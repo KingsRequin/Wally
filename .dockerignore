@@ -1,0 +1,13 @@
+logs/
+data/
+.env
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+*.md
+docs/
+tests/
+.claude/
