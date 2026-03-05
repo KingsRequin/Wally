@@ -3,9 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 import yaml
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 @dataclass
