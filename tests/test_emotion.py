@@ -1,6 +1,7 @@
 # tests/test_emotion.py
 import math
 import time
+import pytest
 from unittest.mock import MagicMock
 
 from bot.core.emotion import EmotionEngine, EMOTIONS
