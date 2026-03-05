@@ -83,3 +83,25 @@ def test_optional_fields_default_none(tmp_path):
     config = Config.load(str(cfg_file))
     assert config.bot.journal_channel_id is None
     assert config.bot.dashboard_token is None
+
+
+def test_missing_section_raises_valueerror(tmp_path):
+    bad_config = {"bot": MINIMAL_CONFIG["bot"]}  # missing openai, discord, twitch
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(bad_config))
+    with pytest.raises(ValueError, match="Missing required section"):
+        Config.load(str(cfg_file))
+
+
+def test_optional_fields_absent_from_yaml(tmp_path):
+    # Test that optional fields work when omitted entirely from YAML (not just set to None)
+    config_without_optionals = {
+        k: v for k, v in MINIMAL_CONFIG["bot"].items()
+        if k not in ("journal_channel_id", "dashboard_token")
+    }
+    data = {**MINIMAL_CONFIG, "bot": config_without_optionals}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(data))
+    config = Config.load(str(cfg_file))
+    assert config.bot.journal_channel_id is None
+    assert config.bot.dashboard_token is None

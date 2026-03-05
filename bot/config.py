@@ -1,6 +1,6 @@
 # bot/config.py
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Optional
 import yaml
 from dotenv import load_dotenv
@@ -54,44 +54,50 @@ class TwitchEventConfig:
 
 @dataclass
 class Config:
-    _path: str
     bot: BotConfig
     openai: OpenAIConfig
     discord: DiscordConfig
     twitch: TwitchConfig
     emotions: dict[str, EmotionDecayConfig]
     twitch_events: dict[str, TwitchEventConfig]
+    _path: str = field(default="", init=False, repr=False)
 
     @classmethod
     def load(cls, path: str = "config.yaml") -> "Config":
         with open(path) as f:
             raw = yaml.safe_load(f)
-        emotions = {
-            k: EmotionDecayConfig(**v)
-            for k, v in raw.get("emotions", {}).items()
-        }
-        twitch_events = {
-            k: TwitchEventConfig(**v)
-            for k, v in raw.get("twitch_events", {}).items()
-        }
-        return cls(
-            _path=path,
-            bot=BotConfig(**raw["bot"]),
-            openai=OpenAIConfig(**raw["openai"]),
-            discord=DiscordConfig(**raw["discord"]),
-            twitch=TwitchConfig(**raw["twitch"]),
-            emotions=emotions,
-            twitch_events=twitch_events,
-        )
+        try:
+            emotions = {
+                k: EmotionDecayConfig(**v)
+                for k, v in raw.get("emotions", {}).items()
+            }
+            twitch_events = {
+                k: TwitchEventConfig(**v)
+                for k, v in raw.get("twitch_events", {}).items()
+            }
+            instance = cls(
+                bot=BotConfig(**raw["bot"]),
+                openai=OpenAIConfig(**raw["openai"]),
+                discord=DiscordConfig(**raw["discord"]),
+                twitch=TwitchConfig(**raw["twitch"]),
+                emotions=emotions,
+                twitch_events=twitch_events,
+            )
+        except KeyError as e:
+            raise ValueError(
+                f"Missing required section {e} in config file: {path}"
+            ) from e
+        instance._path = path
+        return instance
 
     def save(self) -> None:
         data = {
-            "bot": {k: v for k, v in vars(self.bot).items()},
-            "openai": vars(self.openai),
-            "discord": vars(self.discord),
-            "twitch": vars(self.twitch),
-            "emotions": {k: vars(v) for k, v in self.emotions.items()},
-            "twitch_events": {k: vars(v) for k, v in self.twitch_events.items()},
+            "bot": asdict(self.bot),
+            "openai": asdict(self.openai),
+            "discord": asdict(self.discord),
+            "twitch": asdict(self.twitch),
+            "emotions": {k: asdict(v) for k, v in self.emotions.items()},
+            "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
         }
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
