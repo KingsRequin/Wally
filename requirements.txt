@@ -1,1 +1,36 @@
+# Discord
+discord.py>=2.3.2
+
+# Twitch
+twitchio>=2.10.0
+
+# OpenAI
+openai>=1.30.0
+
+# Long-term memory
+mem0ai>=0.1.29
+qdrant-client>=1.9.0
+
+# Emotion & language detection
+nrclex>=4.0.0
+langdetect>=1.0.9
+
+# Database
+aiosqlite>=0.20.0
+
+# Config
+pyyaml>=6.0.1
+python-dotenv>=1.0.1
+
+# Logging
 loguru>=0.7.2
+
+# Scheduler
+apscheduler>=3.10.4
+
+# HTTP
+httpx>=0.27.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
