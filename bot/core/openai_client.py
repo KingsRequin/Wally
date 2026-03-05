@@ -33,8 +33,11 @@ FALLBACK_RESPONSE = (
 
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    costs = next(
-        (v for k, v in MODEL_COSTS.items() if k in model), FALLBACK_COST
+    # Exact match first, then longest-prefix match to avoid "gpt-4o" matching "gpt-4o-mini"
+    costs = MODEL_COSTS.get(model) or next(
+        (v for k, v in sorted(MODEL_COSTS.items(), key=lambda x: len(x[0]), reverse=True)
+         if model.startswith(k)),
+        FALLBACK_COST,
     )
     return (input_tokens * costs[0] + output_tokens * costs[1]) / 1_000_000
 

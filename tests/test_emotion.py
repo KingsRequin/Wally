@@ -98,12 +98,10 @@ def test_unknown_emotion_ignored():
     assert "nonexistent" not in engine.get_state()
 
 
-def test_analyze_message_returns_dict():
-    import asyncio
+@pytest.mark.asyncio
+async def test_analyze_message_returns_dict():
     engine = EmotionEngine(make_config())
-    deltas = asyncio.get_event_loop().run_until_complete(
-        engine.analyze_message("I am so happy and joyful today!", trust_score=0.5)
-    )
+    deltas = await engine.analyze_message("I am so happy and joyful today!", trust_score=0.5)
     assert isinstance(deltas, dict)
     # All values should be floats >= 0
     assert all(isinstance(v, float) and v >= 0 for v in deltas.values())
