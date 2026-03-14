@@ -34,18 +34,18 @@ def make_bot(event_cfg=None):
 def make_gift_payload(gifter="alice", total=5, cumulative=20, is_anonymous=False,
                       broadcaster="mychan"):
     payload = MagicMock()
-    payload.is_anonymous = is_anonymous
-    payload.user.name = gifter
-    payload.total = total
-    payload.cumulative_total = cumulative
-    payload.broadcaster.name = broadcaster
+    payload.data.is_anonymous = is_anonymous
+    payload.data.user.name = gifter
+    payload.data.total = total
+    payload.data.cumulative_total = cumulative
+    payload.data.broadcaster.name = broadcaster
     return payload
 
 
 def make_sub_end_payload(username="bob", broadcaster="mychan"):
     payload = MagicMock()
-    payload.user.name = username
-    payload.broadcaster.name = broadcaster
+    payload.data.user.name = username
+    payload.data.broadcaster.name = broadcaster
     return payload
 
 
@@ -165,7 +165,7 @@ async def test_chat_message_handler_calls_handle_message():
     payload = make_chat_payload(content="wally salut")
     with patch("bot.twitch.events.handle_message", new_callable=AsyncMock) as mock_handle:
         await handler(payload)
-    mock_handle.assert_awaited_once_with(bot, payload)
+    mock_handle.assert_awaited_once_with(bot, payload.data)
 
 
 # ── _generate_and_send uses TwitchAPI ────────────────────────────────────────

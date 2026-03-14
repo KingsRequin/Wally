@@ -61,8 +61,8 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         bot.emotion.apply_delta("joy", 0.1)
         await _generate_and_send(
-            bot, payload.broadcaster.name, cfg.message,
-            username=payload.user.name, amount=0, months=0, raiders_count=0,
+            bot, payload.data.broadcaster.name, cfg.message,
+            username=payload.data.user.name, amount=0, months=0, raiders_count=0,
         )
 
     @bot.event()
@@ -70,12 +70,12 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("sub")
         if not cfg or not cfg.active:
             return
-        if payload.is_gift:
+        if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
         bot.emotion.apply_delta("joy", 0.4)
         await _generate_and_send(
-            bot, payload.broadcaster.name, cfg.message,
-            username=payload.user.name, amount=0, months=0, raiders_count=0,
+            bot, payload.data.broadcaster.name, cfg.message,
+            username=payload.data.user.name, amount=0, months=0, raiders_count=0,
         )
 
     @bot.event()
@@ -85,9 +85,9 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         bot.emotion.apply_delta("joy", 0.3)
         await _generate_and_send(
-            bot, payload.broadcaster.name, cfg.message,
-            username=payload.user.name, amount=0,
-            months=payload.cumulative_months, raiders_count=0,
+            bot, payload.data.broadcaster.name, cfg.message,
+            username=payload.data.user.name, amount=0,
+            months=payload.data.cumulative_months, raiders_count=0,
         )
 
     @bot.event()
@@ -96,19 +96,19 @@ def register_events(bot: "WallyTwitch") -> None:
         if not cfg or not cfg.active:
             return
         bot.emotion.apply_delta("joy", 0.5)
-        gifter = "Anonyme" if payload.is_anonymous else payload.user.name
+        gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         await _generate_and_send(
-            bot, payload.broadcaster.name, cfg.message,
+            bot, payload.data.broadcaster.name, cfg.message,
             username=gifter,
-            amount=payload.total,   # nb de gifts dans cette transaction
+            amount=payload.data.total,   # nb de gifts dans cette transaction
             months=0,
             raiders_count=0,
         )
-        # payload.cumulative_total disponible pour un futur template "X gifts au total"
+        # payload.data.cumulative_total disponible pour un futur template "X gifts au total"
 
     @bot.event()
     async def event_eventsub_notification_subscription_end(payload) -> None:
-        logger.debug("Sub end: {user}", user=payload.user.name)
+        logger.debug("Sub end: {user}", user=payload.data.user.name)
         # Pas de réaction visible dans le chat
 
     @bot.event()
@@ -116,12 +116,12 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("bits")
         if not cfg or not cfg.active:
             return
-        delta = _bits_joy(payload.bits)
+        delta = _bits_joy(payload.data.bits)
         bot.emotion.apply_delta("joy", delta)
-        username = "Anonyme" if payload.is_anonymous else payload.user.name
+        username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         await _generate_and_send(
-            bot, payload.broadcaster.name, cfg.message,
-            username=username, amount=payload.bits, months=0, raiders_count=0,
+            bot, payload.data.broadcaster.name, cfg.message,
+            username=username, amount=payload.data.bits, months=0, raiders_count=0,
         )
 
     @bot.event()
@@ -129,19 +129,19 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("raid")
         if not cfg or not cfg.active:
             return
-        joy_spike = min(payload.viewer_count / 50, 0.9)
+        joy_spike = min(payload.data.viewer_count / 50, 0.9)
         bot.emotion.apply_delta("joy", joy_spike)
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
-        channel_name = payload.reciever.name
+        channel_name = payload.data.reciever.name
         await _generate_and_send(
             bot, channel_name, cfg.message,
-            username=payload.raider.name, amount=0,
-            months=0, raiders_count=payload.viewer_count,
+            username=payload.data.raider.name, amount=0,
+            months=0, raiders_count=payload.data.viewer_count,
         )
 
     @bot.event()
     async def event_eventsub_notification_channel_chat_message(payload) -> None:
-        await handle_message(bot, payload)
+        await handle_message(bot, payload.data)
 
 
 class ChatMessageData:
