@@ -29,20 +29,24 @@ async def _generate_and_send(
     template: str,
     **kwargs,
 ) -> None:
-    """Format an event template and send the result via Helix API.
-
-    The rendered template is sent directly as the chat message.  An optional
-    OpenAI completion can enrich the response, but the formatted text (which
-    contains the event-specific values such as username) is always what is
-    delivered to the channel.
-    """
+    """Generate an OpenAI response from an event template and send via Helix API."""
     try:
         from bot.core.prompts import PromptBuilder
 
         formatted = PromptBuilder.format_event_message(template, **kwargs)
-        if len(formatted) > 480:
-            formatted = formatted[:477] + "..."
-        await bot.twitch_api.send_message(text=formatted)
+        situation = {"platform": "Twitch", "streamer": channel_name}
+        system = bot.prompts.build_system_prompt(
+            emotion_state=bot.emotion.get_state(),
+            situation=situation,
+        )
+        reply = await bot.openai.complete(
+            system,
+            [{"role": "user", "content": f"Réagis à cet événement Twitch : {formatted}"}],
+            purpose="twitch_event",
+        )
+        if len(reply) > 480:
+            reply = reply[:477] + "..."
+        await bot.twitch_api.send_message(text=reply)
     except Exception as e:
         logger.error("Twitch event send error: {e}", e=e)
 

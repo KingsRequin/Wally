@@ -176,7 +176,7 @@ async def test_generate_and_send_uses_twitch_api():
     from bot.twitch.events import _generate_and_send
 
     bot = make_bot()
-    bot.get_channel = MagicMock(return_value=None)  # no IRC channel
+    bot.openai.complete = AsyncMock(return_value="Bonjour alice, merci pour ton sub!")
 
     await _generate_and_send(bot, "mychan", "Bonjour {username}!", username="alice",
                               amount=0, months=0, raiders_count=0)
