@@ -1,0 +1,103 @@
+# bot/twitch/handlers.py
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import TYPE_CHECKING
+
+from loguru import logger
+
+if TYPE_CHECKING:
+    from bot.twitch.bot import WallyTwitch
+
+# Strong references to fire-and-forget tasks to prevent GC cancellation.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire(coro) -> asyncio.Task:
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
+    return t
+
+
+async def handle_message(bot: "WallyTwitch", payload) -> None:
+    """Handle an incoming channel.chat.message EventSub payload."""
+    content: str = payload.message.text
+    content_lower = content.lower()
+    author: str = payload.chatter.name
+    user_id: str = str(payload.chatter.id)
+
+    # Trigger check: @botnick (from TWITCH_BOT_NICK env) or any configured trigger name.
+    # bot.nick is unreliable without an IRC connection, so we read the env var directly.
+    bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
+    triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
+        name.lower() in content_lower for name in bot.config.bot.trigger_names
+    )
+    if not triggered:
+        return
+
+    if bot.is_on_cooldown(user_id):
+        return
+
+    try:
+        platform = "twitch"
+        trust = await bot.db.get_trust_score(platform, user_id)
+        channel_name: str = payload.broadcaster.name
+
+        mem_context = await bot.memory.search(platform, user_id, content)
+        channel_id = f"twitch:{channel_name}"
+        context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
+
+        situation = {
+            "platform": "Twitch",
+            "streamer": channel_name,
+            "channel": f"#{channel_name}",
+        }
+        system_prompt = bot.prompts.build_system_prompt(
+            emotion_state=bot.emotion.get_state(),
+            memory_context=mem_context,
+            situation=situation,
+        )
+        context_block = bot.prompts.build_context_block(context_msgs)
+        user_content = (
+            context_block + f"\n[{author}]: {content}" if context_block else content
+        )
+
+        reply = await bot.openai.complete(
+            system_prompt,
+            [{"role": "user", "content": user_content}],
+            purpose="twitch_response",
+        )
+
+        if len(reply) > 480:
+            reply = reply[:477] + "..."
+
+        await bot.twitch_api.send_message(text=reply)
+        bot.set_cooldown(user_id)
+
+        bot.memory.append_message(channel_id, author, content)
+        bot.memory.append_message(channel_id, "Wally", reply)
+
+        _fire(_post_process(bot, content, platform, user_id, trust))
+
+    except Exception as e:
+        logger.error("Twitch message handling error: {e}", e=e)
+
+
+async def _post_process(
+    bot: "WallyTwitch",
+    text: str,
+    platform: str,
+    user_id: str,
+    trust: float,
+) -> None:
+    try:
+        await bot.emotion.process_message(text, trust_score=trust)
+        insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
+        if any(w in text.lower() for w in insult_words):
+            await bot.db.update_trust_score(platform, user_id, -0.05)
+        else:
+            await bot.db.update_trust_score(platform, user_id, 0.01)
+    except Exception as e:
+        logger.error("Twitch post-process error: {e}", e=e)
