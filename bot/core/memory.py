@@ -27,6 +27,8 @@ class MemoryService:
         self._mem0_init_attempted: bool = False
         # Sliding context window: channel_id → list[{author, content, timestamp}]
         self._context_windows: dict[str, list[dict]] = {}
+        # Prelude buffer: channel_id → list[{author, content, timestamp}]
+        self._prelude_windows: dict[str, list[dict]] = {}
         self._openai: Optional["OpenAIClient"] = None
 
     def set_openai_client(self, client: "OpenAIClient") -> None:
@@ -49,7 +51,20 @@ class MemoryService:
                             "url": os.getenv("QDRANT_URL", "http://localhost:6333"),
                             "collection_name": "wally_memory",
                         },
-                    }
+                    },
+                    "llm": {
+                        "provider": "openai",
+                        "config": {
+                            "model": self._config.openai.secondary_model,
+                            "temperature": 0.1,
+                        },
+                    },
+                    "embedder": {
+                        "provider": "openai",
+                        "config": {
+                            "model": "text-embedding-3-small",
+                        },
+                    },
                 }
             )
             logger.info("mem0 initialized with local Qdrant")
@@ -70,6 +85,18 @@ class MemoryService:
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
 
+    async def reset_all(self) -> None:
+        """Clear all context windows and all mem0 long-term memories."""
+        self._context_windows.clear()
+        self._prelude_windows.clear()
+        logger.info("Memory context windows cleared")
+        if self._mem0 is not None:
+            try:
+                await asyncio.to_thread(self._mem0.reset)
+                logger.info("mem0 long-term memory reset")
+            except Exception as exc:
+                logger.warning("mem0 reset failed: {e}", e=exc)
+
     async def search(self, platform: str, user_id: str, query: str) -> str:
         self._init_mem0()
         if self._mem0 is None:
@@ -79,6 +106,9 @@ class MemoryService:
             results = await asyncio.to_thread(
                 self._mem0.search, query, user_id=uid, limit=5
             )
+            # mem0 >=0.1.40 returns {"results": [...]} dict instead of a list
+            if isinstance(results, dict):
+                results = results.get("results", [])
             if not results:
                 return ""
             return "\n".join(
@@ -102,11 +132,35 @@ class MemoryService:
     def get_context(self, channel_id: str) -> list[dict]:
         return list(self._context_windows.get(channel_id, []))
 
+    def append_prelude(self, channel_id: str, author: str, content: str) -> None:
+        window = self._prelude_windows.setdefault(channel_id, [])
+        window.append(
+            {"author": author, "content": content, "timestamp": time.time()}
+        )
+        max_size = self._config.bot.prelude_window_size
+        if len(window) > max_size:
+            self._prelude_windows[channel_id] = window[-max_size:]
+
+    def get_prelude(self, channel_id: str) -> list[dict]:
+        return list(self._prelude_windows.get(channel_id, []))
+
+    def get_all_contexts(self) -> list[dict]:
+        """Return all messages from all channels, sorted by timestamp."""
+        all_messages: list[dict] = []
+        for msgs in self._context_windows.values():
+            all_messages.extend(msgs)
+        all_messages.sort(key=lambda m: m["timestamp"])
+        return all_messages
+
     async def get_context_summarized_if_needed(
         self, channel_id: str
     ) -> list[dict]:
         messages = self.get_context(channel_id)
         if not messages or self._openai is None:
+            return messages
+
+        # Guard: a single summary entry is already compact — never re-summarize it.
+        if len(messages) == 1 and messages[0].get("author") == "RÉSUMÉ":
             return messages
 
         # Rough token estimate: 4 chars ≈ 1 token
@@ -119,13 +173,19 @@ class MemoryService:
             "Context window for {ch} exceeds token threshold, summarizing",
             ch=channel_id,
         )
+        # Record the timestamp boundary before the await so we can recover any
+        # messages that arrive on this channel while summarization is in progress.
+        snapshot_ts = messages[-1]["timestamp"]
         summary = await self._summarize_messages(messages)
         summary_entry = {
             "author": "RÉSUMÉ",
             "content": summary,
             "timestamp": time.time(),
         }
-        self._context_windows[channel_id] = [summary_entry]
+        # Preserve messages appended to the window during the await.
+        current = self._context_windows.get(channel_id, [])
+        added_during = [m for m in current if m["timestamp"] > snapshot_ts]
+        self._context_windows[channel_id] = [summary_entry] + added_during
         return [summary_entry]
 
     async def _summarize_messages(self, messages: list[dict]) -> str:
