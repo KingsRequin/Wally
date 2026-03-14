@@ -27,9 +27,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     content_lower = content.lower()
     author: str = payload.chatter.name
     user_id: str = str(payload.chatter.id)
+    channel_name: str = payload.broadcaster.name
+    channel_id = f"twitch:{channel_name}"
 
-    # Trigger check: @botnick (from TWITCH_BOT_NICK env) or any configured trigger name.
-    # bot.nick is unreliable without an IRC connection, so we read the env var directly.
+    # Capture passive : prelude AVANT d'ajouter le message courant
+    prelude = bot.memory.get_prelude(channel_id)
+    bot.memory.append_prelude(channel_id, author, content)
+
+    # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
     triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
@@ -43,10 +48,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     try:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
-        channel_name: str = payload.broadcaster.name
 
         mem_context = await bot.memory.search(platform, user_id, content)
-        channel_id = f"twitch:{channel_name}"
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         situation = {
@@ -59,10 +62,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             memory_context=mem_context,
             situation=situation,
         )
+        prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
-        user_content = (
-            context_block + f"\n[{author}]: {content}" if context_block else content
-        )
+        user_content = prelude_block + context_block + f"\n[{author}]: {content}"
 
         reply = await bot.openai.complete(
             system_prompt,
