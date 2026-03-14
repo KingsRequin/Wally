@@ -27,9 +27,9 @@ class TwitchAPI:
 
     async def send_message(self, text: str) -> None:
         """POST /helix/chat/messages. Retry once on 401 after bot token refresh."""
-        for attempt in range(2):
-            try:
-                async with httpx.AsyncClient() as client:
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
                     resp = await client.post(
                         self.MESSAGES_URL,
                         headers={
@@ -43,25 +43,23 @@ class TwitchAPI:
                         },
                         timeout=10,
                     )
-                if resp.status_code == 401:
-                    if attempt == 0:
-                        logger.warning(
-                            "Twitch chat API 401 — refreshing bot token and retrying"
-                        )
-                        refreshed = await self._tm.refresh("bot")
-                        if not refreshed:
-                            logger.error(
-                                "Bot token refresh failed, cannot send message"
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Twitch chat API 401 — refreshing bot token and retrying"
                             )
-                            return
-                        continue
-                    logger.error("Twitch chat API 401 after refresh, giving up")
+                            refreshed = await self._tm.refresh("bot")
+                            if not refreshed:
+                                logger.error(
+                                    "Bot token refresh failed, cannot send message"
+                                )
+                                return
+                            continue
+                        logger.error("Twitch chat API 401 after refresh, giving up")
+                        return
+                    resp.raise_for_status()
                     return
-                resp.raise_for_status()
-                return
-            except httpx.HTTPStatusError as exc:
-                logger.error("Twitch send_message HTTP error: {e}", e=exc)
-                return
-            except Exception as exc:
-                logger.error("Twitch send_message error: {e}", e=exc)
-                return
+        except httpx.HTTPStatusError as exc:
+            logger.error("Twitch send_message HTTP error: {e}", e=exc)
+        except Exception as exc:
+            logger.error("Twitch send_message error: {e}", e=exc)
