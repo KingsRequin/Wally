@@ -137,6 +137,17 @@ async def test_sets_cooldown_after_response(monkeypatch):
     assert "789" in bot._cooldowns
 
 
+@pytest.mark.asyncio
+async def test_handle_message_exception_is_caught(monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = make_bot()
+    bot.openai.complete = AsyncMock(side_effect=RuntimeError("OpenAI down"))
+    payload = make_payload(content="wally erreur")
+    # Should not raise — exception is caught and logged
+    await handle_message(bot, payload)
+    bot.twitch_api.send_message.assert_not_awaited()
+
+
 # ── _post_process ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
