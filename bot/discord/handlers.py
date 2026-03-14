@@ -25,7 +25,7 @@ def _fire(coro) -> asyncio.Task:
     return t
 
 
-async def _fetch_discord_history(channel, limit: int) -> list[dict]:
+async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = None) -> list[dict]:
     """Fallback cold start : récupère l'historique Discord via API.
     Retourne les messages en ordre chronologique (plus ancien en premier).
     Retourne [] en cas d'erreur (permissions, etc.).
@@ -33,11 +33,11 @@ async def _fetch_discord_history(channel, limit: int) -> list[dict]:
     non stockés dans _prelude_windows."""
     try:
         msgs = []
-        async for m in channel.history(limit=limit):
-            if not m.author.bot:
+        async for m in channel.history(limit=limit + (1 if exclude_id is not None else 0)):
+            if not m.author.bot and m.id != exclude_id:
                 msgs.append({"author": m.author.display_name, "content": m.content})
         msgs.reverse()  # Discord renvoie du plus récent au plus ancien
-        return msgs
+        return msgs[-limit:] if len(msgs) > limit else msgs
     except Exception as e:
         logger.warning("channel.history() fallback failed: {e}", e=e)
         return []
@@ -141,7 +141,7 @@ async def _respond(
         # Fallback cold start si prelude vide
         if not prelude:
             prelude = await _fetch_discord_history(
-                message.channel, bot.config.bot.prelude_window_size
+                message.channel, bot.config.bot.prelude_window_size, exclude_id=message.id
             )
 
         situation: dict = {"platform": "Discord"}

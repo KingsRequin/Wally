@@ -39,6 +39,8 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()
+    bot.memory.get_prelude = MagicMock(return_value=[])
+    bot.memory.append_prelude = MagicMock()
 
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
