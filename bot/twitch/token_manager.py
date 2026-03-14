@@ -69,7 +69,12 @@ class TwitchTokenManager:
                     logger.warning(
                         "Twitch {t} token invalid at startup, refreshing...", t=token_type
                     )
-                    await self.refresh(token_type)
+                    refreshed = await self.refresh(token_type)
+                    if not refreshed and token_type == "bot":
+                        logger.warning(
+                            "Bot token unrecoverable — Twitch bot will not start"
+                        )
+                        self._bot_token = ""
                 else:
                     resp.raise_for_status()
                     data = resp.json()
@@ -155,9 +160,6 @@ class TwitchTokenManager:
 
         content = _replace_or_append(content, access_key, new_token)
         content = _replace_or_append(content, refresh_key, new_refresh)
-        # TODO: add asyncio.Lock guard here when concurrent refresh callers are introduced
-        #       (currently single-threaded by asyncio between awaits, but could race if
-        #        startup_validate and TwitchAPI 401 retry run concurrently)
-        tmp_path = self._env_path.parent / ".env.tmp"
-        tmp_path.write_text(content, encoding="utf-8")
-        os.replace(str(tmp_path), str(self._env_path))
+        # Write directly — os.replace() fails on Docker bind-mounted files (EBUSY).
+        # TODO: add asyncio.Lock guard here when concurrent refresh callers are introduced.
+        self._env_path.write_text(content, encoding="utf-8")
