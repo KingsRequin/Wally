@@ -70,16 +70,20 @@ PRELUDE_HEADER = (
 
 
 class PromptBuilder:
-    def __init__(self, system_prompt: str):
-        self._base = system_prompt.strip()
+    def __init__(self):
+        pass
 
     def build_system_prompt(
         self,
         emotion_state: dict[str, float],
         memory_context: str = "",
         situation: dict | None = None,
+        persona_block: str = "",
     ) -> str:
-        parts = [self._base, STYLE_DIRECTIVE, LANGUAGE_DIRECTIVE]
+        parts = []
+        if persona_block:
+            parts.append(persona_block)
+        parts += [STYLE_DIRECTIVE, LANGUAGE_DIRECTIVE]
 
         # Situational context (platform, channel, datetime)
         if situation:

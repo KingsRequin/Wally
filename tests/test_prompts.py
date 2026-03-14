@@ -4,14 +4,17 @@ from bot.core.prompts import PromptBuilder
 _EMOTIONS_FLAT = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
 
-def test_build_includes_base_prompt():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
-    result = pb.build_system_prompt(emotion_state=_EMOTIONS_FLAT)
+def test_build_includes_persona_block():
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+        persona_block="Tu es Wally.",
+    )
     assert "Tu es Wally." in result
 
 
 def test_anger_directive_injected_above_threshold():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.9, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
     )
@@ -20,7 +23,7 @@ def test_anger_directive_injected_above_threshold():
 
 
 def test_low_emotion_no_directive():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.1, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
     )
@@ -28,7 +31,7 @@ def test_low_emotion_no_directive():
 
 
 def test_language_directive_adaptive():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(emotion_state=_EMOTIONS_FLAT)
     # Should instruct the bot to adapt to the user's language
     assert "langue" in result.lower()
@@ -36,7 +39,7 @@ def test_language_directive_adaptive():
 
 
 def test_memory_context_injected():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state=_EMOTIONS_FLAT,
         memory_context="L'utilisateur s'appelle Alice.",
@@ -45,7 +48,7 @@ def test_memory_context_injected():
 
 
 def test_situation_context_injected():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state=_EMOTIONS_FLAT,
         situation={"platform": "Discord", "server": "MonServeur", "channel": "#général"},
@@ -56,7 +59,7 @@ def test_situation_context_injected():
 
 
 def test_situation_twitch():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state=_EMOTIONS_FLAT,
         situation={"platform": "Twitch", "streamer": "wallytebully", "channel": "#wallytebully"},
@@ -66,7 +69,7 @@ def test_situation_twitch():
 
 
 def test_build_context_block_with_messages():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     messages = [
         {"author": "Alice", "content": "Bonjour !", "timestamp": 1000.0},
         {"author": "Bob", "content": "Salut !", "timestamp": 1001.0},
@@ -77,7 +80,7 @@ def test_build_context_block_with_messages():
 
 
 def test_build_context_block_empty():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     assert pb.build_context_block([]) == ""
 
 
@@ -93,7 +96,7 @@ def test_format_event_message():
 
 
 def test_at_most_two_dominant_emotions():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.9, "joy": 0.8, "sadness": 0.7, "curiosity": 0.6, "boredom": 0.5},
     )
@@ -103,12 +106,12 @@ def test_at_most_two_dominant_emotions():
 # ── build_prelude_block ───────────────────────────────────────────────────────
 
 def test_build_prelude_block_empty():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     assert pb.build_prelude_block([]) == ""
 
 
 def test_build_prelude_block_formats_messages():
-    pb = PromptBuilder(system_prompt="Tu es Wally.")
+    pb = PromptBuilder()
     messages = [
         {"author": "Alice", "content": "Salut tout le monde", "timestamp": 1.0},
         {"author": "Bob", "content": "Ça roule ?", "timestamp": 2.0},

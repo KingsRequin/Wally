@@ -12,7 +12,6 @@ class BotConfig:
     context_window_size: int
     context_token_threshold: int
     journal_time: str
-    system_prompt: str
     journal_channel_id: Optional[int] = None
     dashboard_token: Optional[str] = None
     prelude_window_size: int = 15

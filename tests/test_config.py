@@ -13,7 +13,6 @@ MINIMAL_CONFIG = {
         "journal_channel_id": None,
         "dashboard_token": None,
         "prelude_window_size": 15,
-        "system_prompt": "Tu es Wally.",
     },
     "openai": {
         "primary_model": "gpt-4o",
