@@ -154,6 +154,7 @@ async def _respond(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
             situation=situation,
+            persona_block=bot.persona.build_prompt_block(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
@@ -243,7 +244,9 @@ async def _maybe_welcome(
         if isinstance(message.channel, discord.TextChannel):
             situation["channel"] = f"#{message.channel.name}"
         system_prompt = bot.prompts.build_system_prompt(
-            bot.emotion.get_state(), situation=situation
+            bot.emotion.get_state(),
+            situation=situation,
+            persona_block=bot.persona.build_prompt_block(),
         )
         welcome = await bot.openai.complete(
             system_prompt,

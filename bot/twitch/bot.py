@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from bot.core.language import LanguageDetector
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
+    from bot.core.persona import PersonaService
 
 
 class WallyTwitch(commands.Bot):
@@ -32,6 +33,7 @@ class WallyTwitch(commands.Bot):
         language: "LanguageDetector",
         token_manager: "TwitchTokenManager",
         twitch_api: "TwitchAPI",
+        persona: "PersonaService",
     ):
         super().__init__(
             token=token_manager.bot_token,
@@ -47,6 +49,7 @@ class WallyTwitch(commands.Bot):
         self.language = language
         self.token_manager = token_manager
         self.twitch_api = twitch_api
+        self.persona = persona
         # Per-user cooldown: {user_id: last_response_timestamp}
         self._cooldowns: dict[str, float] = {}
 

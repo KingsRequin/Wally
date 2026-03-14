@@ -34,6 +34,7 @@ async def main() -> None:
     from bot.core.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.core.journal import DailyJournal
+    from bot.core.persona import PersonaService
 
     # ── Load config and database ──────────────────────────────────────────────
     config = Config.load(os.getenv("CONFIG_PATH", "config.yaml"))
@@ -57,9 +58,10 @@ async def main() -> None:
     memory.set_openai_client(openai_client)
     logger.info("MemoryService and OpenAIClient initialized")
 
-    prompts = PromptBuilder(config.bot.system_prompt)
+    prompts = PromptBuilder()
     language = LanguageDetector(config.bot.language_default)
-    logger.info("PromptBuilder and LanguageDetector initialized")
+    persona = PersonaService()
+    logger.info("PromptBuilder, LanguageDetector, and PersonaService initialized")
 
     journal = DailyJournal(config, openai_client, emotion, memory)
     logger.info("DailyJournal initialized")
@@ -67,7 +69,7 @@ async def main() -> None:
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
 
-    discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language)
+    discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
 
     @discord_bot.event
     async def on_message(message):
@@ -109,6 +111,7 @@ async def main() -> None:
             config, db, emotion, memory, openai_client, prompts, language,
             token_manager=token_manager,
             twitch_api=twitch_api,
+            persona=persona,
         )
         register_events(twitch_bot)
         tasks.append(twitch_bot.start())
