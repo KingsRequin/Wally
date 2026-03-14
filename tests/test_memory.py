@@ -13,6 +13,7 @@ def make_config(window_size=5, token_threshold=100):
     config = MagicMock()
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
+    config.bot.prelude_window_size = 15
     return config
 
 
