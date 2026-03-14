@@ -42,7 +42,7 @@ IRC est une technologie legacy que Twitch n'investit plus. Ce refactoring migre 
 | `TWITCH_CLIENT_ID` | `TWITCH_CLIENT_ID` | inchangé |
 | `TWITCH_BROADCASTER_ID` | `TWITCH_BROADCASTER_ID` | inchangé |
 | `TWITCH_BOT_ID` | `TWITCH_BOT_ID` | inchangé |
-| `TWITCH_BOT_NICK` | `TWITCH_BOT_NICK` | inchangé |
+| `TWITCH_BOT_NICK` | `TWITCH_BOT_NICK` | inchangé — toujours requis pour la détection de trigger dans handlers.py |
 
 ### `.env.example` final
 
@@ -78,19 +78,24 @@ class TwitchTokenManager:
     streamer_token: str   # propriété, toujours la valeur courante
 
     @classmethod
-    def load(cls) -> "TwitchTokenManager":
-        """Charge les tokens depuis les variables d'environnement."""
+    def load(cls, env_path: Path) -> "TwitchTokenManager":
+        """Charge les tokens depuis les variables d'environnement.
+        env_path : chemin absolu vers le fichier .env (résolu par main.py)."""
 
     async def startup_validate(self) -> None:
         """Valide les deux tokens via GET /oauth2/validate.
         Si un token est invalide (401), tente un refresh immédiat.
-        Log les scopes et expires_in pour chaque token."""
+        Log les scopes et expires_in pour chaque token.
+        Lève TwitchTokenError si le bot_token est manquant ou irrécupérable."""
 
     async def refresh(self, token_type: Literal["bot", "streamer"]) -> bool:
         """Rafraîchit le token via POST /id.twitch.tv/oauth2/token.
         Met à jour en mémoire et persiste dans .env.
         Retourne True si succès."""
 ```
+
+**Résolution du chemin `.env` :**
+`main.py` résout le chemin absolu du `.env` via `pathlib.Path(__file__).parent.parent / ".env"` et le passe à `TwitchTokenManager.load()`. Toutes les opérations fichier utilisent ce chemin absolu — jamais un chemin relatif dépendant du CWD.
 
 **Flux de validation (startup) :**
 ```
@@ -115,22 +120,28 @@ POST https://id.twitch.tv/oauth2/token
 ```
 
 **Réécriture atomique du `.env` :**
-1. Lire le contenu complet du `.env`
-2. Remplacer les lignes `BOT_ACCESS_TOKEN=...`, `BOT_REFRESH_TOKEN=...` (ou STREAMER) par les nouvelles valeurs via regex
-3. Écrire dans `.env.tmp`
-4. `os.replace(".env.tmp", ".env")` — atomique sur Linux, évite la corruption si crash
+1. Lire le contenu complet du `.env` via le chemin absolu (`env_path`)
+2. Remplacer les lignes `BOT_ACCESS_TOKEN=...`, `BOT_REFRESH_TOKEN=...` (ou `STREAMER_*`) par les nouvelles valeurs via regex
+3. Écrire dans `env_path.parent / ".env.tmp"`
+4. `os.replace(str(env_path.parent / ".env.tmp"), str(env_path))` — atomique sur Linux, évite la corruption si crash entre l'écriture et le rename
 
 #### `bot/twitch/api.py` — `TwitchAPI`
 
-Thin wrapper httpx pour l'API Helix.
+Thin wrapper httpx pour l'API Helix. Toutes les valeurs fixes (broadcaster_id, bot_id, client_id) sont injectées au constructeur — aucune lecture d'env var dans les méthodes.
 
 **Interface publique :**
 ```python
 class TwitchAPI:
-    def __init__(self, token_manager: TwitchTokenManager, client_id: str, bot_id: str):
+    def __init__(
+        self,
+        token_manager: TwitchTokenManager,
+        client_id: str,
+        bot_id: str,
+        broadcaster_id: str,
+    ):
         ...
 
-    async def send_message(self, broadcaster_id: str, text: str) -> None:
+    async def send_message(self, text: str) -> None:
         """POST /helix/chat/messages. Retry sur 401 (refresh bot token + 1 essai)."""
 ```
 
@@ -140,8 +151,8 @@ POST https://api.twitch.tv/helix/chat/messages
 Authorization: Bearer <BOT_ACCESS_TOKEN>
 Client-Id: <TWITCH_CLIENT_ID>
 {
-  "broadcaster_id": "<TWITCH_BROADCASTER_ID>",
-  "sender_id": "<TWITCH_BOT_ID>",
+  "broadcaster_id": "<TWITCH_BROADCASTER_ID>",  # injecté au constructeur
+  "sender_id": "<TWITCH_BOT_ID>",               # injecté au constructeur
   "message": "<text>"
 }
 ```
@@ -158,18 +169,25 @@ Client-Id: <TWITCH_CLIENT_ID>
 
 #### `bot/twitch/events.py`
 
+**Scopes requis par token :**
+
+- **Bot** (`BOT_ACCESS_TOKEN`) : `user:read:chat`, `user:write:chat`, `user:bot`, `moderator:read:followers`
+- **Streamer** (`STREAMER_ACCESS_TOKEN`) : `channel:read:subscriptions`, `bits:read`
+
 **Abonnements EventSub :**
 
-| Event | Token | Nouveau ? |
-|---|---|---|
-| `channel.follow` v2 | Bot | non |
-| `channel.raid` | Bot | non |
-| `channel.chat.message` | Bot | **oui** |
-| `channel.subscribe` | Streamer | non |
-| `channel.subscription.message` | Streamer | non |
-| `channel.subscription.gift` | Streamer | **oui** |
-| `channel.subscription.end` | Streamer | **oui** (abonnement seul) |
-| `channel.cheer` | Streamer | non |
+| Event | Token | Scope requis | Méthode twitchio v2 | Nouveau ? |
+|---|---|---|---|---|
+| `channel.follow` v2 | Bot | `moderator:read:followers` | `subscribe_channel_follows_v2` | non |
+| `channel.raid` | Bot | *(aucun)* | `subscribe_channel_raid` | non |
+| `channel.chat.message` | Bot | `user:read:chat` | `subscribe_channel_chat_messages` | **oui** |
+| `channel.subscribe` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscriptions` | non |
+| `channel.subscription.message` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_messages` | non |
+| `channel.subscription.gift` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_gifts` | **oui** |
+| `channel.subscription.end` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_end` | **oui** (abonnement seul) |
+| `channel.cheer` | Streamer | `bits:read` | `subscribe_channel_cheers` | non |
+
+**`_generate_and_send()` :** Cette fonction helper existante doit être mise à jour pour envoyer via `bot.twitch_api.send_message(text=reply)` au lieu de l'appel IRC `channel.send(reply)`. L'objet twitchio channel (IRC) n'existe plus.
 
 **Nouveau handler `channel.chat.message` :**
 ```python
@@ -208,28 +226,45 @@ async def event_eventsub_notification_subscription_end(payload):
 
 #### `bot/twitch/handlers.py`
 
-`handle_message()` adapté pour un payload EventSub :
+`handle_message()` adapté pour un payload EventSub. Le `broadcaster_id` n'est pas lu depuis l'env — `TwitchAPI` le connaît déjà via son constructeur :
+
 ```python
 async def handle_message(bot: "WallyTwitch", payload) -> None:
     content: str = payload.message.text
     author: str  = payload.chatter.name
     user_id: str = str(payload.chatter.id)
-    channel_name: str = payload.broadcaster.name
 
-    # ... logique inchangée ...
+    # Trigger check : @botnick (via TWITCH_BOT_NICK) ou trigger_names configurés
+    bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
+    triggered = (bot_nick and f"@{bot_nick}" in content.lower()) or any(
+        name.lower() in content.lower() for name in bot.config.bot.trigger_names
+    )
+    if not triggered:
+        return
+
+    # ... logique inchangée (cooldown, memory, prompts, openai) ...
 
     # Envoi via Helix au lieu d'IRC
-    await bot.twitch_api.send_message(
-        broadcaster_id=os.getenv("TWITCH_BROADCASTER_ID"),
-        text=reply,
-    )
+    await bot.twitch_api.send_message(text=reply)
 ```
+
+Note : `bot.nick` (attribut twitchio IRC) n'est plus fiable sans connexion IRC. Le trigger check utilise directement `TWITCH_BOT_NICK`.
 
 #### `bot/main.py`
 
 - `_resolve_twitch_token()` supprimé
-- `TwitchTokenManager.load()` + `await token_manager.startup_validate()` avant l'initialisation des bots
-- `TwitchAPI` instancié et injecté dans `WallyTwitch`
+- Résolution du chemin `.env` : `env_path = Path(__file__).parent.parent / ".env"`
+- `token_manager = TwitchTokenManager.load(env_path)`
+- `await token_manager.startup_validate()` avant toute initialisation des bots
+- `TwitchAPI(token_manager, client_id, bot_id, broadcaster_id)` instancié et injecté dans `WallyTwitch`
+
+**Comportement au démarrage selon l'état des tokens :**
+
+| État | Comportement |
+|---|---|
+| `BOT_ACCESS_TOKEN` valide (ou refresh réussi) | Bot Twitch démarré normalement |
+| `BOT_ACCESS_TOKEN` invalide + refresh échoue | `WallyTwitch` non démarré — log WARNING, bot Discord non affecté |
+| `STREAMER_ACCESS_TOKEN` invalide + refresh échoue | Bot démarre, subscriptions streamer skippées — log WARNING (comportement existant) |
 
 #### `config.yaml`
 
@@ -247,7 +282,7 @@ twitch_events:
 
 | Situation | Comportement |
 |---|---|
-| Token invalide au démarrage | Refresh immédiat ; si refresh échoue → log ERROR, bot démarre sans ce token |
+| Token invalide au démarrage | Refresh immédiat ; si refresh échoue → voir table startup ci-dessus |
 | 401 sur `send_message` | Refresh bot token + 1 retry ; si toujours 401 → log ERROR, message non envoyé |
 | `event_token_expired` twitchio | Délègue à `token_manager.refresh("bot")` |
 | Refresh échoue (réseau, secret invalide) | Log ERROR, retourne False, token précédent conservé en mémoire |
@@ -258,10 +293,10 @@ twitch_events:
 
 ## Tests
 
-- `tests/test_twitch_token_manager.py` — validate, refresh (success + failure), réécriture `.env`
+- `tests/test_twitch_token_manager.py` — validate, refresh (success + failure), réécriture `.env` atomique
 - `tests/test_twitch_api.py` — send_message, retry sur 401
-- `tests/test_twitch_handlers.py` — mise à jour pour payload EventSub (remplace objet twitchio Message)
-- `tests/test_twitch_events.py` — handlers gift_sub, subscription_end, chat_message
+- `tests/test_twitch_handlers.py` — mise à jour pour payload EventSub (remplace objet twitchio Message), trigger check via `TWITCH_BOT_NICK`
+- `tests/test_twitch_events.py` — handlers gift_sub (payload.total), subscription_end, chat_message
 
 ---
 
@@ -280,3 +315,4 @@ twitch_events:
 | `tests/test_twitch_token_manager.py` | Créé |
 | `tests/test_twitch_api.py` | Créé |
 | `tests/test_twitch_handlers.py` | Modifié |
+| `tests/test_twitch_events.py` | Modifié |
