@@ -1,3 +1,4 @@
+# bot/twitch/token_manager.py
 from __future__ import annotations
 
 import os
@@ -149,11 +150,14 @@ class TwitchTokenManager:
         def _replace_or_append(text: str, key: str, value: str) -> str:
             pattern = rf"^{key}=.*$"
             if re.search(pattern, text, flags=re.MULTILINE):
-                return re.sub(pattern, f"{key}={value}", text, flags=re.MULTILINE)
+                return re.sub(pattern, lambda m: f"{key}={value}", text, flags=re.MULTILINE)
             return text.rstrip("\n") + f"\n{key}={value}\n"
 
         content = _replace_or_append(content, access_key, new_token)
         content = _replace_or_append(content, refresh_key, new_refresh)
+        # TODO: add asyncio.Lock guard here when concurrent refresh callers are introduced
+        #       (currently single-threaded by asyncio between awaits, but could race if
+        #        startup_validate and TwitchAPI 401 retry run concurrently)
         tmp_path = self._env_path.parent / ".env.tmp"
         tmp_path.write_text(content, encoding="utf-8")
         os.replace(str(tmp_path), str(self._env_path))
