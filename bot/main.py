@@ -2,6 +2,7 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -63,12 +64,62 @@ async def main() -> None:
     journal = DailyJournal(config, openai_client, emotion, memory)
     logger.info("DailyJournal initialized")
 
-    logger.info("All Phase 2 core services operational — ready for Discord/Twitch adapters")
+    # ── Discord adapter ───────────────────────────────────────────────────────
+    from bot.discord.bot import WallyDiscord
 
-    # Discord and Twitch bots wired in Phase 3 and 4.
-    # asyncio.gather(discord_bot.start(), twitch_bot.start()) goes here.
+    discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language)
 
-    await db.close()
+    @discord_bot.event
+    async def on_message(message):
+        from bot.discord.handlers import handle_message
+        await handle_message(discord_bot, message)
+
+    async def journal_send_cb(text: str) -> None:
+        channel_id = config.bot.journal_channel_id
+        if channel_id:
+            ch = discord_bot.get_channel(channel_id)
+            if ch:
+                await ch.send(text)
+
+    journal.set_send_callback(journal_send_cb)
+    journal.start()
+    logger.info("Discord adapter configured, journal scheduler started")
+
+    # ── Twitch adapter ────────────────────────────────────────────────────────
+    from bot.twitch.bot import WallyTwitch
+    from bot.twitch.token_manager import TwitchTokenManager
+    from bot.twitch.api import TwitchAPI
+    from bot.twitch.events import register_events
+
+    env_path = Path(__file__).parent.parent / ".env"
+    token_manager = TwitchTokenManager.load(env_path)
+    await token_manager.startup_validate()
+
+    discord_token = os.getenv("DISCORD_TOKEN", "")
+
+    tasks = [discord_bot.start(discord_token)]
+    if token_manager.bot_token:
+        twitch_api = TwitchAPI(
+            token_manager=token_manager,
+            client_id=os.getenv("TWITCH_CLIENT_ID", ""),
+            bot_id=os.getenv("TWITCH_BOT_ID", ""),
+            broadcaster_id=os.getenv("TWITCH_BROADCASTER_ID", ""),
+        )
+        twitch_bot = WallyTwitch(
+            config, db, emotion, memory, openai_client, prompts, language,
+            token_manager=token_manager,
+            twitch_api=twitch_api,
+        )
+        register_events(twitch_bot)
+        tasks.append(twitch_bot.start())
+        logger.info("Twitch adapter configured and included in gather")
+    else:
+        logger.warning(
+            "Twitch bot skipped — set BOT_ACCESS_TOKEN (or BOT_REFRESH_TOKEN + "
+            "TWITCH_CLIENT_ID/SECRET) to enable"
+        )
+
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
