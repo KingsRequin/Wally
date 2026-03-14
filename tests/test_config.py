@@ -12,6 +12,7 @@ MINIMAL_CONFIG = {
         "journal_time": "03:00",
         "journal_channel_id": None,
         "dashboard_token": None,
+        "prelude_window_size": 15,
         "system_prompt": "Tu es Wally.",
     },
     "openai": {
@@ -45,6 +46,7 @@ def test_load_config(tmp_path):
     config = Config.load(str(cfg_file))
     assert config.bot.trigger_names == ["wally"]
     assert config.bot.language_default == "fr"
+    assert config.bot.prelude_window_size == 15
     assert config.openai.primary_model == "gpt-4o"
     assert config.discord.anger_trigger_threshold == 3
     assert config.twitch.cooldown_seconds == 10

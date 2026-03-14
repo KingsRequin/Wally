@@ -15,6 +15,7 @@ class BotConfig:
     system_prompt: str
     journal_channel_id: Optional[int] = None
     dashboard_token: Optional[str] = None
+    prelude_window_size: int = 15
 
 
 @dataclass
@@ -88,6 +89,8 @@ class Config:
         return instance
 
     def save(self) -> None:
+        if not self._path:
+            raise RuntimeError("Config.save() called before Config.load() — no path set")
         data = {
             "bot": asdict(self.bot),
             "openai": asdict(self.openai),
