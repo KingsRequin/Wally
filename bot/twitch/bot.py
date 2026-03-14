@@ -1,6 +1,7 @@
 # bot/twitch/bot.py
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING, Optional
 
@@ -56,17 +57,22 @@ class WallyTwitch(commands.Bot):
     def set_cooldown(self, user_id: str) -> None:
         self._cooldowns[user_id] = time.time()
 
-    async def event_token_expired(self) -> Optional[str]:
-        """Called by twitchio when the IRC/API OAuth token expires."""
-        refreshed = await self.token_manager.refresh("bot")
-        if refreshed:
-            return self.token_manager.bot_token
-        return None
+    async def start(self) -> None:
+        """Start EventSub client — IRC connection is intentionally bypassed.
 
-    async def event_ready(self) -> None:
-        logger.info("Twitch bot ready as {nick}", nick=self.nick)
+        twitchio's default start() connects to Twitch IRC (irc.chat.twitch.tv),
+        which requires chat:read/chat:edit scopes. This bot uses EventSub for all
+        chat traffic, so IRC is never needed and the token only carries EventSub
+        scopes (user:read:chat, user:write:chat, user:bot).
+        """
+        logger.info("Twitch bot starting in EventSub-only mode")
         from bot.twitch.events import start_eventsub_client
         await start_eventsub_client(self)
+        # Keep the task alive — EventSub runs its own async tasks.
+        try:
+            await asyncio.sleep(float("inf"))
+        except asyncio.CancelledError:
+            pass
 
     async def event_error(self, error: Exception, data=None) -> None:
         logger.error("Twitch error: {e}", e=error)
