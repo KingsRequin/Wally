@@ -8,6 +8,7 @@ __pycache__/
 .git/
 .gitignore
 *.md
+!bot/persona/*.md
 docs/
 tests/
 .claude/
