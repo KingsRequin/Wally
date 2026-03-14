@@ -1,7 +1,24 @@
 # bot/core/prompts.py
 from __future__ import annotations
 
+from datetime import datetime
+
 EMOTION_THRESHOLD = 0.4
+
+_FRENCH_DAYS = [
+    "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
+]
+_FRENCH_MONTHS = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _now_fr() -> str:
+    dt = datetime.now()
+    day = _FRENCH_DAYS[dt.weekday()]
+    month = _FRENCH_MONTHS[dt.month - 1]
+    return f"{day} {dt.day} {month} {dt.year}, {dt.hour:02d}h{dt.minute:02d}"
 
 EMOTION_DIRECTIVES: dict[str, str] = {
     "anger": (
@@ -26,23 +43,29 @@ EMOTION_DIRECTIVES: dict[str, str] = {
     ),
 }
 
-LANGUAGE_LABELS: dict[str, str] = {
-    "fr": "français",
-    "en": "English",
-    "es": "español",
-    "de": "Deutsch",
-    "it": "italiano",
-    "pt": "português",
-    "nl": "Nederlands",
-    "ru": "русский",
-    "ja": "日本語",
-    "zh": "中文",
-}
+LANGUAGE_DIRECTIVE = (
+    "Réponds toujours dans la langue utilisée par l'utilisateur. "
+    "Si l'utilisateur écrit en anglais, réponds en anglais. "
+    "Si l'utilisateur écrit en français, réponds en français. Adapte-toi à chaque message."
+)
+
+STYLE_DIRECTIVE = (
+    "Réponds toujours de façon naturelle et conversationnelle, comme un humain dans un chat Discord. "
+    "N'utilise JAMAIS de listes à puces, de listes numérotées, de titres ou de formatage Markdown. "
+    "Écris en phrases courtes et directes. Pas de mise en forme structurée — juste du texte naturel "
+    "avec de la personnalité."
+)
 
 CONTEXT_HEADER = (
     "\n--- Contexte de la conversation (messages récents, plusieurs auteurs) ---\n"
     "{context}\n"
     "--- Fin du contexte ---"
+)
+
+PRELUDE_HEADER = (
+    "\n--- Discussion récente dans le canal (avant ta mention) ---\n"
+    "{context}\n"
+    "--- Fin de la discussion ---"
 )
 
 
@@ -53,14 +76,24 @@ class PromptBuilder:
     def build_system_prompt(
         self,
         emotion_state: dict[str, float],
-        language: str,
         memory_context: str = "",
+        situation: dict | None = None,
     ) -> str:
-        parts = [self._base]
+        parts = [self._base, STYLE_DIRECTIVE, LANGUAGE_DIRECTIVE]
 
-        # Language directive
-        lang_label = LANGUAGE_LABELS.get(language, language)
-        parts.append(f"\nRéponds toujours en {lang_label} dans cette conversation.")
+        # Situational context (platform, channel, datetime)
+        if situation:
+            lines = ["\n--- Contexte situationnel ---"]
+            if platform := situation.get("platform"):
+                lines.append(f"Plateforme : {platform}")
+            if server := situation.get("server"):
+                lines.append(f"Serveur : {server}")
+            if channel := situation.get("channel"):
+                lines.append(f"Salon : {channel}")
+            if streamer := situation.get("streamer"):
+                lines.append(f"Chaîne Twitch : {streamer}")
+            lines.append(f"Date et heure : {_now_fr()}")
+            parts.append("\n".join(lines))
 
         # Inject directives for dominant emotions (top 2 above threshold)
         dominant = sorted(
@@ -88,6 +121,12 @@ class PromptBuilder:
             return ""
         lines = [f"[{m['author']}]: {m['content']}" for m in messages]
         return CONTEXT_HEADER.format(context="\n".join(lines))
+
+    def build_prelude_block(self, messages: list[dict]) -> str:
+        if not messages:
+            return ""
+        lines = [f"[{m['author']}]: {m['content']}" for m in messages]
+        return PRELUDE_HEADER.format(context="\n".join(lines))
 
     @staticmethod
     def format_event_message(template: str, **kwargs) -> str:
