@@ -180,12 +180,31 @@ Client-Id: <TWITCH_CLIENT_ID>
 |---|---|---|---|---|
 | `channel.follow` v2 | Bot | `moderator:read:followers` | `subscribe_channel_follows_v2` | non |
 | `channel.raid` | Bot | *(aucun)* | `subscribe_channel_raid` | non |
-| `channel.chat.message` | Bot | `user:read:chat` | `subscribe_channel_chat_messages` | **oui** |
+| `channel.chat.message` | Bot | `user:read:chat` | patch manuel (voir ci-dessous) | **oui** |
 | `channel.subscribe` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscriptions` | non |
 | `channel.subscription.message` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_messages` | non |
 | `channel.subscription.gift` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_gifts` | **oui** |
 | `channel.subscription.end` | Streamer | `channel:read:subscriptions` | `subscribe_channel_subscription_end` | **oui** (abonnement seul) |
 | `channel.cheer` | Streamer | `bits:read` | `subscribe_channel_cheers` | non |
+
+**`channel.chat.message` — patch twitchio v2 :**
+`subscribe_channel_chat_messages` n'existe pas dans twitchio v2 et `channel.chat.message` est absent de `SubscriptionTypes._name_map` (un event non reconnu ferait planter la boucle `pump()`). Solution : patch à l'initialisation dans `start_eventsub_client()` avant toute subscription :
+```python
+from twitchio.ext.eventsub.models import SubscriptionTypes, _Subscription
+SubscriptionTypes._name_map["channel.chat.message"] = "channel_chat_message"
+SubscriptionTypes._type_map["channel.chat.message"] = ChatMessageData  # dataclass dans events.py
+# Abonnement manuel avec condition {broadcaster_user_id, user_id}
+sub = _Subscription(
+    ("channel.chat.message", 1, ChatMessageData),
+    {"broadcaster_user_id": broadcaster_id, "user_id": bot_id},
+    bot_token,
+)
+client.add_subscription(sub)
+```
+`ChatMessageData` est une dataclass implémentée dans `events.py` exposant :
+- `payload.chatter.name`, `payload.chatter.id`
+- `payload.message.text`
+- `payload.broadcaster.name`
 
 **`_generate_and_send()` :** Cette fonction helper existante doit être mise à jour pour envoyer via `bot.twitch_api.send_message(text=reply)` au lieu de l'appel IRC `channel.send(reply)`. L'objet twitchio channel (IRC) n'existe plus.
 
@@ -284,7 +303,8 @@ twitch_events:
 |---|---|
 | Token invalide au démarrage | Refresh immédiat ; si refresh échoue → voir table startup ci-dessus |
 | 401 sur `send_message` | Refresh bot token + 1 retry ; si toujours 401 → log ERROR, message non envoyé |
-| `event_token_expired` twitchio | Délègue à `token_manager.refresh("bot")` |
+| `event_token_expired` twitchio | Délègue à `token_manager.refresh("bot")` — couvre le bot token IRC/API uniquement |
+| 401 sur création subscription streamer | `Unauthorized` catchée dans `start_eventsub_client()` → `token_manager.refresh("streamer")` + retry de la subscription |
 | Refresh échoue (réseau, secret invalide) | Log ERROR, retourne False, token précédent conservé en mémoire |
 | `.env.tmp` write crash | `.env` original intact (rename atomique non effectué) |
 | EventSub subscription échoue | Log WARNING par subscription, les autres continuent (comportement existant) |
