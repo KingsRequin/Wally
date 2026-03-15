@@ -158,7 +158,7 @@ async def test_respond_includes_context_block_when_present():
 async def test_post_process_calls_emotion_and_trust():
     bot = make_bot()
     await _post_process(bot, "thank you", "discord", "12345", "99999", 0.5)
-    bot.emotion.process_message.assert_awaited_once_with("thank you", trust_score=0.5)
+    bot.emotion.process_message.assert_awaited_once_with("thank you", trust_score=0.5, context_messages=None)
     bot.db.update_trust_score.assert_awaited_once()
 
 

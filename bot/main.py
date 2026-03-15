@@ -56,6 +56,7 @@ async def main() -> None:
     memory = MemoryService(config)
     openai_client = OpenAIClient(config, db)
     memory.set_openai_client(openai_client)
+    emotion.set_openai_client(openai_client)
     logger.info("MemoryService and OpenAIClient initialized")
 
     prompts = PromptBuilder()

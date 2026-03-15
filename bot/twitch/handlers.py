@@ -62,6 +62,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             memory_context=mem_context,
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -82,7 +83,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_message(channel_id, author, content)
         bot.memory.append_message(channel_id, "Wally", reply)
 
-        _fire(_post_process(bot, content, platform, user_id, trust))
+        exchange = f"[{author}]: {content}\n[Wally]: {reply}"
+        _fire(bot.memory.add(platform, user_id, exchange))
+        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
 
     except Exception as e:
         logger.error("Twitch message handling error: {e}", e=e)
@@ -94,9 +97,10 @@ async def _post_process(
     platform: str,
     user_id: str,
     trust: float,
+    context_messages: list[dict] | None = None,
 ) -> None:
     try:
-        await bot.emotion.process_message(text, trust_score=trust)
+        await bot.emotion.process_message(text, trust_score=trust, context_messages=context_messages)
         insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
         if any(w in text.lower() for w in insult_words):
             await bot.db.update_trust_score(platform, user_id, -0.05)

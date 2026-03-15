@@ -155,6 +155,7 @@ async def _respond(
             memory_context=mem_context,
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
@@ -183,7 +184,9 @@ async def _respond(
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
-        _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust))
+        exchange = f"[{message.author.display_name}]: {message.content}\n[Wally]: {reply}"
+        _fire(bot.memory.add(platform, user_id, exchange))
+        _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
 
     except Exception as e:
         logger.error("Error handling Discord message: {e}", e=e)
@@ -200,9 +203,10 @@ async def _post_process(
     user_id: str,
     guild_id: str,
     trust: float,
+    context_messages: list[dict] | None = None,
 ) -> None:
     try:
-        await bot.emotion.process_message(text, trust_score=trust)
+        await bot.emotion.process_message(text, trust_score=trust, context_messages=context_messages)
 
         insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
         if any(w in text.lower() for w in insult_words):
@@ -247,6 +251,7 @@ async def _maybe_welcome(
             bot.emotion.get_state(),
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
         )
         welcome = await bot.openai.complete(
             system_prompt,
