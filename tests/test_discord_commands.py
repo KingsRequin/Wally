@@ -10,6 +10,7 @@ from bot.discord.commands.mood import MoodCog, make_bar
 from bot.discord.commands.status import StatusCog
 from bot.discord.commands.ask import AskCog
 from bot.discord.commands.memory_cmd import MemoryCog
+from bot.discord.commands.persona_cmd import PersonaCog
 from bot.discord.commands.setup import is_valid_model, SetupCog, SetupView
 
 
@@ -217,9 +218,6 @@ async def test_setup_command_sends_ephemeral():
 
 
 # ── /wally reload-persona ──────────────────────────────────────────────────────
-
-from bot.discord.commands.persona_cmd import PersonaCog
-
 
 @pytest.mark.asyncio
 async def test_reload_persona_sends_embed():
