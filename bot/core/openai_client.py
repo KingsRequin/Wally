@@ -63,7 +63,6 @@ class OpenAIClient:
             model=model,
             input=messages,
             reasoning={"effort": "low"},
-            text={"verbosity": "medium"},
         )
         text = response.output_text
         if response.usage:
@@ -98,7 +97,11 @@ class OpenAIClient:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
         if _uses_responses_api(model):
-            return await self._complete_responses_api(model, full_messages, purpose)
+            try:
+                return await self._complete_responses_api(model, full_messages, purpose)
+            except Exception as exc:
+                logger.error("OpenAI Responses API error: {e}", e=exc)
+                return FALLBACK_RESPONSE
 
         for attempt in range(3):
             try:
