@@ -71,6 +71,7 @@ async def main() -> None:
     from bot.discord.bot import WallyDiscord
 
     discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
+    discord_bot.journal = journal
 
     @discord_bot.event
     async def on_message(message):
