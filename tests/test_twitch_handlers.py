@@ -49,6 +49,9 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     # TwitchAPI replaces IRC channel.send
     bot.twitch_api.send_message = AsyncMock()
 
+    bot.persona = MagicMock()
+    bot.persona.build_prompt_block = MagicMock(return_value="persona block")
+
     return bot
 
 

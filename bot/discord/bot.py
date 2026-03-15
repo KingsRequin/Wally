@@ -52,12 +52,14 @@ class WallyDiscord(commands.Bot):
         from bot.discord.commands.mood import MoodCog
         from bot.discord.commands.memory_cmd import MemoryCog
         from bot.discord.commands.setup import SetupCog
+        from bot.discord.commands.persona_cmd import PersonaCog
 
         await self.add_cog(AskCog(self))
         await self.add_cog(StatusCog(self))
         await self.add_cog(MoodCog(self))
         await self.add_cog(MemoryCog(self))
         await self.add_cog(SetupCog(self))
+        await self.add_cog(PersonaCog(self))
         await self.tree.sync()
         logger.info("Discord slash commands synced")
 

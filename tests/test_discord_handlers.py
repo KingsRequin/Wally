@@ -44,6 +44,9 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.prompts.build_prelude_block = MagicMock(return_value="")  # ← nouveau
     bot.openai.complete = AsyncMock(return_value="Bonjour!")
 
+    bot.persona = MagicMock()
+    bot.persona.build_prompt_block = MagicMock(return_value="persona block")
+
     return bot
 
 
