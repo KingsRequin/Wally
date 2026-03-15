@@ -14,6 +14,13 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
 
+_RESPONSES_API_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
+
+def _uses_responses_api(model: str) -> bool:
+    return any(model.startswith(p) for p in _RESPONSES_API_PREFIXES)
+
+
 # Cost per 1M tokens (input, output) in USD — approximate
 MODEL_COSTS: dict[str, tuple[float, float]] = {
     "gpt-4o": (5.0, 15.0),
@@ -49,6 +56,37 @@ class OpenAIClient:
         api_key = os.environ.get("OPENAI_API_KEY", "dummy-key-for-testing")
         self._client = AsyncOpenAI(api_key=api_key)
 
+    async def _complete_responses_api(
+        self, model: str, messages: list[dict], purpose: str
+    ) -> str:
+        response = await self._client.responses.create(
+            model=model,
+            input=messages,
+            reasoning={"effort": "low"},
+            text={"verbosity": "medium"},
+        )
+        text = response.output_text
+        if response.usage:
+            cost = estimate_cost(
+                model, response.usage.input_tokens, response.usage.output_tokens
+            )
+            await self._db.log_cost(
+                model,
+                response.usage.input_tokens,
+                response.usage.output_tokens,
+                cost,
+                purpose,
+            )
+            logger.info(
+                "OpenAI {model} (Responses) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
+                model=model,
+                inp=response.usage.input_tokens,
+                out=response.usage.output_tokens,
+                cost=cost,
+                purpose=purpose,
+            )
+        return text
+
     async def complete(
         self,
         system_prompt: str,
@@ -59,13 +97,16 @@ class OpenAIClient:
         model = model or self._config.openai.primary_model
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
+        if _uses_responses_api(model):
+            return await self._complete_responses_api(model, full_messages, purpose)
+
         for attempt in range(3):
             try:
                 response = await self._client.chat.completions.create(
                     model=model,
                     messages=full_messages,
                     temperature=self._config.openai.temperature,
-                    max_tokens=self._config.openai.max_tokens,
+                    max_completion_tokens=self._config.openai.max_tokens,
                 )
                 usage = response.usage
                 cost = estimate_cost(model, usage.prompt_tokens, usage.completion_tokens)

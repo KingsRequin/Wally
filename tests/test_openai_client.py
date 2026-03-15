@@ -6,7 +6,7 @@ import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.core.openai_client import OpenAIClient, estimate_cost
+from bot.core.openai_client import OpenAIClient, estimate_cost, _uses_responses_api
 
 
 def make_config():
@@ -150,3 +150,43 @@ async def test_get_monthly_cost():
     client = OpenAIClient(config, db)
     cost = await client.get_monthly_cost()
     assert cost == 0.042
+
+
+def test_uses_responses_api_detection():
+    assert _uses_responses_api("gpt-5-mini") is True
+    assert _uses_responses_api("gpt-5.2-mini") is True
+    assert _uses_responses_api("o1-mini") is True
+    assert _uses_responses_api("o3-mini") is True
+    assert _uses_responses_api("o4") is True
+    assert _uses_responses_api("gpt-4o") is False
+    assert _uses_responses_api("gpt-4o-mini") is False
+
+
+@pytest.mark.asyncio
+async def test_complete_routes_to_responses_api_for_gpt5():
+    config = make_config()
+    config.openai.primary_model = "gpt-5-mini"
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    with patch.object(client, "_complete_responses_api", new=AsyncMock(return_value="Réponse LLM")) as mock_resp:
+        result = await client.complete("System", [{"role": "user", "content": "Hi"}])
+
+    mock_resp.assert_called_once()
+    assert result == "Réponse LLM"
+
+
+@pytest.mark.asyncio
+async def test_complete_routes_to_chat_completions_for_gpt4():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    mock_response = make_mock_response("Chat response")
+    with patch.object(
+        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
+    ) as mock_create:
+        result = await client.complete("System", [{"role": "user", "content": "Hi"}])
+
+    mock_create.assert_called_once()
+    assert result == "Chat response"
