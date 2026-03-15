@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+import os
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -25,8 +28,37 @@ NRC_MAP: dict[str, list[str]] = {
 # Max delta applied per message per emotion
 MAX_DELTA_PER_MESSAGE = 0.3
 
+# French keyword → (emotion, delta) supplements for NRCLex (English-only lexicon)
+FR_EMOTION_WORDS: dict[str, list[tuple[str, float]]] = {
+    "anger": [
+        ("connard", 0.15), ("con", 0.10), ("merde", 0.12), ("chier", 0.10),
+        ("énervant", 0.12), ("chiant", 0.08), ("débile", 0.10),
+        ("nul", 0.08), ("rage", 0.12), ("putain", 0.10), ("abruti", 0.12),
+    ],
+    "joy": [
+        ("super", 0.08), ("génial", 0.10), ("excellent", 0.10),
+        ("top", 0.07), ("cool", 0.07), ("bravo", 0.08), ("gg", 0.06),
+        ("lol", 0.06), ("mdr", 0.07), ("xd", 0.06), ("pog", 0.08),
+        ("incroyable", 0.10), ("ouf", 0.07), ("marrant", 0.08), ("ptdr", 0.07),
+    ],
+    "sadness": [
+        ("triste", 0.12), ("déçu", 0.10), ("dommage", 0.08),
+        ("rip", 0.08), ("horrible", 0.10), ("terrible", 0.10), ("naze", 0.08),
+    ],
+    "curiosity": [
+        ("pourquoi", 0.08), ("comment", 0.06), ("vraiment", 0.05),
+        ("intéressant", 0.10), ("sérieux", 0.06), ("c'est quoi", 0.07),
+    ],
+    "boredom": [
+        ("bof", 0.10), ("mouais", 0.08), ("meh", 0.08),
+        ("ennuyeux", 0.10), ("flemme", 0.08), ("chiant", 0.06),
+    ],
+}
+
 # Emotions are zeroed below this floor after decay
 DECAY_FLOOR = 0.01
+
+_LEARNED_WORDS_PATH = "data/fr_emotion_words.json"
 
 
 class EmotionEngine:
@@ -35,6 +67,10 @@ class EmotionEngine:
         self._state: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         self._last_decay: float = time.time()
         self._decay_task: asyncio.Task | None = None
+        self._openai = None
+        self._learned_words: dict[str, list[tuple[str, float]]] = {e: [] for e in EMOTIONS}
+        self._learned_lock = asyncio.Lock()
+        self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
 
@@ -56,6 +92,117 @@ class EmotionEngine:
 
     def get_dominant(self, threshold: float = 0.4) -> list[str]:
         return [e for e in EMOTIONS if self._state.get(e, 0.0) >= threshold]
+
+    def set_openai_client(self, client) -> None:
+        """Injection du client OpenAI (pattern identique à MemoryService)."""
+        self._openai = client
+
+    def _load_learned_words(self) -> None:
+        """Charge les mots appris depuis le disque au démarrage."""
+        try:
+            with open(_LEARNED_WORDS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            for emotion in EMOTIONS:
+                self._learned_words[emotion] = [
+                    (pair[0], float(pair[1])) for pair in data.get(emotion, [])
+                ]
+            logger.info("Learned emotion words loaded from {p}", p=_LEARNED_WORDS_PATH)
+        except FileNotFoundError:
+            pass  # premier démarrage — normal
+        except Exception as exc:
+            logger.warning("Failed to load learned words: {e}", e=exc)
+
+    def _is_known_word(self, word: str) -> bool:
+        """Vérifie si un mot existe déjà (hardcodé ou appris) — case-insensitive."""
+        word_lower = word.lower()
+        for entries in FR_EMOTION_WORDS.values():
+            if any(w.lower() == word_lower for w, _ in entries):
+                return True
+        for entries in self._learned_words.values():
+            if any(w.lower() == word_lower for w, _ in entries):
+                return True
+        return False
+
+    @staticmethod
+    def _write_learned_words_sync(data: dict, path: str) -> None:
+        """Écriture atomique dans un thread — ne pas appeler directement."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+
+    async def _save_learned_words(self) -> None:
+        """Sauvegarde atomique des mots appris (lock + to_thread)."""
+        async with self._learned_lock:
+            data = {e: [[w, d] for w, d in self._learned_words[e]] for e in EMOTIONS}
+            try:
+                await asyncio.to_thread(self._write_learned_words_sync, data, _LEARNED_WORDS_PATH)
+            except Exception as exc:
+                logger.warning("Failed to save learned words: {e}", e=exc)
+
+    async def _learn_words(self, new_words: list[dict]) -> None:
+        """Valide et ajoute les nouveaux mots appris depuis le LLM."""
+        added = False
+        for entry in new_words:
+            word = entry.get("word", "")
+            emotion = entry.get("emotion", "")
+            delta = entry.get("delta", 0.0)
+            if emotion not in EMOTIONS:
+                continue
+            if not (0.0 < delta <= MAX_DELTA_PER_MESSAGE):
+                continue
+            if len(word) < 2:
+                continue
+            if self._is_known_word(word):
+                continue
+            self._learned_words[emotion].append((word, float(delta)))
+            logger.info("New emotion word learned: {w} → {e} ({d})", w=word, e=emotion, d=delta)
+            added = True
+        if added:
+            await self._save_learned_words()
+
+    async def _analyze_llm(
+        self, text: str, trust_score: float, context_messages: list[dict]
+    ) -> tuple[dict[str, float], list[dict]]:
+        """Analyse émotionnelle via LLM — retourne (deltas, new_words)."""
+        system_prompt = (
+            "Tu analyses l'état émotionnel de Wally (bot de chat) après un échange.\n"
+            "Wally a 5 émotions : anger, joy, sadness, curiosity, boredom.\n"
+            "Tu retournes des deltas (variations à additionner à l'état courant).\n\n"
+            "Règles :\n"
+            "- Chaque delta est un float entre 0.0 et 0.3\n"
+            "- Si une émotion est dirigée vers un autre utilisateur et non vers Wally, divise le delta par 3\n"
+            "- Si dirigée vers Wally → impact normal\n"
+            "- trust_score (0.0–1.0) : trust faible amplifie anger (×2 max à trust=0.0)\n"
+            "- Le dernier message est le plus important\n"
+            "- new_words : mots/expressions français pertinents (max 3)\n\n"
+            "Réponds uniquement en JSON valide, sans markdown :\n"
+            '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
+            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}]}'
+        )
+        context_lines = "\n".join(
+            f"[{m['author']}]: {m['content']}" for m in context_messages
+        )
+        user_msg = (
+            f"trust_score: {trust_score:.2f}\n\n"
+            f"Historique récent :\n{context_lines}\n\n"
+            f"Message déclencheur :\n{text}"
+        )
+        raw = await self._openai.complete_secondary(
+            system_prompt,
+            [{"role": "user", "content": user_msg}],
+            purpose="emotion_analysis",
+        )
+        parsed = json.loads(raw)
+        raw_deltas = parsed.get("deltas", {})
+        deltas = {
+            e: min(max(float(raw_deltas.get(e, 0.0)), 0.0), MAX_DELTA_PER_MESSAGE)
+            for e in EMOTIONS
+        }
+        new_words = parsed.get("new_words", [])
+        return deltas, new_words
 
     # ── Decay ─────────────────────────────────────────────────────────────────
 
@@ -94,7 +241,11 @@ class EmotionEngine:
         try:
             from nrclex import NRCLex  # local import — heavy at first call
 
-            scores = NRCLex(text).affect_frequencies
+            # v4 API: constructor loads the lexicon (no text arg); then
+            # load_token_list avoids NLTK/textblob corpus dependency.
+            nrc = NRCLex()
+            nrc.load_token_list(text.lower().split())
+            scores = nrc.affect_frequencies
             deltas: dict[str, float] = {}
 
             for emotion, nrc_keys in NRC_MAP.items():
@@ -111,12 +262,42 @@ class EmotionEngine:
                     raw = min(raw * 0.3, MAX_DELTA_PER_MESSAGE)
                 deltas[emotion] = raw
 
+            # Supplement with French keyword detection (NRCLex is English-only)
+            # Merge hardcoded + learned words
+            text_lower = text.lower()
+            all_fr_words: dict[str, list[tuple[str, float]]] = {}
+            for emotion in EMOTIONS:
+                all_fr_words[emotion] = list(FR_EMOTION_WORDS.get(emotion, [])) + list(self._learned_words.get(emotion, []))
+
+            for emotion, word_deltas in all_fr_words.items():
+                fr_raw = sum(d for w, d in word_deltas if w in text_lower)
+                if fr_raw > 0:
+                    combined = deltas.get(emotion, 0.0) + fr_raw
+                    if emotion == "anger":
+                        combined = min(combined * (1.0 + max(0.0, 1.0 - trust_score)), MAX_DELTA_PER_MESSAGE)
+                    else:
+                        combined = min(combined, MAX_DELTA_PER_MESSAGE)
+                    deltas[emotion] = combined
+
             return deltas
         except Exception as exc:
             logger.warning("NRCLex analysis failed: {e}", e=exc)
             return {}
 
-    async def process_message(self, text: str, trust_score: float = 0.5) -> None:
+    async def process_message(
+        self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None
+    ) -> None:
+        if self._openai is not None and context_messages:
+            try:
+                deltas, new_words = await self._analyze_llm(text, trust_score, context_messages)
+                for emotion, delta in deltas.items():
+                    self.apply_delta(emotion, delta)
+                if new_words:
+                    await self._learn_words(new_words)
+                return
+            except Exception as exc:
+                logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
+        # Fallback : NRCLex + FR_EMOTION_WORDS
         deltas = await self.analyze_message(text, trust_score)
         for emotion, delta in deltas.items():
             self.apply_delta(emotion, delta)
