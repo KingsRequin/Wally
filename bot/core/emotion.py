@@ -115,8 +115,10 @@ class EmotionEngine:
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
             return
-        self._state[emotion] = max(0.0, min(1.0, self._state[emotion] + delta))
-        self._apply_suppression(emotion, delta)
+        old = self._state[emotion]
+        self._state[emotion] = max(0.0, min(1.0, old + delta))
+        effective_delta = self._state[emotion] - old
+        self._apply_suppression(emotion, effective_delta)
         self._dirty = True
         self._schedule_save()
 

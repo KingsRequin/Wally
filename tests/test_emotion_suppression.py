@@ -124,3 +124,14 @@ def test_set_emotion_negative_effective_delta_no_suppression():
     engine._state["anger"] = 0.8
     engine.set_emotion("joy", 0.1)  # delta_effectif = 0.1 - 0.5 = -0.4
     assert engine.get_state()["anger"] == pytest.approx(0.8, abs=0.001)
+
+
+def test_suppression_uses_effective_delta_when_clamped():
+    """Quand apply_delta est clampé (emotion déjà à 0.9, delta=0.5 → effective=0.1),
+    la suppression utilise le delta effectif (0.1), pas le delta brut (0.5)."""
+    engine = EmotionEngine(make_config())
+    engine._state["anger"] = 0.9  # anger près du plafond
+    engine._state["joy"] = 0.8
+    engine.apply_delta("anger", 0.5)  # anger → clampé à 1.0 (effective=0.1)
+    assert engine.get_state()["anger"] == pytest.approx(1.0, abs=0.001)
+    assert engine.get_state()["joy"] == pytest.approx(0.75, abs=0.001)  # 0.8 - 0.1*0.5
