@@ -501,3 +501,127 @@ async def test_edit_channel_list_modal_rejects_invalid():
     await modal.on_submit(interaction)
 
     bot.config.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_twitch_config_modal_saves_config():
+    """TwitchConfigModal met à jour channels et cooldown_seconds."""
+    from bot.discord.commands.setup import TwitchConfigModal
+
+    bot = make_bot()
+    bot.config.twitch.channels = ["Azrael_TTV"]
+    bot.config.twitch.cooldown_seconds = 10
+    bot.config.save = MagicMock()
+
+    modal = TwitchConfigModal(bot)
+    modal.channels._value = "Azrael_TTV, OtherStreamer"
+    modal.cooldown_seconds._value = "15"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    assert bot.config.twitch.channels == ["Azrael_TTV", "OtherStreamer"]
+    assert bot.config.twitch.cooldown_seconds == 15
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_openai_params_modal_rejects_invalid_temperature():
+    """OpenAIParamsModal rejette une température hors de [0.0, 2.0]."""
+    from bot.discord.commands.setup import OpenAIParamsModal
+
+    bot = make_bot()
+    bot.config.openai.temperature = 0.8
+    bot.config.openai.max_tokens = 1000
+    bot.config.save = MagicMock()
+
+    modal = OpenAIParamsModal(bot)
+    modal.temperature._value = "3.5"  # hors plage
+    modal.max_tokens._value = "1000"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    bot.config.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decay_modal_saves_all_lambdas():
+    """DecayModal met à jour decay_lambda pour chaque émotion."""
+    from bot.discord.commands.setup import DecayModal
+    from bot.config import EmotionDecayConfig
+
+    bot = make_bot()
+    bot.config.emotions = {
+        "anger": EmotionDecayConfig(decay_lambda=0.01),
+        "joy": EmotionDecayConfig(decay_lambda=0.005),
+        "sadness": EmotionDecayConfig(decay_lambda=0.008),
+        "curiosity": EmotionDecayConfig(decay_lambda=0.01),
+        "boredom": EmotionDecayConfig(decay_lambda=0.015),
+    }
+    bot.config.save = MagicMock()
+
+    modal = DecayModal(bot)
+    modal.anger._value = "0.02"
+    modal.joy._value = "0.01"
+    modal.sadness._value = "0.015"
+    modal.curiosity._value = "0.012"
+    modal.boredom._value = "0.02"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    assert bot.config.emotions["anger"].decay_lambda == pytest.approx(0.02)
+    assert bot.config.emotions["joy"].decay_lambda == pytest.approx(0.01)
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_decay_modal_rejects_out_of_range():
+    """DecayModal rejette decay_lambda hors de (0.0, 1.0)."""
+    from bot.discord.commands.setup import DecayModal
+    from bot.config import EmotionDecayConfig
+
+    bot = make_bot()
+    bot.config.emotions = {
+        e: EmotionDecayConfig(decay_lambda=0.01)
+        for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
+    }
+    bot.config.save = MagicMock()
+
+    modal = DecayModal(bot)
+    modal.anger._value = "1.5"  # hors plage
+    modal.joy._value = "0.01"
+    modal.sadness._value = "0.008"
+    modal.curiosity._value = "0.01"
+    modal.boredom._value = "0.015"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    bot.config.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_setup_command_warns_if_env_incomplete(monkeypatch):
+    """Le message d'accueil de /setup liste les clés .env manquantes."""
+    import bot.discord.commands.setup as setup_module
+    monkeypatch.setattr(setup_module, "is_env_complete", lambda path=".env": ["OPENAI_API_KEY"])
+
+    bot_obj = make_bot()
+    cog = SetupCog(bot_obj)
+    interaction = make_interaction()
+
+    await cog.setup.callback(cog, interaction)
+
+    call_args = interaction.response.send_message.call_args
+    content = call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
+    assert "OPENAI_API_KEY" in content

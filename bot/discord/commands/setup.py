@@ -727,19 +727,182 @@ class DiscordView(discord.ui.View):
         await interaction.response.send_modal(EditChannelListModal(self.bot, "whitelist"))
 
 
-# ── Placeholders Task 5 ───────────────────────────────────────────────────────
+# ── Tab Avancé : Twitch Config ────────────────────────────────────────────────
+
+class TwitchConfigModal(discord.ui.Modal, title="Configuration Twitch"):
+    channels = discord.ui.TextInput(
+        label="Channels Twitch (séparés par des virgules)",
+        max_length=200,
+    )
+    cooldown_seconds = discord.ui.TextInput(
+        label="Cooldown par utilisateur (secondes, ≥0)",
+        max_length=5,
+    )
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        self.channels.default = ", ".join(bot.config.twitch.channels)
+        self.cooldown_seconds.default = str(bot.config.twitch.cooldown_seconds)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            cs = int(self.cooldown_seconds.value)
+            if cs < 0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Cooldown invalide. Entrez un entier ≥ 0.", ephemeral=True
+            )
+            return
+        self.bot.config.twitch.channels = [
+            c.strip() for c in self.channels.value.split(",") if c.strip()
+        ]
+        self.bot.config.twitch.cooldown_seconds = cs
+        self.bot.config.save()
+        await interaction.response.send_message("✅ Config Twitch mise à jour.", ephemeral=True)
+
+
+class TwitchConfigView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.bot = bot
+
+    @discord.ui.button(label="Modifier config Twitch", style=discord.ButtonStyle.primary, row=0)
+    async def edit_twitch(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TwitchConfigModal(self.bot))
+
+
+# ── Tab Avancé : OpenAI params ────────────────────────────────────────────────
+
+class OpenAIParamsModal(discord.ui.Modal, title="Paramètres OpenAI"):
+    temperature = discord.ui.TextInput(
+        label="Temperature (0.0 – 2.0)", max_length=5
+    )
+    max_tokens = discord.ui.TextInput(
+        label="Max tokens (≥1)", max_length=6
+    )
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        self.temperature.default = str(bot.config.openai.temperature)
+        self.max_tokens.default = str(bot.config.openai.max_tokens)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            temp = float(self.temperature.value)
+            mt = int(self.max_tokens.value)
+            if not (0.0 <= temp <= 2.0) or mt < 1:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Valeurs invalides. Temperature : 0.0–2.0, max_tokens : entier ≥ 1.",
+                ephemeral=True,
+            )
+            return
+        self.bot.config.openai.temperature = temp
+        self.bot.config.openai.max_tokens = mt
+        self.bot.config.save()
+        await interaction.response.send_message(
+            f"✅ Temperature : {temp}, max_tokens : {mt}.", ephemeral=True
+        )
+
+
+class OpenAIParamsView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.bot = bot
+
+    @discord.ui.button(label="Modifier paramètres OpenAI", style=discord.ButtonStyle.primary, row=0)
+    async def edit_openai(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(OpenAIParamsModal(self.bot))
+
+
+# ── Tab Avancé : Decay émotions ───────────────────────────────────────────────
+
+class DecayModal(discord.ui.Modal, title="Decay des émotions (λ)"):
+    anger = discord.ui.TextInput(label="anger decay_lambda (0 < x < 1)", max_length=6)
+    joy = discord.ui.TextInput(label="joy decay_lambda (0 < x < 1)", max_length=6)
+    sadness = discord.ui.TextInput(label="sadness decay_lambda (0 < x < 1)", max_length=6)
+    curiosity = discord.ui.TextInput(label="curiosity decay_lambda (0 < x < 1)", max_length=6)
+    boredom = discord.ui.TextInput(label="boredom decay_lambda (0 < x < 1)", max_length=6)
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        emotions = bot.config.emotions
+        self.anger.default = str(emotions["anger"].decay_lambda)
+        self.joy.default = str(emotions["joy"].decay_lambda)
+        self.sadness.default = str(emotions["sadness"].decay_lambda)
+        self.curiosity.default = str(emotions["curiosity"].decay_lambda)
+        self.boredom.default = str(emotions["boredom"].decay_lambda)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = {
+            "anger": self.anger.value,
+            "joy": self.joy.value,
+            "sadness": self.sadness.value,
+            "curiosity": self.curiosity.value,
+            "boredom": self.boredom.value,
+        }
+        try:
+            parsed = {k: float(v) for k, v in raw.items()}
+            if any(not (0.0 < v < 1.0) for v in parsed.values()):
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Valeurs invalides. Chaque λ doit être un float entre 0.0 et 1.0 (exclus).",
+                ephemeral=True,
+            )
+            return
+        for emotion, value in parsed.items():
+            self.bot.config.emotions[emotion].decay_lambda = value
+        self.bot.config.save()
+        await interaction.response.send_message("✅ Decay des émotions mis à jour.", ephemeral=True)
+
+
+class DecayView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.bot = bot
+
+    @discord.ui.button(label="Modifier decay", style=discord.ButtonStyle.primary, row=0)
+    async def edit_decay(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DecayModal(self.bot))
+
+
+# ── Tab Avancé : implémentations finales ─────────────────────────────────────
 
 async def _send_twitch_config_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
-    """Placeholder — implémenté en Task 5."""
-    await interaction.response.send_message("Twitch Config — à venir", ephemeral=True)
+    cfg = bot.config.twitch
+    lines = [
+        "**Twitch Config**",
+        f"Channels : {', '.join(cfg.channels)}",
+        f"Cooldown : {cfg.cooldown_seconds}s",
+    ]
+    view = TwitchConfigView(bot)
+    await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+
 
 async def _send_openai_params_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
-    """Placeholder — implémenté en Task 5."""
-    await interaction.response.send_message("OpenAI params — à venir", ephemeral=True)
+    cfg = bot.config.openai
+    lines = [
+        "**Paramètres OpenAI**",
+        f"Temperature : {cfg.temperature}",
+        f"Max tokens : {cfg.max_tokens}",
+    ]
+    view = OpenAIParamsView(bot)
+    await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+
 
 async def _send_decay_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
-    """Placeholder — implémenté en Task 5."""
-    await interaction.response.send_message("Decay — à venir", ephemeral=True)
+    emotions = bot.config.emotions
+    lines = ["**Decay des émotions (λ)**"] + [
+        f"**{e}** : {cfg.decay_lambda}" for e, cfg in emotions.items()
+    ]
+    view = DecayView(bot)
+    await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
 
 
 # ── Navigation niveau Avancé ──────────────────────────────────────────────────
@@ -1020,9 +1183,13 @@ class SetupCog(commands.Cog):
     )
     @app_commands.default_permissions(administrator=True)
     async def setup(self, interaction: discord.Interaction):
+        missing = is_env_complete()
+        if missing:
+            content = (
+                "**Configuration de Wally** — Sélectionnez un niveau :\n"
+                f"⚠️ Clés `.env` manquantes : {', '.join(missing)}"
+            )
+        else:
+            content = "**Configuration de Wally** — Sélectionnez un niveau :"
         view = SetupView(self.bot)
-        await interaction.response.send_message(
-            "**Configuration de Wally** — Sélectionnez un onglet :",
-            view=view,
-            ephemeral=True,
-        )
+        await interaction.response.send_message(content, view=view, ephemeral=True)
