@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -547,9 +548,15 @@ class BotGeneralModal(discord.ui.Modal, title="Paramètres généraux du bot"):
             pws = int(self.prelude_window_size.value)
             if cws < 1 or ctt < 1 or pws < 1:
                 raise ValueError("Valeur trop petite")
+            jt = self.journal_time.value.strip()
+            if not re.match(r"^\d{2}:\d{2}$", jt):
+                raise ValueError("Format journal_time invalide")
+            h, m = int(jt.split(":")[0]), int(jt.split(":")[1])
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                raise ValueError("Heure hors plage")
         except ValueError:
             await interaction.response.send_message(
-                "❌ Valeurs invalides. Les champs numériques doivent être des entiers ≥ 1.",
+                "❌ Valeurs invalides. Entiers ≥ 1 pour les tailles, format HH:MM (ex: 21:00) pour l'heure journal.",
                 ephemeral=True,
             )
             return
@@ -557,7 +564,7 @@ class BotGeneralModal(discord.ui.Modal, title="Paramètres généraux du bot"):
         cfg.language_default = self.language_default.value
         cfg.context_window_size = cws
         cfg.context_token_threshold = ctt
-        cfg.journal_time = self.journal_time.value
+        cfg.journal_time = jt
         cfg.prelude_window_size = pws
         self.bot.config.save()
         await interaction.response.send_message("✅ Paramètres généraux mis à jour.", ephemeral=True)
