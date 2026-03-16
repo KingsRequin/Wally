@@ -2,10 +2,10 @@
 discord.py>=2.3.2
 
 # Twitch
-twitchio>=2.10.0
+twitchio>=2.10.0,<3.0.0
 
 # OpenAI
-openai>=1.30.0
+openai>=1.40.0,<2.0.0
 
 # Long-term memory
 mem0ai>=0.1.29

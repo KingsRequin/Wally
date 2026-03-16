@@ -54,9 +54,11 @@ bot/
 │   ├── emotion.py       # Global emotion state, decay, NRCLex analysis
 │   ├── memory.py        # mem0 wrapper, sliding context window
 │   ├── openai_client.py # Completions, cost tracking, retry logic
-│   ├── prompts.py       # All system prompt templates, emotion directives
+│   ├── prompts.py       # PromptBuilder, load_prompt(), emotion directives
 │   ├── language.py      # langdetect wrapper with fallback
-│   └── journal.py       # Daily journal scheduler (apscheduler)
+│   ├── journal.py       # Daily journal scheduler (apscheduler)
+│   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mem0
+│   └── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
 ├── discord/
 │   ├── bot.py           # discord.py Bot subclass
 │   ├── handlers.py      # on_message, welcome logic, timeout reactions
@@ -65,7 +67,13 @@ bot/
 │       ├── memory_cmd.py # /wally memory show (admin)
 │       ├── status.py    # /wally status
 │       ├── mood.py      # /wally mood
+│       ├── journal_cmd.py # /wally journal (admin, déclenche journal à la demande)
+│       ├── persona_cmd.py # /wally reload-persona (admin, recharge fichiers persona)
 │       └── setup.py     # /wally setup (4-tab interactive UI)
+├── persona/
+│   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
+│   ├── EMOTIONS.md      # directives comportementales par émotion (sections ## emotion_name)
+│   └── prompts/         # templates système chargés via load_prompt("name")
 ├── twitch/
 │   ├── bot.py           # twitchio Bot, OAuth refresh, cooldowns
 │   ├── events.py        # follow/sub/resub/bits/raid handlers
@@ -203,3 +211,23 @@ Wally `depends_on: qdrant: condition: service_healthy`
 Config and data mounted as volumes — no rebuild needed for config changes.
 
 Web dashboard token field exists in `config.yaml` but dashboard is not implemented.
+
+---
+
+## PersonaService
+
+`PersonaService` charge SOUL → IDENTITY → VOICE → EXEMPLES en un bloc unique injecté dans le prompt.
+`EMOTIONS.md` est parsé en `{emotion: directive}` — sections délimitées par `## emotion_name`.
+`/wally reload-persona` recharge tous les fichiers sans redémarrage.
+
+### Prompt Templates
+`load_prompt("name")` charge `bot/persona/prompts/name.md` avec fallback chaîne vide.
+Les templates sont chargés au niveau module (variables globales) pour éviter les I/O répétées.
+
+---
+
+## SessionManager
+
+Suit les conversations par canal. Après 20min d'inactivité (`SESSION_TIMEOUT_SECONDS`) :
+analyse LLM via `complete_secondary()` → extrait les faits durables par participant → `memory.add()`.
+Ne stocke que les sessions de ≥ 2 messages. Format d'analyse : `### pseudo\n- fait\n...`

@@ -38,6 +38,8 @@ async def _generate_and_send(
         system = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             situation=situation,
+            persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
         )
         reply = await bot.openai.complete(
             system,
@@ -262,6 +264,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 logger.warning(
                     "EventSub subscription failed [{sub}]: {e}", sub=name, e=exc
                 )
+            await asyncio.sleep(0.5)  # avoid 429 rate-limit on rapid subscription bursts
 
         bot._eventsub_client = client
         logger.info(

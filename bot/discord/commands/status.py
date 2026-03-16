@@ -1,0 +1,33 @@
+# bot/discord/commands/status.py
+import time
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+
+class StatusCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="status", description="Statut du bot Wally")
+    async def status(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        uptime_s = int(time.time() - (self.bot._start_time or time.time()))
+        h, rem = divmod(uptime_s, 3600)
+        m, s = divmod(rem, 60)
+        uptime_str = f"{h}h {m}m {s}s"
+
+        daily_cost = await self.bot.openai.get_daily_cost()
+        monthly_cost = await self.bot.openai.get_monthly_cost()
+
+        dominant = self.bot.emotion.get_dominant(threshold=0.4)
+        mood_str = ", ".join(dominant) if dominant else "neutre"
+
+        embed = discord.Embed(title="Statut de Wally", color=discord.Color.blurple())
+        embed.add_field(name="Uptime", value=uptime_str, inline=True)
+        embed.add_field(name="Modele principal", value=self.bot.config.openai.primary_model, inline=True)
+        embed.add_field(name="Humeur dominante", value=mood_str, inline=True)
+        embed.add_field(name="Cout aujourd'hui", value=f"${daily_cost:.4f}", inline=True)
+        embed.add_field(name="Cout ce mois", value=f"${monthly_cost:.4f}", inline=True)
+        await interaction.followup.send(embed=embed)

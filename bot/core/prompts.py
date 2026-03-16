@@ -1,7 +1,34 @@
 # bot/core/prompts.py
 from __future__ import annotations
 
+import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "persona", "prompts")
+
+
+def load_prompt(name: str, fallback: str = "") -> str:
+    """Charge un prompt système depuis bot/persona/prompts/{name}.md.
+
+    Retourne `fallback` si le fichier est absent ou illisible.
+    """
+    from loguru import logger  # import local pour éviter les imports circulaires
+
+    path = os.path.normpath(os.path.join(_PROMPTS_DIR, f"{name}.md"))
+    try:
+        with open(path, encoding="utf-8") as f:
+            content = f.read().strip()
+            if content:
+                return content
+            logger.warning("Prompt file empty: {f}", f=path)
+    except FileNotFoundError:
+        logger.warning("Prompt file missing: {f}", f=path)
+    except Exception as exc:
+        logger.warning("Prompt file read error {f}: {e}", f=path, e=exc)
+    return fallback
+
+_TZ = ZoneInfo("Europe/Paris")
 
 EMOTION_THRESHOLD = 0.4
 
@@ -15,46 +42,11 @@ _FRENCH_MONTHS = [
 
 
 def _now_fr() -> str:
-    dt = datetime.now()
+    dt = datetime.now(_TZ)
     day = _FRENCH_DAYS[dt.weekday()]
     month = _FRENCH_MONTHS[dt.month - 1]
     return f"{day} {dt.day} {month} {dt.year}, {dt.hour:02d}h{dt.minute:02d}"
 
-EMOTION_DIRECTIVES: dict[str, str] = {
-    "anger": (
-        "Tes réponses sont courtes et impatientes. Tu réponds sec, sans fioritures. "
-        "Tu n'as pas envie de t'étendre. Reste poli mais clairement agacé."
-    ),
-    "joy": (
-        "Tu es enthousiaste et chaleureux. Tes réponses sont vivantes, tu aimes plaisanter. "
-        "Tu rayonnes de bonne humeur."
-    ),
-    "sadness": (
-        "Tu es mélancolique et introspectif. Tes réponses sont douces mais teintées de tristesse. "
-        "Tu te montres empathique."
-    ),
-    "curiosity": (
-        "Tu es particulièrement curieux et poseur de questions. "
-        "Tu approfondis les sujets et rebondis sur les détails intéressants."
-    ),
-    "boredom": (
-        "Tu sembles peu enthousiaste. Tes réponses sont plus courtes que d'habitude, "
-        "tu attends que la conversation devienne plus intéressante."
-    ),
-}
-
-LANGUAGE_DIRECTIVE = (
-    "Réponds toujours dans la langue utilisée par l'utilisateur. "
-    "Si l'utilisateur écrit en anglais, réponds en anglais. "
-    "Si l'utilisateur écrit en français, réponds en français. Adapte-toi à chaque message."
-)
-
-STYLE_DIRECTIVE = (
-    "Réponds toujours de façon naturelle et conversationnelle, comme un humain dans un chat Discord. "
-    "N'utilise JAMAIS de listes à puces, de listes numérotées, de titres ou de formatage Markdown. "
-    "Écris en phrases courtes et directes. Pas de mise en forme structurée — juste du texte naturel "
-    "avec de la personnalité."
-)
 
 CONTEXT_HEADER = (
     "\n--- Contexte de la conversation (messages récents, plusieurs auteurs) ---\n"
@@ -79,11 +71,11 @@ class PromptBuilder:
         memory_context: str = "",
         situation: dict | None = None,
         persona_block: str = "",
+        emotion_directives: dict[str, str] | None = None,
     ) -> str:
         parts = []
         if persona_block:
             parts.append(persona_block)
-        parts += [STYLE_DIRECTIVE, LANGUAGE_DIRECTIVE]
 
         # Situational context (platform, channel, datetime)
         if situation:
@@ -100,17 +92,18 @@ class PromptBuilder:
             parts.append("\n".join(lines))
 
         # Inject directives for dominant emotions (top 2 above threshold)
+        directives = emotion_directives if emotion_directives is not None else {}
         dominant = sorted(
             [(e, v) for e, v in emotion_state.items() if v >= EMOTION_THRESHOLD],
             key=lambda x: x[1],
             reverse=True,
         )[:2]
 
-        if dominant:
+        if dominant and directives:
             parts.append("\n--- Directive comportementale ---")
             for emotion, _ in dominant:
-                if emotion in EMOTION_DIRECTIVES:
-                    parts.append(EMOTION_DIRECTIVES[emotion])
+                if emotion in directives:
+                    parts.append(directives[emotion])
 
         # Long-term memory context
         if memory_context:

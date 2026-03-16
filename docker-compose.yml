@@ -27,6 +27,8 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+    environment:
+      - TZ=Europe/Paris
     env_file: .env
     volumes:
       - ./data:/app/data

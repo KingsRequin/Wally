@@ -8,21 +8,45 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
+from bot.core.prompts import load_prompt
+
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
     from bot.core.openai_client import OpenAIClient
 
-_JOURNAL_SYSTEM = (
-    "Tu es Wally. Écris ton journal intime de la journée. Parle de tes interactions, "
-    "des personnes marquantes, de ton état émotionnel ressenti, et laisse une pensée libre. "
-    "Ton ton est naturel, personnel, authentique. Ce journal est secret, juste pour toi."
+# Traduction des noms d'émotions internes (anglais) vers le français pour l'affichage
+_EMOTION_FR = {
+    "anger": "colère",
+    "joy": "joie",
+    "sadness": "tristesse",
+    "curiosity": "curiosité",
+    "boredom": "ennui",
+}
+
+_JOURNAL_SYSTEM = load_prompt(
+    "journal_system",
+    fallback=(
+        "Tu es Wally, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
+        "Rédige une entrée de journal en 3 à 5 paragraphes, à la première personne, "
+        "200 à 350 mots, ton sincère et introspectif."
+    ),
 )
-
-_CHUNK_SYSTEM = "Résume brièvement ces échanges en conservant les moments importants."
-_FINAL_SYSTEM = "Fais une synthèse finale de ces résumés de journée."
-
+_CHUNK_SYSTEM = load_prompt(
+    "journal_chunk_system",
+    fallback=(
+        "Tu es le module de mémoire de Wally. Résume le bloc de messages en 3 à 6 lignes, "
+        "texte brut, sans titre."
+    ),
+)
+_FINAL_SYSTEM = load_prompt(
+    "journal_final_system",
+    fallback=(
+        "Tu es le module de mémoire de Wally. Synthétise les résumés en 6 à 10 lignes, "
+        "texte brut, sans titre."
+    ),
+)
 _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
 _CHUNK_SIZE = 20
@@ -46,12 +70,13 @@ def _build_emotion_arc(snapshots: list[dict]) -> str:
             pct = int(snap[emotion] * 100)
             if pct < 30:
                 continue
+            name_fr = _EMOTION_FR.get(emotion, emotion)
             if pct >= 70:
-                label = f"pic de {emotion} ({pct}%)"
+                label = f"pic de {name_fr} ({pct}%)"
             elif pct >= 50:
-                label = f"{emotion} montante ({pct}%)"
+                label = f"{name_fr} montante ({pct}%)"
             else:
-                label = f"{emotion} légère ({pct}%)"
+                label = f"{name_fr} légère ({pct}%)"
             parts.append(label)
         if parts:
             lines.append(f"{ts.strftime('%Hh%M')} — {', '.join(parts)}")
@@ -132,7 +157,9 @@ class DailyJournal:
         arc_section = f"\n{arc}\n" if arc else ""
 
         emotions = self._emotion.get_state()
-        emotions_text = ", ".join(f"{k}: {int(v * 100)}%" for k, v in emotions.items())
+        emotions_text = ", ".join(
+            f"{_EMOTION_FR.get(k, k)}: {int(v * 100)}%" for k, v in emotions.items()
+        )
 
         user_msg = (
             f"Voici un résumé de la journée :\n\n{context_text}"
@@ -147,7 +174,7 @@ class DailyJournal:
             purpose="daily_journal",
         )
 
-        formatted = f"**Journal de Wally — {self._today()}**\n\n{journal_text}"
+        formatted = f"# Journal de Wally — {self._today()}\n\n{journal_text}"
         if self._send_cb:
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)

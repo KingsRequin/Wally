@@ -6,7 +6,7 @@ All Discord objects and services are mocked — no real bot connection needed.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.discord.handlers import handle_message, _respond, _post_process, _maybe_welcome
+from bot.discord.handlers import handle_message, _respond, _post_process
 
 
 def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
@@ -179,23 +179,38 @@ async def test_post_process_mutes_on_high_anger_and_threshold():
     bot.db.add_timeout.assert_awaited_once()
 
 
-# ── _maybe_welcome ────────────────────────────────────────────────────────────
+# ── Premier contact (bienvenue intégrée) ──────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_maybe_welcome_skips_already_welcomed():
-    bot = make_bot(welcomed=True)
-    message = make_message()
-    await _maybe_welcome(bot, message, "12345", "99999")
-    bot.openai.complete.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_maybe_welcome_sends_and_marks():
+async def test_first_contact_marks_welcomed():
+    """Lors du premier contact, mark_welcomed est appelé après la réponse."""
     bot = make_bot(welcomed=False)
-    message = make_message()
-    await _maybe_welcome(bot, message, "12345", "99999")
-    message.channel.send.assert_awaited_once()
+    message = make_message(content="wally bonjour")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await handle_message(bot, message)
     bot.db.mark_welcomed.assert_awaited_once_with("12345", "99999")
+
+
+@pytest.mark.asyncio
+async def test_already_welcomed_no_mark():
+    """Si déjà accueilli, mark_welcomed n'est pas rappelé."""
+    bot = make_bot(welcomed=True)
+    message = make_message(content="wally bonjour")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await handle_message(bot, message)
+    bot.db.mark_welcomed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_first_contact_injects_welcome_context():
+    """Lors du premier contact, le contexte bienvenue est injecté dans le prompt."""
+    bot = make_bot(welcomed=False)
+    message = make_message(content="wally salut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await handle_message(bot, message)
+    call_args = bot.openai.complete.call_args
+    user_content = call_args[0][1][0]["content"]
+    assert "première fois" in user_content
 
 
 # ── Prelude context ───────────────────────────────────────────────────────────

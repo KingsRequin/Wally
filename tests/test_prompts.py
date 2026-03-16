@@ -3,6 +3,14 @@ from bot.core.prompts import PromptBuilder
 
 _EMOTIONS_FLAT = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
+_EMOTION_DIRECTIVES = {
+    "anger": "Tes réponses sont courtes et impatientes. Tu réponds sec, sans fioritures.",
+    "joy": "Tu es enthousiaste et chaleureux. Tes réponses sont vivantes.",
+    "sadness": "Tu es mélancolique et introspectif.",
+    "curiosity": "Tu es particulièrement curieux et poseur de questions.",
+    "boredom": "Tu sembles peu enthousiaste.",
+}
+
 
 def test_build_includes_persona_block():
     pb = PromptBuilder()
@@ -17,6 +25,7 @@ def test_anger_directive_injected_above_threshold():
     pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.9, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
     )
     assert "impatient" in result.lower() or "court" in result.lower()
     assert "tu es en colère" not in result.lower()
@@ -26,16 +35,20 @@ def test_low_emotion_no_directive():
     pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.1, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
     )
     assert "impatient" not in result.lower()
 
 
-def test_language_directive_adaptive():
+def test_language_directive_in_persona_block():
     pb = PromptBuilder()
-    result = pb.build_system_prompt(emotion_state=_EMOTIONS_FLAT)
-    # Should instruct the bot to adapt to the user's language
+    # La directive de langue vient du persona_block (SOUL.md) — pas injectée séparément
+    result = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+        persona_block="Tu parles toujours dans la langue de ton interlocuteur. Si quelqu'un t'écrit en anglais, tu réponds en anglais.",
+    )
     assert "langue" in result.lower()
-    assert "utilisateur" in result.lower()
+    assert "anglais" in result.lower()
 
 
 def test_memory_context_injected():
@@ -99,8 +112,19 @@ def test_at_most_two_dominant_emotions():
     pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.9, "joy": 0.8, "sadness": 0.7, "curiosity": 0.6, "boredom": 0.5},
+        emotion_directives=_EMOTION_DIRECTIVES,
     )
     assert result.count("impatient") <= 1
+
+
+def test_no_emotion_directives_when_not_passed():
+    pb = PromptBuilder()
+    # Sans emotion_directives → aucune directive comportementale injectée
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.9, "joy": 0.8, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+    )
+    assert "impatient" not in result.lower()
+    assert "Directive comportementale" not in result
 
 
 # ── build_prelude_block ───────────────────────────────────────────────────────

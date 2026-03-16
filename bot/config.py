@@ -27,9 +27,11 @@ class OpenAIConfig:
 
 @dataclass
 class DiscordConfig:
-    allowed_channels: list[int]
     anger_trigger_threshold: int
     timeout_minutes: int
+    channel_filter_mode: str = "blacklist"
+    channel_whitelist: list[int] = field(default_factory=list)
+    channel_blacklist: list[int] = field(default_factory=list)
 
 
 @dataclass

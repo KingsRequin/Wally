@@ -45,15 +45,27 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
         return []
 
 
+def _is_channel_allowed(config, channel_id: int) -> bool:
+    """Vérifie si Wally peut répondre dans ce canal selon le mode de filtrage."""
+    mode = config.discord.channel_filter_mode
+    if mode == "whitelist":
+        wl = config.discord.channel_whitelist
+        return not wl or channel_id in wl
+    if mode == "blacklist":
+        bl = config.discord.channel_blacklist
+        return channel_id not in bl
+    return True  # mode "none" ou inconnu : tout autorisé
+
+
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
 
     user_id = str(message.author.id)
+    channel_allowed = _is_channel_allowed(bot.config, message.channel.id)
 
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
-    allowed = bot.config.discord.allowed_channels
-    if not allowed or message.channel.id in allowed:
+    if channel_allowed:
         prelude = bot.memory.get_prelude(str(message.channel.id))
         bot.memory.append_prelude(
             str(message.channel.id), message.author.display_name, message.content
@@ -78,7 +90,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if not triggered:
         return
 
-    if allowed and message.channel.id not in allowed:
+    if not channel_allowed:
         return
 
     guild_id = str(message.guild.id) if message.guild else "dm"
@@ -208,9 +220,8 @@ async def _respond(
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
-        exchange = f"[{message.author.display_name}]: {message.content}\n[Wally]: {reply}"
         tag = build_emotion_tag(bot.emotion.get_state())
-        _fire(bot.memory.add(platform, user_id, exchange, emotion_context=tag))
+        _fire(bot.memory.add(platform, user_id, message.content, emotion_context=tag))
         _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
 
     except Exception as e:

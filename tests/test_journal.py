@@ -144,9 +144,9 @@ def test_build_emotion_arc_formats_dominant_emotions():
     ]
     arc = _build_emotion_arc(snapshots)
     assert "Arc émotionnel" in arc
-    assert "pic de joy" in arc       # 0.75 → 75% ≥ 70% → "pic de"
-    assert "joy montante" in arc     # 0.55 → 55% ≥ 50% → "montante"
-    assert "curiosity légère" in arc # 0.35 → 35% ≥ 30% et < 50% → "légère"
+    assert "pic de joie" in arc       # 0.75 → 75% ≥ 70% → "pic de"
+    assert "joie montante" in arc     # 0.55 → 55% ≥ 50% → "montante"
+    assert "curiosité légère" in arc  # 0.35 → 35% ≥ 30% et < 50% → "légère"
     assert arc.count("\n") >= 1
 
 

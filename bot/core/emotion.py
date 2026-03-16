@@ -245,17 +245,40 @@ class EmotionEngine:
     ) -> tuple[dict[str, float], list[dict]]:
         """Analyse émotionnelle via LLM — retourne (deltas, new_words)."""
         system_prompt = (
-            "Tu analyses l'état émotionnel de Wally (bot de chat) après un échange.\n"
-            "Wally a 5 émotions : anger, joy, sadness, curiosity, boredom.\n"
-            "Tu retournes des deltas (variations à additionner à l'état courant).\n\n"
-            "Règles :\n"
-            "- Chaque delta est un float entre 0.0 et 0.3\n"
-            "- Si une émotion est dirigée vers un autre utilisateur et non vers Wally, divise le delta par 3\n"
-            "- Si dirigée vers Wally → impact normal\n"
-            "- trust_score (0.0–1.0) : trust faible amplifie anger (×2 max à trust=0.0)\n"
-            "- Le dernier message est le plus important\n"
-            "- new_words : mots/expressions français pertinents (max 3)\n\n"
-            "Réponds uniquement en JSON valide, sans markdown :\n"
+            "Tu es le module d'analyse émotionnelle de Wally, un bot de chat Discord. "
+            "Ton rôle est de mesurer l'impact d'un échange sur l'état interne de Wally.\n\n"
+
+            "## Émotions disponibles\n"
+            "anger, joy, sadness, curiosity, boredom\n\n"
+
+            "## Calcul des deltas\n"
+            "- Chaque delta est un float dans [0.0, 0.3] représentant une variation positive de l'émotion.\n"
+            "- Pondération par la cible :\n"
+            "  • Émotion dirigée vers Wally → impact plein (delta normal)\n"
+            "  • Émotion dirigée entre utilisateurs (Wally non concerné) → delta ÷ 3\n"
+            "- Pondération par la confiance :\n"
+            "  • trust_score proche de 0.0 → anger amplifié (×2 max)\n"
+            "  • trust_score proche de 1.0 → pas d'amplification\n"
+            "- Le dernier message (« Message déclencheur ») a un poids plus élevé que l'historique.\n"
+            "- Si un message est neutre ou sans contenu émotionnel, laisse tous les deltas à 0.0.\n\n"
+
+            "## Apprentissage de nouveaux mots (new_words)\n"
+            "Identifie au maximum 3 mots ou expressions françaises absents du lexique standard "
+            "qui expriment clairement une émotion dans ce message. "
+            "Critères : mot non anglais, porteur d'émotion explicite, delta entre 0.05 et 0.3.\n\n"
+
+            "## Exemple\n"
+            "trust_score: 0.30\n"
+            "Historique :\n"
+            "[Alice]: c'est vraiment nul comme réponse\n"
+            "Message déclencheur :\n"
+            "[Bob]: ouais Wally t'es carrément à côté de la plaque là\n"
+            "→ Réponse attendue :\n"
+            '{"deltas": {"anger": 0.22, "joy": 0.0, "sadness": 0.05, "curiosity": 0.0, "boredom": 0.0}, '
+            '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}]}\n\n'
+
+            "## Format de sortie\n"
+            "JSON valide uniquement, sans markdown ni commentaire :\n"
             '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
             '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}]}'
         )

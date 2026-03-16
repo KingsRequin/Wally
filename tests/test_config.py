@@ -21,7 +21,6 @@ MINIMAL_CONFIG = {
         "max_tokens": 1000,
     },
     "discord": {
-        "allowed_channels": [],
         "anger_trigger_threshold": 3,
         "timeout_minutes": 10,
     },

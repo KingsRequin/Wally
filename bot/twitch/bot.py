@@ -71,11 +71,36 @@ class WallyTwitch(commands.Bot):
         logger.info("Twitch bot starting in EventSub-only mode")
         from bot.twitch.events import start_eventsub_client
         await start_eventsub_client(self)
-        # Keep the task alive — EventSub runs its own async tasks.
+        # Refresh tokens every 3h (Twitch user tokens expire after 4h).
+        # twitchio v2 stores token strings in _Subscription objects — they cannot be
+        # updated in-flight, so restarting the EventSub client is the only reliable
+        # way to pick up refreshed tokens and avoid InvalidStateError on reconnect.
         try:
-            await asyncio.sleep(float("inf"))
+            while True:
+                await asyncio.sleep(3 * 3600)
+                logger.info("Periodic Twitch token refresh + EventSub restart")
+                await self.token_manager.startup_validate()
+                await self._restart_eventsub()
         except asyncio.CancelledError:
             pass
+
+    async def _restart_eventsub(self) -> None:
+        """Tear down existing EventSub sockets and reconnect with fresh tokens."""
+        from bot.twitch.events import start_eventsub_client
+
+        client = getattr(self, "_eventsub_client", None)
+        if client:
+            for sock in list(client._sockets):
+                try:
+                    if sock._pump_task and not sock._pump_task.done():
+                        sock._pump_task.cancel()
+                    if sock._sock and not sock._sock.closed:
+                        await sock._sock.close()
+                except Exception as e:
+                    logger.warning("Error closing EventSub socket during restart: {e}", e=e)
+            self._eventsub_client = None
+
+        await start_eventsub_client(self)
 
     async def event_error(self, error: Exception, data=None) -> None:
         logger.error("Twitch error: {e}", e=error)

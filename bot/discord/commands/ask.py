@@ -39,6 +39,7 @@ class AskCog(commands.Cog):
                 memory_context=mem_context,
                 situation=situation,
                 persona_block=self.bot.persona.build_prompt_block(),
+                emotion_directives=self.bot.persona.emotion_directives,
             )
             context_block = self.bot.prompts.build_context_block(context_msgs)
 

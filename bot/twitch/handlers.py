@@ -85,9 +85,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_message(channel_id, author, content)
         bot.memory.append_message(channel_id, "Wally", reply)
 
-        exchange = f"[{author}]: {content}\n[Wally]: {reply}"
         tag = build_emotion_tag(bot.emotion.get_state())
-        _fire(bot.memory.add(platform, user_id, exchange, emotion_context=tag))
+        _fire(bot.memory.add(platform, user_id, content, emotion_context=tag))
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
 
     except Exception as e:

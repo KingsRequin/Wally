@@ -7,13 +7,14 @@ from loguru import logger
 
 
 class PersonaService:
-    """Charge et expose les fichiers de persona Markdown (SOUL, IDENTITY, VOICE)."""
+    """Charge et expose les fichiers de persona Markdown (SOUL, IDENTITY, VOICE, EMOTIONS)."""
 
-    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md"]  # ordre canonique
+    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md"]  # ordre canonique pour persona_block
 
     def __init__(self, persona_dir: str = "bot/persona"):
         self._dir = persona_dir
         self._blocks: dict[str, str] = {}
+        self._emotion_directives: dict[str, str] = {}
         self.reload()
 
     def reload(self) -> None:
@@ -30,6 +31,39 @@ class PersonaService:
             except Exception as exc:
                 logger.warning("Persona file read error {f}: {e}", f=filename, e=exc)
                 self._blocks[filename] = ""
+
+        self._emotion_directives = self._parse_emotions()
+
+    def _parse_emotions(self) -> dict[str, str]:
+        """Parse EMOTIONS.md en un dict {emotion: directive}."""
+        path = os.path.join(self._dir, "EMOTIONS.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: EMOTIONS.md")
+            return {}
+        except Exception as exc:
+            logger.warning("EMOTIONS.md read error: {e}", e=exc)
+            return {}
+
+        directives: dict[str, str] = {}
+        # Sections délimitées par "## emotion_name"
+        sections = content.split("\n## ")
+        for section in sections[1:]:  # sections[0] = préambule
+            lines = section.strip().split("\n", 1)
+            if len(lines) >= 2:
+                emotion = lines[0].strip()
+                text = " ".join(lines[1].strip().split("\n")).strip()
+                if emotion and text:
+                    directives[emotion] = text
+        logger.info("EMOTIONS.md loaded: {n} directives", n=len(directives))
+        return directives
+
+    @property
+    def emotion_directives(self) -> dict[str, str]:
+        """Directives comportementales par état émotionnel."""
+        return self._emotion_directives
 
     def build_prompt_block(self) -> str:
         """Retourne les blocs SOUL → IDENTITY → VOICE concaténés."""

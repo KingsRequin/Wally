@@ -13,13 +13,18 @@ warnings.filterwarnings("ignore", message="Qdrant client version", category=User
 
 from loguru import logger
 
+from bot.core.prompts import load_prompt
+
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.openai_client import OpenAIClient
 
-_SUMMARIZE_SYSTEM = (
-    "Résume ce contexte de conversation de façon concise en conservant les informations "
-    "importantes : qui parle, les sujets abordés, les faits clés. Sois bref."
+_SUMMARIZE_SYSTEM = load_prompt(
+    "memory_summarize_system",
+    fallback=(
+        "Tu es le module de mémoire de Wally. Résume la conversation en 4 à 7 lignes, "
+        "texte brut, sans titre."
+    ),
 )
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
@@ -28,11 +33,12 @@ _CHUNK_SIZE = 10  # messages per summarization chunk
 # Quand un utilisateur dépasse ce nombre de souvenirs, on les consolide en un
 # ensemble compact de faits essentiels pour éviter la dérive mémorielle.
 _CONSOLIDATION_THRESHOLD = 25
-_CONSOLIDATION_SYSTEM = (
-    "Tu reçois une liste de souvenirs mémorisés sur une personne. "
-    "Synthétise-les en une liste concise de faits essentiels et durables. "
-    "Élimine les doublons, les informations éphémères et les détails non pertinents. "
-    "Renvoie uniquement les faits importants, un par ligne, sans préambule."
+_CONSOLIDATION_SYSTEM = load_prompt(
+    "memory_consolidation_system",
+    fallback=(
+        "Tu es le gestionnaire de mémoire long-terme de Wally. Consolide les souvenirs "
+        "en 15 faits essentiels maximum, un par ligne, sans préambule."
+    ),
 )
 
 

@@ -1,8 +1,13 @@
 # bot/core/language.py
 from __future__ import annotations
 
-from langdetect import detect, LangDetectException
+from langdetect import detect_langs, LangDetectException
+from langdetect.detector_factory import DetectorFactory
 from loguru import logger
+
+DetectorFactory.seed = 0  # make detection deterministic
+
+_MIN_CONFIDENCE = 0.75  # below this, fall back to default
 
 
 class LanguageDetector:
@@ -13,7 +18,10 @@ class LanguageDetector:
         if not text or not text.strip():
             return self._default
         try:
-            return detect(text)
+            results = detect_langs(text)
+            if results and results[0].prob >= _MIN_CONFIDENCE:
+                return str(results[0].lang)
+            return self._default
         except LangDetectException:
             logger.debug(
                 "Language detection failed, using default {lang}", lang=self._default
