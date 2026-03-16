@@ -31,6 +31,7 @@ def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
     bot.emotion.get_dominant = MagicMock(return_value=["joy"])
 
     bot.memory.search = AsyncMock(return_value="")
+    bot.memory.get_all = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()
 
@@ -174,7 +175,7 @@ async def test_ask_error_sends_fallback():
 @pytest.mark.asyncio
 async def test_memory_show_no_memory():
     bot = make_bot()
-    bot.memory.search = AsyncMock(return_value="")
+    bot.memory.get_all = AsyncMock(return_value="")
     cog = MemoryCog(bot)
     interaction = make_interaction()
     target_user = MagicMock()
@@ -188,7 +189,7 @@ async def test_memory_show_no_memory():
 @pytest.mark.asyncio
 async def test_memory_show_sends_embed():
     bot = make_bot()
-    bot.memory.search = AsyncMock(return_value="Bob aime les chats.")
+    bot.memory.get_all = AsyncMock(return_value="Bob aime les chats.")
     cog = MemoryCog(bot)
     interaction = make_interaction()
     target_user = MagicMock()
@@ -243,3 +244,56 @@ async def test_reload_persona_sends_embed():
     call_kwargs = interaction.followup.send.call_args
     # L'embed doit être passé en kwarg 'embed'
     assert "embed" in call_kwargs.kwargs
+
+
+@pytest.mark.asyncio
+async def test_mood_command_displays_percentage():
+    """La commande /mood affiche les émotions en % et non en float."""
+    from bot.discord.commands.mood import MoodCog
+    from unittest.mock import AsyncMock, MagicMock
+
+    bot = MagicMock()
+    bot.emotion.get_state = MagicMock(
+        return_value={"anger": 0.0, "joy": 0.73, "sadness": 0.0,
+                      "curiosity": 0.0, "boredom": 0.0}
+    )
+
+    cog = MoodCog(bot)
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await cog.mood.callback(cog, interaction)
+
+    call_kwargs = interaction.response.send_message.call_args
+    embed = call_kwargs.kwargs.get("embed") or (call_kwargs.args[0] if call_kwargs.args else None)
+    assert embed is not None
+    # Chercher "73%" dans les champs de l'embed
+    field_values = [f.value for f in embed.fields]
+    assert any("73%" in v for v in field_values)
+    assert not any("0.73" in v for v in field_values)
+
+
+@pytest.mark.asyncio
+async def test_setup_mood_tab_displays_percentage():
+    """L'onglet Humeur du /setup affiche les émotions en %."""
+    from bot.discord.commands.setup import SetupTabSelect
+    from unittest.mock import AsyncMock, MagicMock
+
+    bot = MagicMock()
+    bot.emotion.get_state = MagicMock(
+        return_value={"anger": 0.0, "joy": 0.65, "sadness": 0.0,
+                      "curiosity": 0.0, "boredom": 0.0}
+    )
+    bot.config.bot.trigger_names = ["wally"]
+
+    select = SetupTabSelect(bot)
+    select._values = ["mood"]
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await select.callback(interaction)
+
+    call_args = interaction.response.send_message.call_args
+    content = call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
+    assert "65%" in content
+    assert "0.65" not in content
