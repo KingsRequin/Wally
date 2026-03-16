@@ -2,6 +2,7 @@
 import asyncio
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,12 +14,25 @@ load_dotenv()
 def setup_logging() -> None:
     logger.remove()
     logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
+
+    log_dir = Path("logs") / datetime.now().strftime("%Y-%m-%d")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     logger.add(
-        "logs/wally.log",
-        rotation="1 day",
+        str(log_dir / "app.log"),
+        rotation="100 MB",
         retention="30 days",
         level="INFO",
         encoding="utf-8",
+        format="{time:HH:mm:ss} | {level:<8} | {name}:{line} | {message}",
+    )
+    logger.add(
+        str(log_dir / "error.log"),
+        rotation="100 MB",
+        retention="30 days",
+        level="ERROR",
+        encoding="utf-8",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name}:{line} | {message}",
     )
 
 
@@ -47,10 +61,13 @@ async def main() -> None:
     db_path = os.getenv("DB_PATH", "data/wally.db")
     db = await Database.create(db_path)
     logger.info("Database ready at {path}", path=db_path)
+    await db.cleanup_old_emotion_history()
+    logger.info("Old emotion history cleaned up")
 
     # ── Core services ─────────────────────────────────────────────────────────
-    emotion = EmotionEngine(config)
-    emotion.start_decay_task()
+    emotion = EmotionEngine(config, db=db)          # db injecté
+    await emotion.load_state()                      # charge l'état persisté
+    emotion.start_decay_task()                      # APRÈS load_state
     logger.info("EmotionEngine started with decay task")
 
     memory = MemoryService(config)
@@ -64,14 +81,20 @@ async def main() -> None:
     persona = PersonaService()
     logger.info("PromptBuilder, LanguageDetector, and PersonaService initialized")
 
-    journal = DailyJournal(config, openai_client, emotion, memory)
+    journal = DailyJournal(config, openai_client, emotion, memory, db=db)  # db injecté
     logger.info("DailyJournal initialized")
+
+    from bot.core.sessions import SessionManager
+
+    session_manager = SessionManager(memory, openai_client)
+    logger.info("SessionManager initialized")
 
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
 
     discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
     discord_bot.journal = journal
+    discord_bot.session_manager = session_manager
 
     @discord_bot.event
     async def on_message(message):
