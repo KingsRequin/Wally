@@ -20,12 +20,6 @@ _JOURNAL_SYSTEM = (
     "Ton ton est naturel, personnel, authentique. Ce journal est secret, juste pour toi."
 )
 
-_JOURNAL_USER_TEMPLATE = (
-    "Voici un résumé de la journée :\n\n{context}\n\n"
-    "Ton état émotionnel : {emotions}\n\n"
-    "Écris ton journal intime pour aujourd'hui."
-)
-
 _CHUNK_SYSTEM = "Résume brièvement ces échanges en conservant les moments importants."
 _FINAL_SYSTEM = "Fais une synthèse finale de ces résumés de journée."
 
@@ -100,11 +94,13 @@ class DailyJournal:
         openai: "OpenAIClient",
         emotion: "EmotionEngine",
         memory: "MemoryService",
+        db=None,
     ):
         self._config = config
         self._openai = openai
         self._emotion = emotion
         self._memory = memory
+        self._db = db
         self._send_cb: Optional[Callable[..., Any]] = None
 
     def set_send_callback(self, cb: Callable[..., Any]) -> None:
@@ -119,18 +115,30 @@ class DailyJournal:
 
         logger.info("Generating daily journal...")
 
-        # Gather all messages from all context windows, sorted by timestamp
         all_messages = self._memory.get_all_contexts()
-
         if all_messages:
             context_text = await self._build_context_text(all_messages)
         else:
             context_text = "Pas grand chose de notable aujourd'hui."
 
+        # Récupération de l'arc émotionnel
+        try:
+            snapshots = await self._db.get_today_emotion_snapshots() if self._db else []
+        except Exception as exc:
+            logger.warning("Failed to get emotion snapshots for journal: {e}", e=exc)
+            snapshots = []
+
+        arc = _build_emotion_arc(snapshots)
+        arc_section = f"\n{arc}\n" if arc else ""
+
         emotions = self._emotion.get_state()
-        emotions_text = ", ".join(f"{k}: {v:.2f}" for k, v in emotions.items())
-        user_msg = _JOURNAL_USER_TEMPLATE.format(
-            context=context_text, emotions=emotions_text
+        emotions_text = ", ".join(f"{k}: {int(v * 100)}%" for k, v in emotions.items())
+
+        user_msg = (
+            f"Voici un résumé de la journée :\n\n{context_text}"
+            f"{arc_section}"
+            f"\nTon état émotionnel actuel : {emotions_text}\n\n"
+            f"Écris ton journal intime pour aujourd'hui."
         )
 
         journal_text = await self._openai.complete_secondary(

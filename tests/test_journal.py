@@ -183,3 +183,103 @@ def test_build_emotion_arc_labels():
     assert "légère" in arc
     assert "montante" in arc
     assert "pic de" in arc
+
+
+@pytest.mark.asyncio
+async def test_journal_backward_compat_no_db():
+    """DailyJournal sans db continue de fonctionner (backward compat)."""
+    config, openai, emotion, memory = make_deps()
+    journal = DailyJournal(config, openai, emotion, memory)  # pas de db
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t: sent.append(t)))
+    await journal.generate_and_send()
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_journal_emotions_text_uses_percentage():
+    """Le prompt du journal contient les émotions en pourcentage."""
+    config, openai, emotion, memory = make_deps()
+    # joy=0.5 → 50%
+    emotion.get_state = MagicMock(
+        return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    )
+    captured_prompt = []
+
+    async def capture(system, messages, purpose=""):
+        captured_prompt.append(messages[0]["content"])
+        return "Journal text"
+
+    openai.complete_secondary = capture
+    journal = DailyJournal(config, openai, emotion, memory)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t: sent.append(t)))
+    await journal.generate_and_send()
+
+    assert len(captured_prompt) >= 1
+    # Le dernier appel est le journal final
+    final_prompt = captured_prompt[-1]
+    assert "50%" in final_prompt
+    assert "0.5" not in final_prompt  # pas de float brut
+
+
+@pytest.mark.asyncio
+async def test_journal_arc_injected_when_db_has_snapshots(tmp_path):
+    """Quand la DB a ≥2 snapshots, l'arc est présent dans le prompt journal."""
+    from bot.db.database import Database
+    import time
+    db = await Database.create(str(tmp_path / "test.db"))
+
+    # Insérer 2 snapshots directement
+    now = time.time()
+    await db.execute(
+        "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
+        "VALUES (?, 0.0, 0.8, 0.0, 0.0, 0.0)",
+        (now - 3600,),
+    )
+    await db.execute(
+        "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
+        "VALUES (?, 0.0, 0.5, 0.0, 0.0, 0.0)",
+        (now,),
+    )
+
+    config, openai, emotion, memory = make_deps()
+    captured_prompt = []
+
+    async def capture(system, messages, purpose=""):
+        captured_prompt.append(messages[0]["content"])
+        return "Journal text"
+
+    openai.complete_secondary = capture
+    journal = DailyJournal(config, openai, emotion, memory, db=db)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t: sent.append(t)))
+    await journal.generate_and_send()
+
+    final_prompt = captured_prompt[-1]
+    assert "Arc émotionnel" in final_prompt
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_journal_arc_absent_when_less_than_2_snapshots(tmp_path):
+    """Avec 0 ou 1 snapshot, l'arc est absent du prompt (pas de ligne vide parasite)."""
+    from bot.db.database import Database
+    db = await Database.create(str(tmp_path / "test.db"))
+
+    config, openai, emotion, memory = make_deps()
+    captured_prompt = []
+
+    async def capture(system, messages, purpose=""):
+        captured_prompt.append(messages[0]["content"])
+        return "Journal text"
+
+    openai.complete_secondary = capture
+    journal = DailyJournal(config, openai, emotion, memory, db=db)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t: sent.append(t)))
+    await journal.generate_and_send()
+
+    final_prompt = captured_prompt[-1]
+    assert "Arc émotionnel" not in final_prompt
+    await db.close()
