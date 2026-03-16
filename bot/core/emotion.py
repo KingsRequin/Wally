@@ -98,10 +98,14 @@ class EmotionEngine:
         if emotion not in self._state:
             return
         self._state[emotion] = max(0.0, min(1.0, self._state[emotion] + delta))
+        self._dirty = True
+        self._schedule_save()
 
     def set_emotion(self, emotion: str, value: float) -> None:
         if emotion in self._state:
             self._state[emotion] = max(0.0, min(1.0, value))
+            self._dirty = True
+            self._schedule_save()
 
     def reset(self) -> None:
         self._state = {e: 0.0 for e in EMOTIONS}
@@ -126,6 +130,24 @@ class EmotionEngine:
             logger.info("Emotion state loaded from DB: {s}", s=self._state)
         except Exception as exc:
             logger.warning("Failed to load emotion state: {e}", e=exc)
+
+    def _schedule_save(self) -> None:
+        """Debounce : annule la tâche en cours et en planifie une nouvelle dans 5s."""
+        if self._db is None:
+            return
+        if self._save_task and not self._save_task.done():
+            self._save_task.cancel()
+        self._save_task = asyncio.create_task(self._delayed_save())
+
+    async def _delayed_save(self) -> None:
+        await asyncio.sleep(5)
+        if self._db and self._dirty:
+            try:
+                await self._db.save_emotion_state(self._state)
+                self._dirty = False
+            except Exception as exc:
+                logger.warning("Failed to persist emotion state: {e}", e=exc)
+                # _dirty reste True → retry au prochain apply_delta
 
     def _load_learned_words(self) -> None:
         """Charge les mots appris depuis le disque au démarrage."""
@@ -254,7 +276,15 @@ class EmotionEngine:
         while True:
             await asyncio.sleep(60)
             self._apply_decay()
+            self._dirty = True
+            self._schedule_save()
             logger.debug("Emotion decay applied: {state}", state=self._state)
+            self._ticks += 1
+            if self._ticks % 60 == 0 and self._db:
+                try:
+                    await self._db.insert_emotion_snapshot(self._state)
+                except Exception as exc:
+                    logger.warning("Failed to insert emotion snapshot: {e}", e=exc)
 
     def start_decay_task(self) -> None:
         self._decay_task = asyncio.create_task(self._decay_loop())

@@ -293,3 +293,84 @@ async def test_load_state_clamps_values(tmp_path):
     await engine.load_state()
     assert engine.get_state()["joy"] == 1.0  # clampé
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_apply_delta_marks_dirty_when_db_set(tmp_path):
+    from bot.db.database import Database
+    db = await Database.create(str(tmp_path / "test.db"))
+    engine = EmotionEngine(make_config(), db=db)
+    assert engine._dirty is False
+    engine.apply_delta("joy", 0.5)
+    assert engine._dirty is True
+    await db.close()
+
+
+def test_apply_delta_does_not_create_task_without_db():
+    """Sans DB, apply_delta ne doit pas tenter asyncio.create_task."""
+    engine = EmotionEngine(make_config())
+    engine.apply_delta("joy", 0.5)  # should not raise
+    assert engine._save_task is None
+
+
+@pytest.mark.asyncio
+async def test_delayed_save_persists_state(tmp_path):
+    from bot.db.database import Database
+    from unittest.mock import patch, AsyncMock as AM
+    db = await Database.create(str(tmp_path / "test.db"))
+    engine = EmotionEngine(make_config(), db=db)
+    engine._state["joy"] = 0.6
+    engine._dirty = True
+    # Appeler _delayed_save directement en patchant asyncio.sleep pour ne pas attendre 5s
+    with patch("bot.core.emotion.asyncio.sleep", AM(return_value=None)):
+        await engine._delayed_save()
+    assert engine._dirty is False  # doit être remis à False après sauvegarde réussie
+    loaded = await db.load_emotion_state()
+    assert abs(loaded["joy"] - 0.6) < 0.001
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_delayed_save_keeps_dirty_on_error(tmp_path):
+    from bot.db.database import Database
+    from unittest.mock import patch, AsyncMock as AM, MagicMock
+    db = await Database.create(str(tmp_path / "test.db"))
+    engine = EmotionEngine(make_config(), db=db)
+    engine._dirty = True
+    # Simuler une erreur de sauvegarde
+    with patch("bot.core.emotion.asyncio.sleep", AM(return_value=None)):
+        with patch.object(db, "save_emotion_state", AM(side_effect=Exception("DB error"))):
+            await engine._delayed_save()
+    assert engine._dirty is True  # doit rester True en cas d'erreur
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_inserted_on_60th_tick(tmp_path):
+    """Vérifie que _decay_loop() insère un snapshot à chaque 60e tick."""
+    import asyncio as aio
+    from bot.db.database import Database
+    from unittest.mock import patch
+    db = await Database.create(str(tmp_path / "test.db"))
+    engine = EmotionEngine(make_config(), db=db)
+    engine._state["curiosity"] = 0.4
+    engine._ticks = 59  # prochain tick = 60 → snapshot attendu
+
+    call_count = 0
+
+    async def fake_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise aio.CancelledError()  # arrête la boucle après 1 itération
+
+    with patch("bot.core.emotion.asyncio.sleep", fake_sleep):
+        task = aio.create_task(engine._decay_loop())
+        try:
+            await task
+        except aio.CancelledError:
+            pass
+
+    snapshots = await db.get_today_emotion_snapshots()
+    assert len(snapshots) == 1  # le 60e tick a bien déclenché l'insert
+    await db.close()
