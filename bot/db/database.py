@@ -1,6 +1,10 @@
 from __future__ import annotations
 import time
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+_TZ_DB = ZoneInfo("Europe/Paris")
 
 import aiosqlite
 from loguru import logger
@@ -216,10 +220,7 @@ class Database:
         )
 
     async def get_today_emotion_snapshots(self) -> list[dict]:
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        _TZ = ZoneInfo("Europe/Paris")
-        midnight = datetime.now(_TZ).replace(
+        midnight = datetime.now(_TZ_DB).replace(
             hour=0, minute=0, second=0, microsecond=0
         ).timestamp()
         rows = await self.fetch_all(

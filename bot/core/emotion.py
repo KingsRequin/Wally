@@ -109,6 +109,8 @@ class EmotionEngine:
 
     def reset(self) -> None:
         self._state = {e: 0.0 for e in EMOTIONS}
+        self._dirty = True
+        self._schedule_save()
         logger.info("Emotion state reset to zero")
 
     def get_dominant(self, threshold: float = 0.4) -> list[str]:
