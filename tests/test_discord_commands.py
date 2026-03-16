@@ -11,7 +11,7 @@ from bot.discord.commands.status import StatusCog
 from bot.discord.commands.ask import AskCog
 from bot.discord.commands.memory_cmd import MemoryCog
 from bot.discord.commands.persona_cmd import PersonaCog
-from bot.discord.commands.setup import is_valid_model, SetupCog, SetupView
+from bot.discord.commands.setup import is_valid_model, SetupCog, SetupView, BasicTabSelect
 
 
 def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
@@ -205,7 +205,7 @@ async def test_memory_show_sends_embed():
 def test_setup_view_has_select():
     bot = make_bot()
     view = SetupView(bot)
-    assert len(view.children) == 1  # one SetupTabSelect
+    assert len(view.children) == 2  # LevelSelect + RestartButton
 
 
 @pytest.mark.asyncio
@@ -276,7 +276,7 @@ async def test_mood_command_displays_percentage():
 @pytest.mark.asyncio
 async def test_setup_mood_tab_displays_percentage():
     """L'onglet Humeur du /setup affiche les émotions en %."""
-    from bot.discord.commands.setup import SetupTabSelect
+    from bot.discord.commands.setup import BasicTabSelect  # remplace SetupTabSelect
     from unittest.mock import AsyncMock, MagicMock
 
     bot = MagicMock()
@@ -286,7 +286,7 @@ async def test_setup_mood_tab_displays_percentage():
     )
     bot.config.bot.trigger_names = ["wally"]
 
-    select = SetupTabSelect(bot)
+    select = BasicTabSelect(bot)  # remplace SetupTabSelect(bot)
     select._values = ["mood"]
     interaction = MagicMock()
     interaction.response.send_message = AsyncMock()

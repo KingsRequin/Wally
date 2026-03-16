@@ -428,9 +428,25 @@ class MemoryView(discord.ui.View):
         self.add_item(ResetMemoryButton(bot))
 
 
-# ── Tab selector ─────────────────────────────────────────────────────────────
+# ── Restart ───────────────────────────────────────────────────────────────────
 
-class SetupTabSelect(discord.ui.Select):
+class ConfirmRestartView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=30)  # expire en 30s
+
+    @discord.ui.button(label="✅ Confirmer", style=discord.ButtonStyle.danger, row=0)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🔄 Redémarrage en cours...", ephemeral=True)
+        asyncio.get_running_loop().call_later(1.0, os._exit, 0)
+
+    @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.secondary, row=0)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Redémarrage annulé.", ephemeral=True)
+
+
+# ── Navigation niveau Basique ─────────────────────────────────────────────────
+
+class BasicTabSelect(discord.ui.Select):
     def __init__(self, bot: "WallyDiscord"):
         self.bot = bot
         options = [
@@ -439,6 +455,7 @@ class SetupTabSelect(discord.ui.Select):
             discord.SelectOption(label="Evenements Twitch", value="twitch", emoji="🎮"),
             discord.SelectOption(label="Noms declencheurs", value="triggers", emoji="📢"),
             discord.SelectOption(label="Memoire", value="memory", emoji="🧠"),
+            discord.SelectOption(label="Variables d'env", value="env", emoji="🔑"),
         ]
         super().__init__(placeholder="Choisir un onglet...", options=options)
 
@@ -484,12 +501,84 @@ class SetupTabSelect(discord.ui.Select):
         elif tab == "model":
             await interaction.response.defer(ephemeral=True, thinking=True)
             await _send_model_tab(self.bot, interaction)
+        elif tab == "env":
+            await _send_env_tab(self.bot, interaction)
+
+
+class BasicView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.add_item(BasicTabSelect(bot))
+
+
+# ── Stub AdvancedView (remplacé en Task 4) ───────────────────────────────────
+
+class AdvancedView(discord.ui.View):
+    """Stub — remplacé en Task 4."""
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+
+
+# ── Placeholder _send_env_tab (remplacé en Task 3) ───────────────────────────
+
+async def _send_env_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
+    """Placeholder — implémenté en Task 3. Utilise send_message (pas defer)."""
+    missing = is_env_complete()
+    msg = "**Variables d'environnement**"
+    if missing:
+        msg += f"\n⚠️ Clés manquantes : {', '.join(missing)}"
+    await interaction.response.send_message(msg, ephemeral=True)
+
+
+# ── Sélecteur de niveau + SetupView ──────────────────────────────────────────
+
+class LevelSelect(discord.ui.Select):
+    def __init__(self, bot: "WallyDiscord"):
+        self.bot = bot
+        options = [
+            discord.SelectOption(label="Basique", value="basic", emoji="⚙️",
+                                 description="Modèle, humeur, triggers, Twitch events, mémoire, .env"),
+            discord.SelectOption(label="Avancé", value="advanced", emoji="🔧",
+                                 description="Paramètres bot, Discord, Twitch, OpenAI, decay"),
+        ]
+        super().__init__(placeholder="Choisir un niveau...", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "basic":
+            view = BasicView(self.bot)
+            await interaction.response.send_message(
+                "**Configuration — Niveau Basique**", view=view, ephemeral=True
+            )
+        else:
+            view = AdvancedView(self.bot)
+            await interaction.response.send_message(
+                "**Configuration — Niveau Avancé**", view=view, ephemeral=True
+            )
+
+
+class RestartButton(discord.ui.Button):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(
+            label="🔄 Redémarrer le bot",
+            style=discord.ButtonStyle.danger,
+            row=1,
+        )
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        view = ConfirmRestartView()
+        await interaction.response.send_message(
+            "⚠️ Confirmer le redémarrage du bot ?",
+            view=view,
+            ephemeral=True,
+        )
 
 
 class SetupView(discord.ui.View):
     def __init__(self, bot: "WallyDiscord"):
         super().__init__(timeout=180)
-        self.add_item(SetupTabSelect(bot))
+        self.add_item(LevelSelect(bot))
+        self.add_item(RestartButton(bot))
 
 
 class SetupCog(commands.Cog):
