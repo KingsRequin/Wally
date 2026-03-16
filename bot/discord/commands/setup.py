@@ -511,12 +511,280 @@ class BasicView(discord.ui.View):
         self.add_item(BasicTabSelect(bot))
 
 
-# ── Stub AdvancedView (remplacé en Task 4) ───────────────────────────────────
+# ── Tab Avancé : Bot Général ──────────────────────────────────────────────────
 
-class AdvancedView(discord.ui.View):
-    """Stub — remplacé en Task 4."""
+class BotGeneralModal(discord.ui.Modal, title="Paramètres généraux du bot"):
+    language_default = discord.ui.TextInput(
+        label="Langue par défaut (ex: fr, en)", max_length=5
+    )
+    context_window_size = discord.ui.TextInput(
+        label="Taille contexte (nb messages, ≥1)", max_length=5
+    )
+    context_token_threshold = discord.ui.TextInput(
+        label="Seuil tokens contexte (≥1)", max_length=6
+    )
+    journal_time = discord.ui.TextInput(
+        label="Heure journal (HH:MM)", max_length=5
+    )
+    prelude_window_size = discord.ui.TextInput(
+        label="Taille prélude (≥1)", max_length=5
+    )
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        cfg = bot.config.bot
+        self.language_default.default = cfg.language_default
+        self.context_window_size.default = str(cfg.context_window_size)
+        self.context_token_threshold.default = str(cfg.context_token_threshold)
+        self.journal_time.default = cfg.journal_time
+        self.prelude_window_size.default = str(cfg.prelude_window_size)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            cws = int(self.context_window_size.value)
+            ctt = int(self.context_token_threshold.value)
+            pws = int(self.prelude_window_size.value)
+            if cws < 1 or ctt < 1 or pws < 1:
+                raise ValueError("Valeur trop petite")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Valeurs invalides. Les champs numériques doivent être des entiers ≥ 1.",
+                ephemeral=True,
+            )
+            return
+        cfg = self.bot.config.bot
+        cfg.language_default = self.language_default.value
+        cfg.context_window_size = cws
+        cfg.context_token_threshold = ctt
+        cfg.journal_time = self.journal_time.value
+        cfg.prelude_window_size = pws
+        self.bot.config.save()
+        await interaction.response.send_message("✅ Paramètres généraux mis à jour.", ephemeral=True)
+
+
+class JournalChannelModal(discord.ui.Modal, title="Channel du journal"):
+    channel_id = discord.ui.TextInput(
+        label="ID du channel Discord (vide pour désactiver)",
+        required=False,
+        max_length=20,
+    )
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        current = bot.config.bot.journal_channel_id
+        self.channel_id.default = str(current) if current else ""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = self.channel_id.value.strip()
+        if raw == "":
+            self.bot.config.bot.journal_channel_id = None
+            self.bot.config.save()
+            await interaction.response.send_message("✅ Channel journal désactivé.", ephemeral=True)
+            return
+        try:
+            cid = int(raw)
+            if cid <= 0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ ID invalide. Entrez un entier > 0 ou laissez vide.", ephemeral=True
+            )
+            return
+        self.bot.config.bot.journal_channel_id = cid
+        self.bot.config.save()
+        await interaction.response.send_message(f"✅ Channel journal : {cid}", ephemeral=True)
+
+
+class BotGeneralView(discord.ui.View):
     def __init__(self, bot: "WallyDiscord"):
         super().__init__(timeout=120)
+        self.bot = bot
+
+    @discord.ui.button(label="Modifier paramètres généraux", style=discord.ButtonStyle.primary, row=0)
+    async def edit_general(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BotGeneralModal(self.bot))
+
+    @discord.ui.button(label="Définir channel journal", style=discord.ButtonStyle.secondary, row=1)
+    async def edit_journal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JournalChannelModal(self.bot))
+
+
+# ── Tab Avancé : Discord ──────────────────────────────────────────────────────
+
+class DiscordParamsModal(discord.ui.Modal, title="Paramètres Discord"):
+    anger_trigger_threshold = discord.ui.TextInput(
+        label="Seuil déclencheur colère (≥1)", max_length=3
+    )
+    timeout_minutes = discord.ui.TextInput(
+        label="Durée timeout en minutes (≥1)", max_length=4
+    )
+
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__()
+        self.bot = bot
+        self.anger_trigger_threshold.default = str(bot.config.discord.anger_trigger_threshold)
+        self.timeout_minutes.default = str(bot.config.discord.timeout_minutes)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            att = int(self.anger_trigger_threshold.value)
+            tm = int(self.timeout_minutes.value)
+            if att < 1 or tm < 1:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Valeurs invalides. Les deux champs doivent être des entiers ≥ 1.",
+                ephemeral=True,
+            )
+            return
+        self.bot.config.discord.anger_trigger_threshold = att
+        self.bot.config.discord.timeout_minutes = tm
+        self.bot.config.save()
+        await interaction.response.send_message(
+            f"✅ Seuil colère : {att}, timeout : {tm} min.", ephemeral=True
+        )
+
+
+class EditChannelListModal(discord.ui.Modal, title="Modifier la liste de channels"):
+    channel_ids = discord.ui.TextInput(
+        label="IDs des channels (séparés par des virgules)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500,
+    )
+
+    def __init__(self, bot: "WallyDiscord", list_type: str):
+        super().__init__()
+        self.bot = bot
+        self.list_type = list_type
+        current: list[int] = (
+            bot.config.discord.channel_blacklist
+            if list_type == "blacklist"
+            else bot.config.discord.channel_whitelist
+        )
+        self.channel_ids.default = ", ".join(str(c) for c in current)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = self.channel_ids.value.strip()
+        if not raw:
+            ids: list[int] = []
+        else:
+            try:
+                ids = [int(x.strip()) for x in raw.split(",") if x.strip()]
+                if any(i <= 0 for i in ids):
+                    raise ValueError
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ IDs invalides. Entrez des entiers > 0 séparés par des virgules.",
+                    ephemeral=True,
+                )
+                return
+        if self.list_type == "blacklist":
+            self.bot.config.discord.channel_blacklist = ids
+        else:
+            self.bot.config.discord.channel_whitelist = ids
+        self.bot.config.save()
+        await interaction.response.send_message(
+            f"✅ {self.list_type.capitalize()} mise à jour ({len(ids)} channel(s)).",
+            ephemeral=True,
+        )
+
+
+class DiscordView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.bot = bot
+
+    @discord.ui.button(label="Colère & timeout", style=discord.ButtonStyle.primary, row=0)
+    async def edit_params(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DiscordParamsModal(self.bot))
+
+    @discord.ui.button(label="Mode filtre : ...", style=discord.ButtonStyle.secondary, row=1)
+    async def toggle_filter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current = self.bot.config.discord.channel_filter_mode
+        new_mode = "whitelist" if current == "blacklist" else "blacklist"
+        self.bot.config.discord.channel_filter_mode = new_mode
+        self.bot.config.save()
+        await interaction.response.send_message(
+            f"✅ Mode filtre : **{new_mode}**", ephemeral=True
+        )
+
+    @discord.ui.button(label="Modifier la blacklist", style=discord.ButtonStyle.secondary, row=2)
+    async def edit_blacklist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EditChannelListModal(self.bot, "blacklist"))
+
+    @discord.ui.button(label="Modifier la whitelist", style=discord.ButtonStyle.secondary, row=3)
+    async def edit_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EditChannelListModal(self.bot, "whitelist"))
+
+
+# ── Placeholders Task 5 ───────────────────────────────────────────────────────
+
+async def _send_twitch_config_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
+    """Placeholder — implémenté en Task 5."""
+    await interaction.response.send_message("Twitch Config — à venir", ephemeral=True)
+
+async def _send_openai_params_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
+    """Placeholder — implémenté en Task 5."""
+    await interaction.response.send_message("OpenAI params — à venir", ephemeral=True)
+
+async def _send_decay_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
+    """Placeholder — implémenté en Task 5."""
+    await interaction.response.send_message("Decay — à venir", ephemeral=True)
+
+
+# ── Navigation niveau Avancé ──────────────────────────────────────────────────
+
+class AdvancedTabSelect(discord.ui.Select):
+    def __init__(self, bot: "WallyDiscord"):
+        self.bot = bot
+        options = [
+            discord.SelectOption(label="Bot Général", value="bot", emoji="⚙️"),
+            discord.SelectOption(label="Discord", value="discord", emoji="💬"),
+            discord.SelectOption(label="Twitch Config", value="twitch_cfg", emoji="🟣"),
+            discord.SelectOption(label="OpenAI (params)", value="openai", emoji="🤖"),
+            discord.SelectOption(label="Decay émotions", value="decay", emoji="💭"),
+        ]
+        super().__init__(placeholder="Choisir un onglet avancé...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        tab = self.values[0]
+        if tab == "bot":
+            cfg = self.bot.config.bot
+            lines = [
+                f"**Bot Général**",
+                f"Langue : {cfg.language_default}",
+                f"Contexte : {cfg.context_window_size} messages / {cfg.context_token_threshold} tokens",
+                f"Journal : {cfg.journal_time} — channel : {cfg.journal_channel_id or 'non défini'}",
+                f"Prélude : {cfg.prelude_window_size}",
+            ]
+            view = BotGeneralView(self.bot)
+            await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+        elif tab == "discord":
+            cfg = self.bot.config.discord
+            lines = [
+                f"**Paramètres Discord**",
+                f"Seuil colère : {cfg.anger_trigger_threshold} — Timeout : {cfg.timeout_minutes} min",
+                f"Mode filtre : **{cfg.channel_filter_mode}**",
+                f"Blacklist : {len(cfg.channel_blacklist)} channel(s)",
+                f"Whitelist : {len(cfg.channel_whitelist)} channel(s)",
+            ]
+            view = DiscordView(self.bot)
+            await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+        elif tab == "twitch_cfg":
+            await _send_twitch_config_tab(self.bot, interaction)
+        elif tab == "openai":
+            await _send_openai_params_tab(self.bot, interaction)
+        elif tab == "decay":
+            await _send_decay_tab(self.bot, interaction)
+
+
+class AdvancedView(discord.ui.View):
+    def __init__(self, bot: "WallyDiscord"):
+        super().__init__(timeout=120)
+        self.add_item(AdvancedTabSelect(bot))
 
 
 # ── Tab .env ──────────────────────────────────────────────────────────────────

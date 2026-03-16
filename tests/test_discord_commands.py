@@ -340,3 +340,164 @@ async def test_env_openai_modal_saves_key(monkeypatch):
 
     assert saved.get("OPENAI_API_KEY") == "sk-new-key"
     interaction.response.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_advanced_tab_bot_sends_message():
+    """L'onglet Bot Général envoie un message avec BotGeneralView."""
+    from bot.discord.commands.setup import AdvancedTabSelect
+
+    bot = make_bot()
+    bot.config.bot.language_default = "fr"
+    bot.config.bot.context_window_size = 20
+    bot.config.bot.context_token_threshold = 3000
+    bot.config.bot.journal_time = "21:00"
+    bot.config.bot.prelude_window_size = 15
+    bot.config.bot.journal_channel_id = None
+
+    select = AdvancedTabSelect(bot)
+    select._values = ["bot"]
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await select.callback(interaction)
+
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_bot_general_modal_saves_config(tmp_path, monkeypatch):
+    """BotGeneralModal met à jour config et appelle config.save()."""
+    from bot.discord.commands.setup import BotGeneralModal
+
+    bot = make_bot()
+    bot.config.bot.language_default = "fr"
+    bot.config.bot.context_window_size = 20
+    bot.config.bot.context_token_threshold = 3000
+    bot.config.bot.journal_time = "21:00"
+    bot.config.bot.prelude_window_size = 15
+    bot.config.save = MagicMock()
+
+    modal = BotGeneralModal(bot)
+    modal.language_default._value = "en"
+    modal.context_window_size._value = "25"
+    modal.context_token_threshold._value = "4000"
+    modal.journal_time._value = "20:00"
+    modal.prelude_window_size._value = "10"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    assert bot.config.bot.language_default == "en"
+    assert bot.config.bot.context_window_size == 25
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_bot_general_modal_rejects_invalid_int():
+    """BotGeneralModal envoie une erreur si context_window_size n'est pas un int valide."""
+    from bot.discord.commands.setup import BotGeneralModal
+
+    bot = make_bot()
+    bot.config.bot.language_default = "fr"
+    bot.config.bot.context_window_size = 20
+    bot.config.bot.context_token_threshold = 3000
+    bot.config.bot.journal_time = "21:00"
+    bot.config.bot.prelude_window_size = 15
+    bot.config.save = MagicMock()
+
+    modal = BotGeneralModal(bot)
+    modal.language_default._value = "fr"
+    modal.context_window_size._value = "abc"  # invalide
+    modal.context_token_threshold._value = "3000"
+    modal.journal_time._value = "21:00"
+    modal.prelude_window_size._value = "15"
+
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    bot.config.save.assert_not_called()
+    interaction.response.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_discord_params_modal_saves_config():
+    """DiscordParamsModal met à jour anger_trigger_threshold et timeout_minutes."""
+    from bot.discord.commands.setup import DiscordParamsModal
+
+    bot = make_bot()
+    bot.config.discord.anger_trigger_threshold = 3
+    bot.config.discord.timeout_minutes = 10
+    bot.config.save = MagicMock()
+
+    modal = DiscordParamsModal(bot)
+    modal.anger_trigger_threshold._value = "5"
+    modal.timeout_minutes._value = "15"
+
+    interaction = make_interaction()
+    await modal.on_submit(interaction)
+
+    assert bot.config.discord.anger_trigger_threshold == 5
+    assert bot.config.discord.timeout_minutes == 15
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_journal_channel_modal_clears_on_empty():
+    """JournalChannelModal avec input vide met journal_channel_id à None."""
+    from bot.discord.commands.setup import JournalChannelModal
+
+    bot = make_bot()
+    bot.config.bot.journal_channel_id = 12345
+    bot.config.save = MagicMock()
+
+    modal = JournalChannelModal(bot)
+    modal.channel_id._value = ""
+
+    interaction = make_interaction()
+    await modal.on_submit(interaction)
+
+    assert bot.config.bot.journal_channel_id is None
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_channel_list_modal_parses_comma_sep_ints():
+    """EditChannelListModal parse les IDs séparés par des virgules."""
+    from bot.discord.commands.setup import EditChannelListModal
+
+    bot = make_bot()
+    bot.config.discord.channel_blacklist = []
+    bot.config.save = MagicMock()
+
+    modal = EditChannelListModal(bot, "blacklist")
+    modal.channel_ids._value = "123456, 789012, 345678"
+
+    interaction = make_interaction()
+    await modal.on_submit(interaction)
+
+    assert bot.config.discord.channel_blacklist == [123456, 789012, 345678]
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_channel_list_modal_rejects_invalid():
+    """EditChannelListModal rejette les IDs non entiers."""
+    from bot.discord.commands.setup import EditChannelListModal
+
+    bot = make_bot()
+    bot.config.discord.channel_blacklist = []
+    bot.config.save = MagicMock()
+
+    modal = EditChannelListModal(bot, "blacklist")
+    modal.channel_ids._value = "abc, 123"
+
+    interaction = make_interaction()
+    await modal.on_submit(interaction)
+
+    bot.config.save.assert_not_called()
