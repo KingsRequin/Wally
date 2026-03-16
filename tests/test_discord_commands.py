@@ -297,3 +297,46 @@ async def test_setup_mood_tab_displays_percentage():
     content = call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
     assert "65%" in content
     assert "0.65" not in content
+
+
+@pytest.mark.asyncio
+async def test_send_env_tab_includes_env_view(monkeypatch):
+    """_send_env_tab envoie un message avec une EnvView (pas juste du texte)."""
+    from bot.discord.commands.setup import _send_env_tab, EnvView
+    import bot.discord.commands.setup as setup_module
+
+    monkeypatch.setattr(setup_module, "is_env_complete",
+                        lambda path=".env": ["OPENAI_API_KEY"])
+
+    bot_obj = make_bot()
+    interaction = make_interaction()
+
+    await _send_env_tab(bot_obj, interaction)
+
+    call_args = interaction.response.send_message.call_args
+    msg = call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
+    assert "OPENAI_API_KEY" in msg
+    # La vraie implémentation doit passer une EnvView
+    view = call_args.kwargs.get("view")
+    assert view is not None
+    assert isinstance(view, EnvView)
+
+
+@pytest.mark.asyncio
+async def test_env_openai_modal_saves_key(monkeypatch):
+    """EnvOpenAIModal.on_submit appelle update_env_file avec OPENAI_API_KEY."""
+    from bot.discord.commands.setup import EnvOpenAIModal
+    import bot.discord.commands.setup as setup_module
+
+    saved = {}
+    monkeypatch.setattr(setup_module, "update_env_file",
+                        lambda path, updates: saved.update(updates))
+
+    modal = EnvOpenAIModal({})
+    modal.openai_api_key._value = "sk-new-key"
+
+    interaction = make_interaction()
+    await modal.on_submit(interaction)
+
+    assert saved.get("OPENAI_API_KEY") == "sk-new-key"
+    interaction.response.send_message.assert_awaited_once()
