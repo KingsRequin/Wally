@@ -28,6 +28,14 @@ NRC_MAP: dict[str, list[str]] = {
 # Max delta applied per message per emotion
 MAX_DELTA_PER_MESSAGE = 0.3
 
+# Paires d'émotions incompatibles : (source, cible, coefficient de suppression)
+# Bidirectionnel et symétrique : même coefficient dans les deux sens.
+# Quand source monte, cible descend de delta×coeff, et vice-versa.
+SUPPRESSION_RULES: list[tuple[str, str, float]] = [
+    ("joy", "anger",   0.5),
+    ("joy", "sadness", 0.5),
+]
+
 # French keyword → (emotion, delta) supplements for NRCLex (English-only lexicon)
 FR_EMOTION_WORDS: dict[str, list[tuple[str, float]]] = {
     "anger": [
@@ -94,16 +102,29 @@ class EmotionEngine:
     def get_state(self) -> dict[str, float]:
         return dict(self._state)
 
+    def _apply_suppression(self, emotion: str, delta: float) -> None:
+        """Supprime partiellement les émotions incompatibles si delta > 0."""
+        if delta <= 0:
+            return
+        for src, tgt, coeff in SUPPRESSION_RULES:
+            if emotion == src:
+                self._state[tgt] = max(0.0, self._state[tgt] - delta * coeff)
+            elif emotion == tgt:
+                self._state[src] = max(0.0, self._state[src] - delta * coeff)
+
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
             return
         self._state[emotion] = max(0.0, min(1.0, self._state[emotion] + delta))
+        self._apply_suppression(emotion, delta)
         self._dirty = True
         self._schedule_save()
 
     def set_emotion(self, emotion: str, value: float) -> None:
         if emotion in self._state:
+            effective_delta = value - self._state[emotion]
             self._state[emotion] = max(0.0, min(1.0, value))
+            self._apply_suppression(emotion, effective_delta)
             self._dirty = True
             self._schedule_save()
 
