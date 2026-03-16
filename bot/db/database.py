@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS trust_scores (
     updated_at REAL NOT NULL,
     PRIMARY KEY (user_id, platform)
 );
+
+CREATE TABLE IF NOT EXISTS emotion_state (
+    emotion    TEXT PRIMARY KEY,
+    value      REAL NOT NULL DEFAULT 0.0,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS emotion_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_at REAL NOT NULL,
+    anger       REAL NOT NULL DEFAULT 0.0,
+    joy         REAL NOT NULL DEFAULT 0.0,
+    sadness     REAL NOT NULL DEFAULT 0.0,
+    curiosity   REAL NOT NULL DEFAULT 0.0,
+    boredom     REAL NOT NULL DEFAULT 0.0
+);
+
+CREATE INDEX IF NOT EXISTS idx_emotion_history_ts ON emotion_history(snapshot_at);
 """
 
 
@@ -166,3 +184,18 @@ class Database:
             "score=excluded.score, updated_at=excluded.updated_at",
             (user_id, platform, new_score, time.time()),
         )
+
+    # ── Emotion persistence ───────────────────────────────────────────────────
+
+    async def load_emotion_state(self) -> dict[str, float]:
+        rows = await self.fetch_all("SELECT emotion, value FROM emotion_state")
+        return {row["emotion"]: float(row["value"]) for row in rows}
+
+    async def save_emotion_state(self, state: dict[str, float]) -> None:
+        now = time.time()
+        for emotion, value in state.items():
+            await self.execute(
+                "INSERT INTO emotion_state (emotion, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (emotion, value, now),
+            )

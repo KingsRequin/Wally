@@ -80,3 +80,47 @@ async def test_count_recent_triggers(tmp_path):
     count = await db.count_recent_triggers("user1", "guild1", window_seconds=60)
     assert count == 2
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_emotion_tables_created(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    tables = await db.fetch_all(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )
+    names = {row["name"] for row in tables}
+    assert "emotion_state" in names
+    assert "emotion_history" in names
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_save_and_load_emotion_state(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    state = {"anger": 0.3, "joy": 0.7, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.1}
+    await db.save_emotion_state(state)
+    loaded = await db.load_emotion_state()
+    for emotion, value in state.items():
+        assert abs(loaded[emotion] - value) < 0.001
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_load_emotion_state_returns_empty_dict_when_no_data(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    loaded = await db.load_emotion_state()
+    assert loaded == {}
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_save_emotion_state_is_idempotent(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    state = {"anger": 0.2, "joy": 0.6, "sadness": 0.0, "curiosity": 0.4, "boredom": 0.0}
+    await db.save_emotion_state(state)
+    state2 = {"anger": 0.9, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    await db.save_emotion_state(state2)
+    loaded = await db.load_emotion_state()
+    assert abs(loaded["anger"] - 0.9) < 0.001
+    assert abs(loaded["joy"] - 0.1) < 0.001
+    await db.close()
