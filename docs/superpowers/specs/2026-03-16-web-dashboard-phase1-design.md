@@ -178,6 +178,10 @@ Validation des champs contraints :
 - `emotions.*.decay_lambda` : doit être > 0 → 400 si invalide
 - Champs inconnus dans une section : ignorés silencieusement
 
+Comportement des types `list` (ex : `bot.trigger_names`, `twitch.channels`, `discord.channel_whitelist`) :
+les listes sont **remplacées entièrement** par la valeur fournie dans le body — pas de merge
+élément par élément. Le merge section-par-section ne s'applique qu'aux sous-objets `dict`.
+
 ---
 
 ## SSE — Détails d'implémentation
@@ -194,7 +198,14 @@ Validation des champs contraints :
 - Liste globale de queues : `_log_queues: list[asyncio.Queue]` dans `sse.py`.
 - Le sink loguru écrit dans **toutes** les queues de la liste (fan-out broadcast).
 - Le sink est **synchrone** (loguru appelle les sinks depuis un thread) — utiliser `queue.put_nowait()`.
-  Queue de taille max 100 ; si pleine, le record est silencieusement ignoré (`try/except queue.Full`).
+  Queue de taille max 100 ; si pleine, le record est silencieusement ignoré (`try/except`).
+- Thread-safety : dans le sink, itérer sur une **copie** de la liste pour éviter un `RuntimeError`
+  si la liste est modifiée (append/remove) depuis le thread asyncio en parallèle :
+  ```python
+  for q in list(_log_queues):
+      try: q.put_nowait(record)
+      except: pass
+  ```
 - À chaque connexion SSE : créer une `asyncio.Queue(maxsize=100)`, l'ajouter à `_log_queues`, la retirer à la déconnexion.
 - Le sink extrait depuis le record loguru : `record["level"].name`, `record["message"]`, `record["time"].strftime("%H:%M:%S")`.
 - Format push : `data: {"level": "INFO", "message": "...", "time": "HH:MM:SS"}\n\n`
@@ -246,6 +257,8 @@ Dans `dashboard/app.py`, via la lifespan FastAPI :
 
 ```python
 async def _snapshot_task(state: AppState):
+    # Snapshot immédiat au démarrage — le graphe 24h est disponible dès l'ouverture du dashboard
+    await state.db.insert_emotion_snapshot(state.emotion.get_state())
     while True:
         await asyncio.sleep(300)  # 5 minutes
         await state.db.insert_emotion_snapshot(state.emotion.get_state())
