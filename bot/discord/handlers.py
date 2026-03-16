@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.emotion import build_emotion_tag
+
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
@@ -47,6 +49,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
 
+    user_id = str(message.author.id)
+
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
     allowed = bot.config.discord.allowed_channels
     if not allowed or message.channel.id in allowed:
@@ -54,6 +58,15 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         bot.memory.append_prelude(
             str(message.channel.id), message.author.display_name, message.content
         )
+        # Enregistrement dans la session active du canal (tous les messages)
+        if getattr(bot, "session_manager", None) is not None:
+            bot.session_manager.record_message(
+                str(message.channel.id),
+                "discord",
+                user_id,
+                message.author.display_name,
+                message.content,
+            )
     else:
         prelude = []
 
@@ -68,7 +81,6 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if allowed and message.channel.id not in allowed:
         return
 
-    user_id = str(message.author.id)
     guild_id = str(message.guild.id) if message.guild else "dm"
 
     if await bot.db.is_muted(user_id, guild_id):
@@ -76,8 +88,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         await message.add_reaction(emoji)
         return
 
-    await _respond(bot, message, user_id, guild_id, prelude)
-    _fire(_maybe_welcome(bot, message, user_id, guild_id))
+    first_contact = not await bot.db.is_welcomed(user_id, guild_id)
+    await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact)
 
 
 _LIST_RE = re.compile(r"^\s*([-*+]|\d+[.)]) ")
@@ -126,6 +138,7 @@ async def _respond(
     user_id: str,
     guild_id: str,
     prelude: list[dict],
+    first_contact: bool = False,
 ) -> None:
     try:
         await message.add_reaction("🔍")
@@ -166,6 +179,14 @@ async def _respond(
             + f"\n[{message.author.display_name}]: {message.content}"
         )
 
+        if first_contact:
+            user_content = (
+                f"[CONTEXTE: C'est la première fois que {message.author.display_name} "
+                f"t'adresse la parole sur ce serveur. Commence ta réponse par une "
+                f"bienvenue chaleureuse en une phrase courte, puis réponds à son message.]\n\n"
+                + user_content
+            )
+
         openai_messages = [{"role": "user", "content": user_content}]
 
         async with message.channel.typing():
@@ -179,13 +200,17 @@ async def _respond(
             pass
         await _send_in_parts(message, reply)
 
+        if first_contact:
+            await bot.db.mark_welcomed(user_id, guild_id)
+
         bot.memory.append_message(
             str(message.channel.id), message.author.display_name, message.content
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
         exchange = f"[{message.author.display_name}]: {message.content}\n[Wally]: {reply}"
-        _fire(bot.memory.add(platform, user_id, exchange))
+        tag = build_emotion_tag(bot.emotion.get_state())
+        _fire(bot.memory.add(platform, user_id, exchange, emotion_context=tag))
         _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
 
     except Exception as e:
@@ -233,41 +258,3 @@ async def _post_process(
         logger.error("Post-process error: {e}", e=e)
 
 
-async def _maybe_welcome(
-    bot: "WallyDiscord",
-    message: discord.Message,
-    user_id: str,
-    guild_id: str,
-) -> None:
-    try:
-        if await bot.db.is_welcomed(user_id, guild_id):
-            return
-        situation: dict = {"platform": "Discord"}
-        if message.guild:
-            situation["server"] = message.guild.name
-        if isinstance(message.channel, discord.TextChannel):
-            situation["channel"] = f"#{message.channel.name}"
-        system_prompt = bot.prompts.build_system_prompt(
-            bot.emotion.get_state(),
-            situation=situation,
-            persona_block=bot.persona.build_prompt_block(),
-            emotion_directives=bot.persona.emotion_directives,
-        )
-        welcome = await bot.openai.complete(
-            system_prompt,
-            [
-                {
-                    "role": "user",
-                    "content": (
-                        f"C'est la première fois que {message.author.display_name} "
-                        "écrit dans ce serveur. Envoie-lui un message de bienvenue "
-                        "chaleureux et personnalisé."
-                    ),
-                }
-            ],
-            purpose="discord_welcome",
-        )
-        await message.channel.send(welcome)
-        await bot.db.mark_welcomed(user_id, guild_id)
-    except Exception as e:
-        logger.error("Welcome error: {e}", e=e)

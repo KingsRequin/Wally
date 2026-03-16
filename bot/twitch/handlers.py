@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot.core.emotion import build_emotion_tag
+
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
@@ -84,7 +86,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_message(channel_id, "Wally", reply)
 
         exchange = f"[{author}]: {content}\n[Wally]: {reply}"
-        _fire(bot.memory.add(platform, user_id, exchange))
+        tag = build_emotion_tag(bot.emotion.get_state())
+        _fire(bot.memory.add(platform, user_id, exchange, emotion_context=tag))
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
 
     except Exception as e:
