@@ -74,7 +74,7 @@ def build_emotion_tag(emotion_state: dict[str, float]) -> str:
 
 
 class EmotionEngine:
-    def __init__(self, config: "Config"):
+    def __init__(self, config: "Config", db=None):
         self._config = config
         self._state: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         self._last_decay: float = time.time()
@@ -82,6 +82,11 @@ class EmotionEngine:
         self._openai = None
         self._learned_words: dict[str, list[tuple[str, float]]] = {e: [] for e in EMOTIONS}
         self._learned_lock = asyncio.Lock()
+        # Persistence
+        self._db = db
+        self._dirty: bool = False
+        self._save_task: asyncio.Task | None = None
+        self._ticks: int = 0
         self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
@@ -108,6 +113,19 @@ class EmotionEngine:
     def set_openai_client(self, client) -> None:
         """Injection du client OpenAI (pattern identique à MemoryService)."""
         self._openai = client
+
+    async def load_state(self) -> None:
+        """Charge l'état émotionnel depuis la DB. No-op si db est None."""
+        if self._db is None:
+            return
+        try:
+            loaded = await self._db.load_emotion_state()
+            for emotion, value in loaded.items():
+                if emotion in self._state:
+                    self._state[emotion] = max(0.0, min(1.0, value))
+            logger.info("Emotion state loaded from DB: {s}", s=self._state)
+        except Exception as exc:
+            logger.warning("Failed to load emotion state: {e}", e=exc)
 
     def _load_learned_words(self) -> None:
         """Charge les mots appris depuis le disque au démarrage."""

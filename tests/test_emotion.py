@@ -238,3 +238,58 @@ def test_build_emotion_tag_threshold_boundary():
     tag = build_emotion_tag(state)
     assert "anger" in tag
     assert "joy" not in tag
+
+
+# ── Persistence ───────────────────────────────────────────────────────────────
+
+def test_engine_persistence_attrs_initialized():
+    engine = EmotionEngine(make_config())
+    assert engine._ticks == 0
+    assert engine._dirty is False
+    assert engine._save_task is None
+    assert engine._db is None
+
+
+def test_engine_accepts_db_param():
+    from unittest.mock import MagicMock
+    db = MagicMock()
+    engine = EmotionEngine(make_config(), db=db)
+    assert engine._db is db
+
+
+@pytest.mark.asyncio
+async def test_load_state_no_db_does_not_raise():
+    engine = EmotionEngine(make_config())
+    await engine.load_state()  # db is None — should be a no-op
+    assert all(v == 0.0 for v in engine.get_state().values())
+
+
+@pytest.mark.asyncio
+async def test_load_state_restores_persisted_values(tmp_path):
+    from bot.db.database import Database
+    db = await Database.create(str(tmp_path / "test.db"))
+    # Sauvegarder un état en DB
+    await db.save_emotion_state(
+        {"anger": 0.3, "joy": 0.8, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.0}
+    )
+    # Créer un engine et charger
+    engine = EmotionEngine(make_config(), db=db)
+    assert engine.get_state()["joy"] == 0.0  # avant load_state
+    await engine.load_state()
+    assert abs(engine.get_state()["joy"] - 0.8) < 0.001
+    assert abs(engine.get_state()["anger"] - 0.3) < 0.001
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_load_state_clamps_values(tmp_path):
+    from bot.db.database import Database
+    db = await Database.create(str(tmp_path / "test.db"))
+    # Insérer une valeur hors plage directement
+    await db.execute(
+        "INSERT INTO emotion_state (emotion, value, updated_at) VALUES ('joy', 1.5, 0)",
+    )
+    engine = EmotionEngine(make_config(), db=db)
+    await engine.load_state()
+    assert engine.get_state()["joy"] == 1.0  # clampé
+    await db.close()
