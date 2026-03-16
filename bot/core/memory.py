@@ -4,7 +4,12 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+import warnings
 from typing import TYPE_CHECKING, Optional
+
+# Le qdrant-client peut être en avance sur le serveur Qdrant en production :
+# le warning est purement cosmétique — les API utilisées sont stables.
+warnings.filterwarnings("ignore", message="Qdrant client version", category=UserWarning)
 
 from loguru import logger
 
@@ -19,6 +24,17 @@ _SUMMARIZE_SYSTEM = (
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
 
+# ── Consolidation des souvenirs long-terme ────────────────────────────────────
+# Quand un utilisateur dépasse ce nombre de souvenirs, on les consolide en un
+# ensemble compact de faits essentiels pour éviter la dérive mémorielle.
+_CONSOLIDATION_THRESHOLD = 25
+_CONSOLIDATION_SYSTEM = (
+    "Tu reçois une liste de souvenirs mémorisés sur une personne. "
+    "Synthétise-les en une liste concise de faits essentiels et durables. "
+    "Élimine les doublons, les informations éphémères et les détails non pertinents. "
+    "Renvoie uniquement les faits importants, un par ligne, sans préambule."
+)
+
 
 class MemoryService:
     def __init__(self, config: "Config"):
@@ -30,9 +46,17 @@ class MemoryService:
         # Prelude buffer: channel_id → list[{author, content, timestamp}]
         self._prelude_windows: dict[str, list[dict]] = {}
         self._openai: Optional["OpenAIClient"] = None
+        # Strong refs pour les tâches fire-and-forget (consolidation, etc.)
+        self._bg_tasks: set[asyncio.Task] = set()
 
     def set_openai_client(self, client: "OpenAIClient") -> None:
         self._openai = client
+
+    def _fire(self, coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        return t
 
     # ── mem0 long-term memory ─────────────────────────────────────────────────
 
@@ -75,15 +99,55 @@ class MemoryService:
     def _user_id(self, platform: str, user_id: str) -> str:
         return f"{platform}:{user_id}"
 
-    async def add(self, platform: str, user_id: str, content: str) -> None:
+    async def add(self, platform: str, user_id: str, content: str,
+                  emotion_context: str = "") -> None:
         self._init_mem0()
         if self._mem0 is None:
             return
         try:
             uid = self._user_id(platform, user_id)
-            await asyncio.to_thread(self._mem0.add, content, user_id=uid)
+            full_content = f"[{emotion_context}] {content}" if emotion_context else content
+            await asyncio.to_thread(self._mem0.add, full_content, user_id=uid)
+            # Vérification consolidation en arrière-plan (ne bloque pas la réponse)
+            self._fire(self._maybe_consolidate(platform, user_id))
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
+
+    async def _maybe_consolidate(self, platform: str, user_id: str) -> None:
+        """Consolide les souvenirs si leur nombre dépasse le seuil."""
+        if self._openai is None:
+            return
+        try:
+            uid = self._user_id(platform, user_id)
+            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
+            if isinstance(results, dict):
+                results = results.get("results", [])
+            if len(results) <= _CONSOLIDATION_THRESHOLD:
+                return
+
+            logger.info(
+                "Consolidating {n} memories for {uid}",
+                n=len(results),
+                uid=uid,
+            )
+            memories_text = "\n".join(
+                f"- {r.get('memory', '')}" for r in results if r.get("memory")
+            )
+            consolidated = await self._openai.complete_secondary(
+                _CONSOLIDATION_SYSTEM,
+                [{"role": "user", "content": memories_text}],
+                purpose="memory_consolidation",
+            )
+            # Remplacer tous les souvenirs par la synthèse
+            await asyncio.to_thread(self._mem0.delete_all, user_id=uid)
+            await asyncio.to_thread(self._mem0.add, consolidated, user_id=uid)
+            logger.info(
+                "Memory consolidated for {uid}: {n} entries → 1",
+                uid=uid,
+                n=len(results),
+            )
+        except Exception as exc:
+            logger.warning("Memory consolidation failed: {e}", e=exc)
 
     async def reset_all(self) -> None:
         """Clear all context windows and all mem0 long-term memories."""
@@ -97,9 +161,30 @@ class MemoryService:
             except Exception as exc:
                 logger.warning("mem0 reset failed: {e}", e=exc)
 
+    async def get_all(self, platform: str, user_id: str) -> str:
+        """Retourne toutes les mémoires d'un utilisateur sous forme de texte."""
+        self._init_mem0()
+        if self._mem0 is None:
+            return ""
+        try:
+            uid = self._user_id(platform, user_id)
+            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
+            if isinstance(results, dict):
+                results = results.get("results", [])
+            if not results:
+                return ""
+            return "\n".join(
+                r.get("memory", "") for r in results if r.get("memory")
+            )
+        except Exception as exc:
+            logger.warning("mem0 get_all failed: {e}", e=exc)
+            return ""
+
     async def search(self, platform: str, user_id: str, query: str) -> str:
         self._init_mem0()
         if self._mem0 is None:
+            return ""
+        if not query or not query.strip():
             return ""
         try:
             uid = self._user_id(platform, user_id)
