@@ -199,3 +199,38 @@ class Database:
                 "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (emotion, value, now),
             )
+
+    async def insert_emotion_snapshot(self, state: dict[str, float]) -> None:
+        await self.execute(
+            "INSERT INTO emotion_history "
+            "(snapshot_at, anger, joy, sadness, curiosity, boredom) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                time.time(),
+                state.get("anger", 0.0),
+                state.get("joy", 0.0),
+                state.get("sadness", 0.0),
+                state.get("curiosity", 0.0),
+                state.get("boredom", 0.0),
+            ),
+        )
+
+    async def get_today_emotion_snapshots(self) -> list[dict]:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        _TZ = ZoneInfo("Europe/Paris")
+        midnight = datetime.now(_TZ).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+        rows = await self.fetch_all(
+            "SELECT * FROM emotion_history WHERE snapshot_at >= ? ORDER BY snapshot_at ASC",
+            (midnight,),
+        )
+        return [dict(row) for row in rows]
+
+    async def cleanup_old_emotion_history(self, days: int = 7) -> None:
+        cutoff = time.time() - days * 86400
+        await self.execute(
+            "DELETE FROM emotion_history WHERE snapshot_at < ?",
+            (cutoff,),
+        )

@@ -124,3 +124,44 @@ async def test_save_emotion_state_is_idempotent(tmp_path):
     assert abs(loaded["anger"] - 0.9) < 0.001
     assert abs(loaded["joy"] - 0.1) < 0.001
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_insert_and_get_today_snapshots(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    state = {"anger": 0.2, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
+    await db.insert_emotion_snapshot(state)
+    await db.insert_emotion_snapshot(state)
+    snapshots = await db.get_today_emotion_snapshots()
+    assert len(snapshots) == 2
+    assert abs(snapshots[0]["joy"] - 0.5) < 0.001
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_today_snapshots_returns_empty_list_when_none(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    snapshots = await db.get_today_emotion_snapshots()
+    assert snapshots == []
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_removes_old_snapshots(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    import time
+    # Insert an 8-day-old snapshot directly via raw SQL
+    old_ts = time.time() - 8 * 86400
+    await db.execute(
+        "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
+        "VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0)",
+        (old_ts,),
+    )
+    # Insert a recent one
+    await db.insert_emotion_snapshot(
+        {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    )
+    await db.cleanup_old_emotion_history(days=7)
+    rows = await db.fetch_all("SELECT * FROM emotion_history")
+    assert len(rows) == 1  # seul le récent reste
+    await db.close()
