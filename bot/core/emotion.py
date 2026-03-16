@@ -61,6 +61,18 @@ DECAY_FLOOR = 0.01
 _LEARNED_WORDS_PATH = "data/fr_emotion_words.json"
 
 
+def build_emotion_tag(emotion_state: dict[str, float]) -> str:
+    """Construit un tag textuel à partir des émotions dominantes (≥ 0.4).
+
+    Retourne "" si aucune émotion n'est dominante.
+    Exemple : "Wally: joy, curiosity"
+    """
+    dominant = [e for e, v in emotion_state.items() if v >= 0.4]
+    if not dominant:
+        return ""
+    return "Wally: " + ", ".join(dominant)
+
+
 class EmotionEngine:
     def __init__(self, config: "Config"):
         self._config = config
@@ -216,7 +228,7 @@ class EmotionEngine:
             if not cfg or self._state[emotion] <= 0:
                 continue
             lam = cfg.decay_lambda
-            decayed = self._state[emotion] * math.exp(-lam * delta_t)
+            decayed = self._state[emotion] * math.exp(-lam * (delta_t / 60.0))
             self._state[emotion] = 0.0 if decayed < DECAY_FLOOR else decayed
         self._last_decay = now
 

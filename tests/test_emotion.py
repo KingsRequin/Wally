@@ -67,9 +67,9 @@ def test_decay_reduces_emotion():
     # Simulate 10 seconds elapsed
     engine._last_decay = time.time() - 10
     engine._apply_decay()
-    # E = 1.0 * e^(-0.1 * 10) ≈ 0.368
+    # lambda est exprimé par minute : E = 1.0 * e^(-0.1 * (10/60)) ≈ 0.983
     anger = engine.get_state()["anger"]
-    expected = math.exp(-0.1 * 10)
+    expected = math.exp(-0.1 * (10 / 60.0))
     assert abs(anger - expected) < 0.01
 
 
@@ -211,3 +211,30 @@ async def test_learn_word_invalid_delta_ignored():
     engine = EmotionEngine(make_config())
     await engine._learn_words([{"word": "relou", "emotion": "boredom", "delta": 5.0}])
     assert all("relou" not in [w for w, _ in v] for v in engine._learned_words.values())
+
+
+# ── build_emotion_tag ─────────────────────────────────────────────────────────
+
+def test_build_emotion_tag_with_dominant_emotions():
+    from bot.core.emotion import build_emotion_tag
+    state = {"anger": 0.0, "joy": 0.7, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.0}
+    tag = build_emotion_tag(state)
+    assert "joy" in tag
+    assert "curiosity" in tag
+    assert tag.startswith("Wally:")
+
+
+def test_build_emotion_tag_returns_empty_when_none_dominant():
+    from bot.core.emotion import build_emotion_tag
+    state = {"anger": 0.2, "joy": 0.3, "sadness": 0.0, "curiosity": 0.1, "boredom": 0.0}
+    tag = build_emotion_tag(state)
+    assert tag == ""
+
+
+def test_build_emotion_tag_threshold_boundary():
+    from bot.core.emotion import build_emotion_tag
+    # Exactement au seuil : 0.4 → inclus
+    state = {"anger": 0.4, "joy": 0.39, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    tag = build_emotion_tag(state)
+    assert "anger" in tag
+    assert "joy" not in tag
