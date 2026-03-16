@@ -19,12 +19,10 @@ def make_deps(journal_channel_id=12345, journal_time="03:00"):
     )
 
     memory = MagicMock()
-    memory._context_windows = {
-        "ch1": [
-            {"author": "Alice", "content": "Hello", "timestamp": 1000.0},
-            {"author": "Wally", "content": "Hi Alice!", "timestamp": 1001.0},
-        ]
-    }
+    memory.get_all_contexts = MagicMock(return_value=[
+        {"author": "Alice", "content": "Hello", "timestamp": 1000.0},
+        {"author": "Wally", "content": "Hi Alice!", "timestamp": 1001.0},
+    ])
 
     return config, openai, emotion, memory
 
@@ -68,7 +66,7 @@ async def test_generate_skips_when_no_callback():
 @pytest.mark.asyncio
 async def test_generate_with_empty_context():
     config, openai, emotion, memory = make_deps()
-    memory._context_windows = {}
+    memory.get_all_contexts = MagicMock(return_value=[])
     journal = DailyJournal(config, openai, emotion, memory)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t: sent.append(t)))
@@ -96,3 +94,92 @@ def test_start_configures_scheduler():
         assert call_kwargs.kwargs.get("hour") == 22
         assert call_kwargs.kwargs.get("minute") == 30
         mock_sched.start.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_build_context_text_multi_pass():
+    """When messages exceed token threshold, uses multi-pass summarization."""
+    config, openai, emotion, memory = make_deps()
+    journal = DailyJournal(config, openai, emotion, memory)
+
+    call_count = 0
+
+    async def fake_complete(system, messages, purpose="summary"):
+        nonlocal call_count
+        call_count += 1
+        return f"chunk_{call_count}"
+
+    openai.complete_secondary = fake_complete
+
+    # 25 messages × 1000 chars = 25000 chars → 6250 tokens > 6000 threshold
+    # 25 messages → 2 chunks (20 + 5) → 2 chunk summaries + 1 final = 3 calls
+    big_messages = [
+        {"author": "User", "content": "x" * 1000, "timestamp": float(i)}
+        for i in range(25)
+    ]
+    result = await journal._build_context_text(big_messages)
+
+    assert call_count == 3
+    assert result == "chunk_3"  # the final combining call
+
+
+# ── Arc émotionnel ────────────────────────────────────────────────────────────
+
+def test_build_emotion_arc_returns_empty_with_less_than_2_snapshots():
+    from bot.core.journal import _build_emotion_arc
+    assert _build_emotion_arc([]) == ""
+    assert _build_emotion_arc([{"snapshot_at": 0, "anger": 0.5, "joy": 0.0,
+                                "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}]) == ""
+
+
+def test_build_emotion_arc_formats_dominant_emotions():
+    from bot.core.journal import _build_emotion_arc
+    import time
+    now = time.time()
+    snapshots = [
+        {"snapshot_at": now - 3600, "anger": 0.0, "joy": 0.75, "sadness": 0.0,
+         "curiosity": 0.0, "boredom": 0.0},
+        {"snapshot_at": now, "anger": 0.0, "joy": 0.55, "sadness": 0.0,
+         "curiosity": 0.35, "boredom": 0.0},
+    ]
+    arc = _build_emotion_arc(snapshots)
+    assert "Arc émotionnel" in arc
+    assert "pic de joy" in arc       # 0.75 → 75% ≥ 70% → "pic de"
+    assert "joy montante" in arc     # 0.55 → 55% ≥ 50% → "montante"
+    assert "curiosity légère" in arc # 0.35 → 35% ≥ 30% et < 50% → "légère"
+    assert arc.count("\n") >= 1
+
+
+def test_build_emotion_arc_omits_emotions_below_30_percent():
+    from bot.core.journal import _build_emotion_arc
+    import time
+    now = time.time()
+    snapshots = [
+        {"snapshot_at": now - 3600, "anger": 0.1, "joy": 0.2, "sadness": 0.0,
+         "curiosity": 0.0, "boredom": 0.0},
+        {"snapshot_at": now, "anger": 0.1, "joy": 0.2, "sadness": 0.0,
+         "curiosity": 0.0, "boredom": 0.0},
+    ]
+    arc = _build_emotion_arc(snapshots)
+    # Tout < 30% → chaque ligne affiche "neutre"
+    assert "neutre" in arc
+    assert "anger" not in arc
+
+
+def test_build_emotion_arc_labels():
+    """Vérifie les 3 paliers de labels."""
+    from bot.core.journal import _build_emotion_arc
+    import time
+    now = time.time()
+    snapshots = [
+        {"snapshot_at": now - 7200, "anger": 0.35, "joy": 0.0, "sadness": 0.0,
+         "curiosity": 0.0, "boredom": 0.0},  # 35% → légère
+        {"snapshot_at": now - 3600, "anger": 0.0, "joy": 0.6, "sadness": 0.0,
+         "curiosity": 0.0, "boredom": 0.0},  # 60% → montante
+        {"snapshot_at": now, "anger": 0.0, "joy": 0.0, "sadness": 0.8,
+         "curiosity": 0.0, "boredom": 0.0},  # 80% → pic de
+    ]
+    arc = _build_emotion_arc(snapshots)
+    assert "légère" in arc
+    assert "montante" in arc
+    assert "pic de" in arc

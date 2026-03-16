@@ -1,8 +1,9 @@
 # bot/core/journal.py
 from __future__ import annotations
 
-from datetime import date
-from typing import TYPE_CHECKING, Optional
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any, Callable, Optional
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
@@ -31,6 +32,65 @@ _FINAL_SYSTEM = "Fais une synthèse finale de ces résumés de journée."
 _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
 _CHUNK_SIZE = 20
+_DISCORD_LIMIT = 1900  # marge de sécurité sous la limite Discord de 2000
+
+_TZ_JOURNAL = ZoneInfo("Europe/Paris")
+
+
+def _build_emotion_arc(snapshots: list[dict]) -> str:
+    """Construit l'arc émotionnel de la journée depuis les snapshots horaires.
+
+    Retourne "" si moins de 2 snapshots (pas assez de données pour une narrative).
+    """
+    if len(snapshots) < 2:
+        return ""
+    lines = []
+    for snap in snapshots:
+        ts = datetime.fromtimestamp(snap["snapshot_at"], tz=_TZ_JOURNAL)
+        parts = []
+        for emotion in ["anger", "joy", "sadness", "curiosity", "boredom"]:
+            pct = int(snap[emotion] * 100)
+            if pct < 30:
+                continue
+            if pct >= 70:
+                label = f"pic de {emotion} ({pct}%)"
+            elif pct >= 50:
+                label = f"{emotion} montante ({pct}%)"
+            else:
+                label = f"{emotion} légère ({pct}%)"
+            parts.append(label)
+        if parts:
+            lines.append(f"{ts.strftime('%Hh%M')} — {', '.join(parts)}")
+        else:
+            lines.append(f"{ts.strftime('%Hh%M')} — neutre")
+    return "Arc émotionnel de la journée :\n" + "\n".join(lines)
+
+
+def _split_for_discord(text: str, limit: int = _DISCORD_LIMIT) -> list[str]:
+    """Découpe le texte en blocs ≤ limit caractères sur des coupures naturelles."""
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+    for para in text.split("\n\n"):
+        candidate = (current + "\n\n" + para) if current else para
+        if len(candidate) <= limit:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            if len(para) > limit:
+                # Découpe forcée si un seul paragraphe dépasse la limite
+                while len(para) > limit:
+                    chunks.append(para[:limit])
+                    para = para[limit:]
+                current = para
+            else:
+                current = para
+    if current:
+        chunks.append(current)
+    return chunks if chunks else [text]
 
 
 class DailyJournal:
@@ -45,9 +105,9 @@ class DailyJournal:
         self._openai = openai
         self._emotion = emotion
         self._memory = memory
-        self._send_cb: Optional[callable] = None
+        self._send_cb: Optional[Callable[..., Any]] = None
 
-    def set_send_callback(self, cb: callable) -> None:
+    def set_send_callback(self, cb: Callable[..., Any]) -> None:
         """Inject an async callable: async def send(text: str) -> None"""
         self._send_cb = cb
 
@@ -60,10 +120,7 @@ class DailyJournal:
         logger.info("Generating daily journal...")
 
         # Gather all messages from all context windows, sorted by timestamp
-        all_messages: list[dict] = []
-        for msgs in self._memory._context_windows.values():
-            all_messages.extend(msgs)
-        all_messages.sort(key=lambda m: m["timestamp"])
+        all_messages = self._memory.get_all_contexts()
 
         if all_messages:
             context_text = await self._build_context_text(all_messages)
@@ -84,7 +141,8 @@ class DailyJournal:
 
         formatted = f"**Journal de Wally — {self._today()}**\n\n{journal_text}"
         if self._send_cb:
-            await self._send_cb(formatted)
+            for chunk in _split_for_discord(formatted):
+                await self._send_cb(chunk)
             logger.info("Daily journal sent to channel {ch}", ch=channel_id)
         else:
             logger.warning("No send callback set for journal — generated but not sent")
@@ -121,14 +179,20 @@ class DailyJournal:
         return date.today().strftime("%d/%m/%Y")
 
     def start(self) -> None:
-        scheduler = AsyncIOScheduler()
-        time_str = self._config.bot.journal_time  # "HH:MM"
-        hour, minute = map(int, time_str.split(":"))
-        scheduler.add_job(
+        self._scheduler = AsyncIOScheduler()
+        raw = self._config.bot.journal_time
+        # YAML parse `21:00` sans guillemets en int sexagésimal (1260) — on normalise
+        if isinstance(raw, int):
+            hour, minute = divmod(raw, 60)
+            time_str = f"{hour:02d}:{minute:02d}"
+        else:
+            time_str = str(raw)
+            hour, minute = map(int, time_str.split(":"))
+        self._scheduler.add_job(
             self.generate_and_send,
             "cron",
             hour=hour,
             minute=minute,
         )
-        scheduler.start()
+        self._scheduler.start()
         logger.info("Daily journal scheduler started, fires at {t}", t=time_str)
