@@ -546,7 +546,7 @@ class EnvDiscordModal(discord.ui.Modal, title="Variables Discord"):
     discord_token = discord.ui.TextInput(
         label="DISCORD_TOKEN",
         placeholder="MTxx...",
-        max_length=100,
+        max_length=200,
     )
     discord_guild_id = discord.ui.TextInput(
         label="DISCORD_GUILD_ID",
@@ -604,10 +604,10 @@ class EnvTwitchIdModal(discord.ui.Modal, title="Twitch — Identité"):
 
 
 class EnvTwitchTokensModal(discord.ui.Modal, title="Twitch — Tokens"):
-    bot_access_token = discord.ui.TextInput(label="BOT_ACCESS_TOKEN", max_length=50)
-    bot_refresh_token = discord.ui.TextInput(label="BOT_REFRESH_TOKEN", max_length=60)
-    streamer_access_token = discord.ui.TextInput(label="STREAMER_ACCESS_TOKEN", max_length=50)
-    streamer_refresh_token = discord.ui.TextInput(label="STREAMER_REFRESH_TOKEN", max_length=60)
+    bot_access_token = discord.ui.TextInput(label="BOT_ACCESS_TOKEN", max_length=200)
+    bot_refresh_token = discord.ui.TextInput(label="BOT_REFRESH_TOKEN", max_length=200)
+    streamer_access_token = discord.ui.TextInput(label="STREAMER_ACCESS_TOKEN", max_length=200)
+    streamer_refresh_token = discord.ui.TextInput(label="STREAMER_REFRESH_TOKEN", max_length=200)
 
     def __init__(self, values: dict[str, str]):
         super().__init__()
