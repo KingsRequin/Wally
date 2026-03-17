@@ -256,8 +256,8 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .gauge-track {
   flex: 1;
   height: 10px;
-  background: rgba(255,255,255,0.08);
-  border: 1.5px solid rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-xs);
   position: relative;
   overflow: hidden;
@@ -267,14 +267,14 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
   height: 100%;
   width: 0%;
   border-radius: calc(var(--radius-xs) - 1px);
-  transition: width 1s ease;
+  transition: width 0.6s ease;
 }
 
-.gauge-fill.anger    { background: var(--c-anger); }
-.gauge-fill.joy      { background: var(--c-joy); }
-.gauge-fill.curiosity{ background: var(--c-curiosity); }
-.gauge-fill.sadness  { background: var(--c-sadness); }
-.gauge-fill.boredom  { background: var(--c-boredom); }
+.gauge-fill.anger     { background: var(--c-anger);    box-shadow: 0 0 8px rgba(255, 77, 77, 0.53); }
+.gauge-fill.joy       { background: var(--c-joy);      box-shadow: 0 0 8px rgba(255, 215, 0, 0.53); }
+.gauge-fill.curiosity { background: var(--c-curiosity);box-shadow: 0 0 8px rgba(0, 229, 160, 0.53); }
+.gauge-fill.sadness   { background: var(--c-sadness);  box-shadow: 0 0 8px rgba(77, 166, 255, 0.53); }
+.gauge-fill.boredom   { background: var(--c-boredom);  box-shadow: none; }
 
 
 .gauge-val {
@@ -298,8 +298,9 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
 .emotion-summary {
   font-size: 0.9rem;
-  color: rgba(205,214,244,0.6);
   font-style: italic;
+  text-align: center;
+  opacity: 0.6;
   margin-top: 12px;
   min-height: 1.4em;
 }
