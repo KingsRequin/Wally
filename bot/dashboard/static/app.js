@@ -576,7 +576,7 @@ async function loadMemoryUsers(filter = '') {
   const el = document.getElementById('mem-user-list');
   if (!el) return;
   if (users.length === 0) {
-    el.innerHTML = '<div style="color:#555;font-size:0.75rem;padding:8px">Aucun utilisateur</div>';
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.75rem;padding:8px">Aucun utilisateur</div>';
     return;
   }
   el.innerHTML = users.map(u => {
@@ -627,13 +627,13 @@ function renderMemories(userId, memories) {
     </div>
     <div style="padding:12px">
       ${memories.length === 0
-        ? '<div style="color:#555;font-size:0.85rem">Aucun souvenir.</div>'
+        ? '<div style="color:var(--text-muted);font-size:0.85rem">Aucun souvenir.</div>'
         : memories.map(m => `
           <div style="background:var(--card);border:1.5px solid #ddd;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start"
                id="mem-entry-${escAttr(m.id)}">
             <span style="font-size:0.82rem;flex:1;line-height:1.5">${escHtml(m.memory)}</span>
             <button onclick="deleteMemory('${escAttr(userId)}','${escAttr(m.id)}')"
-                    style="background:none;border:none;color:#ff3333;cursor:pointer;font-size:1.1rem;margin-left:12px;flex-shrink:0;line-height:1">✕</button>
+                    style="background:none;border:none;color:var(--c-anger);cursor:pointer;font-size:1.1rem;margin-left:12px;flex-shrink:0;line-height:1">✕</button>
           </div>`).join('')
       }
     </div>
@@ -660,7 +660,7 @@ async function deleteAllMemories(userId) {
   );
   if (r && r.ok) {
     document.getElementById('mem-detail').innerHTML =
-      '<div style="padding:16px;color:#555;font-size:0.85rem">Aucun souvenir.</div>';
+      '<div style="padding:16px;color:var(--text-muted);font-size:0.85rem">Aucun souvenir.</div>';
     _selectedMemUser = null;
     const filter = document.getElementById('mem-user-filter')?.value || '';
     loadMemoryUsers(filter);
@@ -697,7 +697,7 @@ async function searchMemories(q) {
     </div>
     <div style="padding:12px">
       ${results.length === 0
-        ? '<div style="color:#555;font-size:0.85rem">Aucun résultat.</div>'
+        ? '<div style="color:var(--text-muted);font-size:0.85rem">Aucun résultat.</div>'
         : results.map(res => `
           <div style="background:var(--card);border:1.5px solid #ddd;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
             <span style="font-size:0.65rem;color:#888;display:block;margin-bottom:4px">${escHtml(res.user_id)}</span>
