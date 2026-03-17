@@ -1,27 +1,44 @@
-/* Dark Neobrutalism — Wally Dashboard
+/* Light Neo-Brutalism — Wally Dashboard
    Règles fondamentales :
-   - Bordures épaisses 3px solid #ffffff
-   - Ombres dures sans flou : box-shadow 4px 4px 0px #ffffff
+   - Bordures épaisses 2.5px solid #111
+   - Ombres dures sans flou : box-shadow 4px 4px 0px #111
    - Zéro dégradé, zéro flou
-   - Border-radius : 0px (max 4px)
+   - Border-radius : 14px (cards/header), 10px (buttons), 8px (inputs), 4px (gauges)
 */
 
 :root {
-  --bg: #0f0f0f;
-  --card: #1a1a1a;
-  --border: #ffffff;
-  --shadow: 4px 4px 0px #ffffff;
-  --shadow-sm: 2px 2px 0px #ffffff;
-  --text: #ffffff;
-  --text-muted: #aaaaaa;
-  --c-anger: #ff3333;
-  --c-joy: #ffdd00;
-  --c-curiosity: #00ccff;
-  --c-sadness: #7777ff;
-  --c-boredom: #888888;
-  --c-online: #00ff88;
-  --c-offline: #ff3333;
+  --bg: #fafaf8;
+  --bg-alt: #f0ede8;
+  --card: #ffffff;
+  --border: #111111;
+  --shadow: 4px 4px 0px #111111;
+  --shadow-sm: 2px 2px 0px #111111;
+  --text: #111111;
+  --text-muted: #666666;
   --font: 'Courier New', Courier, monospace;
+  --radius: 14px;       /* cards, header, modal, log stream */
+  --radius-sm: 8px;     /* inputs, selects, mode toggle, memory items */
+  --radius-btn: 10px;   /* buttons */
+  --radius-tab: 6px;    /* badges pill */
+  --radius-xs: 4px;     /* gauge tracks */
+
+  /* Emotion colors */
+  --c-anger:    #e63946;
+  --c-joy:      #ffd60a;
+  --c-curiosity:#2dc653;
+  --c-sadness:  #0096c7;
+  --c-boredom:  #9ca3af;
+
+  /* Card accent colors */
+  --card-pink:   #ff6b9d;
+  --card-teal:   #4ecdc4;
+  --card-yellow: #ffe66d;
+  --card-aqua:   #a8edea;
+  --card-mint:   #b7f5c8;
+
+  /* Status */
+  --c-online:  #16a34a;
+  --c-offline: #dc2626;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
