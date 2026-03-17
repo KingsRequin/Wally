@@ -14,7 +14,7 @@ Refonte visuelle complète du dashboard : abandon du neo-brutalism pastel au pro
 
 ## 1. Variables CSS — Nouveau token set
 
-Remplacer intégralement le bloc `:root` actuel :
+Remplacer intégralement le bloc `:root` actuel. Les variables `--card-pink`, `--card-teal`, `--card-yellow`, `--card-aqua`, `--card-mint` sont supprimées. Les variables `--c-anger/joy/curiosity/sadness/boredom` sont mises à jour. `--shadow-btn` est conservé.
 
 ```css
 :root {
@@ -63,8 +63,6 @@ Remplacer intégralement le bloc `:root` actuel :
 }
 ```
 
-**Supprimées** : `--card-pink`, `--card-teal`, `--card-yellow`, `--card-aqua`, `--card-mint`, `--shadow-btn` (remplacé), `--c-anger/joy/curiosity/sadness/boredom` anciens.
-
 ---
 
 ## 2. Import de police — Google Fonts
@@ -81,7 +79,7 @@ Ajouter dans `<head>` de `index.html`, avant le `<link rel="stylesheet">` :
 
 ## 3. Cartes — Glassmorphism
 
-Remplacer les règles `.card` et `.card-*` :
+Remplacer les règles `.card` et supprimer toutes les règles `.card-pink`, `.card-teal`, `.card-yellow`, `.card-aqua`, `.card-mint` (voir section 10 pour la liste complète) :
 
 ```css
 .card {
@@ -101,7 +99,7 @@ Remplacer les règles `.card` et `.card-*` :
 }
 ```
 
-**Supprimer** les classes `.card-pink`, `.card-teal`, `.card-yellow`, `.card-aqua`, `.card-mint` du CSS et de `index.html` (retirer ces classes des divs du bento).
+Dans `index.html`, retirer les classes `card-pink`, `card-teal`, `card-yellow`, `card-aqua`, `card-mint` des six divs du bento.
 
 ---
 
@@ -126,11 +124,34 @@ Remplacer les règles `.card` et `.card-*` :
 }
 ```
 
-Les icônes (⏱ 📡 💬) sont ajoutées directement dans le texte des `.card-title` dans `index.html`.
+Mettre à jour les `.card-title` dans `index.html` en ajoutant une icône en préfixe :
+
+| Carte | Nouveau texte |
+|---|---|
+| UPTIME | `⏱ UPTIME` |
+| PLATEFORMES | `📡 PLATEFORMES` |
+| MESSAGES TRAITÉS | `💬 MESSAGES TRAITÉS` |
+| HUMEUR EN DIRECT | `🎭 HUMEUR EN DIRECT` |
+| AZRAEL_TTV (stream card) | `📺 AZRAEL_TTV` |
+| DERNIÈRES 24H (graph) | `📈 DERNIÈRES 24H` |
 
 ---
 
 ## 5. Jauges d'émotions
+
+### Constante EMOTION_COLORS mise à jour dans `app.js`
+
+Remplacer les valeurs actuelles de `EMOTION_COLORS` (qui sont `#e63946`, `#ffd60a`, etc.) par :
+
+```js
+const EMOTION_COLORS = {
+  anger:    '#FF4D4D',
+  joy:      '#FFD700',
+  curiosity:'#00E5A0',
+  sadness:  '#4DA6FF',
+  boredom:  '#AAAAAA',
+};
+```
 
 ### Couleurs et glow des fills
 
@@ -158,7 +179,7 @@ Les icônes (⏱ 📡 💬) sont ajoutées directement dans le texte des `.card-
 
 ### Emoji dans les labels
 
-Dans `app.js`, `buildGauges()` — ajouter un préfixe emoji par émotion :
+Dans `app.js`, ajouter la constante `EMOTION_EMOJIS` (juste après `EMOTION_COLORS`) :
 
 ```js
 const EMOTION_EMOJIS = {
@@ -166,7 +187,7 @@ const EMOTION_EMOJIS = {
 };
 ```
 
-Le label affiche `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
+Dans `buildGauges()`, modifier la ligne qui génère le label pour afficher `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
 
 ### Résumé textuel
 
@@ -209,12 +230,51 @@ Le label affiche `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
 }
 ```
 
+Remplacer intégralement la règle `.badge-soon` existante (qui utilise `background: var(--card-yellow)`) par ce bloc.
+
 ---
 
 ## 7. Badges Twitch
 
+### CSS — remplacement complet des règles `.stream-live-badge` et `.stream-offline-badge`
+
 ```css
-/* Pulse offline */
+.stream-live-badge,
+.stream-offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-weight: 900;
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  border-radius: var(--radius-tab);
+  margin-bottom: 8px;
+}
+.stream-live-badge {
+  background: rgba(0, 229, 160, 0.15);
+  color: var(--c-online);
+  border: 1px solid rgba(0, 229, 160, 0.4);
+}
+.stream-offline-badge {
+  background: rgba(255, 77, 77, 0.15);
+  color: var(--c-offline);
+  border: 1px solid rgba(255, 77, 77, 0.4);
+}
+
+/* Dot indicator */
+.stream-live-badge .dot,
+.stream-offline-badge .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stream-live-badge .dot  { background: var(--c-online); }
+.stream-offline-badge .dot { background: var(--c-offline); }
+
+/* Animations */
 @keyframes pulse-red {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,77,0.7); }
   50%       { box-shadow: 0 0 0 6px rgba(255,77,77,0); }
@@ -223,7 +283,6 @@ Le label affiche `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
   animation: pulse-red 2s ease-in-out infinite;
 }
 
-/* Scale online */
 @keyframes scale-green {
   0%, 100% { transform: scale(1); }
   50%       { transform: scale(1.15); }
@@ -233,46 +292,217 @@ Le label affiche `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
 }
 ```
 
-Le dot est un `<span class="dot">` ajouté dans `loadStreamStatus()` en JS.
+### JS — mise à jour de `loadStreamStatus()`
+
+Modifier les deux blocs `innerHTML` pour inclure `<span class="dot"></span>` :
+
+```js
+// Cas live :
+el.innerHTML = `
+  <div class="stream-live-badge"><span class="dot"></span> LIVE</div>
+  <div style="font-size:1.1rem;font-weight:700;margin-bottom:6px">${escHtml(d.title || '')}</div>
+  <div style="color:var(--text-muted);margin-bottom:4px">${escHtml(d.category || '')}</div>
+  <div style="font-size:1.5rem;font-weight:900;color:var(--c-curiosity)">${(d.viewers || 0).toLocaleString()} viewers</div>
+`;
+
+// Cas offline :
+el.innerHTML = `
+  <div class="stream-offline-badge"><span class="dot"></span> OFFLINE</div>
+  ${d.started_at ? `<div style="color:var(--text-muted);margin-top:6px;font-size:0.85rem">Dernier stream : ${new Date(d.started_at).toLocaleString('fr')}</div>` : ''}
+`;
+```
 
 ---
 
 ## 8. Graphe canvas — Area chart + tooltip
 
-### `drawEmotionGraph()` — modifications dans `app.js`
+### Helper `hexToRgba`
 
-**Area chart avec gradient :**
-Pour chaque émotion, après le tracé de la ligne :
+Ajouter cette fonction dans `app.js` (juste avant `drawEmotionGraph`) :
+
 ```js
-// Gradient fill sous la courbe
-const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
-grad.addColorStop(0, hexToRgba(EMOTION_COLORS[e], 0.3));
-grad.addColorStop(1, hexToRgba(EMOTION_COLORS[e], 0.03));
-ctx.fillStyle = grad;
-// Fermer le path vers le bas
-ctx.lineTo(lastX, PAD.top + gH);
-ctx.lineTo(firstX, PAD.top + gH);
-ctx.closePath();
-ctx.fill();
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 ```
 
-Helper `hexToRgba(hex, alpha)` — convertit `#RRGGBB` → `rgba(r,g,b,alpha)`.
+### Variables de module pour le tooltip
 
-**Grille :**
+Ajouter en tête de module (à côté des autres `const` globaux) :
+
 ```js
-// 4 lignes horizontales à 25/50/75/100%
-ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-ctx.lineWidth = 1;
+let _graphMeta = null;  // { history, tMin, tRange, PAD, gW, gH, W, H }
+let _rafPending = false;
 ```
 
-**Tooltip au hover :**
-- Ajouter un `mousemove` listener sur le canvas dans `DOMContentLoaded`
-- Sur mousemove : trouver le point historique le plus proche par interpolation temporelle
-- Dessiner un tooltip glassmorphism (fond `rgba(11,11,20,0.85)`, border `rgba(0,212,255,0.3)`, `border-radius: 8px`) avec les 5 valeurs d'émotions
-- Utiliser `requestAnimationFrame` pour throttler les redraws
-- Cacher le tooltip au `mouseleave`
+### Remplacement complet de `drawEmotionGraph(history)`
 
-Le listener stocke les données `history` dans une variable de module `_graphHistory` pour y accéder depuis le handler.
+```js
+function drawEmotionGraph(history) {
+  const canvas = document.getElementById('emotionCanvas');
+  if (!canvas || !history || history.length < 2) return;
+
+  const W = canvas.offsetWidth || 800;
+  const H = 165;
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Fond sombre (--bg-alt)
+  ctx.fillStyle = '#0f0f1c';
+  ctx.fillRect(0, 0, W, H);
+
+  const PAD = { top: 10, bottom: 40, left: 4, right: 4 };
+  const gW = W - PAD.left - PAD.right;
+  const gH = H - PAD.top - PAD.bottom;
+
+  const tMin = history[0].snapshot_at;
+  const tMax = history[history.length - 1].snapshot_at;
+  const tRange = tMax - tMin || 1;
+
+  // Stocker pour le tooltip
+  _graphMeta = { history, tMin, tRange, PAD, gW, gH, W, H };
+
+  // Grille — 4 lignes horizontales à 25/50/75/100%
+  ctx.lineWidth = 1;
+  for (let pct = 0.25; pct <= 1.0; pct += 0.25) {
+    const y = PAD.top + (1 - pct) * gH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(W - PAD.right, y);
+    ctx.stroke();
+  }
+
+  // Tracé ligne + area fill par émotion
+  for (const e of EMOTIONS) {
+    let firstX = 0, lastX = 0;
+
+    // 1. Ligne (stroke)
+    ctx.beginPath();
+    ctx.strokeStyle = EMOTION_COLORS[e];
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.85;
+    history.forEach((snap, i) => {
+      const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+      const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
+      if (i === 0) { ctx.moveTo(x, y); firstX = x; }
+      else ctx.lineTo(x, y);
+      lastX = x;
+    });
+    ctx.stroke();
+
+    // 2. Area fill (path séparé, gradient du haut vers le bas)
+    ctx.beginPath();
+    ctx.globalAlpha = 1;
+    history.forEach((snap, i) => {
+      const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+      const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(lastX,  PAD.top + gH);
+    ctx.lineTo(firstX, PAD.top + gH);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
+    grad.addColorStop(0, hexToRgba(EMOTION_COLORS[e], 0.25));
+    grad.addColorStop(1, hexToRgba(EMOTION_COLORS[e], 0.02));
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+
+  // Axe temporel
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  const label0 = new Date(tMin * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
+  const labelN = new Date(tMax * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
+  ctx.fillText(label0, PAD.left, H - 26);
+  ctx.textAlign = 'right';
+  ctx.fillText(labelN, W - PAD.right, H - 26);
+
+  // Légende des émotions
+  ctx.font = '9px monospace';
+  const itemW = gW / EMOTIONS.length;
+  EMOTIONS.forEach((e, i) => {
+    const x = PAD.left + i * itemW;
+    const ly = H - 10;
+    ctx.strokeStyle = EMOTION_COLORS[e];
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, ly);
+    ctx.lineTo(x + 14, ly);
+    ctx.stroke();
+    ctx.fillStyle = EMOTION_COLORS[e];
+    ctx.textAlign = 'left';
+    ctx.fillText(EMOTION_LABELS[e], x + 18, ly + 3);
+  });
+}
+```
+
+### Tooltip au hover — listeners dans `DOMContentLoaded`
+
+Ajouter après le `requestAnimationFrame(() => loadEmotionHistory())` initial :
+
+```js
+const emotionCanvas = document.getElementById('emotionCanvas');
+emotionCanvas.addEventListener('mousemove', (ev) => {
+  if (!_graphMeta || _rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    const { history, tMin, tRange, PAD, gW, gH, W, H } = _graphMeta;
+    const rect = emotionCanvas.getBoundingClientRect();
+    const mouseX = ev.clientX - rect.left;
+
+    // Trouver le snapshot dont la position X canvas est la plus proche du curseur
+    let nearest = null, minDist = Infinity;
+    for (const snap of history) {
+      const sx = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+      const dist = Math.abs(sx - mouseX);
+      if (dist < minDist) { minDist = dist; nearest = snap; }
+    }
+
+    // Redessiner le graphe complet, puis superposer le tooltip
+    drawEmotionGraph(history);
+    if (!nearest) return;
+
+    const ctx = emotionCanvas.getContext('2d');
+    const tw = 140;
+    const th = 12 + EMOTIONS.length * 16 + 8;
+    const tx = Math.min(mouseX + 12, W - tw - 4);
+    const ty = 8;
+
+    // Fond glassmorphism
+    ctx.fillStyle = 'rgba(11,11,20,0.85)';
+    ctx.strokeStyle = 'rgba(0,212,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(tx, ty, tw, th, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    // Valeurs d'émotions
+    ctx.textAlign = 'left';
+    ctx.font = '10px monospace';
+    EMOTIONS.forEach((e, i) => {
+      ctx.fillStyle = EMOTION_COLORS[e];
+      ctx.fillText(
+        `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}: ${(nearest[e] ?? 0).toFixed(2)}`,
+        tx + 8, ty + 16 + i * 16
+      );
+    });
+  });
+});
+emotionCanvas.addEventListener('mouseleave', () => {
+  if (_graphMeta) drawEmotionGraph(_graphMeta.history);
+});
+```
 
 ---
 
@@ -302,13 +532,40 @@ Dans `index.html`, ajouter la classe `.bento-card-anim` à chaque card du bento.
 
 ---
 
-## 10. Nettoyage des overrides dark-mode devenus obsolètes
+## 10. Nettoyage — liste exhaustive des sélecteurs à modifier/supprimer
 
-Supprimer les blocs suivants de `style.css` (devenus sans objet) :
-- `.card:not(.card-pink)...card-title` / `.card-value`
-- `.graph-container .card-title`
-- `.card-pink .gauge-val`, `.card-teal .gauge-val`… (tous les overrides colorés)
-- `.card-pink .emotion-label`… etc.
+### Dans le bloc `:root`
+
+Supprimer les 5 variables : `--card-pink`, `--card-teal`, `--card-yellow`, `--card-aqua`, `--card-mint`.
+
+### Règles à supprimer entièrement
+
+| Sélecteur(s) | Action |
+|---|---|
+| `.card-pink { background: var(--card-pink); color: #111; }` | Supprimer |
+| `.card-teal { background: var(--card-teal); color: #111; }` | Supprimer |
+| `.card-yellow { background: var(--card-yellow); color: #111; }` | Supprimer |
+| `.card-aqua { background: var(--card-aqua); color: #111; }` | Supprimer |
+| `.card-mint { background: var(--card-mint); color: #111; }` | Supprimer |
+| `.card-pink .gauge-track, .card-teal .gauge-track, .card-yellow .gauge-track, .card-aqua .gauge-track, .card-mint .gauge-track { … }` | Supprimer |
+| `.card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-title { … }` | Supprimer |
+| `.card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-value { … }` | Supprimer |
+| `.graph-container .card-title { color: rgba(205,214,244,0.55); }` | Supprimer |
+| `.card-pink .gauge-val, .card-teal .gauge-val, … .card-mint .gauge-val { color: #111; }` | Supprimer |
+| `.card-pink .emotion-label, .card-teal .emotion-label, … .card-mint .emotion-label { color: #111; }` | Supprimer |
+| `.card-pink .emotion-summary, .card-teal .emotion-summary, … .card-mint .emotion-summary { color: rgba(0,0,0,0.55); }` | Supprimer |
+
+### Règles à mettre à jour
+
+| Sélecteur | Propriété modifiée |
+|---|---|
+| `.logo .logo-accent` | `color: var(--card-pink)` → `color: var(--accent)` |
+| `.badge-soon` | Remplacer entièrement par le bloc de la section 6 |
+| `.stream-live-badge` | Remplacer entièrement par le bloc de la section 7 |
+| `.stream-offline-badge` | Remplacer entièrement par le bloc de la section 7 |
+| `.btn-success` | `background: var(--card-mint)` → `background: rgba(0,229,160,0.15); color: var(--c-online); border-color: var(--c-online);` |
+| `.btn-info` | `background: var(--card-aqua)` → `background: rgba(0,212,255,0.15); color: var(--accent); border-color: var(--accent);` |
+| `.toast.success` | `background: var(--card-mint)` → `background: rgba(0,229,160,0.15); border-color: var(--c-online);` |
 
 ---
 
@@ -316,9 +573,9 @@ Supprimer les blocs suivants de `style.css` (devenus sans objet) :
 
 | Fichier | Changements |
 |---|---|
-| `style.css` | Nouveau `:root`, glassmorphism `.card`, nouvelle typo, nouvelles jauges, tabs, badges Twitch, animations, nettoyage overrides |
-| `index.html` | Import Inter, icônes dans card-title, suppression classes card-*, ajout classe `.bento-card-anim` |
-| `app.js` | `EMOTION_EMOJIS`, `EMOTION_COLORS` mis à jour, `buildGauges` avec emojis, `drawEmotionGraph` area+gradient+grille+tooltip, `_graphHistory` module var, mousemove listener |
+| `style.css` | Nouveau `:root`, glassmorphism `.card`, nouvelle typo, nouvelles jauges, tabs shimmer, badges Twitch glassmorphism + animations, animations fadeIn stagger, nettoyage complet overrides |
+| `index.html` | Import Inter, icônes dans card-title (6 cartes), suppression classes `card-*`, ajout classe `.bento-card-anim` |
+| `app.js` | `EMOTION_COLORS` mis à jour, `EMOTION_EMOJIS` ajouté, `buildGauges` avec emojis, `hexToRgba` helper, `_graphMeta`/`_rafPending` vars, `drawEmotionGraph` réécriture complète (area+gradient+grille+bg sombre), mousemove/mouseleave listeners + tooltip, `loadStreamStatus` innerHTML avec `.dot` span |
 
 ---
 
@@ -335,8 +592,8 @@ Supprimer les blocs suivants de `style.css` (devenus sans objet) :
 - Vérifier les 6 cartes bento en glassmorphism (fond translucide, blur)
 - Vérifier que les valeurs (uptime, messages) s'affichent en `#00D4FF`
 - Vérifier les jauges : glow sur fills, track sombre, emojis sur labels
-- Vérifier le graph : fond sombre, area fills, légende, tooltip au hover
+- Vérifier le graph : fond `#0f0f1c`, area fills dégradés, grille, légende, tooltip au hover avec les 5 valeurs
 - Vérifier badge BIENTÔT shimmer, tab actif cyan
-- Vérifier badges Twitch animés (pulse offline, scale online)
-- Vérifier fade-in au chargement (stagger visible)
+- Vérifier badges Twitch animés (pulse offline, scale online) avec `.dot` span
+- Vérifier fade-in au chargement (stagger 6 cards)
 - Vérifier mode admin inchangé visuellement
