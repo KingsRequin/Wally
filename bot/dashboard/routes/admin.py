@@ -1,0 +1,132 @@
+# bot/dashboard/routes/admin.py
+from __future__ import annotations
+
+import os
+from dataclasses import asdict
+
+from fastapi import APIRouter, HTTPException, Request
+from loguru import logger
+
+router = APIRouter()
+
+_OPENAI_INCLUDE = ["gpt", "chatgpt", "o1", "o3", "o4"]
+_OPENAI_EXCLUDE = ["realtime", "preview", "audio", "vision"]
+
+
+@router.get("/config")
+async def get_config(request: Request) -> dict:
+    cfg = request.app.state.wally.config
+    return {
+        "bot": asdict(cfg.bot),
+        "openai": asdict(cfg.openai),
+        "discord": asdict(cfg.discord),
+        "twitch": asdict(cfg.twitch),
+        "emotions": {k: asdict(v) for k, v in cfg.emotions.items()},
+        "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
+    }
+
+
+@router.post("/config")
+async def update_config(request: Request, body: dict) -> dict:
+    """Mise à jour partielle de la config en mémoire + config.save().
+
+    Stratégie de merge :
+    - Sous-objets dict : merge champ par champ (seuls les champs fournis sont mis à jour).
+    - Listes (trigger_names, channels, channel_whitelist, etc.) : remplacement intégral.
+    - Champs inconnus : ignorés silencieusement.
+    """
+    state = request.app.state.wally
+    cfg = state.config
+
+    if "openai" in body:
+        d = body["openai"]
+        if "temperature" in d:
+            temp = float(d["temperature"])
+            if not (0.0 <= temp <= 2.0):
+                raise HTTPException(status_code=400, detail="temperature must be 0.0–2.0")
+            cfg.openai.temperature = temp
+        if "primary_model" in d:
+            cfg.openai.primary_model = str(d["primary_model"])
+        if "secondary_model" in d:
+            cfg.openai.secondary_model = str(d["secondary_model"])
+        if "max_tokens" in d:
+            cfg.openai.max_tokens = int(d["max_tokens"])
+
+    if "bot" in body:
+        d = body["bot"]
+        if "language_default" in d:
+            cfg.bot.language_default = str(d["language_default"])
+        if "journal_time" in d:
+            cfg.bot.journal_time = str(d["journal_time"])
+        if "context_window_size" in d:
+            cfg.bot.context_window_size = int(d["context_window_size"])
+        if "context_token_threshold" in d:
+            cfg.bot.context_token_threshold = int(d["context_token_threshold"])
+        if "journal_channel_id" in d:
+            cfg.bot.journal_channel_id = d["journal_channel_id"]
+        if "dashboard_token" in d:
+            cfg.bot.dashboard_token = str(d["dashboard_token"]) or None
+        if "trigger_names" in d:
+            cfg.bot.trigger_names = list(d["trigger_names"])  # liste : remplacement intégral
+
+    if "discord" in body:
+        d = body["discord"]
+        if "anger_trigger_threshold" in d:
+            cfg.discord.anger_trigger_threshold = int(d["anger_trigger_threshold"])
+        if "timeout_minutes" in d:
+            cfg.discord.timeout_minutes = int(d["timeout_minutes"])
+        if "channel_filter_mode" in d:
+            cfg.discord.channel_filter_mode = str(d["channel_filter_mode"])
+        if "channel_whitelist" in d:
+            cfg.discord.channel_whitelist = list(d["channel_whitelist"])  # liste
+        if "channel_blacklist" in d:
+            cfg.discord.channel_blacklist = list(d["channel_blacklist"])  # liste
+
+    if "twitch" in body:
+        d = body["twitch"]
+        if "channels" in d:
+            cfg.twitch.channels = list(d["channels"])  # liste
+        if "cooldown_seconds" in d:
+            cfg.twitch.cooldown_seconds = int(d["cooldown_seconds"])
+
+    if "emotions" in body:
+        for name, d in body["emotions"].items():
+            if name in cfg.emotions and "decay_lambda" in d:
+                lam = float(d["decay_lambda"])
+                if lam <= 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"decay_lambda for {name} must be > 0",
+                    )
+                cfg.emotions[name].decay_lambda = lam
+
+    cfg.save()
+    return {"status": "saved"}
+
+
+@router.get("/openai/models")
+async def get_openai_models(request: Request) -> dict:
+    """Liste les modèles OpenAI filtrés selon les règles du cahier des charges.
+
+    Inclut : gpt, chatgpt, o1, o3, o4
+    Exclut : realtime, preview, audio, vision
+
+    Fallback sur les modèles configurés en cas d'erreur API.
+    """
+    state = request.app.state.wally
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+        models_page = await client.models.list()
+        filtered = sorted([
+            m.id for m in models_page.data
+            if any(kw in m.id for kw in _OPENAI_INCLUDE)
+            and not any(kw in m.id for kw in _OPENAI_EXCLUDE)
+        ])
+        return {"models": filtered}
+    except Exception as exc:
+        logger.warning("Failed to list OpenAI models: {e}", e=exc)
+        return {"models": [
+            state.config.openai.primary_model,
+            state.config.openai.secondary_model,
+        ]}
