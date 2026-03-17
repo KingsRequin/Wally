@@ -58,7 +58,8 @@ header {
   justify-content: space-between;
   padding: 12px 20px;
   border-bottom: 3px solid var(--border);
-  background: var(--bg);
+  box-shadow: 0 2px 0 var(--border);
+  background: var(--card);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -68,17 +69,18 @@ header {
   font-size: 1.4rem;
   font-weight: 900;
   letter-spacing: 4px;
-  color: var(--c-joy);
+  color: var(--text);
 }
+
+.logo .logo-accent { color: var(--card-pink); }
 
 .mode-toggle {
   display: flex;
-  gap: 0;
 }
 
 .mode-btn {
   padding: 6px 16px;
-  border: 3px solid var(--border);
+  border: 2.5px solid var(--border);
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font);
@@ -89,8 +91,8 @@ header {
   transition: box-shadow 0.1s, transform 0.1s;
 }
 
-.mode-btn:first-child { border-right-width: 1.5px; }
-.mode-btn:last-child  { border-left-width: 1.5px; }
+.mode-btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); border-right-width: 1.5px; }
+.mode-btn:last-child  { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 1.5px; }
 
 .mode-btn.active {
   background: var(--border);
