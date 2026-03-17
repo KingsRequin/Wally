@@ -64,6 +64,10 @@ async def main() -> None:
     await db.cleanup_old_emotion_history()
     logger.info("Old emotion history cleaned up")
 
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    await db.sync_memory_users_from_qdrant(qdrant_url)
+    logger.info("Memory users sync from Qdrant complete")
+
     # ── Core services ─────────────────────────────────────────────────────────
     emotion = EmotionEngine(config, db=db)          # db injecté
     await emotion.load_state()                      # charge l'état persisté
@@ -142,6 +146,7 @@ async def main() -> None:
             twitch_api=twitch_api,
             persona=persona,
         )
+        twitch_bot.session_manager = session_manager
         register_events(twitch_bot)
         tasks.append(twitch_bot.start())
         logger.info("Twitch adapter configured and included in gather")
