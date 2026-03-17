@@ -1,45 +1,48 @@
-/* Light Neo-Brutalism — Wally Dashboard
-   Règles fondamentales :
-   - Bordures épaisses 2.5px solid #111
-   - Ombres dures sans flou : box-shadow 4px 4px 0px #111
-   - Zéro dégradé, zéro flou
-   - Border-radius : 14px (cards/header), 10px (buttons), 8px (inputs), 4px (gauges)
-*/
+/* Glassmorphism dark — Wally Dashboard */
 
 :root {
-  --bg: #1e1e2e;
-  --bg-alt: #181825;
-  --card: #313244;
-  --border: #cdd6f4;
-  --shadow: 4px 4px 0px #cdd6f4;
-  --shadow-sm: 2px 2px 0px #cdd6f4;
-  --shadow-btn: 3px 3px 0px #cdd6f4;
-  --text: #cdd6f4;
-  --text-muted: #6c7086;
-  --font: 'Courier New', Courier, monospace;
-  --radius: 14px;
-  --radius-sm: 8px;
+  /* Base */
+  --bg: #0b0b14;
+  --bg-alt: #0f0f1c;
+  --card: rgba(255, 255, 255, 0.05);
+  --card-border: rgba(255, 255, 255, 0.08);
+
+  /* Accent */
+  --accent: #00D4FF;
+  --accent-glow: rgba(0, 212, 255, 0.35);
+  --accent-soft: rgba(0, 212, 255, 0.15);
+
+  /* Texte */
+  --text: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.5);
+
+  /* Ombres */
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.2);
+  --shadow-btn: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* Bordures/radius */
+  --border: rgba(255, 255, 255, 0.08);
+  --radius: 16px;
+  --radius-sm: 10px;
   --radius-btn: 10px;
   --radius-tab: 6px;
   --radius-xs: 4px;
 
-  /* Emotion colors — Catppuccin Mocha */
-  --c-anger:    #f38ba8;
-  --c-joy:      #f9e2af;
-  --c-curiosity:#a6e3a1;
-  --c-sadness:  #89b4fa;
-  --c-boredom:  #585b70;
+  /* Polices */
+  --font: 'Courier New', Courier, monospace;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* Card accent colors — Catppuccin pastel */
-  --card-pink:   #f38ba8;
-  --card-teal:   #94e2d5;
-  --card-yellow: #f9e2af;
-  --card-aqua:   #89dceb;
-  --card-mint:   #a6e3a1;
+  /* Émotions */
+  --c-anger:    #FF4D4D;
+  --c-joy:      #FFD700;
+  --c-curiosity:#00E5A0;
+  --c-sadness:  #4DA6FF;
+  --c-boredom:  #AAAAAA;
 
   /* Status */
-  --c-online:  #a6e3a1;
-  --c-offline: #f38ba8;
+  --c-online:  #00E5A0;
+  --c-offline: #FF4D4D;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -160,33 +163,36 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
 .card {
   background: var(--card);
-  border: 2.5px solid var(--border);
-  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius);
-  padding: 16px;
+  box-shadow: var(--shadow);
+  padding: 20px;
   margin-bottom: 16px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* Carte colorée : background + texte sombre (pastels clairs sur dark theme) */
-.card-pink   { background: var(--card-pink);   color: #111; }
-.card-teal   { background: var(--card-teal);   color: #111; }
-.card-yellow { background: var(--card-yellow); color: #111; }
-.card-aqua   { background: var(--card-aqua);   color: #111; }
-.card-mint   { background: var(--card-mint);   color: #111; }
 
 .card-title {
-  font-size: 0.52rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: rgba(0, 0, 0, 0.5);
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-bottom: 10px;
 }
 
 .card-value {
-  font-size: 1.8rem;
-  font-weight: 900;
-  color: var(--text);
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--font);
 }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
