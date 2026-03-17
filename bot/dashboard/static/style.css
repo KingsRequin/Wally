@@ -13,6 +13,7 @@
   --border: #111111;
   --shadow: 4px 4px 0px #111111;
   --shadow-sm: 2px 2px 0px #111111;
+  --shadow-btn: 3px 3px 0px #111111;
   --text: #111111;
   --text-muted: #666666;
   --font: 'Courier New', Courier, monospace;
@@ -172,7 +173,7 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .card-mint   { background: var(--card-mint); }
 
 .card-title {
-  font-size: 0.7rem;
+  font-size: 0.52rem;
   font-weight: 700;
   letter-spacing: 2px;
   color: rgba(0, 0, 0, 0.5);
@@ -297,7 +298,7 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
   font-weight: 700;
   font-size: 0.85rem;
   cursor: pointer;
-  box-shadow: 3px 3px 0px var(--border);
+  box-shadow: var(--shadow-btn);
   transition: box-shadow 0.1s, transform 0.1s;
 }
 
