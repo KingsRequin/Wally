@@ -114,6 +114,38 @@ async def main() -> None:
                 await ch.send(text)
 
     journal.set_send_callback(journal_send_cb)
+
+    async def journal_history_cb() -> list[dict]:
+        """Lit l'historique de tous les canaux Discord autorisés depuis minuit."""
+        from bot.discord.handlers import _is_channel_allowed
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        midnight = datetime.now(ZoneInfo("Europe/Paris")).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        messages: list[dict] = []
+        for guild in discord_bot.guilds:
+            for channel in guild.text_channels:
+                if not _is_channel_allowed(config, channel.id):
+                    continue
+                try:
+                    async for msg in channel.history(after=midnight, limit=2000):
+                        if not msg.content.strip():
+                            continue
+                        messages.append({
+                            "author": msg.author.display_name,
+                            "content": msg.content,
+                            "timestamp": msg.created_at.timestamp(),
+                        })
+                except Exception as exc:
+                    logger.debug(
+                        "Journal history: cannot read channel {ch}: {e}",
+                        ch=channel.id, e=exc,
+                    )
+        messages.sort(key=lambda m: m["timestamp"])
+        return messages
+
+    journal.set_history_callback(journal_history_cb)
     journal.start()
     logger.info("Discord adapter configured, journal scheduler started")
 

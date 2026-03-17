@@ -283,3 +283,93 @@ async def test_journal_arc_absent_when_less_than_2_snapshots(tmp_path):
     final_prompt = captured_prompt[-1]
     assert "Arc émotionnel" not in final_prompt
     await db.close()
+
+
+# ── 4-source fallback chain ────────────────────────────────────────────────────
+
+def make_deps_with_db(journal_channel_id=12345, journal_time="03:00",
+                      db_messages=None):
+    config, openai, emotion, memory = make_deps(journal_channel_id, journal_time)
+    memory.get_all_contexts = MagicMock(return_value=[])  # RAM vide
+
+    db = MagicMock()
+    if db_messages is None:
+        db_messages = [
+            {"author": "Alice", "content": "Hello from DB", "timestamp": 1000.0},
+        ]
+    db.get_today_messages = AsyncMock(return_value=db_messages)
+    db.get_today_emotion_snapshots = AsyncMock(return_value=[])
+    db.list_memory_users = AsyncMock(return_value=[])
+
+    return config, openai, emotion, memory, db
+
+
+def _get_journal_user_msg(openai_mock) -> str:
+    """Extrait le contenu du message utilisateur envoyé lors du dernier appel journal."""
+    call_args = openai_mock.complete_secondary.call_args_list
+    journal_call = [c for c in call_args if c.kwargs.get("purpose") == "daily_journal"]
+    assert journal_call, "complete_secondary should be called with purpose=daily_journal"
+    return journal_call[0].args[1][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_journal_uses_db_messages_when_available():
+    """Le journal doit utiliser daily_log quand des messages sont disponibles."""
+    config, openai, emotion, memory, db = make_deps_with_db()
+    journal = DailyJournal(config, openai, emotion, memory, db)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    assert "Hello from DB" in _get_journal_user_msg(openai)
+
+
+@pytest.mark.asyncio
+async def test_journal_falls_back_to_discord_history_when_db_empty():
+    """Quand daily_log vide, le journal doit utiliser le callback Discord history."""
+    config, openai, emotion, memory, db = make_deps_with_db(db_messages=[])
+    history_messages = [
+        {"author": "Bob", "content": "Message depuis Discord history", "timestamp": 2000.0},
+    ]
+    history_cb = AsyncMock(return_value=history_messages)
+
+    journal = DailyJournal(config, openai, emotion, memory, db)
+    journal.set_send_callback(AsyncMock())
+    journal.set_history_callback(history_cb)
+
+    await journal.generate_and_send()
+
+    history_cb.assert_called_once()
+    assert "Message depuis Discord history" in _get_journal_user_msg(openai)
+
+
+@pytest.mark.asyncio
+async def test_journal_falls_back_to_ram_when_no_db_no_history():
+    """Sans db et sans history callback, le journal utilise get_all_contexts() (RAM)."""
+    config, openai, emotion, memory = make_deps()
+    # memory.get_all_contexts retourne des messages (défini dans make_deps)
+    journal = DailyJournal(config, openai, emotion, memory, db=None)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    openai.complete_secondary.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_journal_uses_mem0_fallback_when_all_sources_empty():
+    """Quand toutes les sources sont vides, le journal utilise les souvenirs mem0."""
+    config, openai, emotion, memory, db = make_deps_with_db(db_messages=[])
+    history_cb = AsyncMock(return_value=[])  # Discord history vide aussi
+    db.list_memory_users = AsyncMock(return_value=[
+        {"user_id": "discord:123", "platform": "discord", "username": "Alice"}
+    ])
+    memory.get_all = AsyncMock(return_value="Alice aime les chats.")
+
+    journal = DailyJournal(config, openai, emotion, memory, db)
+    journal.set_send_callback(AsyncMock())
+    journal.set_history_callback(history_cb)
+
+    await journal.generate_and_send()
+
+    assert "Alice aime les chats." in _get_journal_user_msg(openai)

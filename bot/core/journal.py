@@ -127,10 +127,16 @@ class DailyJournal:
         self._memory = memory
         self._db = db
         self._send_cb: Optional[Callable[..., Any]] = None
+        self._fetch_history_cb: Optional[Callable[..., Any]] = None
 
     def set_send_callback(self, cb: Callable[..., Any]) -> None:
         """Inject an async callable: async def send(text: str) -> None"""
         self._send_cb = cb
+
+    def set_history_callback(self, cb: Callable[..., Any]) -> None:
+        """Inject an async callable: async def fetch_history() -> list[dict]
+        Appelé quand daily_log est vide pour lire l'historique Discord du jour."""
+        self._fetch_history_cb = cb
 
     async def generate_and_send(self) -> None:
         channel_id = self._config.bot.journal_channel_id
@@ -140,11 +146,40 @@ class DailyJournal:
 
         logger.info("Generating daily journal...")
 
-        all_messages = self._memory.get_all_contexts()
+        # Source 1 : daily_log SQLite (survit aux redémarrages, toutes plateformes)
+        if self._db is not None:
+            try:
+                db_messages = await self._db.get_today_messages()
+            except Exception as exc:
+                logger.warning("Failed to get daily_log messages: {e}", e=exc)
+                db_messages = []
+        else:
+            db_messages = []
+
+        # Source 2 : Discord channel history (lecture API, toute la journée)
+        if not db_messages and self._fetch_history_cb is not None:
+            try:
+                db_messages = await self._fetch_history_cb()
+                if db_messages:
+                    logger.info(
+                        "Journal: using Discord history fallback ({n} messages)",
+                        n=len(db_messages),
+                    )
+            except Exception as exc:
+                logger.warning("Journal Discord history fallback failed: {e}", e=exc)
+                db_messages = []
+
+        # Source 3 : fenêtres RAM (depuis le dernier démarrage)
+        ram_messages = self._memory.get_all_contexts()
+        all_messages = db_messages if db_messages else ram_messages
+
         if all_messages:
             context_text = await self._build_context_text(all_messages)
         else:
-            context_text = "Pas grand chose de notable aujourd'hui."
+            # Source 4 : souvenirs mem0 de tous les utilisateurs connus
+            context_text = await self._build_mem0_fallback_context()
+            if not context_text:
+                context_text = "Pas grand chose de notable aujourd'hui."
 
         # Récupération de l'arc émotionnel
         try:
@@ -208,6 +243,38 @@ class DailyJournal:
             [{"role": "user", "content": combined}],
             purpose="journal_final_summary",
         )
+
+    async def _build_mem0_fallback_context(self) -> str:
+        """Fallback final : souvenirs mem0 de tous les utilisateurs connus."""
+        if self._db is None:
+            return ""
+        try:
+            users = await self._db.list_memory_users()
+        except Exception as exc:
+            logger.warning("Failed to list memory users for journal fallback: {e}", e=exc)
+            return ""
+
+        if not users:
+            return ""
+
+        parts: list[str] = []
+        for user in users:
+            uid_full = user["user_id"]   # e.g. "discord:123456"
+            platform = user["platform"]
+            username = user.get("username") or uid_full
+            raw_id = uid_full[len(platform) + 1:]  # "discord:123" → "123"
+            try:
+                facts = await self._memory.get_all(platform, raw_id)
+            except Exception:
+                continue
+            if facts:
+                parts.append(f"[{username}] {facts}")
+
+        if not parts:
+            return ""
+
+        logger.info("Journal fallback: using mem0 facts for {n} user(s)", n=len(parts))
+        return "Souvenirs des utilisateurs (mémoire long-terme) :\n" + "\n".join(parts)
 
     @staticmethod
     def _today() -> str:
