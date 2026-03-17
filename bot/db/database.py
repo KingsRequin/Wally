@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS memory_users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_emotion_history_ts ON emotion_history(snapshot_at);
+
+CREATE TABLE IF NOT EXISTS daily_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  REAL    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    author     TEXT    NOT NULL,
+    content    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_log_ts ON daily_log(timestamp);
 """
 
 
@@ -88,6 +98,15 @@ class Database:
             await conn.commit()
         except aiosqlite.OperationalError:
             pass  # colonne déjà présente
+        # Nettoyage automatique des vieilles entrées daily_log au démarrage
+        try:
+            await conn.execute(
+                "DELETE FROM daily_log WHERE timestamp < ?",
+                (time.time() - 7 * 86400,)
+            )
+            await conn.commit()
+        except Exception:
+            pass  # table absente au premier démarrage — CREATE TABLE IF NOT EXISTS s'en charge
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -335,3 +354,36 @@ class Database:
             }
             for r in rows
         ]
+
+    # ── Daily log (journal persistence) ──────────────────────────────────────────
+
+    async def log_daily_message(
+        self, channel_id: str, author: str, content: str, timestamp: float | None = None
+    ) -> None:
+        await self.execute(
+            "INSERT INTO daily_log (timestamp, channel_id, author, content) VALUES (?, ?, ?, ?)",
+            (timestamp if timestamp is not None else time.time(), channel_id, author, content),
+        )
+
+    async def get_today_messages(self) -> list[dict]:
+        midnight = datetime.now(_TZ_DB).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+        rows = await self.fetch_all(
+            "SELECT timestamp, channel_id, author, content FROM daily_log "
+            "WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (midnight,),
+        )
+        return [
+            {
+                "timestamp": float(row["timestamp"]),
+                "channel_id": row["channel_id"],
+                "author": row["author"],
+                "content": row["content"],
+            }
+            for row in rows
+        ]
+
+    async def cleanup_old_daily_log(self, days: int = 7) -> None:
+        cutoff = time.time() - days * 86400
+        await self.execute("DELETE FROM daily_log WHERE timestamp < ?", (cutoff,))

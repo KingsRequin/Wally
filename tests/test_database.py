@@ -165,3 +165,55 @@ async def test_cleanup_removes_old_snapshots(tmp_path):
     rows = await db.fetch_all("SELECT * FROM emotion_history")
     assert len(rows) == 1  # seul le récent reste
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_daily_log_table_exists(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    tables = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")
+    names = {row["name"] for row in tables}
+    assert "daily_log" in names
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_log_daily_message_and_get_today(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    now = time.time()
+    await db.log_daily_message("ch1", "Alice", "Bonjour !", now)
+    await db.log_daily_message("ch1", "Wally", "Salut Alice !", now + 1)
+
+    msgs = await db.get_today_messages()
+    assert len(msgs) == 2
+    assert msgs[0]["author"] == "Alice"
+    assert msgs[0]["content"] == "Bonjour !"
+    assert msgs[1]["author"] == "Wally"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_today_messages_excludes_yesterday(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    yesterday = time.time() - 86400 - 1
+    today = time.time()
+    await db.log_daily_message("ch1", "Alice", "Hier", yesterday)
+    await db.log_daily_message("ch1", "Bob", "Aujourd'hui", today)
+
+    msgs = await db.get_today_messages()
+    assert len(msgs) == 1
+    assert msgs[0]["author"] == "Bob"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_daily_log(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    old = time.time() - 8 * 86400
+    await db.log_daily_message("ch1", "Alice", "Très vieux", old)
+    await db.log_daily_message("ch1", "Bob", "Récent", time.time())
+
+    await db.cleanup_old_daily_log(days=7)
+    msgs = await db.fetch_all("SELECT * FROM daily_log")
+    assert len(msgs) == 1
+    assert msgs[0]["author"] == "Bob"
+    await db.close()
