@@ -275,9 +275,10 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 /* ── Canvas graph ────────────────────────────────────────────────────────── */
 
 .graph-container {
-  border: 3px solid var(--border);
+  border: 2.5px solid var(--border);
   box-shadow: var(--shadow);
-  background: #111;
+  border-radius: var(--radius);
+  background: var(--card);
   padding: 4px;
   margin-top: 16px;
 }
@@ -288,7 +289,8 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
 .btn {
   padding: 8px 18px;
-  border: 3px solid var(--border);
+  border: 2.5px solid var(--border);
+  border-radius: var(--radius-btn);
   background: var(--card);
   color: var(--text);
   font-family: var(--font);
@@ -301,14 +303,20 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
 .btn:hover {
   box-shadow: none;
-  transform: translate(2px, 2px);
+  transform: translate(3px, 3px);
 }
 
 .btn:active { box-shadow: none; transform: translate(4px, 4px); }
 
-.btn-danger  { border-color: var(--c-anger);  color: var(--c-anger); }
-.btn-success { border-color: var(--c-joy);    color: var(--c-joy); }
-.btn-info    { border-color: var(--c-curiosity); color: var(--c-curiosity); }
+.btn.active {
+  background: var(--border);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+.btn-danger  { background: #fee2e2; border-color: var(--c-offline);  color: var(--c-offline); }
+.btn-success { background: var(--card-mint); }
+.btn-info    { background: var(--card-aqua); }
 
 /* ── Inputs & Selects ────────────────────────────────────────────────────── */
 
@@ -327,14 +335,14 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 input[type="text"], input[type="number"], input[type="password"], select, textarea {
   width: 100%;
   padding: 7px 10px;
-  background: var(--bg);
-  border: 3px solid var(--border);
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--font);
   font-size: 0.9rem;
   box-shadow: var(--shadow-sm);
   outline: none;
-  border-radius: 0;
 }
 
 input[type="range"] {
