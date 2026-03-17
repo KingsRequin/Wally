@@ -563,9 +563,22 @@ Supprimer les 5 variables : `--card-pink`, `--card-teal`, `--card-yellow`, `--ca
 | `.badge-soon` | Remplacer entièrement par le bloc de la section 6 |
 | `.stream-live-badge` | Remplacer entièrement par le bloc de la section 7 |
 | `.stream-offline-badge` | Remplacer entièrement par le bloc de la section 7 |
+| `.graph-container` | `border: 2.5px solid var(--border)` → `border: 1px solid var(--card-border)` (laisser `background`, `box-shadow`, `border-radius`, `padding` inchangés) |
 | `.btn-success` | `background: var(--card-mint)` → `background: rgba(0,229,160,0.15); color: var(--c-online); border-color: var(--c-online);` |
 | `.btn-info` | `background: var(--card-aqua)` → `background: rgba(0,212,255,0.15); color: var(--accent); border-color: var(--accent);` |
 | `.toast.success` | `background: var(--card-mint)` → `background: rgba(0,229,160,0.15); border-color: var(--c-online);` |
+| `.gauge-fill` (règle de base existante) | Mettre à jour uniquement la propriété `transition` : `width 1s ease` → `width 0.6s ease`. Ne pas supprimer les autres propriétés existantes (`height: 100%; width: 0%; border-radius: …`). |
+
+### Dans `app.js` — nettoyage des références à `--card-yellow`
+
+Dans la onglet admin mémoire (`renderMemoryTab` / `selectMemUser`), deux lignes référencent `var(--card-yellow)` en style inline. Remplacer par `var(--accent-soft)` :
+
+- Ligne ~620 : `background:${selected ? 'var(--card-yellow)' : 'var(--card)'}` → `background:${selected ? 'var(--accent-soft)' : 'var(--card)'}`
+- Ligne ~643 : `el.style.background = selected ? 'var(--card-yellow)' : 'var(--card)'` → `el.style.background = selected ? 'var(--accent-soft)' : 'var(--card)'`
+
+### Dans `index.html` — classe admin card
+
+`<div class="card card-yellow">` (onglet admin humeur, hors bento) : retirer la classe `card-yellow`. La règle CSS `.card-yellow` sera supprimée et la card utilisera simplement le style glassmorphism `.card`.
 
 ---
 
