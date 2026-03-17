@@ -262,6 +262,8 @@ class MemoryService:
         max_size = self._config.bot.context_window_size
         if len(window) > max_size:
             self._context_windows[channel_id] = window[-max_size:]
+        if self._db is not None:
+            self._fire(self._db.log_daily_message(channel_id, author, content))
 
     def get_context(self, channel_id: str) -> list[dict]:
         return list(self._context_windows.get(channel_id, []))
