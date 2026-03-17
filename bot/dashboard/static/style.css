@@ -112,6 +112,7 @@ nav.tabs {
   border-bottom: 3px solid var(--border);
   overflow-x: auto;
   scrollbar-width: none;
+  background: var(--bg);
 }
 
 nav.tabs::-webkit-scrollbar { display: none; }
@@ -119,7 +120,7 @@ nav.tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
   padding: 10px 18px;
   border: none;
-  border-right: 1px solid #333;
+  border-right: 1px solid #ddd;
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font);
@@ -136,12 +137,12 @@ nav.tabs::-webkit-scrollbar { display: none; }
 }
 
 .tab-btn:hover:not(.active) {
-  background: #222;
+  background: #eee;
   color: var(--text);
 }
 
 .tab-btn.disabled {
-  color: #444;
+  color: #bbb;
   cursor: not-allowed;
 }
 
