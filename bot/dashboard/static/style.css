@@ -205,6 +205,21 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
   gap: 16px;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bento-card-anim {
+  animation: fadeIn 0.4s ease forwards;
+  opacity: 0;
+}
+.bento-grid > *:nth-child(1) { animation-delay: 0.0s; }
+.bento-grid > *:nth-child(2) { animation-delay: 0.1s; }
+.bento-grid > *:nth-child(3) { animation-delay: 0.2s; }
+.bento-grid > *:nth-child(4) { animation-delay: 0.3s; }
+.bento-grid > *:nth-child(5) { animation-delay: 0.4s; }
+.bento-grid > *:nth-child(6) { animation-delay: 0.5s; }
+
 @keyframes shimmer {
   0%   { background-position: -200% center; }
   100% { background-position:  200% center; }
@@ -316,7 +331,7 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 /* ── Canvas graph ────────────────────────────────────────────────────────── */
 
 .graph-container {
-  border: 2.5px solid var(--border);
+  border: 1px solid var(--card-border);
   box-shadow: var(--shadow);
   border-radius: var(--radius);
   background: var(--card);
@@ -355,8 +370,8 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 }
 
 .btn-danger  { background: #3d1522; border-color: var(--c-offline);  color: var(--c-offline); }
-.btn-success { background: var(--card-mint); }
-.btn-info    { background: var(--card-aqua); }
+.btn-success { background: rgba(0,229,160,0.15); color: var(--c-online);  border-color: var(--c-online); }
+.btn-info    { background: rgba(0,212,255,0.15); color: var(--accent);    border-color: var(--accent); }
 
 /* ── Inputs & Selects ────────────────────────────────────────────────────── */
 
@@ -537,7 +552,7 @@ input[type="range"] {
   color: var(--text);
 }
 
-.toast.success { background: var(--card-mint); }
+.toast.success { background: rgba(0,229,160,0.15); border-color: var(--c-online); }
 .toast.error   { background: #3d1522; border-color: var(--c-offline); color: var(--c-offline); }
 
 @keyframes toast-in {
