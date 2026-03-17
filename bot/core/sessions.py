@@ -168,3 +168,62 @@ class SessionManager:
         except Exception as e:
             logger.error("Erreur lors de l'analyse de session: {e}", e=e)
             return 0
+
+    async def analyze_channel_messages(
+        self,
+        messages: list,  # list[discord.Message] — pas d'import discord ici
+        platform: str,
+        channel_id: str,
+        bot_user_id: int,
+    ) -> int:
+        """Analyse une liste de messages Discord et stocke les faits durables en mémoire.
+
+        Retourne le nombre de participants pour lesquels des faits ont été stockés.
+        Lève ValueError si moins de 2 messages d'auteurs humains sont présents.
+        """
+        # 1. Filtrage
+        filtered = []
+        for msg in messages:
+            # Exclure les bots autres que Wally
+            if msg.author.bot and msg.author.id != bot_user_id:
+                continue
+            # Exclure les messages vides
+            if not msg.content.strip():
+                continue
+            filtered.append(msg)
+
+        # 2. Vérifier qu'il y a assez de messages humains
+        human_count = sum(1 for m in filtered if not m.author.bot)
+        if human_count < 2:
+            raise ValueError(
+                f"Pas assez de messages humains pour analyser : {human_count} (minimum 2)"
+            )
+
+        # 3. Conversion en dicts session
+        converted = [
+            {
+                "author": msg.author.display_name,
+                "user_id": str(msg.author.id),
+                "content": msg.content,
+                "timestamp": msg.created_at.timestamp(),
+            }
+            for msg in filtered
+        ]
+
+        # 4. Construction de la session
+        participants = {
+            str(msg.author.id): msg.author.display_name
+            for msg in filtered
+            if not msg.author.bot
+        }
+        session = _Session(
+            channel_id=channel_id,
+            platform=platform,
+            messages=converted,
+            participants=participants,
+            last_activity=converted[-1]["timestamp"],
+            timeout_task=None,
+        )
+
+        # 5. Analyse
+        return await self._analyze_session(session)
