@@ -8,11 +8,11 @@
 
 const AUTH_KEY = 'wally_token';
 const EMOTION_COLORS = {
-  anger:    '#ff3333',
-  joy:      '#ffdd00',
-  curiosity:'#00ccff',
-  sadness:  '#7777ff',
-  boredom:  '#888888',
+  anger:    '#e63946',
+  joy:      '#ffd60a',
+  curiosity:'#2dc653',
+  sadness:  '#0096c7',
+  boredom:  '#9ca3af',
 };
 const EMOTION_LABELS = {
   anger: 'ANGER', joy: 'JOY', curiosity: 'CURIOSITY', sadness: 'SADNESS', boredom: 'BOREDOM',
@@ -235,7 +235,7 @@ function drawEmotionGraph(history) {
   canvas.height = 140;
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#111';
+  ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, 140);
 
   const PAD = { top: 10, bottom: 20, left: 4, right: 4 };
@@ -261,7 +261,7 @@ function drawEmotionGraph(history) {
   }
 
   // Axe temporel (labels)
-  ctx.fillStyle = '#666';
+  ctx.fillStyle = '#888';
   ctx.font = '10px monospace';
   ctx.textAlign = 'left';
   const label0 = new Date(tMin * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
@@ -350,7 +350,7 @@ async function renderConfigForm(cfg) {
       <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
       ${Object.entries(cfg.emotions).map(([name, ec]) => `
         <div class="field-group">
-          <label class="field-label" style="color:${EMOTION_COLORS[name] || '#fff'}">${name.toUpperCase()} λ</label>
+          <label class="field-label" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}">${name.toUpperCase()} λ</label>
           <input type="range" id="cfg-lambda-${name}" min="0.01" max="2" step="0.01" value="${ec.decay_lambda}"
             oninput="document.getElementById('lbl-lambda-${name}').textContent=parseFloat(this.value).toFixed(2)">
           <span id="lbl-lambda-${name}">${ec.decay_lambda.toFixed(2)}</span>
@@ -448,17 +448,26 @@ async function resetEmotions() {
 
 // ── Admin logs SSE ────────────────────────────────────────────────────────────
 
-function startLogSSE() {
+async function startLogSSE() {
   if (logSSE) logSSE.close();
   const token = getToken();
   if (!token) return;
+
+  // Charger l'historique du fichier log avant de brancher le SSE live
+  // (résout la perte des logs au reload)
+  await loadLogHistory();
+
   logSSE = new EventSource(`/api/admin/sse/logs`);
-  // Note : EventSource ne supporte pas les headers custom.
-  // Le token est vérifié via le middleware — pour l'instant on compte sur
-  // le fait que le dashboard est sur réseau local non public.
   logSSE.onmessage = (e) => {
     try { appendLog(JSON.parse(e.data)); } catch {}
   };
+}
+
+async function loadLogHistory() {
+  const r = await apiFetch('/api/admin/logs/history');
+  if (!r || !r.ok) return;
+  const { entries } = await r.json();
+  for (const entry of entries) appendLog(entry);
 }
 
 function stopLogSSE() {
@@ -532,18 +541,18 @@ function escAttr(str) {
 
 function renderMemoryTab() {
   document.getElementById('tab-memory').innerHTML = `
-    <div style="padding:12px 16px;border-bottom:2px solid #333;display:flex;gap:10px;align-items:center">
+    <div style="padding:12px 16px;border-bottom:2px solid #eee;display:flex;gap:10px;align-items:center">
       <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px;white-space:nowrap">CHERCHER</span>
       <input type="text" id="mem-search" placeholder="Recherche dans tous les souvenirs…"
              oninput="onMemSearch(this.value)"
-             style="flex:1;max-width:320px;padding:7px 10px;background:var(--bg);border:3px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.9rem;box-shadow:2px 2px 0px #fff;outline:none;border-radius:0">
+             style="flex:1;max-width:320px;padding:7px 10px;background:var(--card);border:2px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.9rem;box-shadow:var(--shadow-sm);outline:none;border-radius:var(--radius-sm)">
     </div>
     <div style="display:flex;min-height:400px">
-      <div style="width:220px;border-right:2px solid #333;display:flex;flex-direction:column">
-        <div style="padding:10px 12px;border-bottom:1px solid #333">
+      <div style="width:220px;border-right:2px solid #eee;display:flex;flex-direction:column">
+        <div style="padding:10px 12px;border-bottom:1px solid #eee">
           <input type="text" id="mem-user-filter" placeholder="Filtrer users…"
                  oninput="onUserFilter(this.value)"
-                 style="width:100%;padding:7px 10px;background:var(--bg);border:3px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.8rem;outline:none;border-radius:0">
+                 style="width:100%;padding:7px 10px;background:var(--card);border:2px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.8rem;outline:none;border-radius:var(--radius-sm)">
         </div>
         <div id="mem-user-list" style="flex:1;overflow-y:auto;padding:8px"></div>
       </div>
@@ -570,15 +579,22 @@ async function loadMemoryUsers(filter = '') {
     el.innerHTML = '<div style="color:#555;font-size:0.75rem;padding:8px">Aucun utilisateur</div>';
     return;
   }
-  el.innerHTML = users.map(u => `
+  el.innerHTML = users.map(u => {
+    const selected = u.user_id === _selectedMemUser;
+    const lastSeen = u.last_updated
+      ? new Date(u.last_updated * 1000).toLocaleString('fr', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+      : '—';
+    const trustColor = u.trust_score >= 0.7 ? 'var(--c-curiosity)' : u.trust_score <= 0.3 ? 'var(--c-offline)' : 'var(--text-muted)';
+    return `
     <div class="mem-user-item"
          data-uid="${escAttr(u.user_id)}"
          onclick="selectMemUser('${escAttr(u.user_id)}')"
-         style="padding:7px 10px;background:#1a1a1a;border:2px solid ${u.user_id === _selectedMemUser ? '#00ccff' : '#555'};
-                margin-bottom:4px;cursor:pointer;color:${u.user_id === _selectedMemUser ? '#00ccff' : 'var(--text)'}">
-      <span style="font-size:0.65rem;color:#888;display:block">${escHtml(u.platform)}</span>
+         style="padding:7px 10px;background:${selected ? 'var(--card-yellow)' : 'var(--card)'};border:2px solid ${selected ? 'var(--border)' : '#ddd'};border-radius:var(--radius-sm);box-shadow:${selected ? 'var(--shadow-sm)' : 'none'};margin-bottom:4px;cursor:pointer;color:var(--text)">
+      <span style="font-size:0.65rem;color:#888;display:block">${escHtml(u.platform)} · ${escHtml(lastSeen)}</span>
       <span style="font-size:0.8rem">${escHtml(u.user_id.split(':').slice(1).join(':') || u.user_id)}</span>
-    </div>`).join('');
+      <span style="font-size:0.65rem;color:${trustColor};display:block">trust: ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
+    </div>`;
+  }).join('');
 }
 
 async function selectMemUser(userId) {
@@ -586,8 +602,9 @@ async function selectMemUser(userId) {
   // Update visual selection without reloading the whole list
   document.querySelectorAll('.mem-user-item').forEach(el => {
     const selected = el.dataset.uid === userId;
-    el.style.borderColor = selected ? '#00ccff' : '#555';
-    el.style.color = selected ? '#00ccff' : 'var(--text)';
+    el.style.background = selected ? 'var(--card-yellow)' : 'var(--card)';
+    el.style.borderColor = selected ? 'var(--border)' : '#ddd';
+    el.style.boxShadow = selected ? 'var(--shadow-sm)' : 'none';
   });
   await loadUserMemories(userId);
 }
@@ -603,7 +620,7 @@ function renderMemories(userId, memories) {
   const el = document.getElementById('mem-detail');
   if (!el) return;
   el.innerHTML = `
-    <div style="padding:10px 16px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center">
+    <div style="padding:10px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${escHtml(userId)} — ${memories.length} souvenir(s)</span>
       <button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
               style="font-size:0.72rem;padding:4px 10px">🗑 TOUT SUPPRIMER</button>
@@ -612,7 +629,7 @@ function renderMemories(userId, memories) {
       ${memories.length === 0
         ? '<div style="color:#555;font-size:0.85rem">Aucun souvenir.</div>'
         : memories.map(m => `
-          <div style="background:#1a1a1a;border:2px solid #333;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start"
+          <div style="background:var(--card);border:1.5px solid #ddd;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start"
                id="mem-entry-${escAttr(m.id)}">
             <span style="font-size:0.82rem;flex:1;line-height:1.5">${escHtml(m.memory)}</span>
             <button onclick="deleteMemory('${escAttr(userId)}','${escAttr(m.id)}')"
@@ -675,14 +692,14 @@ async function searchMemories(q) {
   const el = document.getElementById('mem-detail');
   if (!el) return;
   el.innerHTML = `
-    <div style="padding:10px 16px;border-bottom:1px solid #333">
+    <div style="padding:10px 16px;border-bottom:1px solid #eee">
       <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${results.length} résultat(s) pour "${escHtml(q)}"</span>
     </div>
     <div style="padding:12px">
       ${results.length === 0
         ? '<div style="color:#555;font-size:0.85rem">Aucun résultat.</div>'
         : results.map(res => `
-          <div style="background:#1a1a1a;border:2px solid #333;padding:10px 12px;margin-bottom:8px">
+          <div style="background:var(--card);border:1.5px solid #ddd;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
             <span style="font-size:0.65rem;color:#888;display:block;margin-bottom:4px">${escHtml(res.user_id)}</span>
             <span style="font-size:0.82rem;line-height:1.5">${escHtml(res.memory)}</span>
           </div>`).join('')
