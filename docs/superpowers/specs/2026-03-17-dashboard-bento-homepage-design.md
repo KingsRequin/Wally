@@ -152,7 +152,7 @@ Pas de `tab-content` associé pour l'instant.
 | Fichier | Changement |
 |---|---|
 | `index.html` | Réduire nav publique, remplacer les 4 tab-content par un seul `#tab-status` avec la grille bento |
-| `app.js` | Déplacer les appels `loadStreamStatus`, `loadStats`, `loadEmotionHistory`, `startEmotionSSE` dans `showTab('status')` ; supprimer les branches `if (tabId === 'stream')`, `if (tabId === 'stats')`, `if (tabId === 'emotions')` |
+| `app.js` | Déplacer `loadStreamStatus` et `loadEmotionHistory` dans `showTab('status')` ; supprimer `loadStats()` (redondant) ; laisser `startEmotionSSE` dans `DOMContentLoaded` (inchangé) ; supprimer les branches `if (tabId === 'stream')`, `if (tabId === 'stats')`, `if (tabId === 'emotions')` |
 | `style.css` | Ajouter `.bento-grid`, `.badge-soon`, responsive override mobile |
 
 ---
