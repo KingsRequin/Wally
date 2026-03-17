@@ -91,6 +91,12 @@ class OpenAIClient:
     def _build_image_content(
         self, text: str, image_urls: list[str], use_responses_api: bool
     ) -> list[dict]:
+        """Build image content blocks for the last message.
+
+        Callers must ensure text is non-empty; image-only messages should be
+        prefixed with descriptive text (e.g. "Regarde cette image.") at the
+        handler level to avoid empty text content blocks.
+        """
         if use_responses_api:
             content = [{"type": "input_text", "text": text}]
             for url in image_urls:
@@ -113,10 +119,11 @@ class OpenAIClient:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
         if image_urls:
-            last_msg = full_messages[-1]
+            last_msg = dict(full_messages[-1])
             last_msg["content"] = self._build_image_content(
                 last_msg["content"], image_urls, _uses_responses_api(model)
             )
+            full_messages[-1] = last_msg
 
         if _uses_responses_api(model):
             try:

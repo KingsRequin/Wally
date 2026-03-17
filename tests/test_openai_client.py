@@ -6,7 +6,7 @@ import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.core.openai_client import OpenAIClient, estimate_cost, _uses_responses_api
+from bot.core.openai_client import OpenAIClient, estimate_cost, _uses_responses_api, FALLBACK_IMAGE_RESPONSE, FALLBACK_RESPONSE
 
 
 def make_config():
@@ -193,8 +193,6 @@ async def test_complete_routes_to_chat_completions_for_gpt4():
 
 
 # ── Vision ────────────────────────────────────────────────────────────────────
-
-from bot.core.openai_client import FALLBACK_IMAGE_RESPONSE, FALLBACK_RESPONSE
 
 
 def test_build_image_content_chat_completions():
