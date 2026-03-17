@@ -25,6 +25,10 @@ def _make_app(token: str | None) -> FastAPI:
     async def public_route():
         return {"ok": True}
 
+    @app.get("/api/admin/sse/logs")
+    async def sse_logs_route():
+        return {"ok": True}
+
     return app
 
 
@@ -62,3 +66,10 @@ def test_admin_empty_token_returns_503():
     client = TestClient(_make_app(""))
     r = client.get("/api/admin/test", headers={"Authorization": "Bearer anything"})
     assert r.status_code == 503
+
+
+def test_sse_logs_exempt_from_auth():
+    """EventSource ne peut pas envoyer de headers — la route SSE doit être accessible sans token."""
+    client = TestClient(_make_app("secret123"))
+    r = client.get("/api/admin/sse/logs")
+    assert r.status_code == 200

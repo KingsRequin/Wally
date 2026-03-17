@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from bot.dashboard.state import AppState
 
 _ADMIN_PREFIX = "/api/admin/"
+# EventSource (SSE) cannot send custom headers — these paths bypass Bearer auth
+# and are only accessible on a trusted local network.
+_SSE_EXEMPT = {"/api/admin/sse/logs"}
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
@@ -19,6 +22,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request, call_next):
         if not request.url.path.startswith(_ADMIN_PREFIX):
+            return await call_next(request)
+
+        # SSE endpoints cannot send Authorization headers
+        if request.url.path in _SSE_EXEMPT:
             return await call_next(request)
 
         token = self._state.config.bot.dashboard_token
