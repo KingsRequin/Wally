@@ -62,15 +62,28 @@ CSS :
 }
 ```
 
-Placement des blocs :
-- UPTIME : `grid-column: 1 / 2`
-- PLATEFORMES : `grid-column: 2 / 3`
-- MESSAGES : `grid-column: 3 / 4`
-- HUMEUR : `grid-column: 1 / 3`
-- STREAM : `grid-column: 3 / 4`
-- GRAPHE : `grid-column: 1 / 4`
+Placement des blocs — les éléments **doivent apparaître dans cet ordre dans le DOM** pour que l'auto-placement CSS Grid fonctionne correctement. Les `grid-row` sont implicites (auto) :
 
-Sur mobile (`max-width: 600px`) : `grid-template-columns: 1fr` — tous les blocs passent en pleine largeur, les `grid-column` sont réinitialisés.
+| Bloc | `grid-column` | `grid-row` (implicite) |
+|---|---|---|
+| UPTIME | `1 / 2` | 1 |
+| PLATEFORMES | `2 / 3` | 1 |
+| MESSAGES | `3 / 4` | 1 |
+| HUMEUR | `1 / 3` | 2 |
+| STREAM | `3 / 4` | 2 |
+| GRAPHE | `1 / 4` | 3 |
+
+Sur mobile (`max-width: 600px`) :
+```css
+@media (max-width: 600px) {
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+  .bento-grid > * {
+    grid-column: 1 / 2 !important;
+  }
+}
+```
 
 ### 3. Contenu des blocs
 
@@ -90,10 +103,29 @@ Les `tab-content` suivants sont **retirés du HTML** :
 - `#tab-stream`
 - `#tab-stats`
 
-Le JS correspondant est réorganisé :
-- `loadStreamStatus()`, `loadStats()`, `startEmotionSSE()` sont appelés dans `showTab('status')` au lieu d'être liés à leurs onglets respectifs.
-- `loadEmotionHistory()` (graphe 24h) est appelé dans `showTab('status')`.
-- Les fonctions elles-mêmes ne changent pas — seul leur point d'appel change.
+#### Réorganisation JS — points d'appel
+
+**`startEmotionSSE()`** reste appelé une seule fois depuis `DOMContentLoaded` (comportement inchangé). Elle n'est **pas** appelée dans `showTab('status')` — la connexion SSE est permanente dès le chargement, pas liée à la navigation.
+
+**`loadStreamStatus()`** et **`loadStatus()`** sont appelés dans `showTab('status')`, rechargés à chaque retour sur l'onglet (comportement intentionnel — données fraîches à chaque visite).
+
+**`loadStats()` est supprimée** : elle est redondante avec `loadStatus()` (même endpoint `/api/public/status`, même élément cible `#stat-messages`). Le polling `setInterval(loadStatus, 30000)` reste inchangé et couvre le besoin.
+
+**`loadEmotionHistory()`** (canvas graphe 24h) est appelée dans `showTab('status')` à l'intérieur d'un `requestAnimationFrame` pour garantir que le canvas a une largeur calculée avant le rendu :
+```js
+if (tabId === 'status') {
+  loadStreamStatus();
+  requestAnimationFrame(() => loadEmotionHistory());
+}
+```
+
+#### Suppression des branches `showTab` obsolètes
+Retirer les blocs :
+```js
+if (tabId === 'stream')    loadStreamStatus();  // déplacé
+if (tabId === 'stats')     loadStats();          // supprimé
+if (tabId === 'emotions')  loadEmotionHistory(); // déplacé
+```
 
 ### 5. Onglet CHAT (placeholder)
 
