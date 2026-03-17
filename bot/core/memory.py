@@ -52,11 +52,15 @@ class MemoryService:
         # Prelude buffer: channel_id → list[{author, content, timestamp}]
         self._prelude_windows: dict[str, list[dict]] = {}
         self._openai: Optional["OpenAIClient"] = None
+        self._db: Optional[object] = None
         # Strong refs pour les tâches fire-and-forget (consolidation, etc.)
         self._bg_tasks: set[asyncio.Task] = set()
 
     def set_openai_client(self, client: "OpenAIClient") -> None:
         self._openai = client
+
+    def set_db(self, db) -> None:
+        self._db = db
 
     def _fire(self, coro) -> asyncio.Task:
         t = asyncio.create_task(coro)
@@ -114,6 +118,8 @@ class MemoryService:
             uid = self._user_id(platform, user_id)
             full_content = f"[{emotion_context}] {content}" if emotion_context else content
             await asyncio.to_thread(self._mem0.add, full_content, user_id=uid)
+            if self._db is not None:
+                await self._db.upsert_memory_user(uid, platform)
             # Vérification consolidation en arrière-plan (ne bloque pas la réponse)
             self._fire(self._maybe_consolidate(platform, user_id))
         except Exception as exc:
