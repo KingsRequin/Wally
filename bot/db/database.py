@@ -260,6 +260,48 @@ class Database:
             (user_id, platform, time.time(), username or None),
         )
 
+    async def sync_memory_users_from_qdrant(self, qdrant_url: str) -> int:
+        """Imports into memory_users the user_ids found in Qdrant.
+
+        Returns the number of newly inserted users.
+        Silent if Qdrant is unavailable.
+        """
+        try:
+            from qdrant_client import QdrantClient
+            client = QdrantClient(url=qdrant_url)
+            user_ids: set[str] = set()
+            offset = None
+            while True:
+                points, next_offset = client.scroll(
+                    collection_name="wally_memory",
+                    limit=100,
+                    with_payload=True,
+                    offset=offset,
+                )
+                for point in points:
+                    uid = (point.payload or {}).get("user_id")
+                    if uid and isinstance(uid, str) and ":" in uid:
+                        user_ids.add(uid)
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            inserted = 0
+            before = {u["user_id"] for u in await self.list_memory_users()}
+            for uid in user_ids:
+                platform = uid.split(":")[0]
+                await self.upsert_memory_user(uid, platform, username="")
+                if uid not in before:
+                    inserted += 1
+
+            if inserted:
+                logger.info("sync_memory_users_from_qdrant: {n} nouveaux utilisateurs importés", n=inserted)
+            return inserted
+
+        except Exception as exc:
+            logger.warning("sync_memory_users_from_qdrant échoué: {e}", e=exc)
+            return 0
+
     async def list_memory_users(self, q: str | None = None) -> list[dict]:
         # LEFT JOIN avec trust_scores : la clé memory_users.user_id est "platform:raw_id"
         # alors que trust_scores.user_id est "raw_id" — on extrait via SUBSTR.
