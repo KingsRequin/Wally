@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wally Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888'/></svg>">
 </head>
@@ -41,13 +44,13 @@
     <div class="bento-grid">
 
       <!-- Ligne 1 : UPTIME | PLATEFORMES | MESSAGES -->
-      <div class="card card-pink" style="grid-column: 1 / 2">
-        <div class="card-title">UPTIME</div>
+      <div class="card bento-card-anim" style="grid-column: 1 / 2">
+        <div class="card-title">⏱ UPTIME</div>
         <div class="card-value" id="uptime">—</div>
       </div>
 
-      <div class="card card-teal" style="grid-column: 2 / 3">
-        <div class="card-title">PLATEFORMES</div>
+      <div class="card bento-card-anim" style="grid-column: 2 / 3">
+        <div class="card-title">📡 PLATEFORMES</div>
         <div style="margin-bottom:8px">
           <span class="status-dot offline" id="dot-discord"></span>
           <span id="lbl-discord">Discord</span>
@@ -58,27 +61,27 @@
         </div>
       </div>
 
-      <div class="card card-mint" style="grid-column: 3 / 4">
-        <div class="card-title">MESSAGES TRAITÉS</div>
+      <div class="card bento-card-anim" style="grid-column: 3 / 4">
+        <div class="card-title">💬 MESSAGES TRAITÉS</div>
         <div class="card-value" id="stat-messages">—</div>
         <div style="color:var(--text-muted);font-size:0.75rem;margin-top:6px">depuis le dernier démarrage</div>
       </div>
 
       <!-- Ligne 2 : HUMEUR (2 cols) | STREAM (1 col) -->
-      <div class="card card-yellow" style="grid-column: 1 / 3">
-        <div class="card-title">HUMEUR EN DIRECT</div>
+      <div class="card bento-card-anim" style="grid-column: 1 / 3">
+        <div class="card-title">🎭 HUMEUR EN DIRECT</div>
         <div id="gauges-public"></div>
         <div class="emotion-summary" id="emotion-summary">—</div>
       </div>
 
-      <div class="card card-aqua" style="grid-column: 3 / 4" id="stream-card">
-        <div class="card-title">AZRAEL_TTV</div>
+      <div class="card bento-card-anim" style="grid-column: 3 / 4" id="stream-card">
+        <div class="card-title">📺 AZRAEL_TTV</div>
         <div id="stream-content">Chargement…</div>
       </div>
 
       <!-- Ligne 3 : GRAPHE 24H (pleine largeur) -->
-      <div class="graph-container" style="grid-column: 1 / 4">
-        <div class="card-title" style="padding:8px 8px 0">DERNIÈRES 24H</div>
+      <div class="graph-container bento-card-anim" style="grid-column: 1 / 4">
+        <div class="card-title" style="padding:8px 8px 0">📈 DERNIÈRES 24H</div>
         <canvas id="emotionCanvas" height="140"></canvas>
       </div>
 
@@ -92,7 +95,7 @@
 
   <!-- ── ADMIN EMOTIONS ────────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-admin-emotions">
-    <div class="card card-yellow">
+    <div class="card">
       <div class="card-title">FORCER UNE VALEUR</div>
       <div id="gauges-admin"></div>
       <div style="margin-top:16px">
