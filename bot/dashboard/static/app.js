@@ -8,11 +8,14 @@
 
 const AUTH_KEY = 'wally_token';
 const EMOTION_COLORS = {
-  anger:    '#e63946',
-  joy:      '#ffd60a',
-  curiosity:'#2dc653',
-  sadness:  '#0096c7',
-  boredom:  '#9ca3af',
+  anger:    '#FF4D4D',
+  joy:      '#FFD700',
+  curiosity:'#00E5A0',
+  sadness:  '#4DA6FF',
+  boredom:  '#AAAAAA',
+};
+const EMOTION_EMOJIS = {
+  anger: '😤', joy: '😊', sadness: '😢', curiosity: '🤔', boredom: '😴',
 };
 const EMOTION_LABELS = {
   anger: 'ANGER', joy: 'JOY', curiosity: 'CURIOSITY', sadness: 'SADNESS', boredom: 'BOREDOM',
@@ -27,6 +30,8 @@ let emotionSSE  = null;
 let logSSE      = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
+let _graphMeta  = null;  // { history, tMin, tRange, PAD, gW, gH, W, H }
+let _rafPending = false;
 
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
 
@@ -162,7 +167,7 @@ function buildGauges(containerId, editable) {
     const row = document.createElement('div');
     row.className = 'emotion-row';
     row.innerHTML = `
-      <span class="emotion-label" style="color:${EMOTION_COLORS[e]}">${EMOTION_LABELS[e]}</span>
+      <span class="emotion-label" style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}</span>
       ${editable
         ? `<input type="range" class="emotion-slider" id="slider-${e}" min="0" max="1" step="0.01" value="0"
              oninput="document.getElementById('val-${e}').textContent=parseFloat(this.value).toFixed(2)"
@@ -302,14 +307,14 @@ async function loadStreamStatus() {
 
   if (d.live) {
     el.innerHTML = `
-      <div class="stream-live-badge">🔴 LIVE</div>
+      <div class="stream-live-badge"><span class="dot"></span> LIVE</div>
       <div style="font-size:1.1rem;font-weight:700;margin-bottom:6px">${escHtml(d.title || '')}</div>
       <div style="color:var(--text-muted);margin-bottom:4px">${escHtml(d.category || '')}</div>
       <div style="font-size:1.5rem;font-weight:900;color:var(--c-curiosity)">${(d.viewers || 0).toLocaleString()} viewers</div>
     `;
   } else {
     el.innerHTML = `
-      <div class="stream-offline-badge">OFFLINE</div>
+      <div class="stream-offline-badge"><span class="dot"></span> OFFLINE</div>
       ${d.started_at ? `<div style="color:var(--text-muted);margin-top:6px;font-size:0.85rem">Dernier stream : ${new Date(d.started_at).toLocaleString('fr')}</div>` : ''}
     `;
   }
@@ -617,7 +622,7 @@ async function loadMemoryUsers(filter = '') {
     <div class="mem-user-item"
          data-uid="${escAttr(u.user_id)}"
          onclick="selectMemUser('${escAttr(u.user_id)}','${escAttr(u.username || '')}')"
-         style="padding:7px 10px;background:${selected ? 'var(--card-yellow)' : 'var(--card)'};border:2px solid ${selected ? 'var(--border)' : '#ddd'};border-radius:var(--radius-sm);box-shadow:${selected ? 'var(--shadow-sm)' : 'none'};margin-bottom:4px;cursor:pointer;color:var(--text)">
+         style="padding:7px 10px;background:${selected ? 'var(--accent-soft)' : 'var(--card)'};border:1px solid ${selected ? 'var(--accent)' : 'var(--card-border)'};border-radius:var(--radius-sm);box-shadow:${selected ? 'var(--shadow-sm)' : 'none'};margin-bottom:4px;cursor:pointer;color:var(--text)">
       <span style="font-size:0.65rem;color:#888;display:block">${escHtml(u.platform)} · ${escHtml(lastSeen)}</span>
       <span style="font-size:0.8rem">${escHtml(u.username || u.user_id.split(':').slice(1).join(':') || u.user_id)}</span>
       <span style="font-size:0.65rem;color:${trustColor};display:block">trust: ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
@@ -640,8 +645,8 @@ async function selectMemUser(userId, username) {
   // Update visual selection without reloading the whole list
   document.querySelectorAll('.mem-user-item').forEach(el => {
     const selected = el.dataset.uid === userId;
-    el.style.background = selected ? 'var(--card-yellow)' : 'var(--card)';
-    el.style.borderColor = selected ? 'var(--border)' : '#ddd';
+    el.style.background  = selected ? 'var(--accent-soft)' : 'var(--card)';
+    el.style.borderColor = selected ? 'var(--accent)' : 'rgba(255,255,255,0.08)';
     el.style.boxShadow = selected ? 'var(--shadow-sm)' : 'none';
   });
   await loadUserMemories(userId);
