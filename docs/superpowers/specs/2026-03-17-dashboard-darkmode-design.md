@@ -69,6 +69,7 @@ Ces couleurs sont inscrites en dur dans le CSS (hors variables) et doivent être
 | `.stream-offline-badge` | `border-color` | `#999` | `#45475a` |
 | `.log-entry.INFO` | `color` | `#555` | `#a6adc8` |
 | `.log-entry.WARNING` | `color` | `#b45309` | `#f9e2af` |
+| `.log-entry.ERROR` | `color` | `var(--c-offline)` | *(inchangé — se met à jour via `--c-offline`)* |
 | `.toast.error` | `background` | `#fee2e2` | `#3d1522` |
 
 ---
@@ -77,8 +78,8 @@ Ces couleurs sont inscrites en dur dans le CSS (hors variables) et doivent être
 
 ### Titres de cartes sur fond sombre
 
-`.card-title` est en `rgba(0,0,0,0.5)` — lisible sur les cartes colorées (pastels clairs).
-Pour les cartes neutres (`--card` = `#313244`), ajouter :
+`.card-title` est en `rgba(0,0,0,0.5)` — **laisser cette règle de base inchangée**, elle reste lisible sur les cartes pastels clairs.
+Pour les cartes neutres (`--card` = `#313244`), ajouter en plus :
 
 ```css
 .card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-title {
@@ -86,17 +87,74 @@ Pour les cartes neutres (`--card` = `#313244`), ajouter :
 }
 ```
 
-De même pour `.card-value` et `.graph-container .card-title`.
+De même pour `.card-value` sur cartes neutres et `.graph-container .card-title` :
 
-### Valeurs des jauges sur fond sombre
+```css
+.card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-value {
+  color: var(--text);
+}
 
-`.gauge-val` est en `var(--text)`. Sur cartes colorées (jaune), surcharger en `#111`.
-Sur cartes neutres, `var(--text)` = `#cdd6f4` est correct.
+.graph-container .card-title {
+  color: rgba(205,214,244,0.55);
+}
+```
+
+### Valeurs des jauges sur fond coloré
+
+`.gauge-val` est en `var(--text)` (lavande clair). Sur toutes les cartes colorées (fond pastel clair),
+le texte lavande est peu lisible — surcharger en `#111` pour les 5 variantes :
+
+```css
+.card-pink .gauge-val,
+.card-teal .gauge-val,
+.card-yellow .gauge-val,
+.card-aqua .gauge-val,
+.card-mint .gauge-val {
+  color: #111;
+}
+```
+
+De même pour `.emotion-label` et `.emotion-summary` à l'intérieur des cartes colorées :
+
+```css
+.card-pink .emotion-label,
+.card-teal .emotion-label,
+.card-yellow .emotion-label,
+.card-aqua .emotion-label,
+.card-mint .emotion-label {
+  color: #111;
+}
+
+.card-pink .emotion-summary,
+.card-teal .emotion-summary,
+.card-yellow .emotion-summary,
+.card-aqua .emotion-summary,
+.card-mint .emotion-summary {
+  color: rgba(0,0,0,0.55);
+}
+```
 
 ### Input background
 
-`input`, `select`, `textarea` : changer `background: var(--card)` → `background: var(--bg-alt)`
-pour un léger contraste avec les cartes.
+Dans la règle existante `input[type="text"], input[type="number"], input[type="password"], select, textarea { ... }`,
+remplacer `background: var(--card)` par `background: var(--bg-alt)`.
+Résultat : fond `#181825` pour les inputs, qui contraste légèrement avec les cartes `#313244`.
+
+La propriété `color` de cette règle est déjà `var(--text)` — **aucun changement nécessaire**, elle deviendra automatiquement `#cdd6f4` via la mise à jour de la variable.
+
+### Bouton `.btn-danger`
+
+La propriété `color` de `.btn-danger` est déjà `var(--c-offline)` — **aucun changement nécessaire**.
+`--c-offline` passant de `#dc2626` à `#f38ba8` (rose Catppuccin), le texte rose sur fond `#3d1522` est lisible.
+Il n'y a pas de règle hover/active spécifique à `.btn-danger` dans le CSS actuel — pas de modification nécessaire.
+
+---
+
+## Éléments absents du CSS actuel (confirmation explicite)
+
+- `.card-label` — **n'existe pas** dans le CSS actuel, pas de règle à créer
+- `.log-entry.DEBUG`, `.log-entry.CRITICAL` — **n'existent pas** dans le CSS actuel
+- Seuls trois niveaux de log sont stylés : `INFO`, `WARNING`, `ERROR` (voir section 2)
 
 ---
 
