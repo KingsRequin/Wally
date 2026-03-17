@@ -165,6 +165,7 @@ async def test_sync_memory_users_from_qdrant_skips_existing():
         client_instance.scroll.return_value = ([point], None)
         n = await db.sync_memory_users_from_qdrant("http://localhost:6333")
 
+    assert n == 0
     # No new users — but existing username is preserved
     users = await db.list_memory_users()
     assert users[0]["username"] == "OlafMC"

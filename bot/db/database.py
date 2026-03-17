@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import time
 from datetime import datetime
 from typing import Optional
@@ -272,16 +273,20 @@ class Database:
             user_ids: set[str] = set()
             offset = None
             while True:
-                points, next_offset = client.scroll(
+                points, next_offset = await asyncio.to_thread(
+                    client.scroll,
                     collection_name="wally_memory",
                     limit=100,
                     with_payload=True,
+                    with_vectors=False,
                     offset=offset,
                 )
                 for point in points:
                     uid = (point.payload or {}).get("user_id")
                     if uid and isinstance(uid, str) and ":" in uid:
-                        user_ids.add(uid)
+                        platform_prefix = uid.split(":")[0]
+                        if platform_prefix:  # skip malformed entries with empty prefix
+                            user_ids.add(uid)
                 if next_offset is None:
                     break
                 offset = next_offset
