@@ -136,8 +136,9 @@ nav.tabs::-webkit-scrollbar { display: none; }
 }
 
 .tab-btn.active {
-  background: var(--border);
-  color: var(--bg);
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
 }
 
 .tab-btn:hover:not(.active) {
@@ -204,13 +205,20 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
   gap: 16px;
 }
 
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
 .badge-soon {
-  background: var(--card-yellow);
-  border: 1.5px solid #111;
+  background: linear-gradient(90deg, rgba(0,212,255,0.2) 25%, rgba(0,212,255,0.5) 50%, rgba(0,212,255,0.2) 75%);
+  background-size: 200% auto;
+  animation: shimmer 2s linear infinite;
+  border: 1px solid rgba(0,212,255,0.4);
+  color: var(--accent);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: 0.6rem;
-  font-weight: 900;
+  font-weight: 700;
   vertical-align: middle;
 }
 
@@ -384,30 +392,56 @@ input[type="range"] {
 
 /* ── Stream card ─────────────────────────────────────────────────────────── */
 
-.stream-live-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  background: var(--card-pink);
-  color: var(--text);
+.stream-live-badge,
+.stream-offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
   font-weight: 900;
   font-size: 0.75rem;
   letter-spacing: 2px;
-  border: 2px solid var(--border);
   border-radius: var(--radius-tab);
   margin-bottom: 8px;
 }
-
+.stream-live-badge {
+  background: rgba(0, 229, 160, 0.15);
+  color: var(--c-online);
+  border: 1px solid rgba(0, 229, 160, 0.4);
+}
 .stream-offline-badge {
+  background: rgba(255, 77, 77, 0.15);
+  color: var(--c-offline);
+  border: 1px solid rgba(255, 77, 77, 0.4);
+}
+
+/* Dot indicator */
+.stream-live-badge .dot,
+.stream-offline-badge .dot {
   display: inline-block;
-  padding: 2px 10px;
-  background: #313244;
-  color: var(--text-muted);
-  font-weight: 900;
-  font-size: 0.75rem;
-  letter-spacing: 2px;
-  border: 2px solid #45475a;
-  border-radius: var(--radius-tab);
-  margin-bottom: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stream-live-badge .dot  { background: var(--c-online); }
+.stream-offline-badge .dot { background: var(--c-offline); }
+
+/* Animations */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,77,0.7); }
+  50%       { box-shadow: 0 0 0 6px rgba(255,77,77,0); }
+}
+.stream-offline-badge .dot {
+  animation: pulse-red 2s ease-in-out infinite;
+}
+
+@keyframes scale-green {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.15); }
+}
+.stream-live-badge .dot {
+  animation: scale-green 1.5s ease-in-out infinite;
 }
 
 /* ── Logs ────────────────────────────────────────────────────────────────── */
