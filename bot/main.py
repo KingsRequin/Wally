@@ -124,6 +124,9 @@ async def main() -> None:
 
     discord_token = os.getenv("DISCORD_TOKEN", "")
 
+    twitch_bot = None
+    twitch_api = None
+
     tasks = [discord_bot.start(discord_token)]
     if token_manager.bot_token:
         twitch_api = TwitchAPI(
@@ -146,6 +149,44 @@ async def main() -> None:
             "Twitch bot skipped — set BOT_ACCESS_TOKEN (or BOT_REFRESH_TOKEN + "
             "TWITCH_CLIENT_ID/SECRET) to enable"
         )
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    from bot.dashboard.app import create_dashboard_app
+    from bot.dashboard.state import AppState
+    import uvicorn
+
+    _twitch_bot_ref = twitch_bot if token_manager.bot_token else None
+    _twitch_api_ref = twitch_api if token_manager.bot_token else None
+
+    dashboard_state = AppState(
+        config=config,
+        db=db,
+        emotion=emotion,
+        memory=memory,
+        persona=persona,
+        openai_client=openai_client,
+        token_manager=token_manager,
+        twitch_api=_twitch_api_ref,
+        discord_bot=discord_bot,
+        twitch_bot=_twitch_bot_ref,
+    )
+
+    discord_bot.dashboard_state = dashboard_state
+    if _twitch_bot_ref is not None:
+        _twitch_bot_ref.dashboard_state = dashboard_state
+
+    dashboard_app = create_dashboard_app(dashboard_state)
+    dashboard_server = uvicorn.Server(
+        uvicorn.Config(
+            dashboard_app,
+            host="0.0.0.0",
+            port=8080,
+            log_config=None,   # loguru gère les logs — désactiver uvicorn's logging
+            access_log=False,
+        )
+    )
+    tasks.append(dashboard_server.serve())
+    logger.info("Dashboard server added to gather on port 8080")
 
     await asyncio.gather(*tasks)
 
