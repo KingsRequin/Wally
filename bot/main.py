@@ -124,6 +124,9 @@ async def main() -> None:
             hour=0, minute=0, second=0, microsecond=0
         )
         messages: list[dict] = []
+        if not discord_bot.guilds:
+            logger.warning("Journal history callback: discord_bot.guilds is empty, skipping")
+            return []
         for guild in discord_bot.guilds:
             for channel in guild.text_channels:
                 if not _is_channel_allowed(config, channel.id):
@@ -132,6 +135,7 @@ async def main() -> None:
                     async for msg in channel.history(after=midnight, limit=2000):
                         if not msg.content.strip():
                             continue
+                        # Include all messages (humans + Wally) — journal reflects the full conversation
                         messages.append({
                             "author": msg.author.display_name,
                             "content": msg.content,

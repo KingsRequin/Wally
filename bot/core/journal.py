@@ -172,6 +172,8 @@ class DailyJournal:
         # Source 3 : fenêtres RAM (depuis le dernier démarrage)
         ram_messages = self._memory.get_all_contexts()
         all_messages = db_messages if db_messages else ram_messages
+        if not db_messages and ram_messages:
+            logger.info("Journal: using RAM context fallback ({n} messages)", n=len(ram_messages))
 
         if all_messages:
             context_text = await self._build_context_text(all_messages)
@@ -179,6 +181,7 @@ class DailyJournal:
             # Source 4 : souvenirs mem0 de tous les utilisateurs connus
             context_text = await self._build_mem0_fallback_context()
             if not context_text:
+                logger.warning("Journal: all sources empty — generating with no conversation context")
                 context_text = "Pas grand chose de notable aujourd'hui."
 
         # Récupération de l'arc émotionnel
@@ -265,7 +268,8 @@ class DailyJournal:
             raw_id = uid_full[len(platform) + 1:]  # "discord:123" → "123"
             try:
                 facts = await self._memory.get_all(platform, raw_id)
-            except Exception:
+            except Exception as exc:
+                logger.debug("Journal mem0 fallback: failed for user {u}: {e}", u=username, e=exc)
                 continue
             if facts:
                 parts.append(f"[{username}] {facts}")
