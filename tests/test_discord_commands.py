@@ -625,3 +625,197 @@ async def test_setup_command_warns_if_env_incomplete(monkeypatch):
     call_args = interaction.response.send_message.call_args
     content = call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
     assert "OPENAI_API_KEY" in content
+
+
+# ── /wally scan ────────────────────────────────────────────────────────────────
+import discord as discord_module
+from bot.discord.commands.scan_cmd import ScanCog
+
+
+def make_scan_bot(session_manager=None):
+    bot = make_bot()
+    bot.user = MagicMock()
+    bot.user.id = 999  # ID de Wally
+    bot.session_manager = session_manager
+    return bot
+
+
+def make_scan_interaction(channel_id=100):
+    interaction = make_interaction(channel_id=channel_id)
+    interaction.channel_id = channel_id
+
+    # channel mock avec history async
+    async def fake_history(**kwargs):
+        return
+        yield  # rend la fonction un async generator vide
+
+    interaction.channel = MagicMock()
+    interaction.channel.history = MagicMock(return_value=fake_history())
+    interaction.client = MagicMock()
+    interaction.client.user.id = 999
+    return interaction
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_no_params():
+    """Erreur si ni messages ni heures fournis."""
+    bot = make_scan_bot(session_manager=AsyncMock())
+    cog = ScanCog(bot)
+    interaction = make_interaction()
+    await cog.scan.callback(cog, interaction, messages=None, heures=None)
+    interaction.response.send_message.assert_called_once()
+    call_kwargs = interaction.response.send_message.call_args
+    assert "❌" in call_kwargs[0][0]
+    interaction.response.defer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_messages_out_of_range():
+    """Erreur si messages hors [2, 500]."""
+    bot = make_scan_bot(session_manager=AsyncMock())
+    cog = ScanCog(bot)
+
+    for bad_val in [1, 501]:
+        interaction = make_interaction()
+        await cog.scan.callback(cog, interaction, messages=bad_val, heures=None)
+        interaction.response.send_message.assert_called_once()
+        assert "❌" in interaction.response.send_message.call_args[0][0]
+        interaction.response.defer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_heures_out_of_range():
+    """Erreur si heures hors [0.1, 72.0]."""
+    bot = make_scan_bot(session_manager=AsyncMock())
+    cog = ScanCog(bot)
+
+    for bad_val in [0.0, 73.0]:
+        interaction = make_interaction()
+        await cog.scan.callback(cog, interaction, messages=None, heures=bad_val)
+        interaction.response.send_message.assert_called_once()
+        assert "❌" in interaction.response.send_message.call_args[0][0]
+        interaction.response.defer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_session_manager_none():
+    """Erreur si session_manager est None."""
+    bot = make_scan_bot(session_manager=None)
+    cog = ScanCog(bot)
+    interaction = make_interaction()
+    await cog.scan.callback(cog, interaction, messages=20, heures=None)
+    interaction.response.send_message.assert_called_once()
+    assert "❌" in interaction.response.send_message.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_messages_nominal():
+    """Cas nominal : scan par nombre de messages."""
+    session_manager = MagicMock()
+    session_manager.analyze_channel_messages = AsyncMock(return_value=2)
+    bot = make_scan_bot(session_manager=session_manager)
+    cog = ScanCog(bot)
+    interaction = make_scan_interaction()
+
+    await cog.scan.callback(cog, interaction, messages=20, heures=None)
+
+    interaction.response.defer.assert_called_once_with(ephemeral=True)
+    session_manager.analyze_channel_messages.assert_called_once()
+    call_kwargs = session_manager.analyze_channel_messages.call_args[1]
+    assert call_kwargs["platform"] == "discord"
+    assert call_kwargs["channel_id"] == str(interaction.channel_id)
+    assert call_kwargs["bot_user_id"] == 999
+    # Message de succès
+    interaction.followup.send.assert_called_once()
+    msg = interaction.followup.send.call_args[0][0]
+    assert "✅" in msg
+    assert "2" in msg
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_heures_nominal():
+    """Cas nominal : scan par durée."""
+    from datetime import datetime, timezone, timedelta
+    session_manager = MagicMock()
+    session_manager.analyze_channel_messages = AsyncMock(return_value=1)
+    bot = make_scan_bot(session_manager=session_manager)
+    cog = ScanCog(bot)
+    interaction = make_scan_interaction()
+
+    before = datetime.now(timezone.utc)
+    await cog.scan.callback(cog, interaction, messages=None, heures=2.0)
+    after = datetime.now(timezone.utc)
+
+    interaction.response.defer.assert_called_once_with(ephemeral=True)
+    session_manager.analyze_channel_messages.assert_called_once()
+    # Vérifier que history a été appelé avec after ≈ now - 2h
+    history_kwargs = interaction.channel.history.call_args[1]
+    after_dt = history_kwargs["after"]
+    expected_min = before - timedelta(hours=2.0, seconds=1)
+    expected_max = after - timedelta(hours=2.0) + timedelta(seconds=1)
+    assert expected_min <= after_dt <= expected_max
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_too_few_messages():
+    """ValueError de analyze_channel_messages → message ⚠️."""
+    session_manager = MagicMock()
+    session_manager.analyze_channel_messages = AsyncMock(
+        side_effect=ValueError("Pas assez de messages")
+    )
+    bot = make_scan_bot(session_manager=session_manager)
+    cog = ScanCog(bot)
+    interaction = make_scan_interaction()
+
+    await cog.scan.callback(cog, interaction, messages=10, heures=None)
+
+    interaction.followup.send.assert_called_once()
+    msg = interaction.followup.send.call_args[0][0]
+    assert "⚠️" in msg
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_forbidden():
+    """discord.Forbidden lors du fetch → message de permission."""
+    import discord as discord_mod
+    session_manager = MagicMock()
+    bot = make_scan_bot(session_manager=session_manager)
+    cog = ScanCog(bot)
+
+    # Simuler channel.history levant Forbidden
+    async def forbidden_history(**kwargs):
+        raise discord_mod.Forbidden(MagicMock(), "missing permissions")
+        yield  # async generator
+
+    interaction = make_scan_interaction()
+    interaction.channel.history = MagicMock(return_value=forbidden_history())
+
+    await cog.scan.callback(cog, interaction, messages=10, heures=None)
+
+    interaction.followup.send.assert_called_once()
+    msg = interaction.followup.send.call_args[0][0]
+    assert "❌" in msg
+    assert "permission" in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_scan_cmd_http_exception():
+    """discord.HTTPException (non-Forbidden) → message erreur réseau."""
+    import discord as discord_mod
+    session_manager = MagicMock()
+    bot = make_scan_bot(session_manager=session_manager)
+    cog = ScanCog(bot)
+
+    async def http_error_history(**kwargs):
+        raise discord_mod.HTTPException(MagicMock(), "server error")
+        yield
+
+    interaction = make_scan_interaction()
+    interaction.channel.history = MagicMock(return_value=http_error_history())
+
+    await cog.scan.callback(cog, interaction, messages=10, heures=None)
+
+    interaction.followup.send.assert_called_once()
+    msg = interaction.followup.send.call_args[0][0]
+    assert "❌" in msg
+    assert "réseau" in msg.lower() or "erreur" in msg.lower()
