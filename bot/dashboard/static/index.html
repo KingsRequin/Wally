@@ -19,10 +19,8 @@
 
 <!-- Tab navigation — public -->
 <nav class="tabs" id="tabs-public">
-  <button class="tab-btn active" data-tab="status"   onclick="showTab('status')">📊 STATUT</button>
-  <button class="tab-btn"        data-tab="emotions" onclick="showTab('emotions')">😤 HUMEUR</button>
-  <button class="tab-btn"        data-tab="stream"   onclick="showTab('stream')">🎮 STREAM</button>
-  <button class="tab-btn"        data-tab="stats"    onclick="showTab('stats')">📈 STATS</button>
+  <button class="tab-btn active" data-tab="status" onclick="showTab('status')">📊 STATUT</button>
+  <button class="tab-btn disabled" data-tab="chat" title="Chat — bientôt disponible">💬 CHAT <span class="badge-soon">BIENTÔT</span></button>
 </nav>
 
 <!-- Tab navigation — admin -->
@@ -38,14 +36,17 @@
 
 <main>
 
-  <!-- ── STATUS ───────────────────────────────────────────────────────── -->
+  <!-- ── BENTO HOMEPAGE ──────────────────────────────────────────────── -->
   <div class="tab-content active" id="tab-status">
-    <div class="grid-2">
-      <div class="card card-pink">
+    <div class="bento-grid">
+
+      <!-- Ligne 1 : UPTIME | PLATEFORMES | MESSAGES -->
+      <div class="card card-pink" style="grid-column: 1 / 2">
         <div class="card-title">UPTIME</div>
         <div class="card-value" id="uptime">—</div>
       </div>
-      <div class="card card-teal">
+
+      <div class="card card-teal" style="grid-column: 2 / 3">
         <div class="card-title">PLATEFORMES</div>
         <div style="margin-bottom:8px">
           <span class="status-dot offline" id="dot-discord"></span>
@@ -56,38 +57,31 @@
           <span id="lbl-twitch">Twitch</span>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- ── EMOTIONS (public) ─────────────────────────────────────────────── -->
-  <div class="tab-content" id="tab-emotions">
-    <div class="card card-yellow">
-      <div class="card-title">HUMEUR EN DIRECT</div>
-      <div id="gauges-public"></div>
-      <div class="emotion-summary" id="emotion-summary">—</div>
-    </div>
-    <div class="graph-container">
-      <div class="card-title" style="padding:8px 8px 0">DERNIÈRES 24H</div>
-      <canvas id="emotionCanvas" height="140"></canvas>
-    </div>
-  </div>
-
-  <!-- ── STREAM ────────────────────────────────────────────────────────── -->
-  <div class="tab-content" id="tab-stream">
-    <div class="card card-aqua" id="stream-card">
-      <div class="card-title">AZRAEL_TTV</div>
-      <div id="stream-content">Chargement…</div>
-    </div>
-  </div>
-
-  <!-- ── STATS ─────────────────────────────────────────────────────────── -->
-  <div class="tab-content" id="tab-stats">
-    <div class="grid-2">
-      <div class="card card-mint">
+      <div class="card card-mint" style="grid-column: 3 / 4">
         <div class="card-title">MESSAGES TRAITÉS</div>
         <div class="card-value" id="stat-messages">—</div>
         <div style="color:var(--text-muted);font-size:0.75rem;margin-top:6px">depuis le dernier démarrage</div>
       </div>
+
+      <!-- Ligne 2 : HUMEUR (2 cols) | STREAM (1 col) -->
+      <div class="card card-yellow" style="grid-column: 1 / 3">
+        <div class="card-title">HUMEUR EN DIRECT</div>
+        <div id="gauges-public"></div>
+        <div class="emotion-summary" id="emotion-summary">—</div>
+      </div>
+
+      <div class="card card-aqua" style="grid-column: 3 / 4" id="stream-card">
+        <div class="card-title">AZRAEL_TTV</div>
+        <div id="stream-content">Chargement…</div>
+      </div>
+
+      <!-- Ligne 3 : GRAPHE 24H (pleine largeur) -->
+      <div class="graph-container" style="grid-column: 1 / 4">
+        <div class="card-title" style="padding:8px 8px 0">DERNIÈRES 24H</div>
+        <canvas id="emotionCanvas" height="140"></canvas>
+      </div>
+
     </div>
   </div>
 
