@@ -50,7 +50,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     return bot
 
 
-def make_message(content="wally bonjour", author_bot=False, mentions=None):
+def make_message(content="wally bonjour", author_bot=False, mentions=None, attachments=None):
     """Build a minimal discord.Message-like mock."""
     msg = MagicMock()
     msg.content = content
@@ -68,8 +68,15 @@ def make_message(content="wally bonjour", author_bot=False, mentions=None):
     msg.remove_reaction = AsyncMock()
     msg.reply = AsyncMock()
     msg.channel.send = AsyncMock()
-    # bot.user not in mentions by default
+    msg.attachments = attachments or []
     return msg
+
+
+def make_attachment(url: str, content_type: str = "image/png"):
+    att = MagicMock()
+    att.url = url
+    att.content_type = content_type
+    return att
 
 
 # ── handle_message ────────────────────────────────────────────────────────────
@@ -303,3 +310,91 @@ async def test_channel_history_permission_error_graceful():
     bot.prompts.build_prelude_block.assert_called_once_with([])
     # La réponse est quand même envoyée
     bot.openai.complete.assert_called_once()
+
+
+# ── Vision ────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_respond_extracts_image_urls():
+    """_respond extrait les URLs image et les passe à complete() via image_urls."""
+    bot = make_bot()
+    message = make_message(
+        content="wally regarde",
+        attachments=[make_attachment("https://cdn.discord.com/img.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    call_kwargs = bot.openai.complete.call_args.kwargs
+    assert call_kwargs["image_urls"] == ["https://cdn.discord.com/img.png"]
+
+
+@pytest.mark.asyncio
+async def test_respond_limits_4_images():
+    """_respond envoie au maximum 4 images à complete()."""
+    bot = make_bot()
+    attachments = [make_attachment(f"https://cdn.discord.com/img{i}.png") for i in range(6)]
+    message = make_message(content="wally regarde", attachments=attachments)
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    call_kwargs = bot.openai.complete.call_args.kwargs
+    assert len(call_kwargs["image_urls"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_respond_no_text_uses_default_prompt():
+    """Message image-only : le texte envoyé à OpenAI est 'Regarde cette image.'"""
+    bot = make_bot()
+    message = make_message(
+        content="",
+        attachments=[make_attachment("https://cdn.discord.com/img.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    call_args = bot.openai.complete.call_args
+    user_content = call_args.args[1][0]["content"]
+    assert "Regarde cette image." in user_content
+
+
+@pytest.mark.asyncio
+async def test_respond_image_only_memory_tag():
+    """Message image sans texte : append_message reçoit '[image]' comme contenu."""
+    bot = make_bot()
+    message = make_message(
+        content="",
+        attachments=[make_attachment("https://cdn.discord.com/img.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    calls = bot.memory.append_message.call_args_list
+    # Premier appel : message de l'utilisateur
+    stored_content = calls[0].args[2]
+    assert stored_content == "[image]"
+
+
+@pytest.mark.asyncio
+async def test_respond_no_images_no_image_urls_kwarg():
+    """Sans pièce jointe image, image_urls n'est pas passé (None)."""
+    bot = make_bot()
+    message = make_message(content="wally bonjour", attachments=[])
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    call_kwargs = bot.openai.complete.call_args.kwargs
+    assert call_kwargs.get("image_urls") is None
+
+
+@pytest.mark.asyncio
+async def test_respond_non_image_attachment_ignored():
+    """Les pièces jointes non-image (PDF, etc.) sont ignorées."""
+    bot = make_bot()
+    pdf = make_attachment("https://cdn.discord.com/doc.pdf", content_type="application/pdf")
+    message = make_message(content="wally regarde", attachments=[pdf])
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    call_kwargs = bot.openai.complete.call_args.kwargs
+    assert call_kwargs.get("image_urls") is None

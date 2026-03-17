@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.core.emotion import build_emotion_tag
-
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
@@ -189,10 +187,19 @@ async def _respond(
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
 
+        # Extraction des images
+        image_urls = [
+            a.url for a in message.attachments
+            if a.content_type and a.content_type.startswith("image/")
+        ][:4]
+
+        # Texte à envoyer (substitution si message image-only)
+        text_content = message.content or ("Regarde cette image." if image_urls else "")
+
         user_content = (
             prelude_block
             + context_block
-            + f"\n[{message.author.display_name}]: {message.content}"
+            + f"\n[{message.author.display_name}]: {text_content}"
         )
 
         if first_contact:
@@ -207,7 +214,8 @@ async def _respond(
 
         async with message.channel.typing():
             reply = await bot.openai.complete(
-                system_prompt, openai_messages, purpose="discord_response"
+                system_prompt, openai_messages, purpose="discord_response",
+                image_urls=image_urls or None,
             )
 
         try:
@@ -219,13 +227,12 @@ async def _respond(
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)
 
+        stored_content = message.content or "[image]"
         bot.memory.append_message(
-            str(message.channel.id), message.author.display_name, message.content
+            str(message.channel.id), message.author.display_name, stored_content
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
-        tag = build_emotion_tag(bot.emotion.get_state())
-        _fire(bot.memory.add(platform, user_id, message.content, emotion_context=tag))
         _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
 
     except Exception as e:
