@@ -80,6 +80,12 @@ class Database:
         conn.row_factory = aiosqlite.Row
         await conn.executescript(SCHEMA)
         await conn.commit()
+        # Migration: ajouter username à memory_users si absent
+        try:
+            await conn.execute("ALTER TABLE memory_users ADD COLUMN username TEXT")
+            await conn.commit()
+        except Exception:
+            pass  # colonne déjà présente
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -244,20 +250,40 @@ class Database:
 
     # ── Memory users tracking ─────────────────────────────────────────────────────
 
-    async def upsert_memory_user(self, user_id: str, platform: str) -> None:
+    async def upsert_memory_user(self, user_id: str, platform: str, username: str = "") -> None:
         await self.execute(
-            "INSERT INTO memory_users(user_id, platform, last_updated) VALUES(?,?,?)"
-            " ON CONFLICT(user_id) DO UPDATE SET last_updated=excluded.last_updated",
-            (user_id, platform, time.time()),
+            "INSERT INTO memory_users(user_id, platform, last_updated, username) VALUES(?,?,?,?)"
+            " ON CONFLICT(user_id) DO UPDATE SET"
+            "   last_updated=excluded.last_updated,"
+            "   username=COALESCE(NULLIF(excluded.username,''), memory_users.username)",
+            (user_id, platform, time.time(), username or None),
         )
 
     async def list_memory_users(self, q: str | None = None) -> list[dict]:
-        sql = "SELECT user_id, platform, last_updated FROM memory_users"
+        # LEFT JOIN avec trust_scores : la clé memory_users.user_id est "platform:raw_id"
+        # alors que trust_scores.user_id est "raw_id" — on extrait via SUBSTR.
+        sql = (
+            "SELECT m.user_id, m.platform, m.last_updated, m.username, "
+            "COALESCE(t.score, 0.5) AS trust_score "
+            "FROM memory_users m "
+            "LEFT JOIN trust_scores t "
+            "  ON t.platform = m.platform "
+            "  AND t.user_id = SUBSTR(m.user_id, LENGTH(m.platform) + 2)"
+        )
         params: tuple = ()
         if q:
-            sql += " WHERE user_id LIKE ?"
-            params = (f"%{q}%",)
-        sql += " ORDER BY last_updated DESC"
+            sql += " WHERE (m.user_id LIKE ? OR m.username LIKE ?)"
+            params = (f"%{q}%", f"%{q}%")
+        sql += " ORDER BY m.last_updated DESC"
         async with self._conn.execute(sql, params) as cur:
             rows = await cur.fetchall()
-        return [{"user_id": r["user_id"], "platform": r["platform"], "last_updated": r["last_updated"]} for r in rows]
+        return [
+            {
+                "user_id": r["user_id"],
+                "platform": r["platform"],
+                "last_updated": r["last_updated"],
+                "username": r["username"],
+                "trust_score": round(float(r["trust_score"]), 2),
+            }
+            for r in rows
+        ]
