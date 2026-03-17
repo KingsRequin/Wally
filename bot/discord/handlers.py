@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.emotion import build_emotion_tag
+
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
@@ -233,6 +235,8 @@ async def _respond(
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
+        tag = build_emotion_tag(bot.emotion.get_state())
+        _fire(bot.memory.add(platform, user_id, message.content, emotion_context=tag))
         _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
 
     except Exception as e:
