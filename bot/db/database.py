@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS emotion_history (
 CREATE TABLE IF NOT EXISTS memory_users (
     user_id      TEXT PRIMARY KEY,
     platform     TEXT NOT NULL,
-    last_updated REAL NOT NULL
+    last_updated REAL NOT NULL,
+    username     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_emotion_history_ts ON emotion_history(snapshot_at);
@@ -84,7 +85,7 @@ class Database:
         try:
             await conn.execute("ALTER TABLE memory_users ADD COLUMN username TEXT")
             await conn.commit()
-        except Exception:
+        except aiosqlite.OperationalError:
             pass  # colonne déjà présente
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
