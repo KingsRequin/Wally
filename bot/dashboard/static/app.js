@@ -67,10 +67,19 @@ function showTab(tabId) {
   currentTab = tabId;
 
   // Chargements spécifiques par onglet
-  if (tabId === 'stream')   loadStreamStatus();
-  if (tabId === 'stats')    loadStats();
-  if (tabId === 'emotions') loadEmotionHistory();
+  if (tabId === 'status') {
+    loadStreamStatus();
+    requestAnimationFrame(() => loadEmotionHistory());
+  }
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
+  if (tabId === 'admin-logs') {
+    // L'historique a pu être chargé quand le tab était caché (display:none → scrollHeight=0).
+    // On force le scroll vers le bas au prochain frame, une fois l'élément visible.
+    requestAnimationFrame(() => {
+      const el = document.getElementById('log-stream');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -141,15 +150,6 @@ async function loadStatus() {
   };
   setDot('dot-discord', d.discord_online);
   setDot('dot-twitch',  d.twitch_online);
-  document.getElementById('stat-messages').textContent = d.total_messages.toLocaleString();
-}
-
-// ── Stats ─────────────────────────────────────────────────────────────────────
-
-async function loadStats() {
-  const r = await fetch('/api/public/status');
-  if (!r.ok) return;
-  const d = await r.json();
   document.getElementById('stat-messages').textContent = d.total_messages.toLocaleString();
 }
 
@@ -528,6 +528,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Polling statut toutes les 30s
   setInterval(loadStatus, 30000);
+
+  // Chargement initial du bento (stream + graphe)
+  loadStreamStatus();
+  requestAnimationFrame(() => loadEmotionHistory());
 
   // Si token existant → proposer mode admin
   // (mais ne pas switcher automatiquement)
