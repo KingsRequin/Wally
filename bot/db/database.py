@@ -245,12 +245,11 @@ class Database:
     # ── Memory users tracking ─────────────────────────────────────────────────────
 
     async def upsert_memory_user(self, user_id: str, platform: str) -> None:
-        await self._conn.execute(
+        await self.execute(
             "INSERT INTO memory_users(user_id, platform, last_updated) VALUES(?,?,?)"
             " ON CONFLICT(user_id) DO UPDATE SET last_updated=excluded.last_updated",
             (user_id, platform, time.time()),
         )
-        await self._conn.commit()
 
     async def list_memory_users(self, q: str | None = None) -> list[dict]:
         sql = "SELECT user_id, platform, last_updated FROM memory_users"
@@ -261,4 +260,4 @@ class Database:
         sql += " ORDER BY last_updated DESC"
         async with self._conn.execute(sql, params) as cur:
             rows = await cur.fetchall()
-        return [{"user_id": r[0], "platform": r[1], "last_updated": r[2]} for r in rows]
+        return [{"user_id": r["user_id"], "platform": r["platform"], "last_updated": r["last_updated"]} for r in rows]

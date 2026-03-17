@@ -1,5 +1,6 @@
+import asyncio
+
 import pytest
-import time as time_module
 
 from bot.db.database import Database
 
@@ -21,7 +22,6 @@ async def test_upsert_memory_user_updates_last_updated():
     db = await Database.create(":memory:")
     await db.upsert_memory_user("discord:123", "discord")
     t1 = (await db.list_memory_users())[0]["last_updated"]
-    import asyncio
     await asyncio.sleep(0.01)
     await db.upsert_memory_user("discord:123", "discord")
     t2 = (await db.list_memory_users())[0]["last_updated"]
