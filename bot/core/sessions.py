@@ -156,6 +156,7 @@ class SessionManager:
                     session.platform,
                     user_id,
                     user_facts,
+                    username=display_name,
                 )
                 stored += 1
             logger.info(
