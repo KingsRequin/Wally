@@ -603,6 +603,60 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadStreamStatus();
   requestAnimationFrame(() => loadEmotionHistory());
 
+  // ── Tooltip hover sur le graphe ─────────────────────────────────────────
+  const emotionCanvas = document.getElementById('emotionCanvas');
+  emotionCanvas.addEventListener('mousemove', (ev) => {
+    if (!_graphMeta || _rafPending) return;
+    _rafPending = true;
+    requestAnimationFrame(() => {
+      _rafPending = false;
+      const { history, tMin, tRange, PAD, gW, gH, W, H } = _graphMeta;
+      const rect = emotionCanvas.getBoundingClientRect();
+      const mouseX = ev.clientX - rect.left;
+
+      // Trouver le snapshot dont la position X canvas est la plus proche du curseur
+      let nearest = null, minDist = Infinity;
+      for (const snap of history) {
+        const sx = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+        const dist = Math.abs(sx - mouseX);
+        if (dist < minDist) { minDist = dist; nearest = snap; }
+      }
+
+      // Redessiner le graphe complet, puis superposer le tooltip
+      drawEmotionGraph(history);
+      if (!nearest) return;
+
+      const ctx = emotionCanvas.getContext('2d');
+      const tw = 140;
+      const th = 12 + EMOTIONS.length * 16 + 8;
+      const tx = Math.min(mouseX + 12, W - tw - 4);
+      const ty = 8;
+
+      // Fond glassmorphism — roundRect dispo Chrome 99+ / Firefox 112+ / Safari 15.4+
+      ctx.fillStyle = 'rgba(11,11,20,0.85)';
+      ctx.strokeStyle = 'rgba(0,212,255,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw, th, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Valeurs d'émotions
+      ctx.textAlign = 'left';
+      ctx.font = '10px monospace';
+      EMOTIONS.forEach((e, i) => {
+        ctx.fillStyle = EMOTION_COLORS[e];
+        ctx.fillText(
+          `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}: ${(nearest[e] ?? 0).toFixed(2)}`,
+          tx + 8, ty + 16 + i * 16
+        );
+      });
+    });
+  });
+  emotionCanvas.addEventListener('mouseleave', () => {
+    if (_graphMeta) drawEmotionGraph(_graphMeta.history);
+  });
+
   // Si token existant → proposer mode admin
   // (mais ne pas switcher automatiquement)
 });
