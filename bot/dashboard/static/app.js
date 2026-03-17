@@ -231,6 +231,13 @@ async function loadEmotionHistory() {
   drawEmotionGraph(history);
 }
 
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function drawEmotionGraph(history) {
   const canvas = document.getElementById('emotionCanvas');
   if (!canvas || !history || history.length < 2) return;
@@ -241,11 +248,10 @@ function drawEmotionGraph(history) {
   canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  // Fond sombre (même teinte que --card)
-  ctx.fillStyle = '#313244';
+  // Fond sombre (--bg-alt)
+  ctx.fillStyle = '#0f0f1c';
   ctx.fillRect(0, 0, W, H);
 
-  // Zone de tracé : réserve 40px en bas (axe temps + légende)
   const PAD = { top: 10, bottom: 40, left: 4, right: 4 };
   const gW = W - PAD.left - PAD.right;
   const gH = H - PAD.top - PAD.bottom;
@@ -254,7 +260,25 @@ function drawEmotionGraph(history) {
   const tMax = history[history.length - 1].snapshot_at;
   const tRange = tMax - tMin || 1;
 
+  // Stocker pour le tooltip
+  _graphMeta = { history, tMin, tRange, PAD, gW, gH, W, H };
+
+  // Grille — 4 lignes horizontales à 25/50/75/100%
+  ctx.lineWidth = 1;
+  for (let pct = 0.25; pct <= 1.0; pct += 0.25) {
+    const y = PAD.top + (1 - pct) * gH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(W - PAD.right, y);
+    ctx.stroke();
+  }
+
+  // Tracé ligne + area fill par émotion
   for (const e of EMOTIONS) {
+    let firstX = 0, lastX = 0;
+
+    // 1. Ligne (stroke)
     ctx.beginPath();
     ctx.strokeStyle = EMOTION_COLORS[e];
     ctx.lineWidth = 2;
@@ -262,14 +286,34 @@ function drawEmotionGraph(history) {
     history.forEach((snap, i) => {
       const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
       const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      if (i === 0) { ctx.moveTo(x, y); firstX = x; }
+      else ctx.lineTo(x, y);
+      lastX = x;
     });
     ctx.stroke();
+
+    // 2. Area fill (path séparé, gradient du haut vers le bas)
+    ctx.beginPath();
     ctx.globalAlpha = 1;
+    history.forEach((snap, i) => {
+      const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+      const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(lastX,  PAD.top + gH);
+    ctx.lineTo(firstX, PAD.top + gH);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
+    grad.addColorStop(0, hexToRgba(EMOTION_COLORS[e], 0.25));
+    grad.addColorStop(1, hexToRgba(EMOTION_COLORS[e], 0.02));
+    ctx.fillStyle = grad;
+    ctx.fill();
   }
 
+  ctx.globalAlpha = 1;
+
   // Axe temporel
-  ctx.fillStyle = '#a6adc8';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '10px monospace';
   ctx.textAlign = 'left';
   const label0 = new Date(tMin * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
@@ -280,7 +324,7 @@ function drawEmotionGraph(history) {
 
   // Légende des émotions
   ctx.font = '9px monospace';
-  const itemW = (W - PAD.left - PAD.right) / EMOTIONS.length;
+  const itemW = gW / EMOTIONS.length;
   EMOTIONS.forEach((e, i) => {
     const x = PAD.left + i * itemW;
     const ly = H - 10;
