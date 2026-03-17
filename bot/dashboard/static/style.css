@@ -157,17 +157,25 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
 .card {
   background: var(--card);
-  border: 3px solid var(--border);
+  border: 2.5px solid var(--border);
   box-shadow: var(--shadow);
+  border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 16px;
 }
+
+/* Carte colorée : surcharge uniquement le background */
+.card-pink   { background: var(--card-pink); }
+.card-teal   { background: var(--card-teal); }
+.card-yellow { background: var(--card-yellow); }
+.card-aqua   { background: var(--card-aqua); }
+.card-mint   { background: var(--card-mint); }
 
 .card-title {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 2px;
-  color: var(--text-muted);
+  color: rgba(0, 0, 0, 0.5);
   text-transform: uppercase;
   margin-bottom: 10px;
 }
@@ -175,6 +183,7 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .card-value {
   font-size: 1.8rem;
   font-weight: 900;
+  color: var(--text);
 }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
