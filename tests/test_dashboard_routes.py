@@ -238,8 +238,17 @@ async def test_stream_uses_cache(app):
     mock_api.get_stream.assert_called_once()
 
 
-# ── Memory stub ───────────────────────────────────────────────────────────────
+# ── Memory routes (Phase 2 — no longer stub) ──────────────────────────────────
 
-async def test_memory_stub_returns_501(client):
-    r = await client.get("/api/admin/memory/users", headers=ADMIN_HEADERS)
-    assert r.status_code == 501
+async def test_memory_users_route_is_implemented():
+    db = MagicMock()
+    db.get_today_emotion_snapshots = AsyncMock(return_value=[])
+    db.insert_emotion_snapshot = AsyncMock()
+    db.list_memory_users = AsyncMock(return_value=[])
+    state = _make_state(db=db)
+    app = create_dashboard_app(state)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        r = await c.get("/api/admin/memory/users", headers=ADMIN_HEADERS)
+    assert r.status_code != 501
