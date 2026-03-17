@@ -38,7 +38,7 @@ async def test_add_calls_upsert_when_db_set():
     with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
         await svc.add("discord", "123", "test content")
 
-    db.upsert_memory_user.assert_called_once_with("discord:123", "discord")
+    db.upsert_memory_user.assert_called_once_with("discord:123", "discord", "")
 
 
 @pytest.mark.asyncio

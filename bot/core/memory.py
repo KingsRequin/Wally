@@ -28,6 +28,7 @@ _SUMMARIZE_SYSTEM = load_prompt(
 )
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
+_MIN_SEARCH_SCORE = 0.3  # score en dessous duquel un souvenir est ignoré dans search()
 
 # ── Consolidation des souvenirs long-terme ────────────────────────────────────
 # Quand un utilisateur dépasse ce nombre de souvenirs, on les consolide en un
@@ -110,23 +111,35 @@ class MemoryService:
         return f"{platform}:{user_id}"
 
     async def add(self, platform: str, user_id: str, content: str,
-                  emotion_context: str = "") -> None:
+                  username: str = "", emotion_context: str = "") -> None:
         self._init_mem0()
         if self._mem0 is None:
             return
         try:
             uid = self._user_id(platform, user_id)
             full_content = f"[{emotion_context}] {content}" if emotion_context else content
-            await asyncio.to_thread(self._mem0.add, full_content, user_id=uid)
+            result = await asyncio.to_thread(self._mem0.add, full_content, user_id=uid)
+            # Journaliser ce que mem0 a effectivement stocké/modifié
+            stored = result.get("results", []) if isinstance(result, dict) else (result if isinstance(result, list) else [])
+            for entry in stored:
+                event = entry.get("event", "")
+                memory = entry.get("memory", "")
+                if event in ("ADD", "UPDATE") and memory:
+                    logger.debug("mem0 {event} [{uid}]: {mem}", event=event, uid=uid, mem=memory)
             if self._db is not None:
-                await self._db.upsert_memory_user(uid, platform)
+                await self._db.upsert_memory_user(uid, platform, username)
             # Vérification consolidation en arrière-plan (ne bloque pas la réponse)
             self._fire(self._maybe_consolidate(platform, user_id))
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
 
     async def _maybe_consolidate(self, platform: str, user_id: str) -> None:
-        """Consolide les souvenirs si leur nombre dépasse le seuil."""
+        """Consolide les souvenirs si leur nombre dépasse le seuil.
+
+        Stratégie safe : on ajoute la synthèse AVANT de supprimer les anciens.
+        Si une suppression individuelle échoue, la synthèse est déjà persistée —
+        on ne perd pas la mémoire de l'utilisateur.
+        """
         if self._openai is None:
             return
         try:
@@ -142,6 +155,7 @@ class MemoryService:
                 n=len(results),
                 uid=uid,
             )
+            old_ids = [r["id"] for r in results if r.get("id")]
             memories_text = "\n".join(
                 f"- {r.get('memory', '')}" for r in results if r.get("memory")
             )
@@ -150,13 +164,25 @@ class MemoryService:
                 [{"role": "user", "content": memories_text}],
                 purpose="memory_consolidation",
             )
-            # Remplacer tous les souvenirs par la synthèse
-            await asyncio.to_thread(self._mem0.delete_all, user_id=uid)
+            # Ajouter la synthèse en premier — la donnée est safe dès ici
             await asyncio.to_thread(self._mem0.add, consolidated, user_id=uid)
+            # Supprimer les anciens souvenirs un par un
+            deleted = 0
+            for old_id in old_ids:
+                try:
+                    await asyncio.to_thread(self._mem0.delete, old_id)
+                    deleted += 1
+                except Exception as del_exc:
+                    logger.warning(
+                        "Failed to delete old memory {id}: {e}",
+                        id=old_id,
+                        e=del_exc,
+                    )
             logger.info(
-                "Memory consolidated for {uid}: {n} entries → 1",
+                "Memory consolidated for {uid}: {n} entries → 1 ({d}/{n} old deleted)",
                 uid=uid,
                 n=len(results),
+                d=deleted,
             )
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
@@ -208,8 +234,19 @@ class MemoryService:
                 results = results.get("results", [])
             if not results:
                 return ""
+            # Filtrer les résultats sous le seuil de pertinence sémantique
+            relevant = [r for r in results if r.get("score", 1.0) >= _MIN_SEARCH_SCORE]
+            if len(relevant) < len(results):
+                logger.debug(
+                    "search: {n} résultat(s) ignoré(s) (score < {t}) pour {uid}",
+                    n=len(results) - len(relevant),
+                    t=_MIN_SEARCH_SCORE,
+                    uid=uid,
+                )
+            if not relevant:
+                return ""
             return "\n".join(
-                r.get("memory", "") for r in results if r.get("memory")
+                r.get("memory", "") for r in relevant if r.get("memory")
             )
         except Exception as exc:
             logger.warning("mem0 search failed: {e}", e=exc)
