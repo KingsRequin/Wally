@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS emotion_history (
     boredom     REAL NOT NULL DEFAULT 0.0
 );
 
+CREATE TABLE IF NOT EXISTS memory_users (
+    user_id      TEXT PRIMARY KEY,
+    platform     TEXT NOT NULL,
+    last_updated REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_emotion_history_ts ON emotion_history(snapshot_at);
 """
 
@@ -235,3 +241,24 @@ class Database:
             "DELETE FROM emotion_history WHERE snapshot_at < ?",
             (cutoff,),
         )
+
+    # ── Memory users tracking ─────────────────────────────────────────────────────
+
+    async def upsert_memory_user(self, user_id: str, platform: str) -> None:
+        await self._conn.execute(
+            "INSERT INTO memory_users(user_id, platform, last_updated) VALUES(?,?,?)"
+            " ON CONFLICT(user_id) DO UPDATE SET last_updated=excluded.last_updated",
+            (user_id, platform, time.time()),
+        )
+        await self._conn.commit()
+
+    async def list_memory_users(self, q: str | None = None) -> list[dict]:
+        sql = "SELECT user_id, platform, last_updated FROM memory_users"
+        params: tuple = ()
+        if q:
+            sql += " WHERE user_id LIKE ?"
+            params = (f"%{q}%",)
+        sql += " ORDER BY last_updated DESC"
+        async with self._conn.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+        return [{"user_id": r[0], "platform": r[1], "last_updated": r[2]} for r in rows]
