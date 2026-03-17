@@ -76,7 +76,7 @@ header {
   color: var(--text);
 }
 
-.logo .logo-accent { color: var(--card-pink); }
+.logo .logo-accent { color: var(--accent); }
 
 .mode-toggle {
   display: flex;
@@ -276,15 +276,6 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .gauge-fill.sadness  { background: var(--c-sadness); }
 .gauge-fill.boredom  { background: var(--c-boredom); }
 
-/* Gauge track sur cartes pastels claires — fond sombre lisible */
-.card-pink .gauge-track,
-.card-teal .gauge-track,
-.card-yellow .gauge-track,
-.card-aqua .gauge-track,
-.card-mint .gauge-track {
-  background: rgba(0,0,0,0.12);
-  border-color: rgba(0,0,0,0.15);
-}
 
 .gauge-val {
   width: 38px;
@@ -521,46 +512,3 @@ input[type="range"] {
 
 /* ── Favicon SVG (dynamique) ─────────────────────────────────────────────── */
 /* Le favicon est mis à jour via JS selon l'émotion dominante */
-
-/* ── Dark mode overrides : texte sur cartes colorées ─────────────────────── */
-
-/* card-title et card-value sur cartes neutres sombres */
-.card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-title {
-  color: rgba(205,214,244,0.55);
-}
-
-.card:not(.card-pink):not(.card-teal):not(.card-yellow):not(.card-aqua):not(.card-mint) .card-value {
-  color: var(--text);
-}
-
-/* card-title dans le graph container (fond sombre) */
-.graph-container .card-title {
-  color: rgba(205,214,244,0.55);
-}
-
-/* gauge-val sur cartes colorées (fond pastel clair → texte sombre) */
-.card-pink .gauge-val,
-.card-teal .gauge-val,
-.card-yellow .gauge-val,
-.card-aqua .gauge-val,
-.card-mint .gauge-val {
-  color: #111;
-}
-
-/* emotion-label sur cartes colorées */
-.card-pink .emotion-label,
-.card-teal .emotion-label,
-.card-yellow .emotion-label,
-.card-aqua .emotion-label,
-.card-mint .emotion-label {
-  color: #111;
-}
-
-/* emotion-summary sur cartes colorées */
-.card-pink .emotion-summary,
-.card-teal .emotion-summary,
-.card-yellow .emotion-summary,
-.card-aqua .emotion-summary,
-.card-mint .emotion-summary {
-  color: rgba(0,0,0,0.55);
-}
