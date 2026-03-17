@@ -605,14 +605,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Tooltip hover sur le graphe ─────────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');
+  if (!emotionCanvas) return;
   emotionCanvas.addEventListener('mousemove', (ev) => {
     if (!_graphMeta || _rafPending) return;
+    const clientX = ev.clientX;
     _rafPending = true;
     requestAnimationFrame(() => {
       _rafPending = false;
       const { history, tMin, tRange, PAD, gW, gH, W, H } = _graphMeta;
       const rect = emotionCanvas.getBoundingClientRect();
-      const mouseX = ev.clientX - rect.left;
+      const mouseX = clientX - rect.left;
 
       // Trouver le snapshot dont la position X canvas est la plus proche du curseur
       let nearest = null, minDist = Infinity;
