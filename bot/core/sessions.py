@@ -133,7 +133,7 @@ class SessionManager:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    async def _analyze_session(self, session: _Session) -> None:
+    async def _analyze_session(self, session: _Session) -> int:
         try:
             conversation = "\n".join(
                 f"[{m['author']}]: {m['content']}" for m in session.messages
@@ -143,7 +143,6 @@ class SessionManager:
                 [{"role": "user", "content": conversation}],
                 purpose="session_analysis",
             )
-            date_str = time.strftime("%d/%m/%Y")
             stored = 0
             for user_id, display_name in session.participants.items():
                 user_facts = _extract_user_section(analysis, display_name)
@@ -156,7 +155,7 @@ class SessionManager:
                 await self._memory.add(
                     session.platform,
                     user_id,
-                    f"Session du {date_str}: {user_facts}",
+                    user_facts,
                 )
                 stored += 1
             logger.info(
@@ -165,5 +164,7 @@ class SessionManager:
                 total=len(session.participants),
                 ch=session.channel_id,
             )
+            return stored
         except Exception as e:
             logger.error("Erreur lors de l'analyse de session: {e}", e=e)
+            return 0
