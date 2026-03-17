@@ -25,6 +25,10 @@ def _fire(coro) -> asyncio.Task:
 
 async def handle_message(bot: "WallyTwitch", payload) -> None:
     """Handle an incoming channel.chat.message EventSub payload."""
+    # Dashboard message counter (tous les messages, pas seulement les triggers)
+    if getattr(bot, "dashboard_state", None) is not None:
+        bot.dashboard_state.message_count += 1
+
     content: str = payload.message.text
     content_lower = content.lower()
     author: str = payload.chatter.name

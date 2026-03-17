@@ -61,6 +61,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
 
+    # Dashboard message counter
+    if getattr(bot, "dashboard_state", None) is not None:
+        bot.dashboard_state.message_count += 1
+
     user_id = str(message.author.id)
     channel_allowed = _is_channel_allowed(bot.config, message.channel.id)
 
