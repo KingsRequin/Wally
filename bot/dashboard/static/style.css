@@ -167,12 +167,12 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
   margin-bottom: 16px;
 }
 
-/* Carte colorée : surcharge uniquement le background */
-.card-pink   { background: var(--card-pink); }
-.card-teal   { background: var(--card-teal); }
-.card-yellow { background: var(--card-yellow); }
-.card-aqua   { background: var(--card-aqua); }
-.card-mint   { background: var(--card-mint); }
+/* Carte colorée : background + texte sombre (pastels clairs sur dark theme) */
+.card-pink   { background: var(--card-pink);   color: #111; }
+.card-teal   { background: var(--card-teal);   color: #111; }
+.card-yellow { background: var(--card-yellow); color: #111; }
+.card-aqua   { background: var(--card-aqua);   color: #111; }
+.card-mint   { background: var(--card-mint);   color: #111; }
 
 .card-title {
   font-size: 0.52rem;
@@ -269,6 +269,16 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .gauge-fill.curiosity{ background: var(--c-curiosity); }
 .gauge-fill.sadness  { background: var(--c-sadness); }
 .gauge-fill.boredom  { background: var(--c-boredom); }
+
+/* Gauge track sur cartes pastels claires — fond sombre lisible */
+.card-pink .gauge-track,
+.card-teal .gauge-track,
+.card-yellow .gauge-track,
+.card-aqua .gauge-track,
+.card-mint .gauge-track {
+  background: rgba(0,0,0,0.12);
+  border-color: rgba(0,0,0,0.15);
+}
 
 .gauge-val {
   width: 38px;

@@ -231,16 +231,19 @@ function drawEmotionGraph(history) {
   if (!canvas || !history || history.length < 2) return;
 
   const W = canvas.offsetWidth || 800;
+  const H = 165;
   canvas.width  = W;
-  canvas.height = 140;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, W, 140);
+  // Fond sombre (même teinte que --card)
+  ctx.fillStyle = '#313244';
+  ctx.fillRect(0, 0, W, H);
 
-  const PAD = { top: 10, bottom: 20, left: 4, right: 4 };
+  // Zone de tracé : réserve 40px en bas (axe temps + légende)
+  const PAD = { top: 10, bottom: 40, left: 4, right: 4 };
   const gW = W - PAD.left - PAD.right;
-  const gH = 140 - PAD.top - PAD.bottom;
+  const gH = H - PAD.top - PAD.bottom;
 
   const tMin = history[0].snapshot_at;
   const tMax = history[history.length - 1].snapshot_at;
@@ -260,15 +263,33 @@ function drawEmotionGraph(history) {
     ctx.globalAlpha = 1;
   }
 
-  // Axe temporel (labels)
-  ctx.fillStyle = '#888';
+  // Axe temporel
+  ctx.fillStyle = '#a6adc8';
   ctx.font = '10px monospace';
   ctx.textAlign = 'left';
   const label0 = new Date(tMin * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
   const labelN = new Date(tMax * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
-  ctx.fillText(label0, PAD.left, 138);
+  ctx.fillText(label0, PAD.left, H - 26);
   ctx.textAlign = 'right';
-  ctx.fillText(labelN, W - PAD.right, 138);
+  ctx.fillText(labelN, W - PAD.right, H - 26);
+
+  // Légende des émotions
+  ctx.font = '9px monospace';
+  const itemW = (W - PAD.left - PAD.right) / EMOTIONS.length;
+  EMOTIONS.forEach((e, i) => {
+    const x = PAD.left + i * itemW;
+    const ly = H - 10;
+    ctx.strokeStyle = EMOTION_COLORS[e];
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, ly);
+    ctx.lineTo(x + 14, ly);
+    ctx.stroke();
+    ctx.fillStyle = EMOTION_COLORS[e];
+    ctx.textAlign = 'left';
+    ctx.fillText(EMOTION_LABELS[e], x + 18, ly + 3);
+  });
 }
 
 // ── Stream status ─────────────────────────────────────────────────────────────
