@@ -12,6 +12,7 @@ from bot.discord.commands.ask import AskCog
 from bot.discord.commands.memory_cmd import MemoryCog
 from bot.discord.commands.persona_cmd import PersonaCog
 from bot.discord.commands.setup import is_valid_model, SetupCog, SetupView, BasicTabSelect
+from bot.discord.commands.scan_cmd import ScanCog
 
 
 def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
@@ -628,8 +629,6 @@ async def test_setup_command_warns_if_env_incomplete(monkeypatch):
 
 
 # ── /wally scan ────────────────────────────────────────────────────────────────
-import discord as discord_module
-from bot.discord.commands.scan_cmd import ScanCog
 
 
 def make_scan_bot(session_manager=None):

@@ -63,7 +63,7 @@ class ScanCog(commands.Cog):
                 after_dt = datetime.now(timezone.utc) - timedelta(hours=heures)
                 fetched = [
                     m async for m in interaction.channel.history(
-                        after=after_dt, oldest_first=True
+                        after=after_dt, oldest_first=True, limit=None
                     )
                 ]
             else:
@@ -84,7 +84,7 @@ class ScanCog(commands.Cog):
                 f"✅ Faits extraits pour {stored} utilisateur(s).", ephemeral=True
             )
 
-        except ValueError as e:
+        except ValueError:
             await interaction.followup.send(
                 "⚠️ Pas assez de messages humains pour analyser (minimum 2).",
                 ephemeral=True,
