@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
@@ -70,6 +71,16 @@ async def delete_memory(user_id: str, memory_id: str, request: Request):
     return {"deleted": True}
 
 
+# ── POST /memory/sync ─────────────────────────────────────────────────────────
+
+@router.post("/memory/sync")
+async def sync_memory_users(request: Request):
+    state = request.app.state.wally
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    n = await state.db.sync_memory_users_from_qdrant(qdrant_url)
+    return {"synced": n}
+
+
 # ── GET /memory/search ────────────────────────────────────────────────────────
 
 @router.get("/memory/search")
@@ -80,6 +91,8 @@ async def search_memories(request: Request, q: str | None = None):
     mem0 = _get_mem0(request)
 
     users = await state.db.list_memory_users()
+    username_map = {u["user_id"]: u.get("username") for u in users}
+
     all_results = []
     for user in users:
         uid = user["user_id"]
@@ -90,6 +103,7 @@ async def search_memories(request: Request, q: str | None = None):
                 if r.get("memory"):
                     all_results.append({
                         "user_id": uid,
+                        "username": username_map.get(uid),
                         "platform": platform,
                         "memory": r["memory"],
                         "score": r.get("score", 0.0),
