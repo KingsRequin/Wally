@@ -38,6 +38,8 @@ FALLBACK_RESPONSE = (
     "Je rencontre un problème technique, réessaie dans un moment. 🔧"
 )
 
+FALLBACK_IMAGE_RESPONSE = "Désolé, j'ai une poussière dans l'œil… j'arrive pas à la voir 👁️"
+
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     # Exact match first, then longest-prefix match to avoid "gpt-4o" matching "gpt-4o-mini"
@@ -86,22 +88,42 @@ class OpenAIClient:
             )
         return text
 
+    def _build_image_content(
+        self, text: str, image_urls: list[str], use_responses_api: bool
+    ) -> list[dict]:
+        if use_responses_api:
+            content = [{"type": "input_text", "text": text}]
+            for url in image_urls:
+                content.append({"type": "input_image", "image_url": url})
+        else:
+            content = [{"type": "text", "text": text}]
+            for url in image_urls:
+                content.append({"type": "image_url", "image_url": {"url": url}})
+        return content
+
     async def complete(
         self,
         system_prompt: str,
         messages: list[dict],
         model: Optional[str] = None,
         purpose: str = "response",
+        image_urls: list[str] | None = None,
     ) -> str:
         model = model or self._config.openai.primary_model
         full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+        if image_urls:
+            last_msg = full_messages[-1]
+            last_msg["content"] = self._build_image_content(
+                last_msg["content"], image_urls, _uses_responses_api(model)
+            )
 
         if _uses_responses_api(model):
             try:
                 return await self._complete_responses_api(model, full_messages, purpose)
             except Exception as exc:
                 logger.error("OpenAI Responses API error: {e}", e=exc)
-                return FALLBACK_RESPONSE
+                return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
 
         for attempt in range(3):
             try:
@@ -152,7 +174,7 @@ class OpenAIClient:
                 logger.error("OpenAI unexpected error: {e}", e=exc)
                 break
 
-        return FALLBACK_RESPONSE
+        return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
 
     async def complete_secondary(
         self,

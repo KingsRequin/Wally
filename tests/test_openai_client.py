@@ -190,3 +190,104 @@ async def test_complete_routes_to_chat_completions_for_gpt4():
 
     mock_create.assert_called_once()
     assert result == "Chat response"
+
+
+# ── Vision ────────────────────────────────────────────────────────────────────
+
+from bot.core.openai_client import FALLBACK_IMAGE_RESPONSE, FALLBACK_RESPONSE
+
+
+def test_build_image_content_chat_completions():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    result = client._build_image_content(
+        "bonjour", ["http://img1.png", "http://img2.png"], use_responses_api=False
+    )
+
+    assert result[0] == {"type": "text", "text": "bonjour"}
+    assert result[1] == {"type": "image_url", "image_url": {"url": "http://img1.png"}}
+    assert result[2] == {"type": "image_url", "image_url": {"url": "http://img2.png"}}
+    assert len(result) == 3
+
+
+def test_build_image_content_responses_api():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    result = client._build_image_content(
+        "bonjour", ["http://img1.png"], use_responses_api=True
+    )
+
+    assert result[0] == {"type": "input_text", "text": "bonjour"}
+    assert result[1] == {"type": "input_image", "image_url": "http://img1.png"}
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_complete_with_images_transforms_last_message():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    captured = {}
+
+    async def capture_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return make_mock_response("Je vois une image!")
+
+    with patch.object(
+        client._client.chat.completions, "create", new=AsyncMock(side_effect=capture_create)
+    ):
+        await client.complete(
+            "System",
+            [{"role": "user", "content": "regarde"}],
+            image_urls=["https://cdn.discord.com/img.png"],
+        )
+
+    last_content = captured["messages"][-1]["content"]
+    assert isinstance(last_content, list)
+    assert last_content[0] == {"type": "text", "text": "regarde"}
+    assert last_content[1] == {"type": "image_url", "image_url": {"url": "https://cdn.discord.com/img.png"}}
+
+
+@pytest.mark.asyncio
+async def test_complete_image_error_returns_image_fallback():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    with patch.object(
+        client._client.chat.completions,
+        "create",
+        new=AsyncMock(side_effect=Exception("Invalid image URL")),
+    ):
+        result = await client.complete(
+            "System",
+            [{"role": "user", "content": "regarde"}],
+            image_urls=["https://invalid.png"],
+        )
+
+    assert result == FALLBACK_IMAGE_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_complete_no_images_uses_generic_fallback():
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    with patch.object(
+        client._client.chat.completions,
+        "create",
+        new=AsyncMock(side_effect=Exception("Server error")),
+    ):
+        with patch("asyncio.sleep", new=AsyncMock()):
+            result = await client.complete(
+                "System",
+                [{"role": "user", "content": "bonjour"}],
+            )
+
+    assert result == FALLBACK_RESPONSE
