@@ -543,6 +543,8 @@ function renderMemoryTab() {
   document.getElementById('tab-memory').innerHTML = `
     <div style="padding:12px 16px;border-bottom:2px solid #eee;display:flex;gap:10px;align-items:center">
       <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px;white-space:nowrap">CHERCHER</span>
+      <button class="btn" onclick="syncMemoryUsers()"
+              style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">↻ SYNC</button>
       <input type="text" id="mem-search" placeholder="Recherche dans tous les souvenirs…"
              oninput="onMemSearch(this.value)"
              style="flex:1;max-width:320px;padding:7px 10px;background:var(--card);border:2px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.9rem;box-shadow:var(--shadow-sm);outline:none;border-radius:var(--radius-sm)">
@@ -567,6 +569,7 @@ function renderMemoryTab() {
 }
 
 let _selectedMemUser = null;
+let _selectedMemUsername = null;
 
 async function loadMemoryUsers(filter = '') {
   const url = '/api/admin/memory/users' + (filter ? `?q=${encodeURIComponent(filter)}` : '');
@@ -588,17 +591,27 @@ async function loadMemoryUsers(filter = '') {
     return `
     <div class="mem-user-item"
          data-uid="${escAttr(u.user_id)}"
-         onclick="selectMemUser('${escAttr(u.user_id)}')"
+         onclick="selectMemUser('${escAttr(u.user_id)}','${escAttr(u.username || '')}')"
          style="padding:7px 10px;background:${selected ? 'var(--card-yellow)' : 'var(--card)'};border:2px solid ${selected ? 'var(--border)' : '#ddd'};border-radius:var(--radius-sm);box-shadow:${selected ? 'var(--shadow-sm)' : 'none'};margin-bottom:4px;cursor:pointer;color:var(--text)">
       <span style="font-size:0.65rem;color:#888;display:block">${escHtml(u.platform)} · ${escHtml(lastSeen)}</span>
-      <span style="font-size:0.8rem">${escHtml(u.user_id.split(':').slice(1).join(':') || u.user_id)}</span>
+      <span style="font-size:0.8rem">${escHtml(u.username || u.user_id.split(':').slice(1).join(':') || u.user_id)}</span>
       <span style="font-size:0.65rem;color:${trustColor};display:block">trust: ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
     </div>`;
   }).join('');
 }
 
-async function selectMemUser(userId) {
+async function syncMemoryUsers() {
+  const r = await apiFetch('/api/admin/memory/sync', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur sync', 'error'); return; }
+  const { synced } = await r.json();
+  toast(`${synced} utilisateur(s) importé(s)`, 'success');
+  const filter = document.getElementById('mem-user-filter')?.value || '';
+  loadMemoryUsers(filter);
+}
+
+async function selectMemUser(userId, username) {
   _selectedMemUser = userId;
+  _selectedMemUsername = username || null;
   // Update visual selection without reloading the whole list
   document.querySelectorAll('.mem-user-item').forEach(el => {
     const selected = el.dataset.uid === userId;
@@ -613,15 +626,15 @@ async function loadUserMemories(userId) {
   const r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
   if (!r || !r.ok) return;
   const { memories } = await r.json();
-  renderMemories(userId, memories);
+  renderMemories(userId, memories, _selectedMemUsername);
 }
 
-function renderMemories(userId, memories) {
+function renderMemories(userId, memories, username = null) {
   const el = document.getElementById('mem-detail');
   if (!el) return;
   el.innerHTML = `
     <div style="padding:10px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${escHtml(userId)} — ${memories.length} souvenir(s)</span>
+      <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${username ? escHtml(username) + ' (' + escHtml(userId) + ')' : escHtml(userId)} — ${memories.length} souvenir(s)</span>
       <button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
               style="font-size:0.72rem;padding:4px 10px">🗑 TOUT SUPPRIMER</button>
     </div>
@@ -700,7 +713,7 @@ async function searchMemories(q) {
         ? '<div style="color:var(--text-muted);font-size:0.85rem">Aucun résultat.</div>'
         : results.map(res => `
           <div style="background:var(--card);border:1.5px solid #ddd;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
-            <span style="font-size:0.65rem;color:#888;display:block;margin-bottom:4px">${escHtml(res.user_id)}</span>
+            <span style="font-size:0.65rem;color:#888;display:block;margin-bottom:4px">${res.username ? escHtml(res.username) + ' · ' : ''}${escHtml(res.user_id)}</span>
             <span style="font-size:0.82rem;line-height:1.5">${escHtml(res.memory)}</span>
           </div>`).join('')
       }
