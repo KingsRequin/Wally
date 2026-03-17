@@ -52,6 +52,8 @@ class WallyTwitch(commands.Bot):
         self.persona = persona
         # Per-user cooldown: {user_id: last_response_timestamp}
         self._cooldowns: dict[str, float] = {}
+        # Dashboard integration — set to AppState by main.py after construction
+        self.dashboard_state = None  # type: ignore[assignment]
 
     def is_on_cooldown(self, user_id: str) -> bool:
         last = self._cooldowns.get(user_id, 0.0)

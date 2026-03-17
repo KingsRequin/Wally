@@ -47,6 +47,8 @@ class WallyDiscord(commands.Bot):
         self.journal = None  # set by main.py after construction
         self.session_manager = None  # set by main.py after construction
         self._start_time: float | None = None
+        # Dashboard integration — set to AppState by main.py after construction
+        self.dashboard_state = None  # type: ignore[assignment]
 
     async def setup_hook(self) -> None:
         from bot.discord.commands.ask import AskCog
