@@ -10,7 +10,7 @@
 <body>
 
 <header>
-  <div class="logo">WALLY</div>
+  <div class="logo">W<span class="logo-accent">A</span>LLY 🤖</div>
   <div class="mode-toggle">
     <button class="mode-btn active" id="btn-public" onclick="switchMode('public')">PUBLIC</button>
     <button class="mode-btn" id="btn-admin" onclick="switchMode('admin')">ADMIN 🔒</button>
@@ -41,11 +41,11 @@
   <!-- ── STATUS ───────────────────────────────────────────────────────── -->
   <div class="tab-content active" id="tab-status">
     <div class="grid-2">
-      <div class="card">
+      <div class="card card-pink">
         <div class="card-title">UPTIME</div>
         <div class="card-value" id="uptime">—</div>
       </div>
-      <div class="card">
+      <div class="card card-teal">
         <div class="card-title">PLATEFORMES</div>
         <div style="margin-bottom:8px">
           <span class="status-dot offline" id="dot-discord"></span>
@@ -61,7 +61,7 @@
 
   <!-- ── EMOTIONS (public) ─────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-emotions">
-    <div class="card">
+    <div class="card card-yellow">
       <div class="card-title">HUMEUR EN DIRECT</div>
       <div id="gauges-public"></div>
       <div class="emotion-summary" id="emotion-summary">—</div>
@@ -74,7 +74,7 @@
 
   <!-- ── STREAM ────────────────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-stream">
-    <div class="card" id="stream-card">
+    <div class="card card-aqua" id="stream-card">
       <div class="card-title">AZRAEL_TTV</div>
       <div id="stream-content">Chargement…</div>
     </div>
@@ -83,7 +83,7 @@
   <!-- ── STATS ─────────────────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-stats">
     <div class="grid-2">
-      <div class="card">
+      <div class="card card-mint">
         <div class="card-title">MESSAGES TRAITÉS</div>
         <div class="card-value" id="stat-messages">—</div>
         <div style="color:var(--text-muted);font-size:0.75rem;margin-top:6px">depuis le dernier démarrage</div>
@@ -98,7 +98,7 @@
 
   <!-- ── ADMIN EMOTIONS ────────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-admin-emotions">
-    <div class="card">
+    <div class="card card-yellow">
       <div class="card-title">FORCER UNE VALEUR</div>
       <div id="gauges-admin"></div>
       <div style="margin-top:16px">
