@@ -187,7 +187,7 @@ const EMOTION_EMOJIS = {
 };
 ```
 
-Dans `buildGauges()`, modifier la ligne qui génère le label pour afficher `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`.
+Dans `buildGauges()`, modifier uniquement le contenu texte du label span : remplacer `${EMOTION_LABELS[e]}` par `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}`. Conserver l'attribut `style="color:${EMOTION_COLORS[e]}"` existant (les nouvelles valeurs de `EMOTION_COLORS` s'appliquent automatiquement).
 
 ### Résumé textuel
 
@@ -482,6 +482,7 @@ emotionCanvas.addEventListener('mousemove', (ev) => {
     ctx.fillStyle = 'rgba(11,11,20,0.85)';
     ctx.strokeStyle = 'rgba(0,212,255,0.3)';
     ctx.lineWidth = 1;
+    // roundRect disponible Chrome 99+ / Firefox 112+ / Safari 15.4+
     ctx.beginPath();
     ctx.roundRect(tx, ty, tw, th, 8);
     ctx.fill();
@@ -519,7 +520,7 @@ emotionCanvas.addEventListener('mouseleave', () => {
 }
 ```
 
-Dans `index.html`, ajouter la classe `.bento-card-anim` à chaque card du bento. Dans `style.css`, stagger via `nth-child` :
+Dans `index.html`, ajouter la classe `bento-card-anim` aux **six enfants directs de `.bento-grid`** : les cinq divs `.card` et le div `.graph-container` (sixième enfant, `grid-column: 1 / 4`). Dans `style.css`, stagger via `nth-child` :
 
 ```css
 .bento-grid > *:nth-child(1) { animation-delay: 0.0s; }
