@@ -145,6 +145,8 @@ nav.tabs::-webkit-scrollbar { display: none; }
 .tab-btn.disabled {
   color: #45475a;
   cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.6;
 }
 
 /* ── Main content ────────────────────────────────────────────────────────── */
@@ -190,8 +192,30 @@ main { padding: 20px; max-width: 1100px; margin: 0 auto; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
+.bento-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.badge-soon {
+  background: var(--card-yellow);
+  border: 1.5px solid #111;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.6rem;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
 @media (max-width: 600px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+  .bento-grid > * {
+    grid-column: 1 / 2 !important;
+  }
 }
 
 /* ── Status dots ─────────────────────────────────────────────────────────── */
