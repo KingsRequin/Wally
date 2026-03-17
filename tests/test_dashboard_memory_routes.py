@@ -214,3 +214,30 @@ async def test_search_unwraps_dict():
             )
     assert r.status_code == 200
     assert len(r.json()["results"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_continues_on_user_error():
+    """Search loop must continue even if one user's mem0 call raises."""
+    state, mock_mem0, db = _make_state()
+    db.list_memory_users.return_value = [
+        {"user_id": "discord:123", "platform": "discord", "last_updated": 1700000000.0},
+        {"user_id": "twitch:bob", "platform": "twitch", "last_updated": 1700000001.0},
+    ]
+
+    def _search_side_effect(q, user_id, limit):
+        if user_id == "discord:123":
+            raise RuntimeError("Qdrant timeout")
+        return [{"memory": "Aime Minecraft", "score": 0.9}]
+
+    mock_mem0.search.side_effect = _search_side_effect
+    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
+        async with _make_client(state) as client:
+            r = await client.get(
+                "/api/admin/memory/search?q=Minecraft", headers=HEADERS
+            )
+    assert r.status_code == 200
+    results = r.json()["results"]
+    # Only twitch:bob's result should appear (discord:123 raised)
+    assert len(results) == 1
+    assert results[0]["user_id"] == "twitch:bob"

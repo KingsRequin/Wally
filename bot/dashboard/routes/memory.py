@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request
-
-if TYPE_CHECKING:
-    pass
+from loguru import logger
 
 router = APIRouter()
 
@@ -97,8 +94,8 @@ async def search_memories(request: Request, q: str | None = None):
                         "memory": r["memory"],
                         "score": r.get("score", 0.0),
                     })
-        except Exception:
-            pass  # Qdrant timeout for this user — continue
+        except Exception as exc:
+            logger.warning("mem0 search failed for {uid}: {e}", uid=uid, e=exc)
 
     all_results.sort(key=lambda x: x["score"], reverse=True)
     return {"results": all_results}
