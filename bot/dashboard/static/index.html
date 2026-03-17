@@ -30,7 +30,7 @@
   <button class="tab-btn active" data-tab="admin-config"   onclick="showTab('admin-config')">⚙ CONFIG</button>
   <button class="tab-btn"        data-tab="admin-emotions" onclick="showTab('admin-emotions')">😤 HUMEUR</button>
   <button class="tab-btn"        data-tab="admin-logs"     onclick="showTab('admin-logs')">📜 LOGS</button>
-  <button class="tab-btn disabled" title="Phase 2">🧠 MÉMOIRE</button>
+  <button class="tab-btn" data-tab="memory" onclick="showTab('memory')">🧠 MÉMOIRE</button>
   <button class="tab-btn disabled" title="Phase 2">💸 COÛTS</button>
   <button class="tab-btn disabled" title="Phase 3">🎭 PERSONA</button>
   <button class="tab-btn disabled" title="Phase 3">⏱ TIMEOUTS</button>
@@ -118,6 +118,9 @@
     </div>
     <div class="log-stream" id="log-stream"></div>
   </div>
+
+  <!-- ── MEMORY ─────────────────────────────────────────────────────────── -->
+  <div class="tab-content" id="tab-memory"></div>
 
 </main>
 

@@ -70,6 +70,7 @@ function showTab(tabId) {
   if (tabId === 'stream')   loadStreamStatus();
   if (tabId === 'stats')    loadStats();
   if (tabId === 'emotions') loadEmotionHistory();
+  if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -522,3 +523,176 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Si token existant → proposer mode admin
   // (mais ne pas switcher automatiquement)
 });
+
+// ── Memory tab ────────────────────────────────────────────────────────────────
+
+function escAttr(str) {
+  return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderMemoryTab() {
+  document.getElementById('tab-memory').innerHTML = `
+    <div style="padding:12px 16px;border-bottom:2px solid #333;display:flex;gap:10px;align-items:center">
+      <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px;white-space:nowrap">CHERCHER</span>
+      <input type="text" id="mem-search" placeholder="Recherche dans tous les souvenirs…"
+             oninput="onMemSearch(this.value)"
+             style="flex:1;max-width:320px;padding:7px 10px;background:var(--bg);border:3px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.9rem;box-shadow:2px 2px 0px #fff;outline:none;border-radius:0">
+    </div>
+    <div style="display:flex;min-height:400px">
+      <div style="width:220px;border-right:2px solid #333;display:flex;flex-direction:column">
+        <div style="padding:10px 12px;border-bottom:1px solid #333">
+          <input type="text" id="mem-user-filter" placeholder="Filtrer users…"
+                 oninput="onUserFilter(this.value)"
+                 style="width:100%;padding:7px 10px;background:var(--bg);border:3px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.8rem;outline:none;border-radius:0">
+        </div>
+        <div id="mem-user-list" style="flex:1;overflow-y:auto;padding:8px"></div>
+      </div>
+      <div id="mem-detail" style="flex:1;overflow-y:auto;min-height:0">
+        <div style="padding:16px;color:var(--text-muted);font-size:0.85rem">
+          Sélectionne un utilisateur pour voir ses souvenirs.
+        </div>
+      </div>
+    </div>
+  `;
+  loadMemoryUsers();
+}
+
+let _selectedMemUser = null;
+
+async function loadMemoryUsers(filter = '') {
+  const url = '/api/admin/memory/users' + (filter ? `?q=${encodeURIComponent(filter)}` : '');
+  const r = await apiFetch(url);
+  if (!r || !r.ok) return;
+  const { users } = await r.json();
+  const el = document.getElementById('mem-user-list');
+  if (!el) return;
+  if (users.length === 0) {
+    el.innerHTML = '<div style="color:#555;font-size:0.75rem;padding:8px">Aucun utilisateur</div>';
+    return;
+  }
+  el.innerHTML = users.map(u => `
+    <div class="mem-user-item"
+         data-uid="${escAttr(u.user_id)}"
+         onclick="selectMemUser('${escAttr(u.user_id)}')"
+         style="padding:7px 10px;background:#1a1a1a;border:2px solid ${u.user_id === _selectedMemUser ? '#00ccff' : '#555'};
+                margin-bottom:4px;cursor:pointer;color:${u.user_id === _selectedMemUser ? '#00ccff' : 'var(--text)'}">
+      <span style="font-size:0.65rem;color:#888;display:block">${escHtml(u.platform)}</span>
+      <span style="font-size:0.8rem">${escHtml(u.user_id.split(':').slice(1).join(':') || u.user_id)}</span>
+    </div>`).join('');
+}
+
+async function selectMemUser(userId) {
+  _selectedMemUser = userId;
+  // Update visual selection without reloading the whole list
+  document.querySelectorAll('.mem-user-item').forEach(el => {
+    const selected = el.dataset.uid === userId;
+    el.style.borderColor = selected ? '#00ccff' : '#555';
+    el.style.color = selected ? '#00ccff' : 'var(--text)';
+  });
+  await loadUserMemories(userId);
+}
+
+async function loadUserMemories(userId) {
+  const r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
+  if (!r || !r.ok) return;
+  const { memories } = await r.json();
+  renderMemories(userId, memories);
+}
+
+function renderMemories(userId, memories) {
+  const el = document.getElementById('mem-detail');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="padding:10px 16px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${escHtml(userId)} — ${memories.length} souvenir(s)</span>
+      <button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
+              style="font-size:0.72rem;padding:4px 10px">🗑 TOUT SUPPRIMER</button>
+    </div>
+    <div style="padding:12px">
+      ${memories.length === 0
+        ? '<div style="color:#555;font-size:0.85rem">Aucun souvenir.</div>'
+        : memories.map(m => `
+          <div style="background:#1a1a1a;border:2px solid #333;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start"
+               id="mem-entry-${escAttr(m.id)}">
+            <span style="font-size:0.82rem;flex:1;line-height:1.5">${escHtml(m.memory)}</span>
+            <button onclick="deleteMemory('${escAttr(userId)}','${escAttr(m.id)}')"
+                    style="background:none;border:none;color:#ff3333;cursor:pointer;font-size:1.1rem;margin-left:12px;flex-shrink:0;line-height:1">✕</button>
+          </div>`).join('')
+      }
+    </div>
+  `;
+}
+
+async function deleteMemory(userId, memoryId) {
+  const r = await apiFetch(
+    `/api/admin/memory/users/${encodeURIComponent(userId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: 'DELETE' }
+  );
+  if (r && r.ok) {
+    document.getElementById('mem-entry-' + memoryId)?.remove();
+    toast('Souvenir supprimé', 'success');
+  } else {
+    toast('Erreur suppression', 'error');
+  }
+}
+
+async function deleteAllMemories(userId) {
+  const r = await apiFetch(
+    '/api/admin/memory/users/' + encodeURIComponent(userId),
+    { method: 'DELETE' }
+  );
+  if (r && r.ok) {
+    document.getElementById('mem-detail').innerHTML =
+      '<div style="padding:16px;color:#555;font-size:0.85rem">Aucun souvenir.</div>';
+    _selectedMemUser = null;
+    const filter = document.getElementById('mem-user-filter')?.value || '';
+    loadMemoryUsers(filter);
+    toast('Mémoire supprimée', 'success');
+  } else {
+    toast('Erreur suppression', 'error');
+  }
+}
+
+let _memSearchTimer = null;
+function onMemSearch(value) {
+  clearTimeout(_memSearchTimer);
+  _memSearchTimer = setTimeout(async () => {
+    if (value.length >= 2) {
+      await searchMemories(value);
+    } else if (_selectedMemUser) {
+      await loadUserMemories(_selectedMemUser);
+    } else {
+      document.getElementById('mem-detail').innerHTML =
+        '<div style="padding:16px;color:var(--text-muted);font-size:0.85rem">Sélectionne un utilisateur.</div>';
+    }
+  }, 400);
+}
+
+async function searchMemories(q) {
+  const r = await apiFetch('/api/admin/memory/search?q=' + encodeURIComponent(q));
+  if (!r || !r.ok) return;
+  const { results } = await r.json();
+  const el = document.getElementById('mem-detail');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="padding:10px 16px;border-bottom:1px solid #333">
+      <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px">${results.length} résultat(s) pour "${escHtml(q)}"</span>
+    </div>
+    <div style="padding:12px">
+      ${results.length === 0
+        ? '<div style="color:#555;font-size:0.85rem">Aucun résultat.</div>'
+        : results.map(res => `
+          <div style="background:#1a1a1a;border:2px solid #333;padding:10px 12px;margin-bottom:8px">
+            <span style="font-size:0.65rem;color:#888;display:block;margin-bottom:4px">${escHtml(res.user_id)}</span>
+            <span style="font-size:0.82rem;line-height:1.5">${escHtml(res.memory)}</span>
+          </div>`).join('')
+      }
+    </div>
+  `;
+}
+
+let _userFilterTimer = null;
+function onUserFilter(value) {
+  clearTimeout(_userFilterTimer);
+  _userFilterTimer = setTimeout(() => loadMemoryUsers(value), 300);
+}
