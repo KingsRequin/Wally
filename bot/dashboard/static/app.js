@@ -78,6 +78,7 @@ function showTab(tabId) {
     requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
   }
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
+  if (tabId === 'admin-links') loadLinks();
   if (tabId === 'admin-logs') {
     // L'historique a pu être chargé quand le tab était caché (display:none → scrollHeight=0).
     // On force le scroll vers le bas au prochain frame, une fois l'élément visible.
@@ -631,7 +632,12 @@ async function startLogSSE() {
 
   logSSE = new EventSource(`/api/admin/sse/logs`);
   logSSE.onmessage = (e) => {
-    try { appendLog(JSON.parse(e.data)); } catch {}
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'links_analyzed') { loadLinks(); return; }
+      if (data.type === 'link_accepted')  { loadLinks(); return; }
+      appendLog(data);
+    } catch {}
   };
 }
 
@@ -957,4 +963,79 @@ let _userFilterTimer = null;
 function onUserFilter(value) {
   clearTimeout(_userFilterTimer);
   _userFilterTimer = setTimeout(() => loadMemoryUsers(value), 300);
+}
+
+// ── Liaisons de comptes ───────────────────────────────────────────────────────
+
+let currentLinksTab = 'all';
+
+function setLinksTab(tab, btn) {
+  currentLinksTab = tab;
+  document.querySelectorAll('#tab-admin-links .log-controls .btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadLinks();
+}
+
+async function loadLinks() {
+  const statusParam = currentLinksTab !== 'all' ? `?status=${currentLinksTab}` : '';
+  const r = await apiFetch(`/api/admin/links${statusParam}`);
+  if (!r || !r.ok) return;
+  const data = await r.json();
+  renderLinks(data.proposals);
+}
+
+function renderLinks(proposals) {
+  const container = document.getElementById('links-list');
+  if (!container) return;
+  if (!proposals || proposals.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px">Aucune liaison trouvée.</div>';
+    return;
+  }
+  container.innerHTML = proposals.map(p => {
+    const conf = Math.round(p.confidence * 100);
+    const twitchUser  = p.alias_id.replace('twitch:', '');
+    const twitchUrl   = `https://www.twitch.tv/${twitchUser}`;
+    const discordUser = p.canonical_id.replace('discord:', '');
+    const statusBadge = {
+      pending:  '<span class="badge" style="background:rgba(255,160,0,0.2);color:#FFA000;border:1px solid #FFA000;padding:2px 6px;border-radius:4px;font-size:0.7rem">EN ATTENTE</span>',
+      accepted: '<span class="badge" style="background:rgba(0,229,160,0.2);color:var(--c-curiosity);border:1px solid var(--c-curiosity);padding:2px 6px;border-radius:4px;font-size:0.7rem">ACCEPTÉ</span>',
+      rejected: '<span class="badge" style="background:rgba(255,77,77,0.2);color:var(--c-anger);border:1px solid var(--c-anger);padding:2px 6px;border-radius:4px;font-size:0.7rem">REJETÉ</span>',
+    }[p.status] || '';
+    const actions = p.status === 'pending' ? `
+      <button onclick="acceptLink(${p.id})" class="btn btn-success" style="font-size:0.75rem;padding:4px 10px">✓ Accepter</button>
+      <button onclick="rejectLink(${p.id})" class="btn btn-danger"  style="font-size:0.75rem;padding:4px 10px">✗ Rejeter</button>
+    ` : '';
+    return `
+      <div style="background:var(--card);border:1.5px solid var(--card-border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${statusBadge}
+          <span style="font-weight:700;color:var(--accent)">${conf}%</span>
+          <span style="font-size:0.85rem">Discord: <strong>${escHtml(discordUser)}</strong></span>
+          <span style="color:var(--text-muted)">↔</span>
+          <span style="font-size:0.85rem">Twitch: <a href="${twitchUrl}" target="_blank" style="color:var(--c-curiosity)">${escHtml(twitchUser)}</a></span>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">${actions}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function analyzeLinks() {
+  const r = await apiFetch('/api/admin/links/analyze', { method: 'POST' });
+  if (r && r.ok) toast('Analyse déclenchée', 'success');
+  else toast('Erreur analyse', 'error');
+}
+
+async function acceptLink(id) {
+  const r = await apiFetch(`/api/admin/links/${id}/accept`, { method: 'POST' });
+  if (r && r.ok) toast('Liaison acceptée', 'success');
+  else toast('Erreur', 'error');
+  loadLinks();
+}
+
+async function rejectLink(id) {
+  const r = await apiFetch(`/api/admin/links/${id}/reject`, { method: 'POST' });
+  if (r && r.ok) toast('Liaison rejetée', 'success');
+  else toast('Erreur', 'error');
+  loadLinks();
 }

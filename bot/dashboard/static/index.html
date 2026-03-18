@@ -33,6 +33,7 @@
   <button class="tab-btn"        data-tab="admin-emotions" onclick="showTab('admin-emotions')">😤 HUMEUR</button>
   <button class="tab-btn"        data-tab="admin-logs"     onclick="showTab('admin-logs')">📜 LOGS</button>
   <button class="tab-btn" data-tab="memory" onclick="showTab('memory')">🧠 MÉMOIRE</button>
+  <button class="tab-btn"        data-tab="admin-links"    onclick="showTab('admin-links')">🔗 LIAISONS</button>
   <button class="tab-btn disabled" title="Phase 2">💸 COÛTS</button>
   <button class="tab-btn disabled" title="Phase 3">🎭 PERSONA</button>
   <button class="tab-btn disabled" title="Phase 3">⏱ TIMEOUTS</button>
@@ -127,6 +128,23 @@
 
   <!-- ── MEMORY ─────────────────────────────────────────────────────────── -->
   <div class="tab-content" id="tab-memory"></div>
+
+  <!-- ── ADMIN LIAISONS ───────────────────────────────────────────────────── -->
+  <div class="tab-content" id="tab-admin-links">
+    <div class="card">
+      <div class="section-header">
+        <span>LIAISONS DE COMPTES</span>
+        <button onclick="analyzeLinks()" class="btn btn-success">⚡ Analyser</button>
+      </div>
+      <div class="log-controls" style="margin-top:12px">
+        <button class="btn active" id="links-tab-all"      onclick="setLinksTab('all', this)">TOUS</button>
+        <button class="btn"        id="links-tab-pending"  onclick="setLinksTab('pending', this)">EN ATTENTE</button>
+        <button class="btn"        id="links-tab-accepted" onclick="setLinksTab('accepted', this)">ACCEPTÉS</button>
+        <button class="btn"        id="links-tab-rejected" onclick="setLinksTab('rejected', this)">REJETÉS</button>
+      </div>
+      <div id="links-list" style="margin-top:12px"></div>
+    </div>
+  </div>
 
 </main>
 
