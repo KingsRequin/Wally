@@ -69,6 +69,11 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.bot.dashboard_token = str(d["dashboard_token"]) or None
         if "trigger_names" in d:
             cfg.bot.trigger_names = list(d["trigger_names"])  # liste : remplacement intégral
+        if "cost_alert_threshold" in d:
+            val = float(d["cost_alert_threshold"])
+            if val <= 0:
+                raise HTTPException(status_code=400, detail="cost_alert_threshold must be > 0")
+            cfg.bot.cost_alert_threshold = val
 
     if "discord" in body:
         d = body["discord"]

@@ -16,6 +16,7 @@ class BotConfig:
     dashboard_token: Optional[str] = None
     prelude_window_size: int = 15
     link_min_confidence: float = 0.75
+    cost_alert_threshold: float = 25.0
 
 
 @dataclass
