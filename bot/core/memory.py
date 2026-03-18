@@ -56,6 +56,8 @@ class MemoryService:
         self._db: Optional[object] = None
         # Strong refs pour les tâches fire-and-forget (consolidation, etc.)
         self._bg_tasks: set[asyncio.Task] = set()
+        # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
+        self._alias_cache: dict[str, str] = {}
 
     def set_openai_client(self, client: "OpenAIClient") -> None:
         self._openai = client
@@ -108,7 +110,20 @@ class MemoryService:
             self._mem0 = None
 
     def _user_id(self, platform: str, user_id: str) -> str:
-        return f"{platform}:{user_id}"
+        raw = f"{platform}:{user_id}"
+        return self._alias_cache.get(raw, raw)
+
+    async def load_aliases(self, db) -> None:
+        """Charge la carte d'alias depuis la DB (liaisons acceptées).
+
+        Appelé au démarrage dans main.py après Database.create().
+        """
+        try:
+            alias_map = await db.get_alias_map()
+            self._alias_cache = alias_map
+            logger.info("Alias cache chargé: {n} liaisons", n=len(alias_map))
+        except Exception as e:
+            logger.warning("Impossible de charger les alias: {e}", e=e)
 
     async def add(self, platform: str, user_id: str, content: str,
                   username: str = "", emotion_context: str = "") -> None:
@@ -130,6 +145,12 @@ class MemoryService:
                 await self._db.upsert_memory_user(uid, platform, username)
             # Vérification consolidation en arrière-plan (ne bloque pas la réponse)
             self._fire(self._maybe_consolidate(platform, user_id))
+            # Analyse automatique des liens de comptes (seulement pour les non-alias)
+            raw_uid = f"{platform}:{user_id}"
+            if uid == raw_uid and self._db is not None:
+                from bot.core import account_linker
+                threshold = getattr(self._config.bot, "link_min_confidence", 0.75)
+                self._fire(account_linker.analyze_new_user(self._db, raw_uid, threshold))
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
 

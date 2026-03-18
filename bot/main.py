@@ -78,6 +78,7 @@ async def main() -> None:
     openai_client = OpenAIClient(config, db)
     memory.set_openai_client(openai_client)
     memory.set_db(db)
+    await memory.load_aliases(db)
     emotion.set_openai_client(openai_client)
     logger.info("MemoryService and OpenAIClient initialized")
 
