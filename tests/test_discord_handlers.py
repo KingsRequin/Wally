@@ -3,6 +3,7 @@
 Tests for Discord message handler pipeline.
 All Discord objects and services are mocked — no real bot connection needed.
 """
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -165,7 +166,7 @@ async def test_respond_includes_context_block_when_present():
 async def test_post_process_calls_emotion_and_trust():
     bot = make_bot()
     await _post_process(bot, "thank you", "discord", "12345", "99999", 0.5)
-    bot.emotion.process_message.assert_awaited_once_with("thank you", trust_score=0.5, context_messages=None)
+    bot.emotion.process_message.assert_awaited_once_with("thank you", trust_score=0.5, context_messages=None, image_urls=None)
     bot.db.update_trust_score.assert_awaited_once()
 
 
@@ -398,3 +399,41 @@ async def test_respond_non_image_attachment_ignored():
 
     call_kwargs = bot.openai.complete.call_args.kwargs
     assert call_kwargs.get("image_urls") is None
+
+
+# ── Image emotion ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_post_process_passes_image_urls_to_emotion():
+    """_post_process doit transmettre image_urls à emotion.process_message."""
+    bot = make_bot()
+    await _post_process(
+        bot, "regarde cette image", "discord", "12345", "99999", 0.5,
+        context_messages=[],
+        image_urls=["https://example.com/meme.png"],
+    )
+    call_kwargs = bot.emotion.process_message.call_args.kwargs
+    assert call_kwargs.get("image_urls") == ["https://example.com/meme.png"]
+
+
+@pytest.mark.asyncio
+async def test_respond_passes_image_urls_to_post_process():
+    """_respond doit passer image_urls et text_content (substitution image-only) à _post_process.
+
+    handlers.py ligne 197 :
+        text_content = message.content or ("Regarde cette image." if image_urls else "")
+    C'est ce text_content qui est passé à _post_process, pas message.content.
+    """
+    bot = make_bot()
+    attachment = make_attachment("https://example.com/img.png")
+    message = make_message(content="", attachments=[attachment])
+
+    # On ne patche pas create_task → _post_process s'exécute réellement
+    await _respond(bot, message, "12345", "99999", [])
+    await asyncio.sleep(0)  # laisse la tâche de fond se terminer
+
+    call_kwargs = bot.emotion.process_message.call_args.kwargs
+    assert call_kwargs.get("image_urls") == ["https://example.com/img.png"]
+    # Texte de substitution pour message image-only
+    call_args = bot.emotion.process_message.call_args.args
+    assert call_args[0] == "Regarde cette image."

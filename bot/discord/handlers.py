@@ -233,7 +233,10 @@ async def _respond(
         )
         bot.memory.append_message(str(message.channel.id), "Wally", reply)
 
-        _fire(_post_process(bot, message.content, platform, user_id, guild_id, trust, context_messages))
+        _fire(_post_process(
+            bot, text_content, platform, user_id, guild_id, trust, context_messages,
+            image_urls=image_urls or None,
+        ))
 
     except Exception as e:
         logger.error("Error handling Discord message: {e}", e=e)
@@ -251,9 +254,13 @@ async def _post_process(
     guild_id: str,
     trust: float,
     context_messages: list[dict] | None = None,
+    image_urls: list[str] | None = None,
 ) -> None:
     try:
-        await bot.emotion.process_message(text, trust_score=trust, context_messages=context_messages)
+        await bot.emotion.process_message(
+            text, trust_score=trust, context_messages=context_messages,
+            image_urls=image_urls,
+        )
 
         insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
         if any(w in text.lower() for w in insult_words):
