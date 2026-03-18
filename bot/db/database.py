@@ -467,3 +467,15 @@ class Database:
         )
         rows = await cursor.fetchall()
         return {r[0]: r[1] for r in rows}
+
+    async def get_platform_users(self, platform: str) -> list[str]:
+        """Retourne la liste des user_ids (sans préfixe platform) pour une plateforme donnée.
+
+        Cherche dans trust_scores où platform=platform.
+        """
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT user_id FROM trust_scores WHERE platform = ?",
+            (platform,),
+        )
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]
