@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS cost_log (
     input_tokens INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL,
     cost_usd REAL NOT NULL,
-    purpose TEXT
+    purpose TEXT,
+    user_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS timeout_log (
@@ -70,6 +71,8 @@ CREATE TABLE IF NOT EXISTS memory_users (
 
 CREATE INDEX IF NOT EXISTS idx_emotion_history_ts ON emotion_history(snapshot_at);
 
+CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp);
+
 CREATE TABLE IF NOT EXISTS daily_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp  REAL    NOT NULL,
@@ -90,6 +93,18 @@ CREATE TABLE IF NOT EXISTS user_links (
     resolved_at REAL,
     UNIQUE(canonical_id, alias_id)
 );
+
+CREATE TABLE IF NOT EXISTS session_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_msgs_channel ON session_messages(channel_id);
 """
 
 
@@ -109,6 +124,18 @@ class Database:
             await conn.commit()
         except aiosqlite.OperationalError:
             pass  # colonne déjà présente
+        # Migration: ajouter user_id à cost_log si absent
+        try:
+            await conn.execute("ALTER TABLE cost_log ADD COLUMN user_id TEXT")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass  # colonne déjà présente
+        # Migration: index sur cost_log.timestamp
+        try:
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp)")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
         # Nettoyage automatique des vieilles entrées daily_log au démarrage
         try:
             await conn.execute(
@@ -145,12 +172,13 @@ class Database:
         output_tokens: int,
         cost_usd: float,
         purpose: str = "",
+        user_id: str | None = None,
     ):
         await self.execute(
             "INSERT INTO cost_log "
-            "(timestamp, model, input_tokens, output_tokens, cost_usd, purpose) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (time.time(), model, input_tokens, output_tokens, cost_usd, purpose),
+            "(timestamp, model, input_tokens, output_tokens, cost_usd, purpose, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), model, input_tokens, output_tokens, cost_usd, purpose, user_id),
         )
 
     async def get_cost_since(self, since_timestamp: float) -> float:
@@ -160,6 +188,45 @@ class Database:
             (since_timestamp,),
         )
         return float(row["total"]) if row else 0.0
+
+    async def get_daily_costs(self, since_ts: float, until_ts: float | None = None) -> list[dict]:
+        """Coûts agrégés par jour (date ISO, cost_usd total)."""
+        end = until_ts or time.time()
+        rows = await self.fetch_all(
+            "SELECT DATE(timestamp, 'unixepoch', 'localtime') AS date, "
+            "SUM(cost_usd) AS cost "
+            "FROM cost_log WHERE timestamp >= ? AND timestamp <= ? "
+            "GROUP BY date ORDER BY date ASC",
+            (since_ts, end),
+        )
+        return [{"date": r["date"], "cost": round(float(r["cost"]), 6)} for r in rows]
+
+    async def get_cost_breakdown(self, since_ts: float, group_by: str) -> list[dict]:
+        """Agrège les coûts par model, purpose, ou user_id."""
+        allowed = {"model", "purpose", "user_id"}
+        if group_by not in allowed:
+            raise ValueError(f"group_by must be one of {allowed}")
+        rows = await self.fetch_all(
+            f"SELECT {group_by} AS grp, SUM(cost_usd) AS total, COUNT(*) AS count "
+            f"FROM cost_log WHERE timestamp >= ? "
+            f"GROUP BY {group_by} ORDER BY total DESC",
+            (since_ts,),
+        )
+        return [
+            {"key": r["grp"], "total": round(float(r["total"]), 6), "count": int(r["count"])}
+            for r in rows
+        ]
+
+    async def get_cost_stats(self, since_ts: float) -> dict:
+        """Total et nombre d'appels depuis since_ts."""
+        row = await self.fetch_one(
+            "SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS count "
+            "FROM cost_log WHERE timestamp >= ?",
+            (since_ts,),
+        )
+        total = float(row["total"]) if row else 0.0
+        count = int(row["count"]) if row else 0
+        return {"total": round(total, 6), "count": count}
 
     # ── Timeout / mute ───────────────────────────────────────────────────────
 
@@ -288,6 +355,10 @@ class Database:
             (user_id, platform, time.time(), username or None),
         )
 
+    async def delete_memory_user(self, user_id: str) -> None:
+        """Supprime un utilisateur de memory_users (après fusion de comptes)."""
+        await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))
+
     async def sync_memory_users_from_qdrant(self, qdrant_url: str) -> int:
         """Imports into memory_users the user_ids found in Qdrant.
 
@@ -415,19 +486,23 @@ class Database:
     async def list_link_proposals(self, status: str | None = None) -> list[dict]:
         """Retourne les propositions de liaison.
 
-        Chaque dict contient: id, canonical_id, alias_id, confidence, status, created_at, resolved_at.
+        Chaque dict contient: id, canonical_id, alias_id, confidence, status,
+        created_at, resolved_at, canonical_username, alias_username.
         """
+        base = (
+            "SELECT l.id, l.canonical_id, l.alias_id, l.confidence, l.status, "
+            "l.created_at, l.resolved_at, "
+            "mc.username AS canonical_username, ma.username AS alias_username "
+            "FROM user_links l "
+            "LEFT JOIN memory_users mc ON mc.user_id = l.canonical_id "
+            "LEFT JOIN memory_users ma ON ma.user_id = l.alias_id"
+        )
         if status:
-            cursor = await self._conn.execute(
-                "SELECT id, canonical_id, alias_id, confidence, status, created_at, resolved_at "
-                "FROM user_links WHERE status = ? ORDER BY confidence DESC",
-                (status,),
-            )
+            query = f"{base} WHERE l.status = ? ORDER BY l.confidence DESC"
+            cursor = await self._conn.execute(query, (status,))
         else:
-            cursor = await self._conn.execute(
-                "SELECT id, canonical_id, alias_id, confidence, status, created_at, resolved_at "
-                "FROM user_links ORDER BY confidence DESC"
-            )
+            query = f"{base} ORDER BY l.confidence DESC"
+            cursor = await self._conn.execute(query)
         rows = await cursor.fetchall()
         return [
             {
@@ -438,6 +513,8 @@ class Database:
                 "status": r[4],
                 "created_at": r[5],
                 "resolved_at": r[6],
+                "canonical_username": r[7],
+                "alias_username": r[8],
             }
             for r in rows
         ]
@@ -468,14 +545,64 @@ class Database:
         rows = await cursor.fetchall()
         return {r[0]: r[1] for r in rows}
 
-    async def get_platform_users(self, platform: str) -> list[str]:
-        """Retourne la liste des user_ids (sans préfixe platform) pour une plateforme donnée.
+    async def get_platform_users(self, platform: str) -> list[dict]:
+        """Retourne les utilisateurs d'une plateforme depuis memory_users.
 
-        Cherche dans trust_scores où platform=platform.
+        Chaque dict contient 'raw_id' (sans préfixe) et 'username' (peut être None).
         """
         cursor = await self._conn.execute(
-            "SELECT DISTINCT user_id FROM trust_scores WHERE platform = ?",
+            "SELECT user_id, username FROM memory_users WHERE platform = ?",
             (platform,),
         )
         rows = await cursor.fetchall()
-        return [r[0] for r in rows]
+        return [
+            {
+                "raw_id": r[0].split(":", 1)[1] if ":" in r[0] else r[0],
+                "username": r[1],
+                "full_id": r[0],
+            }
+            for r in rows
+        ]
+
+    # ── Session persistence ───────────────────────────────────────────────────
+
+    async def insert_session_message(
+        self,
+        channel_id: str,
+        platform: str,
+        user_id: str,
+        display_name: str,
+        content: str,
+        timestamp: float,
+    ) -> None:
+        await self.execute(
+            "INSERT INTO session_messages "
+            "(channel_id, platform, user_id, display_name, content, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (channel_id, platform, user_id, display_name, content, timestamp),
+        )
+
+    async def get_recent_session_messages(self, since: float) -> list[dict]:
+        """Retourne les messages de session plus récents que `since`."""
+        rows = await self.fetch_all(
+            "SELECT channel_id, platform, user_id, display_name, content, timestamp "
+            "FROM session_messages WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since,),
+        )
+        return [
+            {
+                "channel_id": r["channel_id"],
+                "platform": r["platform"],
+                "user_id": r["user_id"],
+                "display_name": r["display_name"],
+                "content": r["content"],
+                "timestamp": float(r["timestamp"]),
+            }
+            for r in rows
+        ]
+
+    async def delete_session_messages(self, channel_id: str) -> None:
+        """Supprime les messages de session d'un canal (après analyse)."""
+        await self.execute(
+            "DELETE FROM session_messages WHERE channel_id = ?", (channel_id,)
+        )
