@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS user_links (
 | Méthode | Description |
 |---|---|
 | `upsert_link_proposal(canonical_id, alias_id, confidence)` | Insert si absent ; met à jour `confidence` si le score a changé ; no-op si déjà accepted/rejected |
-| `list_link_proposals(status=None)` | Liste filtrée par statut, triée par confidence DESC |
+| `list_link_proposals(status=None)` | Liste filtrée par statut, triée par confidence DESC. Retourne les `username` via LEFT JOIN sur `memory_users`. Inclut également `counts: {pending, accepted, rejected}` dans la réponse pour les badges UI. |
 | `accept_link(id)` | `status='accepted'`, `resolved_at=now()` |
 | `reject_link(id)` | `status='rejected'`, `resolved_at=now()` |
 | `get_alias_map()` | `dict[alias_id → canonical_id]` pour tous les liens acceptés |
@@ -145,7 +145,7 @@ async def analyze_new_user(db: Database, new_user_id: str) -> None:
     Appelé en fire-and-forget depuis upsert_memory_user."""
 ```
 
-`analyze_new_user` est appelé dans `MemoryService.add()` après `await self._db.upsert_memory_user(...)` via `self._fire(account_linker.analyze_new_user(self._db, uid))`. Le hook est dans le service, pas dans la méthode DB.
+`analyze_new_user` est appelé dans `MemoryService.add()` après `await self._db.upsert_memory_user(...)` via `self._fire(account_linker.analyze_new_user(self._db, uid))`. Le hook est dans le service, pas dans la méthode DB. **Important :** le fire-and-forget n'est déclenché que si `uid == raw` (compte pas encore aliasé) — si le compte est déjà lié, `_user_id()` retourne le `canonical_id` et l'analyse serait inutile.
 
 #### Dépendance
 
@@ -225,7 +225,7 @@ Ajoutée dans la page admin, après la section mémoire.
 | `bot/core/account_linker.py` | créé | Analyse similarité Jaro-Winkler, `analyze_all`, `analyze_new_user` |
 | `bot/config.py` | modifié | Champ `link_min_confidence` dans `BotConfig` |
 | `bot/dashboard/routes/links.py` | créé | 4 routes admin |
-| `bot/dashboard/routes/sse.py` | modifié | Ajout `broadcast_event(data)` — push événement structuré dans `_log_queues` |
+| `bot/dashboard/routes/sse.py` | modifié | Ajout `broadcast_event(data: dict)` — fonction **synchrone** appelant `q.put_nowait()` sur `_log_queues` (même pattern que `_log_sink`) |
 | `bot/dashboard/app.py` | modifié | Include router links |
 | `bot/dashboard/static/app.js` | modifié | Section UI liaisons de comptes |
 | `bot/dashboard/static/index.html` | modifié | Onglet/section liaisons dans l'admin |
