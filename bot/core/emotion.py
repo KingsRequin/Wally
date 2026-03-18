@@ -241,7 +241,8 @@ class EmotionEngine:
             await self._save_learned_words()
 
     async def _analyze_llm(
-        self, text: str, trust_score: float, context_messages: list[dict]
+        self, text: str, trust_score: float, context_messages: list[dict],
+        image_urls: list[str] | None = None,
     ) -> tuple[dict[str, float], list[dict]]:
         """Analyse émotionnelle via LLM — retourne (deltas, new_words)."""
         system_prompt = (
@@ -282,6 +283,14 @@ class EmotionEngine:
             '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
             '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}]}'
         )
+        if image_urls:
+            system_prompt += (
+                "\n\n## Images jointes\n"
+                "Des images accompagnent ce message. Analyse aussi leur contenu émotionnel "
+                "(ton visuel, sujet représenté, contexte apparent) pour affiner les deltas. "
+                "Une image de rage, un mème sarcastique ou une photo triste doit influencer "
+                "les deltas au même titre que le texte."
+            )
         context_lines = "\n".join(
             f"[{m['author']}]: {m['content']}" for m in context_messages
         )
@@ -294,6 +303,7 @@ class EmotionEngine:
             system_prompt,
             [{"role": "user", "content": user_msg}],
             purpose="emotion_analysis",
+            image_urls=image_urls or None,
         )
         parsed = json.loads(raw)
         raw_deltas = parsed.get("deltas", {})
@@ -393,11 +403,14 @@ class EmotionEngine:
             return {}
 
     async def process_message(
-        self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None
+        self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None,
+        image_urls: list[str] | None = None,
     ) -> None:
         if self._openai is not None and context_messages:
             try:
-                deltas, new_words = await self._analyze_llm(text, trust_score, context_messages)
+                deltas, new_words = await self._analyze_llm(
+                    text, trust_score, context_messages, image_urls=image_urls
+                )
                 for emotion, delta in deltas.items():
                     self.apply_delta(emotion, delta)
                 if new_words:

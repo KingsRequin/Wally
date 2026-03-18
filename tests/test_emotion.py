@@ -375,3 +375,138 @@ async def test_snapshot_inserted_on_60th_tick(tmp_path):
     snapshots = await db.get_emotion_snapshots_since(_time.time() - 86400)
     assert len(snapshots) == 1  # le 60e tick a bien déclenché l'insert
     await db.close()
+
+
+# ── Image URLs support ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_analyze_llm_passes_image_urls_to_complete_secondary():
+    """_analyze_llm doit transmettre image_urls à complete_secondary."""
+    engine = EmotionEngine(make_config())
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+        "deltas": {"anger": 0.0, "joy": 0.15, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        "new_words": []
+    }))
+    engine.set_openai_client(mock_openai)
+
+    await engine.process_message(
+        "regarde cette image",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "regarde cette image"}],
+        image_urls=["https://example.com/meme.png"],
+    )
+
+    call_kwargs = mock_openai.complete_secondary.call_args.kwargs
+    assert call_kwargs.get("image_urls") == ["https://example.com/meme.png"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_llm_enriches_prompt_with_images():
+    """Quand image_urls est non-vide, le system_prompt doit mentionner les images."""
+    engine = EmotionEngine(make_config())
+    captured_prompt = {}
+
+    async def capture_complete_secondary(system_prompt, messages, purpose="summary", image_urls=None):
+        captured_prompt["system"] = system_prompt
+        return json.dumps({
+            "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+            "new_words": []
+        })
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = capture_complete_secondary
+    engine.set_openai_client(mock_openai)
+
+    await engine.process_message(
+        "voilà",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "voilà"}],
+        image_urls=["https://example.com/img.png"],
+    )
+
+    assert "Images jointes" in captured_prompt["system"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_llm_no_image_urls_no_prompt_enrichment():
+    """Sans images, le system_prompt ne doit PAS contenir la directive images."""
+    engine = EmotionEngine(make_config())
+    captured_prompt = {}
+
+    async def capture_complete_secondary(system_prompt, messages, purpose="summary", image_urls=None):
+        captured_prompt["system"] = system_prompt
+        return json.dumps({
+            "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+            "new_words": []
+        })
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = capture_complete_secondary
+    engine.set_openai_client(mock_openai)
+
+    await engine.process_message(
+        "texte sans image",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "texte sans image"}],
+    )
+
+    assert "Images jointes" not in captured_prompt["system"]
+
+
+@pytest.mark.asyncio
+async def test_process_message_image_only_llm_available():
+    """Message image-seul avec texte de substitution : le LLM est appelé avec image_urls."""
+    engine = EmotionEngine(make_config())
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+        "deltas": {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.05, "boredom": 0.0},
+        "new_words": []
+    }))
+    engine.set_openai_client(mock_openai)
+
+    # handlers.py passe "Regarde cette image." quand message.content est vide
+    await engine.process_message(
+        "Regarde cette image.",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "Regarde cette image."}],
+        image_urls=["https://example.com/meme.png"],
+    )
+
+    mock_openai.complete_secondary.assert_called_once()
+    call_kwargs = mock_openai.complete_secondary.call_args.kwargs
+    assert call_kwargs.get("image_urls") == ["https://example.com/meme.png"]
+    assert engine.get_state()["joy"] == pytest.approx(0.1, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_process_message_image_only_llm_unavailable():
+    """Message image-seul, LLM indisponible : fallback NRCLex sans erreur."""
+    engine = EmotionEngine(make_config())
+    # Pas d'openai injecté → fallback NRCLex
+    await engine.process_message(
+        "Regarde cette image.",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "Regarde cette image."}],
+        image_urls=["https://example.com/img.png"],
+    )
+    # Pas d'exception, état valide
+    assert all(0.0 <= v <= 1.0 for v in engine.get_state().values())
+
+
+@pytest.mark.asyncio
+async def test_process_message_text_image_llm_error_falls_back():
+    """Texte + images, LLM échoue : fallback NRCLex sur le texte seul."""
+    engine = EmotionEngine(make_config())
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(side_effect=Exception("timeout"))
+    engine.set_openai_client(mock_openai)
+
+    # Pas d'exception levée — fallback silencieux vers NRCLex
+    await engine.process_message(
+        "happy joyful",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "happy joyful"}],
+        image_urls=["https://example.com/img.png"],
+    )
+    assert all(0.0 <= v <= 1.0 for v in engine.get_state().values())
