@@ -24,13 +24,13 @@ def test_joy_suppresses_anger():
 
 
 def test_joy_suppresses_sadness():
-    # ("joy","sadness",0.8) + ("sadness","joy",0.8) bidirectionnel → double suppression
-    # sadness = 0.6 - 0.4*0.8 - 0.4*0.8 = 0.6 - 0.64 = -0.04 → floored to 0.0
+    # ("joy","sadness",0.8) bidirectionnel via _apply_suppression → suppression unique
+    # sadness = 0.6 - 0.4*0.8 = 0.6 - 0.32 = 0.28
     engine = EmotionEngine(make_config())
     engine._state["sadness"] = 0.6
     engine.apply_delta("joy", 0.4)
     assert engine.get_state()["joy"] == pytest.approx(0.4, abs=0.001)
-    assert engine.get_state()["sadness"] == pytest.approx(0.0, abs=0.001)
+    assert engine.get_state()["sadness"] == pytest.approx(0.28, abs=0.001)
 
 
 def test_anger_suppresses_joy():
@@ -42,13 +42,13 @@ def test_anger_suppresses_joy():
 
 
 def test_sadness_suppresses_joy():
-    # ("sadness","joy",0.8) + ("joy","sadness",0.8) bidirectionnel → double suppression
-    # joy = 0.8 - 0.3*0.8 - 0.3*0.8 = 0.8 - 0.48 = 0.32
+    # ("joy","sadness",0.8) bidirectionnel via elif dans _apply_suppression → suppression unique
+    # joy = 0.8 - 0.3*0.8 = 0.8 - 0.24 = 0.56
     engine = EmotionEngine(make_config())
     engine._state["joy"] = 0.8
     engine.apply_delta("sadness", 0.3)
     assert engine.get_state()["sadness"] == pytest.approx(0.3, abs=0.001)
-    assert engine.get_state()["joy"] == pytest.approx(0.32, abs=0.001)
+    assert engine.get_state()["joy"] == pytest.approx(0.56, abs=0.001)
 
 
 def test_anger_does_not_suppress_sadness():

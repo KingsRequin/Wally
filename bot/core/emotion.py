@@ -30,12 +30,11 @@ MAX_DELTA_PER_MESSAGE = 0.3
 
 # Coefficient de suppression lors d'un apply_delta : la valeur montante érode la valeur adverse.
 # Bidirectionnel : si joy monte, anger baisse ; si anger monte, joy baisse.
-# ("sadness", "joy") est explicite pour que sadness montante supprime joy directement.
 # anger↔boredom intentionnellement absent (coexistence plausible).
+# sadness↔joy bidirectionnel via "elif emotion == tgt" dans _apply_suppression.
 SUPPRESSION_RULES: list[tuple[str, str, float]] = [
     ("joy",     "anger",   0.8),
     ("joy",     "sadness", 0.8),
-    ("sadness", "joy",     0.8),  # explicite : sadness montante supprime joy
 ]
 
 # French keyword → (emotion, delta) supplements for NRCLex (English-only lexicon)
