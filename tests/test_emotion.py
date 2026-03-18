@@ -371,6 +371,7 @@ async def test_snapshot_inserted_on_60th_tick(tmp_path):
         except aio.CancelledError:
             pass
 
-    snapshots = await db.get_today_emotion_snapshots()
+    import time as _time
+    snapshots = await db.get_emotion_snapshots_since(_time.time() - 86400)
     assert len(snapshots) == 1  # le 60e tick a bien déclenché l'insert
     await db.close()

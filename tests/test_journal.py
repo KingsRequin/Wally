@@ -298,7 +298,7 @@ def make_deps_with_db(journal_channel_id=12345, journal_time="03:00",
             {"author": "Alice", "content": "Hello from DB", "timestamp": 1000.0},
         ]
     db.get_today_messages = AsyncMock(return_value=db_messages)
-    db.get_today_emotion_snapshots = AsyncMock(return_value=[])
+    db.get_emotion_snapshots_since = AsyncMock(return_value=[])
     db.list_memory_users = AsyncMock(return_value=[])
 
     return config, openai, emotion, memory, db

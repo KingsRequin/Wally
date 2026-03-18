@@ -1,6 +1,8 @@
 # bot/dashboard/routes/emotions.py
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -18,7 +20,7 @@ async def get_emotions_public(request: Request) -> dict:
 @public_router.get("/emotions/history")
 async def get_emotions_history(request: Request) -> dict:
     state = request.app.state.wally
-    snapshots = await state.db.get_today_emotion_snapshots()
+    snapshots = await state.db.get_emotion_snapshots_since(time.time() - 86400)
     return {"history": snapshots}
 
 

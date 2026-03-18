@@ -63,7 +63,7 @@ def _make_state(**overrides) -> AppState:
     emotion.set_emotion = MagicMock()
 
     db = MagicMock()
-    db.get_today_emotion_snapshots = AsyncMock(return_value=[])
+    db.get_emotion_snapshots_since = AsyncMock(return_value=[])
     db.insert_emotion_snapshot = AsyncMock()
 
     cfg = _make_config()
@@ -242,7 +242,7 @@ async def test_stream_uses_cache(app):
 
 async def test_memory_users_route_is_implemented():
     db = MagicMock()
-    db.get_today_emotion_snapshots = AsyncMock(return_value=[])
+    db.get_emotion_snapshots_since = AsyncMock(return_value=[])
     db.insert_emotion_snapshot = AsyncMock()
     db.list_memory_users = AsyncMock(return_value=[])
     state = _make_state(db=db)

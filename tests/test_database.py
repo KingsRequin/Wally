@@ -132,17 +132,39 @@ async def test_insert_and_get_today_snapshots(tmp_path):
     state = {"anger": 0.2, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
     await db.insert_emotion_snapshot(state)
     await db.insert_emotion_snapshot(state)
-    snapshots = await db.get_today_emotion_snapshots()
+    import time
+    snapshots = await db.get_emotion_snapshots_since(time.time() - 86400)
     assert len(snapshots) == 2
     assert abs(snapshots[0]["joy"] - 0.5) < 0.001
     await db.close()
 
 
 @pytest.mark.asyncio
-async def test_get_today_snapshots_returns_empty_list_when_none(tmp_path):
+async def test_get_snapshots_since_returns_empty_list_when_none(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
-    snapshots = await db.get_today_emotion_snapshots()
+    import time
+    snapshots = await db.get_emotion_snapshots_since(time.time() - 86400)
     assert snapshots == []
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_snapshots_since_excludes_old_data(tmp_path):
+    """Les snapshots antérieurs au cutoff ne sont pas retournés."""
+    import time
+    db = await Database.create(str(tmp_path / "test.db"))
+    old_ts = time.time() - 25 * 3600  # 25h avant = hors fenêtre 24h
+    await db.execute(
+        "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
+        "VALUES (?, 0.1, 0.9, 0.0, 0.0, 0.0)",
+        (old_ts,),
+    )
+    await db.insert_emotion_snapshot(
+        {"anger": 0.2, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
+    )
+    snapshots = await db.get_emotion_snapshots_since(time.time() - 86400)
+    assert len(snapshots) == 1
+    assert abs(snapshots[0]["anger"] - 0.2) < 0.001
     await db.close()
 
 

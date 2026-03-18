@@ -252,13 +252,10 @@ class Database:
             ),
         )
 
-    async def get_today_emotion_snapshots(self) -> list[dict]:
-        midnight = datetime.now(_TZ_DB).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).timestamp()
+    async def get_emotion_snapshots_since(self, since: float) -> list[dict]:
         rows = await self.fetch_all(
             "SELECT * FROM emotion_history WHERE snapshot_at >= ? ORDER BY snapshot_at ASC",
-            (midnight,),
+            (since,),
         )
         return [dict(row) for row in rows]
 

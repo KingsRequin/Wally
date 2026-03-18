@@ -61,7 +61,7 @@ async def main() -> None:
     db_path = os.getenv("DB_PATH", "data/wally.db")
     db = await Database.create(db_path)
     logger.info("Database ready at {path}", path=db_path)
-    await db.cleanup_old_emotion_history()
+    await db.cleanup_old_emotion_history(days=30)
     logger.info("Old emotion history cleaned up")
 
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")

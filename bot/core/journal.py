@@ -1,6 +1,7 @@
 # bot/core/journal.py
 from __future__ import annotations
 
+import time
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -186,7 +187,7 @@ class DailyJournal:
 
         # Récupération de l'arc émotionnel
         try:
-            snapshots = await self._db.get_today_emotion_snapshots() if self._db else []
+            snapshots = await self._db.get_emotion_snapshots_since(time.time() - 86400) if self._db else []
         except Exception as exc:
             logger.warning("Failed to get emotion snapshots for journal: {e}", e=exc)
             snapshots = []
