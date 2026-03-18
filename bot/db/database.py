@@ -217,13 +217,20 @@ class Database:
             for r in rows
         ]
 
-    async def get_cost_stats(self, since_ts: float) -> dict:
-        """Total et nombre d'appels depuis since_ts."""
-        row = await self.fetch_one(
-            "SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS count "
-            "FROM cost_log WHERE timestamp >= ?",
-            (since_ts,),
-        )
+    async def get_cost_stats(self, since_ts: float, until_ts: float | None = None) -> dict:
+        """Total et nombre d'appels entre since_ts et until_ts."""
+        if until_ts is not None:
+            row = await self.fetch_one(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS count "
+                "FROM cost_log WHERE timestamp >= ? AND timestamp < ?",
+                (since_ts, until_ts),
+            )
+        else:
+            row = await self.fetch_one(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS count "
+                "FROM cost_log WHERE timestamp >= ?",
+                (since_ts,),
+            )
         total = float(row["total"]) if row else 0.0
         count = int(row["count"]) if row else 0
         return {"total": round(total, 6), "count": count}

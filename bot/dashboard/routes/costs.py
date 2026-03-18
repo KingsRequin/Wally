@@ -25,6 +25,10 @@ PURPOSE_CATEGORIES = {
 }
 
 
+def _clamp_days(days: int) -> int:
+    return max(1, min(days, 365))
+
+
 def _since_ts(days: int) -> float:
     """Timestamp Unix il y a N jours."""
     return time.time() - days * 86400
@@ -40,7 +44,7 @@ async def costs_summary(request: Request) -> dict:
     prev_start = (datetime.now().replace(day=1) - timedelta(days=1)).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
     ).timestamp()
-    prev = await db.get_cost_stats(prev_start)
+    prev = await db.get_cost_stats(prev_start, month_start)
 
     total = current["total"]
     count = current["count"]
@@ -59,6 +63,7 @@ async def costs_summary(request: Request) -> dict:
 
 @router.get("/costs/daily")
 async def costs_daily(request: Request, days: int = 30) -> dict:
+    days = _clamp_days(days)
     db = request.app.state.wally.db
     current = await db.get_daily_costs(_since_ts(days))
     previous = await db.get_daily_costs(_since_ts(days * 2), _since_ts(days))
@@ -67,6 +72,7 @@ async def costs_daily(request: Request, days: int = 30) -> dict:
 
 @router.get("/costs/breakdown/model")
 async def costs_breakdown_model(request: Request, days: int = 30) -> list:
+    days = _clamp_days(days)
     db = request.app.state.wally.db
     rows = await db.get_cost_breakdown(_since_ts(days), "model")
     return [{"model": r["key"], "total": r["total"], "count": r["count"]} for r in rows]
@@ -74,6 +80,7 @@ async def costs_breakdown_model(request: Request, days: int = 30) -> list:
 
 @router.get("/costs/breakdown/purpose")
 async def costs_breakdown_purpose(request: Request, days: int = 30) -> list:
+    days = _clamp_days(days)
     db = request.app.state.wally.db
     rows = await db.get_cost_breakdown(_since_ts(days), "purpose")
     categories: dict[str, dict] = {}
@@ -88,6 +95,8 @@ async def costs_breakdown_purpose(request: Request, days: int = 30) -> list:
 
 @router.get("/costs/top-users")
 async def costs_top_users(request: Request, days: int = 30, limit: int = 10) -> list:
+    days = _clamp_days(days)
+    limit = max(1, min(limit, 100))
     db = request.app.state.wally.db
     rows = await db.get_cost_breakdown(_since_ts(days), "user_id")
 
