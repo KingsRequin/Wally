@@ -133,6 +133,48 @@ async def test_get_emotions_history(client):
     assert "history" in r.json()
 
 
+async def test_get_emotions_history_with_since_param(app):
+    """Le param since est transmis à la DB ; la réponse contient toujours 'history'."""
+    import time
+    state = _make_state()
+    # Remplacer le mock pour capturer l'argument reçu
+    captured = {}
+    async def fake_since(since):
+        captured["since"] = since
+        return []
+    state.db.get_emotion_snapshots_since = fake_since
+
+    app2 = create_dashboard_app(state)
+    async with AsyncClient(
+        transport=ASGITransport(app=app2), base_url="http://test"
+    ) as c:
+        since_val = time.time() - 7 * 86400
+        r = await c.get(f"/api/public/emotions/history?since={since_val}")
+    assert r.status_code == 200
+    assert "history" in r.json()
+    assert abs(captured["since"] - since_val) < 1.0
+
+
+async def test_get_emotions_history_since_capped_at_30d(app):
+    """Un since trop ancien est cappé à 30 jours."""
+    import time
+    state = _make_state()
+    captured = {}
+    async def fake_since(since):
+        captured["since"] = since
+        return []
+    state.db.get_emotion_snapshots_since = fake_since
+
+    app2 = create_dashboard_app(state)
+    async with AsyncClient(
+        transport=ASGITransport(app=app2), base_url="http://test"
+    ) as c:
+        r = await c.get("/api/public/emotions/history?since=0")
+    assert r.status_code == 200
+    # Le since reçu par la DB doit être >= now - 30j - quelques secondes de marge
+    assert captured["since"] >= time.time() - 30 * 86400 - 5
+
+
 # ── Emotions admin ────────────────────────────────────────────────────────────
 
 ADMIN_HEADERS = {"Authorization": "Bearer testtoken"}

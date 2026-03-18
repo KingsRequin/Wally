@@ -1,9 +1,9 @@
 # bot/dashboard/routes/emotions.py
 from __future__ import annotations
 
-import time
+import time as _time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from bot.core.emotion import EMOTIONS
@@ -18,9 +18,16 @@ async def get_emotions_public(request: Request) -> dict:
 
 
 @public_router.get("/emotions/history")
-async def get_emotions_history(request: Request) -> dict:
+async def get_emotions_history(
+    request: Request,
+    since: float = Query(default=None),
+) -> dict:
     state = request.app.state.wally
-    snapshots = await state.db.get_emotion_snapshots_since(time.time() - 86400)
+    if since is None:
+        since = _time.time() - 86400
+    # Cap à 30 jours maximum
+    since = max(since, _time.time() - 30 * 86400)
+    snapshots = await state.db.get_emotion_snapshots_since(since)
     return {"history": snapshots}
 
 
