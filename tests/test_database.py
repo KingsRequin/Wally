@@ -127,7 +127,7 @@ async def test_save_emotion_state_is_idempotent(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_insert_and_get_today_snapshots(tmp_path):
+async def test_insert_and_get_snapshots_since(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     state = {"anger": 0.2, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
     await db.insert_emotion_snapshot(state)
