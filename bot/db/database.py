@@ -79,6 +79,17 @@ CREATE TABLE IF NOT EXISTS daily_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_log_ts ON daily_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS user_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canonical_id TEXT NOT NULL,
+    alias_id TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at REAL NOT NULL,
+    resolved_at REAL,
+    UNIQUE(canonical_id, alias_id)
+);
 """
 
 
@@ -384,3 +395,75 @@ class Database:
     async def cleanup_old_daily_log(self, days: int = 7) -> None:
         cutoff = time.time() - days * 86400
         await self.execute("DELETE FROM daily_log WHERE timestamp < ?", (cutoff,))
+
+    # ── User links (account linking) ─────────────────────────────────────────
+
+    async def upsert_link_proposal(
+        self, canonical_id: str, alias_id: str, confidence: float
+    ) -> None:
+        """Insère ou met à jour une proposition de liaison (status=pending, update confidence)."""
+        async with self._conn.execute(
+            """INSERT INTO user_links (canonical_id, alias_id, confidence, status, created_at)
+               VALUES (?, ?, ?, 'pending', ?)
+               ON CONFLICT(canonical_id, alias_id)
+               DO UPDATE SET confidence=excluded.confidence, status='pending', created_at=excluded.created_at""",
+            (canonical_id, alias_id, confidence, time.time()),
+        ):
+            pass
+        await self._conn.commit()
+
+    async def list_link_proposals(self, status: str | None = None) -> list[dict]:
+        """Retourne les propositions de liaison.
+
+        Chaque dict contient: id, canonical_id, alias_id, confidence, status, created_at, resolved_at.
+        """
+        if status:
+            cursor = await self._conn.execute(
+                "SELECT id, canonical_id, alias_id, confidence, status, created_at, resolved_at "
+                "FROM user_links WHERE status = ? ORDER BY confidence DESC",
+                (status,),
+            )
+        else:
+            cursor = await self._conn.execute(
+                "SELECT id, canonical_id, alias_id, confidence, status, created_at, resolved_at "
+                "FROM user_links ORDER BY confidence DESC"
+            )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "canonical_id": r[1],
+                "alias_id": r[2],
+                "confidence": r[3],
+                "status": r[4],
+                "created_at": r[5],
+                "resolved_at": r[6],
+            }
+            for r in rows
+        ]
+
+    async def accept_link(self, link_id: int) -> dict | None:
+        """Marque la liaison comme acceptée, retourne canonical_id et alias_id."""
+        cursor = await self._conn.execute(
+            "UPDATE user_links SET status='accepted', resolved_at=? WHERE id=? RETURNING canonical_id, alias_id",
+            (time.time(), link_id),
+        )
+        row = await cursor.fetchone()
+        await self._conn.commit()
+        return {"canonical_id": row[0], "alias_id": row[1]} if row else None
+
+    async def reject_link(self, link_id: int) -> None:
+        """Marque la liaison comme rejetée."""
+        await self._conn.execute(
+            "UPDATE user_links SET status='rejected', resolved_at=? WHERE id=?",
+            (time.time(), link_id),
+        )
+        await self._conn.commit()
+
+    async def get_alias_map(self) -> dict[str, str]:
+        """Retourne {alias_id: canonical_id} pour toutes les liaisons acceptées."""
+        cursor = await self._conn.execute(
+            "SELECT alias_id, canonical_id FROM user_links WHERE status='accepted'"
+        )
+        rows = await cursor.fetchall()
+        return {r[0]: r[1] for r in rows}
