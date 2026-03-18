@@ -15,6 +15,7 @@ class BotConfig:
     journal_channel_id: Optional[int] = None
     dashboard_token: Optional[str] = None
     prelude_window_size: int = 15
+    link_min_confidence: float = 0.75
 
 
 @dataclass
