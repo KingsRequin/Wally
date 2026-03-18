@@ -75,7 +75,7 @@ function showTab(tabId) {
   // Chargements spécifiques par onglet
   if (tabId === 'status') {
     loadStreamStatus();
-    requestAnimationFrame(() => loadEmotionHistory());
+    requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
   }
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
   if (tabId === 'admin-logs') {
@@ -650,7 +650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Chargement initial du bento (stream + graphe)
   loadStreamStatus();
-  requestAnimationFrame(() => loadEmotionHistory());
+  requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
 
   // ── Tooltip hover sur le graphe ─────────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');
