@@ -188,12 +188,14 @@ class OpenAIClient:
         system_prompt: str,
         messages: list[dict],
         purpose: str = "summary",
+        image_urls: list[str] | None = None,
     ) -> str:
         return await self.complete(
             system_prompt,
             messages,
             model=self._config.openai.secondary_model,
             purpose=purpose,
+            image_urls=image_urls,
         )
 
     async def get_daily_cost(self) -> float:

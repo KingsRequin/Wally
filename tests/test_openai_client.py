@@ -289,3 +289,29 @@ async def test_complete_no_images_uses_generic_fallback():
             )
 
     assert result == FALLBACK_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_complete_secondary_forwards_image_urls():
+    """complete_secondary doit passer image_urls à complete()."""
+    config = make_config()
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    mock_response = make_mock_response("ok")
+    with patch.object(
+        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
+    ) as mock_create:
+        await client.complete_secondary(
+            "system",
+            [{"role": "user", "content": "test"}],
+            image_urls=["https://example.com/img.png"],
+        )
+        # Le dernier message doit contenir des blocs multimodaux (type: text + type: image_url)
+        call_args = mock_create.call_args
+        messages = call_args.kwargs["messages"]
+        last_content = messages[-1]["content"]
+        assert isinstance(last_content, list)
+        types = [block["type"] for block in last_content]
+        assert "text" in types
+        assert "image_url" in types
