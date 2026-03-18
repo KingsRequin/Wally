@@ -293,9 +293,13 @@ function drawEmotionGraph(history) {
 
   const W = canvas.offsetWidth || 800;
   const H = 165;
-  canvas.width  = W;
-  canvas.height = H;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
   // Fond sombre (--bg-alt)
   ctx.fillStyle = '#0f0f1c';
