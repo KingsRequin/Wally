@@ -145,7 +145,7 @@ async def analyze_new_user(db: Database, new_user_id: str) -> None:
     Appelé en fire-and-forget depuis upsert_memory_user."""
 ```
 
-`analyze_new_user` est appelé dans `MemoryService.add()` après `db.upsert_memory_user()` via `self._fire(...)`.
+`analyze_new_user` est appelé dans `MemoryService.add()` après `await self._db.upsert_memory_user(...)` via `self._fire(account_linker.analyze_new_user(self._db, uid))`. Le hook est dans le service, pas dans la méthode DB.
 
 #### Dépendance
 
@@ -158,20 +158,24 @@ async def analyze_new_user(db: Database, new_user_id: str) -> None:
 | Méthode | Route | Description |
 |---|---|---|
 | `GET` | `/api/admin/links` | Liste des propositions. Paramètre optionnel `?status=pending\|accepted\|rejected` |
-| `POST` | `/api/admin/links/analyze` | Déclenche `analyze_all` en tâche background. Réponse immédiate `{"status": "started"}` |
+| `POST` | `/api/admin/links/analyze` | Déclenche `analyze_all` en tâche background. Réponse immédiate `{"status": "started"}`. Quand la tâche se termine, un message SSE est émis sur le canal admin existant : `{"type": "links_analyzed", "count": N}`. Le frontend affiche un toast "N proposition(s) trouvée(s)" à la réception et rafraîchit la liste. |
 | `POST` | `/api/admin/links/{id}/accept` | Merge mémoires + update cache + `accept_link()` |
 | `POST` | `/api/admin/links/{id}/reject` | `reject_link()` |
 
 **Séquence d'acceptation (`accept`) :**
 
-1. `mem0.get_all(alias_id)` → liste des mémoires
-2. Pour chaque mémoire : `mem0.add(memory_text, user_id=canonical_id)`
-3. `mem0.delete_all(alias_id)`
-4. `db.execute("DELETE FROM memory_users WHERE user_id=?", alias_id)`
-5. `db.accept_link(id)`
-6. `memory._alias_cache[alias_id] = canonical_id`
+Les accès mem0 passent par `state.memory` (service layer) pour bénéficier du unwrap dict/list et du score filtering.
 
-Erreurs mem0 : loggées, non bloquantes. Le lien est accepté même si la copie mémoire échoue partiellement (les nouvelles interactions iront vers canonical_id dès l'étape 6).
+1. Récupérer `platform_alias` et `raw_id_alias` depuis `alias_id` (split sur `:`)
+2. `await state.memory.get_all(platform_alias, raw_id_alias)` → texte mémoires alias (méthode existante)
+3. Récupérer `platform_canonical` et `raw_id_canonical` depuis `canonical_id`
+4. Pour chaque bloc de mémoire non-vide : `await state.memory.add(platform_canonical, raw_id_canonical, memory_text)`
+5. Appel direct `mem0.delete_all(user_id=alias_id)` via `asyncio.to_thread` pour purger (pas de wrapper service existant pour delete_all — acceptable)
+6. `db.execute("DELETE FROM memory_users WHERE user_id=?", alias_id)`
+7. `db.accept_link(id)`
+8. `state.memory._alias_cache[alias_id] = canonical_id`
+
+Erreurs mem0 : loggées, non bloquantes. Le lien est accepté même si la copie mémoire échoue partiellement (les nouvelles interactions iront vers canonical_id dès l'étape 8).
 
 Fichier : `bot/dashboard/routes/links.py` — router inclus dans `app.py` sous `/api/admin`.
 
