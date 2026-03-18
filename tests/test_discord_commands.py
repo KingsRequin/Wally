@@ -65,17 +65,17 @@ def make_interaction(user_id=42, channel_id=100, guild_id=200):
 # ── make_bar ──────────────────────────────────────────────────────────────────
 
 def test_make_bar_full():
-    assert make_bar(1.0) == "██████████"
+    assert make_bar(1.0) == "▰▰▰▰▰▰▰▰▰▰▰▰"
 
 
 def test_make_bar_empty():
-    assert make_bar(0.0) == "░░░░░░░░░░"
+    assert make_bar(0.0) == "▱▱▱▱▱▱▱▱▱▱▱▱"
 
 
 def test_make_bar_half():
     bar = make_bar(0.5)
-    assert bar.count("█") == 5
-    assert bar.count("░") == 5
+    assert bar.count("▰") == 6
+    assert bar.count("▱") == 6
 
 
 # ── is_valid_model ────────────────────────────────────────────────────────────

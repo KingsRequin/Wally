@@ -51,9 +51,15 @@ async def test_memory_add_no_tag_when_empty_context():
 
 
 @pytest.mark.asyncio
-async def test_discord_handler_passes_emotion_tag_to_memory(tmp_path):
-    """Le handler Discord passe le tag émotionnel à memory.add()."""
-    from unittest.mock import AsyncMock, MagicMock, patch, call
+async def test_discord_handler_updates_context_window(tmp_path):
+    """Le handler Discord met à jour la fenêtre de contexte après une réponse.
+
+    memory.add() (mémoire long-terme) est appelé par le SessionManager après
+    inactivité, pas directement dans le handler. Ce test vérifie le comportement
+    réel : append_message est appelé pour le message utilisateur et la réponse,
+    et l'état émotionnel est utilisé pour construire le prompt.
+    """
+    from unittest.mock import AsyncMock, MagicMock
     import discord
 
     bot = MagicMock()
@@ -64,9 +70,8 @@ async def test_discord_handler_passes_emotion_tag_to_memory(tmp_path):
     bot.config.discord.anger_trigger_threshold = 3
     bot.config.discord.timeout_minutes = 10
 
-    bot.emotion.get_state = MagicMock(
-        return_value={"anger": 0.0, "joy": 0.8, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.0}
-    )
+    emotion_state = {"anger": 0.0, "joy": 0.8, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.0}
+    bot.emotion.get_state = MagicMock(return_value=emotion_state)
     bot.db.is_muted = AsyncMock(return_value=False)
     bot.db.is_welcomed = AsyncMock(return_value=True)
     bot.db.get_trust_score = AsyncMock(return_value=0.5)
@@ -78,7 +83,6 @@ async def test_discord_handler_passes_emotion_tag_to_memory(tmp_path):
     bot.memory.get_prelude = MagicMock(return_value=[])
     bot.memory.append_prelude = MagicMock()
     bot.memory.append_message = MagicMock()
-    bot.memory.add = AsyncMock()
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_prelude_block = MagicMock(return_value="")
     bot.prompts.build_context_block = MagicMock(return_value="")
@@ -109,8 +113,10 @@ async def test_discord_handler_passes_emotion_tag_to_memory(tmp_path):
     from bot.discord.handlers import handle_message
     await handle_message(bot, message)
 
-    # Vérifier que memory.add a été appelé avec un emotion_context non vide
-    assert bot.memory.add.called
-    call_kwargs = bot.memory.add.call_args
-    emotion_context = call_kwargs.kwargs.get("emotion_context", "")
-    assert "joy" in emotion_context  # joy=0.8 ≥ 0.4 → dans le tag
+    # La fenêtre de contexte est mise à jour pour le message user + la réponse
+    assert bot.memory.append_message.call_count >= 2
+
+    # L'état émotionnel est passé à build_system_prompt
+    bot.prompts.build_system_prompt.assert_called_once()
+    call_kwargs = bot.prompts.build_system_prompt.call_args
+    assert call_kwargs.kwargs["emotion_state"] == emotion_state
