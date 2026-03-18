@@ -59,7 +59,7 @@ class OpenAIClient:
         self._client = AsyncOpenAI(api_key=api_key)
 
     async def _complete_responses_api(
-        self, model: str, messages: list[dict], purpose: str
+        self, model: str, messages: list[dict], purpose: str, user_id: str | None = None
     ) -> str:
         response = await self._client.responses.create(
             model=model,
@@ -77,6 +77,7 @@ class OpenAIClient:
                 response.usage.output_tokens,
                 cost,
                 purpose,
+                user_id=user_id,
             )
             logger.info(
                 "OpenAI {model} (Responses) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
@@ -114,6 +115,7 @@ class OpenAIClient:
         model: Optional[str] = None,
         purpose: str = "response",
         image_urls: list[str] | None = None,
+        user_id: str | None = None,
     ) -> str:
         model = model or self._config.openai.primary_model
         full_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -127,7 +129,7 @@ class OpenAIClient:
 
         if _uses_responses_api(model):
             try:
-                return await self._complete_responses_api(model, full_messages, purpose)
+                return await self._complete_responses_api(model, full_messages, purpose, user_id=user_id)
             except Exception as exc:
                 logger.error("OpenAI Responses API error: {e}", e=exc)
                 return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
@@ -143,7 +145,8 @@ class OpenAIClient:
                 usage = response.usage
                 cost = estimate_cost(model, usage.prompt_tokens, usage.completion_tokens)
                 await self._db.log_cost(
-                    model, usage.prompt_tokens, usage.completion_tokens, cost, purpose
+                    model, usage.prompt_tokens, usage.completion_tokens, cost, purpose,
+                    user_id=user_id,
                 )
                 logger.info(
                     "OpenAI {model} — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
@@ -189,6 +192,7 @@ class OpenAIClient:
         messages: list[dict],
         purpose: str = "summary",
         image_urls: list[str] | None = None,
+        user_id: str | None = None,
     ) -> str:
         return await self.complete(
             system_prompt,
@@ -196,6 +200,7 @@ class OpenAIClient:
             model=self._config.openai.secondary_model,
             purpose=purpose,
             image_urls=image_urls,
+            user_id=user_id,
         )
 
     async def get_daily_cost(self) -> float:

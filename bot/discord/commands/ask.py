@@ -1,12 +1,10 @@
 # bot/discord/commands/ask.py
-import asyncio
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 from loguru import logger
 
-from bot.discord.handlers import _post_process
+from bot.discord.handlers import _post_process, _fire
 
 
 class AskCog(commands.Cog):
@@ -54,16 +52,24 @@ class AskCog(commands.Cog):
                 system_prompt,
                 [{"role": "user", "content": content}],
                 purpose="discord_ask",
+                user_id=f"discord:{interaction.user.id}",
             )
+
+            channel_id_str = str(interaction.channel_id)
 
             self.bot.memory.append_message(
-                str(interaction.channel_id), interaction.user.display_name, question
+                channel_id_str, interaction.user.display_name, question
             )
-            self.bot.memory.append_message(str(interaction.channel_id), "Wally", reply)
+            self.bot.memory.append_message(channel_id_str, "Wally", reply)
 
-            asyncio.create_task(
-                _post_process(self.bot, question, platform, user_id, guild_id, trust)
-            )
+            # Enregistrement dans la session active (mémoire long-terme via analyse)
+            if getattr(self.bot, "session_manager", None) is not None:
+                self.bot.session_manager.record_message(
+                    channel_id_str, "discord", user_id,
+                    interaction.user.display_name, question,
+                )
+
+            _fire(_post_process(self.bot, question, platform, user_id, guild_id, trust))
             await interaction.followup.send(reply)
 
         except Exception as e:

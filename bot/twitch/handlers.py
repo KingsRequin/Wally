@@ -88,6 +88,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             system_prompt,
             [{"role": "user", "content": user_content}],
             purpose="twitch_response",
+            user_id=f"twitch:{author}",
         )
 
         if len(reply) > 480:

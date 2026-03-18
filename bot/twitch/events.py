@@ -41,10 +41,12 @@ async def _generate_and_send(
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
         )
+        event_user_id = f"twitch:{kwargs.get('username', '')}" if kwargs.get('username') else None
         reply = await bot.openai.complete(
             system,
             [{"role": "user", "content": f"Réagis à cet événement Twitch : {formatted}"}],
             purpose="twitch_event",
+            user_id=event_user_id,
         )
         if len(reply) > 480:
             reply = reply[:477] + "..."

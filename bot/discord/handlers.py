@@ -216,6 +216,7 @@ async def _respond(
             reply = await bot.openai.complete(
                 system_prompt, openai_messages, purpose="discord_response",
                 image_urls=image_urls or None,
+                user_id=f"discord:{message.author.id}",
             )
 
         try:
@@ -270,6 +271,8 @@ async def _post_process(
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8:
+            # Always record the anger trigger (duration=0 → tracking only, not a real mute)
+            await bot.db.add_timeout(user_id, guild_id, 0, anger)
             count = await bot.db.count_recent_triggers(user_id, guild_id)
             if count >= bot.config.discord.anger_trigger_threshold:
                 await bot.db.add_timeout(
