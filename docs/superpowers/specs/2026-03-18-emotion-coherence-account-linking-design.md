@@ -158,7 +158,7 @@ async def analyze_new_user(db: Database, new_user_id: str) -> None:
 | Méthode | Route | Description |
 |---|---|---|
 | `GET` | `/api/admin/links` | Liste des propositions. Paramètre optionnel `?status=pending\|accepted\|rejected` |
-| `POST` | `/api/admin/links/analyze` | Déclenche `analyze_all` en tâche background. Réponse immédiate `{"status": "started"}`. Quand la tâche se termine, un message SSE est émis sur le canal admin existant : `{"type": "links_analyzed", "count": N}`. Le frontend affiche un toast "N proposition(s) trouvée(s)" à la réception et rafraîchit la liste. |
+| `POST` | `/api/admin/links/analyze` | Déclenche `analyze_all` en tâche background. Réponse immédiate `{"status": "started"}`. Quand la tâche se termine, un événement structuré est pushé dans `_log_queues` via une nouvelle fonction `broadcast_event(data: dict)` dans `sse.py` : `{"type": "links_analyzed", "count": N}`. Le frontend SSE discrimine par la présence du champ `"type"` : si présent → événement structuré (toast + refresh liste) ; sinon → entrée de log (`appendLog()`). |
 | `POST` | `/api/admin/links/{id}/accept` | Merge mémoires + update cache + `accept_link()` |
 | `POST` | `/api/admin/links/{id}/reject` | `reject_link()` |
 
@@ -225,6 +225,7 @@ Ajoutée dans la page admin, après la section mémoire.
 | `bot/core/account_linker.py` | créé | Analyse similarité Jaro-Winkler, `analyze_all`, `analyze_new_user` |
 | `bot/config.py` | modifié | Champ `link_min_confidence` dans `BotConfig` |
 | `bot/dashboard/routes/links.py` | créé | 4 routes admin |
+| `bot/dashboard/routes/sse.py` | modifié | Ajout `broadcast_event(data)` — push événement structuré dans `_log_queues` |
 | `bot/dashboard/app.py` | modifié | Include router links |
 | `bot/dashboard/static/app.js` | modifié | Section UI liaisons de comptes |
 | `bot/dashboard/static/index.html` | modifié | Onglet/section liaisons dans l'admin |
