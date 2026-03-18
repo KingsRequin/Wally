@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from bot.core.emotion import build_emotion_tag
-
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
@@ -33,12 +31,24 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     content_lower = content.lower()
     author: str = payload.chatter.name
     user_id: str = str(payload.chatter.id)
-    channel_name: str = payload.broadcaster.name
+    # Normalisé en minuscules — cohérent avec les clés de _channel_ids
+    channel_name: str = payload.broadcaster.name.lower()
     channel_id = f"twitch:{channel_name}"
+
+    # Marquer la chaîne invitée comme "vue live" dès réception d'un message
+    if channel_name in bot._channel_ids:
+        bot._channel_was_live[channel_name] = True
+
+    # Ignorer les propres messages de Wally qui reviennent via EventSub
+    bot_id = str(getattr(bot.twitch_api, "_bot_id", ""))
+    if bot_id and user_id == bot_id:
+        return
 
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author, content)
+    if getattr(bot, "session_manager", None) is not None:
+        bot.session_manager.record_message(channel_id, "twitch", user_id, author, content)
 
     # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
@@ -83,14 +93,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
-        await bot.twitch_api.send_message(text=reply)
+        if channel_name in bot._channel_ids:
+            # Chaîne invitée : envoi via IRC (pas d'autorisation broadcaster requise)
+            irc_channel = bot.get_channel(channel_name)
+            if irc_channel:
+                await irc_channel.send(reply)
+            else:
+                logger.warning("IRC non connecté pour {ch}, réponse ignorée", ch=channel_name)
+        else:
+            # Chaîne home : envoi via Helix API
+            await bot.twitch_api.send_message(text=reply)
         bot.set_cooldown(user_id)
 
         bot.memory.append_message(channel_id, author, content)
         bot.memory.append_message(channel_id, "Wally", reply)
 
-        tag = build_emotion_tag(bot.emotion.get_state())
-        _fire(bot.memory.add(platform, user_id, content, emotion_context=tag))
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
 
     except Exception as e:

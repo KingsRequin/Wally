@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -79,6 +80,53 @@ async def sse_emotions(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _find_latest_log() -> Path | None:
+    """Retourne le fichier app.log le plus récemment modifié sous logs/*/."""
+    logs_root = Path("logs")
+    if not logs_root.exists():
+        return None
+    candidates = sorted(
+        logs_root.glob("*/app.log"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _parse_log_line(line: str) -> dict | None:
+    """Parse une ligne loguru au format HH:MM:SS | LEVEL | source | message."""
+    parts = line.split(" | ", 3)
+    if len(parts) < 2:
+        return None
+    level = parts[1].strip()
+    if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        return None
+    message = parts[3].strip() if len(parts) >= 4 else (parts[2].strip() if len(parts) == 3 else "")
+    return {"time": parts[0].strip(), "level": level, "message": message}
+
+
+@admin_router.get("/logs/history")
+async def log_history(request: Request, lines: int = 200):
+    """Retourne les dernières lignes du fichier log courant.
+
+    Lit dynamiquement le app.log le plus récent (résout le bug des logs
+    affichés depuis >2h : le fichier cherché est toujours le plus récent,
+    quelle que soit la date de démarrage du bot).
+    """
+    log_path = _find_latest_log()
+    if log_path is None:
+        return {"entries": [], "file": None}
+    try:
+        text = await asyncio.to_thread(log_path.read_text, encoding="utf-8", errors="replace")
+        all_lines = text.splitlines()
+        recent = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        entries = [e for line in recent if (e := _parse_log_line(line)) is not None]
+        return {"entries": entries, "file": str(log_path)}
+    except Exception as exc:
+        logger.warning("Failed to read log history: {e}", e=exc)
+        return {"entries": [], "file": str(log_path)}
 
 
 @admin_router.get("/sse/logs")

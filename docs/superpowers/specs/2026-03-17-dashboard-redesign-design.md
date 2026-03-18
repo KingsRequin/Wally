@@ -53,7 +53,7 @@ Each card has a dedicated background color matching its semantic role:
 | Humeur / émotions | Jaune soleil | `#ffe66d` |
 | Stream / Twitch | Aqua | `#a8edea` |
 | Stats / messages | Menthe | `#b7f5c8` |
-| Config sections | Blanc | `#ffffff` |
+| Config sections | Blanc | `#ffffff` (use `var(--card)` — the generic white card variable) |
 | Mémoire selected | Jaune soleil | `#ffe66d` |
 | Succès / positif | Menthe | `#b7f5c8` |
 | Danger / erreur | Rose pâle | `#fee2e2` |
@@ -81,9 +81,11 @@ Emotion gauge fill colors (unchanged functionally, adjusted for light bg):
   --text: #111111;
   --text-muted: #666666;
   --font: 'Courier New', Courier, monospace;
-  --radius: 14px;
-  --radius-sm: 8px;
-  --radius-btn: 10px;
+  --radius: 14px;       /* cards, header, modal, log stream */
+  --radius-sm: 8px;     /* inputs, selects, mode toggle, memory items */
+  --radius-btn: 10px;   /* buttons */
+  --radius-tab: 6px;    /* stream/stream-offline badges; one-off tab indicators */
+  --radius-xs: 4px;     /* gauge tracks */
 
   /* Emotion colors */
   --c-anger:    #e63946;
@@ -114,7 +116,8 @@ Emotion gauge fill colors (unchanged functionally, adjusted for light bg):
 
 **Tab bar**
 - Background `#fafaf8`, bottom border `3px solid #111`
-- Active tab: `background:#111; color:#fafaf8; border-radius: 0` (flat within bar)
+- Active tab: `background:#111; color:#fafaf8; border-radius: 0` — the tab element itself has no rounding (it fills the full tab bar height flush with the bottom border)
+- The `--radius-tab: 6px` from Section 3 is used on stream badges and similar pill labels, not on the tab active element
 - Hover: `background:#eee`
 
 **Cards**
@@ -126,7 +129,7 @@ Emotion gauge fill colors (unchanged functionally, adjusted for light bg):
 **Emotion Gauges**
 - Track background: `rgba(0,0,0,0.12)` with `border: 1.5px solid rgba(0,0,0,0.15); border-radius: 4px`
 - Fill: vivid emotion colors (see table above), `border-radius: 3px`
-- Height increased to `10px` (was `18px` with border — now slimmer but clearer on light bg)
+- Height reduced to `10px` (was `18px` — slimmer but clearer on light bg)
 
 **Buttons**
 - Default: `background:#fff; border: 2.5px solid #111; border-radius: 10px; box-shadow: 3px 3px 0 #111`
@@ -189,7 +192,7 @@ Beyond the color/radius reskin, the following UX improvements are included:
 |---|---|
 | `bot/dashboard/static/style.css` | Full rewrite of CSS variables and all component styles |
 | `bot/dashboard/static/index.html` | Add color utility classes to card elements; update emotion/stream/memory markup minimally |
-| `bot/dashboard/static/app.js` | Update `EMOTION_COLORS` for light bg; update inline styles in JS-rendered HTML (memory tab, config form, stream card) |
+| `bot/dashboard/static/app.js` | Update `EMOTION_COLORS` hex values to match the new palette table (e.g. joy `#ffdd00` → `#ffd60a`, anger `#ff3333` → `#e63946`, etc.); update inline styles in JS-rendered HTML (memory tab, config form, stream card, canvas `fillStyle`) |
 
 ---
 
@@ -210,4 +213,5 @@ Beyond the color/radius reskin, the following UX improvements are included:
 - Verify auth modal renders correctly on light background
 - Verify toast messages (success/error) are readable
 - Verify emotion gauges update correctly via SSE
-- Verify graph canvas renders on white background
+- Verify graph canvas renders on white background (canvas `fillStyle` must be `#fff`, not `#111`)
+- Verify `EMOTION_COLORS` in `app.js` produces correct line colors on the canvas graph

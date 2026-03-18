@@ -37,7 +37,7 @@ def _make_config():
         timeout_minutes=10,
     )
     cfg.twitch = TwitchConfig(
-        channels=[],
+        guest_channels=[],
         cooldown_seconds=10,
     )
     cfg.emotions = {

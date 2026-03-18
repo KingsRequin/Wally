@@ -266,6 +266,24 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 )
             await asyncio.sleep(0.5)  # avoid 429 rate-limit on rapid subscription bursts
 
+        # Chaînes invitées : chat seulement
+        for guest_name in bot.config.twitch.guest_channels:
+            guest_id = await bot.twitch_api.get_broadcaster_id(guest_name)
+            if guest_id:
+                bot._channel_ids[guest_name] = guest_id
+                try:
+                    await _subscribe_chat(client, guest_id, bot_id, bot_token)
+                    logger.info("EventSub subscribed: chat guest {name}", name=guest_name)
+                except Exception as exc:
+                    logger.warning(
+                        "EventSub guest chat failed [{name}]: {e}", name=guest_name, e=exc
+                    )
+            else:
+                logger.warning(
+                    "Chaîne invitée introuvable ou API indisponible: {name}", name=guest_name
+                )
+            await asyncio.sleep(0.5)
+
         bot._eventsub_client = client
         logger.info(
             "EventSub WebSocket client active (broadcaster_id={bid})", bid=broadcaster_id

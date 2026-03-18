@@ -37,7 +37,7 @@ class DiscordConfig:
 
 @dataclass
 class TwitchConfig:
-    channels: list[str]
+    guest_channels: list[str]
     cooldown_seconds: int
 
 
@@ -75,11 +75,22 @@ class Config:
                 k: TwitchEventConfig(**v)
                 for k, v in raw.get("twitch_events", {}).items()
             }
+            twitch_raw = dict(raw.get("twitch", {}))
+            # Migration : ancien champ "channels" → "guest_channels"
+            if "guest_channels" not in twitch_raw and "channels" in twitch_raw:
+                import os as _os
+                home_login = _os.getenv("TWITCH_BROADCASTER_LOGIN", "").lower()
+                twitch_raw["guest_channels"] = [
+                    ch for ch in twitch_raw.pop("channels") if ch.lower() != home_login
+                ]
+            else:
+                twitch_raw.setdefault("guest_channels", [])
+                twitch_raw.pop("channels", None)
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=OpenAIConfig(**raw["openai"]),
                 discord=DiscordConfig(**raw["discord"]),
-                twitch=TwitchConfig(**raw["twitch"]),
+                twitch=TwitchConfig(**twitch_raw),
                 emotions=emotions,
                 twitch_events=twitch_events,
             )

@@ -1,7 +1,7 @@
 # bot/twitch/api.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import httpx
 from loguru import logger
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class TwitchAPI:
     MESSAGES_URL = "https://api.twitch.tv/helix/chat/messages"
     STREAMS_URL = "https://api.twitch.tv/helix/streams"
+    USERS_URL = "https://api.twitch.tv/helix/users"
 
     def __init__(
         self,
@@ -26,8 +27,12 @@ class TwitchAPI:
         self._bot_id = bot_id
         self._broadcaster_id = broadcaster_id
 
-    async def send_message(self, text: str) -> None:
-        """POST /helix/chat/messages. Retry once on 401 after bot token refresh."""
+    async def send_message(self, text: str, broadcaster_id: Optional[str] = None) -> None:
+        """POST /helix/chat/messages. Retry once on 401 after bot token refresh.
+
+        broadcaster_id: chaîne cible. Si None, utilise self._broadcaster_id (chaîne home).
+        """
+        target = broadcaster_id or self._broadcaster_id
         try:
             async with httpx.AsyncClient() as client:
                 for attempt in range(2):
@@ -38,7 +43,7 @@ class TwitchAPI:
                             "Client-Id": self._client_id,
                         },
                         json={
-                            "broadcaster_id": self._broadcaster_id,
+                            "broadcaster_id": target,
                             "sender_id": self._bot_id,
                             "message": text,
                         },
@@ -65,6 +70,75 @@ class TwitchAPI:
         except Exception as exc:
             logger.error("Twitch send_message error: {e}", e=exc)
 
+    async def get_broadcaster_id(self, login: str) -> Optional[str]:
+        """GET /helix/users?login={login}. Retourne l'ID ou None si introuvable.
+
+        Retry une fois sur 401. Retourne None si la chaîne n'existe pas ou si
+        l'API est indisponible.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.get(
+                        self.USERS_URL,
+                        params={"login": login.lower()},
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Twitch users API 401 — refreshing bot token and retrying"
+                            )
+                            refreshed = await self._tm.refresh("bot")
+                            if not refreshed:
+                                return None
+                            continue
+                        return None
+                    resp.raise_for_status()
+                    data = resp.json().get("data", [])
+                    return data[0]["id"] if data else None
+        except Exception as exc:
+            logger.warning("get_broadcaster_id failed for {login}: {e}", login=login, e=exc)
+            return None
+
+    async def get_streams_status(self, broadcaster_ids: list[str]) -> dict[str, bool]:
+        """GET /helix/streams?user_id=id1&user_id=id2...
+
+        Retourne {broadcaster_id: is_live}. Retourne {} si la liste est vide ou en cas
+        d'erreur (pas de faux positif de suppression).
+        """
+        if not broadcaster_ids:
+            return {}
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.get(
+                        self.STREAMS_URL,
+                        params=[("user_id", bid) for bid in broadcaster_ids],
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            refreshed = await self._tm.refresh("bot")
+                            if not refreshed:
+                                return {}
+                            continue
+                        return {}
+                    resp.raise_for_status()
+                    live_ids = {s["user_id"] for s in resp.json().get("data", [])}
+                    return {bid: (bid in live_ids) for bid in broadcaster_ids}
+        except Exception as exc:
+            logger.warning("get_streams_status failed: {e}", e=exc)
+            return {}
+
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
 
@@ -75,16 +149,31 @@ class TwitchAPI:
         """
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    self.STREAMS_URL,
-                    params={"user_id": self._broadcaster_id},
-                    headers={
-                        "Authorization": f"Bearer {self._tm.bot_token}",
-                        "Client-Id": self._client_id,
-                    },
-                    timeout=10,
-                )
-                resp.raise_for_status()
+                for attempt in range(2):
+                    resp = await client.get(
+                        self.STREAMS_URL,
+                        params={"user_id": self._broadcaster_id},
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Twitch streams API 401 — refreshing bot token and retrying"
+                            )
+                            refreshed = await self._tm.refresh("bot")
+                            if not refreshed:
+                                logger.error(
+                                    "Bot token refresh failed, cannot fetch stream status"
+                                )
+                                break
+                            continue
+                        logger.error("Twitch streams API 401 after refresh, giving up")
+                        break
+                    resp.raise_for_status()
                 data = resp.json().get("data", [])
                 if not data:
                     return {

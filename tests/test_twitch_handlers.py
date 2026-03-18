@@ -68,6 +68,19 @@ def make_payload(content="wally salut", author_name="streamer",
 # ── handle_message ────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_ignores_own_bot_messages(monkeypatch):
+    """Les messages de Wally lui-même (echo EventSub) doivent être ignorés."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = make_bot(trigger_names=["wally"])
+    bot.twitch_api._bot_id = "999"
+    # Payload dont l'auteur est Wally lui-même
+    payload = make_payload(content="wally salut", author_id="999")
+    await handle_message(bot, payload)
+    bot.openai.complete.assert_not_awaited()
+    bot.memory.append_prelude.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_ignores_untriggered_messages(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = make_bot(trigger_names=["wally"])

@@ -29,7 +29,7 @@ def _make_config(dashboard_token: str = "test-token"):
         max_tokens=1000,
     )
     cfg.discord = DiscordConfig(anger_trigger_threshold=3, timeout_minutes=10)
-    cfg.twitch = TwitchConfig(channels=[], cooldown_seconds=10)
+    cfg.twitch = TwitchConfig(guest_channels=[], cooldown_seconds=10)
     cfg.emotions = {
         "anger": EmotionDecayConfig(decay_lambda=0.1),
         "joy": EmotionDecayConfig(decay_lambda=0.1),

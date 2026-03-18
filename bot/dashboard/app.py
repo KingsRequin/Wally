@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from loguru import logger
+from starlette.types import Scope
 
 from bot.dashboard.auth import BearerAuthMiddleware
 
@@ -17,6 +18,15 @@ if TYPE_CHECKING:
     from bot.dashboard.state import AppState
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles avec Cache-Control: no-cache pour éviter le cache CDN (Cloudflare)."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
 
 def create_dashboard_app(state: "AppState") -> FastAPI:
@@ -68,9 +78,9 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(memory.router, prefix="/api/admin")
     app.include_router(links.router, prefix="/api/admin")
 
-    # Static files
+    # Static files — NoCacheStaticFiles force la revalidation via Cloudflare tunnel
     if STATIC_DIR.exists():
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/")
     async def root():

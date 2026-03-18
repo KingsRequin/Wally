@@ -510,7 +510,7 @@ async def test_twitch_config_modal_saves_config():
     from bot.discord.commands.setup import TwitchConfigModal
 
     bot = make_bot()
-    bot.config.twitch.channels = ["Azrael_TTV"]
+    bot.config.twitch.guest_channels = ["azrael_ttv"]
     bot.config.twitch.cooldown_seconds = 10
     bot.config.save = MagicMock()
 
@@ -523,7 +523,7 @@ async def test_twitch_config_modal_saves_config():
 
     await modal.on_submit(interaction)
 
-    assert bot.config.twitch.channels == ["Azrael_TTV", "OtherStreamer"]
+    assert bot.config.twitch.guest_channels == ["azrael_ttv", "otherstreamer"]
     assert bot.config.twitch.cooldown_seconds == 15
     bot.config.save.assert_called_once()
 

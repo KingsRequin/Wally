@@ -742,7 +742,7 @@ class TwitchConfigModal(discord.ui.Modal, title="Configuration Twitch"):
     def __init__(self, bot: "WallyDiscord"):
         super().__init__()
         self.bot = bot
-        self.channels.default = ", ".join(bot.config.twitch.channels)
+        self.channels.default = ", ".join(bot.config.twitch.guest_channels)
         self.cooldown_seconds.default = str(bot.config.twitch.cooldown_seconds)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -755,8 +755,8 @@ class TwitchConfigModal(discord.ui.Modal, title="Configuration Twitch"):
                 "❌ Cooldown invalide. Entrez un entier ≥ 0.", ephemeral=True
             )
             return
-        self.bot.config.twitch.channels = [
-            c.strip() for c in self.channels.value.split(",") if c.strip()
+        self.bot.config.twitch.guest_channels = [
+            c.strip().lower() for c in self.channels.value.split(",") if c.strip()
         ]
         self.bot.config.twitch.cooldown_seconds = cs
         self.bot.config.save()

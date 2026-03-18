@@ -89,6 +89,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.persona.build_prompt_block = MagicMock(return_value="")
     bot.persona.emotion_directives = {}
     bot.emotion.process_message = AsyncMock()
+    bot.session_manager = MagicMock()
 
     message = MagicMock(spec=discord.Message)
     message.author.bot = False
@@ -120,3 +121,9 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.prompts.build_system_prompt.assert_called_once()
     call_kwargs = bot.prompts.build_system_prompt.call_args
     assert call_kwargs.kwargs["emotion_state"] == emotion_state
+
+    # memory.add() ne doit pas être appelé directement depuis le handler
+    bot.memory.add.assert_not_called()
+
+    # Le SessionManager enregistre le message pour l'analyse en fin de session
+    bot.session_manager.record_message.assert_called_once()

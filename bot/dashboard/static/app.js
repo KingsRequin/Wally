@@ -240,11 +240,13 @@ async function loadEmotionHistory(since) {
 function setGraphRange(range) {
   const now = Date.now() / 1000;
   const titles = {
+    '1h':  '📈 DERNIÈRE HEURE',
     '24h': '📈 DERNIÈRES 24H',
     '7d':  '📈 7 DERNIERS JOURS',
     '30d': '📈 30 DERNIERS JOURS',
   };
   const offsets = {
+    '1h':  3600,
     '24h': 86400,
     '7d':  7 * 86400,
     '30d': 30 * 86400,
@@ -256,8 +258,9 @@ function setGraphRange(range) {
   if (titleEl) titleEl.textContent = titles[range];
 
   // Mettre à jour l'état actif des boutons
+  const btnLabels = { '1h': '1H', '24h': '24H', '7d': '7J', '30d': '30J' };
   document.querySelectorAll('.graph-range-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.textContent === { '24h': '24H', '7d': '7J', '30d': '30J' }[range]);
+    btn.classList.toggle('active', btn.textContent === btnLabels[range]);
   });
 
   loadEmotionHistory(currentGraphSince);
@@ -332,7 +335,10 @@ function drawEmotionGraph(history) {
   {
     const rawRange = tMax - tMin;
     let tickStep, tickMode;
-    if (rawRange <= 27 * 3600) {
+    if (rawRange <= 1.1 * 3600) {
+      tickStep = 600;    // toutes les 10 min
+      tickMode = 'minute';
+    } else if (rawRange <= 27 * 3600) {
       tickStep = 7200;   // toutes les 2h
       tickMode = 'hour';
     } else if (rawRange <= 8 * 86400) {
@@ -344,7 +350,9 @@ function drawEmotionGraph(history) {
     }
 
     let firstTick;
-    if (tickMode === 'hour') {
+    if (tickMode === 'minute') {
+      firstTick = Math.ceil(tMin / 600) * 600;
+    } else if (tickMode === 'hour') {
       firstTick = Math.ceil(tMin / 3600) * 3600;
     } else {
       const d = new Date(tMin * 1000);
@@ -367,9 +375,11 @@ function drawEmotionGraph(history) {
       ctx.stroke();
 
       // Label centré
-      const label = tickMode === 'hour'
-        ? new Date(t * 1000).toLocaleTimeString('fr', { hour: '2-digit' })
-        : new Date(t * 1000).toLocaleDateString('fr', { day: 'numeric', month: 'numeric' });
+      const label = tickMode === 'minute'
+        ? new Date(t * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
+        : tickMode === 'hour'
+          ? new Date(t * 1000).toLocaleTimeString('fr', { hour: '2-digit' })
+          : new Date(t * 1000).toLocaleDateString('fr', { day: 'numeric', month: 'numeric' });
       ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.font = '10px monospace';
       ctx.textAlign = 'center';
@@ -553,6 +563,31 @@ async function renderConfigForm(cfg) {
       </div>
       <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
     </div>
+
+    <!-- Chaînes Twitch invitées -->
+    <div class="card config-section" id="guest-channels-card">
+      <div class="config-section-title">CHAÎNES TWITCH INVITÉES</div>
+      <div id="guest-channels-list">
+        ${(cfg.twitch.guest_channels || []).length === 0
+          ? '<p style="color:var(--text-muted);margin:0 0 12px">Aucune chaîne invitée.</p>'
+          : (cfg.twitch.guest_channels || []).map(ch => `
+            <div class="guest-channel-item" id="guest-ch-${ch}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="flex:1;font-family:monospace">${ch}</span>
+              <button class="btn btn-danger" style="padding:2px 8px;font-size:0.8em"
+                onclick="removeGuestChannel('${ch}')">✕</button>
+            </div>`).join('')
+        }
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="text" id="guest-channel-input" placeholder="nom de chaîne twitch…"
+               style="flex:1" onkeydown="if(event.key==='Enter') addGuestChannel()">
+        <button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>
+      </div>
+      <div id="guest-channel-error" style="color:var(--danger);font-size:0.85em;margin-top:6px;display:none"></div>
+      <p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">
+        Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler.
+      </p>
+    </div>
   `;
 }
 
@@ -592,6 +627,73 @@ async function saveBotGeneral() {
     }}),
   });
   if (r && r.ok) toast('Config bot sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
+}
+
+// ── Guest channels ─────────────────────────────────────────────────────────────
+
+async function addGuestChannel() {
+  const input = document.getElementById('guest-channel-input');
+  const errEl = document.getElementById('guest-channel-error');
+  const name = input.value.trim().toLowerCase();
+  errEl.style.display = 'none';
+
+  if (!name || !/^[a-z0-9_]{1,25}$/.test(name)) {
+    errEl.textContent = 'Nom de chaîne invalide (1–25 caractères, alphanumériques + _).';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const r = await apiFetch('/api/admin/twitch/channels', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+
+  if (!r) { errEl.textContent = 'Erreur réseau.'; errEl.style.display = 'block'; return; }
+
+  if (r.status === 409) {
+    errEl.textContent = 'Chaîne déjà ajoutée.'; errEl.style.display = 'block'; return;
+  }
+  if (r.status === 404) {
+    errEl.textContent = 'Chaîne introuvable sur Twitch.'; errEl.style.display = 'block'; return;
+  }
+  if (r.status === 503) {
+    errEl.textContent = 'API Twitch indisponible.'; errEl.style.display = 'block'; return;
+  }
+  if (!r.ok) {
+    errEl.textContent = 'Erreur serveur.'; errEl.style.display = 'block'; return;
+  }
+
+  // Ajout visuel immédiat
+  const list = document.getElementById('guest-channels-list');
+  const empty = list.querySelector('p');
+  if (empty) empty.remove();
+  const item = document.createElement('div');
+  item.id = `guest-ch-${name}`;
+  item.className = 'guest-channel-item';
+  item.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+  item.innerHTML = `<span style="flex:1;font-family:monospace">${name}</span>
+    <button class="btn btn-danger" style="padding:2px 8px;font-size:0.8em"
+      onclick="removeGuestChannel('${name}')">✕</button>`;
+  list.appendChild(item);
+  input.value = '';
+  toast(`Wally rejoint ${name}`, 'success');
+}
+
+async function removeGuestChannel(name) {
+  const r = await apiFetch(`/api/admin/twitch/channels/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (r && r.ok) {
+    const el = document.getElementById(`guest-ch-${name}`);
+    if (el) el.remove();
+    const list = document.getElementById('guest-channels-list');
+    if (list && !list.querySelector('.guest-channel-item')) {
+      list.innerHTML = '<p style="color:var(--text-muted);margin:0 0 12px">Aucune chaîne invitée.</p>';
+    }
+    toast(`Wally a quitté ${name}`, 'success');
+  } else {
+    toast('Erreur lors de la suppression', 'error');
+  }
 }
 
 // ── Admin emotions ────────────────────────────────────────────────────────────
@@ -707,9 +809,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Polling statut toutes les 30s
   setInterval(loadStatus, 30000);
 
-  // Chargement initial du bento (stream + graphe)
+  // Chargement initial du bento (stream + graphe) — 1H par défaut
   loadStreamStatus();
-  requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
+  requestAnimationFrame(() => setGraphRange('1h'));
 
   // ── Tooltip hover sur le graphe ─────────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -84,8 +85,8 @@ async def update_config(request: Request, body: dict) -> dict:
 
     if "twitch" in body:
         d = body["twitch"]
-        if "channels" in d:
-            cfg.twitch.channels = list(d["channels"])  # liste
+        if "guest_channels" in d:
+            cfg.twitch.guest_channels = list(d["guest_channels"])  # liste : remplacement intégral
         if "cooldown_seconds" in d:
             cfg.twitch.cooldown_seconds = int(d["cooldown_seconds"])
 
@@ -130,3 +131,37 @@ async def get_openai_models(request: Request) -> dict:
             state.config.openai.primary_model,
             state.config.openai.secondary_model,
         ]}
+
+
+_TWITCH_LOGIN_RE = re.compile(r'^[a-z0-9_]{1,25}$')
+
+
+@router.post("/twitch/channels")
+async def add_twitch_channel(request: Request, body: dict) -> dict:
+    """Ajoute une chaîne Twitch invitée.
+
+    body = {"name": "streameurxyz"}
+    Retourne {"broadcaster_id": "..."} en cas de succès.
+    """
+    name = str(body.get("name", "")).strip().lower()
+    if not _TWITCH_LOGIN_RE.match(name):
+        raise HTTPException(status_code=400, detail="Nom de chaîne invalide")
+    state = request.app.state.wally
+    if state.twitch_bot is None:
+        raise HTTPException(status_code=503, detail="Twitch non disponible")
+    result = await state.twitch_bot.add_guest_channel(name)
+    if result == "already_added":
+        raise HTTPException(status_code=409, detail="Chaîne déjà ajoutée")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Chaîne introuvable sur Twitch")
+    return {"broadcaster_id": result}
+
+
+@router.delete("/twitch/channels/{name}")
+async def remove_twitch_channel(request: Request, name: str) -> dict:
+    """Supprime une chaîne Twitch invitée."""
+    state = request.app.state.wally
+    if state.twitch_bot is None:
+        raise HTTPException(status_code=503, detail="Twitch non disponible")
+    await state.twitch_bot.remove_guest_channel(name.lower())
+    return {"status": "removed"}
