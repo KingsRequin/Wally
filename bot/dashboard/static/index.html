@@ -81,8 +81,16 @@
 
       <!-- Ligne 3 : GRAPHE 24H (pleine largeur) -->
       <div class="graph-container bento-card-anim" style="grid-column: 1 / 4">
-        <div class="card-title" style="padding:8px 8px 0">📈 DERNIÈRES 24H</div>
+        <div class="graph-header">
+          <span id="graph-title">📈 DERNIÈRES 24H</span>
+          <div class="graph-range-btns">
+            <button class="graph-range-btn active" onclick="setGraphRange('24h')">24H</button>
+            <button class="graph-range-btn" onclick="setGraphRange('7d')">7J</button>
+            <button class="graph-range-btn" onclick="setGraphRange('30d')">30J</button>
+          </div>
+        </div>
         <canvas id="emotionCanvas" height="140"></canvas>
+        <div id="emotion-averages" style="display:none"></div>
       </div>
 
     </div>
