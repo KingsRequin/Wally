@@ -37,6 +37,11 @@ SUPPRESSION_RULES: list[tuple[str, str, float]] = [
     ("joy",     "sadness", 0.8),
 ]
 
+# Coefficient de compétition continue pendant le decay (par tick de 60s).
+# extra = state[src] * state[tgt] * COMPETITION_K est soustrait des deux émotions.
+# Avec K=0.05 : anger=0.65 + joy=0.33 → extra≈0.011/tick → convergence en ~10min.
+COMPETITION_K: float = 0.05
+
 # French keyword → (emotion, delta) supplements for NRCLex (English-only lexicon)
 FR_EMOTION_WORDS: dict[str, list[tuple[str, float]]] = {
     "anger": [
@@ -102,6 +107,20 @@ class EmotionEngine:
 
     def get_state(self) -> dict[str, float]:
         return dict(self._state)
+
+    def _apply_competition(self) -> None:
+        """Érode mutuellement les émotions incompatibles (appelée après chaque decay tick).
+
+        Pour chaque paire (src, tgt) dans SUPPRESSION_RULES :
+            extra = state[src] * state[tgt] * COMPETITION_K
+        Les deux valeurs baissent de `extra`, clampées à 0.0.
+        """
+        for src, tgt, _ in SUPPRESSION_RULES:
+            extra = self._state[src] * self._state[tgt] * COMPETITION_K
+            if extra <= 0:
+                continue
+            self._state[src] = max(0.0, self._state[src] - extra)
+            self._state[tgt] = max(0.0, self._state[tgt] - extra)
 
     def _apply_suppression(self, emotion: str, delta: float) -> None:
         """Supprime partiellement les émotions incompatibles si delta > 0."""
@@ -330,6 +349,7 @@ class EmotionEngine:
             decayed = self._state[emotion] * math.exp(-lam * (delta_t / 60.0))
             self._state[emotion] = 0.0 if decayed < DECAY_FLOOR else decayed
         self._last_decay = now
+        self._apply_competition()
 
     async def _decay_loop(self) -> None:
         while True:
