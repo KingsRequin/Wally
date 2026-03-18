@@ -620,3 +620,46 @@ input[type="range"] {
   opacity: 0.8;
   /* display controlled by JS (renderEmotionAverages sets display:flex) */
 }
+
+/* ── Tab badge (alert indicator) ─────────────────────────────────────────── */
+
+.tab-badge {
+  display: inline-block;
+  background: #FF4D4D;
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  margin-left: 4px;
+  vertical-align: top;
+}
+
+/* ── Cost range buttons ──────────────────────────────────────────────────── */
+
+.cost-range-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cost-range-btn.active {
+  background: #FFD700;
+  color: #000;
+  border-color: #FFD700;
+}
+
+.cost-range-btn:focus-visible {
+  outline: 2px solid #FFD700;
+  outline-offset: 2px;
+}
+
+/* ── Cost canvas ─────────────────────────────────────────────────────────── */
+
+#costCanvas { display: block; width: 100%; }

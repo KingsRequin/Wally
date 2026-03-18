@@ -34,7 +34,7 @@
   <button class="tab-btn"        data-tab="admin-logs"     onclick="showTab('admin-logs')">📜 LOGS</button>
   <button class="tab-btn" data-tab="memory" onclick="showTab('memory')">🧠 MÉMOIRE</button>
   <button class="tab-btn"        data-tab="admin-links"    onclick="showTab('admin-links')">🔗 LIAISONS</button>
-  <button class="tab-btn disabled" title="Phase 2">💸 COÛTS</button>
+  <button class="tab-btn" data-tab="admin-costs" onclick="showTab('admin-costs')">💸 COÛTS <span id="costs-badge" class="tab-badge" style="display:none">!</span></button>
   <button class="tab-btn disabled" title="Phase 3">🎭 PERSONA</button>
   <button class="tab-btn disabled" title="Phase 3">⏱ TIMEOUTS</button>
 </nav>
@@ -137,6 +137,12 @@
         <span>LIAISONS DE COMPTES</span>
         <button onclick="analyzeLinks()" class="btn btn-success">⚡ Analyser</button>
       </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="manual-link-discord" type="text" placeholder="Discord ID (ex: 123456789)" style="flex:1;min-width:160px;padding:6px 10px;background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem">
+        <span style="color:var(--text-muted)">↔</span>
+        <input id="manual-link-twitch" type="text" placeholder="Twitch username" style="flex:1;min-width:160px;padding:6px 10px;background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:0.85rem">
+        <button onclick="createManualLink()" class="btn" style="white-space:nowrap">➕ Lier</button>
+      </div>
       <div class="log-controls" style="margin-top:12px">
         <button class="btn active" id="links-tab-all"      onclick="setLinksTab('all', this)">TOUS</button>
         <button class="btn"        id="links-tab-pending"  onclick="setLinksTab('pending', this)">EN ATTENTE</button>
@@ -144,6 +150,70 @@
         <button class="btn"        id="links-tab-rejected" onclick="setLinksTab('rejected', this)">REJETÉS</button>
       </div>
       <div id="links-list" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ── ADMIN COÛTS ───────────────────────────────────────────────────── -->
+  <div class="tab-content" id="tab-admin-costs">
+    <div class="bento-grid">
+      <!-- Row 1: 4 KPIs -->
+      <div class="card bento-card-anim" id="kpi-month">
+        <div class="card-title">💰 MOIS EN COURS</div>
+        <div class="card-value" id="cost-month-total">—</div>
+        <div id="cost-month-change" style="color:var(--text-muted);font-size:0.75rem;margin-top:6px"></div>
+      </div>
+      <div class="card bento-card-anim" id="kpi-today">
+        <div class="card-title">📅 AUJOURD'HUI</div>
+        <div class="card-value" id="cost-today-total">—</div>
+      </div>
+      <div class="card bento-card-anim" id="kpi-avg">
+        <div class="card-title">📊 COÛT / MSG</div>
+        <div class="card-value" id="cost-avg-msg">—</div>
+      </div>
+      <div class="card bento-card-anim" id="kpi-threshold">
+        <div class="card-title">⚠ SEUIL D'ALERTE</div>
+        <div class="card-value" id="cost-threshold">—</div>
+        <div id="cost-threshold-pct" style="color:var(--text-muted);font-size:0.75rem;margin-top:6px"></div>
+      </div>
+
+      <!-- Row 2: Graph full width -->
+      <div class="graph-container bento-card-anim" style="grid-column: 1 / 4">
+        <div class="graph-header">
+          <span id="cost-graph-title">💸 7 DERNIERS JOURS</span>
+          <div class="graph-range-btns">
+            <button class="cost-range-btn active" onclick="setCostRange('7d')">7J</button>
+            <button class="cost-range-btn" onclick="setCostRange('30d')">30J</button>
+            <button class="cost-range-btn" onclick="setCostRange('90d')">90J</button>
+          </div>
+        </div>
+        <canvas id="costCanvas" height="165"></canvas>
+        <div id="cost-graph-legend" style="display:flex;gap:16px;padding:4px 8px;font-size:0.7rem;color:var(--text-muted)">
+          <span>━ Période courante</span>
+          <span style="opacity:0.6">┅ Période précédente</span>
+        </div>
+      </div>
+
+      <!-- Row 3: 3 breakdown columns -->
+      <div class="card bento-card-anim">
+        <div class="card-title">🤖 PAR MODÈLE</div>
+        <div id="cost-by-model">—</div>
+      </div>
+      <div class="card bento-card-anim">
+        <div class="card-title">🎯 PAR PURPOSE</div>
+        <div id="cost-by-purpose">—</div>
+      </div>
+      <div class="card bento-card-anim">
+        <div class="card-title">👥 TOP UTILISATEURS</div>
+        <div id="cost-top-users">—</div>
+      </div>
+    </div>
+
+    <!-- Alert bar -->
+    <div class="card" id="cost-alert-bar" style="margin-top:12px;display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span id="cost-alert-text"></span>
+        <span id="cost-alert-pct" style="color:var(--text-muted)"></span>
+      </div>
     </div>
   </div>
 

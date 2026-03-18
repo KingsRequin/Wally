@@ -79,6 +79,8 @@ function showTab(tabId) {
   }
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
   if (tabId === 'admin-links') loadLinks();
+  if (tabId === 'admin-costs') loadCosts();
+  pollCostsBadge();
   if (tabId === 'admin-logs') {
     // L'historique a pu être chargé quand le tab était caché (display:none → scrollHeight=0).
     // On force le scroll vers le bas au prochain frame, une fois l'élément visible.
@@ -737,7 +739,8 @@ async function startLogSSE() {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'links_analyzed') { loadLinks(); return; }
-      if (data.type === 'link_accepted')  { loadLinks(); return; }
+      if (data.type === 'link_accepted')  { loadLinks(); loadMemoryUsers(); return; }
+      if (data.type === 'link_rejected')  { loadLinks(); return; }
       appendLog(data);
     } catch {}
   };
@@ -813,6 +816,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadStreamStatus();
   requestAnimationFrame(() => setGraphRange('1h'));
 
+  // Poll cost alert badge (shows red badge on COÛTS tab if threshold exceeded)
+  pollCostsBadge();
+
   // ── Tooltip hover sur le graphe ─────────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');
   if (!emotionCanvas) return;
@@ -885,6 +891,8 @@ function renderMemoryTab() {
       <span style="font-size:0.7rem;color:#aaa;letter-spacing:2px;white-space:nowrap">CHERCHER</span>
       <button class="btn" onclick="syncMemoryUsers()"
               style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">↻ SYNC</button>
+      <button class="btn" onclick="resolveUsernames()"
+              style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">👤 RÉSOUDRE NOMS</button>
       <input type="text" id="mem-search" placeholder="Recherche dans tous les souvenirs…"
              oninput="onMemSearch(this.value)"
              style="flex:1;max-width:320px;padding:7px 10px;background:var(--card);border:2px solid var(--border);color:var(--text);font-family:var(--font);font-size:0.9rem;box-shadow:var(--shadow-sm);outline:none;border-radius:var(--radius-sm)">
@@ -945,6 +953,15 @@ async function syncMemoryUsers() {
   if (!r || !r.ok) { toast('Erreur sync', 'error'); return; }
   const { synced } = await r.json();
   toast(`${synced} utilisateur(s) importé(s)`, 'success');
+  const filter = document.getElementById('mem-user-filter')?.value || '';
+  loadMemoryUsers(filter);
+}
+
+async function resolveUsernames() {
+  const r = await apiFetch('/api/admin/memory/resolve-usernames', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur résolution', 'error'); return; }
+  const { resolved } = await r.json();
+  toast(`${resolved} nom(s) résolu(s)`, 'success');
   const filter = document.getElementById('mem-user-filter')?.value || '';
   loadMemoryUsers(filter);
 }
@@ -1079,8 +1096,10 @@ function setLinksTab(tab, btn) {
 }
 
 async function loadLinks() {
-  const statusParam = currentLinksTab !== 'all' ? `?status=${currentLinksTab}` : '';
-  const r = await apiFetch(`/api/admin/links${statusParam}`);
+  const params = new URLSearchParams();
+  if (currentLinksTab !== 'all') params.set('status', currentLinksTab);
+  params.set('_t', Date.now());
+  const r = await apiFetch(`/api/admin/links?${params}`);
   if (!r || !r.ok) return;
   const data = await r.json();
   renderLinks(data.proposals);
@@ -1095,9 +1114,10 @@ function renderLinks(proposals) {
   }
   container.innerHTML = proposals.map(p => {
     const conf = Math.round(p.confidence * 100);
-    const twitchUser  = p.alias_id.replace('twitch:', '');
-    const twitchUrl   = `https://www.twitch.tv/${twitchUser}`;
-    const discordUser = p.canonical_id.replace('discord:', '');
+    const twitchRaw   = p.alias_id.replace('twitch:', '');
+    const twitchUser  = p.alias_username || twitchRaw;
+    const twitchUrl   = `https://www.twitch.tv/${p.alias_username || twitchRaw}`;
+    const discordUser = p.canonical_username || p.canonical_id.replace('discord:', '');
     const statusBadge = {
       pending:  '<span class="badge" style="background:rgba(255,160,0,0.2);color:#FFA000;border:1px solid #FFA000;padding:2px 6px;border-radius:4px;font-size:0.7rem">EN ATTENTE</span>',
       accepted: '<span class="badge" style="background:rgba(0,229,160,0.2);color:var(--c-curiosity);border:1px solid var(--c-curiosity);padding:2px 6px;border-radius:4px;font-size:0.7rem">ACCEPTÉ</span>',
@@ -1122,6 +1142,26 @@ function renderLinks(proposals) {
   }).join('');
 }
 
+async function createManualLink() {
+  const discordId = document.getElementById('manual-link-discord').value.trim();
+  const twitchUser = document.getElementById('manual-link-twitch').value.trim();
+  if (!discordId || !twitchUser) { toast('Remplis les deux champs', 'error'); return; }
+  const r = await apiFetch('/api/admin/links/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ canonical_id: `discord:${discordId}`, alias_id: `twitch:${twitchUser}` }),
+  });
+  if (r && r.ok) {
+    toast('Liaison créée', 'success');
+    document.getElementById('manual-link-discord').value = '';
+    document.getElementById('manual-link-twitch').value = '';
+    loadLinks();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
 async function analyzeLinks() {
   const r = await apiFetch('/api/admin/links/analyze', { method: 'POST' });
   if (r && r.ok) toast('Analyse déclenchée', 'success');
@@ -1140,4 +1180,266 @@ async function rejectLink(id) {
   if (r && r.ok) toast('Liaison rejetée', 'success');
   else toast('Erreur', 'error');
   loadLinks();
+}
+
+// ── Admin costs ────────────────────────────────────────────────────────────────
+
+let currentCostRange = '7d';
+
+async function loadCosts() {
+  const days = { '7d': 7, '30d': 30, '90d': 90 }[currentCostRange] || 7;
+
+  const [summaryR, dailyR, modelR, purposeR, usersR, alertR] = await Promise.all([
+    apiFetch('/api/admin/costs/summary'),
+    apiFetch(`/api/admin/costs/daily?days=${days}`),
+    apiFetch(`/api/admin/costs/breakdown/model?days=${days}`),
+    apiFetch(`/api/admin/costs/breakdown/purpose?days=${days}`),
+    apiFetch(`/api/admin/costs/top-users?days=${days}&limit=10`),
+    apiFetch('/api/admin/costs/alert'),
+  ]);
+
+  if (!summaryR || !summaryR.ok) return;
+
+  const summary = await summaryR.json();
+  const daily = await dailyR.json();
+  const models = await modelR.json();
+  const purposes = await purposeR.json();
+  const users = await usersR.json();
+  const alert = await alertR.json();
+
+  // KPIs
+  document.getElementById('cost-month-total').textContent = `$${summary.total.toFixed(2)}`;
+  const changeEl = document.getElementById('cost-month-change');
+  if (summary.pct_change !== 0) {
+    const arrow = summary.pct_change < 0 ? '▼' : '▲';
+    const color = summary.pct_change < 0 ? '#00E5A0' : '#FF4D4D';
+    changeEl.innerHTML = `<span style="color:${color}">${arrow} ${Math.abs(summary.pct_change).toFixed(1)}% vs mois préc.</span>`;
+  } else {
+    changeEl.textContent = '';
+  }
+
+  // Today: calculate from daily data (last entry if it's today)
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntry = daily.current.find(d => d.date === today);
+  document.getElementById('cost-today-total').textContent = `$${(todayEntry ? todayEntry.cost : 0).toFixed(2)}`;
+
+  document.getElementById('cost-avg-msg').textContent = `$${summary.avg_per_msg.toFixed(4)}`;
+
+  // Threshold KPI
+  const threshEl = document.getElementById('cost-threshold');
+  threshEl.textContent = `$${alert.threshold.toFixed(2)}`;
+  const pctEl = document.getElementById('cost-threshold-pct');
+  pctEl.textContent = `${alert.pct_used.toFixed(1)}% utilisé`;
+  // Color based on status
+  const threshColor = alert.status === 'critical' ? '#FF4D4D' : alert.status === 'warning' ? '#FFD700' : '#00E5A0';
+  threshEl.style.color = threshColor;
+  pctEl.style.color = threshColor;
+
+  // Graph
+  drawCostGraph(daily.current, daily.previous);
+
+  // Breakdowns
+  renderCostBreakdown('cost-by-model', models, 'model');
+  renderCostBreakdown('cost-by-purpose', purposes, 'category');
+  renderCostUsers(users);
+
+  // Alert bar
+  updateCostAlertBar(alert);
+  updateCostBadge(alert);
+}
+
+function setCostRange(range) {
+  currentCostRange = range;
+  const titles = { '7d': '💸 7 DERNIERS JOURS', '30d': '💸 30 DERNIERS JOURS', '90d': '💸 90 DERNIERS JOURS' };
+  const el = document.getElementById('cost-graph-title');
+  if (el) el.textContent = titles[range];
+
+  document.querySelectorAll('.cost-range-btn').forEach(btn => {
+    const labels = { '7d': '7J', '30d': '30J', '90d': '90J' };
+    btn.classList.toggle('active', btn.textContent === labels[range]);
+  });
+
+  loadCosts();
+}
+
+function drawCostGraph(current, previous) {
+  const canvas = document.getElementById('costCanvas');
+  if (!canvas || !current || current.length < 1) return;
+
+  const W = canvas.offsetWidth || 800;
+  const H = 165;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  ctx.fillStyle = '#0f0f1c';
+  ctx.fillRect(0, 0, W, H);
+
+  const PAD = { top: 10, bottom: 40, left: 50, right: 10 };
+  const gW = W - PAD.left - PAD.right;
+  const gH = H - PAD.top - PAD.bottom;
+
+  // Find max cost for Y scale
+  const allCosts = [...current.map(d => d.cost), ...(previous || []).map(d => d.cost)];
+  const maxCost = Math.max(...allCosts, 0.01);
+
+  // X positions: evenly spaced
+  const xStep = current.length > 1 ? gW / (current.length - 1) : gW;
+
+  // Y grid lines
+  ctx.lineWidth = 1;
+  const ySteps = 4;
+  for (let i = 0; i <= ySteps; i++) {
+    const pct = i / ySteps;
+    const y = PAD.top + (1 - pct) * gH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(W - PAD.right, y);
+    ctx.stroke();
+
+    // Y axis labels
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`$${(maxCost * pct).toFixed(2)}`, PAD.left - 4, y + 3);
+  }
+
+  // X axis labels (dates)
+  ctx.textAlign = 'center';
+  const labelEvery = current.length > 14 ? Math.ceil(current.length / 7) : (current.length > 7 ? 2 : 1);
+  current.forEach((d, i) => {
+    if (i % labelEvery !== 0 && i !== current.length - 1) return;
+    const x = PAD.left + i * xStep;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px monospace';
+    const parts = d.date.split('-');
+    ctx.fillText(`${parts[2]}/${parts[1]}`, x, H - 26);
+  });
+
+  // Draw previous period (dashed line)
+  if (previous && previous.length > 0) {
+    const prevXStep = previous.length > 1 ? gW / (previous.length - 1) : gW;
+    ctx.beginPath();
+    ctx.strokeStyle = '#4DA6FF';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.5;
+    previous.forEach((d, i) => {
+      const x = PAD.left + i * prevXStep;
+      const y = PAD.top + (1 - d.cost / maxCost) * gH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw current period (solid line + area fill)
+  ctx.beginPath();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  let firstX = 0, lastX = 0;
+  current.forEach((d, i) => {
+    const x = PAD.left + i * xStep;
+    const y = PAD.top + (1 - d.cost / maxCost) * gH;
+    if (i === 0) { ctx.moveTo(x, y); firstX = x; }
+    else ctx.lineTo(x, y);
+    lastX = x;
+  });
+  ctx.stroke();
+
+  // Area fill
+  ctx.beginPath();
+  current.forEach((d, i) => {
+    const x = PAD.left + i * xStep;
+    const y = PAD.top + (1 - d.cost / maxCost) * gH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(lastX, PAD.top + gH);
+  ctx.lineTo(firstX, PAD.top + gH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
+  grad.addColorStop(0, 'rgba(255, 215, 0, 0.25)');
+  grad.addColorStop(1, 'rgba(255, 215, 0, 0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+function renderCostBreakdown(containerId, data, keyField) {
+  const el = document.getElementById(containerId);
+  if (!el || !data || data.length === 0) { if (el) el.textContent = '—'; return; }
+
+  const maxTotal = data[0].total;
+  el.innerHTML = data.map(d => {
+    const pct = maxTotal > 0 ? (d.total / maxTotal * 100) : 0;
+    const label = d[keyField] || 'Inconnu';
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px">
+        <span>${escHtml(label)}</span>
+        <span style="color:#FFD700">$${d.total.toFixed(2)}</span>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:#FFD700;border-radius:2px"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCostUsers(users) {
+  const el = document.getElementById('cost-top-users');
+  if (!el || !users || users.length === 0) { if (el) el.textContent = '—'; return; }
+
+  const maxTotal = users[0].total;
+  el.innerHTML = users.map(u => {
+    const pct = maxTotal > 0 ? (u.total / maxTotal * 100) : 0;
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px">
+        <span>${escHtml(u.username)}</span>
+        <span style="color:#FFD700">$${u.total.toFixed(2)}</span>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:#FFD700;border-radius:2px"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateCostAlertBar(alert) {
+  const bar = document.getElementById('cost-alert-bar');
+  if (!bar) return;
+
+  if (alert.status === 'ok') {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'block';
+  const color = alert.status === 'critical' ? '#FF4D4D' : '#FFD700';
+  bar.style.borderColor = color;
+  bar.style.background = alert.status === 'critical'
+    ? 'rgba(255,77,77,0.1)' : 'rgba(255,215,0,0.1)';
+
+  document.getElementById('cost-alert-text').innerHTML =
+    `<span style="color:${color}">⚠ Seuil d'alerte : <strong>$${alert.threshold.toFixed(2)}</strong></span>`;
+  document.getElementById('cost-alert-pct').textContent = `${alert.pct_used.toFixed(1)}% utilisé`;
+}
+
+function updateCostBadge(alert) {
+  const badge = document.getElementById('costs-badge');
+  if (!badge) return;
+  badge.style.display = alert.status === 'critical' ? 'inline-block' : 'none';
+}
+
+async function pollCostsBadge() {
+  try {
+    const r = await apiFetch('/api/admin/costs/alert');
+    if (!r || !r.ok) return;
+    const alert = await r.json();
+    updateCostBadge(alert);
+  } catch (e) { /* ignore */ }
 }
