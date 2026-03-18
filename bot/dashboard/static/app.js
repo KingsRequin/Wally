@@ -30,6 +30,7 @@ let emotionSSE  = null;
 let logSSE      = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
+let currentGraphSince = null;  // null = 24h glissantes par défaut
 let _graphMeta  = null;  // { history, tMin, tRange, PAD, gW, gH, W, H }
 let _rafPending = false;
 
@@ -224,11 +225,59 @@ function startEmotionSSE() {
 
 // ── Emotion canvas graph ──────────────────────────────────────────────────────
 
-async function loadEmotionHistory() {
-  const r = await fetch('/api/public/emotions/history');
+async function loadEmotionHistory(since) {
+  const url = since != null
+    ? `/api/public/emotions/history?since=${since}`
+    : '/api/public/emotions/history';
+  const r = await fetch(url);
   if (!r.ok) return;
   const { history } = await r.json();
   drawEmotionGraph(history);
+  renderEmotionAverages(history);
+}
+
+function setGraphRange(range) {
+  const now = Date.now() / 1000;
+  const titles = {
+    '24h': '📈 DERNIÈRES 24H',
+    '7d':  '📈 7 DERNIERS JOURS',
+    '30d': '📈 30 DERNIERS JOURS',
+  };
+  const offsets = {
+    '24h': 86400,
+    '7d':  7 * 86400,
+    '30d': 30 * 86400,
+  };
+  currentGraphSince = now - offsets[range];
+
+  // Mettre à jour le titre
+  const titleEl = document.getElementById('graph-title');
+  if (titleEl) titleEl.textContent = titles[range];
+
+  // Mettre à jour l'état actif des boutons
+  document.querySelectorAll('.graph-range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent === { '24h': '24H', '7d': '7J', '30d': '30J' }[range]);
+  });
+
+  loadEmotionHistory(currentGraphSince);
+}
+
+function renderEmotionAverages(history) {
+  const el = document.getElementById('emotion-averages');
+  if (!el) return;
+  if (!history || history.length < 2) {
+    el.style.display = 'none';
+    return;
+  }
+  const avgs = {};
+  for (const e of EMOTIONS) {
+    const sum = history.reduce((acc, snap) => acc + (snap[e] ?? 0), 0);
+    avgs[e] = sum / history.length;
+  }
+  el.innerHTML = EMOTIONS.map(e =>
+    `<span style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]} ${avgs[e].toFixed(2)}</span>`
+  ).join('');
+  el.style.display = 'flex';
 }
 
 function hexToRgba(hex, alpha) {
