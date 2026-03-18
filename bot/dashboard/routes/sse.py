@@ -18,6 +18,18 @@ _log_queues: list[asyncio.Queue] = []
 _sink_id: int | None = None
 
 
+def broadcast_event(data: dict) -> None:
+    """Envoie un événement structuré à tous les clients SSE connectés.
+
+    Distingué des log entries par la présence du champ 'type'.
+    """
+    for q in list(_log_queues):
+        try:
+            q.put_nowait(data)
+        except Exception:
+            pass
+
+
 def _log_sink(message) -> None:
     """Sink loguru — appelé de manière synchrone depuis le thread de logging.
 
