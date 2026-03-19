@@ -23,7 +23,10 @@ def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
     bot.config.twitch_events = {}
     bot._start_time = None
 
+    bot.config.bot.love_decay_lambda = 0.1
+
     bot.db.get_trust_score = AsyncMock(return_value=0.5)
+    bot.db.get_love_score = AsyncMock(return_value=0.3)
     bot.db.update_trust_score = AsyncMock()
 
     bot.emotion.get_state = MagicMock(
@@ -188,8 +191,8 @@ async def test_memory_show_no_memory():
     target_user.id = 999
     target_user.display_name = "Bob"
     await cog.memory_show.callback(cog, interaction, target_user)
-    followup_text = interaction.followup.send.call_args.args[0]
-    assert "Aucune memoire" in followup_text
+    embed = interaction.followup.send.call_args.kwargs["embed"]
+    assert "Aucun souvenir" in embed.description
 
 
 @pytest.mark.asyncio

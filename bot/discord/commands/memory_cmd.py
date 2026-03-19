@@ -80,12 +80,24 @@ class MemoryCog(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
         try:
             mem = await self.bot.memory.get_all("discord", str(target.id))
+            trust = await self.bot.db.get_trust_score("discord", str(target.id))
+            love = await self.bot.db.get_love_score("discord", str(target.id), self.bot.config.bot.love_decay_lambda)
+
+            # Prepend trust + love to memory text
+            header = f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\n"
+
             if not mem:
+                # Still show trust+love even with no memories
                 await interaction.followup.send(
-                    f"Aucune memoire pour {target.display_name}.", ephemeral=True
+                    embed=discord.Embed(
+                        title=f"Mémoire de Wally — {target.display_name}",
+                        description=f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\nAucun souvenir.",
+                        color=discord.Color.green(),
+                    ),
+                    ephemeral=True,
                 )
                 return
-            pages = _paginate(mem)
+            pages = _paginate(header + mem)
             view = MemoryPaginatedView(pages, target.display_name)
             await interaction.followup.send(
                 embed=view._make_embed(), view=view, ephemeral=True
