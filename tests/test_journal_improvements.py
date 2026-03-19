@@ -201,3 +201,34 @@ async def test_peak_antispam_prevents_duplicate(tmp_path):
     peaks = await db.get_emotion_peaks_since(time.time() - 10)
     assert len(peaks) == 1  # Only one peak, second blocked
     await db.close()
+
+
+# ── stats block + word range (Task 5) ──
+
+from bot.core.journal import _build_stats_block, _get_word_range
+
+
+def test_build_stats_block_basic():
+    messages = [
+        {"author": "Alice", "content": "Hello", "timestamp": 1710800000.0, "platform": "discord"},
+        {"author": "Bob", "content": "Hi", "timestamp": 1710803600.0, "platform": "discord"},
+        {"author": "Alice", "content": "Sup", "timestamp": 1710807200.0, "platform": "twitch"},
+    ]
+    block = _build_stats_block(messages)
+    assert "Messages : 3" in block
+    assert "Participants : 2" in block
+    assert "Alice (2 msgs)" in block
+    assert "Discord" in block or "discord" in block
+
+
+def test_build_stats_block_empty():
+    block = _build_stats_block([])
+    assert block == ""
+
+
+def test_get_word_range():
+    assert _get_word_range(10) == "150 à 250"
+    assert _get_word_range(49) == "150 à 250"
+    assert _get_word_range(50) == "250 à 400"
+    assert _get_word_range(150) == "250 à 400"
+    assert _get_word_range(151) == "400 à 600"

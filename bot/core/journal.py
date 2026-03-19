@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -31,29 +32,90 @@ _JOURNAL_SYSTEM = load_prompt(
     fallback=(
         "Tu es Wally, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
         "Rédige une entrée de journal en 3 à 5 paragraphes, à la première personne, "
-        "200 à 350 mots, ton sincère et introspectif."
+        "ton sincère et introspectif. Respecte la fourchette de mots indiquée dans le contexte."
     ),
 )
 _CHUNK_SYSTEM = load_prompt(
     "journal_chunk_system",
     fallback=(
-        "Tu es le module de mémoire de Wally. Résume le bloc de messages en 3 à 6 lignes, "
-        "texte brut, sans titre."
+        "Tu es le module de mémoire de Wally. Résume le bloc de messages en 5 à 10 lignes, "
+        "texte brut, sans titre. Mentionne toujours qui a dit ou fait quoi par son pseudo exact."
     ),
 )
 _FINAL_SYSTEM = load_prompt(
     "journal_final_system",
     fallback=(
-        "Tu es le module de mémoire de Wally. Synthétise les résumés en 6 à 10 lignes, "
-        "texte brut, sans titre."
+        "Tu es le module de mémoire de Wally. Synthétise les résumés en 10 à 20 lignes, "
+        "texte brut, sans titre. Mentionne toujours qui a dit ou fait quoi par son pseudo exact."
     ),
 )
 _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
-_CHUNK_SIZE = 20
+_CHUNK_SIZE = 30
 _DISCORD_LIMIT = 1900  # marge de sécurité sous la limite Discord de 2000
 
 _TZ_JOURNAL = ZoneInfo("Europe/Paris")
+
+
+def _get_word_range(message_count: int) -> str:
+    """Return a word-count range string based on the number of messages."""
+    if message_count < 50:
+        return "150 à 250"
+    if message_count <= 150:
+        return "250 à 400"
+    return "400 à 600"
+
+
+def _build_active_hours(messages: list[dict]) -> str:
+    """Build human-readable active hour ranges from messages."""
+    if not messages:
+        return ""
+    hours: set[int] = set()
+    for m in messages:
+        ts = m.get("timestamp", 0)
+        if ts:
+            hours.add(datetime.fromtimestamp(ts, tz=_TZ_JOURNAL).hour)
+    if not hours:
+        return ""
+    sorted_hours = sorted(hours)
+    ranges: list[str] = []
+    start = prev = sorted_hours[0]
+    for h in sorted_hours[1:]:
+        if h - prev <= 1:
+            prev = h
+        else:
+            ranges.append(f"{start}h-{prev + 1}h" if start != prev else f"{start}h")
+            start = prev = h
+    ranges.append(f"{start}h-{prev + 1}h" if start != prev else f"{start}h")
+    return ", ".join(ranges)
+
+
+def _build_stats_block(messages: list[dict]) -> str:
+    """Build a stats summary block from a list of messages."""
+    if not messages:
+        return ""
+    count = len(messages)
+    authors = Counter(m["author"] for m in messages)
+    unique = len(authors)
+    top5 = ", ".join(f"{name} ({n} msgs)" for name, n in authors.most_common(5))
+    active = _build_active_hours(messages)
+
+    lines = [
+        "Statistiques de la journée :",
+        f"- Messages : {count}",
+        f"- Participants : {unique}",
+    ]
+    if active:
+        lines.append(f"- Activité : {active}")
+
+    # Platform breakdown
+    platforms = Counter(m.get("platform", "discord") for m in messages)
+    if len(platforms) > 1:
+        breakdown = ", ".join(f"{p.capitalize()} ({n})" for p, n in platforms.most_common())
+        lines.append(f"- Plateformes : {breakdown}")
+
+    lines.append(f"- Top participants : {top5}")
+    return "\n".join(lines)
 
 
 def _build_emotion_arc(snapshots: list[dict]) -> str:

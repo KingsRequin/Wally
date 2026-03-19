@@ -111,11 +111,11 @@ async def test_build_context_text_multi_pass():
 
     openai.complete_secondary = fake_complete
 
-    # 25 messages × 1000 chars = 25000 chars → 6250 tokens > 6000 threshold
-    # 25 messages → 2 chunks (20 + 5) → 2 chunk summaries + 1 final = 3 calls
+    # 35 messages × 1000 chars = 35000 chars → 8750 tokens > 6000 threshold
+    # 35 messages → 2 chunks (30 + 5) → 2 chunk summaries + 1 final = 3 calls
     big_messages = [
         {"author": "User", "content": "x" * 1000, "timestamp": float(i)}
-        for i in range(25)
+        for i in range(35)
     ]
     result = await journal._build_context_text(big_messages)
 
