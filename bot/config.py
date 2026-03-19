@@ -18,6 +18,7 @@ class BotConfig:
     link_min_confidence: float = 0.75
     cost_alert_threshold: float = 25.0
     emotion_peak_threshold: float = 0.7
+    emotion_inertia_factor: float = 0.5
 
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
