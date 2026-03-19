@@ -19,6 +19,11 @@ class BotConfig:
     cost_alert_threshold: float = 25.0
     emotion_peak_threshold: float = 0.7
     emotion_inertia_factor: float = 0.5
+    spontaneous_discord_enabled: bool = True
+    spontaneous_twitch_enabled: bool = True
+    spontaneous_probability: float = 0.05
+    spontaneous_passion_probability: float = 0.15
+    spontaneous_cooldown_seconds: int = 300
 
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
@@ -42,6 +47,7 @@ class DiscordConfig:
     channel_filter_mode: str = "blacklist"
     channel_whitelist: list[int] = field(default_factory=list)
     channel_blacklist: list[int] = field(default_factory=list)
+    emoji_reaction_probability: float = 0.05
 
 
 @dataclass

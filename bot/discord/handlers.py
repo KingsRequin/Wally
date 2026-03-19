@@ -54,6 +54,33 @@ def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
     return None
 
 
+_PASSION_KEYWORDS = {
+    "bouchon", "bouchons", "silice", "chariot", "chariots",
+    "néon", "néons", "ticket de caisse", "notice pliée",
+    "feuille morte", "feuilles mortes",
+}
+_AVERSION_KEYWORDS = {
+    "ananas", "pizza ananas", "ketchup", "croque-monsieur",
+    "c'est juste un jeu", "on part sur", "eau tiède",
+    "clavier mécanique", "applaudir",
+}
+_SPONTANEOUS_KEYWORDS = _PASSION_KEYWORDS | _AVERSION_KEYWORDS
+
+
+def _check_spontaneous_trigger(
+    text: str, curiosity: float, anger: float, boredom: float,
+) -> str | None:
+    """Check if a message should trigger a spontaneous intervention.
+    Returns 'passion' (higher prob), 'emotion' (lower prob), or None.
+    """
+    text_lower = text.lower()
+    if any(kw in text_lower for kw in _SPONTANEOUS_KEYWORDS):
+        return "passion"
+    if curiosity >= 0.6 or anger >= 0.7 or boredom >= 0.7:
+        return "emotion"
+    return None
+
+
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 
