@@ -399,6 +399,15 @@ class Database:
             (user_id, platform, time.time(), username or None),
         )
 
+    async def get_last_interaction(self, user_id: str) -> float | None:
+        """Retourne le timestamp de la dernière interaction d'un utilisateur, ou None."""
+        cursor = await self._conn.execute(
+            "SELECT last_updated FROM memory_users WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return float(row["last_updated"]) if row else None
+
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (après fusion de comptes)."""
         await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))

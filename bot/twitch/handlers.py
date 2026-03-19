@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -72,6 +73,18 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         trust = await bot.db.get_trust_score(platform, user_id)
 
         mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude)
+
+        # Temporal activity: inject absence note if user hasn't been seen in 7+ days
+        try:
+            last_seen = await bot.db.get_last_interaction(f"{platform}:{user_id}")
+            if last_seen:
+                days_ago = int((time.time() - last_seen) / 86400)
+                if days_ago >= 7:
+                    absence_note = f"\nDernière interaction avec cet utilisateur : il y a {days_ago} jours."
+                    mem_context = (mem_context + absence_note) if mem_context else absence_note.strip()
+        except Exception:
+            pass
+
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         situation = {
