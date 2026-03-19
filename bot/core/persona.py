@@ -34,6 +34,7 @@ class PersonaService:
 
         self._emotion_directives = self._parse_emotions()
         self._weekday_directives = self._parse_weekdays()
+        self._composite_directives = self._parse_composites()
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
@@ -85,6 +86,36 @@ class PersonaService:
                     directives[day] = text
         logger.info("WEEKDAYS.md loaded: {n} directives", n=len(directives))
         return directives
+
+    def _parse_composites(self) -> dict[str, str]:
+        """Parse COMPOSITES.md en un dict {paire: directive}."""
+        path = os.path.join(self._dir, "COMPOSITES.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: COMPOSITES.md")
+            return {}
+        except Exception as exc:
+            logger.warning("COMPOSITES.md read error: {e}", e=exc)
+            return {}
+
+        directives: dict[str, str] = {}
+        sections = ("\n" + content).split("\n## ")
+        for section in sections[1:]:
+            lines = section.strip().split("\n", 1)
+            if len(lines) >= 2:
+                key = lines[0].strip()
+                text = " ".join(lines[1].strip().split("\n")).strip()
+                if key and text:
+                    directives[key] = text
+        logger.info("COMPOSITES.md loaded: {n} directives", n=len(directives))
+        return directives
+
+    @property
+    def composite_directives(self) -> dict[str, str]:
+        """Directives comportementales pour les émotions composites."""
+        return self._composite_directives
 
     @property
     def emotion_directives(self) -> dict[str, str]:
