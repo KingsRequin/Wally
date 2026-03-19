@@ -201,7 +201,7 @@ class DailyJournal:
         Appelé quand daily_log est vide pour lire l'historique Discord du jour."""
         self._fetch_history_cb = cb
 
-    async def generate_and_send(self) -> None:
+    async def generate_and_send(self, archive: bool = True) -> None:
         channel_id = self._config.bot.journal_channel_id
         if not channel_id:
             logger.warning("No journal_channel_id configured, skipping journal")
@@ -247,7 +247,35 @@ class DailyJournal:
                 logger.warning("Journal: all sources empty — generating with no conversation context")
                 context_text = "Pas grand chose de notable aujourd'hui."
 
-        # Récupération de l'arc émotionnel
+        # ── Stats block (F4, F8) ──
+        stats_block = _build_stats_block(all_messages) if all_messages else ""
+
+        # ── Dynamic word range (F1) ──
+        word_range = _get_word_range(len(all_messages)) if all_messages else "150 à 250"
+
+        # ── Emotion peaks (F5) ──
+        peaks_block = ""
+        if self._db is not None:
+            try:
+                peaks = await self._db.get_emotion_peaks_since(time.time() - 86400)
+                if peaks:
+                    peak_lines = []
+                    for p in peaks:
+                        ts = datetime.fromtimestamp(p["timestamp"], tz=_TZ_JOURNAL)
+                        name_fr = _EMOTION_FR.get(p["emotion"], p["emotion"])
+                        pct = int(p["value"] * 100)
+                        user = p.get("trigger_user") or "inconnu"
+                        msg = p.get("trigger_message") or ""
+                        msg_short = msg[:80] + "…" if len(msg) > 80 else msg
+                        peak_lines.append(
+                            f"- {ts.strftime('%Hh%M')} — pic de {name_fr} ({pct}%) "
+                            f"déclenché par {user} : \"{msg_short}\""
+                        )
+                    peaks_block = "Moments forts émotionnels :\n" + "\n".join(peak_lines)
+            except Exception as exc:
+                logger.warning("Failed to get emotion peaks for journal: {e}", e=exc)
+
+        # ── Emotion arc ──
         try:
             snapshots = await self._db.get_emotion_snapshots_since(time.time() - 86400) if self._db else []
         except Exception as exc:
@@ -255,21 +283,66 @@ class DailyJournal:
             snapshots = []
 
         arc = _build_emotion_arc(snapshots)
-        arc_section = f"\n{arc}\n" if arc else ""
 
+        # ── Comparative emotion weather (F9) ──
+        weather_block = ""
+        if self._db is not None:
+            try:
+                week_avgs = await self._db.get_emotion_averages(time.time() - 7 * 86400)
+                day_avgs = await self._db.get_emotion_averages(time.time() - 86400)
+                if week_avgs and day_avgs:
+                    diffs = []
+                    for emotion in ["anger", "joy", "sadness", "curiosity", "boredom"]:
+                        delta = day_avgs[emotion] - week_avgs[emotion]
+                        if abs(delta) >= 0.10:
+                            name_fr = _EMOTION_FR.get(emotion, emotion)
+                            sign = "+" if delta > 0 else ""
+                            pct = int(delta * 100)
+                            direction = "plus haute que d'habitude" if delta > 0 else "en baisse"
+                            diffs.append(f"{name_fr} {direction} ({sign}{pct}%)")
+                    if diffs:
+                        weather_block = "Comparé à la semaine : " + ", ".join(diffs)
+            except Exception as exc:
+                logger.warning("Failed to compute emotion weather: {e}", e=exc)
+
+        # ── Yesterday's journal (F6) ──
+        yesterday_block = ""
+        if self._db is not None:
+            try:
+                yesterday = await self._db.get_yesterday_journal()
+                if yesterday:
+                    yesterday_block = f"Ton journal d'hier :\n{yesterday['content']}"
+            except Exception as exc:
+                logger.warning("Failed to get yesterday's journal: {e}", e=exc)
+
+        # ── Current emotion state ──
         emotions = self._emotion.get_state()
         emotions_text = ", ".join(
             f"{_EMOTION_FR.get(k, k)}: {int(v * 100)}%" for k, v in emotions.items()
         )
 
-        user_msg = (
-            f"Voici un résumé de la journée :\n\n{context_text}"
-            f"{arc_section}"
-            f"\nTon état émotionnel actuel : {emotions_text}\n\n"
-            f"Écris ton journal intime pour aujourd'hui."
-        )
+        # ── Build user prompt ──
+        sections = [
+            f"Fourchette de mots pour cette entrée : {word_range} mots.",
+        ]
+        if stats_block:
+            sections.append(stats_block)
+        sections.append(f"Voici un résumé de la journée :\n\n{context_text}")
+        if peaks_block:
+            sections.append(peaks_block)
+        if arc:
+            sections.append(arc)
+        if weather_block:
+            sections.append(weather_block)
+        sections.append(f"Ton état émotionnel actuel : {emotions_text}")
+        if yesterday_block:
+            sections.append(yesterday_block)
+        sections.append("Écris ton journal intime pour aujourd'hui.")
 
-        journal_text = await self._openai.complete_secondary(
+        user_msg = "\n\n".join(sections)
+
+        # ── Generate with primary model (F11) ──
+        journal_text = await self._openai.complete(
             _JOURNAL_SYSTEM,
             [{"role": "user", "content": user_msg}],
             purpose="daily_journal",
@@ -282,6 +355,17 @@ class DailyJournal:
             logger.info("Daily journal sent to channel {ch}", ch=channel_id)
         else:
             logger.warning("No send callback set for journal — generated but not sent")
+
+        # ── Archive (F6) ──
+        if archive and self._db is not None:
+            try:
+                word_count = len(journal_text.split())
+                await self._db.insert_journal(
+                    date.today().isoformat(), journal_text, word_count,
+                )
+                logger.info("Journal archived ({n} words)", n=word_count)
+            except Exception as exc:
+                logger.warning("Failed to archive journal: {e}", e=exc)
 
     async def _build_context_text(self, messages: list[dict]) -> str:
         total_chars = sum(len(m["content"]) for m in messages)

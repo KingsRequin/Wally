@@ -232,3 +232,118 @@ def test_get_word_range():
     assert _get_word_range(50) == "250 à 400"
     assert _get_word_range(150) == "250 à 400"
     assert _get_word_range(151) == "400 à 600"
+
+
+# ── Task 6: Wire everything into generate_and_send ──
+
+@pytest.mark.asyncio
+async def test_journal_injects_stats_and_word_range(tmp_path):
+    """Stats block, word range, and peaks are injected in the journal prompt."""
+    from unittest.mock import MagicMock, AsyncMock
+    from bot.core.journal import DailyJournal
+
+    db_inst = await Database.create(str(tmp_path / "test.db"))
+    now = time.time()
+    # Insert messages into daily_log
+    for i in range(60):
+        await db_inst.log_daily_message("ch1", "Alice" if i % 2 == 0 else "Bob", f"msg {i}", platform="discord")
+    # Insert a peak
+    await db_inst.insert_emotion_peak(now, "joy", 0.85, "Alice", "LOL", "ch1", "discord")
+    # Insert yesterday's journal
+    from datetime import date, timedelta
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    await db_inst.insert_journal(yesterday, "Journal d'hier : tout était calme.", 6)
+
+    config = MagicMock()
+    config.bot.journal_channel_id = 12345
+    config.bot.journal_time = "03:00"
+    config.bot.emotion_peak_threshold = 0.7
+
+    openai_mock = MagicMock()
+    openai_mock.complete_secondary = AsyncMock(return_value="Summary text.")
+
+    captured_journal_prompt = []
+    async def fake_complete(system, messages, purpose="", **kwargs):
+        captured_journal_prompt.append(messages[0]["content"])
+        return "Generated journal text"
+
+    openai_mock.complete = fake_complete
+
+    emotion = MagicMock()
+    emotion.get_state = MagicMock(
+        return_value={"anger": 0.1, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
+    )
+    memory = MagicMock()
+    memory.get_all_contexts = MagicMock(return_value=[])
+
+    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+    await journal.generate_and_send()
+
+    assert len(captured_journal_prompt) == 1
+    prompt = captured_journal_prompt[0]
+    assert "Messages : 60" in prompt
+    assert "250 à 400" in prompt
+    await db_inst.close()
+
+
+@pytest.mark.asyncio
+async def test_journal_archives_after_send(tmp_path):
+    from unittest.mock import MagicMock, AsyncMock
+    from bot.core.journal import DailyJournal
+
+    db_inst = await Database.create(str(tmp_path / "test.db"))
+    config = MagicMock()
+    config.bot.journal_channel_id = 12345
+    config.bot.journal_time = "03:00"
+    config.bot.emotion_peak_threshold = 0.7
+    openai_mock = MagicMock()
+    openai_mock.complete_secondary = AsyncMock(return_value="Summary.")
+    openai_mock.complete = AsyncMock(return_value="Mon journal du jour.")
+    emotion = MagicMock()
+    emotion.get_state = MagicMock(return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0})
+    memory = MagicMock()
+    memory.get_all_contexts = MagicMock(return_value=[{"author": "A", "content": "hi", "timestamp": 1000.0}])
+
+    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+    await journal.generate_and_send()
+
+    from datetime import date
+    today = date.today().isoformat()
+    row = await db_inst.fetch_one("SELECT * FROM journal_archive WHERE date = ?", (today,))
+    assert row is not None
+    assert "Mon journal du jour." in row["content"]
+    await db_inst.close()
+
+
+@pytest.mark.asyncio
+async def test_journal_archive_false_does_not_archive(tmp_path):
+    from unittest.mock import MagicMock, AsyncMock
+    from bot.core.journal import DailyJournal
+
+    db_inst = await Database.create(str(tmp_path / "test.db"))
+    config = MagicMock()
+    config.bot.journal_channel_id = 12345
+    config.bot.journal_time = "03:00"
+    config.bot.emotion_peak_threshold = 0.7
+    openai_mock = MagicMock()
+    openai_mock.complete_secondary = AsyncMock(return_value="Summary.")
+    openai_mock.complete = AsyncMock(return_value="Test journal.")
+    emotion = MagicMock()
+    emotion.get_state = MagicMock(return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0})
+    memory = MagicMock()
+    memory.get_all_contexts = MagicMock(return_value=[{"author": "A", "content": "hi", "timestamp": 1000.0}])
+
+    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+    await journal.generate_and_send(archive=False)
+
+    from datetime import date
+    today = date.today().isoformat()
+    row = await db_inst.fetch_one("SELECT * FROM journal_archive WHERE date = ?", (today,))
+    assert row is None
+    await db_inst.close()
