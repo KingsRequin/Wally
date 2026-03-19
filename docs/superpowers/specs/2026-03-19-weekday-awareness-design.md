@@ -67,12 +67,18 @@ La directive temporelle est injectée **après** le contexte situationnel et **a
 
 ### Callers
 
-Les deux handlers qui appellent `build_system_prompt` doivent passer `weekday_directives` :
+Tous les sites qui appellent `build_system_prompt` doivent passer `weekday_directives` :
 
-- `bot/discord/handlers.py` : `_respond()` line ~181
-- `bot/twitch/handlers.py` : handler Twitch équivalent
+- `bot/discord/handlers.py` : `_respond()` — handler principal Discord
+- `bot/discord/commands/ask.py` : commande `/wally ask`
+- `bot/twitch/handlers.py` : handler principal Twitch
+- `bot/twitch/events.py` : `_generate_and_send()` pour les événements follow/sub/bits/raid
 
 Ils passent déjà `bot.persona.emotion_directives` — ajouter `weekday_directives=bot.persona.weekday_directives`.
+
+### Notes de parsing
+
+Les sections `## jour` dans WEEKDAYS.md doivent être en **minuscules** (case-sensitive) car la clé de lookup vient de `_FRENCH_DAYS` qui est toujours en minuscules. Le parseur applique la même logique que `_parse_emotions()` : `lines[0].strip()` pour la clé, et les lignes de contenu sont jointes en une seule chaîne.
 
 ---
 
@@ -88,6 +94,7 @@ Ils passent déjà `bot.persona.emotion_directives` — ajouter `weekday_directi
 
 - `test_weekday_directive_injected` — passe un dict avec `vendredi` → vérifie que la directive apparaît dans le prompt
 - `test_weekday_directive_not_injected_when_none` — `weekday_directives=None` → pas de section temporelle
+- `test_weekday_directive_not_injected_when_day_missing` — passe un dict sans le jour courant → pas de section temporelle
 - `test_weekday_directive_order` — la directive temporelle apparaît avant les directives émotionnelles
 
 ### Tests existants
@@ -104,5 +111,7 @@ Aucun test existant ne devrait casser — le nouveau paramètre `weekday_directi
 | `bot/core/persona.py` | `_parse_weekdays()`, property `weekday_directives`, appel dans `reload()` |
 | `bot/core/prompts.py` | Nouveau param `weekday_directives`, injection directive temporelle |
 | `bot/discord/handlers.py` | Passer `weekday_directives` à `build_system_prompt` |
+| `bot/discord/commands/ask.py` | Passer `weekday_directives` à `build_system_prompt` |
 | `bot/twitch/handlers.py` | Passer `weekday_directives` à `build_system_prompt` |
+| `bot/twitch/events.py` | Passer `weekday_directives` à `build_system_prompt` |
 | Tests | Nouveaux tests parsing + injection |
