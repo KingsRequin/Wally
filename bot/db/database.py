@@ -78,10 +78,32 @@ CREATE TABLE IF NOT EXISTS daily_log (
     timestamp  REAL    NOT NULL,
     channel_id TEXT    NOT NULL,
     author     TEXT    NOT NULL,
-    content    TEXT    NOT NULL
+    content    TEXT    NOT NULL,
+    platform   TEXT    NOT NULL DEFAULT 'discord'
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_log_ts ON daily_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS emotion_peaks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    emotion TEXT NOT NULL,
+    value REAL NOT NULL,
+    trigger_user TEXT,
+    trigger_message TEXT,
+    channel_id TEXT,
+    platform TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_emotion_peaks_ts ON emotion_peaks(timestamp);
+
+CREATE TABLE IF NOT EXISTS journal_archive (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    word_count INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS user_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,6 +127,15 @@ CREATE TABLE IF NOT EXISTS session_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_msgs_channel ON session_messages(channel_id);
+
+CREATE TABLE IF NOT EXISTS web_search_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    query TEXT NOT NULL,
+    results_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_search_log_ts ON web_search_log(timestamp);
 """
 
 
@@ -133,6 +164,12 @@ class Database:
         # Migration: index sur cost_log.timestamp
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp)")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
+        # Migration: ajouter platform à daily_log si absent
+        try:
+            await conn.execute("ALTER TABLE daily_log ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'")
             await conn.commit()
         except aiosqlite.OperationalError:
             pass
@@ -398,7 +435,12 @@ class Database:
 
             inserted = 0
             before = {u["user_id"] for u in await self.list_memory_users()}
+            # Ne pas recréer les alias déjà liés (sinon ils réapparaissent en double)
+            alias_map = await self.get_alias_map()
+            alias_ids = set(alias_map.keys())
             for uid in user_ids:
+                if uid in alias_ids:
+                    continue  # alias lié — ne pas recréer dans memory_users
                 platform = uid.split(":")[0]
                 await self.upsert_memory_user(uid, platform, username="")
                 if uid not in before:
@@ -444,11 +486,12 @@ class Database:
     # ── Daily log (journal persistence) ──────────────────────────────────────────
 
     async def log_daily_message(
-        self, channel_id: str, author: str, content: str, timestamp: float | None = None
+        self, channel_id: str, author: str, content: str,
+        timestamp: float | None = None, platform: str = "discord",
     ) -> None:
         await self.execute(
-            "INSERT INTO daily_log (timestamp, channel_id, author, content) VALUES (?, ?, ?, ?)",
-            (timestamp if timestamp is not None else time.time(), channel_id, author, content),
+            "INSERT INTO daily_log (timestamp, channel_id, author, content, platform) VALUES (?, ?, ?, ?, ?)",
+            (timestamp if timestamp is not None else time.time(), channel_id, author, content, platform),
         )
 
     async def get_today_messages(self) -> list[dict]:
@@ -456,7 +499,7 @@ class Database:
             hour=0, minute=0, second=0, microsecond=0
         ).timestamp()
         rows = await self.fetch_all(
-            "SELECT timestamp, channel_id, author, content FROM daily_log "
+            "SELECT timestamp, channel_id, author, content, platform FROM daily_log "
             "WHERE timestamp >= ? ORDER BY timestamp ASC",
             (midnight,),
         )
@@ -466,6 +509,7 @@ class Database:
                 "channel_id": row["channel_id"],
                 "author": row["author"],
                 "content": row["content"],
+                "platform": row["platform"] if "platform" in row.keys() else "discord",
             }
             for row in rows
         ]
@@ -473,6 +517,84 @@ class Database:
     async def cleanup_old_daily_log(self, days: int = 7) -> None:
         cutoff = time.time() - days * 86400
         await self.execute("DELETE FROM daily_log WHERE timestamp < ?", (cutoff,))
+
+    # ── Emotion peaks ──────────────────────────────────────────────────────
+
+    async def insert_emotion_peak(
+        self, timestamp: float, emotion: str, value: float,
+        trigger_user: str = "", trigger_message: str = "",
+        channel_id: str = "", platform: str = "",
+    ) -> None:
+        await self.execute(
+            "INSERT INTO emotion_peaks "
+            "(timestamp, emotion, value, trigger_user, trigger_message, channel_id, platform) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (timestamp, emotion, value, trigger_user, trigger_message, channel_id, platform),
+        )
+
+    async def get_emotion_peaks_since(self, since: float) -> list[dict]:
+        rows = await self.fetch_all(
+            "SELECT timestamp, emotion, value, trigger_user, trigger_message, channel_id, platform "
+            "FROM emotion_peaks WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since,),
+        )
+        return [
+            {
+                "timestamp": float(r["timestamp"]),
+                "emotion": r["emotion"],
+                "value": float(r["value"]),
+                "trigger_user": r["trigger_user"],
+                "trigger_message": r["trigger_message"],
+                "channel_id": r["channel_id"],
+                "platform": r["platform"],
+            }
+            for r in rows
+        ]
+
+    # ── Journal archive ────────────────────────────────────────────────────
+
+    async def insert_journal(self, date: str, content: str, word_count: int) -> None:
+        await self.execute(
+            "INSERT INTO journal_archive (date, content, word_count, created_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(date) DO UPDATE SET content=excluded.content, "
+            "word_count=excluded.word_count, created_at=excluded.created_at",
+            (date, content, word_count, time.time()),
+        )
+
+    async def get_yesterday_journal(self, today: str | None = None) -> dict | None:
+        """Returns yesterday's journal entry, or None if not found.
+        today: ISO 8601 date string (YYYY-MM-DD). Defaults to today."""
+        if today is None:
+            today = datetime.now(_TZ_DB).strftime("%Y-%m-%d")
+        from datetime import date as date_type, timedelta
+        yesterday = (date_type.fromisoformat(today) - timedelta(days=1)).isoformat()
+        row = await self.fetch_one(
+            "SELECT date, content, word_count FROM journal_archive WHERE date = ?",
+            (yesterday,),
+        )
+        if row is None:
+            return None
+        return {"date": row["date"], "content": row["content"], "word_count": int(row["word_count"])}
+
+    # ── Emotion averages ──────────────────────────────────────────────────
+
+    async def get_emotion_averages(self, since: float) -> dict | None:
+        row = await self.fetch_one(
+            "SELECT AVG(anger) AS anger, AVG(joy) AS joy, AVG(sadness) AS sadness, "
+            "AVG(curiosity) AS curiosity, AVG(boredom) AS boredom "
+            "FROM emotion_history WHERE snapshot_at >= ?",
+            (since,),
+        )
+        if row is None or row["anger"] is None:
+            return None
+        return {
+            "anger": float(row["anger"]),
+            "joy": float(row["joy"]),
+            "sadness": float(row["sadness"]),
+            "curiosity": float(row["curiosity"]),
+            "boredom": float(row["boredom"]),
+        }
 
     # ── User links (account linking) ─────────────────────────────────────────
 
@@ -613,3 +735,20 @@ class Database:
         await self.execute(
             "DELETE FROM session_messages WHERE channel_id = ?", (channel_id,)
         )
+
+    # ── Web search log ────────────────────────────────────────────────────────
+
+    async def log_web_search(self, query: str, results_count: int) -> None:
+        await self.execute(
+            "INSERT INTO web_search_log (timestamp, query, results_count) VALUES (?, ?, ?)",
+            (time.time(), query, results_count),
+        )
+
+    async def count_web_searches_this_month(self) -> int:
+        now = datetime.now(_TZ_DB)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        row = await self.fetch_one(
+            "SELECT COUNT(*) AS cnt FROM web_search_log WHERE timestamp >= ?",
+            (month_start.timestamp(),),
+        )
+        return int(row["cnt"]) if row else 0
