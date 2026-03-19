@@ -32,7 +32,8 @@ dans le résumé lossy.
   "200 à 350 mots" du template `journal_system.md`
 
 **Fichiers impactés :**
-- `bot/core/journal.py` : calcul du palier, injection dans le prompt user
+- `bot/core/journal.py` : calcul du palier, injection dans le prompt user.
+  Aussi mettre à jour le fallback string (lignes 32-35) qui contient "200 à 350 mots".
 - `bot/persona/prompts/journal_system.md` : retirer la fourchette fixe, ajouter un placeholder
   ou laisser le code l'overrider via le message user
 
@@ -77,7 +78,9 @@ dans le résumé lossy.
 **Données collectées :**
 - Nombre total de messages
 - Nombre de participants uniques
-- Plages horaires actives (ex: "14h-16h, 20h-23h")
+- Plages horaires actives : grouper les messages par slot d'1 heure. Les heures consécutives
+  actives forment une plage. Les plages séparées par 2+ heures inactives sont distinctes.
+  (ex: messages à 14h, 15h, 16h, puis 20h, 21h, 22h, 23h → "14h-16h, 20h-23h")
 - Répartition par plateforme (si F7 implémentée)
 
 **Injection :** Bloc texte structuré injecté dans le prompt user avant le résumé des conversations.
@@ -117,10 +120,17 @@ CREATE INDEX IF NOT EXISTS idx_emotion_peaks_ts ON emotion_peaks(timestamp);
 ```
 
 **Logique de détection :**
-- Dans `EmotionEngine.update()` ou `process_message()` : après calcul du delta, si
-  `new_value > threshold` ET `delta > 0` (pic montant, pas stagnation), insert dans la table
+- Point de détection : dans `process_message()`, après les appels à `apply_delta()`. C'est le
+  seul endroit où le contexte complet (user, message, channel, platform) est disponible.
+  `process_message()` compare l'état avant/après pour chaque émotion et appelle
+  `_maybe_log_peak(emotion, old_value, new_value, trigger_user, trigger_message, channel_id, platform)`
+- Les mises à jour directes via `apply_delta()` hors `process_message()` (ex: Twitch bits joy
+  dans `events.py`) doivent aussi appeler `_maybe_log_peak()` avec le contexte disponible.
 - Seuil par défaut : 0.7, configurable via `config.yaml` (`bot.emotion_peak_threshold`)
-- Anti-spam : pas de nouveau pic pour la même émotion si le dernier date de < 5 minutes
+- Anti-spam : cache en mémoire `dict[str, float]` (emotion → timestamp du dernier pic).
+  Pas de nouveau pic pour la même émotion si `time.time() - last_peak < 300`. Pas de requête DB.
+- `_maybe_log_peak()` est async — appelée via `self._fire()` (fire-and-forget) depuis
+  `process_message()` pour ne pas bloquer le flow.
 
 **Injection dans le journal :**
 - `db.get_emotion_peaks_today()` retourne les pics du jour
@@ -146,7 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_emotion_peaks_ts ON emotion_peaks(timestamp);
 ```sql
 CREATE TABLE IF NOT EXISTS journal_archive (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL UNIQUE,
+    date TEXT NOT NULL UNIQUE,  -- format ISO 8601 : YYYY-MM-DD
     content TEXT NOT NULL,
     word_count INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL
@@ -154,6 +164,7 @@ CREATE TABLE IF NOT EXISTS journal_archive (
 ```
 
 **Logique :**
+- Format date : ISO 8601 (`date.today().isoformat()` → `"2026-03-19"`)
 - Après envoi réussi du journal → `db.insert_journal(date, content, word_count)`
 - Au moment de générer → `db.get_yesterday_journal()` retourne le contenu de la veille
 - Injecté **en entier** dans le prompt user (pas de troncation — le modèle a largement la
@@ -171,9 +182,11 @@ CREATE TABLE IF NOT EXISTS journal_archive (
 **Objectif :** Distinguer Discord et Twitch dans les stats et le journal.
 
 **Migration `daily_log` :**
-- Ajouter colonne `platform TEXT DEFAULT 'discord'` à `daily_log`
+- Ajouter colonne `platform TEXT DEFAULT 'discord'` à `daily_log` dans le SCHEMA (source of truth)
+  ET via ALTER TABLE migration pour les bases existantes
 - Mettre à jour `log_daily_message()` pour accepter et stocker la plateforme
-- Mettre à jour `append_message()` dans `MemoryService` pour passer la plateforme
+- `MemoryService.append_message()` : ajouter `platform: str = "discord"` comme keyword argument
+  (rétrocompatible avec les appelants existants)
 
 **Impact sur les stats (F4) :**
 - Répartition par plateforme dans le bloc statistiques
@@ -207,12 +220,18 @@ CREATE TABLE IF NOT EXISTS journal_archive (
 **Mécanisme :**
 - `db.get_emotion_snapshots_since(7_jours)` → moyenne par émotion sur la semaine
 - `db.get_emotion_snapshots_since(24h)` → moyenne du jour
-- Comparaison : delta significatif (> 10%) → mentionné
-- Format : "Comparé à la semaine : joie plus haute que d'habitude (+15%), ennui en baisse (-12%)"
+- Comparaison : delta significatif = différence absolue > 0.10 sur l'échelle 0.0–1.0
+  (ex: moyenne semaine joy=0.35, moyenne jour joy=0.48 → delta +0.13 → mentionné)
+- Format : "Comparé à la semaine : joie plus haute que d'habitude (+13%), ennui en baisse (-12%)"
 - Injecté dans le prompt user après l'arc émotionnel
 
 **Fichiers impactés :**
-- `bot/db/database.py` : méthode `get_emotion_averages(since)` si pas déjà existante
+- `bot/db/database.py` : nouvelle méthode `get_emotion_averages(since)` utilisant `AVG()` en SQL :
+  ```sql
+  SELECT AVG(anger) AS anger, AVG(joy) AS joy, AVG(sadness) AS sadness,
+         AVG(curiosity) AS curiosity, AVG(boredom) AS boredom
+  FROM emotion_history WHERE snapshot_at >= ?
+  ```
 - `bot/core/journal.py` : calcul comparatif + injection
 
 ---
@@ -235,12 +254,18 @@ CREATE TABLE IF NOT EXISTS journal_archive (
 - Envoyé dans le canal journal **avant** le texte du journal
 - Pas de fichier temporaire sur disque
 
-**Dépendance :** `matplotlib` ajouté à `requirements.txt`
+**Dépendance :** `matplotlib` ajouté à `requirements.txt`. Import lazy dans la méthode de
+génération pour éviter le coût au démarrage (~200ms).
+
+**Note :** Les snapshots émotionnels sont pris toutes les 60 ticks (≈1/heure), soit ~24 points
+max sur 24h. Suffisant pour un graphique courbe lisible.
 
 **Fichiers impactés :**
 - `bot/core/journal.py` : nouvelle méthode `_generate_emotion_chart(snapshots) -> BytesIO`
-- `bot/core/journal.py` : `set_send_callback` doit supporter l'envoi de fichiers
-  (nouvelle callback `set_send_file_callback`)
+- `bot/core/journal.py` : callback d'envoi unifiée — modifier `set_send_callback` pour accepter
+  un paramètre optionnel `file: BytesIO | None = None` au lieu de créer une deuxième callback.
+  Signature : `async def send(text: str, file: BytesIO | None = None) -> None`
+  Le chart n'est généré que si la callback est définie (pas de travail gaspillé).
 - `requirements.txt` : ajouter `matplotlib`
 
 ---
@@ -265,8 +290,9 @@ produisant une prose plus riche.
 **Objectif :** Permettre de tester la génération du journal sans polluer les données.
 
 **Slash command :**
-- `/test` avec un select menu (options futures possibles, pour l'instant : "Journal")
-- Sélection "Journal" → modal ou paramètre pour l'ID du canal cible
+- `/wally test` (sous-commande du groupe existant `/wally`, pas un slash command séparé)
+- Select menu avec options (pour l'instant : "Journal")
+- Sélection "Journal" → paramètre pour l'ID du canal cible
 - Admin-only (même permissions que `/wally journal`)
 
 **Comportement :**
