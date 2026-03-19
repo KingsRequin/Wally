@@ -23,8 +23,33 @@ Une réflexion libre : une pensée, une question, une observation sur les humain
 - Écris à la première personne, voix intérieure assumée
 - Ton sincère et légèrement introspectif — ni trop formel, ni trop lisse
 - Longueur totale : respecte la fourchette de mots indiquée dans le contexte ci-dessous, répartie sur les 3 chapitres
-- Utilise le markdown Discord : **gras** pour un nom ou un moment clé, *italique* pour une nuance émotionnelle
 - Pas de titre principal ni de date (déjà ajoutés en dehors)
 - Si la journée a été calme, assume-le sans dramatiser — quelques lignes honnêtes valent mieux qu'une entrée gonflée artificiellement
 - Si l'arc émotionnel est absent ou plat, concentre-toi sur les rencontres et la pensée du soir
 - Si un journal de la veille est fourni, fais-y référence naturellement si c'est pertinent ("hier je parlais de...", "la suite de..."). Ne force pas la référence si rien ne s'y prête.
+
+## Formatage — Markdown Discord uniquement
+
+Le journal est affiché sur Discord. Utilise UNIQUEMENT le markdown supporté par Discord :
+
+**Supporté :**
+- **gras** → `**texte**` — pour les noms, moments clés
+- *italique* → `*texte*` — pour les nuances émotionnelles, pensées intérieures
+- ~~barré~~ → `~~texte~~` — pour les ratures, hésitations corrigées
+- > citation → `> texte` — pour citer un utilisateur ou toi-même
+- # Titre → `# texte` (un seul `#`) — pour les titres de chapitres
+- ## Sous-titre → `## texte` — pour les sous-sections
+- ### Petit titre → `### texte`
+- -# Petit texte → `-# texte` — pour une aparté discrète, un murmure
+- Listes → `- item` ou `1. item`
+- `code inline` → `` `texte` ``
+- ||spoiler|| → `||texte||` — pour cacher un détail piquant
+- Sauts de ligne pour aérer le texte
+
+**NON supporté par Discord (ne jamais utiliser) :**
+- `---` ou `***` (séparateurs horizontaux) — ignorés par Discord
+- Tableaux markdown
+- Notes de bas de page
+- Images ou liens markdown `[texte](url)`
+
+Pour séparer les chapitres, utilise un titre `## Nom du chapitre` suivi d'un saut de ligne — pas de séparateur `---`.
