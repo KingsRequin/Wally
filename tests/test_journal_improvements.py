@@ -372,3 +372,11 @@ def test_generate_emotion_chart_returns_bytes():
 def test_generate_emotion_chart_returns_none_with_less_than_2():
     assert _generate_emotion_chart([]) is None
     assert _generate_emotion_chart([{"snapshot_at": 0, "anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}]) is None
+
+
+# ── Task 8: /wally test command (F12) ──
+
+@pytest.mark.asyncio
+async def test_test_command_cog_exists():
+    from bot.discord.commands.test_cmd import TestCog
+    assert TestCog is not None
