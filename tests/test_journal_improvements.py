@@ -347,3 +347,28 @@ async def test_journal_archive_false_does_not_archive(tmp_path):
     row = await db_inst.fetch_one("SELECT * FROM journal_archive WHERE date = ?", (today,))
     assert row is None
     await db_inst.close()
+
+
+# ── Task 7: Emotion chart (F10) ──
+
+from bot.core.journal import _generate_emotion_chart
+
+
+def test_generate_emotion_chart_returns_bytes():
+    import time
+    now = time.time()
+    snapshots = [
+        {"snapshot_at": now - 7200, "anger": 0.1, "joy": 0.6, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0},
+        {"snapshot_at": now - 3600, "anger": 0.0, "joy": 0.8, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.1},
+        {"snapshot_at": now, "anger": 0.2, "joy": 0.5, "sadness": 0.1, "curiosity": 0.4, "boredom": 0.0},
+    ]
+    buf = _generate_emotion_chart(snapshots)
+    assert buf is not None
+    data = buf.getvalue()
+    assert len(data) > 1000  # should be a valid PNG
+    assert data[:4] == b'\x89PNG'
+
+
+def test_generate_emotion_chart_returns_none_with_less_than_2():
+    assert _generate_emotion_chart([]) is None
+    assert _generate_emotion_chart([{"snapshot_at": 0, "anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}]) is None

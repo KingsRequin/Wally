@@ -4,12 +4,14 @@ from __future__ import annotations
 import time
 from collections import Counter
 from datetime import date, datetime
+from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
+from bot.core.emotion import EMOTIONS
 from bot.core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -55,6 +57,55 @@ _CHUNK_SIZE = 30
 _DISCORD_LIMIT = 1900  # marge de sécurité sous la limite Discord de 2000
 
 _TZ_JOURNAL = ZoneInfo("Europe/Paris")
+
+_EMOTION_COLORS = {
+    "anger": "#ff3333",
+    "joy": "#ffdd00",
+    "curiosity": "#00ccff",
+    "sadness": "#7777ff",
+    "boredom": "#888888",
+}
+
+
+def _generate_emotion_chart(snapshots: list[dict]) -> BytesIO | None:
+    """Generate a dark-themed emotion chart. Returns PNG as BytesIO, or None if < 2 snapshots."""
+    if len(snapshots) < 2:
+        return None
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+
+    times = [datetime.fromtimestamp(s["snapshot_at"], tz=_TZ_JOURNAL) for s in snapshots]
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    fig.patch.set_facecolor("#1a1a1a")
+    ax.set_facecolor("#1a1a1a")
+
+    for emotion in EMOTIONS:
+        values = [s[emotion] * 100 for s in snapshots]
+        color = _EMOTION_COLORS.get(emotion, "#ffffff")
+        label = _EMOTION_FR.get(emotion, emotion).capitalize()
+        ax.plot(times, values, color=color, label=label, linewidth=2)
+
+    ax.set_ylim(0, 100)
+    ax.set_ylabel("Intensité (%)", color="#aaaaaa", fontsize=10)
+    ax.set_xlabel("")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Hh", tz=_TZ_JOURNAL))
+    ax.tick_params(colors="#aaaaaa")
+    ax.grid(True, color="#333333", linewidth=0.5, alpha=0.5)
+    for spine in ax.spines.values():
+        spine.set_color("#444444")
+
+    ax.legend(loc="upper right", fontsize=9, facecolor="#1a1a1a", edgecolor="#444444", labelcolor="#ffffff")
+    fig.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", facecolor="#1a1a1a", dpi=100)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
 
 
 def _get_word_range(message_count: int) -> str:
@@ -348,8 +399,13 @@ class DailyJournal:
             purpose="daily_journal",
         )
 
+        # ── Emotion chart image (F10) ──
+        chart_buf = _generate_emotion_chart(snapshots) if snapshots else None
+
         formatted = f"# Journal de Wally — {self._today()}\n\n{journal_text}"
         if self._send_cb:
+            if chart_buf:
+                await self._send_cb("", file=chart_buf)
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)
             logger.info("Daily journal sent to channel {ch}", ch=channel_id)

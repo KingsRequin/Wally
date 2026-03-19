@@ -82,6 +82,22 @@ async def main() -> None:
     emotion.set_openai_client(openai_client)
     logger.info("MemoryService and OpenAIClient initialized")
 
+    from bot.core.web_search import WebSearchService
+
+    web_search = WebSearchService(config, db)
+    if web_search.available:
+        logger.info("WebSearchService initialized (Tavily)")
+    else:
+        logger.warning("WebSearchService disabled — TAVILY_API_KEY missing or tavily-python not installed")
+
+    from bot.core.apex_api import ApexLegendsService
+
+    apex_api = ApexLegendsService()
+    if apex_api.available:
+        logger.info("ApexLegendsService initialized")
+    else:
+        logger.warning("ApexLegendsService disabled — APEX_API_KEY missing")
+
     prompts = PromptBuilder()
     language = LanguageDetector(config.bot.language_default)
     persona = PersonaService()
@@ -92,7 +108,8 @@ async def main() -> None:
 
     from bot.core.sessions import SessionManager
 
-    session_manager = SessionManager(memory, openai_client)
+    session_manager = SessionManager(memory, openai_client, db=db)
+    await session_manager.restore_sessions()
     logger.info("SessionManager initialized")
 
     # ── Discord adapter ───────────────────────────────────────────────────────
@@ -101,18 +118,27 @@ async def main() -> None:
     discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
     discord_bot.journal = journal
     discord_bot.session_manager = session_manager
+    discord_bot.web_search = web_search
+    discord_bot.apex_api = apex_api
 
     @discord_bot.event
     async def on_message(message):
         from bot.discord.handlers import handle_message
         await handle_message(discord_bot, message)
 
-    async def journal_send_cb(text: str) -> None:
+    async def journal_send_cb(text: str, file=None) -> None:
         channel_id = config.bot.journal_channel_id
         if channel_id:
             ch = discord_bot.get_channel(channel_id)
             if ch:
-                await ch.send(text)
+                if file and not text:
+                    import discord as _discord
+                    await ch.send(file=_discord.File(file, filename="emotions_jour.png"))
+                elif file:
+                    import discord as _discord
+                    await ch.send(text, file=_discord.File(file, filename="emotions_jour.png"))
+                else:
+                    await ch.send(text)
 
     journal.set_send_callback(journal_send_cb)
 
@@ -184,6 +210,8 @@ async def main() -> None:
             persona=persona,
         )
         twitch_bot.session_manager = session_manager
+        twitch_bot.web_search = web_search
+        twitch_bot.apex_api = apex_api
         register_events(twitch_bot)
         tasks.append(twitch_bot.start())
         logger.info("Twitch adapter configured and included in gather")
