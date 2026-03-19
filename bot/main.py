@@ -113,7 +113,7 @@ async def main() -> None:
     await session_manager.restore_sessions()
     logger.info("SessionManager initialized")
 
-    reaction_tracker = ReactionTracker(emotion)
+    reaction_tracker = ReactionTracker(emotion, db)
     logger.info("ReactionTracker initialized")
 
     # ── Discord adapter ───────────────────────────────────────────────────────

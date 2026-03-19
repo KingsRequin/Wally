@@ -121,6 +121,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         else:
             mem_context = (trust_line + love_line).strip()
 
+        # Inject recent successful jokes for this channel
+        try:
+            recent_jokes = await bot.db.get_recent_jokes(channel_id, limit=3)
+            if recent_jokes:
+                jokes_block = "\n--- Tes blagues récentes qui ont bien marché dans ce salon ---"
+                for j in recent_jokes:
+                    jokes_block += f'\n- "{j}"'
+                mem_context = (mem_context + jokes_block) if mem_context else jokes_block.strip()
+        except Exception:
+            pass
+
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         situation = {
@@ -200,7 +211,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.set_cooldown(user_id)
 
         if getattr(bot, "reaction_tracker", None):
-            bot.reaction_tracker.track_twitch_response(channel_id)
+            bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
 
         bot.memory.append_message(channel_id, author, content, platform="twitch")
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")

@@ -290,6 +290,17 @@ async def _respond(
         else:
             mem_context = (trust_line + love_line).strip()
 
+        # Inject recent successful jokes for this channel
+        try:
+            recent_jokes = await bot.db.get_recent_jokes(str(message.channel.id), limit=3)
+            if recent_jokes:
+                jokes_block = "\n--- Tes blagues récentes qui ont bien marché dans ce salon ---"
+                for j in recent_jokes:
+                    jokes_block += f'\n- "{j}"'
+                mem_context = (mem_context + jokes_block) if mem_context else jokes_block.strip()
+        except Exception:
+            pass
+
         context_messages = await bot.memory.get_context_summarized_if_needed(
             str(message.channel.id)
         )
@@ -417,7 +428,7 @@ async def _respond(
 
         reply_msg_id = await _send_in_parts(message, reply)
         if reply_msg_id and getattr(bot, "reaction_tracker", None):
-            bot.reaction_tracker.track_discord_message(reply_msg_id)
+            bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
 
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)
