@@ -301,6 +301,17 @@ async def _respond(
         except Exception:
             pass
 
+        # Inject community opinions
+        try:
+            opinions = await bot.db.get_opinions(limit=10)
+            if opinions:
+                opinions_block = "\n--- Tes opinions sur les sujets de la communauté ---"
+                for o in opinions:
+                    opinions_block += f'\n- {o["topic"]} : "{o["opinion"]}"'
+                mem_context = (mem_context + opinions_block) if mem_context else opinions_block.strip()
+        except Exception:
+            pass
+
         context_messages = await bot.memory.get_context_summarized_if_needed(
             str(message.channel.id)
         )

@@ -1,6 +1,8 @@
 # bot/core/journal.py
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from collections import Counter
 from datetime import date, datetime
@@ -84,12 +86,13 @@ def _generate_emotion_chart(snapshots: list[dict]) -> BytesIO | None:
     ax.set_facecolor("#1a1a1a")
 
     for emotion in EMOTIONS:
-        values = [s[emotion] * 100 for s in snapshots]
+        values = [max(0, min(100, s[emotion] * 100)) for s in snapshots]
         color = _EMOTION_COLORS.get(emotion, "#ffffff")
         label = _EMOTION_FR.get(emotion, emotion).capitalize()
-        ax.plot(times, values, color=color, label=label, linewidth=2)
+        ax.plot(times, values, color=color, label=label, linewidth=2, clip_on=True)
 
     ax.set_ylim(0, 100)
+    ax.set_clip_on(True)
     ax.set_ylabel("Intensité (%)", color="#aaaaaa", fontsize=10)
     ax.set_xlabel("")
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Hh", tz=_TZ_JOURNAL))
@@ -242,6 +245,7 @@ class DailyJournal:
         self._db = db
         self._send_cb: Optional[Callable[..., Any]] = None
         self._fetch_history_cb: Optional[Callable[..., Any]] = None
+        self._bg_tasks: set[asyncio.Task] = set()
 
     def set_send_callback(self, cb: Callable[..., Any]) -> None:
         """Inject an async callable: async def send(text: str) -> None"""
@@ -402,6 +406,7 @@ class DailyJournal:
             _JOURNAL_SYSTEM,
             [{"role": "user", "content": user_msg}],
             purpose="daily_journal",
+            max_tokens=4000,
         )
 
         # ── Emotion chart image (F10) ──
@@ -412,7 +417,7 @@ class DailyJournal:
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)
             if chart_buf:
-                await self._send_cb("", file=chart_buf)
+                await self._send_cb("# Historique de mes émotions", file=chart_buf)
             logger.info("Daily journal sent to channel {ch}", ch=channel_id)
         else:
             logger.warning("No send callback set for journal — generated but not sent")
@@ -427,6 +432,48 @@ class DailyJournal:
                 logger.info("Journal archived ({n} words)", n=word_count)
             except Exception as exc:
                 logger.warning("Failed to archive journal: {e}", e=exc)
+
+        # ── Opinion formation (fire-and-forget) ──
+        if self._db is not None:
+            self._fire(self._form_opinions(context_text))
+
+    def _fire(self, coro) -> asyncio.Task:
+        """Fire-and-forget with strong reference to prevent GC cancellation."""
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        return t
+
+    async def _form_opinions(self, summary_text: str) -> None:
+        """Analyse le résumé du jour et forme/met à jour des opinions."""
+        try:
+            system_prompt = (
+                "Tu es Wally. Voici le résumé des conversations d'aujourd'hui. "
+                "Identifie les sujets qui reviennent régulièrement ou qui ont provoqué "
+                "des réactions fortes. Pour chaque sujet (max 3), formule une opinion "
+                "courte que Wally pourrait avoir, cohérente avec sa personnalité "
+                "(aigri, sarcastique, mais avec des avis tranchés et parfois surprenants).\n\n"
+                "Retourne un JSON valide uniquement :\n"
+                '[{"topic": "nom du sujet", "opinion": "opinion courte de Wally"}]\n\n'
+                "Si aucun sujet ne mérite une opinion, retourne []."
+            )
+            raw = await self._openai.complete_secondary(
+                system_prompt,
+                [{"role": "user", "content": summary_text}],
+                purpose="opinion_formation",
+            )
+            opinions = json.loads(raw)
+            if not isinstance(opinions, list):
+                return
+            for item in opinions[:3]:
+                topic = item.get("topic", "").strip()
+                opinion = item.get("opinion", "").strip()
+                if topic and opinion:
+                    await self._db.upsert_opinion(topic, opinion)
+                    logger.info("Opinion formed: {t} → {o}", t=topic, o=opinion[:50])
+            await self._db.cleanup_opinions(max_age_days=30, max_count=10)
+        except Exception as exc:
+            logger.warning("Opinion formation failed: {e}", e=exc)
 
     async def _build_context_text(self, messages: list[dict]) -> str:
         total_chars = sum(len(m["content"]) for m in messages)
