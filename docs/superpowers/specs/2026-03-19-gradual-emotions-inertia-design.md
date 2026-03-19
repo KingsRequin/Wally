@@ -23,9 +23,9 @@ Chaque émotion a 3 niveaux de directive au lieu d'un :
 
 | Palier | Range | Clé dans EMOTIONS.md |
 |--------|-------|----------------------|
-| low    | 0.2 – 0.4 | `## {emotion}_low` |
-| mid    | 0.4 – 0.7 | `## {emotion}_mid` |
-| high   | ≥ 0.7     | `## {emotion}_high` |
+| low    | [0.2, 0.4) | `## {emotion}_low` |
+| mid    | [0.4, 0.7) | `## {emotion}_mid` |
+| high   | [0.7, 1.0] | `## {emotion}_high` |
 
 En dessous de 0.2, aucune directive n'est injectée (émotion négligeable).
 
@@ -66,8 +66,6 @@ Par une logique à paliers :
 
 ```python
 # APRÈS (3 paliers)
-EMOTION_THRESHOLDS = {"low": 0.2, "mid": 0.4, "high": 0.7}
-
 def _get_tier(value: float) -> str | None:
     if value >= 0.7:
         return "high"
@@ -92,7 +90,7 @@ Supprimer la constante `EMOTION_THRESHOLD = 0.4`.
 
 #### `bot/core/emotion.py` — `build_emotion_tag()`
 
-Mettre à jour la fonction libre `build_emotion_tag` pour utiliser le seuil 0.2 au lieu de 0.4 :
+Mettre à jour la fonction libre `build_emotion_tag` pour utiliser le seuil 0.2 au lieu de 0.4. Cette fonction est utilisée pour le logging/debug uniquement, pas pour les directives prompt — elle reste un simple listing sans info de palier :
 
 ```python
 def build_emotion_tag(emotion_state: dict[str, float]) -> str:
@@ -109,6 +107,8 @@ Mettre à jour le seuil par défaut de `get_dominant()` de 0.4 à 0.2 :
 ```python
 def get_dominant(self, threshold: float = 0.2) -> list[str]:
 ```
+
+**Impact :** cette méthode est appelée par `/wally status` (`bot/discord/commands/status.py`). Avec le nouveau seuil, davantage d'émotions seront listées comme "dominantes". C'est cohérent — le status reflète maintenant la sensibilité accrue du système.
 
 ---
 
@@ -177,6 +177,10 @@ Note : l'inertie s'applique uniquement aux deltas positifs. Les deltas négatifs
 
 Note : les émotions sans paire d'opposition (curiosity, boredom) ne sont jamais atténuées par l'inertie. C'est voulu — la curiosité et l'ennui ne s'opposent pas directement aux autres émotions.
 
+Note : `set_emotion()` ne passe PAS par l'inertie. C'est intentionnel — un set manuel (via dashboard ou `/wally setup`) est un override explicite qui doit prendre effet immédiatement.
+
+Note : le troisième élément des tuples `SUPPRESSION_RULES` (le coefficient de suppression, ex: 0.8) n'est pas utilisé par l'inertie. L'inertie utilise `inertia_factor` depuis la config. Les coefficients de suppression restent utilisés par `_apply_suppression()` comme avant.
+
 ---
 
 ## Tests
@@ -199,10 +203,19 @@ Note : les émotions sans paire d'opposition (curiosity, boredom) ne sont jamais
 - `test_inertia_configurable` — vérifie que changer `emotion_inertia_factor` modifie le résultat
 - `test_inertia_bidirectional` — anger=0.6, delta joy atténué ET joy=0.6, delta anger atténué
 
+### Tests inertie — note sur la suppression
+
+Les tests d'inertie doivent tenir compte du fait que `apply_delta` appelle ensuite `_apply_suppression`. Par exemple, quand sadness monte, joy est supprimée de `effective_delta × 0.8`. Les assertions doivent vérifier la valeur de l'émotion cible (sadness) qui elle n'est pas affectée par la suppression, ou bien désactiver la suppression dans le test.
+
 ### Tests existants à adapter
 
-- Tous les tests qui référencent `emotion_directives` avec des clés simples (`"anger"`, `"joy"`) doivent utiliser les nouvelles clés (`"anger_low"`, `"anger_mid"`, `"anger_high"`)
-- Le seuil `EMOTION_THRESHOLD` importé dans certains tests doit être remplacé
+- `tests/test_prompts.py` : le dict `_EMOTION_DIRECTIVES` utilise des clés simples (`"anger"`, `"joy"`) → remplacer par des clés tiered (`"anger_low"`, `"anger_mid"`, `"anger_high"`, etc.)
+- `tests/test_emotion.py` : `test_build_emotion_tag_returns_empty_when_none_dominant` utilise des valeurs de 0.2-0.3 qui seront maintenant au-dessus du nouveau seuil → ajuster les valeurs de test ou les assertions
+- Tous les tests importent `EMOTION_THRESHOLD` depuis `prompts.py` → cette constante est supprimée, utiliser les seuils hardcodés ou la fonction `_get_tier()`
+
+### Migration EMOTIONS.md
+
+L'implémentation DOIT fournir le nouveau contenu complet de `EMOTIONS.md` avec les 15 sections. L'ancien format (`## anger`) ne sera plus reconnu par la logique tiered et résulterait en zéro directive injectée — c'est une régression silencieuse si on oublie la migration.
 
 ---
 
@@ -211,8 +224,9 @@ Note : les émotions sans paire d'opposition (curiosity, boredom) ne sont jamais
 | Fichier | Nature du changement |
 |---------|---------------------|
 | `bot/persona/EMOTIONS.md` | 5 → 15 sections (3 paliers × 5 émotions) |
-| `bot/core/prompts.py` | Logique de sélection par palier, suppr. `EMOTION_THRESHOLD` |
+| `bot/core/prompts.py` | Logique de sélection par palier, suppr. `EMOTION_THRESHOLD`, ajout `_get_tier()` |
 | `bot/core/emotion.py` | Inertie dans `apply_delta()`, seuil `build_emotion_tag()` 0.2, `get_dominant()` défaut 0.2 |
+| `bot/discord/commands/status.py` | Aucun changement de code — impacté par le nouveau seuil de `get_dominant()` |
 | `bot/config.py` | Ajout `emotion_inertia_factor: float = 0.5` dans `BotConfig` |
 | `config.yaml` | Ajout `emotion_inertia_factor: 0.5` |
 | Tests | Adaptation clés directives + nouveaux tests inertie/paliers |
