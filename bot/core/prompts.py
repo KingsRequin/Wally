@@ -81,6 +81,7 @@ class PromptBuilder:
         situation: dict | None = None,
         persona_block: str = "",
         emotion_directives: dict[str, str] | None = None,
+        weekday_directives: dict[str, str] | None = None,
     ) -> str:
         parts = []
         if persona_block:
@@ -99,6 +100,13 @@ class PromptBuilder:
                 lines.append(f"Chaîne Twitch : {streamer}")
             lines.append(f"Date et heure : {_now_fr()}")
             parts.append("\n".join(lines))
+
+        # Inject weekday directive
+        if weekday_directives:
+            day_name = _FRENCH_DAYS[datetime.now(_TZ).weekday()]
+            if day_name in weekday_directives:
+                parts.append("\n--- Directive temporelle ---")
+                parts.append(weekday_directives[day_name])
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         directives = emotion_directives if emotion_directives is not None else {}
