@@ -222,3 +222,19 @@ def test_missing_tiered_key_silently_skipped():
     )
     assert "sec" not in result
     assert "furax" not in result
+
+
+def test_get_tier_returns_correct_level():
+    from bot.core.prompts import _get_tier
+    assert _get_tier(0.0) is None
+    assert _get_tier(0.1) is None
+    assert _get_tier(0.19) is None
+    assert _get_tier(0.2) == "low"
+    assert _get_tier(0.3) == "low"
+    assert _get_tier(0.39) == "low"
+    assert _get_tier(0.4) == "mid"
+    assert _get_tier(0.5) == "mid"
+    assert _get_tier(0.69) == "mid"
+    assert _get_tier(0.7) == "high"
+    assert _get_tier(0.8) == "high"
+    assert _get_tier(1.0) == "high"
