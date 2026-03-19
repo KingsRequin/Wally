@@ -141,7 +141,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_message(channel_id, author, content, platform="twitch")
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
 
-        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
+        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id))
 
     except Exception as e:
         logger.error("Twitch message handling error: {e}", e=e)
@@ -154,9 +154,13 @@ async def _post_process(
     user_id: str,
     trust: float,
     context_messages: list[dict] | None = None,
+    channel_id: str = "",
 ) -> None:
     try:
-        await bot.emotion.process_message(text, trust_score=trust, context_messages=context_messages)
+        await bot.emotion.process_message(
+            text, trust_score=trust, context_messages=context_messages,
+            trigger_user=user_id, channel_id=channel_id, platform="twitch",
+        )
         insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
         if any(w in text.lower() for w in insult_words):
             await bot.db.update_trust_score(platform, user_id, -0.05)

@@ -138,3 +138,66 @@ async def test_append_message_platform_defaults_to_discord():
     # platform should default to "discord"
     call_str = str(db.log_daily_message.call_args)
     assert "discord" in call_str
+
+
+# ── emotion peak detection ──
+
+from bot.core.emotion import EmotionEngine
+
+
+@pytest.mark.asyncio
+async def test_process_message_logs_peak_above_threshold(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    config = MagicMock()
+    config.emotions = {}
+    config.bot = MagicMock()
+    config.bot.emotion_peak_threshold = 0.7
+
+    engine = EmotionEngine(config, db=db)
+    # Force joy high so that any positive delta crosses threshold
+    engine._state["joy"] = 0.65
+
+    # Simulate NRCLex returning a delta that pushes joy above 0.7
+    async def fake_analyze(text, trust_score=0.5):
+        return {"joy": 0.1}
+
+    engine.analyze_message = fake_analyze
+
+    await engine.process_message("super cool gg", trust_score=0.5)
+
+    # Wait for fire-and-forget task
+    await asyncio.sleep(0.1)
+
+    peaks = await db.get_emotion_peaks_since(time.time() - 10)
+    assert len(peaks) >= 1
+    assert peaks[0]["emotion"] == "joy"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_peak_antispam_prevents_duplicate(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    config = MagicMock()
+    config.emotions = {}
+    config.bot = MagicMock()
+    config.bot.emotion_peak_threshold = 0.7
+
+    engine = EmotionEngine(config, db=db)
+    engine._state["joy"] = 0.65
+
+    async def fake_analyze(text, trust_score=0.5):
+        return {"joy": 0.1}
+
+    engine.analyze_message = fake_analyze
+
+    await engine.process_message("super cool gg", trust_score=0.5)
+    await asyncio.sleep(0.1)
+
+    # Second call immediately — should be blocked by anti-spam
+    engine._state["joy"] = 0.65
+    await engine.process_message("encore plus cool", trust_score=0.5)
+    await asyncio.sleep(0.1)
+
+    peaks = await db.get_emotion_peaks_since(time.time() - 10)
+    assert len(peaks) == 1  # Only one peak, second blocked
+    await db.close()

@@ -26,6 +26,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.db.add_timeout = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
+    bot.db.upsert_memory_user = AsyncMock()
 
     bot.emotion.get_state = MagicMock(
         return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
@@ -47,6 +48,9 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
 
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
+
+    bot.web_search = None  # désactivé par défaut dans les tests
+    bot.apex_api = None
 
     return bot
 
@@ -166,7 +170,10 @@ async def test_respond_includes_context_block_when_present():
 async def test_post_process_calls_emotion_and_trust():
     bot = make_bot()
     await _post_process(bot, "thank you", "discord", "12345", "99999", 0.5)
-    bot.emotion.process_message.assert_awaited_once_with("thank you", trust_score=0.5, context_messages=None, image_urls=None)
+    bot.emotion.process_message.assert_awaited_once_with(
+        "thank you", trust_score=0.5, context_messages=None, image_urls=None,
+        trigger_user="12345", channel_id="", platform="discord",
+    )
     bot.db.update_trust_score.assert_awaited_once()
 
 
@@ -184,7 +191,12 @@ async def test_post_process_mutes_on_high_anger_and_threshold():
     bot.emotion.get_state = MagicMock(return_value={"anger": 0.9})
     bot.db.count_recent_triggers = AsyncMock(return_value=5)
     await _post_process(bot, "merde", "discord", "12345", "99999", 0.5)
-    bot.db.add_timeout.assert_awaited_once()
+    # Called twice: once for the anger trigger (duration=0), once for the actual mute
+    assert bot.db.add_timeout.await_count == 2
+    # First call: trigger tracking (duration=0)
+    assert bot.db.add_timeout.await_args_list[0].args[2] == 0
+    # Second call: real mute (duration=timeout_minutes)
+    assert bot.db.add_timeout.await_args_list[1].args[2] == 10
 
 
 # ── Premier contact (bienvenue intégrée) ──────────────────────────────────────

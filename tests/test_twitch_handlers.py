@@ -52,6 +52,9 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
 
+    bot.web_search = None  # désactivé par défaut dans les tests
+    bot.apex_api = None
+
     return bot
 
 
@@ -172,7 +175,10 @@ async def test_handle_message_exception_is_caught(monkeypatch):
 async def test_post_process_calls_emotion_and_trust():
     bot = make_bot()
     await _post_process(bot, "merci wally", "twitch", "111", 0.5)
-    bot.emotion.process_message.assert_awaited_once_with("merci wally", trust_score=0.5, context_messages=None)
+    bot.emotion.process_message.assert_awaited_once_with(
+        "merci wally", trust_score=0.5, context_messages=None,
+        trigger_user="111", channel_id="", platform="twitch",
+    )
     bot.db.update_trust_score.assert_awaited_once()
 
 

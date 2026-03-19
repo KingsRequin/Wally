@@ -88,10 +88,14 @@ def build_emotion_tag(emotion_state: dict[str, float]) -> str:
 
 
 class EmotionEngine:
+    # Taux de montée du boredom par minute d'inactivité (linéaire, clampé à 1.0)
+    BOREDOM_RISE_PER_MINUTE: float = 0.02
+
     def __init__(self, config: "Config", db=None):
         self._config = config
         self._state: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         self._last_decay: float = time.time()
+        self._last_interaction: float = time.time()
         self._decay_task: asyncio.Task | None = None
         self._openai = None
         self._learned_words: dict[str, list[tuple[str, float]]] = {e: [] for e in EMOTIONS}
@@ -101,6 +105,9 @@ class EmotionEngine:
         self._dirty: bool = False
         self._save_task: asyncio.Task | None = None
         self._ticks: int = 0
+        # Peak detection anti-spam cache: emotion → timestamp of last peak
+        self._last_peak_ts: dict[str, float] = {}
+        self._bg_tasks: set[asyncio.Task] = set()
         self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
@@ -162,6 +169,39 @@ class EmotionEngine:
     def set_openai_client(self, client) -> None:
         """Injection du client OpenAI (pattern identique à MemoryService)."""
         self._openai = client
+
+    def _fire(self, coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        return t
+
+    async def _maybe_log_peak(
+        self, emotion: str, old_value: float, new_value: float,
+        trigger_user: str = "", trigger_message: str = "",
+        channel_id: str = "", platform: str = "",
+    ) -> None:
+        """Log an emotion peak if it crosses the threshold."""
+        threshold = getattr(self._config.bot, "emotion_peak_threshold", 0.7)
+        if new_value <= threshold or new_value <= old_value:
+            return
+        now = time.time()
+        last = self._last_peak_ts.get(emotion, 0.0)
+        if now - last < 300:  # 5 minute anti-spam
+            return
+        self._last_peak_ts[emotion] = now
+        if self._db is not None:
+            try:
+                await self._db.insert_emotion_peak(
+                    now, emotion, new_value,
+                    trigger_user, trigger_message, channel_id, platform,
+                )
+                logger.info(
+                    "Emotion peak logged: {e}={v:.0%} triggered by {u}",
+                    e=emotion, v=new_value, u=trigger_user or "unknown",
+                )
+            except Exception as exc:
+                logger.warning("Failed to log emotion peak: {e}", e=exc)
 
     async def load_state(self) -> None:
         """Charge l'état émotionnel depuis la DB. No-op si db est None."""
@@ -342,12 +382,19 @@ class EmotionEngine:
         if delta_t <= 0:
             return
         for emotion in EMOTIONS:
+            if emotion == "boredom":
+                continue  # boredom géré séparément ci-dessous
             cfg = self._config.emotions.get(emotion)
             if not cfg or self._state[emotion] <= 0:
                 continue
             lam = cfg.decay_lambda
             decayed = self._state[emotion] * math.exp(-lam * (delta_t / 60.0))
             self._state[emotion] = 0.0 if decayed < DECAY_FLOOR else decayed
+        # Boredom monte quand personne n'interagit (inversement au decay des autres)
+        idle_minutes = (now - self._last_interaction) / 60.0
+        boredom_target = min(1.0, idle_minutes * self.BOREDOM_RISE_PER_MINUTE)
+        if boredom_target > self._state["boredom"]:
+            self._state["boredom"] = boredom_target
         self._last_decay = now
         self._apply_competition()
 
@@ -423,10 +470,24 @@ class EmotionEngine:
             logger.warning("NRCLex analysis failed: {e}", e=exc)
             return {}
 
+    def record_interaction(self) -> None:
+        """Enregistre une interaction — fait baisser le boredom proportionnellement."""
+        self._last_interaction = time.time()
+        if self._state["boredom"] > 0:
+            # Réduction immédiate : chaque message réduit le boredom de 30%
+            self._state["boredom"] = max(0.0, self._state["boredom"] * 0.7)
+            if self._state["boredom"] < DECAY_FLOOR:
+                self._state["boredom"] = 0.0
+            self._dirty = True
+            self._schedule_save()
+
     async def process_message(
         self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None,
         image_urls: list[str] | None = None,
+        trigger_user: str = "", channel_id: str = "", platform: str = "",
     ) -> None:
+        self.record_interaction()
+        state_before = self.get_state()
         if self._openai is not None and context_messages:
             try:
                 deltas, new_words = await self._analyze_llm(
@@ -436,6 +497,15 @@ class EmotionEngine:
                     self.apply_delta(emotion, delta)
                 if new_words:
                     await self._learn_words(new_words)
+                # Check for peaks
+                state_after = self.get_state()
+                for emotion, delta in deltas.items():
+                    if delta > 0:
+                        self._fire(self._maybe_log_peak(
+                            emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
+                            trigger_user=trigger_user, trigger_message=text,
+                            channel_id=channel_id, platform=platform,
+                        ))
                 return
             except Exception as exc:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
@@ -443,3 +513,11 @@ class EmotionEngine:
         deltas = await self.analyze_message(text, trust_score)
         for emotion, delta in deltas.items():
             self.apply_delta(emotion, delta)
+        state_after = self.get_state()
+        for emotion, delta in deltas.items():
+            if delta > 0:
+                self._fire(self._maybe_log_peak(
+                    emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
+                    trigger_user=trigger_user, trigger_message=text,
+                    channel_id=channel_id, platform=platform,
+                ))

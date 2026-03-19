@@ -11,7 +11,22 @@ if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
 # Imported at module level so tests can patch bot.twitch.events.handle_message
-from bot.twitch.handlers import handle_message
+from bot.twitch.handlers import handle_message, _fire
+
+
+def _check_peak(bot, emotion: str, old_val: float, delta: float, username: str = "", event_name: str = ""):
+    """Fire-and-forget peak check for Twitch events."""
+    import inspect
+    new_val = min(1.0, old_val + delta)
+    if hasattr(bot.emotion, '_maybe_log_peak'):
+        coro = bot.emotion._maybe_log_peak(
+            emotion, old_val, new_val,
+            trigger_user=username,
+            trigger_message=f"[Twitch {event_name}]",
+            channel_id="", platform="twitch",
+        )
+        if inspect.iscoroutine(coro):
+            _fire(coro)
 
 
 def _bits_joy(amount: int) -> float:
@@ -63,7 +78,9 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("follow")
         if not cfg or not cfg.active:
             return
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.1)
+        _check_peak(bot, "joy", old_joy, 0.1, username=payload.data.user.name, event_name="follow")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -76,7 +93,9 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.4)
+        _check_peak(bot, "joy", old_joy, 0.4, username=payload.data.user.name, event_name="subscribe")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -87,7 +106,9 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("resub")
         if not cfg or not cfg.active:
             return
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.3)
+        _check_peak(bot, "joy", old_joy, 0.3, username=payload.data.user.name, event_name="resub")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0,
@@ -99,8 +120,10 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("gift_sub")
         if not cfg or not cfg.active:
             return
-        bot.emotion.apply_delta("joy", 0.5)
         gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
+        bot.emotion.apply_delta("joy", 0.5)
+        _check_peak(bot, "joy", old_joy, 0.5, username=gifter, event_name="gift_sub")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=gifter,
@@ -121,8 +144,10 @@ def register_events(bot: "WallyTwitch") -> None:
         if not cfg or not cfg.active:
             return
         delta = _bits_joy(payload.data.bits)
-        bot.emotion.apply_delta("joy", delta)
         username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
+        bot.emotion.apply_delta("joy", delta)
+        _check_peak(bot, "joy", old_joy, delta, username=username, event_name="bits")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=username, amount=payload.data.bits, months=0, raiders_count=0,
@@ -134,7 +159,9 @@ def register_events(bot: "WallyTwitch") -> None:
         if not cfg or not cfg.active:
             return
         joy_spike = min(payload.data.viewer_count / 50, 0.9)
+        old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", joy_spike)
+        _check_peak(bot, "joy", old_joy, joy_spike, username=payload.data.raider.name, event_name="raid")
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
         await _generate_and_send(

@@ -295,6 +295,7 @@ async def _respond(
         _fire(_post_process(
             bot, text_content, platform, user_id, guild_id, trust, context_messages,
             image_urls=image_urls or None,
+            channel_id=str(message.channel.id),
         ))
 
     except Exception as e:
@@ -314,11 +315,13 @@ async def _post_process(
     trust: float,
     context_messages: list[dict] | None = None,
     image_urls: list[str] | None = None,
+    channel_id: str = "",
 ) -> None:
     try:
         await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             image_urls=image_urls,
+            trigger_user=user_id, channel_id=channel_id, platform="discord",
         )
 
         insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
