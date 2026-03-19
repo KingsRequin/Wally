@@ -304,11 +304,16 @@ class DailyJournal:
         # ── Dynamic word range (F1) ──
         word_range = _get_word_range(len(all_messages)) if all_messages else "150 à 250"
 
+        # ── Midnight timestamp for today-based queries ──
+        midnight = datetime.now(_TZ_JOURNAL).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+
         # ── Emotion peaks (F5) ──
         peaks_block = ""
         if self._db is not None:
             try:
-                peaks = await self._db.get_emotion_peaks_since(time.time() - 86400)
+                peaks = await self._db.get_emotion_peaks_since(midnight)
                 if peaks:
                     peak_lines = []
                     for p in peaks:
@@ -328,7 +333,7 @@ class DailyJournal:
 
         # ── Emotion arc ──
         try:
-            snapshots = await self._db.get_emotion_snapshots_since(time.time() - 86400) if self._db else []
+            snapshots = await self._db.get_emotion_snapshots_since(midnight) if self._db else []
         except Exception as exc:
             logger.warning("Failed to get emotion snapshots for journal: {e}", e=exc)
             snapshots = []
@@ -340,7 +345,7 @@ class DailyJournal:
         if self._db is not None:
             try:
                 week_avgs = await self._db.get_emotion_averages(time.time() - 7 * 86400)
-                day_avgs = await self._db.get_emotion_averages(time.time() - 86400)
+                day_avgs = await self._db.get_emotion_averages(midnight)
                 if week_avgs and day_avgs:
                     diffs = []
                     for emotion in ["anger", "joy", "sadness", "curiosity", "boredom"]:
