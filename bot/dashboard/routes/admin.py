@@ -92,6 +92,16 @@ async def update_config(request: Request, body: dict) -> dict:
             if val <= 0:
                 raise HTTPException(status_code=400, detail="cost_alert_threshold must be > 0")
             cfg.bot.cost_alert_threshold = val
+        if "spontaneous_discord_enabled" in d:
+            cfg.bot.spontaneous_discord_enabled = bool(d["spontaneous_discord_enabled"])
+        if "spontaneous_twitch_enabled" in d:
+            cfg.bot.spontaneous_twitch_enabled = bool(d["spontaneous_twitch_enabled"])
+        if "spontaneous_probability" in d:
+            cfg.bot.spontaneous_probability = float(d["spontaneous_probability"])
+        if "spontaneous_passion_probability" in d:
+            cfg.bot.spontaneous_passion_probability = float(d["spontaneous_passion_probability"])
+        if "spontaneous_cooldown_seconds" in d:
+            cfg.bot.spontaneous_cooldown_seconds = int(d["spontaneous_cooldown_seconds"])
 
     if "discord" in body:
         d = body["discord"]

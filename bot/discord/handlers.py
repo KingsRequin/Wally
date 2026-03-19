@@ -83,6 +83,7 @@ def _check_spontaneous_trigger(
 
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
+_spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
 
 
 def _fire(coro) -> asyncio.Task:
@@ -173,6 +174,29 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                     await message.add_reaction(passive_emoji)
                 except Exception:
                     pass
+        # Spontaneous intervention
+        if channel_allowed and bot.config.bot.spontaneous_discord_enabled:
+            import time as _time
+            state = bot.emotion.get_state()
+            trigger_type = _check_spontaneous_trigger(
+                message.content,
+                curiosity=state.get("curiosity", 0.0),
+                anger=state.get("anger", 0.0),
+                boredom=state.get("boredom", 0.0),
+            )
+            if trigger_type:
+                chan_id = str(message.channel.id)
+                now = _time.time()
+                cooldown = bot.config.bot.spontaneous_cooldown_seconds
+                if now - _spontaneous_cooldowns.get(chan_id, 0) >= cooldown:
+                    prob = (
+                        bot.config.bot.spontaneous_passion_probability
+                        if trigger_type == "passion"
+                        else bot.config.bot.spontaneous_probability
+                    )
+                    if random.random() < prob:
+                        _spontaneous_cooldowns[chan_id] = now
+                        _fire(_spontaneous_respond(bot, message))
         return
 
     if not channel_allowed:
@@ -458,5 +482,59 @@ async def _post_process(
                 )
     except Exception as e:
         logger.error("Post-process error: {e}", e=e)
+
+
+async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) -> None:
+    """Generate and send a spontaneous (unsolicited) response."""
+    try:
+        prelude = bot.memory.get_prelude(str(message.channel.id))
+        situation: dict = {"platform": "Discord"}
+        if message.guild:
+            situation["server"] = message.guild.name
+        if isinstance(message.channel, discord.TextChannel):
+            situation["channel"] = f"#{message.channel.name}"
+
+        system_prompt = bot.prompts.build_system_prompt(
+            emotion_state=bot.emotion.get_state(),
+            situation=situation,
+            persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
+            weekday_directives=bot.persona.weekday_directives,
+            composite_directives=bot.persona.composite_directives,
+        )
+        prelude_block = bot.prompts.build_prelude_block(prelude)
+        user_content = (
+            "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
+            "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
+            "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
+            + prelude_block
+            + f"\n[{message.author.display_name}]: {message.content}"
+        )
+
+        async with message.channel.typing():
+            reply = await bot.openai.complete(
+                system_prompt,
+                [{"role": "user", "content": user_content}],
+                purpose="discord_spontaneous",
+            )
+
+        # Parse and apply react tag if present
+        react_emoji, reply = _parse_react_tag(reply)
+        if react_emoji:
+            try:
+                await message.add_reaction(react_emoji)
+            except Exception:
+                pass
+
+        # Send as a regular message (not a reply)
+        await message.channel.send(reply)
+
+        bot.memory.append_message(
+            str(message.channel.id), "Wally", reply, platform="discord"
+        )
+        logger.info("Spontaneous intervention in #{ch}", ch=getattr(message.channel, 'name', 'dm'))
+
+    except Exception as e:
+        logger.error("Spontaneous intervention error: {e}", e=e)
 
 
