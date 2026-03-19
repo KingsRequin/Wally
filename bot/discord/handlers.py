@@ -85,6 +85,13 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     else:
         prelude = []
 
+    # Reaction tracking: detect positive replies to Wally's messages
+    tracker = getattr(bot, "reaction_tracker", None)
+    if tracker and message.reference and message.reference.message_id:
+        tracker.record_discord_reply(
+            message.reference.message_id, message.content, message.author.bot,
+        )
+
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
     triggered = mentioned or any(
@@ -114,11 +121,11 @@ def _is_list_item(line: str) -> bool:
     return bool(_LIST_RE.match(line))
 
 
-async def _send_in_parts(message: discord.Message, text: str) -> None:
+async def _send_in_parts(message: discord.Message, text: str) -> int | None:
     """Split text on newlines, group consecutive list items, send as separate messages."""
     lines = [line for line in text.split("\n") if line.strip()]
     if not lines:
-        return
+        return None
 
     # Group lines: consecutive list items are bundled into one message
     groups: list[str] = []
@@ -141,10 +148,11 @@ async def _send_in_parts(message: discord.Message, text: str) -> None:
     if current:
         groups.append("\n".join(current))
 
-    await message.reply(groups[0])
+    first_msg = await message.reply(groups[0])
     for group in groups[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
         await message.channel.send(group)
+    return first_msg.id
 
 
 async def _respond(
@@ -277,7 +285,9 @@ async def _respond(
                 await message.remove_reaction(emoji, bot.user)
             except Exception:
                 pass
-        await _send_in_parts(message, reply)
+        reply_msg_id = await _send_in_parts(message, reply)
+        if reply_msg_id and getattr(bot, "reaction_tracker", None):
+            bot.reaction_tracker.track_discord_message(reply_msg_id)
 
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)

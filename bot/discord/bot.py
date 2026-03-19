@@ -49,6 +49,7 @@ class WallyDiscord(commands.Bot):
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
+        self.reaction_tracker = None  # set by main.py after construction
 
     async def setup_hook(self) -> None:
         from bot.discord.commands.ask import AskCog
@@ -76,6 +77,17 @@ class WallyDiscord(commands.Bot):
     async def on_ready(self) -> None:
         self._start_time = time.time()
         logger.info("Discord bot ready as {user}", user=self.user)
+
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        if not self.reaction_tracker:
+            return
+        if payload.user_id == self.user.id:
+            return
+        member = payload.member
+        is_bot = member.bot if member else False
+        self.reaction_tracker.record_discord_reaction(
+            payload.message_id, str(payload.emoji), is_bot,
+        )
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)
