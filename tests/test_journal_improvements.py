@@ -152,6 +152,7 @@ async def test_process_message_logs_peak_above_threshold(tmp_path):
     config.emotions = {}
     config.bot = MagicMock()
     config.bot.emotion_peak_threshold = 0.7
+    config.bot.emotion_inertia_factor = 0.5
 
     engine = EmotionEngine(config, db=db)
     # Force joy high so that any positive delta crosses threshold
@@ -181,6 +182,7 @@ async def test_peak_antispam_prevents_duplicate(tmp_path):
     config.emotions = {}
     config.bot = MagicMock()
     config.bot.emotion_peak_threshold = 0.7
+    config.bot.emotion_inertia_factor = 0.5
 
     engine = EmotionEngine(config, db=db)
     engine._state["joy"] = 0.65

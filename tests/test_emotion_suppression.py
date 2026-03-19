@@ -10,6 +10,7 @@ def make_config():
         e: MagicMock(decay_lambda=0.1)
         for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
     }
+    config.bot.emotion_inertia_factor = 0.0
     return config
 
 

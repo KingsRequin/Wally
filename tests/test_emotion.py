@@ -19,6 +19,7 @@ def make_config():
     config.emotions["joy"].decay_lambda = 0.05
     config.discord.anger_trigger_threshold = 3
     config.discord.timeout_minutes = 10
+    config.bot.emotion_inertia_factor = 0.5
     return config
 
 
@@ -226,18 +227,29 @@ def test_build_emotion_tag_with_dominant_emotions():
 
 def test_build_emotion_tag_returns_empty_when_none_dominant():
     from bot.core.emotion import build_emotion_tag
-    state = {"anger": 0.2, "joy": 0.3, "sadness": 0.0, "curiosity": 0.1, "boredom": 0.0}
+    # Toutes les valeurs sous 0.2 → pas de tag
+    state = {"anger": 0.1, "joy": 0.15, "sadness": 0.0, "curiosity": 0.05, "boredom": 0.0}
     tag = build_emotion_tag(state)
     assert tag == ""
 
 
 def test_build_emotion_tag_threshold_boundary():
     from bot.core.emotion import build_emotion_tag
-    # Exactement au seuil : 0.4 → inclus
-    state = {"anger": 0.4, "joy": 0.39, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    # Exactement au seuil : 0.2 → inclus, 0.19 → exclus
+    state = {"anger": 0.2, "joy": 0.19, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
     tag = build_emotion_tag(state)
     assert "anger" in tag
     assert "joy" not in tag
+
+
+def test_get_dominant_default_threshold_02():
+    """get_dominant() sans argument utilise le seuil 0.2."""
+    engine = EmotionEngine(make_config())
+    engine._state["joy"] = 0.25
+    engine._state["anger"] = 0.15
+    dominant = engine.get_dominant()
+    assert "joy" in dominant
+    assert "anger" not in dominant
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -584,3 +596,100 @@ def test_other_emotions_still_decay_with_boredom_rise():
     anger = engine.get_state()["anger"]
     expected = math.exp(-0.1 * (10 / 60.0))
     assert abs(anger - expected) < 0.01
+
+
+# ── Inertie émotionnelle ──────────────────────────────────────────────────
+
+
+def test_inertia_attenuates_opposite_emotion():
+    """joy=0.7, delta sadness=0.2 → atténué par inertie."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.7
+    engine.apply_delta("sadness", 0.2)
+    # effective = 0.2 * (1 - 0.7 * 0.5) = 0.13
+    # sadness passe de 0.0 à 0.13 (suppression n'affecte pas sadness elle-même)
+    assert engine.get_state()["sadness"] == pytest.approx(0.13, abs=0.01)
+
+
+def test_inertia_no_effect_same_emotion():
+    """joy=0.7, delta joy=0.2 → pas d'atténuation (même émotion)."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.7
+    engine.apply_delta("joy", 0.2)
+    assert engine.get_state()["joy"] == pytest.approx(0.9, abs=0.01)
+
+
+def test_inertia_no_effect_unrelated_emotion():
+    """joy=0.7, delta curiosity=0.2 → pas d'atténuation (pas d'opposition)."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.7
+    engine.apply_delta("curiosity", 0.2)
+    assert engine.get_state()["curiosity"] == pytest.approx(0.2, abs=0.01)
+
+
+def test_inertia_zero_when_opposite_zero():
+    """anger=0.0, delta joy=0.2 → pas d'atténuation."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+    engine = EmotionEngine(config)
+    engine.apply_delta("joy", 0.2)
+    assert engine.get_state()["joy"] == pytest.approx(0.2, abs=0.01)
+
+
+def test_inertia_configurable():
+    """Changer emotion_inertia_factor modifie l'atténuation."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.7
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.7
+    engine.apply_delta("sadness", 0.2)
+    # effective = 0.2 * (1 - 0.7 * 0.7) = 0.2 * 0.51 = 0.102
+    assert engine.get_state()["sadness"] == pytest.approx(0.102, abs=0.01)
+
+
+def test_inertia_bidirectional():
+    """L'inertie fonctionne dans les deux sens (anger→joy et joy→anger)."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+
+    # anger haute → joy atténuée
+    engine1 = EmotionEngine(config)
+    engine1._state["anger"] = 0.6
+    engine1.apply_delta("joy", 0.2)
+    # effective = 0.2 * (1 - 0.6 * 0.5) = 0.2 * 0.7 = 0.14
+    assert engine1.get_state()["joy"] == pytest.approx(0.14, abs=0.01)
+
+    # joy haute → anger atténuée
+    engine2 = EmotionEngine(config)
+    engine2._state["joy"] = 0.6
+    engine2.apply_delta("anger", 0.2)
+    # effective = 0.2 * (1 - 0.6 * 0.5) = 0.2 * 0.7 = 0.14
+    assert engine2.get_state()["anger"] == pytest.approx(0.14, abs=0.01)
+
+
+def test_inertia_disabled_when_factor_zero():
+    """emotion_inertia_factor=0 → pas d'inertie."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.0
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.9
+    engine.apply_delta("sadness", 0.2)
+    assert engine.get_state()["sadness"] == pytest.approx(0.2, abs=0.01)
+
+
+def test_inertia_only_on_positive_deltas():
+    """Les deltas négatifs ne sont pas atténués par l'inertie."""
+    config = make_config()
+    config.bot.emotion_inertia_factor = 0.5
+    engine = EmotionEngine(config)
+    engine._state["joy"] = 0.7
+    engine._state["anger"] = 0.5
+    engine.apply_delta("anger", -0.3)
+    # delta négatif → pas d'inertie → anger = 0.5 - 0.3 = 0.2
+    assert engine.get_state()["anger"] == pytest.approx(0.2, abs=0.01)

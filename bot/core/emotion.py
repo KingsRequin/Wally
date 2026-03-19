@@ -76,12 +76,12 @@ _LEARNED_WORDS_PATH = "data/fr_emotion_words.json"
 
 
 def build_emotion_tag(emotion_state: dict[str, float]) -> str:
-    """Construit un tag textuel à partir des émotions dominantes (≥ 0.4).
+    """Construit un tag textuel à partir des émotions dominantes (≥ 0.2).
 
     Retourne "" si aucune émotion n'est dominante.
     Exemple : "Wally: joy, curiosity"
     """
-    dominant = [e for e, v in emotion_state.items() if v >= 0.4]
+    dominant = [e for e, v in emotion_state.items() if v >= 0.2]
     if not dominant:
         return ""
     return "Wally: " + ", ".join(dominant)
@@ -142,6 +142,17 @@ class EmotionEngine:
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
             return
+        # Inertie : atténuer si une émotion opposée est dominante
+        inertia = getattr(self._config.bot, "emotion_inertia_factor", 0.5)
+        if inertia > 0 and delta > 0:
+            max_opposite = 0.0
+            for src, tgt, _ in SUPPRESSION_RULES:
+                if emotion == src:
+                    max_opposite = max(max_opposite, self._state.get(tgt, 0.0))
+                elif emotion == tgt:
+                    max_opposite = max(max_opposite, self._state.get(src, 0.0))
+            if max_opposite > 0:
+                delta = delta * (1 - max_opposite * inertia)
         old = self._state[emotion]
         self._state[emotion] = max(0.0, min(1.0, old + delta))
         effective_delta = self._state[emotion] - old
@@ -163,7 +174,7 @@ class EmotionEngine:
         self._schedule_save()
         logger.info("Emotion state reset to zero")
 
-    def get_dominant(self, threshold: float = 0.4) -> list[str]:
+    def get_dominant(self, threshold: float = 0.2) -> list[str]:
         return [e for e in EMOTIONS if self._state.get(e, 0.0) >= threshold]
 
     def set_openai_client(self, client) -> None:
