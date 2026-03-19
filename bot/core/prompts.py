@@ -82,6 +82,7 @@ class PromptBuilder:
         persona_block: str = "",
         emotion_directives: dict[str, str] | None = None,
         weekday_directives: dict[str, str] | None = None,
+        composite_directives: dict[str, str] | None = None,
     ) -> str:
         parts = []
         if persona_block:
@@ -109,6 +110,7 @@ class PromptBuilder:
                 parts.append(weekday_directives[day_name])
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
+        # With composite override when both emotions are >= 0.4 and pair is known
         directives = emotion_directives if emotion_directives is not None else {}
         dominant = sorted(
             [(e, v) for e, v in emotion_state.items() if v >= 0.2],
@@ -117,12 +119,26 @@ class PromptBuilder:
         )[:2]
 
         if dominant and directives:
-            parts.append("\n--- Directive comportementale ---")
-            for emotion, value in dominant:
-                tier = _get_tier(value)
-                key = f"{emotion}_{tier}"
-                if key in directives:
-                    parts.append(directives[key])
+            composite_used = False
+            if (
+                composite_directives
+                and len(dominant) >= 2
+                and dominant[0][1] >= 0.4
+                and dominant[1][1] >= 0.4
+            ):
+                composite_key = "_".join(sorted([dominant[0][0], dominant[1][0]]))
+                if composite_key in composite_directives:
+                    parts.append("\n--- Directive comportementale ---")
+                    parts.append(composite_directives[composite_key])
+                    composite_used = True
+
+            if not composite_used:
+                parts.append("\n--- Directive comportementale ---")
+                for emotion, value in dominant:
+                    tier = _get_tier(value)
+                    key = f"{emotion}_{tier}"
+                    if key in directives:
+                        parts.append(directives[key])
 
         # Long-term memory context
         if memory_context:
