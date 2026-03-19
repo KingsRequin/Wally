@@ -21,7 +21,7 @@ async def test_memory_add_prefixes_emotion_tag():
 
     memory._init_mem0()
     memory._mem0 = MagicMock()
-    memory._mem0.add = MagicMock(side_effect=lambda content, user_id: stored_content.append(content))
+    memory._mem0.add = MagicMock(side_effect=lambda content, user_id, **kwargs: stored_content.append(content))
 
     with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
         await memory.add("discord", "user1", "bonjour !", emotion_context="Wally: joy")
@@ -41,7 +41,7 @@ async def test_memory_add_no_tag_when_empty_context():
     stored_content = []
     memory._init_mem0()
     memory._mem0 = MagicMock()
-    memory._mem0.add = MagicMock(side_effect=lambda content, user_id: stored_content.append(content))
+    memory._mem0.add = MagicMock(side_effect=lambda content, user_id, **kwargs: stored_content.append(content))
 
     with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
         await memory.add("discord", "user1", "bonjour !", emotion_context="")
@@ -90,6 +90,8 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.persona.emotion_directives = {}
     bot.emotion.process_message = AsyncMock()
     bot.session_manager = MagicMock()
+    bot.web_search = None
+    bot.apex_api = None
 
     message = MagicMock(spec=discord.Message)
     message.author.bot = False

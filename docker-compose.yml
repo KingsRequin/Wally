@@ -19,12 +19,27 @@ services:
       retries: 5
     restart: unless-stopped
 
+  init-perms:
+    image: alpine:3.19
+    container_name: wally-init-perms
+    user: "0:0"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./.env:/dotenv
+      - ./config.yaml:/config.yaml
+    command: sh -c "chown -R 1000:1000 /data /logs && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
+    restart: "no"
+
   wally:
     build: .
     container_name: wally-bot
+    user: "1000:1000"
     networks:
       - wally-net
     depends_on:
+      init-perms:
+        condition: service_completed_successfully
       qdrant:
         condition: service_healthy
     environment:
@@ -37,4 +52,5 @@ services:
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
       - ./.env:/app/.env
+      - ./ROADMAP.md:/app/ROADMAP.md:ro
     restart: unless-stopped

@@ -1,1 +1,25 @@
+# Worktrees
 .worktrees/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Logs
+logs/
+
+# Data (Qdrant, SQLite, etc.)
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude/Superpowers local state
+.claude/
+.superpowers/

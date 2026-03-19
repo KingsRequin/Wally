@@ -69,12 +69,19 @@ class SessionManager:
     stockés dans la mémoire long-terme de chaque participant.
     """
 
-    def __init__(self, memory: "MemoryService", openai: "OpenAIClient") -> None:
+    def __init__(self, memory: "MemoryService", openai: "OpenAIClient", db=None) -> None:
         self._memory = memory
         self._openai = openai
+        self._db = db
         self._sessions: dict[str, _Session] = {}
         # Strong refs pour éviter que le GC n'annule les tâches
         self._bg_tasks: set[asyncio.Task] = set()
+
+    def _fire(self, coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        return t
 
     def record_message(
         self,
@@ -91,16 +98,23 @@ class SessionManager:
             self._sessions[channel_id] = session
             logger.debug("Session ouverte — canal {ch}", ch=channel_id)
 
+        ts = time.time()
         session.messages.append(
             {
                 "author": display_name,
                 "user_id": user_id,
                 "content": content,
-                "timestamp": time.time(),
+                "timestamp": ts,
             }
         )
         session.participants[user_id] = display_name
-        session.last_activity = time.time()
+        session.last_activity = ts
+
+        # Persister en SQLite pour survivre aux redémarrages
+        if self._db is not None:
+            self._fire(self._db.insert_session_message(
+                channel_id, platform, user_id, display_name, content, ts,
+            ))
 
         # Réinitialiser le timer d'inactivité
         if session.timeout_task and not session.timeout_task.done():
@@ -121,6 +135,9 @@ class SessionManager:
 
         session = self._sessions.pop(channel_id, None)
         if session is None or len(session.messages) < 2:
+            # Nettoyer la DB même pour les sessions trop courtes
+            if self._db is not None:
+                await self._db.delete_session_messages(channel_id)
             return
 
         logger.info(
@@ -129,9 +146,20 @@ class SessionManager:
             n=len(session.messages),
             u=len(session.participants),
         )
-        task = asyncio.create_task(self._analyze_session(session))
+        task = asyncio.create_task(self._analyze_and_cleanup(session))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
+
+    async def _analyze_and_cleanup(self, session: _Session) -> int:
+        """Analyse la session puis supprime les messages persistés."""
+        try:
+            return await self._analyze_session(session)
+        finally:
+            if self._db is not None:
+                try:
+                    await self._db.delete_session_messages(session.channel_id)
+                except Exception as e:
+                    logger.warning("Failed to cleanup session_messages: {e}", e=e)
 
     async def _analyze_session(self, session: _Session) -> int:
         try:
@@ -169,6 +197,63 @@ class SessionManager:
         except Exception as e:
             logger.error("Erreur lors de l'analyse de session: {e}", e=e)
             return 0
+
+    async def restore_sessions(self) -> int:
+        """Reconstruit les sessions actives depuis la DB après un redémarrage.
+
+        Retourne le nombre de sessions restaurées.
+        """
+        if self._db is None:
+            return 0
+
+        since = time.time() - SESSION_TIMEOUT_SECONDS
+        try:
+            rows = await self._db.get_recent_session_messages(since)
+        except Exception as e:
+            logger.warning("Failed to restore sessions: {e}", e=e)
+            return 0
+
+        if not rows:
+            return 0
+
+        # Grouper par channel_id
+        channels: dict[str, list[dict]] = {}
+        for row in rows:
+            channels.setdefault(row["channel_id"], []).append(row)
+
+        restored = 0
+        for channel_id, messages in channels.items():
+            session = _Session(
+                channel_id=channel_id,
+                platform=messages[0]["platform"],
+            )
+            for msg in messages:
+                session.messages.append({
+                    "author": msg["display_name"],
+                    "user_id": msg["user_id"],
+                    "content": msg["content"],
+                    "timestamp": msg["timestamp"],
+                })
+                session.participants[msg["user_id"]] = msg["display_name"]
+            session.last_activity = messages[-1]["timestamp"]
+
+            # Calculer le délai restant avant timeout
+            elapsed = time.time() - session.last_activity
+            remaining = max(0.0, SESSION_TIMEOUT_SECONDS - elapsed)
+
+            self._sessions[channel_id] = session
+            task = asyncio.create_task(self._wait_and_close(channel_id, remaining))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+            session.timeout_task = task
+            restored += 1
+
+        logger.info(
+            "Sessions restaurées: {n} canal/canaux, {m} messages",
+            n=restored,
+            m=len(rows),
+        )
+        return restored
 
     async def analyze_channel_messages(
         self,

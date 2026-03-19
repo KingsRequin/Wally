@@ -27,10 +27,12 @@ def _make_config():
         prelude_window_size=15,
     )
     cfg.openai = OpenAIConfig(
-        primary_model="gpt-4o",
-        secondary_model="gpt-4o-mini",
+        primary_model="gpt-5",
+        secondary_model="gpt-5-mini",
         temperature=0.8,
         max_tokens=1000,
+        reasoning_effort="medium",
+        text_verbosity="medium",
     )
     cfg.discord = DiscordConfig(
         anger_trigger_threshold=3,
@@ -287,6 +289,7 @@ async def test_memory_users_route_is_implemented():
     db.get_emotion_snapshots_since = AsyncMock(return_value=[])
     db.insert_emotion_snapshot = AsyncMock()
     db.list_memory_users = AsyncMock(return_value=[])
+    db.list_link_proposals = AsyncMock(return_value=[])
     state = _make_state(db=db)
     app = create_dashboard_app(state)
     async with AsyncClient(

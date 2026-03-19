@@ -6,6 +6,10 @@ Logique:
 - Score Jaro-Winkler sur les noms normalisés
 - Si score >= threshold → upsert_link_proposal(discord_id, twitch_id, score)
 - Discord ID est toujours canonical_id, Twitch ID est toujours alias_id
+
+get_platform_users retourne des dicts {raw_id, username, full_id}.
+Pour Discord, raw_id est numérique (inutile) → on utilise username (display_name).
+Pour Twitch, raw_id EST le username.
 """
 from __future__ import annotations
 
@@ -25,9 +29,10 @@ def _normalize(name: str) -> str:
 
     Étapes:
     1. Lowercase + strip
-    2. Supprimer le suffixe _ttv (avec ou sans underscore)
-    3. Supprimer les séparateurs (_, -, .)
-    4. Supprimer les chiffres trailing
+    2. Supprimer les chiffres trailing
+    3. Supprimer le suffixe _ttv (avec ou sans underscore)
+    4. Supprimer les séparateurs (_, -, .)
+    5. Supprimer les chiffres trailing (second pass)
     """
     name = name.lower().strip()
     name = re.sub(r"\d+$", "", name)
@@ -39,7 +44,26 @@ def _normalize(name: str) -> str:
 
 def score(a: str, b: str) -> float:
     """Score de similarité Jaro-Winkler entre deux noms normalisés."""
-    return jellyfish.jaro_winkler_similarity(_normalize(a), _normalize(b))
+    na, nb = _normalize(a), _normalize(b)
+    if not na or not nb:
+        return 0.0
+    return jellyfish.jaro_winkler_similarity(na, nb)
+
+
+def _get_comparable_name(user: dict, platform: str) -> str | None:
+    """Retourne le nom utilisable pour la comparaison Jaro-Winkler.
+
+    Pour les deux plateformes, on utilise le champ 'username' de memory_users
+    car raw_id est numérique (Discord = snowflake, Twitch = numeric user ID).
+    Fallback sur raw_id uniquement s'il n'est pas purement numérique.
+    """
+    username = user.get("username")
+    if username:
+        return username
+    raw_id = user.get("raw_id") or ""
+    if raw_id and not raw_id.isdigit():
+        return raw_id
+    return None
 
 
 async def analyze_all(db: "Database", threshold: float = 0.75) -> int:
@@ -49,22 +73,25 @@ async def analyze_all(db: "Database", threshold: float = 0.75) -> int:
     """
     proposals_count = 0
     try:
-        # Récupère tous les user_ids existants
-        discord_ids = await db.get_platform_users("discord")
-        twitch_ids = await db.get_platform_users("twitch")
+        discord_users = await db.get_platform_users("discord")
+        twitch_users = await db.get_platform_users("twitch")
 
-        for discord_user_id in discord_ids:
-            for twitch_user_id in twitch_ids:
-                s = score(discord_user_id, twitch_user_id)
+        for d_user in discord_users:
+            d_name = _get_comparable_name(d_user, "discord")
+            if not d_name:
+                continue
+            for t_user in twitch_users:
+                t_name = _get_comparable_name(t_user, "twitch")
+                if not t_name:
+                    continue
+                s = score(d_name, t_name)
                 if s >= threshold:
-                    canonical_id = f"discord:{discord_user_id}"
-                    alias_id = f"twitch:{twitch_user_id}"
-                    await db.upsert_link_proposal(canonical_id, alias_id, s)
+                    await db.upsert_link_proposal(d_user["full_id"], t_user["full_id"], s)
                     proposals_count += 1
                     logger.info(
-                        "Lien proposé: {c} ↔ {a} (score={s:.3f})",
-                        c=canonical_id,
-                        a=alias_id,
+                        "Lien proposé: {dn} ({c}) ↔ {tn} ({a}) score={s:.3f}",
+                        dn=d_name, c=d_user["full_id"],
+                        tn=t_name, a=t_user["full_id"],
                         s=s,
                     )
     except Exception as e:
@@ -87,33 +114,54 @@ async def analyze_new_user(
         platform, user_id = parts
 
         if platform == "discord":
-            # Compare contre tous les Twitch
-            twitch_ids = await db.get_platform_users("twitch")
-            for twitch_user_id in twitch_ids:
-                s = score(user_id, twitch_user_id)
+            # Pour Discord, on a besoin du username — le chercher dans memory_users
+            discord_users = await db.get_platform_users("discord")
+            d_name = None
+            for u in discord_users:
+                if u["full_id"] == new_user_id:
+                    d_name = _get_comparable_name(u, "discord")
+                    break
+            if not d_name:
+                return
+
+            twitch_users = await db.get_platform_users("twitch")
+            for t_user in twitch_users:
+                t_name = _get_comparable_name(t_user, "twitch")
+                if not t_name:
+                    continue
+                s = score(d_name, t_name)
                 if s >= threshold:
-                    canonical_id = new_user_id
-                    alias_id = f"twitch:{twitch_user_id}"
-                    await db.upsert_link_proposal(canonical_id, alias_id, s)
+                    await db.upsert_link_proposal(new_user_id, t_user["full_id"], s)
                     logger.info(
-                        "Lien proposé: {c} ↔ {a} (score={s:.3f})",
-                        c=canonical_id,
-                        a=alias_id,
+                        "Lien proposé: {dn} ({c}) ↔ {tn} ({a}) score={s:.3f}",
+                        dn=d_name, c=new_user_id,
+                        tn=t_name, a=t_user["full_id"],
                         s=s,
                     )
+
         elif platform == "twitch":
-            # Compare contre tous les Discord
-            discord_ids = await db.get_platform_users("discord")
-            for discord_user_id in discord_ids:
-                s = score(discord_user_id, user_id)
+            # Récupérer le username depuis memory_users (raw_id est numérique)
+            twitch_users = await db.get_platform_users("twitch")
+            t_name = None
+            for u in twitch_users:
+                if u["full_id"] == new_user_id:
+                    t_name = _get_comparable_name(u, "twitch")
+                    break
+            if not t_name:
+                return
+
+            discord_users = await db.get_platform_users("discord")
+            for d_user in discord_users:
+                d_name = _get_comparable_name(d_user, "discord")
+                if not d_name:
+                    continue
+                s = score(d_name, t_name)
                 if s >= threshold:
-                    canonical_id = f"discord:{discord_user_id}"
-                    alias_id = new_user_id
-                    await db.upsert_link_proposal(canonical_id, alias_id, s)
+                    await db.upsert_link_proposal(d_user["full_id"], new_user_id, s)
                     logger.info(
-                        "Lien proposé: {c} ↔ {a} (score={s:.3f})",
-                        c=canonical_id,
-                        a=alias_id,
+                        "Lien proposé: {dn} ({c}) ↔ {tn} ({a}) score={s:.3f}",
+                        dn=d_name, c=d_user["full_id"],
+                        tn=t_name, a=new_user_id,
                         s=s,
                     )
     except Exception as e:

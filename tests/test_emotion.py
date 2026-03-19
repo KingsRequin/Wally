@@ -510,3 +510,77 @@ async def test_process_message_text_image_llm_error_falls_back():
         image_urls=["https://example.com/img.png"],
     )
     assert all(0.0 <= v <= 1.0 for v in engine.get_state().values())
+
+
+# ── Boredom rise on inactivity ─────────────────────────────────────────────
+
+
+def test_boredom_rises_during_inactivity():
+    """Le boredom monte quand personne ne parle au bot."""
+    engine = EmotionEngine(make_config())
+    assert engine.get_state()["boredom"] == 0.0
+    # Simule 10 minutes d'inactivité
+    engine._last_interaction = time.time() - 600
+    engine._last_decay = time.time() - 60
+    engine._apply_decay()
+    # 10 min * 0.02/min = 0.20
+    assert abs(engine.get_state()["boredom"] - 0.20) < 0.01
+
+
+def test_boredom_capped_at_1():
+    """Le boredom ne dépasse jamais 1.0."""
+    engine = EmotionEngine(make_config())
+    # Simule 2 heures d'inactivité (120 min * 0.02 = 2.4 → clamp à 1.0)
+    engine._last_interaction = time.time() - 7200
+    engine._last_decay = time.time() - 60
+    engine._apply_decay()
+    assert engine.get_state()["boredom"] == 1.0
+
+
+def test_boredom_does_not_decay_like_others():
+    """Le boredom n'est pas réduit par le decay exponentiel classique."""
+    engine = EmotionEngine(make_config())
+    engine._state["boredom"] = 0.5
+    # Interaction récente → boredom_target ≈ 0, mais on ne réduit pas en-dessous
+    engine._last_interaction = time.time()
+    engine._last_decay = time.time() - 60
+    engine._apply_decay()
+    assert engine.get_state()["boredom"] == 0.5
+
+
+def test_record_interaction_reduces_boredom():
+    """Quand quelqu'un parle, le boredom baisse de 30%."""
+    engine = EmotionEngine(make_config())
+    engine._state["boredom"] = 0.8
+    engine.record_interaction()
+    # 0.8 * 0.7 = 0.56
+    assert abs(engine.get_state()["boredom"] - 0.56) < 0.01
+
+
+def test_record_interaction_zeroes_tiny_boredom():
+    """Le boredom est mis à zéro s'il passe sous le seuil DECAY_FLOOR."""
+    engine = EmotionEngine(make_config())
+    engine._state["boredom"] = 0.005
+    engine.record_interaction()
+    assert engine.get_state()["boredom"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_process_message_resets_interaction_timer():
+    """process_message doit enregistrer l'interaction (réduire le boredom)."""
+    engine = EmotionEngine(make_config())
+    engine._state["boredom"] = 0.6
+    await engine.process_message("salut", trust_score=0.5)
+    # boredom réduit de 30% → 0.42
+    assert abs(engine.get_state()["boredom"] - 0.42) < 0.01
+
+
+def test_other_emotions_still_decay_with_boredom_rise():
+    """Les autres émotions continuent de décroître normalement."""
+    engine = EmotionEngine(make_config())
+    engine.apply_delta("anger", 1.0)
+    engine._last_decay = time.time() - 10
+    engine._apply_decay()
+    anger = engine.get_state()["anger"]
+    expected = math.exp(-0.1 * (10 / 60.0))
+    assert abs(anger - expected) < 0.01

@@ -80,19 +80,24 @@ def test_make_bar_half():
 
 # ── is_valid_model ────────────────────────────────────────────────────────────
 
-def test_is_valid_model_accepts_gpt():
-    assert is_valid_model("gpt-4o") is True
-    assert is_valid_model("gpt-4o-mini") is True
-    assert is_valid_model("o3-mini") is True
+def test_is_valid_model_accepts_gpt5():
+    assert is_valid_model("gpt-5") is True
+    assert is_valid_model("gpt-5-mini") is True
+    assert is_valid_model("gpt-5-nano") is True
+    assert is_valid_model("gpt-5-pro") is True
+    assert is_valid_model("gpt-5.1") is True
+    assert is_valid_model("gpt-5.4-mini") is True
 
 
 def test_is_valid_model_rejects_excluded():
-    assert is_valid_model("gpt-4o-realtime-preview") is False
-    assert is_valid_model("gpt-4o-audio-preview") is False
-    assert is_valid_model("gpt-4-vision-preview") is False
+    assert is_valid_model("gpt-5-realtime") is False
+    assert is_valid_model("gpt-5-audio-preview") is False
 
 
-def test_is_valid_model_rejects_unknown():
+def test_is_valid_model_rejects_old_and_unknown():
+    assert is_valid_model("gpt-4o") is False
+    assert is_valid_model("gpt-4o-mini") is False
+    assert is_valid_model("o3-mini") is False
     assert is_valid_model("whisper-1") is False
     assert is_valid_model("dall-e-3") is False
 
@@ -145,7 +150,7 @@ async def test_ask_calls_openai_and_replies():
     bot = make_bot()
     cog = AskCog(bot)
     interaction = make_interaction()
-    with patch("bot.discord.commands.ask.asyncio.create_task"):
+    with patch("bot.discord.commands.ask._fire"):
         await cog.ask.callback(cog, interaction, question="C'est quoi Python?")
     bot.openai.complete.assert_awaited_once()
     interaction.followup.send.assert_awaited_once_with("Réponse Wally")
@@ -156,7 +161,7 @@ async def test_ask_appends_to_context():
     bot = make_bot()
     cog = AskCog(bot)
     interaction = make_interaction()
-    with patch("bot.discord.commands.ask.asyncio.create_task"):
+    with patch("bot.discord.commands.ask._fire"):
         await cog.ask.callback(cog, interaction, question="Test")
     assert bot.memory.append_message.call_count == 2
 
@@ -529,17 +534,19 @@ async def test_twitch_config_modal_saves_config():
 
 
 @pytest.mark.asyncio
-async def test_openai_params_modal_rejects_invalid_temperature():
-    """OpenAIParamsModal rejette une température hors de [0.0, 2.0]."""
+async def test_openai_params_modal_rejects_invalid_reasoning_effort():
+    """OpenAIParamsModal rejette un reasoning_effort invalide."""
     from bot.discord.commands.setup import OpenAIParamsModal
 
     bot = make_bot()
-    bot.config.openai.temperature = 0.8
+    bot.config.openai.reasoning_effort = "medium"
+    bot.config.openai.text_verbosity = "medium"
     bot.config.openai.max_tokens = 1000
     bot.config.save = MagicMock()
 
     modal = OpenAIParamsModal(bot)
-    modal.temperature._value = "3.5"  # hors plage
+    modal.reasoning_effort._value = "invalid"  # valeur inconnue
+    modal.text_verbosity._value = "medium"
     modal.max_tokens._value = "1000"
 
     interaction = MagicMock()

@@ -20,12 +20,18 @@ class BotConfig:
     emotion_peak_threshold: float = 0.7
 
 
+VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
+VALID_TEXT_VERBOSITIES = ("low", "medium", "high")
+
+
 @dataclass
 class OpenAIConfig:
     primary_model: str
     secondary_model: str
     temperature: float
     max_tokens: int
+    reasoning_effort: str = "medium"
+    text_verbosity: str = "medium"
 
 
 @dataclass

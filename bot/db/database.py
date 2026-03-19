@@ -441,10 +441,11 @@ class Database:
             for uid in user_ids:
                 if uid in alias_ids:
                     continue  # alias lié — ne pas recréer dans memory_users
+                if uid in before:
+                    continue  # déjà connu — ne pas écraser last_updated
                 platform = uid.split(":")[0]
                 await self.upsert_memory_user(uid, platform, username="")
-                if uid not in before:
-                    inserted += 1
+                inserted += 1
 
             if inserted:
                 logger.info("sync_memory_users_from_qdrant: {n} nouveaux utilisateurs importés", n=inserted)

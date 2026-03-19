@@ -93,26 +93,57 @@ async def costs_breakdown_purpose(request: Request, days: int = 30) -> list:
     return sorted(categories.values(), key=lambda x: x["total"], reverse=True)
 
 
+def _friendly_name(uid: str | None, username_map: dict[str, str]) -> str:
+    """Résout un user_id en nom lisible pour l'affichage."""
+    if uid is None:
+        return "Système"
+    # Nom résolu depuis memory_users
+    if uid in username_map:
+        return username_map[uid]
+    # Extraire la partie lisible depuis "platform:name_or_id"
+    parts = uid.split(":", 1)
+    if len(parts) == 2:
+        platform, raw = parts
+        if not raw.isdigit():
+            return raw  # twitch:KingsRequin → KingsRequin
+    return uid
+
+
 @router.get("/costs/top-users")
 async def costs_top_users(request: Request, days: int = 30, limit: int = 10) -> list:
     days = _clamp_days(days)
     limit = max(1, min(limit, 100))
-    db = request.app.state.wally.db
+    state = request.app.state.wally
+    db = state.db
     rows = await db.get_cost_breakdown(_since_ts(days), "user_id")
 
     all_users = await db.list_memory_users()
     username_map = {u["user_id"]: u["username"] for u in all_users if u.get("username")}
 
+    # Résolution à la volée des Discord IDs sans username via le bot Discord
+    discord_bot = getattr(state, "discord_bot", None)
+    top_rows = rows[:limit]
+    if discord_bot is not None:
+        for r in top_rows:
+            uid = r["key"]
+            if uid and uid.startswith("discord:") and uid not in username_map:
+                raw_id = uid.split(":", 1)[1]
+                if raw_id.isdigit():
+                    try:
+                        discord_user = await discord_bot.fetch_user(int(raw_id))
+                        name = discord_user.display_name or discord_user.name
+                        if name:
+                            username_map[uid] = name
+                            await db.upsert_memory_user(uid, "discord", username=name)
+                    except Exception:
+                        pass
+
     result = []
-    for r in rows[:limit]:
+    for r in top_rows:
         uid = r["key"]
-        if uid is None:
-            username = "Système"
-        else:
-            username = username_map.get(uid) or uid
         result.append({
             "user_id": uid,
-            "username": username,
+            "username": _friendly_name(uid, username_map),
             "total": r["total"],
             "count": r["count"],
         })

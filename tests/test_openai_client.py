@@ -11,10 +11,12 @@ from bot.core.openai_client import OpenAIClient, estimate_cost, _uses_responses_
 
 def make_config():
     config = MagicMock()
-    config.openai.primary_model = "gpt-4o"
-    config.openai.secondary_model = "gpt-4o-mini"
+    config.openai.primary_model = "gpt-5"
+    config.openai.secondary_model = "gpt-5-mini"
     config.openai.temperature = 0.8
     config.openai.max_tokens = 1000
+    config.openai.reasoning_effort = "medium"
+    config.openai.text_verbosity = "medium"
     return config
 
 
@@ -29,6 +31,7 @@ def make_mock_response(content: str, prompt_tokens: int = 50, completion_tokens:
     usage = MagicMock()
     usage.prompt_tokens = prompt_tokens
     usage.completion_tokens = completion_tokens
+    usage.prompt_tokens_details = None
     choice = MagicMock()
     choice.message.content = content
     response = MagicMock()
@@ -47,20 +50,32 @@ def test_estimate_cost_unknown_model_uses_default():
     assert cost > 0
 
 
+def test_estimate_cost_cached_tokens_reduce_cost():
+    """Les cached input tokens doivent coûter 50% du tarif normal."""
+    full_cost = estimate_cost("gpt-4o", 1000, 0, cached_input_tokens=0)
+    half_cached = estimate_cost("gpt-4o", 1000, 0, cached_input_tokens=1000)
+    assert half_cached == pytest.approx(full_cost * 0.5)
+
+
+def test_estimate_cost_partial_cache():
+    """500 tokens cachés sur 1000 → 75% du coût complet (500 full + 500 half)."""
+    full_cost = estimate_cost("gpt-4o", 1000, 0, cached_input_tokens=0)
+    partial = estimate_cost("gpt-4o", 1000, 0, cached_input_tokens=500)
+    assert partial == pytest.approx(full_cost * 0.75)
+
+
 @pytest.mark.asyncio
 async def test_complete_success():
+    """GPT-5 routes through Responses API."""
     config = make_config()
     db = make_db()
     client = OpenAIClient(config, db)
 
-    mock_response = make_mock_response("Bonjour !")
-    with patch.object(
-        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
-    ):
+    with patch.object(client, "_complete_responses_api", new=AsyncMock(return_value="Bonjour !")) as mock_resp:
         result = await client.complete("System prompt", [{"role": "user", "content": "Hi"}])
 
     assert result == "Bonjour !"
-    db.log_cost.assert_called_once()
+    mock_resp.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -69,14 +84,11 @@ async def test_complete_uses_primary_model_by_default():
     db = make_db()
     client = OpenAIClient(config, db)
 
-    mock_response = make_mock_response("OK")
-    with patch.object(
-        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
-    ) as mock_create:
+    with patch.object(client, "_complete_responses_api", new=AsyncMock(return_value="OK")) as mock_resp:
         await client.complete("System", [{"role": "user", "content": "Hello"}])
 
-    call_kwargs = mock_create.call_args.kwargs
-    assert call_kwargs["model"] == "gpt-4o"
+    call_args = mock_resp.call_args
+    assert call_args[0][0] == "gpt-5"  # first positional arg = model
 
 
 @pytest.mark.asyncio
@@ -85,20 +97,19 @@ async def test_complete_secondary_uses_secondary_model():
     db = make_db()
     client = OpenAIClient(config, db)
 
-    mock_response = make_mock_response("Summary")
-    with patch.object(
-        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
-    ) as mock_create:
+    with patch.object(client, "_complete_responses_api", new=AsyncMock(return_value="Summary")) as mock_resp:
         await client.complete_secondary("System", [{"role": "user", "content": "Summarise"}])
 
-    call_kwargs = mock_create.call_args.kwargs
-    assert call_kwargs["model"] == "gpt-4o-mini"
+    call_args = mock_resp.call_args
+    assert call_args[0][0] == "gpt-5-mini"
 
 
 @pytest.mark.asyncio
-async def test_complete_retries_on_rate_limit_then_succeeds():
+async def test_complete_chat_completions_retries_on_rate_limit():
+    """Chat Completions path (non-GPT-5 model) retries on rate limit."""
     from openai import RateLimitError
     config = make_config()
+    config.openai.primary_model = "gpt-4o"  # force Chat Completions path
     db = make_db()
     client = OpenAIClient(config, db)
 
@@ -117,18 +128,15 @@ async def test_complete_retries_on_rate_limit_then_succeeds():
 
 
 @pytest.mark.asyncio
-async def test_complete_returns_fallback_after_all_retries_fail():
-    from openai import RateLimitError
+async def test_complete_returns_fallback_on_responses_api_error():
     config = make_config()
     db = make_db()
     client = OpenAIClient(config, db)
 
-    error = RateLimitError("rate limit", response=MagicMock(status_code=429), body=None)
     with patch.object(
-        client._client.chat.completions, "create", new=AsyncMock(side_effect=error)
+        client._client.responses, "create", new=AsyncMock(side_effect=Exception("API down"))
     ):
-        with patch("asyncio.sleep", new=AsyncMock()):
-            result = await client.complete("System", [{"role": "user", "content": "Hi"}])
+        result = await client.complete("System", [{"role": "user", "content": "Hi"}])
 
     assert isinstance(result, str) and len(result) > 0  # fallback message
 
@@ -155,11 +163,42 @@ async def test_get_monthly_cost():
 def test_uses_responses_api_detection():
     assert _uses_responses_api("gpt-5-mini") is True
     assert _uses_responses_api("gpt-5.2-mini") is True
+    assert _uses_responses_api("gpt-5.4-nano") is True
+    assert _uses_responses_api("gpt-5-pro") is True
     assert _uses_responses_api("o1-mini") is True
     assert _uses_responses_api("o3-mini") is True
     assert _uses_responses_api("o4") is True
     assert _uses_responses_api("gpt-4o") is False
     assert _uses_responses_api("gpt-4o-mini") is False
+
+
+@pytest.mark.asyncio
+async def test_responses_api_passes_reasoning_effort():
+    """Verify reasoning_effort and text_verbosity from config are passed to Responses API."""
+    config = make_config()
+    config.openai.reasoning_effort = "high"
+    config.openai.text_verbosity = "low"
+    db = make_db()
+    client = OpenAIClient(config, db)
+
+    captured = {}
+
+    async def capture_create(**kwargs):
+        captured.update(kwargs)
+        resp = MagicMock()
+        resp.output_text = "test"
+        resp.usage = MagicMock()
+        resp.usage.input_tokens = 10
+        resp.usage.output_tokens = 5
+        resp.usage.input_tokens_details = None
+        return resp
+
+    with patch.object(client._client.responses, "create", new=AsyncMock(side_effect=capture_create)):
+        await client.complete("System", [{"role": "user", "content": "Hi"}])
+
+    assert captured["reasoning"] == {"effort": "high"}
+    assert captured["text"]["verbosity"] == "low"
+    assert captured["max_output_tokens"] == 1000
 
 
 @pytest.mark.asyncio
@@ -179,6 +218,7 @@ async def test_complete_routes_to_responses_api_for_gpt5():
 @pytest.mark.asyncio
 async def test_complete_routes_to_chat_completions_for_gpt4():
     config = make_config()
+    config.openai.primary_model = "gpt-4o"  # force Chat Completions path
     db = make_db()
     client = OpenAIClient(config, db)
 
@@ -226,7 +266,9 @@ def test_build_image_content_responses_api():
 
 @pytest.mark.asyncio
 async def test_complete_with_images_transforms_last_message():
+    """Chat Completions path — image content blocks."""
     config = make_config()
+    config.openai.primary_model = "gpt-4o"  # force Chat Completions path
     db = make_db()
     client = OpenAIClient(config, db)
 
@@ -258,7 +300,7 @@ async def test_complete_image_error_returns_image_fallback():
     client = OpenAIClient(config, db)
 
     with patch.object(
-        client._client.chat.completions,
+        client._client.responses,
         "create",
         new=AsyncMock(side_effect=Exception("Invalid image URL")),
     ):
@@ -278,40 +320,37 @@ async def test_complete_no_images_uses_generic_fallback():
     client = OpenAIClient(config, db)
 
     with patch.object(
-        client._client.chat.completions,
+        client._client.responses,
         "create",
         new=AsyncMock(side_effect=Exception("Server error")),
     ):
-        with patch("asyncio.sleep", new=AsyncMock()):
-            result = await client.complete(
-                "System",
-                [{"role": "user", "content": "bonjour"}],
-            )
+        result = await client.complete(
+            "System",
+            [{"role": "user", "content": "bonjour"}],
+        )
 
     assert result == FALLBACK_RESPONSE
 
 
 @pytest.mark.asyncio
 async def test_complete_secondary_forwards_image_urls():
-    """complete_secondary doit passer image_urls à complete()."""
+    """complete_secondary with GPT-5 model routes through Responses API."""
     config = make_config()
     db = make_db()
     client = OpenAIClient(config, db)
 
-    mock_response = make_mock_response("ok")
-    with patch.object(
-        client._client.chat.completions, "create", new=AsyncMock(return_value=mock_response)
-    ) as mock_create:
+    # GPT-5-mini uses Responses API — mock _complete_responses_api
+    with patch.object(client, "_complete_responses_api", new=AsyncMock(return_value="ok")) as mock_resp:
         await client.complete_secondary(
             "system",
             [{"role": "user", "content": "test"}],
             image_urls=["https://example.com/img.png"],
         )
-        # Le dernier message doit contenir des blocs multimodaux (type: text + type: image_url)
-        call_args = mock_create.call_args
-        messages = call_args.kwargs["messages"]
+        # Verify image_urls were included in the messages passed
+        call_args = mock_resp.call_args
+        messages = call_args[0][1]  # second positional arg = messages
         last_content = messages[-1]["content"]
         assert isinstance(last_content, list)
         types = [block["type"] for block in last_content]
-        assert "text" in types
-        assert "image_url" in types
+        assert "input_text" in types
+        assert "input_image" in types

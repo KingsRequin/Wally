@@ -26,7 +26,7 @@ def _make_config():
         cost_alert_threshold=25.0,
     )
     cfg.openai = OpenAIConfig(
-        primary_model="gpt-4o", secondary_model="gpt-4o-mini",
+        primary_model="gpt-5", secondary_model="gpt-5-mini",
         temperature=0.8, max_tokens=1000,
     )
     cfg.discord = DiscordConfig(anger_trigger_threshold=3, timeout_minutes=10)
@@ -199,6 +199,34 @@ async def test_costs_top_users(client):
     assert len(data) == 3
     assert data[0]["username"] == "Azrael"
     assert data[2]["username"] == "Système"
+
+
+async def test_costs_top_users_resolves_discord_names_via_bot():
+    """Discord IDs sans username dans memory_users sont résolus via le bot Discord."""
+    discord_bot = MagicMock()
+    discord_user = MagicMock()
+    discord_user.display_name = "KingsRequin"
+    discord_user.name = "kingsrequin"
+    discord_bot.fetch_user = AsyncMock(return_value=discord_user)
+
+    state = _make_state(discord_bot=discord_bot)
+    state.db.get_cost_breakdown = AsyncMock(return_value=[
+        {"key": "discord:999888", "total": 5.0, "count": 40},
+    ])
+    state.db.list_memory_users = AsyncMock(return_value=[
+        {"user_id": "discord:999888", "username": None, "platform": "discord",
+         "last_updated": 0, "trust_score": 0.5},
+    ])
+    state.db.upsert_memory_user = AsyncMock()
+
+    app = create_dashboard_app(state)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/admin/costs/top-users?days=30", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data[0]["username"] == "KingsRequin"
+    discord_bot.fetch_user.assert_awaited_once_with(999888)
+    state.db.upsert_memory_user.assert_awaited_once()
 
 
 # ── Alert ─────────────────────────────────────────────────────────────────────

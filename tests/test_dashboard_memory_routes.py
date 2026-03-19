@@ -23,8 +23,8 @@ def _make_config(dashboard_token: str = "test-token"):
         dashboard_token=dashboard_token,
     )
     cfg.openai = OpenAIConfig(
-        primary_model="gpt-4o-mini",
-        secondary_model="gpt-4o-mini",
+        primary_model="gpt-5-mini",
+        secondary_model="gpt-5-mini",
         temperature=0.7,
         max_tokens=1000,
     )
@@ -98,11 +98,12 @@ async def test_list_users_with_filter():
 
 
 @pytest.mark.asyncio
-async def test_get_user_memories_returns_list():
+async def test_get_user_memories_returns_list_sorted_by_date():
     state, mock_mem0, _ = _make_state()
     mock_mem0.get_all.return_value = [
-        {"id": "mem-1", "memory": "Préfère le français"},
-        {"id": "mem-2", "memory": "Aime Minecraft"},
+        {"id": "mem-1", "memory": "Préfère le français", "created_at": "2026-03-10T10:00:00Z", "updated_at": None},
+        {"id": "mem-2", "memory": "Aime Minecraft", "created_at": "2026-03-18T15:00:00Z", "updated_at": None},
+        {"id": "mem-3", "memory": "Joue à Apex", "created_at": "2026-03-12T08:00:00Z", "updated_at": "2026-03-19T09:00:00Z"},
     ]
     with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
         async with _make_client(state) as client:
@@ -111,8 +112,14 @@ async def test_get_user_memories_returns_list():
             )
     assert r.status_code == 200
     data = r.json()
-    assert len(data["memories"]) == 2
-    assert data["memories"][0]["id"] == "mem-1"
+    assert len(data["memories"]) == 3
+    # Most recent first: mem-3 (updated 03-19), mem-2 (created 03-18), mem-1 (created 03-10)
+    assert data["memories"][0]["id"] == "mem-3"
+    assert data["memories"][1]["id"] == "mem-2"
+    assert data["memories"][2]["id"] == "mem-1"
+    # Verify date fields are included
+    assert data["memories"][0]["created_at"] == "2026-03-12T08:00:00Z"
+    assert data["memories"][0]["updated_at"] == "2026-03-19T09:00:00Z"
 
 
 @pytest.mark.asyncio

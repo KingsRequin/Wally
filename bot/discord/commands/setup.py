@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
 EXCLUDED_MODEL_KEYWORDS = ["realtime", "preview", "audio", "vision"]
-INCLUDED_MODEL_KEYWORDS = ["gpt", "chatgpt", "o1", "o3", "o4"]
+INCLUDED_MODEL_KEYWORDS = ["gpt-5"]
 
 # ── Clés .env éditables ───────────────────────────────────────────────────────
 
@@ -775,37 +775,55 @@ class TwitchConfigView(discord.ui.View):
 
 # ── Tab Avancé : OpenAI params ────────────────────────────────────────────────
 
+_REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"]
+_TEXT_VERBOSITIES = ["low", "medium", "high"]
+
+
 class OpenAIParamsModal(discord.ui.Modal, title="Paramètres OpenAI"):
-    temperature = discord.ui.TextInput(
-        label="Temperature (0.0 – 2.0)", max_length=5
+    reasoning_effort = discord.ui.TextInput(
+        label="Reasoning effort (none/minimal/low/medium/high/xhigh)",
+        max_length=7,
+    )
+    text_verbosity = discord.ui.TextInput(
+        label="Verbosité réponses (low/medium/high)",
+        max_length=6,
     )
     max_tokens = discord.ui.TextInput(
-        label="Max tokens (≥1)", max_length=6
+        label="Max output tokens (≥1)", max_length=6
     )
 
     def __init__(self, bot: "WallyDiscord"):
         super().__init__()
         self.bot = bot
-        self.temperature.default = str(bot.config.openai.temperature)
+        self.reasoning_effort.default = bot.config.openai.reasoning_effort
+        self.text_verbosity.default = bot.config.openai.text_verbosity
         self.max_tokens.default = str(bot.config.openai.max_tokens)
 
     async def on_submit(self, interaction: discord.Interaction):
+        effort = self.reasoning_effort.value.strip().lower()
+        verbosity = self.text_verbosity.value.strip().lower()
         try:
-            temp = float(self.temperature.value)
             mt = int(self.max_tokens.value)
-            if not (0.0 <= temp <= 2.0) or mt < 1:
+            if mt < 1:
+                raise ValueError
+            if effort not in _REASONING_EFFORTS:
+                raise ValueError
+            if verbosity not in _TEXT_VERBOSITIES:
                 raise ValueError
         except ValueError:
             await interaction.response.send_message(
-                "❌ Valeurs invalides. Temperature : 0.0–2.0, max_tokens : entier ≥ 1.",
+                "❌ Valeurs invalides. Effort : none/minimal/low/medium/high/xhigh. "
+                "Verbosité : low/medium/high. Max tokens : entier ≥ 1.",
                 ephemeral=True,
             )
             return
-        self.bot.config.openai.temperature = temp
+        self.bot.config.openai.reasoning_effort = effort
+        self.bot.config.openai.text_verbosity = verbosity
         self.bot.config.openai.max_tokens = mt
         self.bot.config.save()
         await interaction.response.send_message(
-            f"✅ Temperature : {temp}, max_tokens : {mt}.", ephemeral=True
+            f"✅ Effort : {effort}, verbosité : {verbosity}, max tokens : {mt}.",
+            ephemeral=True,
         )
 
 
@@ -889,8 +907,9 @@ async def _send_openai_params_tab(bot: "WallyDiscord", interaction: discord.Inte
     cfg = bot.config.openai
     lines = [
         "**Paramètres OpenAI**",
-        f"Temperature : {cfg.temperature}",
-        f"Max tokens : {cfg.max_tokens}",
+        f"Reasoning effort : {cfg.reasoning_effort}",
+        f"Verbosité : {cfg.text_verbosity}",
+        f"Max output tokens : {cfg.max_tokens}",
     ]
     view = OpenAIParamsView(bot)
     await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)

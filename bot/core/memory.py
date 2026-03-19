@@ -133,7 +133,11 @@ class MemoryService:
         try:
             uid = self._user_id(platform, user_id)
             full_content = f"[{emotion_context}] {content}" if emotion_context else content
-            result = await asyncio.to_thread(self._mem0.add, full_content, user_id=uid)
+            origin = f"{platform}:{user_id}"
+            result = await asyncio.to_thread(
+                self._mem0.add, full_content, user_id=uid,
+                metadata={"origin": origin},
+            )
             # Journaliser ce que mem0 a effectivement stocké/modifié
             stored = result.get("results", []) if isinstance(result, dict) else (result if isinstance(result, list) else [])
             for entry in stored:

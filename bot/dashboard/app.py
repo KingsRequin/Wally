@@ -63,13 +63,14 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
     app.include_router(emotions.public_router, prefix="/api/public")
     app.include_router(twitch.router, prefix="/api/public")
     app.include_router(sse.public_router, prefix="/api/public")
+    app.include_router(roadmap.router, prefix="/api/public")
 
     # Admin routes
     app.include_router(emotions.admin_router, prefix="/api/admin")

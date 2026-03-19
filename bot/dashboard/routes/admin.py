@@ -8,9 +8,11 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
+from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES
+
 router = APIRouter()
 
-_OPENAI_INCLUDE = ["gpt", "chatgpt", "o1", "o3", "o4"]
+_OPENAI_INCLUDE = ["gpt-5"]
 _OPENAI_EXCLUDE = ["realtime", "preview", "audio", "vision"]
 
 
@@ -52,6 +54,22 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.openai.secondary_model = str(d["secondary_model"])
         if "max_tokens" in d:
             cfg.openai.max_tokens = int(d["max_tokens"])
+        if "reasoning_effort" in d:
+            val = str(d["reasoning_effort"])
+            if val not in VALID_REASONING_EFFORTS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"reasoning_effort must be one of {VALID_REASONING_EFFORTS}",
+                )
+            cfg.openai.reasoning_effort = val
+        if "text_verbosity" in d:
+            val = str(d["text_verbosity"])
+            if val not in VALID_TEXT_VERBOSITIES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"text_verbosity must be one of {VALID_TEXT_VERBOSITIES}",
+                )
+            cfg.openai.text_verbosity = val
 
     if "bot" in body:
         d = body["bot"]
