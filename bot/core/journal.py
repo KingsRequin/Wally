@@ -409,10 +409,10 @@ class DailyJournal:
 
         formatted = f"# Journal de Wally — {self._today()}\n\n{journal_text}"
         if self._send_cb:
-            if chart_buf:
-                await self._send_cb("", file=chart_buf)
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)
+            if chart_buf:
+                await self._send_cb("", file=chart_buf)
             logger.info("Daily journal sent to channel {ch}", ch=channel_id)
         else:
             logger.warning("No send callback set for journal — generated but not sent")
