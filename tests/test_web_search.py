@@ -366,8 +366,11 @@ async def test_discord_handler_adds_globe_reaction_on_search():
     bot.config.bot.trigger_names = ["wally"]
     bot.config.bot.prelude_window_size = 5
     bot.db.get_trust_score = AsyncMock(return_value=0.5)
+    bot.db.get_love_score = AsyncMock(return_value=0.0)
+    bot.db.update_love_score = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.config.bot.love_decay_lambda = 0.02
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()
@@ -437,8 +440,11 @@ async def test_discord_handler_no_search_when_quota_exceeded():
     bot.config.bot.trigger_names = ["wally"]
     bot.config.bot.prelude_window_size = 5
     bot.db.get_trust_score = AsyncMock(return_value=0.5)
+    bot.db.get_love_score = AsyncMock(return_value=0.0)
+    bot.db.update_love_score = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.config.bot.love_decay_lambda = 0.02
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()

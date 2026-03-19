@@ -281,6 +281,15 @@ async def _respond(
         except Exception:
             pass
 
+        # Inject trust + love levels into memory context
+        love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
+        trust_line = f"\nNiveau de confiance : {trust:.2f}/1.0"
+        love_line = f"\nNiveau d'affection : {love:.2f}/1.0"
+        if mem_context:
+            mem_context = mem_context + trust_line + love_line
+        else:
+            mem_context = (trust_line + love_line).strip()
+
         context_messages = await bot.memory.get_context_summarized_if_needed(
             str(message.channel.id)
         )
@@ -451,17 +460,26 @@ async def _post_process(
     channel_id: str = "",
 ) -> None:
     try:
-        await bot.emotion.process_message(
+        llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             image_urls=image_urls,
             trigger_user=user_id, channel_id=channel_id, platform="discord",
         )
 
-        insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
-        if any(w in text.lower() for w in insult_words):
-            await bot.db.update_trust_score(platform, user_id, -0.05)
+        if llm_deltas:
+            await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
+            if llm_deltas["love_delta"] > 0:
+                await bot.db.update_love_score(
+                    platform, user_id, llm_deltas["love_delta"],
+                    bot.config.bot.love_decay_lambda,
+                )
         else:
-            await bot.db.update_trust_score(platform, user_id, 0.01)
+            # Fallback: simple heuristic when LLM unavailable
+            insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
+            if any(w in text.lower() for w in insult_words):
+                await bot.db.update_trust_score(platform, user_id, -0.05)
+            else:
+                await bot.db.update_trust_score(platform, user_id, 0.01)
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8:

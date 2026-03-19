@@ -24,16 +24,19 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.db.is_welcomed = AsyncMock(return_value=welcomed)
     bot.db.get_trust_score = AsyncMock(return_value=trust)
     bot.db.update_trust_score = AsyncMock()
+    bot.db.update_love_score = AsyncMock()
+    bot.db.get_love_score = AsyncMock(return_value=0.0)
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.db.add_timeout = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.config.bot.love_decay_lambda = 0.02
 
     bot.emotion.get_state = MagicMock(
         return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0}
     )
     bot.emotion.get_dominant = MagicMock(return_value=["joy"])
-    bot.emotion.process_message = AsyncMock()
+    bot.emotion.process_message = AsyncMock(return_value=None)
 
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])

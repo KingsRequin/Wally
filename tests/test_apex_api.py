@@ -228,8 +228,12 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     bot.config.bot.trigger_names = ["wally"]
     bot.config.bot.prelude_window_size = 5
     bot.db.get_trust_score = AsyncMock(return_value=0.5)
+    bot.db.get_love_score = AsyncMock(return_value=0.0)
+    bot.db.update_trust_score = AsyncMock()
+    bot.db.update_love_score = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.config.bot.love_decay_lambda = 0.02
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()
@@ -240,7 +244,6 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     bot.persona.build_prompt_block = MagicMock(return_value="")
     bot.emotion.get_state = MagicMock(return_value={"anger": 0.0})
     bot.emotion.process_message = AsyncMock()
-    bot.db.update_trust_score = AsyncMock()
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.db.add_timeout = AsyncMock()
 
