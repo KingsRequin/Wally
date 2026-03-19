@@ -17,6 +17,7 @@ class BotConfig:
     prelude_window_size: int = 15
     link_min_confidence: float = 0.75
     cost_alert_threshold: float = 25.0
+    emotion_peak_threshold: float = 0.7
 
 
 @dataclass
@@ -54,6 +55,11 @@ class TwitchEventConfig:
 
 
 @dataclass
+class TavilyConfig:
+    monthly_limit: int = 200
+
+
+@dataclass
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
@@ -61,6 +67,7 @@ class Config:
     twitch: TwitchConfig
     emotions: dict[str, EmotionDecayConfig]
     twitch_events: dict[str, TwitchEventConfig]
+    tavily: TavilyConfig = field(default_factory=TavilyConfig)
     _path: str = field(default="", init=False, repr=False)
 
     @classmethod
@@ -87,6 +94,7 @@ class Config:
             else:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
+            tavily_raw = raw.get("tavily", {})
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=OpenAIConfig(**raw["openai"]),
@@ -94,6 +102,7 @@ class Config:
                 twitch=TwitchConfig(**twitch_raw),
                 emotions=emotions,
                 twitch_events=twitch_events,
+                tavily=TavilyConfig(**tavily_raw),
             )
         except KeyError as e:
             raise ValueError(
@@ -112,6 +121,7 @@ class Config:
             "twitch": asdict(self.twitch),
             "emotions": {k: asdict(v) for k, v in self.emotions.items()},
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
+            "tavily": asdict(self.tavily),
         }
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
