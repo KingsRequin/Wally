@@ -71,7 +71,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context = await bot.memory.search(platform, user_id, content)
+        mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude)
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         situation = {

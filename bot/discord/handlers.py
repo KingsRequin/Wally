@@ -169,7 +169,7 @@ async def _respond(
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context = await bot.memory.search(platform, user_id, message.content)
+        mem_context = await bot.memory.search(platform, user_id, message.content, context_messages=prelude)
         context_messages = await bot.memory.get_context_summarized_if_needed(
             str(message.channel.id)
         )
