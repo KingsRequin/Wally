@@ -33,6 +33,7 @@ class PersonaService:
                 self._blocks[filename] = ""
 
         self._emotion_directives = self._parse_emotions()
+        self._weekday_directives = self._parse_weekdays()
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
@@ -60,10 +61,40 @@ class PersonaService:
         logger.info("EMOTIONS.md loaded: {n} directives", n=len(directives))
         return directives
 
+    def _parse_weekdays(self) -> dict[str, str]:
+        """Parse WEEKDAYS.md en un dict {jour: directive}."""
+        path = os.path.join(self._dir, "WEEKDAYS.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: WEEKDAYS.md")
+            return {}
+        except Exception as exc:
+            logger.warning("WEEKDAYS.md read error: {e}", e=exc)
+            return {}
+
+        directives: dict[str, str] = {}
+        sections = ("\n" + content).split("\n## ")
+        for section in sections[1:]:
+            lines = section.strip().split("\n", 1)
+            if len(lines) >= 2:
+                day = lines[0].strip()
+                text = " ".join(lines[1].strip().split("\n")).strip()
+                if day and text:
+                    directives[day] = text
+        logger.info("WEEKDAYS.md loaded: {n} directives", n=len(directives))
+        return directives
+
     @property
     def emotion_directives(self) -> dict[str, str]:
         """Directives comportementales par état émotionnel."""
         return self._emotion_directives
+
+    @property
+    def weekday_directives(self) -> dict[str, str]:
+        """Directives comportementales par jour de la semaine."""
+        return self._weekday_directives
 
     def build_prompt_block(self) -> str:
         """Retourne les blocs SOUL → IDENTITY → VOICE concaténés."""
