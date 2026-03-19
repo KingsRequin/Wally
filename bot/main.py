@@ -107,10 +107,14 @@ async def main() -> None:
     logger.info("DailyJournal initialized")
 
     from bot.core.sessions import SessionManager
+    from bot.core.reaction_tracker import ReactionTracker
 
     session_manager = SessionManager(memory, openai_client, db=db)
     await session_manager.restore_sessions()
     logger.info("SessionManager initialized")
+
+    reaction_tracker = ReactionTracker(emotion)
+    logger.info("ReactionTracker initialized")
 
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
@@ -120,6 +124,7 @@ async def main() -> None:
     discord_bot.session_manager = session_manager
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
+    discord_bot.reaction_tracker = reaction_tracker
 
     @discord_bot.event
     async def on_message(message):
@@ -212,6 +217,7 @@ async def main() -> None:
         twitch_bot.session_manager = session_manager
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
+        twitch_bot.reaction_tracker = reaction_tracker
         register_events(twitch_bot)
         tasks.append(twitch_bot.start())
         logger.info("Twitch adapter configured and included in gather")

@@ -51,6 +51,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if getattr(bot, "session_manager", None) is not None:
         bot.session_manager.record_message(channel_id, "twitch", user_id, author, content)
 
+    # Reaction tracking: scan for positive reactions in Twitch window
+    tracker = getattr(bot, "reaction_tracker", None)
+    if tracker:
+        tracker.check_twitch_message(channel_id, content)
+
     # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
     triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
@@ -139,6 +144,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             # Chaîne home : envoi via Helix API
             await bot.twitch_api.send_message(text=reply)
         bot.set_cooldown(user_id)
+
+        if getattr(bot, "reaction_tracker", None):
+            bot.reaction_tracker.track_twitch_response(channel_id)
 
         bot.memory.append_message(channel_id, author, content, platform="twitch")
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
