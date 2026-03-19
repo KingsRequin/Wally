@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS web_search_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_web_search_log_ts ON web_search_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS jokes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    reaction_count INTEGER DEFAULT 0,
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -461,6 +470,22 @@ class Database:
         row = await cursor.fetchone()
         return float(row["last_updated"]) if row else None
 
+    async def insert_joke(self, content: str, channel_id: str, platform: str, reaction_count: int) -> None:
+        """Stocke une blague réussie."""
+        await self.execute(
+            "INSERT INTO jokes (content, channel_id, platform, reaction_count, created_at) VALUES (?,?,?,?,?)",
+            (content, channel_id, platform, reaction_count, time.time()),
+        )
+
+    async def get_recent_jokes(self, channel_id: str, limit: int = 3) -> list[str]:
+        """Retourne les dernières blagues réussies du canal."""
+        cursor = await self._conn.execute(
+            "SELECT content FROM jokes WHERE channel_id=? ORDER BY created_at DESC LIMIT ?",
+            (channel_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [row["content"] for row in rows]
+
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (après fusion de comptes)."""
         await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))
@@ -517,23 +542,46 @@ class Database:
             logger.warning("sync_memory_users_from_qdrant échoué: {e}", e=exc)
             return 0
 
-    async def list_memory_users(self, q: str | None = None) -> list[dict]:
+    async def list_memory_users(self, q: str | None = None, include_no_memory: bool = False) -> list[dict]:
         # LEFT JOIN avec trust_scores : la clé memory_users.user_id est "platform:raw_id"
         # alors que trust_scores.user_id est "raw_id" — on extrait via SUBSTR.
         sql = (
             "SELECT m.user_id, m.platform, m.last_updated, m.username, "
-            "COALESCE(t.score, 0.5) AS trust_score "
+            "COALESCE(t.score, 0.5) AS trust_score, 1 AS in_memory_users "
             "FROM memory_users m "
             "LEFT JOIN trust_scores t "
             "  ON t.platform = m.platform "
             "  AND t.user_id = SUBSTR(m.user_id, LENGTH(m.platform) + 2)"
         )
-        params: tuple = ()
+        params: list = []
         if q:
             sql += " WHERE (m.user_id LIKE ? OR m.username LIKE ?)"
-            params = (f"%{q}%", f"%{q}%")
-        sql += " ORDER BY m.last_updated DESC"
-        async with self._conn.execute(sql, params) as cur:
+            params.extend([f"%{q}%", f"%{q}%"])
+
+        if include_no_memory:
+            # UNION avec trust_scores pour les utilisateurs sans mémoire
+            union = (
+                " UNION ALL "
+                "SELECT (t2.platform || ':' || t2.user_id) AS user_id, "
+                "t2.platform, t2.updated_at AS last_updated, NULL AS username, "
+                "t2.score AS trust_score, 0 AS in_memory_users "
+                "FROM trust_scores t2 "
+                "WHERE NOT EXISTS ("
+                "  SELECT 1 FROM memory_users m2 "
+                "  WHERE m2.user_id = t2.platform || ':' || t2.user_id"
+                ") AND NOT EXISTS ("
+                "  SELECT 1 FROM user_links ul "
+                "  WHERE ul.alias_id = t2.platform || ':' || t2.user_id "
+                "  AND ul.status = 'accepted'"
+                ")"
+            )
+            if q:
+                union += " AND (t2.user_id LIKE ? OR t2.platform || ':' || t2.user_id LIKE ?)"
+                params.extend([f"%{q}%", f"%{q}%"])
+            sql += union
+
+        sql += " ORDER BY in_memory_users DESC, last_updated DESC"
+        async with self._conn.execute(sql, tuple(params)) as cur:
             rows = await cur.fetchall()
         return [
             {
@@ -542,6 +590,7 @@ class Database:
                 "last_updated": r["last_updated"],
                 "username": r["username"],
                 "trust_score": round(float(r["trust_score"]), 2),
+                "in_memory_users": bool(r["in_memory_users"]),
             }
             for r in rows
         ]
@@ -710,6 +759,27 @@ class Database:
             }
             for r in rows
         ]
+
+    async def get_link_proposal(self, link_id: int) -> dict | None:
+        """Retourne une proposition de liaison par ID, ou None."""
+        base = (
+            "SELECT l.id, l.canonical_id, l.alias_id, l.confidence, l.status, "
+            "l.created_at, l.resolved_at, "
+            "mc.username AS canonical_username, ma.username AS alias_username "
+            "FROM user_links l "
+            "LEFT JOIN memory_users mc ON mc.user_id = l.canonical_id "
+            "LEFT JOIN memory_users ma ON ma.user_id = l.alias_id "
+            "WHERE l.id = ?"
+        )
+        cursor = await self._conn.execute(base, (link_id,))
+        r = await cursor.fetchone()
+        if r is None:
+            return None
+        return {
+            "id": r[0], "canonical_id": r[1], "alias_id": r[2],
+            "confidence": r[3], "status": r[4], "created_at": r[5],
+            "resolved_at": r[6], "canonical_username": r[7], "alias_username": r[8],
+        }
 
     async def accept_link(self, link_id: int) -> dict | None:
         """Marque la liaison comme acceptée, retourne canonical_id et alias_id."""
