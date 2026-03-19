@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import TYPE_CHECKING
 
@@ -84,12 +85,43 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         context_block = bot.prompts.build_context_block(context_msgs)
         user_content = prelude_block + context_block + f"\n[{author}]: {content}"
 
-        reply = await bot.openai.complete(
-            system_prompt,
-            [{"role": "user", "content": user_content}],
-            purpose="twitch_response",
-            user_id=f"twitch:{author}",
-        )
+        openai_messages = [{"role": "user", "content": user_content}]
+
+        # ── Collect available tools ──────────────────────────────────────
+        tools: list[dict] = []
+        web_search = getattr(bot, "web_search", None)
+        if web_search and web_search.available and not await web_search.is_quota_exceeded():
+            tools.extend(web_search.get_tool_definitions())
+        apex_api = getattr(bot, "apex_api", None)
+        if apex_api and apex_api.available:
+            tools.append(apex_api.get_tool_definition())
+
+        async def _tool_executor(name: str, arguments: str) -> str:
+            args = json.loads(arguments)
+            if name in ("web_search", "image_search"):
+                if name == "image_search":
+                    return await web_search.search_images(args["query"])
+                return await web_search.search(args["query"])
+            if name == "apex_legends":
+                return await apex_api.execute(
+                    args.get("action", ""),
+                    player_name=args.get("player_name", ""),
+                    platform=args.get("platform", "PC"),
+                )
+            return f"Unknown tool: {name}"
+
+        if tools:
+            reply, _ = await bot.openai.complete_with_tools(
+                system_prompt, openai_messages, tools, _tool_executor,
+                purpose="twitch_response",
+                user_id=f"twitch:{author}",
+            )
+        else:
+            reply = await bot.openai.complete(
+                system_prompt, openai_messages,
+                purpose="twitch_response",
+                user_id=f"twitch:{author}",
+            )
 
         if len(reply) > 480:
             reply = reply[:477] + "..."
@@ -106,8 +138,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             await bot.twitch_api.send_message(text=reply)
         bot.set_cooldown(user_id)
 
-        bot.memory.append_message(channel_id, author, content)
-        bot.memory.append_message(channel_id, "Wally", reply)
+        bot.memory.append_message(channel_id, author, content, platform="twitch")
+        bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
 
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs))
 

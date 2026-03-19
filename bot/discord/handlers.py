@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import re
 from typing import TYPE_CHECKING
@@ -212,17 +213,68 @@ async def _respond(
 
         openai_messages = [{"role": "user", "content": user_content}]
 
+        # ── Collect available tools ──────────────────────────────────────
+        tools: list[dict] = []
+        web_search = getattr(bot, "web_search", None)
+        if web_search and web_search.available and not await web_search.is_quota_exceeded():
+            tools.extend(web_search.get_tool_definitions())
+        apex_api = getattr(bot, "apex_api", None)
+        if apex_api and apex_api.available:
+            tools.append(apex_api.get_tool_definition())
+
+        _reaction_emojis: set[str] = set()
+
+        async def _tool_executor(name: str, arguments: str) -> str:
+            args = json.loads(arguments)
+            if name in ("web_search", "image_search"):
+                if "🌐" not in _reaction_emojis:
+                    try:
+                        await message.add_reaction("🌐")
+                        _reaction_emojis.add("🌐")
+                    except Exception:
+                        pass
+                if name == "image_search":
+                    return await web_search.search_images(args["query"])
+                return await web_search.search(args["query"])
+            if name == "apex_legends":
+                if "🔫" not in _reaction_emojis:
+                    try:
+                        await message.add_reaction("🔫")
+                        _reaction_emojis.add("🔫")
+                    except Exception:
+                        pass
+                return await apex_api.execute(
+                    args.get("action", ""),
+                    player_name=args.get("player_name", ""),
+                    platform=args.get("platform", "PC"),
+                )
+            return f"Unknown tool: {name}"
+
         async with message.channel.typing():
-            reply = await bot.openai.complete(
-                system_prompt, openai_messages, purpose="discord_response",
-                image_urls=image_urls or None,
-                user_id=f"discord:{message.author.id}",
-            )
+            if tools:
+                reply, tools_called = await bot.openai.complete_with_tools(
+                    system_prompt, openai_messages, tools, _tool_executor,
+                    purpose="discord_response",
+                    image_urls=image_urls or None,
+                    user_id=f"discord:{message.author.id}",
+                )
+            else:
+                reply = await bot.openai.complete(
+                    system_prompt, openai_messages, purpose="discord_response",
+                    image_urls=image_urls or None,
+                    user_id=f"discord:{message.author.id}",
+                )
+                tools_called = []
 
         try:
             await message.remove_reaction("🔍", bot.user)
         except Exception:
             pass
+        for emoji in _reaction_emojis:
+            try:
+                await message.remove_reaction(emoji, bot.user)
+            except Exception:
+                pass
         await _send_in_parts(message, reply)
 
         if first_contact:
@@ -230,9 +282,15 @@ async def _respond(
 
         stored_content = message.content or "[image]"
         bot.memory.append_message(
-            str(message.channel.id), message.author.display_name, stored_content
+            str(message.channel.id), message.author.display_name, stored_content, platform="discord"
         )
-        bot.memory.append_message(str(message.channel.id), "Wally", reply)
+        bot.memory.append_message(str(message.channel.id), "Wally", reply, platform="discord")
+
+        # Persiste le display_name pour que le dashboard coûts affiche un nom lisible
+        await bot.db.upsert_memory_user(
+            f"discord:{message.author.id}", "discord",
+            username=message.author.display_name,
+        )
 
         _fire(_post_process(
             bot, text_content, platform, user_id, guild_id, trust, context_messages,

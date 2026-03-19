@@ -93,3 +93,48 @@ async def test_get_emotion_averages(db):
 async def test_get_emotion_averages_empty(db):
     avgs = await db.get_emotion_averages(time.time() - 10)
     assert avgs is None
+
+
+# ── append_message platform propagation ──
+
+import asyncio
+from unittest.mock import MagicMock, AsyncMock
+from bot.core.memory import MemoryService
+
+
+@pytest.mark.asyncio
+async def test_append_message_passes_platform_to_db():
+    config = MagicMock()
+    config.bot.context_window_size = 20
+    memory = MemoryService(config)
+    db = MagicMock()
+    db.log_daily_message = AsyncMock()
+    memory.set_db(db)
+
+    memory.append_message("ch1", "Alice", "Hello", platform="twitch")
+
+    # Let fire-and-forget task run
+    await asyncio.sleep(0.05)
+
+    db.log_daily_message.assert_called_once()
+    _, kwargs = db.log_daily_message.call_args
+    assert kwargs.get("platform") == "twitch" or db.log_daily_message.call_args[0][-1] == "twitch"
+
+
+@pytest.mark.asyncio
+async def test_append_message_platform_defaults_to_discord():
+    config = MagicMock()
+    config.bot.context_window_size = 20
+    memory = MemoryService(config)
+    db = MagicMock()
+    db.log_daily_message = AsyncMock()
+    memory.set_db(db)
+
+    memory.append_message("ch1", "Alice", "Hello")
+
+    await asyncio.sleep(0.05)
+
+    db.log_daily_message.assert_called_once()
+    # platform should default to "discord"
+    call_str = str(db.log_daily_message.call_args)
+    assert "discord" in call_str

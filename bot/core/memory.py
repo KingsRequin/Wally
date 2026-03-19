@@ -275,7 +275,7 @@ class MemoryService:
 
     # ── Sliding context window ────────────────────────────────────────────────
 
-    def append_message(self, channel_id: str, author: str, content: str) -> None:
+    def append_message(self, channel_id: str, author: str, content: str, platform: str = "discord") -> None:
         window = self._context_windows.setdefault(channel_id, [])
         window.append(
             {"author": author, "content": content, "timestamp": time.time()}
@@ -284,7 +284,7 @@ class MemoryService:
         if len(window) > max_size:
             self._context_windows[channel_id] = window[-max_size:]
         if self._db is not None:
-            self._fire(self._db.log_daily_message(channel_id, author, content))
+            self._fire(self._db.log_daily_message(channel_id, author, content, platform=platform))
 
     def get_context(self, channel_id: str) -> list[dict]:
         return list(self._context_windows.get(channel_id, []))
