@@ -9,6 +9,8 @@ Priorité décroissante de ce que tu gardes :
 
 Supprime : salutations, répétitions, messages sans contenu informatif.
 
+Mentionne toujours qui a dit ou fait quoi par son pseudo exact — jamais "un utilisateur", "quelqu'un", ou "une personne".
+
 Si le bloc ne contient rien de notable (que des salutations ou messages vides), retourne une ligne : "Échanges sans contenu notable."
 
-Longueur : 3 à 6 lignes, texte brut, pas de titre ni de liste à puces.
+Longueur : 5 à 10 lignes, texte brut, pas de titre ni de liste à puces.
