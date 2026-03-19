@@ -173,6 +173,17 @@ class Database:
             await conn.commit()
         except aiosqlite.OperationalError:
             pass
+        # Migration: add love columns to trust_scores
+        try:
+            await conn.execute("ALTER TABLE trust_scores ADD COLUMN love REAL DEFAULT 0.0")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await conn.execute("ALTER TABLE trust_scores ADD COLUMN love_updated_at REAL DEFAULT 0")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
         # Nettoyage automatique des vieilles entrées daily_log au démarrage
         try:
             await conn.execute(
@@ -342,6 +353,48 @@ class Database:
             "ON CONFLICT(user_id, platform) DO UPDATE SET "
             "score=excluded.score, updated_at=excluded.updated_at",
             (user_id, platform, new_score, time.time()),
+        )
+
+    # ── Love scores ────────────────────────────────────────────────────────────
+
+    async def get_love_score(self, platform: str, user_id: str, decay_lambda: float = 0.1) -> float:
+        """Retourne le love score avec lazy decay appliqué."""
+        import math
+        cursor = await self._conn.execute(
+            "SELECT love, love_updated_at FROM trust_scores WHERE user_id=? AND platform=?",
+            (user_id, platform),
+        )
+        row = await cursor.fetchone()
+        if not row or row["love"] is None:
+            return 0.0
+        love = float(row["love"])
+        updated_at = float(row["love_updated_at"] or 0)
+        if love <= 0 or updated_at <= 0:
+            return 0.0
+        # Lazy decay
+        elapsed_days = (time.time() - updated_at) / 86400.0
+        if elapsed_days > 0:
+            decayed = love * math.exp(-decay_lambda * elapsed_days)
+            if decayed < 0.01:
+                decayed = 0.0
+            # Save decayed value back if significant change
+            if abs(decayed - love) > 0.01:
+                await self.execute(
+                    "UPDATE trust_scores SET love=?, love_updated_at=? WHERE user_id=? AND platform=?",
+                    (decayed, time.time(), user_id, platform),
+                )
+            return round(decayed, 3)
+        return round(love, 3)
+
+    async def update_love_score(self, platform: str, user_id: str, delta: float, decay_lambda: float = 0.1) -> None:
+        """Met à jour le love score — applique decay, puis ajoute delta, clamp [0, 1]."""
+        current = await self.get_love_score(platform, user_id, decay_lambda)
+        new_value = max(0.0, min(1.0, current + delta))
+        await self.execute(
+            "INSERT INTO trust_scores (user_id, platform, score, updated_at, love, love_updated_at) "
+            "VALUES (?, ?, 0.5, ?, ?, ?) "
+            "ON CONFLICT(user_id, platform) DO UPDATE SET love=?, love_updated_at=?",
+            (user_id, platform, time.time(), new_value, time.time(), new_value, time.time()),
         )
 
     # ── Emotion persistence ───────────────────────────────────────────────────
