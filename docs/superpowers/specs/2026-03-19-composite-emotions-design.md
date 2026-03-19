@@ -37,7 +37,14 @@ Nouveau fichier avec 5 sections `## clé_composite`. Format identique à EMOTION
 
 ### `bot/core/persona.py`
 
-Ajouter `_parse_composites()` — même logique que `_parse_weekdays()` et `_parse_emotions()`. Property `composite_directives` exposée. Appel dans `reload()`.
+Ajouter `_parse_composites()` — utilise le pattern `_parse_weekdays()` (avec `("\n" + content).split("\n## ")` pour gérer les fichiers commençant directement par `##`). Property `composite_directives` exposée.
+
+Dans `reload()`, ajouter après `self._weekday_directives = self._parse_weekdays()` :
+```python
+self._composite_directives = self._parse_composites()
+```
+
+Note : un dict vide `{}` (fichier absent) et `None` (param non passé) ont le même effet — aucune composite n'est injectée, fallback atomique.
 
 ### `bot/core/prompts.py`
 
@@ -50,6 +57,7 @@ Modifier `build_system_prompt` :
      - Si la clé existe dans `composite_directives` → injecter cette directive seule
      - Sinon → fallback : injecter les 2 directives atomiques tiered normalement
    - Si une des deux est < 0.4 → directives atomiques normalement
+   - Si `len(dominant) < 2` (une seule émotion dominante) → skip composite, atomique directement
 
 Le bloc `--- Directive comportementale ---` est toujours utilisé, que ce soit pour une composite ou des atomiques.
 
@@ -76,9 +84,10 @@ Les 4 sites d'appel de `build_system_prompt` doivent passer `composite_directive
 
 - `test_composite_replaces_atomics_when_both_mid` — joy=0.5, curiosity=0.6 → directive composite `curiosity_joy` injectée, pas les atomiques
 - `test_composite_not_triggered_when_one_below_mid` — joy=0.5, curiosity=0.3 → atomiques normales (curiosity < 0.4)
-- `test_composite_not_triggered_when_pair_unknown` — joy=0.5, boredom=0.5 est connu, mais anger=0.5+curiosity=0.5 si pas dans dict → atomiques
+- `test_composite_not_triggered_when_pair_unknown` — joy=0.5, sadness=0.5 (paire `joy_sadness` non définie) → atomiques normales
 - `test_composite_fallback_when_no_dict` — `composite_directives=None` → atomiques normales
-- `test_composite_key_is_alphabetically_sorted` — vérifie que joy+anger → `anger_joy` (trié)
+- `test_composite_key_is_alphabetically_sorted` — vérifie que la clé est construite en triant alphabétiquement (test unitaire de la construction de clé)
+- `test_composite_not_triggered_when_only_one_dominant` — seule joy=0.5 au-dessus de 0.2 → pas de composite, atomique seule
 
 ### Tests existants
 
