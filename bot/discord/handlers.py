@@ -5,6 +5,7 @@ import asyncio
 import json
 import random
 import re
+import re as _re
 from typing import TYPE_CHECKING
 
 import discord
@@ -14,6 +15,43 @@ if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
 TIMEOUT_REACTIONS = ["💩", "⛔", "😤", "🙅", "😒"]
+
+_REACT_TAG_RE = _re.compile(r"^\[react:(.+?)\]\s*")
+
+_LAUGH_WORDS = {"mdr", "lol", "ptdr", "xd", "haha", "😂", "🤣"}
+_POSITIVE_WORDS = {"gg", "bravo", "trop bien", "bien joué", "incroyable"}
+_NEGATIVE_WORDS = {"merde", "putain", "nul", "chier"}
+
+_LAUGH_EMOJIS = ("😂", "💀")
+_POSITIVE_EMOJIS = ("🔥", "👏")
+_NEGATIVE_EMOJIS = ("😤", "💀")
+
+
+def _parse_react_tag(text: str) -> tuple[str | None, str]:
+    """Parse un tag [react:emoji] au début du texte.
+    Retourne (emoji, texte_nettoyé) ou (None, texte_original).
+    """
+    m = _REACT_TAG_RE.match(text)
+    if m:
+        return m.group(1), text[m.end():].strip()
+    return None, text
+
+
+def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
+    """Choisit un emoji de réaction passive basé sur le contenu du message.
+    Retourne None si aucun signal détecté.
+    """
+    text_lower = text.lower()
+    if any(w in text_lower for w in _LAUGH_WORDS):
+        return random.choice(_LAUGH_EMOJIS)
+    if any(w in text_lower for w in _POSITIVE_WORDS):
+        return random.choice(_POSITIVE_EMOJIS)
+    if any(w in text_lower for w in _NEGATIVE_WORDS):
+        return random.choice(_NEGATIVE_EMOJIS)
+    if curiosity >= 0.4 and "?" in text:
+        return "🤔"
+    return None
+
 
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
@@ -98,6 +136,15 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
     if not triggered:
+        # Passive emoji reaction on non-trigger messages (Discord only)
+        if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
+            curiosity = bot.emotion.get_state().get("curiosity", 0.0)
+            passive_emoji = _pick_passive_emoji(message.content, curiosity)
+            if passive_emoji:
+                try:
+                    await message.add_reaction(passive_emoji)
+                except Exception:
+                    pass
         return
 
     if not channel_allowed:
@@ -276,6 +323,9 @@ async def _respond(
                 )
                 tools_called = []
 
+        # Parse optional [react:emoji] tag from LLM response
+        react_emoji, reply = _parse_react_tag(reply)
+
         try:
             await message.remove_reaction("🔍", bot.user)
         except Exception:
@@ -285,6 +335,13 @@ async def _respond(
                 await message.remove_reaction(emoji, bot.user)
             except Exception:
                 pass
+
+        if react_emoji:
+            try:
+                await message.add_reaction(react_emoji)
+            except Exception:
+                pass
+
         reply_msg_id = await _send_in_parts(message, reply)
         if reply_msg_id and getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_discord_message(reply_msg_id)

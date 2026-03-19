@@ -130,6 +130,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 user_id=f"twitch:{author}",
             )
 
+        # Strip [react:] tag (no emoji reactions on Twitch)
+        if reply.startswith("[react:"):
+            import re as _re
+            reply = _re.sub(r"^\[react:.+?\]\s*", "", reply)
+
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
