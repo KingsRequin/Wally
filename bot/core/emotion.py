@@ -314,8 +314,8 @@ class EmotionEngine:
     async def _analyze_llm(
         self, text: str, trust_score: float, context_messages: list[dict],
         image_urls: list[str] | None = None,
-    ) -> tuple[dict[str, float], list[dict]]:
-        """Analyse émotionnelle via LLM — retourne (deltas, new_words)."""
+    ) -> tuple[dict[str, float], list[dict], float, float]:
+        """Analyse émotionnelle via LLM — retourne (deltas, new_words, trust_delta, love_delta)."""
         system_prompt = (
             "Tu es le module d'analyse émotionnelle de Wally, un bot de chat Discord. "
             "Ton rôle est de mesurer l'impact d'un échange sur l'état interne de Wally.\n\n"
@@ -339,6 +339,19 @@ class EmotionEngine:
             "qui expriment clairement une émotion dans ce message. "
             "Critères : mot non anglais, porteur d'émotion explicite, delta entre 0.05 et 0.3.\n\n"
 
+            "## Trust delta\n"
+            "Retourne aussi \"trust_delta\" : un float dans [-0.10, +0.10].\n"
+            "- Interaction constructive, amicale, drôle, engageante → positif (+0.01 à +0.05)\n"
+            "- Interaction hostile, insulte, provocation, toxique → négatif (-0.03 à -0.10)\n"
+            "- Interaction neutre, factuelle, sans charge émotionnelle → 0.0\n"
+            "- Inside joke, complicité, défendre Wally → bonus (+0.05 à +0.10)\n\n"
+
+            "## Love delta\n"
+            "Retourne aussi \"love_delta\" : un float dans [0.0, 0.10].\n"
+            "- Interaction chaleureuse, drôle partagée, intérêt sincère pour Wally → positif (+0.02 à +0.08)\n"
+            "- Le love_delta n'est jamais négatif. L'affection ne baisse que par le decay temporel.\n"
+            "- Interaction neutre ou hostile → 0.0\n\n"
+
             "## Exemple\n"
             "trust_score: 0.30\n"
             "Historique :\n"
@@ -347,12 +360,13 @@ class EmotionEngine:
             "[Bob]: ouais Wally t'es carrément à côté de la plaque là\n"
             "→ Réponse attendue :\n"
             '{"deltas": {"anger": 0.22, "joy": 0.0, "sadness": 0.05, "curiosity": 0.0, "boredom": 0.0}, '
-            '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}]}\n\n'
+            '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}], '
+            '"trust_delta": -0.05, "love_delta": 0.0}\n\n'
 
             "## Format de sortie\n"
             "JSON valide uniquement, sans markdown ni commentaire :\n"
             '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
-            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}]}'
+            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}], "trust_delta": 0.0, "love_delta": 0.0}'
         )
         if image_urls:
             system_prompt += (
@@ -383,7 +397,9 @@ class EmotionEngine:
             for e in EMOTIONS
         }
         new_words = parsed.get("new_words", [])
-        return deltas, new_words
+        trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta", 0.0))))
+        love_delta = max(0.0, min(0.1, float(parsed.get("love_delta", 0.0))))
+        return deltas, new_words, trust_delta, love_delta
 
     # ── Decay ─────────────────────────────────────────────────────────────────
 
@@ -496,12 +512,12 @@ class EmotionEngine:
         self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None,
         image_urls: list[str] | None = None,
         trigger_user: str = "", channel_id: str = "", platform: str = "",
-    ) -> None:
+    ) -> dict | None:
         self.record_interaction()
         state_before = self.get_state()
         if self._openai is not None and context_messages:
             try:
-                deltas, new_words = await self._analyze_llm(
+                deltas, new_words, trust_delta, love_delta = await self._analyze_llm(
                     text, trust_score, context_messages, image_urls=image_urls
                 )
                 for emotion, delta in deltas.items():
@@ -517,7 +533,7 @@ class EmotionEngine:
                             trigger_user=trigger_user, trigger_message=text,
                             channel_id=channel_id, platform=platform,
                         ))
-                return
+                return {"trust_delta": trust_delta, "love_delta": love_delta}
             except Exception as exc:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
         # Fallback : NRCLex + FR_EMOTION_WORDS
@@ -532,3 +548,4 @@ class EmotionEngine:
                     trigger_user=trigger_user, trigger_message=text,
                     channel_id=channel_id, platform=platform,
                 ))
+        return None
