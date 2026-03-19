@@ -56,6 +56,7 @@ async def _generate_and_send(
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
+            composite_directives=bot.persona.composite_directives,
         )
         event_user_id = f"twitch:{kwargs.get('username', '')}" if kwargs.get('username') else None
         reply = await bot.openai.complete(

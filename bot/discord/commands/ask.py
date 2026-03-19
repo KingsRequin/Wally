@@ -39,6 +39,7 @@ class AskCog(commands.Cog):
                 persona_block=self.bot.persona.build_prompt_block(),
                 emotion_directives=self.bot.persona.emotion_directives,
                 weekday_directives=self.bot.persona.weekday_directives,
+                composite_directives=self.bot.persona.composite_directives,
             )
             context_block = self.bot.prompts.build_context_block(context_msgs)
 

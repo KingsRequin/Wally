@@ -81,6 +81,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
+            composite_directives=bot.persona.composite_directives,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
