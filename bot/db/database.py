@@ -145,6 +145,14 @@ CREATE TABLE IF NOT EXISTS jokes (
     reaction_count INTEGER DEFAULT 0,
     created_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS opinions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT NOT NULL UNIQUE,
+    opinion TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 
@@ -485,6 +493,35 @@ class Database:
         )
         rows = await cursor.fetchall()
         return [row["content"] for row in rows]
+
+    async def upsert_opinion(self, topic: str, opinion: str) -> None:
+        """Insère ou met à jour une opinion sur un sujet."""
+        now = time.time()
+        await self.execute(
+            "INSERT INTO opinions (topic, opinion, created_at, updated_at) VALUES (?,?,?,?)"
+            " ON CONFLICT(topic) DO UPDATE SET opinion=excluded.opinion, updated_at=excluded.updated_at",
+            (topic, opinion, now, now),
+        )
+
+    async def get_opinions(self, limit: int = 10) -> list[dict]:
+        """Retourne les opinions les plus récemment mises à jour."""
+        cursor = await self._conn.execute(
+            "SELECT topic, opinion FROM opinions ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [{"topic": row["topic"], "opinion": row["opinion"]} for row in rows]
+
+    async def cleanup_opinions(self, max_age_days: int = 30, max_count: int = 10) -> None:
+        """Supprime les opinions expirées et garde les max_count plus récentes."""
+        cutoff = time.time() - max_age_days * 86400
+        await self.execute("DELETE FROM opinions WHERE updated_at < ?", (cutoff,))
+        # Keep only max_count most recent
+        await self.execute(
+            "DELETE FROM opinions WHERE id NOT IN "
+            "(SELECT id FROM opinions ORDER BY updated_at DESC LIMIT ?)",
+            (max_count,),
+        )
 
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (après fusion de comptes)."""
