@@ -30,8 +30,6 @@ def load_prompt(name: str, fallback: str = "") -> str:
 
 _TZ = ZoneInfo("Europe/Paris")
 
-EMOTION_THRESHOLD = 0.4
-
 _FRENCH_DAYS = [
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
 ]
@@ -59,6 +57,17 @@ PRELUDE_HEADER = (
     "{context}\n"
     "--- Fin de la discussion ---"
 )
+
+
+def _get_tier(value: float) -> str | None:
+    """Retourne le palier émotionnel pour une valeur donnée."""
+    if value >= 0.7:
+        return "high"
+    if value >= 0.4:
+        return "mid"
+    if value >= 0.2:
+        return "low"
+    return None
 
 
 class PromptBuilder:
@@ -91,19 +100,21 @@ class PromptBuilder:
             lines.append(f"Date et heure : {_now_fr()}")
             parts.append("\n".join(lines))
 
-        # Inject directives for dominant emotions (top 2 above threshold)
+        # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         directives = emotion_directives if emotion_directives is not None else {}
         dominant = sorted(
-            [(e, v) for e, v in emotion_state.items() if v >= EMOTION_THRESHOLD],
+            [(e, v) for e, v in emotion_state.items() if v >= 0.2],
             key=lambda x: x[1],
             reverse=True,
         )[:2]
 
         if dominant and directives:
             parts.append("\n--- Directive comportementale ---")
-            for emotion, _ in dominant:
-                if emotion in directives:
-                    parts.append(directives[emotion])
+            for emotion, value in dominant:
+                tier = _get_tier(value)
+                key = f"{emotion}_{tier}"
+                if key in directives:
+                    parts.append(directives[key])
 
         # Long-term memory context
         if memory_context:

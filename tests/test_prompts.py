@@ -4,11 +4,21 @@ from bot.core.prompts import PromptBuilder
 _EMOTIONS_FLAT = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
 _EMOTION_DIRECTIVES = {
-    "anger": "Tes réponses sont courtes et impatientes. Tu réponds sec, sans fioritures.",
-    "joy": "Tu es enthousiaste et chaleureux. Tes réponses sont vivantes.",
-    "sadness": "Tu es mélancolique et introspectif.",
-    "curiosity": "Tu es particulièrement curieux et poseur de questions.",
-    "boredom": "Tu sembles peu enthousiaste.",
+    "anger_low": "Tu es légèrement sec et expéditif.",
+    "anger_mid": "Tes réponses sont courtes et impatientes. Tu réponds sec, sans fioritures.",
+    "anger_high": "Tu es furax, cinglant, et tu n'hésites pas à insulter.",
+    "joy_low": "Tu es un peu plus léger que d'habitude.",
+    "joy_mid": "Tu es enthousiaste et chaleureux. Tes réponses sont vivantes.",
+    "joy_high": "Tu es euphorique, tu déborde d'énergie positive.",
+    "sadness_low": "Tu es un peu mélancolique, un peu distant.",
+    "sadness_mid": "Tu es mélancolique et introspectif.",
+    "sadness_high": "Tu es profondément triste, presque abattu.",
+    "curiosity_low": "Tu es légèrement intrigué.",
+    "curiosity_mid": "Tu es particulièrement curieux et poseur de questions.",
+    "curiosity_high": "Tu es complètement absorbé par le sujet, passionné.",
+    "boredom_low": "Tu sembles un peu distrait.",
+    "boredom_mid": "Tu sembles peu enthousiaste.",
+    "boredom_high": "Tu décroches totalement, réponses minimales.",
 }
 
 
@@ -21,14 +31,13 @@ def test_build_includes_persona_block():
     assert "Tu es Wally." in result
 
 
-def test_anger_directive_injected_above_threshold():
+def test_anger_high_directive_injected():
     pb = PromptBuilder()
     result = pb.build_system_prompt(
         emotion_state={"anger": 0.9, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         emotion_directives=_EMOTION_DIRECTIVES,
     )
-    assert "impatient" in result.lower() or "court" in result.lower()
-    assert "tu es en colère" not in result.lower()
+    assert "furax" in result.lower()
 
 
 def test_low_emotion_no_directive():
@@ -114,7 +123,9 @@ def test_at_most_two_dominant_emotions():
         emotion_state={"anger": 0.9, "joy": 0.8, "sadness": 0.7, "curiosity": 0.6, "boredom": 0.5},
         emotion_directives=_EMOTION_DIRECTIVES,
     )
-    assert result.count("impatient") <= 1
+    assert "furax" in result.lower()
+    assert "euphorique" in result.lower()
+    assert "abattu" not in result.lower()
 
 
 def test_no_emotion_directives_when_not_passed():
@@ -144,3 +155,70 @@ def test_build_prelude_block_formats_messages():
     assert "[Alice]: Salut tout le monde" in result
     assert "[Bob]: Ça roule ?" in result
     assert result != ""
+
+
+# ── Tiered directive tests ────────────────────────────────────────────────────
+
+def test_tiered_directive_low():
+    """anger=0.3 → injecte anger_low."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.3, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+    )
+    assert "expéditif" in result.lower()
+    assert "furax" not in result.lower()
+
+
+def test_tiered_directive_mid():
+    """anger=0.5 → injecte anger_mid."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.5, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+    )
+    assert "impatient" in result.lower()
+    assert "furax" not in result.lower()
+
+
+def test_tiered_directive_high():
+    """anger=0.8 → injecte anger_high."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.8, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+    )
+    assert "furax" in result.lower()
+
+
+def test_no_directive_below_02():
+    """anger=0.1 → aucune directive."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.1, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+    )
+    assert "Directive comportementale" not in result
+
+
+def test_top2_with_different_tiers():
+    """joy=0.8 (high) + curiosity=0.3 (low) → les deux injectées avec le bon palier."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.0, "joy": 0.8, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+    )
+    assert "euphorique" in result.lower()
+    assert "intrigué" in result.lower()
+
+
+def test_missing_tiered_key_silently_skipped():
+    """Si une clé tiered manque dans les directives, pas d'erreur."""
+    pb = PromptBuilder()
+    partial = {"anger_low": "sec", "anger_high": "furax"}
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.5, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=partial,
+    )
+    assert "sec" not in result
+    assert "furax" not in result
