@@ -22,6 +22,11 @@ const EMOTION_LABELS = {
 };
 const EMOTIONS = ['anger', 'joy', 'sadness', 'curiosity', 'boredom'];
 
+const PLATFORM_COLORS = {
+  discord: '#5865F2',
+  twitch: '#9146FF',
+};
+
 const PLATFORM_ICONS = {
   discord: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>',
   twitch: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>',
@@ -39,6 +44,11 @@ let currentGraphSince = null;
 let _graphMeta  = null;
 let _rafPending = false;
 let hiddenEmotions = new Set(); // for interactive legend
+
+// ── Web Chat state ──────────────────────────────────────────────
+let _chatWs = null;
+let _chatUser = null;
+let _chatTypingTimer = null;
 
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
 
@@ -89,8 +99,9 @@ function showTab(tabId) {
     requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
   }
   if (tabId === 'roadmap') loadRoadmap();
+  if (tabId === 'chat') renderChatTab();
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
-  if (tabId === 'admin-links') loadLinks();
+  if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'admin-costs') loadCosts();
   pollCostsBadge();
   if (tabId === 'admin-logs') {
@@ -797,9 +808,12 @@ async function startLogSSE() {
   logSSE.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'links_analyzed') { loadLinks(); return; }
-      if (data.type === 'link_accepted')  { loadLinks(); loadMemoryUsers(); return; }
-      if (data.type === 'link_rejected')  { loadLinks(); return; }
+      if (data.type === 'links_analyzed' || data.type === 'link_accepted' || data.type === 'link_rejected' || data.type === 'link_unlinked') {
+        const filter = document.getElementById('mem-user-filter')?.value || '';
+        loadMemoryUsers(filter);
+        if (_selectedMemUser) loadUserDetail(_selectedMemUser);
+        return;
+      }
       appendLog(data);
     } catch {}
   };
@@ -1048,33 +1062,49 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ── Memory tab ────────────────────────────────────────────────────────────────
 
 function escAttr(str) {
-  return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(str).replace(/\\/g, '\\\\').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+let _showAllUsers = true; // show users without memories by default
+let _linkMode = false;
+let _linkSelection = []; // [{user_id, username}]
 
 function renderMemoryTab() {
   document.getElementById('tab-memory').innerHTML = `
     <div class="mem-toolbar">
-      <span style="font-size:0.7rem;color:var(--text-muted);letter-spacing:2px;white-space:nowrap">CHERCHER</span>
-      <button class="btn" onclick="syncMemoryUsers()"
-              style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">↻ SYNC</button>
-      <button class="btn" onclick="resolveUsernames()"
-              style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">👤 RÉSOUDRE NOMS</button>
-      <input type="text" id="mem-search" placeholder="Recherche dans tous les souvenirs…"
+      <input type="text" id="mem-search" placeholder="Recherche globale…"
              oninput="onMemSearch(this.value)"
-             style="flex:1;max-width:320px" aria-label="Recherche mémoire">
+             style="flex:1;max-width:260px" aria-label="Recherche mémoire">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn ${_showAllUsers ? 'active' : ''}" onclick="toggleShowAll()" id="btn-show-all"
+                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">Tous les users</button>
+        <button class="btn" onclick="toggleLinkMode()" id="btn-link-mode"
+                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">🔗 Lier deux users</button>
+        <button class="btn" onclick="syncMemoryUsers()"
+                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">↻ Sync</button>
+        <button class="btn" onclick="resolveUsernames()"
+                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">👤 Noms</button>
+        <button class="btn btn-success" onclick="analyzeLinks()"
+                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">🔗 Auto-analyser</button>
+      </div>
     </div>
+    <div id="link-mode-bar" class="link-mode-bar" style="display:none"></div>
     <div class="mem-layout">
       <div class="mem-sidebar">
         <div class="mem-sidebar-filter">
-          <input type="text" id="mem-user-filter" placeholder="Filtrer users…"
+          <input type="text" id="mem-user-filter" placeholder="Filtrer…"
                  oninput="onUserFilter(this.value)"
                  style="width:100%;font-size:0.8rem" aria-label="Filtrer utilisateurs">
         </div>
+        <div class="mem-sidebar-actions">
+          <button class="btn" onclick="showAddUserForm()" style="width:100%;font-size:0.72rem;padding:5px 8px">+ Ajouter un utilisateur</button>
+        </div>
+        <div id="mem-add-user-form" style="display:none"></div>
         <div id="mem-user-list" class="mem-user-list"></div>
       </div>
       <div id="mem-detail" class="mem-detail">
-        <div style="padding:16px;color:var(--text-muted);font-size:0.85rem">
-          Sélectionne un utilisateur pour voir ses souvenirs.
+        <div class="mem-empty-state">
+          Sélectionne un utilisateur pour voir ses souvenirs et liaisons.
         </div>
       </div>
     </div>
@@ -1082,11 +1112,153 @@ function renderMemoryTab() {
   loadMemoryUsers();
 }
 
+function toggleLinkMode() {
+  _linkMode = !_linkMode;
+  _linkSelection = [];
+  const btn = document.getElementById('btn-link-mode');
+  if (btn) btn.classList.toggle('active', _linkMode);
+  updateLinkModeBar();
+  // Re-render list to show link-mode styling
+  refreshUserList();
+  if (_linkMode) {
+    document.getElementById('mem-detail').innerHTML =
+      '<div class="mem-empty-state">Clique sur deux utilisateurs pour les lier.</div>';
+  }
+}
+
+function updateLinkModeBar() {
+  const bar = document.getElementById('link-mode-bar');
+  if (!bar) return;
+  if (!_linkMode) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  if (_linkSelection.length === 0) {
+    bar.innerHTML = '<span>Sélectionne le <strong>premier</strong> utilisateur</span>'
+      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px;margin-left:auto">Annuler</button>';
+  } else if (_linkSelection.length === 1) {
+    const s = _linkSelection[0];
+    bar.innerHTML = `<span>${PLATFORM_ICONS[s.platform] || ''} <strong>${escHtml(s.name)}</strong> ↔ sélectionne le <strong>second</strong></span>`
+      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px;margin-left:auto">Annuler</button>';
+  } else {
+    const a = _linkSelection[0], b = _linkSelection[1];
+    bar.innerHTML = `<span>${PLATFORM_ICONS[a.platform] || ''} <strong>${escHtml(a.name)}</strong> ↔ ${PLATFORM_ICONS[b.platform] || ''} <strong>${escHtml(b.name)}</strong></span>`
+      + '<div style="margin-left:auto;display:flex;gap:6px">'
+      + '<button class="btn btn-success" onclick="confirmLinkSelection()" style="font-size:0.72rem;padding:4px 10px">✓ Lier</button>'
+      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px">Annuler</button>'
+      + '</div>';
+  }
+}
+
+function handleLinkModeClick(userId, username, platform) {
+  // Don't add same user twice
+  if (_linkSelection.some(s => s.user_id === userId)) return;
+  // Max 2
+  if (_linkSelection.length >= 2) return;
+
+  _linkSelection.push({ user_id: userId, name: username, platform });
+  updateLinkModeBar();
+
+  // Highlight selected items
+  document.querySelectorAll('.mem-user-item').forEach(el => {
+    const isSelected = _linkSelection.some(s => s.user_id === el.dataset.uid);
+    el.classList.toggle('link-selected', isSelected);
+  });
+}
+
+async function confirmLinkSelection() {
+  if (_linkSelection.length !== 2) return;
+  const a = _linkSelection[0], b = _linkSelection[1];
+
+  // Discord is always canonical if possible
+  let canonical, alias;
+  if (a.platform === 'discord') {
+    canonical = a.user_id; alias = b.user_id;
+  } else if (b.platform === 'discord') {
+    canonical = b.user_id; alias = a.user_id;
+  } else {
+    // Both same platform — first selected is canonical
+    canonical = a.user_id; alias = b.user_id;
+  }
+
+  const r = await apiFetch('/api/admin/links/manual', {
+    method: 'POST',
+    body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
+  });
+  if (r && r.ok) {
+    toast('Comptes liés avec succès', 'success');
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur liaison', 'error');
+  }
+  // Exit link mode and refresh
+  _linkMode = false;
+  _linkSelection = [];
+  const btn = document.getElementById('btn-link-mode');
+  if (btn) btn.classList.remove('active');
+  updateLinkModeBar();
+  refreshUserList();
+}
+
+function refreshUserList() {
+  const filter = document.getElementById('mem-user-filter')?.value || '';
+  loadMemoryUsers(filter);
+}
+
+function toggleShowAll() {
+  _showAllUsers = !_showAllUsers;
+  const btn = document.getElementById('btn-show-all');
+  if (btn) btn.classList.toggle('active', _showAllUsers);
+  refreshUserList();
+}
+
+function showAddUserForm() {
+  const el = document.getElementById('mem-add-user-form');
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.08)">
+      <select id="add-user-platform" style="width:100%;margin-bottom:6px;font-size:0.8rem">
+        <option value="discord">Discord</option>
+        <option value="twitch">Twitch</option>
+      </select>
+      <input type="text" id="add-user-id" placeholder="ID ou username" style="width:100%;font-size:0.8rem;margin-bottom:6px">
+      <input type="text" id="add-user-name" placeholder="Nom affiché (optionnel)" style="width:100%;font-size:0.8rem;margin-bottom:6px">
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-success" onclick="submitAddUser()" style="flex:1;font-size:0.72rem;padding:4px 6px">Ajouter</button>
+        <button class="btn" onclick="document.getElementById('mem-add-user-form').style.display='none'" style="font-size:0.72rem;padding:4px 6px">Annuler</button>
+      </div>
+    </div>
+  `;
+}
+
+async function submitAddUser() {
+  const platform = document.getElementById('add-user-platform').value;
+  const userId = document.getElementById('add-user-id').value.trim();
+  const username = document.getElementById('add-user-name').value.trim();
+  if (!userId) { toast('ID requis', 'error'); return; }
+  const r = await apiFetch('/api/admin/memory/users', {
+    method: 'POST',
+    body: JSON.stringify({ platform, user_id: userId, username }),
+  });
+  if (r && r.ok) {
+    toast('Utilisateur ajouté', 'success');
+    document.getElementById('mem-add-user-form').style.display = 'none';
+    refreshUserList();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
 let _selectedMemUser = null;
 let _selectedMemUsername = null;
 
 async function loadMemoryUsers(filter = '') {
-  const url = '/api/admin/memory/users' + (filter ? `?q=${encodeURIComponent(filter)}` : '');
+  const params = new URLSearchParams();
+  if (filter) params.set('q', filter);
+  if (_showAllUsers) params.set('show_all', '1');
+  const url = '/api/admin/memory/users' + (params.toString() ? `?${params}` : '');
   const r = await apiFetch(url);
   if (!r || !r.ok) return;
   const { users } = await r.json();
@@ -1102,16 +1274,33 @@ async function loadMemoryUsers(filter = '') {
       ? new Date(u.last_updated * 1000).toLocaleString('fr', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
       : '—';
     const trustColor = u.trust_score >= 0.7 ? 'var(--c-curiosity)' : u.trust_score <= 0.3 ? 'var(--c-offline)' : 'var(--text-muted)';
+    const platformIcon = PLATFORM_ICONS[u.platform] || '';
+
+    const pColor = PLATFORM_COLORS[u.platform] || 'var(--accent)';
     const linkedBadge = (u.linked_accounts || []).map(a =>
-      `<span style="font-size:0.58rem;background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.25);padding:1px 5px;border-radius:4px;margin-left:4px" title="Lié à ${escAttr(a.alias_id)}">🔗 ${escHtml(a.alias_username)}</span>`
+      `<span class="mem-link-badge" title="Lié à ${escAttr(a.alias_id)}">🔗 ${escHtml(a.alias_username)}</span>`
     ).join('');
+    const noMemBadge = u.in_memory_users === false
+      ? '<span class="mem-no-memory-badge">sans mémoire</span>'
+      : '';
+    const displayName = u.username || u.user_id.split(':').slice(1).join(':') || u.user_id;
+    const linkSelected = _linkMode && _linkSelection.some(s => s.user_id === u.user_id);
+    const clickHandler = _linkMode
+      ? `handleLinkModeClick('${escAttr(u.user_id)}','${escAttr(displayName)}','${escAttr(u.platform)}')`
+      : `selectMemUser('${escAttr(u.user_id)}','${escAttr(u.username || '')}', ${u.in_memory_users !== false})`;
     return `
-    <div class="mem-user-item ${selected ? 'selected' : ''}"
+    <div class="mem-user-item ${selected && !_linkMode ? 'selected' : ''} ${u.in_memory_users === false ? 'no-memory' : ''} ${linkSelected ? 'link-selected' : ''} ${_linkMode ? 'link-mode' : ''}"
          data-uid="${escAttr(u.user_id)}"
-         onclick="selectMemUser('${escAttr(u.user_id)}','${escAttr(u.username || '')}')">
-      <span style="font-size:0.62rem;color:var(--text-dim);display:block">${escHtml(u.platform)} · ${escHtml(lastSeen)}</span>
-      <span style="font-size:0.82rem">${escHtml(u.username || u.user_id.split(':').slice(1).join(':') || u.user_id)}${linkedBadge}</span>
-      <span style="font-size:0.62rem;color:${trustColor};display:block">trust: ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
+         onclick="${clickHandler}">
+      <div class="mem-user-header">
+        <span class="mem-platform-icon" style="color:${pColor}">${platformIcon}</span>
+        <span class="mem-user-name">${escHtml(displayName)}</span>
+        ${noMemBadge}${linkedBadge}
+      </div>
+      <div class="mem-user-meta">
+        <span style="color:${trustColor}">🛡️ ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
+        <span>· ${escHtml(lastSeen)}</span>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1121,8 +1310,7 @@ async function syncMemoryUsers() {
   if (!r || !r.ok) { toast('Erreur sync', 'error'); return; }
   const { synced } = await r.json();
   toast(`${synced} utilisateur(s) importé(s)`, 'success');
-  const filter = document.getElementById('mem-user-filter')?.value || '';
-  loadMemoryUsers(filter);
+  refreshUserList();
 }
 
 async function resolveUsernames() {
@@ -1130,64 +1318,259 @@ async function resolveUsernames() {
   if (!r || !r.ok) { toast('Erreur résolution', 'error'); return; }
   const { resolved } = await r.json();
   toast(`${resolved} nom(s) résolu(s)`, 'success');
-  const filter = document.getElementById('mem-user-filter')?.value || '';
-  loadMemoryUsers(filter);
+  refreshUserList();
 }
 
-async function selectMemUser(userId, username) {
+async function selectMemUser(userId, username, hasMemories = true) {
   _selectedMemUser = userId;
   _selectedMemUsername = username || null;
   document.querySelectorAll('.mem-user-item').forEach(el => {
     el.classList.toggle('selected', el.dataset.uid === userId);
   });
-  await loadUserMemories(userId);
+  await loadUserDetail(userId, hasMemories);
 }
 
-async function loadUserMemories(userId) {
-  const r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
-  if (!r || !r.ok) return;
-  const { memories } = await r.json();
-  renderMemories(userId, memories, _selectedMemUsername);
-}
-
-function renderMemories(userId, memories, username = null) {
+async function loadUserDetail(userId, hasMemories = true) {
   const el = document.getElementById('mem-detail');
   if (!el) return;
+
+  // Charger mémoires + liens en parallèle
+  const [memR, linksR] = await Promise.all([
+    hasMemories ? apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId)) : null,
+    apiFetch('/api/admin/links?_t=' + Date.now()),
+  ]);
+
+  const memories = memR && memR.ok ? (await memR.json()).memories : [];
+  const allLinks = linksR && linksR.ok ? (await linksR.json()).proposals : [];
+
+  // Filtrer les liens pertinents pour cet utilisateur
+  const userLinks = allLinks.filter(p =>
+    p.canonical_id === userId || p.alias_id === userId
+  );
+  const pendingLinks = userLinks.filter(p => p.status === 'pending');
+  const acceptedLinks = userLinks.filter(p => p.status === 'accepted');
+
+  const displayName = _selectedMemUsername || userId.split(':').slice(1).join(':') || userId;
+  const platform = userId.split(':')[0];
+  const platformColors = { discord: '#5865F2', twitch: '#9146FF' };
+  const pColor = PLATFORM_COLORS[platform] || 'var(--accent)';
+  const platformIcon = PLATFORM_ICONS[platform] || '';
+
   el.innerHTML = `
-    <div style="padding:10px 16px;border-bottom:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:0.7rem;color:var(--text-muted);letter-spacing:1px">${username ? escHtml(username) + ' (' + escHtml(userId) + ')' : escHtml(userId)} — ${memories.length} souvenir(s)</span>
-      <button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
-              style="font-size:0.72rem;padding:4px 10px">🗑 TOUT SUPPRIMER</button>
+    <!-- User header -->
+    <div class="mem-detail-header">
+      <div class="mem-detail-user">
+        <span class="mem-detail-platform" style="color:${pColor}">${platformIcon}</span>
+        <div>
+          <div class="mem-detail-name">${escHtml(displayName)}</div>
+          <div class="mem-detail-id">${escHtml(userId)}</div>
+        </div>
+      </div>
+      <div class="mem-detail-actions">
+        ${memories.length > 0 ? `<button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
+                style="font-size:0.72rem;padding:4px 10px">🗑 Supprimer tout</button>` : ''}
+      </div>
     </div>
-    <div style="padding:12px">
+
+    <!-- Link section -->
+    ${acceptedLinks.length > 0 || pendingLinks.length > 0 ? `
+    <div class="mem-detail-section">
+      <div class="mem-detail-section-title">🔗 LIAISONS</div>
+      ${acceptedLinks.map(p => {
+        const otherId = p.canonical_id === userId ? p.alias_id : p.canonical_id;
+        const otherName = p.canonical_id === userId
+          ? (p.alias_username || otherId.split(':').slice(1).join(':'))
+          : (p.canonical_username || otherId.split(':').slice(1).join(':'));
+        const otherPlatform = otherId.split(':')[0];
+        const otherIcon = PLATFORM_ICONS[otherPlatform] || '';
+        const otherColor = PLATFORM_COLORS[otherPlatform] || 'var(--accent)';
+        return `<div class="mem-link-card accepted">
+          <span style="color:${otherColor}">${otherIcon}</span>
+          <span>${escHtml(otherName)}</span>
+          <span class="mem-link-status accepted">LIÉ</span>
+          <button onclick="unlinkAccounts(${p.id})" class="btn btn-danger" style="font-size:0.62rem;padding:2px 8px;margin-left:4px" title="Délier ces comptes">✗ Délier</button>
+        </div>`;
+      }).join('')}
+      ${pendingLinks.map(p => {
+        const otherId = p.canonical_id === userId ? p.alias_id : p.canonical_id;
+        const otherName = p.canonical_id === userId
+          ? (p.alias_username || otherId.split(':').slice(1).join(':'))
+          : (p.canonical_username || otherId.split(':').slice(1).join(':'));
+        const otherPlatform = otherId.split(':')[0];
+        const otherIcon = PLATFORM_ICONS[otherPlatform] || '';
+        const otherColor = PLATFORM_COLORS[otherPlatform] || 'var(--accent)';
+        return `<div class="mem-link-card pending">
+          <span style="color:${otherColor}">${otherIcon}</span>
+          <span>${escHtml(otherName)}</span>
+          <span class="mem-link-confidence">${Math.round(p.confidence * 100)}%</span>
+          <div class="mem-link-actions">
+            <button onclick="acceptLink(${p.id})" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">✓</button>
+            <button onclick="rejectLink(${p.id})" class="btn btn-danger" style="font-size:0.68rem;padding:2px 8px">✗</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ` : ''}
+
+    <!-- Manual link + add memory -->
+    <div class="mem-detail-section">
+      <div class="mem-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>${memories.length} SOUVENIR(S)</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn" onclick="showAddMemoryForm('${escAttr(userId)}')" style="font-size:0.68rem;padding:2px 8px">+ Ajouter</button>
+          <button class="btn" onclick="showInlineLink('${escAttr(userId)}')" style="font-size:0.68rem;padding:2px 8px">+ Lier un compte</button>
+        </div>
+      </div>
+      <div id="add-memory-form" style="display:none"></div>
+      <div id="inline-link-form" style="display:none"></div>
+    </div>
+
+    <!-- Memories -->
+    <div class="mem-detail-memories">
       ${memories.length === 0
-        ? '<div style="color:rgba(255,255,255,0.45);font-size:0.85rem">Aucun souvenir.</div>'
+        ? '<div class="mem-empty-state">Aucun souvenir enregistré.</div>'
         : memories.map(m => {
-          const platform = m.source_platform || (m.source ? m.source.split(':')[0] : '');
-          const platformColors = { discord: '#5865F2', twitch: '#9146FF' };
-          const platformColor = platformColors[platform] || 'rgba(6,182,212,0.7)';
-          const platformSvg = PLATFORM_ICONS[platform] || '';
-          const platformBadge = platformSvg
-            ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.58rem;background:${platformColor}20;color:${platformColor};border:1px solid ${platformColor}40;padding:2px 6px;border-radius:4px;margin-right:4px" title="${escAttr(platform)}">${platformSvg}${platform}</span>`
+          const mPlatform = m.source_platform || (m.source ? m.source.split(':')[0] : '');
+          const mColor = PLATFORM_COLORS[mPlatform] || 'rgba(6,182,212,0.7)';
+          const mSvg = PLATFORM_ICONS[mPlatform] || '';
+          const mBadge = mSvg
+            ? `<span class="mem-entry-platform" style="background:${mColor}20;color:${mColor};border-color:${mColor}40" title="${escAttr(mPlatform)}">${mSvg}${mPlatform}</span>`
             : '';
           const dateStr = m.updated_at || m.created_at;
           const dateBadge = dateStr
-            ? `<span style="font-size:0.6rem;color:rgba(255,255,255,0.35);white-space:nowrap">${new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>`
+            ? `<span class="mem-entry-date">${new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>`
             : '';
           return `
-          <div class="card" style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start"
-               id="mem-entry-${escAttr(m.id)}">
-            <div style="flex:1;line-height:1.5">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">${platformBadge}${dateBadge}</div>
-              <span style="font-size:0.82rem">${escHtml(m.memory)}</span>
+          <div class="mem-entry" id="mem-entry-${escAttr(m.id)}">
+            <div class="mem-entry-content">
+              <div class="mem-entry-meta">${mBadge}${dateBadge}</div>
+              <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
             </div>
-            <button onclick="deleteMemory('${escAttr(m.source || userId)}','${escAttr(m.id)}')"
-                    style="background:none;border:none;color:var(--c-anger);cursor:pointer;font-size:1.1rem;margin-left:12px;flex-shrink:0;line-height:1" aria-label="Supprimer ce souvenir">&#10005;</button>
+            <div class="mem-entry-actions">
+              <button onclick="startEditMemory('${escAttr(m.source || userId)}','${escAttr(m.id)}')"
+                      class="mem-entry-edit" aria-label="Modifier ce souvenir">&#9998;</button>
+              <button onclick="deleteMemory('${escAttr(m.source || userId)}','${escAttr(m.id)}')"
+                      class="mem-entry-delete" aria-label="Supprimer ce souvenir">&#10005;</button>
+            </div>
           </div>`;
         }).join('')
       }
     </div>
   `;
+}
+
+function startEditMemory(userId, memoryId) {
+  const textEl = document.getElementById('mem-text-' + memoryId);
+  if (!textEl) return;
+  const current = textEl.textContent;
+  const entry = document.getElementById('mem-entry-' + memoryId);
+  if (!entry) return;
+  const contentDiv = entry.querySelector('.mem-entry-content');
+  const actionsDiv = entry.querySelector('.mem-entry-actions');
+  if (actionsDiv) actionsDiv.style.display = 'none';
+  const metaHtml = contentDiv.querySelector('.mem-entry-meta')?.outerHTML || '';
+  contentDiv.innerHTML = `
+    ${metaHtml}
+    <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+      <input type="text" id="edit-memory-input-${escAttr(memoryId)}" value="${escAttr(current)}"
+             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitEditMemory('${escAttr(userId)}','${escAttr(memoryId)}'); if(event.key==='Escape') cancelEditMemory();">
+      <button onclick="submitEditMemory('${escAttr(userId)}','${escAttr(memoryId)}')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>
+      <button onclick="cancelEditMemory()" class="btn" style="font-size:0.68rem;padding:2px 8px">✗</button>
+    </div>
+  `;
+  document.getElementById('edit-memory-input-' + memoryId)?.focus();
+}
+
+async function submitEditMemory(userId, memoryId) {
+  const input = document.getElementById('edit-memory-input-' + memoryId);
+  const content = input?.value.trim();
+  if (!content) { toast('Contenu requis', 'error'); return; }
+  const r = await apiFetch(
+    `/api/admin/memory/users/${encodeURIComponent(userId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: 'PUT', body: JSON.stringify({ content }) }
+  );
+  if (r && r.ok) {
+    toast('Souvenir modifié', 'success');
+    await loadUserDetail(_selectedMemUser, true);
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
+function cancelEditMemory() {
+  if (_selectedMemUser) loadUserDetail(_selectedMemUser, true);
+}
+
+function showAddMemoryForm(userId) {
+  const el = document.getElementById('add-memory-form');
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;padding:8px 0">
+      <input type="text" id="add-memory-input" placeholder="Nouveau souvenir…"
+             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitAddMemory('${escAttr(userId)}')">
+      <button onclick="submitAddMemory('${escAttr(userId)}')" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Ajouter</button>
+    </div>
+  `;
+  document.getElementById('add-memory-input')?.focus();
+}
+
+async function submitAddMemory(userId) {
+  const input = document.getElementById('add-memory-input');
+  const content = input?.value.trim();
+  if (!content) { toast('Contenu requis', 'error'); return; }
+  const r = await apiFetch(`/api/admin/memory/users/${encodeURIComponent(userId)}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+  if (r && r.ok) {
+    toast('Souvenir ajouté', 'success');
+    document.getElementById('add-memory-form').style.display = 'none';
+    await loadUserDetail(_selectedMemUser, true);
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
+function showInlineLink(userId) {
+  const el = document.getElementById('inline-link-form');
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  const platform = userId.split(':')[0];
+  const otherPlatform = platform === 'discord' ? 'twitch' : 'discord';
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;padding:8px 0">
+      <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap">Lier à ${otherPlatform}:</span>
+      <input type="text" id="inline-link-target" placeholder="${otherPlatform === 'discord' ? 'Discord ID' : 'Twitch username'}"
+             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitInlineLink('${escAttr(userId)}')">
+      <button onclick="submitInlineLink('${escAttr(userId)}')" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Lier</button>
+    </div>
+  `;
+}
+
+async function submitInlineLink(userId) {
+  const target = document.getElementById('inline-link-target')?.value.trim();
+  if (!target) { toast('ID requis', 'error'); return; }
+  const platform = userId.split(':')[0];
+  const otherPlatform = platform === 'discord' ? 'twitch' : 'discord';
+  const canonical = platform === 'discord' ? userId : `discord:${target}`;
+  const alias = platform === 'discord' ? `twitch:${target}` : userId;
+  const r = await apiFetch('/api/admin/links/manual', {
+    method: 'POST',
+    body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
+  });
+  if (r && r.ok) {
+    toast('Liaison créée et fusionnée', 'success');
+    await loadUserDetail(_selectedMemUser);
+    refreshUserList();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
 }
 
 async function deleteMemory(userId, memoryId) {
@@ -1209,12 +1592,10 @@ async function deleteAllMemories(userId) {
     { method: 'DELETE' }
   );
   if (r && r.ok) {
-    document.getElementById('mem-detail').innerHTML =
-      '<div style="padding:16px;color:var(--text-muted);font-size:0.85rem">Aucun souvenir.</div>';
-    _selectedMemUser = null;
-    const filter = document.getElementById('mem-user-filter')?.value || '';
-    loadMemoryUsers(filter);
     toast('Mémoire supprimée', 'success');
+    // Recharger le detail (user existe encore mais sans mémoires)
+    await loadUserDetail(userId, false);
+    refreshUserList();
   } else {
     toast('Erreur suppression', 'error');
   }
@@ -1227,10 +1608,10 @@ function onMemSearch(value) {
     if (value.length >= 2) {
       await searchMemories(value);
     } else if (_selectedMemUser) {
-      await loadUserMemories(_selectedMemUser);
+      await loadUserDetail(_selectedMemUser);
     } else {
       document.getElementById('mem-detail').innerHTML =
-        '<div style="padding:16px;color:var(--text-muted);font-size:0.85rem">Sélectionne un utilisateur.</div>';
+        '<div class="mem-empty-state">Sélectionne un utilisateur pour voir ses souvenirs et liaisons.</div>';
     }
   }, 400);
 }
@@ -1332,87 +1713,7 @@ function renderRoadmap(data) {
   el.innerHTML = html;
 }
 
-// ── Liaisons de comptes ───────────────────────────────────────────────────────
-
-let currentLinksTab = 'all';
-
-function setLinksTab(tab, btn) {
-  currentLinksTab = tab;
-  document.querySelectorAll('#tab-admin-links .log-controls .btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  loadLinks();
-}
-
-async function loadLinks() {
-  const params = new URLSearchParams();
-  if (currentLinksTab !== 'all') params.set('status', currentLinksTab);
-  params.set('_t', Date.now());
-  const r = await apiFetch(`/api/admin/links?${params}`);
-  if (!r || !r.ok) return;
-  const data = await r.json();
-  renderLinks(data.proposals);
-}
-
-function renderLinks(proposals) {
-  const container = document.getElementById('links-list');
-  if (!container) return;
-  if (!proposals || proposals.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px">Aucune liaison trouvée.</div>';
-    return;
-  }
-  container.innerHTML = proposals.map(p => {
-    const conf = Math.round(p.confidence * 100);
-    const twitchRaw   = p.alias_id.replace('twitch:', '');
-    const twitchUser  = p.alias_username || twitchRaw;
-    const twitchUrl   = `https://www.twitch.tv/${p.alias_username || twitchRaw}`;
-    const discordUser = p.canonical_username || p.canonical_id.replace('discord:', '');
-    const statusBadge = {
-      pending:  '<span style="background:rgba(255,160,0,0.15);color:#FFA000;border:1px solid rgba(255,160,0,0.3);padding:2px 6px;border-radius:var(--radius-xs);font-size:0.68rem;font-weight:600">EN ATTENTE</span>',
-      accepted: '<span style="background:rgba(0,229,160,0.1);color:var(--c-online);border:1px solid rgba(0,229,160,0.25);padding:2px 6px;border-radius:var(--radius-xs);font-size:0.68rem;font-weight:600">ACCEPTÉ</span>',
-      rejected: '<span style="background:rgba(255,77,77,0.1);color:var(--c-anger);border:1px solid rgba(255,77,77,0.25);padding:2px 6px;border-radius:var(--radius-xs);font-size:0.68rem;font-weight:600">REJETÉ</span>',
-    }[p.status] || '';
-    const actions = p.status === 'pending' ? `
-      <button onclick="acceptLink(${p.id})" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">✓ Accepter</button>
-      <button onclick="rejectLink(${p.id})" class="btn btn-danger"  style="font-size:0.72rem;padding:4px 10px">✗ Rejeter</button>
-    ` : '';
-    return `
-      <div class="card" style="padding:12px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          ${statusBadge}
-          <span style="font-weight:700;color:var(--accent)">${conf}%</span>
-          <span style="font-size:0.85rem">Discord: <strong>${escHtml(discordUser)}</strong></span>
-          <span style="color:var(--text-dim)">↔</span>
-          <span style="font-size:0.85rem">Twitch: <a href="${twitchUrl}" target="_blank" rel="noopener" style="color:var(--c-curiosity)">${escHtml(twitchUser)}</a></span>
-        </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">${actions}</div>
-      </div>
-    `;
-  }).join('');
-}
-
-async function createManualLink() {
-  const discordId = document.getElementById('manual-link-discord').value.trim();
-  const twitchUser = document.getElementById('manual-link-twitch').value.trim();
-  if (!discordId || !twitchUser) { toast('Remplis les deux champs', 'error'); return; }
-  const r = await apiFetch('/api/admin/links/manual', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ canonical_id: `discord:${discordId}`, alias_id: `twitch:${twitchUser}` }),
-  });
-  if (r && r.ok) {
-    toast('Liaison créée et fusionnée', 'success');
-    document.getElementById('manual-link-discord').value = '';
-    document.getElementById('manual-link-twitch').value = '';
-    loadLinks();
-    if (document.getElementById('mem-user-list')) {
-      const filter = document.getElementById('mem-user-filter')?.value || '';
-      loadMemoryUsers(filter);
-    }
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur', 'error');
-  }
-}
+// ── Liaisons de comptes (fonctions utilitaires conservées) ─────────────────────
 
 async function analyzeLinks() {
   const r = await apiFetch('/api/admin/links/analyze', { method: 'POST' });
@@ -1424,21 +1725,33 @@ async function acceptLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/accept`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison acceptée — mémoires fusionnées', 'success');
-    if (document.getElementById('mem-user-list')) {
-      const filter = document.getElementById('mem-user-filter')?.value || '';
-      loadMemoryUsers(filter);
-    }
+    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
+    refreshUserList();
   } else {
     toast('Erreur', 'error');
   }
-  loadLinks();
 }
 
 async function rejectLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/reject`, { method: 'POST' });
-  if (r && r.ok) toast('Liaison rejetée', 'success');
-  else toast('Erreur', 'error');
-  loadLinks();
+  if (r && r.ok) {
+    toast('Liaison rejetée', 'success');
+    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
+  } else {
+    toast('Erreur', 'error');
+  }
+}
+
+async function unlinkAccounts(id) {
+  const r = await apiFetch(`/api/admin/links/${id}/unlink`, { method: 'POST' });
+  if (r && r.ok) {
+    toast('Comptes déliés', 'success');
+    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
+    refreshUserList();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur déliaison', 'error');
+  }
 }
 
 // ── Admin costs ────────────────────────────────────────────────────────────────
@@ -1701,4 +2014,251 @@ async function pollCostsBadge() {
     const alert = await r.json();
     updateCostBadge(alert);
   } catch (e) { /* ignore */ }
+}
+
+// ── Chat Auth ───────────────────────────────────────────────────
+
+function getChatJwt() { return localStorage.getItem('chat_jwt'); }
+function getChatRefresh() { return localStorage.getItem('chat_refresh'); }
+function setChatTokens(jwt, refresh) {
+  localStorage.setItem('chat_jwt', jwt);
+  localStorage.setItem('chat_refresh', refresh);
+}
+function clearChatTokens() {
+  localStorage.removeItem('chat_jwt');
+  localStorage.removeItem('chat_refresh');
+  _chatUser = null;
+}
+
+async function chatCheckAuth() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('chat_code')) {
+    const code = params.get('chat_code');
+    window.history.replaceState({}, '', '/');
+    const resp = await fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(code));
+    if (resp.ok) {
+      const data = await resp.json();
+      setChatTokens(data.jwt, data.refresh_token);
+    }
+  }
+
+  const jwt = getChatJwt();
+  if (!jwt) return false;
+
+  const r = await fetch('/api/chat/auth/me', { headers: { Authorization: 'Bearer ' + jwt } });
+  if (r.ok) {
+    _chatUser = await r.json();
+    return true;
+  }
+
+  const refresh = getChatRefresh();
+  if (!refresh) { clearChatTokens(); return false; }
+
+  const rr = await fetch('/api/chat/auth/refresh', { headers: { Authorization: 'Bearer ' + refresh } });
+  if (rr.ok) {
+    const data = await rr.json();
+    setChatTokens(data.jwt, data.refresh_token);
+    return chatCheckAuth();
+  }
+
+  clearChatTokens();
+  return false;
+}
+
+// ── Chat Tab Render ─────────────────────────────────────────────
+
+async function renderChatTab() {
+  const el = document.getElementById('tab-chat');
+  if (!el) return;
+
+  const authed = await chatCheckAuth();
+
+  if (!authed) {
+    el.innerHTML = `
+      <div class="chat-login-prompt">
+        <div style="font-size:1.2rem;font-weight:600;margin-bottom:8px">Chat avec Wally</div>
+        <div style="color:var(--text-muted);max-width:400px">
+          Connecte-toi avec Discord pour discuter avec Wally en temps réel.
+        </div>
+        <a href="/api/chat/auth/login" class="chat-login-btn">
+          <svg width="20" height="15" viewBox="0 0 71 55" fill="white"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.4.2a.2.2 0 0 0-.2.1 40.8 40.8 0 0 0-1.8 3.7 54 54 0 0 0-16.2 0A37.4 37.4 0 0 0 25.4.3a.2.2 0 0 0-.2-.1A58.4 58.4 0 0 0 10.5 4.9a.2.2 0 0 0-.1.1C1.5 18.7-.9 32.2.3 45.5v.2a58.9 58.9 0 0 0 17.8 9a.2.2 0 0 0 .3-.1 42.1 42.1 0 0 0 3.6-5.9.2.2 0 0 0-.1-.3 38.8 38.8 0 0 1-5.5-2.6.2.2 0 0 1 0-.4l1.1-.9a.2.2 0 0 1 .2 0 42 42 0 0 0 35.8 0 .2.2 0 0 1 .2 0l1.1.9a.2.2 0 0 1 0 .3 36.4 36.4 0 0 1-5.5 2.7.2.2 0 0 0-.1.3 47.3 47.3 0 0 0 3.6 5.8.2.2 0 0 0 .3.1A58.7 58.7 0 0 0 70.5 45.7v-.2c1.4-15-2.3-28.4-9.8-40.1a.2.2 0 0 0-.1-.1zM23.7 37.3c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1zm23.2 0c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1z"/></svg>
+          Se connecter avec Discord
+        </a>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="chat-container">
+      <div class="chat-avatar-bar">
+        <img class="chat-avatar-img" id="chat-wally-avatar" src="/static/avatar/emotions/neutral/idle.png" alt="Wally">
+        <div>
+          <div style="font-weight:600">Wally</div>
+          <div class="chat-avatar-status" id="chat-avatar-status">neutre</div>
+        </div>
+        <div style="margin-left:auto;font-size:0.72rem;color:var(--text-muted)">
+          Connecté en tant que <strong>${escHtml(_chatUser.username)}</strong>
+          <button onclick="chatLogout()" style="margin-left:8px;font-size:0.68rem;padding:2px 8px" class="btn">Déconnexion</button>
+        </div>
+      </div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-typing" id="chat-typing">Wally réfléchit...</div>
+      <div class="chat-cooldown-msg" id="chat-cooldown"></div>
+      <div class="chat-input-bar">
+        <input type="text" id="chat-input" placeholder="Envoyer un message..." maxlength="2000"
+               onkeydown="if(event.key==='Enter') chatSend()">
+        <button class="btn btn-success" onclick="chatSend()">Envoyer</button>
+      </div>
+    </div>`;
+
+  chatConnectWs();
+  chatStartAvatarUpdates();
+}
+
+function chatLogout() {
+  clearChatTokens();
+  if (_chatWs) { _chatWs.close(); _chatWs = null; }
+  renderChatTab();
+}
+
+// ── Chat WebSocket ──────────────────────────────────────────────
+
+function chatConnectWs() {
+  if (_chatWs) { _chatWs.close(); _chatWs = null; }
+  const jwt = getChatJwt();
+  if (!jwt) return;
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _chatWs = new WebSocket(`${proto}//${location.host}/ws/chat?token=${jwt}`);
+
+  _chatWs.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'history') {
+      const el = document.getElementById('chat-messages');
+      if (el) el.innerHTML = '';
+      (data.messages || []).forEach(m => chatAppendMessage(m));
+      chatScrollBottom();
+    } else if (data.type === 'message') {
+      chatAppendMessage(data);
+      chatScrollBottom();
+      chatHideTyping();
+    } else if (data.type === 'typing') {
+      chatShowTyping();
+    } else if (data.type === 'cooldown') {
+      const el = document.getElementById('chat-cooldown');
+      if (el) {
+        el.textContent = `Cooldown: attends ${data.remaining_seconds}s`;
+        setTimeout(() => { el.textContent = ''; }, 3000);
+      }
+    }
+  };
+
+  _chatWs.onclose = () => {
+    _chatWs = null;
+    setTimeout(() => { if (getChatJwt()) chatConnectWs(); }, 3000);
+  };
+}
+
+function chatAppendMessage(msg) {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const isWally = msg.is_wally;
+  const avatarSrc = isWally
+    ? (document.getElementById('chat-wally-avatar')?.src || '/static/avatar/emotions/neutral/idle.png')
+    : (msg.avatar_url || '');
+  const avatarHtml = avatarSrc
+    ? `<img class="chat-msg-avatar" src="${escAttr(avatarSrc)}" alt="">`
+    : `<div class="chat-msg-avatar" style="background:var(--accent);border-radius:50%"></div>`;
+
+  const time = msg.created_at
+    ? new Date(msg.created_at * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  const div = document.createElement('div');
+  div.className = `chat-msg ${isWally ? 'wally' : ''}`;
+  div.innerHTML = `
+    ${avatarHtml}
+    <div class="chat-msg-body">
+      <div class="chat-msg-header">
+        <span class="chat-msg-username ${isWally ? 'wally' : ''}">${escHtml(msg.username)}</span>
+        <span class="chat-msg-time">${time}</span>
+      </div>
+      <div class="chat-msg-content">${escHtml(msg.content)}</div>
+    </div>`;
+  el.appendChild(div);
+}
+
+function chatScrollBottom() {
+  const el = document.getElementById('chat-messages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function chatShowTyping() {
+  const el = document.getElementById('chat-typing');
+  if (el) el.classList.add('visible');
+  clearTimeout(_chatTypingTimer);
+  _chatTypingTimer = setTimeout(chatHideTyping, 30000);
+}
+
+function chatHideTyping() {
+  const el = document.getElementById('chat-typing');
+  if (el) el.classList.remove('visible');
+}
+
+function chatSend() {
+  const input = document.getElementById('chat-input');
+  const content = input?.value.trim();
+  if (!content || !_chatWs || _chatWs.readyState !== WebSocket.OPEN) return;
+  _chatWs.send(JSON.stringify({ type: 'message', content }));
+  input.value = '';
+}
+
+// ── Chat Avatar ─────────────────────────────────────────────────
+
+function chatStartAvatarUpdates() {
+  setInterval(chatUpdateAvatar, 5000);
+  chatUpdateAvatar();
+}
+
+function chatUpdateAvatar() {
+  if (typeof currentEmotions === 'undefined' || !currentEmotions) return;
+
+  const emotions = currentEmotions;
+  let dominant = 'neutral';
+  let maxVal = 0.2;
+
+  for (const [emotion, value] of Object.entries(emotions)) {
+    if (value > maxVal) {
+      dominant = emotion;
+      maxVal = value;
+    }
+  }
+
+  let tier = 'idle';
+  if (dominant !== 'neutral') {
+    if (maxVal >= 0.7) tier = 'high';
+    else if (maxVal >= 0.4) tier = 'mid';
+    else tier = 'low';
+  }
+
+  const basePath = dominant === 'neutral'
+    ? '/static/avatar/emotions/neutral/idle'
+    : `/static/avatar/emotions/${dominant}/${tier}`;
+
+  const img = document.getElementById('chat-wally-avatar');
+  if (!img) return;
+
+  const gifUrl = basePath + '.gif';
+  const pngUrl = basePath + '.png';
+
+  const testImg = new Image();
+  testImg.onload = () => { img.src = gifUrl; };
+  testImg.onerror = () => { img.src = pngUrl; };
+  testImg.src = gifUrl;
+
+  const statusEl = document.getElementById('chat-avatar-status');
+  if (statusEl) {
+    const labels = { neutral: 'neutre', joy: 'joyeux', anger: 'en colère', sadness: 'triste', curiosity: 'curieux', boredom: 'ennuyé' };
+    statusEl.textContent = labels[dominant] || dominant;
+  }
 }
