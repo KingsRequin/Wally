@@ -54,8 +54,8 @@ async def test_memory_add_no_tag_when_empty_context():
 async def test_discord_handler_updates_context_window(tmp_path):
     """Le handler Discord met à jour la fenêtre de contexte après une réponse.
 
-    memory.add() (mémoire long-terme) est appelé par le SessionManager après
-    inactivité, pas directement dans le handler. Ce test vérifie le comportement
+    memory.add() (mémoire long-terme) est appelé par le FactExtractor après
+    analyse du buffer, pas directement dans le handler. Ce test vérifie le comportement
     réel : append_message est appelé pour le message utilisateur et la réponse,
     et l'état émotionnel est utilisé pour construire le prompt.
     """

@@ -49,7 +49,7 @@ async def analyze_links(request: Request):
 
 async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
     """Fusionne les mémoires mem0 de l'alias vers le canonical, puis nettoie."""
-    state.memory._alias_cache[alias_id] = canonical_id
+    state.memory.add_alias(alias_id, canonical_id)
 
     state.memory._init_mem0()
     if state.memory._mem0 is None:
@@ -84,28 +84,27 @@ async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
             await asyncio.to_thread(
                 state.memory._mem0.delete_all, user_id=alias_id
             )
-            await state.db.delete_memory_user(alias_id)
+            # Ne pas supprimer de memory_users : l'alias est masqué via
+            # user_links dans list_users, et on garde le username pour l'affichage
         elif total > 0:
             logger.warning(
-                "Fusion partielle {a} → {c}: {ok}/{n} — alias non supprimé",
+                "Fusion partielle {a} → {c}: {ok}/{n} — mémoires alias conservées",
                 a=alias_id, c=canonical_id, ok=copied, n=total,
             )
-        else:
-            await state.db.delete_memory_user(alias_id)
     except Exception as e:
         logger.error("Erreur fusion mémoire: {e}", e=e)
 
 
-async def _resolve_user_id(db, entered: str, platform: str) -> str:
+async def _resolve_user_id(db, entered: str, platform: str) -> str | None:
     """Résout un identifiant entré par l'admin vers le vrai user_id dans memory_users.
 
     Stratégie : match exact sur user_id, puis recherche par username.
-    Retourne l'entrée telle quelle si aucun match trouvé.
+    Retourne None si aucun match trouvé (pour éviter de créer des entrées fantômes).
     """
-    all_users = await db.list_memory_users()
+    all_users = await db.list_memory_users(include_no_memory=True)
     platform_users = [u for u in all_users if u["platform"] == platform]
 
-    # 1. Match exact sur user_id
+    # 1. Match exact sur user_id (format complet "platform:id")
     for u in platform_users:
         if u["user_id"] == entered:
             return entered
@@ -123,7 +122,7 @@ async def _resolve_user_id(db, entered: str, platform: str) -> str:
         if u.get("username") and u["username"].lower() == raw_lower:
             return u["user_id"]
 
-    return entered
+    return None
 
 
 @router.post("/links/{link_id}/accept")
@@ -171,8 +170,15 @@ async def create_manual_link(body: ManualLinkRequest, request: Request):
     # (ex: "twitch:noctea_moon" → "twitch:12345678" si le username matche)
     canonical_platform = canonical.split(":")[0]
     alias_platform = alias.split(":")[0]
-    canonical = await _resolve_user_id(state.db, canonical, canonical_platform)
-    alias = await _resolve_user_id(state.db, alias, alias_platform)
+    resolved_canonical = await _resolve_user_id(state.db, canonical, canonical_platform)
+    resolved_alias = await _resolve_user_id(state.db, alias, alias_platform)
+
+    if resolved_canonical is None:
+        raise HTTPException(status_code=404, detail=f"Utilisateur introuvable : {canonical}")
+    if resolved_alias is None:
+        raise HTTPException(status_code=404, detail=f"Utilisateur introuvable : {alias}")
+    canonical = resolved_canonical
+    alias = resolved_alias
 
     if canonical == alias:
         raise HTTPException(status_code=400, detail="Les deux identifiants résolvent vers le même utilisateur")
@@ -203,3 +209,40 @@ async def reject_link(link_id: int, request: Request):
     await state.db.reject_link(link_id)
     broadcast_event({"type": "link_rejected", "link_id": link_id})
     return {"status": "rejected"}
+
+
+@router.post("/links/{link_id}/unlink")
+async def unlink(link_id: int, request: Request):
+    """Délie deux comptes précédemment liés.
+
+    Remet le statut à 'rejected', supprime l'alias du cache mémoire,
+    et recrée l'entrée memory_users pour l'alias (les mémoires restent
+    dans le canonical — pas de "dé-fusion" automatique).
+    """
+    state = request.app.state.wally
+
+    # Récupérer les infos du lien avant modification
+    link = await state.db.get_link_proposal(link_id)
+    if link is None:
+        raise HTTPException(status_code=404, detail="Liaison introuvable")
+    if link["status"] != "accepted":
+        raise HTTPException(status_code=400, detail="Seule une liaison acceptée peut être déliée")
+
+    canonical_id = link["canonical_id"]
+    alias_id = link["alias_id"]
+
+    # Marquer comme rejeté
+    await state.db.reject_link(link_id)
+
+    # Retirer du cache d'alias en mémoire
+    state.memory.remove_alias(alias_id)
+
+    # Recréer l'entrée memory_users pour l'alias (pour qu'il réapparaisse)
+    alias_platform = alias_id.split(":")[0] if ":" in alias_id else ""
+    alias_username = link.get("alias_username") or ""
+    if alias_platform:
+        await state.db.upsert_memory_user(alias_id, alias_platform, username=alias_username)
+
+    broadcast_event({"type": "link_unlinked", "canonical_id": canonical_id, "alias_id": alias_id})
+    logger.info("Liaison déliée: {a} ↔ {c}", a=alias_id, c=canonical_id)
+    return {"status": "unlinked", "canonical_id": canonical_id, "alias_id": alias_id}

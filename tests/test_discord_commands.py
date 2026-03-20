@@ -707,7 +707,7 @@ async def test_scan_cmd_heures_out_of_range():
 
 
 @pytest.mark.asyncio
-async def test_scan_cmd_session_manager_none():
+async def test_scan_cmd_fact_extractor_none():
     """Erreur si fact_extractor est None."""
     bot = make_scan_bot(fact_extractor=None)
     cog = ScanCog(bot)

@@ -24,7 +24,9 @@ DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
 
 _generated_secret: str | None = None
 
-def _jwt_secret(request: Request) -> str:
+
+def _jwt_secret_raw() -> str:
+    """Retourne le secret JWT — réutilisable depuis chat.py sans Request."""
     global _generated_secret
     secret = os.getenv("JWT_SECRET")
     if secret:
@@ -35,6 +37,10 @@ def _jwt_secret(request: Request) -> str:
     _generated_secret = secrets.token_hex(32)
     logger.warning("JWT_SECRET not set — auto-generated a temporary secret (will change on restart)")
     return _generated_secret
+
+
+def _jwt_secret(request: Request) -> str:
+    return _jwt_secret_raw()
 
 
 def create_jwt(discord_id: str, username: str, avatar_url: str | None, secret: str, ttl: int = JWT_TTL) -> str:
@@ -61,7 +67,7 @@ def hash_token(token: str) -> str:
 
 # ── GET /chat/auth/login ──────────────────────────────────────────────────────
 
-@router.get("/chat/auth/login")
+@router.get("/auth/login")
 async def login(request: Request):
     client_id = os.getenv("DISCORD_CLIENT_ID")
     base_url = os.getenv("WEB_BASE_URL", "").rstrip("/")
@@ -79,7 +85,7 @@ async def login(request: Request):
 
 # ── GET /chat/auth/callback ───────────────────────────────────────────────────
 
-@router.get("/chat/auth/callback")
+@router.get("/auth/callback")
 async def callback(code: str, request: Request):
     import httpx
 
@@ -147,7 +153,7 @@ _pending_codes: dict[str, dict] = {}
 
 # ── GET /chat/auth/exchange ───────────────────────────────────────────────────
 
-@router.get("/chat/auth/exchange")
+@router.get("/auth/exchange")
 async def exchange_code(code: str):
     """Exchange a one-time auth code for JWT + refresh token."""
     entry = _pending_codes.pop(code, None)
@@ -158,7 +164,7 @@ async def exchange_code(code: str):
 
 # ── GET /chat/auth/refresh ────────────────────────────────────────────────────
 
-@router.get("/chat/auth/refresh")
+@router.get("/auth/refresh")
 async def refresh(request: Request):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -186,7 +192,7 @@ async def refresh(request: Request):
 
 # ── GET /chat/auth/me ─────────────────────────────────────────────────────────
 
-@router.get("/chat/auth/me")
+@router.get("/auth/me")
 async def me(request: Request):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):

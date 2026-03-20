@@ -94,7 +94,9 @@ async def test_list_users_with_filter():
     async with _make_client(state) as client:
         r = await client.get("/api/admin/memory/users?q=discord", headers=HEADERS)
     assert r.status_code == 200
-    db.list_memory_users.assert_called_once_with("discord")
+    # Appelé 2 fois : une pour la liste filtrée, une pour uid_to_name (tous les users)
+    assert db.list_memory_users.call_count == 2
+    db.list_memory_users.assert_any_call("discord", include_no_memory=False)
 
 
 @pytest.mark.asyncio
@@ -179,6 +181,79 @@ async def test_delete_memory_calls_mem0_delete():
 
 
 @pytest.mark.asyncio
+async def test_add_memory_stores_via_mem0():
+    state, mock_mem0, db = _make_state()
+    mock_mem0.add = MagicMock(return_value={"results": []})
+    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
+        async with _make_client(state) as client:
+            r = await client.post(
+                "/api/admin/memory/users/discord%3A123/memories",
+                headers=HEADERS,
+                json={"content": "Aime les crevettes"},
+            )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    mock_mem0.add.assert_called_once_with(
+        "Aime les crevettes", user_id="discord:123",
+        metadata={"origin": "discord:123"},
+    )
+    db.upsert_memory_user.assert_called_once_with("discord:123", "discord")
+
+
+@pytest.mark.asyncio
+async def test_add_memory_rejects_empty_content():
+    state, _, _ = _make_state()
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/users/discord%3A123/memories",
+            headers=HEADERS,
+            json={"content": "   "},
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_add_memory_503_when_mem0_none():
+    state, _, _ = _make_state()
+    state.memory._mem0 = None
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/users/discord%3A123/memories",
+            headers=HEADERS,
+            json={"content": "Test"},
+        )
+    assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_update_memory_calls_mem0_update():
+    state, mock_mem0, _ = _make_state()
+    mock_mem0.update = MagicMock()
+    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
+        async with _make_client(state) as client:
+            r = await client.put(
+                "/api/admin/memory/users/discord%3A123/memories/mem-abc",
+                headers=HEADERS,
+                json={"content": "Nouveau contenu"},
+            )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    mock_mem0.update.assert_called_once_with("mem-abc", "Nouveau contenu")
+
+
+@pytest.mark.asyncio
+async def test_update_memory_rejects_empty_content():
+    state, _, _ = _make_state()
+    async with _make_client(state) as client:
+        r = await client.put(
+            "/api/admin/memory/users/discord%3A123/memories/mem-abc",
+            headers=HEADERS,
+            json={"content": "  "},
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_search_requires_q():
     state, _, _ = _make_state()
     async with _make_client(state) as client:
@@ -248,3 +323,160 @@ async def test_search_continues_on_user_error():
     # Only twitch:bob's result should appear (discord:123 raised)
     assert len(results) == 1
     assert results[0]["user_id"] == "twitch:bob"
+
+
+# ── Alias routes ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_aliases():
+    """GET /memory/aliases returns aliases and unresolved with fact_count."""
+    state, mock_mem0, db = _make_state()
+    db.list_aliases.return_value = [
+        {"nickname": "rekin", "canonical_uid": "discord:123", "display_name": "KingsRequin",
+         "source": "manual", "confidence": 1.0},
+    ]
+    db.list_unresolved_aliases.return_value = [
+        {"user_id": "unknown:johndoe", "username": "johndoe"},
+    ]
+    mock_mem0.get_all.return_value = [
+        {"memory": "Aime les jeux FPS"},
+        {"memory": "Parle français"},
+    ]
+    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
+        async with _make_client(state) as client:
+            r = await client.get("/api/admin/memory/aliases", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["aliases"]) == 1
+    assert data["aliases"][0]["nickname"] == "rekin"
+    assert len(data["unresolved"]) == 1
+    assert data["unresolved"][0]["user_id"] == "unknown:johndoe"
+    assert data["unresolved"][0]["fact_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_list_aliases_mem0_down():
+    """GET /memory/aliases still works when mem0 is unavailable."""
+    state, _, db = _make_state()
+    state.memory._mem0 = None
+    db.list_aliases.return_value = []
+    db.list_unresolved_aliases.return_value = [
+        {"user_id": "unknown:foo", "username": "foo"},
+    ]
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/aliases", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    # fact_count should be 0 when mem0 is not available
+    assert data["unresolved"][0]["fact_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_add_alias():
+    """POST /memory/aliases creates alias and updates memory cache."""
+    state, _, db = _make_state()
+    db.upsert_alias = AsyncMock()
+    state.memory.add_alias = MagicMock()
+
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/aliases",
+            headers=HEADERS,
+            json={"nickname": "Rekin", "canonical_uid": "discord:123", "display_name": "KingsRequin"},
+        )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    db.upsert_alias.assert_called_once_with(
+        "rekin", "discord:123", "KingsRequin", "manual", 1.0
+    )
+    state.memory.add_alias.assert_called_once_with("nickname:rekin", "discord:123")
+
+
+@pytest.mark.asyncio
+async def test_add_alias_with_fact_extractor():
+    """POST /memory/aliases fires _reconcile_orphan_facts when fact_extractor is available."""
+    state, _, db = _make_state()
+    db.upsert_alias = AsyncMock()
+    state.memory.add_alias = MagicMock()
+
+    fe = MagicMock()
+    fe._reconcile_orphan_facts = AsyncMock(return_value=None)
+    state.fact_extractor = fe
+
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/aliases",
+            headers=HEADERS,
+            json={"nickname": "jo", "canonical_uid": "discord:456", "display_name": ""},
+        )
+    assert r.status_code == 200
+    # Give asyncio.create_task a chance to fire
+    import asyncio
+    await asyncio.sleep(0)
+    fe._reconcile_orphan_facts.assert_called_once_with("jo", "discord:456")
+
+
+@pytest.mark.asyncio
+async def test_add_alias_rejects_missing_fields():
+    """POST /memory/aliases returns 400 when nickname or canonical_uid is empty."""
+    state, _, db = _make_state()
+    db.upsert_alias = AsyncMock()
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/aliases",
+            headers=HEADERS,
+            json={"nickname": "", "canonical_uid": "discord:123", "display_name": ""},
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delete_alias():
+    """DELETE /memory/aliases/{nickname} removes alias from DB and memory cache."""
+    state, _, db = _make_state()
+    db.delete_alias = AsyncMock()
+    state.memory.remove_alias = MagicMock()
+
+    async with _make_client(state) as client:
+        r = await client.delete("/api/admin/memory/aliases/rekin", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True
+    db.delete_alias.assert_called_once_with("rekin")
+    state.memory.remove_alias.assert_called_once_with("nickname:rekin")
+
+
+@pytest.mark.asyncio
+async def test_resolve_alias():
+    """POST /memory/aliases/{nickname}/resolve resolves an unknown alias."""
+    state, _, db = _make_state()
+    db.upsert_alias = AsyncMock()
+    state.memory.add_alias = MagicMock()
+
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/aliases/unknown%3Ajohndoe/resolve",
+            headers=HEADERS,
+            json={"canonical_uid": "discord:789", "display_name": "John Doe"},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "ok"
+    assert "unknown:johndoe" in data["resolved"]
+    db.upsert_alias.assert_called_once_with(
+        "unknown:johndoe", "discord:789", "John Doe", "manual", 1.0
+    )
+    state.memory.add_alias.assert_called_once_with("nickname:unknown:johndoe", "discord:789")
+
+
+@pytest.mark.asyncio
+async def test_resolve_alias_rejects_empty_canonical():
+    """POST /memory/aliases/{nickname}/resolve returns 400 when canonical_uid is empty."""
+    state, _, db = _make_state()
+    db.upsert_alias = AsyncMock()
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/aliases/somealias/resolve",
+            headers=HEADERS,
+            json={"canonical_uid": "  ", "display_name": ""},
+        )
+    assert r.status_code == 400

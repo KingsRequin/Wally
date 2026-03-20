@@ -54,3 +54,15 @@ services:
       - ./.env:/app/.env
       - ./ROADMAP.md:/app/ROADMAP.md:ro
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: wally-cloudflared
+    command: tunnel --no-autoupdate run
+    networks:
+      - wally-net
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_WALLY_TOKEN}
+    depends_on:
+      - wally
+    restart: unless-stopped
