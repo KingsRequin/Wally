@@ -56,19 +56,49 @@ function toggleMode() {
   switchMode(currentMode === 'public' ? 'admin' : 'public');
 }
 
+function _isMobileNav() {
+  return document.body.classList.contains('is-mobile');
+}
+
 function switchMode(mode, restoreTab = null) {
   if (mode === 'admin') {
     if (!getToken()) { showAuthModal(); return; }
   }
   currentMode = mode;
+  document.body.classList.toggle('admin-mode', mode === 'admin');
 
+  const publicNav = document.getElementById('nav-public');
   const adminNav = document.getElementById('nav-admin');
   const divider = document.getElementById('sidebar-divider');
   const modeBtn = document.getElementById('sidebar-mode-toggle');
 
-  adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
-  if (divider) divider.style.display = mode === 'admin' ? 'block' : 'none';
-  if (modeBtn) modeBtn.classList.toggle('active', mode === 'admin');
+  if (_isMobileNav()) {
+    // Mobile: swap nav groups — show one at a time
+    publicNav.style.display = mode === 'admin' ? 'none' : 'flex';
+    adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
+    if (divider) divider.style.display = 'none';
+    // Update toggle button: back arrow + "Retour" label in admin, lock icon in public
+    if (modeBtn) {
+      modeBtn.classList.toggle('active', mode === 'admin');
+      const svg = modeBtn.querySelector('svg');
+      const span = modeBtn.querySelector('span');
+      if (svg) {
+        svg.innerHTML = mode === 'admin'
+          ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>'
+          : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>';
+      }
+      if (span) {
+        span.textContent = mode === 'admin' ? 'Retour' : 'Admin';
+        span.style.display = mode === 'admin' ? 'block' : '';
+      }
+    }
+  } else {
+    // Desktop: show both nav groups
+    publicNav.style.display = 'flex';
+    adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
+    if (divider) divider.style.display = mode === 'admin' ? 'block' : 'none';
+    if (modeBtn) modeBtn.classList.toggle('active', mode === 'admin');
+  }
 
   const firstTab = restoreTab || (mode === 'public' ? 'status' : 'admin-config');
   showTab(firstTab);
@@ -146,12 +176,12 @@ async function apiFetch(url, opts = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const r = await fetch(url, { ...opts, headers });
   if (r.status === 401) {
-    clearToken();
-    if (!_sessionExpiredFired) {
+    if (token && !_sessionExpiredFired) {
       _sessionExpiredFired = true;
       toast('Session expirée', 'error');
-      switchMode('public');
     }
+    clearToken();
+    switchMode('public');
     return null;
   }
   return r;
@@ -2008,6 +2038,7 @@ function updateCostBadge(alert) {
 }
 
 async function pollCostsBadge() {
+  if (!getToken()) return;
   try {
     const r = await apiFetch('/api/admin/costs/alert');
     if (!r || !r.ok) return;
@@ -2076,10 +2107,42 @@ async function renderChatTab() {
   if (!authed) {
     el.innerHTML = `
       <div class="chat-login-prompt">
-        <div style="font-size:1.2rem;font-weight:600;margin-bottom:8px">Chat avec Wally</div>
-        <div style="color:var(--text-muted);max-width:400px">
-          Connecte-toi avec Discord pour discuter avec Wally en temps réel.
+        <div class="login-title">Avant de te connecter...</div>
+        <div class="login-subtitle">Wally a besoin de savoir qui tu es pour se souvenir de toi.</div>
+
+        <div class="login-why-block">
+          <div class="login-why-icon">🔗</div>
+          <div class="login-why-title">Pourquoi Discord ?</div>
+          <div class="login-why-text">
+            Wally utilise ton compte Discord comme identifiant pour rattacher tes souvenirs à ton profil.
+            C'est ce qui lui permet de te reconnaître et de se souvenir de tes échanges passés,
+            que ce soit ici ou sur le serveur Discord.
+          </div>
         </div>
+
+        <div class="login-cards">
+          <div class="login-card" style="--card-accent: var(--c-curiosity)">
+            <div class="login-card-icon" aria-hidden="true">🧠</div>
+            <div class="login-card-title">Ta mémoire personnelle</div>
+            <div class="login-card-text">Au fil de vos échanges, Wally retient tes goûts, ton humour, tes sujets favoris. Chaque conversation devient plus naturelle.</div>
+          </div>
+          <div class="login-card" style="--card-accent: var(--c-joy)">
+            <div class="login-card-icon" aria-hidden="true">🔒</div>
+            <div class="login-card-title">Données minimales</div>
+            <div class="login-card-text">Seuls ton pseudo, ton ID et ton avatar Discord sont récupérés. Aucun accès à tes messages, serveurs ou liste d'amis.</div>
+          </div>
+          <div class="login-card" style="--card-accent: var(--c-sadness)">
+            <div class="login-card-icon" aria-hidden="true">📦</div>
+            <div class="login-card-title">Hébergement local</div>
+            <div class="login-card-text">Tout est stocké sur le serveur de Wally. Rien ne transite par des services tiers. Tes données restent chez nous.</div>
+          </div>
+          <div class="login-card" style="--card-accent: var(--c-anger)">
+            <div class="login-card-icon" aria-hidden="true">🗑️</div>
+            <div class="login-card-title">Contrôle total</div>
+            <div class="login-card-text">Tu peux consulter ou supprimer tous tes souvenirs à tout moment, directement depuis le chat.</div>
+          </div>
+        </div>
+
         <a href="/api/chat/auth/login" class="chat-login-btn">
           <svg width="20" height="15" viewBox="0 0 71 55" fill="white"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.4.2a.2.2 0 0 0-.2.1 40.8 40.8 0 0 0-1.8 3.7 54 54 0 0 0-16.2 0A37.4 37.4 0 0 0 25.4.3a.2.2 0 0 0-.2-.1A58.4 58.4 0 0 0 10.5 4.9a.2.2 0 0 0-.1.1C1.5 18.7-.9 32.2.3 45.5v.2a58.9 58.9 0 0 0 17.8 9a.2.2 0 0 0 .3-.1 42.1 42.1 0 0 0 3.6-5.9.2.2 0 0 0-.1-.3 38.8 38.8 0 0 1-5.5-2.6.2.2 0 0 1 0-.4l1.1-.9a.2.2 0 0 1 .2 0 42 42 0 0 0 35.8 0 .2.2 0 0 1 .2 0l1.1.9a.2.2 0 0 1 0 .3 36.4 36.4 0 0 1-5.5 2.7.2.2 0 0 0-.1.3 47.3 47.3 0 0 0 3.6 5.8.2.2 0 0 0 .3.1A58.7 58.7 0 0 0 70.5 45.7v-.2c1.4-15-2.3-28.4-9.8-40.1a.2.2 0 0 0-.1-.1zM23.7 37.3c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1zm23.2 0c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1z"/></svg>
           Se connecter avec Discord
@@ -2090,16 +2153,31 @@ async function renderChatTab() {
 
   el.innerHTML = `
     <div class="chat-container">
-      <div class="chat-avatar-bar">
-        <img class="chat-avatar-img" id="chat-wally-avatar" src="/static/avatar/emotions/neutral/idle.png" alt="Wally">
-        <div>
-          <div style="font-weight:600">Wally</div>
-          <div class="chat-avatar-status" id="chat-avatar-status">neutre</div>
+      <div class="chat-hero">
+        <div class="chat-hero-side chat-hero-emotions" id="chat-hero-emotions"></div>
+        <div class="chat-hero-center">
+          <img class="chat-hero-avatar" id="chat-wally-avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="Wally">
+          <div class="chat-hero-name">Wally</div>
+          <div class="chat-hero-status" id="chat-avatar-status">neutre</div>
+          <div class="chat-hero-user">
+            <strong>${escHtml(_chatUser.username)}</strong>
+            <button onclick="chatLogout()" style="font-size:0.65rem;padding:2px 8px" class="btn">Déconnexion</button>
+          </div>
         </div>
-        <div style="margin-left:auto;font-size:0.72rem;color:var(--text-muted)">
-          Connecté en tant que <strong>${escHtml(_chatUser.username)}</strong>
-          <button onclick="chatLogout()" style="margin-left:8px;font-size:0.68rem;padding:2px 8px" class="btn">Déconnexion</button>
+        <div class="chat-hero-side chat-hero-memories" id="chat-hero-memories">
+          <div class="chat-hero-side-title">
+            Ce que Wally sait de toi
+            <button class="chat-mem-expand-btn" onclick="chatOpenMemoryPanel()" title="Voir tout">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+          <div class="chat-hero-memories-list" id="chat-memories-list">
+            <span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Chargement...</span>
+          </div>
         </div>
+        <button class="chat-mem-mobile-btn" onclick="chatOpenMemoryPanel()" title="Ce que Wally sait de toi">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M10 21h4"/></svg>
+        </button>
       </div>
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-typing" id="chat-typing">Wally réfléchit...</div>
@@ -2111,8 +2189,26 @@ async function renderChatTab() {
       </div>
     </div>`;
 
+  // Memory panel overlay (inserted once into the page)
+  if (!document.getElementById('chat-memory-panel')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div class="chat-mem-overlay" id="chat-memory-panel" onclick="chatCloseMemoryPanel(event)">
+        <div class="chat-mem-panel">
+          <div class="chat-mem-panel-header">
+            <span class="chat-mem-panel-title">Ce que Wally sait de toi</span>
+            <button class="chat-mem-panel-close" onclick="chatCloseMemoryPanel()">&times;</button>
+          </div>
+          <div class="chat-mem-panel-body" id="chat-mem-panel-body">
+            <span style="color:rgba(255,255,255,0.3)">Chargement...</span>
+          </div>
+        </div>
+      </div>`);
+  }
+
+  chatBuildHeroEmotions();
   chatConnectWs();
   chatStartAvatarUpdates();
+  chatLoadMyMemories();
 }
 
 function chatLogout() {
@@ -2164,25 +2260,22 @@ function chatAppendMessage(msg) {
   if (!el) return;
   const isWally = msg.is_wally;
   const avatarSrc = isWally
-    ? (document.getElementById('chat-wally-avatar')?.src || '/static/avatar/emotions/neutral/idle.png')
+    ? (document.getElementById('chat-wally-avatar')?.src || '/static/avatar/emotions/neutral/idle.gif')
     : (msg.avatar_url || '');
   const avatarHtml = avatarSrc
     ? `<img class="chat-msg-avatar" src="${escAttr(avatarSrc)}" alt="">`
-    : `<div class="chat-msg-avatar" style="background:var(--accent);border-radius:50%"></div>`;
+    : `<div class="chat-msg-avatar" style="background:var(--accent)"></div>`;
 
   const time = msg.created_at
     ? new Date(msg.created_at * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
     : '';
 
   const div = document.createElement('div');
-  div.className = `chat-msg ${isWally ? 'wally' : ''}`;
+  div.className = `chat-msg ${isWally ? 'wally' : 'user'}`;
   div.innerHTML = `
     ${avatarHtml}
-    <div class="chat-msg-body">
-      <div class="chat-msg-header">
-        <span class="chat-msg-username ${isWally ? 'wally' : ''}">${escHtml(msg.username)}</span>
-        <span class="chat-msg-time">${time}</span>
-      </div>
+    <div class="chat-msg-bubble">
+      <div class="chat-msg-username ${isWally ? 'wally' : ''}">${escHtml(msg.username)} <span class="chat-msg-time">${time}</span></div>
       <div class="chat-msg-content">${escHtml(msg.content)}</div>
     </div>`;
   el.appendChild(div);
@@ -2213,6 +2306,108 @@ function chatSend() {
   input.value = '';
 }
 
+// ── Mobile virtual keyboard handling ────────────────────────────
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput && document.activeElement === chatInput) {
+      requestAnimationFrame(() => chatInput.scrollIntoView({ block: 'nearest' }));
+    }
+  });
+}
+
+// ── Chat Hero: Emotions panel ───────────────────────────────────
+
+function chatBuildHeroEmotions() {
+  const el = document.getElementById('chat-hero-emotions');
+  if (!el) return;
+  let html = '<div class="chat-hero-side-title">Humeur</div>';
+  for (const e of EMOTIONS) {
+    html += `
+      <div class="chat-hero-gauge">
+        <span class="chat-hero-gauge-icon" style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]}</span>
+        <div class="chat-hero-gauge-track">
+          <div class="chat-hero-gauge-fill ${e}" id="chat-fill-${e}"></div>
+        </div>
+      </div>`;
+  }
+  el.innerHTML = html;
+  chatUpdateHeroEmotions();
+}
+
+function chatUpdateHeroEmotions() {
+  if (typeof currentEmotions === 'undefined' || !currentEmotions) return;
+  for (const e of EMOTIONS) {
+    const fill = document.getElementById(`chat-fill-${e}`);
+    if (fill) fill.style.width = `${((currentEmotions[e] ?? 0) * 100).toFixed(1)}%`;
+  }
+}
+
+// ── Chat Hero: Memories panel ───────────────────────────────────
+
+async function chatLoadMyMemories() {
+  const el = document.getElementById('chat-memories-list');
+  if (!el) return;
+
+  const jwt = getChatJwt();
+  if (!jwt) { el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Non connecté</span>'; return; }
+
+  try {
+    const r = await fetch('/api/chat/my-memories', {
+      headers: { 'Authorization': `Bearer ${jwt}` },
+    });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    const memories = data.memories || [];
+    _chatMemoriesCache = memories;
+
+    if (memories.length === 0) {
+      el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Aucun souvenir</span>';
+    } else {
+      el.innerHTML = memories.map(m =>
+        `<div class="chat-hero-memory-item">${escHtml(m)}</div>`
+      ).join('');
+    }
+
+    // Also update the expanded panel if it exists
+    const panelBody = document.getElementById('chat-mem-panel-body');
+    if (panelBody) _renderMemoryPanelBody(panelBody, memories);
+  } catch {
+    el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Indisponible</span>';
+  }
+}
+
+// ── Chat Memory Panel ───────────────────────────────────────────
+
+let _chatMemoriesCache = null;
+
+function chatOpenMemoryPanel(evt) {
+  const overlay = document.getElementById('chat-memory-panel');
+  if (!overlay) return;
+  overlay.classList.add('open');
+
+  const body = document.getElementById('chat-mem-panel-body');
+  if (body && _chatMemoriesCache !== null) {
+    _renderMemoryPanelBody(body, _chatMemoriesCache);
+  }
+}
+
+function chatCloseMemoryPanel(evt) {
+  if (evt && evt.target !== evt.currentTarget) return;
+  const overlay = document.getElementById('chat-memory-panel');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function _renderMemoryPanelBody(el, memories) {
+  if (memories.length === 0) {
+    el.innerHTML = '<div style="color:rgba(255,255,255,0.35);text-align:center;padding:32px 0">Wally ne sait encore rien de toi. Discute avec lui !</div>';
+    return;
+  }
+  el.innerHTML = memories.map(m =>
+    `<div class="chat-mem-panel-item">${escHtml(m)}</div>`
+  ).join('');
+}
+
 // ── Chat Avatar ─────────────────────────────────────────────────
 
 function chatStartAvatarUpdates() {
@@ -2222,6 +2417,7 @@ function chatStartAvatarUpdates() {
 
 function chatUpdateAvatar() {
   if (typeof currentEmotions === 'undefined' || !currentEmotions) return;
+  chatUpdateHeroEmotions();
 
   const emotions = currentEmotions;
   let dominant = 'neutral';
