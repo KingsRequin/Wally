@@ -49,11 +49,17 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         setup_log_sink()
 
         task = asyncio.create_task(_snapshot_task(state))
+        cleanup_task = asyncio.create_task(_chat_cleanup_task(state))
         logger.info("Dashboard started on port 8080")
         yield
         task.cancel()
+        cleanup_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await cleanup_task
         except asyncio.CancelledError:
             pass
         logger.info("Dashboard shutdown")
@@ -63,7 +69,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -71,6 +77,10 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(twitch.router, prefix="/api/public")
     app.include_router(sse.public_router, prefix="/api/public")
     app.include_router(roadmap.router, prefix="/api/public")
+
+    # Chat routes (public — JWT auth handled internally)
+    app.include_router(chat_auth.router, prefix="/api/chat")
+    app.include_router(chat.router)
 
     # Admin routes
     app.include_router(emotions.admin_router, prefix="/api/admin")
@@ -99,3 +109,15 @@ async def _snapshot_task(state: "AppState") -> None:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
             logger.warning("Failed periodic emotion snapshot: {e}", e=exc)
+
+
+async def _chat_cleanup_task(state: "AppState") -> None:
+    """Nettoie les vieux messages chat et refresh tokens toutes les 24h."""
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            await state.db.cleanup_old_chat_messages(days=30)
+            await state.db.cleanup_expired_refresh_tokens()
+            logger.info("Chat cleanup: old messages and expired tokens removed")
+        except Exception as exc:
+            logger.warning("Chat cleanup failed: {e}", e=exc)
