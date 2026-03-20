@@ -92,7 +92,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.persona.build_prompt_block = MagicMock(return_value="")
     bot.persona.emotion_directives = {}
     bot.emotion.process_message = AsyncMock()
-    bot.session_manager = MagicMock()
+    bot.fact_extractor = MagicMock()
     bot.web_search = None
     bot.apex_api = None
 
@@ -130,5 +130,5 @@ async def test_discord_handler_updates_context_window(tmp_path):
     # memory.add() ne doit pas être appelé directement depuis le handler
     bot.memory.add.assert_not_called()
 
-    # Le SessionManager enregistre le message pour l'analyse en fin de session
-    bot.session_manager.record_message.assert_called_once()
+    # Le FactExtractor enregistre le message pour l'analyse
+    bot.fact_extractor.record_message.assert_called_once()

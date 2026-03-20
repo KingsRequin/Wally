@@ -141,13 +141,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             str(message.channel.id), message.author.display_name, message.content
         )
         # Enregistrement dans la session active du canal (tous les messages)
-        if getattr(bot, "session_manager", None) is not None:
-            bot.session_manager.record_message(
-                str(message.channel.id),
-                "discord",
-                user_id,
-                message.author.display_name,
-                message.content,
+        if getattr(bot, "fact_extractor", None) is not None:
+            bot.fact_extractor.record_message(
+                str(message.channel.id), "discord", user_id,
+                message.author.display_name, message.content,
+                is_reply=message.reference is not None,
             )
     else:
         prelude = []
@@ -460,6 +458,7 @@ async def _respond(
             bot, text_content, platform, user_id, guild_id, trust, context_messages,
             image_urls=image_urls or None,
             channel_id=str(message.channel.id),
+            display_name=message.author.display_name,
         ))
 
     except Exception as e:
@@ -480,6 +479,7 @@ async def _post_process(
     context_messages: list[dict] | None = None,
     image_urls: list[str] | None = None,
     channel_id: str = "",
+    display_name: str = "",
 ) -> None:
     try:
         llm_deltas = await bot.emotion.process_message(
@@ -502,6 +502,13 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, -0.05)
             else:
                 await bot.db.update_trust_score(platform, user_id, 0.01)
+
+        if llm_deltas and llm_deltas.get("user_facts"):
+            await bot.memory.add(
+                platform, user_id,
+                "\n".join(llm_deltas["user_facts"]),
+                username=display_name,
+            )
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8:

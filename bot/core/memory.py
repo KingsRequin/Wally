@@ -124,6 +124,13 @@ class MemoryService:
             logger.info("Alias cache chargé: {n} liaisons", n=len(alias_map))
         except Exception as e:
             logger.warning("Impossible de charger les alias: {e}", e=e)
+        try:
+            nickname_map = await db.get_nickname_alias_map()
+            for nickname, canonical_uid in nickname_map.items():
+                self._alias_cache[f"nickname:{nickname}"] = canonical_uid
+            logger.info("Nickname aliases loaded: {n}", n=len(nickname_map))
+        except Exception as e:
+            logger.warning("Failed to load nickname aliases: {e}", e=e)
 
     def add_alias(self, alias_id: str, canonical_id: str) -> None:
         """Enregistre un alias dans le cache (après acceptation d'un lien)."""

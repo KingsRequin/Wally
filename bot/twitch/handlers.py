@@ -53,8 +53,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author, content)
-    if getattr(bot, "session_manager", None) is not None:
-        bot.session_manager.record_message(channel_id, "twitch", user_id, author, content)
+    if getattr(bot, "fact_extractor", None) is not None:
+        bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False)
 
     # Reaction tracking: scan for positive reactions in Twitch window
     tracker = getattr(bot, "reaction_tracker", None)
@@ -262,6 +262,9 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, -0.05)
             else:
                 await bot.db.update_trust_score(platform, user_id, 0.01)
+
+        if llm_deltas and llm_deltas.get("user_facts"):
+            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]))
     except Exception as e:
         logger.error("Twitch post-process error: {e}", e=e)
 

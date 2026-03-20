@@ -106,12 +106,12 @@ async def main() -> None:
     journal = DailyJournal(config, openai_client, emotion, memory, db=db)  # db injecté
     logger.info("DailyJournal initialized")
 
-    from bot.core.sessions import SessionManager
+    from bot.core.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
 
-    session_manager = SessionManager(memory, openai_client, db=db)
-    await session_manager.restore_sessions()
-    logger.info("SessionManager initialized")
+    fact_extractor = FactExtractor(config, memory, openai_client, db=db)
+    await fact_extractor.restore_buffers()
+    logger.info("FactExtractor initialized")
 
     reaction_tracker = ReactionTracker(emotion, db)
     logger.info("ReactionTracker initialized")
@@ -121,7 +121,7 @@ async def main() -> None:
 
     discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
     discord_bot.journal = journal
-    discord_bot.session_manager = session_manager
+    discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
     discord_bot.reaction_tracker = reaction_tracker
@@ -214,7 +214,7 @@ async def main() -> None:
             twitch_api=twitch_api,
             persona=persona,
         )
-        twitch_bot.session_manager = session_manager
+        twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
         twitch_bot.reaction_tracker = reaction_tracker
@@ -247,6 +247,7 @@ async def main() -> None:
         discord_bot=discord_bot,
         twitch_bot=_twitch_bot_ref,
         prompts=prompts,
+        fact_extractor=fact_extractor,
     )
 
     discord_bot.dashboard_state = dashboard_state

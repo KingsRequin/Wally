@@ -56,6 +56,7 @@ class WallyTwitch(commands.Bot):
         self._channel_ids: dict[str, str] = {}
         # Chaînes invitées ayant été détectées live au moins une fois
         self._channel_was_live: dict[str, bool] = {}
+        self.fact_extractor = None  # set by main.py after construction
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
 
