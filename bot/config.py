@@ -74,6 +74,13 @@ class TavilyConfig:
 
 
 @dataclass
+class WebChatConfig:
+    cooldown_seconds: int = 10
+    history_limit: int = 50
+    random_avatar_chance: float = 0.05
+
+
+@dataclass
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
@@ -82,6 +89,7 @@ class Config:
     emotions: dict[str, EmotionDecayConfig]
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
+    web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     _path: str = field(default="", init=False, repr=False)
 
     @classmethod
@@ -109,6 +117,7 @@ class Config:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
+            web_chat_raw = raw.get("web_chat", {})
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=OpenAIConfig(**raw["openai"]),
@@ -117,6 +126,7 @@ class Config:
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
+                web_chat=WebChatConfig(**web_chat_raw),
             )
         except KeyError as e:
             raise ValueError(
@@ -136,6 +146,7 @@ class Config:
             "emotions": {k: asdict(v) for k, v in self.emotions.items()},
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
             "tavily": asdict(self.tavily),
+            "web_chat": asdict(self.web_chat),
         }
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
