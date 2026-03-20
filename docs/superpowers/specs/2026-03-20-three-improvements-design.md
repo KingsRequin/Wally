@@ -15,12 +15,21 @@ Le trust score démarre actuellement à 0.5 (neutre). La confiance doit se méri
 **`bot/db/database.py`**
 - Schema SQL : `score REAL NOT NULL DEFAULT 0.0` (était `0.5`)
 - Fallback Python dans `get_trust_score()` : `return 0.0` (était `0.5`)
-- Migration au démarrage dans `_init_schema()` : `UPDATE trust_scores SET score = MAX(score - 0.5, 0.0)` — appliquée une seule fois via un flag ou une table de migrations
+- `COALESCE(t.score, 0.5)` dans `list_memory_users()` → `COALESCE(t.score, 0.0)`
+- Migration au démarrage dans `_init_schema()` : `UPDATE trust_scores SET score = MAX(score - 0.5, 0.0)`
+- Idempotence : `ALTER TABLE trust_scores ADD COLUMN trust_v2_migrated INTEGER DEFAULT 0` — si la colonne existe déjà, le UPDATE est skippé (même pattern que les migrations existantes avec try/except)
+
+**`bot/core/emotion.py`**
+- `trust_score: float = 0.5` (défauts des méthodes d'analyse) → `0.0` (2 occurrences)
+
+**`bot/dashboard/routes/chat.py`**
+- `trust: float = 0.5` dans `_post_process()` → `0.0`
 
 ### Impact
 - Les nouveaux utilisateurs partent à 0.0
 - Les utilisateurs existants perdent 0.5 de trust score (plancher à 0.0)
-- Le reste du code utilise déjà `get_trust_score()` comme unique point d'accès → aucun autre changement
+- À +0.01 par interaction positive, il faut ~50 interactions pour atteindre l'ancien défaut de 0.5 — c'est le comportement voulu (la confiance se mérite)
+- Faire un backup de la base SQLite avant déploiement est recommandé
 
 ---
 
@@ -76,7 +85,7 @@ Chaque section suit le même pattern :
 
 #### Section 2 — Système émotionnel
 - **Vulgarisation** : Wally ressent 5 émotions en permanence (colère, joie, tristesse, curiosité, ennui), chacune entre 0.0 et 1.0. Chaque message les fait bouger — un compliment booste la joie, une insulte monte la colère. Avec le temps, elles retombent naturellement vers zéro, comme un humain qui se calme. La vitesse de retombée est différente pour chaque émotion. Si la colère dépasse un seuil trop souvent avec le même utilisateur, Wally le mute temporairement.
-- **Visuel** : 5 jauges animées avec les couleurs d'émotion
+- **Visuel** : 5 jauges statiques/décoratives avec les couleurs d'émotion (pas de données live — c'est de la documentation, pas un monitoring)
 - **Aller plus loin** : Formule `E(t) = E₀ × e^(−λ × Δt)`, code `_apply_decay()`, analyse NRCLex, impact du trust score sur les deltas, mécanisme de timeout
 
 #### Section 3 — Mémoire
@@ -96,8 +105,18 @@ Chaque section suit le même pattern :
 - **Schéma** : Diagramme d'architecture (Discord Bot + Twitch Bot → Core Services → Qdrant/SQLite/OpenAI)
 - **Aller plus loin** : `asyncio.gather()`, injection de dépendances dans `main.py`, docker-compose, healthcheck Qdrant, config hot-reload
 
+### Rendu
+- Contenu 100% statique, généré en JS dans `renderJournalDetailTab()` — pas d'appel API
+- Schémas en CSS/HTML inline (même approche que les SVG inline existants dans le dashboard)
+- Grille 2×2 des cartes passe en colonne unique sur mobile (breakpoint existant `is-mobile`)
+- Les `<details>` natifs HTML gèrent les accordéons — pas de JS custom nécessaire
+
 ### Engagement de maintenance
 Cette page doit être mise à jour à chaque modification du bot qui impacte un des 6 sujets couverts. C'est une responsabilité continue.
+
+### Tests
+- Améliorations 2 et 3 sont purement frontend → test manuel suffisant
+- Amélioration 1 (trust score) → mettre à jour les tests existants qui assertent sur le défaut 0.5
 
 ### Fichiers modifiés
 - `bot/dashboard/static/index.html` — nouvel onglet dans la sidebar + conteneur `tab-journal-detail`
