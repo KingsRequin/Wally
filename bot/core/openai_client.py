@@ -94,7 +94,8 @@ class OpenAIClient:
         self._client = AsyncOpenAI(api_key=api_key)
 
     async def _complete_responses_api(
-        self, model: str, messages: list[dict], purpose: str, user_id: str | None = None
+        self, model: str, messages: list[dict], purpose: str,
+        user_id: str | None = None, max_tokens: int | None = None,
     ) -> str:
         kwargs: dict = {
             "model": model,
@@ -106,8 +107,9 @@ class OpenAIClient:
         verbosity = self._config.openai.text_verbosity
         if verbosity:
             kwargs["text"] = {"format": {"type": "text"}, "verbosity": verbosity}
-        if self._config.openai.max_tokens:
-            kwargs["max_output_tokens"] = self._config.openai.max_tokens
+        effective_max = max_tokens or self._config.openai.max_tokens
+        if effective_max:
+            kwargs["max_output_tokens"] = effective_max
         response = await self._client.responses.create(**kwargs)
         text = response.output_text
         if response.usage:
@@ -164,8 +166,10 @@ class OpenAIClient:
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         model = model or self._config.openai.primary_model
+        effective_max_tokens = max_tokens or self._config.openai.max_tokens
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
         if image_urls:
@@ -177,7 +181,7 @@ class OpenAIClient:
 
         if _uses_responses_api(model):
             try:
-                return await self._complete_responses_api(model, full_messages, purpose, user_id=user_id)
+                return await self._complete_responses_api(model, full_messages, purpose, user_id=user_id, max_tokens=effective_max_tokens)
             except Exception as exc:
                 logger.error("OpenAI Responses API error: {e}", e=exc)
                 return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
@@ -188,7 +192,7 @@ class OpenAIClient:
                     model=model,
                     messages=full_messages,
                     temperature=self._config.openai.temperature,
-                    max_completion_tokens=self._config.openai.max_tokens,
+                    max_completion_tokens=effective_max_tokens,
                 )
                 usage = response.usage
                 try:
@@ -486,6 +490,211 @@ class OpenAIClient:
             image_urls=image_urls,
             user_id=user_id,
         )
+
+    async def complete_secondary_structured(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        schema: dict,
+        schema_name: str = "response",
+        purpose: str = "structured",
+        user_id: str | None = None,
+    ) -> dict:
+        """Call the secondary model with JSON schema structured output.
+
+        Returns the parsed dict. Raises RuntimeError on truncation or total failure.
+        Uses Responses API for o1/o3/o4/gpt-5 models, Chat Completions otherwise.
+        """
+        model = self._config.openai.secondary_model
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+        if _uses_responses_api(model):
+            # Responses API path
+            for attempt in range(3):
+                try:
+                    kwargs: dict = {
+                        "model": model,
+                        "input": full_messages,
+                        "text": {
+                            "format": {
+                                "type": "json_schema",
+                                "name": schema_name,
+                                "schema": schema,
+                            }
+                        },
+                    }
+                    effort = self._config.openai.reasoning_effort
+                    if effort and effort != "none":
+                        kwargs["reasoning"] = {"effort": effort}
+                    if self._config.openai.max_tokens:
+                        kwargs["max_output_tokens"] = self._config.openai.max_tokens
+
+                    response = await self._client.responses.create(**kwargs)
+
+                    if response.status != "completed":
+                        raise RuntimeError(
+                            f"Structured output truncated or incomplete "
+                            f"(status={response.status!r})"
+                        )
+
+                    parsed = json.loads(response.output_text)
+
+                    if response.usage:
+                        try:
+                            cached = response.usage.input_tokens_details.cached_tokens or 0
+                        except (AttributeError, TypeError):
+                            cached = 0
+                        cost = estimate_cost(
+                            model,
+                            response.usage.input_tokens,
+                            response.usage.output_tokens,
+                            cached_input_tokens=cached,
+                        )
+                        await self._db.log_cost(
+                            model,
+                            response.usage.input_tokens,
+                            response.usage.output_tokens,
+                            cost,
+                            purpose,
+                            user_id=user_id,
+                        )
+                        logger.info(
+                            "OpenAI {model} (Responses/structured) — {inp}in/{out}out tokens, "
+                            "${cost:.6f} [{purpose}]",
+                            model=model,
+                            inp=response.usage.input_tokens,
+                            out=response.usage.output_tokens,
+                            cost=cost,
+                            purpose=purpose,
+                        )
+
+                    return parsed
+
+                except RuntimeError:
+                    raise
+                except RateLimitError:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Rate limited by OpenAI (structured), retrying in {w}s (attempt {a}/3)",
+                        w=wait,
+                        a=attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                except APIStatusError as exc:
+                    if exc.status_code >= 500:
+                        wait = 2 ** attempt
+                        logger.warning(
+                            "OpenAI server error {code} (structured), retrying in {w}s",
+                            code=exc.status_code,
+                            w=wait,
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.error(
+                            "OpenAI API error {code} (structured): {e}",
+                            code=exc.status_code,
+                            e=exc,
+                        )
+                        break
+                except Exception as exc:
+                    logger.error("OpenAI unexpected error (structured/responses): {e}", e=exc)
+                    break
+
+            raise RuntimeError(
+                f"complete_secondary_structured failed after 3 attempts (model={model!r})"
+            )
+
+        else:
+            # Chat Completions path
+            for attempt in range(3):
+                try:
+                    response = await self._client.chat.completions.create(
+                        model=model,
+                        messages=full_messages,
+                        temperature=self._config.openai.temperature,
+                        max_completion_tokens=self._config.openai.max_tokens,
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": schema_name,
+                                "schema": schema,
+                                "strict": True,
+                            },
+                        },
+                    )
+
+                    choice = response.choices[0]
+                    if choice.finish_reason == "length":
+                        raise RuntimeError(
+                            "Structured output truncated (finish_reason='length')"
+                        )
+
+                    parsed = json.loads(choice.message.content)
+
+                    usage = response.usage
+                    try:
+                        cached = usage.prompt_tokens_details.cached_tokens or 0
+                    except (AttributeError, TypeError):
+                        cached = 0
+                    cost = estimate_cost(
+                        model,
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                        cached_input_tokens=cached,
+                    )
+                    await self._db.log_cost(
+                        model,
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                        cost,
+                        purpose,
+                        user_id=user_id,
+                    )
+                    logger.info(
+                        "OpenAI {model} (Chat/structured) — {inp}in/{out}out tokens, "
+                        "${cost:.6f} [{purpose}]",
+                        model=model,
+                        inp=usage.prompt_tokens,
+                        out=usage.completion_tokens,
+                        cost=cost,
+                        purpose=purpose,
+                    )
+
+                    return parsed
+
+                except RuntimeError:
+                    raise
+                except RateLimitError:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Rate limited by OpenAI (structured), retrying in {w}s (attempt {a}/3)",
+                        w=wait,
+                        a=attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                except APIStatusError as exc:
+                    if exc.status_code >= 500:
+                        wait = 2 ** attempt
+                        logger.warning(
+                            "OpenAI server error {code} (structured), retrying in {w}s",
+                            code=exc.status_code,
+                            w=wait,
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.error(
+                            "OpenAI API error {code} (structured): {e}",
+                            code=exc.status_code,
+                            e=exc,
+                        )
+                        break
+                except Exception as exc:
+                    logger.error("OpenAI unexpected error (structured/chat): {e}", e=exc)
+                    break
+
+            raise RuntimeError(
+                f"complete_secondary_structured failed after 3 attempts (model={model!r})"
+            )
 
     async def get_daily_cost(self) -> float:
         return await self._db.get_cost_since(time.time() - 86_400)
