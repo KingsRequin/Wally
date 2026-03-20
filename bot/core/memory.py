@@ -125,6 +125,14 @@ class MemoryService:
         except Exception as e:
             logger.warning("Impossible de charger les alias: {e}", e=e)
 
+    def add_alias(self, alias_id: str, canonical_id: str) -> None:
+        """Enregistre un alias dans le cache (après acceptation d'un lien)."""
+        self._alias_cache[alias_id] = canonical_id
+
+    def remove_alias(self, alias_id: str) -> None:
+        """Supprime un alias du cache (après déliaison)."""
+        self._alias_cache.pop(alias_id, None)
+
     async def add(self, platform: str, user_id: str, content: str,
                   username: str = "", emotion_context: str = "") -> None:
         self._init_mem0()
@@ -212,6 +220,37 @@ class MemoryService:
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
 
+    async def delete_user_memories(self, platform: str, user_id: str) -> None:
+        """Delete all long-term memories for a given user (e.g. orphan cleanup)."""
+        self._init_mem0()
+        if self._mem0 is None:
+            return
+        try:
+            uid = self._user_id(platform, user_id)
+            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
+            if isinstance(results, dict):
+                results = results.get("results", [])
+            deleted = 0
+            for r in results:
+                mid = r.get("id")
+                if mid:
+                    try:
+                        await asyncio.to_thread(self._mem0.delete, mid)
+                        deleted += 1
+                    except Exception as del_exc:
+                        logger.warning(
+                            "delete_user_memories: failed to delete {id}: {e}",
+                            id=mid,
+                            e=del_exc,
+                        )
+            logger.info(
+                "delete_user_memories: removed {n} memories for {uid}",
+                n=deleted,
+                uid=uid,
+            )
+        except Exception as exc:
+            logger.warning("delete_user_memories failed: {e}", e=exc)
+
     async def reset_all(self) -> None:
         """Clear all context windows and all mem0 long-term memories."""
         self._context_windows.clear()
@@ -243,7 +282,10 @@ class MemoryService:
             logger.warning("mem0 get_all failed: {e}", e=exc)
             return ""
 
-    async def search(self, platform: str, user_id: str, query: str) -> str:
+    async def search(
+        self, platform: str, user_id: str, query: str,
+        context_messages: list[dict] | None = None,
+    ) -> str:
         self._init_mem0()
         if self._mem0 is None:
             return ""
@@ -251,28 +293,54 @@ class MemoryService:
             return ""
         try:
             uid = self._user_id(platform, user_id)
-            results = await asyncio.to_thread(
-                self._mem0.search, query, user_id=uid, limit=5
-            )
-            # mem0 >=0.1.40 returns {"results": [...]} dict instead of a list
-            if isinstance(results, dict):
-                results = results.get("results", [])
-            if not results:
-                return ""
-            # Filtrer les résultats sous le seuil de pertinence sémantique
-            relevant = [r for r in results if r.get("score", 1.0) >= _MIN_SEARCH_SCORE]
-            if len(relevant) < len(results):
-                logger.debug(
-                    "search: {n} résultat(s) ignoré(s) (score < {t}) pour {uid}",
-                    n=len(results) - len(relevant),
-                    t=_MIN_SEARCH_SCORE,
-                    uid=uid,
+
+            # Build context query from prelude (exclude Wally's messages)
+            context_query = ""
+            if context_messages:
+                context_texts = [
+                    m["content"] for m in context_messages[-5:]
+                    if m.get("author", "").lower() != "wally"
+                ]
+                context_query = "\n".join(context_texts).strip()
+
+            # Run searches (parallel if context available)
+            if context_query and context_query != query.strip():
+                direct_results, context_results = await asyncio.gather(
+                    asyncio.to_thread(self._mem0.search, query, user_id=uid, limit=5),
+                    asyncio.to_thread(self._mem0.search, context_query, user_id=uid, limit=5),
                 )
-            if not relevant:
+            else:
+                direct_results = await asyncio.to_thread(
+                    self._mem0.search, query, user_id=uid, limit=5
+                )
+                context_results = None
+
+            # Normalize mem0 response format
+            if isinstance(direct_results, dict):
+                direct_results = direct_results.get("results", [])
+            if context_results is not None and isinstance(context_results, dict):
+                context_results = context_results.get("results", [])
+
+            # Merge and deduplicate by memory content, keeping best score
+            seen: dict[str, float] = {}
+            for r in (direct_results or []):
+                mem = r.get("memory", "")
+                score = r.get("score", 1.0)
+                if mem and score >= _MIN_SEARCH_SCORE:
+                    seen[mem] = max(seen.get(mem, 0.0), score)
+            for r in (context_results or []):
+                mem = r.get("memory", "")
+                score = r.get("score", 1.0)
+                if mem and score >= _MIN_SEARCH_SCORE:
+                    seen[mem] = max(seen.get(mem, 0.0), score)
+
+            if not seen:
                 return ""
-            return "\n".join(
-                r.get("memory", "") for r in relevant if r.get("memory")
-            )
+
+            # Sort by score descending
+            sorted_memories = sorted(seen.items(), key=lambda x: x[1], reverse=True)
+            return "\n".join(mem for mem, _ in sorted_memories)
+
         except Exception as exc:
             logger.warning("mem0 search failed: {e}", e=exc)
             return ""
