@@ -246,6 +246,7 @@ async def main() -> None:
         twitch_api=_twitch_api_ref,
         discord_bot=discord_bot,
         twitch_bot=_twitch_bot_ref,
+        prompts=prompts,
     )
 
     discord_bot.dashboard_state = dashboard_state

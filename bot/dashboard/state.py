@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from bot.twitch.api import TwitchAPI
     from bot.discord.bot import WallyDiscord
     from bot.twitch.bot import WallyTwitch
+    from bot.core.prompts import PromptBuilder
 
 
 @dataclass
@@ -30,5 +31,6 @@ class AppState:
     twitch_api: Optional["TwitchAPI"]
     discord_bot: Optional["WallyDiscord"]
     twitch_bot: Optional["WallyTwitch"]
+    prompts: Optional["PromptBuilder"] = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
