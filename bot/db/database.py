@@ -153,6 +153,26 @@ CREATE TABLE IF NOT EXISTS opinions (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
+    content TEXT NOT NULL,
+    is_wally BOOLEAN DEFAULT 0,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
+
+CREATE TABLE IF NOT EXISTS chat_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    discord_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
+    expires_at REAL NOT NULL
+);
 """
 
 
@@ -922,3 +942,45 @@ class Database:
             (month_start.timestamp(),),
         )
         return int(row["cnt"]) if row else 0
+
+    # ── Web chat messages ─────────────────────────────────────────────────────
+
+    async def insert_chat_message(self, sender_id, username, avatar_url, content, is_wally, created_at):
+        cursor = await self._conn.execute(
+            "INSERT INTO chat_messages (sender_id, username, avatar_url, content, is_wally, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (sender_id, username, avatar_url, content, int(is_wally), created_at))
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def load_chat_history(self, limit=50):
+        cursor = await self._conn.execute("SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?", (limit,))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    async def cleanup_old_chat_messages(self, days=30):
+        cutoff = time.time() - days * 86400
+        await self._conn.execute("DELETE FROM chat_messages WHERE created_at < ?", (cutoff,))
+        await self._conn.commit()
+
+    # ── Chat refresh tokens ───────────────────────────────────────────────────
+
+    async def store_refresh_token(self, token_hash, discord_id, username, avatar_url, expires_at):
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO chat_refresh_tokens (token_hash, discord_id, username, avatar_url, expires_at) VALUES (?, ?, ?, ?, ?)",
+            (token_hash, discord_id, username, avatar_url, expires_at))
+        await self._conn.commit()
+
+    async def get_refresh_token(self, token_hash):
+        cursor = await self._conn.execute(
+            "SELECT * FROM chat_refresh_tokens WHERE token_hash = ? AND expires_at > ?",
+            (token_hash, time.time()))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def delete_refresh_token(self, token_hash):
+        await self._conn.execute("DELETE FROM chat_refresh_tokens WHERE token_hash = ?", (token_hash,))
+        await self._conn.commit()
+
+    async def cleanup_expired_refresh_tokens(self):
+        await self._conn.execute("DELETE FROM chat_refresh_tokens WHERE expires_at < ?", (time.time(),))
+        await self._conn.commit()
