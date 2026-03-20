@@ -119,10 +119,13 @@ async def test_analyze_message_returns_dict():
 async def test_process_message_uses_llm_when_openai_injected():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+    mock_openai.complete_secondary_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.2, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
-        "new_words": []
-    }))
+        "new_words": [],
+        "trust_delta": 0.0,
+        "love_delta": 0.0,
+        "user_facts": [],
+    })
     engine.set_openai_client(mock_openai)
 
     await engine.process_message("t'es nul", trust_score=0.5, context_messages=[
@@ -130,14 +133,14 @@ async def test_process_message_uses_llm_when_openai_injected():
     ])
 
     assert engine.get_state()["anger"] == pytest.approx(0.2, abs=0.01)
-    mock_openai.complete_secondary.assert_called_once()
+    mock_openai.complete_secondary_structured.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_process_message_falls_back_on_llm_failure():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(side_effect=Exception("API error"))
+    mock_openai.complete_secondary_structured = AsyncMock(side_effect=Exception("API error"))
     engine.set_openai_client(mock_openai)
 
     # Should not raise — falls back to NRCLex (English text to get non-zero)
@@ -152,7 +155,7 @@ async def test_process_message_falls_back_on_llm_failure():
 async def test_process_message_falls_back_on_invalid_json():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value="pas du json")
+    mock_openai.complete_secondary_structured = AsyncMock(side_effect=Exception("invalid response"))
     engine.set_openai_client(mock_openai)
 
     await engine.process_message("test", trust_score=0.5, context_messages=[
@@ -446,15 +449,18 @@ async def test_analyze_llm_no_image_urls_no_prompt_enrichment():
     engine = EmotionEngine(make_config())
     captured_prompt = {}
 
-    async def capture_complete_secondary(system_prompt, messages, purpose="summary", image_urls=None):
+    async def capture_complete_secondary_structured(system_prompt, messages, schema=None, purpose="summary"):
         captured_prompt["system"] = system_prompt
-        return json.dumps({
+        return {
             "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
-            "new_words": []
-        })
+            "new_words": [],
+            "trust_delta": 0.0,
+            "love_delta": 0.0,
+            "user_facts": [],
+        }
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = capture_complete_secondary
+    mock_openai.complete_secondary_structured = capture_complete_secondary_structured
     engine.set_openai_client(mock_openai)
 
     await engine.process_message(

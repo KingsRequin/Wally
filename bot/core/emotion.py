@@ -74,6 +74,42 @@ DECAY_FLOOR = 0.01
 
 _LEARNED_WORDS_PATH = "data/fr_emotion_words.json"
 
+_EMOTION_ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "deltas": {
+            "type": "object",
+            "properties": {
+                "anger": {"type": "number"},
+                "joy": {"type": "number"},
+                "sadness": {"type": "number"},
+                "curiosity": {"type": "number"},
+                "boredom": {"type": "number"},
+            },
+            "required": ["anger", "joy", "sadness", "curiosity", "boredom"],
+            "additionalProperties": False,
+        },
+        "new_words": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "word": {"type": "string"},
+                    "emotion": {"type": "string"},
+                    "delta": {"type": "number"},
+                },
+                "required": ["word", "emotion", "delta"],
+                "additionalProperties": False,
+            },
+        },
+        "trust_delta": {"type": "number"},
+        "love_delta": {"type": "number"},
+        "user_facts": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["deltas", "new_words", "trust_delta", "love_delta", "user_facts"],
+    "additionalProperties": False,
+}
+
 
 def build_emotion_tag(emotion_state: dict[str, float]) -> str:
     """Construit un tag textuel à partir des émotions dominantes (≥ 0.2).
@@ -314,8 +350,8 @@ class EmotionEngine:
     async def _analyze_llm(
         self, text: str, trust_score: float, context_messages: list[dict],
         image_urls: list[str] | None = None,
-    ) -> tuple[dict[str, float], list[dict], float, float]:
-        """Analyse émotionnelle via LLM — retourne (deltas, new_words, trust_delta, love_delta)."""
+    ) -> tuple[dict[str, float], list[dict], float, float, list[str]]:
+        """Analyse émotionnelle via LLM — retourne (deltas, new_words, trust_delta, love_delta, user_facts)."""
         system_prompt = (
             "Tu es le module d'analyse émotionnelle de Wally, un bot de chat Discord. "
             "Ton rôle est de mesurer l'impact d'un échange sur l'état interne de Wally.\n\n"
@@ -352,6 +388,11 @@ class EmotionEngine:
             "- Le love_delta n'est jamais négatif. L'affection ne baisse que par le decay temporel.\n"
             "- Interaction neutre ou hostile → 0.0\n\n"
 
+            "## Extraction de faits\n"
+            "Retourne aussi \"user_facts\" : une liste de faits durables sur l'utilisateur "
+            "qui envoie le message déclencheur (centres d'intérêt, préférences, faits "
+            "biographiques, opinions exprimées). Liste vide si rien de durable.\n\n"
+
             "## Exemple\n"
             "trust_score: 0.30\n"
             "Historique :\n"
@@ -361,12 +402,12 @@ class EmotionEngine:
             "→ Réponse attendue :\n"
             '{"deltas": {"anger": 0.22, "joy": 0.0, "sadness": 0.05, "curiosity": 0.0, "boredom": 0.0}, '
             '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}], '
-            '"trust_delta": -0.05, "love_delta": 0.0}\n\n'
+            '"trust_delta": -0.05, "love_delta": 0.0, "user_facts": []}\n\n'
 
             "## Format de sortie\n"
             "JSON valide uniquement, sans markdown ni commentaire :\n"
             '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
-            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}], "trust_delta": 0.0, "love_delta": 0.0}'
+            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}], "trust_delta": 0.0, "love_delta": 0.0, "user_facts": []}'
         )
         if image_urls:
             system_prompt += (
@@ -384,22 +425,38 @@ class EmotionEngine:
             f"Historique récent :\n{context_lines}\n\n"
             f"Message déclencheur :\n{text}"
         )
-        raw = await self._openai.complete_secondary(
-            system_prompt,
-            [{"role": "user", "content": user_msg}],
-            purpose="emotion_analysis",
-            image_urls=image_urls or None,
-        )
-        parsed = json.loads(raw)
-        raw_deltas = parsed.get("deltas", {})
+        if image_urls:
+            # Images require multimodal content blocks — use plain complete_secondary + json.loads
+            raw = await self._openai.complete_secondary(
+                system_prompt,
+                [{"role": "user", "content": user_msg}],
+                purpose="emotion_analysis",
+                image_urls=image_urls,
+            )
+            parsed = json.loads(raw)
+            raw_deltas = parsed.get("deltas", {})
+            new_words = parsed.get("new_words", [])
+            trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta", 0.0))))
+            love_delta = max(0.0, min(0.1, float(parsed.get("love_delta", 0.0))))
+            user_facts = parsed.get("user_facts", [])
+        else:
+            # No images — use structured outputs (schema-guaranteed response)
+            parsed = await self._openai.complete_secondary_structured(
+                system_prompt,
+                [{"role": "user", "content": user_msg}],
+                schema=_EMOTION_ANALYSIS_SCHEMA,
+                purpose="emotion_analysis",
+            )
+            raw_deltas = parsed["deltas"]
+            new_words = parsed["new_words"]
+            trust_delta = max(-0.1, min(0.1, float(parsed["trust_delta"])))
+            love_delta = max(0.0, min(0.1, float(parsed["love_delta"])))
+            user_facts = parsed["user_facts"]
         deltas = {
             e: min(max(float(raw_deltas.get(e, 0.0)), 0.0), MAX_DELTA_PER_MESSAGE)
             for e in EMOTIONS
         }
-        new_words = parsed.get("new_words", [])
-        trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta", 0.0))))
-        love_delta = max(0.0, min(0.1, float(parsed.get("love_delta", 0.0))))
-        return deltas, new_words, trust_delta, love_delta
+        return deltas, new_words, trust_delta, love_delta, user_facts
 
     # ── Decay ─────────────────────────────────────────────────────────────────
 
@@ -517,7 +574,7 @@ class EmotionEngine:
         state_before = self.get_state()
         if self._openai is not None and context_messages:
             try:
-                deltas, new_words, trust_delta, love_delta = await self._analyze_llm(
+                deltas, new_words, trust_delta, love_delta, user_facts = await self._analyze_llm(
                     text, trust_score, context_messages, image_urls=image_urls
                 )
                 for emotion, delta in deltas.items():
@@ -533,7 +590,7 @@ class EmotionEngine:
                             trigger_user=trigger_user, trigger_message=text,
                             channel_id=channel_id, platform=platform,
                         ))
-                return {"trust_delta": trust_delta, "love_delta": love_delta}
+                return {"trust_delta": trust_delta, "love_delta": love_delta, "user_facts": user_facts}
             except Exception as exc:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
         # Fallback : NRCLex + FR_EMOTION_WORDS
