@@ -28,7 +28,7 @@ async def test_log_and_get_cost(tmp_path):
 async def test_trust_score_default(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     score = await db.get_trust_score("discord", "unknown_user")
-    assert score == 0.5  # default
+    assert score == 0.0  # default
     await db.close()
 
 
@@ -37,7 +37,7 @@ async def test_trust_score_update(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     await db.update_trust_score("discord", "user1", 0.1)
     score = await db.get_trust_score("discord", "user1")
-    assert abs(score - 0.6) < 0.001  # 0.5 default + 0.1 delta
+    assert abs(score - 0.1) < 0.001  # 0.0 default + 0.1 delta
     await db.close()
 
 

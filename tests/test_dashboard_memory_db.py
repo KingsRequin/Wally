@@ -63,14 +63,14 @@ async def test_list_memory_users_includes_trust_score():
     """list_memory_users retourne trust_score issu de trust_scores (JOIN)."""
     db = await Database.create(":memory:")
     await db.upsert_memory_user("discord:alice", "discord")
-    # Pas encore de trust score → défaut 0.5
+    # Pas encore de trust score → défaut 0.0
     users = await db.list_memory_users()
-    assert users[0]["trust_score"] == 0.5
+    assert users[0]["trust_score"] == 0.0
 
     # Enregistrer un trust score pour alice
     await db.update_trust_score("discord", "alice", +0.3)
     users = await db.list_memory_users()
-    assert users[0]["trust_score"] == round(0.5 + 0.3, 2)
+    assert users[0]["trust_score"] == round(0.0 + 0.3, 2)
     await db.close()
 
 
@@ -82,8 +82,8 @@ async def test_list_memory_users_trust_score_platform_isolated():
     await db.upsert_memory_user("twitch:bob", "twitch")
     await db.update_trust_score("discord", "bob", +0.2)
     users = {u["user_id"]: u for u in await db.list_memory_users()}
-    assert users["discord:bob"]["trust_score"] == round(0.5 + 0.2, 2)
-    assert users["twitch:bob"]["trust_score"] == 0.5  # Twitch inchangé
+    assert users["discord:bob"]["trust_score"] == round(0.0 + 0.2, 2)
+    assert users["twitch:bob"]["trust_score"] == 0.0  # Twitch inchangé
     await db.close()
 
 

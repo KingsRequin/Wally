@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS welcomed (
 CREATE TABLE IF NOT EXISTS trust_scores (
     user_id TEXT NOT NULL,
     platform TEXT NOT NULL,
-    score REAL NOT NULL DEFAULT 0.5,
+    score REAL NOT NULL DEFAULT 0.0,
     updated_at REAL NOT NULL,
     PRIMARY KEY (user_id, platform)
 );
@@ -245,6 +245,20 @@ class Database:
             await conn.commit()
         except Exception:
             pass  # table absente au premier démarrage — CREATE TABLE IF NOT EXISTS s'en charge
+        # Migration: trust score baseline 0.5 → 0.0
+        try:
+            await conn.execute(
+                "ALTER TABLE trust_scores ADD COLUMN trust_v2_migrated INTEGER DEFAULT 0"
+            )
+            await conn.commit()
+            # Column just created → migration not yet run
+            await conn.execute(
+                "UPDATE trust_scores SET score = MAX(score - 0.5, 0.0)"
+            )
+            await conn.commit()
+            logger.info("Trust score migration applied: all scores shifted by -0.5")
+        except aiosqlite.OperationalError:
+            pass  # Column already exists → migration already applied
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -394,7 +408,7 @@ class Database:
             "SELECT score FROM trust_scores WHERE user_id=? AND platform=?",
             (user_id, platform),
         )
-        return float(row["score"]) if row else 0.5
+        return float(row["score"]) if row else 0.0
 
     async def update_trust_score(self, platform: str, user_id: str, delta: float):
         current = await self.get_trust_score(platform, user_id)
@@ -619,7 +633,7 @@ class Database:
         # alors que trust_scores.user_id est "raw_id" — on extrait via SUBSTR.
         sql = (
             "SELECT m.user_id, m.platform, m.last_updated, m.username, "
-            "COALESCE(t.score, 0.5) AS trust_score, 1 AS in_memory_users "
+            "COALESCE(t.score, 0.0) AS trust_score, 1 AS in_memory_users "
             "FROM memory_users m "
             "LEFT JOIN trust_scores t "
             "  ON t.platform = m.platform "

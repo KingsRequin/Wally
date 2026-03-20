@@ -503,7 +503,7 @@ class EmotionEngine:
     # ── NRCLex analysis ───────────────────────────────────────────────────────
 
     async def analyze_message(
-        self, text: str, trust_score: float = 0.5
+        self, text: str, trust_score: float = 0.0
     ) -> dict[str, float]:
         return await asyncio.to_thread(self._analyze_sync, text, trust_score)
 
@@ -566,7 +566,7 @@ class EmotionEngine:
             self._schedule_save()
 
     async def process_message(
-        self, text: str, trust_score: float = 0.5, context_messages: list[dict] | None = None,
+        self, text: str, trust_score: float = 0.0, context_messages: list[dict] | None = None,
         image_urls: list[str] | None = None,
         trigger_user: str = "", channel_id: str = "", platform: str = "",
     ) -> dict | None:

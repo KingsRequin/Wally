@@ -8,10 +8,11 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from bot.dashboard.routes.chat_auth import decode_jwt, _jwt_secret_raw
+from bot.discord.handlers import _parse_react_tag
 
 if TYPE_CHECKING:
     from bot.dashboard.state import AppState
@@ -190,6 +191,9 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
                 user_id=sender_id,
             )
 
+            # Strip [react:emoji] tag — web chat doesn't support reactions
+            _react_emoji, reply = _parse_react_tag(reply)
+
             now = time.time()
             msg_id = await state.db.insert_chat_message(
                 "wally", "Wally", None, reply, True, now,
@@ -201,6 +205,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
                 "is_wally": True, "created_at": now,
             })
 
+            state.memory.append_prelude("web:chat", "Wally", reply)
             state.memory.append_message("web:chat", "Wally", reply, platform="discord")
 
             asyncio.create_task(_post_process(state, content, sender_id, trust))
@@ -209,7 +214,49 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
             logger.error("WebChat Wally response failed: {e}", e=exc)
 
 
-async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.5) -> None:
+@router.get("/api/chat/my-memories")
+async def my_memories(request: Request):
+    """Return mem0 memories for the currently authenticated chat user."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, detail="JWT required")
+
+    payload = decode_jwt(auth[7:], _jwt_secret_raw())
+    if not payload:
+        raise HTTPException(401, detail="Invalid or expired token")
+
+    state: AppState = request.app.state.wally
+    discord_id = payload["discord_id"]
+    user_id = f"discord:{discord_id}"
+
+    try:
+        state.memory._init_mem0()
+        mem0 = state.memory._mem0
+        if mem0 is None:
+            return {"memories": []}
+
+        results = await asyncio.to_thread(mem0.get_all, user_id=user_id)
+        raw = results.get("results", []) if isinstance(results, dict) else (results or [])
+        memories = [r.get("memory", "") for r in raw if r.get("memory")]
+
+        # Include accepted alias memories
+        accepted_links = await state.db.list_link_proposals(status="accepted")
+        alias_ids = [link["alias_id"] for link in accepted_links if link["canonical_id"] == user_id]
+        for alias_id in alias_ids:
+            try:
+                alias_results = await asyncio.to_thread(mem0.get_all, user_id=alias_id)
+                alias_raw = alias_results.get("results", []) if isinstance(alias_results, dict) else (alias_results or [])
+                memories.extend(r.get("memory", "") for r in alias_raw if r.get("memory"))
+            except Exception:
+                pass
+
+        return {"memories": memories}
+    except Exception as exc:
+        logger.warning("my-memories failed for {u}: {e}", u=discord_id, e=exc)
+        return {"memories": []}
+
+
+async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.0) -> None:
     try:
         deltas = await state.emotion.process_message(
             text, trust_score=trust, channel_id="web:chat", platform="web",
