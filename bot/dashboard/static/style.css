@@ -832,47 +832,59 @@ select option { background: #11151c; color: #e2e8f0; }
   to   { opacity: 0; transform: translateY(-8px) scale(0.96); }
 }
 
-/* ── Memory Tab ───────────────────────────────────────────────── */
+/* ── Memory + Links Unified Tab ───────────────────────────────── */
 
 .mem-toolbar {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   gap: 10px;
   align-items: center;
   background: rgba(255, 255, 255, 0.02);
   flex-wrap: wrap;
+  border-radius: 16px 16px 0 0;
 }
 
 .mem-layout {
   display: flex;
-  min-height: 400px;
+  min-height: calc(100vh - 180px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.01);
 }
 
 .mem-sidebar {
-  width: 240px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  width: 280px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   background: rgba(255, 255, 255, 0.01);
+  flex-shrink: 0;
 }
 
 .mem-sidebar-filter {
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mem-sidebar-actions {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .mem-user-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 6px;
 }
 
 .mem-user-item {
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   cursor: pointer;
   transition: all 0.15s ease;
   background: rgba(255, 255, 255, 0.02);
@@ -880,6 +892,7 @@ select option { background: #11151c; color: #e2e8f0; }
 
 .mem-user-item:hover {
   background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .mem-user-item.selected {
@@ -888,10 +901,299 @@ select option { background: #11151c; color: #e2e8f0; }
   box-shadow: 0 0 12px rgba(6, 182, 212, 0.08);
 }
 
+.mem-user-item.no-memory {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.mem-user-item.no-memory:hover {
+  opacity: 0.85;
+}
+
+.mem-user-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mem-platform-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.mem-user-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.mem-user-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 2px;
+  padding-left: 20px;
+}
+
+.mem-link-badge {
+  font-size: 0.56rem;
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.mem-no-memory-badge {
+  font-size: 0.56rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-style: italic;
+}
+
 .mem-detail {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.mem-empty-state {
+  padding: 32px 16px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.mem-detail-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mem-detail-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mem-detail-platform {
+  display: inline-flex;
+  transform: scale(1.4);
+}
+
+.mem-detail-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.mem-detail-id {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: var(--font-mono);
+}
+
+.mem-detail-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mem-detail-section {
+  padding: 10px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mem-detail-section-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.mem-link-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  font-size: 0.82rem;
+}
+
+.mem-link-card.accepted {
+  background: rgba(34, 197, 94, 0.06);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.mem-link-card.pending {
+  background: rgba(255, 160, 0, 0.06);
+  border: 1px solid rgba(255, 160, 0, 0.15);
+}
+
+.mem-link-status {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.mem-link-status.accepted {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--c-online);
+}
+
+.mem-link-confidence {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #FFA000;
+  margin-left: auto;
+}
+
+.mem-link-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mem-detail-memories {
+  padding: 12px 20px;
+}
+
+.mem-entry {
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  transition: border-color 0.15s ease;
+}
+
+.mem-entry:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.mem-entry-content {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.mem-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.mem-entry-platform {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.56rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+
+.mem-entry-date {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+}
+
+.mem-entry-text {
+  font-size: 0.82rem;
+}
+
+.mem-entry-actions {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.mem-entry-edit {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  opacity: 0;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: opacity 0.15s;
+}
+
+.mem-entry:hover .mem-entry-edit {
+  opacity: 0.5;
+}
+
+.mem-entry-edit:hover {
+  opacity: 1 !important;
+}
+
+.mem-entry-delete {
+  background: none;
+  border: none;
+  color: var(--c-anger);
+  cursor: pointer;
+  font-size: 1rem;
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: 0;
+  padding: 2px 4px;
+  transition: opacity 0.15s;
+}
+
+.mem-entry:hover .mem-entry-delete {
+  opacity: 0.4;
+}
+
+.mem-entry-delete:hover {
+  opacity: 1 !important;
+}
+
+/* ── Link Mode ───────────────────────────────────────────────── */
+
+.link-mode-bar {
+  padding: 8px 16px;
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-top: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.mem-user-item.link-mode {
+  cursor: crosshair;
+}
+
+.mem-user-item.link-mode:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+  background: rgba(6, 182, 212, 0.06);
+}
+
+.mem-user-item.link-selected {
+  background: rgba(6, 182, 212, 0.12) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.15);
 }
 
 /* ── Roadmap ──────────────────────────────────────────────────── */
@@ -1084,7 +1386,13 @@ button:focus-visible {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    max-height: 200px;
+    max-height: 240px;
+  }
+
+  .mem-detail-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
   }
 }
 
@@ -1111,4 +1419,162 @@ button:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ── Web Chat ─────────────────────────────────────────────────── */
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 80px);
+  max-height: 800px;
+}
+
+.chat-avatar-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-avatar-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-avatar-status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-msg {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.chat-msg:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-msg.wally {
+  background: rgba(6, 182, 212, 0.06);
+  border-left: 2px solid var(--accent);
+}
+
+.chat-msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chat-msg-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.chat-msg-username {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.chat-msg-username.wally {
+  color: var(--accent);
+}
+
+.chat-msg-time {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.chat-msg-content {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.chat-typing {
+  padding: 4px 20px;
+  font-size: 0.75rem;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.3s;
+  height: 20px;
+}
+
+.chat-typing.visible {
+  opacity: 1;
+}
+
+.chat-input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-input-bar input {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.chat-login-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.chat-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #5865F2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-login-btn:hover {
+  background: #4752C4;
+}
+
+.chat-cooldown-msg {
+  font-size: 0.72rem;
+  color: var(--c-anger);
+  padding: 2px 20px;
+  height: 16px;
 }
