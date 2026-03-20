@@ -33,10 +33,10 @@ Ajouter un chat en temps réel sur le dashboard web, permettant aux utilisateurs
 1. Utilisateur clique "Se connecter avec Discord"
 2. `GET /api/chat/auth/login` → redirect vers Discord authorize URL
    - Scope: `identify` uniquement
-   - Redirect URI: `{BASE_URL}/api/chat/auth/callback`
+   - Redirect URI: `{WEB_BASE_URL}/api/chat/auth/callback`
 3. `GET /api/chat/auth/callback` → échange le `code` contre un access token via Discord API
 4. Fetch `GET https://discord.com/api/users/@me` avec le token → récupère `id`, `username`, `avatar`
-5. Génère un **JWT** signé avec `dashboard_token` (de `config.yaml`):
+5. Génère un **JWT** signé avec `JWT_SECRET` (variable `.env` dédiée, 256+ bits):
    ```json
    {
      "discord_id": "123456789",
@@ -46,13 +46,13 @@ Ajouter un chat en temps réel sur le dashboard web, permettant aux utilisateurs
    }
    ```
    Expiration: **1 heure**
-6. Génère un **refresh token** (UUID opaque), stocké en SQLite (`chat_refresh_tokens`), expiration **30 jours**
+6. Génère un **refresh token** (UUID opaque), stocké **hashé en SHA-256** en SQLite (`chat_refresh_tokens`), expiration **30 jours**
 7. Retourne JWT + refresh token au client (stockés en `localStorage`)
 
 ### Refresh silencieux
 
 - `GET /api/chat/auth/refresh` avec le refresh token en header
-- Si valide et non expiré → nouveau JWT (1h) + nouveau refresh token (30j, rotation)
+- Si valide et non expiré → nouveau JWT (1h) + nouveau refresh token (30j, rotation — l'ancien est invalidé)
 - Si expiré → 401, l'utilisateur doit se reconnecter via Discord
 - Le client appelle automatiquement le refresh quand le JWT expire (ou au chargement de la page)
 
@@ -66,9 +66,11 @@ Ajouter un chat en temps réel sur le dashboard web, permettant aux utilisateurs
 ```
 DISCORD_CLIENT_ID=...        # Application ID dans Discord Developer Portal
 DISCORD_CLIENT_SECRET=...   # OAuth2 secret (jamais exposé au client)
+JWT_SECRET=...               # Secret pour signer les JWT (256+ bits, ex: openssl rand -hex 32)
+WEB_BASE_URL=...             # URL publique du dashboard (ex: https://wally.example.com)
 ```
 
-Le JWT est signé avec `dashboard_token` déjà présent dans `config.yaml` — pas de secret supplémentaire.
+Le `JWT_SECRET` est un secret cryptographique dédié, distinct du `dashboard_token`. Si absent au démarrage, le bot en génère un automatiquement et log un warning.
 
 ---
 
@@ -82,6 +84,8 @@ Serveur → valide JWT
         → si invalide: close(4001, "Invalid token")
         → si valide: ajoute le client au pool, envoie les N derniers messages
 ```
+
+Le JWT est validé à la connexion uniquement. Une session WS reste active jusqu'à déconnexion, même si le JWT expire entre-temps (le refresh se fait en HTTP indépendamment pour la reconnexion future).
 
 ### Format des messages
 
@@ -98,7 +102,7 @@ Serveur → valide JWT
 {
   "type": "message",
   "id": 42,
-  "discord_id": "discord:123456789",
+  "sender_id": "discord:123456789",
   "username": "KingsRequin",
   "avatar_url": "https://cdn.discordapp.com/...",
   "content": "Salut Wally !",
@@ -112,7 +116,7 @@ Serveur → valide JWT
 {
   "type": "message",
   "id": 43,
-  "discord_id": "wally",
+  "sender_id": "wally",
   "username": "Wally",
   "avatar_url": null,
   "content": "Hey ! Comment ça va ?",
@@ -137,30 +141,51 @@ Serveur → valide JWT
 }
 ```
 
+**Serveur → Client (cooldown):**
+```json
+{
+  "type": "cooldown",
+  "remaining_seconds": 7
+}
+```
+
+**Serveur → Client (heartbeat):**
+```json
+{
+  "type": "ping"
+}
+```
+
 ### Pipeline de traitement
+
+Un **`asyncio.Lock`** sérialise les réponses de Wally sur le canal `"web:chat"` pour éviter les réponses concurrentes incohérentes.
 
 À la réception d'un message utilisateur:
 
-1. **Valider** le cooldown (rejet silencieux si en cooldown)
+1. **Valider** le cooldown → si en cooldown, envoyer un message `"cooldown"` avec le temps restant à l'expéditeur uniquement, ne pas traiter le message
 2. **Persister** en SQLite (`chat_messages`)
 3. **Broadcast** le message à tous les clients WS connectés
-4. **Append** dans `memory.append_message("web:chat", username, content, platform="web")`
-5. **Broadcast** typing indicator
-6. **Pipeline Wally** (identique à Discord):
+4. **Append** dans `memory.append_message("web:chat", username, content, platform="discord")` — on utilise `platform="discord"` car la mémoire est liée à `discord:{user_id}`
+5. **Acquérir le lock** de réponse
+6. **Broadcast** typing indicator
+7. **Pipeline Wally** (identique à Discord):
    - Trust score lookup (`discord:{user_id}`)
    - Memory search (`discord:{user_id}`, query=content, context=prelude)
    - PromptBuilder: situation `{"platform": "Web", "channel": "Chat public"}`
    - `openai_client.complete()` avec purpose `"web_response"`
-7. **Broadcast** réponse Wally à tous les clients
-8. **Persister** réponse Wally en SQLite
-9. **Append** Wally dans context_window
-10. **Post-process** (émotion, trust, love) — même `_post_process` que Discord
+8. **Broadcast** réponse Wally à tous les clients
+9. **Persister** réponse Wally en SQLite
+10. **Append** Wally dans context_window
+11. **Relâcher le lock**
+12. **Post-process** (émotion, trust, love) — adapté de Discord:
+    - Utilise `guild_id="web"` (constante synthétique, le web n'a pas de guild)
+    - Le timeout/mute s'applique au web avec ce guild_id synthétique
 
 ### Gestion des connexions
 
 - Pool de clients: `dict[WebSocket, UserInfo]`
-- À la déconnexion: retrait du pool, pas de cleanup spécial
-- Pas de heartbeat custom — le protocole WS gère les pings/pongs
+- À la déconnexion: retrait du pool
+- **Heartbeat serveur:** envoi d'un `{"type": "ping"}` toutes les 30s à chaque client. Si l'envoi échoue, le client est retiré du pool.
 
 ---
 
@@ -226,20 +251,24 @@ bot/dashboard/static/avatar/
 ```sql
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    discord_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
     username TEXT NOT NULL,
     avatar_url TEXT,
     content TEXT NOT NULL,
     is_wally BOOLEAN DEFAULT 0,
     created_at REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
 ```
+
+- `sender_id` — `discord:{user_id}` pour les utilisateurs, `"wally"` pour Wally
+- Index sur `created_at` pour le cleanup des vieux messages
 
 ### Table `chat_refresh_tokens`
 
 ```sql
 CREATE TABLE IF NOT EXISTS chat_refresh_tokens (
-    token TEXT PRIMARY KEY,
+    token_hash TEXT PRIMARY KEY,
     discord_id TEXT NOT NULL,
     username TEXT NOT NULL,
     avatar_url TEXT,
@@ -247,11 +276,14 @@ CREATE TABLE IF NOT EXISTS chat_refresh_tokens (
 );
 ```
 
+- `token_hash` — SHA-256 du refresh token (jamais stocké en clair)
+
 ### Requêtes principales
 
 - **Charger historique:** `SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?` → inversé côté client
-- **Insérer message:** `INSERT INTO chat_messages (discord_id, username, avatar_url, content, is_wally, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-- **Cleanup refresh tokens:** `DELETE FROM chat_refresh_tokens WHERE expires_at < ?` (cron ou au login)
+- **Insérer message:** `INSERT INTO chat_messages (...) VALUES (...) RETURNING id`
+- **Cleanup refresh tokens:** `DELETE FROM chat_refresh_tokens WHERE expires_at < ?` (au login)
+- **Cleanup vieux messages:** `DELETE FROM chat_messages WHERE created_at < ?` — garder les 30 derniers jours, exécuté quotidiennement (même pattern que `cleanup_old_daily_log`)
 
 ---
 
@@ -271,6 +303,8 @@ web_chat:
 ```
 DISCORD_CLIENT_ID=...        # ID application Discord (Developer Portal)
 DISCORD_CLIENT_SECRET=...   # Secret OAuth2 (Developer Portal, jamais exposé au client)
+JWT_SECRET=...               # Secret JWT (openssl rand -hex 32)
+WEB_BASE_URL=...             # URL publique (ex: https://wally.example.com)
 ```
 
 ---
@@ -289,21 +323,26 @@ DISCORD_CLIENT_SECRET=...   # Secret OAuth2 (Developer Portal, jamais exposé au
 
 | Fichier | Modification |
 |---|---|
-| `bot/db/database.py` | Tables `chat_messages` + `chat_refresh_tokens`, query helpers |
+| `bot/db/database.py` | Tables `chat_messages` + `chat_refresh_tokens`, query helpers, cleanup |
 | `bot/config.py` | Dataclass `WebChatConfig`, intégration dans Config |
 | `bot/dashboard/app.py` | Enregistrement des nouvelles routes + WS |
-| `bot/dashboard/auth.py` | Exempter les routes `/api/chat/auth/*` du bearer token |
+| `bot/dashboard/state.py` | Ajouter `prompts: PromptBuilder` dans AppState |
+| `bot/main.py` | Passer `prompts` dans AppState |
 | `bot/dashboard/static/index.html` | Nouvel onglet "Chat" dans la sidebar (public) |
 | `bot/dashboard/static/app.js` | UI chat: connexion Discord, messages, avatar, WS |
 | `bot/dashboard/static/style.css` | Styles du chat et de l'avatar |
+
+Note: `bot/dashboard/auth.py` n'a **pas** besoin de modification — le bearer token middleware ne s'applique qu'aux routes `/api/admin/*`. Les routes `/api/chat/*` et `/ws/chat` en sont déjà exemptes. L'auth JWT est gérée dans les routes chat elles-mêmes.
+
+Note: `bot/core/prompts.py` n'a **pas** besoin de modification — le dict `situation` est injecté tel quel dans le prompt, la valeur `"Web"` fonctionne directement.
 
 ### Tests
 
 | Fichier | Couverture |
 |---|---|
-| `tests/test_chat_auth.py` | OAuth2 flow, JWT generation/validation, refresh |
-| `tests/test_chat_websocket.py` | WS connect, message broadcast, cooldown, history |
-| `tests/test_chat_db.py` | Tables, insert, load history, refresh token CRUD |
+| `tests/test_chat_auth.py` | OAuth2 flow, JWT generation/validation, refresh token hash/rotation |
+| `tests/test_chat_websocket.py` | WS connect, message broadcast, cooldown feedback, history, heartbeat |
+| `tests/test_chat_db.py` | Tables, insert, load history, refresh token CRUD, cleanup |
 
 ---
 
@@ -322,6 +361,7 @@ DISCORD_CLIENT_SECRET=...   # Secret OAuth2 (Developer Portal, jamais exposé au
 │  Wally: Toujours ! 😄               │
 │                                      │
 ├──────────────────────────────────────┤
+│  Wally réfléchit...                  │  ← typing indicator
 │  [Message...]              [Envoyer] │  ← input + bouton
 └──────────────────────────────────────┘
 ```
@@ -338,8 +378,11 @@ DISCORD_CLIENT_SECRET=...   # Secret OAuth2 (Developer Portal, jamais exposé au
 ## 8. Sécurité
 
 - **OAuth2:** Le `DISCORD_CLIENT_SECRET` reste côté serveur, jamais envoyé au client
-- **JWT:** Signé avec `dashboard_token`, vérifié à chaque connexion WS
+- **JWT:** Signé avec `JWT_SECRET` dédié (256+ bits), vérifié à chaque connexion WS
+- **Refresh token:** Stocké hashé (SHA-256) en base — un dump DB ne compromet pas les sessions
 - **Refresh token rotation:** Chaque refresh génère un nouveau token (l'ancien est invalidé)
-- **Cooldown:** Prévient le spam et les coûts OpenAI excessifs
+- **Cooldown:** Prévient le spam et les coûts OpenAI excessifs, avec feedback utilisateur
 - **Validation input:** Longueur max du message (2000 chars), strip, pas de messages vides
 - **XSS:** Tout contenu utilisateur échappé avant affichage (même pattern que le dashboard existant)
+- **Concurrence:** Lock asyncio sur les réponses Wally pour éviter les réponses incohérentes
+- **Heartbeat:** Nettoyage des connexions mortes toutes les 30s
