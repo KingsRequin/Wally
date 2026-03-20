@@ -130,6 +130,7 @@ function showTab(tabId) {
   }
   if (tabId === 'roadmap') loadRoadmap();
   if (tabId === 'chat') renderChatTab();
+  if (tabId === 'journal-detail') renderJournalDetailTab();
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
   if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'admin-costs') loadCosts();
@@ -2457,4 +2458,329 @@ function chatUpdateAvatar() {
     const labels = { neutral: 'neutre', joy: 'joyeux', anger: 'en colère', sadness: 'triste', curiosity: 'curieux', boredom: 'ennuyé' };
     statusEl.textContent = labels[dominant] || dominant;
   }
+}
+
+// ── Journal détaillé ────────────────────────────────────────────────────────
+
+function renderJournalDetailTab() {
+  const el = document.getElementById('tab-journal-detail');
+  if (!el || el.querySelector('.jd-container')) return;
+
+  el.innerHTML = `
+    <div class="jd-container">
+      <div class="jd-header">
+        <h2 class="jd-title">Comment fonctionne Wally ?</h2>
+        <p class="jd-subtitle">Découvre ce qui se passe dans la tête de Wally, étape par étape. Clique sur « Aller plus loin » pour voir le code source et les détails techniques.</p>
+      </div>
+
+      <!-- Section 1: Cycle de vie d'un message -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: var(--c-curiosity)">1</span>
+          <h3>Cycle de vie d'un message</h3>
+        </div>
+        <div class="jd-body">
+          <p>Quand quelqu'un envoie un message sur Discord ou Twitch, Wally le reçoit et lance une série d'étapes en quelques secondes :</p>
+          <p>D'abord, il <strong>détecte la langue</strong> du message (français, anglais…) pour répondre dans la bonne langue. Ensuite, il <strong>analyse le ton émotionnel</strong> grâce à NRCLex, un dictionnaire qui associe chaque mot à des émotions (joie, colère, tristesse…). En parallèle, il <strong>consulte sa mémoire</strong> : que sait-il sur l'auteur du message ? Quels sont ses goûts, ses sujets favoris ?</p>
+          <p>Avec toutes ces informations, il <strong>construit un prompt personnalisé</strong> : sa personnalité (qui il est, comment il parle), son humeur actuelle, les souvenirs pertinents, et les derniers messages de la conversation. Ce prompt est envoyé à <strong>OpenAI</strong>, qui génère la réponse.</p>
+          <p>En arrière-plan, Wally met à jour le <strong>score de confiance</strong> de l'utilisateur et enregistre le <strong>coût de l'appel API</strong>.</p>
+
+          <div class="jd-pipeline">
+            <span class="jd-pipe-step" style="background: #5865F2">📨 Message</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">🌍 Langue</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">🧠 Émotion</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">💾 Mémoire</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">✍️ Prompt</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">🤖 OpenAI</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step" style="background: var(--c-curiosity)">💬 Réponse</span>
+          </div>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — le pipeline en code</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/discord/handlers.py — handle_message()</div>
+              <pre><code>async def handle_message(self, message):
+    # 1. Détection de la langue (asyncio.to_thread pour ne pas bloquer)
+    lang = await asyncio.to_thread(detect_language, message.content)
+
+    # 2. Analyse émotionnelle via NRCLex (aussi en thread séparé)
+    trust = await self.db.get_trust_score(platform, user_id)
+    emotion_result = await self.emotion.process_message(
+        text, trust_score=trust, context_messages=context
+    )
+
+    # 3. Recherche en mémoire (Qdrant — similarité vectorielle)
+    memories = await self.memory.search(user_id, message.content)
+
+    # 4. Construction du prompt (persona + émotion + mémoire + contexte)
+    prompt = self.prompt_builder.build(
+        emotion_state=self.emotion.get_state(),
+        memories=memories,
+        context=recent_messages
+    )
+
+    # 5. Appel OpenAI → réponse
+    response = await self.openai.complete(prompt)
+
+    # 6. Post-traitement : trust score, coût, extraction de faits
+    await self._post_process(message, response)</code></pre>
+              <p class="jd-tech-note">Le pipeline est entièrement <strong>asynchrone</strong>. Les opérations CPU-bound (NRCLex, détection de langue) tournent dans <code>asyncio.to_thread()</code> pour ne pas bloquer la boucle événementielle — ce qui permet à Wally de continuer à écouter les autres messages pendant qu'il traite celui-ci.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 2: Système émotionnel -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: var(--c-joy); color: #000">2</span>
+          <h3>Système émotionnel</h3>
+        </div>
+        <div class="jd-body">
+          <p>Wally ressent <strong>5 émotions en permanence</strong>, chacune mesurée entre 0.0 (absente) et 1.0 (maximale) :</p>
+
+          <div class="jd-gauges">
+            <div class="jd-gauge"><span class="jd-gauge-label">Colère</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:15%;background:var(--c-anger)"></div></div></div>
+            <div class="jd-gauge"><span class="jd-gauge-label">Joie</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:65%;background:var(--c-joy)"></div></div></div>
+            <div class="jd-gauge"><span class="jd-gauge-label">Tristesse</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:10%;background:var(--c-sadness)"></div></div></div>
+            <div class="jd-gauge"><span class="jd-gauge-label">Curiosité</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:45%;background:var(--c-curiosity)"></div></div></div>
+            <div class="jd-gauge"><span class="jd-gauge-label">Ennui</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:30%;background:var(--c-boredom)"></div></div></div>
+          </div>
+
+          <p>Chaque message fait bouger ces émotions. Un compliment booste la <strong>joie</strong>, une insulte monte la <strong>colère</strong>, une question intéressante pique la <strong>curiosité</strong>. L'impact dépend aussi du <strong>score de confiance</strong> de l'auteur : un inconnu (trust bas) provoque des réactions plus vives qu'un habitué.</p>
+          <p>Avec le temps, chaque émotion <strong>retombe naturellement vers zéro</strong>, comme un humain qui se calme. La vitesse de retombée est différente pour chaque émotion — la colère s'apaise vite, la tristesse persiste plus longtemps.</p>
+          <p>Si un utilisateur déclenche la colère au-delà d'un seuil trop souvent, Wally le <strong>mute temporairement</strong> : il ne répond plus avec du texte, seulement avec des réactions emoji (💩 ⛔ 😤).</p>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — décroissance exponentielle et formules</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/core/emotion.py — _apply_decay()</div>
+              <pre><code># Formule de décroissance : E(t) = E₀ × e^(−λ × Δt)
+# Chaque émotion a son propre λ (lambda) configurable dans config.yaml
+
+def _apply_decay(self):
+    now = time.time()
+    dt = now - self._last_decay
+    for emotion in EMOTIONS:
+        lam = self._lambdas[emotion]
+        self._state[emotion] *= math.exp(-lam * dt)
+        if self._state[emotion] < DECAY_FLOOR:
+            self._state[emotion] = 0.0
+    self._last_decay = now</code></pre>
+              <p class="jd-tech-note"><strong>Décroissance exponentielle</strong> : un λ élevé = retombée rapide. La colère a typiquement λ=0.003 (retombe en ~10min) tandis que la tristesse a λ=0.001 (persiste ~30min). Un task en arrière-plan applique cette décroissance toutes les 60 secondes.</p>
+              <p class="jd-tech-note"><strong>Trust score et colère</strong> : quand le trust score est bas (&lt;0.3), les deltas de colère sont amplifiés. Un nouvel utilisateur (trust=0.0) provoquera une réaction de colère plus forte qu'un habitué (trust=0.8). C'est un mécanisme de protection naturel.</p>
+              <p class="jd-tech-note"><strong>Timeout</strong> : si la colère dépasse le seuil configuré N fois pour un même utilisateur, il est mute pendant X minutes (configurable). Pendant ce mute, Wally réagit uniquement avec des emoji.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 3: Mémoire -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: var(--c-sadness)">3</span>
+          <h3>Mémoire</h3>
+        </div>
+        <div class="jd-body">
+          <p>Wally a <strong>deux types de mémoire</strong>, comme un humain :</p>
+          <p><strong>La mémoire courte</strong> — les derniers messages de la conversation en cours. Wally garde en tête les N derniers échanges (configurable) pour garder le fil. Quand cette fenêtre devient trop grande, il la résume automatiquement via un modèle secondaire pour économiser des tokens.</p>
+          <p><strong>La mémoire longue</strong> — des faits extraits automatiquement au fil du temps et stockés dans une base vectorielle (Qdrant). « Aime les crevettes », « fan d'Apex Legends », « déteste le lundi matin », « a un chat qui s'appelle Pixel ». Ces faits sont extraits par le <strong>FactExtractor</strong>, qui analyse les conversations par batch après une période d'inactivité.</p>
+          <p>Quand Wally reçoit un message, il cherche dans sa mémoire longue les souvenirs les plus <strong>pertinents par similarité sémantique</strong> — pas juste par mots-clés, mais par sens. Si tu parles de « mon félin », il retrouvera le souvenir de Pixel même si le mot « chat » n'apparaît pas.</p>
+          <p>Chaque plateforme a sa propre mémoire : les souvenirs Discord et Twitch sont <strong>strictement séparés</strong> par namespace (<code>discord:user_id</code> vs <code>twitch:username</code>).</p>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — mem0, Qdrant, trust score</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/core/memory.py — search() + FactExtractor</div>
+              <pre><code># Recherche par similarité vectorielle dans Qdrant
+async def search(self, user_id, query, limit=5):
+    results = await self.client.search(
+        collection="memories",
+        query=query,
+        filter={"user_id": user_id},
+        limit=limit
+    )
+    return [r.payload for r in results]
+
+# FactExtractor : extraction de faits par batch
+# Après 20min d'inactivité dans un canal, le FactExtractor
+# analyse la conversation et extrait les faits durables :
+# "### pseudo\n- fait 1\n- fait 2\n..."
+# Chaque fait est stocké via memory.add() dans Qdrant.</code></pre>
+              <p class="jd-tech-note"><strong>mem0</strong> est la couche d'abstraction pour la mémoire longue. Elle gère l'embedding (conversion texte → vecteur), le stockage dans <strong>Qdrant</strong> (base vectorielle auto-hébergée), et la recherche par similarité.</p>
+              <p class="jd-tech-note"><strong>Trust score</strong> : chaque utilisateur a un score de confiance (0.0 → 1.0) qui évolue avec le temps. +0.01 par interaction positive, -0.05 pour les comportements toxiques. Le score part à 0.0 — la confiance se mérite.</p>
+              <p class="jd-tech-note"><strong>Sliding window</strong> : la mémoire courte garde les N derniers messages. Quand le nombre de tokens dépasse un seuil, les messages les plus anciens sont résumés par un modèle secondaire et remplacés par un bloc résumé.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 4: Personnalité -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: var(--c-anger)">4</span>
+          <h3>Personnalité</h3>
+        </div>
+        <div class="jd-body">
+          <p>La personnalité de Wally est définie dans <strong>4 fichiers texte</strong> (Markdown), chacun avec un rôle précis :</p>
+          <p><strong>SOUL.md</strong> — Son âme. Qui il est fondamentalement : un pote loyal, un peu cynique, avec un humour pince-sans-rire. Ce fichier définit les valeurs profondes qui ne changent jamais, peu importe l'humeur.</p>
+          <p><strong>IDENTITY.md</strong> — Son histoire. D'où il vient, ce qu'il aime (la tech, les jeux, la musique), ses opinions, ses running jokes. C'est ce qui le rend unique et cohérent dans le temps.</p>
+          <p><strong>VOICE.md</strong> — Comment il parle. Son registre de langue, ses tics verbaux, la longueur de ses réponses, quand il utilise des emoji et quand il n'en met pas. Le style, pas le fond.</p>
+          <p><strong>EXEMPLES.md</strong> — Des exemples concrets de réponses « à la Wally » pour calibrer le ton. Le modèle s'en inspire sans les copier.</p>
+          <p>À chaque message, ces 4 fichiers sont <strong>assemblés dans cet ordre</strong> et injectés dans le prompt système. L'émotion dominante du moment ajoute une <strong>directive comportementale</strong> tirée de <strong>EMOTIONS.md</strong> — si Wally est joyeux, il est plus bavard et taquin ; s'il est en colère, ses réponses sont courtes et impatientes.</p>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — PersonaService et prompt building</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/core/persona.py + bot/core/prompts.py</div>
+              <pre><code># PersonaService charge les 4 fichiers persona au démarrage
+# Ordre canonique : SOUL → IDENTITY → VOICE → EXEMPLES
+persona_block = PersonaService.load()
+# → Un seul bloc texte injecté dans le system prompt
+
+# EMOTIONS.md est parsé séparément en {emotion: directive}
+# Sections délimitées par "## emotion_name"
+# Ex: "## anger" → "Tes réponses sont courtes et impatientes."
+
+# PromptBuilder assemble le prompt final :
+# [persona_block] + [emotion_directive] + [memories] + [context]
+prompt = PromptBuilder.build(
+    emotion_state=current_emotions,
+    memories=relevant_memories,
+    context=recent_messages
+)</code></pre>
+              <p class="jd-tech-note">Les fichiers persona sont chargés au démarrage et mis en cache. La commande <code>/wally reload-persona</code> permet de les recharger à chaud sans redémarrer le bot.</p>
+              <p class="jd-tech-note"><strong>Directive émotionnelle</strong> : le prompt ne dit jamais « tu es en colère » — il dit « tes réponses sont courtes et impatientes ». C'est un choix de design : on décrit le comportement, pas l'état interne. Le LLM interprète mieux des instructions concrètes.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 5: Journal quotidien -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: var(--c-curiosity)">5</span>
+          <h3>Journal quotidien</h3>
+        </div>
+        <div class="jd-body">
+          <p>Chaque soir, Wally <strong>écrit son journal de la journée</strong>. C'est un texte rédigé avec ses propres mots, comme un vrai journal intime.</p>
+          <p>Il commence par compiler <strong>toutes les conversations de la journée</strong> depuis sa base de données. Il identifie les <strong>moments forts</strong> : les pics d'émotion (quand il a ri, quand il s'est énervé, quand il était curieux) et qui les a déclenchés.</p>
+          <p>Il note les <strong>statistiques</strong> : combien de messages, combien de participants uniques, les top 5 des plus actifs, les heures de pointe, la répartition Discord vs Twitch.</p>
+          <p>Puis il rédige un <strong>résumé narratif</strong> de sa journée. Pour les grosses journées (beaucoup de messages), il utilise une technique de résumé multi-passes : il découpe en blocs de 30 messages, résume chaque bloc, puis synthétise les résumés en un texte final.</p>
+          <p>Il génère aussi un <strong>graphe d'émotions</strong> (image PNG) montrant l'évolution de ses 5 émotions au cours de la journée, et <strong>forme des opinions</strong> sur les sujets récurrents qu'il a rencontrés (fire-and-forget, en arrière-plan).</p>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — DailyJournal et sources de données</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/core/journal.py — DailyJournal</div>
+              <pre><code># Sources de données (ordre de priorité / fallback) :
+# 1. daily_log (SQLite) — tous les messages du jour, survit aux redémarrages
+# 2. Discord channel history — fallback API si daily_log vide
+# 3. RAM context windows — buffers mémoire de la session en cours
+# 4. mem0 memory banks — faits stockés en mémoire longue
+
+# Taille dynamique du journal :
+# &lt; 50 messages → 150-250 mots
+# 50-200 messages → 250-400 mots
+# &gt; 200 messages → 400-600 mots
+
+# Multi-pass summarization pour les grosses journées :
+# 1. Découper en chunks de 30 messages
+# 2. Résumer chaque chunk via modèle secondaire
+# 3. Synthétiser les résumés en texte final
+
+# Le journal inclut aussi :
+# - Comparaison hebdo (émotions vs moyenne 7 jours)
+# - Le journal de la veille (pour la continuité narrative)
+# - Un graphe Matplotlib (PNG) des émotions du jour</code></pre>
+              <p class="jd-tech-note">Le journal est déclenché par <strong>apscheduler</strong> (cron async) à une heure configurable. Il peut aussi être déclenché manuellement via <code>/wally journal</code>.</p>
+              <p class="jd-tech-note">Le résultat est découpé en messages de max 1900 caractères (limite Discord = 2000) et posté dans le salon configuré. Le graphe PNG est envoyé en pièce jointe.</p>
+              <p class="jd-tech-note"><strong>Formation d'opinions</strong> : en parallèle du journal, Wally analyse les sujets récurrents de la journée et forme des opinions nuancées qu'il stocke en mémoire. C'est un processus fire-and-forget qui enrichit sa personnalité au fil du temps.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 6: Architecture -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: #ff8800">6</span>
+          <h3>Architecture</h3>
+        </div>
+        <div class="jd-body">
+          <p>Wally est un <strong>programme Python unique</strong> (monolithe modulaire) qui gère Discord et Twitch en parallèle dans la même boucle asynchrone.</p>
+          <p>Les deux plateformes partagent le <strong>même cerveau</strong> : le même moteur d'émotions, la même mémoire, la même personnalité, le même client OpenAI. C'est de l'<strong>injection de dépendances</strong> : les services sont créés une seule fois au démarrage, puis passés aux adaptateurs Discord et Twitch.</p>
+          <p>Les souvenirs sont stockés dans <strong>Qdrant</strong>, une base de données spécialisée dans la recherche par similarité vectorielle. Les données opérationnelles (coûts, trust scores, timeouts, logs) sont dans <strong>SQLite</strong> via aiosqlite (async).</p>
+          <p>Le tout tourne dans <strong>2 conteneurs Docker</strong> : un pour Wally (bot + dashboard web), un pour Qdrant. Qdrant a un healthcheck, et Wally attend qu'il soit prêt avant de démarrer.</p>
+
+          <div class="jd-arch-diagram">
+            <div class="jd-arch-row">
+              <div class="jd-arch-box" style="border-color: #5865F2">
+                <strong>Discord Bot</strong><br><span>discord.py 2.x</span>
+              </div>
+              <div class="jd-arch-box" style="border-color: #9146FF">
+                <strong>Twitch Bot</strong><br><span>twitchio 2.x</span>
+              </div>
+              <div class="jd-arch-box" style="border-color: var(--accent)">
+                <strong>Dashboard Web</strong><br><span>FastAPI + SSE</span>
+              </div>
+            </div>
+            <div class="jd-arch-arrow">↓ injection de dépendances ↓</div>
+            <div class="jd-arch-row">
+              <div class="jd-arch-box jd-arch-core">
+                <strong>Core Services</strong><br>
+                <span>EmotionEngine · MemoryService · OpenAIClient · PersonaService · Config</span>
+              </div>
+            </div>
+            <div class="jd-arch-arrow">↓ stockage ↓</div>
+            <div class="jd-arch-row">
+              <div class="jd-arch-box" style="border-color: var(--c-anger)">
+                <strong>Qdrant</strong><br><span>Mémoire vectorielle</span>
+              </div>
+              <div class="jd-arch-box" style="border-color: var(--c-joy)">
+                <strong>SQLite</strong><br><span>Coûts, trust, logs</span>
+              </div>
+              <div class="jd-arch-box" style="border-color: var(--c-curiosity)">
+                <strong>OpenAI API</strong><br><span>GPT / o-series</span>
+              </div>
+            </div>
+          </div>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — main.py et asyncio.gather()</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/main.py — point d'entrée</div>
+              <pre><code># Injection de dépendances : tout est créé une fois, partagé partout
+config = Config.load()
+db = await Database.create(config)
+emotion = EmotionEngine(config)
+memory = MemoryService(config)
+openai_client = OpenAIClient(config, db)
+persona = PersonaService(config)
+
+# Les deux bots reçoivent les mêmes services
+discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, persona)
+twitch_bot = WallyTwitch(config, db, emotion, memory, openai_client, persona)
+dashboard = create_dashboard(config, db, emotion, memory, openai_client)
+
+# Tout tourne en parallèle dans la même boucle événementielle
+await asyncio.gather(
+    discord_bot.start(token),
+    twitch_bot.start(),
+    dashboard.serve()
+)</code></pre>
+              <p class="jd-tech-note"><strong>asyncio.gather()</strong> lance les 3 services en parallèle dans la même boucle événementielle Python. Pas besoin de multi-threading ou de multi-processing — l'async/await suffit car tout le I/O est non-bloquant.</p>
+              <p class="jd-tech-note"><strong>Docker</strong> : le <code>docker-compose.yml</code> définit 2 services. Wally dépend de Qdrant avec <code>condition: service_healthy</code> (healthcheck sur <code>/healthz</code>). La config et les données sont montées en volumes — pas besoin de rebuild pour changer la config.</p>
+              <p class="jd-tech-note"><strong>Hot-reload</strong> : <code>config.save()</code> écrit la config en mémoire directement dans <code>config.yaml</code>. Les changements via le dashboard sont appliqués instantanément sans redémarrage.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>`;
 }
