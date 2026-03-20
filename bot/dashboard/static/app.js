@@ -2135,12 +2135,12 @@ async function renderChatTab() {
           <div class="login-card" style="--card-accent: var(--c-sadness)">
             <div class="login-card-icon" aria-hidden="true">📦</div>
             <div class="login-card-title">Hébergement local</div>
-            <div class="login-card-text">Tout est stocké sur le serveur de Wally. Rien ne transite par des services tiers. Tes données restent chez nous.</div>
+            <div class="login-card-text">Tout est stocké sur le serveur de Wally. Rien ne transite par des services tiers. Tes données restent chez moi.</div>
           </div>
           <div class="login-card" style="--card-accent: var(--c-anger)">
             <div class="login-card-icon" aria-hidden="true">🗑️</div>
-            <div class="login-card-title">Contrôle total</div>
-            <div class="login-card-text">Tu peux consulter ou supprimer tous tes souvenirs à tout moment, directement depuis le chat.</div>
+            <div class="login-card-title">Droit de regard</div>
+            <div class="login-card-text">Tu peux consulter tes souvenirs à tout moment. Pour une suppression, fais-en la demande à KingsRequin sur Discord.</div>
           </div>
         </div>
 
@@ -2592,7 +2592,7 @@ def _apply_decay(self):
           <p><strong>La mémoire courte</strong> — les derniers messages de la conversation en cours. Wally garde en tête les N derniers échanges (configurable) pour garder le fil. Quand cette fenêtre devient trop grande, il la résume automatiquement via un modèle secondaire pour économiser des tokens.</p>
           <p><strong>La mémoire longue</strong> — des faits extraits automatiquement au fil du temps et stockés dans une base vectorielle (Qdrant). « Aime les crevettes », « fan d'Apex Legends », « déteste le lundi matin », « a un chat qui s'appelle Pixel ». Ces faits sont extraits par le <strong>FactExtractor</strong>, qui analyse les conversations par batch après une période d'inactivité.</p>
           <p>Quand Wally reçoit un message, il cherche dans sa mémoire longue les souvenirs les plus <strong>pertinents par similarité sémantique</strong> — pas juste par mots-clés, mais par sens. Si tu parles de « mon félin », il retrouvera le souvenir de Pixel même si le mot « chat » n'apparaît pas.</p>
-          <p>Chaque plateforme a sa propre mémoire : les souvenirs Discord et Twitch sont <strong>strictement séparés</strong> par namespace (<code>discord:user_id</code> vs <code>twitch:username</code>).</p>
+          <p>Par défaut, chaque plateforme a sa propre mémoire (namespace <code>discord:user_id</code> vs <code>twitch:username</code>). Mais un administrateur peut <strong>lier manuellement</strong> les profils Discord et Twitch d'un même utilisateur pour que Wally partage ses souvenirs entre les deux.</p>
 
           <details class="jd-details">
             <summary>🔍 Aller plus loin — mem0, Qdrant, trust score</summary>
