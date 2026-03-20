@@ -986,6 +986,28 @@ class Database:
         rows = await cursor.fetchall()
         return [dict(r) for r in reversed(rows)]
 
+    async def load_chat_history_for_day(self, date_str: str):
+        """Load chat messages for a specific day (YYYY-MM-DD format)."""
+        import datetime
+        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        start = dt.replace(hour=0, minute=0, second=0).timestamp()
+        end = start + 86400
+        cursor = await self._conn.execute(
+            "SELECT * FROM chat_messages WHERE created_at >= ? AND created_at < ? ORDER BY id ASC",
+            (start, end),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def list_chat_session_dates(self):
+        """Return list of dates (YYYY-MM-DD) that have chat messages, most recent first."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT date(created_at, 'unixepoch', 'localtime') as day "
+            "FROM chat_messages ORDER BY day DESC"
+        )
+        rows = await cursor.fetchall()
+        return [row["day"] for row in rows]
+
     async def cleanup_old_chat_messages(self, days=30):
         cutoff = time.time() - days * 86400
         await self._conn.execute("DELETE FROM chat_messages WHERE created_at < ?", (cutoff,))

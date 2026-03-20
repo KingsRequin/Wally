@@ -2088,6 +2088,77 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
   font-size: 0.85rem;
 }
 
+/* ── Chat session bar ────────────────────────────────────────────── */
+.chat-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.chat-session-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.chat-session-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.chat-session-btn:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8);
+}
+.chat-session-panel {
+  background: rgba(0,0,0,0.4);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 10px 14px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.chat-session-panel-title {
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.chat-session-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-session-item {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.6);
+  font-size: 0.75rem;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-session-item:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+.chat-session-item.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .chat-login-prompt {
   display: flex;
   flex-direction: column;

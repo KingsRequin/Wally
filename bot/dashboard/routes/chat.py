@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
 import time
@@ -88,8 +89,9 @@ async def ws_chat(ws: WebSocket):
 
     heartbeat_task = None
     try:
-        # Send history
-        history = await state.db.load_chat_history(limit=state.config.web_chat.history_limit)
+        # Send today's messages only
+        today = datetime.date.today().isoformat()
+        history = await state.db.load_chat_history_for_day(today)
         await _send_to(ws, {"type": "history", "messages": history})
 
         # Start heartbeat
@@ -214,6 +216,42 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
             logger.error("WebChat Wally response failed: {e}", e=exc)
 
 
+@router.get("/api/chat/sessions")
+async def chat_sessions(request: Request):
+    """Return list of dates with chat messages (most recent first)."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, detail="JWT required")
+    payload = decode_jwt(auth[7:], _jwt_secret_raw())
+    if not payload:
+        raise HTTPException(401, detail="Invalid or expired token")
+
+    state: AppState = request.app.state.wally
+    dates = await state.db.list_chat_session_dates()
+    return {"dates": dates}
+
+
+@router.get("/api/chat/history/{date_str}")
+async def chat_history_for_day(date_str: str, request: Request):
+    """Return chat messages for a specific day (YYYY-MM-DD)."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, detail="JWT required")
+    payload = decode_jwt(auth[7:], _jwt_secret_raw())
+    if not payload:
+        raise HTTPException(401, detail="Invalid or expired token")
+
+    # Validate date format
+    try:
+        datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, detail="Invalid date format, use YYYY-MM-DD")
+
+    state: AppState = request.app.state.wally
+    messages = await state.db.load_chat_history_for_day(date_str)
+    return {"messages": messages}
+
+
 @router.get("/api/chat/my-memories")
 async def my_memories(request: Request):
     """Return mem0 memories for the currently authenticated chat user."""
@@ -237,7 +275,7 @@ async def my_memories(request: Request):
 
         results = await asyncio.to_thread(mem0.get_all, user_id=user_id)
         raw = results.get("results", []) if isinstance(results, dict) else (results or [])
-        memories = [r.get("memory", "") for r in raw if r.get("memory")]
+        all_entries = [r for r in raw if r.get("memory")]
 
         # Include accepted alias memories
         accepted_links = await state.db.list_link_proposals(status="accepted")
@@ -246,11 +284,16 @@ async def my_memories(request: Request):
             try:
                 alias_results = await asyncio.to_thread(mem0.get_all, user_id=alias_id)
                 alias_raw = alias_results.get("results", []) if isinstance(alias_results, dict) else (alias_results or [])
-                memories.extend(r.get("memory", "") for r in alias_raw if r.get("memory"))
+                all_entries.extend(r for r in alias_raw if r.get("memory"))
             except Exception:
                 pass
 
-        return {"memories": memories}
+        # Sort by most recent first
+        all_entries.sort(
+            key=lambda r: r.get("updated_at") or r.get("created_at") or "",
+            reverse=True,
+        )
+        return {"memories": [r["memory"] for r in all_entries]}
     except Exception as exc:
         logger.warning("my-memories failed for {u}: {e}", u=discord_id, e=exc)
         return {"memories": []}

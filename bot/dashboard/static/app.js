@@ -2180,6 +2180,18 @@ async function renderChatTab() {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M10 21h4"/></svg>
         </button>
       </div>
+      <div class="chat-session-bar">
+        <span class="chat-session-label" id="chat-session-label">Aujourd'hui</span>
+        <button class="chat-session-btn" onclick="chatToggleSessionPanel()" title="Sessions précédentes">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </button>
+      </div>
+      <div class="chat-session-panel" id="chat-session-panel" style="display:none">
+        <div class="chat-session-panel-title">Sessions précédentes</div>
+        <div class="chat-session-list" id="chat-session-list">
+          <span style="color:rgba(255,255,255,0.3);font-size:0.75rem">Chargement...</span>
+        </div>
+      </div>
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-typing" id="chat-typing">Wally réfléchit...</div>
       <div class="chat-cooldown-msg" id="chat-cooldown"></div>
@@ -2342,6 +2354,92 @@ function chatUpdateHeroEmotions() {
     const fill = document.getElementById(`chat-fill-${e}`);
     if (fill) fill.style.width = `${((currentEmotions[e] ?? 0) * 100).toFixed(1)}%`;
   }
+}
+
+// ── Chat Sessions ───────────────────────────────────────────────
+
+let _chatViewingDate = null; // null = today (live), string = archived day
+
+async function chatToggleSessionPanel() {
+  const panel = document.getElementById('chat-session-panel');
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    await chatLoadSessions();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+async function chatLoadSessions() {
+  const list = document.getElementById('chat-session-list');
+  if (!list) return;
+  const jwt = getChatJwt();
+  if (!jwt) return;
+  try {
+    const r = await fetch('/api/chat/sessions', {
+      headers: { 'Authorization': `Bearer ${jwt}` },
+    });
+    const data = await r.json();
+    const dates = data.dates || [];
+    const today = new Date().toISOString().slice(0, 10);
+    if (dates.length === 0) {
+      list.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.75rem;padding:8px">Aucune session</div>';
+      return;
+    }
+    list.innerHTML = dates.map(d => {
+      const isToday = d === today;
+      const isActive = isToday ? !_chatViewingDate : _chatViewingDate === d;
+      const label = isToday ? "Aujourd'hui" : _formatSessionDate(d);
+      return `<button class="chat-session-item${isActive ? ' active' : ''}" onclick="chatLoadDay('${d}')">${label}</button>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--c-anger);font-size:0.75rem;padding:8px">Erreur</div>';
+  }
+}
+
+function _formatSessionDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+async function chatLoadDay(dateStr) {
+  const today = new Date().toISOString().slice(0, 10);
+  const label = document.getElementById('chat-session-label');
+  const el = document.getElementById('chat-messages');
+  const inputBar = document.querySelector('.chat-input-bar');
+
+  if (dateStr === today) {
+    // Back to live mode
+    _chatViewingDate = null;
+    if (label) label.textContent = "Aujourd'hui";
+    if (inputBar) inputBar.style.display = '';
+    // Reconnect WS to get today's messages
+    chatConnectWs();
+  } else {
+    _chatViewingDate = dateStr;
+    if (label) label.textContent = _formatSessionDate(dateStr);
+    if (inputBar) inputBar.style.display = 'none'; // hide input for archived sessions
+    // Load archived day via REST
+    const jwt = getChatJwt();
+    if (!jwt || !el) return;
+    try {
+      const r = await fetch(`/api/chat/history/${dateStr}`, {
+        headers: { 'Authorization': `Bearer ${jwt}` },
+      });
+      const data = await r.json();
+      el.innerHTML = '';
+      (data.messages || []).forEach(m => chatAppendMessage(m));
+      chatScrollBottom();
+    } catch (e) {
+      if (el) el.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);padding:40px">Erreur de chargement</div>';
+    }
+  }
+  // Close panel & refresh list
+  const panel = document.getElementById('chat-session-panel');
+  if (panel) panel.style.display = 'none';
 }
 
 // ── Chat Hero: Memories panel ───────────────────────────────────
