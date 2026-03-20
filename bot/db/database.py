@@ -173,6 +173,15 @@ CREATE TABLE IF NOT EXISTS chat_refresh_tokens (
     avatar_url TEXT,
     expires_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_aliases (
+    nickname     TEXT PRIMARY KEY,
+    canonical_uid TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT 'llm',
+    confidence   REAL NOT NULL DEFAULT 0.0,
+    created_at   REAL NOT NULL
+);
 """
 
 
@@ -221,6 +230,12 @@ class Database:
             await conn.commit()
         except aiosqlite.OperationalError:
             pass
+        # Migration: add is_reply to session_messages if absent
+        try:
+            await conn.execute("ALTER TABLE session_messages ADD COLUMN is_reply INTEGER DEFAULT 0")
+            await conn.commit()
+        except Exception:
+            pass  # Column already exists
         # Nettoyage automatique des vieilles entrées daily_log au démarrage
         try:
             await conn.execute(
@@ -984,3 +999,94 @@ class Database:
     async def cleanup_expired_refresh_tokens(self):
         await self._conn.execute("DELETE FROM chat_refresh_tokens WHERE expires_at < ?", (time.time(),))
         await self._conn.commit()
+
+    # ── User aliases (nickname resolution) ────────────────────────────────────
+
+    async def upsert_alias(
+        self,
+        nickname: str,
+        canonical_uid: str,
+        display_name: str,
+        source: str,
+        confidence: float,
+    ) -> None:
+        """Insert or update an alias mapping.
+
+        If source == 'llm', an existing alias with source == 'manual' is NOT overwritten.
+        """
+        nickname = nickname.lower().strip()
+        if source == "llm":
+            existing = await self.fetch_one(
+                "SELECT source FROM user_aliases WHERE nickname = ?", (nickname,)
+            )
+            if existing and existing["source"] == "manual":
+                return  # manual entries are protected from LLM overwrites
+        await self.execute(
+            "INSERT INTO user_aliases (nickname, canonical_uid, display_name, source, confidence, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(nickname) DO UPDATE SET "
+            "canonical_uid=excluded.canonical_uid, display_name=excluded.display_name, "
+            "source=excluded.source, confidence=excluded.confidence, created_at=excluded.created_at",
+            (nickname, canonical_uid, display_name, source, confidence, time.time()),
+        )
+
+    async def delete_alias(self, nickname: str) -> None:
+        """Delete an alias by nickname."""
+        await self.execute(
+            "DELETE FROM user_aliases WHERE nickname = ?", (nickname.lower().strip(),)
+        )
+
+    async def list_aliases(self, canonical_uid: str | None = None) -> list[dict]:
+        """Return all aliases, optionally filtered by canonical_uid."""
+        if canonical_uid is not None:
+            rows = await self.fetch_all(
+                "SELECT nickname, canonical_uid, display_name, source, confidence, created_at "
+                "FROM user_aliases WHERE canonical_uid = ? ORDER BY created_at DESC",
+                (canonical_uid,),
+            )
+        else:
+            rows = await self.fetch_all(
+                "SELECT nickname, canonical_uid, display_name, source, confidence, created_at "
+                "FROM user_aliases ORDER BY created_at DESC",
+            )
+        return [
+            {
+                "nickname": r["nickname"],
+                "canonical_uid": r["canonical_uid"],
+                "display_name": r["display_name"],
+                "source": r["source"],
+                "confidence": float(r["confidence"]),
+                "created_at": float(r["created_at"]),
+            }
+            for r in rows
+        ]
+
+    async def get_nickname_alias_map(self) -> dict[str, str]:
+        """Return {nickname: canonical_uid} for all aliases."""
+        rows = await self.fetch_all(
+            "SELECT nickname, canonical_uid FROM user_aliases"
+        )
+        return {r["nickname"]: r["canonical_uid"] for r in rows}
+
+    async def list_unresolved_aliases(self) -> list[dict]:
+        """Return memory_users rows where user_id LIKE 'unknown:%'."""
+        rows = await self.fetch_all(
+            "SELECT user_id, platform, last_updated, username "
+            "FROM memory_users WHERE user_id LIKE 'unknown:%' ORDER BY last_updated DESC",
+        )
+        return [
+            {
+                "user_id": r["user_id"],
+                "platform": r["platform"],
+                "last_updated": float(r["last_updated"]),
+                "username": r["username"],
+            }
+            for r in rows
+        ]
+
+    async def delete_session_messages_before(self, channel_id: str, cutoff_ts: float) -> None:
+        """Delete session messages for a channel older than cutoff_ts."""
+        await self.execute(
+            "DELETE FROM session_messages WHERE channel_id = ? AND timestamp <= ?",
+            (channel_id, cutoff_ts),
+        )
