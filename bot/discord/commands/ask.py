@@ -65,10 +65,11 @@ class AskCog(commands.Cog):
             self.bot.memory.append_message(channel_id_str, "Wally", reply)
 
             # Enregistrement dans la session active (mémoire long-terme via analyse)
-            if getattr(self.bot, "session_manager", None) is not None:
-                self.bot.session_manager.record_message(
+            if getattr(self.bot, "fact_extractor", None) is not None:
+                self.bot.fact_extractor.record_message(
                     channel_id_str, "discord", user_id,
                     interaction.user.display_name, question,
+                    is_reply=False,
                 )
 
             _fire(_post_process(self.bot, question, platform, user_id, guild_id, trust))

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from bot.dashboard.routes.chat_auth import decode_jwt
+from bot.dashboard.routes.chat_auth import decode_jwt, _jwt_secret_raw
 
 if TYPE_CHECKING:
     from bot.dashboard.state import AppState
@@ -67,7 +67,7 @@ async def ws_chat(ws: WebSocket):
         return
 
     state: AppState = ws.app.state.wally
-    secret = os.getenv("JWT_SECRET", state.config.bot.dashboard_token or "fallback")
+    secret = _jwt_secret_raw()
     payload = decode_jwt(token, secret)
     if not payload:
         await ws.close(code=4001, reason="Invalid token")

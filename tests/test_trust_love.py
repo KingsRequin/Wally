@@ -80,12 +80,13 @@ async def test_love_clamps_at_one(tmp_path):
 async def test_analyze_llm_returns_trust_and_love_delta():
     engine = EmotionEngine(_make_emotion_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+    mock_openai.complete_secondary_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.05,
         "love_delta": 0.03,
-    }))
+        "user_facts": [],
+    })
     engine.set_openai_client(mock_openai)
 
     result = await engine.process_message(
@@ -101,12 +102,13 @@ async def test_analyze_llm_returns_trust_and_love_delta():
 async def test_analyze_llm_clamps_trust_delta():
     engine = EmotionEngine(_make_emotion_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+    mock_openai.complete_secondary_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.5,  # way over max
         "love_delta": -0.3,  # negative, should clamp to 0
-    }))
+        "user_facts": [],
+    })
     engine.set_openai_client(mock_openai)
 
     result = await engine.process_message(

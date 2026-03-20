@@ -60,13 +60,20 @@ def test_accept_link_updates_alias_cache():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "accepted"
-    # Le cache doit être mis à jour
-    assert client.app.state.wally.memory._alias_cache.get("twitch:abc") == "discord:123"
+    # add_alias doit avoir été appelé
+    client.app.state.wally.memory.add_alias.assert_called_once_with("twitch:abc", "discord:123")
 
 
 def test_manual_link():
     """POST /api/admin/links/manual crée et auto-accepte une liaison."""
     client = make_app()
+    # list_memory_users doit retourner les users pour que _resolve_user_id les trouve
+    client.app.state.wally.db.list_memory_users = AsyncMock(return_value=[
+        {"user_id": "discord:999", "platform": "discord", "last_updated": 1000.0,
+         "username": "testdiscord", "trust_score": 0.5, "in_memory_users": True},
+        {"user_id": "twitch:testuser", "platform": "twitch", "last_updated": 1000.0,
+         "username": "testtwitch", "trust_score": 0.5, "in_memory_users": True},
+    ])
     # Configurer list_link_proposals pour retourner le lien créé (pour l'auto-accept)
     client.app.state.wally.db.list_link_proposals = AsyncMock(return_value=[
         {"id": 99, "canonical_id": "discord:999", "alias_id": "twitch:testuser",
@@ -113,10 +120,10 @@ def test_accept_link_merges_memories():
     assert resp.status_code == 200
     # Mémoires copiées vers canonical
     assert state.memory._mem0.add.call_count == 2
-    # Ancien namespace nettoyé
+    # Ancien namespace mem0 nettoyé
     state.memory._mem0.delete_all.assert_called_once_with(user_id="twitch:abc")
-    # memory_user supprimé
-    state.db.delete_memory_user.assert_awaited_once_with("twitch:abc")
+    # memory_users conservé (pour garder le username pour l'affichage)
+    state.db.delete_memory_user.assert_not_awaited()
 
 
 def test_accept_link_partial_failure_keeps_alias():

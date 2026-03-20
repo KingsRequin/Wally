@@ -48,7 +48,7 @@ class ScanCog(commands.Cog):
             )
             return
 
-        if getattr(self.bot, "session_manager", None) is None:
+        if getattr(self.bot, "fact_extractor", None) is None:
             await interaction.response.send_message(
                 "❌ Service d'analyse non disponible.", ephemeral=True
             )
@@ -74,7 +74,7 @@ class ScanCog(commands.Cog):
                 ]
 
             # ── Analyse ──────────────────────────────────────────────────────
-            stored = await self.bot.session_manager.analyze_channel_messages(
+            stored = await self.bot.fact_extractor.analyze_channel_messages(
                 messages=fetched,
                 platform="discord",
                 channel_id=str(interaction.channel_id),

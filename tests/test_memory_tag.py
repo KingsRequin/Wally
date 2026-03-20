@@ -54,8 +54,8 @@ async def test_memory_add_no_tag_when_empty_context():
 async def test_discord_handler_updates_context_window(tmp_path):
     """Le handler Discord met à jour la fenêtre de contexte après une réponse.
 
-    memory.add() (mémoire long-terme) est appelé par le SessionManager après
-    inactivité, pas directement dans le handler. Ce test vérifie le comportement
+    memory.add() (mémoire long-terme) est appelé par le FactExtractor après
+    analyse du buffer, pas directement dans le handler. Ce test vérifie le comportement
     réel : append_message est appelé pour le message utilisateur et la réponse,
     et l'état émotionnel est utilisé pour construire le prompt.
     """
@@ -92,7 +92,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.persona.build_prompt_block = MagicMock(return_value="")
     bot.persona.emotion_directives = {}
     bot.emotion.process_message = AsyncMock()
-    bot.session_manager = MagicMock()
+    bot.fact_extractor = MagicMock()
     bot.web_search = None
     bot.apex_api = None
 
@@ -130,5 +130,5 @@ async def test_discord_handler_updates_context_window(tmp_path):
     # memory.add() ne doit pas être appelé directement depuis le handler
     bot.memory.add.assert_not_called()
 
-    # Le SessionManager enregistre le message pour l'analyse en fin de session
-    bot.session_manager.record_message.assert_called_once()
+    # Le FactExtractor enregistre le message pour l'analyse
+    bot.fact_extractor.record_message.assert_called_once()
