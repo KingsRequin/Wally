@@ -81,13 +81,19 @@ FACT_EXTRACTION_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string"},
+                    "target": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}]
+                    },
                     "target_user_id": {
                         "anyOf": [{"type": "string"}, {"type": "null"}]
                     },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["personal", "community"],
+                    },
                     "facts": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["target", "target_user_id", "facts"],
+                "required": ["target", "target_user_id", "scope", "facts"],
                 "additionalProperties": False,
             },
         },
@@ -366,13 +372,23 @@ class FactExtractor:
 
         # Process facts
         for entry in result.get("facts", []):
-            uid = entry.get("target_user_id")
             facts_list = entry.get("facts", [])
             if not facts_list:
                 continue
 
+            scope = entry.get("scope", "personal")
             facts_text = "\n".join(f"- {f}" for f in facts_list)
 
+            # Community-scope facts → global namespace
+            if scope == "community":
+                try:
+                    await self._memory.add_global(facts_text)
+                    stored_count += 1
+                except Exception as exc:
+                    logger.warning("memory.add_global failed: {e}", e=exc)
+                continue
+
+            uid = entry.get("target_user_id")
             if uid:
                 # Known user: parse platform:user_id
                 if ":" in uid:

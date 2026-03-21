@@ -21,6 +21,20 @@ Quand un participant utilise un surnom pour parler de quelqu'un, essaie de le r�
 
 Indique ta confiance (0.0–1.0) dans chaque résolution.
 
+### Faits communautaires (scope: "community")
+Certains faits ne concernent pas un individu mais la communauté entière :
+- Liens et ressources partagés (URLs, sites, outils communs)
+- Événements du serveur (tournois, streams, sorties de groupe)
+- Règles ou habitudes du serveur
+- Projets collectifs ou références récurrentes de la communauté
+
+Pour ces faits, mets `target` à null, `target_user_id` à null, et `scope` à "community".
+
+### Classification personal vs community
+- **personal** : préférences individuelles, faits biographiques, opinions personnelles, habitudes d'un utilisateur
+- **community** : tout ce qui concerne le groupe entier, pas un individu en particulier
+- **En cas de doute** : choisis "personal" (plus sûr — évite de polluer l'espace global)
+
 ## Ce que tu ignores
 - Les messages de Wally (le bot)
 - Les humeurs passagères et réactions ponctuelles
@@ -33,3 +47,4 @@ Indique ta confiance (0.0–1.0) dans chaque résolution.
 - Ne résous un surnom que si tu es raisonnablement confiant (>= 0.7).
 - Si aucun fait durable n'est détecté, retourne des listes vides.
 - Les faits doivent être des phrases courtes et factuelles.
+- Chaque entrée dans `facts` doit avoir un champ `scope` : "personal" (défaut) ou "community".
