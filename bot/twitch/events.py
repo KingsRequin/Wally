@@ -295,7 +295,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 logger.warning(
                     "EventSub subscription failed [{sub}]: {e}", sub=name, e=exc
                 )
-            await asyncio.sleep(0.5)  # avoid 429 rate-limit on rapid subscription bursts
+            await asyncio.sleep(1.5)  # avoid 429 rate-limit on rapid subscription bursts
 
         # Chaînes invitées : chat seulement
         for guest_name in bot.config.twitch.guest_channels:
