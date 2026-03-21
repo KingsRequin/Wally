@@ -53,6 +53,7 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./.env:/app/.env
       - ./ROADMAP.md:/app/ROADMAP.md:ro
+      - ./bot/dashboard/static:/app/bot/dashboard/static:ro
     restart: unless-stopped
 
   cloudflared:
