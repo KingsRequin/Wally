@@ -135,6 +135,7 @@ function showTab(tabId) {
   if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'admin-costs') loadCosts();
   pollCostsBadge();
+  pollLinksBadge();
   if (tabId === 'admin-logs') {
     requestAnimationFrame(() => {
       const el = document.getElementById('log-stream');
@@ -843,6 +844,10 @@ async function startLogSSE() {
         const filter = document.getElementById('mem-user-filter')?.value || '';
         loadMemoryUsers(filter);
         if (_selectedMemUser) loadUserDetail(_selectedMemUser);
+        pollLinksBadge();
+        if (data.type === 'links_analyzed' && data.count > 0) {
+          toast(`🔗 ${data.count} liaison(s) à vérifier`, 'info');
+        }
         return;
       }
       appendLog(data);
@@ -939,6 +944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadStreamStatus();
   requestAnimationFrame(() => setGraphRange('1h'));
   pollCostsBadge();
+  pollLinksBadge();
 
   // ── Tooltip hover — emotion graph ─────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');
@@ -1758,6 +1764,7 @@ async function acceptLink(id) {
     toast('Liaison acceptée — mémoires fusionnées', 'success');
     if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
     refreshUserList();
+    pollLinksBadge();
   } else {
     toast('Erreur', 'error');
   }
@@ -1768,6 +1775,7 @@ async function rejectLink(id) {
   if (r && r.ok) {
     toast('Liaison rejetée', 'success');
     if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
+    pollLinksBadge();
   } else {
     toast('Erreur', 'error');
   }
@@ -2048,6 +2056,20 @@ async function pollCostsBadge() {
   } catch (e) { /* ignore */ }
 }
 
+async function pollLinksBadge() {
+  if (!getToken()) return;
+  try {
+    const r = await apiFetch('/api/admin/links?status=pending');
+    if (!r || !r.ok) return;
+    const { proposals } = await r.json();
+    const badge = document.getElementById('links-badge');
+    if (!badge) return;
+    const count = proposals.length;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'flex' : 'none';
+  } catch (e) { /* ignore */ }
+}
+
 // ── Chat Auth ───────────────────────────────────────────────────
 
 function getChatJwt() { return localStorage.getItem('chat_jwt'); }
@@ -2253,6 +2275,9 @@ function chatConnectWs() {
       chatHideTyping();
     } else if (data.type === 'typing') {
       chatShowTyping();
+    } else if (data.type === 'system') {
+      chatAppendSystem(data.content || '');
+      chatScrollBottom();
     } else if (data.type === 'cooldown') {
       const el = document.getElementById('chat-cooldown');
       if (el) {
@@ -2291,6 +2316,18 @@ function chatAppendMessage(msg) {
       <div class="chat-msg-username ${isWally ? 'wally' : ''}">${escHtml(msg.username)} <span class="chat-msg-time">${time}</span></div>
       <div class="chat-msg-content">${escHtml(msg.content)}</div>
     </div>`;
+  el.appendChild(div);
+}
+
+function chatAppendSystem(text) {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg system';
+  const inner = document.createElement('div');
+  inner.className = 'chat-msg-system';
+  inner.textContent = text;
+  div.appendChild(inner);
   el.appendChild(div);
 }
 
@@ -2686,11 +2723,12 @@ def _apply_decay(self):
           <h3>Mémoire</h3>
         </div>
         <div class="jd-body">
-          <p>Wally a <strong>deux types de mémoire</strong>, comme un humain :</p>
+          <p>Wally a <strong>trois types de mémoire</strong> :</p>
           <p><strong>La mémoire courte</strong> — les derniers messages de la conversation en cours. Wally garde en tête les N derniers échanges (configurable) pour garder le fil. Quand cette fenêtre devient trop grande, il la résume automatiquement via un modèle secondaire pour économiser des tokens.</p>
           <p><strong>La mémoire longue</strong> — des faits extraits automatiquement au fil du temps et stockés dans une base vectorielle (Qdrant). « Aime les crevettes », « fan d'Apex Legends », « déteste le lundi matin », « a un chat qui s'appelle Pixel ». Ces faits sont extraits par le <strong>FactExtractor</strong>, qui analyse les conversations par batch après une période d'inactivité.</p>
           <p>Quand Wally reçoit un message, il cherche dans sa mémoire longue les souvenirs les plus <strong>pertinents par similarité sémantique</strong> — pas juste par mots-clés, mais par sens. Si tu parles de « mon félin », il retrouvera le souvenir de Pixel même si le mot « chat » n'apparaît pas.</p>
           <p>Par défaut, chaque plateforme a sa propre mémoire (namespace <code>discord:user_id</code> vs <code>twitch:username</code>). Mais un administrateur peut <strong>lier manuellement</strong> les profils Discord et Twitch d'un même utilisateur pour que Wally partage ses souvenirs entre les deux.</p>
+          <p><strong>La mémoire globale</strong> — des connaissances partagées par toute la communauté : liens importants, événements du serveur, ressources communes. Contrairement à la mémoire individuelle, ces faits sont consultés <strong>pour chaque requête</strong>, peu importe qui pose la question. Les administrateurs peuvent gérer ces connaissances via l'onglet « Mémoire » du dashboard, et le FactExtractor les détecte aussi automatiquement dans les conversations.</p>
 
           <details class="jd-details">
             <summary>🔍 Aller plus loin — mem0, Qdrant, trust score</summary>
