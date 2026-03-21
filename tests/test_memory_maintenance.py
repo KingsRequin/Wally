@@ -110,3 +110,93 @@ async def test_cleanup_old_questions_purges_unresolved_old(tmp_path):
     qs = await db.get_all_pending_questions("discord:123")
     assert len(qs) == 0
     await db.close()
+
+
+from unittest.mock import MagicMock, AsyncMock, patch
+from bot.core.memory import MemoryService
+
+
+def make_config(window_size=5, token_threshold=100):
+    config = MagicMock()
+    config.bot.context_window_size = window_size
+    config.bot.context_token_threshold = token_threshold
+    config.bot.prelude_window_size = 15
+    config.openai.secondary_model = "gpt-4o-mini"
+    return config
+
+
+@pytest.mark.asyncio
+async def test_evaluate_memory_incomplete_creates_question(tmp_path):
+    """When LLM says memory is incomplete, questions are inserted in DB."""
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(return_value='{"complete": false, "questions": [{"question": "Quel mois ?", "priority": "high"}], "resolves": []}')
+    svc.set_openai_client(mock_openai)
+
+    await svc._evaluate_memory("discord:123", "déménage le 1er")
+
+    q = await db.get_pending_question("discord:123")
+    assert q is not None
+    assert q["question"] == "Quel mois ?"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_memory_complete_no_question(tmp_path):
+    """When LLM says memory is complete, no question is created."""
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(return_value='{"complete": true, "questions": [], "resolves": []}')
+    svc.set_openai_client(mock_openai)
+
+    await svc._evaluate_memory("discord:123", "Habite à Lyon depuis 2020")
+
+    q = await db.get_pending_question("discord:123")
+    assert q is None
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_memory_resolves_existing_questions(tmp_path):
+    """When LLM says new memory resolves an existing question, it's marked resolved."""
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    await db.insert_memory_question("discord:123", "déménage le 1er", "Quel mois ?", "high")
+    q = await db.get_pending_question("discord:123")
+    qid = q["id"]
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(
+        return_value=f'{{"complete": true, "questions": [], "resolves": [{qid}]}}'
+    )
+    svc.set_openai_client(mock_openai)
+
+    await svc._evaluate_memory("discord:123", "Déménage le 1er mars 2026 à Lyon")
+
+    q2 = await db.get_pending_question("discord:123")
+    assert q2 is None  # resolved
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_memory_handles_invalid_json(tmp_path):
+    """Invalid JSON from LLM should not crash."""
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    mock_openai = MagicMock()
+    mock_openai.complete_secondary = AsyncMock(return_value="not valid json")
+    svc.set_openai_client(mock_openai)
+
+    # Should not raise
+    await svc._evaluate_memory("discord:123", "some memory")
+    await db.close()

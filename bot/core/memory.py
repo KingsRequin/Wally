@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 import warnings
@@ -40,6 +41,14 @@ _CONSOLIDATION_SYSTEM = load_prompt(
     fallback=(
         "Tu es le gestionnaire de mémoire long-terme de Wally. Consolide les souvenirs "
         "en 15 faits essentiels maximum, un par ligne, sans préambule."
+    ),
+)
+
+_EVALUATE_SYSTEM = load_prompt(
+    "memory_evaluate_system",
+    fallback=(
+        "Tu es le module de mémoire de Wally. Évalue la complétude du souvenir. "
+        'Retourne {"complete": true/false, "questions": [], "resolves": []}'
     ),
 )
 
@@ -171,6 +180,7 @@ class MemoryService:
                 from bot.core import account_linker
                 threshold = getattr(self._config.bot, "link_min_confidence", 0.75)
                 self._fire(account_linker.analyze_new_user(self._db, raw_uid, threshold))
+            self._fire(self._evaluate_memory(uid, content))
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
 
@@ -272,6 +282,45 @@ class MemoryService:
             )
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
+
+    async def _evaluate_memory(self, uid: str, content: str) -> None:
+        """Evaluate memory completeness and create follow-up questions if needed."""
+        if self._openai is None or self._db is None:
+            return
+        try:
+            # Get existing pending questions for context
+            pending = await self._db.get_all_pending_questions(uid)
+            pending_block = ""
+            if pending:
+                lines = [f"- [ID {q['id']}] {q['question']}" for q in pending]
+                pending_block = "\nQuestions en attente :\n" + "\n".join(lines)
+
+            user_msg = f"Nouveau souvenir : {content}{pending_block}"
+            raw = await self._openai.complete_secondary(
+                _EVALUATE_SYSTEM,
+                [{"role": "user", "content": user_msg}],
+                purpose="memory_evaluate",
+            )
+            result = json.loads(raw)
+
+            # Insert new questions
+            for q in result.get("questions", []):
+                question = q.get("question", "").strip()
+                priority = q.get("priority", "medium")
+                if question and priority in ("high", "medium", "low"):
+                    await self._db.insert_memory_question(uid, content, question, priority)
+                    logger.debug("Memory question created for {uid}: {q}", uid=uid, q=question)
+
+            # Resolve answered questions
+            for qid in result.get("resolves", []):
+                if isinstance(qid, int):
+                    await self._db.resolve_question(qid)
+                    logger.debug("Memory question {id} resolved by new memory", id=qid)
+
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.debug("Memory evaluate parse error: {e}", e=exc)
+        except Exception as exc:
+            logger.warning("Memory evaluate failed: {e}", e=exc)
 
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
         """Delete all long-term memories for a given user (e.g. orphan cleanup)."""
