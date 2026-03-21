@@ -41,7 +41,6 @@ Méthodes CRUD :
 - `get_pending_question(user_id, max_attempts=3)` — retourne la question non résolue la plus prioritaire (priority HIGH > MEDIUM > LOW, puis la plus ancienne), avec `attempts < max_attempts` et `resolved = 0`
 - `increment_question_attempts(question_id)` — `attempts += 1`
 - `resolve_question(question_id)` — `resolved = 1`
-- `resolve_questions_for_memory(user_id, memory_text)` — résout toutes les questions liées à un souvenir (quand l'info est mise à jour)
 - `get_all_pending_questions(user_id)` — retourne toutes les questions non résolues pour un utilisateur (pour `_evaluate_memory`)
 - `cleanup_old_questions(max_age_days=30)` — supprime les questions résolues ou trop vieilles
 
