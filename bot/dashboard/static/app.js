@@ -133,6 +133,7 @@ function showTab(tabId) {
   if (tabId === 'journal-detail') renderJournalDetailTab();
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
   if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
+  if (tabId === 'global-memory') renderGlobalMemoryTab();
   if (tabId === 'admin-costs') loadCosts();
   pollCostsBadge();
   pollLinksBadge();
@@ -1136,14 +1137,6 @@ function renderMemoryTab() {
         <div class="mem-sidebar-actions">
           <button class="btn" onclick="showAddUserForm()" style="width:100%;font-size:0.72rem;padding:5px 8px">+ Ajouter un utilisateur</button>
         </div>
-        <div class="mem-global-section" style="padding:12px;border-bottom:1px solid var(--glass-border)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span class="mem-detail-section-title" style="margin:0">🌐 MÉMOIRE GLOBALE <span id="global-mem-count" class="badge" style="font-size:0.6rem"></span></span>
-            <button class="btn btn-sm" onclick="toggleAddGlobalMemory()" style="font-size:0.7rem;padding:2px 8px">+ Ajouter</button>
-          </div>
-          <div id="add-global-memory-form" style="display:none"></div>
-          <div id="global-memory-list"></div>
-        </div>
         <div id="mem-add-user-form" style="display:none"></div>
         <div id="mem-user-list" class="mem-user-list"></div>
       </div>
@@ -1155,7 +1148,6 @@ function renderMemoryTab() {
     </div>
   `;
   loadMemoryUsers();
-  loadGlobalMemories();
 }
 
 function toggleLinkMode() {
@@ -1691,29 +1683,56 @@ function onUserFilter(value) {
   _userFilterTimer = setTimeout(() => loadMemoryUsers(value), 300);
 }
 
-// ── Global memory ─────────────────────────────────────────────────────────────
+// ── Global memory (dedicated tab) ─────────────────────────────────────────────
+
+function renderGlobalMemoryTab() {
+  const el = document.getElementById('tab-global-memory');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="max-width:800px;margin:0 auto;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div>
+          <h2 style="margin:0;font-size:1.3rem">Memoire globale</h2>
+          <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted)">
+            Connaissances partagees par toute la communaute (liens, regles, infos serveur).
+            Consultees automatiquement a chaque requete.
+          </p>
+        </div>
+        <span id="global-mem-count" class="badge" style="font-size:0.75rem;padding:4px 10px"></span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        <input type="text" id="add-global-memory-input" placeholder="Ajouter une connaissance globale…"
+               style="flex:1" onkeydown="if(event.key==='Enter') submitAddGlobalMemory()">
+        <button class="btn btn-success" onclick="submitAddGlobalMemory()" style="white-space:nowrap">Ajouter</button>
+      </div>
+      <div id="global-memory-list"></div>
+    </div>
+  `;
+  loadGlobalMemories();
+}
 
 async function loadGlobalMemories() {
   const r = await apiFetch('/api/admin/memory/global');
   if (!r || !r.ok) return;
   const { memories } = await r.json();
   const countEl = document.getElementById('global-mem-count');
-  if (countEl) countEl.textContent = memories.length;
+  if (countEl) countEl.textContent = memories.length + ' souvenir' + (memories.length !== 1 ? 's' : '');
   const listEl = document.getElementById('global-memory-list');
   if (!listEl) return;
   if (memories.length === 0) {
-    listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:4px 0">Aucune mémoire globale.</div>';
+    listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px 0;font-size:0.9rem">Aucune memoire globale pour l\'instant.<br>Ajoute des liens, regles ou infos communaute ci-dessus.</div>';
     return;
   }
   listEl.innerHTML = memories.map(m => {
-    const dateStr = m.created_at || m.updated_at;
+    const dateStr = m.updated_at || m.created_at;
     const dateFmt = dateStr
       ? new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
       : '';
     return `
-      <div class="mem-entry" id="mem-entry-${escAttr(m.id)}">
+      <div class="mem-entry" id="mem-entry-${escAttr(m.id)}" style="margin-bottom:8px">
         <div class="mem-entry-content">
           <div class="mem-entry-meta">
+            <span class="mem-entry-platform" style="background:var(--accent);color:#fff;border-color:var(--accent)">Global</span>
             ${dateFmt ? '<span class="mem-entry-date">' + dateFmt + '</span>' : ''}
           </div>
           <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
@@ -1726,19 +1745,6 @@ async function loadGlobalMemories() {
   }).join('');
 }
 
-function toggleAddGlobalMemory() {
-  const el = document.getElementById('add-global-memory-form');
-  if (!el) return;
-  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:8px 0">'
-    + '<input type="text" id="add-global-memory-input" placeholder="Nouvelle connaissance globale…"'
-    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitAddGlobalMemory()">'
-    + '<button onclick="submitAddGlobalMemory()" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Ajouter</button>'
-    + '</div>';
-  document.getElementById('add-global-memory-input')?.focus();
-}
-
 async function submitAddGlobalMemory() {
   const input = document.getElementById('add-global-memory-input');
   const content = input?.value.trim();
@@ -1748,8 +1754,8 @@ async function submitAddGlobalMemory() {
     body: JSON.stringify({ content }),
   });
   if (r && r.ok) {
-    toast('Mémoire globale ajoutée', 'success');
-    document.getElementById('add-global-memory-form').style.display = 'none';
+    toast('Memoire globale ajoutee', 'success');
+    input.value = '';
     await loadGlobalMemories();
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
@@ -1786,7 +1792,7 @@ async function submitEditGlobalMemory(memoryId) {
     { method: 'PUT', body: JSON.stringify({ content }) }
   );
   if (r && r.ok) {
-    toast('Mémoire globale modifiée', 'success');
+    toast('Memoire globale modifiee', 'success');
     await loadGlobalMemories();
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
@@ -1804,10 +1810,10 @@ async function deleteGlobalMemory(memoryId) {
     document.getElementById('mem-entry-' + memoryId)?.remove();
     const countEl = document.getElementById('global-mem-count');
     if (countEl) {
-      const current = parseInt(countEl.textContent) || 0;
-      if (current > 0) countEl.textContent = current - 1;
+      const n = (parseInt(countEl.textContent) || 1) - 1;
+      countEl.textContent = n + ' souvenir' + (n !== 1 ? 's' : '');
     }
-    toast('Mémoire globale supprimée', 'success');
+    toast('Memoire globale supprimee', 'success');
   } else {
     toast('Erreur suppression', 'error');
   }
