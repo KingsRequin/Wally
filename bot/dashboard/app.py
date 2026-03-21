@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from starlette.responses import StreamingResponse
 from loguru import logger
 from starlette.types import Scope
 
@@ -53,16 +54,22 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
         task = asyncio.create_task(_snapshot_task(state))
         cleanup_task = asyncio.create_task(_chat_cleanup_task(state))
+        notif_task = asyncio.create_task(_cost_notification_task(state))
         logger.info("Dashboard started on port 8080")
         yield
         task.cancel()
         cleanup_task.cancel()
+        notif_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
         try:
             await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await notif_task
         except asyncio.CancelledError:
             pass
         logger.info("Dashboard shutdown")
@@ -115,6 +122,16 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             },
         )
 
+    @app.get("/overlay")
+    async def overlay():
+        html = (STATIC_DIR / "overlay.html").read_text()
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            },
+        )
+
     return app
 
 
@@ -126,6 +143,29 @@ async def _snapshot_task(state: "AppState") -> None:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
             logger.warning("Failed periodic emotion snapshot: {e}", e=exc)
+
+
+async def _cost_notification_task(state: "AppState") -> None:
+    """Vérifie les coûts toutes les 30 minutes et envoie des alertes Discord si nécessaire."""
+    from datetime import datetime
+    while True:
+        await asyncio.sleep(1800)  # 30 min
+        try:
+            if state.notifications is None:
+                continue
+            threshold = state.config.bot.cost_alert_threshold
+            if threshold <= 0:
+                continue
+            month_start = datetime.now().replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            ).timestamp()
+            stats = await state.db.get_cost_stats(month_start)
+            current = stats["total"]
+            pct = round(current / threshold * 100, 1)
+            status = "critical" if pct >= 80 else "warning" if pct >= 60 else "ok"
+            await state.notifications.notify_cost_alert(status, pct, current, threshold)
+        except Exception as exc:
+            logger.warning("Cost notification check failed: {e}", e=exc)
 
 
 async def _chat_cleanup_task(state: "AppState") -> None:

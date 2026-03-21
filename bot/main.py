@@ -244,6 +244,9 @@ async def main() -> None:
     _twitch_bot_ref = twitch_bot if token_manager.bot_token else None
     _twitch_api_ref = twitch_api if token_manager.bot_token else None
 
+    from bot.core.notifications import NotificationService
+    notification_service = NotificationService(config, discord_bot)
+
     dashboard_state = AppState(
         config=config,
         db=db,
@@ -257,6 +260,7 @@ async def main() -> None:
         twitch_bot=_twitch_bot_ref,
         prompts=prompts,
         fact_extractor=fact_extractor,
+        notifications=notification_service,
     )
 
     discord_bot.dashboard_state = dashboard_state

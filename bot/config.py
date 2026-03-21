@@ -17,6 +17,8 @@ class BotConfig:
     prelude_window_size: int = 15
     link_min_confidence: float = 0.75
     cost_alert_threshold: float = 25.0
+    notification_guild_id: int | None = None
+    notification_channel_id: int | None = None
     emotion_peak_threshold: float = 0.7
     emotion_inertia_factor: float = 0.5
     spontaneous_discord_enabled: bool = True
