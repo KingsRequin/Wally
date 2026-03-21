@@ -5,7 +5,7 @@ import asyncio
 import json
 import time
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -51,6 +51,14 @@ _FINAL_SYSTEM = load_prompt(
     fallback=(
         "Tu es le module de mémoire de Wally. Synthétise les résumés en 10 à 20 lignes, "
         "texte brut, sans titre. Mentionne toujours qui a dit ou fait quoi par son pseudo exact."
+    ),
+)
+_CLEANUP_SYSTEM = load_prompt(
+    "memory_cleanup_system",
+    fallback=(
+        "Tu es le gestionnaire de mémoire long-terme de Wally. Analyse les souvenirs, "
+        'identifie les périmés et à reformuler. Retourne un JSON : '
+        '{"delete": [], "update": [], "questions": []}'
     ),
 )
 _CHARS_PER_TOKEN = 4
@@ -255,6 +263,94 @@ class DailyJournal:
         """Inject an async callable: async def fetch_history() -> list[dict]
         Appelé quand daily_log est vide pour lire l'historique Discord du jour."""
         self._fetch_history_cb = cb
+
+    async def run_memory_cleanup(self) -> None:
+        """Passe en revue les souvenirs des utilisateurs actifs et nettoie."""
+        if self._db is None:
+            logger.warning("Memory cleanup: no DB available, skipping")
+            return
+
+        self._memory._init_mem0()
+        if self._memory._mem0 is None:
+            logger.warning("Memory cleanup: mem0 unavailable, skipping")
+            return
+
+        try:
+            users = await self._db.list_memory_users()
+        except Exception as exc:
+            logger.warning("Memory cleanup: failed to list users: {e}", e=exc)
+            return
+
+        # Max 20 users, sorted by last_updated (most recent first)
+        users = sorted(users, key=lambda u: u.get("last_updated", 0), reverse=True)[:20]
+        today_str = date.today().strftime("%d/%m/%Y")
+        cleanup_prompt = _CLEANUP_SYSTEM.replace("{date}", today_str)
+
+        total_deleted = 0
+        total_updated = 0
+        total_questions = 0
+
+        for user in users:
+            uid = user["user_id"]
+            try:
+                results = await asyncio.to_thread(self._memory._mem0.get_all, user_id=uid)
+                if isinstance(results, dict):
+                    results = results.get("results", [])
+                if len(results) < 5:
+                    continue
+
+                # Build numbered list for LLM
+                numbered = "\n".join(
+                    f"{i}. {r.get('memory', '')}" for i, r in enumerate(results)
+                )
+                raw = await self._openai.complete_secondary(
+                    cleanup_prompt,
+                    [{"role": "user", "content": numbered}],
+                    purpose="memory_cleanup",
+                )
+                actions = json.loads(raw)
+
+                # Apply deletions
+                for idx in actions.get("delete", []):
+                    if isinstance(idx, int) and 0 <= idx < len(results):
+                        mem_id = results[idx].get("id")
+                        if mem_id:
+                            await asyncio.to_thread(self._memory._mem0.delete, mem_id)
+                            total_deleted += 1
+
+                # Apply updates (delete old + add new, bypass memory.add)
+                for upd in actions.get("update", []):
+                    idx = upd.get("index")
+                    new_text = upd.get("new_text", "").strip()
+                    if isinstance(idx, int) and 0 <= idx < len(results) and new_text:
+                        old_id = results[idx].get("id")
+                        if old_id:
+                            await asyncio.to_thread(self._memory._mem0.delete, old_id)
+                            await asyncio.to_thread(
+                                self._memory._mem0.add, new_text, user_id=uid
+                            )
+                            total_updated += 1
+
+                # Create questions
+                for q in actions.get("questions", []):
+                    question = q.get("question", "").strip()
+                    priority = q.get("priority", "medium")
+                    if question and priority in ("high", "medium", "low"):
+                        await self._db.insert_memory_question(uid, "", question, priority)
+                        total_questions += 1
+
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                logger.debug("Memory cleanup parse error for {uid}: {e}", uid=uid, e=exc)
+            except Exception as exc:
+                logger.warning("Memory cleanup failed for {uid}: {e}", uid=uid, e=exc)
+
+        # Cleanup old resolved questions
+        await self._db.cleanup_old_questions(max_age_days=30)
+
+        logger.info(
+            "Memory cleanup done: {d} deleted, {u} updated, {q} questions created",
+            d=total_deleted, u=total_updated, q=total_questions,
+        )
 
     async def generate_and_send(self, archive: bool = True) -> None:
         channel_id = self._config.bot.journal_channel_id
@@ -554,6 +650,18 @@ class DailyJournal:
             "cron",
             hour=hour,
             minute=minute,
+        )
+        # Memory cleanup 30 min before journal
+        cleanup_dt = datetime(2000, 1, 1, hour, minute) - timedelta(minutes=30)
+        self._scheduler.add_job(
+            self.run_memory_cleanup,
+            "cron",
+            hour=cleanup_dt.hour,
+            minute=cleanup_dt.minute,
+        )
+        logger.info(
+            "Memory cleanup scheduler started, fires at {h:02d}:{m:02d}",
+            h=cleanup_dt.hour, m=cleanup_dt.minute,
         )
         self._scheduler.start()
         logger.info("Daily journal scheduler started, fires at {t}", t=time_str)

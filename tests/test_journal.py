@@ -92,10 +92,14 @@ def test_start_configures_scheduler():
         mock_sched = MagicMock()
         MockScheduler.return_value = mock_sched
         journal.start()
-        mock_sched.add_job.assert_called_once()
-        call_kwargs = mock_sched.add_job.call_args
-        assert call_kwargs.kwargs.get("hour") == 22
-        assert call_kwargs.kwargs.get("minute") == 30
+        # Two jobs: generate_and_send (journal) + run_memory_cleanup (cleanup 30min before)
+        assert mock_sched.add_job.call_count == 2
+        journal_call = mock_sched.add_job.call_args_list[0]
+        assert journal_call.kwargs.get("hour") == 22
+        assert journal_call.kwargs.get("minute") == 30
+        cleanup_call = mock_sched.add_job.call_args_list[1]
+        assert cleanup_call.kwargs.get("hour") == 22
+        assert cleanup_call.kwargs.get("minute") == 0
         mock_sched.start.assert_called_once()
 
 
