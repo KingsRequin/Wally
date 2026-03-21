@@ -1,6 +1,7 @@
 # bot/dashboard/routes/admin.py
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from dataclasses import asdict
@@ -26,6 +27,8 @@ async def get_config(request: Request) -> dict:
         "twitch": asdict(cfg.twitch),
         "emotions": {k: asdict(v) for k, v in cfg.emotions.items()},
         "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
+        "image_generation": asdict(cfg.image_generation),
+        "overlay_image": asdict(cfg.overlay_image),
     }
 
 
@@ -138,6 +141,62 @@ async def update_config(request: Request, body: dict) -> dict:
                     )
                 cfg.emotions[name].decay_lambda = lam
 
+    # Image generation config
+    if "image_generation" in body:
+        d = body["image_generation"]
+        ig = cfg.image_generation
+        if "model" in d:
+            ig.model = str(d["model"])
+        if "quality" in d:
+            val = str(d["quality"])
+            if val not in ("low", "medium", "high", "auto"):
+                raise HTTPException(400, "quality must be low/medium/high/auto")
+            ig.quality = val
+        if "size" in d:
+            val = str(d["size"])
+            if val not in ("1024x1024", "1024x1536", "1536x1024", "auto"):
+                raise HTTPException(400, "size must be 1024x1024/1024x1536/1536x1024/auto")
+            ig.size = val
+        if "background" in d:
+            ig.background = str(d["background"])
+        if "format" in d:
+            val = str(d["format"])
+            if val not in ("png", "jpeg", "webp"):
+                raise HTTPException(400, "format must be png/jpeg/webp")
+            ig.format = val
+        if "daily_limit" in d:
+            ig.daily_limit = int(d["daily_limit"])
+        if "per_user_limit" in d:
+            ig.per_user_limit = int(d["per_user_limit"])
+
+    # Overlay image config
+    if "overlay_image" in body:
+        d = body["overlay_image"]
+        oi = cfg.overlay_image
+        if "command" in d:
+            oi.command = str(d["command"])
+        if "display_duration" in d:
+            val = int(d["display_duration"])
+            if not (5 <= val <= 60):
+                raise HTTPException(400, "display_duration must be 5-60")
+            oi.display_duration = val
+        if "animation_in" in d:
+            oi.animation_in = str(d["animation_in"])
+        if "animation_out" in d:
+            oi.animation_out = str(d["animation_out"])
+        if "animation_duration" in d:
+            val = float(d["animation_duration"])
+            if not (0.5 <= val <= 3.0):
+                raise HTTPException(400, "animation_duration must be 0.5-3.0")
+            oi.animation_duration = val
+        if "random_filter" in d:
+            val = str(d["random_filter"])
+            if val not in ("all", "top", "recent"):
+                raise HTTPException(400, "random_filter must be all/top/recent")
+            oi.random_filter = val
+        if "enabled" in d:
+            oi.enabled = bool(d["enabled"])
+
     cfg.save()
     return {"status": "saved"}
 
@@ -249,3 +308,26 @@ async def list_chat_connections(request: Request, limit: int = 50) -> dict:
     limit = max(1, min(limit, 200))
     connections = await state.db.list_chat_connections(limit)
     return {"connections": connections}
+
+
+@router.post("/overlay-image/test")
+async def test_overlay_image(request: Request):
+    state = request.app.state.wally
+    image = await state.db.get_random_gallery_image(state.config.overlay_image.random_filter)
+    if not image:
+        raise HTTPException(404, "No images in gallery to test")
+    cfg = state.config.overlay_image
+    payload = {
+        "image_url": f"/api/public/gallery/{image['id']}/image",
+        "title": image.get("title") or "",
+        "username": image["username"],
+        "display_duration": cfg.display_duration,
+        "animation_in": cfg.animation_in,
+        "animation_out": cfg.animation_out,
+        "animation_duration": cfg.animation_duration,
+    }
+    try:
+        state.overlay_image_queue.put_nowait(payload)
+    except asyncio.QueueFull:
+        raise HTTPException(429, "An image is already being displayed")
+    return {"status": "triggered", "image_id": image["id"]}
