@@ -471,6 +471,22 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to get yesterday's journal: {e}", e=exc)
 
+        # ── Gallery of the day ──
+        gallery_block = ""
+        if self._db is not None:
+            try:
+                today_images = await self._db.get_gallery_images_for_date(date.today().isoformat())
+                if today_images:
+                    lines = [f"**Galerie du jour** : {len(today_images)} images"]
+                    for img in today_images:
+                        title = img.get("title") or "Sans titre"
+                        username = img.get("username") or "inconnu"
+                        votes = img.get("votes", 0)
+                        lines.append(f'- "{title}" par {username} ({votes} 🔥)')
+                    gallery_block = "\n".join(lines)
+            except Exception as exc:
+                logger.warning("Failed to get gallery images for journal: {e}", e=exc)
+
         # ── Current emotion state ──
         emotions = self._emotion.get_state()
         emotions_text = ", ".join(
@@ -493,6 +509,8 @@ class DailyJournal:
         sections.append(f"Ton état émotionnel actuel : {emotions_text}")
         if yesterday_block:
             sections.append(yesterday_block)
+        if gallery_block:
+            sections.append(gallery_block)
         sections.append("Écris ton journal intime pour aujourd'hui.")
 
         user_msg = "\n\n".join(sections)
