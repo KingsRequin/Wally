@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
+import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Awaitable, Optional
 
 from loguru import logger
@@ -38,6 +41,26 @@ MODEL_COSTS: dict[str, tuple[float, float]] = {
 }
 
 FALLBACK_COST = (5.0, 15.0)  # default if model unknown
+
+IMAGE_COSTS: dict[str, dict[tuple[str, str], float]] = {
+    "gpt-image-1.5": {
+        ("low", "1024x1024"): 0.009, ("low", "1024x1536"): 0.013, ("low", "1536x1024"): 0.013,
+        ("medium", "1024x1024"): 0.034, ("medium", "1024x1536"): 0.05, ("medium", "1536x1024"): 0.05,
+        ("high", "1024x1024"): 0.133, ("high", "1024x1536"): 0.20, ("high", "1536x1024"): 0.20,
+    },
+    "gpt-image-1": {
+        ("low", "1024x1024"): 0.011, ("low", "1024x1536"): 0.016, ("low", "1536x1024"): 0.016,
+        ("medium", "1024x1024"): 0.042, ("medium", "1024x1536"): 0.063, ("medium", "1536x1024"): 0.063,
+        ("high", "1024x1024"): 0.167, ("high", "1024x1536"): 0.25, ("high", "1536x1024"): 0.25,
+    },
+    "gpt-image-1-mini": {
+        ("low", "1024x1024"): 0.005, ("low", "1024x1536"): 0.0075, ("low", "1536x1024"): 0.0075,
+        ("medium", "1024x1024"): 0.019, ("medium", "1024x1536"): 0.0285, ("medium", "1536x1024"): 0.0285,
+        ("high", "1024x1024"): 0.076, ("high", "1024x1536"): 0.114, ("high", "1536x1024"): 0.114,
+    },
+}
+
+DATA_GALLERY_DIR = Path("data/gallery")
 
 FALLBACK_RESPONSE = (
     "Je rencontre un problème technique, réessaie dans un moment. 🔧"
@@ -719,6 +742,87 @@ class OpenAIClient:
             raise RuntimeError(
                 f"complete_secondary_structured failed after 3 attempts (model={model!r})"
             )
+
+    @staticmethod
+    def estimate_image_cost(model: str, quality: str, size: str) -> float:
+        model_costs = IMAGE_COSTS.get(model)
+        if not model_costs:
+            return 0.25
+        cost = model_costs.get((quality, size))
+        if cost is not None:
+            return cost
+        return max(model_costs.values())
+
+    async def generate_image(self, prompt: str, sender_id: str | None = None) -> dict:
+        cfg = self._config.image_generation
+        model = cfg.model
+        quality = cfg.quality
+        size = cfg.size
+
+        # Check limits
+        if cfg.daily_limit != -1:
+            today_total = await self._db.get_total_image_count_today()
+            if today_total >= cfg.daily_limit:
+                raise ValueError("Limite quotidienne de génération d'images atteinte.")
+        if cfg.per_user_limit != -1 and sender_id:
+            user_today = await self._db.get_user_image_count_today(sender_id)
+            if user_today >= cfg.per_user_limit:
+                raise ValueError("Tu as atteint ta limite d'images pour aujourd'hui.")
+
+        DATA_GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = await self._client.images.generate(
+                    model=model,
+                    prompt=prompt,
+                    n=1,
+                    size=size,
+                    quality=quality,
+                    background=cfg.background,
+                    response_format="b64_json",
+                )
+                break
+            except RateLimitError as e:
+                last_error = e
+                logger.warning("Image rate limit, attempt {a}/3: {e}", a=attempt + 1, e=e)
+                await asyncio.sleep(2 ** attempt)
+            except APIStatusError as e:
+                if e.status_code == 400:
+                    raise ValueError("Prompt refusé par la modération OpenAI.") from e
+                if e.status_code >= 500:
+                    last_error = e
+                    logger.warning("Image API 5xx, attempt {a}/3: {e}", a=attempt + 1, e=e)
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+        else:
+            logger.error("Image generation failed after 3 attempts: {e}", e=last_error)
+            raise RuntimeError("Échec de la génération d'image après 3 tentatives.")
+
+        image_data = base64.b64decode(response.data[0].b64_json)
+        file_ext = cfg.format if cfg.format in ("png", "jpeg", "webp") else "png"
+        file_id = str(uuid.uuid4())
+        file_name = f"{file_id}.{file_ext}"
+        file_path = DATA_GALLERY_DIR / file_name
+        file_path.write_bytes(image_data)
+
+        cost_usd = self.estimate_image_cost(model, quality, size)
+        await self._db.log_cost(model, 0, 0, cost_usd, purpose="image_generation", user_id=sender_id)
+
+        revised = getattr(response.data[0], "revised_prompt", None)
+
+        return {
+            "file_id": file_id,
+            "file_name": file_name,
+            "file_path": str(file_path),
+            "cost_usd": cost_usd,
+            "revised_prompt": revised,
+            "model": model,
+            "quality": quality,
+            "size": size,
+        }
 
     async def get_daily_cost(self) -> float:
         return await self._db.get_cost_since(time.time() - 86_400)
