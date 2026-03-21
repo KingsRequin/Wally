@@ -1,6 +1,7 @@
 # bot/dashboard/state.py
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
@@ -42,3 +43,4 @@ class AppState:
     message_count_twitch: int = 0
     message_count_web: int = 0
     overlay_visible: bool = True
+    overlay_image_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
