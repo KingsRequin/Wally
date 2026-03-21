@@ -111,6 +111,30 @@ def _parse_log_line(line: str) -> dict | None:
     return {"time": parts[0].strip(), "level": level, "message": message}
 
 
+@public_router.get("/sse/overlay")
+async def sse_overlay(request: Request):
+    """SSE flux de visibilité de l'overlay — push état visible/hidden."""
+    state = request.app.state.wally
+
+    async def generate():
+        try:
+            last_state = None
+            while True:
+                current = state.overlay_visible
+                if current != last_state:
+                    yield f"data: {json.dumps({'visible': current})}\n\n"
+                    last_state = current
+                await asyncio.sleep(1)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @admin_router.get("/logs/history")
 async def log_history(request: Request, lines: int = 200):
     """Retourne les dernières lignes du fichier log courant.

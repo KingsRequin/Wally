@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wally Overlay</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .overlay-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      transition: opacity 0.5s ease;
+    }
+    .overlay-container.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .overlay-avatar {
+      width: 200px;
+      height: 200px;
+      object-fit: contain;
+      image-rendering: auto;
+    }
+    .overlay-status {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      color: white;
+      text-shadow: 0 0 8px rgba(0,0,0,0.8);
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay-container" id="overlay">
+    <img class="overlay-avatar" id="overlay-avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="Wally">
+    <div class="overlay-status" id="overlay-status">neutre</div>
+  </div>
+
+  <script>
+    const labels = {
+      neutral: 'neutre', joy: 'joyeux', anger: 'en colere',
+      sadness: 'triste', curiosity: 'curieux', boredom: 'ennuye'
+    };
+
+    function updateAvatar(emotions) {
+      let dominant = 'neutral';
+      let maxVal = 0.2;
+      for (const [emotion, value] of Object.entries(emotions)) {
+        if (value > maxVal) { dominant = emotion; maxVal = value; }
+      }
+
+      let tier = 'idle';
+      if (dominant !== 'neutral') {
+        if (maxVal >= 0.7) tier = 'high';
+        else if (maxVal >= 0.4) tier = 'mid';
+        else tier = 'low';
+      }
+
+      const basePath = dominant === 'neutral'
+        ? '/static/avatar/emotions/neutral/idle'
+        : `/static/avatar/emotions/${dominant}/${tier}`;
+
+      const img = document.getElementById('overlay-avatar');
+      const gifUrl = basePath + '.gif';
+      const pngUrl = basePath + '.png';
+      const testImg = new Image();
+      testImg.onload = () => { img.src = gifUrl; };
+      testImg.onerror = () => { img.src = pngUrl; };
+      testImg.src = gifUrl;
+
+      document.getElementById('overlay-status').textContent = labels[dominant] || dominant;
+    }
+
+    // SSE emotions
+    function connectSSE() {
+      const sse = new EventSource('/api/public/sse/emotions');
+      sse.onmessage = (e) => {
+        try { updateAvatar(JSON.parse(e.data)); } catch {}
+      };
+      sse.onerror = () => {
+        sse.close();
+        setTimeout(connectSSE, 5000);
+      };
+    }
+    connectSSE();
+
+    // SSE overlay visibility toggle (admin can show/hide live)
+    function connectOverlaySSE() {
+      const sse = new EventSource('/api/public/sse/overlay');
+      sse.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const el = document.getElementById('overlay');
+          if (data.visible === false) el.classList.add('hidden');
+          else el.classList.remove('hidden');
+        } catch {}
+      };
+      sse.onerror = () => {
+        sse.close();
+        setTimeout(connectOverlaySSE, 5000);
+      };
+    }
+    connectOverlaySSE();
+  </script>
+</body>
+</html>
