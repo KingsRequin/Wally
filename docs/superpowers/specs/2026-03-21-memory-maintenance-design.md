@@ -42,6 +42,7 @@ Méthodes CRUD :
 - `increment_question_attempts(question_id)` — `attempts += 1`
 - `resolve_question(question_id)` — `resolved = 1`
 - `resolve_questions_for_memory(user_id, memory_text)` — résout toutes les questions liées à un souvenir (quand l'info est mise à jour)
+- `get_all_pending_questions(user_id)` — retourne toutes les questions non résolues pour un utilisateur (pour `_evaluate_memory`)
 - `cleanup_old_questions(max_age_days=30)` — supprime les questions résolues ou trop vieilles
 
 ## 2. Scoring à l'enregistrement
@@ -56,24 +57,29 @@ self._fire(self._evaluate_memory(uid, content))
 
 ### `_evaluate_memory(uid, content)` — nouvelle méthode async
 
-1. Appel LLM secondaire avec le prompt `memory_evaluate_system.md`
-2. Le LLM retourne un JSON :
+1. Récupère les questions en attente pour cet utilisateur (`db.get_all_pending_questions(uid)`)
+2. Appel LLM secondaire avec le prompt `memory_evaluate_system.md`, en incluant le souvenir ET les questions en attente
+3. Le LLM retourne un JSON :
    ```json
    {
      "complete": false,
      "questions": [
        {"question": "Quel mois exactement ?", "priority": "high"}
-     ]
+     ],
+     "resolves": [3, 7]
    }
    ```
-3. Si `complete == false` : insert chaque question dans `memory_questions`
-4. Si `complete == true` : rien à faire
+4. Si `complete == false` : insert chaque question dans `memory_questions`
+5. Si `resolves` contient des IDs : marquer ces questions comme résolues
+6. Si `complete == true` et pas de `resolves` : rien à faire
 
 ### Prompt `memory_evaluate_system.md`
 
 ```
 Tu es le module de mémoire de Wally. Tu reçois un souvenir qui vient d'être enregistré
-sur un utilisateur. Évalue si l'information est suffisamment précise et complète.
+sur un utilisateur, ainsi que la liste des questions en attente pour cet utilisateur.
+
+## Tâche 1 : Évaluer la complétude du nouveau souvenir
 
 Critères d'incomplétude :
 - Dates vagues ("le 1er", "bientôt", "la semaine prochaine" sans précision)
@@ -81,9 +87,18 @@ Critères d'incomplétude :
 - Références ambiguës ("son projet" sans préciser lequel)
 - Événements sans contexte temporel ("va se marier" — quand ?)
 
-Si le souvenir est complet et précis, retourne : {"complete": true, "questions": []}
-Si le souvenir est incomplet, retourne les questions à poser (max 2) :
-{"complete": false, "questions": [{"question": "...", "priority": "high|medium|low"}]}
+## Tâche 2 : Vérifier si le nouveau souvenir répond à des questions en attente
+
+Si le nouveau souvenir contient l'information demandée par une question en attente,
+inclus son ID dans le champ "resolves".
+
+## Format de réponse
+
+{
+  "complete": true/false,
+  "questions": [{"question": "...", "priority": "high|medium|low"}],
+  "resolves": [id1, id2]
+}
 
 Priority :
 - high : info cruciale manquante (date d'un événement imminent, lieu d'un déménagement)
@@ -117,7 +132,8 @@ Cette directive est ajoutée au prompt par le code appelant (dans `prompts.py` o
 
 - Max 1 question par conversation (une seule directive injectée)
 - Max 3 tentatives (`attempts`) — après 3 injections sans résolution, la question n'est plus injectée
-- Auto-résolution : quand `memory.add()` enregistre un nouveau souvenir pour le même utilisateur, on appelle `resolve_questions_for_memory()` avec un match approximatif sur le sujet (le LLM d'évaluation peut aussi détecter que la question est maintenant résolue)
+- Auto-résolution : la méthode `_evaluate_memory()` (déjà appelée à chaque `memory.add()`) reçoit aussi la liste des questions en attente pour cet utilisateur. Si le nouveau souvenir répond à une question existante, le LLM l'indique dans sa réponse JSON (`"resolves": [question_id, ...]`) et on marque ces questions comme résolues. Pas de match textuel approximatif — c'est le LLM qui juge.
+- `get_pending_question_directive()` est appelé **une seule fois par message entrant**, dans le pipeline de `_respond()` (au moment de la construction du system prompt). Il ne doit jamais être appelé dans une boucle de retry ou dans un appel tool.
 
 ## 4. Nettoyage quotidien
 
@@ -125,23 +141,30 @@ Cette directive est ajoutée au prompt par le code appelant (dans `prompts.py` o
 
 Nouveau cron dans `DailyJournal.start()` : `journal_time - 30 minutes`.
 
+Calcul du temps : utiliser `datetime(hour, minute) - timedelta(minutes=30)` pour gérer le wraparound minuit automatiquement (ex: `00:15` → `23:45` la veille fonctionne car APScheduler gère les heures normalisées).
+
 Nouvelle méthode `DailyJournal.run_memory_cleanup()` (ou une classe séparée `MemoryCleanup` si on veut découpler — mais le journal a déjà toutes les dépendances nécessaires).
 
 ### Flow
 
 ```
 Pour chaque utilisateur dans memory_users (max 20, triés par activité récente) :
-    1. memory.get_all(platform, user_id) → liste de souvenirs
+    1. mem0.get_all(user_id=uid) via asyncio.to_thread → liste de dicts avec "id" et "memory"
+       (appel direct à mem0, pas memory.get_all() qui retourne un str)
     2. Si < 5 souvenirs → skip
     3. Appel LLM secondary avec prompt memory_cleanup_system.md :
-       - Input : liste des souvenirs + date du jour
-       - Output : JSON structuré
+       - Input : liste numérotée des souvenirs + date du jour
+       - Output : JSON structuré (indices → IDs résolus côté code)
     4. Appliquer les actions :
-       - delete : supprimer les souvenirs identifiés (via mem0.delete)
-       - update : supprimer l'ancien + ajouter le reformulé (via mem0)
+       - delete : mem0.delete(id) pour chaque souvenir identifié
+       - update : mem0.delete(old_id) + mem0.add(new_text, user_id=uid)
+         (appel direct à mem0.add, PAS à memory.add() — pour éviter de
+         déclencher _maybe_consolidate et _evaluate_memory en cascade)
        - questions : insert dans memory_questions
     5. Log le résultat
 ```
+
+**Important** : le cleanup appelle `mem0` directement (comme `_maybe_consolidate` le fait déjà), jamais `memory.add()`, pour éviter les race conditions avec la consolidation et l'évaluation fire-and-forget.
 
 ### Prompt `memory_cleanup_system.md`
 
