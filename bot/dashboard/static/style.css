@@ -2501,3 +2501,63 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
 .overlay-switch.on .overlay-switch-knob {
   left: 16px;
 }
+
+/* ── Gallery ── */
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+.gallery-card { background: #1a1a1a; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; overflow: hidden; cursor: pointer; transition: box-shadow 0.15s; }
+.gallery-card:hover { box-shadow: 2px 2px 0px #ffffff; }
+.gallery-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-bottom: 3px solid #ffffff; }
+.gallery-card-info { padding: 12px; }
+.gallery-card-title { font-weight: 800; font-size: 1rem; color: #ffffff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gallery-card-prompt { color: #aaaaaa; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.gallery-card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; color: #aaaaaa; font-size: 0.8rem; }
+.gallery-card-footer { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-top: 3px solid #ffffff; }
+.flame-btn { background: none; border: 2px solid #ffffff; color: #aaaaaa; padding: 4px 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 2px 2px 0px #ffffff; transition: all 0.15s; }
+.flame-btn:hover { box-shadow: 0px 0px 0px #ffffff; transform: translate(2px, 2px); }
+.flame-btn.active { color: #ff3333; border-color: #ff3333; box-shadow: 2px 2px 0px #ff3333; }
+.gallery-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.gallery-delete-btn { background: none; border: 2px solid #ff3333; color: #ff3333; padding: 4px 8px; cursor: pointer; font-weight: 700; box-shadow: 2px 2px 0px #ff3333; transition: all 0.15s; }
+.gallery-delete-btn:hover { box-shadow: 0 0 0 #ff3333; transform: translate(2px, 2px); }
+
+/* Lightbox */
+.gallery-lightbox { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+.gallery-lightbox img { max-width: 85vw; max-height: 75vh; object-fit: contain; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; }
+.gallery-lightbox-info { color: #ffffff; text-align: center; max-width: 600px; }
+.gallery-lightbox-info h3 { font-weight: 900; font-size: 1.3rem; margin-bottom: 4px; }
+.gallery-lightbox-info p { color: #aaaaaa; font-style: italic; }
+.gallery-lightbox-info .meta { color: #888; font-size: 0.85rem; margin-top: 8px; }
+.gallery-lightbox-close { position: absolute; top: 20px; right: 30px; color: #ffffff; font-size: 2.5rem; cursor: pointer; font-weight: 900; line-height: 1; }
+.gallery-lightbox-close:hover { color: #ff3333; }
+
+/* Slash command autocomplete */
+.slash-autocomplete { position: absolute; bottom: 100%; left: 0; right: 0; background: #1a1a1a; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; display: none; z-index: 100; max-height: 200px; overflow-y: auto; }
+.slash-autocomplete.visible { display: block; }
+.slash-item { padding: 10px 14px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.slash-item:hover, .slash-item.selected { background: #2a2a2a; }
+.slash-item-name { font-weight: 800; color: #ffffff; }
+.slash-item-desc { color: #aaaaaa; font-size: 0.85rem; }
+
+/* Chat image embed */
+.chat-image-embed { background: #1a1a1a; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; margin: 8px 0; overflow: hidden; max-width: 400px; border-radius: 0; }
+.chat-image-embed img { width: 100%; display: block; }
+.chat-image-embed .embed-info { padding: 10px; }
+.chat-image-embed .embed-title { font-weight: 800; color: #ffdd00; margin-bottom: 4px; }
+.chat-image-embed .embed-prompt { color: #aaaaaa; font-style: italic; font-size: 0.85rem; }
+.chat-image-embed .embed-footer { color: #666; font-size: 0.75rem; margin-top: 6px; }
+.chat-image-embed .embed-actions { display: flex; gap: 8px; padding: 8px 10px; border-top: 2px solid #333; }
+.chat-image-embed .embed-loading { padding: 20px; text-align: center; color: #aaaaaa; }
+.chat-image-embed .embed-loading img { max-height: 150px; margin-bottom: 8px; }
+
+/* Overlay config sections */
+.overlay-section { background: #1a1a1a; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; padding: 20px; margin-bottom: 20px; }
+.overlay-section h3 { font-weight: 900; font-size: 1.1rem; margin-bottom: 16px; color: #ffffff; }
+.overlay-section .form-row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.overlay-section label { color: #aaaaaa; font-weight: 700; min-width: 160px; }
+
+/* Neo-brutalism form elements for gallery/overlay */
+.neo-input { background: #0f0f0f; border: 3px solid #ffffff; color: #ffffff; padding: 8px 12px; font-family: var(--font); font-weight: 700; outline: none; }
+.neo-input:focus { box-shadow: 2px 2px 0px #ffffff; }
+.neo-select { background: #0f0f0f; border: 3px solid #ffffff; color: #ffffff; padding: 8px 12px; font-family: var(--font); font-weight: 700; outline: none; cursor: pointer; }
+.neo-select:focus { box-shadow: 2px 2px 0px #ffffff; }
+.neo-btn { background: #ffffff; color: #0f0f0f; border: 3px solid #ffffff; padding: 8px 20px; font-family: var(--font); font-weight: 800; cursor: pointer; box-shadow: 4px 4px 0px #888888; transition: all 0.15s; }
+.neo-btn:hover { box-shadow: 2px 2px 0px #888888; transform: translate(2px, 2px); }

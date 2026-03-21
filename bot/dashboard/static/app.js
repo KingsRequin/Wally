@@ -134,6 +134,8 @@ function showTab(tabId) {
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
   if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'global-memory') renderGlobalMemoryTab();
+  if (tabId === 'gallery') loadGallery(true);
+  if (tabId === 'admin-overlays') loadOverlayConfig();
   if (tabId === 'admin-costs') loadCosts();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-visitors') loadVisitors();
@@ -2438,6 +2440,7 @@ async function renderChatTab() {
   chatConnectWs();
   chatStartAvatarUpdates();
   chatLoadMyMemories();
+  setupSlashAutocomplete();
 }
 
 function chatLogout() {
@@ -2478,6 +2481,19 @@ function chatConnectWs() {
         el.textContent = `Cooldown: attends ${data.remaining_seconds}s`;
         setTimeout(() => { el.textContent = ''; }, 3000);
       }
+    } else if (data.type === 'image_generating') {
+      chatAppendImageGenerating(data);
+      chatScrollBottom();
+    } else if (data.type === 'image_result') {
+      chatReplaceImageResult(data);
+      chatScrollBottom();
+    } else if (data.type === 'image_cancelled') {
+      chatReplaceImageCancelled(data);
+      chatScrollBottom();
+    } else if (data.type === 'vote_result') {
+      chatUpdateVoteState(data);
+    } else if (data.type === 'title_updated') {
+      chatUpdateEmbedTitle(data);
     }
   };
 
@@ -3294,4 +3310,657 @@ await asyncio.gather(
         </div>
       </section>
     </div>`;
+}
+
+// ── Debounce utility ──────────────────────────────────────────────────────────
+
+function debounce(fn, ms) {
+  let t;
+  return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
+}
+
+// ── Gallery ───────────────────────────────────────────────────────────────────
+
+let _galleryOffset = 0;
+const _galleryLimit = 20;
+
+async function loadGallery(reset) {
+  if (reset) _galleryOffset = 0;
+  const search = document.getElementById('gallery-search')?.value || '';
+  const sort = document.getElementById('gallery-sort')?.value || 'date';
+  const userFilter = document.getElementById('gallery-user-filter')?.value || '';
+  const params = new URLSearchParams({ sort_by: sort, limit: _galleryLimit, offset: _galleryOffset });
+  if (search) params.set('search', search);
+  if (userFilter) params.set('user_filter', userFilter);
+  const r = await fetch('/api/public/gallery?' + params);
+  if (!r.ok) return;
+  const data = await r.json();
+  const grid = document.getElementById('gallery-grid');
+  if (reset) grid.textContent = '';
+  data.images.forEach(function(img) { grid.appendChild(renderGalleryCard(img)); });
+  document.getElementById('gallery-load-more').style.display = data.images.length >= _galleryLimit ? '' : 'none';
+  _galleryOffset += data.images.length;
+}
+
+function loadMoreGallery() { loadGallery(false); }
+
+function renderGalleryCard(img) {
+  const card = document.createElement('div');
+  card.className = 'gallery-card';
+  card.dataset.id = img.id;
+  const dateStr = img.created_at ? new Date(img.created_at + 'Z').toLocaleString('fr-FR') : '';
+
+  const imgEl = document.createElement('img');
+  imgEl.src = '/api/public/gallery/' + img.id + '/image';
+  imgEl.alt = img.title || '';
+  imgEl.loading = 'lazy';
+  imgEl.onclick = function() { openLightbox(img.id); };
+  card.appendChild(imgEl);
+
+  const info = document.createElement('div');
+  info.className = 'gallery-card-info';
+
+  const title = document.createElement('div');
+  title.className = 'gallery-card-title';
+  title.textContent = img.title || 'Sans titre';
+  info.appendChild(title);
+
+  const prompt = document.createElement('div');
+  prompt.className = 'gallery-card-prompt';
+  prompt.title = img.prompt || '';
+  prompt.textContent = img.prompt || '';
+  info.appendChild(prompt);
+
+  const meta = document.createElement('div');
+  meta.className = 'gallery-card-meta';
+  const userSpan = document.createElement('span');
+  userSpan.textContent = img.username;
+  const dateSpan = document.createElement('span');
+  dateSpan.textContent = dateStr;
+  meta.appendChild(userSpan);
+  meta.appendChild(dateSpan);
+  info.appendChild(meta);
+  card.appendChild(info);
+
+  const footer = document.createElement('div');
+  footer.className = 'gallery-card-footer';
+
+  const flameBtn = document.createElement('button');
+  flameBtn.className = 'flame-btn' + (img.user_voted ? ' active' : '');
+  flameBtn.onclick = function(e) { e.stopPropagation(); toggleFlame(img.id, flameBtn); };
+  flameBtn.textContent = '';
+  const fireText = document.createTextNode('🔥 ');
+  const voteSpan = document.createElement('span');
+  voteSpan.textContent = img.votes || 0;
+  flameBtn.appendChild(fireText);
+  flameBtn.appendChild(voteSpan);
+  footer.appendChild(flameBtn);
+
+  if (currentMode === 'admin') {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'gallery-delete-btn';
+    delBtn.textContent = '🗑️';
+    delBtn.onclick = function(e) { e.stopPropagation(); deleteGalleryImage(img.id); };
+    footer.appendChild(delBtn);
+  }
+
+  card.appendChild(footer);
+  return card;
+}
+
+async function toggleFlame(imageId, btn) {
+  const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('chat_token') || '') }
+  });
+  if (!r.ok) {
+    if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
+    return;
+  }
+  const data = await r.json();
+  btn.classList.toggle('active', data.voted);
+  const detail = await fetch('/api/public/gallery/' + imageId);
+  if (detail.ok) {
+    const img = await detail.json();
+    btn.querySelector('span').textContent = img.votes || 0;
+  }
+}
+
+async function deleteGalleryImage(imageId) {
+  if (!confirm('Supprimer cette image ?')) return;
+  const r = await apiFetch('/api/admin/gallery/' + imageId, { method: 'DELETE' });
+  if (r && r.ok) {
+    const card = document.querySelector('.gallery-card[data-id="' + imageId + '"]');
+    if (card) card.remove();
+    toast('Image supprimée', 'success');
+  }
+}
+
+function openLightbox(imageId) {
+  fetch('/api/public/gallery/' + imageId).then(function(r) { return r.json(); }).then(function(img) {
+    const dateStr = img.created_at ? new Date(img.created_at + 'Z').toLocaleString('fr-FR') : '';
+    const lb = document.createElement('div');
+    lb.className = 'gallery-lightbox';
+    lb.onclick = function(e) { if (e.target === lb) lb.remove(); };
+
+    const closeSpan = document.createElement('span');
+    closeSpan.className = 'gallery-lightbox-close';
+    closeSpan.textContent = '\u00d7';
+    closeSpan.onclick = function() { lb.remove(); };
+    lb.appendChild(closeSpan);
+
+    const lbImg = document.createElement('img');
+    lbImg.src = '/api/public/gallery/' + img.id + '/image';
+    lbImg.alt = '';
+    lb.appendChild(lbImg);
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'gallery-lightbox-info';
+    const h3 = document.createElement('h3');
+    h3.textContent = img.title || 'Sans titre';
+    infoDiv.appendChild(h3);
+    const p = document.createElement('p');
+    p.textContent = img.prompt || '';
+    infoDiv.appendChild(p);
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'meta';
+    metaDiv.textContent = (img.username || '') + ' — ' + dateStr;
+    infoDiv.appendChild(metaDiv);
+    lb.appendChild(infoDiv);
+
+    document.body.appendChild(lb);
+  });
+}
+
+// Gallery event listeners (initialized on DOMContentLoaded)
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('gallery-search')?.addEventListener('input', debounce(function() { loadGallery(true); }, 400));
+  document.getElementById('gallery-sort')?.addEventListener('change', function() { loadGallery(true); });
+  document.getElementById('gallery-user-filter')?.addEventListener('change', function() { loadGallery(true); });
+});
+
+// ── Overlay Config (Admin) ────────────────────────────────────────────────────
+
+const ANIMATE_CSS_IN = ['fadeIn','fadeInDown','fadeInLeft','fadeInRight','fadeInUp','bounceIn','bounceInDown','bounceInLeft','bounceInRight','bounceInUp','zoomIn','zoomInDown','zoomInLeft','zoomInRight','zoomInUp','slideInDown','slideInLeft','slideInRight','slideInUp','flipInX','flipInY','backInDown','backInLeft','backInRight','backInUp','rotateIn'];
+const ANIMATE_CSS_OUT = ['fadeOut','fadeOutDown','fadeOutLeft','fadeOutRight','fadeOutUp','bounceOut','bounceOutDown','bounceOutLeft','bounceOutRight','bounceOutUp','zoomOut','zoomOutDown','zoomOutLeft','zoomOutRight','zoomOutUp','slideOutDown','slideOutLeft','slideOutRight','slideOutUp','flipOutX','flipOutY','backOutDown','backOutLeft','backOutRight','backOutUp','rotateOut'];
+
+async function loadOverlayConfig() {
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) return;
+  const cfg = await r.json();
+  const oi = cfg.overlay_image || {};
+  const ig = cfg.image_generation || {};
+  const container = document.getElementById('overlay-config-container');
+  container.textContent = '';
+
+  // Image generation section
+  const igSection = document.createElement('div');
+  igSection.className = 'overlay-section';
+  const igTitle = document.createElement('h3');
+  igTitle.textContent = 'Génération d\'images';
+  igSection.appendChild(igTitle);
+
+  function makeFormRow(labelText, inputEl) {
+    const row = document.createElement('div');
+    row.className = 'form-row';
+    const lbl = document.createElement('label');
+    lbl.textContent = labelText;
+    row.appendChild(lbl);
+    row.appendChild(inputEl);
+    return row;
+  }
+
+  function makeSelect(id, options, selected) {
+    const sel = document.createElement('select');
+    sel.id = id;
+    sel.className = 'neo-select';
+    options.forEach(function(o) {
+      const opt = document.createElement('option');
+      opt.value = o;
+      opt.textContent = o;
+      if (o === selected) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  igSection.appendChild(makeFormRow('Modèle', makeSelect('ig-model', ['gpt-image-1.5','gpt-image-1','gpt-image-1-mini'], ig.model)));
+  igSection.appendChild(makeFormRow('Qualité', makeSelect('ig-quality', ['low','medium','high'], ig.quality)));
+  igSection.appendChild(makeFormRow('Taille', makeSelect('ig-size', ['1024x1024','1024x1536','1536x1024'], ig.size)));
+  igSection.appendChild(makeFormRow('Format', makeSelect('ig-format', ['png','jpeg','webp'], ig.format)));
+  igSection.appendChild(makeFormRow('Background', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
+
+  // Daily limit
+  const dlRow = document.createElement('div');
+  dlRow.className = 'form-row';
+  const dlLabel = document.createElement('label');
+  dlLabel.textContent = 'Limite/jour (global)';
+  dlRow.appendChild(dlLabel);
+  const dlInput = document.createElement('input');
+  dlInput.type = 'number'; dlInput.id = 'ig-daily-limit'; dlInput.className = 'neo-input';
+  dlInput.value = ig.daily_limit; dlInput.style.width = '80px';
+  dlRow.appendChild(dlInput);
+  const dlHint = document.createElement('span');
+  dlHint.style.color = '#666'; dlHint.textContent = '-1 = illimité';
+  dlRow.appendChild(dlHint);
+  igSection.appendChild(dlRow);
+
+  // Per user limit
+  const puRow = document.createElement('div');
+  puRow.className = 'form-row';
+  const puLabel = document.createElement('label');
+  puLabel.textContent = 'Limite/jour (par user)';
+  puRow.appendChild(puLabel);
+  const puInput = document.createElement('input');
+  puInput.type = 'number'; puInput.id = 'ig-per-user-limit'; puInput.className = 'neo-input';
+  puInput.value = ig.per_user_limit; puInput.style.width = '80px';
+  puRow.appendChild(puInput);
+  const puHint = document.createElement('span');
+  puHint.style.color = '#666'; puHint.textContent = '-1 = illimité';
+  puRow.appendChild(puHint);
+  igSection.appendChild(puRow);
+
+  const costEst = document.createElement('div');
+  costEst.className = 'form-row';
+  costEst.id = 'ig-cost-estimate';
+  costEst.style.color = '#ffdd00';
+  costEst.style.fontWeight = '700';
+  igSection.appendChild(costEst);
+
+  const igSaveBtn = document.createElement('button');
+  igSaveBtn.className = 'neo-btn';
+  igSaveBtn.textContent = 'Sauvegarder';
+  igSaveBtn.onclick = saveImageGenConfig;
+  igSection.appendChild(igSaveBtn);
+
+  container.appendChild(igSection);
+
+  // Overlay image section
+  const oiSection = document.createElement('div');
+  oiSection.className = 'overlay-section';
+  const oiTitle = document.createElement('h3');
+  oiTitle.textContent = 'Overlay Image (Twitch)';
+  oiSection.appendChild(oiTitle);
+
+  // Enabled checkbox
+  const enRow = document.createElement('div');
+  enRow.className = 'form-row';
+  const enLabel = document.createElement('label');
+  enLabel.textContent = 'Activé';
+  enRow.appendChild(enLabel);
+  const enCheck = document.createElement('input');
+  enCheck.type = 'checkbox'; enCheck.id = 'oi-enabled';
+  if (oi.enabled) enCheck.checked = true;
+  enRow.appendChild(enCheck);
+  oiSection.appendChild(enRow);
+
+  // Command
+  const cmdRow = document.createElement('div');
+  cmdRow.className = 'form-row';
+  const cmdLabel = document.createElement('label');
+  cmdLabel.textContent = 'Commande Twitch';
+  cmdRow.appendChild(cmdLabel);
+  const cmdInput = document.createElement('input');
+  cmdInput.type = 'text'; cmdInput.id = 'oi-command'; cmdInput.className = 'neo-input';
+  cmdInput.value = oi.command || '!image'; cmdInput.style.width = '120px';
+  cmdRow.appendChild(cmdInput);
+  oiSection.appendChild(cmdRow);
+
+  // Duration slider
+  const durRow = document.createElement('div');
+  durRow.className = 'form-row';
+  const durLabel = document.createElement('label');
+  durLabel.textContent = 'Durée affichage (s)';
+  durRow.appendChild(durLabel);
+  const durRange = document.createElement('input');
+  durRange.type = 'range'; durRange.id = 'oi-duration';
+  durRange.min = '5'; durRange.max = '60'; durRange.value = oi.display_duration || 15;
+  durRow.appendChild(durRange);
+  const durVal = document.createElement('span');
+  durVal.id = 'oi-duration-val'; durVal.textContent = (oi.display_duration || 15) + 's';
+  durRow.appendChild(durVal);
+  oiSection.appendChild(durRow);
+
+  // Animation in
+  oiSection.appendChild(makeFormRow('Animation entrée', makeSelect('oi-anim-in', ANIMATE_CSS_IN, oi.animation_in)));
+
+  // Animation out
+  oiSection.appendChild(makeFormRow('Animation sortie', makeSelect('oi-anim-out', ANIMATE_CSS_OUT, oi.animation_out)));
+
+  // Animation duration slider
+  const adRow = document.createElement('div');
+  adRow.className = 'form-row';
+  const adLabel = document.createElement('label');
+  adLabel.textContent = 'Durée animation (s)';
+  adRow.appendChild(adLabel);
+  const adRange = document.createElement('input');
+  adRange.type = 'range'; adRange.id = 'oi-anim-duration';
+  adRange.min = '0.5'; adRange.max = '3'; adRange.step = '0.1'; adRange.value = oi.animation_duration || 1;
+  adRow.appendChild(adRange);
+  const adVal = document.createElement('span');
+  adVal.id = 'oi-anim-duration-val'; adVal.textContent = (oi.animation_duration || 1) + 's';
+  adRow.appendChild(adVal);
+  oiSection.appendChild(adRow);
+
+  // Filter
+  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter', ['all','top','recent'], oi.random_filter)));
+
+  // Buttons row
+  const btnRow = document.createElement('div');
+  btnRow.className = 'form-row';
+  const oiSaveBtn = document.createElement('button');
+  oiSaveBtn.className = 'neo-btn';
+  oiSaveBtn.textContent = 'Sauvegarder';
+  oiSaveBtn.onclick = saveOverlayImageConfig;
+  btnRow.appendChild(oiSaveBtn);
+  const oiTestBtn = document.createElement('button');
+  oiTestBtn.className = 'neo-btn';
+  oiTestBtn.textContent = 'Tester';
+  oiTestBtn.style.marginLeft = '8px';
+  oiTestBtn.onclick = testOverlayImage;
+  btnRow.appendChild(oiTestBtn);
+  oiSection.appendChild(btnRow);
+
+  container.appendChild(oiSection);
+
+  updateCostEstimate();
+  document.getElementById('ig-model')?.addEventListener('change', updateCostEstimate);
+  document.getElementById('ig-quality')?.addEventListener('change', updateCostEstimate);
+  document.getElementById('ig-size')?.addEventListener('change', updateCostEstimate);
+
+  durRange.addEventListener('input', function() { durVal.textContent = durRange.value + 's'; });
+  adRange.addEventListener('input', function() { adVal.textContent = adRange.value + 's'; });
+}
+
+async function updateCostEstimate() {
+  const model = document.getElementById('ig-model')?.value;
+  const quality = document.getElementById('ig-quality')?.value;
+  const size = document.getElementById('ig-size')?.value;
+  const r = await fetch('/api/public/gallery/estimate-cost?model=' + model + '&quality=' + quality + '&size=' + size);
+  if (r.ok) {
+    const data = await r.json();
+    const el = document.getElementById('ig-cost-estimate');
+    if (el) el.textContent = 'Coût estimé : $' + data.cost_usd.toFixed(4) + ' par image';
+  }
+}
+
+async function saveImageGenConfig() {
+  const body = { image_generation: {
+    model: document.getElementById('ig-model').value,
+    quality: document.getElementById('ig-quality').value,
+    size: document.getElementById('ig-size').value,
+    format: document.getElementById('ig-format').value,
+    background: document.getElementById('ig-background').value,
+    daily_limit: parseInt(document.getElementById('ig-daily-limit').value),
+    per_user_limit: parseInt(document.getElementById('ig-per-user-limit').value),
+  }};
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) toast('Config image sauvegardée', 'success');
+}
+
+async function saveOverlayImageConfig() {
+  const body = { overlay_image: {
+    enabled: document.getElementById('oi-enabled').checked,
+    command: document.getElementById('oi-command').value,
+    display_duration: parseInt(document.getElementById('oi-duration').value),
+    animation_in: document.getElementById('oi-anim-in').value,
+    animation_out: document.getElementById('oi-anim-out').value,
+    animation_duration: parseFloat(document.getElementById('oi-anim-duration').value),
+    random_filter: document.getElementById('oi-filter').value,
+  }};
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) toast('Config overlay sauvegardée', 'success');
+}
+
+async function testOverlayImage() {
+  const r = await apiFetch('/api/admin/overlay-image/test', { method: 'POST' });
+  if (r && r.ok) toast('Image envoyée à l\'overlay', 'success');
+  else if (r && r.status === 404) toast('Aucune image dans la galerie', 'error');
+  else if (r && r.status === 429) toast('Une image est déjà affichée', 'error');
+}
+
+// ── Slash Commands Autocomplete ───────────────────────────────────────────────
+
+const SLASH_COMMANDS = [
+  { name: '/imagine', desc: 'Générer une image', adminOnly: false },
+  { name: '/scan', desc: 'Scanner la mémoire du chat', adminOnly: true },
+];
+let _slashSelectedIdx = -1;
+
+function setupSlashAutocomplete() {
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+
+  let popup = document.getElementById('slash-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'slash-popup';
+    popup.className = 'slash-autocomplete';
+    chatInput.parentElement.style.position = 'relative';
+    chatInput.parentElement.insertBefore(popup, chatInput);
+  }
+
+  chatInput.addEventListener('input', function() {
+    const val = chatInput.value;
+    if (!val.startsWith('/')) { hideSlashPopup(); return; }
+    const prefix = val.split(' ')[0].toLowerCase();
+    if (val.includes(' ') && val.split(' ').length > 1) { hideSlashPopup(); return; }
+    const isAdmin = !!getToken();
+    const filtered = SLASH_COMMANDS.filter(function(c) { return c.name.startsWith(prefix) && (!c.adminOnly || isAdmin); });
+    if (filtered.length === 0) { hideSlashPopup(); return; }
+    renderSlashPopup(filtered);
+  });
+
+  chatInput.addEventListener('keydown', function(e) {
+    const popup = document.getElementById('slash-popup');
+    if (!popup || !popup.classList.contains('visible')) return;
+    const items = popup.querySelectorAll('.slash-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _slashSelectedIdx = Math.min(_slashSelectedIdx + 1, items.length - 1);
+      items.forEach(function(it, i) { it.classList.toggle('selected', i === _slashSelectedIdx); });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _slashSelectedIdx = Math.max(_slashSelectedIdx - 1, 0);
+      items.forEach(function(it, i) { it.classList.toggle('selected', i === _slashSelectedIdx); });
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      if (_slashSelectedIdx >= 0 && _slashSelectedIdx < items.length) {
+        selectSlashCommand(items[_slashSelectedIdx].dataset.name);
+      } else if (items.length === 1) {
+        selectSlashCommand(items[0].dataset.name);
+      }
+    }
+  });
+}
+
+function renderSlashPopup(commands) {
+  const popup = document.getElementById('slash-popup');
+  if (!popup) return;
+  _slashSelectedIdx = -1;
+  popup.textContent = '';
+  commands.forEach(function(c) {
+    const item = document.createElement('div');
+    item.className = 'slash-item';
+    item.dataset.name = c.name;
+    item.onclick = function() { selectSlashCommand(c.name); };
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'slash-item-name';
+    nameSpan.textContent = c.name;
+    const descSpan = document.createElement('span');
+    descSpan.className = 'slash-item-desc';
+    descSpan.textContent = c.desc;
+    item.appendChild(nameSpan);
+    item.appendChild(descSpan);
+    popup.appendChild(item);
+  });
+  popup.classList.add('visible');
+}
+
+function hideSlashPopup() {
+  const popup = document.getElementById('slash-popup');
+  if (popup) popup.classList.remove('visible');
+  _slashSelectedIdx = -1;
+}
+
+function selectSlashCommand(name) {
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.value = name + ' ';
+    chatInput.focus();
+  }
+  hideSlashPopup();
+}
+
+// ── Chat Image Embeds ─────────────────────────────────────────────────────────
+
+function chatAppendImageGenerating(data) {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg wally';
+  div.id = 'chat-embed-' + data.id;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-msg-bubble';
+  const embed = document.createElement('div');
+  embed.className = 'chat-image-embed';
+  const loading = document.createElement('div');
+  loading.className = 'embed-loading';
+  const icon = document.createElement('div');
+  icon.style.fontSize = '2rem';
+  icon.style.marginBottom = '8px';
+  icon.textContent = '🎨';
+  loading.appendChild(icon);
+  const msg = document.createElement('div');
+  msg.textContent = 'Génération en cours...';
+  loading.appendChild(msg);
+  const promptDiv = document.createElement('div');
+  promptDiv.style.fontSize = '0.75rem';
+  promptDiv.style.color = '#666';
+  promptDiv.style.marginTop = '4px';
+  promptDiv.textContent = data.prompt || '';
+  loading.appendChild(promptDiv);
+  embed.appendChild(loading);
+  bubble.appendChild(embed);
+  div.appendChild(bubble);
+  el.appendChild(div);
+}
+
+function chatReplaceImageResult(data) {
+  const existing = document.getElementById('chat-embed-' + data.id);
+  const dateStr = data.created_at ? new Date(data.created_at + 'Z').toLocaleString('fr-FR') : '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'chat-msg wally';
+  wrapper.id = 'chat-embed-' + data.id;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-msg-bubble';
+  const embed = document.createElement('div');
+  embed.className = 'chat-image-embed';
+
+  const imgEl = document.createElement('img');
+  imgEl.src = '/api/public/gallery/' + data.image_id + '/image';
+  imgEl.alt = data.title || '';
+  imgEl.style.cursor = 'pointer';
+  imgEl.onclick = function() { openLightbox(data.image_id); };
+  embed.appendChild(imgEl);
+
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'embed-info';
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'embed-title';
+  titleDiv.id = 'chat-embed-title-' + data.image_id;
+  titleDiv.textContent = data.title || 'Sans titre';
+  infoDiv.appendChild(titleDiv);
+  const promptDiv = document.createElement('div');
+  promptDiv.className = 'embed-prompt';
+  promptDiv.textContent = data.prompt || '';
+  infoDiv.appendChild(promptDiv);
+  const footerDiv = document.createElement('div');
+  footerDiv.className = 'embed-footer';
+  footerDiv.textContent = (data.username || '') + ' — ' + dateStr;
+  infoDiv.appendChild(footerDiv);
+  embed.appendChild(infoDiv);
+
+  const actions = document.createElement('div');
+  actions.className = 'embed-actions';
+  const flameBtn = document.createElement('button');
+  flameBtn.className = 'flame-btn';
+  flameBtn.onclick = function() { toggleFlameEmbed(data.image_id, flameBtn); };
+  flameBtn.appendChild(document.createTextNode('🔥 '));
+  const vSpan = document.createElement('span');
+  vSpan.textContent = '0';
+  flameBtn.appendChild(vSpan);
+  actions.appendChild(flameBtn);
+  embed.appendChild(actions);
+
+  bubble.appendChild(embed);
+  wrapper.appendChild(bubble);
+
+  if (existing) {
+    existing.replaceWith(wrapper);
+  } else {
+    const container = document.getElementById('chat-messages');
+    if (container) container.appendChild(wrapper);
+  }
+}
+
+function chatReplaceImageCancelled(data) {
+  const existing = document.getElementById('chat-embed-' + data.id);
+  if (!existing) return;
+  existing.textContent = '';
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-msg-bubble';
+  const embed = document.createElement('div');
+  embed.className = 'chat-image-embed';
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'embed-info';
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'embed-title';
+  titleDiv.style.color = '#ff3333';
+  titleDiv.textContent = 'Génération annulée';
+  infoDiv.appendChild(titleDiv);
+  const reasonDiv = document.createElement('div');
+  reasonDiv.className = 'embed-prompt';
+  reasonDiv.textContent = data.reason || 'Erreur inconnue';
+  infoDiv.appendChild(reasonDiv);
+  embed.appendChild(infoDiv);
+  bubble.appendChild(embed);
+  existing.appendChild(bubble);
+}
+
+function chatUpdateVoteState(data) {
+  const embedEl = document.getElementById('chat-embed-' + data.id);
+  if (!embedEl) return;
+  const btn = embedEl.querySelector('.flame-btn');
+  if (btn) {
+    btn.classList.toggle('active', data.voted);
+    const span = btn.querySelector('span');
+    if (span && data.votes !== undefined) span.textContent = data.votes;
+  }
+}
+
+function chatUpdateEmbedTitle(data) {
+  const el = document.getElementById('chat-embed-title-' + data.image_id);
+  if (el) el.textContent = data.title || 'Sans titre';
+}
+
+async function toggleFlameEmbed(imageId, btn) {
+  const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('chat_token') || '') }
+  });
+  if (!r.ok) {
+    if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
+    return;
+  }
+  const data = await r.json();
+  btn.classList.toggle('active', data.voted);
+  const detail = await fetch('/api/public/gallery/' + imageId);
+  if (detail.ok) {
+    const img = await detail.json();
+    btn.querySelector('span').textContent = img.votes || 0;
+  }
 }
