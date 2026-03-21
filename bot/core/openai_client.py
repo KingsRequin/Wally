@@ -526,8 +526,10 @@ class OpenAIClient:
                     effort = self._config.openai.reasoning_effort
                     if effort and effort != "none":
                         kwargs["reasoning"] = {"effort": effort}
-                    if self._config.openai.max_tokens:
-                        kwargs["max_output_tokens"] = self._config.openai.max_tokens
+                    # NOTE: max_output_tokens intentionnellement omis pour les
+                    # appels structured output — les schémas sont petits et bornés,
+                    # et la limite inclut les tokens de raisonnement, ce qui
+                    # provoque des troncatures (status='incomplete').
 
                     response = await self._client.responses.create(**kwargs)
 
@@ -537,7 +539,29 @@ class OpenAIClient:
                             f"(status={response.status!r})"
                         )
 
-                    parsed = json.loads(response.output_text)
+                    text = response.output_text
+                    if not text:
+                        # output_text vide malgré status=completed — extraire
+                        # le JSON depuis les output items bruts (fallback)
+                        for item in response.output:
+                            if hasattr(item, "content"):
+                                for block in item.content:
+                                    t = getattr(block, "text", None)
+                                    if t:
+                                        text = t
+                                        break
+                            if text:
+                                break
+                    if not text:
+                        output_types = [
+                            f"{item.type}" for item in response.output
+                        ]
+                        raise RuntimeError(
+                            f"Structured output empty despite status=completed "
+                            f"(output_types={output_types})"
+                        )
+
+                    parsed = json.loads(text)
 
                     if response.usage:
                         try:
@@ -612,7 +636,7 @@ class OpenAIClient:
                         model=model,
                         messages=full_messages,
                         temperature=self._config.openai.temperature,
-                        max_completion_tokens=self._config.openai.max_tokens,
+                        # max_completion_tokens omis — même raison que Responses API
                         response_format={
                             "type": "json_schema",
                             "json_schema": {
