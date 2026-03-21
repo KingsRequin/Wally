@@ -79,7 +79,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat, gallery
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -87,6 +87,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(twitch.router, prefix="/api/public")
     app.include_router(sse.public_router, prefix="/api/public")
     app.include_router(roadmap.router, prefix="/api/public")
+    app.include_router(gallery.public_router, prefix="/api/public")
 
     # Chat routes (public — JWT auth handled internally)
     app.include_router(chat_auth.router, prefix="/api/chat")
@@ -99,6 +100,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(memory.router, prefix="/api/admin")
     app.include_router(links.router, prefix="/api/admin")
     app.include_router(costs.router, prefix="/api/admin")
+    app.include_router(gallery.admin_router, prefix="/api/admin")
 
     # Static files — NoCacheStaticFiles force la revalidation via Cloudflare tunnel
     if STATIC_DIR.exists():
@@ -130,6 +132,13 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             headers={
                 "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             },
+        )
+
+    @app.get("/overlay-image")
+    async def overlay_image_page():
+        return FileResponse(
+            "bot/dashboard/static/overlay_image.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
 
     return app
