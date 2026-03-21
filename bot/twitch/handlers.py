@@ -99,7 +99,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude)
+        mem_context, global_context = await asyncio.gather(
+            bot.memory.search(platform, user_id, content, context_messages=prelude),
+            bot.memory.search_global(content),
+        )
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:
@@ -153,6 +156,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
+            global_memory_context=global_context,
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
@@ -225,6 +229,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
 
         bot.memory.append_message(channel_id, author, content, platform="twitch")
+        bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
 
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id))
@@ -312,6 +317,7 @@ async def _spontaneous_respond_twitch(
         else:
             await bot.twitch_api.send_message(text=reply)
 
+        bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
         logger.info("Spontaneous intervention in twitch:{ch}", ch=channel_name)
 
