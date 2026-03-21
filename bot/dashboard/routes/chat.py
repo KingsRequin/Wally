@@ -109,16 +109,30 @@ async def ws_chat(ws: WebSocket):
             except json.JSONDecodeError:
                 continue
 
-            if data.get("type") != "message":
+            msg_type = data.get("type", "message")
+
+            if msg_type == "vote":
+                image_id = data.get("image_id")
+                if image_id:
+                    voted = await state.db.toggle_gallery_vote(image_id, f"discord:{user.discord_id}")
+                    await _send_to(ws, {"type": "vote_result", "image_id": image_id, "voted": voted})
+                continue
+
+            if msg_type == "edit_title":
+                image_id = data.get("image_id")
+                title = data.get("title", "").strip()
+                if image_id and title and len(title) <= 100:
+                    image = await state.db.get_gallery_image(image_id)
+                    if image and image["user_id"] == f"discord:{user.discord_id}":
+                        await state.db.update_gallery_title(image_id, title)
+                        await _broadcast({"type": "title_updated", "image_id": image_id, "title": title})
+                continue
+
+            if msg_type != "message":
                 continue
 
             content = (data.get("content") or "").strip()
             if not content or len(content) > 2000:
-                continue
-
-            # ── Admin commands (/scan) ──
-            if content.lower() == "/scan":
-                asyncio.create_task(_handle_scan(state, ws, user))
                 continue
 
             # Cooldown check
@@ -132,6 +146,20 @@ async def ws_chat(ws: WebSocket):
                 })
                 continue
             user.last_message = now
+
+            # ── Slash commands ──
+            if content.startswith("/"):
+                command, _, args = content.partition(" ")
+                args = args.strip()
+                if command == "/imagine":
+                    asyncio.create_task(_handle_imagine(state, ws, user, args))
+                    continue
+                elif command == "/scan":
+                    asyncio.create_task(_handle_scan(state, ws, user, args or None))
+                    continue
+                else:
+                    await _send_to(ws, {"type": "system", "content": f"Commande inconnue : {command}"})
+                    continue
 
             # Dashboard message counter
             state.message_count += 1
@@ -324,8 +352,86 @@ async def my_memories(request: Request):
         return {"memories": []}
 
 
-async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser) -> None:
-    """Handle /scan command — admin only. Scans web chat history for facts."""
+async def _handle_imagine(state: "AppState", ws, user, prompt: str):
+    if not prompt:
+        await _send_to(ws, {"type": "system", "content": "Usage : /imagine <description de l'image>"})
+        return
+
+    import uuid as _uuid
+    msg_id = str(_uuid.uuid4())
+
+    # Send "generating" embed to all connected clients
+    await _broadcast({
+        "type": "image_generating",
+        "id": msg_id,
+        "prompt": prompt,
+        "loading_gif": "/api/public/loading-gif",
+        "username": user.username,
+        "avatar_url": user.avatar_url,
+    })
+
+    try:
+        sender_id = f"discord:{user.discord_id}"
+
+        # Generate image
+        result = await state.openai_client.generate_image(prompt, sender_id)
+
+        # Generate short title via LLM
+        title = await state.openai_client.complete_secondary(
+            "Tu es un assistant. Génère un titre court et créatif (max 6 mots) pour cette image. "
+            "Réponds UNIQUEMENT avec le titre, rien d'autre.",
+            [{"role": "user", "content": f"Image générée à partir du prompt : {prompt}"}],
+            purpose="image_title",
+        )
+        title = title.strip().strip('"').strip("'")[:100]
+
+        # Insert in gallery
+        await state.db.insert_gallery_image(
+            id=result["file_id"],
+            title=title,
+            prompt=prompt,
+            revised_prompt=result.get("revised_prompt"),
+            username=user.username,
+            user_id=sender_id,
+            platform="web",
+            file_path=result["file_name"],
+            model=result["model"],
+            quality=result["quality"],
+            size=result["size"],
+            cost_usd=result["cost_usd"],
+        )
+
+        # Memory
+        try:
+            await state.memory.add("web", sender_id, f"{user.username} a généré une image : {title}")
+        except Exception as e:
+            logger.warning("Failed to add image memory: {e}", e=e)
+
+        # Broadcast result embed to all connected clients
+        await _broadcast({
+            "type": "image_result",
+            "id": msg_id,
+            "image_id": result["file_id"],
+            "title": title,
+            "prompt": prompt,
+            "image_url": f"/api/public/gallery/{result['file_id']}/image",
+            "username": user.username,
+            "avatar_url": user.avatar_url,
+            "created_at": datetime.datetime.now().isoformat(),
+            "votes": 0,
+            "user_voted": False,
+        })
+
+    except ValueError as e:
+        # Cancel the generating embed for all clients
+        await _broadcast({"type": "image_cancelled", "id": msg_id, "error": str(e)})
+    except Exception as e:
+        logger.error("Image generation failed in web chat: {e}", e=e)
+        await _broadcast({"type": "image_cancelled", "id": msg_id, "error": "Erreur lors de la génération de l'image."})
+
+
+async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser, query: str | None = None) -> None:
+    """Handle /scan command — admin only. Scans web chat history for facts. query is reserved for future filtering."""
     # Admin check: same dashboard_token used by /api/admin/* routes
     admin_token = state.config.bot.dashboard_token
     if not admin_token:
