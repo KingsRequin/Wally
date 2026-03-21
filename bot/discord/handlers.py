@@ -102,8 +102,10 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
     try:
         msgs = []
         async for m in channel.history(limit=limit + (1 if exclude_id is not None else 0)):
-            if not m.author.bot and m.id != exclude_id:
-                msgs.append({"author": m.author.display_name, "content": m.content})
+            if m.id == exclude_id:
+                continue
+            # Include Wally's own messages for context awareness
+            msgs.append({"author": m.author.display_name, "content": m.content})
         msgs.reverse()  # Discord renvoie du plus récent au plus ancien
         return msgs[-limit:] if len(msgs) > limit else msgs
     except Exception as e:
@@ -266,7 +268,10 @@ async def _respond(
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context = await bot.memory.search(platform, user_id, message.content, context_messages=prelude)
+        mem_context, global_context = await asyncio.gather(
+            bot.memory.search(platform, user_id, message.content, context_messages=prelude),
+            bot.memory.search_global(message.content),
+        )
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:
@@ -329,6 +334,7 @@ async def _respond(
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
+            global_memory_context=global_context,
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
@@ -446,6 +452,7 @@ async def _respond(
         bot.memory.append_message(
             str(message.channel.id), message.author.display_name, stored_content, platform="discord"
         )
+        bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
         bot.memory.append_message(str(message.channel.id), "Wally", reply, platform="discord")
 
         # Persiste le display_name pour que le dashboard coûts affiche un nom lisible
@@ -573,9 +580,10 @@ async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) ->
             except Exception:
                 pass
 
-        # Send as a regular message (not a reply)
-        await message.channel.send(reply)
+        # Send as a reply to the triggering message
+        await message.reply(reply, mention_author=False)
 
+        bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
         bot.memory.append_message(
             str(message.channel.id), "Wally", reply, platform="discord"
         )
