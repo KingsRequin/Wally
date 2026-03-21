@@ -34,6 +34,7 @@ _MIN_SEARCH_SCORE = 0.3  # score en dessous duquel un souvenir est ignoré dans 
 # Quand un utilisateur dépasse ce nombre de souvenirs, on les consolide en un
 # ensemble compact de faits essentiels pour éviter la dérive mémorielle.
 _CONSOLIDATION_THRESHOLD = 25
+GLOBAL_USER_ID = "global:server"
 _CONSOLIDATION_SYSTEM = load_prompt(
     "memory_consolidation_system",
     fallback=(
@@ -172,6 +173,51 @@ class MemoryService:
                 self._fire(account_linker.analyze_new_user(self._db, raw_uid, threshold))
         except Exception as exc:
             logger.warning("mem0 add failed: {e}", e=exc)
+
+    async def add_global(self, content: str) -> None:
+        """Store a community-level fact in the global namespace.
+
+        Calls mem0.add() directly — bypasses consolidation, upsert_memory_user,
+        and account_linker (not relevant for global facts).
+        """
+        self._init_mem0()
+        if self._mem0 is None:
+            return
+        try:
+            await asyncio.to_thread(
+                self._mem0.add, content, user_id=GLOBAL_USER_ID,
+                metadata={"origin": "global"},
+            )
+            logger.info("Global memory added: {c}", c=content[:80])
+        except Exception as exc:
+            logger.warning("Global memory add failed: {e}", e=exc)
+
+    async def search_global(self, query: str) -> str:
+        """Search the global namespace for community-level knowledge.
+
+        Single-query search (no dual-query with context).
+        Applies _MIN_SEARCH_SCORE filtering. Returns newline-separated memories.
+        """
+        self._init_mem0()
+        if self._mem0 is None:
+            return ""
+        if not query or not query.strip():
+            return ""
+        try:
+            results = await asyncio.to_thread(
+                self._mem0.search, query, user_id=GLOBAL_USER_ID, limit=5,
+            )
+            if isinstance(results, dict):
+                results = results.get("results", [])
+            memories = [
+                r.get("memory", "")
+                for r in results
+                if r.get("memory") and r.get("score", 1.0) >= _MIN_SEARCH_SCORE
+            ]
+            return "\n".join(memories)
+        except Exception as exc:
+            logger.warning("Global memory search failed: {e}", e=exc)
+            return ""
 
     async def _maybe_consolidate(self, platform: str, user_id: str) -> None:
         """Consolide les souvenirs si leur nombre dépasse le seuil.
