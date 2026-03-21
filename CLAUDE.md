@@ -53,7 +53,7 @@ bot/
 ├── core/
 │   ├── emotion.py       # Global emotion state, decay, NRCLex analysis
 │   ├── memory.py        # mem0 wrapper, sliding context window
-│   ├── openai_client.py # Completions, cost tracking, retry logic
+│   ├── openai_client.py # Completions, image generation, cost tracking, retry logic
 │   ├── prompts.py       # PromptBuilder, load_prompt(), emotion directives
 │   ├── language.py      # langdetect wrapper with fallback
 │   ├── journal.py       # Daily journal scheduler (apscheduler)
@@ -69,6 +69,7 @@ bot/
 │       ├── mood.py      # /wally mood
 │       ├── journal_cmd.py # /wally journal (admin, déclenche journal à la demande)
 │       ├── persona_cmd.py # /wally reload-persona (admin, recharge fichiers persona)
+│       ├── imagine.py   # /wally imagine (image generation + gallery)
 │       └── setup.py     # /wally setup (4-tab interactive UI)
 ├── persona/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
@@ -183,6 +184,8 @@ Updated after every response, not in real-time during generation.
 | `timeout_log` | Emotion mute per user per guild |
 | `welcomed` | First-message welcome tracking per user per guild |
 | `trust_scores` | Long-term trust per user per platform |
+| `gallery_images` | Generated images: prompt, title, username, file_path, cost |
+| `gallery_votes` | Flame votes per image per user (toggle) |
 
 ---
 
@@ -210,7 +213,41 @@ Qdrant healthcheck: `curl -f http://localhost:6333/healthz`
 Wally `depends_on: qdrant: condition: service_healthy`
 Config and data mounted as volumes — no rebuild needed for config changes.
 
-Web dashboard token field exists in `config.yaml` but dashboard is not implemented.
+Web dashboard on port 8080, FastAPI + vanilla JS SPA.
+Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
+
+---
+
+## Dashboard Design System — Glassmorphism
+
+The dashboard uses a **glassmorphism** design. All new components must follow this style.
+
+- **Backgrounds**: `rgba(255, 255, 255, 0.03)` to `0.05` with `backdrop-filter: blur(10px)`
+- **Borders**: `1px solid rgba(255, 255, 255, 0.08)` — thin, subtle, never hard white
+- **Border-radius**: `12px` to `16px` — rounded
+- **Shadows**: `0 4px 6px rgba(0, 0, 0, 0.1)` — soft gaussian, never offset
+- **Accent**: `#06b6d4` (cyan) for active states
+- **Hover**: subtle glow/brightness, NOT offset shadow collapse
+- **No neobrutalism**: no 3px solid borders, no `4px 4px 0px` offset shadows, no 0px radius
+
+Emotion colors: anger `#ef4444`, joy `#eab308`, curiosity `#22c55e`, sadness `#3b82f6`, boredom `#a855f7`.
+
+---
+
+## Image Generation
+
+`OpenAIClient.generate_image()` calls OpenAI Images API with retry logic (3 attempts, backoff).
+Images stored on disk in `data/gallery/`, metadata in `gallery_images` table.
+Pricing in `IMAGE_COSTS` dict, cost logged via `log_cost(purpose="image_generation")`.
+
+Config: `config.image_generation` — model, quality, size, background, format, daily_limit, per_user_limit.
+
+Endpoints:
+- Discord: `/wally imagine <prompt>` with persistent flame/edit buttons
+- Web chat: `/imagine <prompt>` via WebSocket slash command
+- Twitch: `!image` triggers overlay display of random gallery image
+- Gallery: public browsable page with search, sort by date/votes, flame voting
+- OBS overlay: `/overlay-image` page with Animate.css, SSE-driven
 
 ---
 
