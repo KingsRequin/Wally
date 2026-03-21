@@ -13,7 +13,16 @@ load_dotenv()
 
 def setup_logging() -> None:
     logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        colorize=True,
+        format=(
+            "<green>{time:HH:mm:ss}</green> | "
+            "<level>{level:<8}</level> | "
+            "<level>{message}</level>"
+        ),
+    )
 
     log_dir = Path("logs") / datetime.now().strftime("%Y-%m-%d")
     log_dir.mkdir(parents=True, exist_ok=True)
