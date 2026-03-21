@@ -2431,3 +2431,43 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
   .jd-pipe-step { font-size: 0.65rem; padding: 4px 8px; }
   .jd-arch-box { min-width: 100px; padding: 8px 12px; }
 }
+
+/* ── Memory Dashboard ─────────────────────────────────── */
+
+.mem-dash-questions { display: flex; flex-direction: column; gap: 12px; }
+.mem-dash-q-row {
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  padding: 12px 16px;
+  border-left: 3px solid rgba(255,255,255,0.1);
+}
+.mem-dash-q-info { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mem-dash-q-prio { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mem-dash-q-memory { font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.mem-dash-q-question { font-size: 0.85rem; color: rgba(255,255,255,0.85); margin-bottom: 8px; font-style: italic; }
+
+.mem-dash-bars { display: flex; flex-direction: column; gap: 8px; }
+.mem-dash-bar-row { display: flex; align-items: center; gap: 10px; }
+.mem-dash-bar-label { width: 140px; font-size: 0.8rem; color: rgba(255,255,255,0.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.mem-dash-bar-track { flex: 1; height: 14px; background: rgba(255,255,255,0.06); border-radius: 7px; overflow: hidden; }
+.mem-dash-bar-fill { height: 100%; background: var(--accent); border-radius: 7px; transition: width 0.3s; }
+.mem-dash-bar-count { width: 36px; text-align: right; font-size: 0.75rem; color: rgba(255,255,255,0.5); flex-shrink: 0; }
+
+.btn-sm { font-size: 0.7rem; padding: 4px 10px; }
+
+/* ── Visitors ─────────────────────────────────────────── */
+
+.visitor-list { display: flex; flex-direction: column; gap: 6px; }
+.visitor-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+}
+.visitor-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
+.visitor-avatar-placeholder { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.08); flex-shrink: 0; }
+.visitor-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.visitor-date { font-size: 0.72rem; color: rgba(255,255,255,0.4); }
+.visitor-meta { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
+.visitor-msgs { font-size: 0.8rem; color: var(--accent); }
+.visitor-duration { font-size: 0.75rem; color: rgba(255,255,255,0.4); }

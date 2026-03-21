@@ -541,3 +541,69 @@ async def scan_web_chat(request: Request):
 
     logger.info("scan-web-chat complete: {n} facts from {m} messages", n=total_stored, m=len(msg_dicts))
     return {"status": "ok", "messages_scanned": len(msg_dicts), "facts_stored": total_stored}
+
+
+# ── GET /memory/dashboard — vue d'ensemble mémoire ───────────────────────────
+
+@router.get("/memory/dashboard")
+async def memory_dashboard(request: Request):
+    """Dashboard mémoire : questions en attente, stats par utilisateur, consolidation."""
+    state = request.app.state.wally
+    db = state.db
+
+    # 1. Toutes les questions en attente (non résolues)
+    cursor = await db._conn.execute(
+        "SELECT mq.*, mu.username FROM memory_questions mq "
+        "LEFT JOIN memory_users mu ON mu.user_id = mq.user_id "
+        "WHERE mq.resolved = 0 ORDER BY "
+        "CASE mq.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, "
+        "mq.created_at ASC"
+    )
+    pending_questions = [dict(row) for row in await cursor.fetchall()]
+
+    # 2. Stats questions (total, résolues, en attente)
+    cursor = await db._conn.execute(
+        "SELECT COUNT(*) as total, "
+        "SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved, "
+        "SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) as pending "
+        "FROM memory_questions"
+    )
+    q_stats = dict(await cursor.fetchone())
+
+    # 3. Nombre de souvenirs par utilisateur (top 20) via memory_users + mem0 count
+    users = await db.list_memory_users()
+    user_memory_counts: list[dict] = []
+    mem0 = None
+    try:
+        mem0 = _get_mem0(request)
+    except Exception:
+        pass
+
+    if mem0:
+        for u in users[:30]:  # limiter pour perf
+            try:
+                results = await asyncio.to_thread(mem0.get_all, user_id=u["user_id"])
+                count = len([r for r in _unwrap(results) if r.get("memory")])
+                user_memory_counts.append({
+                    "user_id": u["user_id"],
+                    "username": u.get("username") or u["user_id"],
+                    "platform": u["platform"],
+                    "count": count,
+                })
+            except Exception:
+                pass
+        user_memory_counts.sort(key=lambda x: x["count"], reverse=True)
+
+    return {
+        "pending_questions": pending_questions,
+        "question_stats": q_stats,
+        "user_memory_counts": user_memory_counts[:20],
+    }
+
+
+@router.post("/memory/questions/{question_id}/resolve")
+async def resolve_question(question_id: int, request: Request):
+    """Marque une question mémoire comme résolue."""
+    state = request.app.state.wally
+    await state.db.resolve_question(question_id)
+    return {"status": "ok"}
