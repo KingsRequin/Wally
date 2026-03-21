@@ -206,9 +206,11 @@ async def remove_twitch_channel(request: Request, name: str) -> dict:
 
 @router.post("/overlay/toggle")
 async def toggle_overlay(request: Request) -> dict:
-    """Bascule la visibilité de l'overlay OBS en temps réel."""
+    """Bascule la visibilité de l'overlay OBS en temps réel et persiste dans config."""
     state = request.app.state.wally
     state.overlay_visible = not state.overlay_visible
+    state.config.web_chat.overlay_visible = state.overlay_visible
+    state.config.save()
     return {"visible": state.overlay_visible}
 
 

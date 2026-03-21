@@ -263,6 +263,8 @@ async def main() -> None:
         notifications=notification_service,
     )
 
+    dashboard_state.overlay_visible = config.web_chat.overlay_visible
+
     discord_bot.dashboard_state = dashboard_state
     if _twitch_bot_ref is not None:
         _twitch_bot_ref.dashboard_state = dashboard_state

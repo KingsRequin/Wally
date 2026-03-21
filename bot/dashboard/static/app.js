@@ -2795,14 +2795,17 @@ async function toggleOverlay() {
   const r = await apiFetch('/api/admin/overlay/toggle', { method: 'POST' });
   if (r && r.ok) {
     const data = await r.json();
-    updateOverlayDot(data.visible);
+    updateOverlaySwitch(data.visible);
     toast(data.visible ? 'Overlay visible' : 'Overlay masqué');
   }
 }
 
-function updateOverlayDot(visible) {
-  const dot = document.getElementById('overlay-status-dot');
-  if (dot) dot.style.background = visible ? '#00E5A0' : '#FF4D4D';
+function updateOverlaySwitch(visible) {
+  const sw = document.getElementById('overlay-switch');
+  if (sw) {
+    if (visible) sw.classList.add('on');
+    else sw.classList.remove('on');
+  }
 }
 
 async function pollOverlayStatus() {
@@ -2810,7 +2813,7 @@ async function pollOverlayStatus() {
     const r = await apiFetch('/api/admin/overlay/status');
     if (r && r.ok) {
       const data = await r.json();
-      updateOverlayDot(data.visible);
+      updateOverlaySwitch(data.visible);
     }
   } catch {}
 }

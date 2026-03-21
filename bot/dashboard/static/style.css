@@ -2471,3 +2471,33 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
 .visitor-meta { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
 .visitor-msgs { font-size: 0.8rem; color: var(--accent); }
 .visitor-duration { font-size: 0.75rem; color: rgba(255,255,255,0.4); }
+
+/* ── Overlay Toggle Switch ────────────────────────────── */
+
+.overlay-toggle-item { position: relative; }
+
+.overlay-switch {
+  width: 28px;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.15);
+  position: relative;
+  transition: background 0.25s;
+  flex-shrink: 0;
+}
+.overlay-switch.on {
+  background: #00E5A0;
+}
+.overlay-switch-knob {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 0.25s;
+}
+.overlay-switch.on .overlay-switch-knob {
+  left: 16px;
+}

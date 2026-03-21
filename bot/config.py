@@ -80,6 +80,7 @@ class WebChatConfig:
     cooldown_seconds: int = 10
     history_limit: int = 50
     random_avatar_chance: float = 0.05
+    overlay_visible: bool = True
 
 
 @dataclass
