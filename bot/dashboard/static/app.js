@@ -1136,6 +1136,14 @@ function renderMemoryTab() {
         <div class="mem-sidebar-actions">
           <button class="btn" onclick="showAddUserForm()" style="width:100%;font-size:0.72rem;padding:5px 8px">+ Ajouter un utilisateur</button>
         </div>
+        <div class="mem-global-section" style="padding:12px;border-bottom:1px solid var(--glass-border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="mem-detail-section-title" style="margin:0">🌐 MÉMOIRE GLOBALE <span id="global-mem-count" class="badge" style="font-size:0.6rem"></span></span>
+            <button class="btn btn-sm" onclick="toggleAddGlobalMemory()" style="font-size:0.7rem;padding:2px 8px">+ Ajouter</button>
+          </div>
+          <div id="add-global-memory-form" style="display:none"></div>
+          <div id="global-memory-list"></div>
+        </div>
         <div id="mem-add-user-form" style="display:none"></div>
         <div id="mem-user-list" class="mem-user-list"></div>
       </div>
@@ -1147,6 +1155,7 @@ function renderMemoryTab() {
     </div>
   `;
   loadMemoryUsers();
+  loadGlobalMemories();
 }
 
 function toggleLinkMode() {
@@ -1680,6 +1689,127 @@ let _userFilterTimer = null;
 function onUserFilter(value) {
   clearTimeout(_userFilterTimer);
   _userFilterTimer = setTimeout(() => loadMemoryUsers(value), 300);
+}
+
+// ── Global memory ─────────────────────────────────────────────────────────────
+
+async function loadGlobalMemories() {
+  const r = await apiFetch('/api/admin/memory/global');
+  if (!r || !r.ok) return;
+  const { memories } = await r.json();
+  const countEl = document.getElementById('global-mem-count');
+  if (countEl) countEl.textContent = memories.length;
+  const listEl = document.getElementById('global-memory-list');
+  if (!listEl) return;
+  if (memories.length === 0) {
+    listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:4px 0">Aucune mémoire globale.</div>';
+    return;
+  }
+  listEl.innerHTML = memories.map(m => {
+    const dateStr = m.created_at || m.updated_at;
+    const dateFmt = dateStr
+      ? new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+      : '';
+    return `
+      <div class="mem-entry" id="mem-entry-${escAttr(m.id)}">
+        <div class="mem-entry-content">
+          <div class="mem-entry-meta">
+            ${dateFmt ? '<span class="mem-entry-date">' + dateFmt + '</span>' : ''}
+          </div>
+          <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
+        </div>
+        <div class="mem-entry-actions">
+          <button class="mem-entry-edit" onclick="startEditGlobalMemory('${escAttr(m.id)}')">&#9998;</button>
+          <button class="mem-entry-delete" onclick="deleteGlobalMemory('${escAttr(m.id)}')">&#10005;</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleAddGlobalMemory() {
+  const el = document.getElementById('add-global-memory-form');
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:8px 0">'
+    + '<input type="text" id="add-global-memory-input" placeholder="Nouvelle connaissance globale…"'
+    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitAddGlobalMemory()">'
+    + '<button onclick="submitAddGlobalMemory()" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Ajouter</button>'
+    + '</div>';
+  document.getElementById('add-global-memory-input')?.focus();
+}
+
+async function submitAddGlobalMemory() {
+  const input = document.getElementById('add-global-memory-input');
+  const content = input?.value.trim();
+  if (!content) { toast('Contenu requis', 'error'); return; }
+  const r = await apiFetch('/api/admin/memory/global', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+  if (r && r.ok) {
+    toast('Mémoire globale ajoutée', 'success');
+    document.getElementById('add-global-memory-form').style.display = 'none';
+    await loadGlobalMemories();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
+function startEditGlobalMemory(memoryId) {
+  const textEl = document.getElementById('mem-text-' + memoryId);
+  if (!textEl) return;
+  const current = textEl.textContent;
+  const entry = document.getElementById('mem-entry-' + memoryId);
+  if (!entry) return;
+  const contentDiv = entry.querySelector('.mem-entry-content');
+  const actionsDiv = entry.querySelector('.mem-entry-actions');
+  if (actionsDiv) actionsDiv.style.display = 'none';
+  const metaHtml = contentDiv.querySelector('.mem-entry-meta')?.outerHTML || '';
+  contentDiv.innerHTML = metaHtml
+    + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
+    + '<input type="text" id="edit-global-memory-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
+    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitEditGlobalMemory(\'' + escAttr(memoryId) + '\'); if(event.key===\'Escape\') loadGlobalMemories();">'
+    + '<button onclick="submitEditGlobalMemory(\'' + escAttr(memoryId) + '\')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>'
+    + '<button onclick="loadGlobalMemories()" class="btn" style="font-size:0.68rem;padding:2px 8px">\u2717</button>'
+    + '</div>';
+  document.getElementById('edit-global-memory-input-' + memoryId)?.focus();
+}
+
+async function submitEditGlobalMemory(memoryId) {
+  const input = document.getElementById('edit-global-memory-input-' + memoryId);
+  const content = input?.value.trim();
+  if (!content) { toast('Contenu requis', 'error'); return; }
+  const r = await apiFetch(
+    '/api/admin/memory/global/' + encodeURIComponent(memoryId),
+    { method: 'PUT', body: JSON.stringify({ content }) }
+  );
+  if (r && r.ok) {
+    toast('Mémoire globale modifiée', 'success');
+    await loadGlobalMemories();
+  } else {
+    const err = r ? await r.json().catch(() => ({})) : {};
+    toast(err.detail || 'Erreur', 'error');
+  }
+}
+
+async function deleteGlobalMemory(memoryId) {
+  const r = await apiFetch(
+    '/api/admin/memory/global/' + encodeURIComponent(memoryId),
+    { method: 'DELETE' }
+  );
+  if (r && r.ok) {
+    document.getElementById('mem-entry-' + memoryId)?.remove();
+    const countEl = document.getElementById('global-mem-count');
+    if (countEl) {
+      const current = parseInt(countEl.textContent) || 0;
+      if (current > 0) countEl.textContent = current - 1;
+    }
+    toast('Mémoire globale supprimée', 'success');
+  } else {
+    toast('Erreur suppression', 'error');
+  }
 }
 
 // ── Roadmap ──────────────────────────────────────────────────────────────────
