@@ -84,6 +84,28 @@ class WebChatConfig:
 
 
 @dataclass
+class ImageGenerationConfig:
+    model: str = "gpt-image-1.5"
+    quality: str = "medium"
+    size: str = "1024x1024"
+    background: str = "auto"
+    format: str = "png"
+    daily_limit: int = -1
+    per_user_limit: int = 5
+
+
+@dataclass
+class OverlayImageConfig:
+    command: str = "!image"
+    display_duration: int = 15
+    animation_in: str = "fadeIn"
+    animation_out: str = "fadeOut"
+    animation_duration: float = 1.0
+    random_filter: str = "all"
+    enabled: bool = True
+
+
+@dataclass
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
@@ -93,6 +115,8 @@ class Config:
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
+    image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
+    overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
     _path: str = field(default="", init=False, repr=False)
 
     @classmethod
@@ -121,6 +145,8 @@ class Config:
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
             web_chat_raw = raw.get("web_chat", {})
+            image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
+            overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=OpenAIConfig(**raw["openai"]),
@@ -130,6 +156,8 @@ class Config:
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
                 web_chat=WebChatConfig(**web_chat_raw),
+                image_generation=image_generation,
+                overlay_image=overlay_image,
             )
         except KeyError as e:
             raise ValueError(
@@ -150,6 +178,8 @@ class Config:
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
             "tavily": asdict(self.tavily),
             "web_chat": asdict(self.web_chat),
+            "image_generation": asdict(self.image_generation),
+            "overlay_image": asdict(self.overlay_image),
         }
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
