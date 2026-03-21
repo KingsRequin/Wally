@@ -42,6 +42,28 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     channel_name: str = payload.broadcaster.name.lower()
     channel_id = f"twitch:{channel_name}"
 
+    # Overlay image command
+    overlay_cfg = bot.config.overlay_image
+    if overlay_cfg.enabled and content.strip().lower() == overlay_cfg.command.lower():
+        ds = getattr(bot, "dashboard_state", None)
+        if ds is not None:
+            image = await bot.db.get_random_gallery_image(overlay_cfg.random_filter)
+            if image:
+                payload_img = {
+                    "image_url": f"/api/public/gallery/{image['id']}/image",
+                    "title": image.get("title") or "",
+                    "username": image["username"],
+                    "display_duration": overlay_cfg.display_duration,
+                    "animation_in": overlay_cfg.animation_in,
+                    "animation_out": overlay_cfg.animation_out,
+                    "animation_duration": overlay_cfg.animation_duration,
+                }
+                try:
+                    ds.overlay_image_queue.put_nowait(payload_img)
+                except asyncio.QueueFull:
+                    pass  # Image already being displayed
+        return  # Don't process further
+
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
         bot._channel_was_live[channel_name] = True
