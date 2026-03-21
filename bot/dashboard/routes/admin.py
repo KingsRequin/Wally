@@ -102,6 +102,10 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.bot.spontaneous_passion_probability = float(d["spontaneous_passion_probability"])
         if "spontaneous_cooldown_seconds" in d:
             cfg.bot.spontaneous_cooldown_seconds = int(d["spontaneous_cooldown_seconds"])
+        if "notification_guild_id" in d:
+            cfg.bot.notification_guild_id = int(d["notification_guild_id"]) if d["notification_guild_id"] else None
+        if "notification_channel_id" in d:
+            cfg.bot.notification_channel_id = int(d["notification_channel_id"]) if d["notification_channel_id"] else None
 
     if "discord" in body:
         d = body["discord"]
@@ -198,3 +202,48 @@ async def remove_twitch_channel(request: Request, name: str) -> dict:
         raise HTTPException(status_code=503, detail="Twitch non disponible")
     await state.twitch_bot.remove_guest_channel(name.lower())
     return {"status": "removed"}
+
+
+@router.post("/overlay/toggle")
+async def toggle_overlay(request: Request) -> dict:
+    """Bascule la visibilité de l'overlay OBS en temps réel."""
+    state = request.app.state.wally
+    state.overlay_visible = not state.overlay_visible
+    return {"visible": state.overlay_visible}
+
+
+@router.get("/overlay/status")
+async def overlay_status(request: Request) -> dict:
+    """Retourne l'état actuel de l'overlay."""
+    state = request.app.state.wally
+    return {"visible": state.overlay_visible}
+
+
+@router.get("/notification-channels")
+async def list_notification_channels(request: Request) -> dict:
+    """Liste les serveurs et salons textuels disponibles pour les notifications."""
+    state = request.app.state.wally
+    if state.discord_bot is None:
+        return {"guilds": []}
+
+    import discord
+    guilds = []
+    for guild in state.discord_bot.guilds:
+        channels = []
+        for ch in guild.text_channels:
+            channels.append({"id": ch.id, "name": ch.name})
+        guilds.append({
+            "id": guild.id,
+            "name": guild.name,
+            "channels": channels,
+        })
+    return {"guilds": guilds}
+
+
+@router.get("/chat-connections")
+async def list_chat_connections(request: Request, limit: int = 50) -> dict:
+    """Liste les connexions récentes au chat web."""
+    state = request.app.state.wally
+    limit = max(1, min(limit, 200))
+    connections = await state.db.list_chat_connections(limit)
+    return {"connections": connections}

@@ -195,6 +195,18 @@ CREATE TABLE IF NOT EXISTS memory_questions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_questions_user ON memory_questions(user_id, resolved);
+
+CREATE TABLE IF NOT EXISTS chat_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    discord_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
+    connected_at REAL NOT NULL,
+    disconnected_at REAL,
+    message_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_connections_time ON chat_connections(connected_at DESC);
 """
 
 
@@ -582,6 +594,38 @@ class Database:
             "DELETE FROM memory_questions WHERE resolved = 1 OR created_at < ?",
             (cutoff,),
         )
+
+    # ── Chat connections ──────────────────────────────────────────
+
+    async def insert_chat_connection(
+        self, discord_id: str, username: str, avatar_url: str | None
+    ) -> int:
+        cursor = await self._conn.execute(
+            "INSERT INTO chat_connections (discord_id, username, avatar_url, connected_at)"
+            " VALUES (?, ?, ?, ?)",
+            (discord_id, username, avatar_url, time.time()),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def update_chat_disconnection(self, conn_id: int, message_count: int) -> None:
+        await self.execute(
+            "UPDATE chat_connections SET disconnected_at = ?, message_count = ? WHERE id = ?",
+            (time.time(), message_count, conn_id),
+        )
+
+    async def increment_chat_connection_messages(self, conn_id: int) -> None:
+        await self.execute(
+            "UPDATE chat_connections SET message_count = message_count + 1 WHERE id = ?",
+            (conn_id,),
+        )
+
+    async def list_chat_connections(self, limit: int = 50) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM chat_connections ORDER BY connected_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
 
     async def get_last_interaction(self, user_id: str) -> float | None:
         """Retourne le timestamp de la dernière interaction d'un utilisateur, ou None."""
