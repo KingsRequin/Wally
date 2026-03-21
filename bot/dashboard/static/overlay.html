@@ -31,27 +31,14 @@
       object-fit: contain;
       image-rendering: auto;
     }
-    .overlay-status {
-      font-family: 'Inter', sans-serif;
-      font-size: 0.9rem;
-      color: white;
-      text-shadow: 0 0 8px rgba(0,0,0,0.8);
-      opacity: 0.7;
-    }
   </style>
 </head>
 <body>
   <div class="overlay-container" id="overlay">
     <img class="overlay-avatar" id="overlay-avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="Wally">
-    <div class="overlay-status" id="overlay-status">neutre</div>
   </div>
 
   <script>
-    const labels = {
-      neutral: 'neutre', joy: 'joyeux', anger: 'en colere',
-      sadness: 'triste', curiosity: 'curieux', boredom: 'ennuye'
-    };
-
     function updateAvatar(emotions) {
       let dominant = 'neutral';
       let maxVal = 0.2;
@@ -78,7 +65,6 @@
       testImg.onerror = () => { img.src = pngUrl; };
       testImg.src = gifUrl;
 
-      document.getElementById('overlay-status').textContent = labels[dominant] || dominant;
     }
 
     // SSE emotions
