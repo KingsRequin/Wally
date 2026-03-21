@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from loguru import logger
 from starlette.types import Scope
 
@@ -21,11 +22,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 class NoCacheStaticFiles(StaticFiles):
-    """StaticFiles avec Cache-Control: no-cache pour éviter le cache CDN (Cloudflare)."""
+    """StaticFiles avec Cache-Control: no-store pour bypasser le cache CDN (Cloudflare)."""
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["CDN-Cache-Control"] = "no-store"
+        response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
         return response
 
 
@@ -94,9 +97,23 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     if STATIC_DIR.exists():
         app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # Cache-bust version: updated at startup, forces CDN to fetch fresh assets
+    _asset_version = str(int(time.time()))
+
     @app.get("/")
     async def root():
-        return FileResponse(str(STATIC_DIR / "index.html"))
+        html = (STATIC_DIR / "index.html").read_text()
+        # Replace static ?v=N with current startup timestamp
+        html = html.replace("style.css?v=4", f"style.css?v={_asset_version}")
+        html = html.replace("app.js?v=4", f"app.js?v={_asset_version}")
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "CDN-Cache-Control": "no-store",
+                "Cloudflare-CDN-Cache-Control": "no-store",
+            },
+        )
 
     return app
 
