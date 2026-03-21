@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel
 
+from bot.core.memory import GLOBAL_USER_ID
+
 router = APIRouter()
 
 
@@ -240,6 +242,61 @@ async def delete_memory(user_id: str, memory_id: str, request: Request):
     return {"deleted": True}
 
 
+# ── Global memory CRUD ────────────────────────────────────────────────────────
+
+@router.get("/memory/global")
+async def list_global_memories(request: Request):
+    """Liste toutes les mémoires globales (connaissances communauté)."""
+    mem0 = _get_mem0(request)
+    results = await asyncio.to_thread(mem0.get_all, user_id=GLOBAL_USER_ID)
+    memories = [
+        {
+            "id": r.get("id"),
+            "memory": r.get("memory", ""),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+        }
+        for r in _unwrap(results)
+        if r.get("memory")
+    ]
+    memories.sort(
+        key=lambda m: m.get("updated_at") or m.get("created_at") or "",
+        reverse=True,
+    )
+    return {"memories": memories}
+
+
+@router.post("/memory/global")
+async def add_global_memory(body: AddMemoryRequest, request: Request):
+    """Ajoute une connaissance globale (communauté)."""
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(400, detail="Contenu requis")
+    state = request.app.state.wally
+    await state.memory.add_global(content)
+    return {"status": "ok"}
+
+
+@router.put("/memory/global/{memory_id}")
+async def update_global_memory(memory_id: str, body: UpdateMemoryRequest, request: Request):
+    """Modifie une mémoire globale."""
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(400, detail="Contenu requis")
+    mem0 = _get_mem0(request)
+    await asyncio.to_thread(mem0.update, memory_id, content)
+    logger.info("Global memory updated: {mid}", mid=memory_id)
+    return {"status": "ok", "memory_id": memory_id}
+
+
+@router.delete("/memory/global/{memory_id}")
+async def delete_global_memory(memory_id: str, request: Request):
+    """Supprime une mémoire globale."""
+    mem0 = _get_mem0(request)
+    await asyncio.to_thread(mem0.delete, memory_id)
+    return {"deleted": True}
+
+
 # ── GET /memory/aliases ───────────────────────────────────────────────────────
 
 @router.get("/memory/aliases")
@@ -438,3 +495,49 @@ async def search_memories(request: Request, q: str | None = None):
 
     all_results.sort(key=lambda x: x["score"], reverse=True)
     return {"results": all_results}
+
+
+# ── POST /memory/scan-web-chat ────────────────────────────────────────────────
+
+@router.post("/memory/scan-web-chat")
+async def scan_web_chat(request: Request):
+    """Scan all web chat messages and extract facts via FactExtractor."""
+    state = request.app.state.wally
+    fe = getattr(state, "fact_extractor", None)
+    if fe is None:
+        raise HTTPException(503, detail="FactExtractor non disponible")
+
+    # Load all non-Wally messages from chat_messages
+    cursor = await state.db._conn.execute(
+        "SELECT sender_id, username, content, created_at "
+        "FROM chat_messages WHERE is_wally = 0 ORDER BY created_at ASC"
+    )
+    rows = await cursor.fetchall()
+
+    if len(rows) < 2:
+        return {"status": "skip", "reason": "Moins de 2 messages humains", "facts_stored": 0}
+
+    # Convert to FactExtractor dict format
+    msg_dicts = [
+        {
+            "user_id": row["sender_id"].split(":", 1)[1] if ":" in row["sender_id"] else row["sender_id"],
+            "display_name": row["username"],
+            "content": row["content"],
+            "timestamp": row["created_at"],
+        }
+        for row in rows
+    ]
+
+    # Process in batches of 50 to avoid oversized LLM calls
+    total_stored = 0
+    batch_size = 50
+    for i in range(0, len(msg_dicts), batch_size):
+        batch = msg_dicts[i : i + batch_size]
+        try:
+            stored = await fe._extract_facts(batch, "discord", "web:chat")
+            total_stored += stored
+        except Exception as exc:
+            logger.warning("scan-web-chat batch {i} failed: {e}", i=i, e=exc)
+
+    logger.info("scan-web-chat complete: {n} facts from {m} messages", n=total_stored, m=len(msg_dicts))
+    return {"status": "ok", "messages_scanned": len(msg_dicts), "facts_stored": total_stored}
