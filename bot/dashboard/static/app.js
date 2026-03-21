@@ -663,15 +663,21 @@ async function renderConfigForm(cfg) {
       <button class="btn btn-success" onclick="saveOpenAI()">💾 SAUVEGARDER</button>
     </div>
 
-    <!-- Émotions — lambdas -->
+    <!-- Émotions — lambdas (boredom exclu : monte avec l'inactivité, pas de decay) -->
     <div class="card config-section">
       <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-      ${Object.entries(cfg.emotions).map(([name, ec]) => `
-        <div class="field-group">
-          <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}">${name.toUpperCase()} λ</label>
-          <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${ec.decay_lambda}">
-        </div>
-      `).join('')}
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+      ${Object.entries(cfg.emotions).filter(([name]) => name !== 'boredom').map(([name, ec]) => {
+        const lam = ec.decay_lambda;
+        const timeToZero = lam > 0 ? Math.round((Math.log(1/0.01)) / lam) : Infinity;
+        const timeLabel = timeToZero === Infinity ? '∞' : timeToZero < 60 ? timeToZero + ' min' : Math.round(timeToZero / 60 * 10) / 10 + ' h';
+        return `
+        <div class="field-group" style="display:flex;align-items:center;gap:12px">
+          <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}; min-width:100px">${name.toUpperCase()} λ</label>
+          <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this, '${name}')">
+          <span id="decay-time-${name}" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
+        </div>`;
+      }).join('')}
       <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
     </div>
 
@@ -782,9 +788,18 @@ async function saveOpenAI() {
   if (r && r.ok) toast('Config OpenAI sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
 }
 
+function updateDecayTime(input, name) {
+  const lam = parseFloat(input.value) || 0;
+  const timeToZero = lam > 0 ? Math.round((Math.log(1/0.01)) / lam) : Infinity;
+  const timeLabel = timeToZero === Infinity ? '∞' : timeToZero < 60 ? timeToZero + ' min' : Math.round(timeToZero / 60 * 10) / 10 + ' h';
+  const span = document.getElementById(`decay-time-${name}`);
+  if (span) span.innerHTML = `100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong>`;
+}
+
 async function saveEmotionLambdas() {
   const emotions = {};
   for (const e of EMOTIONS) {
+    if (e === 'boredom') continue;
     const el = document.getElementById(`cfg-lambda-${e}`);
     if (el) emotions[e] = { decay_lambda: parseFloat(el.value) };
   }
