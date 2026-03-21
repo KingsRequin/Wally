@@ -2061,6 +2061,17 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
   word-break: break-word;
 }
 
+.chat-msg.system {
+  justify-content: center;
+}
+.chat-msg-system {
+  font-size: 0.8rem;
+  color: var(--accent);
+  opacity: 0.85;
+  text-align: center;
+  padding: 4px 12px;
+}
+
 /* ── Typing, input, etc. ─────────────────────────────── */
 
 .chat-typing {

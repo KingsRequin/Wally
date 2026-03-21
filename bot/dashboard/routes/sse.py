@@ -68,10 +68,14 @@ async def sse_emotions(request: Request):
 
     async def generate():
         try:
+            tick = 0
             while True:
                 data = json.dumps(state.emotion.get_state())
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(5)
+                tick += 1
+                if tick % 3 == 0:  # keepalive toutes les 15s
+                    yield ": keepalive\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             pass
 

@@ -112,6 +112,11 @@ async def ws_chat(ws: WebSocket):
             if not content or len(content) > 2000:
                 continue
 
+            # ── Admin commands (/scan) ──
+            if content.lower() == "/scan":
+                asyncio.create_task(_handle_scan(state, ws, user))
+                continue
+
             # Cooldown check
             now = time.time()
             cooldown = state.config.web_chat.cooldown_seconds
@@ -167,6 +172,13 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
             discord_raw_id = sender_id.split(":")[1]
             trust = await state.db.get_trust_score("discord", discord_raw_id)
             state.memory.append_message("web:chat", username, content, platform="discord")
+            # Enregistrement dans le FactExtractor (même pattern que Discord)
+            fe = getattr(state, "fact_extractor", None)
+            if fe is not None:
+                fe.record_message(
+                    "web:chat", "discord", discord_raw_id,
+                    username, content,
+                )
             mem_context = await state.memory.search("discord", discord_raw_id, content)
 
             context_messages = await state.memory.get_context_summarized_if_needed("web:chat")
@@ -297,6 +309,76 @@ async def my_memories(request: Request):
     except Exception as exc:
         logger.warning("my-memories failed for {u}: {e}", u=discord_id, e=exc)
         return {"memories": []}
+
+
+async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser) -> None:
+    """Handle /scan command — admin only. Scans web chat history for facts."""
+    # Admin check: same dashboard_token used by /api/admin/* routes
+    admin_token = state.config.bot.dashboard_token
+    if not admin_token:
+        await _send_to(ws, {"type": "system", "content": "❌ dashboard_token non configuré."})
+        return
+
+    # Check if user is admin via Discord guild permissions
+    is_admin = False
+    if state.discord_bot is not None:
+        for guild in state.discord_bot.guilds:
+            member = guild.get_member(int(user.discord_id))
+            if member and member.guild_permissions.administrator:
+                is_admin = True
+                break
+
+    if not is_admin:
+        await _send_to(ws, {"type": "system", "content": "❌ Réservé aux administrateurs."})
+        return
+
+    fe = getattr(state, "fact_extractor", None)
+    if fe is None:
+        await _send_to(ws, {"type": "system", "content": "❌ FactExtractor non disponible."})
+        return
+
+    await _send_to(ws, {"type": "system", "content": "🔍 Scan des messages web en cours…"})
+
+    try:
+        cursor = await state.db._conn.execute(
+            "SELECT sender_id, username, content, created_at "
+            "FROM chat_messages WHERE is_wally = 0 ORDER BY created_at ASC"
+        )
+        rows = await cursor.fetchall()
+
+        if len(rows) < 2:
+            await _send_to(ws, {"type": "system", "content": "⚠️ Pas assez de messages à analyser."})
+            return
+
+        msg_dicts = [
+            {
+                "user_id": row["sender_id"].split(":", 1)[1] if ":" in row["sender_id"] else row["sender_id"],
+                "display_name": row["username"],
+                "content": row["content"],
+                "timestamp": row["created_at"],
+            }
+            for row in rows
+        ]
+
+        total_stored = 0
+        batch_size = 50
+        for i in range(0, len(msg_dicts), batch_size):
+            batch = msg_dicts[i : i + batch_size]
+            try:
+                stored = await fe._extract_facts(batch, "discord", "web:chat")
+                total_stored += stored
+            except Exception as exc:
+                logger.warning("scan-web-chat batch {i} failed: {e}", i=i, e=exc)
+
+        await _send_to(ws, {
+            "type": "system",
+            "content": f"✅ Scan terminé : {total_stored} faits extraits de {len(msg_dicts)} messages.",
+        })
+        logger.info("/scan web-chat: {n} facts from {m} messages", n=total_stored, m=len(msg_dicts))
+
+    except Exception as exc:
+        logger.error("/scan web-chat failed: {e}", e=exc)
+        await _send_to(ws, {"type": "system", "content": f"❌ Erreur: {exc}"})
 
 
 async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.0) -> None:
