@@ -29,4 +29,7 @@ async def get_status(request: Request) -> dict:
         "discord_online": discord_online,
         "twitch_online": twitch_online,
         "total_messages": state.message_count,
+        "messages_discord": state.message_count_discord,
+        "messages_twitch": state.message_count_twitch,
+        "messages_web": state.message_count_web,
     }

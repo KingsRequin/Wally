@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
     from bot.core.prompts import PromptBuilder
     from bot.core.fact_extractor import FactExtractor
+    from bot.core.notifications import NotificationService
 
 
 @dataclass
@@ -34,5 +35,10 @@ class AppState:
     twitch_bot: Optional["WallyTwitch"]
     prompts: Optional["PromptBuilder"] = None
     fact_extractor: Optional["FactExtractor"] = None
+    notifications: Optional["NotificationService"] = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
+    message_count_discord: int = 0
+    message_count_twitch: int = 0
+    message_count_web: int = 0
+    overlay_visible: bool = True

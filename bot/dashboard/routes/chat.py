@@ -85,6 +85,10 @@ async def ws_chat(ws: WebSocket):
     user = ConnectedUser(ws=ws, discord_id=discord_id, username=username, avatar_url=avatar_url)
     _clients[ws] = user
 
+    # Track connection
+    conn_id = await state.db.insert_chat_connection(discord_id, username, avatar_url)
+    msg_count_session = 0
+
     logger.info("WebChat connected: {u} ({id})", u=username, id=discord_id)
 
     heartbeat_task = None
@@ -129,6 +133,11 @@ async def ws_chat(ws: WebSocket):
                 continue
             user.last_message = now
 
+            # Dashboard message counter
+            state.message_count += 1
+            state.message_count_web += 1
+            msg_count_session += 1
+
             # Persist + broadcast user message
             msg_id = await state.db.insert_chat_message(
                 sender_id, username, avatar_url, content, False, now,
@@ -152,6 +161,10 @@ async def ws_chat(ws: WebSocket):
         _clients.pop(ws, None)
         if heartbeat_task:
             heartbeat_task.cancel()
+        try:
+            await state.db.update_chat_disconnection(conn_id, msg_count_session)
+        except Exception:
+            pass
         logger.info("WebChat disconnected: {u}", u=username)
 
 

@@ -32,6 +32,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Dashboard message counter (tous les messages, pas seulement les triggers)
     if getattr(bot, "dashboard_state", None) is not None:
         bot.dashboard_state.message_count += 1
+        bot.dashboard_state.message_count_twitch += 1
 
     content: str = payload.message.text
     content_lower = content.lower()
