@@ -146,6 +146,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
 
+        # Inject pending memory question directive
+        try:
+            question_directive = await bot.memory.get_pending_question_directive(platform, user_id)
+            if question_directive:
+                mem_context = (mem_context + question_directive) if mem_context else question_directive.strip()
+        except Exception:
+            pass
+
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         situation = {

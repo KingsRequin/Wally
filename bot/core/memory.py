@@ -322,6 +322,26 @@ class MemoryService:
         except Exception as exc:
             logger.warning("Memory evaluate failed: {e}", e=exc)
 
+    async def get_pending_question_directive(self, platform: str, user_id: str) -> str:
+        """Return a prompt directive for the most important pending question, or ''."""
+        if self._db is None:
+            return ""
+        try:
+            uid = self._user_id(platform, user_id)
+            q = await self._db.get_pending_question(uid)
+            if not q:
+                return ""
+            await self._db.increment_question_attempts(q["id"])
+            return (
+                f"\n--- Question en attente ---\n"
+                f"Si l'occasion se présente naturellement dans la conversation, "
+                f"essaie de savoir : {q['question']}\n"
+                f"Ne force pas — si le sujet ne vient pas, laisse tomber."
+            )
+        except Exception as exc:
+            logger.warning("get_pending_question_directive failed: {e}", e=exc)
+            return ""
+
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
         """Delete all long-term memories for a given user (e.g. orphan cleanup)."""
         self._init_mem0()

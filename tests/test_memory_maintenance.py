@@ -200,3 +200,39 @@ async def test_evaluate_memory_handles_invalid_json(tmp_path):
     # Should not raise
     await svc._evaluate_memory("discord:123", "some memory")
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_pending_question_directive_returns_directive(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    await db.insert_memory_question("discord:123", "mem", "Quel mois ?", "high")
+    directive = await svc.get_pending_question_directive("discord", "123")
+    assert "Quel mois ?" in directive
+    assert "Si l'occasion se présente" in directive
+
+    # Check attempts was incremented
+    q = await db.get_pending_question("discord:123")
+    assert q["attempts"] == 1
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_pending_question_directive_empty_when_none(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc = MemoryService(make_config())
+    svc.set_db(db)
+
+    directive = await svc.get_pending_question_directive("discord", "999")
+    assert directive == ""
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_pending_question_directive_no_db(tmp_path):
+    svc = MemoryService(make_config())
+    # No db set
+    directive = await svc.get_pending_question_directive("discord", "123")
+    assert directive == ""

@@ -39,10 +39,16 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.emotion.process_message = AsyncMock(return_value=None)
 
     bot.memory.search = AsyncMock(return_value="")
+    bot.memory.search_global = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
     bot.memory.append_message = MagicMock()
     bot.memory.get_prelude = MagicMock(return_value=[])      # ← nouveau
     bot.memory.append_prelude = MagicMock()                  # ← nouveau
+    bot.memory.get_pending_question_directive = AsyncMock(return_value="")
+
+    bot.db.get_last_interaction = AsyncMock(return_value=None)
+    bot.db.get_recent_jokes = AsyncMock(return_value=[])
+    bot.db.get_opinions = AsyncMock(return_value=[])
 
     bot.language.detect = MagicMock(return_value="fr")
     bot.prompts.build_system_prompt = MagicMock(return_value="system prompt")
