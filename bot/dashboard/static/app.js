@@ -104,6 +104,7 @@ function switchMode(mode, restoreTab = null) {
   showTab(firstTab);
 
   if (mode === 'admin') {
+    renderLogsTab();  // ensure log-stream element exists before SSE starts
     loadConfig();
     startLogSSE();
   } else {
@@ -139,14 +140,10 @@ function showTab(tabId) {
   if (tabId === 'admin-costs') loadCosts();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
-  if (tabId === 'admin-visitors') loadVisitors();
   pollCostsBadge();
   pollLinksBadge();
   if (tabId === 'admin-logs') {
-    requestAnimationFrame(() => {
-      const el = document.getElementById('log-stream');
-      if (el) el.scrollTop = el.scrollHeight;
-    });
+    renderLogsTab();
   }
 }
 
@@ -623,6 +620,15 @@ async function renderConfigForm(cfg) {
   const TEXT_VERBOSITIES = ['low', 'medium', 'high'];
 
   container.innerHTML = `
+    <!-- Émotions (force + reset) -->
+    <div class="card config-section">
+      <div class="config-section-title">ÉMOTIONS</div>
+      <div id="gauges-admin-inline" role="group" aria-label="Controle des emotions"></div>
+      <div class="mt-4">
+        <button class="btn btn-danger" onclick="resetEmotions()">RESET À NEUTRE (0.5)</button>
+      </div>
+    </div>
+
     <!-- OpenAI -->
     <div class="card config-section">
       <div class="config-section-title">OPENAI</div>
@@ -663,9 +669,7 @@ async function renderConfigForm(cfg) {
       ${Object.entries(cfg.emotions).map(([name, ec]) => `
         <div class="field-group">
           <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}">${name.toUpperCase()} λ</label>
-          <input type="range" id="cfg-lambda-${name}" min="0.01" max="2" step="0.01" value="${ec.decay_lambda}"
-            oninput="document.getElementById('lbl-lambda-${name}').textContent=parseFloat(this.value).toFixed(2)">
-          <span id="lbl-lambda-${name}" style="font-family:var(--font-mono);font-size:0.85rem">${ec.decay_lambda.toFixed(2)}</span>
+          <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${ec.decay_lambda}">
         </div>
       `).join('')}
       <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
@@ -729,6 +733,13 @@ async function renderConfigForm(cfg) {
       </p>
     </div>
   `;
+
+  // Build emotion sliders inline
+  buildGauges('gauges-admin-inline', true);
+  // Update with current values if available
+  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
+    updateEmotionGauges(currentEmotions);
+  }
 
   // Load notification channels into the select
   loadNotificationChannels(cfg);
@@ -947,6 +958,107 @@ function clearLogs() {
   if (el) el.innerHTML = '';
 }
 
+// ── Logs tab with sub-navigation (Flux + Visiteurs) ─────────────────────────
+
+let _logsSubTab = 'flux';
+
+function renderLogsTab() {
+  const el = document.getElementById('tab-admin-logs');
+  if (!el) return;
+
+  // Build structure once
+  if (!el.querySelector('.mem-subnav')) {
+    el.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="flux" onclick="switchLogsSubTab('flux')">Flux</button>
+        <button class="mem-subnav-pill" data-subtab="visitors" onclick="switchLogsSubTab('visitors')">Visiteurs</button>
+      </div>
+      <div class="mem-subnav-content active" id="logs-sub-flux">
+        <div class="log-controls">
+          <button class="btn active" id="log-filter-ALL" onclick="setLogFilter('ALL')">TOUS</button>
+          <button class="btn" id="log-filter-INFO" onclick="setLogFilter('INFO')">INFO</button>
+          <button class="btn" id="log-filter-WARNING" onclick="setLogFilter('WARNING')">WARNING</button>
+          <button class="btn" id="log-filter-ERROR" onclick="setLogFilter('ERROR')">ERROR</button>
+          <button class="btn" onclick="clearLogs()" aria-label="Vider les logs">VIDER</button>
+        </div>
+        <div class="log-stream" id="log-stream" role="log" aria-live="polite" aria-label="Flux de logs"></div>
+      </div>
+      <div class="mem-subnav-content" id="logs-sub-visitors"></div>
+    `;
+  }
+
+  switchLogsSubTab(_logsSubTab);
+}
+
+function switchLogsSubTab(subtab) {
+  _logsSubTab = subtab;
+  const el = document.getElementById('tab-admin-logs');
+  if (!el) return;
+
+  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+
+  const panel = document.getElementById('logs-sub-' + subtab);
+  if (panel) panel.classList.add('active');
+
+  if (subtab === 'flux') {
+    requestAnimationFrame(function() {
+      var logEl = document.getElementById('log-stream');
+      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    });
+  } else if (subtab === 'visitors') {
+    loadVisitorsInPanel();
+  }
+}
+
+async function loadVisitorsInPanel() {
+  const el = document.getElementById('logs-sub-visitors');
+  if (!el) return;
+
+  const r = await apiFetch('/api/admin/chat-connections?limit=100');
+  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
+  const data = await r.json();
+  const conns = data.connections || [];
+
+  if (conns.length === 0) {
+    el.innerHTML = '<div class="card"><p style="color:rgba(255,255,255,0.45)">Aucune connexion enregistrée</p></div>';
+    return;
+  }
+
+  let rows = '';
+  for (const c of conns) {
+    const connTime = new Date(c.connected_at * 1000);
+    const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const duration = c.disconnected_at
+      ? formatDuration(c.disconnected_at - c.connected_at)
+      : '<span style="color:#00E5A0">en ligne</span>';
+    const avatarHtml = c.avatar_url
+      ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
+      : '<div class="visitor-avatar-placeholder"></div>';
+    rows += `
+      <div class="visitor-row">
+        ${avatarHtml}
+        <div class="visitor-info">
+          <strong>${escHtml(c.username)}</strong>
+          <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
+        </div>
+        <div class="visitor-meta">
+          <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
+          <span class="visitor-duration">${duration}</span>
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
+      <div class="visitor-list">${rows}</div>
+    </div>`;
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 // ── Naker blur behind cards ──────────────────────────────────────────────────
@@ -985,7 +1097,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   setTimeout(initNakerBlur, 1000);
 
   buildGauges('gauges-public', false);
-  buildGauges('gauges-admin',  true);
 
   await loadStatus();
   startEmotionSSE();
