@@ -1791,6 +1791,7 @@ async function submitEditGlobalMemory(memoryId) {
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
     toast(err.detail || 'Erreur', 'error');
+    await loadGlobalMemories();
   }
 }
 

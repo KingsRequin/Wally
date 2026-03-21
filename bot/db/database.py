@@ -611,7 +611,10 @@ class Database:
             # Ne pas recréer les alias déjà liés (sinon ils réapparaissent en double)
             alias_map = await self.get_alias_map()
             alias_ids = set(alias_map.keys())
+            from bot.core.memory import GLOBAL_USER_ID
             for uid in user_ids:
+                if uid == GLOBAL_USER_ID:
+                    continue  # namespace global — pas un vrai utilisateur
                 if uid in alias_ids:
                     continue  # alias lié — ne pas recréer dans memory_users
                 if uid in before:
@@ -799,12 +802,17 @@ class Database:
     async def upsert_link_proposal(
         self, canonical_id: str, alias_id: str, confidence: float
     ) -> None:
-        """Insère ou met à jour une proposition de liaison (status=pending, update confidence)."""
+        """Insère ou met à jour une proposition de liaison (status=pending, update confidence).
+
+        Ne touche pas aux liens déjà acceptés ou rejetés — seules les propositions
+        pending voient leur confidence mise à jour.
+        """
         async with self._conn.execute(
             """INSERT INTO user_links (canonical_id, alias_id, confidence, status, created_at)
                VALUES (?, ?, ?, 'pending', ?)
                ON CONFLICT(canonical_id, alias_id)
-               DO UPDATE SET confidence=excluded.confidence, status='pending', created_at=excluded.created_at""",
+               DO UPDATE SET confidence=excluded.confidence, created_at=excluded.created_at
+               WHERE user_links.status = 'pending'""",
             (canonical_id, alias_id, confidence, time.time()),
         ):
             pass
