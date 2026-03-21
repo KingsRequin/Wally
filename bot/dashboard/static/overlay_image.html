@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Wally Image Overlay</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  #image-container { display: none; max-width: 90vw; max-height: 90vh; }
+  #image-container img { max-width: 100%; max-height: 90vh; object-fit: contain; border: 3px solid #ffffff; box-shadow: 4px 4px 0px #ffffff; }
+</style>
+</head>
+<body>
+<div id="image-container">
+  <img id="overlay-img" src="" alt="">
+</div>
+<script>
+(function() {
+  const container = document.getElementById('image-container');
+  const img = document.getElementById('overlay-img');
+  let hideTimeout = null;
+
+  const sse = new EventSource('/api/public/sse/overlay-image');
+
+  sse.addEventListener('show_image', function(e) {
+    const data = JSON.parse(e.data);
+    const animIn = data.animation_in || 'fadeIn';
+    const animOut = data.animation_out || 'fadeOut';
+    const duration = (data.display_duration || 15) * 1000;
+    const animDuration = (data.animation_duration || 1) + 's';
+
+    if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+
+    img.src = data.image_url;
+    container.style.display = 'block';
+    container.style.setProperty('--animate-duration', animDuration);
+    container.className = 'animate__animated animate__' + animIn;
+
+    hideTimeout = setTimeout(function() {
+      container.className = 'animate__animated animate__' + animOut;
+      container.addEventListener('animationend', function handler() {
+        container.style.display = 'none';
+        container.className = '';
+        img.src = '';
+        container.removeEventListener('animationend', handler);
+      });
+    }, duration);
+  });
+
+  sse.onerror = function() {
+    setTimeout(function() { location.reload(); }, 5000);
+  };
+})();
+</script>
+</body>
+</html>
