@@ -78,6 +78,7 @@ class PromptBuilder:
         self,
         emotion_state: dict[str, float],
         memory_context: str = "",
+        global_memory_context: str = "",
         situation: dict | None = None,
         persona_block: str = "",
         emotion_directives: dict[str, str] | None = None,
@@ -144,6 +145,12 @@ class PromptBuilder:
         if memory_context:
             parts.append(
                 f"\n--- Ce que tu sais de cet utilisateur ---\n{memory_context}"
+            )
+
+        # Global community memory
+        if global_memory_context:
+            parts.append(
+                f"\n--- Connaissances générales (communauté) ---\n{global_memory_context}"
             )
 
         return "\n".join(parts)
