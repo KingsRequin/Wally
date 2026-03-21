@@ -61,6 +61,7 @@ class WallyDiscord(commands.Bot):
         from bot.discord.commands.journal_cmd import JournalCog
         from bot.discord.commands.scan_cmd import ScanCog
         from bot.discord.commands.test_cmd import TestCog
+        from bot.discord.commands.imagine import ImagineCog
 
         await self.add_cog(AskCog(self))
         await self.add_cog(StatusCog(self))
@@ -71,6 +72,7 @@ class WallyDiscord(commands.Bot):
         await self.add_cog(JournalCog(self))
         await self.add_cog(ScanCog(self))
         await self.add_cog(TestCog(self))
+        await self.add_cog(ImagineCog(self))
         await self.tree.sync()
         logger.info("Discord slash commands synced")
 
