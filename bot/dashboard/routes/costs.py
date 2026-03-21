@@ -52,12 +52,22 @@ async def costs_summary(request: Request) -> dict:
     prev_total = prev["total"]
     pct_change = round((total - prev_total) / prev_total * 100, 2) if prev_total > 0 else 0.0
 
+    # Prévision fin de mois basée sur la moyenne quotidienne
+    now = datetime.now()
+    days_elapsed = now.day
+    days_in_month = (now.replace(month=now.month % 12 + 1, day=1) - timedelta(days=1)).day if now.month < 12 else 31
+    daily_avg = total / days_elapsed if days_elapsed > 0 else 0.0
+    forecast = round(daily_avg * days_in_month, 4)
+
     return {
         "total": total,
         "avg_per_msg": avg,
         "msg_count": count,
         "prev_total": prev_total,
         "pct_change": pct_change,
+        "forecast": forecast,
+        "days_elapsed": days_elapsed,
+        "days_in_month": days_in_month,
     }
 
 

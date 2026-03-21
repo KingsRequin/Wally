@@ -135,6 +135,8 @@ function showTab(tabId) {
   if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'global-memory') renderGlobalMemoryTab();
   if (tabId === 'admin-costs') loadCosts();
+  if (tabId === 'admin-memory-dash') loadMemoryDashboard();
+  if (tabId === 'admin-visitors') loadVisitors();
   pollCostsBadge();
   pollLinksBadge();
   if (tabId === 'admin-logs') {
@@ -244,6 +246,16 @@ async function loadStatus() {
   setDot('dot-discord', d.discord_online);
   setDot('dot-twitch',  d.twitch_online);
   document.getElementById('stat-messages').textContent = d.total_messages.toLocaleString();
+
+  // Per-platform breakdown
+  const breakdownEl = document.getElementById('stat-messages-breakdown');
+  if (breakdownEl) {
+    const parts = [];
+    if (d.messages_discord) parts.push(`Discord ${d.messages_discord}`);
+    if (d.messages_twitch) parts.push(`Twitch ${d.messages_twitch}`);
+    if (d.messages_web) parts.push(`Web ${d.messages_web}`);
+    breakdownEl.textContent = parts.length ? parts.join(' · ') : '';
+  }
 }
 
 // ── Emotions SSE ──────────────────────────────────────────────────────────────
@@ -679,6 +691,13 @@ async function renderConfigForm(cfg) {
         <label class="field-label" for="cfg-cost-threshold">Seuil d'alerte coûts ($)</label>
         <input type="number" id="cfg-cost-threshold" min="1" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold || 25}">
       </div>
+      <div class="field-group">
+        <label class="field-label">Notifications Discord</label>
+        <select id="cfg-notif-channel" style="width:100%">
+          <option value="">Désactivé</option>
+        </select>
+        <p style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
+      </div>
       <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
     </div>
 
@@ -707,6 +726,32 @@ async function renderConfigForm(cfg) {
       </p>
     </div>
   `;
+
+  // Load notification channels into the select
+  loadNotificationChannels(cfg);
+}
+
+async function loadNotificationChannels(cfg) {
+  const select = document.getElementById('cfg-notif-channel');
+  if (!select) return;
+  try {
+    const r = await apiFetch('/api/admin/notification-channels');
+    if (!r || !r.ok) return;
+    const data = await r.json();
+    const currentChannelId = cfg.bot.notification_channel_id;
+    for (const guild of (data.guilds || [])) {
+      const group = document.createElement('optgroup');
+      group.label = guild.name;
+      for (const ch of guild.channels) {
+        const opt = document.createElement('option');
+        opt.value = String(ch.id);
+        opt.textContent = '#' + ch.name;
+        if (currentChannelId && String(ch.id) === String(currentChannelId)) opt.selected = true;
+        group.appendChild(opt);
+      }
+      select.appendChild(group);
+    }
+  } catch (e) { /* silently fail */ }
 }
 
 async function saveOpenAI() {
@@ -744,6 +789,7 @@ async function saveBotGeneral() {
       context_window_size: parseInt(document.getElementById('cfg-ctx-size').value),
       trigger_names:    triggers,
       cost_alert_threshold: parseFloat(document.getElementById('cfg-cost-threshold').value),
+      notification_channel_id: document.getElementById('cfg-notif-channel').value || null,
     }}),
   });
   if (r && r.ok) toast('Config bot sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
@@ -946,6 +992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   requestAnimationFrame(() => setGraphRange('1h'));
   pollCostsBadge();
   pollLinksBadge();
+  pollOverlayStatus();
 
   // ── Tooltip hover — emotion graph ─────────────────────────────────────
   const emotionCanvas = document.getElementById('emotionCanvas');
@@ -1974,6 +2021,16 @@ async function loadCosts() {
 
   document.getElementById('cost-avg-msg').textContent = `$${summary.avg_per_msg.toFixed(4)}`;
 
+  // Forecast KPI
+  const forecastEl = document.getElementById('cost-forecast');
+  if (forecastEl && summary.forecast !== undefined) {
+    forecastEl.textContent = `$${summary.forecast.toFixed(2)}`;
+    const forecastColor = summary.forecast > alert.threshold ? '#FF4D4D' : '#00E5A0';
+    forecastEl.style.color = forecastColor;
+    const detailEl = document.getElementById('cost-forecast-detail');
+    if (detailEl) detailEl.textContent = `J${summary.days_elapsed}/${summary.days_in_month} — moy. $${(summary.total / summary.days_elapsed).toFixed(2)}/j`;
+  }
+
   // Threshold KPI
   const threshEl = document.getElementById('cost-threshold');
   threshEl.textContent = `$${alert.threshold.toFixed(2)}`;
@@ -2729,6 +2786,181 @@ function chatUpdateAvatar() {
   if (statusEl) {
     const labels = { neutral: 'neutre', joy: 'joyeux', anger: 'en colère', sadness: 'triste', curiosity: 'curieux', boredom: 'ennuyé' };
     statusEl.textContent = labels[dominant] || dominant;
+  }
+}
+
+// ── Overlay toggle ──────────────────────────────────────────────────────────
+
+async function toggleOverlay() {
+  const r = await apiFetch('/api/admin/overlay/toggle', { method: 'POST' });
+  if (r && r.ok) {
+    const data = await r.json();
+    updateOverlayDot(data.visible);
+    toast(data.visible ? 'Overlay visible' : 'Overlay masqué');
+  }
+}
+
+function updateOverlayDot(visible) {
+  const dot = document.getElementById('overlay-status-dot');
+  if (dot) dot.style.background = visible ? '#00E5A0' : '#FF4D4D';
+}
+
+async function pollOverlayStatus() {
+  try {
+    const r = await apiFetch('/api/admin/overlay/status');
+    if (r && r.ok) {
+      const data = await r.json();
+      updateOverlayDot(data.visible);
+    }
+  } catch {}
+}
+
+// ── Visitors ────────────────────────────────────────────────────────────────
+
+async function loadVisitors() {
+  const el = document.getElementById('tab-admin-visitors');
+  if (!el) return;
+
+  const r = await apiFetch('/api/admin/chat-connections?limit=100');
+  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
+  const data = await r.json();
+  const conns = data.connections || [];
+
+  if (conns.length === 0) {
+    el.innerHTML = '<div class="card"><p style="color:rgba(255,255,255,0.45)">Aucune connexion enregistrée</p></div>';
+    return;
+  }
+
+  // All user-provided fields escaped via escHtml()
+  let rows = '';
+  for (const c of conns) {
+    const connTime = new Date(c.connected_at * 1000);
+    const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const duration = c.disconnected_at
+      ? formatDuration(c.disconnected_at - c.connected_at)
+      : '<span style="color:#00E5A0">en ligne</span>';
+    const avatarHtml = c.avatar_url
+      ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
+      : '<div class="visitor-avatar-placeholder"></div>';
+    rows += `
+      <div class="visitor-row">
+        ${avatarHtml}
+        <div class="visitor-info">
+          <strong>${escHtml(c.username)}</strong>
+          <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
+        </div>
+        <div class="visitor-meta">
+          <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
+          <span class="visitor-duration">${duration}</span>
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
+      <div class="visitor-list">${rows}</div>
+    </div>`;
+}
+
+function formatDuration(seconds) {
+  const s = Math.floor(seconds);
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'min';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h + 'h' + (m > 0 ? m + 'min' : '');
+}
+
+// ── Memory Dashboard ────────────────────────────────────────────────────────
+
+async function loadMemoryDashboard() {
+  const el = document.getElementById('tab-admin-memory-dash');
+  if (!el) return;
+
+  const r = await apiFetch('/api/admin/memory/dashboard');
+  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
+  const data = await r.json();
+
+  const qs = data.question_stats || {};
+  const pending = data.pending_questions || [];
+  const userCounts = data.user_memory_counts || [];
+
+  // All user-provided data is escaped via escHtml() before injection
+  let questionsHtml = '';
+  if (pending.length === 0) {
+    questionsHtml = '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune question en attente</p>';
+  } else {
+    questionsHtml = '<div class="mem-dash-questions">';
+    for (const q of pending) {
+      const name = escHtml(q.username || q.user_id);
+      const prioColor = q.priority === 'high' ? '#FF4D4D' : q.priority === 'medium' ? '#FFD700' : '#00E5A0';
+      const qId = parseInt(q.id, 10);
+      questionsHtml += `
+        <div class="mem-dash-q-row">
+          <div class="mem-dash-q-info">
+            <span class="mem-dash-q-prio" style="background:${prioColor}"></span>
+            <strong>${name}</strong>
+            <span style="color:rgba(255,255,255,0.45);margin-left:8px">tentative ${parseInt(q.attempts, 10)}/3</span>
+          </div>
+          <div class="mem-dash-q-memory">${escHtml(q.memory_text)}</div>
+          <div class="mem-dash-q-question">${escHtml(q.question)}</div>
+          <button class="btn btn-sm" onclick="resolveMemQuestion(${qId})">Résoudre</button>
+        </div>`;
+    }
+    questionsHtml += '</div>';
+  }
+
+  let barsHtml = '';
+  if (userCounts.length > 0) {
+    const maxCount = userCounts[0].count || 1;
+    for (const u of userCounts) {
+      const pct = Math.round(u.count / maxCount * 100);
+      const platIcon = u.platform === 'discord' ? '🟣' : u.platform === 'twitch' ? '🟪' : '🌐';
+      barsHtml += `
+        <div class="mem-dash-bar-row">
+          <span class="mem-dash-bar-label">${platIcon} ${escHtml(u.username)}</span>
+          <div class="mem-dash-bar-track"><div class="mem-dash-bar-fill" style="width:${pct}%"></div></div>
+          <span class="mem-dash-bar-count">${parseInt(u.count, 10)}</span>
+        </div>`;
+    }
+  } else {
+    barsHtml = '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune donnée</p>';
+  }
+
+  // KPI values are integers from the backend, safe to inject
+  el.innerHTML = `
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div class="card">
+        <div class="card-title">QUESTIONS EN ATTENTE</div>
+        <div class="card-value" style="color:#FFD700">${parseInt(qs.pending, 10) || 0}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">QUESTIONS RESOLUES</div>
+        <div class="card-value" style="color:#00E5A0">${parseInt(qs.resolved, 10) || 0}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">TOTAL QUESTIONS</div>
+        <div class="card-value">${parseInt(qs.total, 10) || 0}</div>
+      </div>
+    </div>
+    <div class="card mb-6">
+      <div class="card-title">QUESTIONS A POSER</div>
+      ${questionsHtml}
+    </div>
+    <div class="card">
+      <div class="card-title">SOUVENIRS PAR UTILISATEUR (TOP 20)</div>
+      <div class="mem-dash-bars">${barsHtml}</div>
+    </div>
+  `;
+}
+
+async function resolveMemQuestion(id) {
+  const r = await apiFetch(`/api/admin/memory/questions/${parseInt(id, 10)}/resolve`, { method: 'POST' });
+  if (r && r.ok) {
+    toast('Question marquée comme résolue');
+    loadMemoryDashboard();
   }
 }
 

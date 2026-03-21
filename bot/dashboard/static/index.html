@@ -99,6 +99,19 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         <span>Global</span>
       </a>
+      <a class="sidebar-item" id="overlay-toggle-btn" onclick="toggleOverlay()" href="javascript:void(0)" aria-label="Overlay">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        <span>Overlay</span>
+        <span id="overlay-status-dot" class="sidebar-badge" style="width:8px;height:8px;border-radius:50%;background:#00E5A0;min-width:8px;padding:0"></span>
+      </a>
+      <a class="sidebar-item" data-tab="admin-visitors" onclick="showTab('admin-visitors')" href="javascript:void(0)" aria-label="Visiteurs">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        <span>Visiteurs</span>
+      </a>
+      <a class="sidebar-item" data-tab="admin-memory-dash" onclick="showTab('admin-memory-dash')" href="javascript:void(0)" aria-label="Mémoire Dashboard">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+        <span>Memoire</span>
+      </a>
       <a class="sidebar-item" data-tab="admin-costs" onclick="showTab('admin-costs')" href="javascript:void(0)" aria-label="Couts">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         <span>Couts</span>
@@ -151,7 +164,7 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <div class="card relative overflow-hidden border-t-2 border-t-blue-500/30">
           <div class="card-title">MESSAGES TRAITES</div>
           <div class="card-value text-blue-400" id="stat-messages" style="text-shadow:0 0 10px rgba(59,130,246,0.7)" aria-live="polite">—</div>
-          <p class="text-xs text-gray-500 mt-1">Depuis le dernier demarrage</p>
+          <p class="text-xs text-gray-500 mt-1" id="stat-messages-breakdown"></p>
           <div class="absolute bottom-0 right-0 w-1/2 h-12 opacity-50">
             <svg class="w-full h-full stroke-blue-400 fill-none" preserveAspectRatio="none" viewBox="0 0 100 50"><path d="M0,50 Q40,40 70,20 T100,15" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
           </div>
@@ -230,11 +243,16 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
     <!-- ADMIN COSTS TAB -->
     <div class="tab-content" id="tab-admin-costs">
       <!-- KPI Row -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
         <div class="card" id="kpi-month">
           <div class="card-title">MOIS EN COURS</div>
           <div class="card-value" id="cost-month-total">—</div>
           <div id="cost-month-change" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+        </div>
+        <div class="card" id="kpi-forecast">
+          <div class="card-title">PREVISION FIN MOIS</div>
+          <div class="card-value" id="cost-forecast">—</div>
+          <div id="cost-forecast-detail" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
         </div>
         <div class="card" id="kpi-today">
           <div class="card-title">AUJOURD'HUI</div>
@@ -289,6 +307,12 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         </div>
       </div>
     </div>
+
+    <!-- ADMIN VISITORS TAB -->
+    <div class="tab-content" id="tab-admin-visitors"></div>
+
+    <!-- ADMIN MEMORY DASHBOARD TAB -->
+    <div class="tab-content" id="tab-admin-memory-dash"></div>
 
     <!-- JOURNAL DETAIL TAB -->
     <div class="tab-content" id="tab-journal-detail"></div>
