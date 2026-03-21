@@ -132,12 +132,13 @@ function showTab(tabId) {
   if (tabId === 'chat') renderChatTab();
   if (tabId === 'journal-detail') renderJournalDetailTab();
   if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
-  if (tabId !== 'memory' && _linkMode) { _linkMode = false; _linkSelection = []; }
+  if (tabId !== 'memory' && tabId !== 'admin-memoire' && _linkMode) { _linkMode = false; _linkSelection = []; }
   if (tabId === 'global-memory') renderGlobalMemoryTab();
   if (tabId === 'gallery') loadGallery(true);
-  if (tabId === 'admin-overlays') loadOverlayConfig();
+  if (tabId === 'admin-overlay') loadOverlayTab();
   if (tabId === 'admin-costs') loadCosts();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
+  if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-visitors') loadVisitors();
   pollCostsBadge();
   pollLinksBadge();
@@ -2822,6 +2823,8 @@ function updateOverlaySwitch(visible) {
     if (visible) sw.classList.add('on');
     else sw.classList.remove('on');
   }
+  // Also update the tab-based switch if present
+  if (typeof updateOverlaySwitchTab === 'function') updateOverlaySwitchTab(visible);
 }
 
 async function pollOverlayStatus() {
@@ -2981,6 +2984,132 @@ async function resolveMemQuestion(id) {
     toast('Question marquée comme résolue');
     loadMemoryDashboard();
   }
+}
+
+// ── Merged Mémoire Tab (Users + Global + Dashboard) ──────────────────────────
+
+let _memoireSubTab = 'users';
+
+function renderMemoireTab() {
+  const el = document.getElementById('tab-admin-memoire');
+  if (!el) return;
+
+  // Only build structure once
+  if (!el.querySelector('.mem-subnav')) {
+    el.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="users" onclick="switchMemoireSubTab('users')">Utilisateurs</button>
+        <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Globale</button>
+        <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Dashboard</button>
+      </div>
+      <div class="mem-subnav-content active" id="memoire-sub-users"></div>
+      <div class="mem-subnav-content" id="memoire-sub-global"></div>
+      <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
+    `;
+  }
+
+  switchMemoireSubTab(_memoireSubTab);
+}
+
+function switchMemoireSubTab(subtab) {
+  _memoireSubTab = subtab;
+  const el = document.getElementById('tab-admin-memoire');
+  if (!el) return;
+
+  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const panel = document.getElementById('memoire-sub-' + subtab);
+  if (panel) panel.classList.add('active');
+
+  if (subtab === 'users') {
+    // Move memory tab content into the sub-panel
+    const memTab = document.getElementById('tab-memory');
+    if (!document.getElementById('mem-user-list')) renderMemoryTab();
+    if (memTab && panel && memTab.children.length > 0 && panel.children.length === 0) {
+      while (memTab.firstChild) panel.appendChild(memTab.firstChild);
+    }
+  } else if (subtab === 'global') {
+    const gmTab = document.getElementById('tab-global-memory');
+    renderGlobalMemoryTab();
+    if (gmTab && panel && gmTab.children.length > 0 && panel.children.length === 0) {
+      while (gmTab.firstChild) panel.appendChild(gmTab.firstChild);
+    }
+  } else if (subtab === 'dashboard') {
+    const mdTab = document.getElementById('tab-admin-memory-dash');
+    if (panel && panel.children.length === 0) {
+      // Temporarily point loadMemoryDashboard to our sub-panel
+      const origId = mdTab ? mdTab.id : null;
+      if (mdTab) mdTab.id = '_tmp_mem_dash';
+      panel.id = 'tab-admin-memory-dash';
+      loadMemoryDashboard().then(function() {
+        panel.id = 'memoire-sub-dashboard';
+        if (mdTab && origId) mdTab.id = origId;
+      });
+    }
+  }
+}
+
+// ── Merged Overlay Tab (toggle + config) ────────────────────────────────────
+
+function loadOverlayTab() {
+  const container = document.getElementById('overlay-config-container');
+  if (!container) return;
+
+  // Add the toggle at the top if not already present
+  if (!document.getElementById('overlay-tab-toggle')) {
+    const toggleCard = document.createElement('div');
+    toggleCard.className = 'card';
+    toggleCard.id = 'overlay-tab-toggle';
+    toggleCard.style.marginBottom = '20px';
+    toggleCard.innerHTML = `
+      <div class="card-title">OVERLAY ON/OFF</div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <span style="color:rgba(255,255,255,0.55);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
+        <div class="overlay-switch" id="overlay-switch-tab" style="cursor:pointer" onclick="toggleOverlayFromTab()">
+          <div class="overlay-switch-knob"></div>
+        </div>
+        <span id="overlay-status-label" style="font-size:0.78rem;color:rgba(255,255,255,0.45)"></span>
+      </div>
+    `;
+    container.parentElement.insertBefore(toggleCard, container);
+
+    // Sync the switch state
+    pollOverlayStatusForTab();
+  }
+
+  loadOverlayConfig();
+}
+
+async function toggleOverlayFromTab() {
+  const r = await apiFetch('/api/admin/overlay/toggle', { method: 'POST' });
+  if (r && r.ok) {
+    const data = await r.json();
+    updateOverlaySwitch(data.visible);
+    updateOverlaySwitchTab(data.visible);
+    toast(data.visible ? 'Overlay visible' : 'Overlay masqué');
+  }
+}
+
+function updateOverlaySwitchTab(visible) {
+  const sw = document.getElementById('overlay-switch-tab');
+  const lbl = document.getElementById('overlay-status-label');
+  if (sw) {
+    if (visible) sw.classList.add('on');
+    else sw.classList.remove('on');
+  }
+  if (lbl) lbl.textContent = visible ? 'Visible' : 'Masqué';
+}
+
+async function pollOverlayStatusForTab() {
+  try {
+    const r = await apiFetch('/api/admin/overlay/status');
+    if (r && r.ok) {
+      const data = await r.json();
+      updateOverlaySwitchTab(data.visible);
+    }
+  } catch {}
 }
 
 // ── Journal détaillé ────────────────────────────────────────────────────────
@@ -3541,7 +3670,7 @@ async function loadOverlayConfig() {
   dlInput.value = ig.daily_limit; dlInput.style.width = '80px';
   dlRow.appendChild(dlInput);
   const dlHint = document.createElement('span');
-  dlHint.style.color = '#666'; dlHint.textContent = '-1 = illimité';
+  dlHint.style.color = 'rgba(255,255,255,0.35)'; dlHint.style.fontSize = '0.78rem'; dlHint.textContent = '-1 = illimité';
   dlRow.appendChild(dlHint);
   igSection.appendChild(dlRow);
 
@@ -3556,15 +3685,16 @@ async function loadOverlayConfig() {
   puInput.value = ig.per_user_limit; puInput.style.width = '80px';
   puRow.appendChild(puInput);
   const puHint = document.createElement('span');
-  puHint.style.color = '#666'; puHint.textContent = '-1 = illimité';
+  puHint.style.color = 'rgba(255,255,255,0.35)'; puHint.style.fontSize = '0.78rem'; puHint.textContent = '-1 = illimité';
   puRow.appendChild(puHint);
   igSection.appendChild(puRow);
 
   const costEst = document.createElement('div');
   costEst.className = 'form-row';
   costEst.id = 'ig-cost-estimate';
-  costEst.style.color = '#ffdd00';
-  costEst.style.fontWeight = '700';
+  costEst.style.color = 'var(--accent)';
+  costEst.style.fontWeight = '600';
+  costEst.style.fontSize = '0.85rem';
   igSection.appendChild(costEst);
 
   const igSaveBtn = document.createElement('button');
@@ -3837,7 +3967,7 @@ function chatAppendImageGenerating(data) {
   loading.appendChild(msg);
   const promptDiv = document.createElement('div');
   promptDiv.style.fontSize = '0.75rem';
-  promptDiv.style.color = '#666';
+  promptDiv.style.color = 'rgba(255,255,255,0.35)';
   promptDiv.style.marginTop = '4px';
   promptDiv.textContent = data.prompt || '';
   loading.appendChild(promptDiv);
@@ -3919,7 +4049,7 @@ function chatReplaceImageCancelled(data) {
   infoDiv.className = 'embed-info';
   const titleDiv = document.createElement('div');
   titleDiv.className = 'embed-title';
-  titleDiv.style.color = '#ff3333';
+  titleDiv.style.color = 'var(--c-anger)';
   titleDiv.textContent = 'Génération annulée';
   infoDiv.appendChild(titleDiv);
   const reasonDiv = document.createElement('div');
