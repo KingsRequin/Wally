@@ -182,6 +182,19 @@ CREATE TABLE IF NOT EXISTS user_aliases (
     confidence   REAL NOT NULL DEFAULT 0.0,
     created_at   REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS memory_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    memory_text TEXT NOT NULL,
+    question TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_questions_user ON memory_questions(user_id, resolved);
 """
 
 
@@ -516,6 +529,58 @@ class Database:
             "   last_updated=excluded.last_updated,"
             "   username=COALESCE(NULLIF(excluded.username,''), memory_users.username)",
             (user_id, platform, time.time(), username or None),
+        )
+
+    # ── Memory questions ───────────────────────────────────────────────────
+
+    async def insert_memory_question(
+        self, user_id: str, memory_text: str, question: str, priority: str = "medium"
+    ) -> None:
+        await self.execute(
+            "INSERT INTO memory_questions (user_id, memory_text, question, priority, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (user_id, memory_text, question, priority, time.time()),
+        )
+
+    async def get_pending_question(
+        self, user_id: str, max_attempts: int = 3
+    ) -> dict | None:
+        cursor = await self._conn.execute(
+            "SELECT * FROM memory_questions"
+            " WHERE user_id = ? AND resolved = 0 AND attempts < ?"
+            " ORDER BY"
+            "   CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
+            "   created_at ASC"
+            " LIMIT 1",
+            (user_id, max_attempts),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_all_pending_questions(self, user_id: str) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM memory_questions WHERE user_id = ? AND resolved = 0",
+            (user_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def increment_question_attempts(self, question_id: int) -> None:
+        await self.execute(
+            "UPDATE memory_questions SET attempts = attempts + 1 WHERE id = ?",
+            (question_id,),
+        )
+
+    async def resolve_question(self, question_id: int) -> None:
+        await self.execute(
+            "UPDATE memory_questions SET resolved = 1 WHERE id = ?",
+            (question_id,),
+        )
+
+    async def cleanup_old_questions(self, max_age_days: int = 30) -> None:
+        cutoff = time.time() - max_age_days * 86400
+        await self.execute(
+            "DELETE FROM memory_questions WHERE resolved = 1 OR created_at < ?",
+            (cutoff,),
         )
 
     async def get_last_interaction(self, user_id: str) -> float | None:
