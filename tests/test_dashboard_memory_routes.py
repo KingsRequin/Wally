@@ -543,6 +543,22 @@ async def test_list_users_enriches_trust_and_love():
 
 
 @pytest.mark.asyncio
+async def test_get_user_memories_includes_category():
+    state, mock_mem0, db = _make_state()
+    mock_mem0.get_all.return_value = [
+        {"id": "mem1", "memory": "Likes Python", "metadata": {"origin": "discord:123", "category": "PREF"}, "created_at": "2026-03-20", "updated_at": "2026-03-20"},
+        {"id": "mem2", "memory": "Lives in Lyon", "metadata": {"origin": "discord:123"}, "created_at": "2026-03-19", "updated_at": "2026-03-19"},
+    ]
+    db.list_link_proposals = AsyncMock(return_value=[])
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/users/discord:123", headers=HEADERS)
+    assert r.status_code == 200
+    memories = r.json()["memories"]
+    assert memories[0]["category"] == "PREF"
+    assert memories[1]["category"] == ""
+
+
+@pytest.mark.asyncio
 async def test_resolve_alias_rejects_empty_canonical():
     """POST /memory/aliases/{nickname}/resolve returns 400 when canonical_uid is empty."""
     state, _, db = _make_state()

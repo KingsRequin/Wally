@@ -165,6 +165,7 @@ async def get_user_memories(user_id: str, request: Request):
         {
             "id": r.get("id"),
             "memory": r.get("memory", ""),
+            "category": (r.get("metadata") or {}).get("category", ""),
             "source": user_id,
             "source_platform": _extract_origin(r, user_id),
             "created_at": r.get("created_at"),
@@ -188,6 +189,7 @@ async def get_user_memories(user_id: str, request: Request):
                     memories.append({
                         "id": r.get("id"),
                         "memory": r.get("memory", ""),
+                        "category": (r.get("metadata") or {}).get("category", ""),
                         "source": alias_id,
                         "source_platform": _extract_origin(r, alias_id),
                         "created_at": r.get("created_at"),
