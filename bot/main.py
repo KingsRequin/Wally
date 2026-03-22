@@ -115,6 +115,23 @@ async def main() -> None:
     journal = DailyJournal(config, openai_client, emotion, memory, db=db)  # db injecté
     logger.info("DailyJournal initialized")
 
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from bot.core.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService, ActionDefinition
+
+    # Shared scheduler
+    shared_scheduler = AsyncIOScheduler()
+
+    # Action services
+    action_registry = ActionRegistry(db)
+    await action_registry.load_permissions()
+
+    action_executor = ActionExecutor(action_registry)
+
+    action_scheduler = ActionScheduler(db, action_executor, shared_scheduler)
+
+    action_service = ActionService(action_registry, action_scheduler, db)
+    logger.info("ActionService initialized")
+
     from bot.core.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
 
@@ -191,8 +208,7 @@ async def main() -> None:
         return messages
 
     journal.set_history_callback(journal_history_cb)
-    journal.start()
-    logger.info("Discord adapter configured, journal scheduler started")
+    logger.info("Discord adapter configured")
 
     # ── Twitch adapter ────────────────────────────────────────────────────────
     from bot.twitch.bot import WallyTwitch
@@ -236,6 +252,30 @@ async def main() -> None:
             "TWITCH_CLIENT_ID/SECRET) to enable"
         )
 
+    # ── Action service wiring ────────────────────────────────────────────────
+    discord_bot.action_service = action_service
+    if twitch_bot is not None:
+        twitch_bot.action_service = action_service
+
+    # Late injection of bots into executor (twitch_bot may be None)
+    action_executor.set_bots(discord_bot, twitch_bot)
+
+    # Register built-in actions
+    async def _reminder_handler(payload: dict, target: dict) -> str:
+        return payload.get("message", "Rappel!")
+
+    await action_registry.register("reminder", ActionDefinition(
+        name="reminder",
+        description="Envoyer un message de rappel",
+        parameters={"type": "object", "properties": {"message": {"type": "string"}}},
+        handler=_reminder_handler,
+    ))
+
+    journal.start(scheduler=shared_scheduler)
+    await action_scheduler.reload_all()
+    shared_scheduler.start()
+    logger.info("Shared scheduler started (journal + actions)")
+
     # ── Dashboard ─────────────────────────────────────────────────────────────
     from bot.dashboard.app import create_dashboard_app
     from bot.dashboard.state import AppState
@@ -261,6 +301,7 @@ async def main() -> None:
         prompts=prompts,
         fact_extractor=fact_extractor,
         notifications=notification_service,
+        action_service=action_service,
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

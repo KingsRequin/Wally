@@ -303,9 +303,15 @@ class DailyJournal:
                 numbered = "\n".join(
                     f"{i}. {r.get('memory', '')}" for i, r in enumerate(results)
                 )
+                # Include existing pending questions to avoid duplicates
+                pending = await self._db.get_all_pending_questions(uid)
+                pending_block = ""
+                if pending:
+                    plines = [f"- {q['question']}" for q in pending]
+                    pending_block = "\n\nQuestions déjà en attente (ne pas recréer) :\n" + "\n".join(plines)
                 raw = await self._openai.complete_secondary(
                     cleanup_prompt,
-                    [{"role": "user", "content": numbered}],
+                    [{"role": "user", "content": numbered + pending_block}],
                     purpose="memory_cleanup",
                 )
                 actions = json.loads(raw)
@@ -331,11 +337,11 @@ class DailyJournal:
                             )
                             total_updated += 1
 
-                # Create questions
-                for q in actions.get("questions", []):
+                # Create questions (max 1 per user, skip low priority)
+                for q in actions.get("questions", [])[:1]:
                     question = q.get("question", "").strip()
                     priority = q.get("priority", "medium")
-                    if question and priority in ("high", "medium", "low"):
+                    if question and priority in ("high", "medium"):
                         await self._db.insert_memory_question(uid, "", question, priority)
                         total_questions += 1
 
@@ -653,8 +659,13 @@ class DailyJournal:
     def _today() -> str:
         return date.today().strftime("%d/%m/%Y")
 
-    def start(self) -> None:
-        self._scheduler = AsyncIOScheduler()
+    def start(self, scheduler=None) -> None:
+        owns_scheduler = scheduler is None
+        if owns_scheduler:
+            self._scheduler = AsyncIOScheduler()
+        else:
+            self._scheduler = scheduler
+
         raw = self._config.bot.journal_time
         # YAML parse `21:00` sans guillemets en int sexagésimal (1260) — on normalise
         if isinstance(raw, int):
@@ -668,6 +679,8 @@ class DailyJournal:
             "cron",
             hour=hour,
             minute=minute,
+            id="daily_journal",
+            replace_existing=True,
         )
         # Memory cleanup 30 min before journal
         cleanup_dt = datetime(2000, 1, 1, hour, minute) - timedelta(minutes=30)
@@ -676,10 +689,14 @@ class DailyJournal:
             "cron",
             hour=cleanup_dt.hour,
             minute=cleanup_dt.minute,
+            id="memory_cleanup",
+            replace_existing=True,
         )
         logger.info(
             "Memory cleanup scheduler started, fires at {h:02d}:{m:02d}",
             h=cleanup_dt.hour, m=cleanup_dt.minute,
         )
-        self._scheduler.start()
+        # Only start if we own the scheduler (no shared scheduler provided)
+        if owns_scheduler:
+            self._scheduler.start()
         logger.info("Daily journal scheduler started, fires at {t}", t=time_str)
