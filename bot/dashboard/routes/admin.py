@@ -13,7 +13,7 @@ from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES
 
 router = APIRouter()
 
-_OPENAI_INCLUDE = ["gpt-5"]
+_OPENAI_INCLUDE = ["gpt", "chatgpt", "o1", "o3", "o4"]
 _OPENAI_EXCLUDE = ["realtime", "preview", "audio", "vision"]
 
 
@@ -122,6 +122,33 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.discord.channel_whitelist = list(d["channel_whitelist"])  # liste
         if "channel_blacklist" in d:
             cfg.discord.channel_blacklist = list(d["channel_blacklist"])  # liste
+        if "spam_detection" in d:
+            sd = d["spam_detection"]
+            spam = cfg.discord.spam_detection
+            if "enabled" in sd:
+                spam.enabled = bool(sd["enabled"])
+            if "max_messages" in sd:
+                val = int(sd["max_messages"])
+                if not (3 <= val <= 50):
+                    raise HTTPException(400, "max_messages must be 3-50")
+                spam.max_messages = val
+            if "window_seconds" in sd:
+                val = int(sd["window_seconds"])
+                if not (30 <= val <= 600):
+                    raise HTTPException(400, "window_seconds must be 30-600")
+                spam.window_seconds = val
+            if "mute_minutes" in sd:
+                val = int(sd["mute_minutes"])
+                if not (1 <= val <= 60):
+                    raise HTTPException(400, "mute_minutes must be 1-60")
+                spam.mute_minutes = val
+            if "spam_anger_delta" in sd:
+                val = float(sd["spam_anger_delta"])
+                if not (0.01 <= val <= 0.2):
+                    raise HTTPException(400, "spam_anger_delta must be 0.01-0.2")
+                spam.spam_anger_delta = val
+            if "exempt_channels" in sd:
+                spam.exempt_channels = [int(c) for c in sd["exempt_channels"]]
 
     if "twitch" in body:
         d = body["twitch"]
@@ -326,8 +353,11 @@ async def test_overlay_image(request: Request):
         "animation_out": cfg.animation_out,
         "animation_duration": cfg.animation_duration,
     }
-    try:
-        state.overlay_image_queue.put_nowait(payload)
-    except asyncio.QueueFull:
-        raise HTTPException(429, "An image is already being displayed")
+    # Vider la queue pour que le dernier test gagne toujours
+    while not state.overlay_image_queue.empty():
+        try:
+            state.overlay_image_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    state.overlay_image_queue.put_nowait(payload)
     return {"status": "triggered", "image_id": image["id"]}

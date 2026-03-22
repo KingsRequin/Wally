@@ -10,6 +10,7 @@ from bot.dashboard.state import AppState
 from bot.config import (
     BotConfig, OpenAIConfig, DiscordConfig, TwitchConfig,
     EmotionDecayConfig, TwitchEventConfig,
+    ImageGenerationConfig, OverlayImageConfig,
 )
 
 
@@ -52,6 +53,8 @@ def _make_config():
     cfg.twitch_events = {
         "follow": TwitchEventConfig(active=True, message="Hey {username}!"),
     }
+    cfg.image_generation = ImageGenerationConfig()
+    cfg.overlay_image = OverlayImageConfig()
     cfg.save = MagicMock()
     return cfg
 
@@ -248,6 +251,27 @@ async def test_update_config_invalid_lambda(client, app):
         headers=ADMIN_HEADERS,
     )
     assert r.status_code == 400
+
+
+async def test_update_spam_detection_config(client, app):
+    resp = await client.post(
+        "/api/admin/config",
+        json={"discord": {"spam_detection": {
+            "enabled": False,
+            "max_messages": 15,
+            "window_seconds": 60,
+            "mute_minutes": 3,
+            "spam_anger_delta": 0.1,
+            "exempt_channels": [111, 222],
+        }}},
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+    cfg = app.state.wally.config
+    assert cfg.discord.spam_detection.enabled is False
+    assert cfg.discord.spam_detection.max_messages == 15
+    assert cfg.discord.spam_detection.window_seconds == 60
+    assert cfg.discord.spam_detection.exempt_channels == [111, 222]
 
 
 # ── Twitch stream ─────────────────────────────────────────────────────────────
