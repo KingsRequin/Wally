@@ -44,6 +44,16 @@ class OpenAIConfig:
 
 
 @dataclass
+class SpamDetectionConfig:
+    enabled: bool = True
+    max_messages: int = 10
+    window_seconds: int = 120
+    mute_minutes: int = 5
+    spam_anger_delta: float = 0.05
+    exempt_channels: list[int] = field(default_factory=list)
+
+
+@dataclass
 class DiscordConfig:
     anger_trigger_threshold: int
     timeout_minutes: int
@@ -51,6 +61,7 @@ class DiscordConfig:
     channel_whitelist: list[int] = field(default_factory=list)
     channel_blacklist: list[int] = field(default_factory=list)
     emoji_reaction_probability: float = 0.05
+    spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 
 
 @dataclass
@@ -62,6 +73,7 @@ class TwitchConfig:
 @dataclass
 class EmotionDecayConfig:
     decay_lambda: float
+    boredom_rise_per_hour: float | None = None
 
 
 @dataclass
@@ -147,10 +159,12 @@ class Config:
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
+            discord_raw = dict(raw.get("discord", {}))
+            spam_raw = discord_raw.pop("spam_detection", {})
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=OpenAIConfig(**raw["openai"]),
-                discord=DiscordConfig(**raw["discord"]),
+                discord=DiscordConfig(**discord_raw, spam_detection=SpamDetectionConfig(**spam_raw)),
                 twitch=TwitchConfig(**twitch_raw),
                 emotions=emotions,
                 twitch_events=twitch_events,
