@@ -69,6 +69,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.config.bot.prelude_window_size = 5
     bot.config.discord.anger_trigger_threshold = 3
     bot.config.discord.timeout_minutes = 10
+    bot.config.discord.spam_detection.enabled = False
 
     emotion_state = {"anger": 0.0, "joy": 0.8, "sadness": 0.0, "curiosity": 0.5, "boredom": 0.0}
     bot.emotion.get_state = MagicMock(return_value=emotion_state)

@@ -6,6 +6,7 @@ import json
 import random
 import re
 import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 import discord
@@ -92,6 +93,7 @@ def _check_spontaneous_trigger(
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
+_spam_tracker: dict[tuple[str, str], deque] = {}
 
 
 def _fire(coro) -> asyncio.Task:
@@ -133,6 +135,92 @@ def _is_channel_allowed(config, channel_id: int) -> bool:
     return True  # mode "none" ou inconnu : tout autorisé
 
 
+async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
+    """Track message rate and trigger spam mute if threshold exceeded.
+    Returns True if spam was detected and handled (caller should return early).
+    """
+    cfg = bot.config.discord.spam_detection
+    if not cfg.enabled:
+        return False
+    if not message.guild:
+        return False
+    channel_id = message.channel.id
+    if channel_id in cfg.exempt_channels:
+        return False
+
+    user_id = str(message.author.id)
+    key = (user_id, str(channel_id))
+    now = time.time()
+    cutoff = now - cfg.window_seconds
+
+    dq = _spam_tracker.get(key)
+    if dq is None:
+        dq = deque()
+        _spam_tracker[key] = dq
+
+    # Purge old timestamps
+    while dq and dq[0] < cutoff:
+        dq.popleft()
+    # Clean up empty entries before adding new one
+    if not dq:
+        _spam_tracker.pop(key, None)
+    dq.append(now)
+    # Re-register in case we popped above
+    if key not in _spam_tracker:
+        _spam_tracker[key] = dq
+
+    if len(dq) < cfg.max_messages:
+        return False
+
+    # --- Spam detected ---
+    guild_id = str(message.guild.id)
+    username = message.author.display_name
+    anger = bot.emotion.get_state().get("anger", 0.0)
+
+    # Generate LLM warning
+    from bot.core.prompts import load_prompt
+    system = load_prompt("spam_warning_system", "Dis à l'utilisateur de se calmer.")
+    user_msg = (
+        f"L'utilisateur {username} a envoyé {len(dq)} messages "
+        f"en {cfg.window_seconds} secondes."
+    )
+    try:
+        warning = await bot.openai.complete_secondary(
+            system_prompt=system,
+            messages=[{"role": "user", "content": user_msg}],
+            purpose="spam_warning",
+            user_id=user_id,
+        )
+        await message.channel.send(warning)
+    except Exception as e:
+        logger.error("Spam warning LLM failed: {e}", e=e)
+        await message.channel.send(f"{username}, calme-toi un peu. 😤")
+
+    # Mute user
+    await bot.db.add_timeout(user_id, guild_id, cfg.mute_minutes, anger)
+
+    # Store memory fact
+    try:
+        await bot.memory.add(
+            "discord", user_id,
+            f"Wally a coupé {username} pour spam — trop de messages en peu de temps. "
+            f"Il en a eu marre et a arrêté de lui répondre.",
+            username=username,
+        )
+    except Exception as e:
+        logger.warning("Failed to store spam memory: {e}", e=e)
+
+    # Reset tracker for this user/channel
+    dq.clear()
+    _spam_tracker.pop(key, None)
+
+    logger.info(
+        "Spam detected: {user} in channel {ch} — muted {min}min",
+        user=username, ch=channel_id, min=cfg.mute_minutes,
+    )
+    return True
+
+
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
@@ -167,6 +255,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         tracker.record_discord_reply(
             message.reference.message_id, message.content, message.author.bot,
         )
+
+    # Spam detection — track all messages in allowed channels
+    if channel_allowed and message.guild:
+        if await _check_spam(bot, message):
+            return
 
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
@@ -216,6 +309,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if await bot.db.is_muted(user_id, guild_id):
         emoji = random.choice(TIMEOUT_REACTIONS)
         await message.add_reaction(emoji)
+        if bot.config.discord.spam_detection.enabled:
+            bot.emotion.apply_delta("anger", bot.config.discord.spam_detection.spam_anger_delta)
         return
 
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)

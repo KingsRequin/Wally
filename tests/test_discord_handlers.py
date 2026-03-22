@@ -19,6 +19,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.config.discord.anger_trigger_threshold = 3
     bot.config.discord.timeout_minutes = 10
     bot.config.discord.emoji_reaction_probability = 0.05
+    bot.config.discord.spam_detection.enabled = False
 
     bot.db.is_muted = AsyncMock(return_value=muted)
     bot.db.is_welcomed = AsyncMock(return_value=welcomed)
