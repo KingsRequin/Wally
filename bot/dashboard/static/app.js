@@ -38,6 +38,7 @@ let currentMode = 'public';
 let currentTab  = 'status';
 let emotionSSE  = null;
 let logSSE      = null;
+let actionSSE   = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
 let currentGraphSince = null;
@@ -140,7 +141,7 @@ function showTab(tabId) {
   if (tabId === 'admin-costs') loadCosts();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
-  if (tabId === 'admin-actions') renderActionsTab();
+  if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   pollCostsBadge();
   pollLinksBadge();
   if (tabId === 'admin-logs') {
@@ -4313,6 +4314,25 @@ async function toggleFlameEmbed(imageId, btn) {
 
 let _actionsSubTab = 'tasks';
 
+function startActionSSE() {
+  if (actionSSE) actionSSE.close();
+  actionSSE = new EventSource('/api/admin/sse/actions');
+  actionSSE.onmessage = function(e) {
+    try {
+      var evt = JSON.parse(e.data);
+      if (evt.type && evt.task_id) {
+        // Refresh la liste des tâches si on est sur le sub-tab tasks
+        if (_actionsSubTab === 'tasks') loadActionTasks();
+      }
+    } catch (_) {}
+  };
+  actionSSE.onerror = function() {};
+}
+
+function stopActionSSE() {
+  if (actionSSE) { actionSSE.close(); actionSSE = null; }
+}
+
 function renderActionsTab() {
   const el = document.getElementById('tab-admin-actions');
   if (!el) return;
@@ -4494,23 +4514,34 @@ async function actionTaskCancel(id) {
   loadActionTasks();
 }
 
-var DISCORD_ROLES = ['everyone', 'subscriber', 'moderator', 'admin'];
 var TWITCH_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'admin'];
+var _discordGuildRoles = []; // [{id, name, roles: [{id, name, color}]}]
+
+async function loadDiscordRoles() {
+  var r = await apiFetch('/api/actions/discord-roles');
+  if (!r || !r.ok) return;
+  var data = await r.json();
+  _discordGuildRoles = data.guilds || [];
+}
 
 function _buildPermRow(p) {
   var actionType = p.action_type;
   var enabled = p.enabled !== false && p.enabled !== 0;
+  var discordRoles = p.discord_roles || {};
 
-  var tr = document.createElement('tr');
+  var container = document.createElement('div');
+  container.className = 'action-perm-row';
 
-  // Action name
-  var tdName = document.createElement('td');
-  tdName.className = 'action-perm-name';
-  tdName.textContent = actionType;
-  tr.appendChild(tdName);
+  // ── Header: name + enabled + twitch ──
+  var header = document.createElement('div');
+  header.className = 'action-perm-header';
+
+  var nameSpan = document.createElement('span');
+  nameSpan.className = 'action-perm-name';
+  nameSpan.textContent = actionType;
+  header.appendChild(nameSpan);
 
   // Enabled toggle
-  var tdEnabled = document.createElement('td');
   var toggleLabel = document.createElement('label');
   toggleLabel.className = 'action-toggle';
   var checkbox = document.createElement('input');
@@ -4524,26 +4555,15 @@ function _buildPermRow(p) {
   trackSpan.appendChild(thumbSpan);
   toggleLabel.appendChild(checkbox);
   toggleLabel.appendChild(trackSpan);
-  tdEnabled.appendChild(toggleLabel);
-  tr.appendChild(tdEnabled);
+  header.appendChild(toggleLabel);
 
-  // Discord role dropdown
-  var tdDiscord = document.createElement('td');
-  var discordSelect = document.createElement('select');
-  discordSelect.className = 'neo-select action-perm-select';
-  DISCORD_ROLES.forEach(function(role) {
-    var opt = document.createElement('option');
-    opt.value = role;
-    opt.textContent = role;
-    if (p.min_role_discord === role) opt.selected = true;
-    discordSelect.appendChild(opt);
-  });
-  discordSelect.addEventListener('change', function() { updateActionPerm(actionType, 'min_role_discord', this.value); });
-  tdDiscord.appendChild(discordSelect);
-  tr.appendChild(tdDiscord);
-
-  // Twitch role dropdown
-  var tdTwitch = document.createElement('td');
+  // Twitch dropdown
+  var twitchWrap = document.createElement('div');
+  twitchWrap.className = 'action-perm-twitch';
+  var twitchLabel = document.createElement('span');
+  twitchLabel.className = 'action-perm-platform-label';
+  twitchLabel.textContent = 'Twitch';
+  twitchWrap.appendChild(twitchLabel);
   var twitchSelect = document.createElement('select');
   twitchSelect.className = 'neo-select action-perm-select';
   TWITCH_ROLES.forEach(function(role) {
@@ -4554,10 +4574,98 @@ function _buildPermRow(p) {
     twitchSelect.appendChild(opt);
   });
   twitchSelect.addEventListener('change', function() { updateActionPerm(actionType, 'min_role_twitch', this.value); });
-  tdTwitch.appendChild(twitchSelect);
-  tr.appendChild(tdTwitch);
+  twitchWrap.appendChild(twitchSelect);
+  header.appendChild(twitchWrap);
 
-  return tr;
+  container.appendChild(header);
+
+  // ── Discord guilds section ──
+  _discordGuildRoles.forEach(function(guild) {
+    var guildSection = document.createElement('div');
+    guildSection.className = 'action-perm-guild';
+
+    var guildLabel = document.createElement('div');
+    guildLabel.className = 'action-perm-guild-label';
+    guildLabel.textContent = guild.name;
+    guildSection.appendChild(guildLabel);
+
+    var selectedRoles = (discordRoles[guild.id] || []).map(function(r) { return r.role_id; });
+
+    var chipsDiv = document.createElement('div');
+    chipsDiv.className = 'action-role-chips';
+
+    var addSelect = document.createElement('select');
+    addSelect.className = 'neo-select action-perm-add-role';
+
+    function renderChips() {
+      chipsDiv.textContent = '';
+      selectedRoles.forEach(function(rid) {
+        var roleInfo = guild.roles.find(function(r) { return r.id === rid; });
+        if (!roleInfo) return;
+        var chip = document.createElement('span');
+        chip.className = 'action-role-chip';
+        var dot = document.createElement('span');
+        dot.className = 'action-role-dot';
+        dot.style.backgroundColor = roleInfo.color;
+        chip.appendChild(dot);
+        chip.appendChild(document.createTextNode(roleInfo.name));
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'action-role-chip-remove';
+        removeBtn.textContent = '\u00d7';
+        removeBtn.addEventListener('click', function() {
+          selectedRoles = selectedRoles.filter(function(r) { return r !== rid; });
+          saveDiscordPerm(actionType, guild.id, selectedRoles);
+          renderChips();
+          renderDropdown();
+        });
+        chip.appendChild(removeBtn);
+        chipsDiv.appendChild(chip);
+      });
+    }
+
+    function renderDropdown() {
+      addSelect.textContent = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '+ Ajouter un r\u00f4le';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      addSelect.appendChild(placeholder);
+      guild.roles.forEach(function(role) {
+        if (selectedRoles.indexOf(role.id) !== -1) return;
+        var opt = document.createElement('option');
+        opt.value = role.id;
+        opt.textContent = role.name;
+        addSelect.appendChild(opt);
+      });
+    }
+
+    addSelect.addEventListener('change', function() {
+      if (!this.value) return;
+      selectedRoles.push(this.value);
+      saveDiscordPerm(actionType, guild.id, selectedRoles);
+      renderChips();
+      renderDropdown();
+    });
+
+    renderChips();
+    renderDropdown();
+
+    guildSection.appendChild(chipsDiv);
+    guildSection.appendChild(addSelect);
+    container.appendChild(guildSection);
+  });
+
+  return container;
+}
+
+async function saveDiscordPerm(actionType, guildId, roleIds) {
+  var r = await apiFetch('/api/actions/permissions/' + encodeURIComponent(actionType) + '/discord', {
+    method: 'PUT',
+    body: JSON.stringify({ guild_id: guildId, role_ids: roleIds }),
+  });
+  if (!r || !r.ok) { toast('Erreur mise \u00e0 jour permission Discord', 'error'); return; }
+  toast('Permission Discord mise \u00e0 jour', 'success');
 }
 
 async function loadActionPermissions() {
@@ -4569,6 +4677,7 @@ async function loadActionPermissions() {
   loading.textContent = 'Chargement...';
   container.appendChild(loading);
 
+  await loadDiscordRoles();
   var r = await apiFetch('/api/actions/permissions');
   if (!r || !r.ok) {
     loading.textContent = 'Erreur de chargement';
@@ -4582,33 +4691,17 @@ async function loadActionPermissions() {
   if (perms.length === 0) {
     var empty = document.createElement('div');
     empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
-    empty.textContent = 'Aucune permission configurée';
+    empty.textContent = 'Aucune permission configur\u00e9e';
     container.appendChild(empty);
     return;
   }
 
-  var wrap = document.createElement('div');
-  wrap.className = 'action-perms-table-wrap';
-  var table = document.createElement('table');
-  table.className = 'action-perms-table';
-
-  var thead = document.createElement('thead');
-  var headerRow = document.createElement('tr');
-  ['Action', 'Activé', 'Rôle Discord', 'Rôle Twitch'].forEach(function(text) {
-    var th = document.createElement('th');
-    th.textContent = text;
-    headerRow.appendChild(th);
-  });
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-
-  var tbody = document.createElement('tbody');
+  var list = document.createElement('div');
+  list.className = 'action-perms-list';
   perms.forEach(function(p) {
-    tbody.appendChild(_buildPermRow(p));
+    list.appendChild(_buildPermRow(p));
   });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  container.appendChild(wrap);
+  container.appendChild(list);
 }
 
 async function updateActionPerm(actionType, field, value) {
@@ -4618,6 +4711,6 @@ async function updateActionPerm(actionType, field, value) {
     method: 'PUT',
     body: JSON.stringify(body),
   });
-  if (!r || !r.ok) { toast('Erreur mise à jour permission', 'error'); return; }
-  toast('Permission mise à jour', 'success');
+  if (!r || !r.ok) { toast('Erreur mise \u00e0 jour permission', 'error'); return; }
+  toast('Permission mise \u00e0 jour', 'success');
 }

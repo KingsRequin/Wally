@@ -2842,6 +2842,23 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
 .action-perm-name { font-weight: 600; color: #e2e8f0; }
 .action-perm-select { font-size: 0.8rem; padding: 4px 8px; min-width: 120px; }
 
+/* Permission rows — per-guild multi-select layout */
+.action-perms-list { display: flex; flex-direction: column; gap: 12px; }
+.action-perm-row { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 16px; }
+.action-perm-header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.action-perm-header .action-perm-name { min-width: 160px; }
+.action-perm-platform-label { font-size: 0.75rem; color: rgba(255, 255, 255, 0.4); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin-right: 6px; }
+.action-perm-twitch { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.action-perm-guild { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.action-perm-guild-label { font-size: 0.75rem; color: rgba(255, 255, 255, 0.4); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
+.action-role-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 28px; }
+.action-role-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 4px 10px 4px 8px; font-size: 0.8rem; color: rgba(255, 255, 255, 0.8); transition: border-color 0.15s ease; }
+.action-role-chip:hover { border-color: rgba(255, 255, 255, 0.18); }
+.action-role-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.action-role-chip-remove { background: none; border: none; color: rgba(255, 255, 255, 0.35); cursor: pointer; padding: 0 0 0 2px; font-size: 1.1em; line-height: 1; transition: color 0.15s ease; font-family: var(--font); }
+.action-role-chip-remove:hover { color: #ef4444; }
+.action-perm-add-role { max-width: 200px; font-size: 0.8rem; padding: 4px 8px; }
+
 /* Action toggle switch */
 .action-toggle { display: inline-flex; align-items: center; cursor: pointer; }
 .action-toggle input { display: none; }
