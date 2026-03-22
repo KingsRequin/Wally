@@ -33,7 +33,13 @@ CREATE_TOOL = {
                 },
                 "payload": {
                     "type": "object",
-                    "description": "Paramètres de l'action (message, query, prompt...)",
+                    "description": (
+                        "Paramètres spécifiques à l'action. "
+                        "Pour reminder: {\"message\": \"le texte exact du rappel à envoyer\"}. "
+                        "Pour web_search: {\"query\": \"...\"}. "
+                        "Pour image_generate: {\"prompt\": \"...\"}. "
+                        "IMPORTANT: toujours inclure le champ message/query/prompt avec le contenu demandé par l'utilisateur."
+                    ),
                 },
                 "schedule": {
                     "type": "object",
@@ -108,9 +114,10 @@ class ActionService:
     async def execute_tool(
         self, name: str, args: dict, user_id: str, platform: str,
         user_roles: list[str], channel_id: str | None = None,
+        guild_id: str | None = None,
     ) -> dict:
         if name == "create_action_task":
-            return await self.create(args, user_id, platform, user_roles, channel_id)
+            return await self.create(args, user_id, platform, user_roles, channel_id, guild_id=guild_id)
         elif name == "cancel_action_task":
             return await self.cancel(
                 task_id=args.get("task_id"),
@@ -129,11 +136,12 @@ class ActionService:
     async def create(
         self, task_data: dict, user_id: str, platform: str,
         user_roles: list[str], channel_id: str | None = None,
+        guild_id: str | None = None,
     ) -> dict:
         action_type = task_data.get("action_type", "")
 
-        # Permission check
-        if not self._registry.check_permission(action_type, platform, user_roles):
+        # Permission check (before routing — check the base type first)
+        if not self._registry.check_permission(action_type, platform, user_roles, guild_id=guild_id):
             return {"status": "denied", "message": f"Action {action_type} non autorisée pour votre rôle."}
 
         # Rate limit
@@ -186,6 +194,15 @@ class ActionService:
                 "missing": missing,
                 "message": "Il me manque des informations pour planifier cette tâche.",
             }
+
+        # Route reminder → reminder_recurring based on schedule type
+        if action_type == "reminder" and schedule_type in ("interval", "cron"):
+            action_type = "reminder_recurring"
+            # Check permission for the recurring type too
+            if not self._registry.check_permission(action_type, platform, user_roles, guild_id=guild_id):
+                return {"status": "denied", "message": "Les rappels récurrents ne sont pas autorisés pour votre rôle."}
+        elif action_type == "reminder_recurring" and schedule_type == "once":
+            action_type = "reminder"
 
         # Default target to originating channel
         target = task_data.get("target", {})

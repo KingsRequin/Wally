@@ -237,3 +237,37 @@ async def test_create_task_defaults_target_to_origin(service, mock_scheduler):
     call_kwargs = mock_scheduler.schedule.call_args[1]
     assert call_kwargs["target_channel"] == "789"
     assert call_kwargs["target_platform"] == "discord"
+
+
+@pytest.mark.asyncio
+async def test_create_reminder_routes_to_recurring(service, mock_scheduler, mock_registry):
+    """Reminder with interval schedule routes to reminder_recurring."""
+    mock_registry.check_permission = MagicMock(return_value=True)
+    mock_scheduler.schedule = AsyncMock(return_value=42)
+    task_data = {
+        "action_type": "reminder",
+        "description": "Test recurring",
+        "payload": {"message": "Hello"},
+        "schedule": {"type": "interval", "interval_minutes": 10},
+    }
+    result = await service.create(task_data, "user1", "discord", ["admin"], "chan1", guild_id="guild1")
+    assert result["status"] == "created"
+    # Verify scheduler was called with reminder_recurring
+    assert mock_scheduler.schedule.call_args[1]["action_type"] == "reminder_recurring"
+
+
+@pytest.mark.asyncio
+async def test_create_reminder_recurring_once_routes_to_reminder(service, mock_scheduler, mock_registry):
+    """reminder_recurring with once schedule routes back to reminder."""
+    mock_registry.check_permission = MagicMock(return_value=True)
+    mock_scheduler.schedule = AsyncMock(return_value=42)
+    future = (datetime.now(TZ) + timedelta(hours=1)).isoformat()
+    task_data = {
+        "action_type": "reminder_recurring",
+        "description": "Test once",
+        "payload": {"message": "Hello"},
+        "schedule": {"type": "once", "run_at": future},
+    }
+    result = await service.create(task_data, "user1", "discord", ["admin"], "chan1", guild_id="guild1")
+    assert result["status"] == "created"
+    assert mock_scheduler.schedule.call_args[1]["action_type"] == "reminder"
