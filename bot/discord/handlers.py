@@ -483,6 +483,12 @@ async def _respond(
                     platform=args.get("platform", "PC"),
                 )
             if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
+                if "⏱️" not in _reaction_emojis:
+                    try:
+                        await message.add_reaction("⏱️")
+                        _reaction_emojis.add("⏱️")
+                    except Exception:
+                        pass
                 user_roles = _resolve_discord_roles(message.author)
                 # Check config admin list too
                 admin_ids = getattr(bot.config, "admin_ids", [])
