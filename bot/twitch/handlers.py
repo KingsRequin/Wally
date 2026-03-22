@@ -15,6 +15,21 @@ from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
+
+def _resolve_twitch_roles(badges: list) -> list[str]:
+    """Map Twitch badges to the action permission hierarchy."""
+    roles = ["everyone"]
+    badge_names = {b.id if hasattr(b, 'id') else str(b) for b in badges}
+    if "subscriber" in badge_names:
+        roles.append("subscriber")
+    if "vip" in badge_names:
+        roles.append("vip")
+    if "moderator" in badge_names:
+        roles.append("moderator")
+    if "broadcaster" in badge_names:
+        roles.append("admin")
+    return roles
+
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}
@@ -25,6 +40,22 @@ def _fire(coro) -> asyncio.Task:
     _bg_tasks.add(t)
     t.add_done_callback(_bg_tasks.discard)
     return t
+
+
+def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
+    """Build situation dict with stream info if available."""
+    situation: dict = {
+        "platform": "Twitch",
+        "streamer": channel_name,
+        "channel": f"#{channel_name}",
+    }
+    stream = bot._stream_info
+    if stream.get("live"):
+        situation["stream_live"] = True
+        situation["stream_category"] = stream.get("category")
+        situation["stream_title"] = stream.get("title")
+        situation["stream_viewers"] = stream.get("viewers", 0)
+    return situation
 
 
 async def handle_message(bot: "WallyTwitch", payload) -> None:
@@ -58,10 +89,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     "animation_out": overlay_cfg.animation_out,
                     "animation_duration": overlay_cfg.animation_duration,
                 }
-                try:
-                    ds.overlay_image_queue.put_nowait(payload_img)
-                except asyncio.QueueFull:
-                    pass  # Image already being displayed
+                # Générer le message LLM puis envoyer image + texte ensemble
+                _fire(_announce_overlay_image(bot, channel_name, channel_id, image, ds, payload_img))
         return  # Don't process further
 
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
@@ -169,6 +198,15 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
 
+        # Inject relationship context
+        try:
+            rel_context = await bot.memory.search_relationships(platform, [user_id])
+            if rel_context:
+                rel_block = "\n--- Relations connues entre les utilisateurs ---\n" + rel_context
+                mem_context = (mem_context + rel_block) if mem_context else rel_block.strip()
+        except Exception:
+            pass
+
         # Inject pending memory question directive
         try:
             question_directive = await bot.memory.get_pending_question_directive(platform, user_id)
@@ -179,11 +217,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
-        situation = {
-            "platform": "Twitch",
-            "streamer": channel_name,
-            "channel": f"#{channel_name}",
-        }
+        situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
@@ -208,6 +242,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         apex_api = getattr(bot, "apex_api", None)
         if apex_api and apex_api.available:
             tools.append(apex_api.get_tool_definition())
+        action_service = getattr(bot, "action_service", None)
+        if action_service:
+            tools.extend(action_service.get_tool_definitions())
 
         async def _tool_executor(name: str, arguments: str) -> str:
             args = json.loads(arguments)
@@ -221,6 +258,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     player_name=args.get("player_name", ""),
                     platform=args.get("platform", "PC"),
                 )
+            if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
+                badges = getattr(payload.chatter, "badges", []) or []
+                user_roles = _resolve_twitch_roles(badges)
+                result = await action_service.execute_tool(
+                    name, args,
+                    user_id=str(payload.chatter.id),
+                    platform="twitch",
+                    user_roles=user_roles,
+                    channel_id=channel_name,
+                )
+                return json.dumps(result)
             return f"Unknown tool: {name}"
 
         if tools:
@@ -305,6 +353,78 @@ async def _post_process(
         logger.error("Twitch post-process error: {e}", e=e)
 
 
+async def _announce_overlay_image(
+    bot: "WallyTwitch", channel_name: str, channel_id: str, image: dict,
+    dashboard_state, overlay_payload: dict,
+) -> None:
+    """Generate LLM message first, then send overlay image + chat message simultaneously."""
+    try:
+        title = image.get("title") or "sans titre"
+        creator = image.get("username") or "quelqu'un"
+        prompt_text = image.get("prompt") or ""
+
+        prelude = bot.memory.get_prelude(channel_id)
+        context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
+
+        situation = _build_situation(bot, channel_name)
+        system_prompt = bot.prompts.build_system_prompt(
+            emotion_state=bot.emotion.get_state(),
+            situation=situation,
+            persona_block=bot.persona.build_prompt_block(),
+            emotion_directives=bot.persona.emotion_directives,
+            weekday_directives=bot.persona.weekday_directives,
+            composite_directives=bot.persona.composite_directives,
+        )
+        prelude_block = bot.prompts.build_prelude_block(prelude)
+        context_block = bot.prompts.build_context_block(context_msgs)
+
+        image_desc = f"Image affichée sur le stream : \"{title}\" par {creator}."
+        if prompt_text:
+            image_desc += f" Prompt original : \"{prompt_text}\""
+
+        user_content = (
+            "[CONTEXTE: Quelqu'un vient de déclencher !image sur le stream. "
+            "Une image de la galerie s'affiche sur l'overlay. "
+            "Présente cette image au chat en UNE phrase courte et naturelle. "
+            "Mentionne le créateur de l'image.]\n\n"
+            + prelude_block
+            + context_block
+            + f"\n[SYSTÈME]: {image_desc}"
+        )
+
+        # 1. Générer le message LLM (le plus lent)
+        reply = await bot.openai.complete(
+            system_prompt,
+            [{"role": "user", "content": user_content}],
+            purpose="twitch_overlay_announce",
+        )
+
+        # Strip react tag
+        if reply.startswith("[react:"):
+            import re as _re
+            reply = _re.sub(r"^\[react:.+?\]\s*", "", reply)
+        if len(reply) > 480:
+            reply = reply[:477] + "..."
+
+        # 2. Envoyer overlay + message chat en même temps
+        try:
+            dashboard_state.overlay_image_queue.put_nowait(overlay_payload)
+        except asyncio.QueueFull:
+            pass
+
+        if channel_name in bot._channel_ids:
+            irc_channel = bot.get_channel(channel_name)
+            if irc_channel:
+                await irc_channel.send(reply)
+        else:
+            await bot.twitch_api.send_message(text=reply)
+
+        bot.memory.append_prelude(channel_id, "Wally", reply)
+        bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
+    except Exception as e:
+        logger.error("Overlay image announce error: {e}", e=e)
+
+
 async def _spontaneous_respond_twitch(
     bot: "WallyTwitch", channel_name: str, channel_id: str,
     author: str, content: str,
@@ -312,7 +432,7 @@ async def _spontaneous_respond_twitch(
     """Generate and send a spontaneous Twitch response."""
     try:
         prelude = bot.memory.get_prelude(channel_id)
-        situation = {"platform": "Twitch", "streamer": channel_name, "channel": f"#{channel_name}"}
+        situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             situation=situation,

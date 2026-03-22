@@ -5,7 +5,6 @@ import asyncio
 import json
 import random
 import re
-import re as _re
 import time
 from typing import TYPE_CHECKING
 
@@ -17,7 +16,21 @@ if TYPE_CHECKING:
 
 TIMEOUT_REACTIONS = ["💩", "⛔", "😤", "🙅", "😒"]
 
-_REACT_TAG_RE = _re.compile(r"^\[react:(.+?)\]\s*")
+
+def _resolve_discord_roles(member) -> list[str]:
+    """Map Discord member roles to the action permission hierarchy."""
+    roles = ["everyone"]
+    if any(r.name.lower() in ("subscriber", "sub", "abonné") for r in member.roles):
+        roles.append("subscriber")
+    if member.guild_permissions.manage_messages or any(
+        r.name.lower() in ("moderator", "mod", "modérateur") for r in member.roles
+    ):
+        roles.append("moderator")
+    if member.guild_permissions.administrator:
+        roles.append("admin")
+    return roles
+
+_REACT_TAG_RE = re.compile(r"^\[react:(.+?)\]\s*")
 
 _LAUGH_WORDS = {"mdr", "lol", "ptdr", "xd", "haha", "😂", "🤣"}
 _POSITIVE_WORDS = {"gg", "bravo", "trop bien", "bien joué", "incroyable"}
@@ -316,6 +329,15 @@ async def _respond(
         except Exception:
             pass
 
+        # Inject relationship context for participants in conversation
+        try:
+            rel_context = await bot.memory.search_relationships(platform, [user_id])
+            if rel_context:
+                rel_block = "\n--- Relations connues entre les utilisateurs ---\n" + rel_context
+                mem_context = (mem_context + rel_block) if mem_context else rel_block.strip()
+        except Exception:
+            pass
+
         # Inject pending memory question directive
         try:
             question_directive = await bot.memory.get_pending_question_directive(platform, user_id)
@@ -353,11 +375,54 @@ async def _respond(
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
 
-        # Extraction des images
+        # Extraction des images (message courant)
         image_urls = [
             a.url for a in message.attachments
             if a.content_type and a.content_type.startswith("image/")
         ][:4]
+
+        # Si c'est une réponse, récupérer les images du message référencé
+        replied_image_context = ""
+        if message.reference and message.reference.message_id and not image_urls:
+            try:
+                ref_msg = message.reference.resolved
+                if ref_msg is None:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg:
+                    # Images en attachments du message référencé
+                    _img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+                    ref_images = [
+                        a.url for a in ref_msg.attachments
+                        if (a.content_type and a.content_type.startswith("image/"))
+                        or a.filename.lower().endswith(_img_exts)
+                    ]
+                    # Images dans les embeds (URLs CDN uniquement, pas attachment://)
+                    if not ref_images:
+                        for embed in ref_msg.embeds:
+                            if embed.image and embed.image.url and not embed.image.url.startswith("attachment://"):
+                                ref_images.append(embed.image.url)
+                    image_urls = ref_images[:4]
+                    if image_urls:
+                        # Contexte sur l'image référencée
+                        is_wally_image = ref_msg.author.id == bot.user.id
+                        ref_desc = ""
+                        for embed in ref_msg.embeds:
+                            if embed.title:
+                                ref_desc += f" Titre: {embed.title}."
+                            if embed.description:
+                                ref_desc += f" Prompt: {embed.description}"
+                        if is_wally_image:
+                            replied_image_context = (
+                                f"[L'utilisateur répond à une image que TU as générée avec /imagine."
+                                f"{ref_desc} Tu es l'auteur de cette image.]\n"
+                            )
+                        else:
+                            replied_image_context = (
+                                f"[L'utilisateur répond à un message contenant une image."
+                                f"{ref_desc}]\n"
+                            )
+            except Exception as e:
+                logger.debug("Failed to fetch referenced message images: {e}", e=e)
 
         # Texte à envoyer (substitution si message image-only)
         text_content = message.content or ("Regarde cette image." if image_urls else "")
@@ -365,6 +430,7 @@ async def _respond(
         user_content = (
             prelude_block
             + context_block
+            + replied_image_context
             + f"\n[{message.author.display_name}]: {text_content}"
         )
 
@@ -386,6 +452,9 @@ async def _respond(
         apex_api = getattr(bot, "apex_api", None)
         if apex_api and apex_api.available:
             tools.append(apex_api.get_tool_definition())
+        action_service = getattr(bot, "action_service", None)
+        if action_service:
+            tools.extend(action_service.get_tool_definitions())
 
         _reaction_emojis: set[str] = set()
 
@@ -413,6 +482,20 @@ async def _respond(
                     player_name=args.get("player_name", ""),
                     platform=args.get("platform", "PC"),
                 )
+            if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
+                user_roles = _resolve_discord_roles(message.author)
+                # Check config admin list too
+                admin_ids = getattr(bot.config, "admin_ids", [])
+                if str(message.author.id) in [str(a) for a in admin_ids]:
+                    user_roles.append("admin")
+                result = await action_service.execute_tool(
+                    name, args,
+                    user_id=str(message.author.id),
+                    platform="discord",
+                    user_roles=user_roles,
+                    channel_id=str(message.channel.id),
+                )
+                return json.dumps(result)
             return f"Unknown tool: {name}"
 
         async with message.channel.typing():
