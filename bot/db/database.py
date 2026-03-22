@@ -232,6 +232,35 @@ CREATE TABLE IF NOT EXISTS gallery_votes (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (image_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS action_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    creator_id TEXT NOT NULL,
+    creator_platform TEXT NOT NULL,
+    target_channel TEXT,
+    target_platform TEXT,
+    payload TEXT NOT NULL DEFAULT '{}',
+    schedule_type TEXT NOT NULL,
+    schedule_spec TEXT NOT NULL DEFAULT '{}',
+    max_executions INTEGER,
+    execution_count INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    next_run_at TEXT,
+    last_run_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS action_permissions (
+    action_type TEXT PRIMARY KEY,
+    min_role_discord TEXT NOT NULL DEFAULT 'admin',
+    min_role_twitch TEXT NOT NULL DEFAULT 'admin',
+    enabled INTEGER NOT NULL DEFAULT 1
+);
 """
 
 
@@ -623,6 +652,18 @@ class Database:
     async def resolve_question(self, question_id: int) -> None:
         await self.execute(
             "UPDATE memory_questions SET resolved = 1 WHERE id = ?",
+            (question_id,),
+        )
+
+    async def update_question(self, question_id: int, question: str) -> None:
+        await self.execute(
+            "UPDATE memory_questions SET question = ? WHERE id = ?",
+            (question, question_id),
+        )
+
+    async def delete_question(self, question_id: int) -> None:
+        await self.execute(
+            "DELETE FROM memory_questions WHERE id = ?",
             (question_id,),
         )
 
@@ -1484,3 +1525,127 @@ class Database:
             (image_id, user_id),
         )
         return (await cursor.fetchone()) is not None
+
+    # ── Action Tasks ──────────────────────────────────────────────────────
+
+    async def insert_action_task(
+        self,
+        action_type: str,
+        description: str,
+        creator_id: str,
+        creator_platform: str,
+        target_channel: str | None,
+        target_platform: str | None,
+        payload: str,
+        schedule_type: str,
+        schedule_spec: str,
+        max_executions: int | None,
+        status: str,
+        created_at: str,
+        updated_at: str,
+        next_run_at: str | None,
+    ) -> int:
+        cursor = await self._conn.execute(
+            """INSERT INTO action_tasks
+               (action_type, description, creator_id, creator_platform,
+                target_channel, target_platform, payload,
+                schedule_type, schedule_spec, max_executions,
+                status, created_at, updated_at, next_run_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                action_type, description, creator_id, creator_platform,
+                target_channel, target_platform, payload,
+                schedule_type, schedule_spec, max_executions,
+                status, created_at, updated_at, next_run_at,
+            ),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def get_action_task(self, task_id: int) -> dict | None:
+        return await self.fetch_one(
+            "SELECT * FROM action_tasks WHERE id = ?", (task_id,)
+        )
+
+    async def list_action_tasks(
+        self,
+        status: str | None = None,
+        creator_id: str | None = None,
+        creator_platform: str | None = None,
+        action_type: str | None = None,
+    ) -> list[dict]:
+        query = "SELECT * FROM action_tasks WHERE 1=1"
+        params: list = []
+        if status and status != "all":
+            query += " AND status = ?"
+            params.append(status)
+        if creator_id:
+            query += " AND creator_id = ? AND creator_platform = ?"
+            params.append(creator_id)
+            params.append(creator_platform or "")
+        if action_type:
+            query += " AND action_type = ?"
+            params.append(action_type)
+        query += " ORDER BY created_at DESC"
+        return await self.fetch_all(query, tuple(params))
+
+    async def update_action_task(self, task_id: int, **fields) -> None:
+        if not fields:
+            return
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        vals = list(fields.values()) + [task_id]
+        await self.execute(
+            f"UPDATE action_tasks SET {sets} WHERE id = ?", tuple(vals)
+        )
+
+    async def search_action_tasks(
+        self, query: str, creator_id: str, creator_platform: str
+    ) -> list[dict]:
+        return await self.fetch_all(
+            """SELECT * FROM action_tasks
+               WHERE description LIKE ? AND creator_id = ? AND creator_platform = ?
+               AND status IN ('active', 'paused')
+               ORDER BY created_at DESC""",
+            (f"%{query}%", creator_id, creator_platform),
+        )
+
+    async def count_user_action_tasks(
+        self, creator_id: str, creator_platform: str
+    ) -> int:
+        row = await self.fetch_one(
+            """SELECT COUNT(*) as cnt FROM action_tasks
+               WHERE creator_id = ? AND creator_platform = ?
+               AND status IN ('active', 'paused')""",
+            (creator_id, creator_platform),
+        )
+        return row["cnt"] if row else 0
+
+    async def get_active_action_tasks(self) -> list[dict]:
+        return await self.fetch_all(
+            "SELECT * FROM action_tasks WHERE status = 'active' ORDER BY next_run_at"
+        )
+
+    # ── Action Permissions ────────────────────────────────────────────────
+
+    async def get_action_permission(self, action_type: str) -> dict | None:
+        return await self.fetch_one(
+            "SELECT * FROM action_permissions WHERE action_type = ?",
+            (action_type,),
+        )
+
+    async def list_action_permissions(self) -> list[dict]:
+        return await self.fetch_all("SELECT * FROM action_permissions ORDER BY action_type")
+
+    async def upsert_action_permission(
+        self, action_type: str, min_role_discord: str = "admin",
+        min_role_twitch: str = "admin", enabled: int = 1
+    ) -> None:
+        await self.execute(
+            """INSERT INTO action_permissions (action_type, min_role_discord, min_role_twitch, enabled)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(action_type) DO UPDATE SET
+                 min_role_discord = excluded.min_role_discord,
+                 min_role_twitch = excluded.min_role_twitch,
+                 enabled = excluded.enabled""",
+            (action_type, min_role_discord, min_role_twitch, enabled),
+        )
