@@ -91,7 +91,21 @@ FACT_EXTRACTION_SCHEMA = {
                         "type": "string",
                         "enum": ["personal", "community"],
                     },
-                    "facts": {"type": "array", "items": {"type": "string"}},
+                    "facts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "category": {
+                                    "type": "string",
+                                    "enum": ["FAIT", "PREF", "LANG", "REL"],
+                                },
+                            },
+                            "required": ["text", "category"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
                 "required": ["target", "target_user_id", "scope", "facts"],
                 "additionalProperties": False,
@@ -354,9 +368,33 @@ class FactExtractor:
             ]
             alias_hint = "\nAliases connus:\n" + "\n".join(alias_lines)
 
+        # Fetch known memory users so the LLM can resolve mentions of
+        # third parties (users talked about but not in the conversation)
+        known_users_hint = ""
+        if self._db is not None:
+            try:
+                known_users = await self._db.list_memory_users()
+                # Exclude unknown:* entries and current participants
+                known_users = [
+                    u for u in known_users
+                    if not u["user_id"].startswith("unknown:")
+                    and u["user_id"].split(":", 1)[1] not in participants
+                ]
+                if known_users:
+                    user_lines = [
+                        f"  - {u.get('username') or '?'} → {u['user_id']}"
+                        for u in known_users[:50]
+                    ]
+                    known_users_hint = (
+                        "\nUtilisateurs connus en mémoire (pour résoudre les mentions de tiers):\n"
+                        + "\n".join(user_lines)
+                    )
+            except Exception:
+                known_users_hint = ""
+
         user_prompt = (
             f"Participants: {', '.join(f'{n} ({platform}:{uid})' for uid, n in participants.items())}\n"
-            f"{alias_hint}\n\n"
+            f"{alias_hint}{known_users_hint}\n\n"
             f"Conversation:\n{conversation_text}"
         )
 
@@ -377,7 +415,20 @@ class FactExtractor:
                 continue
 
             scope = entry.get("scope", "personal")
-            facts_text = "\n".join(f"- {f}" for f in facts_list)
+
+            # Build text from fact objects (backward-compat: handle both str and dict)
+            fact_items = []
+            for f in facts_list:
+                if isinstance(f, dict):
+                    fact_items.append(f)
+                else:
+                    fact_items.append({"text": str(f), "category": "FAIT"})
+
+            facts_text = "\n".join(f"- {fi['text']}" for fi in fact_items)
+
+            # Determine dominant category for the batch
+            categories = [fi.get("category", "FAIT") for fi in fact_items]
+            dominant_category = max(set(categories), key=categories.count) if categories else "FAIT"
 
             # Community-scope facts → global namespace
             if scope == "community":
@@ -396,7 +447,7 @@ class FactExtractor:
                 else:
                     plat, raw_id = platform, uid
                 try:
-                    await self._memory.add(plat, raw_id, facts_text)
+                    await self._memory.add(plat, raw_id, facts_text, category=dominant_category)
                     stored_count += 1
                 except Exception as exc:
                     logger.warning(
@@ -406,7 +457,7 @@ class FactExtractor:
                 # Unknown user: store under unknown:<nickname>
                 nickname = entry.get("target", "unknown")
                 try:
-                    await self._memory.add("unknown", nickname, facts_text)
+                    await self._memory.add("unknown", nickname, facts_text, category=dominant_category)
                     stored_count += 1
                 except Exception as exc:
                     logger.warning(

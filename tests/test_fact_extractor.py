@@ -337,6 +337,94 @@ class TestFactExtractorAnalyzeChannel:
         fe._memory.add_alias.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_extract_facts_with_categories(self):
+        fe = _make_fact_extractor()
+        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+            "facts": [
+                {
+                    "target": "Alice",
+                    "target_user_id": "discord:111",
+                    "scope": "personal",
+                    "facts": [
+                        {"text": "Works as a developer", "category": "FAIT"},
+                        {"text": "Lives in Lyon", "category": "FAIT"},
+                    ],
+                }
+            ],
+            "aliases": [],
+        })
+        fe._db.list_aliases = AsyncMock(return_value=[])
+        fe._db.list_memory_users = AsyncMock(return_value=[])
+
+        messages = [
+            {"user_id": "111", "display_name": "Alice", "content": "I'm a developer living in Lyon"},
+        ]
+        count = await fe._extract_facts(messages, "discord", "chan1")
+        assert count == 1
+
+        # Verify category was passed to memory.add()
+        call_args = fe._memory.add.call_args
+        assert call_args.kwargs.get("category") == "FAIT"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_mixed_categories(self):
+        """When facts have mixed categories, dominant one wins."""
+        fe = _make_fact_extractor()
+        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+            "facts": [
+                {
+                    "target": "Bob",
+                    "target_user_id": "discord:222",
+                    "scope": "personal",
+                    "facts": [
+                        {"text": "Prefers dark mode", "category": "PREF"},
+                        {"text": "Likes Python", "category": "PREF"},
+                        {"text": "Works at Google", "category": "FAIT"},
+                    ],
+                }
+            ],
+            "aliases": [],
+        })
+        fe._db.list_aliases = AsyncMock(return_value=[])
+        fe._db.list_memory_users = AsyncMock(return_value=[])
+
+        messages = [
+            {"user_id": "222", "display_name": "Bob", "content": "I prefer dark mode and Python, I work at Google"},
+        ]
+        count = await fe._extract_facts(messages, "discord", "chan1")
+        assert count == 1
+
+        call_args = fe._memory.add.call_args
+        assert call_args.kwargs.get("category") == "PREF"
+
+    @pytest.mark.asyncio
+    async def test_extract_facts_backward_compat_strings(self):
+        """Old string format should still work with default FAIT category."""
+        fe = _make_fact_extractor()
+        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+            "facts": [
+                {
+                    "target": "Carol",
+                    "target_user_id": "discord:333",
+                    "scope": "personal",
+                    "facts": ["Lives in Paris", "Speaks French"],
+                }
+            ],
+            "aliases": [],
+        })
+        fe._db.list_aliases = AsyncMock(return_value=[])
+        fe._db.list_memory_users = AsyncMock(return_value=[])
+
+        messages = [
+            {"user_id": "333", "display_name": "Carol", "content": "I live in Paris and speak French"},
+        ]
+        count = await fe._extract_facts(messages, "discord", "chan1")
+        assert count == 1
+
+        call_args = fe._memory.add.call_args
+        assert call_args.kwargs.get("category") == "FAIT"
+
+    @pytest.mark.asyncio
     async def test_alias_with_low_confidence_ignored(self):
         fe = _make_fact_extractor()
         fe._openai.complete_secondary_structured = AsyncMock(
