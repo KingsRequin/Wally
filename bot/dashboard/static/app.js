@@ -132,8 +132,8 @@ function showTab(tabId) {
   if (tabId === 'roadmap') loadRoadmap();
   if (tabId === 'chat') renderChatTab();
   if (tabId === 'journal-detail') renderJournalDetailTab();
-  if (tabId === 'memory' && !document.getElementById('mem-user-list')) renderMemoryTab();
-  if (tabId !== 'memory' && tabId !== 'admin-memoire' && _linkMode) { _linkMode = false; _linkSelection = []; }
+  if (tabId === 'memory' && !document.getElementById('mem-grid')) renderMemoryTab();
+  if (tabId !== 'memory' && tabId !== 'admin-memoire' && _memLinkMode) { cancelLinkMode(); }
   if (tabId === 'global-memory') renderGlobalMemoryTab();
   if (tabId === 'gallery') loadGallery(true);
   if (tabId === 'admin-overlay') loadOverlayTab();
@@ -666,11 +666,11 @@ async function renderConfigForm(cfg) {
     <!-- Émotions — lambdas (boredom exclu : monte avec l'inactivité, pas de decay) -->
     <div class="card config-section">
       <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
       ${Object.entries(cfg.emotions).filter(([name]) => name !== 'boredom').map(([name, ec]) => {
         const lam = ec.decay_lambda;
-        const timeToZero = lam > 0 ? Math.round((Math.log(1/0.01)) / lam) : Infinity;
-        const timeLabel = timeToZero === Infinity ? '∞' : timeToZero < 60 ? timeToZero + ' min' : Math.round(timeToZero / 60 * 10) / 10 + ' h';
+        const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
+        const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
         return `
         <div class="field-group" style="display:flex;align-items:center;gap:12px">
           <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}; min-width:100px">${name.toUpperCase()} λ</label>
@@ -678,6 +678,17 @@ async function renderConfigForm(cfg) {
           <span id="decay-time-${name}" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
         </div>`;
       }).join('')}
+
+      <!-- Boredom rise config -->
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08)">
+        <div style="display:flex;align-items:center;gap:12px">
+          <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'}; min-width:100px">BOREDOM ↑/h</label>
+          <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2}" style="width:90px" oninput="updateBoredomTime(this)">
+          <span id="boredom-time-info" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${(() => { const r = cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2; if (r <= 0) return '∞'; const h = 1/r; return h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; })()}</strong></span>
+        </div>
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
+      </div>
+
       <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
     </div>
 
@@ -790,10 +801,26 @@ async function saveOpenAI() {
 
 function updateDecayTime(input, name) {
   const lam = parseFloat(input.value) || 0;
-  const timeToZero = lam > 0 ? Math.round((Math.log(1/0.01)) / lam) : Infinity;
-  const timeLabel = timeToZero === Infinity ? '∞' : timeToZero < 60 ? timeToZero + ' min' : Math.round(timeToZero / 60 * 10) / 10 + ' h';
+  const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
+  const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
   const span = document.getElementById(`decay-time-${name}`);
   if (span) span.innerHTML = `100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong>`;
+}
+
+function updateBoredomTime(input) {
+  const r = parseFloat(input.value) || 0;
+  let label;
+  if (r <= 0) { label = '\u221e'; }
+  else { const h = 1/r; label = h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; }
+  const span = document.getElementById('boredom-time-info');
+  if (span) {
+    span.textContent = '';
+    span.append('0\u2192100% en ');
+    const strong = document.createElement('strong');
+    strong.style.color = '#e2e8f0';
+    strong.textContent = label;
+    span.appendChild(strong);
+  }
 }
 
 async function saveEmotionLambdas() {
@@ -803,6 +830,8 @@ async function saveEmotionLambdas() {
     const el = document.getElementById(`cfg-lambda-${e}`);
     if (el) emotions[e] = { decay_lambda: parseFloat(el.value) };
   }
+  const boredomRise = document.getElementById('cfg-boredom-rise');
+  if (boredomRise) emotions['boredom'] = { decay_lambda: 0.01, boredom_rise_per_hour: parseFloat(boredomRise.value) };
   const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify({ emotions }) });
   if (r && r.ok) toast('Lambdas sauvegardés', 'success'); else toast('Erreur sauvegarde', 'error');
 }
@@ -917,9 +946,7 @@ async function startLogSSE() {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'links_analyzed' || data.type === 'link_accepted' || data.type === 'link_rejected' || data.type === 'link_unlinked') {
-        const filter = document.getElementById('mem-user-filter')?.value || '';
-        loadMemoryUsers(filter);
-        if (_selectedMemUser) loadUserDetail(_selectedMemUser);
+        loadMemoryUsers();
         pollLinksBadge();
         if (data.type === 'links_analyzed' && data.count > 0) {
           toast(`🔗 ${data.count} liaison(s) à vérifier`, 'info');
@@ -1279,584 +1306,502 @@ function escAttr(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-let _showAllUsers = true; // show users without memories by default
-let _linkMode = false;
-let _linkSelection = []; // [{user_id, username}]
+// ── Memory Tab State ────────────────────────────────────────────
+let _memShowAll = false;
+let _memPlatformFilter = '';
+let _memSortBy = 'memories';
+let _memSearchTimer = null;
+let _memLinkMode = false;
+let _memLinkSourceId = null;
+let _memLinkSourceName = null;
+let _memCurrentUsers = []; // cached users for link mode
+
+const MEM_CATEGORIES = [
+  { key: 'FAIT', label: 'Faits', css: 'fait', color: '#22c55e' },
+  { key: 'PREF', label: 'Préférences', css: 'pref', color: '#3b82f6' },
+  { key: 'LANG', label: 'Langue', css: 'lang', color: '#eab308' },
+  { key: 'REL', label: 'Relations', css: 'rel', color: '#a855f7' },
+  { key: '', label: 'Non classé', css: 'other', color: '#64748b' },
+];
 
 function renderMemoryTab() {
-  document.getElementById('tab-memory').innerHTML = `
-    <div class="mem-toolbar">
-      <input type="text" id="mem-search" placeholder="Recherche globale…"
-             oninput="onMemSearch(this.value)"
-             style="flex:1;max-width:260px" aria-label="Recherche mémoire">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="btn ${_showAllUsers ? 'active' : ''}" onclick="toggleShowAll()" id="btn-show-all"
-                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">Tous les users</button>
-        <button class="btn" onclick="toggleLinkMode()" id="btn-link-mode"
-                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">🔗 Lier deux users</button>
-        <button class="btn" onclick="syncMemoryUsers()"
-                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">↻ Sync</button>
-        <button class="btn" onclick="resolveUsernames()"
-                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">👤 Noms</button>
-        <button class="btn btn-success" onclick="analyzeLinks()"
-                style="font-size:0.72rem;padding:4px 10px;white-space:nowrap">🔗 Auto-analyser</button>
-      </div>
-    </div>
-    <div id="link-mode-bar" class="link-mode-bar" style="display:none"></div>
-    <div class="mem-layout">
-      <div class="mem-sidebar">
-        <div class="mem-sidebar-filter">
-          <input type="text" id="mem-user-filter" placeholder="Filtrer…"
-                 oninput="onUserFilter(this.value)"
-                 style="width:100%;font-size:0.8rem" aria-label="Filtrer utilisateurs">
-        </div>
-        <div class="mem-sidebar-actions">
-          <button class="btn" onclick="showAddUserForm()" style="width:100%;font-size:0.72rem;padding:5px 8px">+ Ajouter un utilisateur</button>
-        </div>
-        <div id="mem-add-user-form" style="display:none"></div>
-        <div id="mem-user-list" class="mem-user-list"></div>
-      </div>
-      <div id="mem-detail" class="mem-detail">
-        <div class="mem-empty-state">
-          Sélectionne un utilisateur pour voir ses souvenirs et liaisons.
-        </div>
-      </div>
-    </div>
-  `;
+  const el = document.getElementById('tab-memory');
+  if (!el) return;
+  el.innerHTML = '<div class="mem-toolbar">'
+    + '<input type="text" class="mem-search" id="mem-search" placeholder="Rechercher un utilisateur..." aria-label="Recherche utilisateur">'
+    + '<div class="mem-platform-pills">'
+    + '<button class="mem-platform-pill active" data-platform="" onclick="setMemPlatform(this)">Tous</button>'
+    + '<button class="mem-platform-pill" data-platform="discord" onclick="setMemPlatform(this)">Discord</button>'
+    + '<button class="mem-platform-pill" data-platform="twitch" onclick="setMemPlatform(this)">Twitch</button>'
+    + '</div>'
+    + '<select class="mem-sort-select" id="mem-sort" onchange="setMemSort(this.value)">'
+    + '<option value="memories">Mémoires</option>'
+    + '<option value="trust">Trust</option>'
+    + '<option value="love">Love</option>'
+    + '<option value="name">Nom</option>'
+    + '</select>'
+    + '<label class="mem-toggle" onclick="toggleMemShowAll()">'
+    + '<div class="mem-toggle-track" id="mem-toggle-track"><div class="mem-toggle-thumb"></div></div>'
+    + '<span>Sans mémoire</span>'
+    + '</label>'
+    + '<button class="mem-action-btn" onclick="syncMemoryUsers()">↻ Sync</button>'
+    + '<button class="mem-action-btn" onclick="analyzeLinks()">🔗 Analyser</button>'
+    + '</div>'
+    + '<div id="mem-link-banner" style="display:none"></div>'
+    + '<div class="mem-grid" id="mem-grid"></div>';
+
+  // Wire search with debounce
+  var searchInput = document.getElementById('mem-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      clearTimeout(_memSearchTimer);
+      _memSearchTimer = setTimeout(function() { loadMemoryUsers(); }, 300);
+    });
+  }
+
   loadMemoryUsers();
 }
 
-function toggleLinkMode() {
-  _linkMode = !_linkMode;
-  _linkSelection = [];
-  const btn = document.getElementById('btn-link-mode');
-  if (btn) btn.classList.toggle('active', _linkMode);
-  updateLinkModeBar();
-  // Re-render list to show link-mode styling
-  refreshUserList();
-  if (_linkMode) {
-    document.getElementById('mem-detail').innerHTML =
-      '<div class="mem-empty-state">Clique sur deux utilisateurs pour les lier.</div>';
-  }
+function setMemPlatform(btn) {
+  _memPlatformFilter = btn.dataset.platform;
+  document.querySelectorAll('.mem-platform-pill').forEach(function(p) { p.classList.remove('active'); });
+  btn.classList.add('active');
+  loadMemoryUsers();
 }
 
-function updateLinkModeBar() {
-  const bar = document.getElementById('link-mode-bar');
-  if (!bar) return;
-  if (!_linkMode) { bar.style.display = 'none'; return; }
-  bar.style.display = 'flex';
-
-  if (_linkSelection.length === 0) {
-    bar.innerHTML = '<span>Sélectionne le <strong>premier</strong> utilisateur</span>'
-      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px;margin-left:auto">Annuler</button>';
-  } else if (_linkSelection.length === 1) {
-    const s = _linkSelection[0];
-    bar.innerHTML = `<span>${PLATFORM_ICONS[s.platform] || ''} <strong>${escHtml(s.name)}</strong> ↔ sélectionne le <strong>second</strong></span>`
-      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px;margin-left:auto">Annuler</button>';
-  } else {
-    const a = _linkSelection[0], b = _linkSelection[1];
-    bar.innerHTML = `<span>${PLATFORM_ICONS[a.platform] || ''} <strong>${escHtml(a.name)}</strong> ↔ ${PLATFORM_ICONS[b.platform] || ''} <strong>${escHtml(b.name)}</strong></span>`
-      + '<div style="margin-left:auto;display:flex;gap:6px">'
-      + '<button class="btn btn-success" onclick="confirmLinkSelection()" style="font-size:0.72rem;padding:4px 10px">✓ Lier</button>'
-      + '<button class="btn" onclick="toggleLinkMode()" style="font-size:0.68rem;padding:2px 8px">Annuler</button>'
-      + '</div>';
-  }
+function setMemSort(value) {
+  _memSortBy = value;
+  loadMemoryUsers();
 }
 
-function handleLinkModeClick(userId, username, platform) {
-  // Don't add same user twice
-  if (_linkSelection.some(s => s.user_id === userId)) return;
-  // Max 2
-  if (_linkSelection.length >= 2) return;
-
-  _linkSelection.push({ user_id: userId, name: username, platform });
-  updateLinkModeBar();
-
-  // Highlight selected items
-  document.querySelectorAll('.mem-user-item').forEach(el => {
-    const isSelected = _linkSelection.some(s => s.user_id === el.dataset.uid);
-    el.classList.toggle('link-selected', isSelected);
-  });
+function toggleMemShowAll() {
+  _memShowAll = !_memShowAll;
+  var track = document.getElementById('mem-toggle-track');
+  if (track) track.classList.toggle('active', _memShowAll);
+  loadMemoryUsers();
 }
 
-async function confirmLinkSelection() {
-  if (_linkSelection.length !== 2) return;
-  const a = _linkSelection[0], b = _linkSelection[1];
-
-  // Discord is always canonical if possible
-  let canonical, alias;
-  if (a.platform === 'discord') {
-    canonical = a.user_id; alias = b.user_id;
-  } else if (b.platform === 'discord') {
-    canonical = b.user_id; alias = a.user_id;
-  } else {
-    // Both same platform — first selected is canonical
-    canonical = a.user_id; alias = b.user_id;
-  }
-
-  const r = await apiFetch('/api/admin/links/manual', {
-    method: 'POST',
-    body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
-  });
-  if (r && r.ok) {
-    toast('Comptes liés avec succès', 'success');
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur liaison', 'error');
-  }
-  // Exit link mode and refresh
-  _linkMode = false;
-  _linkSelection = [];
-  const btn = document.getElementById('btn-link-mode');
-  if (btn) btn.classList.remove('active');
-  updateLinkModeBar();
-  refreshUserList();
-}
-
-function refreshUserList() {
-  const filter = document.getElementById('mem-user-filter')?.value || '';
-  loadMemoryUsers(filter);
-}
-
-function toggleShowAll() {
-  _showAllUsers = !_showAllUsers;
-  const btn = document.getElementById('btn-show-all');
-  if (btn) btn.classList.toggle('active', _showAllUsers);
-  refreshUserList();
-}
-
-function showAddUserForm() {
-  const el = document.getElementById('mem-add-user-form');
-  if (!el) return;
-  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = `
-    <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.08)">
-      <select id="add-user-platform" style="width:100%;margin-bottom:6px;font-size:0.8rem">
-        <option value="discord">Discord</option>
-        <option value="twitch">Twitch</option>
-      </select>
-      <input type="text" id="add-user-id" placeholder="ID ou username" style="width:100%;font-size:0.8rem;margin-bottom:6px">
-      <input type="text" id="add-user-name" placeholder="Nom affiché (optionnel)" style="width:100%;font-size:0.8rem;margin-bottom:6px">
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-success" onclick="submitAddUser()" style="flex:1;font-size:0.72rem;padding:4px 6px">Ajouter</button>
-        <button class="btn" onclick="document.getElementById('mem-add-user-form').style.display='none'" style="font-size:0.72rem;padding:4px 6px">Annuler</button>
-      </div>
-    </div>
-  `;
-}
-
-async function submitAddUser() {
-  const platform = document.getElementById('add-user-platform').value;
-  const userId = document.getElementById('add-user-id').value.trim();
-  const username = document.getElementById('add-user-name').value.trim();
-  if (!userId) { toast('ID requis', 'error'); return; }
-  const r = await apiFetch('/api/admin/memory/users', {
-    method: 'POST',
-    body: JSON.stringify({ platform, user_id: userId, username }),
-  });
-  if (r && r.ok) {
-    toast('Utilisateur ajouté', 'success');
-    document.getElementById('mem-add-user-form').style.display = 'none';
-    refreshUserList();
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur', 'error');
-  }
-}
-
-let _selectedMemUser = null;
-let _selectedMemUsername = null;
-
-async function loadMemoryUsers(filter = '') {
-  const params = new URLSearchParams();
-  if (filter) params.set('q', filter);
-  if (_showAllUsers) params.set('show_all', '1');
-  const url = '/api/admin/memory/users' + (params.toString() ? `?${params}` : '');
-  const r = await apiFetch(url);
+async function loadMemoryUsers() {
+  var params = new URLSearchParams();
+  var q = (document.getElementById('mem-search') || {}).value || '';
+  if (q) params.set('q', q);
+  if (_memShowAll) params.set('show_all', '1');
+  if (_memSortBy) params.set('sort_by', _memSortBy);
+  var url = '/api/admin/memory/users' + (params.toString() ? '?' + params : '');
+  var r = await apiFetch(url);
   if (!r || !r.ok) return;
-  const { users } = await r.json();
-  const el = document.getElementById('mem-user-list');
-  if (!el) return;
-  if (users.length === 0) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.75rem;padding:8px">Aucun utilisateur</div>';
+  var data = await r.json();
+  var users = data.users;
+  _memCurrentUsers = users;
+
+  // Client-side platform filter
+  var filtered = users;
+  if (_memPlatformFilter) {
+    filtered = users.filter(function(u) { return u.platform === _memPlatformFilter; });
+  }
+
+  var grid = document.getElementById('mem-grid');
+  if (!grid) return;
+
+  if (filtered.length === 0) {
+    grid.textContent = '';
+    var emptyDiv = document.createElement('div');
+    emptyDiv.className = 'mem-empty-state';
+    emptyDiv.textContent = 'Aucun utilisateur trouvé.';
+    grid.appendChild(emptyDiv);
     return;
   }
-  el.innerHTML = users.map(u => {
-    const selected = u.user_id === _selectedMemUser;
-    const lastSeen = u.last_updated
-      ? new Date(u.last_updated * 1000).toLocaleString('fr', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
-      : '—';
-    const trustColor = u.trust_score >= 0.7 ? 'var(--c-curiosity)' : u.trust_score <= 0.3 ? 'var(--c-offline)' : 'var(--text-muted)';
-    const platformIcon = PLATFORM_ICONS[u.platform] || '';
 
-    const pColor = PLATFORM_COLORS[u.platform] || 'var(--accent)';
-    const linkedBadge = (u.linked_accounts || []).map(a =>
-      `<span class="mem-link-badge" title="Lié à ${escAttr(a.alias_id)}">🔗 ${escHtml(a.alias_username)}</span>`
-    ).join('');
-    const noMemBadge = u.in_memory_users === false
-      ? '<span class="mem-no-memory-badge">sans mémoire</span>'
+  grid.innerHTML = filtered.map(function(u) {
+    var displayName = u.username || u.user_id.split(':').slice(1).join(':') || u.user_id;
+    var platform = u.platform || u.user_id.split(':')[0];
+    var memCount = u.memory_count || 0;
+    var trust = u.trust_score != null ? u.trust_score : 0;
+    var love = u.love_score != null ? u.love_score : 0;
+    var hasLinks = (u.linked_accounts || []).length > 0;
+    var noMem = memCount === 0;
+    var avatarUrl = u.avatar_url;
+    var initial = (displayName || '?')[0].toUpperCase();
+
+    var avatarStyle = avatarUrl
+      ? "background-image:url('" + escAttr(avatarUrl) + "');background-size:cover;background-position:center"
       : '';
-    const displayName = u.username || u.user_id.split(':').slice(1).join(':') || u.user_id;
-    const linkSelected = _linkMode && _linkSelection.some(s => s.user_id === u.user_id);
-    const clickHandler = _linkMode
-      ? `handleLinkModeClick('${escAttr(u.user_id)}','${escAttr(displayName)}','${escAttr(u.platform)}')`
-      : `selectMemUser('${escAttr(u.user_id)}','${escAttr(u.username || '')}', ${u.in_memory_users !== false})`;
-    return `
-    <div class="mem-user-item ${selected && !_linkMode ? 'selected' : ''} ${u.in_memory_users === false ? 'no-memory' : ''} ${linkSelected ? 'link-selected' : ''} ${_linkMode ? 'link-mode' : ''}"
-         data-uid="${escAttr(u.user_id)}"
-         onclick="${clickHandler}">
-      <div class="mem-user-header">
-        <span class="mem-platform-icon" style="color:${pColor}">${platformIcon}</span>
-        <span class="mem-user-name">${escHtml(displayName)}</span>
-        ${noMemBadge}${linkedBadge}
-      </div>
-      <div class="mem-user-meta">
-        <span style="color:${trustColor}">🛡️ ${u.trust_score !== undefined ? u.trust_score.toFixed(2) : '—'}</span>
-        <span>· ${escHtml(lastSeen)}</span>
-      </div>
-    </div>`;
+    var avatarContent = avatarUrl ? '' : escHtml(initial);
+
+    // Link mode classes
+    var cardClasses = 'mem-card';
+    if (noMem) cardClasses += ' no-memory';
+    if (_memLinkMode) {
+      if (u.user_id === _memLinkSourceId) {
+        cardClasses += ' link-source';
+      } else {
+        cardClasses += ' link-mode';
+      }
+    }
+
+    var clickHandler = _memLinkMode
+      ? "handleMemLinkClick('" + escAttr(u.user_id) + "','" + escAttr(displayName) + "','" + escAttr(platform) + "')"
+      : "openUserModal('" + escAttr(u.user_id) + "')";
+
+    return '<div class="' + cardClasses + '" data-uid="' + escAttr(u.user_id) + '" onclick="' + clickHandler + '">'
+      + (hasLinks ? '<span class="mem-card-link-badge">🔗 lié</span>' : '')
+      + '<div class="mem-card-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
+      + '<div class="mem-card-name" title="' + escAttr(displayName) + '">' + escHtml(displayName) + '</div>'
+      + '<div class="mem-card-sub">' + escHtml(platform) + ' · ' + (noMem ? '<em>sans mémoire</em>' : memCount + ' mémoire' + (memCount > 1 ? 's' : '')) + '</div>'
+      + '<div class="mem-card-bars">'
+      + '<div class="mem-card-bar"><div class="mem-card-bar-fill trust" style="width:' + Math.round(trust * 100) + '%"></div></div>'
+      + '<div class="mem-card-bar"><div class="mem-card-bar-fill love" style="width:' + Math.round(love * 100) + '%"></div></div>'
+      + '</div>'
+      + '<div class="mem-card-stats">'
+      + '<span style="color:#06b6d4">Trust ' + trust.toFixed(2) + '</span>'
+      + '<span style="color:#ec4899">Love ' + love.toFixed(2) + '</span>'
+      + '</div>'
+      + '</div>';
   }).join('');
 }
 
 async function syncMemoryUsers() {
-  const r = await apiFetch('/api/admin/memory/sync', { method: 'POST' });
+  var r = await apiFetch('/api/admin/memory/sync', { method: 'POST' });
   if (!r || !r.ok) { toast('Erreur sync', 'error'); return; }
-  const { synced } = await r.json();
-  toast(`${synced} utilisateur(s) importé(s)`, 'success');
-  refreshUserList();
+  var data = await r.json();
+  var msg = data.synced + ' importé(s)' + (data.resolved ? ', ' + data.resolved + ' nom(s) résolu(s)' : '');
+  toast(msg, 'success');
+  loadMemoryUsers();
 }
 
-async function resolveUsernames() {
-  const r = await apiFetch('/api/admin/memory/resolve-usernames', { method: 'POST' });
-  if (!r || !r.ok) { toast('Erreur résolution', 'error'); return; }
-  const { resolved } = await r.json();
-  toast(`${resolved} nom(s) résolu(s)`, 'success');
-  refreshUserList();
-}
+// ── User Detail Modal ─────────────────────────────────────────────
 
-async function selectMemUser(userId, username, hasMemories = true) {
-  _selectedMemUser = userId;
-  _selectedMemUsername = username || null;
-  document.querySelectorAll('.mem-user-item').forEach(el => {
-    el.classList.toggle('selected', el.dataset.uid === userId);
-  });
-  await loadUserDetail(userId, hasMemories);
-}
+async function openUserModal(userId, userData) {
+  // Fetch memories
+  var memR = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
+  var memories = memR && memR.ok ? (await memR.json()).memories : [];
 
-async function loadUserDetail(userId, hasMemories = true) {
-  const el = document.getElementById('mem-detail');
-  if (!el) return;
-
-  // Charger mémoires + liens en parallèle
-  const [memR, linksR] = await Promise.all([
-    hasMemories ? apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId)) : null,
-    apiFetch('/api/admin/links?_t=' + Date.now()),
-  ]);
-
-  const memories = memR && memR.ok ? (await memR.json()).memories : [];
-  const allLinks = linksR && linksR.ok ? (await linksR.json()).proposals : [];
-
-  // Filtrer les liens pertinents pour cet utilisateur
-  const userLinks = allLinks.filter(p =>
-    p.canonical_id === userId || p.alias_id === userId
-  );
-  const pendingLinks = userLinks.filter(p => p.status === 'pending');
-  const acceptedLinks = userLinks.filter(p => p.status === 'accepted');
-
-  const displayName = _selectedMemUsername || userId.split(':').slice(1).join(':') || userId;
-  const platform = userId.split(':')[0];
-  const platformColors = { discord: '#5865F2', twitch: '#9146FF' };
-  const pColor = PLATFORM_COLORS[platform] || 'var(--accent)';
-  const platformIcon = PLATFORM_ICONS[platform] || '';
-
-  el.innerHTML = `
-    <!-- User header -->
-    <div class="mem-detail-header">
-      <div class="mem-detail-user">
-        <span class="mem-detail-platform" style="color:${pColor}">${platformIcon}</span>
-        <div>
-          <div class="mem-detail-name">${escHtml(displayName)}</div>
-          <div class="mem-detail-id">${escHtml(userId)}</div>
-        </div>
-      </div>
-      <div class="mem-detail-actions">
-        ${memories.length > 0 ? `<button class="btn btn-danger" onclick="deleteAllMemories('${escAttr(userId)}')"
-                style="font-size:0.72rem;padding:4px 10px">🗑 Supprimer tout</button>` : ''}
-      </div>
-    </div>
-
-    <!-- Link section -->
-    ${acceptedLinks.length > 0 || pendingLinks.length > 0 ? `
-    <div class="mem-detail-section">
-      <div class="mem-detail-section-title">🔗 LIAISONS</div>
-      ${acceptedLinks.map(p => {
-        const otherId = p.canonical_id === userId ? p.alias_id : p.canonical_id;
-        const otherName = p.canonical_id === userId
-          ? (p.alias_username || otherId.split(':').slice(1).join(':'))
-          : (p.canonical_username || otherId.split(':').slice(1).join(':'));
-        const otherPlatform = otherId.split(':')[0];
-        const otherIcon = PLATFORM_ICONS[otherPlatform] || '';
-        const otherColor = PLATFORM_COLORS[otherPlatform] || 'var(--accent)';
-        return `<div class="mem-link-card accepted">
-          <span style="color:${otherColor}">${otherIcon}</span>
-          <span>${escHtml(otherName)}</span>
-          <span class="mem-link-status accepted">LIÉ</span>
-          <button onclick="unlinkAccounts(${p.id})" class="btn btn-danger" style="font-size:0.62rem;padding:2px 8px;margin-left:4px" title="Délier ces comptes">✗ Délier</button>
-        </div>`;
-      }).join('')}
-      ${pendingLinks.map(p => {
-        const otherId = p.canonical_id === userId ? p.alias_id : p.canonical_id;
-        const otherName = p.canonical_id === userId
-          ? (p.alias_username || otherId.split(':').slice(1).join(':'))
-          : (p.canonical_username || otherId.split(':').slice(1).join(':'));
-        const otherPlatform = otherId.split(':')[0];
-        const otherIcon = PLATFORM_ICONS[otherPlatform] || '';
-        const otherColor = PLATFORM_COLORS[otherPlatform] || 'var(--accent)';
-        return `<div class="mem-link-card pending">
-          <span style="color:${otherColor}">${otherIcon}</span>
-          <span>${escHtml(otherName)}</span>
-          <span class="mem-link-confidence">${Math.round(p.confidence * 100)}%</span>
-          <div class="mem-link-actions">
-            <button onclick="acceptLink(${p.id})" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">✓</button>
-            <button onclick="rejectLink(${p.id})" class="btn btn-danger" style="font-size:0.68rem;padding:2px 8px">✗</button>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-    ` : ''}
-
-    <!-- Manual link + add memory -->
-    <div class="mem-detail-section">
-      <div class="mem-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>${memories.length} SOUVENIR(S)</span>
-        <div style="display:flex;gap:6px">
-          <button class="btn" onclick="showAddMemoryForm('${escAttr(userId)}')" style="font-size:0.68rem;padding:2px 8px">+ Ajouter</button>
-          <button class="btn" onclick="showInlineLink('${escAttr(userId)}')" style="font-size:0.68rem;padding:2px 8px">+ Lier un compte</button>
-        </div>
-      </div>
-      <div id="add-memory-form" style="display:none"></div>
-      <div id="inline-link-form" style="display:none"></div>
-    </div>
-
-    <!-- Memories -->
-    <div class="mem-detail-memories">
-      ${memories.length === 0
-        ? '<div class="mem-empty-state">Aucun souvenir enregistré.</div>'
-        : memories.map(m => {
-          const mPlatform = m.source_platform || (m.source ? m.source.split(':')[0] : '');
-          const mColor = PLATFORM_COLORS[mPlatform] || 'rgba(6,182,212,0.7)';
-          const mSvg = PLATFORM_ICONS[mPlatform] || '';
-          const mBadge = mSvg
-            ? `<span class="mem-entry-platform" style="background:${mColor}20;color:${mColor};border-color:${mColor}40" title="${escAttr(mPlatform)}">${mSvg}${mPlatform}</span>`
-            : '';
-          const dateStr = m.updated_at || m.created_at;
-          const dateBadge = dateStr
-            ? `<span class="mem-entry-date">${new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>`
-            : '';
-          return `
-          <div class="mem-entry" id="mem-entry-${escAttr(m.id)}">
-            <div class="mem-entry-content">
-              <div class="mem-entry-meta">${mBadge}${dateBadge}</div>
-              <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
-            </div>
-            <div class="mem-entry-actions">
-              <button onclick="startEditMemory('${escAttr(m.source || userId)}','${escAttr(m.id)}')"
-                      class="mem-entry-edit" aria-label="Modifier ce souvenir">&#9998;</button>
-              <button onclick="deleteMemory('${escAttr(m.source || userId)}','${escAttr(m.id)}')"
-                      class="mem-entry-delete" aria-label="Supprimer ce souvenir">&#10005;</button>
-            </div>
-          </div>`;
-        }).join('')
-      }
-    </div>
-  `;
-}
-
-function startEditMemory(userId, memoryId) {
-  const textEl = document.getElementById('mem-text-' + memoryId);
-  if (!textEl) return;
-  const current = textEl.textContent;
-  const entry = document.getElementById('mem-entry-' + memoryId);
-  if (!entry) return;
-  const contentDiv = entry.querySelector('.mem-entry-content');
-  const actionsDiv = entry.querySelector('.mem-entry-actions');
-  if (actionsDiv) actionsDiv.style.display = 'none';
-  const metaHtml = contentDiv.querySelector('.mem-entry-meta')?.outerHTML || '';
-  contentDiv.innerHTML = `
-    ${metaHtml}
-    <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-      <input type="text" id="edit-memory-input-${escAttr(memoryId)}" value="${escAttr(current)}"
-             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitEditMemory('${escAttr(userId)}','${escAttr(memoryId)}'); if(event.key==='Escape') cancelEditMemory();">
-      <button onclick="submitEditMemory('${escAttr(userId)}','${escAttr(memoryId)}')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>
-      <button onclick="cancelEditMemory()" class="btn" style="font-size:0.68rem;padding:2px 8px">✗</button>
-    </div>
-  `;
-  document.getElementById('edit-memory-input-' + memoryId)?.focus();
-}
-
-async function submitEditMemory(userId, memoryId) {
-  const input = document.getElementById('edit-memory-input-' + memoryId);
-  const content = input?.value.trim();
-  if (!content) { toast('Contenu requis', 'error'); return; }
-  const r = await apiFetch(
-    `/api/admin/memory/users/${encodeURIComponent(userId)}/memories/${encodeURIComponent(memoryId)}`,
-    { method: 'PUT', body: JSON.stringify({ content }) }
-  );
-  if (r && r.ok) {
-    toast('Souvenir modifié', 'success');
-    await loadUserDetail(_selectedMemUser, true);
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur', 'error');
+  // Find user data from cached list if not passed
+  if (!userData) {
+    userData = _memCurrentUsers.find(function(u) { return u.user_id === userId; }) || {};
   }
+
+  var displayName = userData.username || userId.split(':').slice(1).join(':') || userId;
+  var platform = userData.platform || userId.split(':')[0];
+  var trust = userData.trust_score != null ? userData.trust_score : 0;
+  var love = userData.love_score != null ? userData.love_score : 0;
+  var avatarUrl = userData.avatar_url;
+  var initial = (displayName || '?')[0].toUpperCase();
+  var linkedAccounts = userData.linked_accounts || [];
+
+  // Group memories by category
+  var grouped = {};
+  MEM_CATEGORIES.forEach(function(cat) { grouped[cat.key] = []; });
+  memories.forEach(function(m) {
+    var catKey = m.category || '';
+    if (!grouped[catKey]) grouped[catKey] = grouped[''];
+    grouped[catKey].push(m);
+  });
+  // Sort each group by date desc
+  Object.keys(grouped).forEach(function(key) {
+    grouped[key].sort(function(a, b) {
+      var da = new Date(b.updated_at || b.created_at || 0);
+      var db = new Date(a.updated_at || a.created_at || 0);
+      return da - db;
+    });
+  });
+
+  // Create backdrop
+  var backdrop = document.createElement('div');
+  backdrop.className = 'mem-modal-backdrop';
+  backdrop.addEventListener('click', function(e) {
+    if (e.target === backdrop) backdrop.remove();
+  });
+
+  var avatarStyle = avatarUrl
+    ? "background-image:url('" + escAttr(avatarUrl) + "');background-size:cover;background-position:center"
+    : '';
+  var avatarContent = avatarUrl ? '' : escHtml(initial);
+
+  // Build category sections HTML
+  var categoriesHtml = '';
+  MEM_CATEGORIES.forEach(function(cat) {
+    var items = grouped[cat.key] || [];
+    if (items.length === 0) return;
+    categoriesHtml += '<div class="mem-category" data-cat="' + escAttr(cat.key) + '">'
+      + '<div class="mem-category-header" onclick="toggleMemCategory(this)">'
+      + '<span class="mem-category-chevron">▼</span>'
+      + '<span class="mem-category-name ' + escAttr(cat.css) + '">' + escHtml(cat.label) + '</span>'
+      + '<span class="mem-category-count">(' + items.length + ')</span>'
+      + '</div>'
+      + '<div class="mem-category-body">'
+      + items.map(function(m) {
+          var isOwn = (m.source || '') === userId || (m.source_platform || '') === platform;
+          var sourceIcon = isOwn ? '🤖' : '✍️';
+          var dateStr = m.updated_at || m.created_at;
+          var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
+          return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '">'
+            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.memory) + '</span>'
+            + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajouté manuellement') + '">' + sourceIcon + '</span>'
+            + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
+            + '<div class="mem-entry-actions">'
+            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Modifier">✏️</button>'
+            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Supprimer">🗑</button>'
+            + '</div></div>';
+        }).join('')
+      + '</div></div>';
+  });
+
+  if (categoriesHtml === '') {
+    categoriesHtml = '<div class="mem-empty-state">Aucun souvenir enregistré.</div>';
+  }
+
+  // Build linked accounts section
+  var linkedHtml = '';
+  if (linkedAccounts.length > 0) {
+    linkedHtml = '<div class="mem-linked-section">'
+      + '<div class="mem-linked-title">Comptes liés</div>'
+      + '<div class="mem-linked-pills">'
+      + linkedAccounts.map(function(a) {
+          var aPlatform = a.alias_platform || a.alias_id.split(':')[0];
+          var aName = a.alias_username || a.alias_id.split(':').slice(1).join(':');
+          return '<div class="mem-linked-pill ' + escAttr(aPlatform) + '">'
+            + (PLATFORM_ICONS[aPlatform] || '') + ' ' + escHtml(aName)
+            + '<button class="mem-linked-pill-unlink" onclick="unlinkFromModal(' + (a.link_id || 0) + ',\'' + escAttr(userId) + '\')" title="Délier">✕</button>'
+            + '</div>';
+        }).join('')
+      + '</div></div>';
+  }
+
+  var modal = document.createElement('div');
+  modal.className = 'mem-modal';
+  modal.innerHTML = '<div class="mem-modal-header">'
+    + '<div class="mem-modal-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
+    + '<div class="mem-modal-info">'
+    + '<div class="mem-modal-name">' + escHtml(displayName) + '</div>'
+    + '<div class="mem-modal-sub">' + escHtml(platform) + ' · ' + escHtml(userId) + '</div>'
+    + '</div>'
+    + '<div class="mem-modal-stats">'
+    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value trust">' + trust.toFixed(2) + '</div><div class="mem-modal-stat-label">Trust</div></div>'
+    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value love">' + love.toFixed(2) + '</div><div class="mem-modal-stat-label">Love</div></div>'
+    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value count">' + memories.length + '</div><div class="mem-modal-stat-label">Mémoires</div></div>'
+    + '</div>'
+    + '<button class="mem-modal-close" onclick="this.closest(\'.mem-modal-backdrop\').remove()">✕</button>'
+    + '</div>'
+    + '<div class="mem-modal-actions">'
+    + '<button class="mem-modal-action add" onclick="showModalAddForm(\'' + escAttr(userId) + '\')">+ Ajouter mémoire</button>'
+    + '<button class="mem-modal-action link" onclick="startLinkMode(\'' + escAttr(userId) + '\',\'' + escAttr(displayName) + '\')">🔗 Lier un compte</button>'
+    + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escAttr(userId) + '\')">🗑 Supprimer tout</button>' : '')
+    + '</div>'
+    + '<div id="modal-add-form"></div>'
+    + '<input type="text" class="mem-modal-search" id="modal-mem-search" placeholder="🔍 Rechercher dans les mémoires..." oninput="filterModalMemories(this.value)">'
+    + '<div id="modal-categories">' + categoriesHtml + '</div>'
+    + linkedHtml;
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
 }
 
-function cancelEditMemory() {
-  if (_selectedMemUser) loadUserDetail(_selectedMemUser, true);
+function toggleMemCategory(headerEl) {
+  var chevron = headerEl.querySelector('.mem-category-chevron');
+  var body = headerEl.nextElementSibling;
+  if (!chevron || !body) return;
+  var isCollapsed = body.classList.toggle('collapsed');
+  chevron.classList.toggle('collapsed', isCollapsed);
 }
 
-function showAddMemoryForm(userId) {
-  const el = document.getElementById('add-memory-form');
+function filterModalMemories(query) {
+  var q = query.toLowerCase();
+  document.querySelectorAll('.mem-modal .mem-entry').forEach(function(entry) {
+    var textEl = entry.querySelector('.mem-entry-text');
+    var text = textEl ? textEl.textContent.toLowerCase() : '';
+    entry.style.display = text.indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function showModalAddForm(userId) {
+  var el = document.getElementById('modal-add-form');
   if (!el) return;
-  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;padding:8px 0">
-      <input type="text" id="add-memory-input" placeholder="Nouveau souvenir…"
-             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitAddMemory('${escAttr(userId)}')">
-      <button onclick="submitAddMemory('${escAttr(userId)}')" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Ajouter</button>
-    </div>
-  `;
-  document.getElementById('add-memory-input')?.focus();
+  if (el.children.length > 0) { el.textContent = ''; return; }
+  var catOptions = MEM_CATEGORIES.filter(function(c) { return c.key; }).map(function(c) {
+    return '<option value="' + escAttr(c.key) + '">' + escHtml(c.label) + '</option>';
+  }).join('') + '<option value="">Non classé</option>';
+  el.innerHTML = '<div class="mem-add-form">'
+    + '<input type="text" id="modal-add-input" placeholder="Nouveau souvenir...">'
+    + '<select id="modal-add-category">' + catOptions + '</select>'
+    + '<button onclick="submitModalAddMemory(\'' + escAttr(userId) + '\')">Ajouter</button>'
+    + '</div>';
+  var inp = document.getElementById('modal-add-input');
+  if (inp) inp.focus();
 }
 
-async function submitAddMemory(userId) {
-  const input = document.getElementById('add-memory-input');
-  const content = input?.value.trim();
+async function submitModalAddMemory(userId) {
+  var input = document.getElementById('modal-add-input');
+  var catEl = document.getElementById('modal-add-category');
+  var cat = catEl ? catEl.value : '';
+  var content = input ? input.value.trim() : '';
   if (!content) { toast('Contenu requis', 'error'); return; }
-  const r = await apiFetch(`/api/admin/memory/users/${encodeURIComponent(userId)}/memories`, {
+  var body = { content: content };
+  if (cat) body.category = cat;
+  var r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   });
   if (r && r.ok) {
     toast('Souvenir ajouté', 'success');
-    document.getElementById('add-memory-form').style.display = 'none';
-    await loadUserDetail(_selectedMemUser, true);
+    var bdrop = document.querySelector('.mem-modal-backdrop');
+    if (bdrop) bdrop.remove();
+    await openUserModal(userId);
+    loadMemoryUsers();
   } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
     toast(err.detail || 'Erreur', 'error');
   }
 }
 
-function showInlineLink(userId) {
-  const el = document.getElementById('inline-link-form');
-  if (!el) return;
-  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  const platform = userId.split(':')[0];
-  const otherPlatform = platform === 'discord' ? 'twitch' : 'discord';
-  el.style.display = 'block';
-  el.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;padding:8px 0">
-      <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap">Lier à ${otherPlatform}:</span>
-      <input type="text" id="inline-link-target" placeholder="${otherPlatform === 'discord' ? 'Discord ID' : 'Twitch username'}"
-             style="flex:1;font-size:0.8rem" onkeydown="if(event.key==='Enter') submitInlineLink('${escAttr(userId)}')">
-      <button onclick="submitInlineLink('${escAttr(userId)}')" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">Lier</button>
-    </div>
-  `;
+function startModalEditMemory(userId, memoryId) {
+  var textEl = document.getElementById('mem-text-' + memoryId);
+  if (!textEl) return;
+  var current = textEl.textContent;
+  var entry = document.getElementById('mem-entry-' + memoryId);
+  if (!entry) return;
+  var actionsDiv = entry.querySelector('.mem-entry-actions');
+  if (actionsDiv) actionsDiv.style.display = 'none';
+  textEl.outerHTML = '<div style="display:flex;gap:6px;align-items:center;flex:1">'
+    + '<input type="text" id="edit-mem-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
+    + ' style="flex:1;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:4px 8px;color:#e2e8f0"'
+    + ' onkeydown="if(event.key===\'Enter\') submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\'); if(event.key===\'Escape\') reopenModal(\'' + escAttr(userId) + '\');">'
+    + '<button class="mem-entry-action" onclick="submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\')" style="opacity:1;font-size:11px">OK</button>'
+    + '<button class="mem-entry-action" onclick="reopenModal(\'' + escAttr(userId) + '\')" style="opacity:1;font-size:11px">✕</button>'
+    + '</div>';
+  var inp = document.getElementById('edit-mem-input-' + memoryId);
+  if (inp) inp.focus();
 }
 
-async function submitInlineLink(userId) {
-  const target = document.getElementById('inline-link-target')?.value.trim();
-  if (!target) { toast('ID requis', 'error'); return; }
-  const platform = userId.split(':')[0];
-  const otherPlatform = platform === 'discord' ? 'twitch' : 'discord';
-  const canonical = platform === 'discord' ? userId : `discord:${target}`;
-  const alias = platform === 'discord' ? `twitch:${target}` : userId;
-  const r = await apiFetch('/api/admin/links/manual', {
-    method: 'POST',
-    body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
-  });
+async function submitModalEditMemory(userId, memoryId) {
+  var input = document.getElementById('edit-mem-input-' + memoryId);
+  var content = input ? input.value.trim() : '';
+  if (!content) { toast('Contenu requis', 'error'); return; }
+  var r = await apiFetch(
+    '/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories/' + encodeURIComponent(memoryId),
+    { method: 'PUT', body: JSON.stringify({ content: content }) }
+  );
   if (r && r.ok) {
-    toast('Liaison créée et fusionnée', 'success');
-    await loadUserDetail(_selectedMemUser);
-    refreshUserList();
+    toast('Souvenir modifié', 'success');
+    await reopenModal(userId);
   } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
     toast(err.detail || 'Erreur', 'error');
   }
 }
 
-async function deleteMemory(userId, memoryId) {
-  const r = await apiFetch(
-    `/api/admin/memory/users/${encodeURIComponent(userId)}/memories/${encodeURIComponent(memoryId)}`,
+async function deleteModalMemory(userId, memoryId) {
+  var r = await apiFetch(
+    '/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories/' + encodeURIComponent(memoryId),
     { method: 'DELETE' }
   );
   if (r && r.ok) {
-    document.getElementById('mem-entry-' + memoryId)?.remove();
     toast('Souvenir supprimé', 'success');
+    await reopenModal(userId);
+    loadMemoryUsers();
   } else {
     toast('Erreur suppression', 'error');
   }
 }
 
-async function deleteAllMemories(userId) {
-  const r = await apiFetch(
+async function deleteAllModalMemories(userId) {
+  if (!confirm('Supprimer tous les souvenirs de cet utilisateur ?')) return;
+  var r = await apiFetch(
     '/api/admin/memory/users/' + encodeURIComponent(userId),
     { method: 'DELETE' }
   );
   if (r && r.ok) {
     toast('Mémoire supprimée', 'success');
-    // Recharger le detail (user existe encore mais sans mémoires)
-    await loadUserDetail(userId, false);
-    refreshUserList();
+    var bdrop = document.querySelector('.mem-modal-backdrop');
+    if (bdrop) bdrop.remove();
+    loadMemoryUsers();
   } else {
     toast('Erreur suppression', 'error');
   }
 }
 
-let _memSearchTimer = null;
-function onMemSearch(value) {
-  clearTimeout(_memSearchTimer);
-  _memSearchTimer = setTimeout(async () => {
-    if (value.length >= 2) {
-      await searchMemories(value);
-    } else if (_selectedMemUser) {
-      await loadUserDetail(_selectedMemUser);
-    } else {
-      document.getElementById('mem-detail').innerHTML =
-        '<div class="mem-empty-state">Sélectionne un utilisateur pour voir ses souvenirs et liaisons.</div>';
-    }
-  }, 400);
+async function reopenModal(userId) {
+  var bdrop = document.querySelector('.mem-modal-backdrop');
+  if (bdrop) bdrop.remove();
+  await openUserModal(userId);
 }
 
-async function searchMemories(q) {
-  const r = await apiFetch('/api/admin/memory/search?q=' + encodeURIComponent(q));
-  if (!r || !r.ok) return;
-  const { results } = await r.json();
-  const el = document.getElementById('mem-detail');
-  if (!el) return;
-  el.innerHTML = `
-    <div style="padding:10px 16px;border-bottom:1px solid var(--glass-border)">
-      <span style="font-size:0.7rem;color:var(--text-muted);letter-spacing:1px">${results.length} résultat(s) pour "${escHtml(q)}"</span>
-    </div>
-    <div style="padding:12px">
-      ${results.length === 0
-        ? '<div style="color:var(--text-muted);font-size:0.85rem">Aucun résultat.</div>'
-        : results.map(res => `
-          <div class="card" style="padding:12px 14px;margin-bottom:8px">
-            <span style="font-size:0.62rem;color:var(--text-dim);display:block;margin-bottom:4px">${res.username ? escHtml(res.username) + ' · ' : ''}${escHtml(res.user_id)}</span>
-            <span style="font-size:0.82rem;line-height:1.5">${escHtml(res.memory)}</span>
-          </div>`).join('')
-      }
-    </div>
-  `;
+async function unlinkFromModal(linkId, userId) {
+  var r = await apiFetch('/api/admin/links/' + linkId + '/unlink', { method: 'POST' });
+  if (r && r.ok) {
+    toast('Comptes déliés', 'success');
+    await reopenModal(userId);
+    loadMemoryUsers();
+  } else {
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Erreur déliaison', 'error');
+  }
 }
 
-let _userFilterTimer = null;
-function onUserFilter(value) {
-  clearTimeout(_userFilterTimer);
-  _userFilterTimer = setTimeout(() => loadMemoryUsers(value), 300);
+// ── Account Linking Flow (grid selection mode) ─────────────────────
+
+function startLinkMode(sourceUserId, sourceUsername) {
+  _memLinkMode = true;
+  _memLinkSourceId = sourceUserId;
+  _memLinkSourceName = sourceUsername;
+  // Close modal
+  var bdrop = document.querySelector('.mem-modal-backdrop');
+  if (bdrop) bdrop.remove();
+  // Show banner
+  var banner = document.getElementById('mem-link-banner');
+  if (banner) {
+    banner.style.display = 'flex';
+    banner.className = 'mem-link-banner';
+    banner.innerHTML = '<div class="mem-link-banner-info">'
+      + '<strong>' + escHtml(sourceUsername) + '</strong> ↔ Cliquer sur un utilisateur...'
+      + '</div>'
+      + '<button class="mem-action-btn" onclick="cancelLinkMode()">Annuler</button>';
+  }
+  // Re-render grid with link mode classes
+  loadMemoryUsers();
+}
+
+function cancelLinkMode() {
+  _memLinkMode = false;
+  _memLinkSourceId = null;
+  _memLinkSourceName = null;
+  var banner = document.getElementById('mem-link-banner');
+  if (banner) banner.style.display = 'none';
+  loadMemoryUsers();
+}
+
+async function handleMemLinkClick(targetUserId, targetName, targetPlatform) {
+  if (!_memLinkMode || !_memLinkSourceId) return;
+  if (targetUserId === _memLinkSourceId) return;
+
+  if (!confirm('Lier ' + _memLinkSourceName + ' avec ' + targetName + ' ?')) return;
+
+  // Determine canonical (Discord preferred)
+  var sourcePlatform = _memLinkSourceId.split(':')[0];
+  var canonical, alias;
+  if (sourcePlatform === 'discord') {
+    canonical = _memLinkSourceId; alias = targetUserId;
+  } else if (targetPlatform === 'discord') {
+    canonical = targetUserId; alias = _memLinkSourceId;
+  } else {
+    canonical = _memLinkSourceId; alias = targetUserId;
+  }
+
+  var r = await apiFetch('/api/admin/links/manual', {
+    method: 'POST',
+    body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
+  });
+  if (r && r.ok) {
+    toast('Comptes liés avec succès', 'success');
+    var sourceId = _memLinkSourceId;
+    cancelLinkMode();
+    // Reopen modal on source user
+    await openUserModal(sourceId);
+    pollLinksBadge();
+  } else {
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Erreur liaison', 'error');
+  }
 }
 
 // ── Global memory (dedicated tab) ─────────────────────────────────────────────
@@ -2075,8 +2020,7 @@ async function acceptLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/accept`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison acceptée — mémoires fusionnées', 'success');
-    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
-    refreshUserList();
+    loadMemoryUsers();
     pollLinksBadge();
   } else {
     toast('Erreur', 'error');
@@ -2087,7 +2031,6 @@ async function rejectLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/reject`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison rejetée', 'success');
-    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
     pollLinksBadge();
   } else {
     toast('Erreur', 'error');
@@ -2098,8 +2041,7 @@ async function unlinkAccounts(id) {
   const r = await apiFetch(`/api/admin/links/${id}/unlink`, { method: 'POST' });
   if (r && r.ok) {
     toast('Comptes déliés', 'success');
-    if (_selectedMemUser) await loadUserDetail(_selectedMemUser);
-    refreshUserList();
+    loadMemoryUsers();
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
     toast(err.detail || 'Erreur déliaison', 'error');
@@ -3152,7 +3094,7 @@ function switchMemoireSubTab(subtab) {
   if (subtab === 'users') {
     // Move memory tab content into the sub-panel
     const memTab = document.getElementById('tab-memory');
-    if (!document.getElementById('mem-user-list')) renderMemoryTab();
+    if (!document.getElementById('mem-grid')) renderMemoryTab();
     if (memTab && panel && memTab.children.length > 0 && panel.children.length === 0) {
       while (memTab.firstChild) panel.appendChild(memTab.firstChild);
     }
@@ -3489,10 +3431,63 @@ prompt = PromptBuilder.build(
         </div>
       </section>
 
-      <!-- Section 6: Architecture -->
+      <!-- Section 6: Galerie d'images et vision -->
       <section class="jd-section">
         <div class="jd-section-header">
-          <span class="jd-num" style="background: #ff8800">6</span>
+          <span class="jd-num" style="background: var(--c-joy); color: #000">6</span>
+          <h3>Galerie d'images et vision</h3>
+        </div>
+        <div class="jd-body">
+          <p>Wally peut <strong>générer des images</strong> via la commande <code>/imagine</code> sur Discord ou dans le chat web. Il utilise l'API OpenAI Images pour créer l'image, puis un modèle secondaire génère automatiquement un <strong>titre court et créatif</strong>.</p>
+          <p>Chaque image est sauvegardée dans la <strong>galerie</strong>, accessible depuis le dashboard. Les utilisateurs peuvent <strong>voter</strong> avec une flamme (toggle), trier par date ou par votes, filtrer par créateur, et le créateur peut <strong>modifier le titre</strong> de son image.</p>
+          <p>Wally a aussi la <strong>vision</strong> : quand quelqu'un envoie une image en pièce jointe, il la voit et peut la commenter. Et quand quelqu'un <strong>répond à une image qu'il a générée</strong>, il sait que c'est la sienne — il reconnaît le titre, le prompt original, et peut en discuter naturellement.</p>
+          <p>Des <strong>limites configurables</strong> empêchent les abus : limite journalière globale et par utilisateur. Le coût de chaque génération est logué dans la base de données.</p>
+
+          <div class="jd-pipeline">
+            <span class="jd-pipe-step" style="background: var(--c-joy); color: #000">✨ /imagine</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">🎨 OpenAI Images</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">📝 Titre LLM</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step">💾 Galerie</span>
+            <span class="jd-pipe-arrow">→</span>
+            <span class="jd-pipe-step" style="background: var(--c-anger)">🔥 Votes</span>
+          </div>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — génération et vision</summary>
+            <div class="jd-code-block">
+              <div class="jd-file-path">bot/discord/commands/imagine.py + bot/discord/handlers.py</div>
+              <pre><code># Génération d'image
+result = await openai.generate_image(prompt, sender_id)
+
+# Titre auto via modèle secondaire
+title = await openai.complete_secondary(
+    "Génère un titre court et créatif (max 6 mots)...",
+    purpose="image_title"
+)
+
+# Vision : quand on répond à un message avec une image
+# Wally récupère l'image du message référencé
+if message.reference:
+    ref_msg = message.reference.resolved
+    # Extrait les URLs d'images (attachments + embeds)
+    # Si c'est une image de Wally → contexte enrichi :
+    # "[Tu as généré cette image. Titre: X. Prompt: Y]"
+    # Sinon → "[L'utilisateur répond à une image.]"</code></pre>
+              <p class="jd-tech-note"><strong>Vision multimodale</strong> : les URLs d'images sont passées à OpenAI via le paramètre <code>image_urls</code>. Le modèle voit l'image et peut la décrire, la commenter ou répondre à des questions dessus.</p>
+              <p class="jd-tech-note"><strong>Reconnaissance d'auteur</strong> : quand le message référencé vient de Wally lui-même, le contexte injecté précise « c'est une image que TU as générée », avec le titre et le prompt original. Wally peut ainsi en parler naturellement.</p>
+              <p class="jd-tech-note"><strong>Stockage</strong> : images sur disque (<code>data/gallery/</code>), métadonnées dans SQLite (<code>gallery_images</code> + <code>gallery_votes</code>). Coût logué dans <code>cost_log</code>.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 7: Architecture -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: #ff8800">7</span>
           <h3>Architecture</h3>
         </div>
         <div class="jd-body">
@@ -3666,7 +3661,7 @@ function renderGalleryCard(img) {
 async function toggleFlame(imageId, btn) {
   const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('chat_token') || '') }
+    headers: { 'Authorization': 'Bearer ' + (getChatJwt() || '') }
   });
   if (!r.ok) {
     if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
@@ -4206,7 +4201,7 @@ function chatUpdateEmbedTitle(data) {
 async function toggleFlameEmbed(imageId, btn) {
   const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('chat_token') || '') }
+    headers: { 'Authorization': 'Bearer ' + (getChatJwt() || '') }
   });
   if (!r.ok) {
     if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
