@@ -32,7 +32,12 @@ def _unwrap(results) -> list:
 # ── GET /memory/users ─────────────────────────────────────────────────────────
 
 @router.get("/memory/users")
-async def list_users(request: Request, q: str | None = None, show_all: str | None = None):
+async def list_users(
+    request: Request,
+    q: str | None = None,
+    show_all: str | None = None,
+    sort_by: str = "memories",
+):
     state = request.app.state.wally
     include_no_memory = show_all == "1"
     users = await state.db.list_memory_users(q, include_no_memory=include_no_memory)
@@ -77,6 +82,36 @@ async def list_users(request: Request, q: str | None = None, show_all: str | Non
         if aliases:
             user["linked_accounts"] = aliases
         merged_users.append(user)
+
+    # Enrichir chaque utilisateur avec trust_score, love_score, defaults
+    for user in merged_users:
+        user.setdefault("avatar_url", None)
+        user.setdefault("memory_count", 0)
+        # Extraire platform et raw_id depuis user_id (format "platform:raw_id")
+        uid = user["user_id"]
+        platform = uid.split(":")[0] if ":" in uid else user.get("platform", "")
+        raw_id = uid.split(":", 1)[1] if ":" in uid else uid
+        try:
+            trust = await state.db.get_trust_score(platform, raw_id)
+            user["trust_score"] = float(trust) if trust is not None else 0.0
+        except Exception:
+            user["trust_score"] = 0.0
+        try:
+            love = await state.db.get_love_score(platform, raw_id)
+            user["love_score"] = float(love) if love is not None else 0.0
+        except Exception:
+            user["love_score"] = 0.0
+
+    # Tri selon le paramètre sort_by
+    sort_keys = {
+        "trust": lambda u: u.get("trust_score", 0.0),
+        "love": lambda u: u.get("love_score", 0.0),
+        "memories": lambda u: u.get("memory_count", 0),
+        "name": lambda u: (u.get("username") or "").lower(),
+    }
+    key_fn = sort_keys.get(sort_by, sort_keys["memories"])
+    reverse = sort_by != "name"
+    merged_users.sort(key=key_fn, reverse=reverse)
 
     return {"users": merged_users}
 

@@ -469,6 +469,80 @@ async def test_resolve_alias():
 
 
 @pytest.mark.asyncio
+async def test_list_users_sort_by_trust():
+    state, _, db = _make_state()
+    db.list_memory_users.return_value = [
+        {"user_id": "discord:1", "platform": "discord", "username": "Alice", "memory_count": 5, "avatar_url": None},
+        {"user_id": "discord:2", "platform": "discord", "username": "Bob", "memory_count": 10, "avatar_url": None},
+    ]
+    db.list_link_proposals = AsyncMock(return_value=[])
+    db.get_trust_score = AsyncMock(side_effect=lambda p, uid: 0.9 if "1" in uid else 0.3)
+    db.get_love_score = AsyncMock(side_effect=lambda p, uid, **kw: 0.5 if "1" in uid else 0.8)
+
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/users?sort_by=trust", headers=HEADERS)
+    assert r.status_code == 200
+    users = r.json()["users"]
+    assert users[0]["trust_score"] >= users[1]["trust_score"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_by_love():
+    state, _, db = _make_state()
+    db.list_memory_users.return_value = [
+        {"user_id": "discord:1", "platform": "discord", "username": "Alice", "memory_count": 5, "avatar_url": None},
+        {"user_id": "discord:2", "platform": "discord", "username": "Bob", "memory_count": 10, "avatar_url": None},
+    ]
+    db.list_link_proposals = AsyncMock(return_value=[])
+    db.get_trust_score = AsyncMock(return_value=0.5)
+    db.get_love_score = AsyncMock(side_effect=lambda p, uid, **kw: 0.5 if "1" in uid else 0.8)
+
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/users?sort_by=love", headers=HEADERS)
+    assert r.status_code == 200
+    users = r.json()["users"]
+    assert users[0]["love_score"] >= users[1]["love_score"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_by_memories():
+    state, _, db = _make_state()
+    db.list_memory_users.return_value = [
+        {"user_id": "discord:1", "platform": "discord", "username": "Alice", "memory_count": 5, "avatar_url": None},
+        {"user_id": "discord:2", "platform": "discord", "username": "Bob", "memory_count": 10, "avatar_url": None},
+    ]
+    db.list_link_proposals = AsyncMock(return_value=[])
+    db.get_trust_score = AsyncMock(return_value=0.5)
+    db.get_love_score = AsyncMock(return_value=0.5)
+
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/users?sort_by=memories", headers=HEADERS)
+    assert r.status_code == 200
+    users = r.json()["users"]
+    assert users[0]["memory_count"] >= users[1]["memory_count"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_enriches_trust_and_love():
+    state, _, db = _make_state()
+    db.list_memory_users.return_value = [
+        {"user_id": "discord:42", "platform": "discord", "username": "Test", "memory_count": 3, "avatar_url": None},
+    ]
+    db.list_link_proposals = AsyncMock(return_value=[])
+    db.get_trust_score = AsyncMock(return_value=0.75)
+    db.get_love_score = AsyncMock(return_value=0.6)
+
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/users", headers=HEADERS)
+    assert r.status_code == 200
+    user = r.json()["users"][0]
+    assert user["trust_score"] == 0.75
+    assert user["love_score"] == 0.6
+    assert "avatar_url" in user
+    assert "memory_count" in user
+
+
+@pytest.mark.asyncio
 async def test_resolve_alias_rejects_empty_canonical():
     """POST /memory/aliases/{nickname}/resolve returns 400 when canonical_uid is empty."""
     state, _, db = _make_state()
