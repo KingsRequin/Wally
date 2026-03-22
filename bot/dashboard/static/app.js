@@ -727,6 +727,40 @@ async function renderConfigForm(cfg) {
       <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
     </div>
 
+    <!-- Anti-spam Discord -->
+    <div class="card config-section">
+      <div class="config-section-title">ANTI-SPAM DISCORD</div>
+      <div class="field-group" style="display:flex;align-items:center;gap:12px">
+        <label class="field-label" style="margin:0" for="cfg-spam-enabled">Activé</label>
+        <input type="checkbox" id="cfg-spam-enabled" ${(cfg.discord.spam_detection || {}).enabled !== false ? 'checked' : ''}>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-spam-max">Messages max</label>
+        <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Nombre de messages avant déclenchement</p>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
+        <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Période de temps pour compter les messages</p>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
+        <input type="number" id="cfg-spam-mute" min="1" max="60" value="${(cfg.discord.spam_detection || {}).mute_minutes || 5}">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
+        <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
+        <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
+      </div>
+      <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
+    </div>
+
     <!-- Chaînes Twitch invitées -->
     <div class="card config-section" id="guest-channels-card">
       <div class="config-section-title">CHAÎNES TWITCH INVITÉES</div>
@@ -853,6 +887,25 @@ async function saveBotGeneral() {
     }}),
   });
   if (r && r.ok) toast('Config bot sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
+}
+
+// ── Anti-spam config ──────────────────────────────────────────────────────────
+
+async function saveSpamConfig() {
+  const exemptRaw = document.getElementById('cfg-spam-exempt').value;
+  const exempt = exemptRaw.split(',').map(s => s.trim()).filter(Boolean).map(Number).filter(n => !isNaN(n));
+  const r = await apiFetch('/api/admin/config', {
+    method: 'POST',
+    body: JSON.stringify({ discord: { spam_detection: {
+      enabled:          document.getElementById('cfg-spam-enabled').checked,
+      max_messages:     parseInt(document.getElementById('cfg-spam-max').value),
+      window_seconds:   parseInt(document.getElementById('cfg-spam-window').value),
+      mute_minutes:     parseInt(document.getElementById('cfg-spam-mute').value),
+      spam_anger_delta: parseFloat(document.getElementById('cfg-spam-anger').value),
+      exempt_channels:  exempt,
+    }}}),
+  });
+  if (r && r.ok) toast('Config anti-spam sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
 }
 
 // ── Guest channels ─────────────────────────────────────────────────────────────
