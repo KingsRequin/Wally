@@ -71,7 +71,7 @@ class ActionScheduler:
         missed_count = 0
         scheduled_count = 0
         for task in tasks:
-            next_run_str = task.get("next_run_at")
+            next_run_str = task["next_run_at"]
             is_past = False
             if next_run_str:
                 try:
@@ -98,13 +98,13 @@ class ActionScheduler:
         new_count = task["execution_count"] + 1
         updates: dict = {"execution_count": new_count, "consecutive_failures": 0,
                          "last_run_at": now, "updated_at": now}
-        max_exec = task.get("max_executions")
+        max_exec = task["max_executions"]
         if max_exec is not None and new_count >= max_exec:
             updates["status"] = "completed"
             self._remove_job(task_id)
             logger.info("Action task {} completed ({}/{} executions)", task_id, new_count, max_exec)
         else:
-            spec = json.loads(task.get("schedule_spec", "{}"))
+            spec = json.loads(task["schedule_spec"] or "{}")
             next_run = self._compute_next_run(task["schedule_type"], spec)
             updates["next_run_at"] = next_run
         await self._db.update_action_task(task_id, **updates)

@@ -27,12 +27,12 @@ class ActionExecutor:
         if defn is None:
             return f"Unknown action type: {action_type}"
 
-        payload = json.loads(task.get("payload", "{}"))
+        payload = json.loads(task["payload"] or "{}")
         target = {
-            "platform": task.get("target_platform"),
-            "channel_id": task.get("target_channel"),
-            "creator_id": task.get("creator_id"),
-            "creator_platform": task.get("creator_platform"),
+            "platform": task["target_platform"],
+            "channel_id": task["target_channel"],
+            "creator_id": task["creator_id"],
+            "creator_platform": task["creator_platform"],
         }
 
         # Call the handler — let exceptions propagate for the scheduler to handle
