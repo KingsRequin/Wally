@@ -1,3 +1,4 @@
 from bot.core.actions.registry import ActionDefinition, ActionRegistry
+from bot.core.actions.scheduler import ActionScheduler
 
-__all__ = ["ActionDefinition", "ActionRegistry"]
+__all__ = ["ActionDefinition", "ActionRegistry", "ActionScheduler"]
