@@ -164,18 +164,32 @@ Left border accent: 2px solid with category color at 30% opacity.
 
 ### Tagging mechanism
 
-Categories are assigned by the LLM during fact extraction. The `fact_extraction_system.md` prompt will be updated to output structured facts with a `category` field.
+Categories are assigned by the LLM during fact extraction. The existing `FACT_EXTRACTION_SCHEMA` in `fact_extractor.py` uses structured JSON output via `complete_secondary_structured()`. The inner `facts` array items (currently plain strings) must become objects with `text` and `category` fields:
 
-Output format per fact:
-```
-[CATEGORY] fact text
+```python
+"facts": {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "category": {
+                "type": "string",
+                "enum": ["FAIT", "PREF", "LANG", "REL"]
+            }
+        },
+        "required": ["text", "category"]
+    }
+}
 ```
 
-Where CATEGORY is one of: `FAIT`, `PREF`, `LANG`, `REL`.
+The `fact_extraction_system.md` prompt must be updated to instruct the LLM to classify each fact into one of these categories.
 
 ### Storage
 
-The category is stored as metadata in mem0 alongside each memory entry. The mem0 `metadata` dict will include a `category` key.
+The category is stored as metadata in mem0 alongside each memory entry. The `memory.add()` method must accept an optional `category` parameter and merge it into the metadata dict: `{"origin": origin, "category": category}`.
+
+The manually-added memory endpoint (`POST /memory/users/{user_id}/memories`) must also accept and forward a `category` field in the request body.
 
 ### Migration
 
@@ -197,9 +211,29 @@ Existing memories without a category will appear in the "Non classé" (gray) sec
 
 ### Avatar URLs
 
-Discord avatars: fetched via Discord API (`user.avatar.url`), cached in `memory_users` or trust_scores table as `avatar_url`.
-Twitch avatars: fetched via Twitch API (`user.profile_image_url`), same caching.
-Resolution happens during Sync or on first load. Stored as URL string in DB.
+Discord avatars: fetched via Discord API (`user.avatar.url`), cached in `memory_users` table as `avatar_url` column.
+Twitch avatars: fetched via Twitch API (`user.profile_image_url`), same table/column.
+Resolution happens during Sync. Stored as URL string.
+
+Migration: `ALTER TABLE memory_users ADD COLUMN avatar_url TEXT DEFAULT NULL` — added in `database.py` init alongside existing migration blocks.
+
+### Love score
+
+Love scores are stored in the existing `trust_scores` table (`love` column, `love_updated_at`). Already available via `db.get_love_score(platform, user_id)`. No schema changes needed.
+
+### Sorting
+
+`GET /memory/users` currently returns users from the `memory_users` table without memory counts. To support `sort_by=memories`:
+- The endpoint will query mem0 for memory counts per user in a single batch call, or maintain a `memory_count` cache column in `memory_users` updated during sync.
+- Recommended approach: add `memory_count INT DEFAULT 0` column to `memory_users`, updated during `POST /memory/sync`. This avoids N+1 calls to mem0.
+
+### Endpoint cleanup
+
+`POST /memory/resolve-usernames` remains accessible as an internal route but is removed from the toolbar UI. Its logic is called by the updated `POST /memory/sync`.
+
+### Account linking endpoint
+
+The "🔗 Lier un compte" confirmation in the modal calls `POST /links/manual` (existing endpoint) which creates and immediately accepts a link. After the response, the frontend reloads the user detail via `GET /memory/users/{user_id}` and reopens the modal.
 
 ---
 
@@ -219,9 +253,9 @@ No changes to Global or Dashboard sub-tabs. They keep their current behavior:
 | `bot/dashboard/static/style.css` | Replace `.mem-sidebar`/`.mem-detail`/`.mem-layout` with grid+modal styles |
 | `bot/dashboard/routes/memory.py` | Add sort_by param, category support, merge resolve-usernames into sync |
 | `bot/persona/prompts/fact_extraction_system.md` | Add category output format |
-| `bot/core/fact_extractor.py` | Parse category from LLM output, store in mem0 metadata |
-| `bot/core/memory.py` | Pass/return category metadata |
-| `bot/db/database.py` | Add `avatar_url` column to relevant table if needed |
+| `bot/core/fact_extractor.py` | Update `FACT_EXTRACTION_SCHEMA` inner facts items to `{text, category}` objects, update parsing logic |
+| `bot/core/memory.py` | Add `category` param to `add()`, merge into metadata dict |
+| `bot/db/database.py` | Add `avatar_url` and `memory_count` columns to `memory_users` (ALTER TABLE migration) |
 
 ---
 
