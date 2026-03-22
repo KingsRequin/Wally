@@ -39,7 +39,7 @@ SUPPRESSION_RULES: list[tuple[str, str, float]] = [
 
 # Coefficient de compétition continue pendant le decay (par tick de 60s).
 # extra = state[src] * state[tgt] * COMPETITION_K est soustrait des deux émotions.
-# Avec K=0.05 : anger=0.65 + joy=0.33 → extra≈0.011/tick → convergence en ~10min.
+# Avec K=0.05 : anger=0.65 + joy=0.33 → extra≈0.011/tick → convergence en ~1h.
 COMPETITION_K: float = 0.05
 
 # French keyword → (emotion, delta) supplements for NRCLex (English-only lexicon)
@@ -124,8 +124,8 @@ def build_emotion_tag(emotion_state: dict[str, float]) -> str:
 
 
 class EmotionEngine:
-    # Taux de montée du boredom par minute d'inactivité (linéaire, clampé à 1.0)
-    BOREDOM_RISE_PER_MINUTE: float = 0.02
+    # Taux de montée du boredom par heure d'inactivité (linéaire, clampé à 1.0)
+    DEFAULT_BOREDOM_RISE_PER_HOUR: float = 1.2
 
     def __init__(self, config: "Config", db=None):
         self._config = config
@@ -198,8 +198,9 @@ class EmotionEngine:
 
     def set_emotion(self, emotion: str, value: float) -> None:
         if emotion in self._state:
-            effective_delta = value - self._state[emotion]
+            old = self._state[emotion]
             self._state[emotion] = max(0.0, min(1.0, value))
+            effective_delta = self._state[emotion] - old
             self._apply_suppression(emotion, effective_delta)
             self._dirty = True
             self._schedule_save()
@@ -391,7 +392,9 @@ class EmotionEngine:
             "## Extraction de faits\n"
             "Retourne aussi \"user_facts\" : une liste de faits durables sur l'utilisateur "
             "qui envoie le message déclencheur (centres d'intérêt, préférences, faits "
-            "biographiques, opinions exprimées). Liste vide si rien de durable.\n\n"
+            "biographiques, opinions exprimées). Liste vide si rien de durable.\n"
+            "Ignore les GIF, mèmes, liens média (Tenor, Giphy, Imgur, etc.) — "
+            "partager un GIF n'est PAS un fait durable.\n\n"
 
             "## Exemple\n"
             "trust_score: 0.30\n"
@@ -472,11 +475,13 @@ class EmotionEngine:
             if not cfg or self._state[emotion] <= 0:
                 continue
             lam = cfg.decay_lambda
-            decayed = self._state[emotion] * math.exp(-lam * (delta_t / 60.0))
+            decayed = self._state[emotion] * math.exp(-lam * (delta_t / 3600.0))
             self._state[emotion] = 0.0 if decayed < DECAY_FLOOR else decayed
         # Boredom monte quand personne n'interagit (inversement au decay des autres)
-        idle_minutes = (now - self._last_interaction) / 60.0
-        boredom_target = min(1.0, idle_minutes * self.BOREDOM_RISE_PER_MINUTE)
+        idle_hours = (now - self._last_interaction) / 3600.0
+        boredom_cfg = self._config.emotions.get("boredom")
+        rise = boredom_cfg.boredom_rise_per_hour if boredom_cfg and boredom_cfg.boredom_rise_per_hour is not None else self.DEFAULT_BOREDOM_RISE_PER_HOUR
+        boredom_target = min(1.0, idle_hours * rise)
         if boredom_target > self._state["boredom"]:
             self._state["boredom"] = boredom_target
         self._last_decay = now

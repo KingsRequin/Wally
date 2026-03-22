@@ -17,6 +17,30 @@ if TYPE_CHECKING:
 
 _MIN_LENGTH = 15
 
+# URLs that are never memorable (GIF/media/image hosting)
+_MEDIA_URL_RE = re.compile(
+    r"https?://(?:"
+    r"tenor\.com/view/|"
+    r"giphy\.com/gifs/|"
+    r"media\.giphy\.com/|"
+    r"media[0-9]*\.giphy\.com/|"
+    r"cdn\.discordapp\.com/attachments/|"
+    r"media\.discordapp\.net/|"
+    r"i\.imgur\.com/|"
+    r"imgur\.com/(?:a/|gallery/)?|"
+    r"gfycat\.com/|"
+    r"streamable\.com/|"
+    r"clips\.twitch\.tv/|"
+    r"youtube\.com/shorts/|"
+    r"vm\.tiktok\.com/|"
+    r"tiktok\.com/"
+    r")",
+    re.IGNORECASE,
+)
+
+# Generic URL pattern for "URL-only" detection
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
 _INTERJECTION_PATTERNS = [
     re.compile(r"^lo+l+$"),
     re.compile(r"^md(r+)$"),
@@ -49,11 +73,29 @@ def _is_interjection(word: str) -> bool:
     return any(p.match(word) for p in _INTERJECTION_PATTERNS)
 
 
+def _is_media_url_only(text: str) -> bool:
+    """Return True if the message is just media/GIF URLs (with optional filler)."""
+    stripped = text.strip()
+    # Remove all URLs from the text
+    without_urls = _URL_RE.sub("", stripped).strip()
+    # If nothing meaningful remains (empty or just punctuation/emoji/interjections)
+    if not without_urls or len(without_urls) < _MIN_LENGTH:
+        # Only reject if at least one URL is a known media host
+        if _MEDIA_URL_RE.search(stripped):
+            return True
+        # Pure URL-only messages (single URL, no text) are also not memorable
+        if not without_urls and _URL_RE.search(stripped):
+            return True
+    return False
+
+
 def _is_memorable(text: str) -> bool:
     text = text.strip()
     if len(text) < _MIN_LENGTH:
         return False
     if _is_emoji_only(text):
+        return False
+    if _is_media_url_only(text):
         return False
     words = text.lower().split()
     if not words:

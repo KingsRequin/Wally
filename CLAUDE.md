@@ -215,6 +215,14 @@ Same rule applies to `memory.search()`, `memory.get_all()`, `memory.delete_user_
 so it can resolve mentions of users not present in the conversation (e.g. "Azrael" → "Azraël").
 Without this, facts about absent users end up under `unknown:<nickname>`.
 
+### FactExtractor — Media/URL Pre-filter
+`_is_memorable()` in `fact_extractor.py` gates every message before it enters the extraction
+buffer. It rejects: short messages (<15 chars), emoji-only, interjections, and **media/GIF URLs**.
+`_is_media_url_only()` detects messages that are just URLs from known media hosts (Tenor, Giphy,
+Imgur, Discord CDN, TikTok, Twitch clips, YouTube Shorts) with no meaningful surrounding text.
+The LLM prompts (`fact_extraction_system.md`, `emotion.py`) also explicitly instruct the model
+to ignore GIF/media links — defense in depth against junk memory entries.
+
 ### Qdrant Manual Cleanup
 When fixing Qdrant entries (double-prefix, orphans), use `qdrant_client.set_payload()` to update
 `user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will

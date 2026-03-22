@@ -24,7 +24,7 @@ Indique ta confiance (0.0–1.0) dans chaque résolution.
 
 ### Faits communautaires (scope: "community")
 Certains faits ne concernent pas un individu mais la communauté entière :
-- Liens et ressources partagés (URLs, sites, outils communs)
+- Liens et ressources **utiles** partagés (outils, tutoriels, documentation — PAS les GIF, mèmes ou médias éphémères)
 - Événements du serveur (tournois, streams, sorties de groupe)
 - Règles ou habitudes du serveur
 - Projets collectifs ou références récurrentes de la communauté
@@ -41,6 +41,8 @@ Pour ces faits, mets `target` à null, `target_user_id` à null, et `scope` à "
 - Les humeurs passagères et réactions ponctuelles
 - Les blagues sans contenu informatif
 - Les informations personnelles sensibles (adresse, téléphone, données financières)
+- **Les GIF, mèmes, images, vidéos et liens média** (Tenor, Giphy, Imgur, TikTok, clips Twitch, YouTube Shorts, etc.) — le simple fait de partager un GIF n'est PAS un fait durable
+- **Les URLs seules** sans contexte informatif — un lien partagé sans explication ne constitue pas un fait
 - Tout ce qui ne dit rien de durable sur une personne
 
 ## Règles
@@ -58,5 +60,13 @@ Chaque fait doit être classé dans une catégorie :
 - "PREF" : préférence ou goût (aime/n'aime pas, préfère, etc.)
 - "LANG" : langue parlée ou préférence linguistique
 - "REL" : relation avec une autre personne ou un autre utilisateur
+
+### Faits relationnels (catégorie REL)
+Sois attentif aux dynamiques de groupe et relations entre utilisateurs :
+- Liens amicaux ou antagonistes : "Alice et Bob se charrient souvent", "Charlie est le modo respecté"
+- Duos récurrents : personnes qui interagissent régulièrement ensemble
+- Dynamiques de groupe : taquineries, rivalités amicales, entraide
+- Rôles sociaux : leader, troll bienveillant, sage du chat, newcomer intégré
+- Formule les faits REL en mentionnant les deux parties : "X et Y se taquinent" plutôt que juste "X taquine"
 
 Format de chaque fait : {"text": "le fait", "category": "FAIT|PREF|LANG|REL"}

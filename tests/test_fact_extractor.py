@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.core.fact_extractor import _is_memorable, FactExtractor
+from bot.core.fact_extractor import _is_memorable, _is_media_url_only, FactExtractor
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,6 +81,77 @@ class TestIsMemorableFilter:
         assert _is_memorable("  lol  ") is False
         assert _is_memorable("  mdr  ") is False
         assert _is_memorable("  je suis dev Python  ") is True  # > 15 chars after strip? Actually "je suis dev Python" is 18 chars
+
+
+# ── Media URL filter tests ────────────────────────────────────────────────────
+
+
+class TestIsMediaUrlOnly:
+    def test_tenor_gif_rejected(self):
+        assert _is_media_url_only("https://tenor.com/view/bro-science-pull-it-together-cool-your-shit-calm-down-keep-calm-gif-9089059") is True
+
+    def test_giphy_gif_rejected(self):
+        assert _is_media_url_only("https://giphy.com/gifs/reaction-funny-3oEjI6SIIHBdRxXI40") is True
+        assert _is_media_url_only("https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif") is True
+        assert _is_media_url_only("https://media0.giphy.com/media/abc/200.gif") is True
+
+    def test_discord_cdn_rejected(self):
+        assert _is_media_url_only("https://cdn.discordapp.com/attachments/123/456/image.png") is True
+        assert _is_media_url_only("https://media.discordapp.net/attachments/123/456/video.mp4") is True
+
+    def test_imgur_rejected(self):
+        assert _is_media_url_only("https://i.imgur.com/abc123.gif") is True
+        assert _is_media_url_only("https://imgur.com/gallery/abc123") is True
+
+    def test_tiktok_rejected(self):
+        assert _is_media_url_only("https://vm.tiktok.com/ZMhAbCdEf/") is True
+        assert _is_media_url_only("https://tiktok.com/@user/video/123") is True
+
+    def test_clips_twitch_rejected(self):
+        assert _is_media_url_only("https://clips.twitch.tv/FunnyClipName-AbCdEfGh") is True
+
+    def test_youtube_shorts_rejected(self):
+        assert _is_media_url_only("https://youtube.com/shorts/abc123def") is True
+
+    def test_media_url_with_filler_text_rejected(self):
+        """Media URL + short filler (emoji, interjection) should still be rejected."""
+        assert _is_media_url_only("lol https://tenor.com/view/funny-gif-123") is True
+        assert _is_media_url_only("https://giphy.com/gifs/cat-123 😂") is True
+
+    def test_media_url_with_real_text_kept(self):
+        """Media URL + meaningful text should NOT be rejected."""
+        assert _is_media_url_only(
+            "regardez ce tuto c'est super utile https://tenor.com/view/tutorial-123"
+        ) is False
+
+    def test_non_media_url_only_rejected(self):
+        """A bare non-media URL with no text is also not memorable."""
+        assert _is_media_url_only("https://example.com/some/random/page") is True
+
+    def test_non_media_url_with_text_kept(self):
+        """A non-media URL with real surrounding text should be kept."""
+        assert _is_media_url_only(
+            "j'utilise ce site pour apprendre le rust https://example.com/rust"
+        ) is False
+
+    def test_no_url_not_rejected(self):
+        assert _is_media_url_only("je suis développeur Python") is False
+
+
+class TestIsMemorableMediaUrls:
+    """Integration: _is_memorable should reject media-only messages."""
+
+    def test_tenor_gif_not_memorable(self):
+        assert _is_memorable("https://tenor.com/view/bro-science-pull-it-together-cool-your-shit-calm-down-keep-calm-gif-9089059") is False
+
+    def test_giphy_not_memorable(self):
+        assert _is_memorable("https://giphy.com/gifs/reaction-funny-3oEjI6SIIHBdRxXI40") is False
+
+    def test_url_with_context_still_memorable(self):
+        assert _is_memorable("regardez ce tuto c'est super utile https://tenor.com/view/tutorial-123") is True
+
+    def test_discord_attachment_not_memorable(self):
+        assert _is_memorable("https://cdn.discordapp.com/attachments/123/456/image.png") is False
 
 
 # ── Buffer tests ───────────────────────────────────────────────────────────────
