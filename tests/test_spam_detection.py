@@ -156,3 +156,48 @@ async def test_spam_tracker_cleans_old_entries():
 
     # Only the new timestamp should remain
     assert len(_spam_tracker[key]) == 1
+
+
+@pytest.mark.asyncio
+async def test_spam_does_not_trigger_in_dms():
+    """DMs should be excluded from spam detection."""
+    bot = _make_spam_bot(max_messages=1)
+    msg = _make_msg()
+    msg.guild = None  # DM
+
+    assert await _check_spam(bot, msg) is False
+    bot.db.add_timeout.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_different_channels_have_separate_trackers():
+    """Spam tracking is per-channel, not global per-user."""
+    bot = _make_spam_bot(max_messages=3, window_seconds=60)
+
+    # 2 messages in channel 100
+    msg1 = _make_msg(channel_id=100)
+    assert await _check_spam(bot, msg1) is False
+    assert await _check_spam(bot, msg1) is False
+
+    # 2 messages in channel 200 (same user)
+    msg2 = _make_msg(channel_id=200)
+    assert await _check_spam(bot, msg2) is False
+    assert await _check_spam(bot, msg2) is False
+
+    # Neither should have triggered (threshold is 3)
+    bot.db.add_timeout.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tracker_resets_after_spam_trigger():
+    """After spam is triggered, the tracker is cleared for that user/channel."""
+    bot = _make_spam_bot(max_messages=2, window_seconds=60)
+    msg = _make_msg()
+
+    # Trigger spam
+    assert await _check_spam(bot, msg) is False
+    assert await _check_spam(bot, msg) is True
+
+    key = (str(msg.author.id), str(msg.channel.id))
+    # Tracker should be cleared
+    assert key not in _spam_tracker
