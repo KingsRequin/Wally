@@ -614,3 +614,29 @@ async def test_resolve_alias_rejects_empty_canonical():
             json={"canonical_uid": "  ", "display_name": ""},
         )
     assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_sync_also_resolves_usernames():
+    state, mock_mem0, db = _make_state()
+    db.sync_memory_users_from_qdrant = AsyncMock(return_value=3)
+    db.list_memory_users = AsyncMock(return_value=[
+        {"user_id": "discord:999", "platform": "discord", "username": ""},
+    ])
+    db.upsert_memory_user = AsyncMock()
+    db.execute = AsyncMock()
+    mock_mem0.get_all.return_value = []
+    mock_discord = MagicMock()
+    mock_user = MagicMock()
+    mock_user.display_name = "ResolvedName"
+    mock_user.name = "ResolvedName"
+    mock_discord.fetch_user = AsyncMock(return_value=mock_user)
+    state.discord_bot = mock_discord
+    state.twitch_bot = None
+
+    async with _make_client(state) as client:
+        r = await client.post("/api/admin/memory/sync", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["synced"] == 3
+    assert data["resolved"] >= 0

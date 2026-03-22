@@ -444,7 +444,73 @@ async def sync_memory_users(request: Request):
     state = request.app.state.wally
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     n = await state.db.sync_memory_users_from_qdrant(qdrant_url)
-    return {"synced": n}
+
+    # ── Resolve missing usernames ──
+    users = await state.db.list_memory_users(include_no_memory=True)
+    resolved = 0
+
+    # Discord
+    if state.discord_bot is not None:
+        for user in users:
+            if user["platform"] != "discord" or user.get("username"):
+                continue
+            raw_id = user["user_id"].replace("discord:", "")
+            if not raw_id.isdigit():
+                continue
+            try:
+                discord_user = await state.discord_bot.fetch_user(int(raw_id))
+                name = discord_user.display_name or discord_user.name
+                if name:
+                    await state.db.upsert_memory_user(user["user_id"], "discord", username=name)
+                    resolved += 1
+                    logger.info("Username résolu: discord:{id} → {name}", id=raw_id, name=name)
+            except Exception as e:
+                logger.warning("Impossible de résoudre discord:{id}: {e}", id=raw_id, e=e)
+
+    # Twitch
+    if state.twitch_bot is not None:
+        twitch_to_resolve = []
+        for user in users:
+            if user["platform"] != "twitch" or user.get("username"):
+                continue
+            raw_id = user["user_id"].replace("twitch:", "")
+            if raw_id.isdigit():
+                twitch_to_resolve.append((user["user_id"], int(raw_id)))
+
+        for i in range(0, len(twitch_to_resolve), 100):
+            batch = twitch_to_resolve[i:i + 100]
+            ids = [uid for _, uid in batch]
+            try:
+                twitch_users = await state.twitch_bot.fetch_users(ids=ids)
+                id_to_name = {
+                    str(tu.id): tu.display_name or tu.name
+                    for tu in twitch_users
+                }
+                for full_id, numeric_id in batch:
+                    name = id_to_name.get(str(numeric_id))
+                    if name:
+                        await state.db.upsert_memory_user(full_id, "twitch", username=name)
+                        resolved += 1
+                        logger.info("Username résolu: {uid} → {name}", uid=full_id, name=name)
+            except Exception as e:
+                logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
+
+    # ── Update memory_count per user ──
+    mem0 = state.memory._mem0
+    if mem0 is not None:
+        for user in users:
+            uid = user["user_id"]
+            try:
+                raw = await asyncio.to_thread(mem0.get_all, user_id=uid)
+                count = len(_unwrap(raw))
+                await state.db.execute(
+                    "UPDATE memory_users SET memory_count=? WHERE user_id=?",
+                    (count, uid),
+                )
+            except Exception as e:
+                logger.warning("memory_count update failed for {uid}: {e}", uid=uid, e=e)
+
+    return {"synced": n, "resolved": resolved}
 
 
 # ── POST /memory/resolve-usernames ────────────────────────────────────────────
