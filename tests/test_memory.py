@@ -295,3 +295,23 @@ async def test_memory_add_passes_username_to_db():
     call_args = mock_db.upsert_memory_user.call_args
     # Verify "OlafMC" is passed as username
     assert "OlafMC" in call_args.args or call_args.kwargs.get("username") == "OlafMC"
+
+
+@pytest.mark.asyncio
+async def test_add_with_category_passes_metadata():
+    """Category should be included in mem0 metadata alongside origin."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    svc._mem0 = MagicMock()
+    svc._mem0.add = MagicMock(return_value={"results": []})
+    mock_db = MagicMock()
+    mock_db.upsert_memory_user = AsyncMock()
+    svc.set_db(mock_db)
+
+    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
+        await svc.add("discord", "123", "Likes Python", category="FAIT")
+
+    call_args = svc._mem0.add.call_args
+    metadata = call_args.kwargs.get("metadata", {})
+    assert metadata["category"] == "FAIT"
+    assert metadata["origin"] == "discord:123"

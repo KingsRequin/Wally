@@ -120,6 +120,14 @@ class MemoryService:
             self._mem0 = None
 
     def _user_id(self, platform: str, user_id: str) -> str:
+        # Guard against double-prefix: if user_id already starts with "platform:",
+        # strip it to avoid "discord:discord:123456" in Qdrant.
+        if user_id.startswith(f"{platform}:"):
+            user_id = user_id[len(platform) + 1:]
+            logger.warning(
+                "Double-prefix detected: platform={p}, user_id had prefix stripped",
+                p=platform,
+            )
         raw = f"{platform}:{user_id}"
         return self._alias_cache.get(raw, raw)
 
@@ -151,7 +159,8 @@ class MemoryService:
         self._alias_cache.pop(alias_id, None)
 
     async def add(self, platform: str, user_id: str, content: str,
-                  username: str = "", emotion_context: str = "") -> None:
+                  username: str = "", emotion_context: str = "",
+                  category: str = "") -> None:
         self._init_mem0()
         if self._mem0 is None:
             return
@@ -159,9 +168,12 @@ class MemoryService:
             uid = self._user_id(platform, user_id)
             full_content = f"[{emotion_context}] {content}" if emotion_context else content
             origin = f"{platform}:{user_id}"
+            metadata: dict = {"origin": origin}
+            if category:
+                metadata["category"] = category
             result = await asyncio.to_thread(
                 self._mem0.add, full_content, user_id=uid,
-                metadata={"origin": origin},
+                metadata=metadata,
             )
             # Journaliser ce que mem0 a effectivement stocké/modifié
             stored = result.get("results", []) if isinstance(result, dict) else (result if isinstance(result, list) else [])
@@ -295,7 +307,20 @@ class MemoryService:
                 lines = [f"- [ID {q['id']}] {q['question']}" for q in pending]
                 pending_block = "\nQuestions en attente :\n" + "\n".join(lines)
 
-            user_msg = f"Nouveau souvenir : {content}{pending_block}"
+            # Include existing memories so the LLM doesn't ask about known info
+            existing_block = ""
+            try:
+                existing = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
+                if isinstance(existing, dict):
+                    existing = existing.get("results", [])
+                if existing:
+                    mem_lines = [r.get("memory", "") for r in existing[:30] if r.get("memory")]
+                    if mem_lines:
+                        existing_block = "\nSouvenirs existants :\n" + "\n".join(f"- {m}" for m in mem_lines)
+            except Exception:
+                pass  # Non-critical, continue without existing memories
+
+            user_msg = f"Nouveau souvenir : {content}{existing_block}{pending_block}"
             raw = await self._openai.complete_secondary(
                 _EVALUATE_SYSTEM,
                 [{"role": "user", "content": user_msg}],
@@ -303,11 +328,12 @@ class MemoryService:
             )
             result = json.loads(raw)
 
-            # Insert new questions
-            for q in result.get("questions", []):
+            # Insert new questions (max 1 to avoid redundant questions)
+            questions = result.get("questions", [])[:1]
+            for q in questions:
                 question = q.get("question", "").strip()
                 priority = q.get("priority", "medium")
-                if question and priority in ("high", "medium", "low"):
+                if question and priority in ("high", "medium"):
                     await self._db.insert_memory_question(uid, content, question, priority)
                     logger.debug("Memory question created for {uid}: {q}", uid=uid, q=question)
 
