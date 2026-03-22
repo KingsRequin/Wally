@@ -28,6 +28,13 @@ class ActionExecutor:
             return f"Unknown action type: {action_type}"
 
         payload = json.loads(task["payload"] or "{}")
+        # Fallback: si pas de "message" dans le payload, utiliser la description de la tâche
+        try:
+            desc = task["description"]
+        except (KeyError, IndexError):
+            desc = None
+        if "message" not in payload and desc:
+            payload["message"] = task["description"]
         target = {
             "platform": task["target_platform"],
             "channel_id": task["target_channel"],

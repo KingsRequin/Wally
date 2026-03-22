@@ -3639,8 +3639,8 @@ await asyncio.gather(
             <li><strong>cancel_action_task</strong> — annuler par ID ou en langage naturel (« arrête le rappel du pain »)</li>
             <li><strong>list_action_tasks</strong> — lister ses tâches actives</li>
           </ul>
-          <p>Chaque type d'action a des <strong>permissions par rôle</strong> : on peut autoriser les rappels pour tout le monde mais réserver la génération d'images aux modérateurs. La hiérarchie Discord (everyone → subscriber → moderator → admin) et Twitch (everyone → subscriber → vip → moderator → admin) est configurable depuis l'onglet <strong>Actions</strong> du dashboard.</p>
-          <p>Les tâches <strong>survivent aux redémarrages</strong> : elles sont persistées en SQLite et rechargées au boot. Les tâches ponctuelles manquées pendant un downtime sont marquées « missed » et visibles dans le dashboard.</p>
+          <p>Les rappels ponctuels et récurrents ont des <strong>permissions séparées</strong> — on peut autoriser les rappels simples pour tout le monde mais réserver les récurrents aux modérateurs. Côté Discord, les permissions utilisent les <strong>vrais rôles du serveur</strong> (multi-sélection par guilde). Côté Twitch, la hiérarchie fixe (everyone → subscriber → vip → moderator → admin) est conservée. Tout est configurable depuis l'onglet <strong>Actions</strong> du dashboard.</p>
+          <p>Quand un rappel se déclenche, <strong>Wally le formule avec sa personnalité</strong> et son humeur du moment — le message passe par le pipeline complet (persona, émotions, directives). Les tâches <strong>survivent aux redémarrages</strong> et les changements sont visibles <strong>en temps réel</strong> sur le dashboard via SSE.</p>
 
           <details class="jd-details">
             <summary>🔍 Aller plus loin — architecture interne</summary>
@@ -3649,6 +3649,8 @@ await asyncio.gather(
               <p class="jd-tech-note"><strong>Scheduler partagé</strong> : un seul <code>AsyncIOScheduler</code> pour le journal quotidien ET les tâches planifiées — pas de conflit.</p>
               <p class="jd-tech-note"><strong>Sécurité</strong> : max 10 tâches par utilisateur, intervalle minimum 5 minutes, pas d'escalade de privilèges, isolation (un user ne voit que ses tâches).</p>
               <p class="jd-tech-note"><strong>Auto-pause</strong> : après 3 échecs consécutifs, une tâche récurrente est mise en pause automatiquement avec le motif d'erreur visible dans le dashboard.</p>
+              <p class="jd-tech-note"><strong>Permissions Discord</strong> : table <code>action_permissions_discord</code> avec clé composite <code>(action_type, guild_id, role_id)</code>. Cache in-memory dans <code>ActionRegistry._discord_perms</code>. Endpoint <code>/api/actions/discord-roles</code> expose les rôles depuis le cache gateway de discord.py.</p>
+              <p class="jd-tech-note"><strong>SSE actions</strong> : <code>/api/admin/sse/actions</code> — fan-out par queue, événements broadcast depuis <code>ActionScheduler</code> via callback <code>on_change</code>.</p>
             </div>
           </details>
         </div>
@@ -4321,8 +4323,8 @@ function startActionSSE() {
     try {
       var evt = JSON.parse(e.data);
       if (evt.type && evt.task_id) {
-        // Refresh la liste des tâches si on est sur le sub-tab tasks
         if (_actionsSubTab === 'tasks') loadActionTasks();
+        if (_actionsSubTab === 'completed') loadCompletedTasks();
       }
     } catch (_) {}
   };
@@ -4340,6 +4342,7 @@ function renderActionsTab() {
   // Build sub-nav + content containers
   var subnavHtml = '<div class="actions-subnav">'
     + '<button class="actions-subnav-pill' + (_actionsSubTab === 'tasks' ? ' active' : '') + '" onclick="switchActionsSubTab(\'tasks\')">Tâches</button>'
+    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'completed' ? ' active' : '') + '" onclick="switchActionsSubTab(\'completed\')">Terminées</button>'
     + '<button class="actions-subnav-pill' + (_actionsSubTab === 'permissions' ? ' active' : '') + '" onclick="switchActionsSubTab(\'permissions\')">Permissions</button>'
     + '</div>';
 
@@ -4351,6 +4354,11 @@ function renderActionsTab() {
   tasksDiv.className = 'actions-subcontent' + (_actionsSubTab === 'tasks' ? ' active' : '');
   el.appendChild(tasksDiv);
 
+  var completedDiv = document.createElement('div');
+  completedDiv.id = 'actions-completed-content';
+  completedDiv.className = 'actions-subcontent' + (_actionsSubTab === 'completed' ? ' active' : '');
+  el.appendChild(completedDiv);
+
   var permsDiv = document.createElement('div');
   permsDiv.id = 'actions-perms-content';
   permsDiv.className = 'actions-subcontent' + (_actionsSubTab === 'permissions' ? ' active' : '');
@@ -4358,6 +4366,8 @@ function renderActionsTab() {
 
   if (_actionsSubTab === 'tasks') {
     loadActionTasks();
+  } else if (_actionsSubTab === 'completed') {
+    loadCompletedTasks();
   } else {
     loadActionPermissions();
   }
@@ -4471,14 +4481,54 @@ async function loadActionTasks() {
     return;
   }
   var data = await r.json();
-  var tasks = data.tasks || [];
+  var allTasks = data.tasks || [];
+  // Only show active and paused tasks
+  var tasks = allTasks.filter(function(t) { return t.status === 'active' || t.status === 'paused'; });
 
   container.textContent = '';
 
   if (tasks.length === 0) {
     var empty = document.createElement('div');
     empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
-    empty.textContent = 'Aucune tâche programmée';
+    empty.textContent = 'Aucune tâche en cours';
+    container.appendChild(empty);
+    return;
+  }
+
+  var grid = document.createElement('div');
+  grid.className = 'action-grid';
+  tasks.forEach(function(t) {
+    grid.appendChild(_buildActionCard(t));
+  });
+  container.appendChild(grid);
+}
+
+async function loadCompletedTasks() {
+  var container = document.getElementById('actions-completed-content');
+  if (!container) return;
+  container.textContent = '';
+  var loading = document.createElement('div');
+  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.textContent = 'Chargement...';
+  container.appendChild(loading);
+
+  var r = await apiFetch('/api/actions/tasks');
+  if (!r || !r.ok) {
+    loading.textContent = 'Erreur de chargement';
+    return;
+  }
+  var data = await r.json();
+  var allTasks = data.tasks || [];
+  var tasks = allTasks.filter(function(t) {
+    return t.status === 'completed' || t.status === 'cancelled' || t.status === 'missed';
+  });
+
+  container.textContent = '';
+
+  if (tasks.length === 0) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.textContent = 'Aucune tâche terminée';
     container.appendChild(empty);
     return;
   }

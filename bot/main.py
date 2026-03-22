@@ -263,12 +263,42 @@ async def main() -> None:
 
     # Register built-in actions
     async def _reminder_handler(payload: dict, target: dict) -> str:
-        msg = payload.get("message", "Rappel!")
+        raw_msg = payload.get("message", "Rappel!")
         creator_id = target.get("creator_id")
         platform = target.get("platform", "")
+
+        # Build a full system prompt so the LLM speaks in Wally's voice + current mood
+        try:
+            system_prompt = prompts.build_system_prompt(
+                emotion_state=emotion.get_state(),
+                situation={"platform": platform, "datetime": True},
+                persona_block=persona.build_prompt_block(),
+                emotion_directives=persona.emotion_directives,
+                weekday_directives=persona.weekday_directives,
+                composite_directives=persona.composite_directives,
+            )
+            user_content = (
+                f"[INSTRUCTION SYSTÈME — NE PAS CITER]\n"
+                f"Tu dois envoyer un rappel à un utilisateur. "
+                f"Voici le contenu du rappel : \"{raw_msg}\"\n"
+                f"Formule ce rappel avec ta personnalité, ton humeur actuelle, "
+                f"et ton style habituel. Sois bref (1-2 phrases max). "
+                f"Ne mets PAS de mention (@), elle sera ajoutée automatiquement."
+            )
+            reply = await openai_client.complete_secondary(
+                system_prompt,
+                [{"role": "user", "content": user_content}],
+                purpose="reminder",
+                user_id=creator_id,
+            )
+            reply = reply.strip()
+        except Exception as e:
+            logger.warning("Reminder LLM generation failed, using raw message: {}", e)
+            reply = raw_msg
+
         if platform == "discord" and creator_id:
-            return f"<@{creator_id}> {msg}"
-        return msg
+            return f"<@{creator_id}> {reply}"
+        return reply
 
     await action_registry.register("reminder", ActionDefinition(
         name="reminder",

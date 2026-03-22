@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 _ADMIN_PREFIX = "/api/admin/"
 # EventSource (SSE) cannot send custom headers — these paths bypass Bearer auth
 # and are only accessible on a trusted local network.
-_SSE_EXEMPT = {"/api/admin/sse/logs"}
+_SSE_EXEMPT = {"/api/admin/sse/logs", "/api/admin/sse/actions"}
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
