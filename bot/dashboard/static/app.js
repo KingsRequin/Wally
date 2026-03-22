@@ -140,6 +140,7 @@ function showTab(tabId) {
   if (tabId === 'admin-costs') loadCosts();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
+  if (tabId === 'admin-actions') renderActionsTab();
   pollCostsBadge();
   pollLinksBadge();
   if (tabId === 'admin-logs') {
@@ -2988,15 +2989,19 @@ async function loadMemoryDashboard() {
       const prioColor = q.priority === 'high' ? '#FF4D4D' : q.priority === 'medium' ? '#FFD700' : '#00E5A0';
       const qId = parseInt(q.id, 10);
       questionsHtml += `
-        <div class="mem-dash-q-row">
+        <div class="mem-dash-q-row" id="mem-q-${qId}">
           <div class="mem-dash-q-info">
             <span class="mem-dash-q-prio" style="background:${prioColor}"></span>
             <strong>${name}</strong>
             <span style="color:rgba(255,255,255,0.45);margin-left:8px">tentative ${parseInt(q.attempts, 10)}/3</span>
           </div>
           <div class="mem-dash-q-memory">${escHtml(q.memory_text)}</div>
-          <div class="mem-dash-q-question">${escHtml(q.question)}</div>
-          <button class="btn btn-sm" onclick="resolveMemQuestion(${qId})">Résoudre</button>
+          <div class="mem-dash-q-question" id="mem-q-text-${qId}">${escHtml(q.question)}</div>
+          <div class="mem-dash-q-actions">
+            <button class="btn btn-sm" onclick="resolveMemQuestion(${qId})">Résoudre</button>
+            <button class="btn btn-sm btn-outline" onclick="editMemQuestion(${qId})">Modifier</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteMemQuestion(${qId})">Supprimer</button>
+          </div>
         </div>`;
     }
     questionsHtml += '</div>';
@@ -3024,15 +3029,15 @@ async function loadMemoryDashboard() {
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
       <div class="card">
         <div class="card-title">QUESTIONS EN ATTENTE</div>
-        <div class="card-value" style="color:#FFD700">${parseInt(qs.pending, 10) || 0}</div>
+        <div class="card-value" id="kpi-q-pending" style="color:#FFD700">${parseInt(qs.pending, 10) || 0}</div>
       </div>
       <div class="card">
         <div class="card-title">QUESTIONS RESOLUES</div>
-        <div class="card-value" style="color:#00E5A0">${parseInt(qs.resolved, 10) || 0}</div>
+        <div class="card-value" id="kpi-q-resolved" style="color:#00E5A0">${parseInt(qs.resolved, 10) || 0}</div>
       </div>
       <div class="card">
         <div class="card-title">TOTAL QUESTIONS</div>
-        <div class="card-value">${parseInt(qs.total, 10) || 0}</div>
+        <div class="card-value" id="kpi-q-total">${parseInt(qs.total, 10) || 0}</div>
       </div>
     </div>
     <div class="card mb-6">
@@ -3046,10 +3051,69 @@ async function loadMemoryDashboard() {
   `;
 }
 
+function _removeQuestionRow(id, action) {
+  const row = document.getElementById('mem-q-' + id);
+  if (row) {
+    row.style.transition = 'opacity 0.3s, transform 0.3s';
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(20px)';
+    setTimeout(function() { row.remove(); }, 300);
+  }
+  const pendingEl = document.getElementById('kpi-q-pending');
+  const resolvedEl = document.getElementById('kpi-q-resolved');
+  const totalEl = document.getElementById('kpi-q-total');
+  const pending = pendingEl ? (parseInt(pendingEl.textContent, 10) || 0) : 0;
+  if (action === 'resolve') {
+    if (pendingEl && pending > 0) pendingEl.textContent = pending - 1;
+    if (resolvedEl) resolvedEl.textContent = (parseInt(resolvedEl.textContent, 10) || 0) + 1;
+  } else if (action === 'delete') {
+    if (pendingEl && pending > 0) pendingEl.textContent = pending - 1;
+    if (totalEl) totalEl.textContent = Math.max(0, (parseInt(totalEl.textContent, 10) || 0) - 1);
+  }
+}
+
 async function resolveMemQuestion(id) {
-  const r = await apiFetch(`/api/admin/memory/questions/${parseInt(id, 10)}/resolve`, { method: 'POST' });
+  id = parseInt(id, 10);
+  _removeQuestionRow(id, 'resolve');
+  const r = await apiFetch(`/api/admin/memory/questions/${id}/resolve`, { method: 'POST' });
   if (r && r.ok) {
     toast('Question marquée comme résolue');
+  } else {
+    toast('Erreur lors de la résolution', 'error');
+    loadMemoryDashboard();
+  }
+}
+
+async function editMemQuestion(id) {
+  id = parseInt(id, 10);
+  const textEl = document.getElementById('mem-q-text-' + id);
+  if (!textEl) return;
+  const current = textEl.textContent;
+  const newText = prompt('Modifier la question :', current);
+  if (newText === null || newText.trim() === '' || newText.trim() === current) return;
+  textEl.textContent = newText.trim();
+  const r = await apiFetch(`/api/admin/memory/questions/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: newText.trim() }),
+  });
+  if (r && r.ok) {
+    toast('Question modifiée');
+  } else {
+    toast('Erreur lors de la modification', 'error');
+    textEl.textContent = current;
+  }
+}
+
+async function deleteMemQuestion(id) {
+  id = parseInt(id, 10);
+  if (!confirm('Supprimer cette question ?')) return;
+  _removeQuestionRow(id, 'delete');
+  const r = await apiFetch(`/api/admin/memory/questions/${id}`, { method: 'DELETE' });
+  if (r && r.ok) {
+    toast('Question supprimée');
+  } else {
+    toast('Erreur lors de la suppression', 'error');
     loadMemoryDashboard();
   }
 }
@@ -3068,7 +3132,7 @@ function renderMemoireTab() {
       <div class="mem-subnav">
         <button class="mem-subnav-pill active" data-subtab="users" onclick="switchMemoireSubTab('users')">Utilisateurs</button>
         <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Globale</button>
-        <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Dashboard</button>
+        <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
@@ -4214,4 +4278,317 @@ async function toggleFlameEmbed(imageId, btn) {
     const img = await detail.json();
     btn.querySelector('span').textContent = img.votes || 0;
   }
+}
+
+// ── Actions Tab ──────────────────────────────────────────────────────────────
+
+let _actionsSubTab = 'tasks';
+
+function renderActionsTab() {
+  const el = document.getElementById('tab-admin-actions');
+  if (!el) return;
+
+  // Build sub-nav + content containers
+  var subnavHtml = '<div class="actions-subnav">'
+    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'tasks' ? ' active' : '') + '" onclick="switchActionsSubTab(\'tasks\')">Tâches</button>'
+    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'permissions' ? ' active' : '') + '" onclick="switchActionsSubTab(\'permissions\')">Permissions</button>'
+    + '</div>';
+
+  el.textContent = '';
+  el.insertAdjacentHTML('beforeend', subnavHtml);
+
+  var tasksDiv = document.createElement('div');
+  tasksDiv.id = 'actions-tasks-content';
+  tasksDiv.className = 'actions-subcontent' + (_actionsSubTab === 'tasks' ? ' active' : '');
+  el.appendChild(tasksDiv);
+
+  var permsDiv = document.createElement('div');
+  permsDiv.id = 'actions-perms-content';
+  permsDiv.className = 'actions-subcontent' + (_actionsSubTab === 'permissions' ? ' active' : '');
+  el.appendChild(permsDiv);
+
+  if (_actionsSubTab === 'tasks') {
+    loadActionTasks();
+  } else {
+    loadActionPermissions();
+  }
+}
+
+function switchActionsSubTab(tab) {
+  _actionsSubTab = tab;
+  renderActionsTab();
+}
+
+function _buildActionCard(t) {
+  var statusClass = t.status || 'active';
+  var isPaused = t.status === 'paused';
+  var isTerminal = t.status === 'completed' || t.status === 'cancelled';
+  var nextRun = t.next_run_at ? new Date(t.next_run_at).toLocaleString('fr-FR') : '—';
+  var execInfo = t.execution_count + (t.max_executions ? '/' + t.max_executions : '');
+  var creator = escHtml(t.creator_id || '?');
+  var platform = t.creator_platform || '';
+
+  var card = document.createElement('div');
+  card.className = 'action-card';
+
+  // Header
+  var header = document.createElement('div');
+  header.className = 'action-card-header';
+  var typeBadge = document.createElement('span');
+  typeBadge.className = 'action-type-badge';
+  typeBadge.textContent = t.action_type;
+  var statusBadge = document.createElement('span');
+  statusBadge.className = 'action-status-badge ' + statusClass;
+  statusBadge.textContent = t.status;
+  header.appendChild(typeBadge);
+  header.appendChild(statusBadge);
+  card.appendChild(header);
+
+  // Description
+  var desc = document.createElement('div');
+  desc.className = 'action-card-desc';
+  desc.textContent = t.description || 'Pas de description';
+  card.appendChild(desc);
+
+  // Meta
+  var meta = document.createElement('div');
+  meta.className = 'action-card-meta';
+
+  var rows = [
+    ['Créateur', creator + ' (' + escHtml(platform) + ')'],
+    ['Prochaine exécution', nextRun],
+    ['Exécutions', execInfo],
+    ['Type planification', t.schedule_type || '—'],
+  ];
+  if (t.last_error) {
+    rows.push(['Dernière erreur', t.last_error]);
+  }
+  rows.forEach(function(pair) {
+    var row = document.createElement('div');
+    row.className = 'action-card-meta-row';
+    var label = document.createElement('span');
+    label.className = 'action-meta-label';
+    label.textContent = pair[0];
+    var val = document.createElement('span');
+    val.textContent = pair[1];
+    if (pair[0] === 'Dernière erreur') val.style.color = '#ef4444';
+    row.appendChild(label);
+    row.appendChild(val);
+    meta.appendChild(row);
+  });
+  card.appendChild(meta);
+
+  // Action buttons (only for non-terminal tasks)
+  if (!isTerminal) {
+    var actions = document.createElement('div');
+    actions.className = 'action-card-actions';
+
+    var pauseBtn = document.createElement('button');
+    pauseBtn.className = 'action-btn';
+    pauseBtn.textContent = isPaused ? '▶ Reprendre' : '⏸ Pause';
+    pauseBtn.addEventListener('click', function() { actionTaskTogglePause(t.id, isPaused); });
+    actions.appendChild(pauseBtn);
+
+    var execBtn = document.createElement('button');
+    execBtn.className = 'action-btn action-btn-exec';
+    execBtn.textContent = '⚡ Exécuter';
+    execBtn.addEventListener('click', function() { actionTaskExecuteNow(t.id); });
+    actions.appendChild(execBtn);
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'action-btn action-btn-cancel';
+    cancelBtn.textContent = '✕ Annuler';
+    cancelBtn.addEventListener('click', function() { actionTaskCancel(t.id); });
+    actions.appendChild(cancelBtn);
+
+    card.appendChild(actions);
+  }
+
+  return card;
+}
+
+async function loadActionTasks() {
+  var container = document.getElementById('actions-tasks-content');
+  if (!container) return;
+  container.textContent = '';
+  var loading = document.createElement('div');
+  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.textContent = 'Chargement...';
+  container.appendChild(loading);
+
+  var r = await apiFetch('/api/actions/tasks');
+  if (!r || !r.ok) {
+    loading.textContent = 'Erreur de chargement';
+    return;
+  }
+  var data = await r.json();
+  var tasks = data.tasks || [];
+
+  container.textContent = '';
+
+  if (tasks.length === 0) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.textContent = 'Aucune tâche programmée';
+    container.appendChild(empty);
+    return;
+  }
+
+  var grid = document.createElement('div');
+  grid.className = 'action-grid';
+  tasks.forEach(function(t) {
+    grid.appendChild(_buildActionCard(t));
+  });
+  container.appendChild(grid);
+}
+
+async function actionTaskTogglePause(id, isPaused) {
+  var endpoint = isPaused ? 'resume' : 'pause';
+  var r = await apiFetch('/api/actions/tasks/' + id + '/' + endpoint, { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur ' + endpoint, 'error'); return; }
+  toast(isPaused ? 'Tâche reprise' : 'Tâche en pause', 'success');
+  loadActionTasks();
+}
+
+async function actionTaskExecuteNow(id) {
+  var r = await apiFetch('/api/actions/tasks/' + id + '/execute', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur exécution', 'error'); return; }
+  toast('Exécution lancée', 'success');
+  loadActionTasks();
+}
+
+async function actionTaskCancel(id) {
+  if (!confirm('Annuler cette tâche ?')) return;
+  var r = await apiFetch('/api/actions/tasks/' + id + '/cancel', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur annulation', 'error'); return; }
+  toast('Tâche annulée', 'success');
+  loadActionTasks();
+}
+
+var DISCORD_ROLES = ['everyone', 'subscriber', 'moderator', 'admin'];
+var TWITCH_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'admin'];
+
+function _buildPermRow(p) {
+  var actionType = p.action_type;
+  var enabled = p.enabled !== false && p.enabled !== 0;
+
+  var tr = document.createElement('tr');
+
+  // Action name
+  var tdName = document.createElement('td');
+  tdName.className = 'action-perm-name';
+  tdName.textContent = actionType;
+  tr.appendChild(tdName);
+
+  // Enabled toggle
+  var tdEnabled = document.createElement('td');
+  var toggleLabel = document.createElement('label');
+  toggleLabel.className = 'action-toggle';
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.addEventListener('change', function() { updateActionPerm(actionType, 'enabled', this.checked); });
+  var trackSpan = document.createElement('span');
+  trackSpan.className = 'action-toggle-track';
+  var thumbSpan = document.createElement('span');
+  thumbSpan.className = 'action-toggle-thumb';
+  trackSpan.appendChild(thumbSpan);
+  toggleLabel.appendChild(checkbox);
+  toggleLabel.appendChild(trackSpan);
+  tdEnabled.appendChild(toggleLabel);
+  tr.appendChild(tdEnabled);
+
+  // Discord role dropdown
+  var tdDiscord = document.createElement('td');
+  var discordSelect = document.createElement('select');
+  discordSelect.className = 'neo-select action-perm-select';
+  DISCORD_ROLES.forEach(function(role) {
+    var opt = document.createElement('option');
+    opt.value = role;
+    opt.textContent = role;
+    if (p.min_role_discord === role) opt.selected = true;
+    discordSelect.appendChild(opt);
+  });
+  discordSelect.addEventListener('change', function() { updateActionPerm(actionType, 'min_role_discord', this.value); });
+  tdDiscord.appendChild(discordSelect);
+  tr.appendChild(tdDiscord);
+
+  // Twitch role dropdown
+  var tdTwitch = document.createElement('td');
+  var twitchSelect = document.createElement('select');
+  twitchSelect.className = 'neo-select action-perm-select';
+  TWITCH_ROLES.forEach(function(role) {
+    var opt = document.createElement('option');
+    opt.value = role;
+    opt.textContent = role;
+    if (p.min_role_twitch === role) opt.selected = true;
+    twitchSelect.appendChild(opt);
+  });
+  twitchSelect.addEventListener('change', function() { updateActionPerm(actionType, 'min_role_twitch', this.value); });
+  tdTwitch.appendChild(twitchSelect);
+  tr.appendChild(tdTwitch);
+
+  return tr;
+}
+
+async function loadActionPermissions() {
+  var container = document.getElementById('actions-perms-content');
+  if (!container) return;
+  container.textContent = '';
+  var loading = document.createElement('div');
+  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.textContent = 'Chargement...';
+  container.appendChild(loading);
+
+  var r = await apiFetch('/api/actions/permissions');
+  if (!r || !r.ok) {
+    loading.textContent = 'Erreur de chargement';
+    return;
+  }
+  var data = await r.json();
+  var perms = data.permissions || [];
+
+  container.textContent = '';
+
+  if (perms.length === 0) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.textContent = 'Aucune permission configurée';
+    container.appendChild(empty);
+    return;
+  }
+
+  var wrap = document.createElement('div');
+  wrap.className = 'action-perms-table-wrap';
+  var table = document.createElement('table');
+  table.className = 'action-perms-table';
+
+  var thead = document.createElement('thead');
+  var headerRow = document.createElement('tr');
+  ['Action', 'Activé', 'Rôle Discord', 'Rôle Twitch'].forEach(function(text) {
+    var th = document.createElement('th');
+    th.textContent = text;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  perms.forEach(function(p) {
+    tbody.appendChild(_buildPermRow(p));
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.appendChild(wrap);
+}
+
+async function updateActionPerm(actionType, field, value) {
+  var body = {};
+  body[field] = value;
+  var r = await apiFetch('/api/actions/permissions/' + encodeURIComponent(actionType), {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (!r || !r.ok) { toast('Erreur mise à jour permission', 'error'); return; }
+  toast('Permission mise à jour', 'success');
 }

@@ -104,6 +104,10 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <span>Couts</span>
         <span id="costs-badge" class="sidebar-badge" style="display:none">!</span>
       </a>
+      <a class="sidebar-item" data-tab="admin-actions" onclick="showTab('admin-actions')" href="javascript:void(0)" aria-label="Actions">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <span>Actions</span>
+      </a>
     </nav>
 
     <div class="sidebar-spacer"></div>
@@ -280,6 +284,9 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
 
     <!-- ADMIN MEMORY DASHBOARD TAB (kept for sub-nav rendering) -->
     <div class="tab-content" id="tab-admin-memory-dash"></div>
+
+    <!-- ADMIN ACTIONS TAB -->
+    <div class="tab-content" id="tab-admin-actions"></div>
 
     <!-- JOURNAL DETAIL TAB -->
     <div class="tab-content" id="tab-journal-detail"></div>
