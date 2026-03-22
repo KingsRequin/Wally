@@ -40,7 +40,9 @@ Structured logging with zero configuration, file rotation built-in, better ergon
 stdlib logging. Use exclusively — never use `print()` or `import logging`.
 
 ### apscheduler
-AsyncIO-native scheduler for the daily journal cron. No separate process or queue required.
+AsyncIO-native scheduler shared between DailyJournal and ActionScheduler. Single
+`AsyncIOScheduler` instance created in `main.py`, passed to both services. No separate
+process or queue required.
 
 ---
 
@@ -58,7 +60,13 @@ bot/
 │   ├── language.py      # langdetect wrapper with fallback
 │   ├── journal.py       # Daily journal scheduler (apscheduler)
 │   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mem0
-│   └── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
+│   ├── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
+│   └── actions/         # ActionService: tâches planifiées via tool calling
+│       ├── __init__.py   # Exports publics
+│       ├── registry.py   # ActionRegistry: catalogue + ACL par rôle
+│       ├── scheduler.py  # ActionScheduler: persistence SQLite + apscheduler
+│       ├── executor.py   # ActionExecutor: routing + livraison messages
+│       └── service.py    # ActionService: facade LLM, tool definitions
 ├── discord/
 │   ├── bot.py           # discord.py Bot subclass
 │   ├── handlers.py      # on_message, welcome logic, timeout reactions
@@ -169,6 +177,22 @@ Namespace: `{platform}:{user_id}` (e.g. `discord:123456789`, `twitch:username`)
 Stores: facts, preferences, recurring topics, preferred language.
 Discord and Twitch memory are strictly separate per user.
 
+### Memory API Convention
+`memory.add(platform, user_id, ...)` — `user_id` must be the RAW id (e.g. `"610550333042589752"`),
+never the prefixed form (`"discord:610550333042589752"`). The method builds `platform:user_id`
+internally via `_user_id()`. A guard logs warnings on double-prefix but callers must pass raw ids.
+Same rule applies to `memory.search()`, `memory.get_all()`, `memory.delete_user_memories()`.
+
+### FactExtractor — Third-party Resolution
+`_extract_facts()` injects both `list_aliases()` and `list_memory_users()` into the LLM prompt
+so it can resolve mentions of users not present in the conversation (e.g. "Azrael" → "Azraël").
+Without this, facts about absent users end up under `unknown:<nickname>`.
+
+### Qdrant Manual Cleanup
+When fixing Qdrant entries (double-prefix, orphans), use `qdrant_client.set_payload()` to update
+`user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will
+strip prefixes and cause unintended deletions. Direct Qdrant client is the safe path for data fixes.
+
 ### Trust Score
 Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
 Positive interactions: +0.01. Repeated insults: -0.05.
@@ -186,6 +210,8 @@ Updated after every response, not in real-time during generation.
 | `trust_scores` | Long-term trust per user per platform |
 | `gallery_images` | Generated images: prompt, title, username, file_path, cost |
 | `gallery_votes` | Flame votes per image per user (toggle) |
+| `action_tasks` | Tâches planifiées: type, schedule, payload, status, creator, target |
+| `action_permissions` | ACL par type d'action: rôle min Discord/Twitch, enabled |
 
 ---
 
@@ -260,6 +286,46 @@ Endpoints:
 ### Prompt Templates
 `load_prompt("name")` charge `bot/persona/prompts/name.md` avec fallback chaîne vide.
 Les templates sont chargés au niveau module (variables globales) pour éviter les I/O répétées.
+
+---
+
+## ActionService
+
+Allows the LLM to create, cancel, and list scheduled tasks via tool calling.
+
+### Architecture
+4 services in `bot/core/actions/`:
+- **ActionRegistry** — action catalog + role-based permissions (DB-backed, in-memory cache)
+- **ActionScheduler** — SQLite persistence + apscheduler job management (shared scheduler)
+- **ActionExecutor** — routes to action handlers, delivers results to Discord/Twitch channels
+- **ActionService** — LLM facade, exposes 3 tools: `create_action_task`, `cancel_action_task`, `list_action_tasks`
+
+### Role Hierarchy
+- **Discord**: `everyone` < `subscriber` < `moderator` < `admin`
+- **Twitch**: `everyone` < `subscriber` < `vip` < `moderator` < `admin`
+
+Permissions stored in `action_permissions` table, configurable per action type via dashboard.
+
+### Schedule Types
+- `once` — single execution at a specific datetime (Europe/Paris timezone)
+- `interval` — recurring every N minutes (minimum 5)
+- `cron` — cron-style (hour, minute, day_of_week)
+
+### Safety
+- Rate limit: max 10 active+paused tasks per user
+- Past `run_at` rejected (30s grace window)
+- Once tasks that fail → marked `missed`; recurring tasks auto-pause after 3 consecutive failures
+- Tasks survive restart: `reload_all()` at boot reschedules active tasks, marks missed `once` tasks
+
+### Dashboard
+Admin tab "Actions" with two sub-tabs:
+- **Tâches** — card grid with status badges, pause/resume/cancel/execute actions
+- **Permissions** — table with enabled toggle + role dropdowns per action type
+
+### Handler Integration
+Same pattern as WebSearchService: `getattr(bot, "action_service", None)` → tools added to
+`complete_with_tools()`. Discord handler adds ⏱️ reaction when action tools are called.
+Role resolution via `_resolve_discord_roles()` / `_resolve_twitch_roles()`.
 
 ---
 

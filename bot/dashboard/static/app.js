@@ -3576,7 +3576,7 @@ if message.reference:
             <div class="jd-arch-row">
               <div class="jd-arch-box jd-arch-core">
                 <strong>Core Services</strong><br>
-                <span>EmotionEngine · MemoryService · OpenAIClient · PersonaService · Config</span>
+                <span>EmotionEngine · MemoryService · OpenAIClient · PersonaService · ActionService · Config</span>
               </div>
             </div>
             <div class="jd-arch-arrow">↓ stockage ↓</div>
@@ -3619,6 +3619,35 @@ await asyncio.gather(
               <p class="jd-tech-note"><strong>asyncio.gather()</strong> lance les 3 services en parallèle dans la même boucle événementielle Python. Pas besoin de multi-threading ou de multi-processing — l'async/await suffit car tout le I/O est non-bloquant.</p>
               <p class="jd-tech-note"><strong>Docker</strong> : le <code>docker-compose.yml</code> définit 2 services. Wally dépend de Qdrant avec <code>condition: service_healthy</code> (healthcheck sur <code>/healthz</code>). La config et les données sont montées en volumes — pas besoin de rebuild pour changer la config.</p>
               <p class="jd-tech-note"><strong>Hot-reload</strong> : <code>config.save()</code> écrit la config en mémoire directement dans <code>config.yaml</code>. Les changements via le dashboard sont appliqués instantanément sans redémarrage.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 8: ActionService -->
+      <section class="jd-section">
+        <div class="jd-section-header">
+          <span class="jd-num" style="background: #06b6d4">8</span>
+          <h3>Actions planifiées</h3>
+        </div>
+        <div class="jd-body">
+          <p>Wally peut <strong>créer ses propres tâches planifiées</strong> quand on lui demande. « Rappelle-moi d'acheter du pain à 18h », « ping-moi toutes les 30 minutes pour boire de l'eau » — il comprend la demande, crée la tâche, et l'exécute au moment voulu.</p>
+          <p>Il dispose de <strong>3 outils</strong> via tool calling :</p>
+          <ul style="margin:0.5rem 0;padding-left:1.5rem;color:rgba(255,255,255,0.7)">
+            <li><strong>create_action_task</strong> — créer un rappel ponctuel, récurrent ou cron</li>
+            <li><strong>cancel_action_task</strong> — annuler par ID ou en langage naturel (« arrête le rappel du pain »)</li>
+            <li><strong>list_action_tasks</strong> — lister ses tâches actives</li>
+          </ul>
+          <p>Chaque type d'action a des <strong>permissions par rôle</strong> : on peut autoriser les rappels pour tout le monde mais réserver la génération d'images aux modérateurs. La hiérarchie Discord (everyone → subscriber → moderator → admin) et Twitch (everyone → subscriber → vip → moderator → admin) est configurable depuis l'onglet <strong>Actions</strong> du dashboard.</p>
+          <p>Les tâches <strong>survivent aux redémarrages</strong> : elles sont persistées en SQLite et rechargées au boot. Les tâches ponctuelles manquées pendant un downtime sont marquées « missed » et visibles dans le dashboard.</p>
+
+          <details class="jd-details">
+            <summary>🔍 Aller plus loin — architecture interne</summary>
+            <div class="jd-code-block">
+              <p class="jd-tech-note"><strong>4 services</strong> : <code>ActionRegistry</code> (catalogue + ACL), <code>ActionScheduler</code> (persistence + apscheduler), <code>ActionExecutor</code> (routing + livraison), <code>ActionService</code> (façade LLM).</p>
+              <p class="jd-tech-note"><strong>Scheduler partagé</strong> : un seul <code>AsyncIOScheduler</code> pour le journal quotidien ET les tâches planifiées — pas de conflit.</p>
+              <p class="jd-tech-note"><strong>Sécurité</strong> : max 10 tâches par utilisateur, intervalle minimum 5 minutes, pas d'escalade de privilèges, isolation (un user ne voit que ses tâches).</p>
+              <p class="jd-tech-note"><strong>Auto-pause</strong> : après 3 échecs consécutifs, une tâche récurrente est mise en pause automatiquement avec le motif d'erreur visible dans le dashboard.</p>
             </div>
           </details>
         </div>
