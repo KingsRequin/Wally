@@ -39,8 +39,12 @@ def _make_app():
     action_service.execute_task_now = AsyncMock(return_value="OK")
     action_service.update_permission = AsyncMock()
     action_service.set_action_enabled = AsyncMock()
+    action_service._registry = MagicMock()
+    action_service._registry.get_discord_roles_for_action = AsyncMock(return_value={})
+    action_service._registry.update_discord_permission = AsyncMock()
 
     state.action_service = action_service
+    state.discord_bot = None
     app.state.wally = state
     return app
 
@@ -90,6 +94,50 @@ def test_update_permission():
     client = TestClient(app)
     resp = client.put(
         "/api/actions/permissions/reminder",
-        json={"min_role_discord": "moderator", "min_role_twitch": "vip", "enabled": True},
+        json={"min_role_twitch": "vip", "enabled": True},
     )
     assert resp.status_code == 200
+
+
+def test_discord_roles_no_bot():
+    app = _make_app()
+    client = TestClient(app)
+    resp = client.get("/api/actions/discord-roles")
+    assert resp.status_code == 200
+    assert resp.json() == {"guilds": []}
+
+
+def test_update_discord_permission():
+    app = _make_app()
+    client = TestClient(app)
+    resp = client.put(
+        "/api/actions/permissions/reminder/discord",
+        json={"guild_id": "111", "role_ids": ["everyone", "222"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+def test_update_discord_permission_no_guild():
+    app = _make_app()
+    client = TestClient(app)
+    resp = client.put(
+        "/api/actions/permissions/reminder/discord",
+        json={"role_ids": ["everyone"]},
+    )
+    assert resp.status_code == 200
+    assert "error" in resp.json()
+
+
+def test_list_permissions_includes_discord_roles():
+    app = _make_app()
+    app.state.wally.action_service._registry.get_discord_roles_for_action = AsyncMock(
+        return_value={"111": [{"role_id": "everyone", "role_name": "everyone"}]}
+    )
+    client = TestClient(app)
+    resp = client.get("/api/actions/permissions")
+    assert resp.status_code == 200
+    perms = resp.json()["permissions"]
+    assert len(perms) == 1
+    assert "discord_roles" in perms[0]
+    assert "111" in perms[0]["discord_roles"]
