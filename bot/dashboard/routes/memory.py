@@ -211,6 +211,7 @@ async def get_user_memories(user_id: str, request: Request):
 
 class AddMemoryRequest(BaseModel):
     content: str
+    category: str = ""
 
 
 @router.post("/memory/users/{user_id}/memories")
@@ -226,9 +227,13 @@ async def add_memory(user_id: str, body: AddMemoryRequest, request: Request):
     # Extraire plateforme depuis le user_id (format "platform:id")
     platform = user_id.split(":")[0] if ":" in user_id else ""
 
+    metadata = {"origin": user_id}
+    if body.category:
+        metadata["category"] = body.category
+
     result = await asyncio.to_thread(
         mem0.add, content, user_id=user_id,
-        metadata={"origin": user_id},
+        metadata=metadata,
     )
     logger.info("Souvenir ajouté manuellement pour {uid}: {c}", uid=user_id, c=content[:80])
 
@@ -255,6 +260,7 @@ async def delete_user(user_id: str, request: Request):
 
 class UpdateMemoryRequest(BaseModel):
     content: str
+    category: str = ""
 
 
 @router.put("/memory/users/{user_id}/memories/{memory_id}")

@@ -559,6 +559,50 @@ async def test_get_user_memories_includes_category():
 
 
 @pytest.mark.asyncio
+async def test_add_memory_with_category():
+    state, mock_mem0, db = _make_state()
+    mock_mem0.add.return_value = {"results": []}
+    db.upsert_memory_user = AsyncMock()
+    async with _make_client(state) as client:
+        r = await client.post("/api/admin/memory/users/discord:123/memories",
+                              json={"content": "Likes cats", "category": "PREF"}, headers=HEADERS)
+    assert r.status_code == 200
+    call_args = mock_mem0.add.call_args
+    metadata = call_args.kwargs.get("metadata", {})
+    assert metadata.get("category") == "PREF"
+
+
+@pytest.mark.asyncio
+async def test_add_memory_without_category():
+    """POST without category should not include category in metadata."""
+    state, mock_mem0, db = _make_state()
+    mock_mem0.add.return_value = {"results": []}
+    db.upsert_memory_user = AsyncMock()
+    async with _make_client(state) as client:
+        r = await client.post("/api/admin/memory/users/discord:123/memories",
+                              json={"content": "Likes dogs"}, headers=HEADERS)
+    assert r.status_code == 200
+    call_args = mock_mem0.add.call_args
+    metadata = call_args.kwargs.get("metadata", {})
+    assert "category" not in metadata
+
+
+@pytest.mark.asyncio
+async def test_update_memory_accepts_category():
+    """PUT with category field should still work (category preserved from original add)."""
+    state, mock_mem0, _ = _make_state()
+    mock_mem0.update = MagicMock()
+    async with _make_client(state) as client:
+        r = await client.put(
+            "/api/admin/memory/users/discord:123/memories/mem-abc",
+            headers=HEADERS,
+            json={"content": "Updated content", "category": "PREF"},
+        )
+    assert r.status_code == 200
+    mock_mem0.update.assert_called_once_with("mem-abc", "Updated content")
+
+
+@pytest.mark.asyncio
 async def test_resolve_alias_rejects_empty_canonical():
     """POST /memory/aliases/{nickname}/resolve returns 400 when canonical_uid is empty."""
     state, _, db = _make_state()
