@@ -3392,7 +3392,7 @@ function renderJournalDetailTab() {
           </div>
 
           <p>Chaque message fait bouger ces émotions. Un compliment booste la <strong>joie</strong>, une insulte monte la <strong>colère</strong>, une question intéressante pique la <strong>curiosité</strong>. L'impact dépend aussi du <strong>score de confiance</strong> de l'auteur : un inconnu (trust bas) provoque des réactions plus vives qu'un habitué.</p>
-          <p>Avec le temps, chaque émotion <strong>retombe naturellement vers zéro</strong>, comme un humain qui se calme. La vitesse de retombée est différente pour chaque émotion — la colère s'apaise vite, la tristesse persiste plus longtemps.</p>
+          <p>Avec le temps, chaque émotion <strong>retombe naturellement vers zéro</strong>, comme un humain qui se calme. La vitesse de retombée est différente pour chaque émotion — la colère s'apaise en quelques heures, la tristesse persiste plus longtemps. L'<strong>ennui</strong> est spécial : il monte linéairement quand personne n'interagit avec Wally.</p>
           <p>Si un utilisateur déclenche la colère au-delà d'un seuil trop souvent, Wally le <strong>mute temporairement</strong> : il ne répond plus avec du texte, seulement avec des réactions emoji (💩 ⛔ 😤).</p>
 
           <details class="jd-details">
@@ -3411,7 +3411,7 @@ def _apply_decay(self):
         if self._state[emotion] < DECAY_FLOOR:
             self._state[emotion] = 0.0
     self._last_decay = now</code></pre>
-              <p class="jd-tech-note"><strong>Décroissance exponentielle</strong> : un λ élevé = retombée rapide. La colère a typiquement λ=0.003 (retombe en ~10min) tandis que la tristesse a λ=0.001 (persiste ~30min). Un task en arrière-plan applique cette décroissance toutes les 60 secondes.</p>
+              <p class="jd-tech-note"><strong>Décroissance exponentielle</strong> : un λ élevé = retombée rapide. Δt est mesuré en <strong>heures</strong>. Un task en arrière-plan applique cette décroissance toutes les 60 secondes. L'ennui monte linéairement pendant l'inactivité (configurable via <code>boredom_rise_per_hour</code>).</p>
               <p class="jd-tech-note"><strong>Trust score et colère</strong> : quand le trust score est bas (&lt;0.3), les deltas de colère sont amplifiés. Un nouvel utilisateur (trust=0.0) provoquera une réaction de colère plus forte qu'un habitué (trust=0.8). C'est un mécanisme de protection naturel.</p>
               <p class="jd-tech-note"><strong>Timeout</strong> : si la colère dépasse le seuil configuré N fois pour un même utilisateur, il est mute pendant X minutes (configurable). Pendant ce mute, Wally réagit uniquement avec des emoji.</p>
             </div>
@@ -3556,7 +3556,7 @@ prompt = PromptBuilder.build(
           <h3>Galerie d'images et vision</h3>
         </div>
         <div class="jd-body">
-          <p>Wally peut <strong>générer des images</strong> via la commande <code>/imagine</code> sur Discord ou dans le chat web. Il utilise l'API OpenAI Images pour créer l'image, puis un modèle secondaire génère automatiquement un <strong>titre court et créatif</strong>.</p>
+          <p>Wally peut <strong>générer des images</strong> via la commande <code>/imagine</code> sur Discord ou dans le chat web. Pendant la génération, un <strong>GIF de chargement</strong> aléatoire s'affiche avec des phrases rotatives toutes les 5 secondes. Le modèle secondaire génère ensuite un <strong>titre court et créatif</strong>, et l'image finale remplace l'embed de chargement.</p>
           <p>Chaque image est sauvegardée dans la <strong>galerie</strong>, accessible depuis le dashboard. Les utilisateurs peuvent <strong>voter</strong> avec une flamme (toggle), trier par date ou par votes, filtrer par créateur, et le créateur peut <strong>modifier le titre</strong> de son image.</p>
           <p>Wally a aussi la <strong>vision</strong> : quand quelqu'un envoie une image en pièce jointe, il la voit et peut la commenter. Et quand quelqu'un <strong>répond à une image qu'il a générée</strong>, il sait que c'est la sienne — il reconnaît le titre, le prompt original, et peut en discuter naturellement.</p>
           <p>Des <strong>limites configurables</strong> empêchent les abus : limite journalière globale et par utilisateur. Le coût de chaque génération est logué dans la base de données.</p>

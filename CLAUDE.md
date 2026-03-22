@@ -148,8 +148,9 @@ All secrets in `.env`. Never hardcode tokens or API keys. Never commit `.env`.
 5 emotions, each float 0.0–1.0: `anger`, `joy`, `sadness`, `curiosity`, `boredom`
 
 ### Decay
-Background task every 60s: `E(t) = E₀ × e^(−λ × Δt)`
+Background task every 60s: `E(t) = E₀ × e^(−λ × Δt)` where Δt is in **hours**.
 Each emotion has its own configurable λ in `config.yaml`.
+Boredom rises linearly during inactivity: `boredom_rise_per_hour` (default 1.2, configurable per emotion).
 
 ### Analysis
 NRCLex maps message text to emotion scores. Weighted deltas applied per emotion.
@@ -250,6 +251,15 @@ Updated after every response, not in real-time during generation.
 | 100–999 | +0.3 |
 | 1000+ | +0.6 (max) |
 
+### Twitch Curiosity Triggers
+- **Follow burst**: ≥5 follows in 60s → curiosity +0.2 (détecté via `_recent_follows` deque)
+- **Massive raid**: ≥50 viewers → curiosity +`min(viewers/100, 0.5)`
+
+### Stream Awareness
+`WallyTwitch._poll_stream_info()` polls the home stream every 60s. Cached in `_stream_info`
+dict (live, title, category, viewers, started_at). Injected into the system prompt situation
+block via `PromptBuilder` when `stream_live` is True.
+
 ---
 
 ## /wally setup Model Filter
@@ -296,11 +306,14 @@ Pricing in `IMAGE_COSTS` dict, cost logged via `log_cost(purpose="image_generati
 Config: `config.image_generation` — model, quality, size, background, format, daily_limit, per_user_limit.
 
 Endpoints:
-- Discord: `/wally imagine <prompt>` with persistent flame/edit buttons
+- Discord: `/wally imagine <prompt>` — loading GIF + rotating phrases during generation, then final embed with flame/edit buttons
 - Web chat: `/imagine <prompt>` via WebSocket slash command
 - Twitch: `!image` triggers overlay display of random gallery image
 - Gallery: public browsable page with search, sort by date/votes, flame voting
-- OBS overlay: `/overlay-image` page with Animate.css, SSE-driven
+- OBS overlay: `/overlay-image` page with Animate.css, SSE-driven, credit overlay showing username
+
+Loading UX: random GIF from `data/loading_gifs/`, phrases from `data/loading_phrases.txt`,
+rotated every 5s while the image generates. Final image replaces the loading embed in-place.
 
 ---
 
