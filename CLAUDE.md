@@ -162,6 +162,32 @@ Dominant emotion(s) → behavioral directive injected into system prompt via `pr
 ### Timeout
 If a user triggers anger above threshold N times → mute mode for X minutes (in `timeout_log`).
 During mute: react only (💩 ⛔ 😤), no text response.
+Each message from a muted user increases anger by `spam_anger_delta` (configurable).
+
+### Spam Detection (Discord only)
+In-memory tracker `_spam_tracker: dict[(user_id, channel_id), deque[float]]` in `handlers.py`.
+Counts message timestamps per user/channel. When `max_messages` exceeded within `window_seconds`:
+1. LLM generates warning via `complete_secondary()` (prompt: `spam_warning_system.md`)
+2. User muted via `add_timeout()` for `mute_minutes`
+3. Memory fact stored via `memory.add()` ("Wally a coupé X pour spam")
+4. Tracker reset for that user/channel
+
+Config in `discord.spam_detection`:
+```yaml
+discord:
+  spam_detection:
+    enabled: true
+    max_messages: 10        # threshold
+    window_seconds: 120     # time window
+    mute_minutes: 5         # mute duration
+    spam_anger_delta: 0.05  # anger increase per muted message
+    exempt_channels:        # channels that skip spam detection
+      - 1485380606224502844
+```
+
+`SpamDetectionConfig` is a nested dataclass in `DiscordConfig`. `Config.load()` pops
+`spam_detection` from the discord dict and constructs it separately to handle nesting.
+Exempt channels are excluded from tracking entirely. DMs are excluded.
 
 ---
 
