@@ -261,6 +261,14 @@ CREATE TABLE IF NOT EXISTS action_permissions (
     min_role_twitch TEXT NOT NULL DEFAULT 'admin',
     enabled INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS action_permissions_discord (
+    action_type TEXT NOT NULL,
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    role_name TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (action_type, guild_id, role_id)
+);
 """
 
 
@@ -1649,3 +1657,32 @@ class Database:
                  enabled = excluded.enabled""",
             (action_type, min_role_discord, min_role_twitch, enabled),
         )
+
+    async def list_discord_permissions(self, action_type: str | None = None) -> list[dict]:
+        if action_type:
+            return await self.fetch_all(
+                "SELECT * FROM action_permissions_discord WHERE action_type = ? ORDER BY guild_id, role_name",
+                (action_type,),
+            )
+        return await self.fetch_all("SELECT * FROM action_permissions_discord ORDER BY action_type, guild_id, role_name")
+
+    async def get_discord_permissions(self, action_type: str, guild_id: str) -> list[dict]:
+        return await self.fetch_all(
+            "SELECT * FROM action_permissions_discord WHERE action_type = ? AND guild_id = ?",
+            (action_type, guild_id),
+        )
+
+    async def set_discord_permissions(self, action_type: str, guild_id: str, roles: list[dict]) -> None:
+        """Replace all Discord role permissions for (action_type, guild_id)."""
+        await self.execute(
+            "DELETE FROM action_permissions_discord WHERE action_type = ? AND guild_id = ?",
+            (action_type, guild_id),
+        )
+        for role in roles:
+            await self.execute(
+                "INSERT INTO action_permissions_discord (action_type, guild_id, role_id, role_name) VALUES (?, ?, ?, ?)",
+                (action_type, guild_id, role["role_id"], role.get("role_name", "")),
+            )
+
+    async def delete_discord_permissions(self, action_type: str) -> None:
+        await self.execute("DELETE FROM action_permissions_discord WHERE action_type = ?", (action_type,))
