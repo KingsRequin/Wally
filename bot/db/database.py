@@ -287,6 +287,18 @@ class Database:
             await conn.commit()
         except Exception:
             pass  # Column already exists
+        # Migration: add avatar_url to memory_users
+        try:
+            await conn.execute("ALTER TABLE memory_users ADD COLUMN avatar_url TEXT DEFAULT NULL")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
+        # Migration: add memory_count to memory_users
+        try:
+            await conn.execute("ALTER TABLE memory_users ADD COLUMN memory_count INTEGER DEFAULT 0")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
         # Nettoyage automatique des vieilles entrées daily_log au démarrage
         try:
             await conn.execute(
@@ -509,7 +521,7 @@ class Database:
         new_value = max(0.0, min(1.0, current + delta))
         await self.execute(
             "INSERT INTO trust_scores (user_id, platform, score, updated_at, love, love_updated_at) "
-            "VALUES (?, ?, 0.5, ?, ?, ?) "
+            "VALUES (?, ?, 0.0, ?, ?, ?) "
             "ON CONFLICT(user_id, platform) DO UPDATE SET love=?, love_updated_at=?",
             (user_id, platform, time.time(), new_value, time.time(), new_value, time.time()),
         )
@@ -734,6 +746,11 @@ class Database:
                 for point in points:
                     uid = (point.payload or {}).get("user_id")
                     if uid and isinstance(uid, str) and ":" in uid:
+                        parts = uid.split(":")
+                        # Fix double-prefix (e.g. "discord:discord:123" → "discord:123")
+                        if len(parts) >= 3 and parts[0] == parts[1]:
+                            uid = f"{parts[0]}:{':'.join(parts[2:])}"
+                            logger.warning("Sync: fixed double-prefix → {uid}", uid=uid)
                         platform_prefix = uid.split(":")[0]
                         if platform_prefix:  # skip malformed entries with empty prefix
                             user_ids.add(uid)

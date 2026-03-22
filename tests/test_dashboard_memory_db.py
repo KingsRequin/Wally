@@ -182,3 +182,15 @@ async def test_sync_memory_users_from_qdrant_handles_qdrant_error():
 
     assert n == 0
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_users_has_avatar_and_count_columns():
+    db = await Database.create(":memory:")
+    await db.upsert_memory_user("discord:123", "discord", username="TestUser")
+    # Verify columns exist by querying them
+    row = await db.fetch_one("SELECT avatar_url, memory_count FROM memory_users WHERE user_id=?", ("discord:123",))
+    assert row is not None
+    assert row["avatar_url"] is None
+    assert row["memory_count"] == 0
+    await db.close()
