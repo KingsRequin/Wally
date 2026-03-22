@@ -127,7 +127,8 @@ async def main() -> None:
 
     action_executor = ActionExecutor(action_registry)
 
-    action_scheduler = ActionScheduler(db, action_executor, shared_scheduler)
+    from bot.dashboard.routes.sse import broadcast_action_event
+    action_scheduler = ActionScheduler(db, action_executor, shared_scheduler, on_change=broadcast_action_event)
 
     action_service = ActionService(action_registry, action_scheduler, db)
     logger.info("ActionService initialized")
@@ -262,11 +263,22 @@ async def main() -> None:
 
     # Register built-in actions
     async def _reminder_handler(payload: dict, target: dict) -> str:
-        return payload.get("message", "Rappel!")
+        msg = payload.get("message", "Rappel!")
+        creator_id = target.get("creator_id")
+        platform = target.get("platform", "")
+        if platform == "discord" and creator_id:
+            return f"<@{creator_id}> {msg}"
+        return msg
 
     await action_registry.register("reminder", ActionDefinition(
         name="reminder",
         description="Envoyer un message de rappel",
+        parameters={"type": "object", "properties": {"message": {"type": "string"}}},
+        handler=_reminder_handler,
+    ))
+    await action_registry.register("reminder_recurring", ActionDefinition(
+        name="reminder_recurring",
+        description="Envoyer un message de rappel récurrent",
         parameters={"type": "object", "properties": {"message": {"type": "string"}}},
         handler=_reminder_handler,
     ))

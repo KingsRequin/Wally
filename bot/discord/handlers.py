@@ -18,14 +18,9 @@ TIMEOUT_REACTIONS = ["💩", "⛔", "😤", "🙅", "😒"]
 
 
 def _resolve_discord_roles(member) -> list[str]:
-    """Map Discord member roles to the action permission hierarchy."""
+    """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable."""
     roles = ["everyone"]
-    if any(r.name.lower() in ("subscriber", "sub", "abonné") for r in member.roles):
-        roles.append("subscriber")
-    if member.guild_permissions.manage_messages or any(
-        r.name.lower() in ("moderator", "mod", "modérateur") for r in member.roles
-    ):
-        roles.append("moderator")
+    roles.extend(str(r.id) for r in member.roles if not r.is_default())
     if member.guild_permissions.administrator:
         roles.append("admin")
     return roles
@@ -494,12 +489,14 @@ async def _respond(
                 admin_ids = getattr(bot.config, "admin_ids", [])
                 if str(message.author.id) in [str(a) for a in admin_ids]:
                     user_roles.append("admin")
+                guild_id = str(message.guild.id) if message.guild else None
                 result = await action_service.execute_tool(
                     name, args,
                     user_id=str(message.author.id),
                     platform="discord",
                     user_roles=user_roles,
                     channel_id=str(message.channel.id),
+                    guild_id=guild_id,
                 )
                 return json.dumps(result)
             return f"Unknown tool: {name}"
