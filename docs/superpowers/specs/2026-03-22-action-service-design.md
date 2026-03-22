@@ -36,15 +36,17 @@ Chaque type d'action est configurable en termes d'accessibilité (ACL par rôle 
 | `last_error` | TEXT NULL | Dernier message d'erreur |
 | `status` | TEXT DEFAULT 'active' | `active` / `paused` / `completed` / `cancelled` / `missed` |
 | `created_at` | TEXT | ISO timestamp |
+| `updated_at` | TEXT | ISO timestamp, mis à jour à chaque changement de statut |
 | `next_run_at` | TEXT NULL | Prochaine exécution prévue |
 | `last_run_at` | TEXT NULL | Dernière exécution |
+
+> **Statut `missed`** : ne s'applique qu'aux tâches `once`. Pour les tâches récurrentes (`interval`/`cron`), les exécutions manquées pendant un downtime sont ignorées — la tâche reste `active` et reprend son cycle normal au redémarrage.
 
 ### Table `action_permissions`
 
 | Colonne | Type | Description |
 |---|---|---|
-| `id` | INTEGER PK | Auto-increment |
-| `action_type` | TEXT UNIQUE | Type d'action |
+| `action_type` | TEXT PRIMARY KEY | Type d'action |
 | `min_role_discord` | TEXT DEFAULT 'admin' | Rôle Discord minimum (`everyone` / `subscriber` / `moderator` / `admin`) |
 | `min_role_twitch` | TEXT DEFAULT 'admin' | Badge Twitch minimum (`everyone` / `subscriber` / `vip` / `moderator` / `admin`) |
 | `enabled` | INTEGER DEFAULT 1 | 1 = activée, 0 = désactivée globalement |
@@ -69,6 +71,8 @@ bot/core/actions/
 └── service.py           # ActionService (façade)
 ```
 
+> **Note architecturale** : c'est le premier sous-package dans `bot/core/` (les autres services sont des fichiers plats). Ce choix est intentionnel — l'ActionService a 4 composants distincts avec des responsabilités claires, ce qui justifie un package dédié plutôt que 4 fichiers éparpillés.
+
 ### ActionRegistry (`registry.py`)
 
 Catalogue des actions disponibles et gestion des permissions.
@@ -89,7 +93,7 @@ Catalogue des actions disponibles et gestion des permissions.
 
 Persistence SQLite + orchestration apscheduler.
 
-- Wraps `AsyncIOScheduler` (même pattern que `journal.py`)
+- Reçoit une instance `AsyncIOScheduler` partagée (créée dans `main.py`, utilisée aussi par `DailyJournal`). Un seul scheduler pour tout le process — pas de conflit de job stores.
 - Méthodes :
   - `schedule(task) -> task_id` — persiste en DB + programme dans apscheduler
   - `cancel(task_id)` — annule dans apscheduler + met à jour le statut DB
@@ -117,6 +121,7 @@ Routing vers les services existants et livraison des résultats.
   - Twitch : `channel.send()` via le bot Twitch
   - DM Discord : `user.send()`
   - Web : WebSocket push
+- Guard contre bots `None` : si `set_bots()` n'a pas encore été appelé, log warning et retourne une erreur sans crash
 - Try/except + logging sur chaque exécution, jamais de crash
 
 ### ActionService (`service.py`)
@@ -130,8 +135,9 @@ Façade pour le LLM, expose les tool definitions.
   - `cancel(task_id=None, search_query=None, user_id=None) -> dict` — annule par ID ou recherche
   - `list_tasks(user_id=None, status_filter="active", own_only=True) -> list` — liste filtrée
 - Valide les permissions via `ActionRegistry.check_permission()` avant création
-- Rate limit : max 10 tâches actives par utilisateur (configurable)
+- Rate limit : max 10 tâches `active + paused` par utilisateur (configurable)
 - Intervalle minimum : 5 minutes entre exécutions d'une tâche récurrente (configurable)
+- Validation temporelle : rejette les tâches `once` dont `run_at` est dans le passé (grace window de 30s)
 
 ---
 
@@ -165,11 +171,12 @@ Façade pour le LLM, expose les tool definitions.
           "type": "object",
           "properties": {
             "type": { "type": "string", "enum": ["once", "interval", "cron"] },
-            "run_at": { "type": "string", "description": "ISO datetime pour les tâches once" },
-            "interval_minutes": { "type": "integer", "description": "Intervalle en minutes" },
+            "run_at": { "type": "string", "description": "ISO datetime (Europe/Paris) pour les tâches once" },
+            "interval_minutes": { "type": "integer", "description": "Intervalle en minutes (min 5)" },
             "cron_hour": { "type": "integer" },
             "cron_minute": { "type": "integer" },
-            "max_executions": { "type": "integer", "description": "Nombre max d'exécutions (null = infini)" }
+            "cron_day_of_week": { "type": "string", "description": "Jour(s) de la semaine: mon,tue,wed,thu,fri,sat,sun" },
+            "max_executions": { "type": ["integer", "null"], "description": "Nombre max d'exécutions (null = infini)" }
           },
           "required": ["type"]
         },
@@ -179,8 +186,7 @@ Façade pour le LLM, expose les tool definitions.
             "platform": { "type": "string", "enum": ["discord", "twitch", "web"] },
             "channel_id": { "type": "string" },
             "dm": { "type": "boolean", "description": "Envoyer en DM au créateur" }
-          },
-          "required": ["platform"]
+          }
         }
       },
       "required": ["action_type", "description"],
@@ -190,12 +196,41 @@ Façade pour le LLM, expose les tool definitions.
 }
 ```
 
-Retour si infos manquantes :
+> **Timezone** : toutes les heures sont interprétées en `Europe/Paris` (cohérent avec `journal.py`).
+> Le LLM doit générer des datetimes dans ce fuseau.
+
+> **Règles de defaulting** : si `target` est omis, le service utilise le canal/plateforme d'origine
+> de la conversation. Si `schedule` est omis, le service retourne `need_more_info` — une tâche
+> doit toujours avoir un planning explicite.
+
+Réponses du tool :
+
 ```json
+// Succès
+{
+  "status": "created",
+  "task_id": 42,
+  "description": "Rappel: acheter du pain",
+  "next_run_at": "2026-03-23T18:00:00+01:00"
+}
+
+// Infos manquantes
 {
   "status": "need_more_info",
-  "missing": ["target.channel_id", "schedule.run_at"],
-  "message": "Je dois savoir dans quel salon et à quelle heure."
+  "missing": ["schedule.run_at"],
+  "message": "Je dois savoir à quelle heure."
+}
+
+// Permission refusée
+{
+  "status": "denied",
+  "message": "Action image_generate réservée aux modérateurs."
+}
+
+// Rate limit
+{
+  "status": "rate_limited",
+  "message": "Maximum 10 tâches actives atteint."
 }
 ```
 
@@ -219,10 +254,11 @@ Retour si infos manquantes :
 }
 ```
 
-Comportement de la recherche :
+Comportement de la recherche (`search_query`) :
+- Implémentation : SQL `LIKE '%query%'` sur la colonne `description`, limité aux tâches actives du user (sauf admin)
 - 0 résultat : `{"status": "not_found", "message": "..."}`
-- 1 résultat : annule directement, `{"status": "cancelled", "task": {...}}`
-- 2+ résultats : `{"status": "ambiguous", "candidates": [...]}`
+- 1 résultat : annule directement, `{"status": "cancelled", "task": {"id": 42, "description": "..."}}`
+- 2+ résultats : `{"status": "ambiguous", "candidates": [{"id": 42, "description": "..."}, ...]}`
 
 ### `list_action_tasks`
 
@@ -241,6 +277,24 @@ Comportement de la recherche :
       "additionalProperties": false
     }
   }
+}
+```
+
+Réponse :
+```json
+{
+  "status": "ok",
+  "tasks": [
+    {
+      "id": 42,
+      "action_type": "reminder",
+      "description": "Rappel: acheter du pain",
+      "status": "active",
+      "next_run_at": "2026-03-23T18:00:00+01:00",
+      "execution_count": 3,
+      "max_executions": 10
+    }
+  ]
 }
 ```
 
@@ -279,22 +333,26 @@ if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
 
 ### Modal Discord
 
-Quand il manque 3+ champs et que la plateforme est Discord, le LLM peut retourner un tag `[modal:create_task]` dans sa réponse. Le handler intercepte ce tag et ouvre un modal avec les champs manquants. À la soumission, le handler appelle `ActionService.create()`.
+Quand il manque 3+ champs et que la plateforme est Discord, le LLM peut appeler un tool dédié `open_task_modal` (au lieu de parser un tag dans le texte). Ce tool retourne un signal au handler Discord qui ouvre un modal pré-rempli avec les champs manquants. À la soumission du modal, le handler appelle `ActionService.create()`.
+
+Ce mécanisme reste dans le paradigme tool calling — pas de parsing de tags dans le texte libre.
 
 ---
 
 ## Boot Sequence
 
 1. Services existants (config, db, emotion, memory, openai...)
-2. `ActionRegistry(db)` — charge les permissions depuis SQLite
-3. `ActionExecutor(registry)` — créé sans les bots
-4. `ActionScheduler(db, executor)` — créé mais pas démarré
-5. `ActionService(registry, scheduler, db)` — façade prête
-6. Discord/Twitch bots créés avec `action_service` injecté
-7. `executor.set_bots(discord_bot, twitch_bot)` — injection tardive
-8. `scheduler.reload_all()` — recharge tâches actives, marque les missed
-9. `scheduler.start()` — démarre apscheduler
-10. `asyncio.gather(...)` — tout tourne
+2. `AsyncIOScheduler()` créé une seule fois dans `main.py` — instance partagée
+3. `ActionRegistry(db)` — charge les permissions depuis SQLite
+4. `ActionExecutor(registry)` — créé sans les bots
+5. `ActionScheduler(db, executor, scheduler)` — reçoit le scheduler partagé, pas encore démarré
+6. `ActionService(registry, scheduler, db)` — façade prête
+7. Discord/Twitch bots créés avec `action_service` injecté
+8. `DailyJournal` reçoit le même scheduler partagé (au lieu de créer le sien)
+9. `executor.set_bots(discord_bot, twitch_bot)` — injection tardive (**DOIT** précéder `reload_all`)
+10. `scheduler.reload_all()` — recharge tâches actives, marque les `missed` pour les tâches `once` dont `next_run_at` est dans le passé
+11. Scheduler partagé `.start()` — démarre une seule fois pour tous les jobs
+12. `asyncio.gather(...)` — tout tourne
 
 ---
 
@@ -346,10 +404,12 @@ Quand il manque 3+ champs et que la plateforme est Discord, le LLM peut retourne
 
 ## Limites de sécurité
 
-- **Max tâches actives par utilisateur** : 10 (configurable dans le dashboard)
+- **Max tâches par utilisateur** : 10 `active + paused` (configurable dans le dashboard)
 - **Intervalle minimum** : 5 minutes entre exécutions récurrentes (configurable)
+- **Validation temporelle** : tâches `once` avec `run_at` dans le passé rejetées (grace window 30s)
 - **Pas d'escalade de privilèges** : le créateur doit avoir le rôle requis pour l'action
 - **Isolation** : un utilisateur ne peut lister/annuler que ses propres tâches (sauf admin)
+- **Timezone** : toutes les heures en `Europe/Paris` (cohérent avec le reste du projet)
 
 ---
 
