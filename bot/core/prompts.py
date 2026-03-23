@@ -28,6 +28,8 @@ def load_prompt(name: str, fallback: str = "") -> str:
         logger.warning("Prompt file read error {f}: {e}", f=path, e=exc)
     return fallback
 
+_MEMORY_RECALL_DIRECTIVE = load_prompt("memory_recall_directive")
+
 _TZ = ZoneInfo("Europe/Paris")
 
 _FRENCH_DAYS = [
@@ -100,6 +102,14 @@ class PromptBuilder:
                 lines.append(f"Salon : {channel}")
             if streamer := situation.get("streamer"):
                 lines.append(f"Chaîne Twitch : {streamer}")
+            if situation.get("stream_live"):
+                cat = situation.get("stream_category") or "inconnue"
+                title = situation.get("stream_title") or ""
+                viewers = situation.get("stream_viewers", 0)
+                lines.append(f"Stream EN DIRECT : {cat}")
+                if title:
+                    lines.append(f"Titre du stream : {title}")
+                lines.append(f"Viewers : {viewers}")
             lines.append(f"Date et heure : {_now_fr()}")
             parts.append("\n".join(lines))
 
@@ -146,6 +156,8 @@ class PromptBuilder:
             parts.append(
                 f"\n--- Ce que tu sais de cet utilisateur ---\n{memory_context}"
             )
+            if _MEMORY_RECALL_DIRECTIVE:
+                parts.append(_MEMORY_RECALL_DIRECTIVE)
 
         # Global community memory
         if global_memory_context:

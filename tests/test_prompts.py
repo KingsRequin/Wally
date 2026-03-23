@@ -238,3 +238,24 @@ def test_get_tier_returns_correct_level():
     assert _get_tier(0.7) == "high"
     assert _get_tier(0.8) == "high"
     assert _get_tier(1.0) == "high"
+
+
+def test_memory_recall_directive_injected():
+    """When memory_context is present, the recall directive is injected."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+        memory_context="Aime le Python et joue à Apex.",
+    )
+    assert "Ce que tu sais de cet utilisateur" in result
+    assert "souvenir" in result.lower() or "rappelle" in result.lower()
+
+
+def test_memory_recall_directive_absent_when_no_memory():
+    """When memory_context is empty, no recall directive is injected."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+    )
+    assert "ça me rappelle" not in result.lower()
+    assert "souvenir" not in result.lower()
