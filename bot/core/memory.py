@@ -493,6 +493,72 @@ class MemoryService:
             logger.warning("mem0 search failed: {e}", e=exc)
             return ""
 
+    async def search_top_match(
+        self, platform: str, user_id: str, query: str,
+    ) -> tuple[str, float] | None:
+        """Return the single best memory match with its score, or None.
+
+        Unlike search(), this does a single Qdrant query (no dual-query)
+        and returns the raw score for threshold comparison.
+        """
+        self._init_mem0()
+        if self._mem0 is None:
+            return None
+        if not query or not query.strip():
+            return None
+        try:
+            uid = self._user_id(platform, user_id)
+            results = await asyncio.to_thread(
+                self._mem0.search, query, user_id=uid, limit=3
+            )
+            if isinstance(results, dict):
+                results = results.get("results", [])
+
+            best: tuple[str, float] | None = None
+            for r in results or []:
+                mem = r.get("memory", "")
+                score = r.get("score", 0.0)
+                if mem and score >= _MIN_SEARCH_SCORE:
+                    if best is None or score > best[1]:
+                        best = (mem, score)
+            return best
+        except Exception as exc:
+            logger.warning("mem0 search_top_match failed: {e}", e=exc)
+            return None
+
+    async def search_relationships(
+        self, platform: str, participants: list[str],
+    ) -> str:
+        """Search for REL facts involving the given participants.
+
+        Returns relationship context as newline-separated memories.
+        Searches each participant's memories for relationship-related content
+        mentioning other participants.
+        """
+        self._init_mem0()
+        if self._mem0 is None or not participants:
+            return ""
+        try:
+            seen: set[str] = set()
+            for user_id in participants[:5]:  # limit for perf
+                uid = self._user_id(platform, user_id)
+                results = await asyncio.to_thread(
+                    self._mem0.get_all, user_id=uid
+                )
+                if isinstance(results, dict):
+                    results = results.get("results", [])
+                for r in results:
+                    meta = r.get("metadata", {}) or {}
+                    if meta.get("category") != "REL":
+                        continue
+                    mem = r.get("memory", "")
+                    if mem and mem not in seen:
+                        seen.add(mem)
+            return "\n".join(seen) if seen else ""
+        except Exception as exc:
+            logger.warning("search_relationships failed: {e}", e=exc)
+            return ""
+
     # ── Sliding context window ────────────────────────────────────────────────
 
     def append_message(self, channel_id: str, author: str, content: str, platform: str = "discord") -> None:

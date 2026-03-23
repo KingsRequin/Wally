@@ -315,3 +315,77 @@ async def test_add_with_category_passes_metadata():
     metadata = call_args.kwargs.get("metadata", {})
     assert metadata["category"] == "FAIT"
     assert metadata["origin"] == "discord:123"
+
+
+@pytest.mark.asyncio
+async def test_search_top_match_returns_best():
+    """search_top_match returns the highest-scoring memory with its score."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    mock_mem0 = MagicMock()
+    mock_mem0.search.return_value = {
+        "results": [
+            {"memory": "aime le Python", "score": 0.6},
+            {"memory": "joue à Apex", "score": 0.85},
+            {"memory": "habite à Lyon", "score": 0.4},
+        ]
+    }
+    svc._mem0 = mock_mem0
+    result = await svc.search_top_match("discord", "12345", "quel jeu tu fais")
+    assert result is not None
+    text, score = result
+    assert text == "joue à Apex"
+    assert score == 0.85
+
+
+@pytest.mark.asyncio
+async def test_search_top_match_no_results():
+    """search_top_match returns None when no results above threshold."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    mock_mem0 = MagicMock()
+    mock_mem0.search.return_value = {"results": []}
+    svc._mem0 = mock_mem0
+    result = await svc.search_top_match("discord", "12345", "random query")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_search_top_match_below_min_score():
+    """search_top_match returns None when all results are below _MIN_SEARCH_SCORE."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    mock_mem0 = MagicMock()
+    mock_mem0.search.return_value = {
+        "results": [
+            {"memory": "some fact", "score": 0.1},
+            {"memory": "another fact", "score": 0.2},
+        ]
+    }
+    svc._mem0 = mock_mem0
+    result = await svc.search_top_match("discord", "12345", "query")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_search_top_match_qdrant_error():
+    """search_top_match returns None and logs warning on Qdrant failure."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    mock_mem0 = MagicMock()
+    mock_mem0.search.side_effect = Exception("Qdrant unavailable")
+    svc._mem0 = mock_mem0
+    result = await svc.search_top_match("discord", "12345", "query")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_search_top_match_empty_query():
+    """search_top_match returns None for empty/whitespace queries."""
+    svc = MemoryService(make_config())
+    svc._init_mem0()
+    svc._mem0 = MagicMock()
+    result = await svc.search_top_match("discord", "12345", "")
+    assert result is None
+    result2 = await svc.search_top_match("discord", "12345", "   ")
+    assert result2 is None
