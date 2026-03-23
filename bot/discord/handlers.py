@@ -93,6 +93,7 @@ def _check_spontaneous_trigger(
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
+_memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
 _spam_tracker: dict[tuple[str, str], deque] = {}
 
 
@@ -286,19 +287,31 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 anger=state.get("anger", 0.0),
                 boredom=state.get("boredom", 0.0),
             )
-            if trigger_type:
-                chan_id = str(message.channel.id)
-                now = _time.time()
-                cooldown = bot.config.bot.spontaneous_cooldown_seconds
-                if now - _spontaneous_cooldowns.get(chan_id, 0) >= cooldown:
-                    prob = (
-                        bot.config.bot.spontaneous_passion_probability
-                        if trigger_type == "passion"
-                        else bot.config.bot.spontaneous_probability
+            chan_id = str(message.channel.id)
+            now = _time.time()
+            cooldown = bot.config.bot.spontaneous_cooldown_seconds
+            cooldown_ok = now - _spontaneous_cooldowns.get(chan_id, 0) >= cooldown
+
+            if trigger_type and cooldown_ok:
+                prob = (
+                    bot.config.bot.spontaneous_passion_probability
+                    if trigger_type == "passion"
+                    else bot.config.bot.spontaneous_probability
+                )
+                if random.random() < prob:
+                    _spontaneous_cooldowns[chan_id] = now
+                    _fire(_spontaneous_respond(bot, message))
+            elif not trigger_type and cooldown_ok:
+                # Memory recall check — rate-limited to 1 per 60s per channel
+                if now - _memory_check_cooldowns.get(chan_id, 0) >= 60:
+                    _memory_check_cooldowns[chan_id] = now
+                    match = await bot.memory.search_top_match(
+                        "discord", str(message.author.id), message.content,
                     )
-                    if random.random() < prob:
-                        _spontaneous_cooldowns[chan_id] = now
-                        _fire(_spontaneous_respond(bot, message))
+                    if match and match[1] >= bot.config.bot.memory_recall_min_score:
+                        if random.random() < bot.config.bot.spontaneous_memory_probability:
+                            _spontaneous_cooldowns[chan_id] = now
+                            _fire(_spontaneous_respond(bot, message, recall_memory=match[0]))
         return
 
     if not channel_allowed:
@@ -728,7 +741,10 @@ async def _post_process(
         logger.error("Post-process error: {e}", e=e)
 
 
-async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) -> None:
+async def _spontaneous_respond(
+    bot: "WallyDiscord", message: discord.Message,
+    recall_memory: str | None = None,
+) -> None:
     """Generate and send a spontaneous (unsolicited) response."""
     try:
         prelude = bot.memory.get_prelude(str(message.channel.id))
@@ -740,6 +756,7 @@ async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) ->
 
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
+            memory_context=recall_memory or "",
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
@@ -747,10 +764,19 @@ async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) ->
             composite_directives=bot.persona.composite_directives,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
+        recall_block = ""
+        if recall_memory:
+            recall_block = (
+                "\n--- Souvenir qui te revient ---\n"
+                f"{recall_memory}\n"
+                f"Tu viens de te rappeler quelque chose en lien avec ce que dit "
+                f"{message.author.display_name}. Évoque-le naturellement.\n\n"
+            )
         user_content = (
             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
             "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
             "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
+            + recall_block
             + prelude_block
             + f"\n[{message.author.display_name}]: {message.content}"
         )
@@ -778,6 +804,8 @@ async def _spontaneous_respond(bot: "WallyDiscord", message: discord.Message) ->
             str(message.channel.id), "Wally", reply, platform="discord"
         )
         logger.info("Spontaneous intervention in #{ch}", ch=getattr(message.channel, 'name', 'dm'))
+        if recall_memory:
+            logger.info("Memory recall for {user}: {mem}", user=message.author.display_name, mem=recall_memory[:80])
 
     except Exception as e:
         logger.error("Spontaneous intervention error: {e}", e=e)
