@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
     from bot.core.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.twitch.token_manager import TwitchTokenManager
@@ -28,7 +28,8 @@ class WallyTwitch(commands.Bot):
         db: "Database",
         emotion: "EmotionEngine",
         memory: "MemoryService",
-        openai: "OpenAIClient",
+        llm: "BaseLLMClient",
+        llm_secondary: "BaseLLMClient",
         prompts: "PromptBuilder",
         language: "LanguageDetector",
         token_manager: "TwitchTokenManager",
@@ -44,7 +45,8 @@ class WallyTwitch(commands.Bot):
         self.db = db
         self.emotion = emotion
         self.memory = memory
-        self.openai = openai
+        self.llm = llm
+        self.llm_secondary = llm_secondary
         self.prompts = prompts
         self.language = language
         self.token_manager = token_manager
@@ -59,6 +61,10 @@ class WallyTwitch(commands.Bot):
         self.fact_extractor = None  # set by main.py after construction
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
+        # Cached stream info (updated every 60s by _poll_stream_info)
+        self._stream_info: dict = {
+            "live": False, "title": None, "category": None, "viewers": 0, "started_at": None,
+        }
 
     def is_on_cooldown(self, user_id: str) -> bool:
         last = self._cooldowns.get(user_id, 0.0)
@@ -82,6 +88,7 @@ class WallyTwitch(commands.Bot):
             self._irc_run(),
             self._token_refresh_loop(),
             self._poll_guest_streams(),
+            self._poll_stream_info(),
         )
 
     async def _irc_run(self) -> None:
@@ -158,6 +165,18 @@ class WallyTwitch(commands.Bot):
                             "Stream terminé : Wally quitte la chaîne invitée {name}", name=name
                         )
                         await self.remove_guest_channel(name)
+        except asyncio.CancelledError:
+            pass
+
+    async def _poll_stream_info(self) -> None:
+        """Poll home stream status every 60s to keep _stream_info up to date."""
+        try:
+            while True:
+                try:
+                    self._stream_info = await self.twitch_api.get_stream()
+                except Exception as exc:
+                    logger.warning("Stream info poll failed: {e}", e=exc)
+                await asyncio.sleep(60)
         except asyncio.CancelledError:
             pass
 

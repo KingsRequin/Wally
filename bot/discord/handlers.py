@@ -186,7 +186,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
         f"en {cfg.window_seconds} secondes."
     )
     try:
-        warning = await bot.openai.complete_secondary(
+        warning = await bot.llm_secondary.complete(
             system_prompt=system,
             messages=[{"role": "user", "content": user_msg}],
             purpose="spam_warning",
@@ -611,14 +611,14 @@ async def _respond(
 
         async with message.channel.typing():
             if tools:
-                reply, tools_called = await bot.openai.complete_with_tools(
+                reply, tools_called = await bot.llm.complete_with_tools(
                     system_prompt, openai_messages, tools, _tool_executor,
                     purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
                 )
             else:
-                reply = await bot.openai.complete(
+                reply = await bot.llm.complete(
                     system_prompt, openai_messages, purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
@@ -782,7 +782,7 @@ async def _spontaneous_respond(
         )
 
         async with message.channel.typing():
-            reply = await bot.openai.complete(
+            reply = await bot.llm.complete(
                 system_prompt,
                 [{"role": "user", "content": user_content}],
                 purpose="discord_spontaneous",

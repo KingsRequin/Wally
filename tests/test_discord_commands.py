@@ -15,10 +15,15 @@ from bot.discord.commands.setup import is_valid_model, SetupCog, SetupView, Basi
 from bot.discord.commands.scan_cmd import ScanCog
 
 
-def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
+def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini",
+             primary_provider="openai", secondary_provider="openai"):
     bot = MagicMock()
     bot.config.openai.primary_model = primary_model
     bot.config.openai.secondary_model = secondary_model
+    bot.config.llm.primary.provider = primary_provider
+    bot.config.llm.primary.model = primary_model
+    bot.config.llm.secondary.provider = secondary_provider
+    bot.config.llm.secondary.model = secondary_model
     bot.config.bot.trigger_names = ["wally"]
     bot.config.twitch_events = {}
     bot._start_time = None
@@ -43,9 +48,10 @@ def make_bot(primary_model="gpt-4o", secondary_model="gpt-4o-mini"):
     bot.prompts.build_system_prompt = MagicMock(return_value="sys")
     bot.prompts.build_context_block = MagicMock(return_value="")
 
-    bot.openai.complete = AsyncMock(return_value="Réponse Wally")
-    bot.openai.get_daily_cost = AsyncMock(return_value=0.0123)
-    bot.openai.get_monthly_cost = AsyncMock(return_value=0.456)
+    bot.llm.complete = AsyncMock(return_value="Réponse Wally")
+    bot.image_client = MagicMock()
+    bot.image_client.get_daily_cost = AsyncMock(return_value=0.0123)
+    bot.image_client.get_monthly_cost = AsyncMock(return_value=0.456)
 
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
@@ -83,26 +89,29 @@ def test_make_bar_half():
 
 # ── is_valid_model ────────────────────────────────────────────────────────────
 
-def test_is_valid_model_accepts_gpt5():
+def test_is_valid_model_accepts_included():
     assert is_valid_model("gpt-5") is True
     assert is_valid_model("gpt-5-mini") is True
-    assert is_valid_model("gpt-5-nano") is True
-    assert is_valid_model("gpt-5-pro") is True
-    assert is_valid_model("gpt-5.1") is True
-    assert is_valid_model("gpt-5.4-mini") is True
+    assert is_valid_model("gpt-4o") is True
+    assert is_valid_model("gpt-4o-mini") is True
+    assert is_valid_model("chatgpt-4o-latest") is True
+    assert is_valid_model("o1") is True
+    assert is_valid_model("o1-mini") is True
+    assert is_valid_model("o3-mini") is True
+    assert is_valid_model("o4-mini") is True
 
 
 def test_is_valid_model_rejects_excluded():
     assert is_valid_model("gpt-5-realtime") is False
     assert is_valid_model("gpt-5-audio-preview") is False
+    assert is_valid_model("gpt-4o-audio-preview") is False
+    assert is_valid_model("o1-preview") is False
 
 
-def test_is_valid_model_rejects_old_and_unknown():
-    assert is_valid_model("gpt-4o") is False
-    assert is_valid_model("gpt-4o-mini") is False
-    assert is_valid_model("o3-mini") is False
+def test_is_valid_model_rejects_unknown():
     assert is_valid_model("whisper-1") is False
     assert is_valid_model("dall-e-3") is False
+    assert is_valid_model("text-embedding-ada-002") is False
 
 
 # ── /wally mood ───────────────────────────────────────────────────────────────
@@ -143,7 +152,7 @@ async def test_status_shows_model_name():
     await cog.status.callback(cog, interaction)
     embed = interaction.followup.send.call_args.kwargs["embed"]
     model_field = next(f for f in embed.fields if f.name == "Modele principal")
-    assert model_field.value == "gpt-4o-mini"
+    assert model_field.value == "openai/gpt-4o-mini"
 
 
 # ── /wally ask ────────────────────────────────────────────────────────────────
@@ -155,7 +164,7 @@ async def test_ask_calls_openai_and_replies():
     interaction = make_interaction()
     with patch("bot.discord.commands.ask._fire"):
         await cog.ask.callback(cog, interaction, question="C'est quoi Python?")
-    bot.openai.complete.assert_awaited_once()
+    bot.llm.complete.assert_awaited_once()
     interaction.followup.send.assert_awaited_once_with("Réponse Wally")
 
 
@@ -172,7 +181,7 @@ async def test_ask_appends_to_context():
 @pytest.mark.asyncio
 async def test_ask_error_sends_fallback():
     bot = make_bot()
-    bot.openai.complete = AsyncMock(side_effect=Exception("API down"))
+    bot.llm.complete = AsyncMock(side_effect=Exception("API down"))
     cog = AskCog(bot)
     interaction = make_interaction()
     await cog.ask.callback(cog, interaction, question="Test")

@@ -168,7 +168,7 @@ async def test_consolidation_adds_before_deleting():
     svc._mem0.delete.side_effect = lambda *a, **kw: call_order.append("delete")
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value="- fait synthétisé")
+    mock_openai.complete = AsyncMock(return_value="- fait synthétisé")
     svc.set_openai_client(mock_openai)
 
     with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
@@ -211,7 +211,7 @@ async def test_summarize_messages_multi_pass():
         return f"summary_{call_count}"
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = fake_complete
+    mock_openai.complete = fake_complete
     svc.set_openai_client(mock_openai)
 
     # 15 messages → 2 chunks (10 + 5) → 2 chunk summaries + 1 final = 3 calls

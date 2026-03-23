@@ -262,7 +262,7 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     apex_api.execute = AsyncMock(return_value="Diamond 2, 8400 RP")
     bot.apex_api = apex_api
 
-    bot.openai.complete_with_tools = AsyncMock(return_value=("Il est Diamond 2", ["apex_legends"]))
+    bot.llm.complete_with_tools = AsyncMock(return_value=("Il est Diamond 2", ["apex_legends"]))
 
     msg = MagicMock()
     msg.content = "wally c'est quoi le rank de Daltoosh"
@@ -285,8 +285,8 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
         await _respond(bot, msg, "12345", "99999", [])
 
     # complete_with_tools called with apex tool
-    bot.openai.complete_with_tools.assert_awaited_once()
-    call_args = bot.openai.complete_with_tools.call_args
+    bot.llm.complete_with_tools.assert_awaited_once()
+    call_args = bot.llm.complete_with_tools.call_args
     tools_passed = call_args.args[2]  # 3rd positional arg = tools list
     tool_names = [t["function"]["name"] for t in tools_passed]
     assert "apex_legends" in tool_names

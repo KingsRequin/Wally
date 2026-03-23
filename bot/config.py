@@ -33,6 +33,23 @@ class BotConfig:
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 VALID_TEXT_VERBOSITIES = ("low", "medium", "high")
+VALID_LLM_PROVIDERS = ("openai", "claude")
+
+
+@dataclass
+class LLMRoleConfig:
+    provider: str
+    model: str
+    temperature: float = 0.8
+    max_tokens: int = 1000
+    reasoning_effort: str = "medium"  # OpenAI-specific, ignored by Claude
+    text_verbosity: str = "medium"    # OpenAI-specific, ignored by Claude
+
+
+@dataclass
+class LLMConfig:
+    primary: LLMRoleConfig
+    secondary: LLMRoleConfig
 
 
 @dataclass
@@ -123,6 +140,7 @@ class OverlayImageConfig:
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
+    llm: LLMConfig
     discord: DiscordConfig
     twitch: TwitchConfig
     emotions: dict[str, EmotionDecayConfig]
@@ -132,6 +150,40 @@ class Config:
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
     _path: str = field(default="", init=False, repr=False)
+
+    @classmethod
+    def _build_llm_config(cls, raw: dict) -> LLMConfig:
+        """Build LLMConfig from raw YAML data.
+
+        Supports new 'llm' section. Falls back to legacy 'openai' section
+        if 'llm' is absent (all providers default to openai).
+        """
+        if "llm" in raw:
+            llm_raw = raw["llm"]
+            return LLMConfig(
+                primary=LLMRoleConfig(**llm_raw["primary"]),
+                secondary=LLMRoleConfig(**llm_raw["secondary"]),
+            )
+        # Legacy fallback: build from openai section
+        openai_raw = raw.get("openai", {})
+        return LLMConfig(
+            primary=LLMRoleConfig(
+                provider="openai",
+                model=openai_raw.get("primary_model", "gpt-5.1"),
+                temperature=openai_raw.get("temperature", 0.8),
+                max_tokens=openai_raw.get("max_tokens", 1000),
+                reasoning_effort=openai_raw.get("reasoning_effort", "medium"),
+                text_verbosity=openai_raw.get("text_verbosity", "medium"),
+            ),
+            secondary=LLMRoleConfig(
+                provider="openai",
+                model=openai_raw.get("secondary_model", "gpt-5-mini"),
+                temperature=openai_raw.get("temperature", 0.8),
+                max_tokens=openai_raw.get("max_tokens", 1000),
+                reasoning_effort=openai_raw.get("reasoning_effort", "medium"),
+                text_verbosity=openai_raw.get("text_verbosity", "medium"),
+            ),
+        )
 
     @classmethod
     def load(cls, path: str = "config.yaml") -> "Config":
@@ -163,9 +215,24 @@ class Config:
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
+            llm_config = cls._build_llm_config(raw)
+            # Build OpenAIConfig from raw or synthesize from llm config
+            openai_raw = raw.get("openai")
+            if openai_raw:
+                openai_config = OpenAIConfig(**openai_raw)
+            else:
+                openai_config = OpenAIConfig(
+                    primary_model=llm_config.primary.model,
+                    secondary_model=llm_config.secondary.model,
+                    temperature=llm_config.primary.temperature,
+                    max_tokens=llm_config.primary.max_tokens,
+                    reasoning_effort=llm_config.primary.reasoning_effort,
+                    text_verbosity=llm_config.primary.text_verbosity,
+                )
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
-                openai=OpenAIConfig(**raw["openai"]),
+                openai=openai_config,
+                llm=llm_config,
                 discord=DiscordConfig(**discord_raw, spam_detection=SpamDetectionConfig(**spam_raw)),
                 twitch=TwitchConfig(**twitch_raw),
                 emotions=emotions,
@@ -175,7 +242,7 @@ class Config:
                 image_generation=image_generation,
                 overlay_image=overlay_image,
             )
-        except KeyError as e:
+        except (KeyError, TypeError) as e:
             raise ValueError(
                 f"Missing required section {e} in config file: {path}"
             ) from e
@@ -188,6 +255,7 @@ class Config:
         data = {
             "bot": asdict(self.bot),
             "openai": asdict(self.openai),
+            "llm": asdict(self.llm),
             "discord": asdict(self.discord),
             "twitch": asdict(self.twitch),
             "emotions": {k: asdict(v) for k, v in self.emotions.items()},

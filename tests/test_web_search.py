@@ -269,7 +269,9 @@ async def test_complete_with_tools_no_tool_call():
     """When the model doesn't call any tool, returns normally."""
     config = make_config()
     db = make_db()
-    client = OpenAIClient(config, db)
+    client = OpenAIClient(config.openai.primary_model, db,
+                           temperature=config.openai.temperature,
+                           max_tokens=config.openai.max_tokens)
 
     final = make_chat_response_final("Direct answer")
     with patch.object(
@@ -292,7 +294,9 @@ async def test_complete_with_tools_executes_tool():
     """When the model calls web_search, the executor is invoked and results sent back."""
     config = make_config()
     db = make_db()
-    client = OpenAIClient(config, db)
+    client = OpenAIClient(config.openai.primary_model, db,
+                           temperature=config.openai.temperature,
+                           max_tokens=config.openai.max_tokens)
 
     tool_response = make_chat_response_with_tool_call()
     final_response = make_chat_response_final("Based on my research...")
@@ -316,7 +320,9 @@ async def test_complete_with_tools_executes_tool():
 async def test_complete_with_tools_logs_cost():
     config = make_config()
     db = make_db()
-    client = OpenAIClient(config, db)
+    client = OpenAIClient(config.openai.primary_model, db,
+                           temperature=config.openai.temperature,
+                           max_tokens=config.openai.max_tokens)
 
     final = make_chat_response_final("answer")
     with patch.object(
@@ -337,7 +343,9 @@ async def test_complete_with_tools_logs_cost():
 async def test_complete_with_tools_returns_fallback_on_error():
     config = make_config()
     db = make_db()
-    client = OpenAIClient(config, db)
+    client = OpenAIClient(config.openai.primary_model, db,
+                           temperature=config.openai.temperature,
+                           max_tokens=config.openai.max_tokens)
 
     with patch.object(
         client._client.chat.completions, "create",
@@ -399,7 +407,7 @@ async def test_discord_handler_adds_globe_reaction_on_search():
     bot.web_search = web_search
     bot.apex_api = None
 
-    bot.openai.complete_with_tools = AsyncMock(return_value=("Answer from web", ["web_search"]))
+    bot.llm.complete_with_tools = AsyncMock(return_value=("Answer from web", ["web_search"]))
 
     msg = MagicMock()
     msg.content = "wally what's the weather"
@@ -425,8 +433,8 @@ async def test_discord_handler_adds_globe_reaction_on_search():
     assert any(call.args[0] == "🔍" for call in msg.add_reaction.call_args_list)
     assert any(call.args[0] == "🔍" for call in msg.remove_reaction.call_args_list)
     # complete_with_tools called with web search tools
-    bot.openai.complete_with_tools.assert_awaited_once()
-    call_args = bot.openai.complete_with_tools.call_args
+    bot.llm.complete_with_tools.assert_awaited_once()
+    call_args = bot.llm.complete_with_tools.call_args
     tools_passed = call_args.args[2]
     tool_names = [t["function"]["name"] for t in tools_passed]
     assert "web_search" in tool_names
@@ -475,7 +483,7 @@ async def test_discord_handler_no_search_when_quota_exceeded():
     bot.web_search = web_search
     bot.apex_api = None
 
-    bot.openai.complete = AsyncMock(return_value="Regular response")
+    bot.llm.complete = AsyncMock(return_value="Regular response")
 
     msg = MagicMock()
     msg.content = "wally hello"
@@ -498,5 +506,5 @@ async def test_discord_handler_no_search_when_quota_exceeded():
         await _respond(bot, msg, "12345", "99999", [])
 
     # Falls back to regular complete (no tools)
-    bot.openai.complete.assert_awaited_once()
-    bot.openai.complete_with_tools = AsyncMock()  # should not have been called
+    bot.llm.complete.assert_awaited_once()
+    bot.llm.complete_with_tools = AsyncMock()  # should not have been called

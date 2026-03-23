@@ -285,13 +285,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             return f"Unknown tool: {name}"
 
         if tools:
-            reply, _ = await bot.openai.complete_with_tools(
+            reply, _ = await bot.llm.complete_with_tools(
                 system_prompt, openai_messages, tools, _tool_executor,
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
             )
         else:
-            reply = await bot.openai.complete(
+            reply = await bot.llm.complete(
                 system_prompt, openai_messages,
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
@@ -406,7 +406,7 @@ async def _announce_overlay_image(
         )
 
         # 1. Générer le message LLM (le plus lent)
-        reply = await bot.openai.complete(
+        reply = await bot.llm.complete(
             system_prompt,
             [{"role": "user", "content": user_content}],
             purpose="twitch_overlay_announce",
@@ -474,7 +474,7 @@ async def _spontaneous_respond_twitch(
             + prelude_block
             + f"\n[{author}]: {content}"
         )
-        reply = await bot.openai.complete(
+        reply = await bot.llm.complete(
             system_prompt,
             [{"role": "user", "content": user_content}],
             purpose="twitch_spontaneous",

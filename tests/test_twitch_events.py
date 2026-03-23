@@ -14,7 +14,7 @@ def make_bot(event_cfg=None):
     bot.emotion.apply_delta = MagicMock()
     bot.emotion.get_state = MagicMock(return_value={})
     bot.prompts.build_system_prompt = MagicMock(return_value="sys")
-    bot.openai.complete = AsyncMock(return_value="réponse")
+    bot.llm.complete = AsyncMock(return_value="réponse")
     bot.twitch_api.send_message = AsyncMock()
 
     default_cfg = {
@@ -176,7 +176,7 @@ async def test_generate_and_send_uses_twitch_api():
     from bot.twitch.events import _generate_and_send
 
     bot = make_bot()
-    bot.openai.complete = AsyncMock(return_value="Bonjour alice, merci pour ton sub!")
+    bot.llm.complete = AsyncMock(return_value="Bonjour alice, merci pour ton sub!")
 
     await _generate_and_send(bot, "mychan", "Bonjour {username}!", username="alice",
                               amount=0, months=0, raiders_count=0)

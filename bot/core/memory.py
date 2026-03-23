@@ -18,7 +18,7 @@ from bot.core.prompts import load_prompt
 
 if TYPE_CHECKING:
     from bot.config import Config
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
 
 _SUMMARIZE_SYSTEM = load_prompt(
     "memory_summarize_system",
@@ -62,14 +62,14 @@ class MemoryService:
         self._context_windows: dict[str, list[dict]] = {}
         # Prelude buffer: channel_id → list[{author, content, timestamp}]
         self._prelude_windows: dict[str, list[dict]] = {}
-        self._openai: Optional["OpenAIClient"] = None
+        self._openai: Optional["BaseLLMClient"] = None
         self._db: Optional[object] = None
         # Strong refs pour les tâches fire-and-forget (consolidation, etc.)
         self._bg_tasks: set[asyncio.Task] = set()
         # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
         self._alias_cache: dict[str, str] = {}
 
-    def set_openai_client(self, client: "OpenAIClient") -> None:
+    def set_openai_client(self, client: "BaseLLMClient") -> None:
         self._openai = client
 
     def set_db(self, db) -> None:
@@ -267,7 +267,7 @@ class MemoryService:
             memories_text = "\n".join(
                 f"- {r.get('memory', '')}" for r in results if r.get("memory")
             )
-            consolidated = await self._openai.complete_secondary(
+            consolidated = await self._openai.complete(
                 _CONSOLIDATION_SYSTEM,
                 [{"role": "user", "content": memories_text}],
                 purpose="memory_consolidation",
@@ -321,7 +321,7 @@ class MemoryService:
                 pass  # Non-critical, continue without existing memories
 
             user_msg = f"Nouveau souvenir : {content}{existing_block}{pending_block}"
-            raw = await self._openai.complete_secondary(
+            raw = await self._openai.complete(
                 _EVALUATE_SYSTEM,
                 [{"role": "user", "content": user_msg}],
                 purpose="memory_evaluate",
@@ -639,7 +639,7 @@ class MemoryService:
             chunk_text = "\n".join(
                 f"[{m['author']}]: {m['content']}" for m in chunk
             )
-            summary = await self._openai.complete_secondary(
+            summary = await self._openai.complete(
                 _SUMMARIZE_SYSTEM,
                 [{"role": "user", "content": chunk_text}],
                 purpose="context_summary",
@@ -650,7 +650,7 @@ class MemoryService:
             return summaries[0]
 
         combined = "\n---\n".join(summaries)
-        return await self._openai.complete_secondary(
+        return await self._openai.complete(
             _SUMMARIZE_SYSTEM,
             [{"role": "user", "content": combined}],
             purpose="context_summary_final",

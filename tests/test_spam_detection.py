@@ -37,8 +37,8 @@ def _make_spam_bot(enabled=True, max_messages=3, window_seconds=10, mute_minutes
     )
     bot.emotion.apply_delta = MagicMock()
 
-    bot.openai = MagicMock()
-    bot.openai.complete_secondary = AsyncMock(return_value="Calme-toi un peu.")
+    bot.llm_secondary = MagicMock()
+    bot.llm_secondary.complete = AsyncMock(return_value="Calme-toi un peu.")
 
     bot.db = MagicMock()
     bot.db.add_timeout = AsyncMock()

@@ -91,7 +91,7 @@ def make_bot_for_spontaneous():
     )
     bot.prompts.build_system_prompt = MagicMock(return_value="system prompt")
     bot.prompts.build_prelude_block = MagicMock(return_value="")
-    bot.openai.complete = AsyncMock(return_value="Ah oui, ça me rappelle!")
+    bot.llm.complete = AsyncMock(return_value="Ah oui, ça me rappelle!")
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona")
     return bot
@@ -185,7 +185,7 @@ async def test_spontaneous_respond_with_memory_injects_recall():
 
     await _spontaneous_respond(bot, msg, recall_memory="joue à Apex")
 
-    complete_call = bot.openai.complete.call_args
+    complete_call = bot.llm.complete.call_args
     user_content = complete_call.args[1][0]["content"]
     assert "Souvenir qui te revient" in user_content
     prompt_kwargs = bot.prompts.build_system_prompt.call_args.kwargs
@@ -201,7 +201,7 @@ async def test_spontaneous_respond_without_memory():
 
     await _spontaneous_respond(bot, msg)
 
-    complete_call = bot.openai.complete.call_args
+    complete_call = bot.llm.complete.call_args
     user_content = complete_call.args[1][0]["content"]
     assert "Souvenir qui te revient" not in user_content
 
@@ -221,6 +221,6 @@ async def test_spontaneous_memory_twitch():
         recall_memory="joue à Apex",
     )
 
-    complete_call = bot.openai.complete.call_args
+    complete_call = bot.llm.complete.call_args
     user_content = complete_call.args[1][0]["content"]
     assert "Souvenir qui te revient" in user_content

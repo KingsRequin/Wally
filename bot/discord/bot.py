@@ -13,7 +13,8 @@ if TYPE_CHECKING:
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
+    from bot.core.llm.openai_client import OpenAILLMClient
     from bot.core.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.core.persona import PersonaService
@@ -26,7 +27,9 @@ class WallyDiscord(commands.Bot):
         db: "Database",
         emotion: "EmotionEngine",
         memory: "MemoryService",
-        openai: "OpenAIClient",
+        llm: "BaseLLMClient",
+        llm_secondary: "BaseLLMClient",
+        image_client: "OpenAILLMClient",
         prompts: "PromptBuilder",
         language: "LanguageDetector",
         persona: "PersonaService",
@@ -40,7 +43,9 @@ class WallyDiscord(commands.Bot):
         self.db = db
         self.emotion = emotion
         self.memory = memory
-        self.openai = openai
+        self.llm = llm
+        self.llm_secondary = llm_secondary
+        self.image_client = image_client
         self.prompts = prompts
         self.language = language
         self.persona = persona
@@ -73,6 +78,12 @@ class WallyDiscord(commands.Bot):
         await self.add_cog(ScanCog(self))
         await self.add_cog(TestCog(self))
         await self.add_cog(ImagineCog(self))
+
+        # Clear stale guild-specific commands, then sync globally
+        for gid in (1063150486137606256, 875421531415666698):
+            guild = discord.Object(id=gid)
+            self.tree.clear_commands(guild=guild)
+            await self.tree.sync(guild=guild)
         await self.tree.sync()
         logger.info("Discord slash commands synced")
 

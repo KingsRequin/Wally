@@ -1,7 +1,23 @@
+import asyncio
+import random
+from pathlib import Path
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from loguru import logger
+
+DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+LOADING_GIFS_DIR = DATA_DIR / "loading_gifs"
+LOADING_PHRASES_FILE = DATA_DIR / "loading_phrases.txt"
+
+
+def _load_phrases() -> list[str]:
+    """Load loading phrases from file, one per line."""
+    if not LOADING_PHRASES_FILE.exists():
+        return ["Wally peint..."]
+    lines = [l.strip() for l in LOADING_PHRASES_FILE.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return lines or ["Wally peint..."]
 
 
 class GalleryView(discord.ui.View):
@@ -82,15 +98,56 @@ class ImagineCog(commands.Cog):
     @app_commands.command(name="imagine", description="Génère une image à partir d'un prompt")
     @app_commands.describe(prompt="Description de l'image à générer")
     async def imagine(self, interaction: discord.Interaction, prompt: str):
-        await interaction.response.defer(thinking=True)
+        await interaction.response.defer()
         try:
             sender_id = f"discord:{interaction.user.id}"
 
+            # Send loading embed with random GIF from local folder
+            phrases = _load_phrases()
+            loading_embed = discord.Embed(
+                title=random.choice(phrases),
+                description=f"*{prompt}*",
+                color=discord.Color.from_str("#06b6d4"),
+            )
+            loading_embed.set_footer(text=f"Demandé par {interaction.user.display_name}")
+
+            gifs = list(LOADING_GIFS_DIR.glob("*.gif"))
+            loading_file = None
+            if gifs:
+                gif_path = random.choice(gifs)
+                loading_file = discord.File(gif_path, filename="loading.gif")
+                loading_embed.set_image(url="attachment://loading.gif")
+
+            loading_msg = await interaction.followup.send(
+                embed=loading_embed, file=loading_file, wait=True,
+            )
+
+            # Rotate loading phrases every 4 seconds
+            rotate_done = asyncio.Event()
+
+            async def _rotate_phrases():
+                while not rotate_done.is_set():
+                    await asyncio.sleep(5)
+                    if rotate_done.is_set():
+                        break
+                    try:
+                        loading_embed.title = random.choice(phrases)
+                        await loading_msg.edit(embed=loading_embed)
+                    except Exception:
+                        # Rate limit probable, attendre plus longtemps avant de réessayer
+                        await asyncio.sleep(6)
+
+            rotate_task = asyncio.create_task(_rotate_phrases())
+
             # Generate image
-            result = await self.bot.openai.generate_image(prompt, sender_id)
+            try:
+                result = await self.bot.image_client.generate_image(prompt, self.bot.config.image_generation, sender_id)
+            finally:
+                rotate_done.set()
+                rotate_task.cancel()
 
             # Generate short title
-            title = await self.bot.openai.complete_secondary(
+            title = await self.bot.llm_secondary.complete(
                 "Tu es un assistant. Génère un titre court et créatif (max 6 mots) pour cette image. "
                 "Réponds UNIQUEMENT avec le titre, rien d'autre.",
                 [{"role": "user", "content": f"Image générée à partir du prompt : {prompt}"}],
@@ -105,7 +162,7 @@ class ImagineCog(commands.Cog):
                 prompt=prompt,
                 revised_prompt=result.get("revised_prompt"),
                 username=interaction.user.display_name,
-                user_id=sender_id,
+                user_id=str(interaction.user.id),
                 platform="discord",
                 file_path=result["file_name"],
                 model=result["model"],
@@ -117,13 +174,13 @@ class ImagineCog(commands.Cog):
             # Memory
             try:
                 await self.bot.memory.add(
-                    "discord", sender_id,
+                    "discord", str(interaction.user.id),
                     f"{interaction.user.display_name} a généré une image : {title}",
                 )
             except Exception as e:
                 logger.warning("Failed to add image memory: {e}", e=e)
 
-            # Build embed
+            # Build final embed with generated image
             from datetime import datetime
             embed = discord.Embed(
                 title=title,
@@ -138,7 +195,7 @@ class ImagineCog(commands.Cog):
             embed.set_footer(text=f"Par {interaction.user.display_name}")
 
             view = GalleryView(result["file_id"], interaction.user.id, self.bot.db)
-            await interaction.followup.send(embed=embed, file=file, view=view)
+            await loading_msg.edit(embed=embed, attachments=[file], view=view)
 
         except ValueError as e:
             await interaction.followup.send(f"❌ {e}")

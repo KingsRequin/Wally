@@ -262,7 +262,7 @@ async def test_journal_injects_stats_and_word_range(tmp_path):
     config.bot.emotion_peak_threshold = 0.7
 
     openai_mock = MagicMock()
-    openai_mock.complete_secondary = AsyncMock(return_value="Summary text.")
+    openai_mock.complete = AsyncMock(return_value="Summary text.")
 
     captured_journal_prompt = []
     async def fake_complete(system, messages, purpose="", **kwargs):
@@ -278,7 +278,7 @@ async def test_journal_injects_stats_and_word_range(tmp_path):
     memory = MagicMock()
     memory.get_all_contexts = MagicMock(return_value=[])
 
-    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    journal = DailyJournal(config, openai_mock, openai_mock, emotion, memory, db=db_inst)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -301,14 +301,14 @@ async def test_journal_archives_after_send(tmp_path):
     config.bot.journal_time = "03:00"
     config.bot.emotion_peak_threshold = 0.7
     openai_mock = MagicMock()
-    openai_mock.complete_secondary = AsyncMock(return_value="Summary.")
+    openai_mock.complete = AsyncMock(return_value="Summary.")
     openai_mock.complete = AsyncMock(return_value="Mon journal du jour.")
     emotion = MagicMock()
     emotion.get_state = MagicMock(return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0})
     memory = MagicMock()
     memory.get_all_contexts = MagicMock(return_value=[{"author": "A", "content": "hi", "timestamp": 1000.0}])
 
-    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    journal = DailyJournal(config, openai_mock, openai_mock, emotion, memory, db=db_inst)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -332,14 +332,14 @@ async def test_journal_archive_false_does_not_archive(tmp_path):
     config.bot.journal_time = "03:00"
     config.bot.emotion_peak_threshold = 0.7
     openai_mock = MagicMock()
-    openai_mock.complete_secondary = AsyncMock(return_value="Summary.")
+    openai_mock.complete = AsyncMock(return_value="Summary.")
     openai_mock.complete = AsyncMock(return_value="Test journal.")
     emotion = MagicMock()
     emotion.get_state = MagicMock(return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0})
     memory = MagicMock()
     memory.get_all_contexts = MagicMock(return_value=[{"author": "A", "content": "hi", "timestamp": 1000.0}])
 
-    journal = DailyJournal(config, openai_mock, emotion, memory, db=db_inst)
+    journal = DailyJournal(config, openai_mock, openai_mock, emotion, memory, db=db_inst)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send(archive=False)

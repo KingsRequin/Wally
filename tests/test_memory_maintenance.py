@@ -133,7 +133,7 @@ async def test_evaluate_memory_incomplete_creates_question(tmp_path):
     svc.set_db(db)
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value='{"complete": false, "questions": [{"question": "Quel mois ?", "priority": "high"}], "resolves": []}')
+    mock_openai.complete = AsyncMock(return_value='{"complete": false, "questions": [{"question": "Quel mois ?", "priority": "high"}], "resolves": []}')
     svc.set_openai_client(mock_openai)
 
     await svc._evaluate_memory("discord:123", "déménage le 1er")
@@ -152,7 +152,7 @@ async def test_evaluate_memory_complete_no_question(tmp_path):
     svc.set_db(db)
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value='{"complete": true, "questions": [], "resolves": []}')
+    mock_openai.complete = AsyncMock(return_value='{"complete": true, "questions": [], "resolves": []}')
     svc.set_openai_client(mock_openai)
 
     await svc._evaluate_memory("discord:123", "Habite à Lyon depuis 2020")
@@ -174,7 +174,7 @@ async def test_evaluate_memory_resolves_existing_questions(tmp_path):
     qid = q["id"]
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(
+    mock_openai.complete = AsyncMock(
         return_value=f'{{"complete": true, "questions": [], "resolves": [{qid}]}}'
     )
     svc.set_openai_client(mock_openai)
@@ -194,7 +194,7 @@ async def test_evaluate_memory_handles_invalid_json(tmp_path):
     svc.set_db(db)
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value="not valid json")
+    mock_openai.complete = AsyncMock(return_value="not valid json")
     svc.set_openai_client(mock_openai)
 
     # Should not raise
@@ -246,21 +246,22 @@ def make_journal_deps(tmp_path, db=None):
     config.bot.journal_channel_id = 12345
     config.bot.journal_time = "21:00"
     config.openai.secondary_model = "gpt-4o-mini"
-    openai_client = MagicMock()
+    llm = MagicMock()
+    llm_secondary = MagicMock()
     emotion = MagicMock()
     memory = MagicMock()
     memory._mem0 = MagicMock()
     memory._init_mem0 = MagicMock()
-    return config, openai_client, emotion, memory
+    return config, llm, llm_secondary, emotion, memory
 
 
 @pytest.mark.asyncio
 async def test_memory_cleanup_deletes_expired(tmp_path):
     """Cleanup should delete memories identified as expired by LLM."""
     db = await Database.create(str(tmp_path / "test.db"))
-    config, openai_client, emotion, memory = make_journal_deps(tmp_path)
+    config, llm, llm_secondary, emotion, memory = make_journal_deps(tmp_path)
 
-    journal = DailyJournal(config, openai_client, emotion, memory, db=db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
 
     # Register a user
     await db.upsert_memory_user("discord:123", "discord", "Alice")
@@ -274,7 +275,7 @@ async def test_memory_cleanup_deletes_expired(tmp_path):
     memory._mem0.add = MagicMock()
 
     # LLM says delete index 0 and 3
-    openai_client.complete_secondary = AsyncMock(
+    llm_secondary.complete = AsyncMock(
         return_value='{"delete": [0, 3], "update": [], "questions": []}'
     )
 
@@ -292,9 +293,9 @@ async def test_memory_cleanup_deletes_expired(tmp_path):
 async def test_memory_cleanup_updates_memories(tmp_path):
     """Cleanup should update memories identified for reformulation by LLM."""
     db = await Database.create(str(tmp_path / "test.db"))
-    config, openai_client, emotion, memory = make_journal_deps(tmp_path)
+    config, llm, llm_secondary, emotion, memory = make_journal_deps(tmp_path)
 
-    journal = DailyJournal(config, openai_client, emotion, memory, db=db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
     fake_memories = [
@@ -304,7 +305,7 @@ async def test_memory_cleanup_updates_memories(tmp_path):
     memory._mem0.delete = MagicMock()
     memory._mem0.add = MagicMock()
 
-    openai_client.complete_secondary = AsyncMock(
+    llm_secondary.complete = AsyncMock(
         return_value='{"delete": [], "update": [{"index": 1, "new_text": "Reformulé"}], "questions": []}'
     )
 
@@ -323,20 +324,20 @@ async def test_memory_cleanup_updates_memories(tmp_path):
 async def test_memory_cleanup_skips_few_memories(tmp_path):
     """Users with < 5 memories should be skipped."""
     db = await Database.create(str(tmp_path / "test.db"))
-    config, openai_client, emotion, memory = make_journal_deps(tmp_path)
+    config, llm, llm_secondary, emotion, memory = make_journal_deps(tmp_path)
 
-    journal = DailyJournal(config, openai_client, emotion, memory, db=db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
     fake_memories = [{"id": "id_0", "memory": "Only one"}]
     memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
 
-    openai_client.complete_secondary = AsyncMock()
+    llm_secondary.complete = AsyncMock()
 
     await journal.run_memory_cleanup()
 
     # LLM should NOT have been called
-    openai_client.complete_secondary.assert_not_called()
+    llm_secondary.complete.assert_not_called()
     await db.close()
 
 
@@ -344,9 +345,9 @@ async def test_memory_cleanup_skips_few_memories(tmp_path):
 async def test_memory_cleanup_creates_questions(tmp_path):
     """Cleanup should create questions identified by LLM."""
     db = await Database.create(str(tmp_path / "test.db"))
-    config, openai_client, emotion, memory = make_journal_deps(tmp_path)
+    config, llm, llm_secondary, emotion, memory = make_journal_deps(tmp_path)
 
-    journal = DailyJournal(config, openai_client, emotion, memory, db=db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
     fake_memories = [
@@ -355,7 +356,7 @@ async def test_memory_cleanup_creates_questions(tmp_path):
     memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
     memory._mem0.delete = MagicMock()
 
-    openai_client.complete_secondary = AsyncMock(
+    llm_secondary.complete = AsyncMock(
         return_value='{"delete": [], "update": [], "questions": [{"question": "Depuis quand ?", "priority": "medium"}]}'
     )
 

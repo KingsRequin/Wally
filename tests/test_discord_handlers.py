@@ -56,7 +56,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.prompts.build_system_prompt = MagicMock(return_value="system prompt")
     bot.prompts.build_context_block = MagicMock(return_value="")
     bot.prompts.build_prelude_block = MagicMock(return_value="")  # ← nouveau
-    bot.openai.complete = AsyncMock(return_value="Bonjour!")
+    bot.llm.complete = AsyncMock(return_value="Bonjour!")
 
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
@@ -172,7 +172,7 @@ async def test_respond_includes_context_block_when_present():
     message = make_message(content="wally continue")
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
-    call_args = bot.openai.complete.call_args
+    call_args = bot.llm.complete.call_args
     assert "[ctx block]" in call_args.args[1][0]["content"]
 
 
@@ -240,7 +240,7 @@ async def test_first_contact_injects_welcome_context():
     message = make_message(content="wally salut")
     with patch("bot.discord.handlers.asyncio.create_task"):
         await handle_message(bot, message)
-    call_args = bot.openai.complete.call_args
+    call_args = bot.llm.complete.call_args
     user_content = call_args[0][1][0]["content"]
     assert "première fois" in user_content
 
@@ -260,7 +260,7 @@ async def test_passive_capture_non_triggered_message():
         message.content,
     )
     # pas de réponse envoyée
-    bot.openai.complete.assert_not_called()
+    bot.llm.complete.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -276,7 +276,7 @@ async def test_prelude_included_in_prompt_on_mention():
 
     bot.prompts.build_prelude_block.assert_called_once_with(prelude_msgs)
     # Le prelude doit apparaître dans user_content envoyé à OpenAI
-    call_args = bot.openai.complete.call_args
+    call_args = bot.llm.complete.call_args
     user_content = call_args[0][1][0]["content"]  # messages[0]["content"]
     assert "[PRELUDE]" in user_content
 
@@ -334,7 +334,7 @@ async def test_channel_history_permission_error_graceful():
     # build_prelude_block appelé avec liste vide (graceful degradation)
     bot.prompts.build_prelude_block.assert_called_once_with([])
     # La réponse est quand même envoyée
-    bot.openai.complete.assert_called_once()
+    bot.llm.complete.assert_called_once()
 
 
 # ── Vision ────────────────────────────────────────────────────────────────────
@@ -350,7 +350,7 @@ async def test_respond_extracts_image_urls():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.openai.complete.call_args.kwargs
+    call_kwargs = bot.llm.complete.call_args.kwargs
     assert call_kwargs["image_urls"] == ["https://cdn.discord.com/img.png"]
 
 
@@ -363,7 +363,7 @@ async def test_respond_limits_4_images():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.openai.complete.call_args.kwargs
+    call_kwargs = bot.llm.complete.call_args.kwargs
     assert len(call_kwargs["image_urls"]) == 4
 
 
@@ -378,7 +378,7 @@ async def test_respond_no_text_uses_default_prompt():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_args = bot.openai.complete.call_args
+    call_args = bot.llm.complete.call_args
     user_content = call_args.args[1][0]["content"]
     assert "Regarde cette image." in user_content
 
@@ -408,7 +408,7 @@ async def test_respond_no_images_no_image_urls_kwarg():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.openai.complete.call_args.kwargs
+    call_kwargs = bot.llm.complete.call_args.kwargs
     assert call_kwargs.get("image_urls") is None
 
 
@@ -421,7 +421,7 @@ async def test_respond_non_image_attachment_ignored():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.openai.complete.call_args.kwargs
+    call_kwargs = bot.llm.complete.call_args.kwargs
     assert call_kwargs.get("image_urls") is None
 
 

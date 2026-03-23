@@ -19,7 +19,7 @@ def _make_fact_extractor() -> FactExtractor:
     memory.get_all = AsyncMock(return_value="")
     memory.delete_user_memories = AsyncMock()
     openai = AsyncMock()
-    openai.complete_secondary_structured = AsyncMock(
+    openai.complete_structured = AsyncMock(
         return_value={"facts": [], "aliases": []}
     )
     db = AsyncMock()
@@ -236,8 +236,8 @@ class TestFactExtractorBuffer:
             )
         # Give tasks a chance to run
         await asyncio.sleep(0)
-        # complete_secondary_structured should have been called (flush triggered)
-        fe._openai.complete_secondary_structured.assert_called()
+        # complete_structured should have been called (flush triggered)
+        fe._openai.complete_structured.assert_called()
 
     @pytest.mark.asyncio
     async def test_reply_chain_prevents_flush_at_threshold(self):
@@ -252,7 +252,7 @@ class TestFactExtractorBuffer:
             )
         await asyncio.sleep(0)
         # No flush yet because reply_chain_active is True
-        fe._openai.complete_secondary_structured.assert_not_called()
+        fe._openai.complete_structured.assert_not_called()
 
 
 # ── analyze_channel_messages tests ────────────────────────────────────────────
@@ -262,7 +262,7 @@ class TestFactExtractorAnalyzeChannel:
     @pytest.mark.asyncio
     async def test_analyze_channel_messages(self):
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(
+        fe._openai.complete_structured = AsyncMock(
             return_value={
                 "facts": [
                     {
@@ -292,7 +292,7 @@ class TestFactExtractorAnalyzeChannel:
             [msg1, msg2], "discord", "ch1", bot_user_id=999
         )
         assert result >= 0
-        fe._openai.complete_secondary_structured.assert_called_once()
+        fe._openai.complete_structured.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_analyze_too_few_messages(self):
@@ -335,7 +335,7 @@ class TestFactExtractorAnalyzeChannel:
     @pytest.mark.asyncio
     async def test_memory_add_called_for_known_user(self):
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(
+        fe._openai.complete_structured = AsyncMock(
             return_value={
                 "facts": [
                     {
@@ -372,7 +372,7 @@ class TestFactExtractorAnalyzeChannel:
     @pytest.mark.asyncio
     async def test_alias_with_high_confidence_stored(self):
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(
+        fe._openai.complete_structured = AsyncMock(
             return_value={
                 "facts": [],
                 "aliases": [
@@ -410,7 +410,7 @@ class TestFactExtractorAnalyzeChannel:
     @pytest.mark.asyncio
     async def test_extract_facts_with_categories(self):
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+        fe._openai.complete_structured = AsyncMock(return_value={
             "facts": [
                 {
                     "target": "Alice",
@@ -441,7 +441,7 @@ class TestFactExtractorAnalyzeChannel:
     async def test_extract_facts_mixed_categories(self):
         """When facts have mixed categories, dominant one wins."""
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+        fe._openai.complete_structured = AsyncMock(return_value={
             "facts": [
                 {
                     "target": "Bob",
@@ -472,7 +472,7 @@ class TestFactExtractorAnalyzeChannel:
     async def test_extract_facts_backward_compat_strings(self):
         """Old string format should still work with default FAIT category."""
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(return_value={
+        fe._openai.complete_structured = AsyncMock(return_value={
             "facts": [
                 {
                     "target": "Carol",
@@ -498,7 +498,7 @@ class TestFactExtractorAnalyzeChannel:
     @pytest.mark.asyncio
     async def test_alias_with_low_confidence_ignored(self):
         fe = _make_fact_extractor()
-        fe._openai.complete_secondary_structured = AsyncMock(
+        fe._openai.complete_structured = AsyncMock(
             return_value={
                 "facts": [],
                 "aliases": [

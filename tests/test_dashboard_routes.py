@@ -11,6 +11,7 @@ from bot.config import (
     BotConfig, OpenAIConfig, DiscordConfig, TwitchConfig,
     EmotionDecayConfig, TwitchEventConfig,
     ImageGenerationConfig, OverlayImageConfig,
+    LLMConfig, LLMRoleConfig,
 )
 
 
@@ -53,6 +54,10 @@ def _make_config():
     cfg.twitch_events = {
         "follow": TwitchEventConfig(active=True, message="Hey {username}!"),
     }
+    cfg.llm = LLMConfig(
+        primary=LLMRoleConfig(provider="openai", model="gpt-5"),
+        secondary=LLMRoleConfig(provider="openai", model="gpt-5-mini"),
+    )
     cfg.image_generation = ImageGenerationConfig()
     cfg.overlay_image = OverlayImageConfig()
     cfg.save = MagicMock()
@@ -79,7 +84,9 @@ def _make_state(**overrides) -> AppState:
         emotion=emotion,
         memory=MagicMock(),
         persona=MagicMock(),
-        openai_client=MagicMock(),
+        primary_llm=MagicMock(),
+        secondary_llm=MagicMock(),
+        image_client=MagicMock(),
         token_manager=MagicMock(),
         twitch_api=None,
         discord_bot=None,

@@ -12,7 +12,8 @@ if TYPE_CHECKING:
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
     from bot.core.persona import PersonaService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
+    from bot.core.llm.openai_client import OpenAILLMClient
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
     from bot.discord.bot import WallyDiscord
@@ -30,7 +31,9 @@ class AppState:
     emotion: "EmotionEngine"
     memory: "MemoryService"
     persona: "PersonaService"
-    openai_client: "OpenAIClient"
+    primary_llm: "BaseLLMClient"
+    secondary_llm: "BaseLLMClient"
+    image_client: "OpenAILLMClient"
     token_manager: "TwitchTokenManager"
     twitch_api: Optional["TwitchAPI"]
     discord_bot: Optional["WallyDiscord"]

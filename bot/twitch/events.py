@@ -29,6 +29,22 @@ def _check_peak(bot, emotion: str, old_val: float, delta: float, username: str =
             _fire(coro)
 
 
+# Track recent follow timestamps to detect follow bursts → curiosity
+_recent_follows: list[float] = []
+_FOLLOW_BURST_WINDOW = 60.0  # seconds
+_FOLLOW_BURST_THRESHOLD = 5  # follows in window to trigger curiosity
+
+
+def _check_follow_burst() -> bool:
+    """Return True if there's a burst of follows (≥5 in 60s)."""
+    import time as _time
+    now = _time.time()
+    cutoff = now - _FOLLOW_BURST_WINDOW
+    _recent_follows[:] = [t for t in _recent_follows if t >= cutoff]
+    _recent_follows.append(now)
+    return len(_recent_follows) >= _FOLLOW_BURST_THRESHOLD
+
+
 def _bits_joy(amount: int) -> float:
     """Map bits amount to joy delta per the design spec."""
     if amount >= 1000:
@@ -49,7 +65,8 @@ async def _generate_and_send(
         from bot.core.prompts import PromptBuilder
 
         formatted = PromptBuilder.format_event_message(template, **kwargs)
-        situation = {"platform": "Twitch", "streamer": channel_name}
+        from bot.twitch.handlers import _build_situation
+        situation = _build_situation(bot, channel_name)
         system = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             situation=situation,
@@ -59,7 +76,7 @@ async def _generate_and_send(
             composite_directives=bot.persona.composite_directives,
         )
         event_user_id = f"twitch:{kwargs.get('username', '')}" if kwargs.get('username') else None
-        reply = await bot.openai.complete(
+        reply = await bot.llm.complete(
             system,
             [{"role": "user", "content": f"Réagis à cet événement Twitch : {formatted}"}],
             purpose="twitch_event",
@@ -83,6 +100,11 @@ def register_events(bot: "WallyTwitch") -> None:
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.1)
         _check_peak(bot, "joy", old_joy, 0.1, username=payload.data.user.name, event_name="follow")
+        # Follow burst → curiosity ("il se passe quoi ?")
+        if _check_follow_burst():
+            old_curiosity = bot.emotion.get_state().get("curiosity", 0.0)
+            bot.emotion.apply_delta("curiosity", 0.2)
+            _check_peak(bot, "curiosity", old_curiosity, 0.2, username=payload.data.user.name, event_name="follow_burst")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -160,10 +182,17 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("raid")
         if not cfg or not cfg.active:
             return
-        joy_spike = min(payload.data.viewer_count / 50, 0.9)
+        viewers = payload.data.viewer_count
+        joy_spike = min(viewers / 50, 0.9)
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", joy_spike)
         _check_peak(bot, "joy", old_joy, joy_spike, username=payload.data.raider.name, event_name="raid")
+        # Massive raid (≥50 viewers) → curiosity spike
+        if viewers >= 50:
+            curiosity_spike = min(viewers / 100, 0.5)
+            old_curiosity = bot.emotion.get_state().get("curiosity", 0.0)
+            bot.emotion.apply_delta("curiosity", curiosity_spike)
+            _check_peak(bot, "curiosity", old_curiosity, curiosity_spike, username=payload.data.raider.name, event_name="raid_massive")
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
         await _generate_and_send(

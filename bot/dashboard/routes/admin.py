@@ -23,6 +23,7 @@ async def get_config(request: Request) -> dict:
     return {
         "bot": asdict(cfg.bot),
         "openai": asdict(cfg.openai),
+        "llm": asdict(cfg.llm),
         "discord": asdict(cfg.discord),
         "twitch": asdict(cfg.twitch),
         "emotions": {k: asdict(v) for k, v in cfg.emotions.items()},
@@ -53,10 +54,18 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.openai.temperature = temp
         if "primary_model" in d:
             cfg.openai.primary_model = str(d["primary_model"])
+            cfg.llm.primary.model = str(d["primary_model"])
+            state.primary_llm.model = str(d["primary_model"])
         if "secondary_model" in d:
             cfg.openai.secondary_model = str(d["secondary_model"])
+            cfg.llm.secondary.model = str(d["secondary_model"])
+            state.secondary_llm.model = str(d["secondary_model"])
         if "max_tokens" in d:
             cfg.openai.max_tokens = int(d["max_tokens"])
+            cfg.llm.primary.max_tokens = int(d["max_tokens"])
+            cfg.llm.secondary.max_tokens = int(d["max_tokens"])
+            state.primary_llm.max_tokens = int(d["max_tokens"])
+            state.secondary_llm.max_tokens = int(d["max_tokens"])
         if "reasoning_effort" in d:
             val = str(d["reasoning_effort"])
             if val not in VALID_REASONING_EFFORTS:
@@ -65,6 +74,12 @@ async def update_config(request: Request, body: dict) -> dict:
                     detail=f"reasoning_effort must be one of {VALID_REASONING_EFFORTS}",
                 )
             cfg.openai.reasoning_effort = val
+            cfg.llm.primary.reasoning_effort = val
+            cfg.llm.secondary.reasoning_effort = val
+            if hasattr(state.primary_llm, "reasoning_effort"):
+                state.primary_llm.reasoning_effort = val
+            if hasattr(state.secondary_llm, "reasoning_effort"):
+                state.secondary_llm.reasoning_effort = val
         if "text_verbosity" in d:
             val = str(d["text_verbosity"])
             if val not in VALID_TEXT_VERBOSITIES:
@@ -73,6 +88,12 @@ async def update_config(request: Request, body: dict) -> dict:
                     detail=f"text_verbosity must be one of {VALID_TEXT_VERBOSITIES}",
                 )
             cfg.openai.text_verbosity = val
+            cfg.llm.primary.text_verbosity = val
+            cfg.llm.secondary.text_verbosity = val
+            if hasattr(state.primary_llm, "text_verbosity"):
+                state.primary_llm.text_verbosity = val
+            if hasattr(state.secondary_llm, "text_verbosity"):
+                state.secondary_llm.text_verbosity = val
 
     if "bot" in body:
         d = body["bot"]
@@ -251,8 +272,8 @@ async def get_openai_models(request: Request) -> dict:
     except Exception as exc:
         logger.warning("Failed to list OpenAI models: {e}", e=exc)
         return {"models": [
-            state.config.openai.primary_model,
-            state.config.openai.secondary_model,
+            state.config.llm.primary.model,
+            state.config.llm.secondary.model,
         ]}
 
 

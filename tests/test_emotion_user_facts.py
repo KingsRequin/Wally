@@ -18,7 +18,7 @@ def engine():
 
 @pytest.mark.asyncio
 async def test_process_message_returns_user_facts(engine):
-    engine._openai.complete_secondary_structured = AsyncMock(return_value={
+    engine._openai.complete_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.02,
@@ -36,7 +36,7 @@ async def test_process_message_returns_user_facts(engine):
 
 @pytest.mark.asyncio
 async def test_process_message_empty_facts(engine):
-    engine._openai.complete_secondary_structured = AsyncMock(return_value={
+    engine._openai.complete_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.05, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.01,

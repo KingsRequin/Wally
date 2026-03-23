@@ -215,7 +215,7 @@ class EmotionEngine:
         return [e for e in EMOTIONS if self._state.get(e, 0.0) >= threshold]
 
     def set_openai_client(self, client) -> None:
-        """Injection du client OpenAI (pattern identique à MemoryService)."""
+        """Injection du client LLM secondaire pour l'analyse émotionnelle."""
         self._openai = client
 
     def _fire(self, coro) -> asyncio.Task:
@@ -429,8 +429,8 @@ class EmotionEngine:
             f"Message déclencheur :\n{text}"
         )
         if image_urls:
-            # Images require multimodal content blocks — use plain complete_secondary + json.loads
-            raw = await self._openai.complete_secondary(
+            # Images require multimodal content blocks — use plain complete + json.loads
+            raw = await self._openai.complete(
                 system_prompt,
                 [{"role": "user", "content": user_msg}],
                 purpose="emotion_analysis",
@@ -444,7 +444,7 @@ class EmotionEngine:
             user_facts = parsed.get("user_facts", [])
         else:
             # No images — use structured outputs (schema-guaranteed response)
-            parsed = await self._openai.complete_secondary_structured(
+            parsed = await self._openai.complete_structured(
                 system_prompt,
                 [{"role": "user", "content": user_msg}],
                 schema=_EMOTION_ANALYSIS_SCHEMA,

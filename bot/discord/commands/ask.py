@@ -50,7 +50,7 @@ class AskCog(commands.Cog):
             else:
                 content = question
 
-            reply = await self.bot.openai.complete(
+            reply = await self.bot.llm.complete(
                 system_prompt,
                 [{"role": "user", "content": content}],
                 purpose="discord_ask",

@@ -14,8 +14,9 @@ from bot.core.emotion import EmotionEngine, EMOTIONS
 def make_config():
     config = MagicMock()
     config.emotions = {
-        e: MagicMock(decay_lambda=0.1) for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
+        e: MagicMock(decay_lambda=0.1, boredom_rise_per_hour=None) for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
     }
+    config.emotions["boredom"].boredom_rise_per_hour = 1.2
     config.emotions["joy"].decay_lambda = 0.05
     config.discord.anger_trigger_threshold = 3
     config.discord.timeout_minutes = 10
@@ -68,9 +69,9 @@ def test_decay_reduces_emotion():
     # Simulate 10 seconds elapsed
     engine._last_decay = time.time() - 10
     engine._apply_decay()
-    # lambda est exprimé par minute : E = 1.0 * e^(-0.1 * (10/60)) ≈ 0.983
+    # lambda est exprimé par heure : E = 1.0 * e^(-0.1 * (10/3600)) ≈ 0.9997
     anger = engine.get_state()["anger"]
-    expected = math.exp(-0.1 * (10 / 60.0))
+    expected = math.exp(-0.1 * (10 / 3600.0))
     assert abs(anger - expected) < 0.01
 
 
@@ -119,7 +120,7 @@ async def test_analyze_message_returns_dict():
 async def test_process_message_uses_llm_when_openai_injected():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = AsyncMock(return_value={
+    mock_openai.complete_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.2, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.0,
@@ -133,14 +134,14 @@ async def test_process_message_uses_llm_when_openai_injected():
     ])
 
     assert engine.get_state()["anger"] == pytest.approx(0.2, abs=0.01)
-    mock_openai.complete_secondary_structured.assert_called_once()
+    mock_openai.complete_structured.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_process_message_falls_back_on_llm_failure():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = AsyncMock(side_effect=Exception("API error"))
+    mock_openai.complete_structured = AsyncMock(side_effect=Exception("API error"))
     engine.set_openai_client(mock_openai)
 
     # Should not raise — falls back to NRCLex (English text to get non-zero)
@@ -155,7 +156,7 @@ async def test_process_message_falls_back_on_llm_failure():
 async def test_process_message_falls_back_on_invalid_json():
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = AsyncMock(side_effect=Exception("invalid response"))
+    mock_openai.complete_structured = AsyncMock(side_effect=Exception("invalid response"))
     engine.set_openai_client(mock_openai)
 
     await engine.process_message("test", trust_score=0.5, context_messages=[
@@ -169,12 +170,12 @@ async def test_process_message_without_context_uses_fallback():
     """Sans context_messages, l'analyse LLM est skippée même si OpenAI est injecté."""
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock()
+    mock_openai.complete = AsyncMock()
     engine.set_openai_client(mock_openai)
 
     await engine.process_message("happy joyful", trust_score=0.5)
 
-    mock_openai.complete_secondary.assert_not_called()
+    mock_openai.complete.assert_not_called()
 
 
 # ── Learned words ─────────────────────────────────────────────────────────────
@@ -396,10 +397,10 @@ async def test_snapshot_inserted_on_60th_tick(tmp_path):
 
 @pytest.mark.asyncio
 async def test_analyze_llm_passes_image_urls_to_complete_secondary():
-    """_analyze_llm doit transmettre image_urls à complete_secondary."""
+    """_analyze_llm doit transmettre image_urls à complete."""
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+    mock_openai.complete = AsyncMock(return_value=json.dumps({
         "deltas": {"anger": 0.0, "joy": 0.15, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": []
     }))
@@ -412,7 +413,7 @@ async def test_analyze_llm_passes_image_urls_to_complete_secondary():
         image_urls=["https://example.com/meme.png"],
     )
 
-    call_kwargs = mock_openai.complete_secondary.call_args.kwargs
+    call_kwargs = mock_openai.complete.call_args.kwargs
     assert call_kwargs.get("image_urls") == ["https://example.com/meme.png"]
 
 
@@ -422,7 +423,7 @@ async def test_analyze_llm_enriches_prompt_with_images():
     engine = EmotionEngine(make_config())
     captured_prompt = {}
 
-    async def capture_complete_secondary(system_prompt, messages, purpose="summary", image_urls=None):
+    async def capture_complete(system_prompt, messages, purpose="summary", image_urls=None):
         captured_prompt["system"] = system_prompt
         return json.dumps({
             "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
@@ -430,7 +431,7 @@ async def test_analyze_llm_enriches_prompt_with_images():
         })
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = capture_complete_secondary
+    mock_openai.complete = capture_complete
     engine.set_openai_client(mock_openai)
 
     await engine.process_message(
@@ -449,7 +450,7 @@ async def test_analyze_llm_no_image_urls_no_prompt_enrichment():
     engine = EmotionEngine(make_config())
     captured_prompt = {}
 
-    async def capture_complete_secondary_structured(system_prompt, messages, schema=None, purpose="summary"):
+    async def capture_complete_structured(system_prompt, messages, schema=None, purpose="summary"):
         captured_prompt["system"] = system_prompt
         return {
             "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
@@ -460,7 +461,7 @@ async def test_analyze_llm_no_image_urls_no_prompt_enrichment():
         }
 
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = capture_complete_secondary_structured
+    mock_openai.complete_structured = capture_complete_structured
     engine.set_openai_client(mock_openai)
 
     await engine.process_message(
@@ -477,7 +478,7 @@ async def test_process_message_image_only_llm_available():
     """Message image-seul avec texte de substitution : le LLM est appelé avec image_urls."""
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(return_value=json.dumps({
+    mock_openai.complete = AsyncMock(return_value=json.dumps({
         "deltas": {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.05, "boredom": 0.0},
         "new_words": []
     }))
@@ -491,8 +492,8 @@ async def test_process_message_image_only_llm_available():
         image_urls=["https://example.com/meme.png"],
     )
 
-    mock_openai.complete_secondary.assert_called_once()
-    call_kwargs = mock_openai.complete_secondary.call_args.kwargs
+    mock_openai.complete.assert_called_once()
+    call_kwargs = mock_openai.complete.call_args.kwargs
     assert call_kwargs.get("image_urls") == ["https://example.com/meme.png"]
     assert engine.get_state()["joy"] == pytest.approx(0.1, abs=0.01)
 
@@ -517,7 +518,7 @@ async def test_process_message_text_image_llm_error_falls_back():
     """Texte + images, LLM échoue : fallback NRCLex sur le texte seul."""
     engine = EmotionEngine(make_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary = AsyncMock(side_effect=Exception("timeout"))
+    mock_openai.complete = AsyncMock(side_effect=Exception("timeout"))
     engine.set_openai_client(mock_openai)
 
     # Pas d'exception levée — fallback silencieux vers NRCLex
@@ -537,18 +538,18 @@ def test_boredom_rises_during_inactivity():
     """Le boredom monte quand personne ne parle au bot."""
     engine = EmotionEngine(make_config())
     assert engine.get_state()["boredom"] == 0.0
-    # Simule 10 minutes d'inactivité
-    engine._last_interaction = time.time() - 600
+    # Simule 1 heure d'inactivité
+    engine._last_interaction = time.time() - 3600
     engine._last_decay = time.time() - 60
     engine._apply_decay()
-    # 10 min * 0.02/min = 0.20
-    assert abs(engine.get_state()["boredom"] - 0.20) < 0.01
+    # 1h * 1.2/h = 1.2 → clamp à 1.0
+    assert engine.get_state()["boredom"] == 1.0
 
 
 def test_boredom_capped_at_1():
     """Le boredom ne dépasse jamais 1.0."""
     engine = EmotionEngine(make_config())
-    # Simule 2 heures d'inactivité (120 min * 0.02 = 2.4 → clamp à 1.0)
+    # Simule 2 heures d'inactivité (2h * 1.2 = 2.4 → clamp à 1.0)
     engine._last_interaction = time.time() - 7200
     engine._last_decay = time.time() - 60
     engine._apply_decay()
@@ -600,7 +601,7 @@ def test_other_emotions_still_decay_with_boredom_rise():
     engine._last_decay = time.time() - 10
     engine._apply_decay()
     anger = engine.get_state()["anger"]
-    expected = math.exp(-0.1 * (10 / 60.0))
+    expected = math.exp(-0.1 * (10 / 3600.0))
     assert abs(anger - expected) < 0.01
 
 

@@ -11,9 +11,11 @@ def make_deps(journal_channel_id=12345, journal_time="03:00"):
     config.bot.journal_time = journal_time
     config.bot.emotion_peak_threshold = 0.7
 
-    openai = MagicMock()
-    openai.complete_secondary = AsyncMock(return_value="Journal entry text.")
-    openai.complete = AsyncMock(return_value="Journal entry text.")
+    llm = MagicMock()
+    llm.complete = AsyncMock(return_value="Journal entry text.")
+
+    llm_secondary = MagicMock()
+    llm_secondary.complete = AsyncMock(return_value="Journal entry text.")
 
     emotion = MagicMock()
     emotion.get_state = MagicMock(
@@ -26,51 +28,51 @@ def make_deps(journal_channel_id=12345, journal_time="03:00"):
         {"author": "Wally", "content": "Hi Alice!", "timestamp": 1001.0},
     ])
 
-    return config, openai, emotion, memory
+    return config, llm, llm_secondary, emotion, memory
 
 
 @pytest.mark.asyncio
-async def test_generate_and_send_calls_openai():
-    config, openai, emotion, memory = make_deps()
-    journal = DailyJournal(config, openai, emotion, memory)
+async def test_generate_and_send_calls_llm():
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     sent_messages = []
     journal.set_send_callback(AsyncMock(side_effect=lambda text, **kw: sent_messages.append(text)))
 
     await journal.generate_and_send()
 
-    openai.complete.assert_called()
+    llm.complete.assert_called()
     assert len(sent_messages) == 1
     assert "Journal" in sent_messages[0]
 
 
 @pytest.mark.asyncio
 async def test_generate_skips_when_no_channel():
-    config, openai, emotion, memory = make_deps(journal_channel_id=None)
-    journal = DailyJournal(config, openai, emotion, memory)
+    config, llm, llm_secondary, emotion, memory = make_deps(journal_channel_id=None)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     journal.set_send_callback(AsyncMock())
 
     await journal.generate_and_send()
 
-    openai.complete.assert_not_called()
-    openai.complete_secondary.assert_not_called()
+    llm.complete.assert_not_called()
+    llm_secondary.complete.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_generate_skips_when_no_callback():
-    config, openai, emotion, memory = make_deps()
-    journal = DailyJournal(config, openai, emotion, memory)
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     # No callback set — should not raise
 
     await journal.generate_and_send()
 
-    openai.complete.assert_called()  # still generates, just can't send
+    llm.complete.assert_called()  # still generates, just can't send
 
 
 @pytest.mark.asyncio
 async def test_generate_with_empty_context():
-    config, openai, emotion, memory = make_deps()
+    config, llm, llm_secondary, emotion, memory = make_deps()
     memory.get_all_contexts = MagicMock(return_value=[])
-    journal = DailyJournal(config, openai, emotion, memory)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
 
@@ -86,8 +88,8 @@ def test_today_format():
 
 
 def test_start_configures_scheduler():
-    config, openai, emotion, memory = make_deps(journal_time="22:30")
-    journal = DailyJournal(config, openai, emotion, memory)
+    config, llm, llm_secondary, emotion, memory = make_deps(journal_time="22:30")
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     with patch("bot.core.journal.AsyncIOScheduler") as MockScheduler:
         mock_sched = MagicMock()
         MockScheduler.return_value = mock_sched
@@ -106,8 +108,8 @@ def test_start_configures_scheduler():
 @pytest.mark.asyncio
 async def test_build_context_text_multi_pass():
     """When messages exceed token threshold, uses multi-pass summarization."""
-    config, openai, emotion, memory = make_deps()
-    journal = DailyJournal(config, openai, emotion, memory)
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
 
     call_count = 0
 
@@ -116,7 +118,7 @@ async def test_build_context_text_multi_pass():
         call_count += 1
         return f"chunk_{call_count}"
 
-    openai.complete_secondary = fake_complete
+    llm_secondary.complete = fake_complete
 
     # 35 messages × 1000 chars = 35000 chars → 8750 tokens > 6000 threshold
     # 35 messages → 2 chunks (30 + 5) → 2 chunk summaries + 1 final = 3 calls
@@ -195,8 +197,8 @@ def test_build_emotion_arc_labels():
 @pytest.mark.asyncio
 async def test_journal_backward_compat_no_db():
     """DailyJournal sans db continue de fonctionner (backward compat)."""
-    config, openai, emotion, memory = make_deps()
-    journal = DailyJournal(config, openai, emotion, memory)  # pas de db
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)  # pas de db
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -206,7 +208,7 @@ async def test_journal_backward_compat_no_db():
 @pytest.mark.asyncio
 async def test_journal_emotions_text_uses_percentage():
     """Le prompt du journal contient les émotions en pourcentage."""
-    config, openai, emotion, memory = make_deps()
+    config, llm, llm_secondary, emotion, memory = make_deps()
     # joy=0.5 → 50%
     emotion.get_state = MagicMock(
         return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
@@ -217,8 +219,8 @@ async def test_journal_emotions_text_uses_percentage():
         captured_prompt.append(messages[0]["content"])
         return "Journal text"
 
-    openai.complete = capture
-    journal = DailyJournal(config, openai, emotion, memory)
+    llm.complete = capture
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -234,31 +236,34 @@ async def test_journal_emotions_text_uses_percentage():
 async def test_journal_arc_injected_when_db_has_snapshots(tmp_path):
     """Quand la DB a ≥2 snapshots, l'arc est présent dans le prompt journal."""
     from bot.db.database import Database
-    import time
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     db = await Database.create(str(tmp_path / "test.db"))
 
-    # Insérer 2 snapshots directement
-    now = time.time()
+    # Insérer 2 snapshots après minuit aujourd'hui (évite le flaky quand l'heure est proche de minuit)
+    midnight = datetime.now(ZoneInfo("Europe/Paris")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).timestamp()
     await db.execute(
         "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
         "VALUES (?, 0.0, 0.8, 0.0, 0.0, 0.0)",
-        (now - 3600,),
+        (midnight + 3600,),
     )
     await db.execute(
         "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
         "VALUES (?, 0.0, 0.5, 0.0, 0.0, 0.0)",
-        (now,),
+        (midnight + 7200,),
     )
 
-    config, openai, emotion, memory = make_deps()
+    config, llm, llm_secondary, emotion, memory = make_deps()
     captured_prompt = []
 
     async def capture(system, messages, purpose="", **kwargs):
         captured_prompt.append(messages[0]["content"])
         return "Journal text"
 
-    openai.complete = capture
-    journal = DailyJournal(config, openai, emotion, memory, db=db)
+    llm.complete = capture
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -274,15 +279,15 @@ async def test_journal_arc_absent_when_less_than_2_snapshots(tmp_path):
     from bot.db.database import Database
     db = await Database.create(str(tmp_path / "test.db"))
 
-    config, openai, emotion, memory = make_deps()
+    config, llm, llm_secondary, emotion, memory = make_deps()
     captured_prompt = []
 
     async def capture(system, messages, purpose="", **kwargs):
         captured_prompt.append(messages[0]["content"])
         return "Journal text"
 
-    openai.complete = capture
-    journal = DailyJournal(config, openai, emotion, memory, db=db)
+    llm.complete = capture
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     sent = []
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
@@ -296,7 +301,7 @@ async def test_journal_arc_absent_when_less_than_2_snapshots(tmp_path):
 
 def make_deps_with_db(journal_channel_id=12345, journal_time="03:00",
                       db_messages=None):
-    config, openai, emotion, memory = make_deps(journal_channel_id, journal_time)
+    config, llm, llm_secondary, emotion, memory = make_deps(journal_channel_id, journal_time)
     config.bot.emotion_peak_threshold = 0.7
     memory.get_all_contexts = MagicMock(return_value=[])  # RAM vide
 
@@ -313,80 +318,77 @@ def make_deps_with_db(journal_channel_id=12345, journal_time="03:00",
     db.insert_journal = AsyncMock()
     db.list_memory_users = AsyncMock(return_value=[])
 
-    return config, openai, emotion, memory, db
+    return config, llm, llm_secondary, emotion, memory, db
 
 
-def _get_journal_user_msg(openai_mock) -> str:
+def _get_journal_user_msg(llm_mock) -> str:
     """Extrait le contenu du message utilisateur envoyé lors du dernier appel journal."""
-    if openai_mock.complete.called:
-        call_args = openai_mock.complete.call_args_list
+    if llm_mock.complete.called:
+        call_args = llm_mock.complete.call_args_list
         journal_call = [c for c in call_args if c.kwargs.get("purpose") == "daily_journal"]
         if journal_call:
             return journal_call[0].args[1][0]["content"]
-    call_args = openai_mock.complete_secondary.call_args_list
-    journal_call = [c for c in call_args if c.kwargs.get("purpose") == "daily_journal"]
-    assert journal_call, "complete/complete_secondary should be called with purpose=daily_journal"
-    return journal_call[0].args[1][0]["content"]
+    return ""
 
 
 @pytest.mark.asyncio
 async def test_journal_uses_db_messages_when_available():
     """Le journal doit utiliser daily_log quand des messages sont disponibles."""
-    config, openai, emotion, memory, db = make_deps_with_db()
-    journal = DailyJournal(config, openai, emotion, memory, db)
+    config, llm, llm_secondary, emotion, memory, db = make_deps_with_db()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db)
     journal.set_send_callback(AsyncMock())
 
     await journal.generate_and_send()
 
-    assert "Hello from DB" in _get_journal_user_msg(openai)
+    assert "Hello from DB" in _get_journal_user_msg(llm)
 
 
 @pytest.mark.asyncio
 async def test_journal_falls_back_to_discord_history_when_db_empty():
     """Quand daily_log vide, le journal doit utiliser le callback Discord history."""
-    config, openai, emotion, memory, db = make_deps_with_db(db_messages=[])
+    config, llm, llm_secondary, emotion, memory, db = make_deps_with_db(db_messages=[])
     history_messages = [
         {"author": "Bob", "content": "Message depuis Discord history", "timestamp": 2000.0},
     ]
     history_cb = AsyncMock(return_value=history_messages)
 
-    journal = DailyJournal(config, openai, emotion, memory, db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db)
     journal.set_send_callback(AsyncMock())
     journal.set_history_callback(history_cb)
 
     await journal.generate_and_send()
 
     history_cb.assert_called_once()
-    assert "Message depuis Discord history" in _get_journal_user_msg(openai)
+    assert "Message depuis Discord history" in _get_journal_user_msg(llm)
 
 
 @pytest.mark.asyncio
 async def test_journal_falls_back_to_ram_when_no_db_no_history():
     """Sans db et sans history callback, le journal utilise get_all_contexts() (RAM)."""
-    config, openai, emotion, memory = make_deps()
+    config, llm, llm_secondary, emotion, memory = make_deps()
     # memory.get_all_contexts retourne des messages (défini dans make_deps)
-    journal = DailyJournal(config, openai, emotion, memory, db=None)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=None)
     journal.set_send_callback(AsyncMock())
 
     await journal.generate_and_send()
 
-    openai.complete.assert_called()
+    llm.complete.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_journal_uses_mem0_fallback_when_all_sources_empty():
     """Quand toutes les sources sont vides, le journal utilise les souvenirs mem0."""
-    config, openai, emotion, memory, db = make_deps_with_db(db_messages=[])
+    config, llm, llm_secondary, emotion, memory, db = make_deps_with_db(db_messages=[])
     history_cb = AsyncMock(return_value=[])  # Discord history vide aussi
     db.list_memory_users = AsyncMock(return_value=[
         {"user_id": "discord:123", "platform": "discord", "username": "Alice"}
     ])
     memory.get_all = AsyncMock(return_value="Alice aime les chats.")
 
-    journal = DailyJournal(config, openai, emotion, memory, db)
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db)
     journal.set_send_callback(AsyncMock())
     journal.set_history_callback(history_cb)
 
     await journal.generate_and_send()
 
-    assert "Alice aime les chats." in _get_journal_user_msg(openai)
+    assert "Alice aime les chats." in _get_journal_user_msg(llm)

@@ -53,7 +53,8 @@ async def estimate_cost(request: Request, model: str | None = None, quality: str
     m = model or cfg.model
     q = quality or cfg.quality
     s = size or cfg.size
-    cost = state.openai_client.estimate_image_cost(m, q, s)
+    from bot.core.llm.openai_client import OpenAILLMClient
+    cost = OpenAILLMClient.estimate_image_cost(m, q, s)
     return {"cost_usd": cost, "model": m, "quality": q, "size": s}
 
 

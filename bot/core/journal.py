@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
 
 # Traduction des noms d'émotions internes (anglais) vers le français pour l'affichage
 _EMOTION_FR = {
@@ -241,13 +241,15 @@ class DailyJournal:
     def __init__(
         self,
         config: "Config",
-        openai: "OpenAIClient",
+        llm: "BaseLLMClient",
+        llm_secondary: "BaseLLMClient",
         emotion: "EmotionEngine",
         memory: "MemoryService",
         db=None,
     ):
         self._config = config
-        self._openai = openai
+        self._llm = llm
+        self._llm_secondary = llm_secondary
         self._emotion = emotion
         self._memory = memory
         self._db = db
@@ -309,7 +311,7 @@ class DailyJournal:
                 if pending:
                     plines = [f"- {q['question']}" for q in pending]
                     pending_block = "\n\nQuestions déjà en attente (ne pas recréer) :\n" + "\n".join(plines)
-                raw = await self._openai.complete_secondary(
+                raw = await self._llm_secondary.complete(
                     cleanup_prompt,
                     [{"role": "user", "content": numbered + pending_block}],
                     purpose="memory_cleanup",
@@ -522,11 +524,10 @@ class DailyJournal:
         user_msg = "\n\n".join(sections)
 
         # ── Generate with primary model (F11) ──
-        journal_text = await self._openai.complete(
+        journal_text = await self._llm.complete(
             _JOURNAL_SYSTEM,
             [{"role": "user", "content": user_msg}],
             purpose="daily_journal",
-            max_tokens=4000,
         )
 
         # ── Emotion chart image (F10) ──
@@ -577,7 +578,7 @@ class DailyJournal:
                 '[{"topic": "nom du sujet", "opinion": "opinion courte de Wally"}]\n\n'
                 "Si aucun sujet ne mérite une opinion, retourne []."
             )
-            raw = await self._openai.complete_secondary(
+            raw = await self._llm_secondary.complete(
                 system_prompt,
                 [{"role": "user", "content": summary_text}],
                 purpose="opinion_formation",
@@ -605,7 +606,7 @@ class DailyJournal:
         for i in range(0, len(messages), _CHUNK_SIZE):
             chunk = messages[i : i + _CHUNK_SIZE]
             chunk_text = "\n".join(f"[{m['author']}]: {m['content']}" for m in chunk)
-            s = await self._openai.complete_secondary(
+            s = await self._llm_secondary.complete(
                 _CHUNK_SYSTEM,
                 [{"role": "user", "content": chunk_text}],
                 purpose="journal_chunk_summary",
@@ -616,7 +617,7 @@ class DailyJournal:
             return summaries[0]
 
         combined = "\n---\n".join(summaries)
-        return await self._openai.complete_secondary(
+        return await self._llm_secondary.complete(
             _FINAL_SYSTEM,
             [{"role": "user", "content": combined}],
             purpose="journal_final_summary",

@@ -13,7 +13,7 @@ from bot.db.database import Database
 def _make_emotion_config():
     config = MagicMock()
     config.emotions = {
-        e: MagicMock(decay_lambda=0.1) for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
+        e: MagicMock(decay_lambda=0.1, boredom_rise_per_hour=None) for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
     }
     config.bot.emotion_inertia_factor = 0.0
     config.bot.emotion_peak_threshold = 0.7
@@ -80,7 +80,7 @@ async def test_love_clamps_at_one(tmp_path):
 async def test_analyze_llm_returns_trust_and_love_delta():
     engine = EmotionEngine(_make_emotion_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = AsyncMock(return_value={
+    mock_openai.complete_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.05,
@@ -102,7 +102,7 @@ async def test_analyze_llm_returns_trust_and_love_delta():
 async def test_analyze_llm_clamps_trust_delta():
     engine = EmotionEngine(_make_emotion_config())
     mock_openai = MagicMock()
-    mock_openai.complete_secondary_structured = AsyncMock(return_value={
+    mock_openai.complete_structured = AsyncMock(return_value={
         "deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
         "new_words": [],
         "trust_delta": 0.5,  # way over max

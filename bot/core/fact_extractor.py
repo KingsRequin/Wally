@@ -13,7 +13,7 @@ from bot.core.prompts import load_prompt
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.memory import MemoryService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import BaseLLMClient
 
 _MIN_LENGTH = 15
 
@@ -197,12 +197,12 @@ class FactExtractor:
         self,
         config: "Config",
         memory: "MemoryService",
-        openai: "OpenAIClient",
+        llm: "BaseLLMClient",
         db=None,
     ) -> None:
         self._config = config
         self._memory = memory
-        self._openai = openai
+        self._openai = llm
         self._db = db
         # channel_id → buffer dict
         self._buffers: dict[str, dict] = {}
@@ -440,7 +440,7 @@ class FactExtractor:
             f"Conversation:\n{conversation_text}"
         )
 
-        result = await self._openai.complete_secondary_structured(
+        result = await self._openai.complete_structured(
             _FACT_EXTRACTION_SYSTEM,
             [{"role": "user", "content": user_prompt}],
             schema=FACT_EXTRACTION_SCHEMA,

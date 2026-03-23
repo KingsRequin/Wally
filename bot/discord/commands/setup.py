@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
 EXCLUDED_MODEL_KEYWORDS = ["realtime", "preview", "audio", "vision"]
-INCLUDED_MODEL_KEYWORDS = ["gpt-5"]
+INCLUDED_MODEL_KEYWORDS = ["gpt", "chatgpt", "o1", "o3", "o4"]
 
 # ── Clés .env éditables ───────────────────────────────────────────────────────
 
@@ -330,6 +330,8 @@ class PrimaryModelSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         self.bot.config.openai.primary_model = self.values[0]
+        self.bot.config.llm.primary.model = self.values[0]
+        self.bot.llm.model = self.values[0]
         self.bot.config.save()
         await interaction.response.send_message(
             f"Modele principal : {self.values[0]}", ephemeral=True
@@ -343,6 +345,8 @@ class SecondaryModelSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         self.bot.config.openai.secondary_model = self.values[0]
+        self.bot.config.llm.secondary.model = self.values[0]
+        self.bot.llm_secondary.model = self.values[0]
         self.bot.config.save()
         await interaction.response.send_message(
             f"Modele secondaire : {self.values[0]}", ephemeral=True
@@ -365,7 +369,7 @@ async def _send_model_tab(
     bot: "WallyDiscord", interaction: discord.Interaction
 ) -> None:
     try:
-        models_resp = await bot.openai._client.models.list()
+        models_resp = await bot.image_client._client.models.list()
         valid_models = sorted(
             [m.id for m in models_resp.data if is_valid_model(m.id)]
         )
@@ -380,7 +384,7 @@ async def _send_model_tab(
             discord.SelectOption(
                 label=mid,
                 value=mid,
-                default=(mid == bot.config.openai.primary_model),
+                default=(mid == bot.config.llm.primary.model),
             )
             for mid in valid_models[:25]
         ]
@@ -388,15 +392,15 @@ async def _send_model_tab(
             discord.SelectOption(
                 label=mid,
                 value=mid,
-                default=(mid == bot.config.openai.secondary_model),
+                default=(mid == bot.config.llm.secondary.model),
             )
             for mid in valid_models[:25]
         ]
 
         view = ModelSelectView(bot, primary_options, secondary_options)
         await interaction.followup.send(
-            f"**Modele actuel :** {bot.config.openai.primary_model}\n"
-            f"**Modele secondaire :** {bot.config.openai.secondary_model}",
+            f"**Modele actuel :** {bot.config.llm.primary.provider}/{bot.config.llm.primary.model}\n"
+            f"**Modele secondaire :** {bot.config.llm.secondary.provider}/{bot.config.llm.secondary.model}",
             view=view,
             ephemeral=True,
         )

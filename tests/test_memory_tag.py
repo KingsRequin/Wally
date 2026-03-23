@@ -81,7 +81,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.db.get_love_score = AsyncMock(return_value=0.0)
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.config.bot.love_decay_lambda = 0.02
-    bot.openai.complete = AsyncMock(return_value="Réponse de Wally")
+    bot.llm.complete = AsyncMock(return_value="Réponse de Wally")
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.search_global = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])

@@ -240,7 +240,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
 
             messages = [{"role": "user", "content": user_content}]
 
-            reply = await state.openai_client.complete(
+            reply = await state.primary_llm.complete(
                 system_prompt, messages,
                 purpose="web_response",
                 user_id=sender_id,
@@ -374,10 +374,10 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
         sender_id = f"discord:{user.discord_id}"
 
         # Generate image
-        result = await state.openai_client.generate_image(prompt, sender_id)
+        result = await state.image_client.generate_image(prompt, state.config.image_generation, sender_id)
 
         # Generate short title via LLM
-        title = await state.openai_client.complete_secondary(
+        title = await state.secondary_llm.complete(
             "Tu es un assistant. Génère un titre court et créatif (max 6 mots) pour cette image. "
             "Réponds UNIQUEMENT avec le titre, rien d'autre.",
             [{"role": "user", "content": f"Image générée à partir du prompt : {prompt}"}],
@@ -392,7 +392,7 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
             prompt=prompt,
             revised_prompt=result.get("revised_prompt"),
             username=user.username,
-            user_id=sender_id,
+            user_id=str(user.discord_id),
             platform="web",
             file_path=result["file_name"],
             model=result["model"],
@@ -403,7 +403,7 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
 
         # Memory
         try:
-            await state.memory.add("web", sender_id, f"{user.username} a généré une image : {title}")
+            await state.memory.add("discord", str(user.discord_id), f"{user.username} a généré une image : {title}")
         except Exception as e:
             logger.warning("Failed to add image memory: {e}", e=e)
 

@@ -18,15 +18,15 @@ class StatusCog(commands.Cog):
         m, s = divmod(rem, 60)
         uptime_str = f"{h}h {m}m {s}s"
 
-        daily_cost = await self.bot.openai.get_daily_cost()
-        monthly_cost = await self.bot.openai.get_monthly_cost()
+        daily_cost = await self.bot.image_client.get_daily_cost()
+        monthly_cost = await self.bot.image_client.get_monthly_cost()
 
         dominant = self.bot.emotion.get_dominant(threshold=0.4)
         mood_str = ", ".join(dominant) if dominant else "neutre"
 
         embed = discord.Embed(title="Statut de Wally", color=discord.Color.blurple())
         embed.add_field(name="Uptime", value=uptime_str, inline=True)
-        embed.add_field(name="Modele principal", value=self.bot.config.openai.primary_model, inline=True)
+        embed.add_field(name="Modele principal", value=f"{self.bot.config.llm.primary.provider}/{self.bot.config.llm.primary.model}", inline=True)
         embed.add_field(name="Humeur dominante", value=mood_str, inline=True)
         embed.add_field(name="Cout aujourd'hui", value=f"${daily_cost:.4f}", inline=True)
         embed.add_field(name="Cout ce mois", value=f"${monthly_cost:.4f}", inline=True)

@@ -53,7 +53,8 @@ async def main() -> None:
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.openai_client import OpenAIClient
+    from bot.core.llm import create_llm_client
+    from bot.core.llm.openai_client import OpenAILLMClient
     from bot.core.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.core.journal import DailyJournal
@@ -62,8 +63,11 @@ async def main() -> None:
     # ── Load config and database ──────────────────────────────────────────────
     config = Config.load(os.getenv("CONFIG_PATH", "config.yaml"))
     logger.info(
-        "Config loaded — primary model: {model}, triggers: {triggers}",
-        model=config.openai.primary_model,
+        "Config loaded — primary: {provider}/{model}, secondary: {s_provider}/{s_model}, triggers: {triggers}",
+        provider=config.llm.primary.provider,
+        model=config.llm.primary.model,
+        s_provider=config.llm.secondary.provider,
+        s_model=config.llm.secondary.model,
         triggers=config.bot.trigger_names,
     )
 
@@ -84,12 +88,23 @@ async def main() -> None:
     logger.info("EmotionEngine started with decay task")
 
     memory = MemoryService(config)
-    openai_client = OpenAIClient(config, db)
-    memory.set_openai_client(openai_client)
+
+    # ── LLM clients ────────────────────────────────────────────────────────
+    primary_llm = create_llm_client(config.llm.primary, db)
+    secondary_llm = create_llm_client(config.llm.secondary, db)
+    # Image client is always OpenAI (Claude has no image generation API)
+    image_client = OpenAILLMClient(
+        model=config.llm.primary.model,  # model irrelevant for images
+        db=db,
+    )
+    logger.info("LLM clients created — primary: {p}, secondary: {s}",
+                p=type(primary_llm).__name__, s=type(secondary_llm).__name__)
+
+    memory.set_openai_client(secondary_llm)
     memory.set_db(db)
     await memory.load_aliases(db)
-    emotion.set_openai_client(openai_client)
-    logger.info("MemoryService and OpenAIClient initialized")
+    emotion.set_openai_client(secondary_llm)
+    logger.info("MemoryService and LLM clients initialized")
 
     from bot.core.web_search import WebSearchService
 
@@ -112,7 +127,7 @@ async def main() -> None:
     persona = PersonaService()
     logger.info("PromptBuilder, LanguageDetector, and PersonaService initialized")
 
-    journal = DailyJournal(config, openai_client, emotion, memory, db=db)  # db injecté
+    journal = DailyJournal(config, primary_llm, secondary_llm, emotion, memory, db=db)
     logger.info("DailyJournal initialized")
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -136,7 +151,7 @@ async def main() -> None:
     from bot.core.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
 
-    fact_extractor = FactExtractor(config, memory, openai_client, db=db)
+    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db)
     await fact_extractor.restore_buffers()
     logger.info("FactExtractor initialized")
 
@@ -146,7 +161,7 @@ async def main() -> None:
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
 
-    discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, prompts, language, persona)
+    discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, prompts, language, persona)
     discord_bot.journal = journal
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
@@ -235,7 +250,7 @@ async def main() -> None:
             broadcaster_id=os.getenv("TWITCH_BROADCASTER_ID", ""),
         )
         twitch_bot = WallyTwitch(
-            config, db, emotion, memory, openai_client, prompts, language,
+            config, db, emotion, memory, primary_llm, secondary_llm, prompts, language,
             token_manager=token_manager,
             twitch_api=twitch_api,
             persona=persona,
@@ -285,7 +300,7 @@ async def main() -> None:
                 f"et ton style habituel. Sois bref (1-2 phrases max). "
                 f"Ne mets PAS de mention (@), elle sera ajoutée automatiquement."
             )
-            reply = await openai_client.complete_secondary(
+            reply = await secondary_llm.complete(
                 system_prompt,
                 [{"role": "user", "content": user_content}],
                 purpose="reminder",
@@ -335,7 +350,9 @@ async def main() -> None:
         emotion=emotion,
         memory=memory,
         persona=persona,
-        openai_client=openai_client,
+        primary_llm=primary_llm,
+        secondary_llm=secondary_llm,
+        image_client=image_client,
         token_manager=token_manager,
         twitch_api=_twitch_api_ref,
         discord_bot=discord_bot,

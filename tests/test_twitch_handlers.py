@@ -53,7 +53,7 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
-    bot.openai.complete = AsyncMock(return_value="Salut depuis Twitch!")
+    bot.llm.complete = AsyncMock(return_value="Salut depuis Twitch!")
 
     # TwitchAPI replaces IRC channel.send
     bot.twitch_api.send_message = AsyncMock()
@@ -90,7 +90,7 @@ async def test_ignores_own_bot_messages(monkeypatch):
     # Payload dont l'auteur est Wally lui-même
     payload = make_payload(content="wally salut", author_id="999")
     await handle_message(bot, payload)
-    bot.openai.complete.assert_not_awaited()
+    bot.llm.complete.assert_not_awaited()
     bot.memory.append_prelude.assert_not_called()
 
 
@@ -100,7 +100,7 @@ async def test_ignores_untriggered_messages(monkeypatch):
     bot = make_bot(trigger_names=["wally"])
     payload = make_payload(content="hello friend")
     await handle_message(bot, payload)
-    bot.openai.complete.assert_not_awaited()
+    bot.llm.complete.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -130,14 +130,14 @@ async def test_cooldown_prevents_second_response(monkeypatch):
     bot._cooldowns["111"] = time.time()
     payload = make_payload(content="wally salut")
     await handle_message(bot, payload)
-    bot.openai.complete.assert_not_awaited()
+    bot.llm.complete.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_reply_truncated_at_480(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = make_bot()
-    bot.openai.complete = AsyncMock(return_value="x" * 600)
+    bot.llm.complete = AsyncMock(return_value="x" * 600)
     payload = make_payload(content="wally parle")
     with patch("bot.twitch.handlers.asyncio.create_task"):
         await handle_message(bot, payload)
@@ -173,7 +173,7 @@ async def test_sets_cooldown_after_response(monkeypatch):
 async def test_handle_message_exception_is_caught(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = make_bot()
-    bot.openai.complete = AsyncMock(side_effect=RuntimeError("OpenAI down"))
+    bot.llm.complete = AsyncMock(side_effect=RuntimeError("OpenAI down"))
     payload = make_payload(content="wally erreur")
     # Should not raise — exception is caught and logged
     await handle_message(bot, payload)
