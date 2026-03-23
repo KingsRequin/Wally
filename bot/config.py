@@ -26,6 +26,8 @@ class BotConfig:
     spontaneous_probability: float = 0.05
     spontaneous_passion_probability: float = 0.15
     spontaneous_cooldown_seconds: int = 300
+    spontaneous_memory_probability: float = 0.2
+    memory_recall_min_score: float = 0.75
     love_decay_lambda: float = 0.1
 
 
