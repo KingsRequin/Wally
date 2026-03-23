@@ -228,6 +228,33 @@ When fixing Qdrant entries (double-prefix, orphans), use `qdrant_client.set_payl
 `user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will
 strip prefixes and cause unintended deletions. Direct Qdrant client is the safe path for data fixes.
 
+### Spontaneous Memory Recall
+Two mechanisms allow Wally to reference old memories naturally:
+
+**1. Spontaneous trigger (Discord + Twitch):**
+In the spontaneous intervention block of each handler, after `_check_spontaneous_trigger()`
+returns `None` and cooldown is elapsed, `memory.search_top_match()` does a single Qdrant
+query on the message author. If the best match scores >= `memory_recall_min_score` (0.75)
+and `random.random() < spontaneous_memory_probability` (0.2), Wally fires a spontaneous
+response with the recalled memory injected as context.
+- Rate-limited via `_memory_check_cooldowns` (1 Qdrant query per 60s per channel)
+- Uses the main `_spontaneous_cooldowns` to avoid overlap with passion/emotion triggers
+
+**2. Normal response directive:**
+`memory_recall_directive.md` is injected in `build_system_prompt()` after the memory block
+when `memory_context` is non-empty. Encourages the LLM to reference memories naturally
+("ça me rappelle quand tu parlais de...") without reciting them verbatim.
+
+Config:
+```yaml
+bot:
+  spontaneous_memory_probability: 0.2  # chance de trigger sur souvenir pertinent
+  memory_recall_min_score: 0.75        # score Qdrant minimum (élevé car non sollicité)
+```
+
+`search_top_match(platform, user_id, query) -> tuple[str, float] | None` — single Qdrant
+query (no dual-query fan-out), returns best match with raw score. Returns `None` on error.
+
 ### Trust Score
 Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
 Positive interactions: +0.01. Repeated insults: -0.05.
