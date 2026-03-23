@@ -95,6 +95,44 @@ async def update_config(request: Request, body: dict) -> dict:
             if hasattr(state.secondary_llm, "text_verbosity"):
                 state.secondary_llm.text_verbosity = val
 
+    if "llm" in body:
+        llm_data = body["llm"]
+        needs_restart = False
+        if "primary" in llm_data:
+            p = llm_data["primary"]
+            if "provider" in p and p["provider"] != cfg.llm.primary.provider:
+                cfg.llm.primary.provider = p["provider"]
+                needs_restart = True
+            if "model" in p:
+                cfg.llm.primary.model = p["model"]
+                cfg.openai.primary_model = p["model"]
+                state.primary_llm.model = p["model"]
+        if "secondary" in llm_data:
+            s = llm_data["secondary"]
+            if "provider" in s and s["provider"] != cfg.llm.secondary.provider:
+                cfg.llm.secondary.provider = s["provider"]
+                needs_restart = True
+            if "model" in s:
+                cfg.llm.secondary.model = s["model"]
+                cfg.openai.secondary_model = s["model"]
+                state.secondary_llm.model = s["model"]
+        if needs_restart:
+            # Provider changed — recreate LLM clients in-place
+            from bot.core.llm import create_llm_client
+            if "primary" in llm_data and llm_data["primary"].get("provider") != type(state.primary_llm).__name__.lower().replace("llmclient", ""):
+                state.primary_llm = create_llm_client(cfg.llm.primary, state.db)
+                # Update bot references
+                if state.discord_bot:
+                    state.discord_bot.llm = state.primary_llm
+                if state.twitch_bot:
+                    state.twitch_bot.llm = state.primary_llm
+            if "secondary" in llm_data and llm_data["secondary"].get("provider") != type(state.secondary_llm).__name__.lower().replace("llmclient", ""):
+                state.secondary_llm = create_llm_client(cfg.llm.secondary, state.db)
+                if state.discord_bot:
+                    state.discord_bot.llm_secondary = state.secondary_llm
+                if state.twitch_bot:
+                    state.twitch_bot.llm_secondary = state.secondary_llm
+
     if "bot" in body:
         d = body["bot"]
         if "language_default" in d:

@@ -631,13 +631,28 @@ async function renderConfigForm(cfg) {
       </div>
     </div>
 
-    <!-- OpenAI -->
+    <!-- LLM Providers -->
     <div class="card config-section">
-      <div class="config-section-title">OPENAI</div>
+      <div class="config-section-title">LLM — MODÈLES</div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-primary-provider">Provider principal</label>
+        <select id="cfg-primary-provider" onchange="onProviderChange()">
+          <option value="openai" ${(cfg.llm?.primary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
+          <option value="claude" ${(cfg.llm?.primary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+        </select>
+      </div>
       <div class="field-group">
         <label class="field-label" for="cfg-primary-model">Modèle principal</label>
         <select id="cfg-primary-model">
           ${models.map(m => `<option value="${m}" ${m === cfg.openai.primary_model ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <input type="text" id="cfg-primary-model-text" placeholder="ex: claude-sonnet-4-6-20260301" value="${cfg.llm?.primary?.model || cfg.openai.primary_model}" style="display:none;margin-top:6px">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
+        <select id="cfg-secondary-provider" onchange="onProviderChange()">
+          <option value="openai" ${(cfg.llm?.secondary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
+          <option value="claude" ${(cfg.llm?.secondary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
         </select>
       </div>
       <div class="field-group">
@@ -645,24 +660,28 @@ async function renderConfigForm(cfg) {
         <select id="cfg-secondary-model">
           ${models.map(m => `<option value="${m}" ${m === cfg.openai.secondary_model ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
+        <input type="text" id="cfg-secondary-model-text" placeholder="ex: claude-haiku-4-5-20251001" value="${cfg.llm?.secondary?.model || cfg.openai.secondary_model}" style="display:none;margin-top:6px">
       </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning)</label>
-        <select id="cfg-reasoning-effort">
-          ${REASONING_EFFORTS.map(e => `<option value="${e}" ${e === cfg.openai.reasoning_effort ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses</label>
-        <select id="cfg-text-verbosity">
-          ${TEXT_VERBOSITIES.map(v => `<option value="${v}" ${v === cfg.openai.text_verbosity ? 'selected' : ''}>${v.toUpperCase()}</option>`).join('')}
-        </select>
+      <div id="openai-specific-settings">
+        <div class="field-group">
+          <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+          <select id="cfg-reasoning-effort">
+            ${REASONING_EFFORTS.map(e => `<option value="${e}" ${e === cfg.openai.reasoning_effort ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+          <select id="cfg-text-verbosity">
+            ${TEXT_VERBOSITIES.map(v => `<option value="${v}" ${v === cfg.openai.text_verbosity ? 'selected' : ''}>${v.toUpperCase()}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-max-tokens">Max output tokens</label>
         <input type="number" id="cfg-max-tokens" min="100" max="32000" value="${cfg.openai.max_tokens}">
       </div>
       <button class="btn btn-success" onclick="saveOpenAI()">💾 SAUVEGARDER</button>
+      <p id="llm-restart-notice" style="display:none;font-size:0.75rem;color:#f59e0b;margin-top:8px">⚠️ Changement de provider — redémarrage requis pour prendre effet.</p>
     </div>
 
     <!-- Émotions — lambdas (boredom exclu : monte avec l'inactivité, pas de decay) -->
@@ -794,6 +813,9 @@ async function renderConfigForm(cfg) {
     updateEmotionGauges(currentEmotions);
   }
 
+  // Initialize provider UI state
+  onProviderChange();
+
   // Load notification channels into the select
   loadNotificationChannels(cfg);
 }
@@ -821,18 +843,61 @@ async function loadNotificationChannels(cfg) {
   } catch (e) { /* silently fail */ }
 }
 
+function onProviderChange() {
+  const primaryProv = document.getElementById('cfg-primary-provider').value;
+  const secondaryProv = document.getElementById('cfg-secondary-provider').value;
+  // Toggle model select vs text input based on provider
+  const primarySelect = document.getElementById('cfg-primary-model');
+  const primaryText = document.getElementById('cfg-primary-model-text');
+  const secondarySelect = document.getElementById('cfg-secondary-model');
+  const secondaryText = document.getElementById('cfg-secondary-model-text');
+  if (primaryProv === 'claude') {
+    primarySelect.style.display = 'none';
+    primaryText.style.display = 'block';
+  } else {
+    primarySelect.style.display = 'block';
+    primaryText.style.display = 'none';
+  }
+  if (secondaryProv === 'claude') {
+    secondarySelect.style.display = 'none';
+    secondaryText.style.display = 'block';
+  } else {
+    secondarySelect.style.display = 'block';
+    secondaryText.style.display = 'none';
+  }
+  // Show restart notice if provider changed
+  const notice = document.getElementById('llm-restart-notice');
+  if (notice) notice.style.display = 'block';
+}
+
 async function saveOpenAI() {
-  const r = await apiFetch('/api/admin/config', {
-    method: 'POST',
-    body: JSON.stringify({ openai: {
-      primary_model:    document.getElementById('cfg-primary-model').value,
-      secondary_model:  document.getElementById('cfg-secondary-model').value,
+  const primaryProv = document.getElementById('cfg-primary-provider').value;
+  const secondaryProv = document.getElementById('cfg-secondary-provider').value;
+  const primaryModel = primaryProv === 'claude'
+    ? document.getElementById('cfg-primary-model-text').value
+    : document.getElementById('cfg-primary-model').value;
+  const secondaryModel = secondaryProv === 'claude'
+    ? document.getElementById('cfg-secondary-model-text').value
+    : document.getElementById('cfg-secondary-model').value;
+
+  const payload = {
+    openai: {
+      primary_model:    primaryModel,
+      secondary_model:  secondaryModel,
       reasoning_effort: document.getElementById('cfg-reasoning-effort').value,
       text_verbosity:   document.getElementById('cfg-text-verbosity').value,
       max_tokens:       parseInt(document.getElementById('cfg-max-tokens').value),
-    }}),
+    },
+    llm: {
+      primary: { provider: primaryProv, model: primaryModel },
+      secondary: { provider: secondaryProv, model: secondaryModel },
+    },
+  };
+  const r = await apiFetch('/api/admin/config', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
-  if (r && r.ok) toast('Config OpenAI sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
+  if (r && r.ok) toast('Config LLM sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
 }
 
 function updateDecayTime(input, name) {
