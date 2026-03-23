@@ -204,3 +204,23 @@ async def test_spontaneous_respond_without_memory():
     complete_call = bot.openai.complete.call_args
     user_content = complete_call.args[1][0]["content"]
     assert "Souvenir qui te revient" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_spontaneous_memory_twitch():
+    """Memory recall works on Twitch handler."""
+    from bot.twitch.handlers import _spontaneous_respond_twitch
+    bot = make_bot_for_spontaneous()
+    bot._channel_ids = {"testchannel": "123"}
+    mock_channel = MagicMock()
+    mock_channel.send = AsyncMock()
+    bot.get_channel = MagicMock(return_value=mock_channel)
+
+    await _spontaneous_respond_twitch(
+        bot, "testchannel", "123", "TestUser", "je vais jouer",
+        recall_memory="joue à Apex",
+    )
+
+    complete_call = bot.openai.complete.call_args
+    user_content = complete_call.args[1][0]["content"]
+    assert "Souvenir qui te revient" in user_content

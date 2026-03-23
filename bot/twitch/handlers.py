@@ -33,6 +33,7 @@ def _resolve_twitch_roles(badges: list) -> list[str]:
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}
+_memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
 
 
 def _fire(coro) -> asyncio.Task:
@@ -123,18 +124,30 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             anger=state.get("anger", 0.0),
             boredom=state.get("boredom", 0.0),
         )
-        if trigger_type:
-            now = _time.time()
-            cooldown = bot.config.bot.spontaneous_cooldown_seconds
-            if now - _spontaneous_cooldowns.get(channel_id, 0) >= cooldown:
-                prob = (
-                    bot.config.bot.spontaneous_passion_probability
-                    if trigger_type == "passion"
-                    else bot.config.bot.spontaneous_probability
-                )
-                if random.random() < prob:
-                    _spontaneous_cooldowns[channel_id] = now
-                    _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content))
+        now = _time.time()
+        cooldown = bot.config.bot.spontaneous_cooldown_seconds
+        cooldown_ok = now - _spontaneous_cooldowns.get(channel_id, 0) >= cooldown
+
+        if trigger_type and cooldown_ok:
+            prob = (
+                bot.config.bot.spontaneous_passion_probability
+                if trigger_type == "passion"
+                else bot.config.bot.spontaneous_probability
+            )
+            if random.random() < prob:
+                _spontaneous_cooldowns[channel_id] = now
+                _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content))
+        elif not trigger_type and cooldown_ok:
+            if now - _memory_check_cooldowns.get(channel_id, 0) >= 60:
+                _memory_check_cooldowns[channel_id] = now
+                match = await bot.memory.search_top_match("twitch", author, content)
+                if match and match[1] >= bot.config.bot.memory_recall_min_score:
+                    if random.random() < bot.config.bot.spontaneous_memory_probability:
+                        _spontaneous_cooldowns[channel_id] = now
+                        _fire(_spontaneous_respond_twitch(
+                            bot, channel_name, channel_id, author, content,
+                            recall_memory=match[0],
+                        ))
 
     # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
@@ -428,6 +441,7 @@ async def _announce_overlay_image(
 async def _spontaneous_respond_twitch(
     bot: "WallyTwitch", channel_name: str, channel_id: str,
     author: str, content: str,
+    recall_memory: str | None = None,
 ) -> None:
     """Generate and send a spontaneous Twitch response."""
     try:
@@ -435,6 +449,7 @@ async def _spontaneous_respond_twitch(
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
+            memory_context=recall_memory or "",
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
@@ -442,10 +457,20 @@ async def _spontaneous_respond_twitch(
             composite_directives=bot.persona.composite_directives,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
+        recall_block = ""
+        if recall_memory:
+            recall_block = (
+                "\n--- Souvenir qui te revient ---\n"
+                f"{recall_memory}\n"
+                f"Tu viens de te rappeler quelque chose en lien avec ce que dit "
+                f"{author}. Évoque-le naturellement.\n\n"
+            )
+            logger.info("Memory recall for {user} on Twitch: {mem}", user=author, mem=recall_memory[:80])
         user_content = (
             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
             "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
             "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
+            + recall_block
             + prelude_block
             + f"\n[{author}]: {content}"
         )
