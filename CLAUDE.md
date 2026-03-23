@@ -14,7 +14,7 @@ Full design doc: `docs/plans/2026-03-05-wally-bot-design.md`
 
 ### Modular Monolith
 Single asyncio process, clean module boundaries via dependency injection. Discord and Twitch
-adapters receive core services (emotion, memory, openai_client, config) at construction time.
+adapters receive core services (emotion, memory, LLM clients, config) at construction time.
 Simple to deploy (one Docker container), no inter-process overhead. At this scale this is the
 right tradeoff — distributed complexity is unnecessary.
 
@@ -55,12 +55,18 @@ bot/
 ├── core/
 │   ├── emotion.py       # Global emotion state, decay, NRCLex analysis
 │   ├── memory.py        # mem0 wrapper, sliding context window
-│   ├── openai_client.py # Completions, image generation, cost tracking, retry logic
+│   ├── openai_client.py # Backward-compat shim → redirects to core/llm/openai_client.py
 │   ├── prompts.py       # PromptBuilder, load_prompt(), emotion directives
 │   ├── language.py      # langdetect wrapper with fallback
 │   ├── journal.py       # Daily journal scheduler (apscheduler)
 │   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mem0
 │   ├── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
+│   ├── llm/             # Multi-provider LLM abstraction layer
+│   │   ├── __init__.py   # Exports: BaseLLMClient, OpenAILLMClient, ClaudeLLMClient, create_llm_client
+│   │   ├── base.py       # ABC BaseLLMClient: complete(), complete_with_tools(), complete_structured()
+│   │   ├── openai_client.py # OpenAILLMClient: Chat Completions + Responses API + generate_image()
+│   │   ├── claude_client.py # ClaudeLLMClient: Anthropic SDK, prompt caching, tool conversion
+│   │   └── factory.py    # create_llm_client(LLMRoleConfig, db) factory
 │   └── actions/         # ActionService: tâches planifiées via tool calling
 │       ├── __init__.py   # Exports publics
 │       ├── registry.py   # ActionRegistry: catalogue + ACL par rôle
@@ -108,13 +114,19 @@ config = Config.load()
 db = await Database.create(config)
 emotion = EmotionEngine(config)
 memory = MemoryService(config)
-openai_client = OpenAIClient(config, db)
 
-discord_bot = WallyDiscord(config, db, emotion, memory, openai_client)
-twitch_bot = WallyTwitch(config, db, emotion, memory, openai_client)
+# LLM clients — separate primary/secondary/image
+primary_llm = create_llm_client(config.llm.primary, db)    # user-facing responses
+secondary_llm = create_llm_client(config.llm.secondary, db) # background tasks
+image_client = OpenAILLMClient(model=..., db=db)             # always OpenAI for images
+
+discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, ...)
+twitch_bot = WallyTwitch(config, db, emotion, memory, primary_llm, secondary_llm, ...)
 
 await asyncio.gather(discord_bot.start(), twitch_bot.start())
 ```
+
+Bot attributes: `bot.llm` (primary), `bot.llm_secondary` (secondary), `bot.image_client` (OpenAI for images+costs).
 
 ### Config Hot-Reload
 `config.save()` writes the full in-memory config back to `config.yaml` synchronously.
@@ -168,7 +180,7 @@ Each message from a muted user increases anger by `spam_anger_delta` (configurab
 ### Spam Detection (Discord only)
 In-memory tracker `_spam_tracker: dict[(user_id, channel_id), deque[float]]` in `handlers.py`.
 Counts message timestamps per user/channel. When `max_messages` exceeded within `window_seconds`:
-1. LLM generates warning via `complete_secondary()` (prompt: `spam_warning_system.md`)
+1. LLM generates warning via `llm_secondary.complete()` (prompt: `spam_warning_system.md`)
 2. User muted via `add_timeout()` for `mute_minutes`
 3. Memory fact stored via `memory.add()` ("Wally a coupé X pour spam")
 4. Tracker reset for that user/channel
@@ -266,7 +278,7 @@ Updated after every response, not in real-time during generation.
 
 | Table | Purpose |
 |---|---|
-| `cost_log` | Every OpenAI API call: model, tokens, cost_usd, purpose |
+| `cost_log` | Every LLM API call (OpenAI + Claude): model, tokens, cost_usd, purpose |
 | `timeout_log` | Emotion mute per user per guild |
 | `welcomed` | First-message welcome tracking per user per guild |
 | `trust_scores` | Long-term trust per user per platform |
@@ -332,9 +344,68 @@ Emotion colors: anger `#ef4444`, joy `#eab308`, curiosity `#22c55e`, sadness `#3
 
 ---
 
+## LLM Abstraction Layer
+
+Multi-provider LLM abstraction in `bot/core/llm/`. Supports OpenAI and Anthropic Claude
+simultaneously — different providers can be used for primary (user-facing) and secondary
+(background tasks) roles.
+
+### BaseLLMClient (ABC)
+Three abstract methods — all providers must implement:
+- `complete(system_prompt, messages, ...) -> str`
+- `complete_with_tools(system_prompt, messages, tools, tool_executor, ...) -> tuple[str, list[str]]`
+- `complete_structured(system_prompt, messages, schema, ...) -> dict`
+
+### Tool Format Convention
+Tools are always passed in **OpenAI Chat Completions format** (canonical):
+`{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}`
+Each provider converts internally (Claude converts to `input_schema` format).
+
+### OpenAILLMClient
+Handles both Chat Completions API (gpt-4o) and Responses API (o1/o3/o4/gpt-5) via
+`_uses_responses_api()` routing. Also hosts `generate_image()` (OpenAI-specific, not in ABC).
+
+### ClaudeLLMClient
+- **Prompt caching**: system prompt wrapped with `cache_control: {"type": "ephemeral"}`
+- **Tool calling**: converts OpenAI tool format → Claude format, handles tool_use/tool_result flow
+- **Structured output**: uses forced `tool_choice` with schema as `input_schema` (no native JSON mode)
+- **Retry logic**: exponential backoff on RateLimitError and 5xx, same pattern as OpenAI
+
+### Config
+```yaml
+llm:
+  primary:
+    provider: "claude"           # or "openai"
+    model: "claude-sonnet-4-6-20260301"
+    temperature: 1.0
+    max_tokens: 1000
+  secondary:
+    provider: "openai"
+    model: "gpt-5.1-mini"
+    temperature: 0.8
+    max_tokens: 1000
+    reasoning_effort: "medium"   # OpenAI-specific, ignored by Claude
+    text_verbosity: "medium"     # OpenAI-specific, ignored by Claude
+```
+
+`LLMRoleConfig` dataclass in `config.py`. Factory `create_llm_client(role_config, db)` in
+`bot/core/llm/factory.py`. Dashboard admin panel has provider dropdown per role — changing
+provider recreates the LLM client in-place without restart.
+
+### Backward Compatibility
+- `bot/core/openai_client.py` is a shim that re-exports `OpenAILLMClient as OpenAIClient`
+- Legacy `openai:` section in config.yaml still loaded, kept in sync with `llm:` section
+- `config.openai.primary_model` still works for reading
+
+### Cost Tracking
+Both providers log costs via `db.log_cost()` with the same schema. Claude costs include
+cache read (90% discount) and cache write (25% surcharge) token accounting.
+
+---
+
 ## Image Generation
 
-`OpenAIClient.generate_image()` calls OpenAI Images API with retry logic (3 attempts, backoff).
+`OpenAILLMClient.generate_image()` calls OpenAI Images API with retry logic (3 attempts, backoff).
 Images stored on disk in `data/gallery/`, metadata in `gallery_images` table.
 Pricing in `IMAGE_COSTS` dict, cost logged via `log_cost(purpose="image_generation")`.
 
@@ -383,7 +454,7 @@ Allows the LLM to create, cancel, and list scheduled tasks via tool calling.
 
 ### Reminder Handler
 Reminders are **generated by the LLM** through the full response pipeline (persona, emotions,
-weekday directives). The handler calls `complete_secondary()` with the reminder content as
+weekday directives). The handler calls `secondary_llm.complete()` with the reminder content as
 context, so Wally formulates the message in his own voice and current mood. Discord reminders
 include a `<@creator_id>` mention. Falls back to raw message on LLM failure.
 
@@ -431,5 +502,5 @@ Role resolution via `_resolve_discord_roles()` / `_resolve_twitch_roles()`.
 ## SessionManager
 
 Suit les conversations par canal. Après 20min d'inactivité (`SESSION_TIMEOUT_SECONDS`) :
-analyse LLM via `complete_secondary()` → extrait les faits durables par participant → `memory.add()`.
+analyse LLM via `secondary_llm.complete()` → extrait les faits durables par participant → `memory.add()`.
 Ne stocke que les sessions de ≥ 2 messages. Format d'analyse : `### pseudo\n- fait\n...`
