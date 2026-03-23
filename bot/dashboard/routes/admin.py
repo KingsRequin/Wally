@@ -218,7 +218,9 @@ async def update_config(request: Request, body: dict) -> dict:
 
     if "emotions" in body:
         for name, d in body["emotions"].items():
-            if name in cfg.emotions and "decay_lambda" in d:
+            if name not in cfg.emotions:
+                continue
+            if "decay_lambda" in d:
                 lam = float(d["decay_lambda"])
                 if lam <= 0:
                     raise HTTPException(
@@ -226,6 +228,8 @@ async def update_config(request: Request, body: dict) -> dict:
                         detail=f"decay_lambda for {name} must be > 0",
                     )
                 cfg.emotions[name].decay_lambda = lam
+            if "boredom_rise_per_hour" in d:
+                cfg.emotions[name].boredom_rise_per_hour = float(d["boredom_rise_per_hour"])
 
     # Image generation config
     if "image_generation" in body:
