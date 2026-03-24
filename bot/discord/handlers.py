@@ -47,6 +47,15 @@ def _parse_react_tag(text: str) -> tuple[str | None, str]:
     return None, text
 
 
+def _author_label(member: discord.Member | discord.User) -> str:
+    """Format author label for LLM context: 'display_name (@username)' if different, else just display_name."""
+    display = member.display_name
+    username = member.name
+    if username and username != display:
+        return f"{display} (@{username})"
+    return display
+
+
 def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
     """Choisit un emoji de réaction passive basé sur le contenu du message.
     Retourne None si aucun signal détecté.
@@ -116,7 +125,7 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
             if m.id == exclude_id:
                 continue
             # Include Wally's own messages for context awareness
-            msgs.append({"author": m.author.display_name, "content": m.content})
+            msgs.append({"author": _author_label(m.author), "content": m.content})
         msgs.reverse()  # Discord renvoie du plus récent au plus ancien
         return msgs[-limit:] if len(msgs) > limit else msgs
     except Exception as e:
@@ -175,7 +184,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
 
     # --- Spam detected ---
     guild_id = str(message.guild.id)
-    username = message.author.display_name
+    username = _author_label(message.author)
     anger = bot.emotion.get_state().get("anger", 0.0)
 
     # Generate LLM warning
@@ -234,17 +243,31 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     user_id = str(message.author.id)
     channel_allowed = _is_channel_allowed(bot.config, message.channel.id)
 
+    # Contenu enrichi : inclut un tag [image] si des images sont jointes
+    _has_images = any(
+        a.content_type and a.content_type.startswith("image/")
+        for a in message.attachments
+    )
+    _enriched_content = message.content or ""
+    if _has_images and not _enriched_content:
+        n = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
+        _enriched_content = f"[a envoyé {'une image' if n == 1 else f'{n} images'}]"
+    elif _has_images:
+        n = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
+        _enriched_content += f" [+ {'une image' if n == 1 else f'{n} images'}]"
+
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
     if channel_allowed:
         prelude = bot.memory.get_prelude(str(message.channel.id))
+        author_label = _author_label(message.author)
         bot.memory.append_prelude(
-            str(message.channel.id), message.author.display_name, message.content
+            str(message.channel.id), author_label, _enriched_content
         )
         # Enregistrement dans la session active du canal (tous les messages)
         if getattr(bot, "fact_extractor", None) is not None:
             bot.fact_extractor.record_message(
                 str(message.channel.id), "discord", user_id,
-                message.author.display_name, message.content,
+                author_label, _enriched_content,
                 is_reply=message.reference is not None,
             )
     else:
@@ -300,7 +323,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 )
                 if random.random() < prob:
                     _spontaneous_cooldowns[chan_id] = now
-                    _fire(_spontaneous_respond(bot, message))
+                    _fire(_spontaneous_respond(bot, message, prelude_snapshot=prelude))
             elif not trigger_type and cooldown_ok:
                 # Memory recall check — rate-limited to 1 per 60s per channel
                 if now - _memory_check_cooldowns.get(chan_id, 0) >= 60:
@@ -311,7 +334,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                     if match and match[1] >= bot.config.bot.memory_recall_min_score:
                         if random.random() < bot.config.bot.spontaneous_memory_probability:
                             _spontaneous_cooldowns[chan_id] = now
-                            _fire(_spontaneous_respond(bot, message, recall_memory=match[0]))
+                            _fire(_spontaneous_respond(bot, message, recall_memory=match[0], prelude_snapshot=prelude))
         return
 
     if not channel_allowed:
@@ -327,7 +350,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         return
 
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
-    await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact)
+    await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
 
 
 _LIST_RE = re.compile(r"^\s*([-*+]|\d+[.)]) ")
@@ -378,6 +401,7 @@ async def _respond(
     guild_id: str,
     prelude: list[dict],
     first_contact: bool = False,
+    enriched_content: str = "",
 ) -> None:
     try:
         await message.add_reaction("🔍")
@@ -534,12 +558,12 @@ async def _respond(
             prelude_block
             + context_block
             + replied_image_context
-            + f"\n[{message.author.display_name}]: {text_content}"
+            + f"\n[{_author_label(message.author)}]: {text_content}"
         )
 
         if first_contact:
             user_content = (
-                f"[CONTEXTE: C'est la première fois que {message.author.display_name} "
+                f"[CONTEXTE: C'est la première fois que {_author_label(message.author)} "
                 f"t'adresse la parole sur ce serveur. Commence ta réponse par une "
                 f"bienvenue chaleureuse en une phrase courte, puis réponds à son message.]\n\n"
                 + user_content
@@ -651,9 +675,8 @@ async def _respond(
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)
 
-        stored_content = message.content or "[image]"
         bot.memory.append_message(
-            str(message.channel.id), message.author.display_name, stored_content, platform="discord"
+            str(message.channel.id), _author_label(message.author), enriched_content or message.content, platform="discord"
         )
         bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
         bot.memory.append_message(str(message.channel.id), "Wally", reply, platform="discord")
@@ -720,6 +743,28 @@ async def _post_process(
                 username=display_name,
             )
 
+        # Génère une description courte de l'image et la stocke en mémoire long-terme
+        if image_urls and getattr(bot, "llm_secondary", None):
+            try:
+                from bot.core.prompts import load_prompt
+                img_system = load_prompt(
+                    "image_describe_system",
+                    "Décris cette image en une phrase courte (max 30 mots).",
+                )
+                img_desc = await bot.llm_secondary.complete(
+                    img_system,
+                    [{"role": "user", "content": text or "Décris cette image."}],
+                    purpose="image_description",
+                    image_urls=image_urls,
+                    max_tokens=100,
+                )
+                if img_desc and img_desc.strip():
+                    fact = f"{display_name} a envoyé une image : {img_desc.strip()}"
+                    await bot.memory.add(platform, user_id, fact, username=display_name)
+                    logger.debug("Image description stored for {u}: {d}", u=display_name, d=img_desc.strip())
+            except Exception as e:
+                logger.warning("Image description failed: {e}", e=e)
+
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8:
             # Always record the anger trigger (duration=0 → tracking only, not a real mute)
@@ -744,10 +789,11 @@ async def _post_process(
 async def _spontaneous_respond(
     bot: "WallyDiscord", message: discord.Message,
     recall_memory: str | None = None,
+    prelude_snapshot: list[dict] | None = None,
 ) -> None:
     """Generate and send a spontaneous (unsolicited) response."""
     try:
-        prelude = bot.memory.get_prelude(str(message.channel.id))
+        prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(str(message.channel.id))
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -770,7 +816,7 @@ async def _spontaneous_respond(
                 "\n--- Souvenir qui te revient ---\n"
                 f"{recall_memory}\n"
                 f"Tu viens de te rappeler quelque chose en lien avec ce que dit "
-                f"{message.author.display_name}. Évoque-le naturellement.\n\n"
+                f"{_author_label(message.author)}. Évoque-le naturellement.\n\n"
             )
         user_content = (
             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
@@ -778,7 +824,7 @@ async def _spontaneous_respond(
             "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
             + recall_block
             + prelude_block
-            + f"\n[{message.author.display_name}]: {message.content}"
+            + f"\n[{_author_label(message.author)}]: {message.content}"
         )
 
         async with message.channel.typing():

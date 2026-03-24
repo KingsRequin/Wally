@@ -61,6 +61,10 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
 
+    bot.llm_secondary = MagicMock()
+    bot.llm_secondary.complete = AsyncMock(return_value="Un paysage de montagne avec un lac.")
+    bot.memory.add = AsyncMock()
+
     bot.web_search = None  # désactivé par défaut dans les tests
     bot.apex_api = None
 
@@ -74,6 +78,7 @@ def make_message(content="wally bonjour", author_bot=False, mentions=None, attac
     msg.author.bot = author_bot
     msg.author.id = 12345
     msg.author.display_name = "TestUser"
+    msg.author.name = "TestUser"
     msg.guild.id = 99999
     msg.channel.id = 777
     msg.channel.typing = MagicMock(return_value=AsyncMock(
@@ -291,11 +296,13 @@ async def test_cold_start_fallback_to_channel_history():
     history_msg1 = MagicMock()
     history_msg1.author.bot = False
     history_msg1.author.display_name = "Alice"
+    history_msg1.author.name = "Alice"
     history_msg1.content = "premier message"
 
     history_msg2 = MagicMock()
     history_msg2.author.bot = False
     history_msg2.author.display_name = "Bob"
+    history_msg2.author.name = "Bob"
     history_msg2.content = "deuxième message"
 
     async def fake_history(limit):
@@ -385,19 +392,37 @@ async def test_respond_no_text_uses_default_prompt():
 
 @pytest.mark.asyncio
 async def test_respond_image_only_memory_tag():
-    """Message image sans texte : append_message reçoit '[image]' comme contenu."""
+    """Message image sans texte : append_message reçoit le tag enrichi via enriched_content."""
     bot = make_bot()
     message = make_message(
         content="",
         attachments=[make_attachment("https://cdn.discord.com/img.png")],
     )
     with patch("bot.discord.handlers.asyncio.create_task"):
-        await _respond(bot, message, "12345", "99999", [])
+        await _respond(bot, message, "12345", "99999", [],
+                        enriched_content="[a envoyé une image]")
 
     calls = bot.memory.append_message.call_args_list
     # Premier appel : message de l'utilisateur
     stored_content = calls[0].args[2]
-    assert stored_content == "[image]"
+    assert stored_content == "[a envoyé une image]"
+
+
+@pytest.mark.asyncio
+async def test_respond_image_with_text_memory_tag():
+    """Message avec texte + image : append_message reçoit le texte enrichi."""
+    bot = make_bot()
+    message = make_message(
+        content="regarde ça",
+        attachments=[make_attachment("https://cdn.discord.com/img.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [],
+                        enriched_content="regarde ça [+ une image]")
+
+    calls = bot.memory.append_message.call_args_list
+    stored_content = calls[0].args[2]
+    assert stored_content == "regarde ça [+ une image]"
 
 
 @pytest.mark.asyncio
@@ -461,3 +486,44 @@ async def test_respond_passes_image_urls_to_post_process():
     # Texte de substitution pour message image-only
     call_args = bot.emotion.process_message.call_args.args
     assert call_args[0] == "Regarde cette image."
+
+
+@pytest.mark.asyncio
+async def test_post_process_stores_image_description_in_memory():
+    """_post_process génère une description d'image via llm_secondary et la stocke en mémoire."""
+    bot = make_bot()
+    bot.llm_secondary.complete = AsyncMock(return_value="Un chat roux assis sur un clavier.")
+
+    await _post_process(
+        bot, "regarde mon chat", "discord", "12345", "99999", 0.5,
+        context_messages=[],
+        image_urls=["https://example.com/cat.png"],
+        display_name="TestUser",
+    )
+
+    # Vérifie que llm_secondary a été appelé pour décrire l'image
+    bot.llm_secondary.complete.assert_called_once()
+    call_kwargs = bot.llm_secondary.complete.call_args.kwargs
+    assert call_kwargs["purpose"] == "image_description"
+    assert call_kwargs["image_urls"] == ["https://example.com/cat.png"]
+
+    # Vérifie que le fait est stocké en mémoire
+    bot.memory.add.assert_called_once()
+    fact = bot.memory.add.call_args.args[2]
+    assert "TestUser" in fact
+    assert "Un chat roux assis sur un clavier." in fact
+
+
+@pytest.mark.asyncio
+async def test_post_process_no_image_description_without_images():
+    """_post_process ne génère pas de description si pas d'images."""
+    bot = make_bot()
+
+    await _post_process(
+        bot, "salut wally", "discord", "12345", "99999", 0.5,
+        context_messages=[],
+        image_urls=None,
+        display_name="TestUser",
+    )
+
+    bot.llm_secondary.complete.assert_not_called()

@@ -149,6 +149,12 @@ logger.error("OpenAI call failed: {e}", e=str(e))
 
 Never use `print()` or `import logging`.
 
+### Author Labels (Discord)
+`_author_label(member)` in `handlers.py` formats user identity for LLM context:
+`display_name (@username)` when `member.name` differs from `member.display_name`, otherwise
+just `display_name`. Used in prelude, context window, fact_extractor, user_content, cold-start
+history, and spam warnings. Ensures the LLM sees the unique Discord username alongside nicknames.
+
 ### Environment Variables
 All secrets in `.env`. Never hardcode tokens or API keys. Never commit `.env`.
 
@@ -251,6 +257,8 @@ and `random.random() < spontaneous_memory_probability` (0.2), Wally fires a spon
 response with the recalled memory injected as context.
 - Rate-limited via `_memory_check_cooldowns` (1 Qdrant query per 60s per channel)
 - Uses the main `_spontaneous_cooldowns` to avoid overlap with passion/emotion triggers
+- `prelude_snapshot` passed from caller (captured before `append_prelude`) to avoid duplication
+  of the triggering message in the LLM prompt
 
 **2. Normal response directive:**
 `memory_recall_directive.md` is injected in `build_system_prompt()` after the memory block
@@ -420,6 +428,21 @@ Endpoints:
 
 Loading UX: random GIF from `data/loading_gifs/`, phrases from `data/loading_phrases.txt`,
 rotated every 5s while the image generates. Final image replaces the loading embed in-place.
+
+### Image Memory
+
+When a user sends an image, the system ensures Wally remembers it:
+
+**Enriched content tags** — In `handle_message()`, messages with image attachments get a
+descriptive tag in the context window, prelude, and fact extractor:
+- Image-only message → `[a envoyé une image]` (or `[a envoyé N images]`)
+- Text + image → `texte [+ une image]`
+These tags are >15 chars, so they pass `_is_memorable()` and enter fact extraction.
+
+**LLM image description** — In `_post_process()` (background), when `image_urls` is present,
+`llm_secondary.complete()` generates a 1-sentence description (prompt: `image_describe_system.md`).
+Stored as a memory fact: `"{display_name} a envoyé une image : {description}"`.
+This allows Wally to recall what was in the image in future conversations.
 
 ---
 
