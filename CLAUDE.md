@@ -176,6 +176,8 @@ Boredom rises linearly during inactivity: `boredom_rise_per_hour` (default 1.2, 
 ### Analysis
 NRCLex maps message text to emotion scores. Weighted deltas applied per emotion.
 `trust_score` (0.0–1.0, per user per platform) amplifies anger delta for low-trust users.
+LLM emotion analysis output parsed via `_extract_json()` — handles raw JSON, markdown code
+blocks (` ```json ``` `), and embedded `{...}` in free text.
 
 ### Prompt Injection
 Dominant emotion(s) → behavioral directive injected into system prompt via `prompts.py`.
@@ -245,6 +247,12 @@ Same rule applies to `memory.search()`, `memory.get_all()`, `memory.delete_user_
 
 Dashboard routes access the store directly via `memory.store` property (returns `QdrantMemoryStore`).
 This bypasses `_user_id()` resolution — callers must pass the full `platform:user_id` namespace.
+
+### Platform Auto-Fix
+`Database._fix_platform(user_id, platform)` detects cross-platform ID mismatches by ID length:
+Discord snowflakes are ≥13 digits, Twitch numeric IDs are ≤12 digits. If the prefix doesn't
+match the ID format (e.g. `twitch:610550333042589752`), it swaps to the correct platform and
+logs a warning. Applied in `upsert_memory_user()` and Qdrant sync.
 
 ### FactExtractor — Third-party Resolution
 `_extract_facts()` injects both `list_aliases()` and `list_memory_users()` into the LLM prompt
@@ -327,6 +335,7 @@ Updated after every response, not in real-time during generation.
 | `gallery_images` | Generated images: prompt, title, username, file_path, cost |
 | `gallery_votes` | Flame votes per image per user (toggle) |
 | `action_tasks` | Tâches planifiées: type, schedule, payload, status, creator, target |
+| `memory_users` | User metadata: user_id, platform, username, avatar_url, last_updated |
 | `action_permissions` | ACL par type d'action: rôle min Twitch, enabled (`min_role_discord` kept but ignored) |
 | `action_permissions_discord` | Rôles Discord autorisés par (action_type, guild_id, role_id) — multi-select |
 

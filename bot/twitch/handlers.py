@@ -137,7 +137,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             )
             if random.random() < prob:
                 _spontaneous_cooldowns[channel_id] = now
-                _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content))
+                _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
         elif not trigger_type and cooldown_ok:
             if now - _memory_check_cooldowns.get(channel_id, 0) >= 60:
                 _memory_check_cooldowns[channel_id] = now
@@ -148,6 +148,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                         _fire(_spontaneous_respond_twitch(
                             bot, channel_name, channel_id, author, content,
                             recall_memory=match[0],
+                            prelude_snapshot=prelude,
                         ))
 
     # Trigger check
@@ -454,10 +455,11 @@ async def _spontaneous_respond_twitch(
     bot: "WallyTwitch", channel_name: str, channel_id: str,
     author: str, content: str,
     recall_memory: str | None = None,
+    prelude_snapshot: list[dict] | None = None,
 ) -> None:
     """Generate and send a spontaneous Twitch response."""
     try:
-        prelude = bot.memory.get_prelude(channel_id)
+        prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),

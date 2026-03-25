@@ -191,7 +191,7 @@ async def main() -> None:
 
     async def journal_history_cb() -> list[dict]:
         """Lit l'historique de tous les canaux Discord autorisés depuis minuit."""
-        from bot.discord.handlers import _is_channel_allowed
+        from bot.discord.handlers import _is_channel_allowed, _author_label
         from datetime import datetime
         from zoneinfo import ZoneInfo
         midnight = datetime.now(ZoneInfo("Europe/Paris")).replace(
@@ -211,7 +211,7 @@ async def main() -> None:
                             continue
                         # Include all messages (humans + Wally) — journal reflects the full conversation
                         messages.append({
-                            "author": msg.author.display_name,
+                            "author": _author_label(msg.author),
                             "content": msg.content,
                             "timestamp": msg.created_at.timestamp(),
                         })
