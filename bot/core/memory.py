@@ -6,6 +6,7 @@ import json
 import os
 import time
 import warnings
+from datetime import date
 from typing import TYPE_CHECKING, Optional
 
 # Le qdrant-client peut être en avance sur le serveur Qdrant en production :
@@ -14,6 +15,7 @@ warnings.filterwarnings("ignore", message="Qdrant client version", category=User
 
 from loguru import logger
 
+from bot.core.memory_store import MemoryMetadata, MemoryRecord, QdrantMemoryStore
 from bot.core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -29,7 +31,6 @@ _SUMMARIZE_SYSTEM = load_prompt(
 )
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
-_MIN_SEARCH_SCORE = 0.3  # score en dessous duquel un souvenir est ignoré dans search()
 
 # ── Consolidation des souvenirs long-terme ────────────────────────────────────
 # Quand un utilisateur dépasse ce nombre de souvenirs, on les consolide en un
@@ -56,8 +57,8 @@ _EVALUATE_SYSTEM = load_prompt(
 class MemoryService:
     def __init__(self, config: "Config"):
         self._config = config
-        self._mem0: Optional[object] = None
-        self._mem0_init_attempted: bool = False
+        self._store: Optional[QdrantMemoryStore] = None
+        self._store_init_attempted: bool = False
         # Sliding context window: channel_id → list[{author, content, timestamp}]
         self._context_windows: dict[str, list[dict]] = {}
         # Prelude buffer: channel_id → list[{author, content, timestamp}]
@@ -81,43 +82,24 @@ class MemoryService:
         t.add_done_callback(self._bg_tasks.discard)
         return t
 
-    # ── mem0 long-term memory ─────────────────────────────────────────────────
+    # ── Qdrant memory store ────────────────────────────────────────────────
 
-    def _init_mem0(self) -> None:
-        if self._mem0_init_attempted:
+    def _init_store(self) -> None:
+        if self._store_init_attempted:
             return
-        self._mem0_init_attempted = True
+        self._store_init_attempted = True
         try:
-            from mem0 import Memory
-
-            self._mem0 = Memory.from_config(
-                {
-                    "vector_store": {
-                        "provider": "qdrant",
-                        "config": {
-                            "url": os.getenv("QDRANT_URL", "http://localhost:6333"),
-                            "collection_name": "wally_memory",
-                        },
-                    },
-                    "llm": {
-                        "provider": "openai",
-                        "config": {
-                            "model": self._config.openai.secondary_model,
-                            "temperature": 0.1,
-                        },
-                    },
-                    "embedder": {
-                        "provider": "openai",
-                        "config": {
-                            "model": "text-embedding-3-small",
-                        },
-                    },
-                }
-            )
-            logger.info("mem0 initialized with local Qdrant")
+            qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+            self._store = QdrantMemoryStore(qdrant_url, "wally_memory", self._db)
+            logger.info("QdrantMemoryStore initialized (url={})", qdrant_url)
         except Exception as exc:
-            logger.warning("mem0 init failed (Qdrant unavailable?): {e}", e=exc)
-            self._mem0 = None
+            logger.warning("QdrantMemoryStore init failed: {e}", e=exc)
+            self._store = None
+
+    @property
+    def store(self) -> QdrantMemoryStore | None:
+        self._init_store()
+        return self._store
 
     def _user_id(self, platform: str, user_id: str) -> str:
         # Guard against double-prefix: if user_id already starts with "platform:",
@@ -128,6 +110,22 @@ class MemoryService:
                 "Double-prefix detected: platform={p}, user_id had prefix stripped",
                 p=platform,
             )
+        # Guard against cross-platform IDs: Discord snowflakes are 17-20 digits,
+        # Twitch IDs are ≤12 digits. Correct the platform if mismatched.
+        if user_id.isdigit():
+            digits = len(user_id)
+            if platform == "twitch" and digits >= 13:
+                platform = "discord"
+                logger.warning(
+                    "Cross-platform fix: snowflake {uid} moved twitch→discord",
+                    uid=user_id,
+                )
+            elif platform == "discord" and digits <= 12:
+                platform = "twitch"
+                logger.warning(
+                    "Cross-platform fix: short ID {uid} moved discord→twitch",
+                    uid=user_id,
+                )
         raw = f"{platform}:{user_id}"
         return self._alias_cache.get(raw, raw)
 
@@ -161,111 +159,113 @@ class MemoryService:
     async def add(self, platform: str, user_id: str, content: str,
                   username: str = "", emotion_context: str = "",
                   category: str = "") -> None:
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return
         try:
             uid = self._user_id(platform, user_id)
-            full_content = f"[{emotion_context}] {content}" if emotion_context else content
-            origin = f"{platform}:{user_id}"
-            metadata: dict = {"origin": origin}
-            if category:
-                metadata["category"] = category
-            result = await asyncio.to_thread(
-                self._mem0.add, full_content, user_id=uid,
-                metadata=metadata,
+            date_str = date.today().isoformat()
+            date_prefix = f"[{date_str}] "
+            full_content = f"[{emotion_context}] {date_prefix}{content}" if emotion_context else f"{date_prefix}{content}"
+
+            metadata = MemoryMetadata(
+                user_id=uid,
+                category=category or "FAIT",
+                date=date_str,
+                source="fact_extractor",
+                platform=platform,
             )
-            # Journaliser ce que mem0 a effectivement stocké/modifié
-            stored = result.get("results", []) if isinstance(result, dict) else (result if isinstance(result, list) else [])
-            for entry in stored:
-                event = entry.get("event", "")
-                memory = entry.get("memory", "")
-                if event in ("ADD", "UPDATE") and memory:
-                    logger.debug("mem0 {event} [{uid}]: {mem}", event=event, uid=uid, mem=memory)
+            await self._store.upsert(uid, full_content, metadata)
+            logger.debug("Memory added [{uid}]: {c}", uid=uid, c=content[:80])
+
             if self._db is not None:
                 await self._db.upsert_memory_user(uid, platform, username)
-            # Vérification consolidation en arrière-plan (ne bloque pas la réponse)
-            self._fire(self._maybe_consolidate(platform, user_id))
+            # Vérification consolidation + évaluation en arrière-plan
+            self._fire(self._post_add_maintenance(uid, content))
             # Analyse automatique des liens de comptes (seulement pour les non-alias)
             raw_uid = f"{platform}:{user_id}"
             if uid == raw_uid and self._db is not None:
                 from bot.core import account_linker
                 threshold = getattr(self._config.bot, "link_min_confidence", 0.75)
                 self._fire(account_linker.analyze_new_user(self._db, raw_uid, threshold))
-            self._fire(self._evaluate_memory(uid, content))
         except Exception as exc:
-            logger.warning("mem0 add failed: {e}", e=exc)
+            logger.warning("Memory add failed: {e}", e=exc)
 
-    async def add_global(self, content: str) -> None:
+    async def add_global(self, content: str, source: str = "fact_extractor") -> None:
         """Store a community-level fact in the global namespace.
 
-        Calls mem0.add() directly — bypasses consolidation, upsert_memory_user,
-        and account_linker (not relevant for global facts).
+        Bypasses consolidation, upsert_memory_user, and account_linker
+        (not relevant for global facts).
         """
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return
         try:
-            await asyncio.to_thread(
-                self._mem0.add, content, user_id=GLOBAL_USER_ID,
-                metadata={"origin": "global"},
+            date_str = date.today().isoformat()
+            full_content = f"[{date_str}] {content}"
+            metadata = MemoryMetadata(
+                user_id=GLOBAL_USER_ID,
+                category="FAIT",
+                date=date_str,
+                source=source,
+                platform="global",
             )
+            await self._store.upsert(GLOBAL_USER_ID, full_content, metadata)
             logger.info("Global memory added: {c}", c=content[:80])
         except Exception as exc:
             logger.warning("Global memory add failed: {e}", e=exc)
 
     async def search_global(self, query: str) -> str:
-        """Search the global namespace for community-level knowledge.
-
-        Single-query search (no dual-query with context).
-        Applies _MIN_SEARCH_SCORE filtering. Returns newline-separated memories.
-        """
-        self._init_mem0()
-        if self._mem0 is None:
+        """Search the global namespace for community-level knowledge."""
+        self._init_store()
+        if self._store is None:
             return ""
         if not query or not query.strip():
             return ""
         try:
-            results = await asyncio.to_thread(
-                self._mem0.search, query, user_id=GLOBAL_USER_ID, limit=5,
+            min_score = self._config.bot.memory_search_min_score
+            results = await self._store.search(
+                query, user_id=GLOBAL_USER_ID, limit=5, min_score=min_score,
             )
-            if isinstance(results, dict):
-                results = results.get("results", [])
-            memories = [
-                r.get("memory", "")
-                for r in results
-                if r.get("memory") and r.get("score", 1.0) >= _MIN_SEARCH_SCORE
-            ]
+            memories = [r.text for r in results if r.text]
             return "\n".join(memories)
         except Exception as exc:
             logger.warning("Global memory search failed: {e}", e=exc)
             return ""
 
-    async def _maybe_consolidate(self, platform: str, user_id: str) -> None:
+    async def _post_add_maintenance(self, uid: str, content: str) -> None:
+        """Run consolidation (if threshold exceeded) and memory evaluation."""
+        if self._store is None:
+            return
+        try:
+            count = await self._store.count(uid)
+            if count > _CONSOLIDATION_THRESHOLD:
+                await self._consolidate(uid)
+            else:
+                await self._evaluate(uid, content)
+        except Exception as exc:
+            logger.warning("Post-add maintenance failed for {uid}: {e}", uid=uid, e=exc)
+
+    async def _consolidate(self, uid: str) -> None:
         """Consolide les souvenirs si leur nombre dépasse le seuil.
 
         Stratégie safe : on ajoute la synthèse AVANT de supprimer les anciens.
-        Si une suppression individuelle échoue, la synthèse est déjà persistée —
-        on ne perd pas la mémoire de l'utilisateur.
         """
-        if self._openai is None:
+        if self._openai is None or self._store is None:
             return
         try:
-            uid = self._user_id(platform, user_id)
-            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
-            if isinstance(results, dict):
-                results = results.get("results", [])
-            if len(results) <= _CONSOLIDATION_THRESHOLD:
+            records = await self._store.get_all(uid)
+            if len(records) <= _CONSOLIDATION_THRESHOLD:
                 return
 
             logger.info(
                 "Consolidating {n} memories for {uid}",
-                n=len(results),
+                n=len(records),
                 uid=uid,
             )
-            old_ids = [r["id"] for r in results if r.get("id")]
+            old_ids = [r.id for r in records]
             memories_text = "\n".join(
-                f"- {r.get('memory', '')}" for r in results if r.get("memory")
+                f"- {r.text}" for r in records if r.text
             )
             consolidated = await self._openai.complete(
                 _CONSOLIDATION_SYSTEM,
@@ -273,12 +273,19 @@ class MemoryService:
                 purpose="memory_consolidation",
             )
             # Ajouter la synthèse en premier — la donnée est safe dès ici
-            await asyncio.to_thread(self._mem0.add, consolidated, user_id=uid)
+            metadata = MemoryMetadata(
+                user_id=uid,
+                category="FAIT",
+                date=date.today().isoformat(),
+                source="consolidation",
+                platform=uid.split(":")[0] if ":" in uid else "",
+            )
+            await self._store.upsert(uid, consolidated, metadata)
             # Supprimer les anciens souvenirs un par un
             deleted = 0
             for old_id in old_ids:
                 try:
-                    await asyncio.to_thread(self._mem0.delete, old_id)
+                    await self._store.delete(old_id)
                     deleted += 1
                 except Exception as del_exc:
                     logger.warning(
@@ -287,17 +294,17 @@ class MemoryService:
                         e=del_exc,
                     )
             logger.info(
-                "Memory consolidated for {uid}: {n} entries → 1 ({d}/{n} old deleted)",
+                "Memory consolidated for {uid}: {n} entries -> 1 ({d}/{n} old deleted)",
                 uid=uid,
-                n=len(results),
+                n=len(records),
                 d=deleted,
             )
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
 
-    async def _evaluate_memory(self, uid: str, content: str) -> None:
+    async def _evaluate(self, uid: str, content: str) -> None:
         """Evaluate memory completeness and create follow-up questions if needed."""
-        if self._openai is None or self._db is None:
+        if self._openai is None or self._db is None or self._store is None:
             return
         try:
             # Get existing pending questions for context
@@ -310,11 +317,9 @@ class MemoryService:
             # Include existing memories so the LLM doesn't ask about known info
             existing_block = ""
             try:
-                existing = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
-                if isinstance(existing, dict):
-                    existing = existing.get("results", [])
-                if existing:
-                    mem_lines = [r.get("memory", "") for r in existing[:30] if r.get("memory")]
+                records = await self._store.get_all(uid)
+                if records:
+                    mem_lines = [r.text for r in records[:30] if r.text]
                     if mem_lines:
                         existing_block = "\nSouvenirs existants :\n" + "\n".join(f"- {m}" for m in mem_lines)
             except Exception:
@@ -370,77 +375,58 @@ class MemoryService:
 
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
         """Delete all long-term memories for a given user (e.g. orphan cleanup)."""
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return
         try:
             uid = self._user_id(platform, user_id)
-            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
-            if isinstance(results, dict):
-                results = results.get("results", [])
-            deleted = 0
-            for r in results:
-                mid = r.get("id")
-                if mid:
-                    try:
-                        await asyncio.to_thread(self._mem0.delete, mid)
-                        deleted += 1
-                    except Exception as del_exc:
-                        logger.warning(
-                            "delete_user_memories: failed to delete {id}: {e}",
-                            id=mid,
-                            e=del_exc,
-                        )
+            await self._store.delete_by_user(uid)
             logger.info(
-                "delete_user_memories: removed {n} memories for {uid}",
-                n=deleted,
+                "delete_user_memories: removed all memories for {uid}",
                 uid=uid,
             )
         except Exception as exc:
             logger.warning("delete_user_memories failed: {e}", e=exc)
 
     async def reset_all(self) -> None:
-        """Clear all context windows and all mem0 long-term memories."""
+        """Clear all context windows and all long-term memories."""
         self._context_windows.clear()
         self._prelude_windows.clear()
         logger.info("Memory context windows cleared")
-        if self._mem0 is not None:
+        if self._store is not None:
             try:
-                await asyncio.to_thread(self._mem0.reset)
-                logger.info("mem0 long-term memory reset")
+                await self._store.reset()
+                logger.info("Long-term memory reset")
             except Exception as exc:
-                logger.warning("mem0 reset failed: {e}", e=exc)
+                logger.warning("Memory reset failed: {e}", e=exc)
 
     async def get_all(self, platform: str, user_id: str) -> str:
         """Retourne toutes les mémoires d'un utilisateur sous forme de texte."""
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return ""
         try:
             uid = self._user_id(platform, user_id)
-            results = await asyncio.to_thread(self._mem0.get_all, user_id=uid)
-            if isinstance(results, dict):
-                results = results.get("results", [])
-            if not results:
+            records = await self._store.get_all(uid)
+            if not records:
                 return ""
-            return "\n".join(
-                r.get("memory", "") for r in results if r.get("memory")
-            )
+            return "\n".join(r.text for r in records if r.text)
         except Exception as exc:
-            logger.warning("mem0 get_all failed: {e}", e=exc)
+            logger.warning("get_all failed: {e}", e=exc)
             return ""
 
     async def search(
         self, platform: str, user_id: str, query: str,
         context_messages: list[dict] | None = None,
     ) -> str:
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return ""
         if not query or not query.strip():
             return ""
         try:
             uid = self._user_id(platform, user_id)
+            min_score = self._config.bot.memory_search_min_score
 
             # Build context query from prelude (exclude Wally's messages)
             context_query = ""
@@ -453,34 +439,29 @@ class MemoryService:
 
             # Run searches (parallel if context available)
             if context_query and context_query != query.strip():
+
+                async def _empty() -> list[MemoryRecord]:
+                    return []
+
+                primary_coro = self._store.search(query, user_id=uid, limit=5, min_score=min_score)
+                context_coro = self._store.search(context_query, user_id=uid, limit=5, min_score=min_score)
                 direct_results, context_results = await asyncio.gather(
-                    asyncio.to_thread(self._mem0.search, query, user_id=uid, limit=5),
-                    asyncio.to_thread(self._mem0.search, context_query, user_id=uid, limit=5),
+                    primary_coro, context_coro,
                 )
             else:
-                direct_results = await asyncio.to_thread(
-                    self._mem0.search, query, user_id=uid, limit=5
+                direct_results = await self._store.search(
+                    query, user_id=uid, limit=5, min_score=min_score,
                 )
-                context_results = None
-
-            # Normalize mem0 response format
-            if isinstance(direct_results, dict):
-                direct_results = direct_results.get("results", [])
-            if context_results is not None and isinstance(context_results, dict):
-                context_results = context_results.get("results", [])
+                context_results = []
 
             # Merge and deduplicate by memory content, keeping best score
             seen: dict[str, float] = {}
-            for r in (direct_results or []):
-                mem = r.get("memory", "")
-                score = r.get("score", 1.0)
-                if mem and score >= _MIN_SEARCH_SCORE:
-                    seen[mem] = max(seen.get(mem, 0.0), score)
-            for r in (context_results or []):
-                mem = r.get("memory", "")
-                score = r.get("score", 1.0)
-                if mem and score >= _MIN_SEARCH_SCORE:
-                    seen[mem] = max(seen.get(mem, 0.0), score)
+            for r in direct_results:
+                if r.text:
+                    seen[r.text] = max(seen.get(r.text, 0.0), r.score)
+            for r in context_results:
+                if r.text:
+                    seen[r.text] = max(seen.get(r.text, 0.0), r.score)
 
             if not seen:
                 return ""
@@ -490,7 +471,7 @@ class MemoryService:
             return "\n".join(mem for mem, _ in sorted_memories)
 
         except Exception as exc:
-            logger.warning("mem0 search failed: {e}", e=exc)
+            logger.warning("Memory search failed: {e}", e=exc)
             return ""
 
     async def search_top_match(
@@ -501,59 +482,48 @@ class MemoryService:
         Unlike search(), this does a single Qdrant query (no dual-query)
         and returns the raw score for threshold comparison.
         """
-        self._init_mem0()
-        if self._mem0 is None:
+        self._init_store()
+        if self._store is None:
             return None
         if not query or not query.strip():
             return None
         try:
             uid = self._user_id(platform, user_id)
-            results = await asyncio.to_thread(
-                self._mem0.search, query, user_id=uid, limit=3
+            min_score = self._config.bot.memory_search_min_score
+            results = await self._store.search(
+                query, user_id=uid, limit=3, min_score=min_score,
             )
-            if isinstance(results, dict):
-                results = results.get("results", [])
-
-            best: tuple[str, float] | None = None
-            for r in results or []:
-                mem = r.get("memory", "")
-                score = r.get("score", 0.0)
-                if mem and score >= _MIN_SEARCH_SCORE:
-                    if best is None or score > best[1]:
-                        best = (mem, score)
-            return best
+            if results:
+                return (results[0].text, results[0].score)
+            return None
         except Exception as exc:
-            logger.warning("mem0 search_top_match failed: {e}", e=exc)
+            logger.warning("search_top_match failed: {e}", e=exc)
             return None
 
     async def search_relationships(
         self, platform: str, participants: list[str],
+        context: str = "",
     ) -> str:
         """Search for REL facts involving the given participants.
 
-        Returns relationship context as newline-separated memories.
-        Searches each participant's memories for relationship-related content
-        mentioning other participants.
+        Uses semantic search with category filter instead of scanning all memories.
         """
-        self._init_mem0()
-        if self._mem0 is None or not participants:
+        self._init_store()
+        if self._store is None or not participants:
             return ""
         try:
+            min_score = self._config.bot.memory_search_min_score
+            query = context or " ".join(participants)
             seen: set[str] = set()
             for user_id in participants[:5]:  # limit for perf
                 uid = self._user_id(platform, user_id)
-                results = await asyncio.to_thread(
-                    self._mem0.get_all, user_id=uid
+                results = await self._store.search(
+                    query, user_id=uid, filters={"category": "REL"},
+                    limit=10, min_score=min_score,
                 )
-                if isinstance(results, dict):
-                    results = results.get("results", [])
                 for r in results:
-                    meta = r.get("metadata", {}) or {}
-                    if meta.get("category") != "REL":
-                        continue
-                    mem = r.get("memory", "")
-                    if mem and mem not in seen:
-                        seen.add(mem)
+                    if r.text and r.text not in seen:
+                        seen.add(r.text)
             return "\n".join(seen) if seen else ""
         except Exception as exc:
             logger.warning("search_relationships failed: {e}", e=exc)
