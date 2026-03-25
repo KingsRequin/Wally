@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot.core.prompts import assemble_memory_context
 from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag
 
 if TYPE_CHECKING:
@@ -180,53 +181,57 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
 
-        # Inject trust + love levels into memory context
-        love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
-        trust_line = f"\nNiveau de confiance : {trust:.2f}/1.0"
-        love_line = f"\nNiveau d'affection : {love:.2f}/1.0"
+        # ── Assemble memory context with token budget ──────────────────
+        max_tokens = bot.config.bot.memory_context_max_tokens
+        memory_parts: list[tuple[int, str]] = []
+
+        # Priority 1: Semantic memories (already fetched)
         if mem_context:
-            mem_context = mem_context + trust_line + love_line
-        else:
-            mem_context = (trust_line + love_line).strip()
+            memory_parts.append((1, mem_context))
 
-        # Inject recent successful jokes for this channel
-        try:
-            recent_jokes = await bot.db.get_recent_jokes(channel_id, limit=3)
-            if recent_jokes:
-                jokes_block = "\n--- Tes blagues récentes qui ont bien marché dans ce salon ---"
-                for j in recent_jokes:
-                    jokes_block += f'\n- "{j}"'
-                mem_context = (mem_context + jokes_block) if mem_context else jokes_block.strip()
-        except Exception:
-            pass
-
-        # Inject community opinions
-        try:
-            opinions = await bot.db.get_opinions(limit=10)
-            if opinions:
-                opinions_block = "\n--- Tes opinions sur les sujets de la communauté ---"
-                for o in opinions:
-                    opinions_block += f'\n- {o["topic"]} : "{o["opinion"]}"'
-                mem_context = (mem_context + opinions_block) if mem_context else opinions_block.strip()
-        except Exception:
-            pass
-
-        # Inject relationship context
+        # Priority 2: Relationships
         try:
             rel_context = await bot.memory.search_relationships(platform, [user_id])
             if rel_context:
-                rel_block = "\n--- Relations connues entre les utilisateurs ---\n" + rel_context
-                mem_context = (mem_context + rel_block) if mem_context else rel_block.strip()
+                memory_parts.append((2, "--- Relations connues entre les utilisateurs ---\n" + rel_context))
         except Exception:
             pass
 
-        # Inject pending memory question directive
+        # Priority 3: Pending memory question directive
         try:
             question_directive = await bot.memory.get_pending_question_directive(platform, user_id)
             if question_directive:
-                mem_context = (mem_context + question_directive) if mem_context else question_directive.strip()
+                memory_parts.append((3, question_directive))
         except Exception:
             pass
+
+        # Priority 4: Recent successful jokes for this channel
+        try:
+            recent_jokes = await bot.db.get_recent_jokes(channel_id, limit=3)
+            if recent_jokes:
+                jokes_block = "--- Tes blagues récentes qui ont bien marché dans ce salon ---"
+                for j in recent_jokes:
+                    jokes_block += f'\n- "{j}"'
+                memory_parts.append((4, jokes_block))
+        except Exception:
+            pass
+
+        # Priority 5: Community opinions
+        try:
+            opinions = await bot.db.get_opinions(limit=10)
+            if opinions:
+                opinions_block = "--- Tes opinions sur les sujets de la communauté ---"
+                for o in opinions:
+                    opinions_block += f'\n- {o["topic"]} : "{o["opinion"]}"'
+                memory_parts.append((5, opinions_block))
+        except Exception:
+            pass
+
+        mem_context = assemble_memory_context(memory_parts, max_tokens)
+
+        # Trust/love go in separate relationship_context (outside token budget)
+        love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
+        relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
 
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
@@ -240,10 +245,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
+            relationship_context=relationship_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
-        user_content = prelude_block + context_block + f"\n[{author}]: {content}"
+        target_notice = (
+            f"\n⚠️ Tu réponds à **{author}**. "
+            "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
+            "attribue chaque propos à son auteur (indiqué entre crochets). "
+            "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre."
+        )
+        user_content = prelude_block + context_block + target_notice + f"\n[{author}]: {content}"
 
         openai_messages = [{"role": "user", "content": user_content}]
 

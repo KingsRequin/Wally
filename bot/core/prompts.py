@@ -48,6 +48,30 @@ def _now_fr() -> str:
     return f"{day} {dt.day} {month} {dt.year}, {dt.hour:02d}h{dt.minute:02d}"
 
 
+def assemble_memory_context(parts: list[tuple[int, str]], max_tokens: int) -> str:
+    """Assemble memory context respecting token budget.
+
+    parts: list of (priority, text) tuples. Lower priority number = higher importance.
+    max_tokens: estimated token budget (len(text) / 4).
+    Returns assembled string, truncated to budget.
+    """
+    sorted_parts = sorted(parts, key=lambda p: p[0])
+    result_parts: list[str] = []
+    used_tokens = 0.0
+    for _priority, text in sorted_parts:
+        if not text or not text.strip():
+            continue
+        estimated = len(text) / 4
+        if used_tokens + estimated > max_tokens:
+            remaining = int((max_tokens - used_tokens) * 4)
+            if remaining > 50:
+                result_parts.append(text[:remaining])
+            break
+        result_parts.append(text)
+        used_tokens += estimated
+    return "\n".join(result_parts)
+
+
 CONTEXT_HEADER = (
     "\n--- Contexte de la conversation (messages récents, plusieurs auteurs) ---\n"
     "{context}\n"
@@ -86,6 +110,7 @@ class PromptBuilder:
         emotion_directives: dict[str, str] | None = None,
         weekday_directives: dict[str, str] | None = None,
         composite_directives: dict[str, str] | None = None,
+        relationship_context: str = "",
     ) -> str:
         parts = []
         if persona_block:
@@ -158,6 +183,10 @@ class PromptBuilder:
             )
             if _MEMORY_RECALL_DIRECTIVE:
                 parts.append(_MEMORY_RECALL_DIRECTIVE)
+
+        # Trust/love relationship context (separate from semantic memories)
+        if relationship_context:
+            parts.append(f"\n--- Relation ---\n{relationship_context}")
 
         # Global community memory
         if global_memory_context:
