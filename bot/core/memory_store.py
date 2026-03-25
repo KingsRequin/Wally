@@ -307,15 +307,9 @@ class QdrantMemoryStore:
         logger.debug("Updated payload for point {}", point_id)
 
     async def reset(self) -> None:
-        """Delete and recreate the collection (preserving vector config)."""
+        """Delete and recreate the collection."""
         self._ensure_client()
         assert self._client is not None
-
-        info = await asyncio.to_thread(
-            self._client.get_collection,
-            collection_name=self._collection_name,
-        )
-        vectors_config = info.config.params.vectors
 
         await asyncio.to_thread(
             self._client.delete_collection,
@@ -324,6 +318,9 @@ class QdrantMemoryStore:
         await asyncio.to_thread(
             self._client.create_collection,
             collection_name=self._collection_name,
-            vectors_config=vectors_config,
+            vectors_config=models.VectorParams(
+                size=_EMBEDDING_DIM,
+                distance=models.Distance.COSINE,
+            ),
         )
         logger.info("Reset collection {}", self._collection_name)
