@@ -10,7 +10,7 @@ def _make_config():
     cfg.bot.context_window_size = 10
     cfg.bot.prelude_window_size = 5
     cfg.bot.context_token_threshold = 2000
-    cfg.openai.secondary_model = "gpt-4o-mini"
+    cfg.bot.memory_search_min_score = 0.5
     return cfg
 
 
@@ -32,14 +32,14 @@ async def test_add_calls_upsert_when_db_set():
     db = AsyncMock()
     svc.set_db(db)
 
-    mock_mem0 = MagicMock()
-    svc._mem0 = mock_mem0
-    svc._mem0_init_attempted = True
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
 
-    with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
-        await svc.add("discord", "123", "test content")
+    await svc.add("discord", "610550333042589752", "test content")
 
-    db.upsert_memory_user.assert_called_once_with("discord:123", "discord", "")
+    db.upsert_memory_user.assert_called_once_with("discord:610550333042589752", "discord", "")
 
 
 @pytest.mark.asyncio
@@ -47,24 +47,24 @@ async def test_add_skips_upsert_when_no_db():
     svc = MemoryService(_make_config())
     # no set_db() called
 
-    mock_mem0 = MagicMock()
-    svc._mem0 = mock_mem0
-    svc._mem0_init_attempted = True
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
 
-    with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
-        await svc.add("discord", "123", "content")
+    await svc.add("discord", "610550333042589752", "content")
     # implicit: no crash
 
 
 @pytest.mark.asyncio
-async def test_add_skips_upsert_when_mem0_none():
+async def test_add_skips_upsert_when_store_none():
     svc = MemoryService(_make_config())
     db = AsyncMock()
     svc.set_db(db)
-    svc._mem0 = None
-    svc._mem0_init_attempted = True
+    svc._store = None
+    svc._store_init_attempted = True
 
-    await svc.add("discord", "123", "content")
+    await svc.add("discord", "610550333042589752", "content")
     db.upsert_memory_user.assert_not_called()
 
 

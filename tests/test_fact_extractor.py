@@ -364,10 +364,11 @@ class TestFactExtractorAnalyzeChannel:
         await fe.analyze_channel_messages(
             [msg1, msg2], "discord", "ch1", bot_user_id=999
         )
-        fe._memory.add.assert_called_once()
-        call_args = fe._memory.add.call_args
-        assert call_args[0][0] == "discord"
-        assert call_args[0][1] == "111"
+        # Facts are stored individually (one call per fact)
+        assert fe._memory.add.call_count == 2
+        for call_args in fe._memory.add.call_args_list:
+            assert call_args[0][0] == "discord"
+            assert call_args[0][1] == "111"
 
     @pytest.mark.asyncio
     async def test_alias_with_high_confidence_stored(self):
@@ -431,15 +432,16 @@ class TestFactExtractorAnalyzeChannel:
             {"user_id": "111", "display_name": "Alice", "content": "I'm a developer living in Lyon"},
         ]
         count = await fe._extract_facts(messages, "discord", "chan1")
-        assert count == 1
+        # Facts are stored individually (one call per fact)
+        assert count == 2
 
-        # Verify category was passed to memory.add()
-        call_args = fe._memory.add.call_args
-        assert call_args.kwargs.get("category") == "FAIT"
+        # Verify category was passed to each memory.add() call
+        for call_args in fe._memory.add.call_args_list:
+            assert call_args.kwargs.get("category") == "FAIT"
 
     @pytest.mark.asyncio
     async def test_extract_facts_mixed_categories(self):
-        """When facts have mixed categories, dominant one wins."""
+        """When facts have mixed categories, each keeps its own category."""
         fe = _make_fact_extractor()
         fe._openai.complete_structured = AsyncMock(return_value={
             "facts": [
@@ -463,10 +465,12 @@ class TestFactExtractorAnalyzeChannel:
             {"user_id": "222", "display_name": "Bob", "content": "I prefer dark mode and Python, I work at Google"},
         ]
         count = await fe._extract_facts(messages, "discord", "chan1")
-        assert count == 1
+        assert count == 3
 
-        call_args = fe._memory.add.call_args
-        assert call_args.kwargs.get("category") == "PREF"
+        # Each fact stored individually with its own category
+        categories = [c.kwargs.get("category") for c in fe._memory.add.call_args_list]
+        assert categories.count("PREF") == 2
+        assert categories.count("FAIT") == 1
 
     @pytest.mark.asyncio
     async def test_extract_facts_backward_compat_strings(self):
@@ -490,10 +494,11 @@ class TestFactExtractorAnalyzeChannel:
             {"user_id": "333", "display_name": "Carol", "content": "I live in Paris and speak French"},
         ]
         count = await fe._extract_facts(messages, "discord", "chan1")
-        assert count == 1
+        assert count == 2
 
-        call_args = fe._memory.add.call_args
-        assert call_args.kwargs.get("category") == "FAIT"
+        # Each fact stored individually with default FAIT category
+        for call_args in fe._memory.add.call_args_list:
+            assert call_args.kwargs.get("category") == "FAIT"
 
     @pytest.mark.asyncio
     async def test_alias_with_low_confidence_ignored(self):

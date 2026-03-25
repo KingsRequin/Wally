@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +9,7 @@ def make_memory_config():
     config.bot.context_window_size = 20
     config.bot.prelude_window_size = 15
     config.bot.context_token_threshold = 3000
+    config.bot.memory_search_min_score = 0.5
     return config
 
 
@@ -17,18 +20,19 @@ async def test_memory_add_prefixes_emotion_tag():
     config = make_memory_config()
     memory = MemoryService(config)
 
-    stored_content = []
+    memory._store_init_attempted = True
+    memory._store = AsyncMock()
+    memory._store.upsert = AsyncMock(return_value="point-uuid")
+    memory._store.get_all = AsyncMock(return_value=[])
 
-    memory._init_mem0()
-    memory._mem0 = MagicMock()
-    memory._mem0.add = MagicMock(side_effect=lambda content, user_id, **kwargs: stored_content.append(content))
+    await memory.add("discord", "610550333042589752", "bonjour !", emotion_context="Wally: joy")
 
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        await memory.add("discord", "user1", "bonjour !", emotion_context="Wally: joy")
-
-    assert len(stored_content) == 1
-    assert stored_content[0].startswith("[Wally: joy]")
-    assert "bonjour !" in stored_content[0]
+    memory._store.upsert.assert_called_once()
+    stored_content = memory._store.upsert.call_args.args[1]
+    assert stored_content.startswith("[Wally: joy]")
+    assert "bonjour !" in stored_content
+    # Date prefix should be present after emotion tag
+    assert re.search(r"\[\d{4}-\d{2}-\d{2}\]", stored_content)
 
 
 @pytest.mark.asyncio
@@ -38,16 +42,17 @@ async def test_memory_add_no_tag_when_empty_context():
     config = make_memory_config()
     memory = MemoryService(config)
 
-    stored_content = []
-    memory._init_mem0()
-    memory._mem0 = MagicMock()
-    memory._mem0.add = MagicMock(side_effect=lambda content, user_id, **kwargs: stored_content.append(content))
+    memory._store_init_attempted = True
+    memory._store = AsyncMock()
+    memory._store.upsert = AsyncMock(return_value="point-uuid")
+    memory._store.get_all = AsyncMock(return_value=[])
 
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        await memory.add("discord", "user1", "bonjour !", emotion_context="")
+    await memory.add("discord", "610550333042589752", "bonjour !", emotion_context="")
 
-    assert len(stored_content) == 1
-    assert stored_content[0] == "bonjour !"
+    memory._store.upsert.assert_called_once()
+    stored_content = memory._store.upsert.call_args.args[1]
+    # Date prefix should be present even without emotion context
+    assert re.search(r"^\[\d{4}-\d{2}-\d{2}\] bonjour !$", stored_content)
 
 
 @pytest.mark.asyncio
@@ -138,3 +143,9 @@ async def test_discord_handler_updates_context_window(tmp_path):
 
     # Le FactExtractor enregistre le message pour l'analyse
     bot.fact_extractor.record_message.assert_called_once()
+
+    # La target notice identifiant le destinataire est incluse dans le user_content
+    llm_call = bot.llm.complete.call_args
+    user_content = llm_call.args[1][0]["content"]
+    assert "Tu réponds à **TestUser" in user_content
+    assert "Ne confonds JAMAIS" in user_content

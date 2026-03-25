@@ -1,7 +1,9 @@
 # tests/test_dashboard_links.py
 """Tests pour les routes de liaison de comptes."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+
+from bot.core.memory_store import MemoryRecord
 
 
 def make_app():
@@ -24,10 +26,12 @@ def make_app():
     state.db.list_memory_users = AsyncMock(return_value=[])
     state.memory = MagicMock()
     state.memory._alias_cache = {}
-    state.memory._init_mem0 = MagicMock()
-    state.memory._mem0 = MagicMock()
-    state.memory._mem0.get_all = MagicMock(return_value=[])
-    state.memory._mem0.delete_all = MagicMock()
+    # Mock the store property to return an AsyncMock with store methods
+    mock_store = AsyncMock()
+    mock_store.get_all = AsyncMock(return_value=[])
+    mock_store.delete_by_user = AsyncMock()
+    mock_store.upsert = AsyncMock(return_value="new-id")
+    type(state.memory).store = PropertyMock(return_value=mock_store)
     state.db.delete_memory_user = AsyncMock()
     state.config.bot.link_min_confidence = 0.75
     app.state.wally = state
@@ -105,23 +109,24 @@ def test_accept_link_merges_memories():
     state.db.delete_memory_user = AsyncMock()
     state.memory = MagicMock()
     state.memory._alias_cache = {}
-    state.memory._init_mem0 = MagicMock()
-    state.memory._mem0 = MagicMock()
-    state.memory._mem0.get_all = MagicMock(return_value=[
-        {"memory": "aime Python"},
-        {"memory": "joue à Minecraft"},
+    # Mock the store property
+    mock_store = AsyncMock()
+    mock_store.get_all = AsyncMock(return_value=[
+        MemoryRecord(id="r1", text="aime Python", user_id="twitch:abc", category="FAIT", date="2026-01-01", source="fact_extractor", platform="twitch"),
+        MemoryRecord(id="r2", text="joue à Minecraft", user_id="twitch:abc", category="FAIT", date="2026-01-01", source="fact_extractor", platform="twitch"),
     ])
-    state.memory._mem0.add = MagicMock()
-    state.memory._mem0.delete_all = MagicMock()
+    mock_store.upsert = AsyncMock(return_value="new-id")
+    mock_store.delete_by_user = AsyncMock()
+    type(state.memory).store = PropertyMock(return_value=mock_store)
     app.state.wally = state
 
     client = TestClient(app)
     resp = client.post("/api/admin/links/1/accept")
     assert resp.status_code == 200
     # Mémoires copiées vers canonical
-    assert state.memory._mem0.add.call_count == 2
-    # Ancien namespace mem0 nettoyé
-    state.memory._mem0.delete_all.assert_called_once_with(user_id="twitch:abc")
+    assert mock_store.upsert.call_count == 2
+    # Ancien namespace store nettoyé
+    mock_store.delete_by_user.assert_called_once_with("twitch:abc")
     # memory_users conservé (pour garder le username pour l'affichage)
     state.db.delete_memory_user.assert_not_awaited()
 
@@ -140,15 +145,15 @@ def test_accept_link_partial_failure_keeps_alias():
     state.db.delete_memory_user = AsyncMock()
     state.memory = MagicMock()
     state.memory._alias_cache = {}
-    state.memory._init_mem0 = MagicMock()
-    state.memory._mem0 = MagicMock()
-    state.memory._mem0.get_all = MagicMock(return_value=[
-        {"memory": "aime Python"},
-        {"memory": "joue à Minecraft"},
+    mock_store = AsyncMock()
+    mock_store.get_all = AsyncMock(return_value=[
+        MemoryRecord(id="r1", text="aime Python", user_id="twitch:abc", category="FAIT", date="2026-01-01", source="fact_extractor", platform="twitch"),
+        MemoryRecord(id="r2", text="joue à Minecraft", user_id="twitch:abc", category="FAIT", date="2026-01-01", source="fact_extractor", platform="twitch"),
     ])
-    # Deuxième appel à add échoue
-    state.memory._mem0.add = MagicMock(side_effect=[None, Exception("mem0 error")])
-    state.memory._mem0.delete_all = MagicMock()
+    # Second upsert fails
+    mock_store.upsert = AsyncMock(side_effect=[AsyncMock(return_value="new-id"), Exception("store error")])
+    mock_store.delete_by_user = AsyncMock()
+    type(state.memory).store = PropertyMock(return_value=mock_store)
     app.state.wally = state
 
     client = TestClient(app)
@@ -156,11 +161,11 @@ def test_accept_link_partial_failure_keeps_alias():
     assert resp.status_code == 200
     # Alias NON supprimé car copie partielle
     state.db.delete_memory_user.assert_not_awaited()
-    state.memory._mem0.delete_all.assert_not_called()
+    mock_store.delete_by_user.assert_not_called()
 
 
-def test_accept_link_mem0_none():
-    """Si mem0 n'est pas disponible, la liaison est acceptée sans fusion."""
+def test_accept_link_store_none():
+    """Si le store n'est pas disponible, la liaison est acceptée sans fusion."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from bot.dashboard.routes.links import router
@@ -173,8 +178,7 @@ def test_accept_link_mem0_none():
     state.db.delete_memory_user = AsyncMock()
     state.memory = MagicMock()
     state.memory._alias_cache = {}
-    state.memory._init_mem0 = MagicMock()
-    state.memory._mem0 = None  # mem0 non disponible
+    type(state.memory).store = PropertyMock(return_value=None)
     app.state.wally = state
 
     client = TestClient(app)

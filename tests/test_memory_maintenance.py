@@ -114,6 +114,7 @@ async def test_cleanup_old_questions_purges_unresolved_old(tmp_path):
 
 from unittest.mock import MagicMock, AsyncMock, patch
 from bot.core.memory import MemoryService
+from bot.core.memory_store import MemoryRecord
 
 
 def make_config(window_size=5, token_threshold=100):
@@ -121,7 +122,7 @@ def make_config(window_size=5, token_threshold=100):
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
     config.bot.prelude_window_size = 15
-    config.openai.secondary_model = "gpt-4o-mini"
+    config.bot.memory_search_min_score = 0.5
     return config
 
 
@@ -131,12 +132,15 @@ async def test_evaluate_memory_incomplete_creates_question(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     svc = MemoryService(make_config())
     svc.set_db(db)
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.get_all = AsyncMock(return_value=[])
 
     mock_openai = MagicMock()
     mock_openai.complete = AsyncMock(return_value='{"complete": false, "questions": [{"question": "Quel mois ?", "priority": "high"}], "resolves": []}')
     svc.set_openai_client(mock_openai)
 
-    await svc._evaluate_memory("discord:123", "déménage le 1er")
+    await svc._evaluate("discord:123", "déménage le 1er")
 
     q = await db.get_pending_question("discord:123")
     assert q is not None
@@ -150,12 +154,15 @@ async def test_evaluate_memory_complete_no_question(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     svc = MemoryService(make_config())
     svc.set_db(db)
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.get_all = AsyncMock(return_value=[])
 
     mock_openai = MagicMock()
     mock_openai.complete = AsyncMock(return_value='{"complete": true, "questions": [], "resolves": []}')
     svc.set_openai_client(mock_openai)
 
-    await svc._evaluate_memory("discord:123", "Habite à Lyon depuis 2020")
+    await svc._evaluate("discord:123", "Habite à Lyon depuis 2020")
 
     q = await db.get_pending_question("discord:123")
     assert q is None
@@ -168,6 +175,9 @@ async def test_evaluate_memory_resolves_existing_questions(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     svc = MemoryService(make_config())
     svc.set_db(db)
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.get_all = AsyncMock(return_value=[])
 
     await db.insert_memory_question("discord:123", "déménage le 1er", "Quel mois ?", "high")
     q = await db.get_pending_question("discord:123")
@@ -179,7 +189,7 @@ async def test_evaluate_memory_resolves_existing_questions(tmp_path):
     )
     svc.set_openai_client(mock_openai)
 
-    await svc._evaluate_memory("discord:123", "Déménage le 1er mars 2026 à Lyon")
+    await svc._evaluate("discord:123", "Déménage le 1er mars 2026 à Lyon")
 
     q2 = await db.get_pending_question("discord:123")
     assert q2 is None  # resolved
@@ -192,13 +202,16 @@ async def test_evaluate_memory_handles_invalid_json(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     svc = MemoryService(make_config())
     svc.set_db(db)
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.get_all = AsyncMock(return_value=[])
 
     mock_openai = MagicMock()
     mock_openai.complete = AsyncMock(return_value="not valid json")
     svc.set_openai_client(mock_openai)
 
     # Should not raise
-    await svc._evaluate_memory("discord:123", "some memory")
+    await svc._evaluate("discord:123", "some memory")
     await db.close()
 
 
@@ -208,13 +221,13 @@ async def test_get_pending_question_directive_returns_directive(tmp_path):
     svc = MemoryService(make_config())
     svc.set_db(db)
 
-    await db.insert_memory_question("discord:123", "mem", "Quel mois ?", "high")
-    directive = await svc.get_pending_question_directive("discord", "123")
+    await db.insert_memory_question("discord:610550333042589752", "mem", "Quel mois ?", "high")
+    directive = await svc.get_pending_question_directive("discord", "610550333042589752")
     assert "Quel mois ?" in directive
     assert "Si l'occasion se présente" in directive
 
     # Check attempts was incremented
-    q = await db.get_pending_question("discord:123")
+    q = await db.get_pending_question("discord:610550333042589752")
     assert q["attempts"] == 1
     await db.close()
 
@@ -245,13 +258,14 @@ def make_journal_deps(tmp_path, db=None):
     config = MagicMock()
     config.bot.journal_channel_id = 12345
     config.bot.journal_time = "21:00"
-    config.openai.secondary_model = "gpt-4o-mini"
     llm = MagicMock()
     llm_secondary = MagicMock()
     emotion = MagicMock()
     memory = MagicMock()
-    memory._mem0 = MagicMock()
-    memory._init_mem0 = MagicMock()
+    # Mock the store property to return an AsyncMock
+    mock_store = AsyncMock()
+    type(memory).store = property(lambda self: mock_store)
+    memory._store_mock = mock_store  # keep reference for tests
     return config, llm, llm_secondary, emotion, memory
 
 
@@ -266,13 +280,14 @@ async def test_memory_cleanup_deletes_expired(tmp_path):
     # Register a user
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
-    # Mock mem0.get_all to return 6 memories with IDs
-    fake_memories = [
-        {"id": f"id_{i}", "memory": f"Souvenir {i}"} for i in range(6)
+    # Mock store.get_all to return 6 memories as MemoryRecords
+    fake_records = [
+        MemoryRecord(id=f"id_{i}", text=f"Souvenir {i}", user_id="discord:123")
+        for i in range(6)
     ]
-    memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
-    memory._mem0.delete = MagicMock()
-    memory._mem0.add = MagicMock()
+    memory._store_mock.get_all = AsyncMock(return_value=fake_records)
+    memory._store_mock.delete = AsyncMock()
+    memory._store_mock.upsert = AsyncMock(return_value="new-id")
 
     # LLM says delete index 0 and 3
     llm_secondary.complete = AsyncMock(
@@ -282,7 +297,7 @@ async def test_memory_cleanup_deletes_expired(tmp_path):
     await journal.run_memory_cleanup()
 
     # Verify delete was called for id_0 and id_3
-    delete_calls = [c.args[0] for c in memory._mem0.delete.call_args_list]
+    delete_calls = [c.args[0] for c in memory._store_mock.delete.call_args_list]
     assert "id_0" in delete_calls
     assert "id_3" in delete_calls
     assert len(delete_calls) == 2
@@ -298,12 +313,13 @@ async def test_memory_cleanup_updates_memories(tmp_path):
     journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
-    fake_memories = [
-        {"id": f"id_{i}", "memory": f"Souvenir {i}"} for i in range(6)
+    fake_records = [
+        MemoryRecord(id=f"id_{i}", text=f"Souvenir {i}", user_id="discord:123")
+        for i in range(6)
     ]
-    memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
-    memory._mem0.delete = MagicMock()
-    memory._mem0.add = MagicMock()
+    memory._store_mock.get_all = AsyncMock(return_value=fake_records)
+    memory._store_mock.delete = AsyncMock()
+    memory._store_mock.upsert = AsyncMock(return_value="new-id")
 
     llm_secondary.complete = AsyncMock(
         return_value='{"delete": [], "update": [{"index": 1, "new_text": "Reformulé"}], "questions": []}'
@@ -312,11 +328,11 @@ async def test_memory_cleanup_updates_memories(tmp_path):
     await journal.run_memory_cleanup()
 
     # Old memory deleted
-    memory._mem0.delete.assert_called_once_with("id_1")
-    # New text added
-    memory._mem0.add.assert_called_once()
-    call_args = memory._mem0.add.call_args
-    assert call_args.args[0] == "Reformulé"
+    memory._store_mock.delete.assert_called_once_with("id_1")
+    # New text upserted
+    memory._store_mock.upsert.assert_called_once()
+    call_args = memory._store_mock.upsert.call_args
+    assert call_args.args[1] == "Reformulé"
     await db.close()
 
 
@@ -329,8 +345,8 @@ async def test_memory_cleanup_skips_few_memories(tmp_path):
     journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
     await db.upsert_memory_user("discord:123", "discord", "Alice")
 
-    fake_memories = [{"id": "id_0", "memory": "Only one"}]
-    memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
+    fake_records = [MemoryRecord(id="id_0", text="Only one", user_id="discord:123")]
+    memory._store_mock.get_all = AsyncMock(return_value=fake_records)
 
     llm_secondary.complete = AsyncMock()
 
@@ -348,13 +364,14 @@ async def test_memory_cleanup_creates_questions(tmp_path):
     config, llm, llm_secondary, emotion, memory = make_journal_deps(tmp_path)
 
     journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
-    await db.upsert_memory_user("discord:123", "discord", "Alice")
+    await db.upsert_memory_user("discord:610550333042589752", "discord", "Alice")
 
-    fake_memories = [
-        {"id": f"id_{i}", "memory": f"Souvenir {i}"} for i in range(6)
+    fake_records = [
+        MemoryRecord(id=f"id_{i}", text=f"Souvenir {i}", user_id="discord:610550333042589752")
+        for i in range(6)
     ]
-    memory._mem0.get_all = MagicMock(return_value={"results": fake_memories})
-    memory._mem0.delete = MagicMock()
+    memory._store_mock.get_all = AsyncMock(return_value=fake_records)
+    memory._store_mock.delete = AsyncMock()
 
     llm_secondary.complete = AsyncMock(
         return_value='{"delete": [], "update": [], "questions": [{"question": "Depuis quand ?", "priority": "medium"}]}'
@@ -362,7 +379,7 @@ async def test_memory_cleanup_creates_questions(tmp_path):
 
     await journal.run_memory_cleanup()
 
-    q = await db.get_pending_question("discord:123")
+    q = await db.get_pending_question("discord:610550333042589752")
     assert q is not None
     assert q["question"] == "Depuis quand ?"
     await db.close()
