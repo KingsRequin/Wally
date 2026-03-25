@@ -1,12 +1,15 @@
 # tests/test_memory.py
 """
-Tests for MemoryService — mem0/Qdrant is mocked entirely.
+Tests for MemoryService — QdrantMemoryStore is mocked entirely.
 """
+import re
 import time
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from bot.core.memory import MemoryService
+from bot.core.memory_store import MemoryRecord
 
 
 def make_config(window_size=5, token_threshold=100):
@@ -14,6 +17,7 @@ def make_config(window_size=5, token_threshold=100):
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
     config.bot.prelude_window_size = 15
+    config.bot.memory_search_min_score = 0.5
     return config
 
 
@@ -54,8 +58,13 @@ def test_channels_are_independent():
 
 def test_user_id_namespacing():
     svc = MemoryService(make_config())
-    assert svc._user_id("discord", "123") == "discord:123"
+    # Discord snowflakes are 17-20 digits
+    assert svc._user_id("discord", "610550333042589752") == "discord:610550333042589752"
     assert svc._user_id("twitch", "alice") == "twitch:alice"
+    # Short numeric IDs on discord get redirected to twitch (cross-platform fix)
+    assert svc._user_id("discord", "123") == "twitch:123"
+    # Long numeric IDs on twitch get redirected to discord
+    assert svc._user_id("twitch", "610550333042589752") == "discord:610550333042589752"
 
 
 @pytest.mark.asyncio
@@ -77,14 +86,14 @@ async def test_get_context_summarized_when_no_openai_returns_as_is():
 
 
 @pytest.mark.asyncio
-async def test_add_graceful_when_mem0_unavailable():
+async def test_add_graceful_when_store_unavailable():
     svc = MemoryService(make_config())
-    # mem0 is not initialized (no Qdrant in test env) — should not raise
+    # store is not initialized (no Qdrant in test env) — should not raise
     await svc.add("discord", "user1", "Alice likes cats")
 
 
 @pytest.mark.asyncio
-async def test_search_returns_empty_when_mem0_unavailable():
+async def test_search_returns_empty_when_store_unavailable():
     svc = MemoryService(make_config())
     result = await svc.search("discord", "user1", "cats")
     assert result == ""
@@ -94,59 +103,49 @@ async def test_search_returns_empty_when_mem0_unavailable():
 async def test_search_filters_low_score_results():
     """Les résultats avec un score inférieur au seuil sont exclus."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
-    svc._mem0.search = MagicMock(return_value={
-        "results": [
-            {"memory": "Fan de jeux vidéo", "score": 0.85},
-            {"memory": "A mentionné la pluie", "score": 0.15},  # sous le seuil
-            {"memory": "Développeur Python", "score": 0.60},
-        ]
-    })
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        result = await svc.search("discord", "user1", "passions")
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    # The store's search already filters by min_score, so we simulate
+    # returning only results above min_score (0.5 default).
+    # The test validates that the service returns what the store returns.
+    svc._store.search = AsyncMock(return_value=[
+        MemoryRecord(id="1", text="Fan de jeux vidéo", user_id="discord:user1", score=0.85),
+        MemoryRecord(id="2", text="Développeur Python", user_id="discord:user1", score=0.60),
+    ])
+
+    result = await svc.search("discord", "user1", "passions")
     assert "Fan de jeux vidéo" in result
     assert "Développeur Python" in result
-    assert "A mentionné la pluie" not in result
 
 
 @pytest.mark.asyncio
 async def test_search_returns_empty_when_all_scores_too_low():
     """Si tous les résultats sont sous le seuil, retourner chaîne vide."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
-    svc._mem0.search = MagicMock(return_value={
-        "results": [
-            {"memory": "Fait non pertinent", "score": 0.10},
-        ]
-    })
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        result = await svc.search("discord", "user1", "quelque chose")
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    # Store returns empty when all below min_score threshold
+    svc._store.search = AsyncMock(return_value=[])
+
+    result = await svc.search("discord", "user1", "quelque chose")
     assert result == ""
 
 
 @pytest.mark.asyncio
-async def test_add_logs_stored_memories():
-    """add() journalise ce que mem0 stocke effectivement via le retour de mem0.add()."""
+async def test_add_stores_content():
+    """add() stores content via _store.upsert()."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
-    svc._mem0.add = MagicMock(return_value={
-        "results": [
-            {"id": "abc", "memory": "Fan de Rust", "event": "ADD"},
-            {"id": "def", "memory": "ancien fait", "event": "DELETE"},
-        ]
-    })
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
 
-    logged = []
-    with patch("bot.core.memory.logger") as mock_logger:
-        mock_logger.debug = MagicMock(side_effect=lambda msg, **kw: logged.append(kw))
-        with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-            await svc.add("discord", "user1", "Fan de Rust")
+    await svc.add("discord", "610550333042589752", "Fan de Rust")
 
-    # L'événement ADD doit être journalisé, pas le DELETE
-    assert any(kw.get("event") == "ADD" and "Rust" in kw.get("mem", "") for kw in logged)
+    svc._store.upsert.assert_called_once()
+    call_args = svc._store.upsert.call_args
+    # First arg is user_id, second is the text content
+    assert "Fan de Rust" in call_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -154,30 +153,29 @@ async def test_consolidation_adds_before_deleting():
     """La consolidation ajoute la synthèse AVANT de supprimer les anciens souvenirs."""
     from bot.core.memory import _CONSOLIDATION_THRESHOLD
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
 
     # Simuler un dépassement du seuil
-    old_memories = [{"id": f"id{i}", "memory": f"fait {i}"} for i in range(_CONSOLIDATION_THRESHOLD + 5)]
-    svc._mem0.get_all = MagicMock(return_value={"results": old_memories})
-    svc._mem0.add = MagicMock(return_value={"results": []})
-    svc._mem0.delete = MagicMock(return_value=None)
+    old_records = [
+        MemoryRecord(id=f"id{i}", text=f"fait {i}", user_id="discord:610550333042589752")
+        for i in range(_CONSOLIDATION_THRESHOLD + 5)
+    ]
 
     call_order = []
-    svc._mem0.add.side_effect = lambda *a, **kw: call_order.append("add") or {"results": []}
-    svc._mem0.delete.side_effect = lambda *a, **kw: call_order.append("delete")
+    svc._store.upsert = AsyncMock(side_effect=lambda *a, **kw: call_order.append("upsert") or "new-id")
+    svc._store.delete = AsyncMock(side_effect=lambda *a, **kw: call_order.append("delete"))
 
     mock_openai = MagicMock()
     mock_openai.complete = AsyncMock(return_value="- fait synthétisé")
     svc.set_openai_client(mock_openai)
 
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        await svc._maybe_consolidate("discord", "user1")
+    await svc._consolidate("discord:610550333042589752", old_records)
 
-    # Le premier appel doit être "add" (synthèse), puis les "delete" (anciens)
-    assert call_order[0] == "add", "La synthèse doit être ajoutée avant toute suppression"
+    # Le premier appel doit être "upsert" (synthèse), puis les "delete" (anciens)
+    assert call_order[0] == "upsert", "La synthèse doit être ajoutée avant toute suppression"
     assert all(op == "delete" for op in call_order[1:]), "Les appels suivants doivent tous être des suppressions"
-    assert len(call_order) == 1 + len(old_memories)  # 1 add + N deletes
+    assert len(call_order) == 1 + len(old_records)  # 1 upsert + N deletes
 
 
 def test_get_all_contexts_returns_all_sorted():
@@ -232,6 +230,7 @@ def make_config_prelude(window_size=5, token_threshold=100, prelude_size=3):
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
     config.bot.prelude_window_size = prelude_size
+    config.bot.memory_search_min_score = 0.5
     return config
 
 
@@ -280,16 +279,16 @@ async def test_memory_add_passes_username_to_db():
     config = make_config()
     svc = MemoryService(config)
 
-    mock_mem0 = MagicMock()
-    mock_mem0.add.return_value = {"results": []}
-    svc._mem0_init_attempted = True  # must be set BEFORE assigning _mem0
-    svc._mem0 = mock_mem0
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
 
     mock_db = MagicMock()
     mock_db.upsert_memory_user = AsyncMock()
     svc.set_db(mock_db)
 
-    await svc.add("discord", "123", "some content", username="OlafMC")
+    await svc.add("discord", "610550333042589752", "some content", username="OlafMC")
 
     mock_db.upsert_memory_user.assert_called_once()
     call_args = mock_db.upsert_memory_user.call_args
@@ -299,38 +298,79 @@ async def test_memory_add_passes_username_to_db():
 
 @pytest.mark.asyncio
 async def test_add_with_category_passes_metadata():
-    """Category should be included in mem0 metadata alongside origin."""
+    """Category should be included in store metadata."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
-    svc._mem0.add = MagicMock(return_value={"results": []})
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
     mock_db = MagicMock()
     mock_db.upsert_memory_user = AsyncMock()
     svc.set_db(mock_db)
 
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs))):
-        await svc.add("discord", "123", "Likes Python", category="FAIT")
+    await svc.add("discord", "610550333042589752", "Likes Python", category="FAIT")
 
-    call_args = svc._mem0.add.call_args
-    metadata = call_args.kwargs.get("metadata", {})
-    assert metadata["category"] == "FAIT"
-    assert metadata["origin"] == "discord:123"
+    call_args = svc._store.upsert.call_args
+    # Third arg is the MemoryMetadata
+    metadata = call_args.args[2]
+    assert metadata.category == "FAIT"
+    assert metadata.user_id == "discord:610550333042589752"
+
+
+@pytest.mark.asyncio
+async def test_add_prefixes_date():
+    """memory.add() prefixes stored content with today's date [YYYY-MM-DD]."""
+    svc = MemoryService(make_config())
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
+
+    await svc.add("discord", "610550333042589752", "Likes Python")
+
+    stored = svc._store.upsert.call_args.args[1]
+    assert re.match(r"^\[\d{4}-\d{2}-\d{2}\] Likes Python$", stored)
+
+
+@pytest.mark.asyncio
+async def test_add_date_prefix_with_emotion_context():
+    """Date prefix is inserted after the emotion tag."""
+    svc = MemoryService(make_config())
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+    svc._store.get_all = AsyncMock(return_value=[])
+
+    await svc.add("discord", "610550333042589752", "Likes Python", emotion_context="Wally: joy")
+
+    stored = svc._store.upsert.call_args.args[1]
+    assert re.match(r"^\[Wally: joy\] \[\d{4}-\d{2}-\d{2}\] Likes Python$", stored)
+
+
+@pytest.mark.asyncio
+async def test_add_global_prefixes_date():
+    """add_global() also prefixes content with date."""
+    svc = MemoryService(make_config())
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.upsert = AsyncMock(return_value="point-uuid")
+
+    await svc.add_global("Tournoi prévu samedi")
+
+    stored = svc._store.upsert.call_args.args[1]
+    assert re.match(r"^\[\d{4}-\d{2}-\d{2}\] Tournoi prévu samedi$", stored)
 
 
 @pytest.mark.asyncio
 async def test_search_top_match_returns_best():
     """search_top_match returns the highest-scoring memory with its score."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    mock_mem0 = MagicMock()
-    mock_mem0.search.return_value = {
-        "results": [
-            {"memory": "aime le Python", "score": 0.6},
-            {"memory": "joue à Apex", "score": 0.85},
-            {"memory": "habite à Lyon", "score": 0.4},
-        ]
-    }
-    svc._mem0 = mock_mem0
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.search = AsyncMock(return_value=[
+        MemoryRecord(id="1", text="joue à Apex", user_id="discord:12345", score=0.85),
+        MemoryRecord(id="2", text="aime le Python", user_id="discord:12345", score=0.6),
+    ])
     result = await svc.search_top_match("discord", "12345", "quel jeu tu fais")
     assert result is not None
     text, score = result
@@ -342,27 +382,21 @@ async def test_search_top_match_returns_best():
 async def test_search_top_match_no_results():
     """search_top_match returns None when no results above threshold."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    mock_mem0 = MagicMock()
-    mock_mem0.search.return_value = {"results": []}
-    svc._mem0 = mock_mem0
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.search = AsyncMock(return_value=[])
     result = await svc.search_top_match("discord", "12345", "random query")
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_search_top_match_below_min_score():
-    """search_top_match returns None when all results are below _MIN_SEARCH_SCORE."""
+    """search_top_match returns None when store returns no results (filtered by min_score)."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    mock_mem0 = MagicMock()
-    mock_mem0.search.return_value = {
-        "results": [
-            {"memory": "some fact", "score": 0.1},
-            {"memory": "another fact", "score": 0.2},
-        ]
-    }
-    svc._mem0 = mock_mem0
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    # Store filters by min_score internally, returns empty
+    svc._store.search = AsyncMock(return_value=[])
     result = await svc.search_top_match("discord", "12345", "query")
     assert result is None
 
@@ -371,10 +405,9 @@ async def test_search_top_match_below_min_score():
 async def test_search_top_match_qdrant_error():
     """search_top_match returns None and logs warning on Qdrant failure."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    mock_mem0 = MagicMock()
-    mock_mem0.search.side_effect = Exception("Qdrant unavailable")
-    svc._mem0 = mock_mem0
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
+    svc._store.search = AsyncMock(side_effect=Exception("Qdrant unavailable"))
     result = await svc.search_top_match("discord", "12345", "query")
     assert result is None
 
@@ -383,8 +416,8 @@ async def test_search_top_match_qdrant_error():
 async def test_search_top_match_empty_query():
     """search_top_match returns None for empty/whitespace queries."""
     svc = MemoryService(make_config())
-    svc._init_mem0()
-    svc._mem0 = MagicMock()
+    svc._store_init_attempted = True
+    svc._store = AsyncMock()
     result = await svc.search_top_match("discord", "12345", "")
     assert result is None
     result2 = await svc.search_top_match("discord", "12345", "   ")

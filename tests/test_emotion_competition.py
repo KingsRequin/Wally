@@ -19,7 +19,7 @@ def make_config(decay_lambda=0.0):
     """decay_lambda=0.0 neutralise le decay exponentiel pour isoler la compétition."""
     config = MagicMock()
     config.emotions = {
-        e: MagicMock(decay_lambda=decay_lambda)
+        e: MagicMock(decay_lambda=decay_lambda, boredom_rise_per_hour=None)
         for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
     }
     config.bot.emotion_inertia_factor = 0.5

@@ -57,6 +57,31 @@ _INTERJECTION_PATTERNS = [
     re.compile(r"^no+n+$"),
     re.compile(r"^\^{2,}$"),
     re.compile(r"^\+1$"),
+    # English / franglais
+    re.compile(r"^su+re+$"),
+    re.compile(r"^ye+a+h+$"),
+    re.compile(r"^ye+p+$"),
+    re.compile(r"^no+pe+$"),
+    re.compile(r"^na+h+$"),
+    re.compile(r"^l+m+a+o+$"),
+    re.compile(r"^l+m+f+a+o+$"),
+    re.compile(r"^ro+fl+$"),
+    re.compile(r"^bru+h+$"),
+    re.compile(r"^da+mn+$"),
+    re.compile(r"^ni+ce+$"),
+    re.compile(r"^co+l+$"),
+    re.compile(r"^tru+e+$"),
+    re.compile(r"^fr+$"),
+    re.compile(r"^idk$"),
+    re.compile(r"^ikr$"),
+    re.compile(r"^ngl$"),
+    re.compile(r"^tbh$"),
+    re.compile(r"^o+mg+$"),
+    re.compile(r"^wo+w+$"),
+    re.compile(r"^we+lp+$"),
+    re.compile(r"^yi+ke+s+$"),
+    re.compile(r"^she+sh+$"),
+    re.compile(r"^be+t+$"),
 ]
 
 
@@ -466,14 +491,9 @@ class FactExtractor:
                 else:
                     fact_items.append({"text": str(f), "category": "FAIT"})
 
-            facts_text = "\n".join(f"- {fi['text']}" for fi in fact_items)
-
-            # Determine dominant category for the batch
-            categories = [fi.get("category", "FAIT") for fi in fact_items]
-            dominant_category = max(set(categories), key=categories.count) if categories else "FAIT"
-
             # Community-scope facts → global namespace
             if scope == "community":
+                facts_text = "\n".join(f"- {fi['text']}" for fi in fact_items)
                 try:
                     await self._memory.add_global(facts_text)
                     stored_count += 1
@@ -482,31 +502,37 @@ class FactExtractor:
                 continue
 
             uid = entry.get("target_user_id")
-            if uid:
-                # Known user: parse platform:user_id
-                if ":" in uid:
-                    plat, raw_id = uid.split(":", 1)
+            # Store each fact individually with its own category
+            for fi in fact_items:
+                fact_text = fi.get("text", "").strip()
+                category = fi.get("category", "FAIT")
+                if not fact_text:
+                    continue
+                if uid:
+                    # Known user: parse platform:user_id
+                    if ":" in uid:
+                        plat, raw_id = uid.split(":", 1)
+                    else:
+                        plat, raw_id = platform, uid
+                    try:
+                        await self._memory.add(plat, raw_id, fact_text, category=category)
+                        stored_count += 1
+                    except Exception as exc:
+                        logger.warning(
+                            "memory.add failed for {uid}: {e}", uid=uid, e=exc
+                        )
                 else:
-                    plat, raw_id = platform, uid
-                try:
-                    await self._memory.add(plat, raw_id, facts_text, category=dominant_category)
-                    stored_count += 1
-                except Exception as exc:
-                    logger.warning(
-                        "memory.add failed for {uid}: {e}", uid=uid, e=exc
-                    )
-            else:
-                # Unknown user: store under unknown:<nickname>
-                nickname = entry.get("target", "unknown")
-                try:
-                    await self._memory.add("unknown", nickname, facts_text, category=dominant_category)
-                    stored_count += 1
-                except Exception as exc:
-                    logger.warning(
-                        "memory.add failed for unknown:{nick}: {e}",
-                        nick=nickname,
-                        e=exc,
-                    )
+                    # Unknown user: store under unknown:<nickname>
+                    nickname = entry.get("target", "unknown")
+                    try:
+                        await self._memory.add("unknown", nickname, fact_text, category=category)
+                        stored_count += 1
+                    except Exception as exc:
+                        logger.warning(
+                            "memory.add failed for unknown:{nick}: {e}",
+                            nick=nickname,
+                            e=exc,
+                        )
 
         # Process aliases
         for alias_entry in result.get("aliases", []):

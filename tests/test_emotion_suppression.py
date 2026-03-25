@@ -7,7 +7,7 @@ from bot.core.emotion import EmotionEngine
 def make_config():
     config = MagicMock()
     config.emotions = {
-        e: MagicMock(decay_lambda=0.1)
+        e: MagicMock(decay_lambda=0.1, boredom_rise_per_hour=None)
         for e in ["anger", "joy", "sadness", "curiosity", "boredom"]
     }
     config.bot.emotion_inertia_factor = 0.0

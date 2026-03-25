@@ -5,28 +5,23 @@ import asyncio
 import os
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
 from bot.core.memory import GLOBAL_USER_ID
+from bot.core.memory_store import MemoryMetadata, MemoryRecord
 
 router = APIRouter()
 
 
-def _get_mem0(request: Request):
-    """Initialise mem0 si besoin et retourne l'objet, ou lève 503."""
+def _get_store(request: Request):
+    """Return the QdrantMemoryStore from MemoryService, or raise 503."""
     state = request.app.state.wally
-    state.memory._init_mem0()
-    if state.memory._mem0 is None:
-        raise HTTPException(503, detail="mem0 not available")
-    return state.memory._mem0
-
-
-def _unwrap(results) -> list:
-    """Unwrap mem0 >= 0.1.40 qui retourne {"results": [...]} au lieu d'une liste."""
-    if isinstance(results, dict):
-        return results.get("results", [])
-    return results if results else []
+    store = state.memory.store
+    if store is None:
+        raise HTTPException(503, detail="Memory store not available")
+    return store
 
 
 # ── GET /memory/users ─────────────────────────────────────────────────────────
@@ -83,10 +78,35 @@ async def list_users(
             user["linked_accounts"] = aliases
         merged_users.append(user)
 
+    # Index avatar par user_id (pour résoudre les avatars des alias liés)
+    all_avatars: dict[str, str] = {
+        u["user_id"]: u.get("avatar_url") or ""
+        for u in all_known
+        if u.get("avatar_url")
+    }
+
     # Enrichir chaque utilisateur avec trust_score, love_score, defaults
     for user in merged_users:
         user.setdefault("avatar_url", None)
         user.setdefault("memory_count", 0)
+
+        # Pour les comptes liés, privilégier l'avatar Discord
+        linked = user.get("linked_accounts", [])
+        if linked:
+            uid = user["user_id"]
+            user_platform = uid.split(":")[0] if ":" in uid else ""
+            # Chercher un avatar Discord parmi canonical + alias
+            discord_avatar = None
+            if user_platform == "discord" and user.get("avatar_url"):
+                discord_avatar = user["avatar_url"]
+            else:
+                for alias in linked:
+                    if alias.get("alias_platform") == "discord":
+                        discord_avatar = all_avatars.get(alias["alias_id"])
+                        if discord_avatar:
+                            break
+            if discord_avatar:
+                user["avatar_url"] = discord_avatar
         # Extraire platform et raw_id depuis user_id (format "platform:raw_id")
         uid = user["user_id"]
         platform = uid.split(":")[0] if ":" in uid else user.get("platform", "")
@@ -150,30 +170,25 @@ async def register_user(body: RegisterUserRequest, request: Request):
 @router.get("/memory/users/{user_id}")
 async def get_user_memories(user_id: str, request: Request):
     state = request.app.state.wally
-    mem0 = _get_mem0(request)
+    store = _get_store(request)
 
-    def _extract_origin(r, fallback_source: str) -> str:
-        """Extrait la plateforme d'origine depuis le metadata.origin ou le source."""
-        origin = (r.get("metadata") or {}).get("origin", "")
-        if origin and ":" in origin:
-            return origin.split(":")[0]
-        return fallback_source.split(":")[0] if ":" in fallback_source else ""
+    def _source_platform(source_id: str) -> str:
+        return source_id.split(":")[0] if ":" in source_id else ""
+
+    def _record_to_dict(r: MemoryRecord, source: str) -> dict:
+        return {
+            "id": r.id,
+            "memory": r.text,
+            "category": r.category,
+            "source": source,
+            "source_platform": _source_platform(source),
+            "created_at": r.created_at,
+            "updated_at": r.created_at,
+        }
 
     # Récupérer les mémoires du user principal
-    results = await asyncio.to_thread(mem0.get_all, user_id=user_id)
-    memories = [
-        {
-            "id": r.get("id"),
-            "memory": r.get("memory", ""),
-            "category": (r.get("metadata") or {}).get("category", ""),
-            "source": user_id,
-            "source_platform": _extract_origin(r, user_id),
-            "created_at": r.get("created_at"),
-            "updated_at": r.get("updated_at"),
-        }
-        for r in _unwrap(results)
-        if r.get("memory")
-    ]
+    records = await store.get_all(user_id)
+    memories = [_record_to_dict(r, user_id) for r in records if r.text]
 
     # Si cet utilisateur a des alias liés, inclure aussi leurs mémoires
     accepted_links = await state.db.list_link_proposals(status="accepted")
@@ -183,24 +198,16 @@ async def get_user_memories(user_id: str, request: Request):
     ]
     for alias_id in alias_ids:
         try:
-            alias_results = await asyncio.to_thread(mem0.get_all, user_id=alias_id)
-            for r in _unwrap(alias_results):
-                if r.get("memory"):
-                    memories.append({
-                        "id": r.get("id"),
-                        "memory": r.get("memory", ""),
-                        "category": (r.get("metadata") or {}).get("category", ""),
-                        "source": alias_id,
-                        "source_platform": _extract_origin(r, alias_id),
-                        "created_at": r.get("created_at"),
-                        "updated_at": r.get("updated_at"),
-                    })
+            alias_records = await store.get_all(alias_id)
+            for r in alias_records:
+                if r.text:
+                    memories.append(_record_to_dict(r, alias_id))
         except Exception as exc:
             logger.warning("Échec lecture mémoires alias {a}: {e}", a=alias_id, e=exc)
 
-    # Trier par date (updated_at ou created_at), plus récent en premier
+    # Trier par date (created_at), plus récent en premier
     memories.sort(
-        key=lambda m: m.get("updated_at") or m.get("created_at") or "",
+        key=lambda m: m.get("created_at") or "",
         reverse=True,
     )
 
@@ -216,25 +223,24 @@ class AddMemoryRequest(BaseModel):
 
 @router.post("/memory/users/{user_id}/memories")
 async def add_memory(user_id: str, body: AddMemoryRequest, request: Request):
-    """Ajoute manuellement un souvenir à un utilisateur via mem0."""
+    """Ajoute manuellement un souvenir à un utilisateur."""
     content = body.content.strip()
     if not content:
         raise HTTPException(400, detail="Contenu requis")
 
-    mem0 = _get_mem0(request)
+    store = _get_store(request)
     state = request.app.state.wally
 
     # Extraire plateforme depuis le user_id (format "platform:id")
     platform = user_id.split(":")[0] if ":" in user_id else ""
 
-    metadata = {"origin": user_id}
-    if body.category:
-        metadata["category"] = body.category
-
-    result = await asyncio.to_thread(
-        mem0.add, content, user_id=user_id,
-        metadata=metadata,
+    meta = MemoryMetadata(
+        user_id=user_id,
+        category=body.category or "FAIT",
+        source=user_id,
+        platform=platform,
     )
+    await store.upsert(user_id, content, meta)
     logger.info("Souvenir ajouté manuellement pour {uid}: {c}", uid=user_id, c=content[:80])
 
     # Assurer que l'utilisateur existe dans memory_users
@@ -248,8 +254,8 @@ async def add_memory(user_id: str, body: AddMemoryRequest, request: Request):
 @router.delete("/memory/users/{user_id}")
 async def delete_user(user_id: str, request: Request):
     state = request.app.state.wally
-    mem0 = _get_mem0(request)
-    await asyncio.to_thread(mem0.delete_all, user_id=user_id)
+    store = _get_store(request)
+    await store.delete_by_user(user_id)
     await state.db.execute(
         "DELETE FROM memory_users WHERE user_id = ?", (user_id,)
     )
@@ -265,13 +271,20 @@ class UpdateMemoryRequest(BaseModel):
 
 @router.put("/memory/users/{user_id}/memories/{memory_id}")
 async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest, request: Request):
-    """Modifie le contenu d'un souvenir existant via mem0."""
+    """Modifie le contenu d'un souvenir existant."""
     content = body.content.strip()
     if not content:
         raise HTTPException(400, detail="Contenu requis")
 
-    mem0 = _get_mem0(request)
-    await asyncio.to_thread(mem0.update, memory_id, content)
+    store = _get_store(request)
+    platform = user_id.split(":")[0] if ":" in user_id else ""
+    meta = MemoryMetadata(
+        user_id=user_id,
+        category=body.category or "FAIT",
+        source=user_id,
+        platform=platform,
+    )
+    await store.update(memory_id, content, meta)
     logger.info("Souvenir modifié pour {uid}: {mid}", uid=user_id, mid=memory_id)
     return {"status": "ok", "memory_id": memory_id}
 
@@ -280,8 +293,8 @@ async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest,
 
 @router.delete("/memory/users/{user_id}/memories/{memory_id}")
 async def delete_memory(user_id: str, memory_id: str, request: Request):
-    mem0 = _get_mem0(request)
-    await asyncio.to_thread(mem0.delete, memory_id)
+    store = _get_store(request)
+    await store.delete(memory_id)
     return {"deleted": True}
 
 
@@ -290,20 +303,20 @@ async def delete_memory(user_id: str, memory_id: str, request: Request):
 @router.get("/memory/global")
 async def list_global_memories(request: Request):
     """Liste toutes les mémoires globales (connaissances communauté)."""
-    mem0 = _get_mem0(request)
-    results = await asyncio.to_thread(mem0.get_all, user_id=GLOBAL_USER_ID)
+    store = _get_store(request)
+    records = await store.get_all(GLOBAL_USER_ID)
     memories = [
         {
-            "id": r.get("id"),
-            "memory": r.get("memory", ""),
-            "created_at": r.get("created_at"),
-            "updated_at": r.get("updated_at"),
+            "id": r.id,
+            "memory": r.text,
+            "created_at": r.created_at,
+            "updated_at": r.created_at,
         }
-        for r in _unwrap(results)
-        if r.get("memory")
+        for r in records
+        if r.text
     ]
     memories.sort(
-        key=lambda m: m.get("updated_at") or m.get("created_at") or "",
+        key=lambda m: m.get("created_at") or "",
         reverse=True,
     )
     return {"memories": memories}
@@ -326,8 +339,14 @@ async def update_global_memory(memory_id: str, body: UpdateMemoryRequest, reques
     content = body.content.strip()
     if not content:
         raise HTTPException(400, detail="Contenu requis")
-    mem0 = _get_mem0(request)
-    await asyncio.to_thread(mem0.update, memory_id, content)
+    store = _get_store(request)
+    meta = MemoryMetadata(
+        user_id=GLOBAL_USER_ID,
+        category=body.category or "FAIT",
+        source="dashboard",
+        platform="",
+    )
+    await store.update(memory_id, content, meta)
     logger.info("Global memory updated: {mid}", mid=memory_id)
     return {"status": "ok", "memory_id": memory_id}
 
@@ -335,8 +354,8 @@ async def update_global_memory(memory_id: str, body: UpdateMemoryRequest, reques
 @router.delete("/memory/global/{memory_id}")
 async def delete_global_memory(memory_id: str, request: Request):
     """Supprime une mémoire globale."""
-    mem0 = _get_mem0(request)
-    await asyncio.to_thread(mem0.delete, memory_id)
+    store = _get_store(request)
+    await store.delete(memory_id)
     return {"deleted": True}
 
 
@@ -348,21 +367,20 @@ async def list_aliases(request: Request):
     aliases = await state.db.list_aliases()
     unresolved = await state.db.list_unresolved_aliases()
 
-    # Count facts for unresolved aliases (try/except — mem0 may be unavailable)
-    mem0 = None
+    # Count facts for unresolved aliases (try/except — store may be unavailable)
+    store = None
     try:
-        mem0 = _get_mem0(request)
+        store = _get_store(request)
     except Exception:
         pass
 
     unresolved_with_facts = []
     for u in unresolved:
         fact_count = 0
-        if mem0:
+        if store:
             try:
-                results = await asyncio.to_thread(mem0.get_all, user_id=u["user_id"])
-                results = _unwrap(results)
-                fact_count = len([r for r in results if r.get("memory")])
+                count = await store.count(u["user_id"])
+                fact_count = count
             except Exception:
                 pass
         unresolved_with_facts.append({**u, "fact_count": fact_count})
@@ -445,64 +463,95 @@ async def sync_memory_users(request: Request):
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     n = await state.db.sync_memory_users_from_qdrant(qdrant_url)
 
-    # ── Resolve missing usernames ──
+    # ── Resolve missing usernames + fetch avatars ──
     users = await state.db.list_memory_users(include_no_memory=True)
     resolved = 0
 
-    # Discord
+    # Discord — resolve usernames and avatars
     if state.discord_bot is not None:
         for user in users:
-            if user["platform"] != "discord" or user.get("username"):
+            if user["platform"] != "discord":
                 continue
             raw_id = user["user_id"].replace("discord:", "")
             if not raw_id.isdigit():
                 continue
+            need_name = not user.get("username")
+            need_avatar = not user.get("avatar_url")
+            if not need_name and not need_avatar:
+                continue
             try:
                 discord_user = await state.discord_bot.fetch_user(int(raw_id))
                 name = discord_user.display_name or discord_user.name
-                if name:
-                    await state.db.upsert_memory_user(user["user_id"], "discord", username=name)
-                    resolved += 1
-                    logger.info("Username résolu: discord:{id} → {name}", id=raw_id, name=name)
+                avatar = str(discord_user.display_avatar.url) if discord_user.display_avatar else ""
+                if name or avatar:
+                    await state.db.upsert_memory_user(
+                        user["user_id"], "discord",
+                        username=name if need_name else "",
+                        avatar_url=avatar if need_avatar else "",
+                    )
+                    if need_name and name:
+                        resolved += 1
+                    logger.info(
+                        "Discord résolu: {id} → name={name} avatar={has}",
+                        id=raw_id, name=name, has=bool(avatar),
+                    )
             except Exception as e:
                 logger.warning("Impossible de résoudre discord:{id}: {e}", id=raw_id, e=e)
 
-    # Twitch
+    # Twitch — resolve usernames and avatars
+    # Twitch user IDs are max ~10 digits; skip Discord snowflakes stored by mistake
     if state.twitch_bot is not None:
         twitch_to_resolve = []
         for user in users:
-            if user["platform"] != "twitch" or user.get("username"):
+            if user["platform"] != "twitch":
                 continue
             raw_id = user["user_id"].replace("twitch:", "")
-            if raw_id.isdigit():
-                twitch_to_resolve.append((user["user_id"], int(raw_id)))
+            if not raw_id.isdigit():
+                continue
+            if len(raw_id) > 12:
+                logger.debug("Skipping likely Discord snowflake in twitch ns: {uid}", uid=user["user_id"])
+                continue
+            need_name = not user.get("username")
+            need_avatar = not user.get("avatar_url")
+            if not need_name and not need_avatar:
+                continue
+            twitch_to_resolve.append((user["user_id"], int(raw_id), need_name))
 
+        logger.info("Twitch users to resolve: {n}", n=len(twitch_to_resolve))
         for i in range(0, len(twitch_to_resolve), 100):
             batch = twitch_to_resolve[i:i + 100]
-            ids = [uid for _, uid in batch]
+            ids = [uid for _, uid, _ in batch]
             try:
                 twitch_users = await state.twitch_bot.fetch_users(ids=ids)
-                id_to_name = {
-                    str(tu.id): tu.display_name or tu.name
-                    for tu in twitch_users
-                }
-                for full_id, numeric_id in batch:
-                    name = id_to_name.get(str(numeric_id))
-                    if name:
-                        await state.db.upsert_memory_user(full_id, "twitch", username=name)
-                        resolved += 1
-                        logger.info("Username résolu: {uid} → {name}", uid=full_id, name=name)
+                id_to_user = {str(tu.id): tu for tu in twitch_users}
+                for full_id, numeric_id, need_name in batch:
+                    tu = id_to_user.get(str(numeric_id))
+                    if tu:
+                        name = tu.display_name or tu.name
+                        avatar = getattr(tu, "profile_image", "") or ""
+                        await state.db.upsert_memory_user(
+                            full_id, "twitch",
+                            username=name if need_name else "",
+                            avatar_url=avatar,
+                        )
+                        if need_name and name:
+                            resolved += 1
+                        logger.info(
+                            "Twitch résolu: {uid} → name={name} avatar={has}",
+                            uid=full_id, name=name, has=bool(avatar),
+                        )
+                    else:
+                        logger.warning("Twitch API n'a pas retourné: {uid}", uid=full_id)
             except Exception as e:
                 logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
 
     # ── Update memory_count per user ──
-    mem0 = state.memory._mem0
-    if mem0 is not None:
+    store = state.memory.store
+    if store is not None:
         for user in users:
             uid = user["user_id"]
             try:
-                raw = await asyncio.to_thread(mem0.get_all, user_id=uid)
-                count = len(_unwrap(raw))
+                count = await store.count(uid)
                 await state.db.execute(
                     "UPDATE memory_users SET memory_count=? WHERE user_id=?",
                     (count, uid),
@@ -525,18 +574,27 @@ async def resolve_usernames(request: Request):
     # ── Discord ──
     if state.discord_bot is not None:
         for user in users:
-            if user["platform"] != "discord" or user.get("username"):
+            if user["platform"] != "discord":
                 continue
             raw_id = user["user_id"].replace("discord:", "")
             if not raw_id.isdigit():
                 continue
+            need_name = not user.get("username")
+            need_avatar = not user.get("avatar_url")
+            if not need_name and not need_avatar:
+                continue
             try:
                 discord_user = await state.discord_bot.fetch_user(int(raw_id))
                 name = discord_user.display_name or discord_user.name
-                if name:
-                    await state.db.upsert_memory_user(user["user_id"], "discord", username=name)
-                    resolved += 1
-                    logger.info("Username résolu: discord:{id} → {name}", id=raw_id, name=name)
+                avatar = str(discord_user.display_avatar.url) if discord_user.display_avatar else ""
+                if name or avatar:
+                    await state.db.upsert_memory_user(
+                        user["user_id"], "discord",
+                        username=name if need_name else "",
+                        avatar_url=avatar if need_avatar else "",
+                    )
+                    if need_name and name:
+                        resolved += 1
             except Exception as e:
                 logger.warning("Impossible de résoudre discord:{id}: {e}", id=raw_id, e=e)
 
@@ -544,28 +602,35 @@ async def resolve_usernames(request: Request):
     if state.twitch_bot is not None:
         twitch_to_resolve = []
         for user in users:
-            if user["platform"] != "twitch" or user.get("username"):
+            if user["platform"] != "twitch":
                 continue
             raw_id = user["user_id"].replace("twitch:", "")
-            if raw_id.isdigit():
-                twitch_to_resolve.append((user["user_id"], int(raw_id)))
+            if not raw_id.isdigit() or len(raw_id) > 12:
+                continue
+            need_name = not user.get("username")
+            need_avatar = not user.get("avatar_url")
+            if not need_name and not need_avatar:
+                continue
+            twitch_to_resolve.append((user["user_id"], int(raw_id), need_name))
 
-        # Batch par groupes de 100 (limite API Twitch)
         for i in range(0, len(twitch_to_resolve), 100):
             batch = twitch_to_resolve[i:i + 100]
-            ids = [uid for _, uid in batch]
+            ids = [uid for _, uid, _ in batch]
             try:
                 twitch_users = await state.twitch_bot.fetch_users(ids=ids)
-                id_to_name = {
-                    str(tu.id): tu.display_name or tu.name
-                    for tu in twitch_users
-                }
-                for full_id, numeric_id in batch:
-                    name = id_to_name.get(str(numeric_id))
-                    if name:
-                        await state.db.upsert_memory_user(full_id, "twitch", username=name)
-                        resolved += 1
-                        logger.info("Username résolu: {uid} → {name}", uid=full_id, name=name)
+                id_to_user = {str(tu.id): tu for tu in twitch_users}
+                for full_id, numeric_id, need_name in batch:
+                    tu = id_to_user.get(str(numeric_id))
+                    if tu:
+                        name = tu.display_name or tu.name
+                        avatar = getattr(tu, "profile_image", "") or ""
+                        await state.db.upsert_memory_user(
+                            full_id, "twitch",
+                            username=name if need_name else "",
+                            avatar_url=avatar,
+                        )
+                        if need_name and name:
+                            resolved += 1
             except Exception as e:
                 logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
 
@@ -579,7 +644,7 @@ async def search_memories(request: Request, q: str | None = None):
     if not q or not q.strip():
         raise HTTPException(400, detail="q parameter required")
     state = request.app.state.wally
-    mem0 = _get_mem0(request)
+    store = _get_store(request)
 
     users = await state.db.list_memory_users()
     username_map = {u["user_id"]: u.get("username") for u in users}
@@ -589,18 +654,18 @@ async def search_memories(request: Request, q: str | None = None):
         uid = user["user_id"]
         platform = user["platform"]
         try:
-            raw = await asyncio.to_thread(mem0.search, q, user_id=uid, limit=3)
-            for r in _unwrap(raw):
-                if r.get("memory"):
+            records = await store.search(q, user_id=uid, limit=3, min_score=0.3)
+            for r in records:
+                if r.text:
                     all_results.append({
                         "user_id": uid,
                         "username": username_map.get(uid),
                         "platform": platform,
-                        "memory": r["memory"],
-                        "score": r.get("score", 0.0),
+                        "memory": r.text,
+                        "score": r.score,
                     })
         except Exception as exc:
-            logger.warning("mem0 search failed for {uid}: {e}", uid=uid, e=exc)
+            logger.warning("Memory search failed for {uid}: {e}", uid=uid, e=exc)
 
     all_results.sort(key=lambda x: x["score"], reverse=True)
     return {"results": all_results}
@@ -679,20 +744,19 @@ async def memory_dashboard(request: Request):
     )
     q_stats = dict(await cursor.fetchone())
 
-    # 3. Nombre de souvenirs par utilisateur (top 20) via memory_users + mem0 count
+    # 3. Nombre de souvenirs par utilisateur (top 20) via memory store count
     users = await db.list_memory_users()
     user_memory_counts: list[dict] = []
-    mem0 = None
+    store = None
     try:
-        mem0 = _get_mem0(request)
+        store = _get_store(request)
     except Exception:
         pass
 
-    if mem0:
+    if store:
         for u in users[:30]:  # limiter pour perf
             try:
-                results = await asyncio.to_thread(mem0.get_all, user_id=u["user_id"])
-                count = len([r for r in _unwrap(results) if r.get("memory")])
+                count = await store.count(u["user_id"])
                 user_memory_counts.append({
                     "user_id": u["user_id"],
                     "username": u.get("username") or u["user_id"],
@@ -715,4 +779,24 @@ async def resolve_question(question_id: int, request: Request):
     """Marque une question mémoire comme résolue."""
     state = request.app.state.wally
     await state.db.resolve_question(question_id)
+    return {"status": "ok"}
+
+
+@router.put("/memory/questions/{question_id}")
+async def update_question(question_id: int, request: Request):
+    """Met à jour le texte d'une question mémoire."""
+    state = request.app.state.wally
+    body = await request.json()
+    question = body.get("question", "").strip()
+    if not question:
+        return JSONResponse({"error": "question is required"}, status_code=400)
+    await state.db.update_question(question_id, question)
+    return {"status": "ok"}
+
+
+@router.delete("/memory/questions/{question_id}")
+async def delete_question(question_id: int, request: Request):
+    """Supprime une question mémoire."""
+    state = request.app.state.wally
+    await state.db.delete_question(question_id)
     return {"status": "ok"}

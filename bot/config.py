@@ -28,12 +28,16 @@ class BotConfig:
     spontaneous_cooldown_seconds: int = 300
     spontaneous_memory_probability: float = 0.2
     memory_recall_min_score: float = 0.75
+    memory_search_min_score: float = 0.5
+    memory_context_max_tokens: int = 800
     love_decay_lambda: float = 0.1
 
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 VALID_TEXT_VERBOSITIES = ("low", "medium", "high")
 VALID_LLM_PROVIDERS = ("openai", "claude")
+VALID_THINKING_TYPES = ("disabled", "enabled", "adaptive")
+VALID_THINKING_EFFORTS = ("low", "medium", "high", "max")
 
 
 @dataclass
@@ -42,8 +46,11 @@ class LLMRoleConfig:
     model: str
     temperature: float = 0.8
     max_tokens: int = 1000
-    reasoning_effort: str = "medium"  # OpenAI-specific, ignored by Claude
-    text_verbosity: str = "medium"    # OpenAI-specific, ignored by Claude
+    reasoning_effort: str = "medium"      # OpenAI-specific, ignored by Claude
+    text_verbosity: str = "medium"        # OpenAI-specific, ignored by Claude
+    thinking_type: str = "disabled"       # Claude-specific: disabled/enabled/adaptive
+    thinking_budget_tokens: int = 10000   # Claude-specific: budget for type=enabled
+    thinking_effort: str = "medium"       # Claude-specific: effort for type=adaptive (low/medium/high)
 
 
 @dataclass

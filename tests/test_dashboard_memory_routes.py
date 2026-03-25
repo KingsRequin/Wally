@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 from httpx import AsyncClient, ASGITransport
 
 from bot.dashboard.app import create_dashboard_app
@@ -8,6 +8,7 @@ from bot.config import (
     BotConfig, OpenAIConfig, EmotionDecayConfig, TwitchEventConfig,
     TwitchConfig, DiscordConfig,
 )
+from bot.core.memory_store import MemoryRecord, MemoryMetadata
 
 
 def _make_config(dashboard_token: str = "test-token"):
@@ -44,9 +45,15 @@ def _make_config(dashboard_token: str = "test-token"):
 
 def _make_state(dashboard_token: str = "test-token"):
     memory = MagicMock()
-    memory._init_mem0 = MagicMock()
-    mock_mem0 = MagicMock()
-    memory._mem0 = mock_mem0
+    mock_store = AsyncMock()
+    mock_store.get_all = AsyncMock(return_value=[])
+    mock_store.search = AsyncMock(return_value=[])
+    mock_store.upsert = AsyncMock(return_value="new-point-id")
+    mock_store.delete = AsyncMock()
+    mock_store.delete_by_user = AsyncMock()
+    mock_store.update = AsyncMock()
+    mock_store.count = AsyncMock(return_value=0)
+    type(memory).store = PropertyMock(return_value=mock_store)
 
     db = AsyncMock()
 
@@ -64,7 +71,7 @@ def _make_state(dashboard_token: str = "test-token"):
         discord_bot=None,
         twitch_bot=None,
     )
-    return state, mock_mem0, db
+    return state, mock_store, db
 
 
 def _make_client(state: AppState):
@@ -103,48 +110,46 @@ async def test_list_users_with_filter():
 
 @pytest.mark.asyncio
 async def test_get_user_memories_returns_list_sorted_by_date():
-    state, mock_mem0, _ = _make_state()
-    mock_mem0.get_all.return_value = [
-        {"id": "mem-1", "memory": "Préfère le français", "created_at": "2026-03-10T10:00:00Z", "updated_at": None},
-        {"id": "mem-2", "memory": "Aime Minecraft", "created_at": "2026-03-18T15:00:00Z", "updated_at": None},
-        {"id": "mem-3", "memory": "Joue à Apex", "created_at": "2026-03-12T08:00:00Z", "updated_at": "2026-03-19T09:00:00Z"},
-    ]
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get(
-                "/api/admin/memory/users/discord%3A123", headers=HEADERS
-            )
+    state, mock_store, _ = _make_state()
+    mock_store.get_all = AsyncMock(return_value=[
+        MemoryRecord(id="mem-1", text="Préfère le français", user_id="discord:123",
+                     created_at="2026-03-10T10:00:00Z"),
+        MemoryRecord(id="mem-2", text="Aime Minecraft", user_id="discord:123",
+                     created_at="2026-03-18T15:00:00Z"),
+        MemoryRecord(id="mem-3", text="Joue à Apex", user_id="discord:123",
+                     created_at="2026-03-19T09:00:00Z"),
+    ])
+    async with _make_client(state) as client:
+        r = await client.get(
+            "/api/admin/memory/users/discord%3A123", headers=HEADERS
+        )
     assert r.status_code == 200
     data = r.json()
     assert len(data["memories"]) == 3
-    # Most recent first: mem-3 (updated 03-19), mem-2 (created 03-18), mem-1 (created 03-10)
+    # Most recent first: mem-3 (03-19), mem-2 (03-18), mem-1 (03-10)
     assert data["memories"][0]["id"] == "mem-3"
     assert data["memories"][1]["id"] == "mem-2"
     assert data["memories"][2]["id"] == "mem-1"
     # Verify date fields are included
-    assert data["memories"][0]["created_at"] == "2026-03-12T08:00:00Z"
-    assert data["memories"][0]["updated_at"] == "2026-03-19T09:00:00Z"
+    assert data["memories"][0]["created_at"] == "2026-03-19T09:00:00Z"
 
 
 @pytest.mark.asyncio
-async def test_get_user_memories_unwraps_dict():
-    state, mock_mem0, _ = _make_state()
-    mock_mem0.get_all.return_value = {
-        "results": [{"id": "mem-1", "memory": "Test"}]
-    }
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get(
-                "/api/admin/memory/users/discord%3A123", headers=HEADERS
-            )
+async def test_get_user_memories_empty():
+    state, mock_store, _ = _make_state()
+    mock_store.get_all = AsyncMock(return_value=[])
+    async with _make_client(state) as client:
+        r = await client.get(
+            "/api/admin/memory/users/discord%3A123", headers=HEADERS
+        )
     assert r.status_code == 200
-    assert len(r.json()["memories"]) == 1
+    assert len(r.json()["memories"]) == 0
 
 
 @pytest.mark.asyncio
-async def test_get_user_memories_503_when_mem0_none():
+async def test_get_user_memories_503_when_store_none():
     state, _, _ = _make_state()
-    state.memory._mem0 = None
+    type(state.memory).store = PropertyMock(return_value=None)
     async with _make_client(state) as client:
         r = await client.get(
             "/api/admin/memory/users/discord%3A123", headers=HEADERS
@@ -153,52 +158,47 @@ async def test_get_user_memories_503_when_mem0_none():
 
 
 @pytest.mark.asyncio
-async def test_delete_user_calls_delete_all_and_db():
-    state, mock_mem0, db = _make_state()
-    mock_mem0.delete_all = MagicMock()
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.delete(
-                "/api/admin/memory/users/discord%3A123", headers=HEADERS
-            )
+async def test_delete_user_calls_delete_by_user_and_db():
+    state, mock_store, db = _make_state()
+    async with _make_client(state) as client:
+        r = await client.delete(
+            "/api/admin/memory/users/discord%3A123", headers=HEADERS
+        )
     assert r.status_code == 200
     assert r.json()["deleted"] is True
-    mock_mem0.delete_all.assert_called_once_with(user_id="discord:123")
+    mock_store.delete_by_user.assert_called_once_with("discord:123")
     db.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_delete_memory_calls_mem0_delete():
-    state, mock_mem0, _ = _make_state()
-    mock_mem0.delete = MagicMock()
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.delete(
-                "/api/admin/memory/users/discord%3A123/memories/mem-abc",
-                headers=HEADERS,
-            )
+async def test_delete_memory_calls_store_delete():
+    state, mock_store, _ = _make_state()
+    async with _make_client(state) as client:
+        r = await client.delete(
+            "/api/admin/memory/users/discord%3A123/memories/mem-abc",
+            headers=HEADERS,
+        )
     assert r.status_code == 200
     assert r.json()["deleted"] is True
-    mock_mem0.delete.assert_called_once_with("mem-abc")
+    mock_store.delete.assert_called_once_with("mem-abc")
 
 
 @pytest.mark.asyncio
-async def test_add_memory_stores_via_mem0():
-    state, mock_mem0, db = _make_state()
-    mock_mem0.add = MagicMock(return_value={"results": []})
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.post(
-                "/api/admin/memory/users/discord%3A123/memories",
-                headers=HEADERS,
-                json={"content": "Aime les crevettes"},
-            )
+async def test_add_memory_stores_via_store():
+    state, mock_store, db = _make_state()
+    db.upsert_memory_user = AsyncMock()
+    async with _make_client(state) as client:
+        r = await client.post(
+            "/api/admin/memory/users/discord%3A123/memories",
+            headers=HEADERS,
+            json={"content": "Aime les crevettes"},
+        )
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
-    mock_mem0.add.assert_called_once_with(
-        "Aime les crevettes", user_id="discord:123",
-        metadata={"origin": "discord:123"},
-    )
+    mock_store.upsert.assert_called_once()
+    call_args = mock_store.upsert.call_args
+    assert call_args.args[0] == "discord:123"  # user_id
+    assert call_args.args[1] == "Aime les crevettes"  # text
     db.upsert_memory_user.assert_called_once_with("discord:123", "discord")
 
 
@@ -215,9 +215,9 @@ async def test_add_memory_rejects_empty_content():
 
 
 @pytest.mark.asyncio
-async def test_add_memory_503_when_mem0_none():
+async def test_add_memory_503_when_store_none():
     state, _, _ = _make_state()
-    state.memory._mem0 = None
+    type(state.memory).store = PropertyMock(return_value=None)
     async with _make_client(state) as client:
         r = await client.post(
             "/api/admin/memory/users/discord%3A123/memories",
@@ -228,19 +228,20 @@ async def test_add_memory_503_when_mem0_none():
 
 
 @pytest.mark.asyncio
-async def test_update_memory_calls_mem0_update():
-    state, mock_mem0, _ = _make_state()
-    mock_mem0.update = MagicMock()
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.put(
-                "/api/admin/memory/users/discord%3A123/memories/mem-abc",
-                headers=HEADERS,
-                json={"content": "Nouveau contenu"},
-            )
+async def test_update_memory_calls_store_update():
+    state, mock_store, _ = _make_state()
+    async with _make_client(state) as client:
+        r = await client.put(
+            "/api/admin/memory/users/discord%3A123/memories/mem-abc",
+            headers=HEADERS,
+            json={"content": "Nouveau contenu"},
+        )
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
-    mock_mem0.update.assert_called_once_with("mem-abc", "Nouveau contenu")
+    mock_store.update.assert_called_once()
+    call_args = mock_store.update.call_args
+    assert call_args.args[0] == "mem-abc"
+    assert call_args.args[1] == "Nouveau contenu"
 
 
 @pytest.mark.asyncio
@@ -265,18 +266,17 @@ async def test_search_requires_q():
 
 @pytest.mark.asyncio
 async def test_search_returns_results():
-    state, mock_mem0, db = _make_state()
+    state, mock_store, db = _make_state()
     db.list_memory_users.return_value = [
         {"user_id": "discord:123", "platform": "discord", "last_updated": 1700000000.0}
     ]
-    mock_mem0.search.return_value = [
-        {"memory": "Aime Minecraft", "score": 0.9}
-    ]
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get(
-                "/api/admin/memory/search?q=Minecraft", headers=HEADERS
-            )
+    mock_store.search = AsyncMock(return_value=[
+        MemoryRecord(id="r1", text="Aime Minecraft", user_id="discord:123", score=0.9),
+    ])
+    async with _make_client(state) as client:
+        r = await client.get(
+            "/api/admin/memory/search?q=Minecraft", headers=HEADERS
+        )
     assert r.status_code == 200
     results = r.json()["results"]
     assert len(results) == 1
@@ -285,41 +285,43 @@ async def test_search_returns_results():
 
 
 @pytest.mark.asyncio
-async def test_search_unwraps_dict():
-    state, mock_mem0, db = _make_state()
+async def test_search_empty_results():
+    state, mock_store, db = _make_state()
     db.list_memory_users.return_value = [
         {"user_id": "discord:123", "platform": "discord", "last_updated": 1700000000.0}
     ]
-    mock_mem0.search.return_value = {"results": [{"memory": "Test", "score": 0.8}]}
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get(
-                "/api/admin/memory/search?q=test", headers=HEADERS
-            )
+    mock_store.search = AsyncMock(return_value=[])
+    async with _make_client(state) as client:
+        r = await client.get(
+            "/api/admin/memory/search?q=Minecraft", headers=HEADERS
+        )
     assert r.status_code == 200
-    assert len(r.json()["results"]) == 1
+    assert len(r.json()["results"]) == 0
 
 
 @pytest.mark.asyncio
 async def test_search_continues_on_user_error():
-    """Search loop must continue even if one user's mem0 call raises."""
-    state, mock_mem0, db = _make_state()
+    """Search loop must continue even if one user's store call raises."""
+    state, mock_store, db = _make_state()
     db.list_memory_users.return_value = [
         {"user_id": "discord:123", "platform": "discord", "last_updated": 1700000000.0},
         {"user_id": "twitch:bob", "platform": "twitch", "last_updated": 1700000001.0},
     ]
 
-    def _search_side_effect(q, user_id, limit):
+    call_count = 0
+
+    async def _search_side_effect(q, user_id=None, limit=10, min_score=0.5, filters=None):
+        nonlocal call_count
+        call_count += 1
         if user_id == "discord:123":
             raise RuntimeError("Qdrant timeout")
-        return [{"memory": "Aime Minecraft", "score": 0.9}]
+        return [MemoryRecord(id="r1", text="Aime Minecraft", user_id="twitch:bob", score=0.9)]
 
-    mock_mem0.search.side_effect = _search_side_effect
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get(
-                "/api/admin/memory/search?q=Minecraft", headers=HEADERS
-            )
+    mock_store.search = _search_side_effect
+    async with _make_client(state) as client:
+        r = await client.get(
+            "/api/admin/memory/search?q=Minecraft", headers=HEADERS
+        )
     assert r.status_code == 200
     results = r.json()["results"]
     # Only twitch:bob's result should appear (discord:123 raised)
@@ -332,7 +334,7 @@ async def test_search_continues_on_user_error():
 @pytest.mark.asyncio
 async def test_list_aliases():
     """GET /memory/aliases returns aliases and unresolved with fact_count."""
-    state, mock_mem0, db = _make_state()
+    state, mock_store, db = _make_state()
     db.list_aliases.return_value = [
         {"nickname": "rekin", "canonical_uid": "discord:123", "display_name": "KingsRequin",
          "source": "manual", "confidence": 1.0},
@@ -340,13 +342,9 @@ async def test_list_aliases():
     db.list_unresolved_aliases.return_value = [
         {"user_id": "unknown:johndoe", "username": "johndoe"},
     ]
-    mock_mem0.get_all.return_value = [
-        {"memory": "Aime les jeux FPS"},
-        {"memory": "Parle français"},
-    ]
-    with patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda f, *args, **kw: f(*args, **kw))):
-        async with _make_client(state) as client:
-            r = await client.get("/api/admin/memory/aliases", headers=HEADERS)
+    mock_store.count = AsyncMock(return_value=2)
+    async with _make_client(state) as client:
+        r = await client.get("/api/admin/memory/aliases", headers=HEADERS)
     assert r.status_code == 200
     data = r.json()
     assert len(data["aliases"]) == 1
@@ -357,10 +355,10 @@ async def test_list_aliases():
 
 
 @pytest.mark.asyncio
-async def test_list_aliases_mem0_down():
-    """GET /memory/aliases still works when mem0 is unavailable."""
+async def test_list_aliases_store_down():
+    """GET /memory/aliases still works when store is unavailable."""
     state, _, db = _make_state()
-    state.memory._mem0 = None
+    type(state.memory).store = PropertyMock(return_value=None)
     db.list_aliases.return_value = []
     db.list_unresolved_aliases.return_value = [
         {"user_id": "unknown:foo", "username": "foo"},
@@ -369,7 +367,7 @@ async def test_list_aliases_mem0_down():
         r = await client.get("/api/admin/memory/aliases", headers=HEADERS)
     assert r.status_code == 200
     data = r.json()
-    # fact_count should be 0 when mem0 is not available
+    # fact_count should be 0 when store is not available
     assert data["unresolved"][0]["fact_count"] == 0
 
 
@@ -546,54 +544,53 @@ async def test_list_users_enriches_trust_and_love():
 
 @pytest.mark.asyncio
 async def test_get_user_memories_includes_category():
-    state, mock_mem0, db = _make_state()
-    mock_mem0.get_all.return_value = [
-        {"id": "mem1", "memory": "Likes Python", "metadata": {"origin": "discord:123", "category": "PREF"}, "created_at": "2026-03-20", "updated_at": "2026-03-20"},
-        {"id": "mem2", "memory": "Lives in Lyon", "metadata": {"origin": "discord:123"}, "created_at": "2026-03-19", "updated_at": "2026-03-19"},
-    ]
+    state, mock_store, db = _make_state()
+    mock_store.get_all = AsyncMock(return_value=[
+        MemoryRecord(id="mem1", text="Likes Python", user_id="discord:123", category="PREF",
+                     created_at="2026-03-20", source="discord:123"),
+        MemoryRecord(id="mem2", text="Lives in Lyon", user_id="discord:123", category="FAIT",
+                     created_at="2026-03-19", source="discord:123"),
+    ])
     db.list_link_proposals = AsyncMock(return_value=[])
     async with _make_client(state) as client:
         r = await client.get("/api/admin/memory/users/discord:123", headers=HEADERS)
     assert r.status_code == 200
     memories = r.json()["memories"]
     assert memories[0]["category"] == "PREF"
-    assert memories[1]["category"] == ""
+    assert memories[1]["category"] == "FAIT"
 
 
 @pytest.mark.asyncio
 async def test_add_memory_with_category():
-    state, mock_mem0, db = _make_state()
-    mock_mem0.add.return_value = {"results": []}
+    state, mock_store, db = _make_state()
     db.upsert_memory_user = AsyncMock()
     async with _make_client(state) as client:
         r = await client.post("/api/admin/memory/users/discord:123/memories",
                               json={"content": "Likes cats", "category": "PREF"}, headers=HEADERS)
     assert r.status_code == 200
-    call_args = mock_mem0.add.call_args
-    metadata = call_args.kwargs.get("metadata", {})
-    assert metadata.get("category") == "PREF"
+    call_args = mock_store.upsert.call_args
+    metadata = call_args.args[2]
+    assert metadata.category == "PREF"
 
 
 @pytest.mark.asyncio
 async def test_add_memory_without_category():
-    """POST without category should not include category in metadata."""
-    state, mock_mem0, db = _make_state()
-    mock_mem0.add.return_value = {"results": []}
+    """POST without category should default to FAIT."""
+    state, mock_store, db = _make_state()
     db.upsert_memory_user = AsyncMock()
     async with _make_client(state) as client:
         r = await client.post("/api/admin/memory/users/discord:123/memories",
                               json={"content": "Likes dogs"}, headers=HEADERS)
     assert r.status_code == 200
-    call_args = mock_mem0.add.call_args
-    metadata = call_args.kwargs.get("metadata", {})
-    assert "category" not in metadata
+    call_args = mock_store.upsert.call_args
+    metadata = call_args.args[2]
+    assert metadata.category == "FAIT"
 
 
 @pytest.mark.asyncio
 async def test_update_memory_accepts_category():
-    """PUT with category field should still work (category preserved from original add)."""
-    state, mock_mem0, _ = _make_state()
-    mock_mem0.update = MagicMock()
+    """PUT with category field should still work."""
+    state, mock_store, _ = _make_state()
     async with _make_client(state) as client:
         r = await client.put(
             "/api/admin/memory/users/discord:123/memories/mem-abc",
@@ -601,7 +598,11 @@ async def test_update_memory_accepts_category():
             json={"content": "Updated content", "category": "PREF"},
         )
     assert r.status_code == 200
-    mock_mem0.update.assert_called_once_with("mem-abc", "Updated content")
+    mock_store.update.assert_called_once()
+    call_args = mock_store.update.call_args
+    assert call_args.args[0] == "mem-abc"
+    assert call_args.args[1] == "Updated content"
+    assert call_args.args[2].category == "PREF"
 
 
 @pytest.mark.asyncio
@@ -620,14 +621,13 @@ async def test_resolve_alias_rejects_empty_canonical():
 
 @pytest.mark.asyncio
 async def test_sync_also_resolves_usernames():
-    state, mock_mem0, db = _make_state()
+    state, mock_store, db = _make_state()
     db.sync_memory_users_from_qdrant = AsyncMock(return_value=3)
     db.list_memory_users = AsyncMock(return_value=[
         {"user_id": "discord:999", "platform": "discord", "username": ""},
     ])
     db.upsert_memory_user = AsyncMock()
     db.execute = AsyncMock()
-    mock_mem0.get_all.return_value = []
     mock_discord = MagicMock()
     mock_user = MagicMock()
     mock_user.display_name = "ResolvedName"
