@@ -45,8 +45,9 @@ def test_user_id_passthrough_when_no_alias():
     config = make_config()
     memory = MemoryService(config)
 
-    result = memory._user_id("discord", "123456789")
-    assert result == "discord:123456789"
+    # Use a realistic Discord snowflake (17+ digits)
+    result = memory._user_id("discord", "610550333042589752")
+    assert result == "discord:610550333042589752"
 
 
 @pytest.mark.asyncio
