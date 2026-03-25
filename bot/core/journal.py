@@ -403,7 +403,7 @@ class DailyJournal:
         if all_messages:
             context_text = await self._build_context_text(all_messages)
         else:
-            # Source 4 : souvenirs mem0 de tous les utilisateurs connus
+            # Source 4 : souvenirs de tous les utilisateurs connus
             context_text = await self._build_memory_fallback_context()
             if not context_text:
                 logger.warning("Journal: all sources empty — generating with no conversation context")
