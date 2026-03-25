@@ -124,7 +124,7 @@ async def _resolve_user_id(db, entered: str, platform: str) -> str | None:
 
 @router.post("/links/{link_id}/accept")
 async def accept_link(link_id: int, request: Request):
-    """Accepte une liaison : merge mem0 et met à jour le cache d'alias."""
+    """Accepte une liaison : merge les souvenirs et met à jour le cache d'alias."""
     state = request.app.state.wally
     result = await state.db.accept_link(link_id)
     if result is None:
