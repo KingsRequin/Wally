@@ -234,19 +234,19 @@ class MemoryService:
             return ""
 
     async def _post_add_maintenance(self, uid: str, content: str) -> None:
-        """Run consolidation (if threshold exceeded) and memory evaluation."""
+        """Run consolidation (if threshold exceeded) or evaluation — single get_all."""
         if self._store is None:
             return
         try:
-            count = await self._store.count(uid)
-            if count > _CONSOLIDATION_THRESHOLD:
-                await self._consolidate(uid)
+            all_records = await self._store.get_all(uid)
+            if len(all_records) > _CONSOLIDATION_THRESHOLD:
+                await self._consolidate(uid, all_records)
             else:
-                await self._evaluate(uid, content)
+                await self._evaluate(uid, content, all_records)
         except Exception as exc:
             logger.warning("Post-add maintenance failed for {uid}: {e}", uid=uid, e=exc)
 
-    async def _consolidate(self, uid: str) -> None:
+    async def _consolidate(self, uid: str, records: list[MemoryRecord] | None = None) -> None:
         """Consolide les souvenirs si leur nombre dépasse le seuil.
 
         Stratégie safe : on ajoute la synthèse AVANT de supprimer les anciens.
@@ -254,7 +254,8 @@ class MemoryService:
         if self._openai is None or self._store is None:
             return
         try:
-            records = await self._store.get_all(uid)
+            if records is None:
+                records = await self._store.get_all(uid)
             if len(records) <= _CONSOLIDATION_THRESHOLD:
                 return
 
@@ -302,7 +303,7 @@ class MemoryService:
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
 
-    async def _evaluate(self, uid: str, content: str) -> None:
+    async def _evaluate(self, uid: str, content: str, records: list[MemoryRecord] | None = None) -> None:
         """Evaluate memory completeness and create follow-up questions if needed."""
         if self._openai is None or self._db is None or self._store is None:
             return
@@ -317,7 +318,8 @@ class MemoryService:
             # Include existing memories so the LLM doesn't ask about known info
             existing_block = ""
             try:
-                records = await self._store.get_all(uid)
+                if records is None:
+                    records = await self._store.get_all(uid)
                 if records:
                     mem_lines = [r.text for r in records[:30] if r.text]
                     if mem_lines:

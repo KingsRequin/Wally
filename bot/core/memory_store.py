@@ -72,9 +72,19 @@ class QdrantMemoryStore:
     # ── Internal helpers ─────────────────────────────────────────────────
 
     def _ensure_client(self) -> None:
-        """Lazy-init Qdrant client and OpenAI client."""
+        """Lazy-init Qdrant client, OpenAI client, and collection."""
         if self._client is None:
             self._client = QdrantClient(url=self._qdrant_url)
+            # Ensure collection exists (no-op if already present)
+            if not self._client.collection_exists(self._collection_name):
+                self._client.create_collection(
+                    collection_name=self._collection_name,
+                    vectors_config=models.VectorParams(
+                        size=_EMBEDDING_DIM,
+                        distance=models.Distance.COSINE,
+                    ),
+                )
+                logger.info("Created Qdrant collection {}", self._collection_name)
             logger.info("QdrantMemoryStore connected to {}", self._qdrant_url)
         if self._openai is None:
             self._openai = openai.OpenAI()
