@@ -5,7 +5,7 @@ import asyncio
 import json
 import time
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from bot.core.emotion import EMOTIONS
+from bot.core.memory_store import MemoryMetadata
 from bot.core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -272,9 +273,8 @@ class DailyJournal:
             logger.warning("Memory cleanup: no DB available, skipping")
             return
 
-        self._memory._init_mem0()
-        if self._memory._mem0 is None:
-            logger.warning("Memory cleanup: mem0 unavailable, skipping")
+        if self._memory.store is None:
+            logger.warning("Memory cleanup: memory store unavailable, skipping")
             return
 
         try:
@@ -295,15 +295,13 @@ class DailyJournal:
         for user in users:
             uid = user["user_id"]
             try:
-                results = await asyncio.to_thread(self._memory._mem0.get_all, user_id=uid)
-                if isinstance(results, dict):
-                    results = results.get("results", [])
+                results = await self._memory.store.get_all(uid)
                 if len(results) < 5:
                     continue
 
                 # Build numbered list for LLM
                 numbered = "\n".join(
-                    f"{i}. {r.get('memory', '')}" for i, r in enumerate(results)
+                    f"{i}. {r.text}" for i, r in enumerate(results)
                 )
                 # Include existing pending questions to avoid duplicates
                 pending = await self._db.get_all_pending_questions(uid)
@@ -321,22 +319,27 @@ class DailyJournal:
                 # Apply deletions
                 for idx in actions.get("delete", []):
                     if isinstance(idx, int) and 0 <= idx < len(results):
-                        mem_id = results[idx].get("id")
+                        mem_id = results[idx].id
                         if mem_id:
-                            await asyncio.to_thread(self._memory._mem0.delete, mem_id)
+                            await self._memory.store.delete(mem_id)
                             total_deleted += 1
 
-                # Apply updates (delete old + add new, bypass memory.add)
+                # Apply updates (delete old + upsert new)
                 for upd in actions.get("update", []):
                     idx = upd.get("index")
                     new_text = upd.get("new_text", "").strip()
                     if isinstance(idx, int) and 0 <= idx < len(results) and new_text:
-                        old_id = results[idx].get("id")
+                        old_id = results[idx].id
                         if old_id:
-                            await asyncio.to_thread(self._memory._mem0.delete, old_id)
-                            await asyncio.to_thread(
-                                self._memory._mem0.add, new_text, user_id=uid
+                            await self._memory.store.delete(old_id)
+                            metadata = MemoryMetadata(
+                                user_id=uid,
+                                category="FAIT",
+                                date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                                source="cleanup",
+                                platform=uid.split(":")[0],
                             )
+                            await self._memory.store.upsert(uid, new_text, metadata)
                             total_updated += 1
 
                 # Create questions (max 1 per user, skip low priority)
@@ -401,7 +404,7 @@ class DailyJournal:
             context_text = await self._build_context_text(all_messages)
         else:
             # Source 4 : souvenirs mem0 de tous les utilisateurs connus
-            context_text = await self._build_mem0_fallback_context()
+            context_text = await self._build_memory_fallback_context()
             if not context_text:
                 logger.warning("Journal: all sources empty — generating with no conversation context")
                 context_text = "Pas grand chose de notable aujourd'hui."
@@ -623,8 +626,8 @@ class DailyJournal:
             purpose="journal_final_summary",
         )
 
-    async def _build_mem0_fallback_context(self) -> str:
-        """Fallback final : souvenirs mem0 de tous les utilisateurs connus."""
+    async def _build_memory_fallback_context(self) -> str:
+        """Fallback final : souvenirs de tous les utilisateurs connus."""
         if self._db is None:
             return ""
         try:
@@ -645,7 +648,7 @@ class DailyJournal:
             try:
                 facts = await self._memory.get_all(platform, raw_id)
             except Exception as exc:
-                logger.debug("Journal mem0 fallback: failed for user {u}: {e}", u=username, e=exc)
+                logger.debug("Journal memory fallback: failed for user {u}: {e}", u=username, e=exc)
                 continue
             if facts:
                 parts.append(f"[{username}] {facts}")
@@ -653,7 +656,7 @@ class DailyJournal:
         if not parts:
             return ""
 
-        logger.info("Journal fallback: using mem0 facts for {n} user(s)", n=len(parts))
+        logger.info("Journal fallback: using memory facts for {n} user(s)", n=len(parts))
         return "Souvenirs des utilisateurs (mémoire long-terme) :\n" + "\n".join(parts)
 
     @staticmethod
