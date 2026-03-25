@@ -307,7 +307,7 @@ async def chat_history_for_day(date_str: str, request: Request):
 
 @router.get("/api/chat/my-memories")
 async def my_memories(request: Request):
-    """Return mem0 memories for the currently authenticated chat user."""
+    """Return memories for the currently authenticated chat user."""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(401, detail="JWT required")
@@ -321,32 +321,27 @@ async def my_memories(request: Request):
     user_id = f"discord:{discord_id}"
 
     try:
-        state.memory._init_mem0()
-        mem0 = state.memory._mem0
-        if mem0 is None:
+        store = state.memory.store
+        if store is None:
             return {"memories": []}
 
-        results = await asyncio.to_thread(mem0.get_all, user_id=user_id)
-        raw = results.get("results", []) if isinstance(results, dict) else (results or [])
-        all_entries = [r for r in raw if r.get("memory")]
+        records = await store.get_all(user_id)
 
         # Include accepted alias memories
         accepted_links = await state.db.list_link_proposals(status="accepted")
         alias_ids = [link["alias_id"] for link in accepted_links if link["canonical_id"] == user_id]
         for alias_id in alias_ids:
             try:
-                alias_results = await asyncio.to_thread(mem0.get_all, user_id=alias_id)
-                alias_raw = alias_results.get("results", []) if isinstance(alias_results, dict) else (alias_results or [])
-                all_entries.extend(r for r in alias_raw if r.get("memory"))
+                records.extend(await store.get_all(alias_id))
             except Exception:
                 pass
 
         # Sort by most recent first
-        all_entries.sort(
-            key=lambda r: r.get("updated_at") or r.get("created_at") or "",
+        records.sort(
+            key=lambda r: r.created_at or "",
             reverse=True,
         )
-        return {"memories": [r["memory"] for r in all_entries]}
+        return {"memories": [{"id": r.id, "memory": r.text} for r in records if r.text]}
     except Exception as exc:
         logger.warning("my-memories failed for {u}: {e}", u=discord_id, e=exc)
         return {"memories": []}

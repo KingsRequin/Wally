@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel
 
+from bot.core.memory_store import MemoryMetadata
 from bot.dashboard.routes.sse import broadcast_event
 
 router = APIRouter()
@@ -48,32 +49,30 @@ async def analyze_links(request: Request):
 
 
 async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
-    """Fusionne les mémoires mem0 de l'alias vers le canonical, puis nettoie."""
+    """Fusionne les mémoires de l'alias vers le canonical, puis nettoie."""
     state.memory.add_alias(alias_id, canonical_id)
 
-    state.memory._init_mem0()
-    if state.memory._mem0 is None:
-        logger.warning("mem0 non disponible — liaison acceptée sans fusion mémoire")
+    store = state.memory.store
+    if store is None:
+        logger.warning("Memory store non disponible — liaison acceptée sans fusion mémoire")
         return
 
     try:
-        alias_memories = await asyncio.to_thread(
-            state.memory._mem0.get_all, user_id=alias_id
-        )
-        memories_list = (
-            alias_memories if isinstance(alias_memories, list)
-            else alias_memories.get("results", [])
-        )
+        records = await store.get_all(alias_id)
         total = 0
         copied = 0
-        for mem in memories_list:
-            content = mem.get("memory", "")
-            if content:
+        for rec in records:
+            if rec.text:
                 total += 1
                 try:
-                    await asyncio.to_thread(
-                        state.memory._mem0.add, content, user_id=canonical_id
+                    meta = MemoryMetadata(
+                        user_id=canonical_id,
+                        category=rec.category,
+                        date=rec.date,
+                        source=rec.source,
+                        platform=rec.platform,
                     )
+                    await store.upsert(canonical_id, rec.text, meta)
                     copied += 1
                 except Exception as copy_err:
                     logger.warning(
@@ -81,9 +80,7 @@ async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
                         a=alias_id, c=canonical_id, e=copy_err,
                     )
         if total > 0 and copied == total:
-            await asyncio.to_thread(
-                state.memory._mem0.delete_all, user_id=alias_id
-            )
+            await store.delete_by_user(alias_id)
             # Ne pas supprimer de memory_users : l'alias est masqué via
             # user_links dans list_users, et on garde le username pour l'affichage
         elif total > 0:
