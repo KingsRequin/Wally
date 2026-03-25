@@ -26,10 +26,12 @@ Full asyncio integration. Well-maintained with extensive documentation.
 Only mature async Python Twitch library. Built-in OAuth token refresh. EventSub support for
 follow/sub/bits/raid events.
 
-### mem0 + local Qdrant
+### Direct Qdrant (QdrantMemoryStore)
 Long-term memory with vector similarity search. Fully self-hosted (data privacy, no external
-dependency). Python-native API. Qdrant is mem0's recommended backend. Qdrant runs as a separate
-Docker service with a healthcheck; wally waits for `service_healthy`.
+dependency). Direct `qdrant-client` access via `QdrantMemoryStore` in `bot/core/memory_store.py`.
+Structured payloads (text, category, date, source, platform). Embeddings via OpenAI
+`text-embedding-3-small` with cost tracking. Qdrant runs as a separate Docker service with a
+healthcheck; wally waits for `service_healthy`.
 
 ### nrclex for emotion detection
 Pure Python, no API call, <20ms per message. NRC Lexicon covers anger/joy/sadness etc.
@@ -54,12 +56,13 @@ bot/
 ├── config.py            # Config singleton, hot-reload, config.save()
 ├── core/
 │   ├── emotion.py       # Global emotion state, decay, NRCLex analysis
-│   ├── memory.py        # mem0 wrapper, sliding context window
+│   ├── memory.py        # MemoryService: sliding context window, search, consolidation
+│   ├── memory_store.py  # QdrantMemoryStore: direct Qdrant access, embeddings, CRUD
 │   ├── openai_client.py # Backward-compat shim → redirects to core/llm/openai_client.py
 │   ├── prompts.py       # PromptBuilder, load_prompt(), emotion directives
 │   ├── language.py      # langdetect wrapper with fallback
 │   ├── journal.py       # Daily journal scheduler (apscheduler)
-│   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mem0
+│   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mémoire
 │   ├── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
 │   ├── llm/             # Multi-provider LLM abstraction layer
 │   │   ├── __init__.py   # Exports: BaseLLMClient, OpenAILLMClient, ClaudeLLMClient, create_llm_client
@@ -102,7 +105,7 @@ bot/
 ## Key Conventions
 
 ### Async First
-- All I/O is async: Discord API, Twitch API, OpenAI API, SQLite (aiosqlite), mem0/Qdrant
+- All I/O is async: Discord API, Twitch API, OpenAI API, SQLite (aiosqlite), Qdrant
 - CPU-bound work (NRCLex, langdetect) runs in `asyncio.to_thread()`
 - Never call blocking code directly in the event loop
 
@@ -217,16 +220,31 @@ Per-channel list of `{author: str, content: str, timestamp: float}` dicts.
 Last N messages (N from config) included in every prompt.
 When token count exceeds threshold: summarize via secondary model, replace with summary entry.
 
-### Long-term Memory (mem0)
+### Long-term Memory (QdrantMemoryStore)
+Direct Qdrant access via `QdrantMemoryStore` in `bot/core/memory_store.py`. No mem0 middleware.
 Namespace: `{platform}:{user_id}` (e.g. `discord:123456789`, `twitch:username`)
 Stores: facts, preferences, recurring topics, preferred language.
 Discord and Twitch memory are strictly separate per user.
+
+Each Qdrant point has a structured payload:
+```json
+{"text": "...", "user_id": "discord:123", "category": "PREF", "date": "2026-03-25",
+ "source": "fact_extractor", "platform": "discord", "created_at": "..."}
+```
+Categories: `FAIT` (biographical), `PREF` (preference), `LANG` (language), `REL` (relationship).
+`search_relationships()` uses native Qdrant filtering on `category=REL`.
+
+Embeddings via `text-embedding-3-small`, cost tracked via `db.log_cost()`.
+Collection auto-created on first connect if missing.
 
 ### Memory API Convention
 `memory.add(platform, user_id, ...)` — `user_id` must be the RAW id (e.g. `"610550333042589752"`),
 never the prefixed form (`"discord:610550333042589752"`). The method builds `platform:user_id`
 internally via `_user_id()`. A guard logs warnings on double-prefix but callers must pass raw ids.
 Same rule applies to `memory.search()`, `memory.get_all()`, `memory.delete_user_memories()`.
+
+Dashboard routes access the store directly via `memory.store` property (returns `QdrantMemoryStore`).
+This bypasses `_user_id()` resolution — callers must pass the full `platform:user_id` namespace.
 
 ### FactExtractor — Third-party Resolution
 `_extract_facts()` injects both `list_aliases()` and `list_memory_users()` into the LLM prompt
@@ -242,9 +260,9 @@ The LLM prompts (`fact_extraction_system.md`, `emotion.py`) also explicitly inst
 to ignore GIF/media links — defense in depth against junk memory entries.
 
 ### Qdrant Manual Cleanup
-When fixing Qdrant entries (double-prefix, orphans), use `qdrant_client.set_payload()` to update
+When fixing Qdrant entries (double-prefix, orphans), use `memory.store.update_payload()` to update
 `user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will
-strip prefixes and cause unintended deletions. Direct Qdrant client is the safe path for data fixes.
+strip prefixes and cause unintended deletions. Direct store access is the safe path for data fixes.
 
 ### Spontaneous Memory Recall
 Two mechanisms allow Wally to reference old memories naturally:
@@ -274,6 +292,22 @@ bot:
 
 `search_top_match(platform, user_id, query) -> tuple[str, float] | None` — single Qdrant
 query (no dual-query fan-out), returns best match with raw score. Returns `None` on error.
+
+### Memory Context Budget
+`mem_context` is assembled with a token budget (`memory_context_max_tokens`, default 800).
+Parts are prioritized: (1) semantic memories, (2) relationships, (3) global memories,
+(4) pending questions, (5) jokes, (6) opinions. Lower-priority parts are truncated when budget
+is exceeded. `assemble_memory_context()` in `prompts.py` handles this.
+
+Trust and love scores are injected in a separate `--- Relation ---` block (outside the budget)
+via the `relationship_context` parameter of `build_system_prompt()`.
+
+Config:
+```yaml
+bot:
+  memory_search_min_score: 0.5      # min Qdrant score for normal responses (was 0.3)
+  memory_context_max_tokens: 800    # token budget for memory context block
+```
 
 ### Trust Score
 Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
@@ -375,6 +409,7 @@ Handles both Chat Completions API (gpt-4o) and Responses API (o1/o3/o4/gpt-5) vi
 
 ### ClaudeLLMClient
 - **Prompt caching**: system prompt wrapped with `cache_control: {"type": "ephemeral"}`
+- **Extended thinking**: configurable via `thinking_type` — `disabled` (default), `adaptive` (with effort level), or `enabled` (with fixed budget_tokens). Temperature forced to 1 when thinking is active. Thinking blocks are preserved in tool use loops for reasoning continuity. Incompatible with `complete_structured()` (forced `tool_choice`), so thinking is disabled there.
 - **Tool calling**: converts OpenAI tool format → Claude format, handles tool_use/tool_result flow
 - **Structured output**: uses forced `tool_choice` with schema as `input_schema` (no native JSON mode)
 - **Retry logic**: exponential backoff on RateLimitError and 5xx, same pattern as OpenAI
@@ -387,6 +422,9 @@ llm:
     model: "claude-sonnet-4-6-20260301"
     temperature: 1.0
     max_tokens: 1000
+    thinking_type: "adaptive"    # Claude-specific: disabled/enabled/adaptive
+    thinking_effort: "medium"    # Claude adaptive: low/medium/high
+    thinking_budget_tokens: 10000 # Claude enabled: fixed token budget
   secondary:
     provider: "openai"
     model: "gpt-5.1-mini"

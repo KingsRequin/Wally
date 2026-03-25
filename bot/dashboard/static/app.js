@@ -360,7 +360,7 @@ async function loadEmotionHistory(since) {
 function showGraphEmpty(canvasId, message) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const W = canvas.offsetWidth || 800;
+  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr;
@@ -447,7 +447,7 @@ function drawEmotionGraph(history) {
   const canvas = document.getElementById('emotionCanvas');
   if (!canvas || !history || history.length < 2) return;
 
-  const W = canvas.offsetWidth || 800;
+  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = W * dpr;
@@ -614,12 +614,21 @@ async function loadOpenAIModels() {
   return models;
 }
 
+async function loadClaudeModels() {
+  const r = await apiFetch('/api/admin/claude/models');
+  if (!r || !r.ok) return [];
+  const { models } = await r.json();
+  return models;
+}
+
 async function renderConfigForm(cfg) {
   const container = document.getElementById('config-form-container');
-  const models = await loadOpenAIModels();
+  const [models, claudeModels] = await Promise.all([loadOpenAIModels(), loadClaudeModels()]);
 
   const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
   const TEXT_VERBOSITIES = ['low', 'medium', 'high'];
+  const THINKING_TYPES = ['disabled', 'enabled', 'adaptive'];
+  const THINKING_EFFORTS = ['low', 'medium', 'high', 'max'];
 
   container.innerHTML = `
     <!-- Émotions (force + reset) -->
@@ -646,7 +655,9 @@ async function renderConfigForm(cfg) {
         <select id="cfg-primary-model">
           ${models.map(m => `<option value="${m}" ${m === cfg.openai.primary_model ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
-        <input type="text" id="cfg-primary-model-text" placeholder="ex: claude-sonnet-4-6-20260301" value="${cfg.llm?.primary?.model || cfg.openai.primary_model}" style="display:none;margin-top:6px">
+        <select id="cfg-primary-model-claude" style="display:none">
+          ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.primary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
@@ -660,7 +671,9 @@ async function renderConfigForm(cfg) {
         <select id="cfg-secondary-model">
           ${models.map(m => `<option value="${m}" ${m === cfg.openai.secondary_model ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
-        <input type="text" id="cfg-secondary-model-text" placeholder="ex: claude-haiku-4-5-20251001" value="${cfg.llm?.secondary?.model || cfg.openai.secondary_model}" style="display:none;margin-top:6px">
+        <select id="cfg-secondary-model-claude" style="display:none">
+          ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.secondary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
       </div>
       <div id="openai-specific-settings">
         <div class="field-group">
@@ -674,6 +687,26 @@ async function renderConfigForm(cfg) {
           <select id="cfg-text-verbosity">
             ${TEXT_VERBOSITIES.map(v => `<option value="${v}" ${v === cfg.openai.text_verbosity ? 'selected' : ''}>${v.toUpperCase()}</option>`).join('')}
           </select>
+        </div>
+      </div>
+      <div id="claude-specific-settings" style="display:none">
+        <div class="field-group">
+          <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">Claude only</span></label>
+          <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
+            ${THINKING_TYPES.map(t => `<option value="${t}" ${t === (cfg.llm?.primary?.thinking_type || 'disabled') ? 'selected' : ''}>${t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)'}</option>`).join('')}
+          </select>
+        </div>
+        <div id="thinking-effort-group" class="field-group" style="display:none">
+          <label class="field-label" for="cfg-thinking-effort">Niveau d'effort thinking</label>
+          <select id="cfg-thinking-effort">
+            ${THINKING_EFFORTS.map(e => `<option value="${e}" ${e === (cfg.llm?.primary?.thinking_effort || 'medium') ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
+          </select>
+          <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
+        </div>
+        <div id="thinking-budget-group" class="field-group" style="display:none">
+          <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
+          <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
+          <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
         </div>
       </div>
       <div class="field-group">
@@ -846,38 +879,52 @@ async function loadNotificationChannels(cfg) {
 function onProviderChange() {
   const primaryProv = document.getElementById('cfg-primary-provider').value;
   const secondaryProv = document.getElementById('cfg-secondary-provider').value;
-  // Toggle model select vs text input based on provider
+  // Toggle model dropdowns based on provider (OpenAI vs Claude)
   const primarySelect = document.getElementById('cfg-primary-model');
-  const primaryText = document.getElementById('cfg-primary-model-text');
+  const primaryClaude = document.getElementById('cfg-primary-model-claude');
   const secondarySelect = document.getElementById('cfg-secondary-model');
-  const secondaryText = document.getElementById('cfg-secondary-model-text');
+  const secondaryClaude = document.getElementById('cfg-secondary-model-claude');
   if (primaryProv === 'claude') {
     primarySelect.style.display = 'none';
-    primaryText.style.display = 'block';
+    primaryClaude.style.display = 'block';
   } else {
     primarySelect.style.display = 'block';
-    primaryText.style.display = 'none';
+    primaryClaude.style.display = 'none';
   }
   if (secondaryProv === 'claude') {
     secondarySelect.style.display = 'none';
-    secondaryText.style.display = 'block';
+    secondaryClaude.style.display = 'block';
   } else {
     secondarySelect.style.display = 'block';
-    secondaryText.style.display = 'none';
+    secondaryClaude.style.display = 'none';
   }
+  // Show/hide provider-specific settings based on primary provider
+  const openaiSettings = document.getElementById('openai-specific-settings');
+  const claudeSettings = document.getElementById('claude-specific-settings');
+  if (openaiSettings) openaiSettings.style.display = primaryProv === 'openai' ? 'block' : 'none';
+  if (claudeSettings) claudeSettings.style.display = primaryProv === 'claude' ? 'block' : 'none';
+  if (primaryProv === 'claude') onThinkingTypeChange();
   // Show restart notice if provider changed
   const notice = document.getElementById('llm-restart-notice');
   if (notice) notice.style.display = 'block';
+}
+
+function onThinkingTypeChange() {
+  const type = document.getElementById('cfg-thinking-type')?.value || 'disabled';
+  const effortGroup = document.getElementById('thinking-effort-group');
+  const budgetGroup = document.getElementById('thinking-budget-group');
+  if (effortGroup) effortGroup.style.display = type === 'adaptive' ? 'block' : 'none';
+  if (budgetGroup) budgetGroup.style.display = type === 'enabled' ? 'block' : 'none';
 }
 
 async function saveOpenAI() {
   const primaryProv = document.getElementById('cfg-primary-provider').value;
   const secondaryProv = document.getElementById('cfg-secondary-provider').value;
   const primaryModel = primaryProv === 'claude'
-    ? document.getElementById('cfg-primary-model-text').value
+    ? document.getElementById('cfg-primary-model-claude').value
     : document.getElementById('cfg-primary-model').value;
   const secondaryModel = secondaryProv === 'claude'
-    ? document.getElementById('cfg-secondary-model-text').value
+    ? document.getElementById('cfg-secondary-model-claude').value
     : document.getElementById('cfg-secondary-model').value;
 
   const payload = {
@@ -889,7 +936,13 @@ async function saveOpenAI() {
       max_tokens:       parseInt(document.getElementById('cfg-max-tokens').value),
     },
     llm: {
-      primary: { provider: primaryProv, model: primaryModel },
+      primary: {
+        provider: primaryProv,
+        model: primaryModel,
+        thinking_type: document.getElementById('cfg-thinking-type')?.value || 'disabled',
+        thinking_effort: document.getElementById('cfg-thinking-effort')?.value || 'medium',
+        thinking_budget_tokens: parseInt(document.getElementById('cfg-thinking-budget')?.value || '10000'),
+      },
       secondary: { provider: secondaryProv, model: secondaryModel },
     },
   };
@@ -1447,28 +1500,87 @@ const MEM_CATEGORIES = [
 function renderMemoryTab() {
   const el = document.getElementById('tab-memory');
   if (!el) return;
-  el.innerHTML = '<div class="mem-toolbar">'
-    + '<input type="text" class="mem-search" id="mem-search" placeholder="Rechercher un utilisateur..." aria-label="Recherche utilisateur">'
-    + '<div class="mem-platform-pills">'
-    + '<button class="mem-platform-pill active" data-platform="" onclick="setMemPlatform(this)">Tous</button>'
-    + '<button class="mem-platform-pill" data-platform="discord" onclick="setMemPlatform(this)">Discord</button>'
-    + '<button class="mem-platform-pill" data-platform="twitch" onclick="setMemPlatform(this)">Twitch</button>'
-    + '</div>'
-    + '<select class="mem-sort-select" id="mem-sort" onchange="setMemSort(this.value)">'
-    + '<option value="memories">Mémoires</option>'
-    + '<option value="trust">Trust</option>'
-    + '<option value="love">Love</option>'
-    + '<option value="name">Nom</option>'
-    + '</select>'
-    + '<label class="mem-toggle" onclick="toggleMemShowAll()">'
-    + '<div class="mem-toggle-track" id="mem-toggle-track"><div class="mem-toggle-thumb"></div></div>'
-    + '<span>Sans mémoire</span>'
-    + '</label>'
-    + '<button class="mem-action-btn" onclick="syncMemoryUsers()">↻ Sync</button>'
-    + '<button class="mem-action-btn" onclick="analyzeLinks()">🔗 Analyser</button>'
-    + '</div>'
-    + '<div id="mem-link-banner" style="display:none"></div>'
-    + '<div class="mem-grid" id="mem-grid"></div>';
+  // Build toolbar with rows for responsive layout
+  var toolbar = document.createElement('div');
+  toolbar.className = 'mem-toolbar';
+
+  var search = document.createElement('input');
+  search.type = 'text';
+  search.className = 'mem-search';
+  search.id = 'mem-search';
+  search.placeholder = 'Rechercher un utilisateur...';
+  search.setAttribute('aria-label', 'Recherche utilisateur');
+  toolbar.appendChild(search);
+
+  var row = document.createElement('div');
+  row.className = 'mem-toolbar-row';
+
+  var pills = document.createElement('div');
+  pills.className = 'mem-platform-pills';
+  ['', 'discord', 'twitch'].forEach(function(p) {
+    var btn = document.createElement('button');
+    btn.className = 'mem-platform-pill' + (p === '' ? ' active' : '');
+    btn.dataset.platform = p;
+    btn.textContent = p === '' ? 'Tous' : p.charAt(0).toUpperCase() + p.slice(1);
+    btn.onclick = function() { setMemPlatform(btn); };
+    pills.appendChild(btn);
+  });
+  row.appendChild(pills);
+
+  var sortSel = document.createElement('select');
+  sortSel.className = 'mem-sort-select';
+  sortSel.id = 'mem-sort';
+  sortSel.onchange = function() { setMemSort(sortSel.value); };
+  [['memories','Mémoires'],['trust','Trust'],['love','Love'],['name','Nom']].forEach(function(o) {
+    var opt = document.createElement('option');
+    opt.value = o[0]; opt.textContent = o[1];
+    sortSel.appendChild(opt);
+  });
+  row.appendChild(sortSel);
+
+  var toggleLabel = document.createElement('label');
+  toggleLabel.className = 'mem-toggle';
+  toggleLabel.onclick = function() { toggleMemShowAll(); };
+  var track = document.createElement('div');
+  track.className = 'mem-toggle-track';
+  track.id = 'mem-toggle-track';
+  var thumb = document.createElement('div');
+  thumb.className = 'mem-toggle-thumb';
+  track.appendChild(thumb);
+  toggleLabel.appendChild(track);
+  var toggleSpan = document.createElement('span');
+  toggleSpan.textContent = 'Sans mémoire';
+  toggleLabel.appendChild(toggleSpan);
+  row.appendChild(toggleLabel);
+
+  var syncBtn = document.createElement('button');
+  syncBtn.className = 'mem-action-btn';
+  syncBtn.textContent = '↻ Sync';
+  syncBtn.onclick = function() { syncMemoryUsers(); };
+  row.appendChild(syncBtn);
+
+  var analyzeBtn = document.createElement('button');
+  analyzeBtn.className = 'mem-action-btn';
+  analyzeBtn.textContent = '🔗 Analyser';
+  analyzeBtn.onclick = function() { analyzeLinks(); };
+  row.appendChild(analyzeBtn);
+
+  toolbar.appendChild(row);
+  el.appendChild(toolbar);
+
+  var pendingDiv = document.createElement('div');
+  pendingDiv.id = 'mem-pending-links';
+  el.appendChild(pendingDiv);
+
+  var bannerDiv = document.createElement('div');
+  bannerDiv.id = 'mem-link-banner';
+  bannerDiv.style.display = 'none';
+  el.appendChild(bannerDiv);
+
+  var grid = document.createElement('div');
+  grid.className = 'mem-grid';
+  grid.id = 'mem-grid';
+  el.appendChild(grid);
 
   // Wire search with debounce
   var searchInput = document.getElementById('mem-search');
@@ -1480,6 +1592,7 @@ function renderMemoryTab() {
   }
 
   loadMemoryUsers();
+  pollLinksBadge();
 }
 
 function setMemPlatform(btn) {
@@ -1505,7 +1618,7 @@ async function loadMemoryUsers() {
   var params = new URLSearchParams();
   var q = (document.getElementById('mem-search') || {}).value || '';
   if (q) params.set('q', q);
-  if (_memShowAll) params.set('show_all', '1');
+  params.set('show_all', '1');
   if (_memSortBy) params.set('sort_by', _memSortBy);
   var url = '/api/admin/memory/users' + (params.toString() ? '?' + params : '');
   var r = await apiFetch(url);
@@ -1514,10 +1627,13 @@ async function loadMemoryUsers() {
   var users = data.users;
   _memCurrentUsers = users;
 
-  // Client-side platform filter
+  // Client-side filters: platform + show/hide users with no memories
   var filtered = users;
+  if (!_memShowAll) {
+    filtered = filtered.filter(function(u) { return (u.memory_count || 0) > 0; });
+  }
   if (_memPlatformFilter) {
-    filtered = users.filter(function(u) { return u.platform === _memPlatformFilter; });
+    filtered = filtered.filter(function(u) { return u.platform === _memPlatformFilter; });
   }
 
   var grid = document.getElementById('mem-grid');
@@ -2132,16 +2248,19 @@ function renderRoadmap(data) {
 
 async function analyzeLinks() {
   const r = await apiFetch('/api/admin/links/analyze', { method: 'POST' });
-  if (r && r.ok) toast('Analyse déclenchée', 'success');
-  else toast('Erreur analyse', 'error');
+  if (r && r.ok) {
+    toast('Analyse déclenchée', 'success');
+    await pollLinksBadge();
+  } else {
+    toast('Erreur analyse', 'error');
+  }
 }
 
 async function acceptLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/accept`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison acceptée — mémoires fusionnées', 'success');
-    loadMemoryUsers();
-    pollLinksBadge();
+    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
   } else {
     toast('Erreur', 'error');
   }
@@ -2151,7 +2270,7 @@ async function rejectLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/reject`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison rejetée', 'success');
-    pollLinksBadge();
+    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
   } else {
     toast('Erreur', 'error');
   }
@@ -2161,7 +2280,7 @@ async function unlinkAccounts(id) {
   const r = await apiFetch(`/api/admin/links/${id}/unlink`, { method: 'POST' });
   if (r && r.ok) {
     toast('Comptes déliés', 'success');
-    loadMemoryUsers();
+    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
     toast(err.detail || 'Erreur déliaison', 'error');
@@ -2266,7 +2385,7 @@ function drawCostGraph(current, previous) {
   const canvas = document.getElementById('costCanvas');
   if (!canvas || !current || current.length < 1) return;
 
-  const W = canvas.offsetWidth || 800;
+  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr;
@@ -2448,11 +2567,87 @@ async function pollLinksBadge() {
     if (!r || !r.ok) return;
     const { proposals } = await r.json();
     const badge = document.getElementById('links-badge');
-    if (!badge) return;
-    const count = proposals.length;
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'flex' : 'none';
+    if (badge) {
+      const count = proposals.length;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+    renderPendingLinks(proposals);
   } catch (e) { /* ignore */ }
+}
+
+function renderPendingLinks(proposals) {
+  var container = document.getElementById('mem-pending-links');
+  if (!container) return;
+  if (!proposals || proposals.length === 0) {
+    container.textContent = '';
+    return;
+  }
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'mem-pending-links';
+
+  var title = document.createElement('div');
+  title.className = 'mem-pending-links-title';
+  title.textContent = '🔗 ' + proposals.length + ' compte(s) à vérifier';
+  wrapper.appendChild(title);
+
+  proposals.forEach(function(p) {
+    var card = document.createElement('div');
+    card.className = 'mem-pending-link-card';
+
+    var names = document.createElement('div');
+    names.className = 'mem-pending-link-names';
+
+    var canonical = document.createElement('span');
+    canonical.className = 'mem-pending-link-user';
+    canonical.textContent = p.canonical_username || p.canonical_id;
+    canonical.title = p.canonical_id;
+    names.appendChild(canonical);
+
+    var arrow = document.createElement('span');
+    arrow.className = 'mem-pending-link-arrow';
+    arrow.textContent = '↔';
+    names.appendChild(arrow);
+
+    var alias = document.createElement('span');
+    alias.className = 'mem-pending-link-user';
+    alias.textContent = p.alias_username || p.alias_id;
+    alias.title = p.alias_id;
+    names.appendChild(alias);
+
+    card.appendChild(names);
+
+    if (p.confidence != null) {
+      var score = document.createElement('span');
+      score.className = 'mem-pending-link-score';
+      score.textContent = Math.round(p.confidence * 100) + '%';
+      card.appendChild(score);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'mem-pending-link-actions';
+
+    var acceptBtn = document.createElement('button');
+    acceptBtn.className = 'mem-pending-link-btn accept';
+    acceptBtn.textContent = '✓';
+    acceptBtn.title = 'Accepter';
+    acceptBtn.onclick = function() { acceptLink(p.id); };
+    actions.appendChild(acceptBtn);
+
+    var rejectBtn = document.createElement('button');
+    rejectBtn.className = 'mem-pending-link-btn reject';
+    rejectBtn.textContent = '✕';
+    rejectBtn.title = 'Rejeter';
+    rejectBtn.onclick = function() { rejectLink(p.id); };
+    actions.appendChild(rejectBtn);
+
+    card.appendChild(actions);
+    wrapper.appendChild(card);
+  });
+
+  container.textContent = '';
+  container.appendChild(wrapper);
 }
 
 // ── Chat Auth ───────────────────────────────────────────────────
@@ -2589,6 +2784,10 @@ async function renderChatTab() {
       </div>
       <div class="chat-session-bar">
         <span class="chat-session-label" id="chat-session-label">Aujourd'hui</span>
+        <button class="chat-session-back-today" id="chat-back-today" onclick="chatBackToToday()" style="display:none" title="Retour à aujourd'hui">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          Aujourd'hui
+        </button>
         <button class="chat-session-btn" onclick="chatToggleSessionPanel()" title="Sessions précédentes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         </button>
@@ -2641,7 +2840,11 @@ function chatLogout() {
 // ── Chat WebSocket ──────────────────────────────────────────────
 
 function chatConnectWs() {
-  if (_chatWs) { _chatWs.close(); _chatWs = null; }
+  if (_chatWs) {
+    _chatWs._intentionalClose = true;
+    _chatWs.close();
+    _chatWs = null;
+  }
   const jwt = getChatJwt();
   if (!jwt) return;
 
@@ -2686,7 +2889,8 @@ function chatConnectWs() {
     }
   };
 
-  _chatWs.onclose = () => {
+  _chatWs.onclose = function() {
+    if (this._intentionalClose) return;
     _chatWs = null;
     setTimeout(() => { if (getChatJwt()) chatConnectWs(); }, 3000);
   };
@@ -2846,18 +3050,21 @@ async function chatLoadDay(dateStr) {
   const label = document.getElementById('chat-session-label');
   const el = document.getElementById('chat-messages');
   const inputBar = document.querySelector('.chat-input-bar');
+  const backBtn = document.getElementById('chat-back-today');
 
   if (dateStr === today) {
     // Back to live mode
     _chatViewingDate = null;
     if (label) label.textContent = "Aujourd'hui";
     if (inputBar) inputBar.style.display = '';
+    if (backBtn) backBtn.style.display = 'none';
     // Reconnect WS to get today's messages
     chatConnectWs();
   } else {
     _chatViewingDate = dateStr;
     if (label) label.textContent = _formatSessionDate(dateStr);
     if (inputBar) inputBar.style.display = 'none'; // hide input for archived sessions
+    if (backBtn) backBtn.style.display = '';
     // Load archived day via REST
     const jwt = getChatJwt();
     if (!jwt || !el) return;
@@ -2876,6 +3083,11 @@ async function chatLoadDay(dateStr) {
   // Close panel & refresh list
   const panel = document.getElementById('chat-session-panel');
   if (panel) panel.style.display = 'none';
+}
+
+function chatBackToToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  chatLoadDay(today);
 }
 
 // ── Chat Hero: Memories panel ───────────────────────────────────
@@ -3500,7 +3712,7 @@ def _apply_decay(self):
           <p><strong>Maintenance automatique</strong> — Wally ne se contente pas de stocker des souvenirs, il les entretient. Chaque nouveau souvenir est évalué pour sa complétude : si une information est vague ou incomplète (une date sans mois, un lieu non précisé), Wally note une question à poser et la glisse naturellement dans une prochaine conversation. Chaque soir, 30 minutes avant son journal, il fait le tri : il supprime les faits périmés, reformule les vagues, et identifie de nouvelles questions. Maximum 1 question par conversation, maximum 3 tentatives — Wally insiste, mais pas trop.</p>
 
           <details class="jd-details">
-            <summary>🔍 Aller plus loin — mem0, Qdrant, trust score</summary>
+            <summary>🔍 Aller plus loin — Qdrant, embeddings, trust score</summary>
             <div class="jd-code-block">
               <div class="jd-file-path">bot/core/memory.py — search() + FactExtractor</div>
               <pre><code># Recherche par similarité vectorielle dans Qdrant
@@ -3518,11 +3730,11 @@ async def search(self, user_id, query, limit=5):
 # analyse la conversation et extrait les faits durables :
 # "### pseudo\n- fait 1\n- fait 2\n..."
 # Chaque fait est stocké via memory.add() dans Qdrant.</code></pre>
-              <p class="jd-tech-note"><strong>mem0</strong> est la couche d'abstraction pour la mémoire longue. Elle gère l'embedding (conversion texte → vecteur), le stockage dans <strong>Qdrant</strong> (base vectorielle auto-hébergée), et la recherche par similarité.</p>
+              <p class="jd-tech-note"><strong>QdrantMemoryStore</strong> gère l'accès direct à <strong>Qdrant</strong> (base vectorielle auto-hébergée) : embedding via OpenAI <code>text-embedding-3-small</code>, stockage avec payloads structurés (texte, catégorie, date, source), et recherche par similarité avec filtrage natif.</p>
               <p class="jd-tech-note"><strong>Trust score</strong> : chaque utilisateur a un score de confiance (0.0 → 1.0) qui évolue avec le temps. +0.01 par interaction positive, -0.05 pour les comportements toxiques. Le score part à 0.0 — la confiance se mérite.</p>
               <p class="jd-tech-note"><strong>Sliding window</strong> : la mémoire courte garde les N derniers messages. Quand le nombre de tokens dépasse un seuil, les messages les plus anciens sont résumés par un modèle secondaire et remplacés par un bloc résumé.</p>
               <p class="jd-tech-note"><strong>Memory scoring</strong> : chaque <code>memory.add()</code> déclenche un appel LLM secondaire (<code>_evaluate_memory</code>) qui évalue la complétude du souvenir. Les questions générées sont stockées dans la table <code>memory_questions</code> et injectées dans le prompt (max 1 par conversation, max 3 tentatives). Si le nouveau souvenir répond à une question existante, elle est automatiquement résolue.</p>
-              <p class="jd-tech-note"><strong>Nettoyage quotidien</strong> : cron 30min avant le journal (<code>run_memory_cleanup</code>). Passe en revue les souvenirs des 20 utilisateurs les plus actifs, identifie les faits périmés/vagues via LLM, et applique suppressions + reformulations. Appelle <code>mem0</code> directement pour éviter les cascades avec la consolidation.</p>
+              <p class="jd-tech-note"><strong>Nettoyage quotidien</strong> : cron 30min avant le journal (<code>run_memory_cleanup</code>). Passe en revue les souvenirs des 20 utilisateurs les plus actifs, identifie les faits périmés/vagues via LLM, et applique suppressions + reformulations via le store Qdrant directement.</p>
             </div>
           </details>
         </div>
@@ -3590,7 +3802,7 @@ prompt = PromptBuilder.build(
 # 1. daily_log (SQLite) — tous les messages du jour, survit aux redémarrages
 # 2. Discord channel history — fallback API si daily_log vide
 # 3. RAM context windows — buffers mémoire de la session en cours
-# 4. mem0 memory banks — faits stockés en mémoire longue
+# 4. Qdrant memory — faits stockés en mémoire longue
 
 # Taille dynamique du journal :
 # &lt; 50 messages → 150-250 mots
