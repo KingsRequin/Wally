@@ -84,7 +84,7 @@ bot/
 │       ├── memory_cmd.py # /wally memory show (admin)
 │       ├── status.py    # /wally status
 │       ├── mood.py      # /wally mood
-│       ├── journal_cmd.py # /wally journal (admin, déclenche journal à la demande)
+│       ├── journal_cmd.py # /wally journal [YYYY-MM-DD] (admin, déclenche journal à la demande, date optionnelle pour backfill)
 │       ├── persona_cmd.py # /wally reload-persona (admin, recharge fichiers persona)
 │       ├── imagine.py   # /wally imagine (image generation + gallery)
 │       └── setup.py     # /wally setup (4-tab interactive UI)
@@ -267,6 +267,11 @@ Imgur, Discord CDN, TikTok, Twitch clips, YouTube Shorts) with no meaningful sur
 The LLM prompts (`fact_extraction_system.md`, `emotion.py`) also explicitly instruct the model
 to ignore GIF/media links — defense in depth against junk memory entries.
 
+### Legacy Payload Compatibility
+`_point_to_record()` reads text with fallback chain: `text` → `data` → `memory`.
+Old mem0 payloads stored text in `data`; the migration script (`scripts/migrate_mem0_to_qdrant.py`)
+rewrites them to the structured format. Run it if old memories don't appear in the dashboard.
+
 ### Qdrant Manual Cleanup
 When fixing Qdrant entries (double-prefix, orphans), use `memory.store.update_payload()` to update
 `user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will
@@ -415,6 +420,11 @@ Each provider converts internally (Claude converts to `input_schema` format).
 ### OpenAILLMClient
 Handles both Chat Completions API (gpt-4o) and Responses API (o1/o3/o4/gpt-5) via
 `_uses_responses_api()` routing. Also hosts `generate_image()` (OpenAI-specific, not in ABC).
+
+**Responses API reasoning budget**: `max_output_tokens` is shared between reasoning tokens and
+visible text. When `reasoning_effort` is set, `max_output_tokens` is **omitted** from the API
+call to let the model manage its own budget. Otherwise small models (e.g. gpt-5-nano) can
+consume the entire budget on reasoning and return empty text.
 
 ### ClaudeLLMClient
 - **Prompt caching**: system prompt wrapped with `cache_control: {"type": "ephemeral"}`
