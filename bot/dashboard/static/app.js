@@ -51,6 +51,103 @@ let _chatWs = null;
 let _chatUser = null;
 let _chatTypingTimer = null;
 
+// -- Bot Control Bar ----------------------------------------------
+var _controlBarInterval = null;
+
+function showControlBar(visible) {
+  var bar = document.getElementById('control-bar');
+  if (bar) bar.style.display = visible ? 'flex' : 'none';
+}
+
+async function pollBotStatus() {
+  var r = await apiFetch('/api/admin/bot/status');
+  if (!r || !r.ok) return;
+  var data = await r.json();
+
+  var discordDot = document.getElementById('discord-dot');
+  var twitchDot = document.getElementById('twitch-dot');
+  var discordBtn = document.getElementById('discord-toggle-btn');
+  var twitchBtn = document.getElementById('twitch-toggle-btn');
+
+  if (discordDot) discordDot.className = 'control-bar-dot' + (data.discord === 'connected' ? ' online' : '');
+  if (twitchDot) twitchDot.className = 'control-bar-dot' + (data.twitch === 'connected' ? ' online' : '');
+  if (discordBtn) {
+    discordBtn.textContent = data.discord === 'connected' ? 'Stop' : 'Start';
+    discordBtn.disabled = false;
+  }
+  if (twitchBtn) {
+    twitchBtn.textContent = data.twitch === 'connected' ? 'Stop' : 'Start';
+    twitchBtn.disabled = false;
+  }
+}
+
+function startControlBarPolling() {
+  if (_controlBarInterval) return;
+  pollBotStatus();
+  _controlBarInterval = setInterval(pollBotStatus, 5000);
+}
+
+function stopControlBarPolling() {
+  if (_controlBarInterval) {
+    clearInterval(_controlBarInterval);
+    _controlBarInterval = null;
+  }
+}
+
+async function toggleBotAdapter(adapter) {
+  var btn = document.getElementById(adapter + '-toggle-btn');
+  if (!btn) return;
+  var action = btn.textContent.trim() === 'Stop' ? 'stop' : 'start';
+  btn.disabled = true;
+  btn.textContent = '...';
+  var r = await apiFetch('/api/admin/bot/' + adapter + '/' + action, { method: 'POST' });
+  if (!r || !r.ok) {
+    toast('Erreur ' + action + ' ' + adapter, 'error');
+    btn.disabled = false;
+    pollBotStatus();
+    return;
+  }
+  toast(adapter + ' ' + (action === 'stop' ? 'arrêté' : 'démarré'), 'success');
+  setTimeout(pollBotStatus, 2000);
+}
+
+async function restartContainer() {
+  if (!confirm('Redémarrer le container Wally ? Le dashboard sera temporairement indisponible.')) return;
+  var btn = document.getElementById('restart-btn');
+  if (btn) btn.disabled = true;
+  var r = await apiFetch('/api/admin/bot/restart', { method: 'POST' });
+  if (!r || !r.ok) {
+    toast('Erreur restart', 'error');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  toast('Restart en cours...', 'success');
+  _waitForReconnect();
+}
+
+function _waitForReconnect() {
+  var attempts = 0;
+  var maxAttempts = 60;
+  var interval = setInterval(async function() {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(interval);
+      toast('Le bot ne répond plus', 'error');
+      return;
+    }
+    try {
+      var r = await fetch('/api/public/status', { signal: AbortSignal.timeout(3000) });
+      if (r.ok) {
+        clearInterval(interval);
+        toast('Bot reconnecté !', 'success');
+        var btn = document.getElementById('restart-btn');
+        if (btn) btn.disabled = false;
+        pollBotStatus();
+      }
+    } catch(e) { /* server still down */ }
+  }, 2000);
+}
+
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
 
 function toggleMode() {
@@ -99,6 +196,14 @@ function switchMode(mode, restoreTab = null) {
     adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
     if (divider) divider.style.display = mode === 'admin' ? 'block' : 'none';
     if (modeBtn) modeBtn.classList.toggle('active', mode === 'admin');
+  }
+
+  // Control bar
+  showControlBar(mode === 'admin');
+  if (mode === 'admin') {
+    startControlBarPolling();
+  } else {
+    stopControlBarPolling();
   }
 
   const firstTab = restoreTab || (mode === 'public' ? 'status' : 'admin-config');
