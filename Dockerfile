@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata docker.io && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 wally
 WORKDIR /app
