@@ -9,7 +9,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
-from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES
+from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
 
 router = APIRouter()
 
@@ -107,6 +107,28 @@ async def update_config(request: Request, body: dict) -> dict:
                 cfg.llm.primary.model = p["model"]
                 cfg.openai.primary_model = p["model"]
                 state.primary_llm.model = p["model"]
+            # Claude thinking settings
+            if "thinking_type" in p:
+                val = str(p["thinking_type"])
+                if val not in VALID_THINKING_TYPES:
+                    raise HTTPException(status_code=400, detail=f"thinking_type must be one of {VALID_THINKING_TYPES}")
+                cfg.llm.primary.thinking_type = val
+                if hasattr(state.primary_llm, "thinking_type"):
+                    state.primary_llm.thinking_type = val
+            if "thinking_effort" in p:
+                val = str(p["thinking_effort"])
+                if val not in VALID_THINKING_EFFORTS:
+                    raise HTTPException(status_code=400, detail=f"thinking_effort must be one of {VALID_THINKING_EFFORTS}")
+                cfg.llm.primary.thinking_effort = val
+                if hasattr(state.primary_llm, "thinking_effort"):
+                    state.primary_llm.thinking_effort = val
+            if "thinking_budget_tokens" in p:
+                val = int(p["thinking_budget_tokens"])
+                if not (1000 <= val <= 128000):
+                    raise HTTPException(status_code=400, detail="thinking_budget_tokens must be 1000–128000")
+                cfg.llm.primary.thinking_budget_tokens = val
+                if hasattr(state.primary_llm, "thinking_budget_tokens"):
+                    state.primary_llm.thinking_budget_tokens = val
         if "secondary" in llm_data:
             s = llm_data["secondary"]
             if "provider" in s and s["provider"] != cfg.llm.secondary.provider:
@@ -319,6 +341,35 @@ async def get_openai_models(request: Request) -> dict:
         ]}
 
 
+_CLAUDE_INCLUDE = ["claude"]
+_CLAUDE_EXCLUDE = ["beta", "preview"]
+
+
+@router.get("/claude/models")
+async def get_claude_models(request: Request) -> dict:
+    """Liste les modèles Claude disponibles via l'API Anthropic.
+
+    Fallback sur les modèles configurés en cas d'erreur API.
+    """
+    state = request.app.state.wally
+    try:
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        models_page = await client.models.list(limit=100)
+        filtered = sorted([
+            m.id for m in models_page.data
+            if any(kw in m.id for kw in _CLAUDE_INCLUDE)
+            and not any(kw in m.id for kw in _CLAUDE_EXCLUDE)
+        ])
+        return {"models": filtered}
+    except Exception as exc:
+        logger.warning("Failed to list Claude models: {e}", e=exc)
+        return {"models": [
+            state.config.llm.primary.model,
+            state.config.llm.secondary.model,
+        ]}
+
+
 _TWITCH_LOGIN_RE = re.compile(r'^[a-z0-9_]{1,25}$')
 
 
@@ -424,3 +475,94 @@ async def test_overlay_image(request: Request):
             break
     state.overlay_image_queue.put_nowait(payload)
     return {"status": "triggered", "image_id": image["id"]}
+
+
+@router.get("/bot/status")
+async def get_bot_status(request: Request) -> dict:
+    state = request.app.state.wally
+    discord_online = (
+        state.discord_bot is not None
+        and state.discord_bot.is_ready()
+    )
+    twitch_online = (
+        state.twitch_bot is not None
+        and getattr(state.twitch_bot, "_eventsub_client", None) is not None
+    )
+    return {
+        "discord": "connected" if discord_online else "disconnected",
+        "twitch": "connected" if twitch_online else "disconnected",
+    }
+
+
+@router.post("/bot/discord/stop")
+async def stop_discord(request: Request) -> dict:
+    state = request.app.state.wally
+    bot = state.discord_bot
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Discord bot not configured")
+    if bot.is_closed():
+        return {"ok": True, "message": "already stopped"}
+    await bot.close()
+    logger.info("Discord bot stopped via dashboard")
+    return {"ok": True}
+
+
+@router.post("/bot/discord/start")
+async def start_discord(request: Request) -> dict:
+    state = request.app.state.wally
+    bot = state.discord_bot
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Discord bot not configured")
+    if not bot.is_closed():
+        return {"ok": True, "message": "already running"}
+    token = os.getenv("DISCORD_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=500, detail="DISCORD_TOKEN not set")
+    asyncio.create_task(bot.start(token))
+    logger.info("Discord bot started via dashboard")
+    return {"ok": True}
+
+
+@router.post("/bot/twitch/stop")
+async def stop_twitch(request: Request) -> dict:
+    state = request.app.state.wally
+    bot = state.twitch_bot
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Twitch bot not configured")
+    if getattr(bot, "_closed", False):
+        return {"ok": True, "message": "already stopped"}
+    await bot.close()
+    logger.info("Twitch bot stopped via dashboard")
+    return {"ok": True}
+
+
+@router.post("/bot/twitch/start")
+async def start_twitch(request: Request) -> dict:
+    state = request.app.state.wally
+    bot = state.twitch_bot
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Twitch bot not configured")
+    if not getattr(bot, "_closed", True):
+        return {"ok": True, "message": "already running"}
+    asyncio.create_task(bot.start())
+    logger.info("Twitch bot started via dashboard")
+    return {"ok": True}
+
+
+@router.post("/bot/restart")
+async def restart_container(request: Request) -> dict:
+    logger.warning("Container restart requested via dashboard")
+
+    async def _do_restart():
+        await asyncio.sleep(1)
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "compose", "restart", "wally",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.error("Restart failed: {}", stderr.decode())
+
+    asyncio.create_task(_do_restart())
+    return {"ok": True, "message": "Restart initiated"}
