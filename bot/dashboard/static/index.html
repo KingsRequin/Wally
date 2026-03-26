@@ -48,6 +48,28 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
 
 <div class="app-wrapper">
 
+  <!-- Admin Control Bar -->
+  <div class="control-bar" id="control-bar" style="display:none">
+    <div class="control-bar-group">
+      <div class="control-bar-indicator">
+        <span class="control-bar-dot" id="discord-dot"></span>
+        <span class="control-bar-label">Discord</span>
+        <button class="control-bar-btn" id="discord-toggle-btn" onclick="toggleBotAdapter('discord')">Stop</button>
+      </div>
+      <div class="control-bar-indicator">
+        <span class="control-bar-dot" id="twitch-dot"></span>
+        <span class="control-bar-label">Twitch</span>
+        <button class="control-bar-btn" id="twitch-toggle-btn" onclick="toggleBotAdapter('twitch')">Stop</button>
+      </div>
+    </div>
+    <div class="control-bar-group">
+      <button class="control-bar-btn restart" id="restart-btn" onclick="restartContainer()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Restart
+      </button>
+    </div>
+  </div>
+
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">W</div>
@@ -57,21 +79,21 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         <span>Status</span>
       </a>
-      <a class="sidebar-item" data-tab="roadmap" onclick="showTab('roadmap')" href="javascript:void(0)" aria-label="Roadmap">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-        <span>Roadmap</span>
-      </a>
       <a class="sidebar-item" data-tab="chat" onclick="showTab('chat')" href="javascript:void(0)" aria-label="Chat">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Chat</span>
+      </a>
+      <a class="sidebar-item" data-tab="gallery" onclick="showTab('gallery')" href="javascript:void(0)" aria-label="Galerie">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        <span>Galerie</span>
       </a>
       <a class="sidebar-item" data-tab="journal-detail" onclick="showTab('journal-detail')" href="javascript:void(0)" aria-label="Journal détaillé">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
         <span>Info</span>
       </a>
-      <a class="sidebar-item" data-tab="gallery" onclick="showTab('gallery')" href="javascript:void(0)" aria-label="Galerie">
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-        <span>Galerie</span>
+      <a class="sidebar-item" data-tab="roadmap" onclick="showTab('roadmap')" href="javascript:void(0)" aria-label="Roadmap">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span>Roadmap</span>
       </a>
     </nav>
 
