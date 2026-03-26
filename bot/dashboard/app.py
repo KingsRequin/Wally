@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from starlette.responses import StreamingResponse
@@ -76,6 +77,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.wally = state
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)

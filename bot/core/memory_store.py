@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -62,12 +64,15 @@ class MemoryRecord:
 class QdrantMemoryStore:
     """Direct Qdrant access for long-term memory storage."""
 
+    _EMBED_CACHE_MAX = 2048
+
     def __init__(self, qdrant_url: str, collection_name: str, db: Any) -> None:
         self._qdrant_url = qdrant_url
         self._collection_name = collection_name
         self._db = db
         self._client: QdrantClient | None = None
         self._openai: openai.OpenAI | None = None
+        self._embed_cache: OrderedDict[str, list[float]] = OrderedDict()
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
@@ -90,14 +95,22 @@ class QdrantMemoryStore:
             self._openai = openai.OpenAI()
 
     async def _embed(self, text: str) -> list[float]:
-        """Generate embedding via OpenAI and log cost."""
+        """Generate embedding via OpenAI with LRU cache and log cost."""
         self._ensure_client()
         assert self._openai is not None
 
-        response = await asyncio.to_thread(
-            self._openai.embeddings.create,
-            model=_EMBEDDING_MODEL,
-            input=text,
+        cache_key = hashlib.sha256(text.encode()).hexdigest()
+        if cache_key in self._embed_cache:
+            self._embed_cache.move_to_end(cache_key)
+            return self._embed_cache[cache_key]
+
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                self._openai.embeddings.create,
+                model=_EMBEDDING_MODEL,
+                input=text,
+            ),
+            timeout=30.0,
         )
         embedding = response.data[0].embedding
         tokens = response.usage.total_tokens
@@ -110,6 +123,11 @@ class QdrantMemoryStore:
             cost_usd=cost,
             purpose="embedding",
         )
+
+        self._embed_cache[cache_key] = embedding
+        if len(self._embed_cache) > self._EMBED_CACHE_MAX:
+            self._embed_cache.popitem(last=False)
+
         return embedding
 
     def _build_filter(
@@ -202,7 +220,8 @@ class QdrantMemoryStore:
         return [self._point_to_record(p, score=p.score) for p in result.points]
 
     async def get_all(
-        self, user_id: str, filters: dict[str, str] | None = None
+        self, user_id: str, filters: dict[str, str] | None = None,
+        batch_size: int = 500,
     ) -> list[MemoryRecord]:
         """Scroll all points for a user with pagination."""
         self._ensure_client()
@@ -217,7 +236,7 @@ class QdrantMemoryStore:
                 self._client.scroll,
                 collection_name=self._collection_name,
                 scroll_filter=query_filter,
-                limit=100,
+                limit=batch_size,
                 offset=offset,
                 with_payload=True,
             )
@@ -256,6 +275,21 @@ class QdrantMemoryStore:
             points_selector=models.PointIdsList(points=[point_id]),
         )
         logger.debug("Deleted memory point {}", point_id)
+
+    async def delete_batch(self, point_ids: list[str]) -> int:
+        """Delete multiple points in a single Qdrant call. Returns count deleted."""
+        if not point_ids:
+            return 0
+        self._ensure_client()
+        assert self._client is not None
+
+        await asyncio.to_thread(
+            self._client.delete,
+            collection_name=self._collection_name,
+            points_selector=models.PointIdsList(points=point_ids),
+        )
+        logger.debug("Batch-deleted {} memory points", len(point_ids))
+        return len(point_ids)
 
     async def delete_by_user(self, user_id: str) -> None:
         """Delete all points for a user."""

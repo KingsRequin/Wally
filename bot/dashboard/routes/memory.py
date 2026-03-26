@@ -32,6 +32,8 @@ async def list_users(
     q: str | None = None,
     show_all: str | None = None,
     sort_by: str = "memories",
+    limit: int = 50,
+    offset: int = 0,
 ):
     state = request.app.state.wally
     include_no_memory = show_all == "1"
@@ -85,17 +87,30 @@ async def list_users(
         if u.get("avatar_url")
     }
 
-    # Enrichir chaque utilisateur avec trust_score, love_score, defaults
+    # Pré-calculer les paires (platform, raw_id) pour batch queries
+    user_pairs: list[tuple[str, str]] = []
     for user in merged_users:
+        uid = user["user_id"]
+        platform = uid.split(":")[0] if ":" in uid else user.get("platform", "")
+        raw_id = uid.split(":", 1)[1] if ":" in uid else uid
+        user_pairs.append((platform, raw_id))
+
+    # Batch fetch trust et love scores (2 queries au lieu de 2×N)
+    trust_map = await state.db.get_trust_scores_batch(user_pairs)
+    love_map = await state.db.get_love_scores_batch(user_pairs)
+
+    # Enrichir chaque utilisateur avec trust_score, love_score, defaults
+    for user, (platform, raw_id) in zip(merged_users, user_pairs):
         user.setdefault("avatar_url", None)
         user.setdefault("memory_count", 0)
+        user["trust_score"] = trust_map.get((platform, raw_id), 0.0)
+        user["love_score"] = love_map.get((platform, raw_id), 0.0)
 
         # Pour les comptes liés, privilégier l'avatar Discord
         linked = user.get("linked_accounts", [])
         if linked:
             uid = user["user_id"]
             user_platform = uid.split(":")[0] if ":" in uid else ""
-            # Chercher un avatar Discord parmi canonical + alias
             discord_avatar = None
             if user_platform == "discord" and user.get("avatar_url"):
                 discord_avatar = user["avatar_url"]
@@ -107,20 +122,6 @@ async def list_users(
                             break
             if discord_avatar:
                 user["avatar_url"] = discord_avatar
-        # Extraire platform et raw_id depuis user_id (format "platform:raw_id")
-        uid = user["user_id"]
-        platform = uid.split(":")[0] if ":" in uid else user.get("platform", "")
-        raw_id = uid.split(":", 1)[1] if ":" in uid else uid
-        try:
-            trust = await state.db.get_trust_score(platform, raw_id)
-            user["trust_score"] = float(trust) if trust is not None else 0.0
-        except Exception:
-            user["trust_score"] = 0.0
-        try:
-            love = await state.db.get_love_score(platform, raw_id)
-            user["love_score"] = float(love) if love is not None else 0.0
-        except Exception:
-            user["love_score"] = 0.0
 
     # Tri selon le paramètre sort_by
     sort_keys = {
@@ -133,7 +134,13 @@ async def list_users(
     reverse = sort_by != "name"
     merged_users.sort(key=key_fn, reverse=reverse)
 
-    return {"users": merged_users}
+    total = len(merged_users)
+    # Clamp limit
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    paginated = merged_users[offset:offset + limit]
+
+    return {"users": paginated, "total": total, "limit": limit, "offset": offset}
 
 
 # ── POST /memory/users (register manually) ────────────────────────────────────

@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS memory_questions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_questions_user ON memory_questions(user_id, resolved);
+CREATE INDEX IF NOT EXISTS idx_memory_questions_priority ON memory_questions(user_id, resolved, priority, created_at);
 
 CREATE TABLE IF NOT EXISTS chat_connections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -343,7 +344,7 @@ class Database:
                 (time.time() - 7 * 86400,)
             )
             await conn.commit()
-        except Exception:
+        except aiosqlite.OperationalError:
             pass  # table absente au premier démarrage — CREATE TABLE IF NOT EXISTS s'en charge
         # Migration: trust score baseline 0.5 → 0.0
         try:
@@ -552,6 +553,45 @@ class Database:
             return round(decayed, 3)
         return round(love, 3)
 
+    async def get_trust_scores_batch(
+        self, users: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], float]:
+        """Fetch trust scores for multiple (platform, user_id) pairs in one query."""
+        if not users:
+            return {}
+        rows = await self.fetch_all("SELECT platform, user_id, score FROM trust_scores")
+        lookup = {(r["platform"], r["user_id"]): float(r["score"]) for r in rows}
+        return {(p, uid): lookup.get((p, uid), 0.0) for p, uid in users}
+
+    async def get_love_scores_batch(
+        self, users: list[tuple[str, str]], decay_lambda: float = 0.1,
+    ) -> dict[tuple[str, str], float]:
+        """Fetch love scores for multiple (platform, user_id) pairs in one query with lazy decay."""
+        import math
+        if not users:
+            return {}
+        rows = await self.fetch_all(
+            "SELECT platform, user_id, love, love_updated_at FROM trust_scores"
+        )
+        now = time.time()
+        result: dict[tuple[str, str], float] = {}
+        for r in rows:
+            love = float(r["love"] or 0)
+            updated_at = float(r["love_updated_at"] or 0)
+            if love <= 0 or updated_at <= 0:
+                result[(r["platform"], r["user_id"])] = 0.0
+                continue
+            elapsed_days = (now - updated_at) / 86400.0
+            if elapsed_days > 0:
+                decayed = love * math.exp(-decay_lambda * elapsed_days)
+                if decayed < 0.01:
+                    decayed = 0.0
+            else:
+                decayed = love
+            result[(r["platform"], r["user_id"])] = round(decayed, 3)
+        user_set = set(users)
+        return {k: result.get(k, 0.0) for k in user_set}
+
     async def update_love_score(self, platform: str, user_id: str, delta: float, decay_lambda: float = 0.1) -> None:
         """Met à jour le love score — applique decay, puis ajoute delta, clamp [0, 1]."""
         current = await self.get_love_score(platform, user_id, decay_lambda)
@@ -570,13 +610,16 @@ class Database:
         return {row["emotion"]: float(row["value"]) for row in rows}
 
     async def save_emotion_state(self, state: dict[str, float]) -> None:
+        if not state:
+            return
         now = time.time()
-        for emotion, value in state.items():
-            await self.execute(
-                "INSERT INTO emotion_state (emotion, value, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-                (emotion, value, now),
-            )
+        query = (
+            "INSERT INTO emotion_state (emotion, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+        )
+        params = [(emotion, value, now) for emotion, value in state.items()]
+        await self._conn.executemany(query, params)
+        await self._conn.commit()
 
     async def insert_emotion_snapshot(self, state: dict[str, float]) -> None:
         await self.execute(

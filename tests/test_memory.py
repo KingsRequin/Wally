@@ -164,7 +164,7 @@ async def test_consolidation_adds_before_deleting():
 
     call_order = []
     svc._store.upsert = AsyncMock(side_effect=lambda *a, **kw: call_order.append("upsert") or "new-id")
-    svc._store.delete = AsyncMock(side_effect=lambda *a, **kw: call_order.append("delete"))
+    svc._store.delete_batch = AsyncMock(side_effect=lambda *a, **kw: call_order.append("delete_batch") or len(a[0]) if a else 0)
 
     mock_openai = MagicMock()
     mock_openai.complete = AsyncMock(return_value="- fait synthétisé")
@@ -172,10 +172,13 @@ async def test_consolidation_adds_before_deleting():
 
     await svc._consolidate("discord:610550333042589752", old_records)
 
-    # Le premier appel doit être "upsert" (synthèse), puis les "delete" (anciens)
+    # Le premier appel doit être "upsert" (synthèse), puis "delete_batch" (anciens en batch)
     assert call_order[0] == "upsert", "La synthèse doit être ajoutée avant toute suppression"
-    assert all(op == "delete" for op in call_order[1:]), "Les appels suivants doivent tous être des suppressions"
-    assert len(call_order) == 1 + len(old_records)  # 1 upsert + N deletes
+    assert call_order[1] == "delete_batch", "Les anciens souvenirs doivent être supprimés en batch"
+    assert len(call_order) == 2  # 1 upsert + 1 delete_batch
+    # Vérifier que tous les IDs ont été passés au batch
+    batch_ids = svc._store.delete_batch.call_args[0][0]
+    assert len(batch_ids) == len(old_records)
 
 
 def test_get_all_contexts_returns_all_sorted():

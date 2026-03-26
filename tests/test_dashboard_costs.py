@@ -14,6 +14,15 @@ from bot.config import (
 HEADERS = {"Authorization": "Bearer testtoken"}
 
 
+@pytest.fixture(autouse=True)
+def _clear_costs_cache():
+    """Vider le cache top_users entre chaque test."""
+    from bot.dashboard.routes.costs import _top_users_cache
+    _top_users_cache.clear()
+    yield
+    _top_users_cache.clear()
+
+
 def _make_config():
     cfg = MagicMock()
     cfg.bot = BotConfig(

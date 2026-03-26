@@ -9,6 +9,10 @@ from fastapi import APIRouter, Request
 
 router = APIRouter()
 
+# Cache simple TTL pour costs_top_users (évite les fetch Discord API répétitifs)
+_top_users_cache: dict[str, tuple[float, list]] = {}  # key → (expires_at, data)
+_TOP_USERS_TTL = 300  # 5 minutes
+
 PURPOSE_CATEGORIES = {
     "discord_response": "Réponses",
     "discord_ask": "Réponses",
@@ -123,6 +127,12 @@ def _friendly_name(uid: str | None, username_map: dict[str, str]) -> str:
 async def costs_top_users(request: Request, days: int = 30, limit: int = 10) -> list:
     days = _clamp_days(days)
     limit = max(1, min(limit, 100))
+
+    cache_key = f"{days}:{limit}"
+    cached = _top_users_cache.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
     state = request.app.state.wally
     db = state.db
     rows = await db.get_cost_breakdown(_since_ts(days), "user_id")
@@ -157,6 +167,8 @@ async def costs_top_users(request: Request, days: int = 30, limit: int = 10) -> 
             "total": r["total"],
             "count": r["count"],
         })
+
+    _top_users_cache[cache_key] = (time.time() + _TOP_USERS_TTL, result)
     return result
 
 

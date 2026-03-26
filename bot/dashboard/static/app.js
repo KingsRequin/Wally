@@ -1724,6 +1724,7 @@ async function loadMemoryUsers() {
   var q = (document.getElementById('mem-search') || {}).value || '';
   if (q) params.set('q', q);
   params.set('show_all', '1');
+  params.set('limit', '200');
   if (_memSortBy) params.set('sort_by', _memSortBy);
   var url = '/api/admin/memory/users' + (params.toString() ? '?' + params : '');
   var r = await apiFetch(url);

@@ -56,6 +56,8 @@ def _make_state(dashboard_token: str = "test-token"):
     type(memory).store = PropertyMock(return_value=mock_store)
 
     db = AsyncMock()
+    db.get_trust_scores_batch.return_value = {}
+    db.get_love_scores_batch.return_value = {}
 
     state = AppState(
         config=_make_config(dashboard_token),
@@ -529,8 +531,8 @@ async def test_list_users_enriches_trust_and_love():
         {"user_id": "discord:42", "platform": "discord", "username": "Test", "memory_count": 3, "avatar_url": None},
     ]
     db.list_link_proposals = AsyncMock(return_value=[])
-    db.get_trust_score = AsyncMock(return_value=0.75)
-    db.get_love_score = AsyncMock(return_value=0.6)
+    db.get_trust_scores_batch.return_value = {("discord", "42"): 0.75}
+    db.get_love_scores_batch.return_value = {("discord", "42"): 0.6}
 
     async with _make_client(state) as client:
         r = await client.get("/api/admin/memory/users", headers=HEADERS)

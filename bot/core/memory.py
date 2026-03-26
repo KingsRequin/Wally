@@ -282,18 +282,14 @@ class MemoryService:
                 platform=uid.split(":")[0] if ":" in uid else "",
             )
             await self._store.upsert(uid, consolidated, metadata)
-            # Supprimer les anciens souvenirs un par un
-            deleted = 0
-            for old_id in old_ids:
-                try:
-                    await self._store.delete(old_id)
-                    deleted += 1
-                except Exception as del_exc:
-                    logger.warning(
-                        "Failed to delete old memory {id}: {e}",
-                        id=old_id,
-                        e=del_exc,
-                    )
+            # Supprimer les anciens souvenirs en batch
+            try:
+                deleted = await self._store.delete_batch(old_ids)
+            except Exception as del_exc:
+                logger.warning(
+                    "Failed to batch-delete old memories: {e}", e=del_exc,
+                )
+                deleted = 0
             logger.info(
                 "Memory consolidated for {uid}: {n} entries -> 1 ({d}/{n} old deleted)",
                 uid=uid,

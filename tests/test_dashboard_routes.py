@@ -321,6 +321,8 @@ async def test_memory_users_route_is_implemented():
     db.insert_emotion_snapshot = AsyncMock()
     db.list_memory_users = AsyncMock(return_value=[])
     db.list_link_proposals = AsyncMock(return_value=[])
+    db.get_trust_scores_batch = AsyncMock(return_value={})
+    db.get_love_scores_batch = AsyncMock(return_value={})
     state = _make_state(db=db)
     app = create_dashboard_app(state)
     async with AsyncClient(

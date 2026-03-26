@@ -347,6 +347,7 @@ class FactExtractor:
             return  # Another flush is already in progress
 
         async with lock:
+            # Re-check after acquiring — another task may have flushed already
             buf = self._buffers.get(channel_id)
             if not buf or not buf["messages"]:
                 return

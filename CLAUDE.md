@@ -30,8 +30,9 @@ follow/sub/bits/raid events.
 Long-term memory with vector similarity search. Fully self-hosted (data privacy, no external
 dependency). Direct `qdrant-client` access via `QdrantMemoryStore` in `bot/core/memory_store.py`.
 Structured payloads (text, category, date, source, platform). Embeddings via OpenAI
-`text-embedding-3-small` with cost tracking. Qdrant runs as a separate Docker service with a
-healthcheck; wally waits for `service_healthy`.
+`text-embedding-3-small` with LRU cache (2048 entries, SHA-256 keyed) and 30s timeout.
+Batch operations for consolidation deletes (`delete_batch()`). Scroll batch size 500.
+Qdrant runs as a separate Docker service with a healthcheck; wally waits for `service_healthy`.
 
 ### nrclex for emotion detection
 Pure Python, no API call, <20ms per message. NRC Lexicon covers anger/joy/sadness etc.
@@ -381,6 +382,8 @@ Config and data mounted as volumes — no rebuild needed for config changes.
 
 Web dashboard on port 8080, FastAPI + vanilla JS SPA.
 Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
+GZip compression via `GZipMiddleware(minimum_size=1000)`.
+Memory users endpoint paginated (limit/offset, default 50, max 200).
 
 ---
 

@@ -37,12 +37,16 @@
 <canvas id="naker-blurred" aria-hidden="true"></canvas>
 <script>
 if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in window)) {
-  var s = document.createElement('script');
-  s.setAttribute('data-who', 'Made with naker.io');
-  s.setAttribute('data-option', '{|environment|:{|gradient|:|radial|,|sensitivity|:0.57,|colorStart|:[0,0,0,1],|colorEnd|:[0,0,0,1]},|particle|:{|life|:5,|power|:0.32,|texture|:|https://res.cloudinary.com/naker-io/image/upload/v1566560053/star_07.png|,|number|:432,|colorStart|:[255,255,255,0.13],|colorEnd|:[149,232,227,1],|sizeStart|:0.38,|sizeEnd|:0.76,|direction1|:{|x|:0,|y|:0,|z|:0},|direction2|:{|x|:0,|y|:0,|z|:0}},|waterMark|:false}');
-  s.setAttribute('data-container', '#naker-bg');
-  s.src = 'https://d23jutsnau9x47.cloudfront.net/back/v1.0.9/viewer.js';
-  document.getElementById('naker-bg').appendChild(s);
+  window.addEventListener('load', function() {
+    var s = document.createElement('script');
+    s.async = true;
+    s.defer = true;
+    s.setAttribute('data-who', 'Made with naker.io');
+    s.setAttribute('data-option', '{|environment|:{|gradient|:|radial|,|sensitivity|:0.57,|colorStart|:[0,0,0,1],|colorEnd|:[0,0,0,1]},|particle|:{|life|:5,|power|:0.32,|texture|:|https://res.cloudinary.com/naker-io/image/upload/v1566560053/star_07.png|,|number|:432,|colorStart|:[255,255,255,0.13],|colorEnd|:[149,232,227,1],|sizeStart|:0.38,|sizeEnd|:0.76,|direction1|:{|x|:0,|y|:0,|z|:0},|direction2|:{|x|:0,|y|:0,|z|:0}},|waterMark|:false}');
+    s.setAttribute('data-container', '#naker-bg');
+    s.src = 'https://d23jutsnau9x47.cloudfront.net/back/v1.0.9/viewer.js';
+    document.getElementById('naker-bg').appendChild(s);
+  });
 }
 </script>
 

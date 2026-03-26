@@ -30,8 +30,8 @@ def broadcast_action_event(event_type: str, task_id: int, extra: dict | None = N
     for q in list(_action_queues):
         try:
             q.put_nowait(payload)
-        except Exception:
-            pass
+        except asyncio.QueueFull:
+            logger.debug("SSE action queue full, dropping event {}", event_type)
 
 
 def broadcast_event(data: dict) -> None:
@@ -42,7 +42,7 @@ def broadcast_event(data: dict) -> None:
     for q in list(_log_queues):
         try:
             q.put_nowait(data)
-        except Exception:
+        except asyncio.QueueFull:
             pass
 
 
@@ -61,8 +61,8 @@ def _log_sink(message) -> None:
     for q in list(_log_queues):
         try:
             q.put_nowait(entry)
-        except Exception:
-            pass  # Queue pleine — log ignoré silencieusement
+        except asyncio.QueueFull:
+            pass  # Queue pleine — log drop silencieux (haute fréquence)
 
 
 def setup_log_sink() -> None:
