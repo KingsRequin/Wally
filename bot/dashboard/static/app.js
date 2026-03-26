@@ -1930,12 +1930,97 @@ async function openUserModal(userId, userData) {
     + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escAttr(userId) + '\')">🗑 Supprimer tout</button>' : '')
     + '</div>'
     + '<div id="modal-add-form"></div>'
-    + '<input type="text" class="mem-modal-search" id="modal-mem-search" placeholder="🔍 Rechercher dans les mémoires..." oninput="filterModalMemories(this.value)">'
+    + '<div class="mem-modal-toolbar">'
+    + '<select class="mem-sort-select" id="modal-mem-sort" onchange="sortModalMemories(this.value)">'
+    + '<option value="default">Tri par défaut</option>'
+    + '<option value="recent">Plus récent</option>'
+    + '<option value="oldest">Plus ancien</option>'
+    + '</select>'
+    + '<input type="text" class="mem-modal-search" id="modal-mem-search" placeholder="🔍 Rechercher..." oninput="filterModalMemories(this.value)">'
+    + '</div>'
     + '<div id="modal-categories">' + categoriesHtml + '</div>'
     + linkedHtml;
 
   backdrop.appendChild(modal);
+  modal._memories = memories;
+  modal._userId = userId;
+  modal._userData = userData;
   document.body.appendChild(backdrop);
+}
+
+function sortModalMemories(sortBy) {
+  var modal = document.querySelector('.mem-modal');
+  if (!modal || !modal._memories) return;
+  var memories = modal._memories.slice();
+
+  if (sortBy === 'recent') {
+    memories.sort(function(a, b) {
+      var da = new Date(a.created_at || a.date || 0);
+      var db = new Date(b.created_at || b.date || 0);
+      return db - da;
+    });
+  } else if (sortBy === 'oldest') {
+    memories.sort(function(a, b) {
+      var da = new Date(a.created_at || a.date || 0);
+      var db = new Date(b.created_at || b.date || 0);
+      return da - db;
+    });
+  }
+
+  var grouped = {};
+  MEM_CATEGORIES.forEach(function(cat) { grouped[cat.key] = []; });
+  memories.forEach(function(m) {
+    var catKey = m.category || '';
+    if (!grouped[catKey]) grouped[catKey] = grouped[''];
+    grouped[catKey].push(m);
+  });
+
+  if (sortBy === 'default') {
+    Object.keys(grouped).forEach(function(key) {
+      grouped[key].sort(function(a, b) {
+        var da = new Date(b.updated_at || b.created_at || 0);
+        var db = new Date(a.updated_at || a.created_at || 0);
+        return da - db;
+      });
+    });
+  }
+
+  var userId = modal._userId;
+  var platform = (modal._userData || {}).platform || userId.split(':')[0];
+  var categoriesHtml = '';
+  MEM_CATEGORIES.forEach(function(cat) {
+    var items = grouped[cat.key] || [];
+    if (items.length === 0) return;
+    categoriesHtml += '<div class="mem-category" data-cat="' + escAttr(cat.key) + '">'
+      + '<div class="mem-category-header" onclick="toggleMemCategory(this)">'
+      + '<span class="mem-category-chevron">\u25bc</span>'
+      + '<span class="mem-category-name ' + escAttr(cat.css) + '">' + escHtml(cat.label) + '</span>'
+      + '<span class="mem-category-count">(' + items.length + ')</span>'
+      + '</div>'
+      + '<div class="mem-category-body">'
+      + items.map(function(m) {
+          var isOwn = (m.source || '') === userId || (m.source_platform || '') === platform;
+          var sourceIcon = isOwn ? '\ud83e\udd16' : '\u270d\ufe0f';
+          var dateStr = m.updated_at || m.created_at;
+          var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
+          return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '" style="border-left:2px solid ' + cat.color + '4d">'
+            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.memory) + '</span>'
+            + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajout\u00e9 manuellement') + '">' + sourceIcon + '</span>'
+            + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
+            + '<div class="mem-entry-actions">'
+            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Modifier">\u270f\ufe0f</button>'
+            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Supprimer">\ud83d\uddd1</button>'
+            + '</div></div>';
+        }).join('')
+      + '</div></div>';
+  });
+
+  if (categoriesHtml === '') {
+    categoriesHtml = '<div class="mem-empty-state">Aucun souvenir enregistr\u00e9.</div>';
+  }
+
+  var container = document.getElementById('modal-categories');
+  if (container) container.innerHTML = categoriesHtml;
 }
 
 function toggleMemCategory(headerEl) {
