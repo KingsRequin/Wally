@@ -21,6 +21,9 @@ SORTIE :
 - Fan de jeux vidéo RPG (notamment Zelda), peu intéressé par les FPS
 - Développeur Python actif
 
-En cas de contradiction entre deux souvenirs (ex. "aime les FPS" vs "déteste les FPS"), préfère le souvenir le plus récent et note la contradiction : "Initialement aimait les FPS, opinion révisée depuis."
+Les souvenirs portent une date entre crochets [YYYY-MM-DD]. Utilise cette information pour :
+- En cas de contradiction entre deux souvenirs, préfère le souvenir le plus récent (date la plus haute) et note la contradiction : "Initialement aimait les FPS, opinion révisée depuis."
+- Si un souvenir ancien dit "veut X" et un souvenir récent dit "a reçu/fait X", supprime la demande et garde le résultat.
+- Conserver la date du souvenir le plus récent dans le fait consolidé.
 
 Renvoie uniquement les faits consolidés, un par ligne, sans préambule.

@@ -23,10 +23,14 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
             db=db,
             temperature=llm_config.temperature,
             max_tokens=llm_config.max_tokens,
+            thinking_type=llm_config.thinking_type,
+            thinking_budget_tokens=llm_config.thinking_budget_tokens,
+            thinking_effort=llm_config.thinking_effort,
         )
         logger.info(
-            "Created ClaudeLLMClient — model={model}, temp={temp}",
+            "Created ClaudeLLMClient — model={model}, temp={temp}, thinking={thinking}",
             model=llm_config.model, temp=llm_config.temperature,
+            thinking=llm_config.thinking_type,
         )
         return client
 

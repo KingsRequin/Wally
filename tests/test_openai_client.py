@@ -148,7 +148,9 @@ async def test_responses_api_passes_reasoning_effort():
 
     assert captured["reasoning"] == {"effort": "high"}
     assert captured["text"]["verbosity"] == "low"
-    assert captured["max_output_tokens"] == 1000
+    # max_output_tokens is omitted when reasoning is active to avoid starving
+    # the visible text response (reasoning tokens share the same budget).
+    assert "max_output_tokens" not in captured
 
 
 @pytest.mark.asyncio

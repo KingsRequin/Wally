@@ -299,10 +299,14 @@ body.admin-mode .main-content {
   padding-top: 48px;
 }
 
-/* Mobile: control bar below sidebar */
+/* Mobile: control bar full width at top */
 body.is-mobile .control-bar {
   left: 0;
-  top: 60px;
+  top: 0;
+}
+
+body.is-mobile.admin-mode .main-content {
+  padding-top: 48px !important;
 }
 
 /* ── Glass Panels / Cards ─────────────────────────────────────── */

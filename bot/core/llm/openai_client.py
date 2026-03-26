@@ -180,12 +180,16 @@ class OpenAILLMClient(BaseLLMClient):
             "model": self._model,
             "input": messages,
         }
-        if self._reasoning_effort and self._reasoning_effort != "none":
+        uses_reasoning = self._reasoning_effort and self._reasoning_effort != "none"
+        if uses_reasoning:
             kwargs["reasoning"] = {"effort": self._reasoning_effort}
         if self._text_verbosity:
             kwargs["text"] = {"format": {"type": "text"}, "verbosity": self._text_verbosity}
         effective_max = max_tokens or self._max_tokens
-        if effective_max:
+        if effective_max and not uses_reasoning:
+            # Skip max_output_tokens when reasoning is active: the Responses API
+            # shares the budget between reasoning and text, which can starve the
+            # visible response on small models.
             kwargs["max_output_tokens"] = effective_max
         response = await self._client.responses.create(**kwargs)
         text = response.output_text

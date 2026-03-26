@@ -5,6 +5,7 @@ import asyncio
 import json
 import math
 import os
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -13,6 +14,29 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from bot.config import Config
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
+
+
+def _extract_json(raw: str) -> dict:
+    """Parse JSON from LLM output, handling markdown code blocks."""
+    raw = raw.strip()
+    # Try direct parse first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # Try extracting from ```json ... ``` blocks
+    m = _JSON_BLOCK_RE.search(raw)
+    if m:
+        return json.loads(m.group(1).strip())
+    # Try finding first { ... } in the text
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        return json.loads(raw[start:end + 1])
+    raise json.JSONDecodeError("No JSON found in LLM output", raw, 0)
+
 
 EMOTIONS = ["anger", "joy", "sadness", "curiosity", "boredom"]
 
@@ -436,7 +460,7 @@ class EmotionEngine:
                 purpose="emotion_analysis",
                 image_urls=image_urls,
             )
-            parsed = json.loads(raw)
+            parsed = _extract_json(raw)
             raw_deltas = parsed.get("deltas", {})
             new_words = parsed.get("new_words", [])
             trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta", 0.0))))

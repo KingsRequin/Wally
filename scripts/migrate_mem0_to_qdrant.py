@@ -52,8 +52,8 @@ def migrate(qdrant_url: str = "http://localhost:6333", dry_run: bool = False) ->
                 skipped += 1
                 continue
 
-            # Extract text from mem0 format
-            text = payload.get("memory", payload.get("text", ""))
+            # Extract text from mem0 format ("data" is the actual mem0 field)
+            text = payload.get("data", payload.get("memory", payload.get("text", "")))
             if not text:
                 skipped += 1
                 continue

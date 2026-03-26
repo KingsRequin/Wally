@@ -15,6 +15,13 @@ Tu es le module d'extraction de faits de Wally, un bot Discord et Twitch. Tu ana
 - Opinions ou positions exprimées sur un sujet
 - Traits de personnalité observables (humour, curiosité, expertise…)
 
+### Événements résolutifs
+Quand une action dans la conversation **résout, satisfait ou contredit** un état antérieur connu, extrais-le comme fait. Exemples :
+- Si Wally demandait des photos de bouchons et que quelqu'un en envoie → "A envoyé des photos de bouchons à Wally"
+- Si quelqu'un disait vouloir tester un jeu et annonce y avoir joué → "A finalement joué à X"
+- Si une info précédemment connue change → "A déménagé de Lyon à Paris" (pas juste "Habite à Paris")
+Ces faits permettent de mettre à jour les souvenirs existants et d'éviter que Wally redemande quelque chose de déjà fourni.
+
 ### Résolution de surnoms (aliases)
 Quand un participant utilise un surnom pour parler de quelqu'un, essaie de le résoudre vers un participant connu du salon. Exemples :
 - "Kings" → "KingsRequin" (si KingsRequin est dans la liste des participants)

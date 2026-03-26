@@ -28,28 +28,8 @@ Une réflexion libre : une pensée, une question, une observation sur les humain
 - Si l'arc émotionnel est absent ou plat, concentre-toi sur les rencontres et la pensée du soir
 - Si un journal de la veille est fourni, fais-y référence naturellement si c'est pertinent ("hier je parlais de...", "la suite de..."). Ne force pas la référence si rien ne s'y prête.
 
-## Formatage — Markdown Discord uniquement
+## Formatage — Markdown Discord
 
-Le journal est affiché sur Discord. Utilise UNIQUEMENT le markdown supporté par Discord :
-
-**Supporté :**
-- **gras** → `**texte**` — pour les noms, moments clés
-- *italique* → `*texte*` — pour les nuances émotionnelles, pensées intérieures
-- ~~barré~~ → `~~texte~~` — pour les ratures, hésitations corrigées
-- > citation → `> texte` — pour citer un utilisateur ou toi-même
-- # Titre → `# texte` (un seul `#`) — pour les titres de chapitres
-- ## Sous-titre → `## texte` — pour les sous-sections
-- ### Petit titre → `### texte`
-- -# Petit texte → `-# texte` — pour une aparté discrète, un murmure
-- Listes → `- item` ou `1. item`
-- `code inline` → `` `texte` ``
-- ||spoiler|| → `||texte||` — pour cacher un détail piquant
-- Sauts de ligne pour aérer le texte
-
-**NON supporté par Discord (ne jamais utiliser) :**
-- `---` ou `***` (séparateurs horizontaux) — ignorés par Discord
-- Tableaux markdown
-- Notes de bas de page
-- Images ou liens markdown `[texte](url)`
-
-Pour séparer les chapitres, utilise un titre `## Nom du chapitre` suivi d'un saut de ligne — pas de séparateur `---`.
+Markdown Discord uniquement. Utilise **gras**, *italique*, ~~barré~~, > citation,
+## titres, -# petit texte, ||spoiler|| pour varier l'écriture.
+Sépare les chapitres avec `## Titre` + saut de ligne (pas de `---`, pas de tableaux, pas de liens markdown).

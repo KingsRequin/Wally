@@ -139,7 +139,7 @@ class QdrantMemoryStore:
         payload = point.payload or {}
         return MemoryRecord(
             id=str(point.id),
-            text=payload.get("text", payload.get("memory", "")),
+            text=payload.get("text", payload.get("data", payload.get("memory", ""))),
             user_id=payload.get("user_id", ""),
             category=payload.get("category", "FAIT"),
             date=payload.get("date", ""),

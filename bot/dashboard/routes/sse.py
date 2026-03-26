@@ -18,6 +18,21 @@ admin_router = APIRouter()
 _log_queues: list[asyncio.Queue] = []
 _sink_id: int | None = None
 
+# Fan-out broadcast pour les événements d'actions (création, exécution, annulation, etc.)
+_action_queues: list[asyncio.Queue] = []
+
+
+def broadcast_action_event(event_type: str, task_id: int, extra: dict | None = None) -> None:
+    """Broadcast un événement action à tous les clients SSE connectés sur /sse/actions."""
+    payload = {"type": event_type, "task_id": task_id}
+    if extra:
+        payload.update(extra)
+    for q in list(_action_queues):
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            pass
+
 
 def broadcast_event(data: dict) -> None:
     """Envoie un événement structuré à tous les clients SSE connectés.
@@ -180,6 +195,38 @@ async def sse_logs(request: Request):
         finally:
             try:
                 _log_queues.remove(queue)
+            except ValueError:
+                pass
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@admin_router.get("/sse/actions")
+async def sse_actions(request: Request):
+    """SSE flux d'événements actions en temps réel (admin uniquement).
+
+    Événements: created, cancelled, paused, resumed, executed, failed, completed.
+    """
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    _action_queues.append(queue)
+
+    async def generate():
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            try:
+                _action_queues.remove(queue)
             except ValueError:
                 pass
 

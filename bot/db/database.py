@@ -609,13 +609,56 @@ class Database:
 
     # ── Memory users tracking ─────────────────────────────────────────────────────
 
-    async def upsert_memory_user(self, user_id: str, platform: str, username: str = "") -> None:
+    @staticmethod
+    def _fix_platform(user_id: str, platform: str) -> tuple[str, str]:
+        """Ensure platform matches the raw ID format in user_id.
+
+        Discord snowflakes are 17-20 digit integers.
+        Twitch numeric IDs are typically ≤12 digits.
+        If the raw ID doesn't match the claimed platform, swap to the correct one.
+        """
+        if ":" not in user_id:
+            return user_id, platform
+
+        prefix, raw = user_id.split(":", 1)
+        if not raw.isdigit():
+            return user_id, platform
+
+        digits = len(raw)
+        is_snowflake = digits >= 13  # Discord snowflakes: 17-20 digits, never <13
+        is_twitch_id = digits <= 12  # Twitch numeric IDs: up to ~10 digits
+
+        fixed_platform = prefix
+        if prefix == "twitch" and is_snowflake:
+            fixed_platform = "discord"
+            user_id = f"discord:{raw}"
+            logger.warning(
+                "Platform fix: {old} → {new} (snowflake detected in twitch ns)",
+                old=f"twitch:{raw}", new=user_id,
+            )
+        elif prefix == "discord" and is_twitch_id:
+            fixed_platform = "twitch"
+            user_id = f"twitch:{raw}"
+            logger.warning(
+                "Platform fix: {old} → {new} (short ID detected in discord ns)",
+                old=f"discord:{raw}", new=user_id,
+            )
+
+        return user_id, fixed_platform
+
+    async def upsert_memory_user(
+        self, user_id: str, platform: str, username: str = "", avatar_url: str = "",
+    ) -> None:
+        user_id, platform = self._fix_platform(user_id, platform)
         await self.execute(
-            "INSERT INTO memory_users(user_id, platform, last_updated, username) VALUES(?,?,?,?)"
+            "INSERT INTO memory_users(user_id, platform, last_updated, username, avatar_url)"
+            " VALUES(?,?,?,?,?)"
             " ON CONFLICT(user_id) DO UPDATE SET"
             "   last_updated=excluded.last_updated,"
-            "   username=COALESCE(NULLIF(excluded.username,''), memory_users.username)",
-            (user_id, platform, time.time(), username or None),
+            "   platform=excluded.platform,"
+            "   username=COALESCE(NULLIF(excluded.username,''), memory_users.username),"
+            "   avatar_url=COALESCE(NULLIF(excluded.avatar_url,''), memory_users.avatar_url)",
+            (user_id, platform, time.time(), username or None, avatar_url or None),
         )
 
     # ── Memory questions ───────────────────────────────────────────────────
@@ -800,7 +843,9 @@ class Database:
                         if len(parts) >= 3 and parts[0] == parts[1]:
                             uid = f"{parts[0]}:{':'.join(parts[2:])}"
                             logger.warning("Sync: fixed double-prefix → {uid}", uid=uid)
+                        # Fix cross-platform IDs before adding
                         platform_prefix = uid.split(":")[0]
+                        uid, platform_prefix = self._fix_platform(uid, platform_prefix)
                         if platform_prefix:  # skip malformed entries with empty prefix
                             user_ids.add(uid)
                 if next_offset is None:
@@ -836,7 +881,8 @@ class Database:
         # LEFT JOIN avec trust_scores : la clé memory_users.user_id est "platform:raw_id"
         # alors que trust_scores.user_id est "raw_id" — on extrait via SUBSTR.
         sql = (
-            "SELECT m.user_id, m.platform, m.last_updated, m.username, "
+            "SELECT m.user_id, m.platform, m.last_updated, m.username, m.avatar_url, "
+            "COALESCE(m.memory_count, 0) AS memory_count, "
             "COALESCE(t.score, 0.0) AS trust_score, 1 AS in_memory_users "
             "FROM memory_users m "
             "LEFT JOIN trust_scores t "
@@ -854,6 +900,7 @@ class Database:
                 " UNION ALL "
                 "SELECT (t2.platform || ':' || t2.user_id) AS user_id, "
                 "t2.platform, t2.updated_at AS last_updated, NULL AS username, "
+                "NULL AS avatar_url, 0 AS memory_count, "
                 "t2.score AS trust_score, 0 AS in_memory_users "
                 "FROM trust_scores t2 "
                 "WHERE NOT EXISTS ("
@@ -879,6 +926,8 @@ class Database:
                 "platform": r["platform"],
                 "last_updated": r["last_updated"],
                 "username": r["username"],
+                "avatar_url": r["avatar_url"] if "avatar_url" in r.keys() else None,
+                "memory_count": r["memory_count"],
                 "trust_score": round(float(r["trust_score"]), 2),
                 "in_memory_users": bool(r["in_memory_users"]),
             }
@@ -904,6 +953,26 @@ class Database:
             "SELECT timestamp, channel_id, author, content, platform FROM daily_log "
             "WHERE timestamp >= ? ORDER BY timestamp ASC",
             (midnight,),
+        )
+        return [
+            {
+                "timestamp": float(row["timestamp"]),
+                "channel_id": row["channel_id"],
+                "author": row["author"],
+                "content": row["content"],
+                "platform": row["platform"] if "platform" in row.keys() else "discord",
+            }
+            for row in rows
+        ]
+
+    async def get_messages_for_date(self, target_date: date) -> list[dict]:
+        """Return daily_log messages for a specific date (Europe/Paris)."""
+        midnight = datetime.combine(target_date, datetime.min.time(), tzinfo=_TZ_DB).timestamp()
+        end = midnight + 86400
+        rows = await self.fetch_all(
+            "SELECT timestamp, channel_id, author, content, platform FROM daily_log "
+            "WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC",
+            (midnight, end),
         )
         return [
             {

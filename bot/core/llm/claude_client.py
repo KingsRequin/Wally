@@ -102,12 +102,18 @@ class ClaudeLLMClient(BaseLLMClient):
         db: "Database",
         temperature: float = 1.0,
         max_tokens: int = 1000,
+        thinking_type: str = "disabled",
+        thinking_budget_tokens: int = 10000,
+        thinking_effort: str = "medium",
         **kwargs,
     ):
         self._model = model
         self._db = db
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._thinking_type = thinking_type
+        self._thinking_budget_tokens = thinking_budget_tokens
+        self._thinking_effort = thinking_effort
         api_key = os.environ.get("ANTHROPIC_API_KEY", "dummy-key-for-testing")
 
         from anthropic import AsyncAnthropic
@@ -136,6 +142,44 @@ class ClaudeLLMClient(BaseLLMClient):
     @max_tokens.setter
     def max_tokens(self, value: int) -> None:
         self._max_tokens = value
+
+    @property
+    def thinking_type(self) -> str:
+        return self._thinking_type
+
+    @thinking_type.setter
+    def thinking_type(self, value: str) -> None:
+        self._thinking_type = value
+
+    @property
+    def thinking_budget_tokens(self) -> int:
+        return self._thinking_budget_tokens
+
+    @thinking_budget_tokens.setter
+    def thinking_budget_tokens(self, value: int) -> None:
+        self._thinking_budget_tokens = value
+
+    @property
+    def thinking_effort(self) -> str:
+        return self._thinking_effort
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: str) -> None:
+        self._thinking_effort = value
+
+    def _build_thinking_param(self) -> dict | None:
+        """Build the thinking parameter for the API call, or None if disabled."""
+        if self._thinking_type == "adaptive":
+            return {"type": "adaptive"}
+        elif self._thinking_type == "enabled":
+            return {"type": "enabled", "budget_tokens": self._thinking_budget_tokens}
+        return None
+
+    def _build_output_config(self) -> dict | None:
+        """Build output_config with effort level (used with adaptive thinking)."""
+        if self._thinking_type in ("adaptive", "enabled") and self._thinking_effort != "high":
+            return {"effort": self._thinking_effort}
+        return None
 
     async def _log_usage(
         self, usage, purpose: str, user_id: str | None = None,
@@ -231,17 +275,29 @@ class ClaudeLLMClient(BaseLLMClient):
             claude_messages[-1] = last_msg
 
         fallback = FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
+        thinking = self._build_thinking_param()
+        output_config = self._build_output_config()
 
         async def _call():
-            response = await self._client.messages.create(
+            kwargs = dict(
                 model=self._model,
                 max_tokens=effective_max,
-                temperature=self._temperature,
                 system=self._build_system_with_caching(system_prompt),
                 messages=claude_messages,
             )
+            if thinking:
+                kwargs["thinking"] = thinking
+                # temperature must be 1 when thinking is enabled
+                kwargs["temperature"] = 1
+            else:
+                kwargs["temperature"] = self._temperature
+            if output_config:
+                kwargs["output_config"] = output_config
+            response = await self._client.messages.create(**kwargs)
             await self._log_usage(response.usage, purpose, user_id=user_id)
-            text = response.content[0].text if response.content else ""
+            # Extract text blocks only (skip thinking blocks)
+            text_blocks = [b for b in response.content if b.type == "text"]
+            text = text_blocks[0].text if text_blocks else ""
             return text.strip() if text else fallback
 
         result = await self._call_with_retry(_call, purpose, fallback=fallback)
@@ -278,18 +334,29 @@ class ClaudeLLMClient(BaseLLMClient):
         from anthropic import RateLimitError, APIStatusError
 
         system = self._build_system_with_caching(system_prompt)
+        thinking = self._build_thinking_param()
+        output_config = self._build_output_config()
+        base_kwargs = dict(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            system=system,
+            tools=claude_tools,
+        )
+        if thinking:
+            base_kwargs["thinking"] = thinking
+            base_kwargs["temperature"] = 1
+        else:
+            base_kwargs["temperature"] = self._temperature
+        if output_config:
+            base_kwargs["output_config"] = output_config
 
         # First call with retry (transient errors on initial call)
         response = None
         for attempt in range(3):
             try:
                 response = await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=self._max_tokens,
-                    temperature=self._temperature,
-                    system=system,
                     messages=claude_messages,
-                    tools=claude_tools,
+                    **base_kwargs,
                 )
                 break
             except RateLimitError:
@@ -329,14 +396,16 @@ class ClaudeLLMClient(BaseLLMClient):
                 if not tool_use_blocks:
                     break
 
-                # Append assistant response (full content including tool_use blocks)
-                claude_messages.append({
-                    "role": "assistant",
-                    "content": [
-                        {"type": b.type, **({"text": b.text} if b.type == "text" else {"id": b.id, "name": b.name, "input": b.input})}
-                        for b in response.content
-                    ],
-                })
+                # Append assistant response (full content including thinking + tool_use blocks)
+                content_blocks = []
+                for b in response.content:
+                    if b.type == "thinking":
+                        content_blocks.append({"type": "thinking", "thinking": b.thinking, "signature": b.signature})
+                    elif b.type == "text":
+                        content_blocks.append({"type": "text", "text": b.text})
+                    elif b.type == "tool_use":
+                        content_blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+                claude_messages.append({"role": "assistant", "content": content_blocks})
 
                 # Execute each tool and build tool_result blocks
                 tool_results = []
@@ -352,12 +421,8 @@ class ClaudeLLMClient(BaseLLMClient):
                 claude_messages.append({"role": "user", "content": tool_results})
 
                 response = await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=self._max_tokens,
-                    temperature=self._temperature,
-                    system=system,
                     messages=claude_messages,
-                    tools=claude_tools,
+                    **base_kwargs,
                 )
 
                 if response.usage:

@@ -363,18 +363,26 @@ class DailyJournal:
             d=total_deleted, u=total_updated, q=total_questions,
         )
 
-    async def generate_and_send(self, archive: bool = True) -> None:
+    async def generate_and_send(self, archive: bool = True, target_date: date | None = None) -> None:
         channel_id = self._config.bot.journal_channel_id
         if not channel_id:
             logger.warning("No journal_channel_id configured, skipping journal")
             return
 
-        logger.info("Generating daily journal...")
+        # target_date=None → aujourd'hui (comportement normal du cron)
+        effective_date = target_date or date.today()
+        is_backfill = target_date is not None
+        display_date = effective_date.strftime("%d/%m/%Y")
+
+        logger.info("Generating daily journal for {d}...", d=effective_date.isoformat())
 
         # Source 1 : daily_log SQLite (survit aux redémarrages, toutes plateformes)
         if self._db is not None:
             try:
-                db_messages = await self._db.get_today_messages()
+                if is_backfill:
+                    db_messages = await self._db.get_messages_for_date(effective_date)
+                else:
+                    db_messages = await self._db.get_today_messages()
             except Exception as exc:
                 logger.warning("Failed to get daily_log messages: {e}", e=exc)
                 db_messages = []
@@ -382,7 +390,7 @@ class DailyJournal:
             db_messages = []
 
         # Source 2 : Discord channel history (lecture API, toute la journée)
-        if not db_messages and self._fetch_history_cb is not None:
+        if not db_messages and not is_backfill and self._fetch_history_cb is not None:
             try:
                 db_messages = await self._fetch_history_cb()
                 if db_messages:
@@ -415,16 +423,18 @@ class DailyJournal:
         # ── Dynamic word range (F1) ──
         word_range = _get_word_range(len(all_messages)) if all_messages else "150 à 250"
 
-        # ── Midnight timestamp for today-based queries ──
-        midnight = datetime.now(_TZ_JOURNAL).replace(
-            hour=0, minute=0, second=0, microsecond=0
+        # ── Midnight timestamp for date-based queries ──
+        midnight = datetime.combine(
+            effective_date, datetime.min.time(), tzinfo=_TZ_JOURNAL
         ).timestamp()
+        end_of_day = midnight + 86400
 
         # ── Emotion peaks (F5) ──
         peaks_block = ""
         if self._db is not None:
             try:
-                peaks = await self._db.get_emotion_peaks_since(midnight)
+                all_peaks = await self._db.get_emotion_peaks_since(midnight)
+                peaks = [p for p in all_peaks if p["timestamp"] < end_of_day] if is_backfill else all_peaks
                 if peaks:
                     peak_lines = []
                     for p in peaks:
@@ -444,7 +454,8 @@ class DailyJournal:
 
         # ── Emotion arc ──
         try:
-            snapshots = await self._db.get_emotion_snapshots_since(midnight) if self._db else []
+            all_snapshots = await self._db.get_emotion_snapshots_since(midnight) if self._db else []
+            snapshots = [s for s in all_snapshots if s["snapshot_at"] < end_of_day] if is_backfill else all_snapshots
         except Exception as exc:
             logger.warning("Failed to get emotion snapshots for journal: {e}", e=exc)
             snapshots = []
@@ -476,7 +487,7 @@ class DailyJournal:
         yesterday_block = ""
         if self._db is not None:
             try:
-                yesterday = await self._db.get_yesterday_journal()
+                yesterday = await self._db.get_yesterday_journal(today=effective_date.isoformat())
                 if yesterday:
                     yesterday_block = f"Ton journal d'hier :\n{yesterday['content']}"
             except Exception as exc:
@@ -486,7 +497,7 @@ class DailyJournal:
         gallery_block = ""
         if self._db is not None:
             try:
-                today_images = await self._db.get_gallery_images_for_date(date.today().isoformat())
+                today_images = await self._db.get_gallery_images_for_date(effective_date.isoformat())
                 if today_images:
                     lines = [f"**Galerie du jour** : {len(today_images)} images"]
                     for img in today_images:
@@ -522,7 +533,10 @@ class DailyJournal:
             sections.append(yesterday_block)
         if gallery_block:
             sections.append(gallery_block)
-        sections.append("Écris ton journal intime pour aujourd'hui.")
+        if is_backfill:
+            sections.append(f"Écris ton journal intime pour le {display_date}.")
+        else:
+            sections.append("Écris ton journal intime pour aujourd'hui.")
 
         user_msg = "\n\n".join(sections)
 
@@ -536,7 +550,7 @@ class DailyJournal:
         # ── Emotion chart image (F10) ──
         chart_buf = _generate_emotion_chart(snapshots) if snapshots else None
 
-        formatted = f"# Journal de Wally — {self._today()}\n\n{journal_text}"
+        formatted = f"# Journal de Wally — {display_date}\n\n{journal_text}"
         if self._send_cb:
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)
@@ -551,7 +565,7 @@ class DailyJournal:
             try:
                 word_count = len(journal_text.split())
                 await self._db.insert_journal(
-                    date.today().isoformat(), journal_text, word_count,
+                    effective_date.isoformat(), journal_text, word_count,
                 )
                 logger.info("Journal archived ({n} words)", n=word_count)
             except Exception as exc:

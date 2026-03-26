@@ -12,10 +12,18 @@ TZ = ZoneInfo("Europe/Paris")
 
 
 class ActionScheduler:
-    def __init__(self, db, executor, apscheduler) -> None:
+    def __init__(self, db, executor, apscheduler, on_change=None) -> None:
         self._db = db
         self._executor = executor
         self._scheduler = apscheduler
+        self._on_change = on_change
+
+    def _notify(self, event_type: str, task_id: int, **extra) -> None:
+        if self._on_change:
+            try:
+                self._on_change(event_type, task_id, extra if extra else None)
+            except Exception:
+                pass
 
     async def schedule(self, action_type: str, description: str, creator_id: str,
                        creator_platform: str, target_channel: str | None,
@@ -34,6 +42,7 @@ class ActionScheduler:
         )
         self._add_apscheduler_job(task_id, schedule_type, spec)
         logger.info("Scheduled action task {} ({}): {}", task_id, action_type, description)
+        self._notify("created", task_id, description=description, action_type=action_type)
         return task_id
 
     async def cancel(self, task_id: int) -> None:
@@ -41,12 +50,14 @@ class ActionScheduler:
         self._remove_job(task_id)
         await self._db.update_action_task(task_id, status="cancelled", updated_at=now)
         logger.info("Cancelled action task {}", task_id)
+        self._notify("cancelled", task_id)
 
     async def pause(self, task_id: int) -> None:
         now = datetime.now(TZ).isoformat()
         self._remove_job(task_id)
         await self._db.update_action_task(task_id, status="paused", updated_at=now)
         logger.info("Paused action task {}", task_id)
+        self._notify("paused", task_id)
 
     async def resume(self, task_id: int) -> None:
         task = await self._db.get_action_task(task_id)
@@ -58,6 +69,7 @@ class ActionScheduler:
         self._add_apscheduler_job(task_id, task["schedule_type"], spec)
         await self._db.update_action_task(task_id, status="active", updated_at=now, next_run_at=next_run)
         logger.info("Resumed action task {}", task_id)
+        self._notify("resumed", task_id)
 
     async def execute_now(self, task_id: int) -> str:
         task = await self._db.get_action_task(task_id)
@@ -103,10 +115,12 @@ class ActionScheduler:
             updates["status"] = "completed"
             self._remove_job(task_id)
             logger.info("Action task {} completed ({}/{} executions)", task_id, new_count, max_exec)
+            self._notify("completed", task_id)
         else:
             spec = json.loads(task["schedule_spec"] or "{}")
             next_run = self._compute_next_run(task["schedule_type"], spec)
             updates["next_run_at"] = next_run
+            self._notify("executed", task_id)
         await self._db.update_action_task(task_id, **updates)
 
     async def _on_job_failed(self, task_id: int, error: str) -> None:
@@ -121,10 +135,14 @@ class ActionScheduler:
             updates["status"] = "missed"
             self._remove_job(task_id)
             logger.warning("Once task {} marked missed after failure: {}", task_id, error)
+            self._notify("failed", task_id, error=error)
         elif failures >= 3:
             updates["status"] = "paused"
             self._remove_job(task_id)
             logger.warning("Action task {} auto-paused after {} failures: {}", task_id, failures, error)
+            self._notify("failed", task_id, error=error, auto_paused=True)
+        else:
+            self._notify("failed", task_id, error=error)
         await self._db.update_action_task(task_id, **updates)
 
     async def _run_task(self, task: dict) -> str:
