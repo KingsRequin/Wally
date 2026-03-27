@@ -59,6 +59,7 @@ MAX_DELTA_PER_MESSAGE = 0.3
 SUPPRESSION_RULES: list[tuple[str, str, float]] = [
     ("joy",     "anger",   0.8),
     ("joy",     "sadness", 0.8),
+    ("anger",   "joy",     0.4),   # anger érode joy (mais moins que l'inverse)
 ]
 
 # Coefficient de compétition continue pendant le decay (par tick de 60s).
@@ -168,12 +169,35 @@ class EmotionEngine:
         # Peak detection anti-spam cache: emotion → timestamp of last peak
         self._last_peak_ts: dict[str, float] = {}
         self._bg_tasks: set[asyncio.Task] = set()
+        # Mood layer (EMA of emotions, slow-moving baseline)
+        self._mood: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
 
     def get_state(self) -> dict[str, float]:
         return dict(self._state)
+
+    def get_mood(self) -> dict[str, float]:
+        return dict(self._mood)
+
+    def _update_mood(self, delta_t_hours: float = 0.0) -> None:
+        """EMA update + slow exponential decay toward neutral."""
+        mood_cfg = getattr(self._config, "mood", None)
+        a = mood_cfg.alpha if mood_cfg and isinstance(getattr(mood_cfg, "alpha", None), (int, float)) else 0.02
+        lam = mood_cfg.decay_lambda if mood_cfg and isinstance(getattr(mood_cfg, "decay_lambda", None), (int, float)) else 0.1
+        for e in EMOTIONS:
+            self._mood[e] = a * self._state[e] + (1 - a) * self._mood[e]
+            if delta_t_hours > 0 and self._mood[e] > 0:
+                self._mood[e] *= math.exp(-lam * delta_t_hours)
+
+    def _apply_mood_bias(self, emotion: str, delta: float) -> float:
+        """Mood amplifies deltas for matching emotions."""
+        if delta <= 0:
+            return delta
+        mood_cfg = getattr(self._config, "mood", None)
+        bias = mood_cfg.bias_factor if mood_cfg and isinstance(getattr(mood_cfg, "bias_factor", None), (int, float)) else 0.3
+        return delta * (1 + self._mood.get(emotion, 0.0) * bias)
 
     def _apply_competition(self) -> None:
         """Érode mutuellement les émotions incompatibles (appelée après chaque decay tick).
@@ -285,6 +309,11 @@ class EmotionEngine:
                 if emotion in self._state:
                     self._state[emotion] = max(0.0, min(1.0, value))
             logger.info("Emotion state loaded from DB: {s}", s=self._state)
+            # Load mood layer
+            mood = await self._db.load_mood_state()
+            for e in EMOTIONS:
+                self._mood[e] = mood.get(e, 0.0)
+            logger.info("Mood state loaded from DB: {s}", s=self._mood)
         except Exception as exc:
             logger.warning("Failed to load emotion state: {e}", e=exc)
 
@@ -301,6 +330,7 @@ class EmotionEngine:
         if self._db and self._dirty:
             try:
                 await self._db.save_emotion_state(self._state)
+                await self._db.save_mood_state(self._mood)
                 self._dirty = False
             except Exception as exc:
                 logger.warning("Failed to persist emotion state: {e}", e=exc)
@@ -510,6 +540,7 @@ class EmotionEngine:
             self._state["boredom"] = boredom_target
         self._last_decay = now
         self._apply_competition()
+        self._update_mood(delta_t / 3600.0)
 
     async def _decay_loop(self) -> None:
         while True:
@@ -572,10 +603,10 @@ class EmotionEngine:
                 fr_raw = sum(d for w, d in word_deltas if w in text_lower)
                 if fr_raw > 0:
                     combined = deltas.get(emotion, 0.0) + fr_raw
-                    if emotion == "anger":
-                        combined = min(combined * (1.0 + max(0.0, 1.0 - trust_score)), MAX_DELTA_PER_MESSAGE)
-                    else:
-                        combined = min(combined, MAX_DELTA_PER_MESSAGE)
+                    # Note: anger amplification already applied above on the
+                    # NRCLex portion — only cap the combined value here to
+                    # avoid double-amplifying.
+                    combined = min(combined, MAX_DELTA_PER_MESSAGE)
                     deltas[emotion] = combined
 
             return deltas
