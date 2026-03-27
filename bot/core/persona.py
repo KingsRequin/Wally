@@ -35,6 +35,7 @@ class PersonaService:
         self._emotion_directives = self._parse_emotions()
         self._weekday_directives = self._parse_weekdays()
         self._composite_directives = self._parse_composites()
+        self._secondary_directives = self._parse_secondaries()
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
@@ -111,6 +112,36 @@ class PersonaService:
                     directives[key] = text
         logger.info("COMPOSITES.md loaded: {n} directives", n=len(directives))
         return directives
+
+    def _parse_secondaries(self) -> dict[str, str]:
+        """Parse SECONDARIES.md en un dict {key: directive}."""
+        path = os.path.join(self._dir, "SECONDARIES.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: SECONDARIES.md")
+            return {}
+        except Exception as exc:
+            logger.warning("SECONDARIES.md read error: {e}", e=exc)
+            return {}
+
+        directives: dict[str, str] = {}
+        sections = ("\n" + content).split("\n## ")
+        for section in sections[1:]:
+            lines = section.strip().split("\n", 1)
+            if len(lines) >= 2:
+                key = lines[0].strip()
+                text = " ".join(lines[1].strip().split("\n")).strip()
+                if key and text:
+                    directives[key] = text
+        logger.info("SECONDARIES.md loaded: {n} directives", n=len(directives))
+        return directives
+
+    @property
+    def secondary_directives(self) -> dict[str, str]:
+        """Directives comportementales pour les émotions secondaires."""
+        return self._secondary_directives
 
     @property
     def composite_directives(self) -> dict[str, str]:
