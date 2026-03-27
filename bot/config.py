@@ -290,9 +290,11 @@ class Config:
         with open(path) as f:
             raw = yaml.safe_load(f)
         try:
+            _ORGANIC_KEYS = {"mood", "fatigue", "habituation", "memory", "circadian", "spontaneous", "secondaries"}
             emotions = {
                 k: EmotionDecayConfig(**v)
                 for k, v in raw.get("emotions", {}).items()
+                if k not in _ORGANIC_KEYS
             }
             twitch_events = {
                 k: TwitchEventConfig(**v)
@@ -403,19 +405,20 @@ class Config:
             "llm": asdict(self.llm),
             "discord": asdict(self.discord),
             "twitch": asdict(self.twitch),
-            "emotions": {k: asdict(v) for k, v in self.emotions.items()},
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
             "tavily": asdict(self.tavily),
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
-            "mood": asdict(self.mood),
-            "fatigue": asdict(self.fatigue),
-            "habituation": asdict(self.habituation),
-            "emotional_memory": asdict(self.emotional_memory),
-            "circadian": asdict(self.circadian),
-            "spontaneous": asdict(self.spontaneous),
-            "secondaries": {k: asdict(v) for k, v in self.secondaries.items()},
         }
+        emotions_data = {k: asdict(v) for k, v in self.emotions.items()}
+        emotions_data["mood"] = asdict(self.mood)
+        emotions_data["fatigue"] = asdict(self.fatigue)
+        emotions_data["habituation"] = asdict(self.habituation)
+        emotions_data["memory"] = asdict(self.emotional_memory)
+        emotions_data["circadian"] = asdict(self.circadian)
+        emotions_data["spontaneous"] = asdict(self.spontaneous)
+        emotions_data["secondaries"] = {k: asdict(v) for k, v in self.secondaries.items()}
+        data["emotions"] = emotions_data
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)

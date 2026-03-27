@@ -76,3 +76,18 @@ def test_secondary_emotion_def():
 def test_secondary_emotion_def_asymmetric_threshold():
     s = SecondaryEmotionDef(a="anger", b="boredom", threshold=[0.4, 0.5])
     assert s.threshold == [0.4, 0.5]
+
+
+def test_config_save_load_roundtrip(tmp_path):
+    """New organic emotion configs should survive save/load cycle."""
+    cfg = Config.load("config.yaml")
+    cfg.mood.alpha = 0.05
+    cfg.fatigue.dampening = 0.9
+    cfg.circadian.enabled = False
+    test_path = str(tmp_path / "test_config.yaml")
+    cfg._path = test_path
+    cfg.save()
+    cfg2 = Config.load(test_path)
+    assert cfg2.mood.alpha == 0.05
+    assert cfg2.fatigue.dampening == 0.9
+    assert cfg2.circadian.enabled is False
