@@ -103,6 +103,85 @@ class EmotionDecayConfig:
 
 
 @dataclass
+class MoodConfig:
+    alpha: float = 0.02
+    decay_lambda: float = 0.1
+    bias_factor: float = 0.3
+
+
+@dataclass
+class FatigueConfig:
+    dampening: float = 0.7
+    recovery_rate: float = 0.1
+
+
+@dataclass
+class HabituationConfig:
+    threshold_count: int = 3
+    window_seconds: int = 600
+    decay_factor: float = 0.5
+    reset_seconds: int = 1800
+    exempt: list[str] = field(default_factory=lambda: ["anger"])
+
+
+@dataclass
+class EmotionalMemoryConfig:
+    learning_rate: float = 0.05
+    priming_factor: float = 0.05
+    amplification_factor: float = 0.3
+    decay_lambda_per_day: float = 0.01
+
+
+@dataclass
+class CircadianPeriod:
+    hours: list[int] = field(default_factory=lambda: [0, 0])
+    anger: float = 1.0
+    joy: float = 1.0
+    sadness: float = 1.0
+    curiosity: float = 1.0
+    boredom: float = 1.0
+
+
+@dataclass
+class CircadianConfig:
+    enabled: bool = True
+    timezone: str = "Europe/Paris"
+    transition_minutes: int = 30
+    periods: dict[str, CircadianPeriod] = field(default_factory=lambda: {
+        "night": CircadianPeriod(hours=[0, 6], anger=1.3, curiosity=0.8, boredom=1.1),
+        "morning": CircadianPeriod(hours=[6, 12], anger=0.9, joy=1.1, sadness=0.9, curiosity=1.2, boredom=0.9),
+        "afternoon": CircadianPeriod(hours=[12, 18]),
+        "evening": CircadianPeriod(hours=[18, 24], sadness=1.15),
+    })
+
+
+@dataclass
+class SpontaneousEvent:
+    weight: int = 0
+    effects: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class SpontaneousConfig:
+    probability_per_tick: float = 0.02
+    max_delta: float = 0.1
+    events: dict[str, SpontaneousEvent] = field(default_factory=lambda: {
+        "wandering_thought": SpontaneousEvent(weight=30, effects={"curiosity": 0.05}),
+        "pleasant_memory": SpontaneousEvent(weight=20, effects={"joy": 0.05}),
+        "unpleasant_memory": SpontaneousEvent(weight=10, effects={"sadness": 0.05}),
+        "existential_ennui": SpontaneousEvent(weight=25, effects={"boredom": 0.08}),
+        "creative_spark": SpontaneousEvent(weight=15, effects={"curiosity": 0.08, "boredom": -0.1}),
+    })
+
+
+@dataclass
+class SecondaryEmotionDef:
+    a: str = ""
+    b: str = ""
+    threshold: float | list[float] = 0.3
+
+
+@dataclass
 class TwitchEventConfig:
     active: bool
     message: str
@@ -156,6 +235,20 @@ class Config:
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
+    mood: MoodConfig = field(default_factory=MoodConfig)
+    fatigue: FatigueConfig = field(default_factory=FatigueConfig)
+    habituation: HabituationConfig = field(default_factory=HabituationConfig)
+    emotional_memory: EmotionalMemoryConfig = field(default_factory=EmotionalMemoryConfig)
+    circadian: CircadianConfig = field(default_factory=CircadianConfig)
+    spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
+    secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
+        "frustration": SecondaryEmotionDef(a="anger", b="boredom", threshold=0.3),
+        "nostalgia": SecondaryEmotionDef(a="joy", b="sadness", threshold=0.3),
+        "pride": SecondaryEmotionDef(a="joy", b="curiosity", threshold=0.4),
+        "anxiety": SecondaryEmotionDef(a="sadness", b="curiosity", threshold=0.3),
+        "contempt": SecondaryEmotionDef(a="anger", b="boredom", threshold=[0.4, 0.5]),
+        "wonder": SecondaryEmotionDef(a="curiosity", b="joy", threshold=0.5),
+    })
     _path: str = field(default="", init=False, repr=False)
 
     @classmethod
@@ -220,6 +313,44 @@ class Config:
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
+            # --- Organic emotion configs (nested under emotions:) ---
+            emo_raw = raw.get("emotions", {})
+            mood_cfg = MoodConfig(**emo_raw.get("mood", {}))
+            fatigue_cfg = FatigueConfig(**emo_raw.get("fatigue", {}))
+            habituation_cfg = HabituationConfig(**emo_raw.get("habituation", {}))
+            emotional_memory_cfg = EmotionalMemoryConfig(**emo_raw.get("memory", {}))
+            # Circadian
+            circ_raw = emo_raw.get("circadian", {})
+            if circ_raw:
+                circ_periods = {}
+                for name, pdata in circ_raw.get("periods", {}).items():
+                    circ_periods[name] = CircadianPeriod(**pdata)
+                circ_kwargs = {k: v for k, v in circ_raw.items() if k != "periods"}
+                if circ_periods:
+                    circ_kwargs["periods"] = circ_periods
+                circadian_cfg = CircadianConfig(**circ_kwargs)
+            else:
+                circadian_cfg = CircadianConfig()
+            # Spontaneous
+            spont_raw = emo_raw.get("spontaneous", {})
+            if spont_raw:
+                spont_events = {}
+                for name, edata in spont_raw.get("events", {}).items():
+                    spont_events[name] = SpontaneousEvent(**edata)
+                spont_kwargs = {k: v for k, v in spont_raw.items() if k != "events"}
+                if spont_events:
+                    spont_kwargs["events"] = spont_events
+                spontaneous_cfg = SpontaneousConfig(**spont_kwargs)
+            else:
+                spontaneous_cfg = SpontaneousConfig()
+            # Secondaries
+            sec_raw = emo_raw.get("secondaries", {})
+            if sec_raw:
+                secondaries_cfg = {
+                    name: SecondaryEmotionDef(**sdata) for name, sdata in sec_raw.items()
+                }
+            else:
+                secondaries_cfg = None  # use default_factory
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
             llm_config = cls._build_llm_config(raw)
@@ -248,6 +379,13 @@ class Config:
                 web_chat=WebChatConfig(**web_chat_raw),
                 image_generation=image_generation,
                 overlay_image=overlay_image,
+                mood=mood_cfg,
+                fatigue=fatigue_cfg,
+                habituation=habituation_cfg,
+                emotional_memory=emotional_memory_cfg,
+                circadian=circadian_cfg,
+                spontaneous=spontaneous_cfg,
+                **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
             )
         except (KeyError, TypeError) as e:
             raise ValueError(
@@ -271,6 +409,13 @@ class Config:
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
+            "mood": asdict(self.mood),
+            "fatigue": asdict(self.fatigue),
+            "habituation": asdict(self.habituation),
+            "emotional_memory": asdict(self.emotional_memory),
+            "circadian": asdict(self.circadian),
+            "spontaneous": asdict(self.spontaneous),
+            "secondaries": {k: asdict(v) for k, v in self.secondaries.items()},
         }
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
