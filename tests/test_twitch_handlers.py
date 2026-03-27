@@ -189,6 +189,7 @@ async def test_post_process_calls_emotion_and_trust():
     bot.emotion.process_message.assert_awaited_once_with(
         "merci wally", trust_score=0.5, context_messages=None,
         trigger_user="111", channel_id="", platform="twitch",
+        user_id="111",
     )
     bot.db.update_trust_score.assert_awaited_once()
 

@@ -247,6 +247,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
             relationship_context=relationship_context,
+            secondary_directives=bot.persona.secondary_directives,
+            active_secondaries=bot.emotion.get_secondary_emotions(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -356,6 +358,7 @@ async def _post_process(
         llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             trigger_user=user_id, channel_id=channel_id, platform="twitch",
+            user_id=user_id,
         )
 
         if llm_deltas:
@@ -400,6 +403,8 @@ async def _announce_overlay_image(
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
+            secondary_directives=bot.persona.secondary_directives,
+            active_secondaries=bot.emotion.get_secondary_emotions(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -469,6 +474,8 @@ async def _spontaneous_respond_twitch(
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
+            secondary_directives=bot.persona.secondary_directives,
+            active_secondaries=bot.emotion.get_secondary_emotions(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""

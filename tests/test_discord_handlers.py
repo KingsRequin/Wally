@@ -190,6 +190,7 @@ async def test_post_process_calls_emotion_and_trust():
     bot.emotion.process_message.assert_awaited_once_with(
         "thank you", trust_score=0.5, context_messages=None, image_urls=None,
         trigger_user="12345", channel_id="", platform="discord",
+        user_id="12345",
     )
     bot.db.update_trust_score.assert_awaited_once()
 

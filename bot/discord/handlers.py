@@ -505,6 +505,8 @@ async def _respond(
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
             relationship_context=relationship_context,
+            secondary_directives=bot.persona.secondary_directives,
+            active_secondaries=bot.emotion.get_secondary_emotions(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
@@ -734,6 +736,7 @@ async def _post_process(
             text, trust_score=trust, context_messages=context_messages,
             image_urls=image_urls,
             trigger_user=user_id, channel_id=channel_id, platform="discord",
+            user_id=user_id,
         )
 
         if llm_deltas:
@@ -823,6 +826,8 @@ async def _spontaneous_respond(
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
+            secondary_directives=bot.persona.secondary_directives,
+            active_secondaries=bot.emotion.get_secondary_emotions(),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""

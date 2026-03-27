@@ -520,8 +520,38 @@ class EmotionEngine:
             for e in EMOTIONS:
                 self._fatigue[e] = fatigue.get(e, 0.0)
             logger.info("Fatigue state loaded from DB: {s}", s=self._fatigue)
+            # Load user affinities (emotional memory)
+            await self.load_user_affinities()
         except Exception as exc:
             logger.warning("Failed to load emotion state: {e}", e=exc)
+
+    async def load_user_affinities(self) -> None:
+        """Load all affinities from DB into memory cache."""
+        if not self._db:
+            return
+        rows = await self._db.fetch_all(
+            "SELECT user_id, platform, emotion, affinity, interaction_count FROM emotional_memory"
+        )
+        for row in rows:
+            key = (row["user_id"], row["platform"])
+            if key not in self._user_affinity:
+                self._user_affinity[key] = {e: 0.0 for e in EMOTIONS}
+                self._user_affinity[key]["_count"] = {e: 0 for e in EMOTIONS}
+            self._user_affinity[key][row["emotion"]] = float(row["affinity"])
+            self._user_affinity[key]["_count"][row["emotion"]] = int(row["interaction_count"])
+        if rows:
+            logger.info("Loaded emotional memory for {n} user-emotion pairs", n=len(rows))
+
+    async def _save_user_affinities(self) -> None:
+        """Persist all in-memory affinities to DB."""
+        if not self._db:
+            return
+        for (user_id, platform), data in self._user_affinity.items():
+            for e in EMOTIONS:
+                aff = data.get(e, 0.0)
+                count = data.get("_count", {}).get(e, 0)
+                if aff != 0.0 or count > 0:
+                    await self._db.upsert_emotional_memory(user_id, platform, e, aff, count)
 
     def _schedule_save(self) -> None:
         """Debounce : annule la tâche en cours et en planifie une nouvelle dans 5s."""
@@ -538,6 +568,7 @@ class EmotionEngine:
                 await self._db.save_emotion_state(self._state)
                 await self._db.save_mood_state(self._mood)
                 await self._db.save_fatigue_state(self._fatigue)
+                await self._save_user_affinities()
                 self._dirty = False
             except Exception as exc:
                 logger.warning("Failed to persist emotion state: {e}", e=exc)
