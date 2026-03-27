@@ -97,6 +97,28 @@ CREATE TABLE IF NOT EXISTS emotion_peaks (
 
 CREATE INDEX IF NOT EXISTS idx_emotion_peaks_ts ON emotion_peaks(timestamp);
 
+CREATE TABLE IF NOT EXISTS emotional_memory (
+    user_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    emotion TEXT NOT NULL,
+    affinity REAL NOT NULL DEFAULT 0.0,
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    last_updated TEXT NOT NULL,
+    PRIMARY KEY (user_id, platform, emotion)
+);
+
+CREATE TABLE IF NOT EXISTS emotion_mood (
+    emotion TEXT PRIMARY KEY,
+    value REAL NOT NULL DEFAULT 0.0,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS emotion_fatigue (
+    emotion TEXT PRIMARY KEY,
+    value REAL NOT NULL DEFAULT 0.0,
+    updated_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS journal_archive (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL UNIQUE,
@@ -649,6 +671,56 @@ class Database:
             "DELETE FROM emotion_history WHERE snapshot_at < ?",
             (cutoff,),
         )
+
+    # ── Emotional memory & mood/fatigue persistence ──────────────────────────────
+
+    async def upsert_emotional_memory(
+        self, user_id: str, platform: str, emotion: str, affinity: float, interaction_count: int,
+    ) -> None:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+        await self.execute(
+            "INSERT INTO emotional_memory (user_id, platform, emotion, affinity, interaction_count, last_updated) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, platform, emotion) DO UPDATE SET "
+            "affinity=excluded.affinity, interaction_count=excluded.interaction_count, last_updated=excluded.last_updated",
+            (user_id, platform, emotion, affinity, interaction_count, now),
+        )
+
+    async def get_emotional_memory(self, user_id: str, platform: str) -> list[dict]:
+        rows = await self.fetch_all(
+            "SELECT emotion, affinity, interaction_count, last_updated "
+            "FROM emotional_memory WHERE user_id = ? AND platform = ?",
+            (user_id, platform),
+        )
+        return [dict(r) for r in rows]
+
+    async def save_mood_state(self, state: dict[str, float]) -> None:
+        now = time.time()
+        query = (
+            "INSERT INTO emotion_mood (emotion, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+        )
+        params = [(e, v, now) for e, v in state.items()]
+        await self._conn.executemany(query, params)
+        await self._conn.commit()
+
+    async def load_mood_state(self) -> dict[str, float]:
+        rows = await self.fetch_all("SELECT emotion, value FROM emotion_mood")
+        return {row["emotion"]: float(row["value"]) for row in rows}
+
+    async def save_fatigue_state(self, state: dict[str, float]) -> None:
+        now = time.time()
+        query = (
+            "INSERT INTO emotion_fatigue (emotion, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(emotion) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+        )
+        params = [(e, v, now) for e, v in state.items()]
+        await self._conn.executemany(query, params)
+        await self._conn.commit()
+
+    async def load_fatigue_state(self) -> dict[str, float]:
+        rows = await self.fetch_all("SELECT emotion, value FROM emotion_fatigue")
+        return {row["emotion"]: float(row["value"]) for row in rows}
 
     # ── Memory users tracking ─────────────────────────────────────────────────────
 
