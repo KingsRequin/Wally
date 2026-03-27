@@ -96,6 +96,37 @@ def _get_tier(value: float) -> str | None:
     return None
 
 
+def _get_tier_fluid(value: float) -> tuple[str, float] | None:
+    """Return tier with blend factor for fluid transitions.
+
+    Returns (tier, 1.0) for pure tiers, ("low_mid", blend) or ("mid_high", blend)
+    for transition zones (+/-0.05 around boundaries 0.4 and 0.7).
+    Returns None if below 0.2.
+    """
+    if value < 0.2:
+        return None
+    # Transition zone around 0.4 (low/mid boundary)
+    if 0.35 <= value < 0.45:
+        blend = (value - 0.35) / 0.1
+        if blend >= 1.0:
+            return ("mid", 1.0)
+        return ("low_mid", blend)
+    # Transition zone around 0.7 (mid/high boundary)
+    if 0.65 <= value < 0.75:
+        blend = (value - 0.65) / 0.1
+        if blend >= 1.0:
+            return ("high", 1.0)
+        return ("mid_high", blend)
+    # Pure tiers
+    if value >= 0.75:
+        return ("high", 1.0)
+    if value >= 0.45:
+        return ("mid", 1.0)
+    if value >= 0.2:
+        return ("low", 1.0)
+    return None
+
+
 class PromptBuilder:
     def __init__(self):
         pass
@@ -111,6 +142,9 @@ class PromptBuilder:
         weekday_directives: dict[str, str] | None = None,
         composite_directives: dict[str, str] | None = None,
         relationship_context: str = "",
+        secondary_directives: dict[str, str] | None = None,
+        active_secondaries: list[tuple[str, float]] | None = None,
+        mood_state: dict[str, float] | None = None,
     ) -> str:
         parts = []
         if persona_block:
@@ -146,7 +180,7 @@ class PromptBuilder:
                 parts.append(weekday_directives[day_name])
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
-        # With composite override when both emotions are >= 0.4 and pair is known
+        # Priority: secondary emotions > composite pairs > atomic with fluid transitions
         directives = emotion_directives if emotion_directives is not None else {}
         dominant = sorted(
             [(e, v) for e, v in emotion_state.items() if v >= 0.2],
@@ -154,8 +188,22 @@ class PromptBuilder:
             reverse=True,
         )[:2]
 
-        if dominant and directives:
-            composite_used = False
+        directive_injected = False
+
+        # 1) Secondary emotions (highest priority)
+        if active_secondaries and secondary_directives:
+            for sec_name, sec_intensity in active_secondaries:
+                if sec_intensity >= 0.4:
+                    sec_tier = _get_tier(sec_intensity)
+                    sec_key = f"{sec_name}_{sec_tier}"
+                    if sec_key in secondary_directives:
+                        parts.append("\n--- Directive comportementale ---")
+                        parts.append(secondary_directives[sec_key])
+                        directive_injected = True
+                        break
+
+        # 2) Composite directives (pair of dominant emotions)
+        if not directive_injected and dominant and directives:
             if (
                 composite_directives
                 and len(dominant) >= 2
@@ -166,13 +214,32 @@ class PromptBuilder:
                 if composite_key in composite_directives:
                     parts.append("\n--- Directive comportementale ---")
                     parts.append(composite_directives[composite_key])
-                    composite_used = True
+                    directive_injected = True
 
-            if not composite_used:
-                parts.append("\n--- Directive comportementale ---")
-                for emotion, value in dominant:
-                    tier = _get_tier(value)
-                    key = f"{emotion}_{tier}"
+        # 3) Atomic directives with fluid transitions
+        if not directive_injected and dominant and directives:
+            parts.append("\n--- Directive comportementale ---")
+            for emotion, value in dominant:
+                fluid = _get_tier_fluid(value)
+                if fluid is None:
+                    continue
+                tier, blend = fluid
+                # Transition zone: combine two tier directives
+                if "_" in tier and blend < 1.0:
+                    low_tier, high_tier = tier.split("_")
+                    low_key = f"{emotion}_{low_tier}"
+                    high_key = f"{emotion}_{high_tier}"
+                    if low_key in directives and high_key in directives:
+                        parts.append(directives[low_key])
+                        parts.append(f"(tendance : {directives[high_key]})")
+                    elif low_key in directives:
+                        parts.append(directives[low_key])
+                    elif high_key in directives:
+                        parts.append(directives[high_key])
+                else:
+                    # Pure tier (or blend == 1.0 which means fully transitioned)
+                    pure_tier = tier.split("_")[-1] if "_" in tier else tier
+                    key = f"{emotion}_{pure_tier}"
                     if key in directives:
                         parts.append(directives[key])
 
