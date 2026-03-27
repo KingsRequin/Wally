@@ -299,7 +299,10 @@ class EmotionEngine:
         if not circ or not getattr(circ, "enabled", True):
             return delta
 
-        tz = ZoneInfo(circ.timezone if hasattr(circ, "timezone") else "Europe/Paris")
+        tz_name = getattr(circ, "timezone", None)
+        if not isinstance(tz_name, str):
+            return delta
+        tz = ZoneInfo(tz_name)
         now = datetime.datetime.now(tz)
         hour_float = now.hour + now.minute / 60.0
 
@@ -378,6 +381,26 @@ class EmotionEngine:
         excess = count - threshold
         decay = hab_cfg.decay_factor if hasattr(hab_cfg, "decay_factor") else 0.5
         return delta * (decay ** excess)
+
+    def prepare_deltas(
+        self, raw_deltas: dict[str, float],
+        user_id: str = "", platform: str = "",
+    ) -> dict[str, float]:
+        """Full pipeline: circadian -> priming -> mood -> amplification -> habituation -> fatigue."""
+        result = {}
+        priming = self._get_priming_deltas(user_id, platform) if user_id else {e: 0.0 for e in EMOTIONS}
+        for e in EMOTIONS:
+            delta = raw_deltas.get(e, 0.0) + priming.get(e, 0.0)
+            if delta > 0:
+                delta = self._apply_circadian(e, delta)
+                delta = self._apply_mood_bias(e, delta)
+                if user_id:
+                    delta = self._apply_affinity_amplification(user_id, platform, e, delta)
+                if user_id:
+                    delta = self._apply_habituation(user_id, e, delta)
+                delta = self._apply_fatigue(e, delta)
+            result[e] = delta
+        return result
 
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
@@ -815,6 +838,7 @@ class EmotionEngine:
         self, text: str, trust_score: float = 0.0, context_messages: list[dict] | None = None,
         image_urls: list[str] | None = None,
         trigger_user: str = "", channel_id: str = "", platform: str = "",
+        user_id: str = "",
     ) -> dict | None:
         self.record_interaction()
         state_before = self.get_state()
@@ -823,13 +847,16 @@ class EmotionEngine:
                 deltas, new_words, trust_delta, love_delta, user_facts = await self._analyze_llm(
                     text, trust_score, context_messages, image_urls=image_urls
                 )
-                for emotion, delta in deltas.items():
+                prepared = self.prepare_deltas(deltas, user_id, platform)
+                for emotion, delta in prepared.items():
                     self.apply_delta(emotion, delta)
                 if new_words:
                     await self._learn_words(new_words)
+                if user_id and platform:
+                    self.update_user_affinity(user_id, platform, deltas)
                 # Check for peaks
                 state_after = self.get_state()
-                for emotion, delta in deltas.items():
+                for emotion, delta in prepared.items():
                     if delta > 0:
                         self._fire(self._maybe_log_peak(
                             emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
@@ -841,10 +868,13 @@ class EmotionEngine:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
         # Fallback : NRCLex + FR_EMOTION_WORDS
         deltas = await self.analyze_message(text, trust_score)
-        for emotion, delta in deltas.items():
+        prepared = self.prepare_deltas(deltas, user_id, platform)
+        for emotion, delta in prepared.items():
             self.apply_delta(emotion, delta)
+        if user_id and platform:
+            self.update_user_affinity(user_id, platform, deltas)
         state_after = self.get_state()
-        for emotion, delta in deltas.items():
+        for emotion, delta in prepared.items():
             if delta > 0:
                 self._fire(self._maybe_log_peak(
                     emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
