@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import math
 import os
@@ -9,6 +10,7 @@ import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -250,6 +252,28 @@ class EmotionEngine:
                 self._state[tgt] = max(0.0, self._state[tgt] - delta * coeff)
             elif emotion == tgt:
                 self._state[src] = max(0.0, self._state[src] - delta * coeff)
+
+    def _apply_circadian(self, emotion: str, delta: float) -> float:
+        """Apply circadian rhythm multiplier to delta based on time of day."""
+        if delta <= 0:
+            return delta
+        circ = getattr(self._config, "circadian", None)
+        if not circ or not getattr(circ, "enabled", True):
+            return delta
+
+        tz = ZoneInfo(circ.timezone if hasattr(circ, "timezone") else "Europe/Paris")
+        now = datetime.datetime.now(tz)
+        hour_float = now.hour + now.minute / 60.0
+
+        # Find current period
+        periods = circ.periods if hasattr(circ, "periods") else {}
+        for _name, p in periods.items():
+            start, end = p.hours
+            if start <= hour_float < end:
+                mult = getattr(p, emotion, 1.0)
+                return delta * mult
+
+        return delta
 
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
