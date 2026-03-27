@@ -171,6 +171,8 @@ class EmotionEngine:
         self._bg_tasks: set[asyncio.Task] = set()
         # Mood layer (EMA of emotions, slow-moving baseline)
         self._mood: dict[str, float] = {e: 0.0 for e in EMOTIONS}
+        # Fatigue: refractory period after peaks
+        self._fatigue: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
@@ -198,6 +200,32 @@ class EmotionEngine:
         mood_cfg = getattr(self._config, "mood", None)
         bias = mood_cfg.bias_factor if mood_cfg and isinstance(getattr(mood_cfg, "bias_factor", None), (int, float)) else 0.3
         return delta * (1 + self._mood.get(emotion, 0.0) * bias)
+
+    def get_fatigue(self) -> dict[str, float]:
+        return dict(self._fatigue)
+
+    def _apply_fatigue(self, emotion: str, delta: float) -> float:
+        if delta <= 0 or self._fatigue.get(emotion, 0.0) <= 0:
+            return delta
+        fatigue_cfg = getattr(self._config, "fatigue", None)
+        dampening = fatigue_cfg.dampening if fatigue_cfg and isinstance(getattr(fatigue_cfg, "dampening", None), (int, float)) else 0.7
+        return delta * (1 - self._fatigue[emotion] * dampening)
+
+    def _check_fatigue_trigger(self, emotion: str, old_value: float, new_value: float) -> None:
+        if emotion == "boredom":
+            return
+        threshold = getattr(self._config.bot, "emotion_peak_threshold", 0.7)
+        if not isinstance(threshold, (int, float)):
+            threshold = 0.7
+        if old_value < threshold <= new_value:
+            self._fatigue[emotion] = new_value
+
+    def _recover_fatigue(self, hours_elapsed: float) -> None:
+        fatigue_cfg = getattr(self._config, "fatigue", None)
+        rate = fatigue_cfg.recovery_rate if fatigue_cfg and isinstance(getattr(fatigue_cfg, "recovery_rate", None), (int, float)) else 0.1
+        for e in EMOTIONS:
+            if self._fatigue[e] > 0:
+                self._fatigue[e] = max(0.0, self._fatigue[e] - rate * hours_elapsed)
 
     def _apply_competition(self) -> None:
         """Érode mutuellement les émotions incompatibles (appelée après chaque decay tick).
@@ -241,6 +269,7 @@ class EmotionEngine:
         self._state[emotion] = max(0.0, min(1.0, old + delta))
         effective_delta = self._state[emotion] - old
         self._apply_suppression(emotion, effective_delta)
+        self._check_fatigue_trigger(emotion, old, self._state[emotion])
         self._dirty = True
         self._schedule_save()
 
@@ -314,6 +343,11 @@ class EmotionEngine:
             for e in EMOTIONS:
                 self._mood[e] = mood.get(e, 0.0)
             logger.info("Mood state loaded from DB: {s}", s=self._mood)
+            # Load fatigue layer
+            fatigue = await self._db.load_fatigue_state()
+            for e in EMOTIONS:
+                self._fatigue[e] = fatigue.get(e, 0.0)
+            logger.info("Fatigue state loaded from DB: {s}", s=self._fatigue)
         except Exception as exc:
             logger.warning("Failed to load emotion state: {e}", e=exc)
 
@@ -331,6 +365,7 @@ class EmotionEngine:
             try:
                 await self._db.save_emotion_state(self._state)
                 await self._db.save_mood_state(self._mood)
+                await self._db.save_fatigue_state(self._fatigue)
                 self._dirty = False
             except Exception as exc:
                 logger.warning("Failed to persist emotion state: {e}", e=exc)
@@ -540,6 +575,7 @@ class EmotionEngine:
             self._state["boredom"] = boredom_target
         self._last_decay = now
         self._apply_competition()
+        self._recover_fatigue(delta_t / 3600.0)
         self._update_mood(delta_t / 3600.0)
 
     async def _decay_loop(self) -> None:
