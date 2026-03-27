@@ -6,6 +6,7 @@ import datetime
 import json
 import math
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -232,6 +233,39 @@ class EmotionEngine:
         for e in EMOTIONS:
             if self._fatigue[e] > 0:
                 self._fatigue[e] = max(0.0, self._fatigue[e] - rate * hours_elapsed)
+
+    def _maybe_spontaneous_event(self) -> None:
+        """Roll for a spontaneous internal emotion event, modulated by mood."""
+        spont = getattr(self._config, "spontaneous", None)
+        if not spont or not isinstance(getattr(spont, "probability_per_tick", None), (int, float)) or spont.probability_per_tick <= 0:
+            return
+        if random.random() >= spont.probability_per_tick:
+            return
+        events = spont.events
+        if not events:
+            return
+        # Build mood-biased weights
+        items = list(events.items())
+        mood_bias_map = {
+            "sadness": ["unpleasant_memory"],
+            "curiosity": ["wandering_thought", "creative_spark"],
+            "joy": ["pleasant_memory"],
+            "boredom": ["existential_ennui"],
+        }
+        weights = []
+        for name, ev in items:
+            w = ev.weight
+            for mood_e, event_names in mood_bias_map.items():
+                if name in event_names and self._mood.get(mood_e, 0.0) > 0.3:
+                    w *= 1 + self._mood[mood_e]
+            weights.append(w)
+        chosen = random.choices(items, weights=weights, k=1)[0]
+        name, event = chosen
+        max_d = spont.max_delta
+        for emotion, delta in event.effects.items():
+            clamped = max(-max_d, min(max_d, delta))
+            if emotion in self._state:
+                self._state[emotion] = max(0.0, min(1.0, self._state[emotion] + clamped))
 
     def _apply_competition(self) -> None:
         """Érode mutuellement les émotions incompatibles (appelée après chaque decay tick).
@@ -671,6 +705,7 @@ class EmotionEngine:
         self._apply_competition()
         self._recover_fatigue(delta_t / 3600.0)
         self._update_mood(delta_t / 3600.0)
+        self._maybe_spontaneous_event()
 
     async def _decay_loop(self) -> None:
         while True:
