@@ -419,6 +419,27 @@ class EmotionEngine:
     def get_dominant(self, threshold: float = 0.2) -> list[str]:
         return [e for e in EMOTIONS if self._state.get(e, 0.0) >= threshold]
 
+    def get_secondary_emotions(self) -> list[tuple[str, float]]:
+        """Return active secondary emotions as (name, intensity) sorted by intensity desc."""
+        secondaries = getattr(self._config, "secondaries", None)
+        if not secondaries or not isinstance(secondaries, dict):
+            return []
+        result = []
+        for name, defn in secondaries.items():
+            val_a = self._state.get(defn.a, 0.0)
+            val_b = self._state.get(defn.b, 0.0)
+            threshold = defn.threshold
+            if isinstance(threshold, list):
+                if val_a < threshold[0] or val_b < threshold[1]:
+                    continue
+            else:
+                if val_a < threshold or val_b < threshold:
+                    continue
+            intensity = min(val_a, val_b)
+            result.append((name, intensity))
+        result.sort(key=lambda x: x[1], reverse=True)
+        return result
+
     def set_openai_client(self, client) -> None:
         """Injection du client LLM secondaire pour l'analyse émotionnelle."""
         self._openai = client
