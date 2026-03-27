@@ -175,6 +175,10 @@ class EmotionEngine:
         self._mood: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         # Fatigue: refractory period after peaks
         self._fatigue: dict[str, float] = {e: 0.0 for e in EMOTIONS}
+        # Per-user emotional memory (affinity)
+        self._user_affinity: dict[tuple[str, str], dict] = {}
+        # Habituation tracker
+        self._habituation_tracker: dict[tuple[str, str], list[tuple[str, float]]] = {}
         self._load_learned_words()
 
     # ── State access ─────────────────────────────────────────────────────────
@@ -274,6 +278,72 @@ class EmotionEngine:
                 return delta * mult
 
         return delta
+
+    # ── Per-user affinity & habituation ────────────────────────────────────
+
+    def get_user_affinity(self, user_id: str, platform: str) -> dict[str, float]:
+        key = (user_id, platform)
+        if key not in self._user_affinity:
+            return {e: 0.0 for e in EMOTIONS}
+        return {e: self._user_affinity[key].get(e, 0.0) for e in EMOTIONS}
+
+    def update_user_affinity(self, user_id: str, platform: str, deltas: dict[str, float]) -> None:
+        key = (user_id, platform)
+        if key not in self._user_affinity:
+            self._user_affinity[key] = {e: 0.0 for e in EMOTIONS}
+            self._user_affinity[key]["_count"] = {e: 0 for e in EMOTIONS}
+        mem_cfg = getattr(self._config, "emotional_memory", None)
+        lr = mem_cfg.learning_rate if mem_cfg else 0.05
+        for e in EMOTIONS:
+            d = deltas.get(e, 0.0)
+            if d != 0.0:
+                self._user_affinity[key][e] = max(-1.0, min(1.0, self._user_affinity[key].get(e, 0.0) + lr * d))
+                self._user_affinity[key]["_count"][e] = self._user_affinity[key]["_count"].get(e, 0) + 1
+
+    def _get_priming_deltas(self, user_id: str, platform: str) -> dict[str, float]:
+        mem_cfg = getattr(self._config, "emotional_memory", None)
+        pf = mem_cfg.priming_factor if mem_cfg else 0.05
+        aff = self.get_user_affinity(user_id, platform)
+        return {e: aff[e] * pf for e in EMOTIONS}
+
+    def _apply_affinity_amplification(self, user_id: str, platform: str, emotion: str, delta: float) -> float:
+        if delta <= 0:
+            return delta
+        mem_cfg = getattr(self._config, "emotional_memory", None)
+        amp = mem_cfg.amplification_factor if mem_cfg else 0.3
+        aff = self.get_user_affinity(user_id, platform)
+        affinity_val = aff.get(emotion, 0.0)
+        if affinity_val <= 0:
+            return delta
+        return delta * (1 + affinity_val * amp)
+
+    def _apply_habituation(self, user_id: str, emotion: str, delta: float) -> float:
+        if delta <= 0:
+            return delta
+        hab_cfg = getattr(self._config, "habituation", None)
+        if not hab_cfg:
+            return delta
+        exempt = hab_cfg.exempt if hasattr(hab_cfg, "exempt") else ["anger"]
+        if emotion in exempt:
+            return delta
+        key = (user_id, emotion)
+        now = time.time()
+        if key not in self._habituation_tracker:
+            self._habituation_tracker[key] = []
+        entries = self._habituation_tracker[key]
+        reset = hab_cfg.reset_seconds if hasattr(hab_cfg, "reset_seconds") else 1800
+        if entries and (now - entries[-1][1]) > reset:
+            entries.clear()
+        window = hab_cfg.window_seconds if hasattr(hab_cfg, "window_seconds") else 600
+        entries[:] = [(e, t) for e, t in entries if now - t < window]
+        entries.append((emotion, now))
+        threshold = hab_cfg.threshold_count if hasattr(hab_cfg, "threshold_count") else 3
+        count = len(entries)
+        if count <= threshold:
+            return delta
+        excess = count - threshold
+        decay = hab_cfg.decay_factor if hasattr(hab_cfg, "decay_factor") else 0.5
+        return delta * (decay ** excess)
 
     def apply_delta(self, emotion: str, delta: float) -> None:
         if emotion not in self._state:
