@@ -2,8 +2,13 @@
 """Routes Setup Wizard — admin (génération invitations) + wizard public."""
 from __future__ import annotations
 
+import asyncio
+import os
+import re
+import subprocess
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -27,7 +32,7 @@ def _invite_status(row) -> str:
         return "preview"
     if row["used_at"]:
         return "used"
-    if row["expires_at"] and row["expires_at"] < row["created_at"]:
+    if row["expires_at"] is not None and row["expires_at"] == -1:
         return "revoked"
     if row["expires_at"] and row["expires_at"] < time.time():
         return "expired"
@@ -61,7 +66,6 @@ def _check_preview_auth(request: Request, token: str) -> None:
 
 @admin_router.post("/invite")
 async def generate_invite(request: Request) -> dict:
-    import os
     state = request.app.state.wally
     token = uuid.uuid4().hex
     expires_at = time.time() + 7 * 86400
@@ -99,9 +103,17 @@ async def revoke_invite(request: Request, token: str) -> dict:
     return {"status": "revoked"}
 
 
+_SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
+_PERSONA_DIR = Path(__file__).parents[3] / "persona"
+
+
+def _validate_slug(slug: str) -> None:
+    if not _SLUG_RE.match(slug):
+        raise HTTPException(status_code=400, detail="Slug invalide.")
+
+
 @admin_router.get("/instances")
 async def list_instances(request: Request) -> dict:
-    import subprocess
     state = request.app.state.wally
     rows = await state.db.list_setup_invites()
     instances = []
@@ -111,7 +123,8 @@ async def list_instances(request: Request) -> dict:
         slug = r["slug"]
         port = r["port"]
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "inspect", "--format", "{{.State.Status}}", f"wally-{slug}"],
                 capture_output=True, text=True, timeout=5,
             )
@@ -128,9 +141,10 @@ async def list_instances(request: Request) -> dict:
 
 @admin_router.post("/instances/{slug}/stop")
 async def stop_instance(request: Request, slug: str) -> dict:
-    import subprocess
+    _validate_slug(slug)
     compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         ["docker", "compose", "-f", str(compose_path), "stop"],
         capture_output=True, text=True, timeout=15,
     )
@@ -139,9 +153,10 @@ async def stop_instance(request: Request, slug: str) -> dict:
 
 @admin_router.post("/instances/{slug}/start")
 async def start_instance(request: Request, slug: str) -> dict:
-    import subprocess
+    _validate_slug(slug)
     compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         ["docker", "compose", "-f", str(compose_path), "start"],
         capture_output=True, text=True, timeout=15,
     )
@@ -150,11 +165,10 @@ async def start_instance(request: Request, slug: str) -> dict:
 
 @admin_router.get("/persona-template/{filename}")
 async def persona_template(filename: str) -> dict:
-    from pathlib import Path
     allowed = {"SOUL", "IDENTITY", "VOICE", "EMOTIONS", "EXEMPLES", "WEEKDAYS"}
     if filename not in allowed:
         raise HTTPException(status_code=404, detail="Fichier inconnu")
-    path = Path("bot/persona") / f"{filename}.md"
+    path = _PERSONA_DIR / f"{filename}.md"
     if not path.exists():
         return {"content": ""}
     return {"content": path.read_text(encoding="utf-8")}

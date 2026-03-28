@@ -1916,7 +1916,7 @@ class Database:
     async def revoke_setup_invite(self, token: str) -> None:
         await self._conn.execute(
             "UPDATE setup_invites SET expires_at = ? WHERE token = ?",
-            (time.time() - 1, token),
+            (-1, token),  # sentinel: -1 means revoked, distinguishable from expired
         )
         await self._conn.commit()
 
