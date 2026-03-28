@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any
@@ -104,7 +105,7 @@ async def revoke_invite(request: Request, token: str) -> dict:
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
-_PERSONA_DIR = Path(__file__).parents[3] / "persona"
+_PERSONA_DIR = Path(__file__).parents[2] / "persona"
 
 
 def _validate_slug(slug: str) -> None:
@@ -205,8 +206,6 @@ async def validate_discord(request: Request, token: str, body: dict) -> dict:
 
 @wizard_router.post("/{token}/twitch-auth-url")
 async def twitch_auth_url(request: Request, token: str, body: dict) -> dict:
-    import os
-    import urllib.parse
     _check_preview_auth(request, token)
     db = request.app.state.wally.db
     await _get_valid_invite(token, db)
@@ -327,12 +326,13 @@ async def submit_wizard(request: Request, token: str, body: dict) -> dict:
 
     port = await db.next_setup_port()
     slug = session.get("bot_name", f"bot{port}").lower().replace(" ", "_")
+    _validate_slug(slug)
 
     try:
         url = await provision_instance(slug, port, session, dry_run=is_dry_run)
     except Exception as e:
         logger.error("Provisioning failed for {}: {}", slug, e)
-        raise HTTPException(status_code=500, detail=f"Erreur lors du démarrage : {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors du démarrage. Contacte l'administrateur.")
 
     if not is_dry_run:
         await db.use_setup_invite(token, slug=slug, port=port)
