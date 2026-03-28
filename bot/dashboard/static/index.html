@@ -193,7 +193,12 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <div class="card md:col-span-2 border-t-2 border-t-orange-500/20">
           <div class="card-title">HUMEUR EN DIRECT</div>
           <div id="gauges-public" role="group" aria-label="Emotions actuelles"></div>
-          <div class="emotion-summary" id="emotion-summary" aria-live="polite">—</div>
+          <div id="mood-fatigue-line" style="display:none;"></div>
+          <div id="emotional-state-block" class="emotional-state-card" style="display:none;" aria-live="polite">
+            <span class="card-sublabel">ÉTAT ÉMOTIONNEL</span>
+            <p id="emotional-state-text"></p>
+          </div>
+          <div class="emotion-summary" id="emotion-summary" aria-live="polite" style="display:none;">—</div>
         </div>
         <div class="card border-t-2 border-t-purple-500/20" id="stream-card">
           <div class="card-title">AZRAEL_TTV</div>
