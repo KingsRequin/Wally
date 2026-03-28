@@ -90,7 +90,8 @@ class MemoryService:
         self._store_init_attempted = True
         try:
             qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-            self._store = QdrantMemoryStore(qdrant_url, "wally_memory", self._db)
+            collection_name = os.getenv("QDRANT_COLLECTION_NAME", "wally_memory")
+            self._store = QdrantMemoryStore(qdrant_url, collection_name, self._db)
             logger.info("QdrantMemoryStore initialized (url={})", qdrant_url)
         except Exception as exc:
             logger.warning("QdrantMemoryStore init failed: {e}", e=exc)
