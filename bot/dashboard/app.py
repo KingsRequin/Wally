@@ -81,7 +81,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat, gallery, actions
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat, gallery, actions, setup
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -104,6 +104,8 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(costs.router, prefix="/api/admin")
     app.include_router(gallery.admin_router, prefix="/api/admin")
     app.include_router(actions.router, prefix="/api/actions")
+    app.include_router(setup.admin_router, prefix="/api/admin/setup")
+    app.include_router(setup.wizard_router, prefix="/api/setup")
 
     # Static files — NoCacheStaticFiles force la revalidation via Cloudflare tunnel
     if STATIC_DIR.exists():
