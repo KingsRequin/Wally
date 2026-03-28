@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -153,7 +153,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         )
 
     @app.get("/setup/preview")
-    async def setup_preview_page(request: "Request"):
+    async def setup_preview_page(request: Request):
         from fastapi import HTTPException as _HTTPException
         cfg_token = state.config.bot.dashboard_token
         auth = request.headers.get("Authorization", "")
@@ -164,7 +164,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     @app.get("/setup/{token}")
-    async def setup_wizard_page(request: "Request", token: str):
+    async def setup_wizard_page(request: Request, token: str):
         import time as _time
         from fastapi import HTTPException as _HTTPException
         row = await state.db.get_setup_invite(token)
