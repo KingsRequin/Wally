@@ -180,6 +180,16 @@ NRCLex maps message text to emotion scores. Weighted deltas applied per emotion.
 LLM emotion analysis output parsed via `_extract_json()` — handles raw JSON, markdown code
 blocks (` ```json ``` `), and embedded `{...}` in free text.
 
+### Suppression Rules
+When an emotion delta is applied, incompatible emotions are partially eroded (`_apply_suppression()`).
+Rules in `SUPPRESSION_RULES` (src, tgt, coeff): joy→anger 0.8×, joy→sadness 0.8×, anger→joy 0.4×.
+Bidirectional: applying the target emotion also erodes the source.
+
+During each 60s decay tick, **continuous competition** erodes both sides when they coexist:
+`extra = state[src] × state[tgt] × COMPETITION_K` (K=0.05) subtracted from each.
+At anger=0.65 + joy=0.33 this yields ~0.011/tick, converging in ~1h.
+`anger↔boredom` is intentionally absent (coexistence is plausible).
+
 ### Prompt Injection
 Dominant emotion(s) → behavioral directive injected into system prompt via `prompts.py`.
 **Never** write "tu es en colère" — write "tes réponses sont courtes et impatientes".
@@ -363,6 +373,16 @@ Updated after every response, not in real-time during generation.
 `WallyTwitch._poll_stream_info()` polls the home stream every 60s. Cached in `_stream_info`
 dict (live, title, category, viewers, started_at). Injected into the system prompt situation
 block via `PromptBuilder` when `stream_live` is True.
+
+### !mood Command (Twitch)
+`!mood` in any channel → Wally replies with all 5 emotion values as a formatted string.
+Sends via IRC (`irc_channel.send()`) for guest channels, via EventSub API for the home channel.
+
+### Bot Filter (Twitch)
+In `handle_message()`, before passive capture, Wally ignores messages from:
+1. A hardcoded set of known bot usernames (`nightbot`, `streamelements`, `moobot`, etc.)
+2. Any chatter whose badges include `set_id == "bot"` (official Twitch bot badge)
+This filter runs after the self-message filter and before `append_prelude` / `fact_extractor`.
 
 ---
 

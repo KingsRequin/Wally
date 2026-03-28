@@ -4126,6 +4126,7 @@ def _apply_decay(self):
     self._last_decay = now</code></pre>
               <p class="jd-tech-note"><strong>Décroissance exponentielle</strong> : un λ élevé = retombée rapide. Δt est mesuré en <strong>heures</strong>. Un task en arrière-plan applique cette décroissance toutes les 60 secondes. L'ennui monte linéairement pendant l'inactivité (configurable via <code>boredom_rise_per_hour</code>).</p>
               <p class="jd-tech-note"><strong>Trust score et colère</strong> : quand le trust score est bas (&lt;0.3), les deltas de colère sont amplifiés. Un nouvel utilisateur (trust=0.0) provoquera une réaction de colère plus forte qu'un habitué (trust=0.8). C'est un mécanisme de protection naturel.</p>
+              <p class="jd-tech-note"><strong>Suppression bidirectionnelle</strong> : quand une émotion monte, elle érode partiellement ses contraires. Joie → colère (×0.8), joie → tristesse (×0.8), colère → joie (×0.4). De plus, à chaque tick de decay, si colère et joie coexistent, elles s'érodent mutuellement en continu (compétition, K=0.05). Colère et ennui peuvent coexister — c'est intentionnel.</p>
               <p class="jd-tech-note"><strong>Timeout</strong> : si la colère dépasse le seuil configuré N fois pour un même utilisateur, il est mute pendant X minutes (configurable). Pendant ce mute, Wally réagit uniquement avec des emoji.</p>
             </div>
           </details>
