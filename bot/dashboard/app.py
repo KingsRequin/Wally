@@ -53,6 +53,12 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         from bot.dashboard.routes.sse import setup_log_sink
         setup_log_sink()
 
+        # Créer le token preview s'il n'existe pas déjà
+        try:
+            await state.db.create_setup_invite("__preview__", expires_at=None, is_preview=1)
+        except Exception:
+            pass  # INSERT OR REPLACE gère les doublons
+
         task = asyncio.create_task(_snapshot_task(state))
         cleanup_task = asyncio.create_task(_chat_cleanup_task(state))
         notif_task = asyncio.create_task(_cost_notification_task(state))
@@ -145,6 +151,33 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             "bot/dashboard/static/overlay_image.html",
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
+
+    @app.get("/setup/preview")
+    async def setup_preview_page(request: "Request"):
+        from fastapi import HTTPException as _HTTPException
+        cfg_token = state.config.bot.dashboard_token
+        auth = request.headers.get("Authorization", "")
+        if not cfg_token or not auth.startswith("Bearer ") or auth[7:] != cfg_token:
+            raise _HTTPException(status_code=401, detail="Admin auth required")
+        html = (STATIC_DIR / "setup.html").read_text()
+        html = html.replace("__WIZARD_TOKEN__", "__preview__").replace("__WIZARD_MODE__", "preview")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    @app.get("/setup/{token}")
+    async def setup_wizard_page(request: "Request", token: str):
+        import time as _time
+        from fastapi import HTTPException as _HTTPException
+        row = await state.db.get_setup_invite(token)
+        if row is None:
+            raise _HTTPException(status_code=404, detail="Lien invalide ou expiré.")
+        if not row["is_preview"]:
+            if row["expires_at"] and row["expires_at"] < _time.time():
+                raise _HTTPException(status_code=410, detail="Ce lien a expiré.")
+            if row["used_at"]:
+                raise _HTTPException(status_code=409, detail="Ce lien a déjà été utilisé.")
+        html = (STATIC_DIR / "setup.html").read_text()
+        html = html.replace("__WIZARD_TOKEN__", token).replace("__WIZARD_MODE__", "normal")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     return app
 
