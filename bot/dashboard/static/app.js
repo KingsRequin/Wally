@@ -35,12 +35,12 @@ const SECONDARY_LABELS_FR = {
   anxiety:     'anxiété',     contempt:  'mépris',       wonder:   'émerveillement',
 };
 const SECONDARY_DEFS = {
-  frustration: { a: 'anger',     b: 'boredom',    threshold: 0.4  },
-  nostalgia:   { a: 'joy',       b: 'sadness',    threshold: 0.35 },
-  pride:       { a: 'joy',       b: 'curiosity',  threshold: 0.5  },
-  anxiety:     { a: 'sadness',   b: 'boredom',    threshold: 0.45 },
-  contempt:    { a: 'anger',     b: 'curiosity',  threshold: 0.5  },
-  wonder:      { a: 'curiosity', b: 'joy',        threshold: 0.45 },
+  frustration: { a: 'anger',     b: 'boredom',    threshold: 0.3         },
+  nostalgia:   { a: 'joy',       b: 'sadness',    threshold: 0.3         },
+  pride:       { a: 'joy',       b: 'curiosity',  threshold: 0.4         },
+  anxiety:     { a: 'sadness',   b: 'curiosity',  threshold: 0.3         },
+  contempt:    { a: 'anger',     b: 'boredom',    threshold: [0.4, 0.5]  },
+  wonder:      { a: 'curiosity', b: 'joy',        threshold: 0.5         },
 };
 
 const PLATFORM_COLORS = {
@@ -721,8 +721,16 @@ function _computeSecondaryActivations(history) {
     const prev = history[i - 1];
     const curr = history[i];
     for (const [name, def] of Object.entries(SECONDARY_DEFS)) {
-      const prevActive = (prev[def.a] ?? 0) >= def.threshold && (prev[def.b] ?? 0) >= def.threshold;
-      const currActive = (curr[def.a] ?? 0) >= def.threshold && (curr[def.b] ?? 0) >= def.threshold;
+      let threshA, threshB;
+      if (Array.isArray(def.threshold)) {
+        threshA = def.threshold[0];
+        threshB = def.threshold[1];
+      } else {
+        threshA = def.threshold;
+        threshB = def.threshold;
+      }
+      const prevActive = (prev[def.a] ?? 0) >= threshA && (prev[def.b] ?? 0) >= threshB;
+      const currActive = (curr[def.a] ?? 0) >= threshA && (curr[def.b] ?? 0) >= threshB;
       if (!prevActive && currActive) {
         activations.push({ name, index: i });
       }
