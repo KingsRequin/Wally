@@ -94,17 +94,24 @@ class WallyTwitch(commands.Bot):
     async def _irc_run(self) -> None:
         """Maintain IRC connection for sending messages to guest channels.
 
-        Reconnects automatically on failure. twitchio's event_ready() fires when
-        IRC auth is complete, at which point guest channels are joined.
+        connect() establishes the WS and returns immediately; twitchio's internal
+        keep-alive handles reconnects. event_ready() fires once auth completes,
+        at which point guest channels are joined.
+
+        We retry the initial connect() on failure, then await _closing (shutdown).
+        Calling connect() in a tight loop would constantly tear down and rebuild the
+        connection, preventing event_ready from ever firing.
         """
         try:
             while True:
                 try:
                     await self.connect()
+                    await self._closing.wait()
+                    return  # clean shutdown
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    logger.warning("Twitch IRC connection lost, retrying in 10s: {e}", e=exc)
+                    logger.warning("Twitch IRC connection failed, retrying in 10s: {e}", e=exc)
                     await asyncio.sleep(10)
         except asyncio.CancelledError:
             pass
