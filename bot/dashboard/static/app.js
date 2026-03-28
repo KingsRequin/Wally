@@ -45,6 +45,32 @@ let currentGraphSince = null;
 let _graphMeta  = null;
 let _rafPending = false;
 let hiddenEmotions = new Set(); // for interactive legend
+let currentMood        = {};
+let currentFatigue     = {};
+let currentSecondaries = [];
+
+const MOOD_ADJ_FR = {
+  anger: 'irritable', joy: 'joyeux', sadness: 'mélancolique',
+  curiosity: 'curieux', boredom: 'apathique',
+};
+const FATIGUE_LABEL_FR = {
+  anger: 'colère', joy: 'joie', sadness: 'tristesse', curiosity: 'curiosité', boredom: 'ennui',
+};
+const FATIGUE_COLORS = {
+  anger:    'rgba(239,68,68,0.7)',
+  joy:      'rgba(234,179,8,0.7)',
+  sadness:  'rgba(59,130,246,0.7)',
+  curiosity:'rgba(34,197,94,0.7)',
+  boredom:  'rgba(168,85,247,0.7)',
+};
+const SECONDARY_ADJ_FR = {
+  frustration: 'frustré',
+  nostalgia:   'nostalgique',
+  pride:       'fier de lui',
+  anxiety:     'anxieux',
+  contempt:    'méprisant',
+  wonder:      'émerveillé',
+};
 
 // ── Web Chat state ──────────────────────────────────────────────
 let _chatWs = null;
@@ -395,10 +421,15 @@ function buildGauges(containerId, editable) {
   }
 }
 
-function updateEmotionGauges(emotions) {
-  currentEmotions = emotions;
+function updateEmotionGauges(payload) {
+  // Extract organic emotion fields
+  currentMood        = payload.mood        || {};
+  currentFatigue     = payload.fatigue     || {};
+  currentSecondaries = payload.secondaries || [];
+
+  currentEmotions = payload;
   for (const e of EMOTIONS) {
-    const v = emotions[e] ?? 0;
+    const v = payload[e] ?? 0;
     const fill = document.getElementById(`fill-${e}`);
     if (fill) {
       fill.style.width = `${(v * 100).toFixed(1)}%`;
@@ -410,8 +441,9 @@ function updateEmotionGauges(emotions) {
     const val = document.getElementById(`val-${e}`);
     if (val) val.textContent = v.toFixed(2);
   }
-  updateEmotionSummary(emotions);
-  updateFavicon(emotions);
+  updateMoodFatigueLine(currentMood, currentFatigue);
+  updateEmotionalStateBlock(payload, currentMood, currentFatigue, currentSecondaries);
+  updateFavicon(payload);
 }
 
 function updateEmotionSummary(emotions) {
@@ -421,6 +453,106 @@ function updateEmotionSummary(emotions) {
   if (dominant.length === 0) { el.textContent = 'Wally est dans un état neutre.'; return; }
   const names = { anger:'en colère', joy:'joyeux', sadness:'triste', curiosity:'curieux', boredom:'ennuyé' };
   el.textContent = `Wally est ${dominant.map(e => names[e]).join(' et ')}.`;
+}
+
+function updateMoodFatigueLine(mood, fatigue) {
+  const el = document.getElementById('mood-fatigue-line');
+  if (!el) return;
+
+  const moodEntries = EMOTIONS
+    .filter(e => (mood[e] ?? 0) >= 0.2)
+    .sort((a, b) => (mood[b] ?? 0) - (mood[a] ?? 0))
+    .slice(0, 2);
+
+  const fatigueEntries = Object.entries(fatigue).filter(([, v]) => v > 0);
+
+  if (moodEntries.length === 0 && fatigueEntries.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+
+  // Build spans from internal constants only — labels from MOOD_ADJ_FR/FATIGUE_LABEL_FR,
+  // color from FATIGUE_COLORS, pct is a rounded integer. No user input reaches innerHTML.
+  const parts = [];
+
+  if (moodEntries.length > 0) {
+    const labels = moodEntries.map(e => MOOD_ADJ_FR[e] || e).join(', ');
+    parts.push(
+      '<span class="mf-label">Humeur de fond</span>',
+      `<span class="mf-value">${labels}</span>`
+    );
+  }
+
+  if (fatigueEntries.length > 0) {
+    if (moodEntries.length > 0) parts.push('<span class="mf-separator">|</span>');
+    parts.push('<span class="mf-label">Fatigue</span>');
+    for (const [emotion, v] of fatigueEntries) {
+      const label = FATIGUE_LABEL_FR[emotion] || emotion;
+      const pct   = Math.round(v * 100);
+      const color = FATIGUE_COLORS[emotion] || 'rgba(255,255,255,0.7)';
+      parts.push(
+        `<span class="mf-value" style="color:${color};margin-left:6px">${label} en récupération (${pct}%)</span>`
+      );
+    }
+  }
+
+  el.innerHTML = parts.join(''); // safe: all content from internal constants + numeric pct
+  el.style.display = 'flex';
+}
+
+function updateEmotionalStateBlock(emotions, mood, fatigue, secondaries) {
+  const el     = document.getElementById('emotional-state-block');
+  const textEl = document.getElementById('emotional-state-text');
+  if (!el || !textEl) return;
+
+  const fatigueActive     = Object.values(fatigue).some(v => v > 0);
+  const activeSecondaries = secondaries.filter(([, intensity]) => intensity >= 0.4);
+
+  const dominantEmotion = EMOTIONS.reduce((a, b) =>
+    (emotions[a] ?? 0) > (emotions[b] ?? 0) ? a : b);
+  const dominantMood = EMOTIONS.reduce((a, b) =>
+    (mood[a] ?? 0) > (mood[b] ?? 0) ? a : b);
+  const hasMoodDissonance = dominantMood !== dominantEmotion
+    && (emotions[dominantEmotion] ?? 0) >= 0.3
+    && (mood[dominantMood] ?? 0) >= 0.3;
+
+  let sentence = '';
+
+  // Rule 1: Secondary emotion active (intensity >= 0.4)
+  if (activeSecondaries.length > 0) {
+    const [secName] = activeSecondaries[0];
+    const secAdj = SECONDARY_ADJ_FR[secName] || secName;
+    sentence = `Wally est ${secAdj}.`;
+    if (fatigueActive) {
+      const firstFatigueEmotion = Object.keys(fatigue).find(k => fatigue[k] > 0);
+      const fatigueLabel = firstFatigueEmotion ? (FATIGUE_LABEL_FR[firstFatigueEmotion] || firstFatigueEmotion) : '';
+      if (fatigueLabel) sentence += ` Sa ${fatigueLabel} est en récupération après un pic.`;
+    }
+    if (hasMoodDissonance) {
+      const moodAdj = MOOD_ADJ_FR[dominantMood] || dominantMood;
+      sentence += ` Fond ${moodAdj} malgré tout.`;
+    }
+  }
+  // Rule 2: Fatigue active but no secondary
+  else if (fatigueActive) {
+    const firstFatigueEmotion = Object.keys(fatigue).find(k => fatigue[k] > 0);
+    const fatigueLabel = firstFatigueEmotion ? (FATIGUE_LABEL_FR[firstFatigueEmotion] || firstFatigueEmotion) : '';
+    sentence = `Wally est dans un état normal.${fatigueLabel ? ` Sa ${fatigueLabel} est en récupération.` : ''}`;
+  }
+  // Rule 3: Mood dissonance
+  else if (hasMoodDissonance) {
+    const emotAdj = MOOD_ADJ_FR[dominantEmotion] || dominantEmotion;
+    const moodAdj = MOOD_ADJ_FR[dominantMood]    || dominantMood;
+    sentence = `Wally est ${emotAdj} en surface mais ${moodAdj} en profondeur.`;
+  }
+  // Rule 4: Nothing interesting — hide
+  else {
+    el.style.display = 'none';
+    return;
+  }
+
+  textEl.textContent = sentence; // textContent — safe, no XSS risk
+  el.style.display = 'block';
 }
 
 function updateFavicon(emotions) {
