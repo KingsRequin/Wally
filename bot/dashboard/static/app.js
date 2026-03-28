@@ -1334,6 +1334,7 @@ async function saveSpamConfig() {
 async function addGuestChannel() {
   const input = document.getElementById('guest-channel-input');
   const errEl = document.getElementById('guest-channel-error');
+  if (!input || !errEl) return;
   const name = input.value.trim().toLowerCase();
   errEl.style.display = 'none';
 
