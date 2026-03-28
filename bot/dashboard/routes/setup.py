@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from bot.core.provisioner import provision_instance
+from bot.core.provisioner import INSTANCES_DIR, provision_instance
 
 admin_router = APIRouter()
 wizard_router = APIRouter()
@@ -27,6 +27,8 @@ def _invite_status(row) -> str:
         return "preview"
     if row["used_at"]:
         return "used"
+    if row["expires_at"] and row["expires_at"] < row["created_at"]:
+        return "revoked"
     if row["expires_at"] and row["expires_at"] < time.time():
         return "expired"
     return "pending"
@@ -127,8 +129,9 @@ async def list_instances(request: Request) -> dict:
 @admin_router.post("/instances/{slug}/stop")
 async def stop_instance(request: Request, slug: str) -> dict:
     import subprocess
+    compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
     result = subprocess.run(
-        ["docker", "stop", f"wally-{slug}"],
+        ["docker", "compose", "-f", str(compose_path), "stop"],
         capture_output=True, text=True, timeout=15,
     )
     return {"status": "ok" if result.returncode == 0 else "error", "detail": result.stderr}
@@ -137,8 +140,9 @@ async def stop_instance(request: Request, slug: str) -> dict:
 @admin_router.post("/instances/{slug}/start")
 async def start_instance(request: Request, slug: str) -> dict:
     import subprocess
+    compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
     result = subprocess.run(
-        ["docker", "start", f"wally-{slug}"],
+        ["docker", "compose", "-f", str(compose_path), "start"],
         capture_output=True, text=True, timeout=15,
     )
     return {"status": "ok" if result.returncode == 0 else "error", "detail": result.stderr}
