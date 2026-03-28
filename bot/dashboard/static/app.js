@@ -3493,7 +3493,8 @@ function chatUpdateAvatar() {
   let dominant = 'neutral';
   let maxVal = 0.2;
 
-  for (const [emotion, value] of Object.entries(emotions)) {
+  for (const emotion of EMOTIONS) {
+    const value = emotions[emotion] ?? 0;
     if (value > maxVal) {
       dominant = emotion;
       maxVal = value;
