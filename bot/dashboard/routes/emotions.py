@@ -12,9 +12,18 @@ public_router = APIRouter()
 admin_router = APIRouter()
 
 
+def _enrich_emotions(emotion_engine) -> dict:
+    """Return get_state() enriched with mood, fatigue (>0 only), and active secondaries."""
+    data = emotion_engine.get_state()
+    data["mood"] = emotion_engine.get_mood()
+    data["fatigue"] = {k: v for k, v in emotion_engine.get_fatigue().items() if v > 0}
+    data["secondaries"] = [list(pair) for pair in emotion_engine.get_secondary_emotions()]
+    return data
+
+
 @public_router.get("/emotions")
 async def get_emotions_public(request: Request) -> dict:
-    return request.app.state.wally.emotion.get_state()
+    return _enrich_emotions(request.app.state.wally.emotion)
 
 
 @public_router.get("/emotions/history")
@@ -33,7 +42,7 @@ async def get_emotions_history(
 
 @admin_router.get("/emotions")
 async def get_emotions_admin(request: Request) -> dict:
-    return request.app.state.wally.emotion.get_state()
+    return _enrich_emotions(request.app.state.wally.emotion)
 
 
 class SetEmotionBody(BaseModel):

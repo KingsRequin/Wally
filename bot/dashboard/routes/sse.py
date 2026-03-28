@@ -85,7 +85,15 @@ async def sse_emotions(request: Request):
         try:
             tick = 0
             while True:
-                data = json.dumps(state.emotion.get_state())
+                state_data = state.emotion.get_state()
+                state_data["mood"] = state.emotion.get_mood()
+                state_data["fatigue"] = {
+                    k: v for k, v in state.emotion.get_fatigue().items() if v > 0
+                }
+                state_data["secondaries"] = [
+                    list(pair) for pair in state.emotion.get_secondary_emotions()
+                ]
+                data = json.dumps(state_data)
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(5)
                 tick += 1
