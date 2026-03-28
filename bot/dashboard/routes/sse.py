@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
+from bot.dashboard.routes.emotions import _enrich_emotions
+
 public_router = APIRouter()
 admin_router = APIRouter()
 
@@ -85,15 +87,7 @@ async def sse_emotions(request: Request):
         try:
             tick = 0
             while True:
-                state_data = state.emotion.get_state()
-                state_data["mood"] = state.emotion.get_mood()
-                state_data["fatigue"] = {
-                    k: v for k, v in state.emotion.get_fatigue().items() if v > 0
-                }
-                state_data["secondaries"] = [
-                    list(pair) for pair in state.emotion.get_secondary_emotions()
-                ]
-                data = json.dumps(state_data)
+                data = json.dumps(_enrich_emotions(state.emotion))
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(5)
                 tick += 1
