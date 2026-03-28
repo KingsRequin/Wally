@@ -95,6 +95,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 _fire(_announce_overlay_image(bot, channel_name, channel_id, image, ds, payload_img))
         return  # Don't process further
 
+    # !mood command
+    if content.strip().lower() == "!mood":
+        state = bot.emotion.get_state()
+        emojis = {"anger": "😤", "joy": "😄", "sadness": "😢", "curiosity": "🤔", "boredom": "😑"}
+        labels = {"anger": "Colère", "joy": "Joie", "sadness": "Tristesse", "curiosity": "Curiosité", "boredom": "Ennui"}
+        parts = [f"{emojis[e]} {labels[e]} {int(state[e]*100)}%" for e in ("anger", "joy", "sadness", "curiosity", "boredom")]
+        mood_text = "Humeur de Wally — " + " | ".join(parts)
+        if channel_name in bot._channel_ids:
+            irc_channel = bot.get_channel(channel_name)
+            if irc_channel:
+                await irc_channel.send(mood_text)
+        else:
+            await bot.twitch_api.send_message(text=mood_text)
+        return
+
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
         bot._channel_was_live[channel_name] = True
