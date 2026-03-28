@@ -21,6 +21,27 @@ const EMOTION_LABELS = {
   anger: 'ANGER', joy: 'JOY', curiosity: 'CURIOSITY', sadness: 'SADNESS', boredom: 'BOREDOM',
 };
 const EMOTIONS = ['anger', 'joy', 'sadness', 'curiosity', 'boredom'];
+const SECONDARY_COLORS = {
+  frustration: '#f97316',
+  nostalgia:   '#ec4899',
+  pride:       '#f59e0b',
+  anxiety:     '#8b5cf6',
+  contempt:    '#6b7280',
+  wonder:      '#14b8a6',
+};
+const SECONDARY_LABELS = ['frustration', 'nostalgia', 'pride', 'anxiety', 'contempt', 'wonder'];
+const SECONDARY_LABELS_FR = {
+  frustration: 'frustration', nostalgia: 'nostalgie',   pride:    'fierté',
+  anxiety:     'anxiété',     contempt:  'mépris',       wonder:   'émerveillement',
+};
+const SECONDARY_DEFS = {
+  frustration: { a: 'anger',     b: 'boredom',    threshold: 0.4  },
+  nostalgia:   { a: 'joy',       b: 'sadness',    threshold: 0.35 },
+  pride:       { a: 'joy',       b: 'curiosity',  threshold: 0.5  },
+  anxiety:     { a: 'sadness',   b: 'boredom',    threshold: 0.45 },
+  contempt:    { a: 'anger',     b: 'curiosity',  threshold: 0.5  },
+  wonder:      { a: 'curiosity', b: 'joy',        threshold: 0.45 },
+};
 
 const PLATFORM_COLORS = {
   discord: '#5865F2',
@@ -44,7 +65,7 @@ let currentEmotions = {};
 let currentGraphSince = null;
 let _graphMeta  = null;
 let _rafPending = false;
-let hiddenEmotions = new Set(); // for interactive legend
+let hiddenEmotions = new Set(SECONDARY_LABELS); // secondaries hidden by default
 let currentMood        = {};
 let currentFatigue     = {};
 let currentSecondaries = [];
@@ -656,14 +677,28 @@ function renderEmotionAverages(history) {
 function buildEmotionLegend() {
   const el = document.getElementById('emotion-graph-legend');
   if (!el) return;
-  el.innerHTML = EMOTIONS.map(e => {
+
+  const primaryItems = EMOTIONS.map(e => {
     const hidden = hiddenEmotions.has(e);
     return `<div class="graph-legend-item ${hidden ? 'hidden-emotion' : ''}"
                  onclick="toggleEmotion('${e}')" title="Cliquer pour ${hidden ? 'afficher' : 'masquer'}">
       <span class="legend-line" style="background:${EMOTION_COLORS[e]}"></span>
       <span>${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}</span>
     </div>`;
-  }).join('');
+  });
+
+  const secondaryItems = SECONDARY_LABELS.map(name => {
+    const hidden = hiddenEmotions.has(name);
+    const color  = SECONDARY_COLORS[name];
+    const label  = SECONDARY_LABELS_FR[name] || name;
+    return `<div class="secondary-legend-item ${hidden ? 'hidden-emotion' : ''}"
+                 onclick="toggleEmotion('${name}')" title="${hidden ? 'Afficher' : 'Masquer'} ${label}">
+      <span class="secondary-legend-dash" style="color:${color}"></span>
+      <span style="color:${color}">${label}</span>
+    </div>`;
+  });
+
+  el.innerHTML = primaryItems.join('') + secondaryItems.join('');
 }
 
 function toggleEmotion(emotion) {
@@ -678,6 +713,22 @@ function hexToRgba(hex, alpha) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function _computeSecondaryActivations(history) {
+  const activations = [];
+  for (let i = 1; i < history.length; i++) {
+    const prev = history[i - 1];
+    const curr = history[i];
+    for (const [name, def] of Object.entries(SECONDARY_DEFS)) {
+      const prevActive = (prev[def.a] ?? 0) >= def.threshold && (prev[def.b] ?? 0) >= def.threshold;
+      const currActive = (curr[def.a] ?? 0) >= def.threshold && (curr[def.b] ?? 0) >= def.threshold;
+      if (!prevActive && currActive) {
+        activations.push({ name, index: i });
+      }
+    }
+  }
+  return activations;
 }
 
 function drawEmotionGraph(history) {
@@ -798,6 +849,36 @@ function drawEmotionGraph(history) {
   }
 
   ctx.globalAlpha = 1;
+
+  // Secondary emotion activation markers (vertical dashed lines)
+  const activations = _computeSecondaryActivations(history);
+  for (const { name, index } of activations) {
+    if (hiddenEmotions.has(name)) continue;
+    const snap  = history[index];
+    const x     = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
+    const color = SECONDARY_COLORS[name];
+    const label = SECONDARY_LABELS_FR[name] || name;
+
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(x, PAD.top);
+    ctx.lineTo(x, PAD.top + gH);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle   = color;
+    ctx.font        = '9px Inter, sans-serif';
+    ctx.textAlign   = 'left';
+    const labelX = Math.min(x + 3, W - PAD.right - 60);
+    ctx.fillText(label, labelX, PAD.top + 10);
+    ctx.restore();
+  }
 
   // Time axis endpoints
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
