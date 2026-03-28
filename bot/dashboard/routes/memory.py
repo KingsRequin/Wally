@@ -24,6 +24,85 @@ def _get_store(request: Request):
     return store
 
 
+async def _resolve_missing_usernames(
+    state,
+    users_without_name: list[dict],
+    uid_to_name: dict[str, str],
+) -> None:
+    """Resolve missing usernames via Discord/Twitch bot caches and persist them.
+
+    Mutates users_without_name in-place (sets ``username``).
+    Uses ``get_user`` (cache-only, no API call) for Discord, and batch
+    ``fetch_users`` for Twitch.  Resolved names are persisted via
+    ``upsert_memory_user`` so future requests don't need resolution.
+    """
+    discord_bot = getattr(state, "discord_bot", None)
+    twitch_bot = getattr(state, "twitch_bot", None)
+
+    # Separate by platform
+    discord_pending: list[dict] = []
+    twitch_pending: list[dict] = []
+    for u in users_without_name:
+        uid = u["user_id"]
+        platform = uid.split(":")[0] if ":" in uid else u.get("platform", "")
+        raw_id = uid.split(":", 1)[1] if ":" in uid else uid
+        if platform == "discord" and raw_id.isdigit() and discord_bot is not None:
+            discord_pending.append(u)
+        elif platform == "twitch" and raw_id.isdigit() and len(raw_id) <= 12 and twitch_bot is not None:
+            twitch_pending.append(u)
+
+    # Discord — try cache first (get_user), fallback to fetch_user
+    for u in discord_pending:
+        raw_id = u["user_id"].split(":", 1)[1]
+        try:
+            discord_user = discord_bot.get_user(int(raw_id))
+            if discord_user is None:
+                discord_user = await discord_bot.fetch_user(int(raw_id))
+            if discord_user:
+                name = discord_user.display_name or discord_user.name
+                avatar = str(discord_user.display_avatar.url) if discord_user.display_avatar else ""
+                if name:
+                    u["username"] = name
+                    uid_to_name[u["user_id"]] = name
+                if avatar and not u.get("avatar_url"):
+                    u["avatar_url"] = avatar
+                # Persist for future requests
+                await state.db.upsert_memory_user(
+                    u["user_id"], "discord",
+                    username=name or "",
+                    avatar_url=avatar or "",
+                )
+        except Exception as e:
+            logger.debug("Discord name resolve failed for {uid}: {e}", uid=u["user_id"], e=e)
+
+    # Twitch — batch fetch (max 100 per call)
+    if twitch_pending:
+        for i in range(0, len(twitch_pending), 100):
+            batch = twitch_pending[i:i + 100]
+            ids = [int(u["user_id"].split(":", 1)[1]) for u in batch]
+            try:
+                twitch_users = await twitch_bot.fetch_users(ids=ids)
+                id_to_tu = {str(tu.id): tu for tu in twitch_users}
+                for u in batch:
+                    raw_id = u["user_id"].split(":", 1)[1]
+                    tu = id_to_tu.get(raw_id)
+                    if tu:
+                        name = tu.display_name or tu.name
+                        avatar = getattr(tu, "profile_image", "") or ""
+                        if name:
+                            u["username"] = name
+                            uid_to_name[u["user_id"]] = name
+                        if avatar and not u.get("avatar_url"):
+                            u["avatar_url"] = avatar
+                        await state.db.upsert_memory_user(
+                            u["user_id"], "twitch",
+                            username=name or "",
+                            avatar_url=avatar or "",
+                        )
+            except Exception as e:
+                logger.debug("Twitch batch resolve failed: {e}", e=e)
+
+
 # ── GET /memory/users ─────────────────────────────────────────────────────────
 
 @router.get("/memory/users")
@@ -48,6 +127,12 @@ async def list_users(
     uid_to_name: dict[str, str] = {
         u["user_id"]: u["username"] for u in all_known if u.get("username")
     }
+
+    # ── Résoudre les noms manquants via le cache Discord / Twitch ──
+    # Collecte des utilisateurs sans username pour résolution en arrière-plan
+    to_resolve: list[dict] = [u for u in users if not u.get("username")]
+    if to_resolve:
+        await _resolve_missing_usernames(state, to_resolve, uid_to_name)
 
     # alias_id → info du canonical (pour masquer l'alias de la liste)
     alias_set: set[str] = set()

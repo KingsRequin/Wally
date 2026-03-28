@@ -515,8 +515,10 @@ class FactExtractor:
                         plat, raw_id = uid.split(":", 1)
                     else:
                         plat, raw_id = platform, uid
+                    # Resolve display name from participants
+                    display = participants.get(raw_id, "")
                     try:
-                        await self._memory.add(plat, raw_id, fact_text, category=category)
+                        await self._memory.add(plat, raw_id, fact_text, category=category, username=display)
                         stored_count += 1
                     except Exception as exc:
                         logger.warning(
