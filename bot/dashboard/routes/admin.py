@@ -404,6 +404,24 @@ async def remove_twitch_channel(request: Request, name: str) -> dict:
     return {"status": "removed"}
 
 
+@router.get("/twitch/channels")
+async def list_twitch_channels(request: Request) -> list[dict]:
+    """Liste les chaines Twitch invitees avec statut IRC et live."""
+    state = request.app.state.wally
+    if state.twitch_bot is None:
+        raise HTTPException(status_code=503, detail="Twitch non disponible")
+    bot = state.twitch_bot
+    return [
+        {
+            "name": name,
+            "broadcaster_id": bid,
+            "irc_connected": bot.get_channel(name) is not None,
+            "live": bot._channel_was_live.get(name, False),
+        }
+        for name, bid in bot._channel_ids.items()
+    ]
+
+
 @router.post("/overlay/toggle")
 async def toggle_overlay(request: Request) -> dict:
     """Bascule la visibilité de l'overlay OBS en temps réel et persiste dans config."""
