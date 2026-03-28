@@ -46,19 +46,6 @@ def _create_directories(slug_dir: Path) -> None:
 
 def _write_env(slug_dir: Path, slug: str, data: dict) -> None:
     jwt_secret = secrets.token_hex(32)
-    twitch_section = ""
-    if data.get("twitch_enabled"):
-        twitch_section = (
-            f"\nTWITCH_CLIENT_ID={data.get('twitch_client_id', '')}"
-            f"\nTWITCH_CLIENT_SECRET={data.get('twitch_client_secret', '')}"
-            f"\nTWITCH_BOT_NICK={data.get('twitch_bot_nick', '')}"
-            f"\nTWITCH_BROADCASTER_ID={data.get('twitch_broadcaster_id', '')}"
-            f"\nTWITCH_BOT_ID={data.get('twitch_bot_id', '')}"
-            f"\nBOT_ACCESS_TOKEN={data.get('bot_access_token', '')}"
-            f"\nBOT_REFRESH_TOKEN={data.get('bot_refresh_token', '')}"
-            f"\nSTREAMER_ACCESS_TOKEN={data.get('streamer_access_token', '')}"
-            f"\nSTREAMER_REFRESH_TOKEN={data.get('streamer_refresh_token', '')}"
-        )
     env_content = (
         f"OPENAI_API_KEY={data.get('openai_api_key', '')}\n"
         f"ANTHROPIC_API_KEY={data.get('anthropic_api_key', '')}\n"
@@ -72,8 +59,20 @@ def _write_env(slug_dir: Path, slug: str, data: dict) -> None:
         f"QDRANT_URL=http://wally-qdrant:6333\n"
         f"QDRANT_COLLECTION_NAME=wally_{slug}\n"
         f"DB_PATH=data/wally.db\n"
-        f"CLOUDFLARED_WALLY_TOKEN={twitch_section}\n"
+        f"CLOUDFLARED_WALLY_TOKEN=\n"
     )
+    if data.get("twitch_enabled"):
+        env_content += (
+            f"TWITCH_CLIENT_ID={data.get('twitch_client_id', '')}\n"
+            f"TWITCH_CLIENT_SECRET={data.get('twitch_client_secret', '')}\n"
+            f"TWITCH_BOT_NICK={data.get('twitch_bot_nick', '')}\n"
+            f"TWITCH_BROADCASTER_ID={data.get('twitch_broadcaster_id', '')}\n"
+            f"TWITCH_BOT_ID={data.get('twitch_bot_id', '')}\n"
+            f"BOT_ACCESS_TOKEN={data.get('bot_access_token', '')}\n"
+            f"BOT_REFRESH_TOKEN={data.get('bot_refresh_token', '')}\n"
+            f"STREAMER_ACCESS_TOKEN={data.get('streamer_access_token', '')}\n"
+            f"STREAMER_REFRESH_TOKEN={data.get('streamer_refresh_token', '')}\n"
+        )
     (slug_dir / ".env").write_text(env_content)
 
 
@@ -217,8 +216,12 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
 def _create_prompts_symlink(slug_dir: Path) -> None:
     link = slug_dir / "bot" / "persona" / "prompts"
     target = _WALLY_DIR / "bot" / "persona" / "prompts"
-    if not link.exists() and target.exists():
-        link.symlink_to(target)
+    if link.exists():
+        return
+    if not target.exists():
+        logger.warning("Prompts directory not found at {} — symlink skipped", target)
+        return
+    link.symlink_to(target)
 
 
 async def _run_docker_compose(compose_path: Path) -> None:
@@ -227,7 +230,11 @@ async def _run_docker_compose(compose_path: Path) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise RuntimeError(f"docker compose up timed out after 60s for {compose_path.parent.name}")
     if proc.returncode != 0:
         raise RuntimeError(f"docker compose up failed: {stderr.decode()}")
     logger.info("docker compose up: {}", stdout.decode().strip())
