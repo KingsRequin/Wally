@@ -294,6 +294,7 @@ function showTab(tabId) {
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (tabId === 'admin-instances') renderInstancesTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollCostsBadge();
   pollLinksBadge();
@@ -5530,4 +5531,197 @@ async function updateActionPerm(actionType, field, value) {
   });
   if (!r || !r.ok) { toast('Erreur mise \u00e0 jour permission', 'error'); return; }
   toast('Permission mise \u00e0 jour', 'success');
+}
+
+// ── Instances tab ─────────────────────────────────────────────────────────────
+
+function _makeGlassCard(withBottomMargin) {
+  var card = document.createElement('div');
+  card.style.cssText = 'background:rgba(255,255,255,0.03);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem;box-shadow:0 4px 6px rgba(0,0,0,0.1)' + (withBottomMargin ? ';margin-bottom:12px' : '');
+  return card;
+}
+
+function renderInstancesTab() {
+  var el = document.getElementById('tab-admin-instances');
+  if (!el) return;
+  el.textContent = '';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px';
+  var h3 = document.createElement('h3');
+  h3.style.cssText = 'margin:0;font-size:1.1rem;font-weight:700;color:#e2e8f0';
+  h3.textContent = 'Instances';
+  var genBtn = document.createElement('button');
+  genBtn.className = 'btn btn-sm';
+  genBtn.textContent = '+ Générer un lien';
+  genBtn.onclick = generateInvite;
+  header.appendChild(h3);
+  header.appendChild(genBtn);
+  el.appendChild(header);
+
+  var invCard = _makeGlassCard(true);
+  var invTitle = document.createElement('div');
+  invTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:10px';
+  invTitle.textContent = "Liens d'invitation";
+  var invList = document.createElement('div');
+  invList.id = 'invites-list';
+  invList.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.45)';
+  invList.textContent = 'Chargement...';
+  invCard.appendChild(invTitle);
+  invCard.appendChild(invList);
+  el.appendChild(invCard);
+
+  var instCard = _makeGlassCard(false);
+  var instTitle = document.createElement('div');
+  instTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:10px';
+  instTitle.textContent = 'Instances actives';
+  var instList = document.createElement('div');
+  instList.id = 'instances-list';
+  instList.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.45)';
+  instList.textContent = 'Chargement...';
+  var wizardLink = document.createElement('a');
+  wizardLink.href = '/setup/preview';
+  wizardLink.target = '_blank';
+  wizardLink.rel = 'noopener noreferrer';
+  wizardLink.style.cssText = 'display:inline-block;margin-top:10px;font-size:0.75rem;color:#06b6d4;text-decoration:underline;cursor:pointer';
+  wizardLink.textContent = 'Ouvrir le wizard en mode test';
+  instCard.appendChild(instTitle);
+  instCard.appendChild(instList);
+  instCard.appendChild(wizardLink);
+  el.appendChild(instCard);
+
+  loadInvites();
+  loadInstances();
+}
+
+async function loadInvites() {
+  try {
+    var resp = await apiFetch('/api/admin/setup/invites');
+    var data = await resp.json();
+    var el = document.getElementById('invites-list');
+    if (!el) return;
+    el.textContent = '';
+    if (!data.invites || data.invites.length === 0) {
+      el.textContent = 'Aucun lien généré';
+      return;
+    }
+    var statusColors = { pending: '#06b6d4', used: '#22c55e', expired: 'rgba(239,68,68,0.6)', revoked: 'rgba(255,255,255,0.2)' };
+    data.invites.forEach(function(inv) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+      var left = document.createElement('div');
+      var tokenSpan = document.createElement('span');
+      tokenSpan.style.cssText = 'font-family:monospace;font-size:12px;color:rgba(255,255,255,0.6)';
+      tokenSpan.textContent = inv.token;
+      var statusSpan = document.createElement('span');
+      statusSpan.style.cssText = 'margin-left:8px;font-size:12px;color:' + (statusColors[inv.status] || 'rgba(255,255,255,0.4)');
+      statusSpan.textContent = inv.status;
+      left.appendChild(tokenSpan);
+      left.appendChild(statusSpan);
+      if (inv.slug) {
+        var slugSpan = document.createElement('span');
+        slugSpan.style.cssText = 'margin-left:8px;font-size:12px;color:rgba(255,255,255,0.3)';
+        slugSpan.textContent = '\u2192 ' + inv.slug;
+        left.appendChild(slugSpan);
+      }
+      row.appendChild(left);
+      if (inv.status === 'pending') {
+        var btnGroup = document.createElement('div');
+        btnGroup.style.cssText = 'display:flex;gap:6px';
+        var copyBtn = document.createElement('button');
+        copyBtn.className = 'btn btn-sm';
+        copyBtn.title = 'Copier le lien';
+        copyBtn.textContent = '\uD83D\uDCCB';
+        copyBtn.onclick = (function(t) { return function() { copyInviteLink(t); }; })(inv.token_full || inv.token);
+        var revokeBtn = document.createElement('button');
+        revokeBtn.className = 'btn btn-sm btn-danger';
+        revokeBtn.textContent = 'Révoquer';
+        revokeBtn.onclick = (function(t) { return function() { revokeInvite(t); }; })(inv.token_full || inv.token);
+        btnGroup.appendChild(copyBtn);
+        btnGroup.appendChild(revokeBtn);
+        row.appendChild(btnGroup);
+      }
+      el.appendChild(row);
+    });
+  } catch(e) { console.error('loadInvites', e); }
+}
+
+async function loadInstances() {
+  try {
+    var resp = await apiFetch('/api/admin/setup/instances');
+    var data = await resp.json();
+    var el = document.getElementById('instances-list');
+    if (!el) return;
+    el.textContent = '';
+    if (!data.instances || data.instances.length === 0) {
+      el.textContent = 'Aucune instance créée';
+      return;
+    }
+    data.instances.forEach(function(inst) {
+      var running = inst.docker_status === 'running';
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+      var left = document.createElement('div');
+      var nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'font-weight:600;color:rgba(255,255,255,0.8)';
+      nameSpan.textContent = inst.slug;
+      var statusSpan = document.createElement('span');
+      statusSpan.style.cssText = 'margin-left:8px;font-size:12px;color:' + (running ? '#22c55e' : 'rgba(239,68,68,0.7)');
+      statusSpan.textContent = '\u25CF ' + inst.docker_status;
+      var portSpan = document.createElement('span');
+      portSpan.style.cssText = 'margin-left:8px;font-size:12px;color:rgba(255,255,255,0.3)';
+      portSpan.textContent = ':' + inst.port;
+      left.appendChild(nameSpan);
+      left.appendChild(statusSpan);
+      left.appendChild(portSpan);
+      row.appendChild(left);
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-sm';
+      if (running) {
+        btn.style.color = 'rgba(239,68,68,0.8)';
+        btn.textContent = 'Stop';
+        btn.onclick = (function(s) { return function() { instanceAction(s, 'stop'); }; })(inst.slug);
+      } else {
+        btn.style.color = 'rgba(34,197,94,0.8)';
+        btn.textContent = 'Start';
+        btn.onclick = (function(s) { return function() { instanceAction(s, 'start'); }; })(inst.slug);
+      }
+      row.appendChild(btn);
+      el.appendChild(row);
+    });
+  } catch(e) { console.error('loadInstances', e); }
+}
+
+async function generateInvite() {
+  try {
+    var resp = await apiFetch('/api/admin/setup/invite', { method: 'POST' });
+    var data = await resp.json();
+    var url = data.url || (window.location.origin + '/setup/' + data.token);
+    await navigator.clipboard.writeText(url);
+    toast('Lien copié : ' + url, 'success');
+    loadInvites();
+  } catch(e) { toast('Erreur : ' + e.message, 'error'); }
+}
+
+async function copyInviteLink(token) {
+  var url = window.location.origin + '/setup/' + token;
+  await navigator.clipboard.writeText(url);
+  toast('Lien copié !', 'success');
+}
+
+async function revokeInvite(token) {
+  if (!confirm('Révoquer ce lien ?')) return;
+  var r = await apiFetch('/api/admin/setup/invite/' + token, { method: 'DELETE' });
+  if (r && r.ok) { toast('Lien révoqué', 'success'); } else { toast('Erreur révocation', 'error'); }
+  loadInvites();
+}
+
+async function instanceAction(slug, action) {
+  var r = await apiFetch('/api/admin/setup/instances/' + slug + '/' + action, { method: 'POST' });
+  if (r && r.ok) {
+    toast('Instance ' + slug + ' : ' + action, 'success');
+  } else {
+    toast('Erreur action ' + action, 'error');
+  }
+  setTimeout(loadInstances, 1500);
 }

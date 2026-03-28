@@ -134,6 +134,10 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         <span>Actions</span>
       </a>
+      <a class="sidebar-item" data-tab="admin-instances" onclick="showTab('admin-instances')" href="javascript:void(0)" aria-label="Instances">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        <span>Instances</span>
+      </a>
       <a class="sidebar-item" data-tab="admin-twitch" onclick="showTab('admin-twitch')" href="javascript:void(0)" aria-label="Twitch">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
         <span>Twitch</span>
@@ -322,6 +326,9 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
 
     <!-- ADMIN ACTIONS TAB -->
     <div class="tab-content" id="tab-admin-actions"></div>
+
+    <!-- ADMIN INSTANCES TAB -->
+    <div class="tab-content" id="tab-admin-instances"></div>
 
     <!-- ADMIN TWITCH TAB -->
     <div class="tab-content" id="tab-admin-twitch"></div>
