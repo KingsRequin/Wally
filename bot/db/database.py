@@ -292,6 +292,22 @@ CREATE TABLE IF NOT EXISTS action_permissions_discord (
     role_name TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (action_type, guild_id, role_id)
 );
+
+CREATE TABLE IF NOT EXISTS setup_invites (
+    token       TEXT PRIMARY KEY,
+    slug        TEXT,
+    created_at  REAL NOT NULL,
+    expires_at  REAL,
+    used_at     REAL,
+    is_preview  INTEGER NOT NULL DEFAULT 0,
+    port        INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS setup_sessions (
+    token       TEXT PRIMARY KEY,
+    step_data   TEXT NOT NULL DEFAULT '{}',
+    updated_at  REAL NOT NULL
+);
 """
 
 
@@ -1870,3 +1886,68 @@ class Database:
 
     async def delete_discord_permissions(self, action_type: str) -> None:
         await self.execute("DELETE FROM action_permissions_discord WHERE action_type = ?", (action_type,))
+
+    # ── Setup Wizard ─────────────────────────────────────────────────────────────
+
+    async def create_setup_invite(
+        self, token: str, expires_at: float | None, is_preview: int = 0
+    ) -> None:
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO setup_invites (token, created_at, expires_at, is_preview)"
+            " VALUES (?, ?, ?, ?)",
+            (token, time.time(), expires_at, is_preview),
+        )
+        await self._conn.commit()
+
+    async def get_setup_invite(self, token: str) -> aiosqlite.Row | None:
+        async with self._conn.execute(
+            "SELECT * FROM setup_invites WHERE token = ?", (token,)
+        ) as cur:
+            return await cur.fetchone()
+
+    async def use_setup_invite(self, token: str, slug: str, port: int) -> None:
+        await self._conn.execute(
+            "UPDATE setup_invites SET used_at = ?, slug = ?, port = ? WHERE token = ?",
+            (time.time(), slug, port, token),
+        )
+        await self._conn.commit()
+
+    async def revoke_setup_invite(self, token: str) -> None:
+        await self._conn.execute(
+            "UPDATE setup_invites SET expires_at = ? WHERE token = ?",
+            (time.time() - 1, token),
+        )
+        await self._conn.commit()
+
+    async def list_setup_invites(self) -> list:
+        async with self._conn.execute(
+            "SELECT * FROM setup_invites WHERE is_preview = 0 ORDER BY created_at DESC"
+        ) as cur:
+            return await cur.fetchall()
+
+    async def save_setup_session(self, token: str, data: dict) -> None:
+        import json
+        existing = await self.get_setup_session(token)
+        merged = {**existing, **data}
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO setup_sessions (token, step_data, updated_at)"
+            " VALUES (?, ?, ?)",
+            (token, json.dumps(merged), time.time()),
+        )
+        await self._conn.commit()
+
+    async def get_setup_session(self, token: str) -> dict:
+        import json
+        async with self._conn.execute(
+            "SELECT step_data FROM setup_sessions WHERE token = ?", (token,)
+        ) as cur:
+            row = await cur.fetchone()
+        return json.loads(row["step_data"]) if row else {}
+
+    async def next_setup_port(self) -> int:
+        async with self._conn.execute(
+            "SELECT MAX(port) as max_port FROM setup_invites WHERE port IS NOT NULL"
+        ) as cur:
+            row = await cur.fetchone()
+        max_port = row["max_port"] if row and row["max_port"] else 8080
+        return max_port + 1
