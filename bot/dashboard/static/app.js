@@ -294,6 +294,7 @@ function showTab(tabId) {
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollCostsBadge();
   pollLinksBadge();
   if (tabId === 'admin-logs') {
@@ -1139,30 +1140,6 @@ async function renderConfigForm(cfg) {
       <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
     </div>
 
-    <!-- Chaînes Twitch invitées -->
-    <div class="card config-section" id="guest-channels-card">
-      <div class="config-section-title">CHAÎNES TWITCH INVITÉES</div>
-      <div id="guest-channels-list">
-        ${(cfg.twitch.guest_channels || []).length === 0
-          ? '<p style="color:var(--text-muted);margin:0 0 12px">Aucune chaîne invitée.</p>'
-          : (cfg.twitch.guest_channels || []).map(ch => `
-            <div class="guest-channel-item" id="guest-ch-${ch}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <span style="flex:1;font-family:var(--font-mono);font-size:0.85rem">${ch}</span>
-              <button class="btn btn-danger" style="padding:2px 8px;font-size:0.8em"
-                onclick="removeGuestChannel('${ch}')">✕</button>
-            </div>`).join('')
-        }
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input type="text" id="guest-channel-input" placeholder="nom de chaîne twitch…"
-               style="flex:1" onkeydown="if(event.key==='Enter') addGuestChannel()">
-        <button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>
-      </div>
-      <div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>
-      <p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">
-        Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler.
-      </p>
-    </div>
   `;
 
   // Build emotion sliders inline
@@ -1381,12 +1358,13 @@ async function addGuestChannel() {
   const empty = list.querySelector('p');
   if (empty) empty.remove();
   const item = document.createElement('div');
-  item.id = `guest-ch-${name}`;
-  item.className = 'guest-channel-item';
-  item.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
-  item.innerHTML = `<span style="flex:1;font-family:var(--font-mono);font-size:0.85rem">${name}</span>
-    <button class="btn btn-danger" style="padding:2px 8px;font-size:0.8em"
-      onclick="removeGuestChannel('${name}')">✕</button>`;
+  item.id = 'guest-ch-' + name;
+  item.className = 'twitch-channel-card';
+  // name is validated ^[a-z0-9_]{1,25}$ before reaching here — safe for innerHTML
+  item.innerHTML = '<div class="tc-dot pending"></div>'
+    + '<span class="tc-name">' + name + '</span>'
+    + '<span class="tc-badge offline">hors ligne</span>'
+    + '<button class="tc-kick" onclick="removeGuestChannel(\'' + name + '\')">Déconnecter</button>';
   list.appendChild(item);
   input.value = '';
   toast(`Wally rejoint ${name}`, 'success');
@@ -1398,13 +1376,57 @@ async function removeGuestChannel(name) {
     const el = document.getElementById(`guest-ch-${name}`);
     if (el) el.remove();
     const list = document.getElementById('guest-channels-list');
-    if (list && !list.querySelector('.guest-channel-item')) {
+    if (list && !list.querySelector('.twitch-channel-card, .guest-channel-item')) {
       list.innerHTML = '<p style="color:var(--text-muted);margin:0 0 12px">Aucune chaîne invitée.</p>';
     }
     toast(`Wally a quitté ${name}`, 'success');
   } else {
     toast('Erreur lors de la suppression', 'error');
   }
+}
+
+// ── Twitch Channels Tab ────────────────────────────────────────────
+
+async function loadTwitchChannelsTab() {
+  const el = document.getElementById('tab-admin-twitch');
+  if (!el) return;
+
+  el.innerHTML = '<p style="color:var(--text-muted);padding:16px">Chargement…</p>';
+
+  const r = await apiFetch('/api/admin/twitch/channels');
+  if (!r || !r.ok) {
+    el.innerHTML = '<p style="color:var(--c-offline);padding:16px">Erreur de chargement.</p>';
+    return;
+  }
+  const channels = await r.json();
+
+  const cardsHtml = channels.length === 0
+    ? '<p style="color:var(--text-muted);margin-bottom:12px">Aucune chaîne invitée.</p>'
+    : channels.map(ch => {
+        // ch.name is a validated Twitch login (^[a-z0-9_]{1,25}$) — safe for innerHTML
+        const dotClass = ch.irc_connected ? 'connected' : 'pending';
+        const badgeClass = ch.live ? 'live' : 'offline';
+        const badgeText = ch.live ? '🔴 LIVE' : 'hors ligne';
+        return '<div class="twitch-channel-card" id="guest-ch-' + ch.name + '">'
+          + '<div class="tc-dot ' + dotClass + '"></div>'
+          + '<span class="tc-name">' + ch.name + '</span>'
+          + '<span class="tc-badge ' + badgeClass + '">' + badgeText + '</span>'
+          + '<button class="tc-kick" onclick="removeGuestChannel(\'' + ch.name + '\')">Déconnecter</button>'
+          + '</div>';
+      }).join('');
+
+  el.innerHTML = '<div style="padding:0 2px">'
+    + '<div id="guest-channels-list">' + cardsHtml + '</div>'
+    + '<div id="twitch-channels-add">'
+    + '<input type="text" id="guest-channel-input" placeholder="nom de chaîne twitch…"'
+    + ' style="flex:1" onkeydown="if(event.key===\'Enter\') addGuestChannel()">'
+    + '<button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>'
+    + '</div>'
+    + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
+    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">'
+    + 'Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler.'
+    + '</p>'
+    + '</div>';
 }
 
 // ── Admin emotions ────────────────────────────────────────────────────────────
