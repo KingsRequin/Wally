@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuration du bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0a0a0f; color: rgba(255,255,255,0.87); font-family: 'Inter', sans-serif; min-height: 100vh; }
+    .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; }
+    .btn-primary { background: rgba(6,182,212,0.2); border: 1px solid rgba(6,182,212,0.5); color: rgb(6,182,212); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-weight: 600; transition: all .2s; }
+    .btn-primary:hover { background: rgba(6,182,212,0.35); }
+    .btn-secondary { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); border-radius: 8px; padding: 8px 18px; cursor: pointer; transition: all .2s; }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+    .field-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; color: rgba(255,255,255,0.9); font-size: 13px; outline: none; transition: border .2s; font-family: monospace; }
+    .field-input:focus { border-color: rgba(6,182,212,0.5); }
+    .help-box { background: rgba(6,182,212,0.06); border-left: 2px solid rgba(6,182,212,0.4); border-radius: 4px; padding: 8px 12px; font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 8px; }
+    .step-circle { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .step-done { background: rgba(34,197,94,0.2); border: 2px solid rgba(34,197,94,0.7); color: rgb(34,197,94); cursor: pointer; }
+    .step-active { background: rgba(6,182,212,0.2); border: 2px solid rgb(6,182,212); color: rgb(6,182,212); }
+    .step-future { background: rgba(255,255,255,0.04); border: 2px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.3); }
+    .step-line { flex: 1; height: 2px; margin-bottom: 18px; }
+    .tag-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.3); border-radius: 20px; padding: 3px 10px; font-size: 12px; color: rgba(6,182,212,0.9); }
+    .tab-btn { padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid transparent; }
+    .tab-active { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.3); color: rgb(6,182,212); }
+    .tab-inactive { color: rgba(255,255,255,0.4); }
+    .tab-inactive:hover { color: rgba(255,255,255,0.7); }
+    .preview-badge { background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.4); color: rgb(251,191,36); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+    .error-msg { color: rgb(239,68,68); font-size: 12px; margin-top: 4px; }
+    .success-msg { color: rgb(34,197,94); font-size: 12px; margin-top: 4px; }
+    textarea.field-input { min-height: 280px; font-size: 12px; resize: vertical; }
+    .progress-step { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    .progress-label { font-size: 10px; white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<div id="app" class="max-w-2xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-bold">🤖 Configuration de ton bot</h1>
+      <p class="text-sm text-white/40 mt-1">Suis les étapes pour configurer ton instance personnelle</p>
+    </div>
+    <span id="preview-badge" class="preview-badge" style="display:none">MODE TEST</span>
+  </div>
+
+  <!-- Barre de progression -->
+  <div class="glass p-4 mb-6">
+    <div class="flex items-center gap-0">
+      <div class="progress-step" id="ps-1" onclick="goToStep(1)">
+        <div class="step-circle step-active" id="sc-1">1</div>
+        <span class="progress-label text-white/50" id="sl-1">Bienvenue</span>
+      </div>
+      <div class="step-line bg-white/10" id="line-1"></div>
+      <div class="progress-step" id="ps-2" onclick="goToStep(2)">
+        <div class="step-circle step-future" id="sc-2">2</div>
+        <span class="progress-label text-white/30" id="sl-2">Discord</span>
+      </div>
+      <div class="step-line bg-white/10" id="line-2"></div>
+      <div class="progress-step" id="ps-3" onclick="goToStep(3)">
+        <div class="step-circle step-future" id="sc-3">3</div>
+        <span class="progress-label text-white/30" id="sl-3">Clés API</span>
+      </div>
+      <div class="step-line bg-white/10" id="line-3"></div>
+      <div class="progress-step" id="ps-4" onclick="goToStep(4)">
+        <div class="step-circle step-future" id="sc-4">4</div>
+        <span class="progress-label text-white/30" id="sl-4">Twitch</span>
+      </div>
+      <div class="step-line bg-white/10" id="line-4"></div>
+      <div class="progress-step" id="ps-5" onclick="goToStep(5)">
+        <div class="step-circle step-future" id="sc-5">5</div>
+        <span class="progress-label text-white/30" id="sl-5">Persona</span>
+      </div>
+      <div class="step-line bg-white/10" id="line-5"></div>
+      <div class="progress-step" id="ps-6">
+        <div class="step-circle step-future" id="sc-6">6</div>
+        <span class="progress-label text-white/30" id="sl-6">Lancement</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Étape 1 — Bienvenue -->
+  <div id="step-1" class="glass p-6">
+    <h2 class="text-lg font-bold mb-2">👋 Bienvenue !</h2>
+    <p class="text-sm text-white/60 mb-4">Ce wizard va configurer ton bot en environ <strong class="text-white/80">10 minutes</strong>. Garde cette page ouverte — le lien expire dans 7 jours.</p>
+    <div class="space-y-3 mb-6">
+      <div class="flex items-start gap-3">
+        <span class="text-green-400 mt-0.5">✅</span>
+        <div><div class="text-sm font-semibold">Discord</div><div class="text-xs text-white/40">Token du bot, ID de ton serveur, clés OAuth</div></div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-green-400 mt-0.5">✅</span>
+        <div><div class="text-sm font-semibold">Clés API (OpenAI requis)</div><div class="text-xs text-white/40">Pour l'intelligence artificielle du bot</div></div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-white/30 mt-0.5">⬜</span>
+        <div><div class="text-sm font-semibold text-white/50">Twitch <span class="text-white/30 font-normal">(optionnel)</span></div><div class="text-xs text-white/30">Si tu veux le bot sur Twitch aussi</div></div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-green-400 mt-0.5">✅</span>
+        <div><div class="text-sm font-semibold">Personnalité</div><div class="text-xs text-white/40">Nom, langue et caractère du bot</div></div>
+      </div>
+    </div>
+    <div class="flex justify-end">
+      <button class="btn-primary" onclick="nextStep()">Commencer →</button>
+    </div>
+  </div>
+
+  <!-- Étape 2 — Discord -->
+  <div id="step-2" class="glass p-6" style="display:none">
+    <h2 class="text-lg font-bold mb-1">🔗 Connexion Discord</h2>
+    <p class="text-xs text-white/40 mb-4">Crée une application sur <a href="https://discord.com/developers/applications" target="_blank" class="text-cyan-400 underline">discord.com/developers</a> si ce n'est pas fait.</p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Discord Bot Token <span class="text-red-400">*</span></label>
+        <div class="help-box">💡 Applications → ton app → onglet <strong>Bot</strong> → bouton <strong>Reset Token</strong> → copie le token</div>
+        <input id="discord_token" type="password" class="field-input" placeholder="MTxx...">
+        <div id="discord_token_err" class="error-msg" style="display:none"></div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Discord Guild ID (ID de ton serveur) <span class="text-red-400">*</span></label>
+        <div class="help-box">💡 Dans Discord : Paramètres → Avancés → active <strong>Mode développeur</strong>. Puis clic droit sur ton serveur → <strong>Copier l'identifiant</strong></div>
+        <input id="discord_guild_id" type="text" class="field-input" placeholder="1234567890123456789">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Client ID <span class="text-red-400">*</span></label>
+        <div class="help-box">💡 Applications → ton app → onglet <strong>OAuth2</strong> → <strong>Client ID</strong></div>
+        <input id="discord_client_id" type="text" class="field-input" placeholder="1234567890123456789">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Client Secret <span class="text-red-400">*</span></label>
+        <div class="help-box">💡 Même page OAuth2 → clique sur <strong>Reset Secret</strong></div>
+        <input id="discord_client_secret" type="password" class="field-input" placeholder="abc123...">
+      </div>
+    </div>
+
+    <div class="mt-4 flex items-center gap-3">
+      <button class="btn-secondary text-sm" onclick="testDiscord()">🔍 Tester la connexion</button>
+      <span id="discord_test_result" class="text-sm"></span>
+    </div>
+
+    <div class="flex justify-between mt-6 pt-4 border-t border-white/5">
+      <button class="btn-secondary" onclick="prevStep()">← Retour</button>
+      <button class="btn-primary" onclick="validateAndNext(2)">Continuer →</button>
+    </div>
+  </div>
+
+  <!-- Étape 3 — Clés API -->
+  <div id="step-3" class="glass p-6" style="display:none">
+    <h2 class="text-lg font-bold mb-1">🔑 Clés API</h2>
+    <p class="text-xs text-white/40 mb-4">Ces clés permettent à ton bot d'utiliser l'intelligence artificielle.</p>
+    <div class="space-y-4">
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">OpenAI API Key <span class="text-red-400">*</span></label>
+        <div class="help-box">💡 Va sur <a href="https://platform.openai.com/api-keys" target="_blank" class="text-cyan-400 underline">platform.openai.com/api-keys</a> → <strong>Create new secret key</strong> → copie la clé (commence par <code>sk-</code>)</div>
+        <input id="openai_api_key" type="password" class="field-input" placeholder="sk-...">
+        <div id="openai_err" class="error-msg" style="display:none"></div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Anthropic API Key <span class="text-white/30 font-normal">(optionnel)</span></label>
+        <div class="help-box" style="border-left-color: rgba(255,255,255,0.15)">Uniquement si tu veux utiliser Claude. Va sur <a href="https://console.anthropic.com" target="_blank" class="text-cyan-400 underline">console.anthropic.com</a> → API Keys. Laisse vide sinon.</div>
+        <input id="anthropic_api_key" type="password" class="field-input" placeholder="sk-ant-... (optionnel)">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Tavily API Key <span class="text-white/30 font-normal">(optionnel)</span></label>
+        <div class="help-box" style="border-left-color: rgba(255,255,255,0.15)">Permet la recherche web. Va sur <a href="https://app.tavily.com" target="_blank" class="text-cyan-400 underline">app.tavily.com</a>. Laisse vide sinon.</div>
+        <input id="tavily_api_key" type="password" class="field-input" placeholder="tvly-... (optionnel)">
+      </div>
+    </div>
+    <div class="flex justify-between mt-6 pt-4 border-t border-white/5">
+      <button class="btn-secondary" onclick="prevStep()">← Retour</button>
+      <button class="btn-primary" onclick="validateAndNext(3)">Continuer →</button>
+    </div>
+  </div>
+
+  <!-- Étape 4 — Twitch -->
+  <div id="step-4" class="glass p-6" style="display:none">
+    <h2 class="text-lg font-bold mb-1">🎮 Twitch <span class="text-sm font-normal text-white/40">(optionnel)</span></h2>
+    <p class="text-xs text-white/40 mb-4">Si ton bot est uniquement pour Discord, clique sur <strong>"Passer"</strong>.</p>
+    <div class="space-y-4">
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Twitch Client ID</label>
+        <div class="help-box">💡 <a href="https://dev.twitch.tv/console" target="_blank" class="text-cyan-400 underline">dev.twitch.tv/console</a> → ton app → <strong>Client ID</strong></div>
+        <input id="twitch_client_id" type="text" class="field-input" placeholder="zzmxpn...">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Twitch Client Secret</label>
+        <div class="help-box">💡 Même page → <strong>Nouveau secret</strong></div>
+        <input id="twitch_client_secret" type="password" class="field-input" placeholder="...">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Nom du compte bot Twitch</label>
+        <input id="twitch_bot_nick" type="text" class="field-input" placeholder="monbot_twitch">
+      </div>
+
+      <div class="glass p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Compte bot Twitch</div>
+          <span id="bot-status" class="text-xs text-white/30">Non connecté</span>
+        </div>
+        <button class="btn-secondary text-sm w-full" onclick="connectTwitch('bot')">Connecter le compte bot →</button>
+      </div>
+
+      <div class="glass p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Compte streamer Twitch</div>
+          <span id="streamer-status" class="text-xs text-white/30">Non connecté</span>
+        </div>
+        <button class="btn-secondary text-sm w-full" onclick="connectTwitch('streamer')">Connecter le compte streamer →</button>
+      </div>
+    </div>
+    <div class="flex justify-between mt-6 pt-4 border-t border-white/5">
+      <button class="btn-secondary" onclick="prevStep()">← Retour</button>
+      <div class="flex gap-2">
+        <button class="btn-secondary" onclick="skipTwitch()">Passer →</button>
+        <button class="btn-primary" onclick="validateAndNext(4)" id="twitch-next-btn" style="display:none">Continuer →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Étape 5 — Personnalité -->
+  <div id="step-5" class="glass p-6" style="display:none">
+    <h2 class="text-lg font-bold mb-1">🎭 Personnalité</h2>
+    <p class="text-xs text-white/40 mb-4">Configure le nom, la langue et éditez les fichiers de personnalité.</p>
+
+    <div class="space-y-4 mb-4">
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Nom du bot <span class="text-red-400">*</span></label>
+        <input id="bot_name" type="text" class="field-input" placeholder="cindy" oninput="updateTriggerChip()">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Langue par défaut</label>
+        <select id="language_default" class="field-input" style="cursor:pointer">
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-white/70 mb-1 block">Mots déclencheurs</label>
+        <div id="trigger-chips" class="flex flex-wrap gap-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="new-trigger" type="text" class="field-input" placeholder="Ajouter un mot..." style="flex:1" onkeydown="if(event.key==='Enter'){addTrigger();event.preventDefault();}">
+          <button class="btn-secondary text-sm px-3" onclick="addTrigger()">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-white/5 pt-4">
+      <p class="text-xs text-white/40 mb-3">Fichiers de personnalité — éditez librement :</p>
+      <div class="flex gap-2 mb-3" id="persona-tabs">
+        <button class="tab-btn tab-active" onclick="switchTab('SOUL')">SOUL</button>
+        <button class="tab-btn tab-inactive" onclick="switchTab('IDENTITY')">IDENTITY</button>
+        <button class="tab-btn tab-inactive" onclick="switchTab('VOICE')">VOICE</button>
+        <button class="tab-btn tab-inactive" onclick="switchTab('EMOTIONS')">EMOTIONS</button>
+      </div>
+      <textarea id="persona-SOUL" class="field-input" placeholder="Décris la personnalité profonde du bot..."></textarea>
+      <textarea id="persona-IDENTITY" class="field-input" style="display:none" placeholder="Décris l'identité et le rôle du bot..."></textarea>
+      <textarea id="persona-VOICE" class="field-input" style="display:none" placeholder="Décris comment le bot s'exprime..."></textarea>
+      <textarea id="persona-EMOTIONS" class="field-input" style="display:none" placeholder="Décris le comportement émotionnel du bot..."></textarea>
+    </div>
+
+    <div class="flex justify-between mt-6 pt-4 border-t border-white/5">
+      <button class="btn-secondary" onclick="prevStep()">← Retour</button>
+      <button class="btn-primary" onclick="validateAndNext(5)">Continuer →</button>
+    </div>
+  </div>
+
+  <!-- Étape 6 — Lancement -->
+  <div id="step-6" class="glass p-6" style="display:none">
+    <h2 class="text-lg font-bold mb-4">🚀 Lancement</h2>
+
+    <!-- Récapitulatif -->
+    <div id="recap" class="space-y-2 mb-6 text-sm"></div>
+
+    <!-- Mode preview toggle -->
+    <div id="preview-toggle" class="glass p-3 mb-4 flex items-center gap-3" style="display:none!important">
+      <input type="checkbox" id="dry-run-toggle" class="w-4 h-4" checked>
+      <label for="dry-run-toggle" class="text-sm cursor-pointer">Mode simulation (ne lance pas Docker — montre les fichiers générés)</label>
+    </div>
+
+    <!-- Bouton lancer -->
+    <div id="launch-section">
+      <button class="btn-primary w-full text-center py-3" onclick="submitWizard()" id="launch-btn">🚀 Créer mon instance</button>
+    </div>
+
+    <!-- Progression -->
+    <div id="launch-progress" style="display:none" class="space-y-3">
+      <div class="text-sm text-white/60" id="launch-status">Création des fichiers...</div>
+      <div class="w-full bg-white/5 rounded-full h-2">
+        <div id="launch-bar" class="h-2 rounded-full bg-cyan-500 transition-all duration-500" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Résultat -->
+    <div id="launch-result" style="display:none"></div>
+
+    <div class="flex justify-start mt-6 pt-4 border-t border-white/5">
+      <button class="btn-secondary" onclick="prevStep()" id="back-from-launch">← Retour</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+const WIZARD_TOKEN = '__WIZARD_TOKEN__';
+const WIZARD_MODE = '__WIZARD_MODE__';
+const IS_PREVIEW = WIZARD_MODE === 'preview';
+
+let currentStep = 1;
+const maxReached = { 1: true };
+const triggerNames = [];
+let twitchPolling = null;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (IS_PREVIEW) {
+    document.getElementById('preview-badge').style.display = 'inline';
+    document.getElementById('preview-toggle').style.removeProperty('display');
+    document.getElementById('launch-btn').textContent = '🔬 Simuler / Créer';
+  }
+  updateProgressBar();
+  loadPersonaTemplates();
+});
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+function showStep(n) {
+  for (let i = 1; i <= 6; i++) {
+    const el = document.getElementById('step-' + i);
+    if (el) el.style.display = i === n ? 'block' : 'none';
+  }
+  currentStep = n;
+  updateProgressBar();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function nextStep() { showStep(currentStep + 1); maxReached[currentStep + 1] = true; }
+function prevStep() { showStep(currentStep - 1); }
+
+function goToStep(n) {
+  if (maxReached[n]) showStep(n);
+}
+
+function updateProgressBar() {
+  for (let i = 1; i <= 6; i++) {
+    const sc = document.getElementById('sc-' + i);
+    const sl = document.getElementById('sl-' + i);
+    if (!sc) continue;
+    sc.className = 'step-circle ';
+    if (i < currentStep) {
+      sc.className += 'step-done';
+      sc.textContent = '✓';
+      if (sl) sl.className = 'progress-label text-green-400';
+    } else if (i === currentStep) {
+      sc.className += 'step-active';
+      sc.textContent = i;
+      if (sl) sl.className = 'progress-label text-cyan-400';
+    } else {
+      sc.className += 'step-future';
+      sc.textContent = i;
+      if (sl) sl.className = 'progress-label text-white/30';
+    }
+    const line = document.getElementById('line-' + i);
+    if (line) {
+      line.className = 'step-line ' + (i < currentStep ? 'bg-green-500/40' : 'bg-white/10');
+    }
+  }
+}
+
+// ── Validation par étape ─────────────────────────────────────────────────────
+async function validateAndNext(step) {
+  if (step === 2) {
+    const fields = ['discord_token', 'discord_guild_id', 'discord_client_id', 'discord_client_secret'];
+    for (const f of fields) {
+      if (!document.getElementById(f).value.trim()) {
+        showError(f + '_err', 'Ce champ est requis.'); return;
+      }
+    }
+  }
+  if (step === 3) {
+    const key = document.getElementById('openai_api_key').value.trim();
+    if (!key) { showError('openai_err', 'La clé OpenAI est requise.'); return; }
+  }
+  if (step === 5) {
+    const name = document.getElementById('bot_name').value.trim();
+    if (!name) { alert('Le nom du bot est requis.'); return; }
+    if (triggerNames.length === 0) triggerNames.push(name);
+  }
+  await saveCurrentStep();
+  nextStep();
+}
+
+async function saveCurrentStep() {
+  const data = gatherStepData(currentStep);
+  if (Object.keys(data).length === 0) return;
+  try {
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    await fetch('/api/setup/' + WIZARD_TOKEN + '/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(data),
+    });
+  } catch (e) { console.warn('Save failed:', e); }
+}
+
+function gatherStepData(step) {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  if (step === 2) return {
+    discord_token: g('discord_token'),
+    discord_guild_id: g('discord_guild_id'),
+    discord_client_id: g('discord_client_id'),
+    discord_client_secret: g('discord_client_secret'),
+  };
+  if (step === 3) return {
+    openai_api_key: g('openai_api_key'),
+    anthropic_api_key: g('anthropic_api_key'),
+    tavily_api_key: g('tavily_api_key'),
+  };
+  if (step === 4) return {
+    twitch_enabled: document.getElementById('twitch_client_id').value.trim() !== '',
+    twitch_client_id: g('twitch_client_id'),
+    twitch_client_secret: g('twitch_client_secret'),
+    twitch_bot_nick: g('twitch_bot_nick'),
+  };
+  if (step === 5) return {
+    bot_name: g('bot_name'),
+    language_default: g('language_default'),
+    trigger_names: [...triggerNames],
+    persona_soul: g('persona-SOUL'),
+    persona_identity: g('persona-IDENTITY'),
+    persona_voice: g('persona-VOICE'),
+    persona_emotions: g('persona-EMOTIONS'),
+  };
+  return {};
+}
+
+// ── Discord test ──────────────────────────────────────────────────────────────
+async function testDiscord() {
+  const token = document.getElementById('discord_token').value.trim();
+  const resultEl = document.getElementById('discord_test_result');
+  if (!token) { resultEl.textContent = "⚠️ Saisis le token d'abord."; resultEl.className = 'text-sm text-yellow-400'; return; }
+  resultEl.textContent = '⏳ Test en cours...';
+  resultEl.className = 'text-sm text-white/50';
+  try {
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/validate-discord', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ discord_token: token }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      resultEl.textContent = '✅ Connecté : @' + data.username;
+      resultEl.className = 'text-sm text-green-400';
+    } else {
+      resultEl.textContent = '❌ ' + (data.error || 'Token invalide');
+      resultEl.className = 'text-sm text-red-400';
+    }
+  } catch (e) {
+    resultEl.textContent = '❌ Erreur réseau';
+    resultEl.className = 'text-sm text-red-400';
+  }
+}
+
+// ── Twitch OAuth ──────────────────────────────────────────────────────────────
+async function connectTwitch(accountType) {
+  const clientId = document.getElementById('twitch_client_id').value.trim();
+  const clientSecret = document.getElementById('twitch_client_secret').value.trim();
+  if (!clientId || !clientSecret) { alert("Saisis le Client ID et le Client Secret d'abord."); return; }
+  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+  const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/twitch-auth-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ account_type: accountType, client_id: clientId, client_secret: clientSecret }),
+  });
+  const data = await resp.json();
+  window.open(data.url, '_blank', 'width=600,height=700');
+  startTwitchPolling();
+}
+
+function startTwitchPolling() {
+  if (twitchPolling) return;
+  twitchPolling = setInterval(async () => {
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/twitch-status', { headers });
+    const data = await resp.json();
+    const botStatus = document.getElementById('bot-status');
+    const streamerStatus = document.getElementById('streamer-status');
+    const nextBtn = document.getElementById('twitch-next-btn');
+    if (data.bot_connected) {
+      botStatus.textContent = '✅ @' + data.bot_username;
+      botStatus.className = 'text-xs text-green-400';
+    }
+    if (data.streamer_connected) {
+      streamerStatus.textContent = '✅ @' + data.streamer_username;
+      streamerStatus.className = 'text-xs text-green-400';
+    }
+    if (data.bot_connected && data.streamer_connected) {
+      clearInterval(twitchPolling); twitchPolling = null;
+      nextBtn.style.display = 'inline-flex';
+    }
+  }, 2000);
+}
+
+async function skipTwitch() {
+  await fetch('/api/setup/' + WIZARD_TOKEN + '/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ twitch_enabled: false }),
+  });
+  nextStep();
+}
+
+// ── Triggers chips ────────────────────────────────────────────────────────────
+function updateTriggerChip() {
+  const name = document.getElementById('bot_name').value.trim().toLowerCase();
+  if (name && !triggerNames.includes(name)) {
+    if (triggerNames.length === 0) { triggerNames.push(name); renderChips(); }
+    else { triggerNames[0] = name; renderChips(); }
+  }
+}
+
+function addTrigger() {
+  const inp = document.getElementById('new-trigger');
+  const val = inp.value.trim().toLowerCase();
+  if (val && !triggerNames.includes(val)) { triggerNames.push(val); renderChips(); }
+  inp.value = '';
+}
+
+function removeTrigger(i) { triggerNames.splice(i, 1); renderChips(); }
+
+function renderChips() {
+  const c = document.getElementById('trigger-chips');
+  c.innerHTML = triggerNames.map((t, i) =>
+    '<span class="tag-chip">' + t + ' <span onclick="removeTrigger(' + i + ')" style="cursor:pointer;margin-left:2px">×</span></span>'
+  ).join('');
+}
+
+// ── Persona tabs ──────────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['SOUL', 'IDENTITY', 'VOICE', 'EMOTIONS'].forEach(n => {
+    document.getElementById('persona-' + n).style.display = n === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('#persona-tabs .tab-btn').forEach((btn, i) => {
+    const tabs = ['SOUL', 'IDENTITY', 'VOICE', 'EMOTIONS'];
+    btn.className = 'tab-btn ' + (tabs[i] === name ? 'tab-active' : 'tab-inactive');
+  });
+}
+
+async function loadPersonaTemplates() {
+  const files = ['SOUL', 'IDENTITY', 'VOICE', 'EMOTIONS'];
+  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+  for (const f of files) {
+    try {
+      const resp = await fetch('/api/admin/setup/persona-template/' + f, { headers });
+      if (resp.ok) {
+        const data = await resp.json();
+        document.getElementById('persona-' + f).value = data.content || '';
+      }
+    } catch (e) { /* silencieux */ }
+  }
+}
+
+// ── Récapitulatif ─────────────────────────────────────────────────────────────
+function buildRecap() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const items = [
+    { label: 'Bot Discord', value: g('discord_guild_id') ? '✅ Guild ID: ' + g('discord_guild_id') : '❌ Non configuré' },
+    { label: 'OpenAI', value: g('openai_api_key') ? '✅ Clé configurée' : '❌ Manquant' },
+    { label: 'Twitch', value: g('twitch_client_id') ? '✅ Configuré' : '⬜ Non configuré (optionnel)' },
+    { label: 'Nom du bot', value: g('bot_name') || '—' },
+    { label: 'Langue', value: g('language_default') || 'fr' },
+  ];
+  const recapEl = document.getElementById('recap');
+  recapEl.innerHTML = '';
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'flex justify-between py-2 border-b border-white/5';
+    const label = document.createElement('span');
+    label.className = 'text-white/50';
+    label.textContent = item.label;
+    const val = document.createElement('span');
+    val.className = 'text-sm';
+    val.textContent = item.value;
+    div.appendChild(label);
+    div.appendChild(val);
+    recapEl.appendChild(div);
+  });
+}
+
+// ── Lancement ─────────────────────────────────────────────────────────────────
+async function submitWizard() {
+  await saveCurrentStep();
+  const dryRun = IS_PREVIEW && document.getElementById('dry-run-toggle').checked;
+  document.getElementById('launch-section').style.display = 'none';
+  document.getElementById('back-from-launch').style.display = 'none';
+  document.getElementById('launch-progress').style.display = 'block';
+
+  const steps = [
+    { msg: 'Création des fichiers de configuration...', pct: 20 },
+    { msg: 'Génération du fichier Docker Compose...', pct: 50 },
+    { msg: 'Démarrage du conteneur...', pct: 80 },
+  ];
+  let si = 0;
+  const ticker = setInterval(() => {
+    if (si < steps.length) {
+      document.getElementById('launch-status').textContent = steps[si].msg;
+      document.getElementById('launch-bar').style.width = steps[si].pct + '%';
+      si++;
+    }
+  }, 800);
+
+  try {
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ dry_run: dryRun }),
+    });
+    clearInterval(ticker);
+    const data = await resp.json();
+    document.getElementById('launch-bar').style.width = '100%';
+    document.getElementById('launch-progress').style.display = 'none';
+    const resultEl = document.getElementById('launch-result');
+    resultEl.style.display = 'block';
+
+    if (resp.ok && data.url) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'glass p-5 text-center space-y-3';
+
+      const emoji = document.createElement('div');
+      emoji.className = 'text-3xl';
+      emoji.textContent = '🎉';
+
+      const title = document.createElement('div');
+      title.className = 'font-bold text-lg';
+      title.textContent = dryRun ? 'Simulation réussie !' : 'Instance démarrée !';
+
+      wrapper.appendChild(emoji);
+      wrapper.appendChild(title);
+
+      if (!dryRun) {
+        const desc = document.createElement('div');
+        desc.className = 'text-sm text-white/60';
+        desc.textContent = 'Ton instance est disponible sur :';
+
+        const url = document.createElement('div');
+        url.className = 'text-cyan-400 font-mono text-sm';
+        url.textContent = data.url;
+
+        const hint = document.createElement('div');
+        hint.className = 'text-xs text-white/30 mt-2';
+        hint.textContent = 'Configure un sous-domaine pointant vers le port ' + data.port + ' de ton serveur.';
+
+        wrapper.appendChild(desc);
+        wrapper.appendChild(url);
+        wrapper.appendChild(hint);
+      } else {
+        const simNote = document.createElement('div');
+        simNote.className = 'text-xs text-white/50';
+        simNote.textContent = 'Mode simulation — aucun conteneur créé.';
+        wrapper.appendChild(simNote);
+      }
+
+      resultEl.innerHTML = '';
+      resultEl.appendChild(wrapper);
+    } else {
+      throw new Error(data.detail || 'Erreur inconnue');
+    }
+  } catch (e) {
+    clearInterval(ticker);
+    document.getElementById('launch-progress').style.display = 'none';
+    const resultEl = document.getElementById('launch-result');
+    resultEl.style.display = 'block';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'glass p-5 space-y-3 border border-red-500/20';
+
+    const errTitle = document.createElement('div');
+    errTitle.className = 'text-red-400 font-semibold';
+    errTitle.textContent = '❌ Erreur lors du lancement';
+
+    const errMsg = document.createElement('div');
+    errMsg.className = 'text-sm text-white/50';
+    errMsg.textContent = e.message;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn-secondary text-sm';
+    retryBtn.textContent = 'Réessayer';
+    retryBtn.onclick = () => location.reload();
+
+    wrapper.appendChild(errTitle);
+    wrapper.appendChild(errMsg);
+    wrapper.appendChild(retryBtn);
+
+    resultEl.innerHTML = '';
+    resultEl.appendChild(wrapper);
+  }
+}
+
+// ── Override step 6 show ──────────────────────────────────────────────────────
+const _origShowStep = showStep;
+window.showStep = function(n) {
+  _origShowStep(n);
+  if (n === 6) buildRecap();
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+  setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
+}
+</script>
+</body>
+</html>
