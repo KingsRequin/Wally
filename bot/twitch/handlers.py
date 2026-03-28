@@ -119,6 +119,20 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if bot_id and user_id == bot_id:
         return
 
+    # Ignorer les bots Twitch connus (username ou badge "bot")
+    _KNOWN_BOTS: frozenset[str] = frozenset({
+        "nightbot", "streamlabs", "streamelements", "moobot", "fossabot",
+        "wizebot", "supibot", "botrixoficial", "sery_bot", "electricallongboard",
+        "streamlabsbot", "commanderroot", "soundalerts", "elbierro", "tangiabot",
+        "kofistreambot", "own3d", "streamelementsbot",
+    })
+    if author.lower() in _KNOWN_BOTS:
+        return
+    badges = getattr(payload.chatter, "badges", []) or []
+    badge_ids = {b.id if hasattr(b, "id") else str(b) for b in badges}
+    if "bot" in badge_ids:
+        return
+
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author, content)

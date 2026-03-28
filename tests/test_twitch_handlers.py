@@ -70,11 +70,12 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
 
 def make_payload(content="wally salut", author_name="streamer",
-                 author_id="111", channel="mychannel"):
+                 author_id="111", channel="mychannel", badges=None):
     payload = MagicMock()
     payload.message.text = content
     payload.chatter.name = author_name
     payload.chatter.id = author_id
+    payload.chatter.badges = badges if badges is not None else []
     payload.broadcaster.name = channel
     return payload
 
@@ -89,6 +90,30 @@ async def test_ignores_own_bot_messages(monkeypatch):
     bot.twitch_api._bot_id = "999"
     # Payload dont l'auteur est Wally lui-même
     payload = make_payload(content="wally salut", author_id="999")
+    await handle_message(bot, payload)
+    bot.llm.complete.assert_not_awaited()
+    bot.memory.append_prelude.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ignores_known_bot_username(monkeypatch):
+    """Les bots Twitch connus (nightbot, streamelements…) doivent être ignorés."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = make_bot(trigger_names=["wally"])
+    payload = make_payload(content="wally salut", author_name="nightbot", author_id="42")
+    await handle_message(bot, payload)
+    bot.llm.complete.assert_not_awaited()
+    bot.memory.append_prelude.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ignores_bot_badge(monkeypatch):
+    """Un chatter avec le badge 'bot' doit être ignoré."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = make_bot(trigger_names=["wally"])
+    badge = MagicMock()
+    badge.id = "bot"
+    payload = make_payload(content="wally salut", author_name="some_custom_bot", badges=[badge])
     await handle_message(bot, payload)
     bot.llm.complete.assert_not_awaited()
     bot.memory.append_prelude.assert_not_called()
