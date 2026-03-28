@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import json
 import time
 from datetime import datetime
 from typing import Optional
@@ -1926,7 +1927,6 @@ class Database:
             return await cur.fetchall()
 
     async def save_setup_session(self, token: str, data: dict) -> None:
-        import json
         existing = await self.get_setup_session(token)
         merged = {**existing, **data}
         await self._conn.execute(
@@ -1937,7 +1937,6 @@ class Database:
         await self._conn.commit()
 
     async def get_setup_session(self, token: str) -> dict:
-        import json
         async with self._conn.execute(
             "SELECT step_data FROM setup_sessions WHERE token = ?", (token,)
         ) as cur:
