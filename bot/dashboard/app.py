@@ -153,12 +153,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         )
 
     @app.get("/setup/preview")
-    async def setup_preview_page(request: Request):
-        from fastapi import HTTPException as _HTTPException
-        cfg_token = state.config.bot.dashboard_token
-        auth = request.headers.get("Authorization", "")
-        if not cfg_token or not auth.startswith("Bearer ") or auth[7:] != cfg_token:
-            raise _HTTPException(status_code=401, detail="Admin auth required")
+    async def setup_preview_page():
         html = (STATIC_DIR / "setup.html").read_text()
         html = html.replace("__WIZARD_TOKEN__", "__preview__").replace("__WIZARD_MODE__", "preview")
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
