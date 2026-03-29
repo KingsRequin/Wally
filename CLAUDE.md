@@ -162,6 +162,13 @@ Never use `print()` or `import logging`.
 just `display_name`. Used in prelude, context window, fact_extractor, user_content, cold-start
 history, and spam warnings. Ensures the LLM sees the unique Discord username alongside nicknames.
 
+### LLM Response Format — target_notice
+`user_content` sent to the LLM ends with `\n[author_label]: message`. Without explicit instruction,
+some LLMs (especially with minimal persona) echo the last line before their response. The
+`target_notice` injected in every Discord and Twitch request includes:
+> "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
+This prevents the echo behavior regardless of how minimal the instance's persona files are.
+
 ### Environment Variables
 All secrets in `.env`. Never hardcode tokens or API keys. Never commit `.env`.
 
@@ -425,6 +432,54 @@ Web dashboard on port 8080, FastAPI + vanilla JS SPA.
 Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
 GZip compression via `GZipMiddleware(minimum_size=1000)`.
 Memory users endpoint paginated (limit/offset, default 50, max 200).
+
+---
+
+## Multi-Instance Setup
+
+Allows deploying isolated Wally instances for third parties, each with their own persona,
+credentials, config, SQLite DB, and Qdrant collection. Managed from the main bot's admin dashboard.
+
+### Invite Flow
+Admin generates a time-limited token (7 days) via `POST /api/admin/invite`. Token is sent
+as a URL `/setup/{token}`. Preview mode uses the special token `__preview__` (Bearer-gated).
+
+`setup_invites` table: `token`, `expires_at` (−1 = revoked sentinel), `used_at`, `is_preview`.
+`setup_sessions` table: wizard step data saved incrementally via `POST /{token}/save`.
+
+### Setup Wizard (6-step SPA)
+`/setup/{token}` — vanilla JS SPA served from `bot/dashboard/static/setup.html`.
+Steps: Persona → Discord → Twitch (optional, skippable) → Recap → Submit.
+Each step validates credentials live (Discord token, Twitch OAuth) before enabling Next.
+Step 6 recap shows a summary. Submit calls `POST /{token}/submit` which runs `provision_instance()`.
+
+Routes in `bot/dashboard/routes/setup.py` — two routers:
+- `admin_router` — invite CRUD, instance notify-update, webhook
+- `wizard_router` — session save, credential validation, Twitch OAuth, submit
+
+### Provisioner (`bot/core/provisioner.py`)
+`provision_instance(slug, port, data, dry_run=False)` creates under `INSTANCES_DIR/{slug}/`:
+- `.env` — all secrets + `QDRANT_COLLECTION_NAME=wally_{slug}`, `DB_PATH=data/wally.db`
+- `config.yaml` — full default config (gpt-4o-mini, triggers, emotions, etc.)
+- `bot/persona/` — SOUL, IDENTITY, VOICE, EMOTIONS, EXEMPLES, WEEKDAYS, COMPOSITES, SECONDARIES
+- `docker-compose.yml` — isolated container on a dedicated port, shared network `wally-ai_wally-net`
+
+Volume mounts per instance:
+```
+./data:/app/data              # isolated SQLite DB
+./bot/persona:/app/bot/persona # instance persona files
+/opt/stacks/wally-ai/bot/persona/prompts:/app/bot/persona/prompts:ro  # shared prompt templates
+```
+The prompts directory is shared read-only from the main bot — no symlink needed, volume mount
+is the correct approach (symlinks across containers don't resolve).
+
+Each instance uses `QDRANT_COLLECTION_NAME=wally_{slug}` for memory isolation on the shared Qdrant.
+`sync_memory_users_from_qdrant` reads this env var — instances import their own users only.
+
+### Dashboard — Onglet Instances
+Admin tab showing all provisioned instances (from `INSTANCES_DIR`). Per-instance:
+notify-update button (sends Discord message with update button), direct dashboard link.
+Routes: `GET /api/admin/instances`, `POST /api/admin/instances/{slug}/notify-update`.
 
 ---
 
