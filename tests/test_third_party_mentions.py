@@ -46,13 +46,32 @@ async def test_fuzzy_match_injects_note():
 
 @pytest.mark.asyncio
 async def test_excludes_current_author():
+    """For Twitch-style user_ids (username == user_id), exclusion via direct token match."""
     bot = _make_bot(
-        alias_cache={"nickname:alice": "discord:999"}
+        alias_cache={"nickname:alice": "twitch:alice"},
+        users=[{"user_id": "twitch:alice", "username": "alice", "platform": "twitch"}],
+    )
+    prelude = [{"author": "alice", "content": "Alice est là", "timestamp": 0.0}]
+    # author_user_id = "alice" — should be excluded for Twitch where id == username
+    result = await _third_party_mention_context(bot, "twitch", "alice", prelude, [])
+    # alice/Alice matches its own author_user_id or username, so should be skipped
+    assert bot.memory.search.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_excludes_author_by_username_discord():
+    """For Discord snowflake IDs, exclusion must use username lookup."""
+    bot = _make_bot(
+        alias_cache={"nickname:alice": "discord:610550333042589752"},
+        users=[{"user_id": "discord:610550333042589752", "username": "Alice", "platform": "discord"}],
+        memory_text="Aime la musique"
     )
     prelude = [{"author": "Alice", "content": "Alice est là", "timestamp": 0.0}]
-    # author_user_id = "alice" — should be excluded
-    result = await _third_party_mention_context(bot, "discord", "alice", prelude, [])
-    # alice matches its own author_user_id, so should be skipped
+    # author_user_id is a numeric snowflake — direct token compare would never match "Alice"
+    result = await _third_party_mention_context(
+        bot, "discord", "610550333042589752", prelude, []
+    )
+    # Alice is the current author — memory.search should NOT be called for her own token
     assert bot.memory.search.call_count == 0
 
 

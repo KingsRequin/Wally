@@ -299,19 +299,29 @@ async def _third_party_mention_context(
         if word[0].isupper() or word.lower() in known_nicknames:
             candidates.add(word)
 
-    # Remove the current author
-    author_lower = author_user_id.lower()
-    candidates = {c for c in candidates if c.lower() != author_lower}
-
     if not candidates:
         return ""
 
     # Load known users for fuzzy matching
     try:
-        users = await bot.db.list_memory_users(limit=200)
+        users = await bot.db.list_memory_users()
     except Exception:
         users = []
     known_usernames = {u["username"].lower(): u for u in users if u.get("username")}
+
+    # Remove the current author by user_id AND by their username (for Discord snowflake IDs)
+    author_lower = author_user_id.lower()
+    author_username_lower = None
+    for u in users:
+        uid = u.get("user_id", "")
+        if uid == author_user_id or uid.endswith(":" + author_user_id):
+            author_username_lower = (u.get("username") or "").lower()
+            break
+    candidates = {
+        c for c in candidates
+        if c.lower() != author_lower
+        and (author_username_lower is None or c.lower() != author_username_lower)
+    }
 
     parts = []
     processed = 0
