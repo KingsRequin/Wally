@@ -333,9 +333,9 @@ query (no dual-query fan-out), returns best match with raw score. Returns `None`
 
 ### Memory Context Budget
 `mem_context` is assembled with a token budget (`memory_context_max_tokens`, default 800).
-Parts are prioritized: (1) semantic memories, (2) relationships, (3) global memories,
-(4) pending questions, (5) jokes, (6) opinions. Lower-priority parts are truncated when budget
-is exceeded. `assemble_memory_context()` in `prompts.py` handles this.
+Parts are prioritized: (1) semantic memories, (2) relationships, (3) pending questions,
+(4) jokes, (5) opinions, (6) third-party mention context. Lower-priority parts are truncated
+when budget is exceeded. `assemble_memory_context()` in `prompts.py` handles this.
 
 Trust and love scores are injected in a separate `--- Relation ---` block (outside the budget)
 via the `relationship_context` parameter of `build_system_prompt()`.
@@ -366,6 +366,33 @@ Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
 Positive interactions: +0.01. Repeated insults: -0.05.
 Updated after every response, not in real-time during generation.
 
+### Alias Management
+Table `user_aliases`: `nickname` (PK), `canonical_uid` (e.g. `"discord:123"`), `display_name`,
+`source` (`llm`/`manual`), `confidence`, `created_at`. FactExtractor auto-populates with
+`source='llm'`; admins add manual entries via the dashboard.
+
+CRUD helpers in `database.py`: `upsert_alias()`, `delete_alias()`, `list_aliases(canonical_uid=None)`,
+`get_nickname_alias_map()`. Admin routes: `GET/POST /api/admin/aliases`, `DELETE /api/admin/aliases/{nickname}`.
+After each mutation: `memory.load_aliases(db)` refreshes `MemoryService._alias_cache`.
+
+Cache key format: `"nickname:{nickname_lower}"` → `canonical_uid`. Populated on startup and after
+each admin mutation.
+
+### Third-party Mention Detection
+`_third_party_mention_context(bot, platform, author_user_id, prelude, context_messages)` in
+`bot/discord/handlers.py` (imported by twitch). Runs as **priority 6** in `memory_parts`.
+
+Algorithm:
+1. Extract candidate tokens (≥3 chars, starts uppercase OR in alias map) from prelude + context
+2. Exclude current author (by user_id AND by resolved username from memory_users)
+3. For each candidate (max 2):
+   - Exact alias match via `_alias_cache["nickname:token"]` → fetch memories → inject `--- Souvenirs sur [user] ---`
+   - Fuzzy match via `difflib.SequenceMatcher` (threshold 0.75) → inject note "ressemble à [user] (X%)"
+4. No injection for unmatched tokens (avoids noise)
+
+Dashboard: alias section in user modal (Mémoire > Utilisateurs) — pills with LLM/Manuel badge,
+inline add/delete, `_refreshAliasPills()` updates in-place without re-opening the modal.
+
 ---
 
 ## Database Tables
@@ -384,6 +411,7 @@ Updated after every response, not in real-time during generation.
 | `action_permissions_discord` | Rôles Discord autorisés par (action_type, guild_id, role_id) — multi-select |
 | `persistent_notes` | Notes explicites du LLM: id, title (UNIQUE), content, created_at, updated_at |
 | `twitch_visits` | Visites chaînes Twitch invitées: channel, joined_at, left_at, duration_s, msg_count, summary (résumé LLM) |
+| `user_aliases` | Alias pseudos → canonical_uid: nickname, canonical_uid, display_name, source (llm/manual), confidence |
 
 ---
 
@@ -459,6 +487,15 @@ Admin sidebar: 6 tabs with sub-tabs — **Paramètres** (Émotions · LLM · Ima
 **Mémoire** (Utilisateurs · Questions · Notes · Global), **Coûts** (Résumé · Détail),
 **Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay · Instances).
 Legacy tab names redirect transparently (e.g. `admin-config` → `admin-parametres`).
+
+**Coûts > Détail** sub-tab: (1) camembert + barres par fonctionnalité (`PURPOSE_FEATURE_MAP`:
+Réponses/Journal/Images/Émotions/Mémoire/Système), (2) tableau prix tokens par modèle
+(`/costs/prices`), (3) breakdowns existants (modèle/purpose/top users), (4) journal paginé
+des appels individuels (`/costs/logs?days=N&page=P&limit=50`).
+
+**Mémoire > Utilisateurs** modal: section "Alias connus" en bas — pills avec badge source
+(LLM/Manuel), ajout par champ texte, suppression inline. Rechargement partiel via
+`_refreshAliasPills()` sans re-ouvrir la modal.
 
 Overlay page (Système > Overlay): two uniform cards (emotions + images), same toggle style,
 OBS URL with copy button for each. `window.location.origin` used — instance-compatible.
