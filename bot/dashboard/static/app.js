@@ -4416,31 +4416,86 @@ async function _renderSystemeTwitch(panel) {
   }
 }
 
-function _renderSystemeOverlay(panel) {
+async function _renderSystemeOverlay(panel) {
   if (!panel || panel.children.length > 0) return;
-  // Build only the overlay (OBS toggle + overlay image config, no image gen)
-  const toggleCard = document.createElement('div');
-  toggleCard.className = 'card';
-  toggleCard.style.marginBottom = '20px';
-  toggleCard.innerHTML = `
-    <div class="card-title">OVERLAY ON/OFF</div>
-    <div style="display:flex;align-items:center;gap:16px">
-      <span style="color:rgba(255,255,255,0.55);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
-      <div class="overlay-switch" id="overlay-switch-systeme" style="cursor:pointer" onclick="toggleOverlayFromSysteme()">
-        <div class="overlay-switch-knob"></div>
-      </div>
-      <span id="overlay-status-label-systeme" style="font-size:0.78rem;color:rgba(255,255,255,0.45)"></span>
-    </div>
-  `;
-  panel.appendChild(toggleCard);
 
-  // Overlay image config
-  const oiContainer = document.createElement('div');
-  oiContainer.id = 'overlay-config-container-systeme';
-  panel.appendChild(oiContainer);
+  const base = window.location.origin;
+  const urlEmotion = base + '/overlay';
+  const urlImage = base + '/overlay-image';
+
+  // Load config to get image overlay state + command name
+  const cfgR = await apiFetch('/api/admin/config');
+  const cfg = cfgR && cfgR.ok ? await cfgR.json() : {};
+  const oi = cfg.overlay_image || {};
+  const imageEnabled = !!oi.enabled;
+  const imageCmd = oi.command || '!image';
+
+  panel.innerHTML = `
+    <div class="overlay-cards-grid">
+
+      <!-- Overlay Émotions -->
+      <div class="card overlay-card">
+        <div class="overlay-card-header">
+          <div class="overlay-card-icon" style="background:rgba(234,179,8,0.1);border-color:rgba(234,179,8,0.2)">🎭</div>
+          <div>
+            <div class="card-title" style="margin:0">OVERLAY ÉMOTIONS</div>
+            <div class="overlay-card-sub">Humeur en temps réel</div>
+          </div>
+        </div>
+        <p class="overlay-card-desc">
+          Affiche l'avatar, les jauges d'émotion et l'état de Wally en direct.
+          Idéal en coin d'écran — fond transparent, compatible Browser Source OBS.
+        </p>
+        <div class="overlay-card-toggle-row">
+          <span class="overlay-card-toggle-label">Afficher</span>
+          <div class="overlay-switch" id="overlay-switch-emotion" style="cursor:pointer" onclick="toggleOverlayFromSysteme()">
+            <div class="overlay-switch-knob"></div>
+          </div>
+          <span id="overlay-status-label-emotion" class="overlay-card-status">Masqué</span>
+        </div>
+        <div class="overlay-url-row">
+          <span class="overlay-url-label">URL OBS</span>
+          <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
+          <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-emotion')">Copier</button>
+        </div>
+        <div class="overlay-url-hint">Browser Source · Largeur 400px · Hauteur 300px · Fond transparent</div>
+      </div>
+
+      <!-- Overlay Images -->
+      <div class="card overlay-card">
+        <div class="overlay-card-header">
+          <div class="overlay-card-icon" style="background:rgba(6,182,212,0.1);border-color:rgba(6,182,212,0.2)">🖼️</div>
+          <div>
+            <div class="card-title" style="margin:0">OVERLAY IMAGES</div>
+            <div class="overlay-card-sub">Galerie via commande Twitch</div>
+          </div>
+        </div>
+        <p class="overlay-card-desc">
+          Affiche une image de la galerie quand un viewer tape <code style="color:var(--accent)">${imageCmd}</code> dans le chat.
+          Animation entrée/sortie configurable ci-dessous.
+        </p>
+        <div class="overlay-card-toggle-row">
+          <span class="overlay-card-toggle-label">Activer</span>
+          <div class="overlay-switch ${imageEnabled ? 'on' : ''}" id="overlay-switch-image" style="cursor:pointer" onclick="toggleOverlayImage()">
+            <div class="overlay-switch-knob"></div>
+          </div>
+          <span id="overlay-status-label-image" class="overlay-card-status">${imageEnabled ? 'Activé' : 'Désactivé'}</span>
+        </div>
+        <div class="overlay-url-row">
+          <span class="overlay-url-label">URL OBS</span>
+          <code class="overlay-url-code" id="url-image">${urlImage}</code>
+          <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-image')">Copier</button>
+        </div>
+        <div class="overlay-url-hint">Browser Source · Largeur 1920px · Hauteur 1080px · Fond transparent</div>
+      </div>
+    </div>
+
+    <!-- Image overlay config -->
+    <div id="overlay-config-container-systeme"></div>
+  `;
 
   pollOverlayStatusForSysteme();
-  loadOverlayConfigInPanel(oiContainer);
+  loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
 }
 
 async function toggleOverlayFromSysteme() {
@@ -4448,11 +4503,11 @@ async function toggleOverlayFromSysteme() {
   if (r && r.ok) {
     const data = await r.json();
     updateOverlaySwitch(data.visible);
-    const sw = document.getElementById('overlay-switch-systeme');
-    const lbl = document.getElementById('overlay-status-label-systeme');
+    const sw = document.getElementById('overlay-switch-emotion');
+    const lbl = document.getElementById('overlay-status-label-emotion');
     if (sw) { if (data.visible) sw.classList.add('on'); else sw.classList.remove('on'); }
     if (lbl) lbl.textContent = data.visible ? 'Visible' : 'Masqué';
-    toast(data.visible ? 'Overlay visible' : 'Overlay masqué');
+    toast(data.visible ? 'Overlay émotions visible' : 'Overlay émotions masqué');
   }
 }
 
@@ -4461,12 +4516,43 @@ async function pollOverlayStatusForSysteme() {
     const r = await apiFetch('/api/admin/overlay/status');
     if (r && r.ok) {
       const data = await r.json();
-      const sw = document.getElementById('overlay-switch-systeme');
-      const lbl = document.getElementById('overlay-status-label-systeme');
+      const sw = document.getElementById('overlay-switch-emotion');
+      const lbl = document.getElementById('overlay-status-label-emotion');
       if (sw) { if (data.visible) sw.classList.add('on'); else sw.classList.remove('on'); }
       if (lbl) lbl.textContent = data.visible ? 'Visible' : 'Masqué';
     }
   } catch {}
+}
+
+async function toggleOverlayImage() {
+  const sw = document.getElementById('overlay-switch-image');
+  const lbl = document.getElementById('overlay-status-label-image');
+  const isOn = sw && sw.classList.contains('on');
+  const newEnabled = !isOn;
+  const body = { overlay_image: { enabled: newEnabled } };
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) {
+    if (sw) { if (newEnabled) sw.classList.add('on'); else sw.classList.remove('on'); }
+    if (lbl) lbl.textContent = newEnabled ? 'Activé' : 'Désactivé';
+    toast(newEnabled ? 'Overlay images activé' : 'Overlay images désactivé', 'success');
+  }
+}
+
+function copyOverlayUrl(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(function() {
+    toast('URL copiée !', 'success');
+  }).catch(function() {
+    // Fallback for HTTP contexts
+    const ta = document.createElement('textarea');
+    ta.value = el.textContent;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('URL copiée !', 'success');
+  });
 }
 
 async function loadOverlayConfigInPanel(container) {
@@ -4479,7 +4565,7 @@ async function loadOverlayConfigInPanel(container) {
   const oiSection = document.createElement('div');
   oiSection.className = 'overlay-section';
   const oiTitle = document.createElement('h3');
-  oiTitle.textContent = 'Overlay Image (Twitch)';
+  oiTitle.textContent = 'Configuration — Overlay Images';
   oiSection.appendChild(oiTitle);
 
   function makeFormRow(labelText, inputEl) {
@@ -4498,11 +4584,6 @@ async function loadOverlayConfigInPanel(container) {
     });
     return sel;
   }
-
-  const enRow = document.createElement('div'); enRow.className = 'form-row';
-  const enLabel = document.createElement('label'); enLabel.textContent = 'Activé'; enRow.appendChild(enLabel);
-  const enCheck = document.createElement('input'); enCheck.type = 'checkbox'; enCheck.id = 'oi-enabled-s'; if (oi.enabled) enCheck.checked = true; enRow.appendChild(enCheck);
-  oiSection.appendChild(enRow);
 
   const cmdRow = document.createElement('div'); cmdRow.className = 'form-row';
   const cmdLabel = document.createElement('label'); cmdLabel.textContent = 'Commande Twitch'; cmdRow.appendChild(cmdLabel);
@@ -4538,8 +4619,9 @@ async function loadOverlayConfigInPanel(container) {
 }
 
 async function saveOverlayImageConfigSysteme() {
+  const sw = document.getElementById('overlay-switch-image');
   const body = { overlay_image: {
-    enabled: document.getElementById('oi-enabled-s').checked,
+    enabled: sw ? sw.classList.contains('on') : false,
     command: document.getElementById('oi-command-s').value,
     display_duration: parseInt(document.getElementById('oi-duration-s').value),
     animation_in: document.getElementById('oi-anim-in-s').value,
