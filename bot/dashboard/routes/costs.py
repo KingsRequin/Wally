@@ -28,6 +28,35 @@ PURPOSE_CATEGORIES = {
     "journal_final_summary": "Journal",
 }
 
+PURPOSE_FEATURE_MAP: dict[str, str] = {
+    "discord_response": "Réponses",
+    "discord_spontaneous": "Réponses",
+    "discord_ask": "Réponses",
+    "twitch_response": "Réponses",
+    "twitch_spontaneous": "Réponses",
+    "twitch_event": "Réponses",
+    "web_response": "Réponses",
+    "daily_journal": "Journal",
+    "journal_chunk_summary": "Journal",
+    "journal_final_summary": "Journal",
+    "opinion_formation": "Journal",
+    "image_generation": "Images",
+    "image_title": "Images",
+    "image_description": "Images",
+    "emotion_analysis": "Émotions",
+    "fact_extraction": "Mémoire",
+    "memory_consolidation": "Mémoire",
+    "memory_evaluate": "Mémoire",
+    "context_summary": "Mémoire",
+    "context_summary_final": "Mémoire",
+    "memory_cleanup": "Mémoire",
+    "embedding": "Mémoire",
+    "spam_warning": "Système",
+    "reminder": "Système",
+    "twitch_visit_summary": "Système",
+    "twitch_overlay_announce": "Système",
+}
+
 
 def _clamp_days(days: int) -> int:
     return max(1, min(days, 365))
@@ -194,3 +223,43 @@ async def costs_alert(request: Request) -> dict:
         "pct_used": pct,
         "status": status,
     }
+
+
+@router.get("/costs/by-feature")
+async def costs_by_feature(request: Request, days: int = 30) -> list:
+    days = _clamp_days(days)
+    db = request.app.state.wally.db
+    rows = await db.get_cost_breakdown(_since_ts(days), "purpose")
+    features: dict[str, dict] = {}
+    grand_total = sum(r["total"] for r in rows)
+    for r in rows:
+        feat = PURPOSE_FEATURE_MAP.get(r["key"] or "", "Autre")
+        if feat not in features:
+            features[feat] = {"feature": feat, "cost": 0.0, "count": 0}
+        features[feat]["cost"] = round(features[feat]["cost"] + r["total"], 6)
+        features[feat]["count"] += r["count"]
+    result = sorted(features.values(), key=lambda x: x["cost"], reverse=True)
+    for item in result:
+        item["pct"] = round(item["cost"] / grand_total * 100, 1) if grand_total > 0 else 0.0
+    return result
+
+
+@router.get("/costs/prices")
+async def costs_prices(request: Request) -> dict:
+    from bot.core.llm.openai_client import MODEL_COSTS
+    from bot.core.llm.claude_client import CLAUDE_MODEL_COSTS
+    result: dict[str, dict] = {}
+    for model, (inp, out) in MODEL_COSTS.items():
+        result[model] = {"input_per_1k": round(inp / 1000, 8), "output_per_1k": round(out / 1000, 8)}
+    for model, (inp, out) in CLAUDE_MODEL_COSTS.items():
+        result[model] = {"input_per_1k": round(inp / 1000, 8), "output_per_1k": round(out / 1000, 8)}
+    return result
+
+
+@router.get("/costs/logs")
+async def costs_logs(request: Request, days: int = 30, page: int = 1, limit: int = 50) -> dict:
+    days = _clamp_days(days)
+    limit = max(1, min(limit, 200))
+    page = max(1, page)
+    db = request.app.state.wally.db
+    return await db.get_cost_logs_paginated(_since_ts(days), page=page, limit=limit)

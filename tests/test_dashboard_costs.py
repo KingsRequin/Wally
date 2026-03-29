@@ -276,3 +276,67 @@ async def test_costs_avg_no_division_by_zero(client):
     r = await client.get("/api/admin/costs/summary", headers=HEADERS)
     data = r.json()
     assert data["avg_per_msg"] == 0.0
+
+
+# ── By Feature ────────────────────────────────────────────────────────────────
+
+async def test_costs_by_feature_grouping(client):
+    db = client._transport.app.state.wally.db
+    db.get_cost_breakdown = AsyncMock(return_value=[
+        {"key": "discord_response", "total": 5.0, "count": 40},
+        {"key": "discord_spontaneous", "total": 1.0, "count": 10},
+        {"key": "daily_journal", "total": 2.0, "count": 2},
+        {"key": "emotion_analysis", "total": 0.5, "count": 50},
+        {"key": "image_generation", "total": 3.0, "count": 5},
+        {"key": "embedding", "total": 0.2, "count": 100},
+        {"key": "reminder", "total": 0.1, "count": 3},
+        {"key": "unknown_thing", "total": 0.05, "count": 1},
+    ])
+    r = await client.get("/api/admin/costs/by-feature?days=30", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    features = {d["feature"]: d for d in data}
+    assert features["Réponses"]["cost"] == pytest.approx(6.0)  # 5.0 + 1.0
+    assert "Journal" in features
+    assert "Images" in features
+    assert "Émotions" in features
+    assert "Mémoire" in features
+    assert "Système" in features
+    assert "Autre" in features
+    total_pct = sum(d["pct"] for d in data)
+    assert total_pct == pytest.approx(100.0, abs=0.5)
+
+
+# ── Prices ────────────────────────────────────────────────────────────────────
+
+async def test_costs_prices(client):
+    r = await client.get("/api/admin/costs/prices", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) > 0
+    for model, prices in data.items():
+        assert "input_per_1k" in prices
+        assert "output_per_1k" in prices
+        assert prices["input_per_1k"] > 0
+
+
+# ── Logs Paginated ────────────────────────────────────────────────────────────
+
+async def test_costs_logs_paginated(client):
+    db = client._transport.app.state.wally.db
+    db.get_cost_logs_paginated = AsyncMock(return_value={
+        "total": 150, "page": 1, "limit": 50,
+        "logs": [{"datetime": "2026-03-29 14:00:00", "model": "gpt-5",
+                  "input_tokens": 200, "output_tokens": 80, "cost_usd": 0.00124,
+                  "purpose": "discord_response", "user_id": "discord:123", "username": "Azrael"}],
+    })
+    r = await client.get("/api/admin/costs/logs?days=7&page=1&limit=50", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 150
+    assert data["logs"][0]["username"] == "Azrael"
+
+
+async def test_costs_logs_auth_required(client):
+    r = await client.get("/api/admin/costs/logs")
+    assert r.status_code == 401
