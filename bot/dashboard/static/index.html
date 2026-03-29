@@ -108,22 +108,14 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>
         <span>Retour</span>
       </a>
-      <a class="sidebar-item" data-tab="admin-config" onclick="showTab('admin-config')" href="javascript:void(0)" aria-label="Configuration">
+      <a class="sidebar-item" data-tab="admin-parametres" onclick="showTab('admin-parametres')" href="javascript:void(0)" aria-label="Paramètres">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        <span>Config</span>
-      </a>
-      <a class="sidebar-item" data-tab="admin-logs" onclick="showTab('admin-logs')" href="javascript:void(0)" aria-label="Logs">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        <span>Logs</span>
+        <span>Params</span>
       </a>
       <a class="sidebar-item" data-tab="admin-memoire" onclick="showTab('admin-memoire')" href="javascript:void(0)" aria-label="Mémoire">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
         <span>Mémoire</span>
         <span id="links-badge" class="sidebar-badge" style="display:none">0</span>
-      </a>
-      <a class="sidebar-item" data-tab="admin-overlay" onclick="showTab('admin-overlay')" href="javascript:void(0)" aria-label="Overlay">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-        <span>Overlay</span>
       </a>
       <a class="sidebar-item" data-tab="admin-costs" onclick="showTab('admin-costs')" href="javascript:void(0)" aria-label="Couts">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -134,13 +126,13 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         <span>Actions</span>
       </a>
-      <a class="sidebar-item" data-tab="admin-instances" onclick="showTab('admin-instances')" href="javascript:void(0)" aria-label="Instances">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        <span>Instances</span>
+      <a class="sidebar-item" data-tab="admin-prompts" onclick="showTab('admin-prompts')" href="javascript:void(0)" aria-label="Prompts">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        <span>Prompts</span>
       </a>
-      <a class="sidebar-item" data-tab="admin-twitch" onclick="showTab('admin-twitch')" href="javascript:void(0)" aria-label="Twitch">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
-        <span>Twitch</span>
+      <a class="sidebar-item" data-tab="admin-systeme" onclick="showTab('admin-systeme')" href="javascript:void(0)" aria-label="Système">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span>Système</span>
       </a>
     </nav>
 
@@ -253,73 +245,8 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
     <!-- MERGED MEMOIRE TAB -->
     <div class="tab-content" id="tab-admin-memoire"></div>
 
-    <!-- ADMIN COSTS TAB -->
-    <div class="tab-content" id="tab-admin-costs">
-      <!-- KPI Row -->
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-        <div class="card" id="kpi-month">
-          <div class="card-title">MOIS EN COURS</div>
-          <div class="card-value" id="cost-month-total">—</div>
-          <div id="cost-month-change" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
-        </div>
-        <div class="card" id="kpi-forecast">
-          <div class="card-title">PREVISION FIN MOIS</div>
-          <div class="card-value" id="cost-forecast">—</div>
-          <div id="cost-forecast-detail" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
-        </div>
-        <div class="card" id="kpi-today">
-          <div class="card-title">AUJOURD'HUI</div>
-          <div class="card-value" id="cost-today-total">—</div>
-        </div>
-        <div class="card" id="kpi-avg">
-          <div class="card-title">COUT / MSG</div>
-          <div class="card-value" id="cost-avg-msg">—</div>
-        </div>
-        <div class="card" id="kpi-threshold">
-          <div class="card-title">SEUIL D'ALERTE</div>
-          <div class="card-value" id="cost-threshold">—</div>
-          <div id="cost-threshold-pct" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
-        </div>
-      </div>
-      <!-- Cost Graph -->
-      <div class="card mb-6">
-        <div class="graph-header">
-          <span class="graph-title" id="cost-graph-title">7 DERNIERS JOURS</span>
-          <div class="graph-range-btns">
-            <button class="cost-range-btn active" onclick="setCostRange('7d')" aria-label="7 derniers jours">7J</button>
-            <button class="cost-range-btn" onclick="setCostRange('30d')" aria-label="30 derniers jours">30J</button>
-            <button class="cost-range-btn" onclick="setCostRange('90d')" aria-label="90 derniers jours">90J</button>
-          </div>
-        </div>
-        <canvas id="costCanvas" height="165" aria-label="Graphique des couts journaliers"></canvas>
-        <div id="cost-graph-legend" style="display:flex;gap:16px;padding:6px 10px;font-size:0.72rem;color:rgba(255,255,255,0.45)">
-          <span>&#9473; Periode courante</span>
-          <span style="opacity:0.5">&#9477; Periode precedente</span>
-        </div>
-      </div>
-      <!-- Breakdowns -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="card">
-          <div class="card-title">PAR MODELE</div>
-          <div id="cost-by-model">—</div>
-        </div>
-        <div class="card">
-          <div class="card-title">PAR PURPOSE</div>
-          <div id="cost-by-purpose">—</div>
-        </div>
-        <div class="card">
-          <div class="card-title">TOP UTILISATEURS</div>
-          <div id="cost-top-users">—</div>
-        </div>
-      </div>
-      <!-- Alert bar -->
-      <div class="card" id="cost-alert-bar" style="margin-top:24px;display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span id="cost-alert-text"></span>
-          <span id="cost-alert-pct" style="color:rgba(255,255,255,0.45)"></span>
-        </div>
-      </div>
-    </div>
+    <!-- ADMIN COSTS TAB (content rendered dynamically by renderCostsTab()) -->
+    <div class="tab-content" id="tab-admin-costs"></div>
 
     <!-- ADMIN MEMORY DASHBOARD TAB (kept for sub-nav rendering) -->
     <div class="tab-content" id="tab-admin-memory-dash"></div>
@@ -327,11 +254,20 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
     <!-- ADMIN ACTIONS TAB -->
     <div class="tab-content" id="tab-admin-actions"></div>
 
+    <!-- ADMIN PROMPTS TAB -->
+    <div class="tab-content" id="tab-admin-prompts"></div>
+
     <!-- ADMIN INSTANCES TAB -->
     <div class="tab-content" id="tab-admin-instances"></div>
 
-    <!-- ADMIN TWITCH TAB -->
+    <!-- ADMIN TWITCH TAB (kept for internal use) -->
     <div class="tab-content" id="tab-admin-twitch"></div>
+
+    <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
+    <div class="tab-content" id="tab-admin-parametres"></div>
+
+    <!-- ADMIN SYSTEME TAB (Logs · Twitch · Overlay · Instances) -->
+    <div class="tab-content" id="tab-admin-systeme"></div>
 
     <!-- JOURNAL DETAIL TAB -->
     <div class="tab-content" id="tab-journal-detail"></div>

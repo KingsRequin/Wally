@@ -70,6 +70,11 @@ let currentMood        = {};
 let currentFatigue     = {};
 let currentSecondaries = [];
 
+// ── Tab sub-navigation state ──────────────────────────────────────
+let _parametresSubTab = 'emotions';
+let _systemeSubTab    = 'logs';
+let _costsSubTab      = 'resume';
+
 const MOOD_ADJ_FR = {
   anger: 'irritable', joy: 'joyeux', sadness: 'mélancolique',
   curiosity: 'curieux', boredom: 'apathique',
@@ -253,12 +258,12 @@ function switchMode(mode, restoreTab = null) {
     stopControlBarPolling();
   }
 
-  const firstTab = restoreTab || (mode === 'public' ? 'status' : 'admin-config');
+  const firstTab = restoreTab || (mode === 'public' ? 'status' : 'admin-parametres');
   showTab(firstTab);
 
   if (mode === 'admin') {
-    renderLogsTab();  // ensure log-stream element exists before SSE starts
-    loadConfig();
+    // Ensure log-stream element exists (inside Système > Logs) before SSE starts
+    renderSystemeTab();
     startLogSSE();
   } else {
     stopLogSSE();
@@ -266,6 +271,23 @@ function switchMode(mode, restoreTab = null) {
 }
 
 function showTab(tabId) {
+  // Redirect legacy tab names to new consolidated tabs
+  const _legacyRedirect = {
+    'admin-config': 'admin-parametres',
+    'admin-logs':   'admin-systeme',
+    'admin-overlay': 'admin-systeme',
+    'admin-instances': 'admin-systeme',
+    'admin-twitch': 'admin-systeme',
+  };
+  if (_legacyRedirect[tabId]) {
+    // Set the appropriate sub-tab before redirecting
+    if (tabId === 'admin-logs') _systemeSubTab = 'logs';
+    else if (tabId === 'admin-overlay') _systemeSubTab = 'overlay';
+    else if (tabId === 'admin-instances') _systemeSubTab = 'instances';
+    else if (tabId === 'admin-twitch') _systemeSubTab = 'twitch';
+    tabId = _legacyRedirect[tabId];
+  }
+
   document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
@@ -290,18 +312,17 @@ function showTab(tabId) {
   if (tabId === 'global-memory') renderGlobalMemoryTab();
   if (tabId === 'gallery') loadGallery(true);
   if (tabId === 'admin-overlay') loadOverlayTab();
-  if (tabId === 'admin-costs') loadCosts();
+  if (tabId === 'admin-costs') renderCostsTab();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
   if (tabId === 'admin-instances') renderInstancesTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
+  if (tabId === 'admin-parametres') renderParametresTab();
+  if (tabId === 'admin-systeme') renderSystemeTab();
   pollCostsBadge();
   pollLinksBadge();
-  if (tabId === 'admin-logs') {
-    renderLogsTab();
-  }
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -1532,8 +1553,8 @@ function renderLogsTab() {
   const el = document.getElementById('tab-admin-logs');
   if (!el) return;
 
-  // Build structure once
-  if (!el.querySelector('.mem-subnav')) {
+  // Build structure once; skip if log-stream already created by _renderSystemeLogs
+  if (!el.querySelector('.mem-subnav') && !document.getElementById('log-stream')) {
     el.innerHTML = `
       <div class="mem-subnav">
         <button class="mem-subnav-pill active" data-subtab="flux" onclick="switchLogsSubTab('flux')">Flux</button>
@@ -3910,6 +3931,742 @@ async function deleteMemQuestion(id) {
   }
 }
 
+// ── Paramètres Tab (Émotions · LLM · Images) ─────────────────────────────────
+
+
+function renderParametresTab() {
+  const el = document.getElementById('tab-admin-parametres');
+  if (!el) return;
+
+  if (!el.querySelector('.mem-subnav')) {
+    el.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="emotions" onclick="switchParametresSubTab('emotions')">Émotions</button>
+        <button class="mem-subnav-pill" data-subtab="llm" onclick="switchParametresSubTab('llm')">LLM</button>
+        <button class="mem-subnav-pill" data-subtab="images" onclick="switchParametresSubTab('images')">Images</button>
+      </div>
+      <div class="mem-subnav-content active" id="parametres-sub-emotions"></div>
+      <div class="mem-subnav-content" id="parametres-sub-llm"></div>
+      <div class="mem-subnav-content" id="parametres-sub-images"></div>
+    `;
+  }
+
+  switchParametresSubTab(_parametresSubTab);
+}
+
+function switchParametresSubTab(subtab) {
+  _parametresSubTab = subtab;
+  const el = document.getElementById('tab-admin-parametres');
+  if (!el) return;
+
+  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const panel = document.getElementById('parametres-sub-' + subtab);
+  if (panel) panel.classList.add('active');
+
+  if (subtab === 'emotions') {
+    _renderParametresEmotions(panel);
+  } else if (subtab === 'llm') {
+    _renderParametresLLM(panel);
+  } else if (subtab === 'images') {
+    _renderParametresImages(panel);
+  }
+}
+
+async function _renderParametresEmotions(panel) {
+  if (!panel || panel.children.length > 0) return;
+
+  // Move config-form-container (emotions + lambdas + bot-general + spam sections) here
+  // We load config then render only the emotion-related cards
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'parametres-emotions-inner';
+
+  // Emotions sliders card
+  const emotCard = document.createElement('div');
+  emotCard.className = 'card config-section';
+  emotCard.innerHTML = `
+    <div class="config-section-title">ÉMOTIONS</div>
+    <div id="gauges-parametres-inline" role="group" aria-label="Controle des emotions"></div>
+    <div class="mt-4">
+      <button class="btn btn-danger" onclick="resetEmotions()">RESET À NEUTRE (0.5)</button>
+    </div>
+  `;
+  wrapper.appendChild(emotCard);
+
+  // Decay lambdas card
+  const lambdaCard = document.createElement('div');
+  lambdaCard.className = 'card config-section';
+  const lambdaRows = Object.entries(cfg.emotions).filter(function([name]) { return name !== 'boredom'; }).map(function([name, ec]) {
+    const lam = ec.decay_lambda;
+    const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
+    const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
+    return `<div class="field-group" style="display:flex;align-items:center;gap:12px">
+      <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'};min-width:100px">${name.toUpperCase()} λ</label>
+      <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this,'${name}')">
+      <span id="decay-time-${name}" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
+    </div>`;
+  }).join('');
+  const boredomRise = cfg.emotions.boredom && cfg.emotions.boredom.boredom_rise_per_hour != null ? cfg.emotions.boredom.boredom_rise_per_hour : 1.2;
+  const boredomH = boredomRise > 0 ? 1/boredomRise : Infinity;
+  const boredomLabel = boredomH === Infinity ? '∞' : boredomH < 1 ? Math.round(boredomH*60)+' min' : Math.round(boredomH*10)/10+' h';
+  lambdaCard.innerHTML = `
+    <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
+    <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+    ${lambdaRows}
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08)">
+      <div style="display:flex;align-items:center;gap:12px">
+        <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'};min-width:100px">BOREDOM ↑/h</label>
+        <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${boredomRise}" style="width:90px" oninput="updateBoredomTime(this)">
+        <span id="boredom-time-info" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${boredomLabel}</strong></span>
+      </div>
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
+    </div>
+    <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
+  `;
+  wrapper.appendChild(lambdaCard);
+
+  // Bot général + anti-spam cards
+  const botCard = document.createElement('div');
+  botCard.className = 'card config-section';
+  botCard.innerHTML = `
+    <div class="config-section-title">BOT GÉNÉRAL</div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-lang">Langue par défaut</label>
+      <input type="text" id="cfg-lang" value="${cfg.bot.language_default || ''}">
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-journal-time">Heure journal (HH:MM)</label>
+      <input type="text" id="cfg-journal-time" value="${cfg.bot.journal_time || ''}">
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-ctx-size">Taille fenêtre contexte</label>
+      <input type="number" id="cfg-ctx-size" value="${cfg.bot.context_window_size || 20}">
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-triggers">Triggers (séparés par virgule)</label>
+      <input type="text" id="cfg-triggers" value="${(cfg.bot.trigger_names || []).join(', ')}">
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-cost-threshold">Seuil d'alerte coûts ($)</label>
+      <input type="number" id="cfg-cost-threshold" min="1" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold || 25}">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Notifications Discord</label>
+      <select id="cfg-notif-channel" style="width:100%">
+        <option value="">Désactivé</option>
+      </select>
+      <p style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
+    </div>
+    <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
+  `;
+  wrapper.appendChild(botCard);
+
+  const spamCard = document.createElement('div');
+  spamCard.className = 'card config-section';
+  spamCard.innerHTML = `
+    <div class="config-section-title">ANTI-SPAM DISCORD</div>
+    <div class="field-group" style="display:flex;align-items:center;gap:12px">
+      <label class="field-label" style="margin:0" for="cfg-spam-enabled">Activé</label>
+      <input type="checkbox" id="cfg-spam-enabled" ${(cfg.discord.spam_detection || {}).enabled !== false ? 'checked' : ''}>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-spam-max">Messages max</label>
+      <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Nombre de messages avant déclenchement</p>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
+      <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Période de temps pour compter les messages</p>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
+      <input type="number" id="cfg-spam-mute" min="1" max="60" value="${(cfg.discord.spam_detection || {}).mute_minutes || 5}">
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
+      <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
+      <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
+      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
+    </div>
+    <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
+  `;
+  wrapper.appendChild(spamCard);
+
+  panel.appendChild(wrapper);
+
+  // Build emotion sliders
+  buildGauges('gauges-parametres-inline', true);
+  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
+    updateEmotionGauges(currentEmotions);
+  }
+  loadNotificationChannels(cfg);
+}
+
+async function _renderParametresLLM(panel) {
+  if (!panel || panel.children.length > 0) return;
+
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+  const [models, claudeModels] = await Promise.all([loadOpenAIModels(), loadClaudeModels()]);
+
+  const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  const TEXT_VERBOSITIES = ['low', 'medium', 'high'];
+  const THINKING_TYPES = ['disabled', 'enabled', 'adaptive'];
+  const THINKING_EFFORTS = ['low', 'medium', 'high', 'max'];
+
+  const card = document.createElement('div');
+  card.className = 'card config-section';
+  card.innerHTML = `
+    <div class="config-section-title">LLM — MODÈLES</div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-primary-provider">Provider principal</label>
+      <select id="cfg-primary-provider" onchange="onProviderChange()">
+        <option value="openai" ${(cfg.llm?.primary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
+        <option value="claude" ${(cfg.llm?.primary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-primary-model">Modèle principal</label>
+      <select id="cfg-primary-model">
+        ${models.map(function(m) { return '<option value="' + m + '"' + (m === cfg.openai.primary_model ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+      </select>
+      <select id="cfg-primary-model-claude" style="display:none">
+        ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.primary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
+      <select id="cfg-secondary-provider" onchange="onProviderChange()">
+        <option value="openai" ${(cfg.llm?.secondary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
+        <option value="claude" ${(cfg.llm?.secondary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
+      <select id="cfg-secondary-model">
+        ${models.map(function(m) { return '<option value="' + m + '"' + (m === cfg.openai.secondary_model ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+      </select>
+      <select id="cfg-secondary-model-claude" style="display:none">
+        ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.secondary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+      </select>
+    </div>
+    <div id="openai-specific-settings">
+      <div class="field-group">
+        <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+        <select id="cfg-reasoning-effort">
+          ${REASONING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === cfg.openai.reasoning_effort ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+        <select id="cfg-text-verbosity">
+          ${TEXT_VERBOSITIES.map(function(v) { return '<option value="' + v + '"' + (v === cfg.openai.text_verbosity ? ' selected' : '') + '>' + v.toUpperCase() + '</option>'; }).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="claude-specific-settings" style="display:none">
+      <div class="field-group">
+        <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">Claude only</span></label>
+        <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
+          ${THINKING_TYPES.map(function(t) { return '<option value="' + t + '"' + (t === (cfg.llm?.primary?.thinking_type || 'disabled') ? ' selected' : '') + '>' + (t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)') + '</option>'; }).join('')}
+        </select>
+      </div>
+      <div id="thinking-effort-group" class="field-group" style="display:none">
+        <label class="field-label" for="cfg-thinking-effort">Niveau d'effort thinking</label>
+        <select id="cfg-thinking-effort">
+          ${THINKING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === (cfg.llm?.primary?.thinking_effort || 'medium') ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
+        </select>
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
+      </div>
+      <div id="thinking-budget-group" class="field-group" style="display:none">
+        <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
+        <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
+      </div>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="cfg-max-tokens">Max output tokens</label>
+      <input type="number" id="cfg-max-tokens" min="100" max="32000" value="${cfg.openai.max_tokens}">
+    </div>
+    <button class="btn btn-success" onclick="saveOpenAI()">💾 SAUVEGARDER</button>
+    <p id="llm-restart-notice" style="display:none;font-size:0.75rem;color:#f59e0b;margin-top:8px">⚠️ Changement de provider — redémarrage requis pour prendre effet.</p>
+  `;
+  panel.appendChild(card);
+
+  onProviderChange();
+}
+
+async function _renderParametresImages(panel) {
+  if (!panel || panel.children.length > 0) return;
+
+  // Delegate to loadOverlayConfig but only inject image_generation section
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+  const ig = cfg.image_generation || {};
+
+  const section = document.createElement('div');
+  section.className = 'overlay-section';
+  const title = document.createElement('h3');
+  title.textContent = 'Génération d\'images';
+  section.appendChild(title);
+
+  function makeFormRow(labelText, inputEl) {
+    const row = document.createElement('div');
+    row.className = 'form-row';
+    const lbl = document.createElement('label');
+    lbl.textContent = labelText;
+    row.appendChild(lbl);
+    row.appendChild(inputEl);
+    return row;
+  }
+
+  function makeSelect(id, options, selected) {
+    const sel = document.createElement('select');
+    sel.id = id + '-p';
+    sel.className = 'neo-select';
+    options.forEach(function(o) {
+      const opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      if (o === selected) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  section.appendChild(makeFormRow('Modèle', makeSelect('ig-model', ['gpt-image-1.5','gpt-image-1','gpt-image-1-mini'], ig.model)));
+  section.appendChild(makeFormRow('Qualité', makeSelect('ig-quality', ['low','medium','high'], ig.quality)));
+  section.appendChild(makeFormRow('Taille', makeSelect('ig-size', ['1024x1024','1024x1536','1536x1024'], ig.size)));
+  section.appendChild(makeFormRow('Format', makeSelect('ig-format', ['png','jpeg','webp'], ig.format)));
+  section.appendChild(makeFormRow('Background', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
+
+  const dlRow = document.createElement('div'); dlRow.className = 'form-row';
+  const dlLabel = document.createElement('label'); dlLabel.textContent = 'Limite/jour (global)'; dlRow.appendChild(dlLabel);
+  const dlInput = document.createElement('input'); dlInput.type = 'number'; dlInput.id = 'ig-daily-limit-p'; dlInput.className = 'neo-input'; dlInput.value = ig.daily_limit; dlInput.style.width = '80px'; dlRow.appendChild(dlInput);
+  const dlHint = document.createElement('span'); dlHint.style.color = 'rgba(255,255,255,0.35)'; dlHint.style.fontSize = '0.78rem'; dlHint.textContent = '-1 = illimité'; dlRow.appendChild(dlHint);
+  section.appendChild(dlRow);
+
+  const puRow = document.createElement('div'); puRow.className = 'form-row';
+  const puLabel = document.createElement('label'); puLabel.textContent = 'Limite/jour (par user)'; puRow.appendChild(puLabel);
+  const puInput = document.createElement('input'); puInput.type = 'number'; puInput.id = 'ig-per-user-limit-p'; puInput.className = 'neo-input'; puInput.value = ig.per_user_limit; puInput.style.width = '80px'; puRow.appendChild(puInput);
+  const puHint = document.createElement('span'); puHint.style.color = 'rgba(255,255,255,0.35)'; puHint.style.fontSize = '0.78rem'; puHint.textContent = '-1 = illimité'; puRow.appendChild(puHint);
+  section.appendChild(puRow);
+
+  const costEst = document.createElement('div'); costEst.className = 'form-row'; costEst.id = 'ig-cost-estimate-p'; costEst.style.color = 'var(--accent)'; costEst.style.fontWeight = '600'; costEst.style.fontSize = '0.85rem';
+  section.appendChild(costEst);
+
+  const saveBtn = document.createElement('button'); saveBtn.className = 'neo-btn'; saveBtn.textContent = 'Sauvegarder'; saveBtn.onclick = saveImageGenConfigParams;
+  section.appendChild(saveBtn);
+
+  panel.appendChild(section);
+
+  // Update cost estimate
+  async function updateCostEstimateParams() {
+    const model = document.getElementById('ig-model-p')?.value;
+    const quality = document.getElementById('ig-quality-p')?.value;
+    const size = document.getElementById('ig-size-p')?.value;
+    if (!model || !quality || !size) return;
+    const r2 = await fetch('/api/public/gallery/estimate-cost?model=' + model + '&quality=' + quality + '&size=' + size);
+    if (r2.ok) {
+      const data = await r2.json();
+      const elCost = document.getElementById('ig-cost-estimate-p');
+      if (elCost) elCost.textContent = 'Coût estimé : $' + data.cost_usd.toFixed(4) + ' par image';
+    }
+  }
+  updateCostEstimateParams();
+  document.getElementById('ig-model-p')?.addEventListener('change', updateCostEstimateParams);
+  document.getElementById('ig-quality-p')?.addEventListener('change', updateCostEstimateParams);
+  document.getElementById('ig-size-p')?.addEventListener('change', updateCostEstimateParams);
+}
+
+async function saveImageGenConfigParams() {
+  const body = { image_generation: {
+    model: document.getElementById('ig-model-p').value,
+    quality: document.getElementById('ig-quality-p').value,
+    size: document.getElementById('ig-size-p').value,
+    format: document.getElementById('ig-format-p').value,
+    background: document.getElementById('ig-background-p').value,
+    daily_limit: parseInt(document.getElementById('ig-daily-limit-p').value),
+    per_user_limit: parseInt(document.getElementById('ig-per-user-limit-p').value),
+  }};
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) toast('Config image sauvegardée', 'success');
+}
+
+// ── Système Tab (Logs · Twitch · Overlay · Instances) ────────────────────────
+
+
+function renderSystemeTab() {
+  const el = document.getElementById('tab-admin-systeme');
+  if (!el) return;
+
+  if (!el.querySelector('.mem-subnav')) {
+    el.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="logs" onclick="switchSystemeSubTab('logs')">Logs</button>
+        <button class="mem-subnav-pill" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
+        <button class="mem-subnav-pill" data-subtab="overlay" onclick="switchSystemeSubTab('overlay')">Overlay</button>
+        <button class="mem-subnav-pill" data-subtab="instances" onclick="switchSystemeSubTab('instances')">Instances</button>
+      </div>
+      <div class="mem-subnav-content active" id="systeme-sub-logs"></div>
+      <div class="mem-subnav-content" id="systeme-sub-twitch"></div>
+      <div class="mem-subnav-content" id="systeme-sub-overlay"></div>
+      <div class="mem-subnav-content" id="systeme-sub-instances"></div>
+    `;
+  }
+
+  switchSystemeSubTab(_systemeSubTab);
+}
+
+function switchSystemeSubTab(subtab) {
+  _systemeSubTab = subtab;
+  const el = document.getElementById('tab-admin-systeme');
+  if (!el) return;
+
+  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const panel = document.getElementById('systeme-sub-' + subtab);
+  if (panel) panel.classList.add('active');
+
+  if (subtab === 'logs') {
+    _renderSystemeLogs(panel);
+  } else if (subtab === 'twitch') {
+    _renderSystemeTwitch(panel);
+  } else if (subtab === 'overlay') {
+    _renderSystemeOverlay(panel);
+  } else if (subtab === 'instances') {
+    _renderSystemeInstances(panel);
+  }
+}
+
+function _renderSystemeLogs(panel) {
+  if (!panel) return;
+  if (!panel.querySelector('.mem-subnav')) {
+    // Build log sub-nav inside the systeme panel (reuse logs sub-tab structure)
+    panel.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="flux" onclick="switchLogsSubTabInSysteme('flux')">Flux</button>
+        <button class="mem-subnav-pill" data-subtab="visitors" onclick="switchLogsSubTabInSysteme('visitors')">Visiteurs</button>
+      </div>
+      <div class="mem-subnav-content active" id="logs-sub-flux">
+        <div class="log-controls">
+          <button class="btn active" id="log-filter-ALL" onclick="setLogFilter('ALL')">TOUS</button>
+          <button class="btn" id="log-filter-INFO" onclick="setLogFilter('INFO')">INFO</button>
+          <button class="btn" id="log-filter-WARNING" onclick="setLogFilter('WARNING')">WARNING</button>
+          <button class="btn" id="log-filter-ERROR" onclick="setLogFilter('ERROR')">ERROR</button>
+          <button class="btn" onclick="clearLogs()" aria-label="Vider les logs">VIDER</button>
+        </div>
+        <div class="log-stream" id="log-stream" role="log" aria-live="polite" aria-label="Flux de logs"></div>
+      </div>
+      <div class="mem-subnav-content" id="logs-sub-visitors"></div>
+    `;
+  }
+  // Activate first pill
+  panel.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === _logsSubTab);
+  });
+  panel.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const logPanel = panel.querySelector('#logs-sub-' + _logsSubTab);
+  if (logPanel) logPanel.classList.add('active');
+  if (_logsSubTab === 'visitors') loadVisitorsInPanel();
+}
+
+function switchLogsSubTabInSysteme(subtab) {
+  _logsSubTab = subtab;
+  const panel = document.getElementById('systeme-sub-logs');
+  if (!panel) return;
+  panel.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  panel.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const sub = panel.querySelector('#logs-sub-' + subtab);
+  if (sub) sub.classList.add('active');
+  if (subtab === 'flux') {
+    requestAnimationFrame(function() {
+      const logEl = document.getElementById('log-stream');
+      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    });
+  } else if (subtab === 'visitors') {
+    loadVisitorsInPanel();
+  }
+}
+
+async function _renderSystemeTwitch(panel) {
+  if (!panel) return;
+  // Delegate to existing Twitch loader
+  const twitchEl = document.getElementById('tab-admin-twitch');
+  // Load content then move it to the systeme panel
+  await loadTwitchChannelsTab();
+  if (twitchEl && panel.children.length === 0) {
+    while (twitchEl.firstChild) panel.appendChild(twitchEl.firstChild);
+  }
+}
+
+function _renderSystemeOverlay(panel) {
+  if (!panel || panel.children.length > 0) return;
+  // Build only the overlay (OBS toggle + overlay image config, no image gen)
+  const toggleCard = document.createElement('div');
+  toggleCard.className = 'card';
+  toggleCard.style.marginBottom = '20px';
+  toggleCard.innerHTML = `
+    <div class="card-title">OVERLAY ON/OFF</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span style="color:rgba(255,255,255,0.55);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
+      <div class="overlay-switch" id="overlay-switch-systeme" style="cursor:pointer" onclick="toggleOverlayFromSysteme()">
+        <div class="overlay-switch-knob"></div>
+      </div>
+      <span id="overlay-status-label-systeme" style="font-size:0.78rem;color:rgba(255,255,255,0.45)"></span>
+    </div>
+  `;
+  panel.appendChild(toggleCard);
+
+  // Overlay image config
+  const oiContainer = document.createElement('div');
+  oiContainer.id = 'overlay-config-container-systeme';
+  panel.appendChild(oiContainer);
+
+  pollOverlayStatusForSysteme();
+  loadOverlayConfigInPanel(oiContainer);
+}
+
+async function toggleOverlayFromSysteme() {
+  const r = await apiFetch('/api/admin/overlay/toggle', { method: 'POST' });
+  if (r && r.ok) {
+    const data = await r.json();
+    updateOverlaySwitch(data.visible);
+    const sw = document.getElementById('overlay-switch-systeme');
+    const lbl = document.getElementById('overlay-status-label-systeme');
+    if (sw) { if (data.visible) sw.classList.add('on'); else sw.classList.remove('on'); }
+    if (lbl) lbl.textContent = data.visible ? 'Visible' : 'Masqué';
+    toast(data.visible ? 'Overlay visible' : 'Overlay masqué');
+  }
+}
+
+async function pollOverlayStatusForSysteme() {
+  try {
+    const r = await apiFetch('/api/admin/overlay/status');
+    if (r && r.ok) {
+      const data = await r.json();
+      const sw = document.getElementById('overlay-switch-systeme');
+      const lbl = document.getElementById('overlay-status-label-systeme');
+      if (sw) { if (data.visible) sw.classList.add('on'); else sw.classList.remove('on'); }
+      if (lbl) lbl.textContent = data.visible ? 'Visible' : 'Masqué';
+    }
+  } catch {}
+}
+
+async function loadOverlayConfigInPanel(container) {
+  if (!container) return;
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) return;
+  const cfg = await r.json();
+  const oi = cfg.overlay_image || {};
+
+  const oiSection = document.createElement('div');
+  oiSection.className = 'overlay-section';
+  const oiTitle = document.createElement('h3');
+  oiTitle.textContent = 'Overlay Image (Twitch)';
+  oiSection.appendChild(oiTitle);
+
+  function makeFormRow(labelText, inputEl) {
+    const row = document.createElement('div'); row.className = 'form-row';
+    const lbl = document.createElement('label'); lbl.textContent = labelText;
+    row.appendChild(lbl); row.appendChild(inputEl);
+    return row;
+  }
+
+  function makeSelect(id, options, selected) {
+    const sel = document.createElement('select'); sel.id = id; sel.className = 'neo-select';
+    options.forEach(function(o) {
+      const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
+      if (o === selected) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  const enRow = document.createElement('div'); enRow.className = 'form-row';
+  const enLabel = document.createElement('label'); enLabel.textContent = 'Activé'; enRow.appendChild(enLabel);
+  const enCheck = document.createElement('input'); enCheck.type = 'checkbox'; enCheck.id = 'oi-enabled-s'; if (oi.enabled) enCheck.checked = true; enRow.appendChild(enCheck);
+  oiSection.appendChild(enRow);
+
+  const cmdRow = document.createElement('div'); cmdRow.className = 'form-row';
+  const cmdLabel = document.createElement('label'); cmdLabel.textContent = 'Commande Twitch'; cmdRow.appendChild(cmdLabel);
+  const cmdInput = document.createElement('input'); cmdInput.type = 'text'; cmdInput.id = 'oi-command-s'; cmdInput.className = 'neo-input'; cmdInput.value = oi.command || '!image'; cmdInput.style.width = '120px'; cmdRow.appendChild(cmdInput);
+  oiSection.appendChild(cmdRow);
+
+  const durRow = document.createElement('div'); durRow.className = 'form-row';
+  const durLabel = document.createElement('label'); durLabel.textContent = 'Durée affichage (s)'; durRow.appendChild(durLabel);
+  const durRange = document.createElement('input'); durRange.type = 'range'; durRange.id = 'oi-duration-s'; durRange.min = '5'; durRange.max = '60'; durRange.value = oi.display_duration || 15; durRow.appendChild(durRange);
+  const durVal = document.createElement('span'); durVal.id = 'oi-duration-val-s'; durVal.textContent = (oi.display_duration || 15) + 's'; durRow.appendChild(durVal);
+  oiSection.appendChild(durRow);
+
+  oiSection.appendChild(makeFormRow('Animation entrée', makeSelect('oi-anim-in-s', ANIMATE_CSS_IN, oi.animation_in)));
+  oiSection.appendChild(makeFormRow('Animation sortie', makeSelect('oi-anim-out-s', ANIMATE_CSS_OUT, oi.animation_out)));
+
+  const adRow = document.createElement('div'); adRow.className = 'form-row';
+  const adLabel = document.createElement('label'); adLabel.textContent = 'Durée animation (s)'; adRow.appendChild(adLabel);
+  const adRange = document.createElement('input'); adRange.type = 'range'; adRange.id = 'oi-anim-duration-s'; adRange.min = '0.5'; adRange.max = '3'; adRange.step = '0.1'; adRange.value = oi.animation_duration || 1; adRow.appendChild(adRange);
+  const adVal = document.createElement('span'); adVal.id = 'oi-anim-duration-val-s'; adVal.textContent = (oi.animation_duration || 1) + 's'; adRow.appendChild(adVal);
+  oiSection.appendChild(adRow);
+
+  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter-s', ['all','top','recent'], oi.random_filter)));
+
+  const btnRow = document.createElement('div'); btnRow.className = 'form-row';
+  const oiSaveBtn = document.createElement('button'); oiSaveBtn.className = 'neo-btn'; oiSaveBtn.textContent = 'Sauvegarder'; oiSaveBtn.onclick = saveOverlayImageConfigSysteme; btnRow.appendChild(oiSaveBtn);
+  const oiTestBtn = document.createElement('button'); oiTestBtn.className = 'neo-btn'; oiTestBtn.textContent = 'Tester'; oiTestBtn.style.marginLeft = '8px'; oiTestBtn.onclick = testOverlayImage; btnRow.appendChild(oiTestBtn);
+  oiSection.appendChild(btnRow);
+
+  container.appendChild(oiSection);
+
+  durRange.addEventListener('input', function() { durVal.textContent = durRange.value + 's'; });
+  adRange.addEventListener('input', function() { adVal.textContent = adRange.value + 's'; });
+}
+
+async function saveOverlayImageConfigSysteme() {
+  const body = { overlay_image: {
+    enabled: document.getElementById('oi-enabled-s').checked,
+    command: document.getElementById('oi-command-s').value,
+    display_duration: parseInt(document.getElementById('oi-duration-s').value),
+    animation_in: document.getElementById('oi-anim-in-s').value,
+    animation_out: document.getElementById('oi-anim-out-s').value,
+    animation_duration: parseFloat(document.getElementById('oi-anim-duration-s').value),
+    random_filter: document.getElementById('oi-filter-s').value,
+  }};
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) toast('Config overlay sauvegardée', 'success');
+}
+
+function _renderSystemeInstances(panel) {
+  if (!panel) return;
+  // Delegate to renderInstancesTab — move content
+  const instEl = document.getElementById('tab-admin-instances');
+  if (panel.children.length === 0) {
+    renderInstancesTab();
+    if (instEl && instEl.children.length > 0) {
+      while (instEl.firstChild) panel.appendChild(instEl.firstChild);
+    }
+  } else {
+    // Refresh invites and instances
+    loadInvites();
+    loadInstances();
+  }
+}
+
+// ── Costs Tab with sub-nav (Résumé · Détail) ─────────────────────────────────
+
+
+function renderCostsTab() {
+  const el = document.getElementById('tab-admin-costs');
+  if (!el) return;
+
+  if (!el.querySelector('.mem-subnav')) {
+    el.innerHTML = `
+      <div class="mem-subnav">
+        <button class="mem-subnav-pill active" data-subtab="resume" onclick="switchCostsSubTab('resume')">Résumé</button>
+        <button class="mem-subnav-pill" data-subtab="detail" onclick="switchCostsSubTab('detail')">Détail</button>
+      </div>
+      <div class="mem-subnav-content active" id="costs-sub-resume">
+        <!-- KPI Row -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
+          <div class="card" id="kpi-month">
+            <div class="card-title">MOIS EN COURS</div>
+            <div class="card-value" id="cost-month-total">—</div>
+            <div id="cost-month-change" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+          </div>
+          <div class="card" id="kpi-forecast">
+            <div class="card-title">PREVISION FIN MOIS</div>
+            <div class="card-value" id="cost-forecast">—</div>
+            <div id="cost-forecast-detail" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+          </div>
+          <div class="card" id="kpi-today">
+            <div class="card-title">AUJOURD'HUI</div>
+            <div class="card-value" id="cost-today-total">—</div>
+          </div>
+          <div class="card" id="kpi-avg">
+            <div class="card-title">COUT / MSG</div>
+            <div class="card-value" id="cost-avg-msg">—</div>
+          </div>
+          <div class="card" id="kpi-threshold">
+            <div class="card-title">SEUIL D'ALERTE</div>
+            <div class="card-value" id="cost-threshold">—</div>
+            <div id="cost-threshold-pct" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+          </div>
+        </div>
+        <!-- Cost Graph -->
+        <div class="card mb-6">
+          <div class="graph-header">
+            <span class="graph-title" id="cost-graph-title">7 DERNIERS JOURS</span>
+            <div class="graph-range-btns">
+              <button class="cost-range-btn active" onclick="setCostRange('7d')" aria-label="7 derniers jours">7J</button>
+              <button class="cost-range-btn" onclick="setCostRange('30d')" aria-label="30 derniers jours">30J</button>
+              <button class="cost-range-btn" onclick="setCostRange('90d')" aria-label="90 derniers jours">90J</button>
+            </div>
+          </div>
+          <canvas id="costCanvas" height="165" aria-label="Graphique des couts journaliers"></canvas>
+          <div id="cost-graph-legend" style="display:flex;gap:16px;padding:6px 10px;font-size:0.72rem;color:rgba(255,255,255,0.45)">
+            <span>&#9473; Periode courante</span>
+            <span style="opacity:0.5">&#9477; Periode precedente</span>
+          </div>
+        </div>
+      </div>
+      <div class="mem-subnav-content" id="costs-sub-detail">
+        <!-- Breakdowns -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="card">
+            <div class="card-title">PAR MODELE</div>
+            <div id="cost-by-model">—</div>
+          </div>
+          <div class="card">
+            <div class="card-title">PAR PURPOSE</div>
+            <div id="cost-by-purpose">—</div>
+          </div>
+          <div class="card">
+            <div class="card-title">TOP UTILISATEURS</div>
+            <div id="cost-top-users">—</div>
+          </div>
+        </div>
+        <!-- Alert bar -->
+        <div class="card" id="cost-alert-bar" style="margin-top:24px;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span id="cost-alert-text"></span>
+            <span id="cost-alert-pct" style="color:rgba(255,255,255,0.45)"></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  switchCostsSubTab(_costsSubTab);
+  loadCosts();
+}
+
+function switchCostsSubTab(subtab) {
+  _costsSubTab = subtab;
+  const el = document.getElementById('tab-admin-costs');
+  if (!el) return;
+  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.subtab === subtab);
+  });
+  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+  const panel = document.getElementById('costs-sub-' + subtab);
+  if (panel) panel.classList.add('active');
+}
+
 // ── Merged Mémoire Tab (Users + Global + Dashboard) ──────────────────────────
 
 let _memoireSubTab = 'users';
@@ -6022,9 +6779,9 @@ function _renderPromptsUI(el) {
         <select onchange="switchPromptsInstance(this.value)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.87);padding:5px 10px;font-size:13px">
           ${instanceOpts}
         </select>
-        <div style="display:flex;gap:6px;margin-left:auto">
-          <button class="tab-btn ${_promptsSection==='persona'?'tab-active':'tab-inactive'}" onclick="switchPromptsSection('persona')">Persona</button>
-          ${_promptsInstance === 'main' ? '<button class="tab-btn ' + (_promptsSection==='system'?'tab-active':'tab-inactive') + '" onclick="switchPromptsSection(\'system\')">Prompts système</button>' : ''}
+        <div class="mem-subnav" style="margin-bottom:0;margin-left:auto">
+          <button class="mem-subnav-pill ${_promptsSection==='persona'?'active':''}" onclick="switchPromptsSection('persona')">Persona</button>
+          ${_promptsInstance === 'main' ? '<button class="mem-subnav-pill ' + (_promptsSection==='system'?'active':'') + '" onclick="switchPromptsSection(\'system\')">Système</button>' : ''}
         </div>
       </div>
       <!-- Body -->

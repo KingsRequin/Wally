@@ -1122,6 +1122,32 @@ select option { background: #11151c; color: #e2e8f0; }
   border-color: rgba(6,182,212,0.3);
   background: rgba(255,255,255,0.07);
 }
+.mem-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(239,68,68,0);
+  color: rgba(239,68,68,0);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+.mem-card:hover .mem-card-delete {
+  background: rgba(239,68,68,0.15);
+  color: #ef4444;
+}
+.mem-card-delete:hover {
+  background: rgba(239,68,68,0.35) !important;
+}
 .mem-card.no-memory {
   opacity: 0.6;
   border-style: dashed;
@@ -3050,8 +3076,8 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
 .neo-btn:hover { background: rgba(6, 182, 212, 0.18); border-color: rgba(6, 182, 212, 0.5); transform: translateY(-1px); }
 
 /* Mémoire sub-navigation pills */
-.mem-subnav { display: flex; gap: 4px; margin-bottom: 16px; }
-.mem-subnav-pill { padding: 6px 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.5); font-family: var(--font); font-weight: 600; font-size: 0.78rem; cursor: pointer; transition: all 0.15s ease; text-transform: uppercase; letter-spacing: 0.5px; }
+.mem-subnav { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+.mem-subnav-pill { padding: 6px 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.5); font-family: var(--font); font-weight: 600; font-size: 0.78rem; cursor: pointer; transition: all 0.15s ease; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
 .mem-subnav-pill:hover { background: rgba(255, 255, 255, 0.06); color: #e2e8f0; }
 .mem-subnav-pill.active { background: rgba(6, 182, 212, 0.15); color: var(--accent); border-color: rgba(6, 182, 212, 0.3); box-shadow: 0 0 10px rgba(6, 182, 212, 0.15); }
 .mem-subnav-content { display: none; }
@@ -3329,4 +3355,40 @@ body.is-mobile.admin-mode .sidebar-mode-btn {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* ── Navigation refactor — Responsive ───────────────────────────── */
+
+/* On very small screens, mem-subnav pills can shrink */
+@media (max-width: 480px) {
+  .mem-subnav-pill {
+    padding: 5px 10px;
+    font-size: 0.72rem;
+  }
+}
+
+/* Costs sub-tab: KPI grid collapses to 1 col on mobile */
+@media (max-width: 600px) {
+  #costs-sub-resume .grid,
+  #costs-sub-detail .grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Parametres and Systeme tab subnav — also wraps on mobile */
+body.is-mobile .mem-subnav {
+  gap: 4px;
+}
+
+body.is-mobile .mem-subnav-pill {
+  padding: 5px 10px;
+  font-size: 0.72rem;
+}
+
+/* Prompts section pills in toolbar — align right, wrap on small screens */
+.tab-admin-prompts-subnav {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
 }

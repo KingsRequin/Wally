@@ -140,8 +140,9 @@
       </div>
     </div>
 
-    <div class="mt-4 flex items-center gap-3">
+    <div class="mt-4 flex flex-wrap items-center gap-3">
       <button class="btn-secondary text-sm" onclick="testDiscord()">🔍 Tester la connexion</button>
+      <button class="btn-secondary text-sm" onclick="inviteBot()">🤖 Inviter le bot sur Discord →</button>
       <span id="discord_test_result" class="text-sm"></span>
     </div>
 
@@ -401,7 +402,7 @@ async function saveCurrentStep() {
   const data = gatherStepData(currentStep);
   if (Object.keys(data).length === 0) return;
   try {
-    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
     await fetch('/api/setup/' + WIZARD_TOKEN + '/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
@@ -441,6 +442,18 @@ function gatherStepData(step) {
   return {};
 }
 
+// ── Discord invite ─────────────────────────────────────────────────────────────
+function inviteBot() {
+  const clientId = document.getElementById('discord_client_id').value.trim();
+  if (!clientId) {
+    document.getElementById('discord_test_result').innerHTML = '<span style="color:rgb(239,68,68)">Remplis d\'abord le Client ID</span>';
+    return;
+  }
+  const url = 'https://discord.com/oauth2/authorize?client_id=' + encodeURIComponent(clientId)
+    + '&permissions=8&scope=bot+applications.commands';
+  window.open(url, '_blank');
+}
+
 // ── Discord test ──────────────────────────────────────────────────────────────
 async function testDiscord() {
   const token = document.getElementById('discord_token').value.trim();
@@ -449,7 +462,7 @@ async function testDiscord() {
   resultEl.textContent = '⏳ Test en cours...';
   resultEl.className = 'text-sm text-white/50';
   try {
-    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
     const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/validate-discord', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
@@ -474,7 +487,7 @@ async function connectTwitch(accountType) {
   const clientId = document.getElementById('twitch_client_id').value.trim();
   const clientSecret = document.getElementById('twitch_client_secret').value.trim();
   if (!clientId || !clientSecret) { alert("Saisis le Client ID et le Client Secret d'abord."); return; }
-  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
   const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/twitch-auth-url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -488,7 +501,7 @@ async function connectTwitch(accountType) {
 function startTwitchPolling() {
   if (twitchPolling) return;
   twitchPolling = setInterval(async () => {
-    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
     const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/twitch-status', { headers });
     const data = await resp.json();
     const botStatus = document.getElementById('bot-status');
@@ -510,7 +523,7 @@ function startTwitchPolling() {
 }
 
 async function skipTwitch() {
-  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
   await fetch('/api/setup/' + WIZARD_TOKEN + '/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -567,7 +580,7 @@ function switchTab(name) {
 
 async function loadPersonaTemplates() {
   const files = ['SOUL', 'IDENTITY', 'VOICE', 'EMOTIONS'];
-  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+  const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
   for (const f of files) {
     try {
       const resp = await fetch('/api/admin/setup/persona-template/' + f, { headers });
@@ -629,7 +642,7 @@ async function submitWizard() {
   }, 800);
 
   try {
-    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_admin_token') || '') } : {};
+    const headers = IS_PREVIEW ? { 'Authorization': 'Bearer ' + (localStorage.getItem('wally_token') || '') } : {};
     const resp = await fetch('/api/setup/' + WIZARD_TOKEN + '/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
