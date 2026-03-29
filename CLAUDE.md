@@ -92,6 +92,9 @@ bot/
 ├── persona/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
 │   ├── EMOTIONS.md      # directives comportementales par émotion (sections ## emotion_name)
+│   ├── WEEKDAYS.md      # directives par jour de la semaine (sections ## monday … sunday)
+│   ├── SECONDARIES.md   # directives émotions secondaires (contempt, pride, shame…)
+│   ├── COMPOSITES.md    # directives pour combinaisons de 2 émotions dominantes ≥ 0.4
 │   └── prompts/         # templates système chargés via load_prompt("name")
 ├── twitch/
 │   ├── bot.py           # twitchio Bot, OAuth refresh, cooldowns
@@ -530,7 +533,20 @@ This allows Wally to recall what was in the image in future conversations.
 
 `PersonaService` charge SOUL → IDENTITY → VOICE → EXEMPLES en un bloc unique injecté dans le prompt.
 `EMOTIONS.md` est parsé en `{emotion: directive}` — sections délimitées par `## emotion_name`.
+`WEEKDAYS.md` est parsé en `{day: directive}` — sections `## monday` … `## sunday`.
+`SECONDARIES.md` est parsé en `{key: directive}` — émotions secondaires (contempt, pride, shame…).
+`COMPOSITES.md` est parsé en `{paire: directive}` — clés triées alphabétiquement (`anger_joy`, `curiosity_sadness`…).
+Déclenché quand les deux émotions dominantes sont ≥ 0.4 simultanément. Priorité sur les directives atomiques.
 `/wally reload-persona` recharge tous les fichiers sans redémarrage.
+
+### Dashboard — Gestion des prompts
+Onglet **Prompts** dans le panel admin : éditeur pour les fichiers persona et les templates système.
+- **Persona** : SOUL, IDENTITY, VOICE, EXEMPLES, EMOTIONS, WEEKDAYS, SECONDARIES, COMPOSITES
+- **Prompts système** : templates `bot/persona/prompts/*.md` (fact_extraction, journal, spam_warning…)
+- Sélecteur de bot : bot principal ou instance par slug
+- Compteur de tokens live + estimation du coût par appel (primary + secondary depuis config)
+- Sauvegarde recharge `PersonaService` en live (bot principal uniquement, sans redémarrage)
+Routes : `GET/POST /api/admin/prompts`, `GET/POST /api/admin/prompts/persona/{filename}`, `GET/POST /api/admin/prompts/system/{filename}`
 
 ### Prompt Templates
 `load_prompt("name")` charge `bot/persona/prompts/name.md` avec fallback chaîne vide.
