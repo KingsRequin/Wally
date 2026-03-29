@@ -2516,14 +2516,14 @@ async function addModalAlias(userId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nickname: nickname, canonical_uid: userId })
   });
-  if (!r || !r.ok) return;
+  if (!r || !r.ok) { var e = r ? await r.json().catch(function() { return {}; }) : {}; toast(e.detail || 'Erreur lors de l\'ajout', 'error'); return; }
   input.value = '';
   await _refreshAliasPills(userId);
 }
 
 async function deleteModalAlias(nickname, userId) {
   var r = await apiFetch('/api/admin/aliases/' + encodeURIComponent(nickname), { method: 'DELETE' });
-  if (!r || !r.ok) return;
+  if (!r || !r.ok) { toast('Erreur lors de la suppression', 'error'); return; }
   await _refreshAliasPills(userId);
 }
 
