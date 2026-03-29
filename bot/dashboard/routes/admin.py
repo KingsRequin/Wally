@@ -149,14 +149,23 @@ async def update_config(request: Request, body: dict) -> dict:
                 # Update bot references
                 if state.discord_bot:
                     state.discord_bot.llm = state.primary_llm
+                    if hasattr(state.discord_bot, "journal"):
+                        state.discord_bot.journal._llm = state.primary_llm
                 if state.twitch_bot:
                     state.twitch_bot.llm = state.primary_llm
             if "secondary" in llm_data and llm_data["secondary"].get("provider") != type(state.secondary_llm).__name__.lower().replace("llmclient", ""):
                 state.secondary_llm = create_llm_client(cfg.llm.secondary, state.db)
                 if state.discord_bot:
                     state.discord_bot.llm_secondary = state.secondary_llm
+                    if hasattr(state.discord_bot, "journal"):
+                        state.discord_bot.journal._llm_secondary = state.secondary_llm
                 if state.twitch_bot:
                     state.twitch_bot.llm_secondary = state.secondary_llm
+                # Update shared services that hold a reference to secondary LLM
+                state.memory.set_openai_client(state.secondary_llm)
+                state.emotion.set_openai_client(state.secondary_llm)
+                if state.fact_extractor:
+                    state.fact_extractor._openai = state.secondary_llm
 
     if "bot" in body:
         d = body["bot"]
