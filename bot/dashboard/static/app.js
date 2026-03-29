@@ -294,6 +294,7 @@ function showTab(tabId) {
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (tabId === 'admin-prompts') renderPromptsTab();
   if (tabId === 'admin-instances') renderInstancesTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollCostsBadge();
@@ -2031,6 +2032,7 @@ async function loadMemoryUsers() {
       : "openUserModal('" + escAttr(u.user_id) + "')";
 
     return '<div class="' + cardClasses + '" data-uid="' + escAttr(u.user_id) + '" onclick="' + clickHandler + '">'
+      + '<button class="mem-card-delete" onclick="event.stopPropagation();deleteUser(\'' + escAttr(u.user_id) + '\',\'' + escAttr(displayName) + '\')" title="Supprimer l\'utilisateur">🗑</button>'
       + (hasLinks ? '<span class="mem-card-link-badge">🔗 lié</span>' : '')
       + '<div class="mem-card-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
       + '<div class="mem-card-name" title="' + escAttr(displayName) + '">' + escHtml(displayName) + '</div>'
@@ -2174,6 +2176,7 @@ async function openUserModal(userId, userData) {
     + '<button class="mem-modal-action add" onclick="showModalAddForm(\'' + escAttr(userId) + '\')">+ Ajouter mémoire</button>'
     + '<button class="mem-modal-action link" onclick="startLinkMode(\'' + escAttr(userId) + '\',\'' + escAttr(displayName) + '\')">🔗 Lier un compte</button>'
     + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escAttr(userId) + '\')">🗑 Supprimer tout</button>' : '')
+    + '<button class="mem-modal-action danger" onclick="deleteUser(\'' + escAttr(userId) + '\',\'' + escAttr(displayName) + '\')" title="Supprime l\'utilisateur et toutes ses mémoires">🗑 Supprimer l\'utilisateur</button>'
     + '</div>'
     + '<div id="modal-add-form"></div>'
     + '<div class="mem-modal-toolbar">'
@@ -2386,6 +2389,27 @@ async function deleteAllModalMemories(userId) {
     toast('Mémoire supprimée', 'success');
     var bdrop = document.querySelector('.mem-modal-backdrop');
     if (bdrop) bdrop.remove();
+    loadMemoryUsers();
+  } else {
+    toast('Erreur suppression', 'error');
+  }
+}
+
+async function deleteUser(userId, displayName) {
+  if (!confirm('Supprimer l\'utilisateur "' + displayName + '" et toutes ses mémoires ?')) return;
+  var r = await apiFetch(
+    '/api/admin/memory/users/' + encodeURIComponent(userId),
+    { method: 'DELETE' }
+  );
+  if (r && r.ok) {
+    toast('Utilisateur supprimé', 'success');
+    // Fermer la modale si ouverte
+    var bdrop = document.querySelector('.mem-modal-backdrop');
+    if (bdrop) bdrop.remove();
+    // Retirer la carte du DOM immédiatement
+    var card = document.querySelector('.mem-card[data-uid="' + userId.replace(/"/g, '\\"') + '"]');
+    if (card) card.remove();
+    // Recharger pour mettre à jour les compteurs
     loadMemoryUsers();
   } else {
     toast('Erreur suppression', 'error');
@@ -4171,7 +4195,7 @@ async def search(self, user_id, query, limit=5):
               <p class="jd-tech-note"><strong>QdrantMemoryStore</strong> gère l'accès direct à <strong>Qdrant</strong> (base vectorielle auto-hébergée) : embedding via OpenAI <code>text-embedding-3-small</code>, stockage avec payloads structurés (texte, catégorie, date, source), et recherche par similarité avec filtrage natif.</p>
               <p class="jd-tech-note"><strong>Trust score</strong> : chaque utilisateur a un score de confiance (0.0 → 1.0) qui évolue avec le temps. +0.01 par interaction positive, -0.05 pour les comportements toxiques. Le score part à 0.0 — la confiance se mérite.</p>
               <p class="jd-tech-note"><strong>Sliding window</strong> : la mémoire courte garde les N derniers messages. Quand le nombre de tokens dépasse un seuil, les messages les plus anciens sont résumés par un modèle secondaire et remplacés par un bloc résumé.</p>
-              <p class="jd-tech-note"><strong>Memory scoring</strong> : chaque <code>memory.add()</code> déclenche un appel LLM secondaire (<code>_evaluate_memory</code>) qui évalue la complétude du souvenir. Les questions générées sont stockées dans la table <code>memory_questions</code> et injectées dans le prompt (max 1 par conversation, max 3 tentatives). Si le nouveau souvenir répond à une question existante, elle est automatiquement résolue.</p>
+              <p class="jd-tech-note"><strong>Memory scoring</strong> : chaque <code>memory.add()</code> déclenche un appel LLM secondaire (<code>_evaluate</code>) qui évalue la complétude du souvenir. Les questions générées sont stockées dans <code>memory_questions</code> et injectées dans le prompt (max 1 par conversation, max 3 tentatives). Si le nouveau souvenir répond à une question existante, elle est automatiquement résolue. Les questions épuisées (3 tentatives) sont re-proposées après 24h via le champ <code>last_attempt_at</code>.</p>
               <p class="jd-tech-note"><strong>Nettoyage quotidien</strong> : cron 30min avant le journal (<code>run_memory_cleanup</code>). Passe en revue les souvenirs des 20 utilisateurs les plus actifs, identifie les faits périmés/vagues via LLM, et applique suppressions + reformulations via le store Qdrant directement.</p>
             </div>
           </details>
@@ -5551,12 +5575,21 @@ function renderInstancesTab() {
   var h3 = document.createElement('h3');
   h3.style.cssText = 'margin:0;font-size:1.1rem;font-weight:700;color:#e2e8f0';
   h3.textContent = 'Instances';
+  var btnGroup = document.createElement('div');
+  btnGroup.style.cssText = 'display:flex;gap:8px;align-items:center';
+  var notifyAllBtn = document.createElement('button');
+  notifyAllBtn.className = 'btn btn-sm';
+  notifyAllBtn.style.cssText = 'color:rgba(6,182,212,0.9)';
+  notifyAllBtn.textContent = '🔔 Notifier tout';
+  notifyAllBtn.onclick = notifyAllInstancesUpdate;
   var genBtn = document.createElement('button');
   genBtn.className = 'btn btn-sm';
   genBtn.textContent = '+ Générer un lien';
   genBtn.onclick = generateInvite;
+  btnGroup.appendChild(notifyAllBtn);
+  btnGroup.appendChild(genBtn);
   header.appendChild(h3);
-  header.appendChild(genBtn);
+  header.appendChild(btnGroup);
   el.appendChild(header);
 
   var invCard = _makeGlassCard(true);
@@ -5657,13 +5690,26 @@ async function loadInstances() {
       el.textContent = 'Aucune instance créée';
       return;
     }
-    data.instances.forEach(function(inst) {
+    for (var i = 0; i < data.instances.length; i++) {
+      var inst = data.instances[i];
       var running = inst.docker_status === 'running';
+
+      // Charger la config de notification
+      var cfg = {};
+      try {
+        var cr = await apiFetch('/api/admin/setup/instances/' + inst.slug + '/update-config');
+        if (cr && cr.ok) cfg = await cr.json();
+      } catch(e) {}
+
+      var card = document.createElement('div');
+      card.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px;margin-bottom:10px';
+
+      // Ligne principale
       var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
       var left = document.createElement('div');
       var nameSpan = document.createElement('span');
-      nameSpan.style.cssText = 'font-weight:600;color:rgba(255,255,255,0.8)';
+      nameSpan.style.cssText = 'font-weight:600;color:rgba(255,255,255,0.85)';
       nameSpan.textContent = inst.slug;
       var statusSpan = document.createElement('span');
       statusSpan.style.cssText = 'margin-left:8px;font-size:12px;color:' + (running ? '#22c55e' : 'rgba(239,68,68,0.7)');
@@ -5675,21 +5721,92 @@ async function loadInstances() {
       left.appendChild(statusSpan);
       left.appendChild(portSpan);
       row.appendChild(left);
-      var btn = document.createElement('button');
-      btn.className = 'btn btn-sm';
+
+      var btnGroup = document.createElement('div');
+      btnGroup.style.cssText = 'display:flex;gap:6px';
+      var toggleBtn = document.createElement('button');
+      toggleBtn.className = 'btn btn-sm';
       if (running) {
-        btn.style.color = 'rgba(239,68,68,0.8)';
-        btn.textContent = 'Stop';
-        btn.onclick = (function(s) { return function() { instanceAction(s, 'stop'); }; })(inst.slug);
+        toggleBtn.style.color = 'rgba(239,68,68,0.8)';
+        toggleBtn.textContent = 'Stop';
+        toggleBtn.onclick = (function(s) { return function() { instanceAction(s, 'stop'); }; })(inst.slug);
       } else {
-        btn.style.color = 'rgba(34,197,94,0.8)';
-        btn.textContent = 'Start';
-        btn.onclick = (function(s) { return function() { instanceAction(s, 'start'); }; })(inst.slug);
+        toggleBtn.style.color = 'rgba(34,197,94,0.8)';
+        toggleBtn.textContent = 'Start';
+        toggleBtn.onclick = (function(s) { return function() { instanceAction(s, 'start'); }; })(inst.slug);
       }
-      row.appendChild(btn);
-      el.appendChild(row);
-    });
+      btnGroup.appendChild(toggleBtn);
+      row.appendChild(btnGroup);
+      card.appendChild(row);
+
+      // Canal de notification + boutons update
+      var updateRow = document.createElement('div');
+      updateRow.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+      var chanInput = document.createElement('input');
+      chanInput.type = 'text';
+      chanInput.placeholder = 'ID du salon Discord';
+      chanInput.value = cfg.notify_channel_id || '';
+      chanInput.style.cssText = 'flex:1;min-width:150px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.85);padding:5px 9px;font-size:12px;font-family:monospace;outline:none';
+      chanInput.dataset.slug = inst.slug;
+
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-sm';
+      saveBtn.textContent = 'Enregistrer';
+      saveBtn.style.cssText = 'font-size:11px;padding:4px 10px';
+      saveBtn.onclick = (function(input, s) {
+        return async function() {
+          var r = await apiFetch('/api/admin/setup/instances/' + s + '/update-config', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ notify_channel_id: input.value.trim() })
+          });
+          if (r && r.ok) toast('Canal enregistré', 'success');
+          else toast('Erreur', 'error');
+        };
+      })(chanInput, inst.slug);
+
+      var notifyBtn = document.createElement('button');
+      notifyBtn.className = 'btn btn-sm';
+      notifyBtn.textContent = '🔔 Notifier';
+      notifyBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(6,182,212,0.9)';
+      notifyBtn.onclick = (function(s) {
+        return async function() {
+          var r = await apiFetch('/api/admin/setup/instances/' + s + '/notify-update', { method: 'POST' });
+          if (r && r.ok) toast('Notification envoyée à ' + s, 'success');
+          else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
+        };
+      })(inst.slug);
+
+      var updateBtn = document.createElement('button');
+      updateBtn.className = 'btn btn-sm';
+      updateBtn.textContent = '⬆️ Mettre à jour';
+      updateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
+      updateBtn.onclick = (function(s, btn) {
+        return async function() {
+          btn.disabled = true; btn.textContent = '⏳ Mise à jour...';
+          var r = await apiFetch('/api/admin/setup/instances/' + s + '/update', { method: 'POST' });
+          btn.disabled = false; btn.textContent = '⬆️ Mettre à jour';
+          if (r && r.ok) { toast('Instance ' + s + ' mise à jour !', 'success'); setTimeout(loadInstances, 1500); }
+          else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
+        };
+      })(inst.slug, updateBtn);
+
+      updateRow.appendChild(chanInput);
+      updateRow.appendChild(saveBtn);
+      updateRow.appendChild(notifyBtn);
+      updateRow.appendChild(updateBtn);
+      card.appendChild(updateRow);
+      el.appendChild(card);
+    }
   } catch(e) { console.error('loadInstances', e); }
+}
+
+async function notifyAllInstancesUpdate() {
+  var r = await apiFetch('/api/admin/setup/notify-all-updates', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur lors de la notification', 'error'); return; }
+  var data = await r.json();
+  var ok = data.results.filter(function(x) { return x.ok; }).length;
+  var fail = data.results.length - ok;
+  toast(ok + ' notification(s) envoyée(s)' + (fail ? ', ' + fail + ' erreur(s)' : ''), fail ? 'error' : 'success');
 }
 
 async function generateInvite() {
@@ -5724,4 +5841,257 @@ async function instanceAction(slug, action) {
     toast('Erreur action ' + action, 'error');
   }
   setTimeout(loadInstances, 1500);
+}
+
+// ── Prompts & Persona Management ─────────────────────────────────────────────
+
+var _promptsData = null;        // { persona: {}, system_prompts: {} }
+var _promptsInstance = 'main';  // 'main' | slug
+var _promptsSection = 'persona'; // 'persona' | 'system'
+var _promptsFile = null;
+var _promptsInstances = [];
+
+async function renderPromptsTab() {
+  var el = document.getElementById('tab-admin-prompts');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:24px;color:rgba(255,255,255,0.4)">Chargement...</div>';
+
+  // Charger instances + config modèles en parallèle
+  var [ri] = await Promise.all([
+    apiFetch('/api/admin/setup/instances'),
+    _loadPromptsModels(),
+  ]);
+  _promptsInstances = (ri && ri.ok) ? (await ri.json()).instances || [] : [];
+
+  await _loadPromptsData();
+  _renderPromptsUI(el);
+}
+
+async function _loadPromptsData() {
+  if (_promptsInstance === 'main') {
+    var r = await apiFetch('/api/admin/prompts');
+    _promptsData = (r && r.ok) ? await r.json() : { persona: {}, system_prompts: {} };
+  } else {
+    var r2 = await apiFetch('/api/admin/setup/instances/' + _promptsInstance + '/persona');
+    var personaData = (r2 && r2.ok) ? (await r2.json()).persona : {};
+    _promptsData = { persona: personaData, system_prompts: {} };
+  }
+  // Sélectionner le premier fichier si aucun sélectionné ou si fichier invalide
+  var files = _promptsSection === 'persona'
+    ? Object.keys(_promptsData.persona)
+    : Object.keys(_promptsData.system_prompts);
+  if (!_promptsFile || !files.includes(_promptsFile)) {
+    _promptsFile = files[0] || null;
+  }
+}
+
+function _renderPromptsUI(el) {
+  var personaFiles = Object.keys(_promptsData.persona);
+  var systemFiles = Object.keys(_promptsData.system_prompts);
+  var currentFiles = _promptsSection === 'persona' ? personaFiles : systemFiles;
+  var content = _promptsFile
+    ? (_promptsSection === 'persona' ? _promptsData.persona[_promptsFile] : _promptsData.system_prompts[_promptsFile])
+    : '';
+
+  // Sélecteur de bot
+  var instanceOpts = '<option value="main">Bot principal</option>';
+  _promptsInstances.forEach(function(inst) {
+    instanceOpts += '<option value="' + inst.slug + '"' + (_promptsInstance === inst.slug ? ' selected' : '') + '>' + inst.slug + '</option>';
+  });
+
+  // Liste de fichiers
+  var fileList = currentFiles.map(function(f) {
+    return '<div class="prompt-file-item' + (f === _promptsFile ? ' active' : '') + '" onclick="selectPromptFile(\'' + f + '\')">' + f.replace('.md','') + '</div>';
+  }).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100%;gap:0">
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap">
+        <div class="card-title" style="margin:0;flex:0 0 auto">PROMPTS</div>
+        <select onchange="switchPromptsInstance(this.value)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.87);padding:5px 10px;font-size:13px">
+          ${instanceOpts}
+        </select>
+        <div style="display:flex;gap:6px;margin-left:auto">
+          <button class="tab-btn ${_promptsSection==='persona'?'tab-active':'tab-inactive'}" onclick="switchPromptsSection('persona')">Persona</button>
+          ${_promptsInstance === 'main' ? '<button class="tab-btn ' + (_promptsSection==='system'?'tab-active':'tab-inactive') + '" onclick="switchPromptsSection(\'system\')">Prompts système</button>' : ''}
+        </div>
+      </div>
+      <!-- Body -->
+      <div style="display:flex;flex:1;min-height:0;overflow:hidden">
+        <!-- File list -->
+        <div style="width:190px;flex-shrink:0;border-right:1px solid rgba(255,255,255,0.07);overflow-y:auto;padding:8px">
+          ${fileList || '<div style="padding:12px;font-size:12px;color:rgba(255,255,255,0.3)">Aucun fichier</div>'}
+        </div>
+        <!-- Editor -->
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;padding:12px 16px;gap:8px">
+          ${_promptsFile ? `
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+              <span style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.6)">${_promptsFile}</span>
+              <button class="btn-primary" onclick="savePromptFile()" style="font-size:12px;padding:6px 14px">💾 Sauvegarder</button>
+            </div>
+            <textarea id="prompt-editor" style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:rgba(255,255,255,0.87);padding:14px;font-size:13px;font-family:monospace;resize:vertical;line-height:1.6;outline:none;min-height:calc(100vh - 310px);width:100%;box-sizing:border-box" spellcheck="false">${escapeHtml(content)}</textarea>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:22px">
+              <div id="prompt-token-info" style="display:flex;gap:16px;font-size:11px;color:rgba(255,255,255,0.35)"></div>
+              <div id="prompt-save-status" style="font-size:12px"></div>
+            </div>
+          ` : '<div style="color:rgba(255,255,255,0.3);font-size:13px;padding-top:40px;text-align:center">Sélectionne un fichier</div>'}
+        </div>
+      </div>
+    </div>`;
+
+  // Compteur de tokens live
+  var editor = document.getElementById('prompt-editor');
+  if (editor) {
+    _updatePromptTokenInfo(editor.value);
+    editor.addEventListener('input', function() { _updatePromptTokenInfo(editor.value); });
+  }
+
+  // Styles inline pour les items de fichier
+  document.querySelectorAll('.prompt-file-item').forEach(function(item) {
+    item.style.cssText = 'padding:8px 12px;border-radius:8px;font-size:12px;cursor:pointer;color:rgba(255,255,255,0.6);transition:all .15s;margin-bottom:2px';
+    if (item.classList.contains('active')) {
+      item.style.background = 'rgba(6,182,212,0.15)';
+      item.style.color = 'rgb(6,182,212)';
+      item.style.borderLeft = '2px solid rgb(6,182,212)';
+    }
+    item.addEventListener('mouseenter', function() {
+      if (!item.classList.contains('active')) item.style.background = 'rgba(255,255,255,0.05)';
+    });
+    item.addEventListener('mouseleave', function() {
+      if (!item.classList.contains('active')) item.style.background = '';
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Prix input par 1M tokens (source : pages tarifaires officielles)
+var _MODEL_PRICE_TABLE = {
+  // OpenAI
+  'gpt-4o':              2.50,
+  'gpt-4o-mini':         0.15,
+  'gpt-4.1':             2.00,
+  'gpt-4.1-mini':        0.40,
+  'gpt-4.1-nano':        0.10,
+  'gpt-5':               5.00,
+  'gpt-5.1':             5.00,
+  'gpt-5.1-mini':        0.40,
+  'gpt-5-nano':          0.10,
+  'o1':                 15.00,
+  'o1-mini':             3.00,
+  'o3':                 10.00,
+  'o3-mini':             1.10,
+  'o4-mini':             1.10,
+  // Anthropic
+  'claude-opus-4':      15.00,
+  'claude-opus-4-5':    15.00,
+  'claude-opus-4-6':    15.00,
+  'claude-sonnet-4':     3.00,
+  'claude-sonnet-4-5':   3.00,
+  'claude-sonnet-4-6':   3.00,
+  'claude-haiku-4':      0.80,
+  'claude-haiku-4-5':    0.80,
+};
+
+var _promptsModels = []; // [{ label, usd }] — peuplé depuis la config
+
+function _priceForModel(modelId) {
+  if (!modelId) return null;
+  var m = modelId.toLowerCase();
+  // Correspondance exacte d'abord
+  if (_MODEL_PRICE_TABLE[m] !== undefined) return _MODEL_PRICE_TABLE[m];
+  // Correspondance partielle (préfixe le plus long)
+  var best = null, bestLen = 0;
+  Object.keys(_MODEL_PRICE_TABLE).forEach(function(k) {
+    if (m.startsWith(k) && k.length > bestLen) { best = _MODEL_PRICE_TABLE[k]; bestLen = k.length; }
+  });
+  return best;
+}
+
+async function _loadPromptsModels() {
+  var r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) return;
+  var cfg = await r.json();
+  var seen = {};
+  _promptsModels = [];
+  [cfg.llm && cfg.llm.primary, cfg.llm && cfg.llm.secondary].forEach(function(role, i) {
+    if (!role || !role.model) return;
+    var key = role.model;
+    if (seen[key]) return;
+    seen[key] = true;
+    var price = _priceForModel(role.model);
+    var label = (i === 0 ? 'primary' : 'secondary') + ' (' + role.model + ')';
+    _promptsModels.push({ label: label, model: role.model, usd: price });
+  });
+}
+
+function _updatePromptTokenInfo(text) {
+  var el = document.getElementById('prompt-token-info');
+  if (!el) return;
+  var tokens = Math.round((text || '').length / 4);
+  var parts = ['<span>' + tokens.toLocaleString() + ' tokens</span>'];
+  _promptsModels.forEach(function(p) {
+    var costStr;
+    if (p.usd === null) {
+      costStr = '<strong style="color:rgba(255,255,255,0.4)">prix inconnu</strong>';
+    } else {
+      var cost = (tokens / 1_000_000) * p.usd;
+      var costFmt = cost < 0.0001 ? ('< $0.0001') : ('$' + cost.toFixed(4));
+      costStr = '<strong style="color:rgba(255,255,255,0.55)">' + costFmt + '</strong>';
+    }
+    parts.push('<span>' + p.label + ' : ' + costStr + '/appel</span>');
+  });
+  el.innerHTML = parts.join('<span style="opacity:.3"> | </span>');
+}
+
+function selectPromptFile(filename) {
+  _promptsFile = filename;
+  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
+}
+
+async function switchPromptsInstance(val) {
+  _promptsInstance = val;
+  _promptsSection = 'persona';
+  _promptsFile = null;
+  await _loadPromptsData();
+  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
+}
+
+async function switchPromptsSection(section) {
+  _promptsSection = section;
+  _promptsFile = null;
+  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
+}
+
+async function savePromptFile() {
+  var editor = document.getElementById('prompt-editor');
+  var status = document.getElementById('prompt-save-status');
+  if (!editor || !_promptsFile) return;
+  var content = editor.value;
+  status.textContent = 'Sauvegarde...';
+  status.style.color = 'rgba(255,255,255,0.4)';
+
+  var url, r;
+  if (_promptsInstance === 'main') {
+    var type = _promptsSection === 'persona' ? 'persona' : 'system';
+    url = '/api/admin/prompts/' + type + '/' + _promptsFile;
+  } else {
+    url = '/api/admin/setup/instances/' + _promptsInstance + '/persona/' + _promptsFile;
+  }
+
+  r = await apiFetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ content }) });
+  if (r && r.ok) {
+    // Mettre à jour le cache local
+    if (_promptsSection === 'persona') _promptsData.persona[_promptsFile] = content;
+    else _promptsData.system_prompts[_promptsFile] = content;
+    status.textContent = '✓ Sauvegardé';
+    status.style.color = 'rgb(34,197,94)';
+    setTimeout(function() { if (status) status.textContent = ''; }, 3000);
+  } else {
+    status.textContent = '✗ Erreur lors de la sauvegarde';
+    status.style.color = 'rgb(239,68,68)';
+  }
 }

@@ -268,6 +268,10 @@ Discord snowflakes are ≥13 digits, Twitch numeric IDs are ≤12 digits. If the
 match the ID format (e.g. `twitch:610550333042589752`), it swaps to the correct platform and
 logs a warning. Applied in `upsert_memory_user()` and Qdrant sync.
 
+`sync_memory_users_from_qdrant(qdrant_url, collection_name=None)` reads `QDRANT_COLLECTION_NAME`
+env var (default `"wally_memory"`) when `collection_name` is not provided — ensures each instance
+syncs from its own Qdrant collection, not the main bot's.
+
 ### FactExtractor — Third-party Resolution
 `_extract_facts()` injects both `list_aliases()` and `list_memory_users()` into the LLM prompt
 so it can resolve mentions of users not present in the conversation (e.g. "Azrael" → "Azraël").
@@ -335,6 +339,20 @@ bot:
   memory_search_min_score: 0.5      # min Qdrant score for normal responses (was 0.3)
   memory_context_max_tokens: 800    # token budget for memory context block
 ```
+
+### Memory Questions
+After each `memory.add()`, `_evaluate()` asks the secondary LLM whether the new memory answers
+any pending question, and whether the memory is incomplete (follow-up question needed). Results
+are JSON — markdown fences stripped before `json.loads()`. Question IDs in `resolves` may be
+strings or ints; both accepted via `int(qid)`.
+
+Questions are injected into the system prompt via `get_pending_question_directive()` (max 1 per
+response). Each injection increments `attempts` and sets `last_attempt_at`. After 3 attempts the
+question is suppressed — until 24h have elapsed (`last_attempt_at < now - 86400`), at which point
+it re-enters the pool with a fresh budget.
+
+`get_pending_question(user_id, max_attempts=3, retry_after_seconds=86400.0)`.
+Migration adds `memory_questions.last_attempt_at REAL DEFAULT NULL`.
 
 ### Trust Score
 Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
