@@ -181,6 +181,14 @@ class MemoryService:
 
             if self._db is not None:
                 await self._db.upsert_memory_user(uid, platform, username)
+                try:
+                    count = await self._store.count(uid)
+                    await self._db.execute(
+                        "UPDATE memory_users SET memory_count=? WHERE user_id=?",
+                        (count, uid),
+                    )
+                except Exception:
+                    pass
             # Vérification consolidation + évaluation en arrière-plan
             self._fire(self._post_add_maintenance(uid, content))
             # Analyse automatique des liens de comptes (seulement pour les non-alias)
@@ -330,6 +338,10 @@ class MemoryService:
                 [{"role": "user", "content": user_msg}],
                 purpose="memory_evaluate",
             )
+            # Strip markdown code blocks if present (LLMs sometimes wrap JSON)
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             result = json.loads(raw)
 
             # Insert new questions (max 1 to avoid redundant questions)
@@ -341,11 +353,13 @@ class MemoryService:
                     await self._db.insert_memory_question(uid, content, question, priority)
                     logger.debug("Memory question created for {uid}: {q}", uid=uid, q=question)
 
-            # Resolve answered questions
+            # Resolve answered questions (LLM may return int or string IDs)
             for qid in result.get("resolves", []):
-                if isinstance(qid, int):
-                    await self._db.resolve_question(qid)
+                try:
+                    await self._db.resolve_question(int(qid))
                     logger.debug("Memory question {id} resolved by new memory", id=qid)
+                except (ValueError, TypeError):
+                    pass
 
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.debug("Memory evaluate parse error: {e}", e=exc)

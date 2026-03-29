@@ -89,6 +89,7 @@ class WallyTwitch(commands.Bot):
             self._token_refresh_loop(),
             self._poll_guest_streams(),
             self._poll_stream_info(),
+            self._resolve_missing_usernames(),
         )
 
     async def _irc_run(self) -> None:
@@ -141,6 +142,47 @@ class WallyTwitch(commands.Bot):
                 await self._restart_eventsub()
         except asyncio.CancelledError:
             pass
+
+    async def _resolve_missing_usernames(self) -> None:
+        """Migration one-shot : nettoie et résout les entrées memory_users Twitch.
+
+        1. Supprime les IDs numériques bruts sans préfixe plateforme (doublons).
+        2. Résout les entrées twitch:ID sans username via l'API Helix.
+        """
+        try:
+            await asyncio.sleep(5)  # laisse le bot finir de démarrer
+
+            # Supprimer les IDs numériques bruts qui ont un doublon twitch: correct
+            await self.db.execute("""
+                DELETE FROM memory_users
+                WHERE user_id NOT LIKE '%:%'
+                  AND ('twitch:' || user_id) IN (SELECT user_id FROM memory_users)
+            """)
+
+            all_users = await self.db.list_memory_users()
+            missing_ids = [
+                u["user_id"].split(":", 1)[1]
+                for u in all_users
+                if u["platform"] == "twitch"
+                and not u.get("username")
+                and u["user_id"].startswith("twitch:")
+                and u["user_id"].split(":", 1)[1].isdigit()
+            ]
+            if not missing_ids:
+                return
+            logger.info(
+                "Résolution de {n} username(s) Twitch manquant(s)...", n=len(missing_ids)
+            )
+            resolved = await self.twitch_api.get_users_by_ids(missing_ids)
+            for numeric_id, login in resolved.items():
+                await self.db.upsert_memory_user(f"twitch:{numeric_id}", "twitch", username=login)
+            logger.info(
+                "Usernames Twitch résolus : {n}/{t}",
+                n=len(resolved),
+                t=len(missing_ids),
+            )
+        except Exception as exc:
+            logger.warning("_resolve_missing_usernames failed: {e}", e=exc)
 
     async def _poll_guest_streams(self) -> None:
         """Vérifie toutes les 60s le statut live des chaînes invitées.

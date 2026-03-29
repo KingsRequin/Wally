@@ -57,6 +57,7 @@ services:
       - ./ROADMAP.md:/app/ROADMAP.md:ro
       - ./bot/dashboard/static:/app/bot/dashboard/static:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/stacks/wally-instances:/opt/stacks/wally-instances
     restart: unless-stopped
 
   cloudflared:

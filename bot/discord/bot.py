@@ -79,13 +79,20 @@ class WallyDiscord(commands.Bot):
         await self.add_cog(TestCog(self))
         await self.add_cog(ImagineCog(self))
 
-        # Clear stale guild-specific commands, then sync globally
-        for gid in (1063150486137606256, 875421531415666698):
-            guild = discord.Object(id=gid)
-            self.tree.clear_commands(guild=guild)
-            await self.tree.sync(guild=guild)
-        await self.tree.sync()
-        logger.info("Discord slash commands synced")
+        # Sync slash commands — wrap in try/except so a 403 (bot not yet in guild) doesn't crash startup
+        try:
+            import os
+            guild_id = int(os.getenv("DISCORD_GUILD_ID", "0")) or None
+            if guild_id:
+                guild = discord.Object(id=guild_id)
+                self.tree.clear_commands(guild=guild)
+                await self.tree.sync(guild=guild)
+            await self.tree.sync()
+            logger.info("Discord slash commands synced")
+        except discord.Forbidden:
+            logger.warning("Discord slash commands sync skipped — bot not yet in guild (invite it first)")
+        except Exception as e:
+            logger.warning("Discord slash commands sync failed: {}", e)
 
     async def on_ready(self) -> None:
         self._start_time = time.time()
@@ -101,6 +108,51 @@ class WallyDiscord(commands.Bot):
         self.reaction_tracker.record_discord_reaction(
             payload.message_id, str(payload.emoji), is_bot,
         )
+
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        if interaction.type != discord.InteractionType.component:
+            return
+        custom_id = (interaction.data or {}).get("custom_id", "")
+        if not custom_id.startswith("update_instance_"):
+            return
+        slug = custom_id[len("update_instance_"):]
+        if not interaction.guild:
+            await interaction.response.send_message("Commande disponible uniquement dans un serveur.", ephemeral=True)
+            return
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member or not member.guild_permissions.manage_guild:
+            await interaction.response.send_message("Permission insuffisante (Gérer le serveur requis).", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            from bot.core.provisioner import INSTANCES_DIR
+            compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
+            if not compose_path.exists():
+                await interaction.followup.send(f"Instance `{slug}` introuvable.", ephemeral=True)
+                return
+            proc = await asyncio.create_subprocess_exec(
+                "/usr/bin/docker", "compose", "-f", str(compose_path),
+                "up", "-d", "--force-recreate",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            if proc.returncode == 0:
+                logger.info("Instance {} updated via Discord button by {}", slug, interaction.user)
+                await interaction.followup.send(f"Instance `{slug}` mise a jour !", ephemeral=True)
+                try:
+                    await interaction.message.edit(
+                        content=interaction.message.content + f"\nMis a jour par {interaction.user.display_name}"
+                    )
+                except Exception:
+                    pass
+            else:
+                await interaction.followup.send(f"Erreur : {stderr.decode()[:300]}", ephemeral=True)
+        except asyncio.TimeoutError:
+            await interaction.followup.send("Timeout lors de la mise a jour (>60s).", ephemeral=True)
+        except Exception as exc:
+            logger.error("Update instance {} failed: {}", slug, exc)
+            await interaction.followup.send(f"Erreur : {exc}", ephemeral=True)
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)

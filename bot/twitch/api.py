@@ -139,6 +139,45 @@ class TwitchAPI:
             logger.warning("get_streams_status failed: {e}", e=exc)
             return {}
 
+    async def get_users_by_ids(self, ids: list[str]) -> dict[str, str]:
+        """GET /helix/users?id=... Returns {numeric_id: login_name}.
+
+        Processes up to 100 IDs per request (Helix API limit).
+        Returns empty dict on error.
+        """
+        if not ids:
+            return {}
+        result: dict[str, str] = {}
+        try:
+            async with httpx.AsyncClient() as client:
+                # Helix allows max 100 ids per request
+                for chunk_start in range(0, len(ids), 100):
+                    chunk = ids[chunk_start:chunk_start + 100]
+                    for attempt in range(2):
+                        resp = await client.get(
+                            self.USERS_URL,
+                            params=[("id", uid) for uid in chunk],
+                            headers={
+                                "Authorization": f"Bearer {self._tm.bot_token}",
+                                "Client-Id": self._client_id,
+                            },
+                            timeout=10,
+                        )
+                        if resp.status_code == 401:
+                            if attempt == 0:
+                                refreshed = await self._tm.refresh("bot")
+                                if not refreshed:
+                                    return result
+                                continue
+                            return result
+                        resp.raise_for_status()
+                        for user in resp.json().get("data", []):
+                            result[user["id"]] = user["login"]
+                        break
+        except Exception as exc:
+            logger.warning("get_users_by_ids failed: {e}", e=exc)
+        return result
+
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
 
@@ -174,23 +213,23 @@ class TwitchAPI:
                         logger.error("Twitch streams API 401 after refresh, giving up")
                         break
                     resp.raise_for_status()
-                data = resp.json().get("data", [])
-                if not data:
+                    data = resp.json().get("data", [])
+                    if not data:
+                        return {
+                            "live": False,
+                            "title": None,
+                            "category": None,
+                            "viewers": 0,
+                            "started_at": None,
+                        }
+                    s = data[0]
                     return {
-                        "live": False,
-                        "title": None,
-                        "category": None,
-                        "viewers": 0,
-                        "started_at": None,
+                        "live": True,
+                        "title": s.get("title"),
+                        "category": s.get("game_name"),
+                        "viewers": s.get("viewer_count", 0),
+                        "started_at": s.get("started_at"),
                     }
-                s = data[0]
-                return {
-                    "live": True,
-                    "title": s.get("title"),
-                    "category": s.get("game_name"),
-                    "viewers": s.get("viewer_count", 0),
-                    "started_at": s.get("started_at"),
-                }
         except Exception as exc:
             logger.warning("Failed to fetch Twitch stream status: {e}", e=exc)
             return {

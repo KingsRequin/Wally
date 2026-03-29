@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -126,7 +127,7 @@ async def list_instances(request: Request) -> dict:
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
-                ["docker", "inspect", "--format", "{{.State.Status}}", f"wally-{slug}"],
+                ["/usr/bin/docker", "inspect", "--format", "{{.State.Status}}", f"wally-{slug}"],
                 capture_output=True, text=True, timeout=5,
             )
             docker_status = result.stdout.strip() or "unknown"
@@ -146,7 +147,7 @@ async def stop_instance(request: Request, slug: str) -> dict:
     compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
     result = await asyncio.to_thread(
         subprocess.run,
-        ["docker", "compose", "-f", str(compose_path), "stop"],
+        ["/usr/bin/docker", "compose", "-f", str(compose_path), "stop"],
         capture_output=True, text=True, timeout=15,
     )
     return {"status": "ok" if result.returncode == 0 else "error", "detail": result.stderr}
@@ -158,7 +159,7 @@ async def start_instance(request: Request, slug: str) -> dict:
     compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
     result = await asyncio.to_thread(
         subprocess.run,
-        ["docker", "compose", "-f", str(compose_path), "start"],
+        ["/usr/bin/docker", "compose", "-f", str(compose_path), "start"],
         capture_output=True, text=True, timeout=15,
     )
     return {"status": "ok" if result.returncode == 0 else "error", "detail": result.stderr}
@@ -173,6 +174,143 @@ async def persona_template(filename: str) -> dict:
     if not path.exists():
         return {"content": ""}
     return {"content": path.read_text(encoding="utf-8")}
+
+
+# ── Instance persona routes ───────────────────────────────────────────────────
+
+_PERSONA_FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md",
+                  "EMOTIONS.md", "WEEKDAYS.md", "SECONDARIES.md", "COMPOSITES.md"]
+
+
+@admin_router.get("/instances/{slug}/persona")
+async def get_instance_persona(slug: str) -> dict:
+    _validate_slug(slug)
+    persona_dir = INSTANCES_DIR / slug / "bot" / "persona"
+    result = {}
+    for fname in _PERSONA_FILES:
+        p = persona_dir / fname
+        result[fname] = p.read_text(encoding="utf-8") if p.exists() else ""
+    return {"persona": result}
+
+
+@admin_router.post("/instances/{slug}/persona/{filename}")
+async def save_instance_persona(slug: str, filename: str, request: Request) -> dict:
+    _validate_slug(slug)
+    if not re.match(r'^[A-Z_]+\.md$', filename):
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide")
+    body = await request.json()
+    content = body.get("content", "")
+    persona_dir = INSTANCES_DIR / slug / "bot" / "persona"
+    persona_dir.mkdir(parents=True, exist_ok=True)
+    (persona_dir / filename).write_text(content, encoding="utf-8")
+    return {"ok": True}
+
+
+# ── Instance update routes ────────────────────────────────────────────────────
+
+def _update_config_path(slug: str) -> Path:
+    return INSTANCES_DIR / slug / "update_config.json"
+
+
+def _load_update_config(slug: str) -> dict:
+    p = _update_config_path(slug)
+    return json.loads(p.read_text()) if p.exists() else {"notify_channel_id": ""}
+
+
+@admin_router.get("/instances/{slug}/update-config")
+async def get_instance_update_config(slug: str) -> dict:
+    _validate_slug(slug)
+    return _load_update_config(slug)
+
+
+@admin_router.post("/instances/{slug}/update-config")
+async def save_instance_update_config(slug: str, request: Request) -> dict:
+    _validate_slug(slug)
+    body = await request.json()
+    channel_id = str(body.get("notify_channel_id", "")).strip()
+    _update_config_path(slug).write_text(json.dumps({"notify_channel_id": channel_id}))
+    return {"ok": True}
+
+
+def _make_update_view(slug: str):
+    import discord
+    view = discord.ui.View(timeout=None)
+    view.add_item(discord.ui.Button(
+        label="⬆️ Mettre à jour",
+        style=discord.ButtonStyle.primary,
+        custom_id=f"update_instance_{slug}",
+    ))
+    return view
+
+
+@admin_router.post("/instances/{slug}/notify-update")
+async def notify_instance_update(slug: str, request: Request) -> dict:
+    _validate_slug(slug)
+    cfg = _load_update_config(slug)
+    channel_id = cfg.get("notify_channel_id", "").strip()
+    if not channel_id:
+        raise HTTPException(status_code=400, detail="Canal de notification non configuré")
+    discord_bot = getattr(request.app.state.wally, "discord_bot", None)
+    if not discord_bot:
+        raise HTTPException(status_code=503, detail="Bot Discord non disponible")
+    channel = discord_bot.get_channel(int(channel_id))
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} introuvable (bot pas dans ce serveur ?)")
+    await channel.send(
+        f"🔄 **Mise à jour disponible** pour l'instance `{slug}` !\n"
+        f"Une nouvelle version du bot est prête. Cliquez pour mettre à jour votre instance.",
+        view=_make_update_view(slug),
+    )
+    logger.info("Update notification sent for instance {}", slug)
+    return {"ok": True}
+
+
+@admin_router.post("/notify-all-updates")
+async def notify_all_instances_update(request: Request) -> dict:
+    slugs = [
+        d.name for d in INSTANCES_DIR.iterdir()
+        if d.is_dir() and (d / "docker-compose.yml").exists()
+        and _load_update_config(d.name).get("notify_channel_id", "").strip()
+    ]
+    results = []
+    for slug in slugs:
+        try:
+            await notify_instance_update(slug, request)
+            results.append({"slug": slug, "ok": True})
+        except Exception as e:
+            results.append({"slug": slug, "ok": False, "error": str(e)})
+    return {"results": results}
+
+
+@admin_router.post("/instances/{slug}/update")
+async def update_instance_now(slug: str) -> dict:
+    _validate_slug(slug)
+    compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
+    if not compose_path.exists():
+        raise HTTPException(status_code=404, detail="Instance introuvable")
+    result = await asyncio.to_thread(
+        subprocess.run,
+        ["/usr/bin/docker", "compose", "-f", str(compose_path), "up", "-d", "--force-recreate"],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr[:500])
+    logger.info("Instance {} updated via dashboard", slug)
+    return {"ok": True}
+
+
+@admin_router.post("/webhook/update")
+async def webhook_update(request: Request) -> dict:
+    """Endpoint appelable depuis un hook post-push pour notifier toutes les instances."""
+    secret = os.getenv("UPDATE_WEBHOOK_SECRET", "")
+    if secret:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if body.get("secret") != secret:
+            raise HTTPException(status_code=403, detail="Secret invalide")
+    return await notify_all_instances_update(request)
 
 
 # ── Wizard routes ─────────────────────────────────────────────────────────────
@@ -307,6 +445,7 @@ async def twitch_callback(request: Request, token: str):
 async def twitch_status(request: Request, token: str) -> dict:
     _check_preview_auth(request, token)
     db = request.app.state.wally.db
+    await _get_valid_invite(token, db)
     session = await db.get_setup_session(token)
     return {
         "bot_connected": bool(session.get("twitch_bot_connected")),

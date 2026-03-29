@@ -368,9 +368,10 @@ class OpenAILLMClient(BaseLLMClient):
                 "input": full_messages,
                 "tools": resp_tools,
             }
-            if self._reasoning_effort and self._reasoning_effort != "none":
+            uses_reasoning = self._reasoning_effort and self._reasoning_effort != "none"
+            if uses_reasoning:
                 resp_kwargs["reasoning"] = {"effort": self._reasoning_effort}
-            if self._max_tokens:
+            if self._max_tokens and not uses_reasoning:
                 resp_kwargs["max_output_tokens"] = self._max_tokens
             response = await self._client.responses.create(**resp_kwargs)
 

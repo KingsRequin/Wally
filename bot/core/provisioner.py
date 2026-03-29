@@ -11,7 +11,7 @@ from loguru import logger
 INSTANCES_DIR = Path("/opt/stacks/wally-instances")
 _WALLY_DIR = Path("/opt/stacks/wally-ai")
 _SHARED_IMAGE = "wally-ai-wally"
-_SHARED_NETWORK = "wally-net"
+_SHARED_NETWORK = "wally-ai_wally-net"
 
 
 async def provision_instance(
@@ -28,7 +28,6 @@ async def provision_instance(
     _write_config_yaml(slug_dir, slug, data)
     _write_persona_files(slug_dir, data)
     _write_docker_compose(slug_dir, slug, port)
-    _create_prompts_symlink(slug_dir)
 
     if not dry_run:
         await _run_docker_compose(slug_dir / "docker-compose.yml")
@@ -169,7 +168,7 @@ def _write_config_yaml(slug_dir: Path, slug: str, data: dict) -> None:
             "size": "1024x1024", "background": "auto",
             "format": "png", "daily_limit": 10, "per_user_limit": 3,
         },
-        "overlay_image": {"display_seconds": 10, "transition_seconds": 1.5},
+        "overlay_image": {"display_duration": 15, "enabled": True},
     }
     (slug_dir / "config.yaml").write_text(yaml.dump(cfg, allow_unicode=True))
 
@@ -183,6 +182,8 @@ def _write_persona_files(slug_dir: Path, data: dict) -> None:
         "EMOTIONS.md": data.get("persona_emotions", ""),
         "EXEMPLES.md": data.get("persona_exemples", ""),
         "WEEKDAYS.md": data.get("persona_weekdays", ""),
+        "COMPOSITES.md": "",
+        "SECONDARIES.md": "",
     }
     for filename, content in files.items():
         (persona_dir / filename).write_text(content)
@@ -205,6 +206,7 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
                     "./config.yaml:/app/config.yaml",
                     "./.env:/app/.env",
                     "./bot/persona:/app/bot/persona",
+                    f"{_WALLY_DIR}/bot/persona/prompts:/app/bot/persona/prompts:ro",
                 ],
                 "restart": "unless-stopped",
             }
@@ -213,20 +215,9 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
     (slug_dir / "docker-compose.yml").write_text(yaml.dump(compose, allow_unicode=True))
 
 
-def _create_prompts_symlink(slug_dir: Path) -> None:
-    link = slug_dir / "bot" / "persona" / "prompts"
-    target = _WALLY_DIR / "bot" / "persona" / "prompts"
-    if link.exists():
-        return
-    if not target.exists():
-        logger.warning("Prompts directory not found at {} — symlink skipped", target)
-        return
-    link.symlink_to(target)
-
-
 async def _run_docker_compose(compose_path: Path) -> None:
     proc = await asyncio.create_subprocess_exec(
-        "docker", "compose", "-f", str(compose_path), "up", "-d",
+        "/usr/bin/docker", "compose", "-f", str(compose_path), "up", "-d",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
