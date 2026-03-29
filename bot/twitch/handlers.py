@@ -75,6 +75,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     channel_name: str = payload.broadcaster.name.lower()
     channel_id = f"twitch:{channel_name}"
 
+    # Incrémentation du compteur de messages pour les visites actives
+    active_visits = getattr(bot, "_active_visits", {})
+    if channel_name in active_visits:
+        active_visits[channel_name]["msg_count"] += 1
+
     # Overlay image command
     overlay_cfg = bot.config.overlay_image
     if overlay_cfg.enabled and content.strip().lower() == overlay_cfg.command.lower():

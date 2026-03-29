@@ -246,3 +246,18 @@ def test_bits_joy_medium():
 def test_bits_joy_large():
     assert _bits_joy(1000) == 0.6
     assert _bits_joy(9999) == 0.6
+
+
+@pytest.mark.asyncio
+async def test_handle_message_increments_visit_msg_count(monkeypatch):
+    """Un message sur une chaîne invitée active doit incrémenter msg_count."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = make_bot()
+    bot.config.twitch.channel = "homechannel"
+    bot._active_visits = {
+        "guestchannel": {"visit_id": 1, "msg_count": 3, "joined_at": time.time() - 100}
+    }
+    payload = make_payload(content="salut !", author_name="viewer1",
+                           author_id="200", channel="guestchannel")
+    await handle_message(bot, payload)
+    assert bot._active_visits["guestchannel"]["msg_count"] == 4
