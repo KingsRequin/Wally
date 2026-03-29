@@ -2109,6 +2109,10 @@ async function openUserModal(userId, userData) {
   var memR = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
   var memories = memR && memR.ok ? (await memR.json()).memories : [];
 
+  // Fetch aliases
+  var aliasesR = await apiFetch('/api/admin/aliases?canonical_uid=' + encodeURIComponent(userId));
+  var aliases = aliasesR && aliasesR.ok ? (await aliasesR.json()) : [];
+
   // Find user data from cached list if not passed
   if (!userData) {
     userData = _memCurrentUsers.find(function(u) { return u.user_id === userId; }) || {};
@@ -2201,6 +2205,27 @@ async function openUserModal(userId, userData) {
       + '</div></div>';
   }
 
+  // Build alias section HTML
+  var aliasHtml = '<div class="mem-linked-section" id="alias-section-' + escAttr(userId) + '">'
+    + '<div class="mem-linked-title">Alias connus</div>'
+    + '<div class="mem-linked-pills" id="alias-pills-' + escAttr(userId) + '">'
+    + (aliases.length === 0 ? '<span style="color:rgba(255,255,255,0.35);font-size:0.8rem">Aucun alias</span>' : '')
+    + aliases.map(function(a) {
+        var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
+        var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
+        return '<div class="mem-linked-pill">'
+          + escHtml(a.nickname)
+          + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
+          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escAttr(a.nickname) + '\',\'' + escAttr(userId) + '\')" title="Supprimer">\u2715</button>'
+          + '</div>';
+      }).join('')
+    + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px">'
+    + '<input type="text" id="alias-input-' + escAttr(userId) + '" placeholder="Ajouter un alias..." class="mem-modal-search" style="flex:1;min-width:0">'
+    + '<button class="mem-modal-action add" style="white-space:nowrap" onclick="addModalAlias(\'' + escAttr(userId) + '\')">Ajouter</button>'
+    + '</div>'
+    + '</div>';
+
   var modal = document.createElement('div');
   modal.className = 'mem-modal';
   modal.innerHTML = '<div class="mem-modal-header">'
@@ -2232,7 +2257,8 @@ async function openUserModal(userId, userData) {
     + '<input type="text" class="mem-modal-search" id="modal-mem-search" placeholder="🔍 Rechercher..." oninput="filterModalMemories(this.value)">'
     + '</div>'
     + '<div id="modal-categories">' + categoriesHtml + '</div>'
-    + linkedHtml;
+    + linkedHtml
+    + aliasHtml;
 
   backdrop.appendChild(modal);
   modal._memories = memories;
@@ -2476,6 +2502,48 @@ async function unlinkFromModal(linkId, userId) {
     var err = r ? await r.json().catch(function() { return {}; }) : {};
     toast(err.detail || 'Erreur déliaison', 'error');
   }
+}
+
+// ── Alias Modal Helpers ────────────────────────────────────────────
+
+async function addModalAlias(userId) {
+  var input = document.getElementById('alias-input-' + userId);
+  if (!input) return;
+  var nickname = input.value.trim();
+  if (!nickname) return;
+  var r = await apiFetch('/api/admin/aliases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nickname: nickname, canonical_uid: userId })
+  });
+  if (!r || !r.ok) return;
+  input.value = '';
+  await _refreshAliasPills(userId);
+}
+
+async function deleteModalAlias(nickname, userId) {
+  var r = await apiFetch('/api/admin/aliases/' + encodeURIComponent(nickname), { method: 'DELETE' });
+  if (!r || !r.ok) return;
+  await _refreshAliasPills(userId);
+}
+
+async function _refreshAliasPills(userId) {
+  var r = await apiFetch('/api/admin/aliases?canonical_uid=' + encodeURIComponent(userId));
+  if (!r || !r.ok) return;
+  var aliases = await r.json();
+  var container = document.getElementById('alias-pills-' + userId);
+  if (!container) return;
+  container.innerHTML = aliases.length === 0
+    ? '<span style="color:rgba(255,255,255,0.35);font-size:0.8rem">Aucun alias</span>'
+    : aliases.map(function(a) {
+        var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
+        var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
+        return '<div class="mem-linked-pill">'
+          + escHtml(a.nickname)
+          + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
+          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escAttr(a.nickname) + '\',\'' + escAttr(userId) + '\')" title="Supprimer">\u2715</button>'
+          + '</div>';
+      }).join('');
 }
 
 // ── Account Linking Flow (grid selection mode) ─────────────────────
