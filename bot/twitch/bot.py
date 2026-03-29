@@ -58,6 +58,10 @@ class WallyTwitch(commands.Bot):
         self._channel_ids: dict[str, str] = {}
         # Chaînes invitées ayant été détectées live au moins une fois
         self._channel_was_live: dict[str, bool] = {}
+        # Visites actives sur chaînes invitées : channel_name → {visit_id, msg_count, joined_at}
+        self._active_visits: dict[str, dict] = {}
+        # Strong refs pour fire-and-forget tasks
+        self._bg_tasks: set[asyncio.Task] = set()
         self.fact_extractor = None  # set by main.py after construction
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
@@ -72,6 +76,13 @@ class WallyTwitch(commands.Bot):
 
     def set_cooldown(self, user_id: str) -> None:
         self._cooldowns[user_id] = time.time()
+
+    def _fire(self, coro) -> asyncio.Task:
+        """Fire-and-forget avec strong reference pour éviter la GC."""
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+        return t
 
     async def start(self) -> None:
         """Start EventSub (reading) + IRC (sending to guest channels).
@@ -252,6 +263,14 @@ class WallyTwitch(commands.Bot):
         except Exception as exc:
             logger.warning("IRC: impossible de rejoindre {name}: {e}", name=name, e=exc)
         logger.info("Wally rejoint la chaîne invitée {name} (id={bid})", name=name, bid=broadcaster_id)
+        # Démarrer le tracking de la visite
+        if self.db is not None:
+            visit_id = await self.db.start_twitch_visit(name)
+            self._active_visits[name] = {
+                "visit_id": visit_id,
+                "msg_count": 0,
+                "joined_at": time.time(),
+            }
         return broadcaster_id
 
     async def remove_guest_channel(self, name: str) -> None:
@@ -262,6 +281,15 @@ class WallyTwitch(commands.Bot):
             self.config.save()
         self._channel_ids.pop(name, None)
         self._channel_was_live.pop(name, None)
+        # Finaliser la visite en fire-and-forget
+        info = self._active_visits.pop(name, None)
+        if info:
+            self._fire(self._finalize_visit(
+                name,
+                info["visit_id"],
+                info["joined_at"],
+                info["msg_count"],
+            ))
         # Quitter la chaîne en IRC
         try:
             await self.part_channels([name])
@@ -269,6 +297,61 @@ class WallyTwitch(commands.Bot):
             logger.warning("IRC: impossible de quitter {name}: {e}", name=name, e=exc)
         await self._restart_eventsub()
         logger.info("Wally a quitté la chaîne invitée {name}", name=name)
+
+    async def _finalize_visit(
+        self,
+        channel: str,
+        visit_id: int,
+        joined_at: float,
+        msg_count: int,
+    ) -> None:
+        """Génère un résumé LLM de la visite et persiste la ligne twitch_visits."""
+        from bot.core.prompts import load_prompt
+        left_at = time.time()
+
+        # Récupérer les messages capturés pendant la visite
+        context = self.memory.get_context(f"twitch:{channel}")
+        summary: str | None = None
+        try:
+            system_prompt = load_prompt(
+                "twitch_visit_summary",
+                fallback=(
+                    "Tu es Wally. Résume en 3-5 lignes à la première personne "
+                    "ta visite sur la chaîne Twitch de {channel}, style carnet de voyage."
+                ).format(channel=channel),
+            )
+            if context:
+                messages_text = "\n".join(
+                    f"[{m['author']}]: {m['content']}" for m in context[-50:]
+                )
+                user_content = (
+                    f"Chaîne visitée : {channel}\n"
+                    f"Durée : {int(left_at - joined_at) // 60} minutes\n"
+                    f"Messages vus :\n{messages_text}"
+                )
+            else:
+                user_content = (
+                    f"Chaîne visitée : {channel}\n"
+                    f"Durée : {int(left_at - joined_at) // 60} minutes\n"
+                    f"Pas de messages capturés."
+                )
+            summary = await self.llm_secondary.complete(
+                system_prompt,
+                [{"role": "user", "content": user_content}],
+                purpose="twitch_visit_summary",
+            )
+        except Exception as exc:
+            logger.warning("_finalize_visit: LLM failed for {ch}: {e}", ch=channel, e=exc)
+
+        if self.db is not None:
+            try:
+                await self.db.end_twitch_visit(visit_id, left_at, msg_count, summary)
+                logger.info(
+                    "Visite {ch} finalisée : {d}min, {n} msgs",
+                    ch=channel, d=int(left_at - joined_at) // 60, n=msg_count,
+                )
+            except Exception as exc:
+                logger.warning("_finalize_visit: DB write failed: {e}", e=exc)
 
     async def _restart_eventsub(self) -> None:
         """Tear down existing EventSub sockets and reconnect with fresh tokens."""
