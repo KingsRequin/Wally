@@ -713,8 +713,8 @@ async def delete_note(note_id: int, request: Request) -> dict:
 
 @router.get("/aliases")
 async def list_aliases(request: Request, canonical_uid: str | None = None):
-    db = request.app.state.wally.db
-    return await db.list_aliases(canonical_uid=canonical_uid)
+    state = request.app.state.wally
+    return await state.db.list_aliases(canonical_uid=canonical_uid)
 
 
 @router.post("/aliases")
