@@ -499,6 +499,10 @@ Volume mounts per instance:
 ./data:/app/data              # isolated SQLite DB
 ./bot/persona:/app/bot/persona # instance persona files
 /opt/stacks/wally-ai/bot/persona/prompts:/app/bot/persona/prompts:ro  # shared prompt templates
+/var/run/docker.sock:/var/run/docker.sock           # Docker socket for self-update
+/usr/bin/docker:/usr/bin/docker:ro                  # docker CLI binary
+/usr/libexec/docker/cli-plugins/docker-compose:ro   # compose plugin
+./docker-compose.yml:/app/docker-compose.yml:ro     # self-reference for recreation
 ```
 The prompts directory is shared read-only from the main bot — no symlink needed, volume mount
 is the correct approach (symlinks across containers don't resolve).
@@ -506,10 +510,38 @@ is the correct approach (symlinks across containers don't resolve).
 Each instance uses `QDRANT_COLLECTION_NAME=wally_{slug}` for memory isolation on the shared Qdrant.
 `sync_memory_users_from_qdrant` reads this env var — instances import their own users only.
 
+### Self-Update Mechanism
+Controlled update workflow: admin tests the new image, then "publishes" an update to specific
+instances. The instance's control bar shows an amber "Update dispo" button only when flagged.
+
+**Flag file**: `INSTANCES_DIR/{slug}/data/update_available` — touched by the main bot,
+read by the instance via `Path("/app/data/update_available").exists()`. Uses the already-mounted
+`data` volume as the signal channel — no extra infrastructure.
+
+**Self-recreation**: `POST /api/admin/self-update` on the instance side. Uses
+`subprocess.Popen(["/usr/bin/docker", "compose", "-f", COMPOSE_FILE, "up", "-d", "--force-recreate"], start_new_session=True)`.
+The `start_new_session=True` detaches the process so the HTTP response is returned before the
+container stops. `COMPOSE_FILE=/app/docker-compose.yml` is set in `.env`.
+
+**is_main detection**: `GET /api/admin/config` returns `"is_main": INSTANCES_DIR.exists()`.
+Used by the frontend to hide the Instances sub-tab and show/hide the self-update button.
+
+**`pollBotStatus()` (every 5s)**: reads `update_available` from `/api/admin/bot/status` and
+toggles `#update-group` visibility in the control bar. The amber pulse button calls `triggerSelfUpdate()`
+which calls the endpoint then `_waitForReconnect()`.
+
 ### Dashboard — Onglet Instances
-Admin tab showing all provisioned instances (from `INSTANCES_DIR`). Per-instance:
-notify-update button (sends Discord message with update button), direct dashboard link.
-Routes: `GET /api/admin/instances`, `POST /api/admin/instances/{slug}/notify-update`.
+Admin tab showing all provisioned instances (from `setup_invites` table). Per-instance:
+- notify-update button (sends Discord message with update button)
+- publish-update controls: "📤 Publier update" / "✓ Publiée — Annuler" based on flag state
+- "Publier à tous" header button
+
+Routes under `/api/admin/setup/`:
+- `GET /instances` — list with `update_available` per instance
+- `POST /instances/{slug}/notify-update` — Discord notification
+- `POST /instances/{slug}/publish-update` — touch flag file
+- `DELETE /instances/{slug}/publish-update` — remove flag file
+- `POST /instances/publish-all-updates` — touch flag for all instances
 
 ---
 
