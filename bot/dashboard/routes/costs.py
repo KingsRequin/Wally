@@ -55,6 +55,7 @@ PURPOSE_FEATURE_MAP: dict[str, str] = {
     "reminder": "Système",
     "twitch_visit_summary": "Système",
     "twitch_overlay_announce": "Système",
+    "session_analysis": "Mémoire",
 }
 
 
@@ -249,9 +250,7 @@ async def costs_prices(request: Request) -> dict:
     from bot.core.llm.openai_client import MODEL_COSTS
     from bot.core.llm.claude_client import CLAUDE_MODEL_COSTS
     result: dict[str, dict] = {}
-    for model, (inp, out) in MODEL_COSTS.items():
-        result[model] = {"input_per_1k": round(inp / 1000, 8), "output_per_1k": round(out / 1000, 8)}
-    for model, (inp, out) in CLAUDE_MODEL_COSTS.items():
+    for model, (inp, out) in {**MODEL_COSTS, **CLAUDE_MODEL_COSTS}.items():
         result[model] = {"input_per_1k": round(inp / 1000, 8), "output_per_1k": round(out / 1000, 8)}
     return result
 
