@@ -87,6 +87,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.config.bot.love_decay_lambda = 0.02
     bot.llm.complete = AsyncMock(return_value="Réponse de Wally")
+    bot.llm.complete_with_tools = AsyncMock(return_value=("Réponse de Wally", []))
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.search_global = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
@@ -97,6 +98,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
     bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_persistent_notes = AsyncMock(return_value=[])
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_prelude_block = MagicMock(return_value="")
     bot.prompts.build_context_block = MagicMock(return_value="")
@@ -145,7 +147,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.fact_extractor.record_message.assert_called_once()
 
     # La target notice identifiant le destinataire est incluse dans le user_content
-    llm_call = bot.llm.complete.call_args
+    llm_call = bot.llm.complete_with_tools.call_args
     user_content = llm_call.args[1][0]["content"]
     assert "Tu réponds à **TestUser" in user_content
     assert "Ne confonds JAMAIS" in user_content

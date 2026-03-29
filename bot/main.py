@@ -328,6 +328,71 @@ async def main() -> None:
         handler=_reminder_handler,
     ))
 
+    async def _join_twitch_channel_handler(payload: dict, target: dict) -> str:
+        channel = payload.get("channel", "").lower().strip()
+        if not channel:
+            return "Nom de chaîne manquant."
+        if twitch_bot is None:
+            return "Twitch non disponible."
+        result = await twitch_bot.add_guest_channel(channel)
+        if result == "already_added":
+            return f"Je suis déjà dans la chaîne {channel}."
+        if result is None:
+            return f"Impossible de rejoindre {channel} — chaîne introuvable ou API indisponible."
+        return f"J'ai rejoint la chaîne {channel}."
+
+    await action_registry.register("join_twitch_channel", ActionDefinition(
+        name="join_twitch_channel",
+        description="Rejoindre une chaîne Twitch en tant qu'invité",
+        parameters={"type": "object", "properties": {"channel": {"type": "string"}}, "required": ["channel"]},
+        handler=_join_twitch_channel_handler,
+    ))
+
+    async def _send_message_to_channel_handler(payload: dict, target: dict) -> str:
+        message = payload.get("message", "").strip()
+        channel = payload.get("channel", "").strip()
+        platform = payload.get("platform", target.get("platform", "discord")).lower()
+        if not message:
+            return "Message vide."
+        if not channel:
+            return "Salon cible non spécifié."
+        if platform == "discord":
+            channel_id = None
+            if channel.isdigit():
+                channel_id = channel
+            else:
+                ch_name = channel.lstrip("#").lower()
+                for guild in discord_bot.guilds:
+                    for text_channel in guild.text_channels:
+                        if text_channel.name.lower() == ch_name:
+                            channel_id = str(text_channel.id)
+                            break
+                    if channel_id:
+                        break
+            if not channel_id:
+                return f"Salon Discord '{channel}' introuvable."
+            await action_executor.deliver(message, "discord", channel_id)
+        elif platform == "twitch":
+            await action_executor.deliver(message, "twitch", channel.lower())
+        else:
+            return f"Plateforme '{platform}' non reconnue."
+        return f"Message envoyé dans {channel}."
+
+    await action_registry.register("send_message_to_channel", ActionDefinition(
+        name="send_message_to_channel",
+        description="Envoyer un message dans un salon Discord ou une chaîne Twitch spécifique",
+        parameters={
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"},
+                "channel": {"type": "string", "description": "Nom du salon (#général) ou ID numérique Discord, ou nom de la chaîne Twitch"},
+                "platform": {"type": "string", "enum": ["discord", "twitch"]},
+            },
+            "required": ["message", "channel"],
+        },
+        handler=_send_message_to_channel_handler,
+    ))
+
     journal.start(scheduler=shared_scheduler)
     await action_scheduler.reload_all()
     shared_scheduler.start()
@@ -382,6 +447,39 @@ async def main() -> None:
     tasks.append(dashboard_server.serve())
     logger.info("Dashboard server added to gather on port 8080")
 
+    async def _sync_memory_counts() -> None:
+        """Sync memory_count from Qdrant for all users with stale counts (one-shot)."""
+        logger.info("_sync_memory_counts: démarrage (sleep 10s)")
+        await asyncio.sleep(10)
+        logger.info("_sync_memory_counts: réveil, lancement sync")
+        try:
+            memory._init_store()
+            store = memory.store
+            if store is None:
+                logger.warning("_sync_memory_counts: store None, abandon")
+                return
+            users = await db.list_memory_users()
+            stale = [u for u in users if not u.get("memory_count")]
+            logger.info("_sync_memory_counts: {n} utilisateurs à sync", n=len(stale))
+            if not stale:
+                return
+            updated = 0
+            for u in stale:
+                try:
+                    count = await store.count(u["user_id"])
+                    if count > 0:
+                        await db.execute(
+                            "UPDATE memory_users SET memory_count=? WHERE user_id=?",
+                            (count, u["user_id"]),
+                        )
+                        updated += 1
+                except Exception as exc:
+                    logger.debug("count failed for {uid}: {e}", uid=u["user_id"], e=exc)
+            logger.info("memory_count mis à jour pour {n}/{t} utilisateurs", n=updated, t=len(stale))
+        except Exception as exc:
+            logger.warning("_sync_memory_counts failed: {e}", e=exc)
+
+    tasks.append(_sync_memory_counts())
     await asyncio.gather(*tasks)
 
 

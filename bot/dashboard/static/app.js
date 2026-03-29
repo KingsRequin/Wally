@@ -3925,10 +3925,12 @@ function renderMemoireTab() {
         <button class="mem-subnav-pill active" data-subtab="users" onclick="switchMemoireSubTab('users')">Utilisateurs</button>
         <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Globale</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
+        <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes persistantes</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
       <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
+      <div class="mem-subnav-content" id="memoire-sub-notes"></div>
     `;
   }
 
@@ -3972,6 +3974,114 @@ function switchMemoireSubTab(subtab) {
         if (mdTab && origId) mdTab.id = origId;
       });
     }
+  } else if (subtab === 'notes') {
+    if (panel) loadNotesTab(panel);
+  }
+}
+
+
+// ── Persistent notes tab ─────────────────────────────────────────────────────
+
+async function loadNotesTab(panel) {
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:rgba(255,255,255,0.45);padding:16px">Chargement...</p>';
+
+  const r = await apiFetch('/api/admin/notes');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const data = await r.json();
+  const notes = data.notes || [];
+
+  const addFormId = 'notes-add-form';
+  let html = '<div class="card mb-4">';
+  html += '<div class="card-title">AJOUTER UNE NOTE</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px" id="' + addFormId + '">';
+  html += '<input id="note-new-title" class="input" placeholder="Titre" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;color:#fff" />';
+  html += '<textarea id="note-new-content" class="input" rows="3" placeholder="Contenu" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;color:#fff;resize:vertical"></textarea>';
+  html += '<button class="btn btn-sm" onclick="saveNewNote()">Enregistrer</button>';
+  html += '</div></div>';
+
+  if (notes.length === 0) {
+    html += '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune note persistante</p>';
+  } else {
+    html += '<div class="card"><div class="card-title">NOTES (' + notes.length + ')</div><div id="notes-list">';
+    for (const n of notes) {
+      html += renderNoteRow(n);
+    }
+    html += '</div></div>';
+  }
+
+  panel.innerHTML = html;
+}
+
+function renderNoteRow(n) {
+  const id = parseInt(n.id, 10);
+  const title = escHtml(n.title);
+  const content = escHtml(n.content);
+  const date = new Date(n.updated_at * 1000).toLocaleDateString('fr-FR');
+  return '<div class="mem-dash-q-row" id="note-row-' + id + '" style="flex-direction:column;align-items:flex-start;gap:6px">'
+    + '<div style="display:flex;justify-content:space-between;width:100%;align-items:center">'
+    + '<strong>' + title + '</strong>'
+    + '<span style="color:rgba(255,255,255,0.35);font-size:11px">' + date + '</span>'
+    + '</div>'
+    + '<div id="note-content-' + id + '" style="color:rgba(255,255,255,0.7);font-size:13px;white-space:pre-wrap">' + content + '</div>'
+    + '<div class="mem-dash-q-actions">'
+    + '<button class="btn btn-sm btn-outline" onclick="editNote(' + id + ')">Modifier</button>'
+    + '<button class="btn btn-sm btn-danger" onclick="deleteNote(' + id + ')">Supprimer</button>'
+    + '</div>'
+    + '</div>';
+}
+
+async function saveNewNote() {
+  const title = (document.getElementById('note-new-title') || {}).value || '';
+  const content = (document.getElementById('note-new-content') || {}).value || '';
+  if (!title.trim() || !content.trim()) { toast('Titre et contenu requis', 'error'); return; }
+  const r = await apiFetch('/api/admin/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+  });
+  if (r && r.ok) {
+    toast('Note enregistrée');
+    const panel = document.getElementById('memoire-sub-notes');
+    if (panel) loadNotesTab(panel);
+  } else {
+    toast('Erreur lors de l\'enregistrement', 'error');
+  }
+}
+
+async function editNote(id) {
+  id = parseInt(id, 10);
+  const contentEl = document.getElementById('note-content-' + id);
+  if (!contentEl) return;
+  const current = contentEl.textContent;
+  const newContent = prompt('Modifier la note :', current);
+  if (newContent === null || newContent.trim() === '' || newContent.trim() === current) return;
+  contentEl.textContent = newContent.trim();
+  const r = await apiFetch('/api/admin/notes/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: document.getElementById('note-row-' + id).querySelector('strong').textContent, content: newContent.trim() }),
+  });
+  if (r && r.ok) {
+    toast('Note modifiée');
+  } else {
+    toast('Erreur lors de la modification', 'error');
+    contentEl.textContent = current;
+  }
+}
+
+async function deleteNote(id) {
+  id = parseInt(id, 10);
+  if (!confirm('Supprimer cette note ?')) return;
+  const row = document.getElementById('note-row-' + id);
+  if (row) { row.style.opacity = '0'; row.style.transition = 'opacity 0.3s'; setTimeout(function() { row.remove(); }, 300); }
+  const r = await apiFetch('/api/admin/notes/' + id, { method: 'DELETE' });
+  if (r && r.ok) {
+    toast('Note supprimée');
+  } else {
+    toast('Erreur lors de la suppression', 'error');
+    const panel = document.getElementById('memoire-sub-notes');
+    if (panel) loadNotesTab(panel);
   }
 }
 

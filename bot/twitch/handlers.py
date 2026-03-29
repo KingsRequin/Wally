@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from bot.core.prompts import assemble_memory_context
-from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag
+from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
@@ -132,6 +132,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     badge_ids = {b.id if hasattr(b, "id") else str(b) for b in badges}
     if "bot" in badge_ids:
         return
+
+    # Persiste le login Twitch pour que le dashboard affiche un nom lisible
+    await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
 
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
@@ -265,6 +268,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
+        # Persistent notes
+        try:
+            persistent_notes = await bot.db.get_persistent_notes()
+        except Exception:
+            persistent_notes = []
+
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
@@ -278,6 +287,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             relationship_context=relationship_context,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
+            persistent_notes=persistent_notes or None,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -285,7 +295,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             f"\n⚠️ Tu réponds à **{author}**. "
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
-            "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre."
+            "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
+            "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
         )
         user_content = prelude_block + context_block + target_notice + f"\n[{author}]: {content}"
 
@@ -302,9 +313,18 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         action_service = getattr(bot, "action_service", None)
         if action_service:
             tools.extend(action_service.get_tool_definitions())
+        tools.extend(_NOTE_TOOLS)
 
         async def _tool_executor(name: str, arguments: str) -> str:
             args = json.loads(arguments)
+            if name == "save_persistent_note":
+                await bot.db.upsert_persistent_note(args["title"], args["content"])
+                return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
+            if name == "delete_persistent_note":
+                deleted = await bot.db.delete_persistent_note(args["title"])
+                if deleted:
+                    return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
+                return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
             if name in ("web_search", "image_search"):
                 if name == "image_search":
                     return await web_search.search_images(args["query"])
@@ -368,7 +388,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
 
-        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id))
+        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author))
 
     except Exception as e:
         logger.error("Twitch message handling error: {e}", e=e)
@@ -382,6 +402,7 @@ async def _post_process(
     trust: float,
     context_messages: list[dict] | None = None,
     channel_id: str = "",
+    username: str = "",
 ) -> None:
     try:
         llm_deltas = await bot.emotion.process_message(
@@ -406,7 +427,7 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
         if llm_deltas and llm_deltas.get("user_facts"):
-            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]))
+            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]), username=username)
     except Exception as e:
         logger.error("Twitch post-process error: {e}", e=e)
 

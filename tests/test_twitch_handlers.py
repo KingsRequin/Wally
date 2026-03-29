@@ -32,6 +32,7 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot.db.update_trust_score = AsyncMock()
     bot.db.update_love_score = AsyncMock()
     bot.db.get_love_score = AsyncMock(return_value=0.0)
+    bot.db.upsert_memory_user = AsyncMock()
     bot.config.bot.love_decay_lambda = 0.02
 
     bot.emotion.get_state = MagicMock(
@@ -50,10 +51,12 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
     bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_persistent_notes = AsyncMock(return_value=[])
 
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
     bot.llm.complete = AsyncMock(return_value="Salut depuis Twitch!")
+    bot.llm.complete_with_tools = AsyncMock(return_value=("Salut depuis Twitch!", []))
 
     # TwitchAPI replaces IRC channel.send
     bot.twitch_api.send_message = AsyncMock()
@@ -163,6 +166,7 @@ async def test_reply_truncated_at_480(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = make_bot()
     bot.llm.complete = AsyncMock(return_value="x" * 600)
+    bot.llm.complete_with_tools = AsyncMock(return_value=("x" * 600, []))
     payload = make_payload(content="wally parle")
     with patch("bot.twitch.handlers.asyncio.create_task"):
         await handle_message(bot, payload)
@@ -199,6 +203,7 @@ async def test_handle_message_exception_is_caught(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = make_bot()
     bot.llm.complete = AsyncMock(side_effect=RuntimeError("OpenAI down"))
+    bot.llm.complete_with_tools = AsyncMock(side_effect=RuntimeError("OpenAI down"))
     payload = make_payload(content="wally erreur")
     # Should not raise — exception is caught and logged
     await handle_message(bot, payload)

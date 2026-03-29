@@ -387,6 +387,7 @@ async def test_discord_handler_adds_globe_reaction_on_search():
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
     bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_persistent_notes = AsyncMock(return_value=[])
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
     bot.prompts.build_prelude_block = MagicMock(return_value="")
@@ -466,6 +467,7 @@ async def test_discord_handler_no_search_when_quota_exceeded():
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
     bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_persistent_notes = AsyncMock(return_value=[])
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
     bot.prompts.build_prelude_block = MagicMock(return_value="")
@@ -484,6 +486,7 @@ async def test_discord_handler_no_search_when_quota_exceeded():
     bot.apex_api = None
 
     bot.llm.complete = AsyncMock(return_value="Regular response")
+    bot.llm.complete_with_tools = AsyncMock(return_value=("Regular response", []))
 
     msg = MagicMock()
     msg.content = "wally hello"
@@ -506,5 +509,5 @@ async def test_discord_handler_no_search_when_quota_exceeded():
         await _respond(bot, msg, "12345", "99999", [])
 
     # Falls back to regular complete (no tools)
-    bot.llm.complete.assert_awaited_once()
+    bot.llm.complete_with_tools.assert_awaited_once()
     bot.llm.complete_with_tools = AsyncMock()  # should not have been called

@@ -309,6 +309,14 @@ CREATE TABLE IF NOT EXISTS setup_sessions (
     step_data   TEXT NOT NULL DEFAULT '{}',
     updated_at  REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS persistent_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL UNIQUE,
+    content     TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+);
 """
 
 
@@ -399,6 +407,14 @@ class Database:
             logger.info("Trust score migration applied: all scores shifted by -0.5")
         except aiosqlite.OperationalError:
             pass  # Column already exists → migration already applied
+        # Migration: add last_attempt_at to memory_questions
+        try:
+            await conn.execute(
+                "ALTER TABLE memory_questions ADD COLUMN last_attempt_at REAL DEFAULT NULL"
+            )
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -416,6 +432,35 @@ class Database:
     async def execute(self, query: str, params=()):
         await self._conn.execute(query, params)
         await self._conn.commit()
+
+    # ── Persistent notes ─────────────────────────────────────────────────────
+
+    async def upsert_persistent_note(self, title: str, content: str) -> None:
+        now = time.time()
+        await self._conn.execute(
+            """
+            INSERT INTO persistent_notes (title, content, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(title) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at
+            """,
+            (title.strip(), content.strip(), now, now),
+        )
+        await self._conn.commit()
+
+    async def delete_persistent_note(self, title: str) -> bool:
+        async with self._conn.execute(
+            "DELETE FROM persistent_notes WHERE title = ?", (title.strip(),)
+        ) as cursor:
+            affected = cursor.rowcount
+        await self._conn.commit()
+        return affected > 0
+
+    async def get_persistent_notes(self) -> list[dict]:
+        async with self._conn.execute(
+            "SELECT id, title, content, created_at, updated_at FROM persistent_notes ORDER BY updated_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     # ── Cost tracking ────────────────────────────────────────────────────────
 
@@ -805,16 +850,18 @@ class Database:
         )
 
     async def get_pending_question(
-        self, user_id: str, max_attempts: int = 3
+        self, user_id: str, max_attempts: int = 3, retry_after_seconds: float = 86400.0
     ) -> dict | None:
+        retry_cutoff = time.time() - retry_after_seconds
         cursor = await self._conn.execute(
             "SELECT * FROM memory_questions"
-            " WHERE user_id = ? AND resolved = 0 AND attempts < ?"
+            " WHERE user_id = ? AND resolved = 0"
+            "   AND (attempts < ? OR (last_attempt_at IS NOT NULL AND last_attempt_at < ?))"
             " ORDER BY"
             "   CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
             "   created_at ASC"
             " LIMIT 1",
-            (user_id, max_attempts),
+            (user_id, max_attempts, retry_cutoff),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
@@ -828,8 +875,8 @@ class Database:
 
     async def increment_question_attempts(self, question_id: int) -> None:
         await self.execute(
-            "UPDATE memory_questions SET attempts = attempts + 1 WHERE id = ?",
-            (question_id,),
+            "UPDATE memory_questions SET attempts = attempts + 1, last_attempt_at = ? WHERE id = ?",
+            (time.time(), question_id),
         )
 
     async def resolve_question(self, question_id: int) -> None:
@@ -947,12 +994,16 @@ class Database:
         """Supprime un utilisateur de memory_users (après fusion de comptes)."""
         await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))
 
-    async def sync_memory_users_from_qdrant(self, qdrant_url: str) -> int:
+    async def sync_memory_users_from_qdrant(self, qdrant_url: str, collection_name: str | None = None) -> int:
         """Imports into memory_users the user_ids found in Qdrant.
 
         Returns the number of newly inserted users.
         Silent if Qdrant is unavailable.
+        collection_name defaults to QDRANT_COLLECTION_NAME env var (fallback: "wally_memory").
         """
+        import os
+        if collection_name is None:
+            collection_name = os.getenv("QDRANT_COLLECTION_NAME", "wally_memory")
         try:
             from qdrant_client import QdrantClient
             client = QdrantClient(url=qdrant_url)
@@ -961,7 +1012,7 @@ class Database:
             while True:
                 points, next_offset = await asyncio.to_thread(
                     client.scroll,
-                    collection_name="wally_memory",
+                    collection_name=collection_name,
                     limit=100,
                     with_payload=True,
                     with_vectors=False,

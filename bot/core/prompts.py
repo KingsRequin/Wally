@@ -145,6 +145,7 @@ class PromptBuilder:
         secondary_directives: dict[str, str] | None = None,
         active_secondaries: list[tuple[str, float]] | None = None,
         mood_state: dict[str, float] | None = None,
+        persistent_notes: list[dict] | None = None,
     ) -> str:
         parts = []
         if persona_block:
@@ -260,6 +261,13 @@ class PromptBuilder:
             parts.append(
                 f"\n--- Connaissances générales (communauté) ---\n{global_memory_context}"
             )
+
+        # Persistent notes (written by the LLM itself for long-term retention)
+        if persistent_notes:
+            lines = ["\n--- Notes persistantes ---"]
+            for note in persistent_notes:
+                lines.append(f"**{note['title']}** : {note['content']}")
+            parts.append("\n".join(lines))
 
         return "\n".join(parts)
 

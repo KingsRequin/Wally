@@ -18,13 +18,13 @@ CREATE_TOOL = {
     "type": "function",
     "function": {
         "name": "create_action_task",
-        "description": "Créer une tâche planifiée (rappel, recherche web, génération d'image...)",
+        "description": "Créer une tâche planifiée (rappel, rejoindre un stream Twitch, envoyer un message dans un salon...)",
         "parameters": {
             "type": "object",
             "properties": {
                 "action_type": {
                     "type": "string",
-                    "enum": ["reminder", "web_search", "image_generate"],
+                    "enum": ["reminder", "join_twitch_channel", "send_message_to_channel"],
                     "description": "Type d'action à exécuter",
                 },
                 "description": {
@@ -36,9 +36,9 @@ CREATE_TOOL = {
                     "description": (
                         "Paramètres spécifiques à l'action. "
                         "Pour reminder: {\"message\": \"le texte exact du rappel à envoyer\"}. "
-                        "Pour web_search: {\"query\": \"...\"}. "
-                        "Pour image_generate: {\"prompt\": \"...\"}. "
-                        "IMPORTANT: toujours inclure le champ message/query/prompt avec le contenu demandé par l'utilisateur."
+                        "Pour join_twitch_channel: {\"channel\": \"nom_de_la_chaine\"}. "
+                        "Pour send_message_to_channel: {\"message\": \"...\", \"channel\": \"nom-du-salon-ou-id\", \"platform\": \"discord|twitch\"}. "
+                        "IMPORTANT: toujours inclure le champ requis avec le contenu demandé par l'utilisateur."
                     ),
                 },
                 "schedule": {

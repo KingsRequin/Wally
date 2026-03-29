@@ -19,6 +19,38 @@ if TYPE_CHECKING:
 
 TIMEOUT_REACTIONS = ["💩", "⛔", "😤", "🙅", "😒"]
 
+_NOTE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "save_persistent_note",
+            "description": "Sauvegarder une note persistante injectée dans chaque conversation future",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Titre court et unique de la note"},
+                    "content": {"type": "string", "description": "Contenu de la note"},
+                },
+                "required": ["title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_persistent_note",
+            "description": "Supprimer une note persistante par son titre",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Titre exact de la note à supprimer"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+]
+
 
 def _resolve_discord_roles(member) -> list[str]:
     """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable."""
@@ -489,6 +521,12 @@ async def _respond(
                 message.channel, bot.config.bot.prelude_window_size, exclude_id=message.id
             )
 
+        # Persistent notes
+        try:
+            persistent_notes = await bot.db.get_persistent_notes()
+        except Exception:
+            persistent_notes = []
+
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -505,6 +543,7 @@ async def _respond(
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
             relationship_context=relationship_context,
+            persistent_notes=persistent_notes or None,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
         )
@@ -568,7 +607,8 @@ async def _respond(
             f"\n⚠️ Tu réponds à **{author_label}**. "
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
-            "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre."
+            "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
+            "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
         )
         user_content = (
             prelude_block
@@ -599,11 +639,21 @@ async def _respond(
         action_service = getattr(bot, "action_service", None)
         if action_service:
             tools.extend(action_service.get_tool_definitions())
+        tools.extend(_NOTE_TOOLS)
 
         _reaction_emojis: set[str] = set()
 
         async def _tool_executor(name: str, arguments: str) -> str:
             args = json.loads(arguments)
+            if name == "save_persistent_note":
+                await bot.db.upsert_persistent_note(args["title"], args["content"])
+                return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
+            if name == "delete_persistent_note":
+                deleted = await bot.db.delete_persistent_note(args["title"])
+                if deleted:
+                    return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
+                return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
+
             if name in ("web_search", "image_search"):
                 if "🌐" not in _reaction_emojis:
                     try:

@@ -6,6 +6,9 @@ import os
 import re
 from dataclasses import asdict
 
+# Strong refs for fire-and-forget tasks (prevents GC cancellation)
+_bg_tasks: set[asyncio.Task] = set()
+
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
@@ -536,7 +539,9 @@ async def start_discord(request: Request) -> dict:
     token = os.getenv("DISCORD_TOKEN", "")
     if not token:
         raise HTTPException(status_code=500, detail="DISCORD_TOKEN not set")
-    asyncio.create_task(bot.start(token))
+    task = asyncio.create_task(bot.start(token))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
     logger.info("Discord bot started via dashboard")
     return {"ok": True}
 
@@ -562,8 +567,66 @@ async def start_twitch(request: Request) -> dict:
         raise HTTPException(status_code=404, detail="Twitch bot not configured")
     if not getattr(bot, "_closed", True):
         return {"ok": True, "message": "already running"}
-    asyncio.create_task(bot.start())
+    task = asyncio.create_task(bot.start())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
     logger.info("Twitch bot started via dashboard")
+    return {"ok": True}
+
+
+@router.get("/prompts")
+async def list_prompts(request: Request) -> dict:
+    from pathlib import Path
+    app_dir = Path(__file__).parents[3]
+    persona_dir = app_dir / "bot" / "persona"
+    prompts_dir = persona_dir / "prompts"
+
+    persona_files = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md",
+                     "EMOTIONS.md", "WEEKDAYS.md", "SECONDARIES.md", "COMPOSITES.md"]
+    persona = {}
+    for fname in persona_files:
+        p = persona_dir / fname
+        persona[fname] = p.read_text() if p.exists() else ""
+
+    system_prompts = {}
+    if prompts_dir.exists():
+        for p in sorted(prompts_dir.glob("*.md")):
+            system_prompts[p.name] = p.read_text()
+
+    return {"persona": persona, "system_prompts": system_prompts}
+
+
+@router.post("/prompts/persona/{filename}")
+async def save_persona_file(filename: str, request: Request) -> dict:
+    from pathlib import Path
+    import re
+    if not re.match(r'^[A-Z_]+\.md$', filename):
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide")
+    body = await request.json()
+    content = body.get("content", "")
+    persona_dir = Path(__file__).parents[3] / "bot" / "persona"
+    (persona_dir / filename).write_text(content)
+    # Reload persona service if available
+    bot = getattr(request.app.state, "wally", None)
+    if bot and hasattr(bot, "persona"):
+        try:
+            bot.persona.reload()
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@router.post("/prompts/system/{filename}")
+async def save_system_prompt(filename: str, request: Request) -> dict:
+    from pathlib import Path
+    import re
+    if not re.match(r'^[\w_-]+\.md$', filename):
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide")
+    body = await request.json()
+    content = body.get("content", "")
+    prompts_dir = Path(__file__).parents[3] / "bot" / "persona" / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    (prompts_dir / filename).write_text(content)
     return {"ok": True}
 
 
@@ -582,5 +645,51 @@ async def restart_container(request: Request) -> dict:
         if proc.returncode != 0:
             logger.error("Restart failed: {}", stderr.decode())
 
-    asyncio.create_task(_do_restart())
+    task = asyncio.create_task(_do_restart())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
     return {"ok": True, "message": "Restart initiated"}
+
+
+# ── Persistent notes ─────────────────────────────────────────────────────────
+
+@router.get("/notes")
+async def get_notes(request: Request) -> dict:
+    db = request.app.state.wally.db
+    notes = await db.get_persistent_notes()
+    return {"notes": notes}
+
+
+@router.put("/notes/{note_id}")
+async def update_note(note_id: int, request: Request) -> dict:
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="title et content requis")
+    db = request.app.state.wally.db
+    await db.upsert_persistent_note(title, content)
+    return {"ok": True}
+
+
+@router.post("/notes")
+async def create_note(request: Request) -> dict:
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="title et content requis")
+    db = request.app.state.wally.db
+    await db.upsert_persistent_note(title, content)
+    return {"ok": True}
+
+
+@router.delete("/notes/{note_id}")
+async def delete_note(note_id: int, request: Request) -> dict:
+    db = request.app.state.wally.db
+    async with db._conn.execute("SELECT title FROM persistent_notes WHERE id = ?", (note_id,)) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Note introuvable")
+    deleted = await db.delete_persistent_note(row["title"])
+    return {"ok": deleted}
