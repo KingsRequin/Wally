@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import subprocess
 from dataclasses import asdict
+from pathlib import Path
 
 # Strong refs for fire-and-forget tasks (prevents GC cancellation)
 _bg_tasks: set[asyncio.Task] = set()
@@ -13,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
+from bot.core.provisioner import INSTANCES_DIR
 
 router = APIRouter()
 
@@ -33,6 +36,7 @@ async def get_config(request: Request) -> dict:
         "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
         "image_generation": asdict(cfg.image_generation),
         "overlay_image": asdict(cfg.overlay_image),
+        "is_main": INSTANCES_DIR.exists(),
     }
 
 
@@ -521,6 +525,7 @@ async def get_bot_status(request: Request) -> dict:
     return {
         "discord": "connected" if discord_online else "disconnected",
         "twitch": "connected" if twitch_online else "disconnected",
+        "update_available": Path("/app/data/update_available").exists(),
     }
 
 
@@ -702,3 +707,58 @@ async def delete_note(note_id: int, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="Note introuvable")
     deleted = await db.delete_persistent_note(row["title"])
     return {"ok": deleted}
+
+
+# ── Aliases ──────────────────────────────────────────────────────────────────
+
+@router.get("/aliases")
+async def list_aliases(request: Request, canonical_uid: str | None = None):
+    db = request.app.state.wally.db
+    return await db.list_aliases(canonical_uid=canonical_uid)
+
+
+@router.post("/aliases")
+async def create_alias(request: Request):
+    state = request.app.state.wally
+    body = await request.json()
+    nickname = (body.get("nickname") or "").strip()
+    canonical_uid = (body.get("canonical_uid") or "").strip()
+    if not nickname or not canonical_uid:
+        raise HTTPException(status_code=400, detail="nickname and canonical_uid are required")
+    display_name = body.get("display_name")
+    await state.db.upsert_alias(nickname, canonical_uid, display_name=display_name, source="manual", confidence=1.0)
+    await state.memory.load_aliases(state.db)
+    return {"ok": True}
+
+
+@router.delete("/aliases/{nickname}")
+async def delete_alias(request: Request, nickname: str):
+    state = request.app.state.wally
+    await state.db.delete_alias(nickname)
+    await state.memory.load_aliases(state.db)
+    return {"ok": True}
+
+
+@router.post("/self-update")
+async def self_update() -> dict:
+    """Déclenche la mise à jour de ce container via Docker Compose (instances uniquement).
+
+    Requiert COMPOSE_FILE dans l'environnement et /var/run/docker.sock monté.
+    Lance la commande en arrière-plan pour que la réponse HTTP parte avant l'arrêt du container.
+    """
+    compose_file = os.getenv("COMPOSE_FILE", "")
+    if not compose_file:
+        raise HTTPException(status_code=503, detail="COMPOSE_FILE non configuré — instance non compatible")
+    if not Path("/var/run/docker.sock").exists():
+        raise HTTPException(status_code=503, detail="Docker socket non disponible")
+    # Supprimer le flag avant de lancer la mise à jour
+    Path("/app/data/update_available").unlink(missing_ok=True)
+    # Popen avec start_new_session=True : le sous-processus survit à l'arrêt du container parent
+    subprocess.Popen(
+        ["/usr/bin/docker", "compose", "-f", compose_file, "up", "-d", "--force-recreate"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.info("Self-update triggered via dashboard for COMPOSE_FILE={}", compose_file)
+    return {"ok": True}
