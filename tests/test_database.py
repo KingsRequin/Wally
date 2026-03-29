@@ -239,3 +239,63 @@ async def test_cleanup_old_daily_log(tmp_path):
     assert len(msgs) == 1
     assert msgs[0]["author"] == "Bob"
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_twitch_visits_table_exists(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    tables = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")
+    names = {row["name"] for row in tables}
+    assert "twitch_visits" in names
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_start_twitch_visit_returns_id(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    visit_id = await db.start_twitch_visit("azrael")
+    assert isinstance(visit_id, int)
+    assert visit_id > 0
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_end_twitch_visit_fills_fields(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    visit_id = await db.start_twitch_visit("azrael")
+    left_at = time.time() + 600
+    await db.end_twitch_visit(visit_id, left_at, 42, "Super visite chez Azrael.")
+    rows = await db.fetch_all("SELECT * FROM twitch_visits WHERE id = ?", (visit_id,))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["channel"] == "azrael"
+    assert row["left_at"] == left_at
+    assert row["duration_s"] == 600
+    assert row["msg_count"] == 42
+    assert row["summary"] == "Super visite chez Azrael."
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_twitch_visits_for_date(tmp_path):
+    from datetime import date
+    db = await Database.create(str(tmp_path / "test.db"))
+    today = date.today().isoformat()
+
+    # Visite aujourd'hui
+    vid = await db.start_twitch_visit("streamer1")
+    await db.end_twitch_visit(vid, time.time() + 100, 10, "Bonne ambiance.")
+
+    # Visite hier (ne doit pas apparaître)
+    yesterday_ts = time.time() - 86400 - 1
+    await db._conn.execute(
+        "INSERT INTO twitch_visits (channel, joined_at, left_at, duration_s, msg_count, summary) VALUES (?, ?, ?, ?, ?, ?)",
+        ("old_channel", yesterday_ts, yesterday_ts + 300, 300, 5, "Hier."),
+    )
+    await db._conn.commit()
+
+    visits = await db.get_twitch_visits_for_date(today)
+    assert len(visits) == 1
+    assert visits[0]["channel"] == "streamer1"
+    assert visits[0]["summary"] == "Bonne ambiance."
+    await db.close()

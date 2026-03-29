@@ -317,6 +317,16 @@ CREATE TABLE IF NOT EXISTS persistent_notes (
     created_at  REAL NOT NULL,
     updated_at  REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS twitch_visits (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel     TEXT    NOT NULL,
+    joined_at   REAL    NOT NULL,
+    left_at     REAL,
+    duration_s  INTEGER,
+    msg_count   INTEGER DEFAULT 0,
+    summary     TEXT
+);
 """
 
 
@@ -417,6 +427,55 @@ class Database:
             pass
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
+
+    # ── Twitch visits ─────────────────────────────────────────────────────────────
+
+    async def start_twitch_visit(self, channel: str) -> int:
+        """Démarre une visite sur une chaîne invitée. Retourne l'id de la ligne."""
+        now = time.time()
+        cursor = await self._conn.execute(
+            "INSERT INTO twitch_visits (channel, joined_at) VALUES (?, ?)",
+            (channel, now),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def end_twitch_visit(
+        self,
+        visit_id: int,
+        left_at: float,
+        msg_count: int,
+        summary: str | None,
+    ) -> None:
+        """Complète une visite avec durée, comptage et résumé LLM."""
+        joined_at = await self._get_visit_joined_at(visit_id)
+        await self._conn.execute(
+            "UPDATE twitch_visits SET left_at = ?, duration_s = ?, msg_count = ?, summary = ? WHERE id = ?",
+            (left_at, int(left_at - joined_at), msg_count, summary, visit_id),
+        )
+        await self._conn.commit()
+
+    async def _get_visit_joined_at(self, visit_id: int) -> float:
+        """Helper interne : récupère joined_at pour calculer duration_s."""
+        row = await self.fetch_one(
+            "SELECT joined_at FROM twitch_visits WHERE id = ?", (visit_id,)
+        )
+        return float(row["joined_at"]) if row else time.time()
+
+    async def get_twitch_visits_for_date(self, date_str: str) -> list[dict]:
+        """Retourne les visites dont joined_at tombe dans la journée (Europe/Paris).
+
+        date_str : format YYYY-MM-DD
+        """
+        from datetime import date as date_type
+        target = date_type.fromisoformat(date_str)
+        midnight = datetime.combine(target, datetime.min.time(), tzinfo=_TZ_DB).timestamp()
+        end = midnight + 86400
+        rows = await self.fetch_all(
+            "SELECT * FROM twitch_visits WHERE joined_at >= ? AND joined_at < ? ORDER BY joined_at ASC",
+            (midnight, end),
+        )
+        return [dict(row) for row in rows]
 
     async def close(self):
         await self._conn.close()
