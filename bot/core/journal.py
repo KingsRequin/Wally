@@ -509,6 +509,20 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to get gallery images for journal: {e}", e=exc)
 
+        # ── Twitch visits of the day ──
+        twitch_visits_block = ""
+        if self._db is not None:
+            try:
+                visits = await self._db.get_twitch_visits_for_date(effective_date.isoformat())
+                if visits:
+                    lines = [f"**Visites Twitch du jour** : {len(visits)} chaîne(s)"]
+                    for v in visits:
+                        dur = f"{v['duration_s'] // 60} min" if v.get("duration_s") else "durée inconnue"
+                        lines.append(f"- {v['channel']} ({dur}) : {v.get('summary') or '...'}")
+                    twitch_visits_block = "\n".join(lines)
+            except Exception as exc:
+                logger.warning("Failed to get twitch visits for journal: {e}", e=exc)
+
         # ── Current emotion state ──
         emotions = self._emotion.get_state()
         emotions_text = ", ".join(
@@ -533,6 +547,8 @@ class DailyJournal:
             sections.append(yesterday_block)
         if gallery_block:
             sections.append(gallery_block)
+        if twitch_visits_block:
+            sections.append(twitch_visits_block)
         if is_backfill:
             sections.append(f"Écris ton journal intime pour le {display_date}.")
         else:

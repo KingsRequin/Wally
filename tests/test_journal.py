@@ -392,3 +392,39 @@ async def test_journal_uses_mem0_fallback_when_all_sources_empty():
     await journal.generate_and_send()
 
     assert "Alice aime les chats." in _get_journal_user_msg(llm)
+
+
+@pytest.mark.asyncio
+async def test_journal_includes_twitch_visits_block():
+    """Le journal doit inclure les visites Twitch dans son prompt si elles existent."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    db = MagicMock()
+    db.get_today_messages = AsyncMock(return_value=[])
+    db.get_emotion_peaks_since = AsyncMock(return_value=[])
+    db.get_emotion_snapshots_since = AsyncMock(return_value=[])
+    db.get_emotion_averages = AsyncMock(return_value={})
+    db.get_yesterday_journal = AsyncMock(return_value=None)
+    db.get_gallery_images_for_date = AsyncMock(return_value=[])
+    db.insert_journal = AsyncMock()
+    db.get_twitch_visits_for_date = AsyncMock(return_value=[
+        {
+            "channel": "azrael",
+            "joined_at": 1000.0,
+            "left_at": 1000.0 + 2700,
+            "duration_s": 2700,
+            "msg_count": 34,
+            "summary": "Chez Azrael, ambiance chill, un sub pendant ma visite.",
+        }
+    ])
+
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    # Vérifier que le prompt envoyé au LLM contient le bloc visites
+    call_args = llm.complete.call_args
+    user_msg = call_args[0][1][0]["content"]  # messages[0]["content"]
+    assert "azrael" in user_msg.lower()
+    assert "45 min" in user_msg
+    assert "Chez Azrael" in user_msg
