@@ -382,6 +382,7 @@ Updated after every response, not in real-time during generation.
 | `memory_users` | User metadata: user_id, platform, username, avatar_url, last_updated |
 | `action_permissions` | ACL par type d'action: rôle min Twitch, enabled (`min_role_discord` kept but ignored) |
 | `action_permissions_discord` | Rôles Discord autorisés par (action_type, guild_id, role_id) — multi-select |
+| `persistent_notes` | Notes explicites du LLM: id, title (UNIQUE), content, created_at, updated_at |
 
 ---
 
@@ -432,6 +433,14 @@ Web dashboard on port 8080, FastAPI + vanilla JS SPA.
 Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
 GZip compression via `GZipMiddleware(minimum_size=1000)`.
 Memory users endpoint paginated (limit/offset, default 50, max 200).
+
+Admin sidebar: 6 tabs with sub-tabs — **Paramètres** (Émotions · LLM · Images),
+**Mémoire** (Utilisateurs · Questions · Notes · Global), **Coûts** (Résumé · Détail),
+**Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay · Instances).
+Legacy tab names redirect transparently (e.g. `admin-config` → `admin-parametres`).
+
+Overlay page (Système > Overlay): two uniform cards (emotions + images), same toggle style,
+OBS URL with copy button for each. `window.location.origin` used — instance-compatible.
 
 ---
 
@@ -641,6 +650,8 @@ Allows the LLM to create, cancel, and list scheduled tasks via tool calling.
 ### Action Types
 - `reminder` — one-shot reminders (schedule type `once`)
 - `reminder_recurring` — recurring reminders (schedule types `interval`/`cron`)
+- `join_twitch_channel` — Wally rejoint un channel Twitch guest à la demande; auto-leave via `_poll_guest_streams()`
+- `send_message_to_channel` — envoie un message dans un salon Discord (résolution par nom ou ID numérique via `executor.deliver()`)
 - The LLM only sees `reminder` in the tool enum. `ActionService.create()` auto-routes to
   `reminder_recurring` based on `schedule.type`. Both share the same handler.
 
@@ -688,6 +699,35 @@ failed, completed) via fan-out queues. Dashboard auto-refreshes the active sub-t
 Same pattern as WebSearchService: `getattr(bot, "action_service", None)` → tools added to
 `complete_with_tools()`. Discord handler adds ⏱️ reaction when action tools are called.
 Role resolution via `_resolve_discord_roles()` / `_resolve_twitch_roles()`.
+
+---
+
+## Notes Persistantes (Mémoire explicite LLM)
+
+Permet au LLM de stocker des notes structurées à long terme, distinctes de la mémoire Qdrant
+(qui est par-utilisateur). Les notes sont globales et survivent aux redémarrages.
+
+Table `persistent_notes` (SQLite) : `id`, `title` (UNIQUE), `content`, `created_at`, `updated_at`.
+`upsert_persistent_note(title, content)` — INSERT OR REPLACE sur conflict title.
+`delete_persistent_note(title) → bool` — retourne True si supprimé.
+`get_persistent_notes() → list[dict]` — toutes les notes, triées par updated_at DESC.
+
+### Tools LLM (`_NOTE_TOOLS` dans `bot/discord/handlers.py`)
+- `save_persistent_note` — crée ou met à jour une note (title, content)
+- `delete_persistent_note` — supprime une note par titre
+
+Ces tools sont **injectés inconditionnellement** dans chaque appel `complete_with_tools()` sur
+Discord et Twitch. `_NOTE_TOOLS` est défini dans `discord/handlers.py` et importé par `twitch/handlers.py`.
+
+### Injection dans le prompt
+`build_system_prompt(persistent_notes=...)` — les notes sont injectées dans un bloc
+`--- Notes persistantes ---` après le contexte mémoire global. Le paramètre accepte
+`list[dict]` avec clés `title` et `content`, ou `None`.
+
+### Dashboard
+Sous-onglet "Notes persistantes" dans l'onglet Mémoire. Routes :
+`GET /api/admin/notes`, `POST /api/admin/notes`, `PUT /api/admin/notes/{note_id}`,
+`DELETE /api/admin/notes/{note_id}`.
 
 ---
 
