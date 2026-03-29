@@ -383,6 +383,7 @@ Updated after every response, not in real-time during generation.
 | `action_permissions` | ACL par type d'action: rôle min Twitch, enabled (`min_role_discord` kept but ignored) |
 | `action_permissions_discord` | Rôles Discord autorisés par (action_type, guild_id, role_id) — multi-select |
 | `persistent_notes` | Notes explicites du LLM: id, title (UNIQUE), content, created_at, updated_at |
+| `twitch_visits` | Visites chaînes Twitch invitées: channel, joined_at, left_at, duration_s, msg_count, summary (résumé LLM) |
 
 ---
 
