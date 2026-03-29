@@ -309,10 +309,10 @@ class WallyTwitch(commands.Bot):
         from bot.core.prompts import load_prompt
         left_at = time.time()
 
-        # Récupérer les messages capturés pendant la visite
-        context = self.memory.get_context(f"twitch:{channel}")
         summary: str | None = None
         try:
+            # Récupérer les messages capturés pendant la visite
+            context = self.memory.get_context(f"twitch:{channel}")
             system_prompt = load_prompt(
                 "twitch_visit_summary",
                 fallback=(
