@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import random
 import re
@@ -265,6 +266,103 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     return True
 
 
+async def _third_party_mention_context(
+    bot,
+    platform: str,
+    author_user_id: str,
+    prelude: list[dict],
+    context_messages: list[dict],
+) -> str:
+    """Detect mentions of third-party users and inject their memories."""
+    # Gather text from recent messages
+    texts = []
+    for msg in (prelude or []):
+        texts.append(msg.get("author", ""))
+        texts.append(msg.get("content", ""))
+    for msg in (context_messages or []):
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            texts.append(content)
+
+    full_text = " ".join(texts)
+    words = re.findall(r"[A-Za-z0-9_À-ÿ]{3,}", full_text)
+
+    # Build candidate set: starts with uppercase or in alias map
+    alias_cache = bot.memory._alias_cache
+    known_nicknames = {
+        k[len("nickname:"):] for k in alias_cache
+        if k.startswith("nickname:")
+    }
+
+    candidates = set()
+    for word in words:
+        if word[0].isupper() or word.lower() in known_nicknames:
+            candidates.add(word)
+
+    # Remove the current author
+    author_lower = author_user_id.lower()
+    candidates = {c for c in candidates if c.lower() != author_lower}
+
+    if not candidates:
+        return ""
+
+    # Load known users for fuzzy matching
+    try:
+        users = await bot.db.list_memory_users(limit=200)
+    except Exception:
+        users = []
+    known_usernames = {u["username"].lower(): u for u in users if u.get("username")}
+
+    parts = []
+    processed = 0
+
+    for token in sorted(candidates):  # sorted for determinism
+        if processed >= 2:
+            break
+
+        token_lower = token.lower()
+        cache_key = f"nickname:{token_lower}"
+
+        if cache_key in alias_cache:
+            # Exact alias match
+            canonical_uid = alias_cache[cache_key]  # e.g. "twitch:mkszedd"
+            uid_parts = canonical_uid.split(":", 1)
+            if len(uid_parts) == 2:
+                third_platform, third_raw_id = uid_parts
+                try:
+                    memories_text = await bot.memory.search(third_platform, third_raw_id, query=token)
+                    if memories_text:
+                        # Find username for display
+                        display = third_raw_id
+                        for u in users:
+                            if u.get("user_id") == canonical_uid:
+                                display = u.get("username", third_raw_id)
+                                break
+                        parts.append(f"--- Souvenirs sur {display} ---\n{memories_text}")
+                        processed += 1
+                except Exception:
+                    pass
+        else:
+            # Fuzzy match against known usernames
+            best_ratio = 0.0
+            best_username = None
+            for uname_lower, udata in known_usernames.items():
+                ratio = difflib.SequenceMatcher(None, token_lower, uname_lower).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_username = udata.get("username", uname_lower)
+
+            if best_ratio >= 0.75 and best_username:
+                pct = int(best_ratio * 100)
+                parts.append(
+                    f"Note interne : '{token}' ressemble à {best_username} (confiance {pct}%) "
+                    f"— si c'est bien lui, mentionne-le naturellement"
+                )
+                processed += 1
+
+    return "\n\n".join(parts)
+
+
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
@@ -459,6 +557,11 @@ async def _respond(
         except Exception:
             pass
 
+        # ── Fetch context messages early (needed for priority 6) ──────
+        context_messages = await bot.memory.get_context_summarized_if_needed(
+            str(message.channel.id)
+        )
+
         # ── Assemble memory context with token budget ──────────────────
         max_tokens = bot.config.bot.memory_context_max_tokens
         memory_parts: list[tuple[int, str]] = []
@@ -505,15 +608,21 @@ async def _respond(
         except Exception:
             pass
 
+        # Priority 6: Third-party mentions
+        try:
+            third_party_ctx = await _third_party_mention_context(
+                bot, platform, user_id, prelude, context_messages
+            )
+            if third_party_ctx:
+                memory_parts.append((6, third_party_ctx))
+        except Exception:
+            pass
+
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
-
-        context_messages = await bot.memory.get_context_summarized_if_needed(
-            str(message.channel.id)
-        )
 
         # Fallback cold start si prelude vide
         if not prelude:

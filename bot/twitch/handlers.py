@@ -2,16 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import os
 import random
+import re
 import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from bot.core.prompts import assemble_memory_context
-from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS
+from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS, _third_party_mention_context
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
@@ -219,6 +221,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
 
+        # ── Fetch context messages early (needed for priority 6) ──────
+        context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
+
         # ── Assemble memory context with token budget ──────────────────
         max_tokens = bot.config.bot.memory_context_max_tokens
         memory_parts: list[tuple[int, str]] = []
@@ -265,13 +270,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
 
+        # Priority 6: Third-party mentions
+        try:
+            third_party_ctx = await _third_party_mention_context(
+                bot, platform, user_id, prelude, context_msgs
+            )
+            if third_party_ctx:
+                memory_parts.append((6, third_party_ctx))
+        except Exception:
+            pass
+
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
-
-        context_msgs = await bot.memory.get_context_summarized_if_needed(channel_id)
 
         # Persistent notes
         try:
