@@ -460,7 +460,10 @@ class Database:
         row = await self.fetch_one(
             "SELECT joined_at FROM twitch_visits WHERE id = ?", (visit_id,)
         )
-        return float(row["joined_at"]) if row else time.time()
+        if row is None:
+            logger.warning("_get_visit_joined_at: visit_id {id} not found, duration_s will be 0", id=visit_id)
+            return time.time()
+        return float(row["joined_at"])
 
     async def get_twitch_visits_for_date(self, date_str: str) -> list[dict]:
         """Retourne les visites dont joined_at tombe dans la journée (Europe/Paris).
