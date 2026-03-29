@@ -596,6 +596,48 @@ class Database:
         count = int(row["count"]) if row else 0
         return {"total": round(total, 6), "count": count}
 
+    async def get_cost_logs_paginated(
+        self,
+        since_ts: float,
+        page: int = 1,
+        limit: int = 50,
+    ) -> dict:
+        """Journal paginé des appels LLM avec résolution username."""
+        offset = (page - 1) * limit
+        rows = await self.fetch_all(
+            "SELECT cl.timestamp, cl.model, cl.input_tokens, cl.output_tokens, "
+            "cl.cost_usd, cl.purpose, cl.user_id, mu.username "
+            "FROM cost_log cl "
+            "LEFT JOIN memory_users mu ON mu.user_id = cl.user_id "
+            "WHERE cl.timestamp >= ? "
+            "ORDER BY cl.timestamp DESC "
+            "LIMIT ? OFFSET ?",
+            (since_ts, limit, offset),
+        )
+        count_row = await self.fetch_one(
+            "SELECT COUNT(*) AS n FROM cost_log WHERE timestamp >= ?",
+            (since_ts,),
+        )
+        total = count_row["n"] if count_row else 0
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "logs": [
+                {
+                    "datetime": datetime.fromtimestamp(r["timestamp"], tz=_TZ_DB).strftime("%Y-%m-%d %H:%M:%S"),
+                    "model": r["model"] or "",
+                    "input_tokens": r["input_tokens"] or 0,
+                    "output_tokens": r["output_tokens"] or 0,
+                    "cost_usd": round(float(r["cost_usd"]), 6),
+                    "purpose": r["purpose"] or "",
+                    "user_id": r["user_id"] or "",
+                    "username": r["username"] or "",
+                }
+                for r in rows
+            ],
+        }
+
     # ── Timeout / mute ───────────────────────────────────────────────────────
 
     async def add_timeout(

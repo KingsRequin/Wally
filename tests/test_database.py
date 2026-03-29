@@ -299,3 +299,34 @@ async def test_get_twitch_visits_for_date(tmp_path):
     assert visits[0]["channel"] == "streamer1"
     assert visits[0]["summary"] == "Bonne ambiance."
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_cost_logs_paginated_basic(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    ts = time.time()
+    # Use a real Discord snowflake ID (≥13 digits)
+    discord_user_id = "discord:610550333042589752"
+    await db.log_cost("gpt-5", 100, 50, 0.001, purpose="discord_response", user_id=discord_user_id)
+    await db.log_cost("gpt-5-mini", 80, 30, 0.0005, purpose="emotion_analysis", user_id=None)
+    await db.upsert_memory_user(discord_user_id, "discord", username="Azrael")
+
+    result = await db.get_cost_logs_paginated(ts - 1, page=1, limit=10)
+    assert result["total"] == 2
+    assert result["page"] == 1
+    assert len(result["logs"]) == 2
+    second = result["logs"][1]
+    assert second["username"] == "Azrael"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_cost_logs_paginated_pagination(tmp_path):
+    db = await Database.create(str(tmp_path / "test.db"))
+    ts = time.time()
+    for i in range(5):
+        await db.log_cost("gpt-5", 10, 5, 0.0001, purpose="discord_response", user_id=None)
+    result = await db.get_cost_logs_paginated(ts - 1, page=2, limit=2)
+    assert result["total"] == 5
+    assert len(result["logs"]) == 2
+    await db.close()
