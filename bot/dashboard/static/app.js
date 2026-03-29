@@ -131,6 +131,22 @@ async function pollBotStatus() {
     twitchBtn.textContent = data.twitch === 'connected' ? 'Stop' : 'Start';
     twitchBtn.disabled = false;
   }
+  var updateGroup = document.getElementById('update-group');
+  if (updateGroup) updateGroup.style.display = data.update_available ? '' : 'none';
+}
+
+async function triggerSelfUpdate() {
+  var btn = document.getElementById('update-available-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Mise à jour…'; }
+  var r = await apiFetch('/api/admin/self-update', { method: 'POST' });
+  if (!r || !r.ok) {
+    var d = r ? await r.json() : {};
+    toast('Erreur : ' + (d.detail || '?'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Update dispo'; }
+    return;
+  }
+  toast('Mise à jour lancée, redémarrage en cours…', 'success');
+  setTimeout(function() { _waitForReconnect(); }, 3000);
 }
 
 function startControlBarPolling() {
@@ -616,6 +632,15 @@ function startEmotionSSE() {
   emotionSSE.onerror = () => {};
 }
 
+// ── Canvas helpers ────────────────────────────────────────────────────────────
+
+function _canvasContentWidth(canvas) {
+  const parent = canvas.parentElement;
+  if (!parent) return canvas.offsetWidth || 800;
+  const cs = getComputedStyle(parent);
+  return Math.floor(parent.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) || 800;
+}
+
 // ── Emotion canvas graph ──────────────────────────────────────────────────────
 
 async function loadEmotionHistory(since) {
@@ -642,7 +667,7 @@ async function loadEmotionHistory(since) {
 function showGraphEmpty(canvasId, message) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
+  const W = _canvasContentWidth(canvas);
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr;
@@ -767,7 +792,7 @@ function drawEmotionGraph(history) {
   const canvas = document.getElementById('emotionCanvas');
   if (!canvas || !history || history.length < 2) return;
 
-  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
+  const W = _canvasContentWidth(canvas);
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = W * dpr;
@@ -1525,9 +1550,7 @@ function appendLog(entry) {
   div.textContent = `[${entry.time}] ${entry.level.padEnd(7)} ${entry.message}`;
   el.appendChild(div);
   while (el.children.length > MAX_LOG_ENTRIES) el.removeChild(el.firstChild);
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
-    el.scrollTop = el.scrollHeight;
-  }
+  el.scrollTop = el.scrollHeight;
 }
 
 function setLogFilter(level) {
@@ -2773,6 +2796,7 @@ async function unlinkAccounts(id) {
 let currentCostRange = '7d';
 let _costGraphMeta = null;
 let _costRafPending = false;
+let _costsLogsPage = 1;
 
 async function loadCosts() {
   const days = { '7d': 7, '30d': 30, '90d': 90 }[currentCostRange] || 7;
@@ -2846,6 +2870,12 @@ async function loadCosts() {
   // Alert bar
   updateCostAlertBar(alert);
   updateCostBadge(alert);
+
+  // Detail tab sections
+  _costsLogsPage = 1;
+  loadCostsByFeature(days);
+  loadCostPrices();
+  loadCostLogs(1);
 }
 
 function setCostRange(range) {
@@ -2866,7 +2896,7 @@ function drawCostGraph(current, previous) {
   const canvas = document.getElementById('costCanvas');
   if (!canvas || !current || current.length < 1) return;
 
-  const W = (canvas.parentElement?.offsetWidth || canvas.offsetWidth) || 800;
+  const W = _canvasContentWidth(canvas);
   const H = 165;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr;
@@ -3029,6 +3059,229 @@ function updateCostBadge(alert) {
   const badge = document.getElementById('costs-badge');
   if (!badge) return;
   badge.style.display = alert.status === 'critical' ? 'flex' : 'none';
+}
+
+const FEATURE_COLORS = ['#06b6d4','#eab308','#22c55e','#ef4444','#a855f7','#f97316','#3b82f6','#ec4899'];
+
+function drawFeaturePie(data) {
+  const canvas = document.getElementById('featurePieCanvas');
+  if (!canvas) return;
+
+  const W = _canvasContentWidth(canvas);
+  const H = 200;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  ctx.fillStyle = 'transparent';
+  ctx.clearRect(0, 0, W, H);
+
+  if (!data || data.length === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Aucune donnée', W / 2, H / 2);
+    return;
+  }
+
+  const total = data.reduce(function(s, d) { return s + d.cost; }, 0);
+  if (total <= 0) return;
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const radius = Math.min(cx, cy) - 10;
+
+  let startAngle = -Math.PI / 2;
+  data.forEach(function(item, i) {
+    const slice = (item.cost / total) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, startAngle, startAngle + slice);
+    ctx.closePath();
+    ctx.fillStyle = FEATURE_COLORS[i % FEATURE_COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    startAngle += slice;
+  });
+
+  // Legend in feature-bars div
+  const barsEl = document.getElementById('feature-bars');
+  if (!barsEl) return;
+  while (barsEl.firstChild) barsEl.removeChild(barsEl.firstChild);
+
+  data.forEach(function(item, i) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.82rem;';
+
+    const swatch = document.createElement('span');
+    swatch.style.cssText = 'display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0;background:' + FEATURE_COLORS[i % FEATURE_COLORS.length] + ';';
+
+    const name = document.createElement('span');
+    name.style.cssText = 'flex:1;color:rgba(255,255,255,0.85);';
+    name.textContent = item.feature || 'autre';
+
+    const cost = document.createElement('span');
+    cost.style.cssText = 'font-family:var(--font-mono);color:#FFD700;';
+    cost.textContent = '$' + item.cost.toFixed(4);
+
+    const pct = document.createElement('span');
+    pct.style.cssText = 'color:rgba(255,255,255,0.4);min-width:42px;text-align:right;';
+    pct.textContent = (item.pct !== undefined ? item.pct.toFixed(1) : (item.cost / total * 100).toFixed(1)) + '%';
+
+    row.appendChild(swatch);
+    row.appendChild(name);
+    row.appendChild(cost);
+    row.appendChild(pct);
+    barsEl.appendChild(row);
+  });
+}
+
+async function loadCostsByFeature(days) {
+  const r = await apiFetch('/api/admin/costs/by-feature?days=' + days);
+  if (!r || !r.ok) return;
+  const data = await r.json();
+  requestAnimationFrame(() => drawFeaturePie(data));
+}
+
+async function loadCostPrices() {
+  const r = await apiFetch('/api/admin/costs/prices');
+  if (!r || !r.ok) return;
+  const prices = await r.json();
+
+  const tableEl = document.getElementById('cost-prices-table');
+  if (!tableEl) return;
+  while (tableEl.firstChild) tableEl.removeChild(tableEl.firstChild);
+
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  ['Modèle', 'Input / 1k tokens', 'Output / 1k tokens'].forEach(function(label) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    th.style.cssText = 'padding:6px 10px;text-align:left;color:rgba(255,255,255,0.45);font-size:0.75rem;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;';
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  tableEl.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  const models = Object.keys(prices).sort();
+  models.forEach(function(model) {
+    const info = prices[model];
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.04);';
+
+    const tdModel = document.createElement('td');
+    tdModel.textContent = model;
+    tdModel.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:rgba(255,255,255,0.8);font-family:var(--font-mono);';
+
+    const tdIn = document.createElement('td');
+    tdIn.textContent = info.input_per_1k !== undefined ? '$' + info.input_per_1k.toFixed(6) : '—';
+    tdIn.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:#06b6d4;font-family:var(--font-mono);';
+
+    const tdOut = document.createElement('td');
+    tdOut.textContent = info.output_per_1k !== undefined ? '$' + info.output_per_1k.toFixed(6) : '—';
+    tdOut.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:#eab308;font-family:var(--font-mono);';
+
+    tr.appendChild(tdModel);
+    tr.appendChild(tdIn);
+    tr.appendChild(tdOut);
+    tbody.appendChild(tr);
+  });
+  tableEl.appendChild(tbody);
+}
+
+async function loadCostLogs(page) {
+  _costsLogsPage = page || 1;
+  const days = { '7d': 7, '30d': 30, '90d': 90 }[currentCostRange] || 7;
+  const r = await apiFetch('/api/admin/costs/logs?days=' + days + '&page=' + _costsLogsPage + '&limit=50');
+  if (!r || !r.ok) return;
+  const data = await r.json();
+
+  const tableEl = document.getElementById('cost-logs-table');
+  if (!tableEl) return;
+  while (tableEl.firstChild) tableEl.removeChild(tableEl.firstChild);
+
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  ['Date/Heure', 'Modèle', 'Tokens In', 'Tokens Out', 'Coût', 'Purpose', 'Utilisateur'].forEach(function(label) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    th.style.cssText = 'padding:6px 10px;text-align:left;color:rgba(255,255,255,0.45);font-size:0.75rem;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;';
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  tableEl.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  (data.logs || []).forEach(function(log) {
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.04);';
+
+    function cell(text, extraStyle) {
+      const td = document.createElement('td');
+      td.textContent = text !== null && text !== undefined ? String(text) : '—';
+      td.style.cssText = 'padding:5px 10px;font-size:0.78rem;' + (extraStyle || 'color:rgba(255,255,255,0.75);');
+      return td;
+    }
+
+    const dt = log.datetime ? log.datetime.replace('T', ' ').slice(0, 19) : '—';
+    tr.appendChild(cell(dt, 'color:rgba(255,255,255,0.45);font-family:var(--font-mono);white-space:nowrap;'));
+    tr.appendChild(cell(log.model, 'color:rgba(255,255,255,0.75);font-family:var(--font-mono);'));
+    tr.appendChild(cell(log.input_tokens !== undefined ? log.input_tokens.toLocaleString() : '—', 'color:#06b6d4;text-align:right;font-family:var(--font-mono);'));
+    tr.appendChild(cell(log.output_tokens !== undefined ? log.output_tokens.toLocaleString() : '—', 'color:#eab308;text-align:right;font-family:var(--font-mono);'));
+    tr.appendChild(cell(log.cost_usd !== undefined ? '$' + log.cost_usd.toFixed(6) : '—', 'color:#FFD700;font-family:var(--font-mono);'));
+    tr.appendChild(cell(log.purpose, 'color:rgba(255,255,255,0.6);'));
+    tr.appendChild(cell(log.username || '—', 'color:rgba(255,255,255,0.5);'));
+    tbody.appendChild(tr);
+  });
+  tableEl.appendChild(tbody);
+
+  // Pagination
+  const paginEl = document.getElementById('cost-logs-pagination');
+  if (!paginEl) return;
+  while (paginEl.firstChild) paginEl.removeChild(paginEl.firstChild);
+
+  const total = data.total || 0;
+  const limit = data.limit || 50;
+  const currentPage = data.page || 1;
+  const totalPages = Math.ceil(total / limit);
+
+  if (totalPages <= 1) return;
+
+  const from = Math.min((currentPage - 1) * limit + 1, total);
+  const to = Math.min(currentPage * limit, total);
+
+  const paginWrap = document.createElement('div');
+  paginWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 0;font-size:0.82rem;';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = 'Précédent';
+  prevBtn.className = 'btn-secondary';
+  prevBtn.style.cssText = 'padding:4px 12px;font-size:0.78rem;';
+  prevBtn.disabled = currentPage <= 1;
+  prevBtn.onclick = function() { loadCostLogs(currentPage - 1); };
+
+  const info = document.createElement('span');
+  info.style.cssText = 'color:rgba(255,255,255,0.45);';
+  info.textContent = from + '–' + to + ' sur ' + total;
+
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = 'Suivant';
+  nextBtn.className = 'btn-secondary';
+  nextBtn.style.cssText = 'padding:4px 12px;font-size:0.78rem;';
+  nextBtn.disabled = currentPage >= totalPages;
+  nextBtn.onclick = function() { loadCostLogs(currentPage + 1); };
+
+  paginWrap.appendChild(prevBtn);
+  paginWrap.appendChild(info);
+  paginWrap.appendChild(nextBtn);
+  paginEl.appendChild(paginWrap);
 }
 
 async function pollCostsBadge() {
@@ -4318,13 +4571,22 @@ function renderSystemeTab() {
         <button class="mem-subnav-pill active" data-subtab="logs" onclick="switchSystemeSubTab('logs')">Logs</button>
         <button class="mem-subnav-pill" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
         <button class="mem-subnav-pill" data-subtab="overlay" onclick="switchSystemeSubTab('overlay')">Overlay</button>
-        <button class="mem-subnav-pill" data-subtab="instances" onclick="switchSystemeSubTab('instances')">Instances</button>
+        <button class="mem-subnav-pill" data-subtab="instances" onclick="switchSystemeSubTab('instances')" style="display:none">Instances</button>
       </div>
       <div class="mem-subnav-content active" id="systeme-sub-logs"></div>
       <div class="mem-subnav-content" id="systeme-sub-twitch"></div>
       <div class="mem-subnav-content" id="systeme-sub-overlay"></div>
       <div class="mem-subnav-content" id="systeme-sub-instances"></div>
     `;
+    // Afficher le bouton Instances uniquement sur le bot principal
+    apiFetch('/api/admin/config').then(async r => {
+      if (!r || !r.ok) return;
+      const data = await r.json();
+      if (data.is_main) {
+        const btn = el.querySelector('[data-subtab="instances"]');
+        if (btn) btn.style.display = '';
+      }
+    });
   }
 
   switchSystemeSubTab(_systemeSubTab);
@@ -4731,6 +4993,85 @@ function renderCostsTab() {
         </div>
       </div>
     `;
+  }
+
+  // Inject new detail sections (par fonctionnalité, prix tokens, journal) if not yet built
+  const detailEl = document.getElementById('costs-sub-detail');
+  if (detailEl && !detailEl.querySelector('#feature-bars')) {
+    // ── Section 1: Par fonctionnalité ──
+    const sec1 = document.createElement('div');
+    sec1.className = 'card';
+    sec1.style.marginBottom = '24px';
+
+    const title1 = document.createElement('div');
+    title1.className = 'card-title';
+    title1.textContent = 'PAR FONCTIONNALITÉ';
+    sec1.appendChild(title1);
+
+    const pieCanvas = document.createElement('canvas');
+    pieCanvas.id = 'featurePieCanvas';
+    pieCanvas.height = 200;
+    pieCanvas.setAttribute('aria-label', 'Camembert des coûts par fonctionnalité');
+    pieCanvas.style.cssText = 'display:block;width:100%;';
+    sec1.appendChild(pieCanvas);
+
+    const featureBars = document.createElement('div');
+    featureBars.id = 'feature-bars';
+    featureBars.style.cssText = 'margin-top:16px;';
+    sec1.appendChild(featureBars);
+
+    // ── Section 2: Prix des tokens ──
+    const sec2 = document.createElement('div');
+    sec2.className = 'card';
+    sec2.style.marginBottom = '24px';
+
+    const title2 = document.createElement('div');
+    title2.className = 'card-title';
+    title2.textContent = 'PRIX DES TOKENS';
+    sec2.appendChild(title2);
+
+    const pricesWrap = document.createElement('div');
+    pricesWrap.style.cssText = 'overflow-x:auto;';
+    const pricesTable = document.createElement('table');
+    pricesTable.id = 'cost-prices-table';
+    pricesTable.style.cssText = 'width:100%;border-collapse:collapse;';
+    pricesWrap.appendChild(pricesTable);
+    sec2.appendChild(pricesWrap);
+
+    // ── Section 4: Journal des appels ──
+    const sec4 = document.createElement('div');
+    sec4.className = 'card';
+    sec4.style.marginTop = '24px';
+
+    const title4 = document.createElement('div');
+    title4.className = 'card-title';
+    title4.textContent = 'JOURNAL DES APPELS';
+    sec4.appendChild(title4);
+
+    const logsWrap = document.createElement('div');
+    logsWrap.style.cssText = 'overflow-x:auto;';
+    const logsTable = document.createElement('table');
+    logsTable.id = 'cost-logs-table';
+    logsTable.style.cssText = 'width:100%;border-collapse:collapse;';
+    logsWrap.appendChild(logsTable);
+    sec4.appendChild(logsWrap);
+
+    const logsPagin = document.createElement('div');
+    logsPagin.id = 'cost-logs-pagination';
+    sec4.appendChild(logsPagin);
+
+    // Insert sec1 and sec2 before the existing breakdowns grid
+    const breakdownsGrid = detailEl.querySelector('.grid');
+    detailEl.insertBefore(sec2, breakdownsGrid);
+    detailEl.insertBefore(sec1, sec2);
+
+    // Append sec4 (journal) after breakdowns grid, before alert bar
+    const alertBar = document.getElementById('cost-alert-bar');
+    if (alertBar) {
+      detailEl.insertBefore(sec4, alertBar);
+    } else {
+      detailEl.appendChild(sec4);
+    }
   }
 
   switchCostsSubTab(_costsSubTab);
@@ -6557,9 +6898,22 @@ function renderInstancesTab() {
   el.appendChild(invCard);
 
   var instCard = _makeGlassCard(false);
+  var instHeader = document.createElement('div');
+  instHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
   var instTitle = document.createElement('div');
-  instTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:10px';
+  instTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6)';
   instTitle.textContent = 'Instances actives';
+  var publishAllBtn = document.createElement('button');
+  publishAllBtn.className = 'btn btn-sm';
+  publishAllBtn.textContent = '📤 Publier à tous';
+  publishAllBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
+  publishAllBtn.onclick = async function() {
+    var r = await apiFetch('/api/admin/setup/instances/publish-all-updates', { method: 'POST' });
+    if (r && r.ok) { toast('Update publiée pour toutes les instances', 'success'); setTimeout(loadInstances, 500); }
+    else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
+  };
+  instHeader.appendChild(instTitle);
+  instHeader.appendChild(publishAllBtn);
   var instList = document.createElement('div');
   instList.id = 'instances-list';
   instList.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.45)';
@@ -6570,7 +6924,7 @@ function renderInstancesTab() {
   wizardLink.rel = 'noopener noreferrer';
   wizardLink.style.cssText = 'display:inline-block;margin-top:10px;font-size:0.75rem;color:#06b6d4;text-decoration:underline;cursor:pointer';
   wizardLink.textContent = 'Ouvrir le wizard en mode test';
-  instCard.appendChild(instTitle);
+  instCard.appendChild(instHeader);
   instCard.appendChild(instList);
   instCard.appendChild(wizardLink);
   el.appendChild(instCard);
@@ -6728,24 +7082,37 @@ async function loadInstances() {
         };
       })(inst.slug);
 
-      var updateBtn = document.createElement('button');
-      updateBtn.className = 'btn btn-sm';
-      updateBtn.textContent = '⬆️ Mettre à jour';
-      updateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
-      updateBtn.onclick = (function(s, btn) {
-        return async function() {
-          btn.disabled = true; btn.textContent = '⏳ Mise à jour...';
-          var r = await apiFetch('/api/admin/setup/instances/' + s + '/update', { method: 'POST' });
-          btn.disabled = false; btn.textContent = '⬆️ Mettre à jour';
-          if (r && r.ok) { toast('Instance ' + s + ' mise à jour !', 'success'); setTimeout(loadInstances, 1500); }
-          else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
-        };
-      })(inst.slug, updateBtn);
-
       updateRow.appendChild(chanInput);
       updateRow.appendChild(saveBtn);
       updateRow.appendChild(notifyBtn);
-      updateRow.appendChild(updateBtn);
+
+      if (inst.update_available) {
+        var cancelUpdateBtn = document.createElement('button');
+        cancelUpdateBtn.className = 'btn btn-sm';
+        cancelUpdateBtn.textContent = '✓ Publiée — Annuler';
+        cancelUpdateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(34,197,94,0.9)';
+        cancelUpdateBtn.onclick = (function(s) {
+          return async function() {
+            var r = await apiFetch('/api/admin/setup/instances/' + s + '/publish-update', { method: 'DELETE' });
+            if (r && r.ok) { toast('Update annulée pour ' + s, 'success'); setTimeout(loadInstances, 500); }
+            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
+          };
+        })(inst.slug);
+        updateRow.appendChild(cancelUpdateBtn);
+      } else {
+        var publishBtn = document.createElement('button');
+        publishBtn.className = 'btn btn-sm';
+        publishBtn.textContent = '📤 Publier update';
+        publishBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
+        publishBtn.onclick = (function(s) {
+          return async function() {
+            var r = await apiFetch('/api/admin/setup/instances/' + s + '/publish-update', { method: 'POST' });
+            if (r && r.ok) { toast('Update publiée pour ' + s, 'success'); setTimeout(loadInstances, 500); }
+            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
+          };
+        })(inst.slug);
+        updateRow.appendChild(publishBtn);
+      }
       card.appendChild(updateRow);
       el.appendChild(card);
     }
