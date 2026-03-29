@@ -100,7 +100,9 @@ async def test_costs_auth_required(client):
     """Tous les endpoints costs refusent sans token."""
     for path in ["/api/admin/costs/summary", "/api/admin/costs/daily",
                  "/api/admin/costs/breakdown/model", "/api/admin/costs/breakdown/purpose",
-                 "/api/admin/costs/top-users", "/api/admin/costs/alert"]:
+                 "/api/admin/costs/top-users", "/api/admin/costs/alert",
+                 "/api/admin/costs/prices", "/api/admin/costs/by-feature",
+                 "/api/admin/costs/logs"]:
         r = await client.get(path)
         assert r.status_code == 401, f"{path} should require auth"
 
