@@ -5204,6 +5204,7 @@ prompt = PromptBuilder.build(
           <p>Il note les <strong>statistiques</strong> : combien de messages, combien de participants uniques, les top 5 des plus actifs, les heures de pointe, la répartition Discord vs Twitch.</p>
           <p>Puis il rédige un <strong>résumé narratif</strong> de sa journée. Pour les grosses journées (beaucoup de messages), il utilise une technique de résumé multi-passes : il découpe en blocs de 30 messages, résume chaque bloc, puis synthétise les résumés en un texte final.</p>
           <p>Il génère aussi un <strong>graphe d'émotions</strong> (image PNG) montrant l'évolution de ses 5 émotions au cours de la journée, et <strong>forme des opinions</strong> sur les sujets récurrents qu'il a rencontrés (fire-and-forget, en arrière-plan).</p>
+          <p>Si Wally a visité des chaînes Twitch invitées dans la journée, il les mentionne dans son journal comme des <strong>petits voyages</strong> : nom de la chaîne, durée de la visite, ambiance et moments notables, rédigés à la première personne.</p>
 
           <details class="jd-details">
             <summary>🔍 Aller plus loin — DailyJournal et sources de données</summary>
@@ -5228,7 +5229,9 @@ prompt = PromptBuilder.build(
 # Le journal inclut aussi :
 # - Comparaison hebdo (émotions vs moyenne 7 jours)
 # - Le journal de la veille (pour la continuité narrative)
-# - Un graphe Matplotlib (PNG) des émotions du jour</code></pre>
+# - Un graphe Matplotlib (PNG) des émotions du jour
+# - Les visites Twitch du jour (twitch_visits_block) :
+#   chaque visite = résumé LLM carnet de voyage (channel, durée, ambiance)</code></pre>
               <p class="jd-tech-note">Le journal est déclenché par <strong>apscheduler</strong> (cron async) à une heure configurable. Il peut aussi être déclenché manuellement via <code>/wally journal</code>.</p>
               <p class="jd-tech-note">Le résultat est découpé en messages de max 1900 caractères (limite Discord = 2000) et posté dans le salon configuré. Le graphe PNG est envoyé en pièce jointe.</p>
               <p class="jd-tech-note"><strong>Formation d'opinions</strong> : en parallèle du journal, Wally analyse les sujets récurrents de la journée et forme des opinions nuancées qu'il stocke en mémoire. C'est un processus fire-and-forget qui enrichit sa personnalité au fil du temps.</p>

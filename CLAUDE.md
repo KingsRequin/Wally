@@ -414,6 +414,26 @@ In `handle_message()`, before passive capture, Wally ignores messages from:
 2. Any chatter whose badges include `set_id == "bot"` (official Twitch bot badge)
 This filter runs after the self-message filter and before `append_prelude` / `fact_extractor`.
 
+### Twitch Visit Awareness
+Wally tracks his visits to guest Twitch channels and includes them in his daily journal.
+
+`WallyTwitch._active_visits: dict[str, dict]` — map `channel_name → {visit_id, msg_count, joined_at}`.
+
+- **`add_guest_channel(name)`** — inserts a `twitch_visits` row via `db.start_twitch_visit()` and
+  initialises `_active_visits[name]`.
+- **`remove_guest_channel(name)`** — pops the entry and fires `_finalize_visit()` as a background task.
+- **`_finalize_visit(channel, visit_id, joined_at, msg_count)`** — computes duration, pulls channel
+  context from memory, calls `llm_secondary.complete()` with `twitch_visit_summary.md` to generate
+  a 3-5 line "carnet de voyage" summary, then calls `db.end_twitch_visit()`.
+- **`handle_message()`** — for any channel that is in `_active_visits`, increments `msg_count` on
+  every incoming message.
+
+In `DailyJournal.generate_and_send()`, a `twitch_visits_block` is assembled from
+`db.get_twitch_visits_for_date(date)` and injected into the journal prompt alongside the other
+sections. Each visit appears as `channel (X min) : LLM summary`.
+
+Prompt template: `bot/persona/prompts/twitch_visit_summary.md`.
+
 ---
 
 ## /wally setup Model Filter
