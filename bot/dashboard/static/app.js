@@ -4324,10 +4324,12 @@ function renderParametresTab() {
         <button class="mem-subnav-pill active" data-subtab="emotions" onclick="switchParametresSubTab('emotions')">Émotions</button>
         <button class="mem-subnav-pill" data-subtab="llm" onclick="switchParametresSubTab('llm')">LLM</button>
         <button class="mem-subnav-pill" data-subtab="images" onclick="switchParametresSubTab('images')">Images</button>
+        <button class="mem-subnav-pill" data-subtab="apparence" onclick="switchParametresSubTab('apparence')">Apparence</button>
       </div>
       <div class="mem-subnav-content active" id="parametres-sub-emotions"></div>
       <div class="mem-subnav-content" id="parametres-sub-llm"></div>
       <div class="mem-subnav-content" id="parametres-sub-images"></div>
+      <div class="mem-subnav-content" id="parametres-sub-apparence"></div>
     `;
   }
 
@@ -4352,6 +4354,9 @@ function switchParametresSubTab(subtab) {
     _renderParametresLLM(panel);
   } else if (subtab === 'images') {
     _renderParametresImages(panel);
+  } else if (subtab === 'apparence') {
+    _renderParametresApparence(panel);
+    loadTheme();
   }
 }
 
@@ -4683,6 +4688,155 @@ async function saveImageGenConfigParams() {
   }};
   const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
   if (r && r.ok) toast('Config image sauvegardée', 'success');
+}
+
+// ── Apparence Sub-Tab ─────────────────────────────────────────────────────────
+
+function _renderParametresApparence(panel) {
+  if (!panel || panel.children.length > 0) return;
+
+  panel.innerHTML = `
+    <div class="section-card">
+      <h3 class="section-title">Couleurs</h3>
+      <div class="config-grid">
+        <div class="config-row">
+          <label>Couleur d\'accent</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="color" id="theme-accent-picker" oninput="onThemeColorInput(\'accent_color\', this.value)">
+            <input type="text" id="theme-accent-hex" class="config-input" style="width:100px" placeholder="#06b6d4"
+                   oninput="onThemeHexInput(\'accent_color\', \'theme-accent-picker\', this.value)">
+          </div>
+        </div>
+        <div class="config-row">
+          <label>Fond général</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="color" id="theme-bg-picker" oninput="onThemeColorInput(\'bg_color\', this.value)">
+            <input type="text" id="theme-bg-hex" class="config-input" style="width:100px" placeholder="#11151c"
+                   oninput="onThemeHexInput(\'bg_color\', \'theme-bg-picker\', this.value)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" style="margin-top:16px">
+      <h3 class="section-title">Layout</h3>
+      <div class="config-grid">
+        <div class="config-row">
+          <label>Disposition</label>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <label class="radio-option">
+              <input type="radio" name="layout-variant" value="sidebar-left" onchange="onThemeRadio(\'layout_variant\', this.value)">
+              Sidebar gauche
+            </label>
+            <label class="radio-option" style="opacity:0.5">
+              <input type="radio" name="layout-variant" value="sidebar-top" disabled>
+              Navigation top <span class="badge-soon">à venir</span>
+            </label>
+            <label class="radio-option" style="opacity:0.5">
+              <input type="radio" name="layout-variant" value="sidebar-mini" disabled>
+              Sidebar mini <span class="badge-soon">à venir</span>
+            </label>
+          </div>
+        </div>
+        <div class="config-row">
+          <label>Style onglets</label>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <label class="radio-option">
+              <input type="radio" name="tab-style" value="icons-only" onchange="onThemeRadio(\'tab_style\', this.value)">
+              Icônes seules
+            </label>
+            <label class="radio-option" style="opacity:0.5">
+              <input type="radio" name="tab-style" value="icons-labels" disabled>
+              Icônes + labels <span class="badge-soon">à venir</span>
+            </label>
+            <label class="radio-option" style="opacity:0.5">
+              <input type="radio" name="tab-style" value="text-only" disabled>
+              Texte seul <span class="badge-soon">à venir</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+      <button class="btn-primary" onclick="saveTheme()">Enregistrer</button>
+      <span id="theme-save-status" style="font-size:13px;color:#94a3b8"></span>
+    </div>
+  `;
+}
+
+// ── Theming ────────────────────────────────────────────────────────────────────
+
+let _themeChanges = {};
+
+async function loadTheme() {
+  try {
+    const r = await fetch('/api/admin/theme', { headers: { Authorization: `Bearer ${TOKEN}` } });
+    if (!r.ok) return;
+    const t = await r.json();
+    const accentPicker = document.getElementById('theme-accent-picker');
+    const accentHex = document.getElementById('theme-accent-hex');
+    const bgPicker = document.getElementById('theme-bg-picker');
+    const bgHex = document.getElementById('theme-bg-hex');
+    if (accentPicker) { accentPicker.value = t.accent_color; accentHex.value = t.accent_color; }
+    if (bgPicker) { bgPicker.value = t.bg_color; bgHex.value = t.bg_color; }
+    const layoutRadio = document.querySelector(`input[name="layout-variant"][value="${t.layout_variant}"]`);
+    if (layoutRadio) layoutRadio.checked = true;
+    const tabRadio = document.querySelector(`input[name="tab-style"][value="${t.tab_style}"]`);
+    if (tabRadio) tabRadio.checked = true;
+  } catch (e) { console.warn('loadTheme failed', e); }
+}
+
+function onThemeColorInput(field, hexValue) {
+  const hexId = field === 'accent_color' ? 'theme-accent-hex' : 'theme-bg-hex';
+  const hexInput = document.getElementById(hexId);
+  if (hexInput) hexInput.value = hexValue;
+  _themeChanges[field] = hexValue;
+  _reloadThemeCss();
+}
+
+function onThemeHexInput(field, pickerId, hexValue) {
+  if (/^#[0-9a-fA-F]{6}$/.test(hexValue)) {
+    const picker = document.getElementById(pickerId);
+    if (picker) picker.value = hexValue;
+    _themeChanges[field] = hexValue;
+    _reloadThemeCss();
+  }
+}
+
+function onThemeRadio(field, value) {
+  _themeChanges[field] = value;
+}
+
+function _reloadThemeCss() {
+  const link = document.getElementById('theme-link');
+  if (!link) return;
+  link.href = `/static/theme.css?v=${Date.now()}`;
+}
+
+async function saveTheme() {
+  const status = document.getElementById('theme-save-status');
+  if (Object.keys(_themeChanges).length === 0) {
+    if (status) status.textContent = 'Aucune modification.';
+    return;
+  }
+  try {
+    const r = await fetch('/api/admin/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify(_themeChanges),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      if (status) status.textContent = `Erreur: ${err.detail || r.status}`;
+      return;
+    }
+    _themeChanges = {};
+    if (status) { status.textContent = 'Sauvegardé \u2713'; setTimeout(() => { status.textContent = ''; }, 3000); }
+    _reloadThemeCss();
+  } catch (e) {
+    if (status) status.textContent = 'Erreur réseau';
+  }
 }
 
 // ── Système Tab (Logs · Twitch · Overlay · Instances) ────────────────────────
