@@ -51,6 +51,20 @@ async def test_config_yaml_has_trigger_names(instance_dir):
     assert "cindy" in cfg["bot"]["trigger_names"]
     assert cfg["bot"]["language_default"] == "fr"
 
+def test_provisioner_config_includes_theme_defaults(tmp_path):
+    """Le config.yaml généré contient un bloc theme: avec les valeurs par défaut."""
+    import yaml
+    from bot.core.provisioner import _write_config_yaml
+
+    data = {"bot_name": "TestBot", "language_default": "fr"}
+    _write_config_yaml(tmp_path, "testslug", data)
+
+    cfg = yaml.safe_load((tmp_path / "config.yaml").read_text())
+    assert "theme" in cfg
+    assert cfg["theme"]["accent_color"] == "#06b6d4"
+    assert cfg["theme"]["layout_variant"] == "sidebar-left"
+    assert cfg["theme"]["tab_style"] == "icons-only"
+
 @pytest.mark.asyncio
 async def test_persona_files_written(instance_dir):
     from bot.core.provisioner import provision_instance

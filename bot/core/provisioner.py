@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 from pathlib import Path
 
@@ -26,7 +27,7 @@ async def provision_instance(
     _create_directories(slug_dir)
     _write_env(slug_dir, slug, data)
     _write_config_yaml(slug_dir, slug, data)
-    _write_persona_files(slug_dir, data)
+    _write_persona_files(slug_dir, slug, data)
     _write_docker_compose(slug_dir, slug, port)
 
     if not dry_run:
@@ -58,6 +59,7 @@ def _write_env(slug_dir: Path, slug: str, data: dict) -> None:
         f"QDRANT_URL=http://wally-qdrant:6333\n"
         f"QDRANT_COLLECTION_NAME=wally_{slug}\n"
         f"DB_PATH=data/wally.db\n"
+        f"COMPOSE_FILE={INSTANCES_DIR / slug}/docker-compose.yml\n"
         f"CLOUDFLARED_WALLY_TOKEN=\n"
     )
     if data.get("twitch_enabled"):
@@ -169,27 +171,58 @@ def _write_config_yaml(slug_dir: Path, slug: str, data: dict) -> None:
             "format": "png", "daily_limit": 10, "per_user_limit": 3,
         },
         "overlay_image": {"display_duration": 15, "enabled": True},
+        "theme": {
+            "accent_color": "#06b6d4",
+            "bg_color": "#11151c",
+            "surface_color": "rgba(255,255,255,0.03)",
+            "sidebar_bg": "rgba(255,255,255,0.02)",
+            "layout_variant": "sidebar-left",
+            "tab_style": "icons-only",
+        },
     }
     (slug_dir / "config.yaml").write_text(yaml.dump(cfg, allow_unicode=True))
 
 
-def _write_persona_files(slug_dir: Path, data: dict) -> None:
+def _write_persona_files(slug_dir: Path, slug: str, data: dict) -> None:
     persona_dir = slug_dir / "bot" / "persona"
+    staged_dir = _WALLY_DIR / "docs" / f"{slug}-persona"
+
+    def _get(key: str, filename: str) -> str:
+        wizard_val = data.get(key, "")
+        if wizard_val:
+            return wizard_val
+        staged_path = staged_dir / filename
+        if staged_path.exists():
+            return staged_path.read_text()
+        return ""
+
     files = {
-        "SOUL.md": data.get("persona_soul", ""),
-        "IDENTITY.md": data.get("persona_identity", ""),
-        "VOICE.md": data.get("persona_voice", ""),
-        "EMOTIONS.md": data.get("persona_emotions", ""),
-        "EXEMPLES.md": data.get("persona_exemples", ""),
-        "WEEKDAYS.md": data.get("persona_weekdays", ""),
-        "COMPOSITES.md": "",
-        "SECONDARIES.md": "",
+        "SOUL.md": _get("persona_soul", "SOUL.md"),
+        "IDENTITY.md": _get("persona_identity", "IDENTITY.md"),
+        "VOICE.md": _get("persona_voice", "VOICE.md"),
+        "EMOTIONS.md": _get("persona_emotions", "EMOTIONS.md"),
+        "EXEMPLES.md": _get("persona_exemples", "EXEMPLES.md"),
+        "WEEKDAYS.md": _get("persona_weekdays", "WEEKDAYS.md"),
+        "COMPOSITES.md": _get("persona_composites", "COMPOSITES.md"),
+        "SECONDARIES.md": _get("persona_secondaries", "SECONDARIES.md"),
     }
+    if staged_dir.exists():
+        logger.info("Instance {}: loading staged persona from {}", slug, staged_dir)
     for filename, content in files.items():
         (persona_dir / filename).write_text(content)
 
 
+def _get_docker_gid() -> int:
+    """Retourne le GID du socket Docker (pour group_add dans les instances)."""
+    try:
+        return os.stat("/var/run/docker.sock").st_gid
+    except Exception:
+        return 996  # valeur par défaut sur ce host
+
+
 def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
+    compose_path = slug_dir / "docker-compose.yml"
+    docker_gid = _get_docker_gid()
     compose = {
         "networks": {_SHARED_NETWORK: {"external": True}},
         "services": {
@@ -197,6 +230,7 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
                 "image": _SHARED_IMAGE,
                 "container_name": f"wally-{slug}",
                 "user": "1000:1000",
+                "group_add": [str(docker_gid)],
                 "networks": [_SHARED_NETWORK],
                 "env_file": ".env",
                 "ports": [f"0.0.0.0:{port}:8080"],
@@ -207,12 +241,16 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
                     "./.env:/app/.env",
                     "./bot/persona:/app/bot/persona",
                     f"{_WALLY_DIR}/bot/persona/prompts:/app/bot/persona/prompts:ro",
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    "/usr/bin/docker:/usr/bin/docker:ro",
+                    "/usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro",
+                    "./docker-compose.yml:/app/docker-compose.yml:ro",
                 ],
                 "restart": "unless-stopped",
             }
         },
     }
-    (slug_dir / "docker-compose.yml").write_text(yaml.dump(compose, allow_unicode=True))
+    compose_path.write_text(yaml.dump(compose, allow_unicode=True))
 
 
 async def _run_docker_compose(compose_path: Path) -> None:
