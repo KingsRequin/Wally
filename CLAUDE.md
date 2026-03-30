@@ -478,6 +478,12 @@ Qdrant healthcheck: `curl -f http://localhost:6333/healthz`
 Wally `depends_on: qdrant: condition: service_healthy`
 Config and data mounted as volumes — no rebuild needed for config changes.
 
+**Build version tracking**: `docker-compose.yml` passes `GIT_HASH` and `BUILD_DATE` as build
+args (set via env vars at build time). Dockerfile exposes them as `BOT_GIT_HASH` and
+`BOT_BUILD_DATE` environment variables. Returned by `/api/admin/bot/status` and
+`/api/public/status`. Dashboard control bar shows `build <hash> · <date>` in `#version-badge`.
+Instances tab fetches each instance's `/api/public/status` to display its own version inline.
+
 Web dashboard on port 8080, FastAPI + vanilla JS SPA.
 Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
 GZip compression via `GZipMiddleware(minimum_size=1000)`.
@@ -526,20 +532,24 @@ Routes in `bot/dashboard/routes/setup.py` — two routers:
 
 ### Provisioner (`bot/core/provisioner.py`)
 `provision_instance(slug, port, data, dry_run=False)` creates under `INSTANCES_DIR/{slug}/`:
-- `.env` — all secrets + `QDRANT_COLLECTION_NAME=wally_{slug}`, `DB_PATH=data/wally.db`
+- `.env` — all secrets + `QDRANT_COLLECTION_NAME=wally_{slug}`, `DB_PATH=data/wally.db`, `COMPOSE_FILE={instance_dir}/docker-compose.yml`
 - `config.yaml` — full default config (gpt-4o-mini, triggers, emotions, etc.)
 - `bot/persona/` — SOUL, IDENTITY, VOICE, EMOTIONS, EXEMPLES, WEEKDAYS, COMPOSITES, SECONDARIES
 - `docker-compose.yml` — isolated container on a dedicated port, shared network `wally-ai_wally-net`
+
+`_get_docker_gid()` reads the GID of `/var/run/docker.sock` at provisioning time (default 996)
+and injects it as `group_add` in the generated docker-compose so the instance container can
+access the Docker socket without root.
 
 Volume mounts per instance:
 ```
 ./data:/app/data              # isolated SQLite DB
 ./bot/persona:/app/bot/persona # instance persona files
 /opt/stacks/wally-ai/bot/persona/prompts:/app/bot/persona/prompts:ro  # shared prompt templates
-/var/run/docker.sock:/var/run/docker.sock           # Docker socket for self-update
-/usr/bin/docker:/usr/bin/docker:ro                  # docker CLI binary
-/usr/libexec/docker/cli-plugins/docker-compose:ro   # compose plugin
-./docker-compose.yml:/app/docker-compose.yml:ro     # self-reference for recreation
+/var/run/docker.sock:/var/run/docker.sock                                       # Docker socket for self-update
+/usr/bin/docker:/usr/bin/docker:ro                                              # docker CLI binary
+/usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro  # compose plugin
+./docker-compose.yml:/app/docker-compose.yml:ro                                 # self-reference for recreation
 ```
 The prompts directory is shared read-only from the main bot — no symlink needed, volume mount
 is the correct approach (symlinks across containers don't resolve).
@@ -563,8 +573,9 @@ container stops. `COMPOSE_FILE=/app/docker-compose.yml` is set in `.env`.
 **is_main detection**: `GET /api/admin/config` returns `"is_main": INSTANCES_DIR.exists()`.
 Used by the frontend to hide the Instances sub-tab and show/hide the self-update button.
 
-**`pollBotStatus()` (every 5s)**: reads `update_available` from `/api/admin/bot/status` and
-toggles `#update-group` visibility in the control bar. The amber pulse button calls `triggerSelfUpdate()`
+**`pollBotStatus()` (every 5s)**: reads `update_available`, `git_hash`, and `build_date` from
+`/api/admin/bot/status`. Toggles `#update-group` visibility. Updates `#version-badge` with
+`build <hash> · <date>` when `git_hash` is known. The amber pulse button calls `triggerSelfUpdate()`
 which calls the endpoint then `_waitForReconnect()`.
 
 ### Dashboard — Onglet Instances
