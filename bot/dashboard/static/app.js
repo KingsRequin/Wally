@@ -59,7 +59,10 @@ let currentMode = 'public';
 let currentTab  = 'status';
 let emotionSSE  = null;
 let logSSE      = null;
-var _twitchPendingRestart = false;
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+let _twitchPendingRestart = false;
 let actionSSE   = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
@@ -4807,7 +4810,7 @@ async function _renderSystemeTwitch(panel) {
 
   function _authCard(id, icon, title, connected, username, scopes) {
     var dotColor   = connected ? '#22c55e' : '#ef4444';
-    var statusText = connected ? (username || 'Connecte') : 'Non connecte';
+    var statusText = connected ? (_escHtml(username) || 'Connecte') : 'Non connecte';
     var btnLabel   = connected ? 'Reconnecter' : 'Connecter';
     var btn = clientIdSet
       ? '<button class="btn btn-success" style="width:100%;margin-top:4px" onclick="startTwitchOAuth(\'' + id + '\')">' + btnLabel + '</button>'
