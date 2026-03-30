@@ -4784,6 +4784,7 @@ async function loadTheme() {
     if (layoutRadio) layoutRadio.checked = true;
     const tabRadio = document.querySelector(`input[name="tab-style"][value="${t.tab_style}"]`);
     if (tabRadio) tabRadio.checked = true;
+    _themeChanges = {};
   } catch (e) { console.warn('loadTheme failed', e); }
 }
 
@@ -4792,7 +4793,7 @@ function onThemeColorInput(field, hexValue) {
   const hexInput = document.getElementById(hexId);
   if (hexInput) hexInput.value = hexValue;
   _themeChanges[field] = hexValue;
-  _reloadThemeCss();
+  _applyThemePreview(field, hexValue);
 }
 
 function onThemeHexInput(field, pickerId, hexValue) {
@@ -4800,12 +4801,18 @@ function onThemeHexInput(field, pickerId, hexValue) {
     const picker = document.getElementById(pickerId);
     if (picker) picker.value = hexValue;
     _themeChanges[field] = hexValue;
-    _reloadThemeCss();
+    _applyThemePreview(field, hexValue);
   }
 }
 
 function onThemeRadio(field, value) {
   _themeChanges[field] = value;
+}
+
+function _applyThemePreview(field, value) {
+  const map = { accent_color: '--accent', bg_color: '--bg-body' };
+  const cssVar = map[field];
+  if (cssVar) document.documentElement.style.setProperty(cssVar, value);
 }
 
 function _reloadThemeCss() {
