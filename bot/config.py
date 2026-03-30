@@ -222,6 +222,20 @@ class OverlayImageConfig:
     enabled: bool = True
 
 
+VALID_LAYOUT_VARIANTS = ("sidebar-left", "sidebar-top", "sidebar-mini")
+VALID_TAB_STYLES = ("icons-only", "icons-labels", "text-only")
+
+
+@dataclass
+class ThemeConfig:
+    accent_color: str = "#06b6d4"
+    bg_color: str = "#11151c"
+    surface_color: str = "rgba(255,255,255,0.03)"
+    sidebar_bg: str = "rgba(255,255,255,0.02)"
+    layout_variant: str = "sidebar-left"
+    tab_style: str = "icons-only"
+
+
 @dataclass
 class Config:
     bot: BotConfig
@@ -235,6 +249,7 @@ class Config:
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
+    theme: ThemeConfig = field(default_factory=ThemeConfig)
     mood: MoodConfig = field(default_factory=MoodConfig)
     fatigue: FatigueConfig = field(default_factory=FatigueConfig)
     habituation: HabituationConfig = field(default_factory=HabituationConfig)
@@ -315,6 +330,7 @@ class Config:
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
+            theme = ThemeConfig(**raw.get("theme", {}))
             # --- Organic emotion configs (nested under emotions:) ---
             emo_raw = raw.get("emotions", {})
             mood_cfg = MoodConfig(**emo_raw.get("mood", {}))
@@ -381,6 +397,7 @@ class Config:
                 web_chat=WebChatConfig(**web_chat_raw),
                 image_generation=image_generation,
                 overlay_image=overlay_image,
+                theme=theme,
                 mood=mood_cfg,
                 fatigue=fatigue_cfg,
                 habituation=habituation_cfg,
@@ -410,6 +427,7 @@ class Config:
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
+            "theme": asdict(self.theme),
         }
         emotions_data = {k: asdict(v) for k, v in self.emotions.items()}
         emotions_data["mood"] = asdict(self.mood)

@@ -105,3 +105,45 @@ def test_optional_fields_absent_from_yaml(tmp_path):
     config = Config.load(str(cfg_file))
     assert config.bot.journal_channel_id is None
     assert config.bot.dashboard_token is None
+
+
+def test_theme_config_defaults():
+    """ThemeConfig a des valeurs par défaut sensées."""
+    from bot.config import ThemeConfig
+    t = ThemeConfig()
+    assert t.accent_color == "#06b6d4"
+    assert t.bg_color == "#11151c"
+    assert t.layout_variant == "sidebar-left"
+    assert t.tab_style == "icons-only"
+
+
+def test_load_config_theme_defaults(tmp_path):
+    """Config.load() crée un ThemeConfig par défaut si absent du YAML."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+    config = Config.load(str(cfg_file))
+    assert config.theme.accent_color == "#06b6d4"
+    assert config.theme.layout_variant == "sidebar-left"
+
+
+def test_load_config_theme_from_yaml(tmp_path):
+    """Config.load() lit le bloc theme: du YAML."""
+    data = dict(MINIMAL_CONFIG)
+    data["theme"] = {"accent_color": "#ff6b6b", "layout_variant": "sidebar-top"}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(data))
+    config = Config.load(str(cfg_file))
+    assert config.theme.accent_color == "#ff6b6b"
+    assert config.theme.layout_variant == "sidebar-top"
+    assert config.theme.bg_color == "#11151c"  # défaut conservé
+
+
+def test_save_config_includes_theme(tmp_path):
+    """Config.save() sérialise le bloc theme: dans le YAML."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+    config = Config.load(str(cfg_file))
+    config.theme.accent_color = "#abc123"
+    config.save()
+    saved = yaml.safe_load(cfg_file.read_text())
+    assert saved["theme"]["accent_color"] == "#abc123"
