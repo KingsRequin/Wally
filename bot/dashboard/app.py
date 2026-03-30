@@ -131,6 +131,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         # Replace static ?v=N with current startup timestamp
         html = html.replace("style.css?v=4", f"style.css?v={_asset_version}")
         html = html.replace("app.js?v=4", f"app.js?v={_asset_version}")
+        html = html.replace('href="/static/theme.css"', f'href="/static/theme.css?v={_asset_version}"')
         return HTMLResponse(
             html,
             headers={

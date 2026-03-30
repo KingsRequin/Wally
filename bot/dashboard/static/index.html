@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/theme.css" id="theme-link">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -65,6 +66,15 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
         <span class="control-bar-label">Twitch</span>
         <button class="control-bar-btn" id="twitch-toggle-btn" onclick="toggleBotAdapter('twitch')">Stop</button>
       </div>
+    </div>
+    <div class="control-bar-group" id="update-group" style="display:none">
+      <button class="control-bar-btn update" id="update-available-btn" onclick="triggerSelfUpdate()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v6m0 0l3-3m-3 3L9 5M12 22v-6m0 0l3 3m-3-3l-3 3M2 12h6m0 0L5 9m3 3l-3 3M22 12h-6m0 0l3-3m-3 3l3 3"/></svg>
+        Update dispo
+      </button>
+    </div>
+    <div class="control-bar-group">
+      <span id="version-badge" style="font-size:11px;color:rgba(255,255,255,0.3);font-family:monospace;letter-spacing:0.02em"></span>
     </div>
     <div class="control-bar-group">
       <button class="control-bar-btn restart" id="restart-btn" onclick="restartContainer()">
@@ -319,5 +329,16 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
 <div id="toast-container" aria-live="assertive"></div>
 
 <script src="/static/app.js?v=6"></script>
+
+<script>
+  // Applique les variants de layout et tab-style depuis les CSS vars du thème
+  (function() {
+    var style = getComputedStyle(document.documentElement);
+    var layout = style.getPropertyValue('--layout-variant').trim().replace(/"/g, '') || 'sidebar-left';
+    var tabStyle = style.getPropertyValue('--tab-style').trim().replace(/"/g, '') || 'icons-only';
+    document.body.setAttribute('data-layout', layout);
+    document.body.setAttribute('data-tab-style', tabStyle);
+  })();
+</script>
 </body>
 </html>
