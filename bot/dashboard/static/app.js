@@ -59,6 +59,7 @@ let currentMode = 'public';
 let currentTab  = 'status';
 let emotionSSE  = null;
 let logSSE      = null;
+var _twitchPendingRestart = false;
 let actionSSE   = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
@@ -133,6 +134,19 @@ async function pollBotStatus() {
   }
   var updateGroup = document.getElementById('update-group');
   if (updateGroup) updateGroup.style.display = data.update_available ? '' : 'none';
+  var versionBadge = document.getElementById('version-badge');
+  if (versionBadge && data.git_hash && data.git_hash !== 'unknown') {
+    versionBadge.textContent = 'build ' + data.git_hash + ' · ' + _formatBuildDate(data.build_date);
+  }
+}
+
+function _formatBuildDate(iso) {
+  if (!iso || iso === 'unknown') return '';
+  try {
+    var d = new Date(iso);
+    var months = ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
+    return d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+  } catch(e) { return iso; }
 }
 
 async function triggerSelfUpdate() {
@@ -214,6 +228,36 @@ function _waitForReconnect() {
       }
     } catch(e) { /* server still down */ }
   }, 2000);
+}
+
+function _onTwitchAuthSuccess(account, username) {
+  _twitchPendingRestart = true;
+  var label = account === 'bot' ? 'bot' : 'streamer';
+  toast('Compte ' + label + ' connecte' + (username ? ' — ' + username : '') + ' ! Redemarre le container.', 'success');
+  var panel = document.getElementById('systeme-sub-twitch');
+  if (panel && panel.classList.contains('active')) {
+    _renderSystemeTwitch(panel);
+  }
+}
+
+async function startTwitchOAuth(account) {
+  var r = await apiFetch('/api/admin/twitch/auth-url', {
+    method: 'POST',
+    body: JSON.stringify({ account: account }),
+  });
+  if (!r || !r.ok) { toast('Erreur generation URL OAuth', 'error'); return; }
+  var data = await r.json();
+  var popup = window.open(data.url, 'twitch-oauth', 'width=600,height=700,noopener');
+  if (!popup) toast('Popup bloque — autorise les popups pour ce site.', 'error');
+}
+
+async function restartTwitchContainer() {
+  if (!confirm('Redemarrer le container Wally ? Le dashboard sera indisponible ~10s.')) return;
+  var r = await apiFetch('/api/admin/twitch/restart', { method: 'POST' });
+  if (!r || !r.ok) { toast('Erreur restart', 'error'); return; }
+  _twitchPendingRestart = false;
+  toast('Redemerrage en cours...', 'success');
+  _waitForReconnect();
 }
 
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
@@ -1444,7 +1488,15 @@ async function loadTwitchChannelsTab() {
 
   const r = await apiFetch('/api/admin/twitch/channels');
   if (!r || !r.ok) {
-    el.innerHTML = '<p style="color:var(--c-offline);padding:16px">Erreur de chargement.</p>';
+    if (r && r.status === 503) {
+      el.textContent = 'Twitch non disponible — BOT_ACCESS_TOKEN manquant dans .env';
+      el.style.padding = '16px';
+      el.style.color = 'var(--c-offline)';
+    } else {
+      el.textContent = 'Erreur de chargement.';
+      el.style.padding = '16px';
+      el.style.color = 'var(--c-offline)';
+    }
     return;
   }
   const channels = await r.json();
@@ -1521,6 +1573,10 @@ async function startLogSSE() {
         if (data.type === 'links_analyzed' && data.count > 0) {
           toast(`🔗 ${data.count} liaison(s) à vérifier`, 'info');
         }
+        return;
+      }
+      if (data.type === 'twitch_auth') {
+        _onTwitchAuthSuccess(data.account, data.username);
         return;
       }
       appendLog(data);
@@ -4737,13 +4793,88 @@ function switchLogsSubTabInSysteme(subtab) {
 
 async function _renderSystemeTwitch(panel) {
   if (!panel) return;
-  // Delegate to existing Twitch loader
-  const twitchEl = document.getElementById('tab-admin-twitch');
-  // Load content then move it to the systeme panel
-  await loadTwitchChannelsTab();
-  if (twitchEl && panel.children.length === 0) {
-    while (twitchEl.firstChild) panel.appendChild(twitchEl.firstChild);
+  panel.innerHTML = '<p style="color:var(--text-muted);padding:16px">Chargement...</p>';
+
+  var statusR = await apiFetch('/api/admin/twitch/auth-status');
+  var status  = statusR && statusR.ok ? await statusR.json() : null;
+
+  var botConnected      = status && status.bot.connected;
+  var streamerConnected = status && status.streamer.connected;
+  var clientIdSet       = status ? status.client_id_set : false;
+
+  var BOT_SCOPES      = 'user:read:chat · user:write:chat · user:bot · moderator:read:followers · chat:read · chat:edit';
+  var STREAMER_SCOPES = 'channel:read:subscriptions · bits:read';
+
+  function _authCard(id, icon, title, connected, username, scopes) {
+    var dotColor   = connected ? '#22c55e' : '#ef4444';
+    var statusText = connected ? (username || 'Connecte') : 'Non connecte';
+    var btnLabel   = connected ? 'Reconnecter' : 'Connecter';
+    var btn = clientIdSet
+      ? '<button class="btn btn-success" style="width:100%;margin-top:4px" onclick="startTwitchOAuth(\'' + id + '\')">' + btnLabel + '</button>'
+      : '<p style="color:#f59e0b;font-size:0.8em;margin-top:8px">Configurer TWITCH_CLIENT_ID dans .env</p>';
+    return '<div class="card" style="flex:1;min-width:220px;padding:20px">'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+      + '<span style="font-size:1.5em">' + icon + '</span>'
+      + '<div><div class="card-title" style="margin:0">' + title + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'
+      + '<span style="width:8px;height:8px;border-radius:50%;background:' + dotColor + ';display:inline-block"></span>'
+      + '<span style="font-size:0.85em;color:' + (connected ? 'var(--text-primary)' : 'var(--text-muted)') + '">' + statusText + '</span>'
+      + '</div></div></div>'
+      + '<div style="font-size:0.75em;color:var(--text-muted);margin-bottom:14px;line-height:1.6"><strong>Scopes :</strong> ' + scopes + '</div>'
+      + btn
+      + '</div>';
   }
+
+  // Charger les chaines invitees
+  var chR = await apiFetch('/api/admin/twitch/channels');
+  var channelsHtml = '';
+  if (chR && chR.ok) {
+    var channels = await chR.json();
+    channelsHtml = channels.length === 0
+      ? '<p style="color:var(--text-muted);margin-bottom:12px">Aucune chaine invitee.</p>'
+      : channels.map(function(ch) {
+          var dotClass   = ch.irc_connected ? 'connected' : 'pending';
+          var badgeClass = ch.live ? 'live' : 'offline';
+          var badgeText  = ch.live ? 'LIVE' : 'hors ligne';
+          return '<div class="twitch-channel-card" id="guest-ch-' + ch.name + '">'
+            + '<div class="tc-dot ' + dotClass + '"></div>'
+            + '<span class="tc-name">' + ch.name + '</span>'
+            + '<span class="tc-badge ' + badgeClass + '">' + badgeText + '</span>'
+            + '<button class="tc-kick" onclick="removeGuestChannel(\'' + ch.name + '\')">Deconnecter</button>'
+            + '</div>';
+        }).join('');
+  } else {
+    channelsHtml = '<p style="color:var(--text-muted);font-size:0.85em">Twitch non demarre — connecte les comptes ci-dessus et redemarre.</p>';
+  }
+
+  var restartHtml = _twitchPendingRestart
+    ? '<div style="margin-top:20px">'
+      + '<button class="btn" style="background:#f59e0b;color:#000;font-weight:600;width:100%" onclick="restartTwitchContainer()">Redemarrer le container</button>'
+      + '<p style="font-size:0.75em;color:var(--text-muted);margin-top:6px;text-align:center">Le dashboard sera indisponible ~10s.</p>'
+      + '</div>'
+    : '';
+
+  panel.innerHTML = '<div style="padding:0 2px">'
+    + '<div style="font-size:0.7em;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">Authentification Twitch</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">'
+    + _authCard('bot',      '🤖', 'Compte Bot',     botConnected,      status && status.bot.username,      BOT_SCOPES)
+    + _authCard('streamer', '📺', 'Compte Streamer', streamerConnected, status && status.streamer.username, STREAMER_SCOPES)
+    + '</div>'
+    + restartHtml
+    + '<hr style="border-color:rgba(255,255,255,0.08);margin:16px 0">'
+    + '<div style="font-size:0.7em;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">Chaines invitees</div>'
+    + '<div id="guest-channels-list">' + channelsHtml + '</div>'
+    + '<div id="twitch-channels-add">'
+    + '<input type="text" id="guest-channel-input" placeholder="nom de chaine twitch..." style="flex:1" onkeydown="if(event.key===\'Enter\') addGuestChannel()">'
+    + '<button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>'
+    + '</div>'
+    + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
+    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">Le broadcaster doit avoir autorise le bot (scope channel:bot) pour que Wally puisse parler.</p>'
+    + '</div>';
+
+  // Vider le div legacy tab-admin-twitch pour eviter les doublons
+  var twitchEl = document.getElementById('tab-admin-twitch');
+  if (twitchEl) twitchEl.innerHTML = '';
 }
 
 async function _renderSystemeOverlay(panel) {
@@ -7092,9 +7223,24 @@ async function loadInstances() {
       var portSpan = document.createElement('span');
       portSpan.style.cssText = 'margin-left:8px;font-size:12px;color:rgba(255,255,255,0.3)';
       portSpan.textContent = ':' + inst.port;
+      var instVersionSpan = document.createElement('span');
+      instVersionSpan.style.cssText = 'margin-left:10px;font-size:11px;color:rgba(255,255,255,0.2);font-family:monospace';
+      instVersionSpan.textContent = '…';
+      if (running) {
+        fetch('http://' + window.location.hostname + ':' + inst.port + '/api/public/status')
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(d) {
+            if (!d || !d.git_hash || d.git_hash === 'unknown') { instVersionSpan.textContent = ''; return; }
+            instVersionSpan.textContent = 'build ' + d.git_hash + ' · ' + _formatBuildDate(d.build_date);
+          })
+          .catch(function() { instVersionSpan.textContent = ''; });
+      } else {
+        instVersionSpan.textContent = '';
+      }
       left.appendChild(nameSpan);
       left.appendChild(statusSpan);
       left.appendChild(portSpan);
+      left.appendChild(instVersionSpan);
       row.appendChild(left);
 
       var btnGroup = document.createElement('div');
