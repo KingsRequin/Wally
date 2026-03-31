@@ -428,3 +428,59 @@ async def test_journal_includes_twitch_visits_block():
     assert "azrael" in user_msg.lower()
     assert "45 min" in user_msg
     assert "Chez Azrael" in user_msg
+
+
+# ── _emotion_tone_hint ────────────────────────────────────────────────────────
+
+from bot.core.journal import _emotion_tone_hint
+
+
+def test_emotion_tone_hint_anger():
+    emotions = {"anger": 0.72, "joy": 0.1, "sadness": 0.0, "curiosity": 0.2, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert "colère" in hint
+    assert "72%" in hint
+    assert "court" in hint.lower() or "cassant" in hint.lower()
+
+
+def test_emotion_tone_hint_joy():
+    emotions = {"anger": 0.0, "joy": 0.65, "sadness": 0.0, "curiosity": 0.2, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert "joyeux" in hint
+    assert "65%" in hint
+
+
+def test_emotion_tone_hint_sadness():
+    emotions = {"anger": 0.0, "joy": 0.1, "sadness": 0.55, "curiosity": 0.0, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert "tristesse" in hint
+    assert "55%" in hint
+
+
+def test_emotion_tone_hint_curiosity():
+    emotions = {"anger": 0.0, "joy": 0.1, "sadness": 0.0, "curiosity": 0.80, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert "curiosité" in hint
+    assert "80%" in hint
+
+
+def test_emotion_tone_hint_boredom():
+    emotions = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.1, "boredom": 0.45}
+    hint = _emotion_tone_hint(emotions)
+    assert "ennui" in hint
+    assert "45%" in hint
+
+
+def test_emotion_tone_hint_below_threshold():
+    """Aucune émotion ≥ 0.30 → pas de signal."""
+    emotions = {"anger": 0.1, "joy": 0.2, "sadness": 0.05, "curiosity": 0.15, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert hint == ""
+
+
+def test_emotion_tone_hint_exactly_at_threshold():
+    """Valeur exactement à 0.30 → signal activé."""
+    emotions = {"anger": 0.0, "joy": 0.30, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    hint = _emotion_tone_hint(emotions)
+    assert hint != ""
+    assert "30%" in hint

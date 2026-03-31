@@ -211,6 +211,23 @@ def _build_emotion_arc(snapshots: list[dict]) -> str:
     return "Arc émotionnel de la journée :\n" + "\n".join(lines)
 
 
+def _emotion_tone_hint(emotions: dict) -> str:
+    """Génère une directive de ton selon l'émotion dominante (≥ 0.30)."""
+    dominant = max(emotions, key=emotions.get)
+    value = emotions[dominant]
+    if value < 0.30:
+        return ""
+    pct = int(value * 100)
+    hints = {
+        "anger": f"Ce soir ta colère domine ({pct}%) — entrée courte, cassante, quelques lignes suffisent.",
+        "joy": f"Ce soir tu es plutôt joyeux ({pct}%) — tu peux te laisser aller, plus léger et spontané.",
+        "sadness": f"Ce soir ta tristesse domine ({pct}%) — écriture plus lente, introspective, quelques silences.",
+        "curiosity": f"Ce soir ta curiosité domine ({pct}%) — laisse-toi partir dans les digressions si l'envie t'en prend.",
+        "boredom": f"Ce soir c'est l'ennui qui domine ({pct}%) — t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
+    }
+    return hints.get(dominant, "")
+
+
 def _split_for_discord(text: str, limit: int = _DISCORD_LIMIT) -> list[str]:
     """Découpe le texte en blocs ≤ limit caractères sur des coupures naturelles."""
     if len(text) <= limit:
