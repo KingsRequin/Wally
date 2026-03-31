@@ -566,6 +566,9 @@ class DailyJournal:
             sections.append(gallery_block)
         if twitch_visits_block:
             sections.append(twitch_visits_block)
+        hint = _emotion_tone_hint(emotions)
+        if hint:
+            sections.append(hint)
         if is_backfill:
             sections.append(f"Écris ton journal intime pour le {display_date}.")
         else:

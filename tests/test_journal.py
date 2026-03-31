@@ -484,3 +484,46 @@ def test_emotion_tone_hint_exactly_at_threshold():
     hint = _emotion_tone_hint(emotions)
     assert hint != ""
     assert "30%" in hint
+
+
+@pytest.mark.asyncio
+async def test_emotion_hint_injected_in_prompt_when_dominant():
+    """Quand une émotion domine (≥ 0.30), le hint est dans le user message envoyé au LLM."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    emotion.get_state = MagicMock(
+        return_value={"anger": 0.75, "joy": 0.1, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    )
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    call_args = llm.complete.call_args
+    user_messages = call_args[0][1]  # second positional arg = messages list
+    user_content = " ".join(m["content"] for m in user_messages if m["role"] == "user")
+    # Le hint directif doit être présent avec "Ce soir ta colère domine (75%)"
+    assert "Ce soir ta colère domine" in user_content
+    assert "75%" in user_content
+
+
+@pytest.mark.asyncio
+async def test_emotion_hint_absent_when_no_dominant():
+    """Quand aucune émotion ≥ 0.30, aucun hint de ton dans le user message."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    emotion.get_state = MagicMock(
+        return_value={"anger": 0.1, "joy": 0.2, "sadness": 0.05, "curiosity": 0.15, "boredom": 0.0}
+    )
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    call_args = llm.complete.call_args
+    user_messages = call_args[0][1]
+    user_content = " ".join(m["content"] for m in user_messages if m["role"] == "user")
+    # Aucune des directives de ton ne doit apparaître (chercher les débuts des hints)
+    assert "Ce soir ta colère domine" not in user_content
+    assert "Ce soir tu es plutôt joyeux" not in user_content
+    assert "Ce soir ta tristesse domine" not in user_content
+    assert "Ce soir ta curiosité domine" not in user_content
+    assert "Ce soir c'est l'ennui qui domine" not in user_content
