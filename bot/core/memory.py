@@ -69,6 +69,8 @@ class MemoryService:
         self._bg_tasks: set[asyncio.Task] = set()
         # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
         self._alias_cache: dict[str, str] = {}
+        # Verrou par utilisateur pour sérialiser les maintenances (évite les questions en double)
+        self._maintenance_locks: dict[str, asyncio.Lock] = {}
 
     def set_openai_client(self, client: "BaseLLMClient") -> None:
         self._openai = client
@@ -246,14 +248,16 @@ class MemoryService:
         """Run consolidation (if threshold exceeded) or evaluation — single get_all."""
         if self._store is None:
             return
-        try:
-            all_records = await self._store.get_all(uid)
-            if len(all_records) > _CONSOLIDATION_THRESHOLD:
-                await self._consolidate(uid, all_records)
-            else:
-                await self._evaluate(uid, content, all_records)
-        except Exception as exc:
-            logger.warning("Post-add maintenance failed for {uid}: {e}", uid=uid, e=exc)
+        lock = self._maintenance_locks.setdefault(uid, asyncio.Lock())
+        async with lock:
+            try:
+                all_records = await self._store.get_all(uid)
+                if len(all_records) > _CONSOLIDATION_THRESHOLD:
+                    await self._consolidate(uid, all_records)
+                else:
+                    await self._evaluate(uid, content, all_records)
+            except Exception as exc:
+                logger.warning("Post-add maintenance failed for {uid}: {e}", uid=uid, e=exc)
 
     async def _consolidate(self, uid: str, records: list[MemoryRecord] | None = None) -> None:
         """Consolide les souvenirs si leur nombre dépasse le seuil.
@@ -313,8 +317,8 @@ class MemoryService:
                         "UPDATE memory_users SET memory_count=? WHERE user_id=?",
                         (new_count, uid),
                     )
-                except Exception:
-                    pass
+                except Exception as count_exc:
+                    logger.debug("Failed to update memory_count after consolidation: {e}", e=count_exc)
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
 

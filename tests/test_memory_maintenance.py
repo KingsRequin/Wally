@@ -112,6 +112,34 @@ async def test_cleanup_old_questions_purges_unresolved_old(tmp_path):
     await db.close()
 
 
+@pytest.mark.asyncio
+async def test_duplicate_question_ignored(tmp_path):
+    """Inserting the same question twice should not create a duplicate."""
+    db = await Database.create(str(tmp_path / "test.db"))
+    await db.insert_memory_question("discord:123", "mem1", "Quel âge ?", "high")
+    await db.insert_memory_question("discord:123", "mem2", "Quel âge ?", "medium")
+    pending = await db.get_all_pending_questions("discord:123")
+    assert len(pending) == 1, f"Expected 1 question, got {len(pending)}"
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_maintenance_lock_exists():
+    """MemoryService should have a _maintenance_locks dict."""
+    from unittest.mock import MagicMock
+    from bot.core.memory import MemoryService
+
+    config = MagicMock()
+    config.bot.context_window_size = 5
+    config.bot.context_token_threshold = 100
+    config.bot.prelude_window_size = 15
+    config.bot.memory_search_min_score = 0.5
+
+    svc = MemoryService(config)
+    assert hasattr(svc, "_maintenance_locks")
+    assert isinstance(svc._maintenance_locks, dict)
+
+
 from unittest.mock import MagicMock, AsyncMock, patch
 from bot.core.memory import MemoryService
 from bot.core.memory_store import MemoryRecord

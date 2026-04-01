@@ -425,6 +425,15 @@ class Database:
             await conn.commit()
         except aiosqlite.OperationalError:
             pass
+        # Migration: add UNIQUE constraint on (user_id, question) for memory_questions
+        try:
+            await conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_questions_unique_q"
+                " ON memory_questions(user_id, question)"
+            )
+            await conn.commit()
+        except Exception:
+            pass
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -948,7 +957,7 @@ class Database:
         self, user_id: str, memory_text: str, question: str, priority: str = "medium"
     ) -> None:
         await self.execute(
-            "INSERT INTO memory_questions (user_id, memory_text, question, priority, created_at)"
+            "INSERT OR IGNORE INTO memory_questions (user_id, memory_text, question, priority, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (user_id, memory_text, question, priority, time.time()),
         )
