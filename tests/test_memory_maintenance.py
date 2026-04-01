@@ -289,6 +289,75 @@ async def test_evaluate_memory_handles_invalid_json(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_question_auto_resolved_by_semantic_match(tmp_path):
+    """A pending question should be auto-resolved if a memory already answers it."""
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.core.memory import MemoryService
+
+    config = MagicMock()
+    config.bot.context_window_size = 5
+    config.bot.context_token_threshold = 100
+    config.bot.prelude_window_size = 15
+    config.bot.memory_search_min_score = 0.5
+
+    svc = MemoryService(config)
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc._db = db
+
+    uid = "discord:6105503330425897"
+
+    # Insert a pending question
+    await db.insert_memory_question(uid, "déménage bientôt", "Dans quelle ville ?", "high")
+
+    # Mock store with a search that finds a matching memory
+    mock_store = AsyncMock()
+    mock_store.search = AsyncMock(return_value=[
+        MagicMock(text="Déménage à Lyon en avril", score=0.90)
+    ])
+    svc._store = mock_store
+
+    # Call get_pending_question_directive — should auto-resolve and return ""
+    directive = await svc.get_pending_question_directive("discord", "6105503330425897")
+    assert directive == "", f"Expected empty directive (auto-resolved), got: {directive}"
+
+    # Verify question is resolved in DB
+    q = await db.get_pending_question(uid)
+    assert q is None, "Question should have been resolved"
+
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_question_not_resolved_by_low_score(tmp_path):
+    """A pending question should NOT be auto-resolved if semantic score is below threshold."""
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.core.memory import MemoryService
+
+    config = MagicMock()
+    config.bot.context_window_size = 5
+    config.bot.context_token_threshold = 100
+    config.bot.prelude_window_size = 15
+    config.bot.memory_search_min_score = 0.5
+
+    svc = MemoryService(config)
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc._db = db
+
+    uid = "discord:6105503330425897"
+    await db.insert_memory_question(uid, "déménage bientôt", "Dans quelle ville ?", "high")
+
+    mock_store = AsyncMock()
+    mock_store.search = AsyncMock(return_value=[
+        MagicMock(text="Aime les pizzas", score=0.40)
+    ])
+    svc._store = mock_store
+
+    directive = await svc.get_pending_question_directive("discord", "6105503330425897")
+    assert "Dans quelle ville" in directive
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_get_pending_question_directive_returns_directive(tmp_path):
     db = await Database.create(str(tmp_path / "test.db"))
     svc = MemoryService(make_config())

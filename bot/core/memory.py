@@ -390,6 +390,22 @@ class MemoryService:
             q = await self._db.get_pending_question(uid)
             if not q:
                 return ""
+
+            # Auto-resolve if a stored memory already answers the question
+            if self._store is not None:
+                try:
+                    results = await self._store.search(uid, q["question"], top_k=1)
+                    if results and results[0].score >= 0.85:
+                        await self._db.resolve_question(q["id"])
+                        logger.debug(
+                            "Question {id} auto-resolved by semantic match (score={s:.2f})",
+                            id=q["id"],
+                            s=results[0].score,
+                        )
+                        return ""
+                except Exception:
+                    pass  # Non-critical, continue with injection
+
             await self._db.increment_question_attempts(q["id"])
             return (
                 f"\n--- Question en attente ---\n"
