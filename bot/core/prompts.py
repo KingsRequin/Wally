@@ -269,6 +269,11 @@ class PromptBuilder:
                 lines.append(f"**{note['title']}** : {note['content']}")
             parts.append("\n".join(lines))
 
+        # Memory tools directive — always injected
+        _memory_tools_directive = load_prompt("memory_tools_directive")
+        if _memory_tools_directive:
+            parts.append(f"\n--- Directive mémoire ---\n{_memory_tools_directive}")
+
         return "\n".join(parts)
 
     def build_context_block(self, messages: list[dict]) -> str:

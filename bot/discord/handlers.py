@@ -25,7 +25,12 @@ _NOTE_TOOLS = [
         "type": "function",
         "function": {
             "name": "save_persistent_note",
-            "description": "Sauvegarder une note persistante injectée dans chaque conversation future",
+            "description": (
+                "Quand quelqu'un te demande de retenir, noter ou mémoriser quelque chose "
+                "qui concerne tout le serveur ou la communauté (un événement, une règle, "
+                "une info partagée, un engagement que tu prends), utilise cet outil. "
+                "La note sera injectée dans TOUTES tes futures conversations."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -47,6 +52,28 @@ _NOTE_TOOLS = [
                     "title": {"type": "string", "description": "Titre exact de la note à supprimer"},
                 },
                 "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_user_memory",
+            "description": (
+                "Quand quelqu'un te demande de retenir, noter ou mémoriser quelque chose "
+                "qui le concerne personnellement (préférence, fait biographique, opinion, "
+                "habitude, info privée), utilise cet outil. Le souvenir sera associé "
+                "uniquement à cet utilisateur."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "Fait ou information à retenir sur cet utilisateur, formulé comme une phrase factuelle courte",
+                    },
+                },
+                "required": ["content"],
             },
         },
     },
@@ -772,6 +799,9 @@ async def _respond(
                 if deleted:
                     return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
                 return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
+            if name == "save_user_memory":
+                await bot.memory.add("discord", user_id, args["content"], username=_author_label(message.author))
+                return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
 
             if name in ("web_search", "image_search"):
                 if "🌐" not in _reaction_emojis:
