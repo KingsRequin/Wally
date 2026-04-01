@@ -19,6 +19,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: wally-neo4j
+    networks:
+      - wally-net
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=512m
+      - NEO4J_server_memory_pagecache_size=256m
+    volumes:
+      - ./data/neo4j:/data
+    ports:
+      - "${NEO4J_BROWSER_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
   init-perms:
     image: alpine:3.19
     container_name: wally-init-perms
@@ -32,7 +55,11 @@ services:
     restart: "no"
 
   wally:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_HASH: ${GIT_HASH:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     container_name: wally-bot
     user: "1000:1000"
     group_add:
@@ -43,6 +70,8 @@ services:
       init-perms:
         condition: service_completed_successfully
       qdrant:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     environment:
       - TZ=Europe/Paris
@@ -58,6 +87,8 @@ services:
       - ./bot/dashboard/static:/app/bot/dashboard/static:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/stacks/wally-instances:/opt/stacks/wally-instances
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
     restart: unless-stopped
 
   cloudflared:

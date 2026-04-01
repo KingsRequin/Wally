@@ -237,6 +237,21 @@ class ThemeConfig:
 
 
 @dataclass
+class GraphitiConfig:
+    enabled: bool = False
+    neo4j_uri: str = "bolt://neo4j:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "changeme"
+    llm_model: str = "gpt-5-nano"
+    community_detection: bool = False
+    group_id: str = "discord:default"
+    affinity_weights: dict[str, float] = field(default_factory=lambda: {
+        "voice": 3.0, "reply": 2.0, "mention": 1.5,
+        "reaction": 1.0, "thread": 1.0, "game": 2.5,
+    })
+
+
+@dataclass
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
@@ -256,6 +271,7 @@ class Config:
     emotional_memory: EmotionalMemoryConfig = field(default_factory=EmotionalMemoryConfig)
     circadian: CircadianConfig = field(default_factory=CircadianConfig)
     spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
+    graphiti: GraphitiConfig = field(default_factory=GraphitiConfig)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
         "frustration": SecondaryEmotionDef(a="anger", b="boredom", threshold=0.3),
         "nostalgia": SecondaryEmotionDef(a="joy", b="sadness", threshold=0.3),
@@ -369,6 +385,7 @@ class Config:
                 }
             else:
                 secondaries_cfg = None  # use default_factory
+            graphiti_cfg = GraphitiConfig(**raw.get("graphiti", {}))
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
             llm_config = cls._build_llm_config(raw)
@@ -404,6 +421,7 @@ class Config:
                 emotional_memory=emotional_memory_cfg,
                 circadian=circadian_cfg,
                 spontaneous=spontaneous_cfg,
+                graphiti=graphiti_cfg,
                 **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
             )
         except (KeyError, TypeError) as e:
@@ -428,6 +446,7 @@ class Config:
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
             "theme": asdict(self.theme),
+            "graphiti": asdict(self.graphiti),
         }
         emotions_data = {k: asdict(v) for k, v in self.emotions.items()}
         emotions_data["mood"] = asdict(self.mood)
