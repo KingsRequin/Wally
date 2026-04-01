@@ -5469,11 +5469,13 @@ function renderMemoireTab() {
         <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
         <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
+        <button class="mem-subnav-pill" data-subtab="graph" onclick="switchMemoireSubTab('graph')">Graphe social</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
       <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
       <div class="mem-subnav-content" id="memoire-sub-notes"></div>
+      <div class="mem-subnav-content" id="memoire-sub-graph"></div>
     `;
   }
 
@@ -5519,6 +5521,8 @@ function switchMemoireSubTab(subtab) {
     }
   } else if (subtab === 'notes') {
     if (panel) loadNotesTab(panel);
+  } else if (subtab === 'graph') {
+    if (panel) loadGraphTab(panel);
   }
 }
 
@@ -5627,6 +5631,223 @@ async function deleteNote(id) {
     const panel = document.getElementById('memoire-sub-notes');
     if (panel) loadNotesTab(panel);
   }
+}
+
+// ── Social Graph Tab (vis-network) ──────────────────────────────────────────
+
+async function loadGraphTab(panel) {
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:rgba(255,255,255,0.45);padding:16px">Chargement du graphe...</p>';
+
+  // Lazy-load vis-network from CDN
+  if (typeof vis === 'undefined') {
+    try {
+      await new Promise(function(resolve, reject) {
+        var script = document.createElement('script');
+        script.src = 'https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js';
+        script.onload = resolve;
+        script.onerror = function() { reject(new Error('Failed to load vis-network')); };
+        document.head.appendChild(script);
+      });
+    } catch (_e) {
+      panel.textContent = 'Impossible de charger vis-network depuis le CDN.';
+      return;
+    }
+  }
+
+  // Build the tab layout
+  var wrapper = document.createElement('div');
+  wrapper.style.cssText = 'max-width:1200px;margin:0 auto;padding:20px';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px';
+
+  var titleBlock = document.createElement('div');
+  var h2 = document.createElement('h2');
+  h2.style.cssText = 'margin:0;font-size:1.3rem';
+  h2.textContent = 'Graphe social';
+  var subtitle = document.createElement('p');
+  subtitle.style.cssText = 'margin:4px 0 0;font-size:0.82rem;color:rgba(255,255,255,0.45)';
+  subtitle.textContent = 'Relations et interactions entre les membres du serveur.';
+  titleBlock.appendChild(h2);
+  titleBlock.appendChild(subtitle);
+
+  var statsEl = document.createElement('span');
+  statsEl.id = 'graph-stats';
+  statsEl.style.cssText = 'font-size:0.75rem;padding:4px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:rgba(255,255,255,0.6)';
+
+  header.appendChild(titleBlock);
+  header.appendChild(statsEl);
+  wrapper.appendChild(header);
+
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.style.cssText = 'padding:0;overflow:hidden;position:relative;min-height:500px';
+  var graphContainer = document.createElement('div');
+  graphContainer.id = 'graph-container';
+  graphContainer.style.cssText = 'width:100%;height:600px;background:rgba(0,0,0,0.2);border-radius:12px';
+  card.appendChild(graphContainer);
+  wrapper.appendChild(card);
+
+  var detailPanel = document.createElement('div');
+  detailPanel.id = 'graph-detail';
+  detailPanel.className = 'card';
+  detailPanel.style.cssText = 'margin-top:16px;display:none';
+  var detailTitle = document.createElement('div');
+  detailTitle.className = 'card-title';
+  detailTitle.textContent = 'D\u00c9TAIL';
+  var detailContent = document.createElement('div');
+  detailContent.id = 'graph-detail-content';
+  detailPanel.appendChild(detailTitle);
+  detailPanel.appendChild(detailContent);
+  wrapper.appendChild(detailPanel);
+
+  panel.textContent = '';
+  panel.appendChild(wrapper);
+
+  // Fetch graph data from API
+  var r = await apiFetch('/api/admin/social-graph/data');
+  if (!r || !r.ok) {
+    graphContainer.textContent = 'Graphe non disponible \u2014 Neo4j non connect\u00e9';
+    graphContainer.style.cssText += ';color:rgba(255,255,255,0.4);padding:40px;text-align:center';
+    return;
+  }
+  var data = await r.json();
+
+  statsEl.textContent = data.nodes.length + ' membres \u00b7 ' + data.edges.length + ' relations';
+
+  if (!data.nodes.length) {
+    graphContainer.textContent = 'Aucune donn\u00e9e dans le graphe. Les relations appara\u00eetront au fil des conversations.';
+    graphContainer.style.cssText += ';color:rgba(255,255,255,0.4);padding:40px;text-align:center';
+    return;
+  }
+
+  // Color map for edge types
+  var edgeColors = {
+    'voice': '#a855f7',
+    'vocal': '#a855f7',
+    'reply': '#3b82f6',
+    'r\u00e9pondu': '#3b82f6',
+    'mention': '#3b82f6',
+    'mentionn\u00e9': '#3b82f6',
+    'reaction': '#eab308',
+    'r\u00e9agi': '#eab308',
+    'thread': '#6b7280',
+    'game': '#22c55e',
+    'jou\u00e9': '#22c55e',
+  };
+
+  function getEdgeColor(type) {
+    if (!type) return '#06b6d4';
+    var t = type.toLowerCase();
+    for (var key in edgeColors) {
+      if (t.indexOf(key) !== -1) return edgeColors[key];
+    }
+    return '#06b6d4';
+  }
+
+  // Build vis-network datasets
+  var visNodes = new vis.DataSet(data.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.name,
+      title: n.summary || n.name,
+      color: {
+        background: 'rgba(6, 182, 212, 0.3)',
+        border: '#06b6d4',
+        highlight: { background: 'rgba(6, 182, 212, 0.6)', border: '#06b6d4' },
+      },
+      font: { color: '#fff', size: 14 },
+      borderWidth: 2,
+      shadow: { enabled: true, color: 'rgba(6, 182, 212, 0.3)', size: 10 },
+    };
+  }));
+
+  var visEdges = new vis.DataSet(data.edges.map(function(e, i) {
+    return {
+      id: i,
+      from: e.source,
+      to: e.target,
+      label: e.type || '',
+      title: e.fact || '',
+      color: { color: getEdgeColor(e.type), highlight: '#fff', opacity: 0.7 },
+      font: { color: 'rgba(255,255,255,0.5)', size: 10, strokeWidth: 0 },
+      width: 2,
+      smooth: { type: 'continuous' },
+    };
+  }));
+
+  var network = new vis.Network(graphContainer, { nodes: visNodes, edges: visEdges }, {
+    physics: {
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01, springLength: 150 },
+      stabilization: { iterations: 100 },
+    },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { shape: 'dot', size: 20 },
+    edges: { arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+    layout: { improvedLayout: true },
+  });
+
+  // Click handler for detail panel
+  network.on('click', function(params) {
+    if (params.nodes.length > 0) {
+      var nodeId = params.nodes[0];
+      var node = data.nodes.find(function(n) { return n.id === nodeId; });
+      if (node) {
+        var nodeEdges = data.edges.filter(function(e) { return e.source === nodeId || e.target === nodeId; });
+        var nameEl = document.createElement('h3');
+        nameEl.style.cssText = 'margin:0 0 8px;color:#06b6d4';
+        nameEl.textContent = node.name;
+
+        detailContent.textContent = '';
+        detailContent.appendChild(nameEl);
+
+        if (node.summary) {
+          var summaryEl = document.createElement('p');
+          summaryEl.style.cssText = 'color:rgba(255,255,255,0.7);margin:0 0 12px';
+          summaryEl.textContent = node.summary;
+          detailContent.appendChild(summaryEl);
+        }
+
+        if (nodeEdges.length) {
+          var edgeList = document.createElement('div');
+          edgeList.style.fontSize = '0.85rem';
+          for (var ei = 0; ei < nodeEdges.length; ei++) {
+            var edge = nodeEdges[ei];
+            var other = edge.source === nodeId ? edge.target_name : edge.source_name;
+            var color = getEdgeColor(edge.type);
+
+            var row = document.createElement('div');
+            row.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+
+            var typeSpan = document.createElement('span');
+            typeSpan.style.cssText = 'color:' + color + ';font-weight:600';
+            typeSpan.textContent = edge.type || 'relation';
+            row.appendChild(typeSpan);
+
+            var arrow = document.createTextNode(' \u2192 ' + (other || '?'));
+            row.appendChild(arrow);
+
+            if (edge.fact) {
+              row.appendChild(document.createElement('br'));
+              var factSpan = document.createElement('span');
+              factSpan.style.cssText = 'color:rgba(255,255,255,0.5);font-size:0.8rem';
+              factSpan.textContent = edge.fact;
+              row.appendChild(factSpan);
+            }
+
+            edgeList.appendChild(row);
+          }
+          detailContent.appendChild(edgeList);
+        }
+
+        detailPanel.style.display = 'block';
+      }
+    } else {
+      detailPanel.style.display = 'none';
+    }
+  });
 }
 
 // ── Merged Overlay Tab (toggle + config) ────────────────────────────────────

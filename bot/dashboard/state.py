@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bot.core.fact_extractor import FactExtractor
     from bot.core.notifications import NotificationService
     from bot.core.actions import ActionService
+    from bot.core.graph import GraphService
 
 
 @dataclass
@@ -42,6 +43,7 @@ class AppState:
     fact_extractor: Optional["FactExtractor"] = None
     notifications: Optional["NotificationService"] = None
     action_service: Optional["ActionService"] = None
+    graph: Optional["GraphService"] = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
     message_count_discord: int = 0

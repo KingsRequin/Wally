@@ -1,7 +1,7 @@
 # tests/test_graph.py
 """Tests for GraphService — Graphiti is mocked entirely."""
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from bot.core.graph import GraphService
 
 
@@ -59,3 +59,22 @@ async def test_initialize_disabled():
     result = await svc.initialize()
     assert result is False
     assert not svc.ready
+
+
+@pytest.mark.asyncio
+async def test_fact_extractor_calls_graph_add_episode():
+    """FactExtractor should call graph.add_episode for each flushed message."""
+    from bot.core.fact_extractor import FactExtractor
+
+    config = _make_config()
+    config.bot.context_window_size = 5
+    config.bot.context_token_threshold = 100
+
+    memory = AsyncMock()
+    llm = AsyncMock()
+    graph = AsyncMock()
+    graph.ready = True
+    graph.add_episode = AsyncMock(return_value={"entities": [], "edges": []})
+
+    extractor = FactExtractor(config, memory, llm, graph=graph)
+    assert extractor._graph is graph
