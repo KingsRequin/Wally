@@ -117,6 +117,51 @@ from bot.core.memory import MemoryService
 from bot.core.memory_store import MemoryRecord
 
 
+@pytest.mark.asyncio
+async def test_consolidate_updates_memory_count(tmp_path):
+    """After consolidation, memory_count in DB should reflect the new Qdrant count."""
+    config = MagicMock()
+    config.bot.context_window_size = 5
+    config.bot.context_token_threshold = 100
+    config.bot.prelude_window_size = 15
+    config.bot.memory_search_min_score = 0.5
+
+    uid = "discord:6105503330425897"
+
+    svc = MemoryService(config)
+    db = await Database.create(str(tmp_path / "test.db"))
+    svc._db = db
+
+    # Seed a memory user
+    await db.upsert_memory_user(uid, "discord", "TestUser")
+    await db.execute("UPDATE memory_users SET memory_count=30 WHERE user_id=?", (uid,))
+
+    # Mock store to return count=1 after consolidation
+    mock_store = AsyncMock()
+    mock_store.count = AsyncMock(return_value=1)
+    mock_store.upsert = AsyncMock()
+    mock_store.delete_batch = AsyncMock(return_value=26)
+    svc._store = mock_store
+
+    # Mock LLM
+    svc._openai = AsyncMock()
+    svc._openai.complete = AsyncMock(return_value="- Fait consolidé 1\n- Fait consolidé 2")
+
+    # Create fake records
+    records = [MemoryRecord(id=str(i), text=f"Fact {i}", user_id=uid) for i in range(26)]
+
+    await svc._consolidate(uid, records)
+
+    # Verify memory_count was updated
+    cursor = await db._conn.execute(
+        "SELECT memory_count FROM memory_users WHERE user_id=?", (uid,)
+    )
+    row = await cursor.fetchone()
+    assert row[0] == 1, f"Expected memory_count=1 after consolidation, got {row[0]}"
+
+    await db.close()
+
+
 def make_config(window_size=5, token_threshold=100):
     config = MagicMock()
     config.bot.context_window_size = window_size

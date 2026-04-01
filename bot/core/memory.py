@@ -305,6 +305,16 @@ class MemoryService:
                 n=len(records),
                 d=deleted,
             )
+            # Update cached memory count in DB
+            if self._db is not None:
+                try:
+                    new_count = await self._store.count(uid)
+                    await self._db.execute(
+                        "UPDATE memory_users SET memory_count=? WHERE user_id=?",
+                        (new_count, uid),
+                    )
+                except Exception:
+                    pass
         except Exception as exc:
             logger.warning("Memory consolidation failed: {e}", e=exc)
 
@@ -345,11 +355,12 @@ class MemoryService:
             result = json.loads(raw)
 
             # Insert new questions (max 1 to avoid redundant questions)
+            existing_q_texts = {q["question"].strip().lower() for q in pending}
             questions = result.get("questions", [])[:1]
             for q in questions:
                 question = q.get("question", "").strip()
                 priority = q.get("priority", "medium")
-                if question and priority in ("high", "medium"):
+                if question and priority in ("high", "medium") and question.lower() not in existing_q_texts:
                     await self._db.insert_memory_question(uid, content, question, priority)
                     logger.debug("Memory question created for {uid}: {q}", uid=uid, q=question)
 
