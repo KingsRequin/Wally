@@ -62,6 +62,7 @@ class WallyTwitch(commands.Bot):
         self._active_visits: dict[str, dict] = {}
         # Strong refs pour fire-and-forget tasks
         self._bg_tasks: set[asyncio.Task] = set()
+        self.graph = None  # set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]

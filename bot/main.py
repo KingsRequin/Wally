@@ -89,6 +89,10 @@ async def main() -> None:
 
     memory = MemoryService(config)
 
+    from bot.core.graph import GraphService
+    graph = GraphService(config)
+    await graph.initialize()
+
     # ── LLM clients ────────────────────────────────────────────────────────
     primary_llm = create_llm_client(config.llm.primary, db)
     secondary_llm = create_llm_client(config.llm.secondary, db)
@@ -163,6 +167,7 @@ async def main() -> None:
 
     discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, prompts, language, persona)
     discord_bot.journal = journal
+    discord_bot.graph = graph
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
@@ -255,6 +260,7 @@ async def main() -> None:
             twitch_api=twitch_api,
             persona=persona,
         )
+        twitch_bot.graph = graph
         twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
@@ -480,7 +486,10 @@ async def main() -> None:
             logger.warning("_sync_memory_counts failed: {e}", e=exc)
 
     tasks.append(_sync_memory_counts())
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        await graph.close()
 
 
 if __name__ == "__main__":
