@@ -40,7 +40,7 @@ async def provision_instance(
 
 
 def _create_directories(slug_dir: Path) -> None:
-    for sub in ["data", "logs", "bot/persona"]:
+    for sub in ["data", "data/neo4j", "logs", "bot/persona"]:
         (slug_dir / sub).mkdir(parents=True, exist_ok=True)
 
 
@@ -59,8 +59,11 @@ def _write_env(slug_dir: Path, slug: str, data: dict) -> None:
         f"QDRANT_URL=http://wally-qdrant:6333\n"
         f"QDRANT_COLLECTION_NAME=wally_{slug}\n"
         f"DB_PATH=data/wally.db\n"
-        f"COMPOSE_FILE={INSTANCES_DIR / slug}/docker-compose.yml\n"
+        f"COMPOSE_FILE=/app/docker-compose.yml\n"
+        f"COMPOSE_PROJECT_NAME={slug}\n"
         f"CLOUDFLARED_WALLY_TOKEN=\n"
+        f"NEO4J_USER=neo4j\n"
+        f"NEO4J_PASSWORD=changeme\n"
     )
     if data.get("twitch_enabled"):
         env_content += (
@@ -171,6 +174,15 @@ def _write_config_yaml(slug_dir: Path, slug: str, data: dict) -> None:
             "format": "png", "daily_limit": 10, "per_user_limit": 3,
         },
         "overlay_image": {"display_duration": 15, "enabled": True},
+        "graphiti": {
+            "enabled": False,
+            "neo4j_uri": f"bolt://{slug}-neo4j:7687",
+            "neo4j_user": "neo4j",
+            "neo4j_password": "changeme",
+            "llm_model": "gpt-5-nano",
+            "community_detection": False,
+            "group_id": "discord:default",
+        },
         "theme": {
             "accent_color": "#06b6d4",
             "bg_color": "#11151c",
@@ -223,15 +235,39 @@ def _get_docker_gid() -> int:
 def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
     compose_path = slug_dir / "docker-compose.yml"
     docker_gid = _get_docker_gid()
+    neo4j_name = f"{slug}-neo4j"
     compose = {
         "networks": {_SHARED_NETWORK: {"external": True}},
         "services": {
+            neo4j_name: {
+                "image": "neo4j:5-community",
+                "container_name": neo4j_name,
+                "networks": [_SHARED_NETWORK],
+                "environment": [
+                    "NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}",
+                    "NEO4J_server_memory_heap_initial__size=512m",
+                    "NEO4J_server_memory_heap_max__size=512m",
+                    "NEO4J_server_memory_pagecache_size=256m",
+                ],
+                "volumes": ["./data/neo4j:/data"],
+                "healthcheck": {
+                    "test": ["CMD", "neo4j", "status"],
+                    "interval": "10s",
+                    "timeout": "5s",
+                    "retries": 10,
+                    "start_period": "30s",
+                },
+                "restart": "unless-stopped",
+            },
             slug: {
                 "image": _SHARED_IMAGE,
                 "container_name": f"wally-{slug}",
                 "user": "1000:1000",
                 "group_add": [str(docker_gid)],
                 "networks": [_SHARED_NETWORK],
+                "depends_on": {
+                    neo4j_name: {"condition": "service_healthy"},
+                },
                 "env_file": ".env",
                 "ports": [f"0.0.0.0:{port}:8080"],
                 "volumes": [
@@ -247,7 +283,7 @@ def _write_docker_compose(slug_dir: Path, slug: str, port: int) -> None:
                     "./docker-compose.yml:/app/docker-compose.yml:ro",
                 ],
                 "restart": "unless-stopped",
-            }
+            },
         },
     }
     compose_path.write_text(yaml.dump(compose, allow_unicode=True))
