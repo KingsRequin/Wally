@@ -146,6 +146,7 @@ class PromptBuilder:
         active_secondaries: list[tuple[str, float]] | None = None,
         mood_state: dict[str, float] | None = None,
         persistent_notes: list[dict] | None = None,
+        graph_context: str = "",
     ) -> str:
         parts = []
         if persona_block:
@@ -268,6 +269,10 @@ class PromptBuilder:
             for note in persistent_notes:
                 lines.append(f"**{note['title']}** : {note['content']}")
             parts.append("\n".join(lines))
+
+        # Knowledge graph context (Graphiti)
+        if graph_context:
+            parts.append(graph_context)
 
         # Memory tools directive — always injected
         _memory_tools_directive = load_prompt("memory_tools_directive")

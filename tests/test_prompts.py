@@ -259,3 +259,24 @@ def test_memory_recall_directive_absent_when_no_memory():
     )
     assert "ça me rappelle" not in result.lower()
     assert "souvenir" not in result.lower()
+
+
+def test_build_system_prompt_includes_graph_context():
+    """graph_context should appear in the system prompt when provided."""
+    pb = PromptBuilder()
+    prompt = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+        graph_context="--- Connaissances du graphe ---\n- Alice joue à Apex",
+    )
+    assert "Connaissances du graphe" in prompt
+    assert "Alice joue à Apex" in prompt
+
+
+def test_build_system_prompt_omits_empty_graph_context():
+    """Empty graph_context should not add anything to the prompt."""
+    pb = PromptBuilder()
+    prompt = pb.build_system_prompt(
+        emotion_state=_EMOTIONS_FLAT,
+        graph_context="",
+    )
+    assert "Connaissances du graphe" not in prompt

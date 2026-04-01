@@ -224,11 +224,13 @@ class FactExtractor:
         memory: "MemoryService",
         llm: "BaseLLMClient",
         db=None,
+        graph=None,
     ) -> None:
         self._config = config
         self._memory = memory
         self._openai = llm
         self._db = db
+        self._graph = graph
         # channel_id → buffer dict
         self._buffers: dict[str, dict] = {}
         # Strong refs for fire-and-forget tasks
@@ -380,6 +382,16 @@ class FactExtractor:
                     ch=channel_id,
                     e=exc,
                 )
+
+            # Ingest into knowledge graph (non-blocking, fire-and-forget)
+            if self._graph is not None and self._graph.ready:
+                for msg in to_flush:
+                    self._fire(self._graph.add_episode(
+                        content=msg.get("content", ""),
+                        author=msg.get("author", "unknown"),
+                        source=platform,
+                        group_id=f"{platform}:{channel_id}",
+                    ))
 
             # Clean up DB
             if self._db is not None:

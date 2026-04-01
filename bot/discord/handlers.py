@@ -449,6 +449,18 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             message.reference.message_id, message.content, message.author.bot,
         )
 
+    # Social signal capture
+    if getattr(bot, "social", None) is not None:
+        # Reply tracking
+        if message.reference and message.reference.resolved:
+            ref_msg = message.reference.resolved
+            if hasattr(ref_msg, "author") and not ref_msg.author.bot:
+                bot.social.on_reply(message.author.display_name, ref_msg.author.display_name)
+        # Mention tracking
+        for mentioned in message.mentions:
+            if not mentioned.bot and mentioned != message.author:
+                bot.social.on_mention(message.author.display_name, mentioned.display_name)
+
     # Spam detection — track all messages in allowed channels
     if channel_allowed and message.guild:
         if await _check_spam(bot, message):
@@ -673,6 +685,22 @@ async def _respond(
         except Exception:
             persistent_notes = []
 
+        # Knowledge graph context (Graphiti)
+        graph_context = ""
+        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
+            try:
+                graph_results = await bot.graph.search(
+                    query=message.content,
+                    group_id=f"discord:{message.guild.id}" if message.guild else None,
+                    num_results=5,
+                )
+                if graph_results:
+                    facts = [r["fact"] for r in graph_results if r.get("fact")]
+                    if facts:
+                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(f"- {f}" for f in facts)
+            except Exception:
+                pass
+
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -692,6 +720,7 @@ async def _respond(
             persistent_notes=persistent_notes or None,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
+            graph_context=graph_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)

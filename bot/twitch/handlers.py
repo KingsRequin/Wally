@@ -292,6 +292,22 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             persistent_notes = []
 
+        # Knowledge graph context (Graphiti)
+        graph_context = ""
+        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
+            try:
+                graph_results = await bot.graph.search(
+                    query=content,
+                    group_id=f"twitch:{channel_name}",
+                    num_results=5,
+                )
+                if graph_results:
+                    facts = [r["fact"] for r in graph_results if r.get("fact")]
+                    if facts:
+                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(f"- {f}" for f in facts)
+            except Exception:
+                pass
+
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
@@ -306,6 +322,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             persistent_notes=persistent_notes or None,
+            graph_context=graph_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -314,7 +331,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
-            "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
+            "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds. "
+            "Sois BREF : 1 à 2 phrases maximum, comme dans un vrai chat Twitch."
         )
         user_content = prelude_block + context_block + target_notice + f"\n[{author}]: {content}"
 
@@ -343,6 +361,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 if deleted:
                     return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
                 return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
+            if name == "save_user_memory":
+                await bot.memory.add("twitch", user_id, args["content"], username=author)
+                return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
             if name in ("web_search", "image_search"):
                 if name == "image_search":
                     return await web_search.search_images(args["query"])
