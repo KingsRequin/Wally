@@ -2680,10 +2680,10 @@ function renderGlobalMemoryTab() {
     <div style="max-width:800px;margin:0 auto;padding:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div>
-          <h2 style="margin:0;font-size:1.3rem">Memoire globale</h2>
+          <h2 style="margin:0;font-size:1.3rem">Mémoire communautaire</h2>
           <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted)">
-            Connaissances partagees par toute la communaute (liens, regles, infos serveur).
-            Consultees automatiquement a chaque requete.
+            Faits sur le serveur et la communauté, retrouvés par pertinence sémantique.
+            Seuls les faits pertinents au message en cours sont injectés.
           </p>
         </div>
         <span id="global-mem-count" class="badge" style="font-size:0.75rem;padding:4px 10px"></span>
@@ -5466,9 +5466,9 @@ function renderMemoireTab() {
     el.innerHTML = `
       <div class="mem-subnav">
         <button class="mem-subnav-pill active" data-subtab="users" onclick="switchMemoireSubTab('users')">Utilisateurs</button>
-        <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Globale</button>
+        <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
-        <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes persistantes</button>
+        <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
@@ -5542,11 +5542,12 @@ async function loadNotesTab(panel) {
   html += '<textarea id="note-new-content" class="input" rows="3" placeholder="Contenu" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;color:#fff;resize:vertical"></textarea>';
   html += '<button class="btn btn-sm" onclick="saveNewNote()">Enregistrer</button>';
   html += '</div></div>';
+  html += '<p style="color:rgba(255,255,255,0.4);font-size:0.82rem;margin:0 0 12px;padding:0 4px">Règles et engagements toujours injectés dans chaque conversation. Pour les infos critiques que le bot doit garder en tête.</p>';
 
   if (notes.length === 0) {
     html += '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune note persistante</p>';
   } else {
-    html += '<div class="card"><div class="card-title">NOTES (' + notes.length + ')</div><div id="notes-list">';
+    html += '<div class="card"><div class="card-title">NOTES DU BOT (' + notes.length + ')</div><div id="notes-list">';
     for (const n of notes) {
       html += renderNoteRow(n);
     }
@@ -7478,6 +7479,19 @@ async function loadInstances() {
           };
         })(inst.slug);
         updateRow.appendChild(cancelUpdateBtn);
+        var applyUpdateBtn = document.createElement('button');
+        applyUpdateBtn.className = 'btn btn-sm';
+        applyUpdateBtn.textContent = '🚀 Appliquer';
+        applyUpdateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9);margin-left:4px';
+        applyUpdateBtn.onclick = (function(s, btn) {
+          return async function() {
+            btn.disabled = true; btn.textContent = '⏳ En cours…';
+            var r = await apiFetch('/api/admin/setup/instances/' + s + '/update', { method: 'POST' });
+            if (r && r.ok) { toast('Mise à jour lancée pour ' + s + ' — redémarrage en cours', 'success'); setTimeout(loadInstances, 3000); }
+            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); btn.disabled = false; btn.textContent = '🚀 Appliquer'; }
+          };
+        })(inst.slug, applyUpdateBtn);
+        updateRow.appendChild(applyUpdateBtn);
       } else {
         var publishBtn = document.createElement('button');
         publishBtn.className = 'btn btn-sm';
