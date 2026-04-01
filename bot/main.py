@@ -155,7 +155,7 @@ async def main() -> None:
     from bot.core.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
 
-    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db)
+    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db, graph=graph)
     await fact_extractor.restore_buffers()
     logger.info("FactExtractor initialized")
 
@@ -168,6 +168,10 @@ async def main() -> None:
     discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, prompts, language, persona)
     discord_bot.journal = journal
     discord_bot.graph = graph
+    if graph.ready:
+        from bot.discord.social import SocialTracker
+        discord_bot.social = SocialTracker(graph)
+        discord_bot.social.start()
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
@@ -432,6 +436,7 @@ async def main() -> None:
         fact_extractor=fact_extractor,
         notifications=notification_service,
         action_service=action_service,
+        graph=graph,
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

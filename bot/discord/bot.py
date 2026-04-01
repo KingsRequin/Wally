@@ -1,6 +1,7 @@
 # bot/discord/bot.py
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -51,6 +52,7 @@ class WallyDiscord(commands.Bot):
         self.persona = persona
         self.journal = None  # set by main.py after construction
         self.graph = None  # set by main.py after construction
+        self.social = None  # SocialTracker, set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
@@ -109,6 +111,21 @@ class WallyDiscord(commands.Bot):
         self.reaction_tracker.record_discord_reaction(
             payload.message_id, str(payload.emoji), is_bot,
         )
+
+    async def on_voice_state_update(self, member, before, after) -> None:
+        if member.bot or not self.social:
+            return
+        if before.channel != after.channel:
+            if before.channel:
+                self.social.on_voice_leave(before.channel.id, member.id, member.display_name)
+            if after.channel:
+                self.social.on_voice_join(after.channel.id, member.id, member.display_name)
+
+    async def on_reaction_add(self, reaction, user) -> None:
+        if user.bot or not self.social:
+            return
+        if reaction.message.author != user:
+            self.social.on_reaction(user.display_name, reaction.message.author.display_name)
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         if interaction.type != discord.InteractionType.component:
