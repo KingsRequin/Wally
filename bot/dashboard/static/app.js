@@ -384,6 +384,7 @@ function showTab(tabId) {
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   if (tabId === 'admin-parametres') renderParametresTab();
   if (tabId === 'admin-systeme') renderSystemeTab();
+  if (tabId === 'graph') loadPublicGraph();
   pollCostsBadge();
   pollLinksBadge();
 }
@@ -5633,9 +5634,27 @@ async function deleteNote(id) {
   }
 }
 
+// ── Public Social Graph Tab ───────────────────────────────────────────────────
+
+var _publicGraphLoaded = false;
+
+async function loadPublicGraph() {
+  var panel = document.getElementById('tab-graph');
+  if (!panel) return;
+  // Only fetch once per session — re-render on subsequent visits without refetch
+  if (_publicGraphLoaded) return;
+  _publicGraphLoaded = true;
+  await _renderGraph(panel, '/api/public/social-graph/data', false);
+}
+
 // ── Social Graph Tab (vis-network) ──────────────────────────────────────────
 
 async function loadGraphTab(panel) {
+  if (!panel) return;
+  await _renderGraph(panel, '/api/admin/social-graph/data', true);
+}
+
+async function _renderGraph(panel, apiUrl, isAdmin) {
   if (!panel) return;
   panel.innerHTML = '<p style="color:rgba(255,255,255,0.45);padding:16px">Chargement du graphe...</p>';
 
@@ -5672,8 +5691,9 @@ async function loadGraphTab(panel) {
   titleBlock.appendChild(h2);
   titleBlock.appendChild(subtitle);
 
+  var pfx = isAdmin ? 'admin' : 'pub';
   var statsEl = document.createElement('span');
-  statsEl.id = 'graph-stats';
+  statsEl.id = pfx + '-graph-stats';
   statsEl.style.cssText = 'font-size:0.75rem;padding:4px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:rgba(255,255,255,0.6)';
 
   header.appendChild(titleBlock);
@@ -5684,20 +5704,20 @@ async function loadGraphTab(panel) {
   card.className = 'card';
   card.style.cssText = 'padding:0;overflow:hidden;position:relative;min-height:500px';
   var graphContainer = document.createElement('div');
-  graphContainer.id = 'graph-container';
+  graphContainer.id = pfx + '-graph-container';
   graphContainer.style.cssText = 'width:100%;height:600px;background:rgba(0,0,0,0.2);border-radius:12px';
   card.appendChild(graphContainer);
   wrapper.appendChild(card);
 
   var detailPanel = document.createElement('div');
-  detailPanel.id = 'graph-detail';
+  detailPanel.id = pfx + '-graph-detail';
   detailPanel.className = 'card';
   detailPanel.style.cssText = 'margin-top:16px;display:none';
   var detailTitle = document.createElement('div');
   detailTitle.className = 'card-title';
   detailTitle.textContent = 'D\u00c9TAIL';
   var detailContent = document.createElement('div');
-  detailContent.id = 'graph-detail-content';
+  detailContent.id = pfx + '-graph-detail-content';
   detailPanel.appendChild(detailTitle);
   detailPanel.appendChild(detailContent);
   wrapper.appendChild(detailPanel);
@@ -5706,7 +5726,7 @@ async function loadGraphTab(panel) {
   panel.appendChild(wrapper);
 
   // Fetch graph data from API
-  var r = await apiFetch('/api/admin/social-graph/data');
+  var r = isAdmin ? await apiFetch(apiUrl) : await fetch(apiUrl);
   if (!r || !r.ok) {
     graphContainer.textContent = 'Graphe non disponible \u2014 Neo4j non connect\u00e9';
     graphContainer.style.cssText += ';color:rgba(255,255,255,0.4);padding:40px;text-align:center';

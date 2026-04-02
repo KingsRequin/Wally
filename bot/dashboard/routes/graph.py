@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 router = APIRouter()
+public_router = APIRouter()
 
 
 def _get_graph(request: Request):
@@ -16,9 +17,8 @@ def _get_graph(request: Request):
     return graph
 
 
-@router.get("/social-graph/data")
-async def get_graph_data(request: Request):
-    """Return nodes and edges for the social graph visualization."""
+async def _graph_data(request: Request) -> dict:
+    """Shared logic for social graph data."""
     graph = _get_graph(request)
     if graph is None:
         return {"nodes": [], "edges": []}
@@ -26,7 +26,6 @@ async def get_graph_data(request: Request):
         driver = graph._graphiti._driver
         gid = graph._sanitize_group_id(graph._config.graphiti.group_id)
         async with driver.session() as session:
-            # Get Entity nodes
             result = await session.run(
                 "MATCH (n:Entity) "
                 "WHERE n.group_id = $gid "
@@ -38,7 +37,6 @@ async def get_graph_data(request: Request):
             )
             nodes = [dict(record) async for record in result]
 
-            # Get active relationships (not invalidated)
             result = await session.run(
                 "MATCH (a:Entity)-[r:RELATES_TO]->(b:Entity) "
                 "WHERE a.group_id = $gid AND r.invalid_at IS NULL "
@@ -55,6 +53,18 @@ async def get_graph_data(request: Request):
     except Exception as exc:
         logger.warning("Social graph query failed: {e}", e=exc)
         return {"nodes": [], "edges": []}
+
+
+@public_router.get("/social-graph/data")
+async def get_graph_data_public(request: Request):
+    """Return nodes and edges for the social graph visualization (public)."""
+    return await _graph_data(request)
+
+
+@router.get("/social-graph/data")
+async def get_graph_data(request: Request):
+    """Return nodes and edges for the social graph visualization (admin)."""
+    return await _graph_data(request)
 
 
 @router.get("/social-graph/affinity/{user_a}/{user_b}")

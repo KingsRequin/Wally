@@ -96,6 +96,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(sse.public_router, prefix="/api/public")
     app.include_router(roadmap.router, prefix="/api/public")
     app.include_router(gallery.public_router, prefix="/api/public")
+    app.include_router(graph.public_router, prefix="/api/public")
 
     # Chat routes (public — JWT auth handled internally)
     app.include_router(chat_auth.router, prefix="/api/chat")
