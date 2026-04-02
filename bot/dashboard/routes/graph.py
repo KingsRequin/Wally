@@ -24,7 +24,7 @@ async def get_graph_data(request: Request):
         return {"nodes": [], "edges": []}
     try:
         driver = graph._graphiti._driver
-        gid = graph._config.graphiti.group_id
+        gid = graph._sanitize_group_id(graph._config.graphiti.group_id)
         async with driver.session() as session:
             # Get Entity nodes
             result = await session.run(
@@ -79,7 +79,7 @@ async def get_communities(request: Request):
         return {"communities": []}
     try:
         driver = graph._graphiti._driver
-        gid = graph._config.graphiti.group_id
+        gid = graph._sanitize_group_id(graph._config.graphiti.group_id)
         async with driver.session() as session:
             result = await session.run(
                 "MATCH (c:Community)-[:HAS_MEMBER]->(e:Entity) "
