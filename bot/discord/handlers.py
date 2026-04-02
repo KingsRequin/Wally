@@ -293,6 +293,83 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     return True
 
 
+def _detect_text_mentions(message, bot) -> list[str]:
+    """Detect text-based mentions (nicknames without @) in a message.
+
+    Checks alias cache first (exact), then member display names (exact),
+    then fuzzy match (SequenceMatcher >= 0.75). Returns display names only.
+    Skips bots, self, and already @mentioned members to avoid double-counting.
+    """
+    guild = message.guild
+    content = message.content
+    if not guild or not content:
+        return []
+
+    tokens = set(re.findall(r"[A-Za-z0-9_À-ÿ]{3,}", content))
+    if not tokens:
+        return []
+
+    # Build member lookup: lower_name -> display_name (skip bots and self)
+    member_map: dict[str, str] = {}
+    for m in guild.members:
+        if not m.bot and m.id != message.author.id:
+            member_map[m.display_name.lower()] = m.display_name
+            if m.name.lower() != m.display_name.lower():
+                member_map[m.name.lower()] = m.display_name
+
+    if not member_map:
+        return []
+
+    # Already @mentioned — skip to avoid double-counting
+    already_mentioned = {m.display_name for m in message.mentions if not m.bot}
+
+    alias_cache: dict[str, str] = {}
+    if getattr(bot, "memory", None) is not None:
+        alias_cache = bot.memory._alias_cache
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for token in tokens:
+        token_lower = token.lower()
+        display_name: str | None = None
+
+        # 1. Alias cache exact match (nickname:{token} -> discord:user_id -> member)
+        cache_key = f"nickname:{token_lower}"
+        if cache_key in alias_cache:
+            canonical_uid = alias_cache[cache_key]
+            if canonical_uid.startswith("discord:"):
+                raw_id = canonical_uid[len("discord:"):]
+                try:
+                    member = guild.get_member(int(raw_id))
+                    if member and not member.bot and member.id != message.author.id:
+                        display_name = member.display_name
+                except (ValueError, Exception):
+                    pass
+
+        # 2. Exact match against member display names / usernames
+        if display_name is None:
+            display_name = member_map.get(token_lower)
+
+        # 3. Fuzzy match
+        if display_name is None:
+            best_ratio = 0.0
+            best_name: str | None = None
+            for name_lower, dname in member_map.items():
+                ratio = difflib.SequenceMatcher(None, token_lower, name_lower).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_name = dname
+            if best_ratio >= 0.75 and best_name:
+                display_name = best_name
+
+        if display_name and display_name not in already_mentioned and display_name not in seen:
+            seen.add(display_name)
+            found.append(display_name)
+
+    return found
+
+
 async def _third_party_mention_context(
     bot,
     platform: str,
@@ -456,10 +533,13 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             ref_msg = message.reference.resolved
             if hasattr(ref_msg, "author") and not ref_msg.author.bot:
                 bot.social.on_reply(message.author.display_name, ref_msg.author.display_name)
-        # Mention tracking
+        # Mention tracking (@mentions)
         for mentioned in message.mentions:
             if not mentioned.bot and mentioned != message.author:
                 bot.social.on_mention(message.author.display_name, mentioned.display_name)
+        # Text-based nickname detection (e.g. "kings", "Requin" without @)
+        for display_name in _detect_text_mentions(message, bot):
+            bot.social.on_mention(message.author.display_name, display_name)
 
     # Spam detection — track all messages in allowed channels
     if channel_allowed and message.guild:
