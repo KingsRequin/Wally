@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -130,51 +129,6 @@ class WallyDiscord(commands.Bot):
             return  # message not in cache, author unknown
         if author != user:
             self.social.on_reaction(user.display_name, author.display_name)
-
-    async def on_interaction(self, interaction: discord.Interaction) -> None:
-        if interaction.type != discord.InteractionType.component:
-            return
-        custom_id = (interaction.data or {}).get("custom_id", "")
-        if not custom_id.startswith("update_instance_"):
-            return
-        slug = custom_id[len("update_instance_"):]
-        if not interaction.guild:
-            await interaction.response.send_message("Commande disponible uniquement dans un serveur.", ephemeral=True)
-            return
-        member = interaction.guild.get_member(interaction.user.id)
-        if not member or not member.guild_permissions.manage_guild:
-            await interaction.response.send_message("Permission insuffisante (Gérer le serveur requis).", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            INSTANCES_DIR = Path("/opt/stacks/wally-instances")
-            compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
-            if not compose_path.exists():
-                await interaction.followup.send(f"Instance `{slug}` introuvable.", ephemeral=True)
-                return
-            proc = await asyncio.create_subprocess_exec(
-                "/usr/bin/docker", "compose", "-f", str(compose_path),
-                "up", "-d", "--force-recreate",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-            if proc.returncode == 0:
-                logger.info("Instance {} updated via Discord button by {}", slug, interaction.user)
-                await interaction.followup.send(f"Instance `{slug}` mise a jour !", ephemeral=True)
-                try:
-                    await interaction.message.edit(
-                        content=interaction.message.content + f"\nMis a jour par {interaction.user.display_name}"
-                    )
-                except Exception:
-                    pass
-            else:
-                await interaction.followup.send(f"Erreur : {stderr.decode()[:300]}", ephemeral=True)
-        except asyncio.TimeoutError:
-            await interaction.followup.send("Timeout lors de la mise a jour (>60s).", ephemeral=True)
-        except Exception as exc:
-            logger.error("Update instance {} failed: {}", slug, exc)
-            await interaction.followup.send(f"Erreur : {exc}", ephemeral=True)
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)
