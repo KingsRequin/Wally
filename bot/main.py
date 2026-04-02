@@ -419,6 +419,15 @@ async def main() -> None:
     from bot.core.notifications import NotificationService
     notification_service = NotificationService(config, discord_bot)
 
+    # ── UpdateChecker ─────────────────────────────────────────────────────────
+    update_checker = None
+    if config.bot.update_image:
+        from bot.core.update_checker import UpdateChecker
+        update_checker = UpdateChecker(config.bot.update_image)
+        logger.info("UpdateChecker configured — image={}", config.bot.update_image)
+    else:
+        logger.info("UpdateChecker disabled — set bot.update_image in config.yaml to enable")
+
     dashboard_state = AppState(
         config=config,
         db=db,
@@ -437,9 +446,13 @@ async def main() -> None:
         notifications=notification_service,
         action_service=action_service,
         graph=graph,
+        update_checker=update_checker,
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible
+
+    if update_checker:
+        update_checker.start()
 
     discord_bot.dashboard_state = dashboard_state
     if _twitch_bot_ref is not None:
@@ -495,6 +508,8 @@ async def main() -> None:
         await asyncio.gather(*tasks)
     finally:
         await graph.close()
+        if update_checker:
+            await update_checker.stop()
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from bot.core.notifications import NotificationService
     from bot.core.actions import ActionService
     from bot.core.graph import GraphService
+    from bot.core.update_checker import UpdateChecker
 
 
 @dataclass
@@ -44,6 +45,7 @@ class AppState:
     notifications: Optional["NotificationService"] = None
     action_service: Optional["ActionService"] = None
     graph: Optional["GraphService"] = None
+    update_checker: Optional["UpdateChecker"] = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
     message_count_discord: int = 0

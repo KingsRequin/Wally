@@ -31,6 +31,7 @@ class BotConfig:
     memory_search_min_score: float = 0.5
     memory_context_max_tokens: int = 800
     love_decay_lambda: float = 0.1
+    update_image: str = ""          # ex: "ghcr.io/user/wally-ai:latest" — vide = polling désactivé
 
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
