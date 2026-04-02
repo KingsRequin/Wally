@@ -309,19 +309,26 @@ def _detect_text_mentions(message, bot) -> list[str]:
     if not tokens:
         return []
 
-    # Build member lookup: lower_name -> display_name (skip bots and self)
+    # Build member lookup: lower_name -> display_name (skip bots except Wally, skip self)
+    bot_user = getattr(bot, "user", None)
     member_map: dict[str, str] = {}
     for m in guild.members:
-        if not m.bot and m.id != message.author.id:
-            member_map[m.display_name.lower()] = m.display_name
-            if m.name.lower() != m.display_name.lower():
-                member_map[m.name.lower()] = m.display_name
+        if m.id == message.author.id:
+            continue
+        if m.bot and m != bot_user:
+            continue
+        member_map[m.display_name.lower()] = m.display_name
+        if m.name.lower() != m.display_name.lower():
+            member_map[m.name.lower()] = m.display_name
 
     if not member_map:
         return []
 
-    # Already @mentioned — skip to avoid double-counting
-    already_mentioned = {m.display_name for m in message.mentions if not m.bot}
+    # Already @mentioned — skip to avoid double-counting (include Wally)
+    already_mentioned = {
+        m.display_name for m in message.mentions
+        if not m.bot or m == bot_user
+    }
 
     alias_cache: dict[str, str] = {}
     if getattr(bot, "memory", None) is not None:
@@ -528,14 +535,16 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     # Social signal capture
     if getattr(bot, "social", None) is not None:
-        # Reply tracking
+        # Reply tracking (include replies to Wally)
         if message.reference and message.reference.resolved:
             ref_msg = message.reference.resolved
-            if hasattr(ref_msg, "author") and not ref_msg.author.bot:
+            if hasattr(ref_msg, "author") and (
+                not ref_msg.author.bot or ref_msg.author == bot.user
+            ):
                 bot.social.on_reply(message.author.display_name, ref_msg.author.display_name)
-        # Mention tracking (@mentions)
+        # Mention tracking (@mentions, include @Wally)
         for mentioned in message.mentions:
-            if not mentioned.bot and mentioned != message.author:
+            if (not mentioned.bot or mentioned == bot.user) and mentioned != message.author:
                 bot.social.on_mention(message.author.display_name, mentioned.display_name)
         # Text-based nickname detection (e.g. "kings", "Requin" without @)
         for display_name in _detect_text_mentions(message, bot):
