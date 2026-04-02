@@ -39,12 +39,11 @@ async function loadStatus() {
     if (!r.ok) return;
     var d = await r.json();
 
-    var online = d.discord_connected || d.twitch_connected;
-    setClass('dot-discord', 'dot ' + (d.discord_connected ? 'online' : 'offline'));
-    setClass('dot-twitch',  'dot ' + (d.twitch_connected  ? 'online' : 'offline'));
-    setText('lbl-discord',
-      d.discord_connected ? ('Discord' + (d.discord_guild ? ' — ' + d.discord_guild : '')) : 'Discord (hors ligne)');
-    setText('lbl-twitch', d.twitch_connected ? 'Twitch' : 'Twitch (hors ligne)');
+    var online = d.discord_online || d.twitch_online;
+    setClass('dot-discord', 'dot ' + (d.discord_online ? 'online' : 'offline'));
+    setClass('dot-twitch',  'dot ' + (d.twitch_online  ? 'online' : 'offline'));
+    setText('lbl-discord', d.discord_online ? 'Discord' : 'Discord (hors ligne)');
+    setText('lbl-twitch',  d.twitch_online  ? 'Twitch'  : 'Twitch (hors ligne)');
 
     if (d.uptime_seconds != null) setText('uptime', formatUptime(d.uptime_seconds));
 

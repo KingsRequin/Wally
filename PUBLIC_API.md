@@ -13,11 +13,13 @@ Base URL : `http(s)://votre-domaine`
 
 Reponse JSON :
 - uptime_seconds (number)
-- discord_connected (bool)
-- twitch_connected (bool)
-- discord_guild (string|null)
-- message_count (number)
-- version (string)
+- discord_online (bool)
+- twitch_online (bool)
+- total_messages (number)
+- messages_discord (number)
+- messages_twitch (number)
+- git_hash (string)
+- build_date (string)
 
 ---
 
