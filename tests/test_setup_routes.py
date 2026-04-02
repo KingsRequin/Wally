@@ -121,7 +121,7 @@ async def test_wizard_validate_discord_bad_token(client):
 
 
 @pytest.mark.asyncio
-async def test_submit_provisions_instance(client):
+async def test_submit_wizard(client):
     c, state = client
     row = MagicMock()
     row.__getitem__ = lambda self, k: {
@@ -129,16 +129,12 @@ async def test_submit_provisions_instance(client):
         "token": "tok999",
     }[k]
     state.db.get_setup_invite = AsyncMock(return_value=row)
-    state.db.get_setup_session = AsyncMock(return_value={
-        "discord_token": "dt", "discord_guild_id": "gid",
-        "discord_client_id": "cid", "discord_client_secret": "cs",
-        "openai_api_key": "sk-x", "bot_name": "cindy",
-        "language_default": "fr", "trigger_names": ["cindy"],
-        "persona_soul": "soul", "persona_identity": "id",
-        "persona_voice": "voice", "persona_emotions": "emo",
-        "twitch_enabled": False,
-    })
-    with patch("bot.dashboard.routes.setup.provision_instance", AsyncMock(return_value="http://localhost:8081")):
-        resp = await c.post("/api/setup/tok999/submit", json={})
+    state.db.get_setup_session = AsyncMock(return_value={"bot_name": "cindy"})
+    state.db.use_setup_invite = AsyncMock()
+    resp = await c.post("/api/setup/tok999/submit", json={})
     assert resp.status_code == 200
-    assert resp.json()["url"] == "http://localhost:8081"
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["slug"] == "cindy"
+    assert not data["dry_run"]
+    state.db.use_setup_invite.assert_awaited_once()
