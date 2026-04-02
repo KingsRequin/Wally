@@ -124,8 +124,11 @@ class WallyDiscord(commands.Bot):
     async def on_reaction_add(self, reaction, user) -> None:
         if user.bot or not self.social:
             return
-        if reaction.message.author != user:
-            self.social.on_reaction(user.display_name, reaction.message.author.display_name)
+        author = reaction.message.author
+        if author is None:
+            return  # message not in cache, author unknown
+        if author != user:
+            self.social.on_reaction(user.display_name, author.display_name)
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         if interaction.type != discord.InteractionType.component:

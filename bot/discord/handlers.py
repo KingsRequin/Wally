@@ -780,7 +780,7 @@ async def _respond(
             try:
                 graph_results = await bot.graph.search(
                     query=message.content,
-                    group_id=f"discord:{message.guild.id}" if message.guild else None,
+                    group_id=None,  # falls back to config.graphiti.group_id (discord-default)
                     num_results=5,
                 )
                 if graph_results:

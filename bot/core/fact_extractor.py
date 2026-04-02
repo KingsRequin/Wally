@@ -385,12 +385,18 @@ class FactExtractor:
 
             # Ingest into knowledge graph (non-blocking, fire-and-forget)
             if self._graph is not None and self._graph.ready:
+                # Discord: server-wide group_id (matches SocialTracker + search)
+                # Twitch: per-channel group_id
+                if platform == "discord":
+                    gid: str | None = self._config.graphiti.group_id
+                else:
+                    gid = f"{platform}:{channel_id.split(':', 1)[-1]}"
                 for msg in to_flush:
                     self._fire(self._graph.add_episode(
                         content=msg.get("content", ""),
                         author=msg.get("author", "unknown"),
                         source=platform,
-                        group_id=f"{platform}:{channel_id.split(':', 1)[-1]}",
+                        group_id=gid,
                     ))
 
             # Clean up DB
