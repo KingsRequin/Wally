@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from bot.dashboard.state import AppState
 
 STATIC_DIR = Path(__file__).parent / "static"
+PUBLIC_UI_DIR = Path("public-ui")
+STARTER_DIR = STATIC_DIR / "public-starter"
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -32,6 +35,34 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["CDN-Cache-Control"] = "no-store"
         response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
         return response
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles avec fallback vers index.html pour les routes SPA inconnues."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            return response
+        except Exception as exc:
+            if getattr(exc, "status_code", None) == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
+def _maybe_seed_public_ui(
+    starter_dir: Path = STARTER_DIR,
+    public_ui_dir: Path = PUBLIC_UI_DIR,
+) -> None:
+    """Copie le starter kit dans public-ui/ si le dossier est vide ou absent."""
+    if not starter_dir.exists():
+        return
+    if public_ui_dir.exists() and any(public_ui_dir.iterdir()):
+        return  # déjà peuplé — ne pas écraser
+    public_ui_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(str(starter_dir), str(public_ui_dir), dirs_exist_ok=True)
+    logger.info("Public UI seeded from starter kit into {}", public_ui_dir)
 
 
 def create_dashboard_app(state: "AppState") -> FastAPI:
@@ -52,6 +83,12 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         # SSE logs sink setup
         from bot.dashboard.routes.sse import setup_log_sink
         setup_log_sink()
+
+        # Seed public-ui/ depuis le starter kit si vide
+        try:
+            _maybe_seed_public_ui()
+        except Exception as exc:
+            logger.warning("Failed to seed public-ui: {e}", e=exc)
 
         # Créer le token preview s'il n'existe pas déjà
         try:
@@ -127,10 +164,9 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     # Cache-bust version: updated at startup, forces CDN to fetch fresh assets
     _asset_version = str(int(time.time()))
 
-    @app.get("/")
-    async def root():
+    @app.get("/admin")
+    async def admin_panel():
         html = (STATIC_DIR / "index.html").read_text()
-        # Replace static ?v=N with current startup timestamp
         html = html.replace("style.css?v=6", f"style.css?v={_asset_version}")
         html = html.replace("app.js?v=6", f"app.js?v={_asset_version}")
         html = html.replace("theme.css?v=6", f"theme.css?v={_asset_version}")
@@ -181,6 +217,15 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         html = (STATIC_DIR / "setup.html").read_text()
         html = html.replace("__WIZARD_TOKEN__", token).replace("__WIZARD_MODE__", "normal")
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    # Public UI — SPAStaticFiles en dernier (catch-all SPA)
+    # Enregistré après tous les routers API pour ne pas intercepter /api/*, /admin, etc.
+    if PUBLIC_UI_DIR.exists():
+        app.mount(
+            "/",
+            SPAStaticFiles(directory=str(PUBLIC_UI_DIR), html=True),
+            name="public-ui",
+        )
 
     return app
 
