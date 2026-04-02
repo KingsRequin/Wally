@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wally</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888' stroke='white' stroke-width='2'/></svg>">
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="header-logo">W</div>
+      <div class="header-info">
+        <h1 class="header-title">Wally</h1>
+        <span class="header-status" id="header-status">Connexion...</span>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-label">STATUT</div>
+          <div class="stat-row">
+            <span class="dot offline" id="dot-discord"></span>
+            <span id="lbl-discord">Discord</span>
+          </div>
+          <div class="stat-row">
+            <span class="dot offline" id="dot-twitch"></span>
+            <span id="lbl-twitch">Twitch</span>
+          </div>
+          <div class="uptime" id="uptime">—</div>
+        </div>
+
+        <div class="card" id="stream-card">
+          <div class="card-label">STREAM</div>
+          <div id="stream-content"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">HUMEUR EN DIRECT</div>
+        <div id="emotions-container" class="emotions-grid"></div>
+        <div class="emotion-state" id="emotion-state" style="display:none"></div>
+      </div>
+
+      <div class="card" id="gallery-card" style="display:none">
+        <div class="card-label">GALERIE</div>
+        <div id="gallery-grid" class="gallery-grid"></div>
+      </div>
+
+    </main>
+
+    <div class="modal-bg" id="modal-bg">
+      <div class="modal-img-wrap" id="modal-wrap">
+        <img id="modal-img" src="" alt="">
+        <p id="modal-caption"></p>
+        <button class="modal-close" id="modal-close">fermer</button>
+      </div>
+    </div>
+
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
