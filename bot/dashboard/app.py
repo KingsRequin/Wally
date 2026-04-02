@@ -47,7 +47,9 @@ class SPAStaticFiles(StaticFiles):
             return response
         except Exception as exc:
             if getattr(exc, "status_code", None) == 404:
-                return await super().get_response("index.html", scope)
+                response = await super().get_response("index.html", scope)
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                return response
             raise
 
 

@@ -99,6 +99,15 @@ def app_with_public_ui(tmp_path, monkeypatch):
     return create_dashboard_app(_make_state())
 
 
+def test_app_starts_without_public_ui(tmp_path, monkeypatch):
+    """L'app démarre sans planter quand public-ui/ n'existe pas."""
+    missing = tmp_path / "nonexistent-public-ui"
+    monkeypatch.setattr("bot.dashboard.app.PUBLIC_UI_DIR", missing)
+    # Should not raise
+    app = create_dashboard_app(_make_state())
+    assert app is not None
+
+
 @pytest.fixture
 async def client(app_with_public_ui):
     async with AsyncClient(
