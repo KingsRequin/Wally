@@ -60,7 +60,7 @@ def _maybe_seed_public_ui(
     """Copie le starter kit dans public-ui/ si le dossier est vide ou absent."""
     if not starter_dir.exists():
         return
-    if public_ui_dir.exists() and any(public_ui_dir.iterdir()):
+    if public_ui_dir.is_dir() and any(public_ui_dir.iterdir()):
         return  # déjà peuplé — ne pas écraser
     public_ui_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(str(starter_dir), str(public_ui_dir), dirs_exist_ok=True)
@@ -85,12 +85,6 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         # SSE logs sink setup
         from bot.dashboard.routes.sse import setup_log_sink
         setup_log_sink()
-
-        # Seed public-ui/ depuis le starter kit si vide
-        try:
-            _maybe_seed_public_ui()
-        except Exception as exc:
-            logger.warning("Failed to seed public-ui: {e}", e=exc)
 
         # Créer le token preview s'il n'existe pas déjà
         try:
@@ -220,9 +214,15 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         html = html.replace("__WIZARD_TOKEN__", token).replace("__WIZARD_MODE__", "normal")
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
+    # Seed public-ui/ depuis le starter kit si vide — avant le mount conditionnel
+    try:
+        _maybe_seed_public_ui()
+    except Exception as exc:
+        logger.warning("Failed to seed public-ui: {e}", e=exc)
+
     # Public UI — SPAStaticFiles en dernier (catch-all SPA)
     # Enregistré après tous les routers API pour ne pas intercepter /api/*, /admin, etc.
-    if PUBLIC_UI_DIR.exists():
+    if PUBLIC_UI_DIR.is_dir():
         app.mount(
             "/",
             SPAStaticFiles(directory=str(PUBLIC_UI_DIR), html=True),

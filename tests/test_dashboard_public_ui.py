@@ -149,3 +149,34 @@ async def test_api_not_intercepted_by_spa(client):
     r = await client.get("/api/public/status")
     assert r.status_code == 200
     assert "uptime_seconds" in r.json()
+
+
+async def test_spa_fallback_has_cache_control(client):
+    """Le fallback SPA applique bien Cache-Control: no-store."""
+    r = await client.get("/page-qui-nexiste-pas")
+    assert r.status_code == 200
+    assert "no-store" in r.headers.get("cache-control", "")
+
+
+@pytest.fixture
+def app_without_index(tmp_path, monkeypatch):
+    """App avec public-ui/ présent mais sans index.html."""
+    public_ui = tmp_path / "public-ui"
+    public_ui.mkdir()
+    (public_ui / "style.css").write_text("body{}")  # un fichier mais pas index.html
+    monkeypatch.setattr("bot.dashboard.app.PUBLIC_UI_DIR", public_ui)
+    return create_dashboard_app(_make_state())
+
+
+@pytest.fixture
+async def client_no_index(app_without_index):
+    async with AsyncClient(
+        transport=ASGITransport(app=app_without_index), base_url="http://test"
+    ) as c:
+        yield c
+
+
+async def test_spa_fallback_without_index_returns_not_500(client_no_index):
+    """Si public-ui/ sans index.html : le SPA fallback retourne 404, pas 500."""
+    r = await client_no_index.get("/une-page-inconnue")
+    assert r.status_code != 500
