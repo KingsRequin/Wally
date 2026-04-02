@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
-from bot.core.provisioner import INSTANCES_DIR
 
 router = APIRouter()
 
@@ -36,7 +35,6 @@ async def get_config(request: Request) -> dict:
         "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
         "image_generation": asdict(cfg.image_generation),
         "overlay_image": asdict(cfg.overlay_image),
-        "is_main": INSTANCES_DIR.exists(),
     }
 
 
@@ -525,7 +523,11 @@ async def get_bot_status(request: Request) -> dict:
     return {
         "discord": "connected" if discord_online else "disconnected",
         "twitch": "connected" if twitch_online else "disconnected",
-        "update_available": Path("/app/data/update_available").exists(),
+        "update_available": (
+            state.update_checker.update_available
+            if state.update_checker is not None
+            else False
+        ),
         "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
         "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
     }
@@ -749,25 +751,31 @@ async def delete_alias(request: Request, nickname: str):
 
 
 @router.post("/self-update")
-async def self_update() -> dict:
-    """Déclenche la mise à jour de ce container via Docker Compose (instances uniquement).
+async def self_update(request: Request) -> dict:
+    """Déclenche la mise à jour de ce container : pull puis recreate via Docker Compose.
 
     Requiert COMPOSE_FILE dans l'environnement et /var/run/docker.sock monté.
     Lance la commande en arrière-plan pour que la réponse HTTP parte avant l'arrêt du container.
     """
     compose_file = os.getenv("COMPOSE_FILE", "")
     if not compose_file:
-        raise HTTPException(status_code=503, detail="COMPOSE_FILE non configuré — instance non compatible")
+        raise HTTPException(status_code=503, detail="COMPOSE_FILE non configuré")
     if not Path("/var/run/docker.sock").exists():
         raise HTTPException(status_code=503, detail="Docker socket non disponible")
-    # Supprimer le flag avant de lancer la mise à jour
-    Path("/app/data/update_available").unlink(missing_ok=True)
-    # Popen avec start_new_session=True : le sous-processus survit à l'arrêt du container parent
+
+    state = request.app.state.wally
+    if state.update_checker is not None:
+        state.update_checker.update_available = False  # reset optimiste
+
+    cmd = (
+        f"/usr/bin/docker compose -f {compose_file} pull && "
+        f"/usr/bin/docker compose -f {compose_file} up -d --force-recreate"
+    )
     subprocess.Popen(
-        ["/usr/bin/docker", "compose", "-f", compose_file, "up", "-d", "--force-recreate"],
+        ["sh", "-c", cmd],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    logger.info("Self-update triggered via dashboard for COMPOSE_FILE={}", compose_file)
+    logger.info("Self-update triggered (pull + recreate) for COMPOSE_FILE={}", compose_file)
     return {"ok": True}
