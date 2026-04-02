@@ -526,6 +526,8 @@ async def get_bot_status(request: Request) -> dict:
         "discord": "connected" if discord_online else "disconnected",
         "twitch": "connected" if twitch_online else "disconnected",
         "update_available": Path("/app/data/update_available").exists(),
+        "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
+        "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
     }
 
 
@@ -648,10 +650,17 @@ async def save_system_prompt(filename: str, request: Request) -> dict:
 async def restart_container(request: Request) -> dict:
     logger.warning("Container restart requested via dashboard")
 
+    compose_file = os.getenv("COMPOSE_FILE", "")
+    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
+
     async def _do_restart():
         await asyncio.sleep(1)
+        cmd = ["/usr/bin/docker", "compose"]
+        if compose_file:
+            cmd += ["-f", compose_file]
+        cmd += ["restart", service_name]
         proc = await asyncio.create_subprocess_exec(
-            "docker", "compose", "restart", "wally",
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

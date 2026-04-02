@@ -211,12 +211,13 @@ async def twitch_auth_callback(request: Request):
 @router.post("/twitch/restart")
 async def restart_twitch_container(request: Request) -> dict:
     logger.warning("Twitch restart requested via dashboard")
-    compose_file = os.getenv("COMPOSE_FILE","/app/docker-compose.yml")
+    compose_file = os.getenv("COMPOSE_FILE", "/app/docker-compose.yml")
+    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
 
     async def _do():
         await asyncio.sleep(1)
         proc = await asyncio.create_subprocess_exec(
-            "docker","compose","-f",compose_file,"restart","wally",
+            "/usr/bin/docker", "compose", "-f", compose_file, "restart", service_name,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()

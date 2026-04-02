@@ -1,6 +1,7 @@
 # bot/dashboard/routes/status.py
 from __future__ import annotations
 
+import os
 import time
 
 from fastapi import APIRouter, Request
@@ -32,4 +33,6 @@ async def get_status(request: Request) -> dict:
         "messages_discord": state.message_count_discord,
         "messages_twitch": state.message_count_twitch,
         "messages_web": state.message_count_web,
+        "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
+        "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
     }

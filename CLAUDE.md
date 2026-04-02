@@ -3,49 +3,8 @@
 ## Project Overview
 
 Wally is an AI-powered Discord and Twitch bot with persistent emotional state, long-term memory,
-and a coherent personality. It runs as a single Python asyncio process (modular monolith) with
-two adapter services (Discord, Twitch) sharing injected core services.
-
-Full design doc: `docs/plans/2026-03-05-wally-bot-design.md`
-
----
-
-## Architecture Decisions
-
-### Modular Monolith
-Single asyncio process, clean module boundaries via dependency injection. Discord and Twitch
-adapters receive core services (emotion, memory, LLM clients, config) at construction time.
-Simple to deploy (one Docker container), no inter-process overhead. At this scale this is the
-right tradeoff — distributed complexity is unnecessary.
-
-### discord.py 2.x
-Most widely used Python Discord library. Native slash commands, modals, select menus, buttons.
-Full asyncio integration. Well-maintained with extensive documentation.
-
-### twitchio 2.x
-Only mature async Python Twitch library. Built-in OAuth token refresh. EventSub support for
-follow/sub/bits/raid events.
-
-### Direct Qdrant (QdrantMemoryStore)
-Long-term memory with vector similarity search. Fully self-hosted (data privacy, no external
-dependency). Direct `qdrant-client` access via `QdrantMemoryStore` in `bot/core/memory_store.py`.
-Structured payloads (text, category, date, source, platform). Embeddings via OpenAI
-`text-embedding-3-small` with LRU cache (2048 entries, SHA-256 keyed) and 30s timeout.
-Batch operations for consolidation deletes (`delete_batch()`). Scroll batch size 500.
-Qdrant runs as a separate Docker service with a healthcheck; wally waits for `service_healthy`.
-
-### nrclex for emotion detection
-Pure Python, no API call, <20ms per message. NRC Lexicon covers anger/joy/sadness etc.
-Runs via `asyncio.to_thread()` to avoid blocking the event loop.
-
-### loguru
-Structured logging with zero configuration, file rotation built-in, better ergonomics than
-stdlib logging. Use exclusively — never use `print()` or `import logging`.
-
-### apscheduler
-AsyncIO-native scheduler shared between DailyJournal and ActionScheduler. Single
-`AsyncIOScheduler` instance created in `main.py`, passed to both services. No separate
-process or queue required.
+and a coherent personality. Single Python asyncio process (modular monolith), two adapters
+(Discord, Twitch) sharing injected core services. Full design doc: `docs/plans/2026-03-05-wally-bot-design.md`
 
 ---
 
@@ -66,35 +25,25 @@ bot/
 │   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mémoire
 │   ├── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
 │   ├── llm/             # Multi-provider LLM abstraction layer
-│   │   ├── __init__.py   # Exports: BaseLLMClient, OpenAILLMClient, ClaudeLLMClient, create_llm_client
 │   │   ├── base.py       # ABC BaseLLMClient: complete(), complete_with_tools(), complete_structured()
 │   │   ├── openai_client.py # OpenAILLMClient: Chat Completions + Responses API + generate_image()
 │   │   ├── claude_client.py # ClaudeLLMClient: Anthropic SDK, prompt caching, tool conversion
 │   │   └── factory.py    # create_llm_client(LLMRoleConfig, db) factory
 │   └── actions/         # ActionService: tâches planifiées via tool calling
-│       ├── __init__.py   # Exports publics
-│       ├── registry.py   # ActionRegistry: catalogue + ACL par rôle
-│       ├── scheduler.py  # ActionScheduler: persistence SQLite + apscheduler
-│       ├── executor.py   # ActionExecutor: routing + livraison messages
-│       └── service.py    # ActionService: facade LLM, tool definitions
+│       ├── registry.py  # ActionRegistry: catalogue + ACL par rôle
+│       ├── scheduler.py # ActionScheduler: persistence SQLite + apscheduler
+│       ├── executor.py  # ActionExecutor: routing + livraison messages
+│       └── service.py   # ActionService: facade LLM, tool definitions
 ├── discord/
 │   ├── bot.py           # discord.py Bot subclass
 │   ├── handlers.py      # on_message, welcome logic, timeout reactions
-│   └── commands/
-│       ├── ask.py       # /wally ask
-│       ├── memory_cmd.py # /wally memory show (admin)
-│       ├── status.py    # /wally status
-│       ├── mood.py      # /wally mood
-│       ├── journal_cmd.py # /wally journal [YYYY-MM-DD] (admin, déclenche journal à la demande, date optionnelle pour backfill)
-│       ├── persona_cmd.py # /wally reload-persona (admin, recharge fichiers persona)
-│       ├── imagine.py   # /wally imagine (image generation + gallery)
-│       └── setup.py     # /wally setup (4-tab interactive UI)
+│   └── commands/        # /wally ask, memory, status, mood, journal, persona, imagine, setup
 ├── persona/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
-│   ├── EMOTIONS.md      # directives comportementales par émotion (sections ## emotion_name)
-│   ├── WEEKDAYS.md      # directives par jour de la semaine (sections ## monday … sunday)
-│   ├── SECONDARIES.md   # directives émotions secondaires (contempt, pride, shame…)
-│   ├── COMPOSITES.md    # directives pour combinaisons de 2 émotions dominantes ≥ 0.4
+│   ├── EMOTIONS.md      # directives par émotion (sections ## emotion_name)
+│   ├── WEEKDAYS.md      # directives par jour (sections ## monday … sunday)
+│   ├── SECONDARIES.md   # émotions secondaires (contempt, pride, shame…)
+│   ├── COMPOSITES.md    # combinaisons de 2 émotions dominantes ≥ 0.4
 │   └── prompts/         # templates système chargés via load_prompt("name")
 ├── twitch/
 │   ├── bot.py           # twitchio Bot, OAuth refresh, cooldowns
@@ -114,60 +63,32 @@ bot/
 - Never call blocking code directly in the event loop
 
 ### Dependency Injection
-Services are created once in `main.py` and passed to adapters at construction:
-
-```python
-config = Config.load()
-db = await Database.create(config)
-emotion = EmotionEngine(config)
-memory = MemoryService(config)
-
-# LLM clients — separate primary/secondary/image
-primary_llm = create_llm_client(config.llm.primary, db)    # user-facing responses
-secondary_llm = create_llm_client(config.llm.secondary, db) # background tasks
-image_client = OpenAILLMClient(model=..., db=db)             # always OpenAI for images
-
-discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, ...)
-twitch_bot = WallyTwitch(config, db, emotion, memory, primary_llm, secondary_llm, ...)
-
-await asyncio.gather(discord_bot.start(), twitch_bot.start())
-```
-
+Services created once in `main.py`, passed to adapters at construction.
 Bot attributes: `bot.llm` (primary), `bot.llm_secondary` (secondary), `bot.image_client` (OpenAI for images+costs).
 
 ### Config Hot-Reload
 `config.save()` writes the full in-memory config back to `config.yaml` synchronously.
-Any change made via `/wally setup` must call `config.save()` immediately. No restart needed.
-
-### Error Handling
-- All top-level event handlers: try/except, log error, continue — never crash
-- OpenAI: exponential backoff (1s, 2s, 4s), max 3 retries, then graceful fallback in user's language
-- Qdrant unavailable: log WARNING, continue without memory context
-- NRCLex/langdetect failure: emotion delta = 0, language = config default
+Any change via `/wally setup` must call `config.save()` immediately. No restart needed.
 
 ### Logging
-Use `loguru` exclusively:
-
+Use `loguru` exclusively — **never use `print()` or `import logging`**:
 ```python
 from loguru import logger
 logger.info("Response sent to {user}", user=username)
-logger.error("OpenAI call failed: {e}", e=str(e))
 ```
 
-Never use `print()` or `import logging`.
+### Error Handling
+- All top-level event handlers: try/except, log error, continue — never crash
+- OpenAI: exponential backoff (1s, 2s, 4s), max 3 retries, graceful fallback in user's language
+- Qdrant unavailable: log WARNING, continue without memory context
 
 ### Author Labels (Discord)
-`_author_label(member)` in `handlers.py` formats user identity for LLM context:
-`display_name (@username)` when `member.name` differs from `member.display_name`, otherwise
-just `display_name`. Used in prelude, context window, fact_extractor, user_content, cold-start
-history, and spam warnings. Ensures the LLM sees the unique Discord username alongside nicknames.
+`_author_label(member)` in `handlers.py`: `display_name (@username)` when name ≠ display_name, otherwise just `display_name`. Used in prelude, context window, fact_extractor, user_content, cold-start history, spam warnings.
 
 ### LLM Response Format — target_notice
-`user_content` sent to the LLM ends with `\n[author_label]: message`. Without explicit instruction,
-some LLMs (especially with minimal persona) echo the last line before their response. The
-`target_notice` injected in every Discord and Twitch request includes:
+Every Discord and Twitch request injects `target_notice`:
 > "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
-This prevents the echo behavior regardless of how minimal the instance's persona files are.
+Prevents LLM echo behavior with minimal persona instances.
 
 ### Environment Variables
 All secrets in `.env`. Never hardcode tokens or API keys. Never commit `.env`.
@@ -176,291 +97,80 @@ All secrets in `.env`. Never hardcode tokens or API keys. Never commit `.env`.
 
 ## Emotion System
 
-### State
 5 emotions, each float 0.0–1.0: `anger`, `joy`, `sadness`, `curiosity`, `boredom`
 
-### Decay
-Background task every 60s: `E(t) = E₀ × e^(−λ × Δt)` where Δt is in **hours**.
-Each emotion has its own configurable λ in `config.yaml`.
-Boredom rises linearly during inactivity: `boredom_rise_per_hour` (default 1.2, configurable per emotion).
+**Decay**: every 60s — `E(t) = E₀ × e^(−λ × Δt)` (Δt in hours). Each emotion has its own λ in `config.yaml`. Boredom rises linearly during inactivity (`boredom_rise_per_hour`).
 
-### Analysis
-NRCLex maps message text to emotion scores. Weighted deltas applied per emotion.
-`trust_score` (0.0–1.0, per user per platform) amplifies anger delta for low-trust users.
-LLM emotion analysis output parsed via `_extract_json()` — handles raw JSON, markdown code
-blocks (` ```json ``` `), and embedded `{...}` in free text.
+**Suppression**: when a delta is applied, incompatible emotions erode via `_apply_suppression()`.
+Rules: joy→anger 0.8×, joy→sadness 0.8×, anger→joy 0.4×. Bidirectional.
 
-### Suppression Rules
-When an emotion delta is applied, incompatible emotions are partially eroded (`_apply_suppression()`).
-Rules in `SUPPRESSION_RULES` (src, tgt, coeff): joy→anger 0.8×, joy→sadness 0.8×, anger→joy 0.4×.
-Bidirectional: applying the target emotion also erodes the source.
+**Competition** (every 60s tick): `extra = state[src] × state[tgt] × 0.05` subtracted from both sides when coexisting. `anger↔boredom` intentionally absent.
 
-During each 60s decay tick, **continuous competition** erodes both sides when they coexist:
-`extra = state[src] × state[tgt] × COMPETITION_K` (K=0.05) subtracted from each.
-At anger=0.65 + joy=0.33 this yields ~0.011/tick, converging in ~1h.
-`anger↔boredom` is intentionally absent (coexistence is plausible).
-
-### Prompt Injection
-Dominant emotion(s) → behavioral directive injected into system prompt via `prompts.py`.
+**Prompt injection**: dominant emotion(s) → behavioral directive in system prompt via `prompts.py`.
 **Never** write "tu es en colère" — write "tes réponses sont courtes et impatientes".
 
-### Timeout
-If a user triggers anger above threshold N times → mute mode for X minutes (in `timeout_log`).
-During mute: react only (💩 ⛔ 😤), no text response.
-Each message from a muted user increases anger by `spam_anger_delta` (configurable).
+**Timeout**: anger above threshold N times → mute mode (react only: 💩 ⛔ 😤). During mute, each message increases anger by `spam_anger_delta`.
 
-### Spam Detection (Discord only)
-In-memory tracker `_spam_tracker: dict[(user_id, channel_id), deque[float]]` in `handlers.py`.
-Counts message timestamps per user/channel. When `max_messages` exceeded within `window_seconds`:
-1. LLM generates warning via `llm_secondary.complete()` (prompt: `spam_warning_system.md`)
-2. User muted via `add_timeout()` for `mute_minutes`
-3. Memory fact stored via `memory.add()` ("Wally a coupé X pour spam")
-4. Tracker reset for that user/channel
-
-Config in `discord.spam_detection`:
-```yaml
-discord:
-  spam_detection:
-    enabled: true
-    max_messages: 10        # threshold
-    window_seconds: 120     # time window
-    mute_minutes: 5         # mute duration
-    spam_anger_delta: 0.05  # anger increase per muted message
-    exempt_channels:        # channels that skip spam detection
-      - 1485380606224502844
-```
-
-`SpamDetectionConfig` is a nested dataclass in `DiscordConfig`. `Config.load()` pops
-`spam_detection` from the discord dict and constructs it separately to handle nesting.
-Exempt channels are excluded from tracking entirely. DMs are excluded.
+**Spam Detection (Discord)**: `_spam_tracker: dict[(user_id, channel_id), deque[float]]` in `handlers.py`. `SpamDetectionConfig` is a nested dataclass in `DiscordConfig` — `Config.load()` pops `spam_detection` from the discord dict and constructs it separately.
 
 ---
 
 ## Memory System
 
-### Sliding Context Window
-Per-channel list of `{author: str, content: str, timestamp: float}` dicts.
-Last N messages (N from config) included in every prompt.
-When token count exceeds threshold: summarize via secondary model, replace with summary entry.
+### Memory API Convention — CRITICAL
+`memory.add(platform, user_id, ...)` — `user_id` must be the **RAW id** (e.g. `"610550333042589752"`), never the prefixed form (`"discord:610550333042589752"`). The method builds `platform:user_id` internally. Same rule for `memory.search()`, `memory.get_all()`, `memory.delete_user_memories()`.
 
-### Long-term Memory (QdrantMemoryStore)
-Direct Qdrant access via `QdrantMemoryStore` in `bot/core/memory_store.py`. No mem0 middleware.
-Namespace: `{platform}:{user_id}` (e.g. `discord:123456789`, `twitch:username`)
-Stores: facts, preferences, recurring topics, preferred language.
-Discord and Twitch memory are strictly separate per user.
+Dashboard routes access the store directly via `memory.store` (returns `QdrantMemoryStore`) — callers must pass the full `platform:user_id` namespace directly.
 
-Each Qdrant point has a structured payload:
+### Qdrant Manual Cleanup
+When fixing Qdrant entries (double-prefix, orphans), use `memory.store.update_payload()` directly.
+**Do NOT go through `MemoryService` methods** — `_user_id()` will strip prefixes and cause unintended deletions.
+
+### Payload Structure
 ```json
 {"text": "...", "user_id": "discord:123", "category": "PREF", "date": "2026-03-25",
  "source": "fact_extractor", "platform": "discord", "created_at": "..."}
 ```
 Categories: `FAIT` (biographical), `PREF` (preference), `LANG` (language), `REL` (relationship).
-`search_relationships()` uses native Qdrant filtering on `category=REL`.
 
-Embeddings via `text-embedding-3-small`, cost tracked via `db.log_cost()`.
-Collection auto-created on first connect if missing.
-
-### Memory API Convention
-`memory.add(platform, user_id, ...)` — `user_id` must be the RAW id (e.g. `"610550333042589752"`),
-never the prefixed form (`"discord:610550333042589752"`). The method builds `platform:user_id`
-internally via `_user_id()`. A guard logs warnings on double-prefix but callers must pass raw ids.
-Same rule applies to `memory.search()`, `memory.get_all()`, `memory.delete_user_memories()`.
-
-Dashboard routes access the store directly via `memory.store` property (returns `QdrantMemoryStore`).
-This bypasses `_user_id()` resolution — callers must pass the full `platform:user_id` namespace.
+Legacy fallback: `_point_to_record()` reads text via `text` → `data` → `memory` chain (old mem0 payloads stored in `data`).
 
 ### Platform Auto-Fix
-`Database._fix_platform(user_id, platform)` detects cross-platform ID mismatches by ID length:
-Discord snowflakes are ≥13 digits, Twitch numeric IDs are ≤12 digits. If the prefix doesn't
-match the ID format (e.g. `twitch:610550333042589752`), it swaps to the correct platform and
-logs a warning. Applied in `upsert_memory_user()` and Qdrant sync.
+`Database._fix_platform()` detects mismatches by ID length: Discord snowflakes ≥13 digits, Twitch ≤12 digits.
+`sync_memory_users_from_qdrant` reads `QDRANT_COLLECTION_NAME` env var — each instance syncs from its own collection.
 
-`sync_memory_users_from_qdrant(qdrant_url, collection_name=None)` reads `QDRANT_COLLECTION_NAME`
-env var (default `"wally_memory"`) when `collection_name` is not provided — ensures each instance
-syncs from its own Qdrant collection, not the main bot's.
-
-### FactExtractor — Third-party Resolution
-`_extract_facts()` injects both `list_aliases()` and `list_memory_users()` into the LLM prompt
-so it can resolve mentions of users not present in the conversation (e.g. "Azrael" → "Azraël").
-Without this, facts about absent users end up under `unknown:<nickname>`.
-
-### FactExtractor — Media/URL Pre-filter
-`_is_memorable()` in `fact_extractor.py` gates every message before it enters the extraction
-buffer. It rejects: short messages (<15 chars), emoji-only, interjections, and **media/GIF URLs**.
-`_is_media_url_only()` detects messages that are just URLs from known media hosts (Tenor, Giphy,
-Imgur, Discord CDN, TikTok, Twitch clips, YouTube Shorts) with no meaningful surrounding text.
-The LLM prompts (`fact_extraction_system.md`, `emotion.py`) also explicitly instruct the model
-to ignore GIF/media links — defense in depth against junk memory entries.
-
-### Legacy Payload Compatibility
-`_point_to_record()` reads text with fallback chain: `text` → `data` → `memory`.
-Old mem0 payloads stored text in `data`; the migration script (`scripts/migrate_mem0_to_qdrant.py`)
-rewrites them to the structured format. Run it if old memories don't appear in the dashboard.
-
-### Qdrant Manual Cleanup
-When fixing Qdrant entries (double-prefix, orphans), use `memory.store.update_payload()` to update
-`user_id` in place. Do NOT go through `MemoryService` methods — the `_user_id()` guard will
-strip prefixes and cause unintended deletions. Direct store access is the safe path for data fixes.
+### FactExtractor
+- `_is_memorable()` rejects short messages (<15 chars), emoji-only, interjections, media/GIF URLs
+- `_extract_facts()` injects `list_aliases()` + `list_memory_users()` so the LLM can resolve absent users (e.g. "Azrael" → `discord:123`)
 
 ### Spontaneous Memory Recall
-Two mechanisms allow Wally to reference old memories naturally:
+After `_check_spontaneous_trigger()` returns None, `memory.search_top_match()` does a single Qdrant query. Fires spontaneous response if score ≥ `memory_recall_min_score` (0.75) and `random.random() < spontaneous_memory_probability` (0.2). Rate-limited: 1 query per 60s per channel via `_memory_check_cooldowns`.
 
-**1. Spontaneous trigger (Discord + Twitch):**
-In the spontaneous intervention block of each handler, after `_check_spontaneous_trigger()`
-returns `None` and cooldown is elapsed, `memory.search_top_match()` does a single Qdrant
-query on the message author. If the best match scores >= `memory_recall_min_score` (0.75)
-and `random.random() < spontaneous_memory_probability` (0.2), Wally fires a spontaneous
-response with the recalled memory injected as context.
-- Rate-limited via `_memory_check_cooldowns` (1 Qdrant query per 60s per channel)
-- Uses the main `_spontaneous_cooldowns` to avoid overlap with passion/emotion triggers
-- `prelude_snapshot` passed from caller (captured before `append_prelude`) to avoid duplication
-  of the triggering message in the LLM prompt
-
-**2. Normal response directive:**
-`memory_recall_directive.md` is injected in `build_system_prompt()` after the memory block
-when `memory_context` is non-empty. Encourages the LLM to reference memories naturally
-("ça me rappelle quand tu parlais de...") without reciting them verbatim.
-
-Config:
-```yaml
-bot:
-  spontaneous_memory_probability: 0.2  # chance de trigger sur souvenir pertinent
-  memory_recall_min_score: 0.75        # score Qdrant minimum (élevé car non sollicité)
-```
-
-`search_top_match(platform, user_id, query) -> tuple[str, float] | None` — single Qdrant
-query (no dual-query fan-out), returns best match with raw score. Returns `None` on error.
+`search_top_match(platform, user_id, query) -> tuple[str, float] | None`
 
 ### Memory Context Budget
-`mem_context` is assembled with a token budget (`memory_context_max_tokens`, default 800).
-Parts are prioritized: (1) semantic memories, (2) relationships, (3) pending questions,
-(4) jokes, (5) opinions, (6) third-party mention context. Lower-priority parts are truncated
-when budget is exceeded. `assemble_memory_context()` in `prompts.py` handles this.
-
-Trust and love scores are injected in a separate `--- Relation ---` block (outside the budget)
-via the `relationship_context` parameter of `build_system_prompt()`.
-
-Config:
-```yaml
-bot:
-  memory_search_min_score: 0.5      # min Qdrant score for normal responses (was 0.3)
-  memory_context_max_tokens: 800    # token budget for memory context block
-```
+`memory_context_max_tokens` (default 800). Priority order: (1) semantic memories (2) relationships (3) pending questions (4) jokes (5) opinions (6) third-party mentions. Trust/love scores in separate `--- Relation ---` block outside budget.
 
 ### Memory Questions
-After each `memory.add()`, `_evaluate()` asks the secondary LLM whether the new memory answers
-any pending question, and whether the memory is incomplete (follow-up question needed). Results
-are JSON — markdown fences stripped before `json.loads()`. Question IDs in `resolves` may be
-strings or ints; both accepted via `int(qid)`.
+After `memory.add()`, `_evaluate()` checks for follow-up questions. Max 3 injection attempts, then suppressed 24h. Question IDs in `resolves` may be strings or ints — both accepted via `int(qid)`.
 
-Questions are injected into the system prompt via `get_pending_question_directive()` (max 1 per
-response). Each injection increments `attempts` and sets `last_attempt_at`. After 3 attempts the
-question is suppressed — until 24h have elapsed (`last_attempt_at < now - 86400`), at which point
-it re-enters the pool with a fresh budget.
-
-`get_pending_question(user_id, max_attempts=3, retry_after_seconds=86400.0)`.
-Migration adds `memory_questions.last_attempt_at REAL DEFAULT NULL`.
-
-### Trust Score
-Stored in `trust_scores` table (aiosqlite). Range 0.0–1.0.
-Positive interactions: +0.01. Repeated insults: -0.05.
-Updated after every response, not in real-time during generation.
-
-### Alias Management
-Table `user_aliases`: `nickname` (PK), `canonical_uid` (e.g. `"discord:123"`), `display_name`,
-`source` (`llm`/`manual`), `confidence`, `created_at`. FactExtractor auto-populates with
-`source='llm'`; admins add manual entries via the dashboard.
-
-CRUD helpers in `database.py`: `upsert_alias()`, `delete_alias()`, `list_aliases(canonical_uid=None)`,
-`get_nickname_alias_map()`. Admin routes: `GET/POST /api/admin/aliases`, `DELETE /api/admin/aliases/{nickname}`.
-After each mutation: `memory.load_aliases(db)` refreshes `MemoryService._alias_cache`.
-
-Cache key format: `"nickname:{nickname_lower}"` → `canonical_uid`. Populated on startup and after
-each admin mutation.
+### Alias Cache
+Key format: `"nickname:{nickname_lower}"` → `canonical_uid`. After each admin mutation: `memory.load_aliases(db)` refreshes cache.
 
 ### Third-party Mention Detection
-`_third_party_mention_context(bot, platform, author_user_id, prelude, context_messages)` in
-`bot/discord/handlers.py` (imported by twitch). Runs as **priority 6** in `memory_parts`.
-
-Algorithm:
-1. Extract candidate tokens (≥3 chars, starts uppercase OR in alias map) from prelude + context
-2. Exclude current author (by user_id AND by resolved username from memory_users)
-3. For each candidate (max 2):
-   - Exact alias match via `_alias_cache["nickname:token"]` → fetch memories → inject `--- Souvenirs sur [user] ---`
-   - Fuzzy match via `difflib.SequenceMatcher` (threshold 0.75) → inject note "ressemble à [user] (X%)"
-4. No injection for unmatched tokens (avoids noise)
-
-Dashboard: alias section in user modal (Mémoire > Utilisateurs) — pills with LLM/Manuel badge,
-inline add/delete, `_refreshAliasPills()` updates in-place without re-opening the modal.
+`_third_party_mention_context()` in `bot/discord/handlers.py`, imported by twitch. Runs as priority 6 in `memory_parts`. Extracts uppercase tokens ≥3 chars, exact alias match or fuzzy (SequenceMatcher threshold 0.75). Max 2 candidates.
 
 ---
 
-## Database Tables
+## Twitch
 
-| Table | Purpose |
-|---|---|
-| `cost_log` | Every LLM API call (OpenAI + Claude): model, tokens, cost_usd, purpose |
-| `timeout_log` | Emotion mute per user per guild |
-| `welcomed` | First-message welcome tracking per user per guild |
-| `trust_scores` | Long-term trust per user per platform |
-| `gallery_images` | Generated images: prompt, title, username, file_path, cost |
-| `gallery_votes` | Flame votes per image per user (toggle) |
-| `action_tasks` | Tâches planifiées: type, schedule, payload, status, creator, target |
-| `memory_users` | User metadata: user_id, platform, username, avatar_url, last_updated |
-| `action_permissions` | ACL par type d'action: rôle min Twitch, enabled (`min_role_discord` kept but ignored) |
-| `action_permissions_discord` | Rôles Discord autorisés par (action_type, guild_id, role_id) — multi-select |
-| `persistent_notes` | Notes explicites du LLM: id, title (UNIQUE), content, created_at, updated_at |
-| `twitch_visits` | Visites chaînes Twitch invitées: channel, joined_at, left_at, duration_s, msg_count, summary (résumé LLM) |
-| `user_aliases` | Alias pseudos → canonical_uid: nickname, canonical_uid, display_name, source (llm/manual), confidence |
+**Bot filter**: ignores known bot usernames + chatters with `set_id == "bot"` badge, before `append_prelude`/`fact_extractor`.
 
----
+**Stream awareness**: `_poll_stream_info()` polls home stream every 60s, cached in `_stream_info`. Injected into system prompt when `stream_live` is True.
 
-## Twitch Bits Joy Tiers
+**`!mood`**: sends all 5 emotion values. Via IRC for guest channels, via EventSub API for home channel.
 
-| Amount | Joy Delta |
-|---|---|
-| 1–99 | +0.1 |
-| 100–999 | +0.3 |
-| 1000+ | +0.6 (max) |
-
-### Twitch Curiosity Triggers
-- **Follow burst**: ≥5 follows in 60s → curiosity +0.2 (détecté via `_recent_follows` deque)
-- **Massive raid**: ≥50 viewers → curiosity +`min(viewers/100, 0.5)`
-
-### Stream Awareness
-`WallyTwitch._poll_stream_info()` polls the home stream every 60s. Cached in `_stream_info`
-dict (live, title, category, viewers, started_at). Injected into the system prompt situation
-block via `PromptBuilder` when `stream_live` is True.
-
-### !mood Command (Twitch)
-`!mood` in any channel → Wally replies with all 5 emotion values as a formatted string.
-Sends via IRC (`irc_channel.send()`) for guest channels, via EventSub API for the home channel.
-
-### Bot Filter (Twitch)
-In `handle_message()`, before passive capture, Wally ignores messages from:
-1. A hardcoded set of known bot usernames (`nightbot`, `streamelements`, `moobot`, etc.)
-2. Any chatter whose badges include `set_id == "bot"` (official Twitch bot badge)
-This filter runs after the self-message filter and before `append_prelude` / `fact_extractor`.
-
-### Twitch Visit Awareness
-Wally tracks his visits to guest Twitch channels and includes them in his daily journal.
-
-`WallyTwitch._active_visits: dict[str, dict]` — map `channel_name → {visit_id, msg_count, joined_at}`.
-
-- **`add_guest_channel(name)`** — inserts a `twitch_visits` row via `db.start_twitch_visit()` and
-  initialises `_active_visits[name]`.
-- **`remove_guest_channel(name)`** — pops the entry and fires `_finalize_visit()` as a background task.
-- **`_finalize_visit(channel, visit_id, joined_at, msg_count)`** — computes duration, pulls channel
-  context from memory, calls `llm_secondary.complete()` with `twitch_visit_summary.md` to generate
-  a 3-5 line "carnet de voyage" summary, then calls `db.end_twitch_visit()`.
-- **`handle_message()`** — for any channel that is in `_active_visits`, increments `msg_count` on
-  every incoming message.
-
-In `DailyJournal.generate_and_send()`, a `twitch_visits_block` is assembled from
-`db.get_twitch_visits_for_date(date)` and injected into the journal prompt alongside the other
-sections. Each visit appears as `channel (X min) : LLM summary`.
-
-Prompt template: `bot/persona/prompts/twitch_visit_summary.md`.
+**Visit tracking**: `_active_visits: dict[str, dict]`. `_finalize_visit()` generates LLM summary via `twitch_visit_summary.md`, stores in `twitch_visits` table. Injected into daily journal.
 
 ---
 
@@ -471,131 +181,37 @@ Exclude model IDs containing: `realtime`, `preview`, `audio`, `vision`
 
 ---
 
-## Docker
+## Docker & Dashboard
 
-Two services: `wally` (main bot) and `qdrant` (vector DB).
-Qdrant healthcheck: `curl -f http://localhost:6333/healthz`
-Wally `depends_on: qdrant: condition: service_healthy`
-Config and data mounted as volumes — no rebuild needed for config changes.
-
-**Build version tracking**: `docker-compose.yml` passes `GIT_HASH` and `BUILD_DATE` as build
-args (set via env vars at build time). Dockerfile exposes them as `BOT_GIT_HASH` and
-`BOT_BUILD_DATE` environment variables. Returned by `/api/admin/bot/status` and
-`/api/public/status`. Dashboard control bar shows `build <hash> · <date>` in `#version-badge`.
-Instances tab fetches each instance's `/api/public/status` to display its own version inline.
-
-Web dashboard on port 8080, FastAPI + vanilla JS SPA.
-Auth: Bearer token for admin, Discord OAuth2 JWT for web chat.
-GZip compression via `GZipMiddleware(minimum_size=1000)`.
-Memory users endpoint paginated (limit/offset, default 50, max 200).
-
-Admin sidebar: 6 tabs with sub-tabs — **Paramètres** (Émotions · LLM · Images),
-**Mémoire** (Utilisateurs · Questions · Notes · Global), **Coûts** (Résumé · Détail),
-**Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay · Instances).
-Legacy tab names redirect transparently (e.g. `admin-config` → `admin-parametres`).
-
-**Coûts > Détail** sub-tab: (1) camembert + barres par fonctionnalité (`PURPOSE_FEATURE_MAP`:
-Réponses/Journal/Images/Émotions/Mémoire/Système), (2) tableau prix tokens par modèle
-(`/costs/prices`), (3) breakdowns existants (modèle/purpose/top users), (4) journal paginé
-des appels individuels (`/costs/logs?days=N&page=P&limit=50`).
-
-**Mémoire > Utilisateurs** modal: section "Alias connus" en bas — pills avec badge source
-(LLM/Manuel), ajout par champ texte, suppression inline. Rechargement partiel via
-`_refreshAliasPills()` sans re-ouvrir la modal.
-
-Overlay page (Système > Overlay): two uniform cards (emotions + images), same toggle style,
-OBS URL with copy button for each. `window.location.origin` used — instance-compatible.
+- Two services: `wally` (port 8080) + `qdrant`. Wally `depends_on: qdrant: condition: service_healthy`.
+- Build version: `GIT_HASH` + `BUILD_DATE` build args → `BOT_GIT_HASH` / `BOT_BUILD_DATE` env vars → `/api/admin/bot/status`.
+- Dashboard: FastAPI + vanilla JS SPA. Auth: Bearer token (admin), Discord OAuth2 JWT (web chat).
+- Admin sidebar: 6 tabs — **Paramètres** (Émotions · LLM · Images), **Mémoire** (Utilisateurs · Questions · Notes · Global), **Coûts** (Résumé · Détail), **Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay · Instances). Legacy tab names redirect transparently.
 
 ---
 
 ## Multi-Instance Setup
 
-Allows deploying isolated Wally instances for third parties, each with their own persona,
-credentials, config, SQLite DB, and Qdrant collection. Managed from the main bot's admin dashboard.
+`provision_instance(slug, port, data)` in `bot/core/provisioner.py` creates `INSTANCES_DIR/{slug}/` with `.env`, `config.yaml`, `bot/persona/`, `docker-compose.yml`.
 
-### Invite Flow
-Admin generates a time-limited token (7 days) via `POST /api/admin/invite`. Token is sent
-as a URL `/setup/{token}`. Preview mode uses the special token `__preview__` (Bearer-gated).
+**Critical volume mounts:**
+- Prompts dir shared read-only from main bot via volume mount (symlinks don't resolve across containers)
+- Docker socket + CLI binary mounted for self-update capability
+- `_get_docker_gid()` reads GID of `/var/run/docker.sock` → injected as `group_add` in docker-compose
 
-`setup_invites` table: `token`, `expires_at` (−1 = revoked sentinel), `used_at`, `is_preview`.
-`setup_sessions` table: wizard step data saved incrementally via `POST /{token}/save`.
+**Self-update flag**: `INSTANCES_DIR/{slug}/data/update_available` — touched by main bot, read by instance via `Path("/app/data/update_available").exists()`.
 
-### Setup Wizard (6-step SPA)
-`/setup/{token}` — vanilla JS SPA served from `bot/dashboard/static/setup.html`.
-Steps: Persona → Discord → Twitch (optional, skippable) → Recap → Submit.
-Each step validates credentials live (Discord token, Twitch OAuth) before enabling Next.
-Step 6 recap shows a summary. Submit calls `POST /{token}/submit` which runs `provision_instance()`.
-
-Routes in `bot/dashboard/routes/setup.py` — two routers:
-- `admin_router` — invite CRUD, instance notify-update, webhook
-- `wizard_router` — session save, credential validation, Twitch OAuth, submit
-
-### Provisioner (`bot/core/provisioner.py`)
-`provision_instance(slug, port, data, dry_run=False)` creates under `INSTANCES_DIR/{slug}/`:
-- `.env` — all secrets + `QDRANT_COLLECTION_NAME=wally_{slug}`, `DB_PATH=data/wally.db`, `COMPOSE_FILE={instance_dir}/docker-compose.yml`
-- `config.yaml` — full default config (gpt-4o-mini, triggers, emotions, etc.)
-- `bot/persona/` — SOUL, IDENTITY, VOICE, EMOTIONS, EXEMPLES, WEEKDAYS, COMPOSITES, SECONDARIES
-- `docker-compose.yml` — isolated container on a dedicated port, shared network `wally-ai_wally-net`
-
-`_get_docker_gid()` reads the GID of `/var/run/docker.sock` at provisioning time (default 996)
-and injects it as `group_add` in the generated docker-compose so the instance container can
-access the Docker socket without root.
-
-Volume mounts per instance:
-```
-./data:/app/data              # isolated SQLite DB
-./bot/persona:/app/bot/persona # instance persona files
-/opt/stacks/wally-ai/bot/persona/prompts:/app/bot/persona/prompts:ro  # shared prompt templates
-/var/run/docker.sock:/var/run/docker.sock                                       # Docker socket for self-update
-/usr/bin/docker:/usr/bin/docker:ro                                              # docker CLI binary
-/usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro  # compose plugin
-./docker-compose.yml:/app/docker-compose.yml:ro                                 # self-reference for recreation
-```
-The prompts directory is shared read-only from the main bot — no symlink needed, volume mount
-is the correct approach (symlinks across containers don't resolve).
-
-Each instance uses `QDRANT_COLLECTION_NAME=wally_{slug}` for memory isolation on the shared Qdrant.
-`sync_memory_users_from_qdrant` reads this env var — instances import their own users only.
-
-### Self-Update Mechanism
-Controlled update workflow: admin tests the new image, then "publishes" an update to specific
-instances. The instance's control bar shows an amber "Update dispo" button only when flagged.
-
-**Flag file**: `INSTANCES_DIR/{slug}/data/update_available` — touched by the main bot,
-read by the instance via `Path("/app/data/update_available").exists()`. Uses the already-mounted
-`data` volume as the signal channel — no extra infrastructure.
-
-**Self-recreation**: `POST /api/admin/self-update` on the instance side. Uses
-`subprocess.Popen(["/usr/bin/docker", "compose", "-f", COMPOSE_FILE, "up", "-d", "--force-recreate"], start_new_session=True)`.
-The `start_new_session=True` detaches the process so the HTTP response is returned before the
-container stops. `COMPOSE_FILE=/app/docker-compose.yml` is set in `.env`.
+**Self-recreation**: `subprocess.Popen([...docker compose up -d --force-recreate...], start_new_session=True)` — `start_new_session=True` detaches so HTTP response returns before container stops.
 
 **is_main detection**: `GET /api/admin/config` returns `"is_main": INSTANCES_DIR.exists()`.
-Used by the frontend to hide the Instances sub-tab and show/hide the self-update button.
 
-**`pollBotStatus()` (every 5s)**: reads `update_available`, `git_hash`, and `build_date` from
-`/api/admin/bot/status`. Toggles `#update-group` visibility. Updates `#version-badge` with
-`build <hash> · <date>` when `git_hash` is known. The amber pulse button calls `triggerSelfUpdate()`
-which calls the endpoint then `_waitForReconnect()`.
-
-### Dashboard — Onglet Instances
-Admin tab showing all provisioned instances (from `setup_invites` table). Per-instance:
-- notify-update button (sends Discord message with update button)
-- publish-update controls: "📤 Publier update" / "✓ Publiée — Annuler" based on flag state
-- "Publier à tous" header button
-
-Routes under `/api/admin/setup/`:
-- `GET /instances` — list with `update_available` per instance
-- `POST /instances/{slug}/notify-update` — Discord notification
-- `POST /instances/{slug}/publish-update` — touch flag file
-- `DELETE /instances/{slug}/publish-update` — remove flag file
-- `POST /instances/publish-all-updates` — touch flag for all instances
+Each instance uses `QDRANT_COLLECTION_NAME=wally_{slug}` for memory isolation on shared Qdrant.
 
 ---
 
 ## Dashboard Design System — Glassmorphism
 
-The dashboard uses a **glassmorphism** design. All new components must follow this style.
+All new components must follow this style:
 
 - **Backgrounds**: `rgba(255, 255, 255, 0.03)` to `0.05` with `backdrop-filter: blur(10px)`
 - **Borders**: `1px solid rgba(255, 255, 255, 0.08)` — thin, subtle, never hard white
@@ -611,229 +227,56 @@ Emotion colors: anger `#ef4444`, joy `#eab308`, curiosity `#22c55e`, sadness `#3
 
 ## LLM Abstraction Layer
 
-Multi-provider LLM abstraction in `bot/core/llm/`. Supports OpenAI and Anthropic Claude
-simultaneously — different providers can be used for primary (user-facing) and secondary
-(background tasks) roles.
+Multi-provider in `bot/core/llm/`. `LLMRoleConfig` dataclass in `config.py`. Factory `create_llm_client(role_config, db)` in `factory.py`. Dashboard provider dropdown recreates client in-place without restart.
 
-### BaseLLMClient (ABC)
-Three abstract methods — all providers must implement:
-- `complete(system_prompt, messages, ...) -> str`
-- `complete_with_tools(system_prompt, messages, tools, tool_executor, ...) -> tuple[str, list[str]]`
-- `complete_structured(system_prompt, messages, schema, ...) -> dict`
-
-### Tool Format Convention
-Tools are always passed in **OpenAI Chat Completions format** (canonical):
-`{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}`
-Each provider converts internally (Claude converts to `input_schema` format).
-
-### OpenAILLMClient
-Handles both Chat Completions API (gpt-4o) and Responses API (o1/o3/o4/gpt-5) via
-`_uses_responses_api()` routing. Also hosts `generate_image()` (OpenAI-specific, not in ABC).
-
-**Responses API reasoning budget**: `max_output_tokens` is shared between reasoning tokens and
-visible text. When `reasoning_effort` is set, `max_output_tokens` is **omitted** from the API
-call to let the model manage its own budget. Otherwise small models (e.g. gpt-5-nano) can
-consume the entire budget on reasoning and return empty text.
-
-### ClaudeLLMClient
-- **Prompt caching**: system prompt wrapped with `cache_control: {"type": "ephemeral"}`
-- **Extended thinking**: configurable via `thinking_type` — `disabled` (default), `adaptive` (with effort level), or `enabled` (with fixed budget_tokens). Temperature forced to 1 when thinking is active. Thinking blocks are preserved in tool use loops for reasoning continuity. Incompatible with `complete_structured()` (forced `tool_choice`), so thinking is disabled there.
-- **Tool calling**: converts OpenAI tool format → Claude format, handles tool_use/tool_result flow
-- **Structured output**: uses forced `tool_choice` with schema as `input_schema` (no native JSON mode)
-- **Retry logic**: exponential backoff on RateLimitError and 5xx, same pattern as OpenAI
-
-### Config
-```yaml
-llm:
-  primary:
-    provider: "claude"           # or "openai"
-    model: "claude-sonnet-4-6-20260301"
-    temperature: 1.0
-    max_tokens: 1000
-    thinking_type: "adaptive"    # Claude-specific: disabled/enabled/adaptive
-    thinking_effort: "medium"    # Claude adaptive: low/medium/high
-    thinking_budget_tokens: 10000 # Claude enabled: fixed token budget
-  secondary:
-    provider: "openai"
-    model: "gpt-5.1-mini"
-    temperature: 0.8
-    max_tokens: 1000
-    reasoning_effort: "medium"   # OpenAI-specific, ignored by Claude
-    text_verbosity: "medium"     # OpenAI-specific, ignored by Claude
+**Tool format** — always pass tools in **OpenAI Chat Completions format** (canonical). Each provider converts internally:
+```python
+{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
 ```
 
-`LLMRoleConfig` dataclass in `config.py`. Factory `create_llm_client(role_config, db)` in
-`bot/core/llm/factory.py`. Dashboard admin panel has provider dropdown per role — changing
-provider recreates the LLM client in-place without restart.
+**OpenAI Responses API** (o1/o3/o4/gpt-5): when `reasoning_effort` is set, `max_output_tokens` is **omitted** — otherwise small models exhaust the budget on reasoning and return empty text.
 
-### Backward Compatibility
-- `bot/core/openai_client.py` is a shim that re-exports `OpenAILLMClient as OpenAIClient`
-- Legacy `openai:` section in config.yaml still loaded, kept in sync with `llm:` section
-- `config.openai.primary_model` still works for reading
+**ClaudeLLMClient**:
+- Prompt caching: system prompt wrapped with `cache_control: {"type": "ephemeral"}`
+- Thinking: `disabled` / `adaptive` (effort level) / `enabled` (fixed budget_tokens). Temperature forced to 1 when active. Thinking blocks preserved in tool use loops. **Incompatible with `complete_structured()`** — thinking disabled there.
+- Structured output: forced `tool_choice` with schema as `input_schema` (no native JSON mode)
 
-### Cost Tracking
-Both providers log costs via `db.log_cost()` with the same schema. Claude costs include
-cache read (90% discount) and cache write (25% surcharge) token accounting.
+**Backward compat**: `bot/core/openai_client.py` re-exports `OpenAILLMClient as OpenAIClient`. Legacy `openai:` config section kept in sync with `llm:` section.
 
 ---
 
 ## Image Generation
 
-`OpenAILLMClient.generate_image()` calls OpenAI Images API with retry logic (3 attempts, backoff).
-Images stored on disk in `data/gallery/`, metadata in `gallery_images` table.
-Pricing in `IMAGE_COSTS` dict, cost logged via `log_cost(purpose="image_generation")`.
+Images in `data/gallery/`, metadata in `gallery_images`. Cost logged via `log_cost(purpose="image_generation")`.
 
-Config: `config.image_generation` — model, quality, size, background, format, daily_limit, per_user_limit.
-
-Endpoints:
-- Discord: `/wally imagine <prompt>` — loading GIF + rotating phrases during generation, then final embed with flame/edit buttons
-- Web chat: `/imagine <prompt>` via WebSocket slash command
-- Twitch: `!image` triggers overlay display of random gallery image
-- Gallery: public browsable page with search, sort by date/votes, flame voting
-- OBS overlay: `/overlay-image` page with Animate.css, SSE-driven, credit overlay showing username
-
-Loading UX: random GIF from `data/loading_gifs/`, phrases from `data/loading_phrases.txt`,
-rotated every 5s while the image generates. Final image replaces the loading embed in-place.
-
-### Image Memory
-
-When a user sends an image, the system ensures Wally remembers it:
-
-**Enriched content tags** — In `handle_message()`, messages with image attachments get a
-descriptive tag in the context window, prelude, and fact extractor:
-- Image-only message → `[a envoyé une image]` (or `[a envoyé N images]`)
-- Text + image → `texte [+ une image]`
-These tags are >15 chars, so they pass `_is_memorable()` and enter fact extraction.
-
-**LLM image description** — In `_post_process()` (background), when `image_urls` is present,
-`llm_secondary.complete()` generates a 1-sentence description (prompt: `image_describe_system.md`).
-Stored as a memory fact: `"{display_name} a envoyé une image : {description}"`.
-This allows Wally to recall what was in the image in future conversations.
+**Image memory**: messages with attachments get content tags (`[a envoyé une image]`, `texte [+ une image]`) injected in context/prelude/fact_extractor. In `_post_process()` (background), `llm_secondary` generates a 1-sentence description stored as a memory fact.
 
 ---
 
 ## PersonaService
 
-`PersonaService` charge SOUL → IDENTITY → VOICE → EXEMPLES en un bloc unique injecté dans le prompt.
-`EMOTIONS.md` est parsé en `{emotion: directive}` — sections délimitées par `## emotion_name`.
-`WEEKDAYS.md` est parsé en `{day: directive}` — sections `## monday` … `## sunday`.
-`SECONDARIES.md` est parsé en `{key: directive}` — émotions secondaires (contempt, pride, shame…).
-`COMPOSITES.md` est parsé en `{paire: directive}` — clés triées alphabétiquement (`anger_joy`, `curiosity_sadness`…).
-Déclenché quand les deux émotions dominantes sont ≥ 0.4 simultanément. Priorité sur les directives atomiques.
-`/wally reload-persona` recharge tous les fichiers sans redémarrage.
+SOUL → IDENTITY → VOICE → EXEMPLES loaded as single block. `COMPOSITES.md` keys are **alphabetically sorted** pairs (`anger_joy`, not `joy_anger`). Composites trigger when both dominant emotions ≥ 0.4 simultaneously — priority over atomic directives.
 
-### Dashboard — Gestion des prompts
-Onglet **Prompts** dans le panel admin : éditeur pour les fichiers persona et les templates système.
-- **Persona** : SOUL, IDENTITY, VOICE, EXEMPLES, EMOTIONS, WEEKDAYS, SECONDARIES, COMPOSITES
-- **Prompts système** : templates `bot/persona/prompts/*.md` (fact_extraction, journal, spam_warning…)
-- Sélecteur de bot : bot principal ou instance par slug
-- Compteur de tokens live + estimation du coût par appel (primary + secondary depuis config)
-- Sauvegarde recharge `PersonaService` en live (bot principal uniquement, sans redémarrage)
-Routes : `GET/POST /api/admin/prompts`, `GET/POST /api/admin/prompts/persona/{filename}`, `GET/POST /api/admin/prompts/system/{filename}`
+`load_prompt("name")` loads `bot/persona/prompts/name.md`. Templates loaded at module level (global vars) to avoid repeated I/O.
 
-### Prompt Templates
-`load_prompt("name")` charge `bot/persona/prompts/name.md` avec fallback chaîne vide.
-Les templates sont chargés au niveau module (variables globales) pour éviter les I/O répétées.
+`/wally reload-persona` reloads all persona files without restart.
 
 ---
 
 ## ActionService
 
-Allows the LLM to create, cancel, and list scheduled tasks via tool calling.
+LLM sees only `reminder` in the tool enum — `ActionService.create()` auto-routes to `reminder_recurring` based on `schedule.type`.
 
-### Architecture
-4 services in `bot/core/actions/`:
-- **ActionRegistry** — action catalog + role-based permissions (DB-backed, in-memory cache)
-- **ActionScheduler** — SQLite persistence + apscheduler job management (shared scheduler)
-- **ActionExecutor** — routes to action handlers, delivers results to Discord/Twitch channels
-- **ActionService** — LLM facade, exposes 3 tools: `create_action_task`, `cancel_action_task`, `list_action_tasks`
+`_resolve_discord_roles()` returns **actual Discord role IDs** as strings, plus `"everyone"` and `"admin"` if member has administrator permission.
 
-### Action Types
-- `reminder` — one-shot reminders (schedule type `once`)
-- `reminder_recurring` — recurring reminders (schedule types `interval`/`cron`)
-- `join_twitch_channel` — Wally rejoint un channel Twitch guest à la demande; auto-leave via `_poll_guest_streams()`
-- `send_message_to_channel` — envoie un message dans un salon Discord (résolution par nom ou ID numérique via `executor.deliver()`)
-- The LLM only sees `reminder` in the tool enum. `ActionService.create()` auto-routes to
-  `reminder_recurring` based on `schedule.type`. Both share the same handler.
+`_NOTE_TOOLS` (persistent notes) is defined in `discord/handlers.py` and **imported by `twitch/handlers.py`** — injected unconditionally in every `complete_with_tools()` call on both platforms.
 
-### Reminder Handler
-Reminders are **generated by the LLM** through the full response pipeline (persona, emotions,
-weekday directives). The handler calls `secondary_llm.complete()` with the reminder content as
-context, so Wally formulates the message in his own voice and current mood. Discord reminders
-include a `<@creator_id>` mention. Falls back to raw message on LLM failure.
+Reminders generated by LLM through full response pipeline (persona, emotions, weekday directives) via `secondary_llm.complete()`.
 
-### Permission Model
-- **Discord**: Per-guild, multi-select real Discord roles. Stored in `action_permissions_discord`
-  table as `(action_type, guild_id, role_id)` tuples. Cached in-memory in `ActionRegistry._discord_perms`.
-  `"everyone"` is a special role_id that grants access to all. `"admin"` always bypasses. DMs denied.
-- **Twitch**: Fixed hierarchy `everyone` < `subscriber` < `vip` < `moderator` < `admin`.
-  Stored as `min_role_twitch` in `action_permissions` table.
-
-### `_resolve_discord_roles` (handlers.py)
-Returns the member's **actual Discord role IDs** as strings, plus `"everyone"` and `"admin"` if
-the member has administrator permission. No longer maps to abstract role names.
-
-### Schedule Types
-- `once` — single execution at a specific datetime (Europe/Paris timezone)
-- `interval` — recurring every N minutes (minimum 5)
-- `cron` — cron-style (hour, minute, day_of_week)
-
-### Safety
-- Rate limit: max 10 active+paused tasks per user
-- Past `run_at` rejected (30s grace window)
-- Once tasks that fail → marked `missed`; recurring tasks auto-pause after 3 consecutive failures
-- Tasks survive restart: `reload_all()` at boot reschedules active tasks, marks missed `once` tasks
-
-### Dashboard
-Admin tab "Actions" with three sub-tabs:
-- **Tâches** — active/paused tasks as card grid, pause/resume/cancel/execute actions
-- **Terminées** — completed/cancelled/missed tasks (read-only)
-- **Permissions** — per action type: enabled toggle, Twitch role dropdown, Discord multi-select
-  role chips per guild (fetched from bot's guild cache via `/api/actions/discord-roles`)
-
-### SSE Real-Time Updates
-`/api/admin/sse/actions` broadcasts events (created, cancelled, paused, resumed, executed,
-failed, completed) via fan-out queues. Dashboard auto-refreshes the active sub-tab.
-`ActionScheduler` calls `broadcast_action_event()` on every state change via `on_change` callback.
-
-### Handler Integration
-Same pattern as WebSearchService: `getattr(bot, "action_service", None)` → tools added to
-`complete_with_tools()`. Discord handler adds ⏱️ reaction when action tools are called.
-Role resolution via `_resolve_discord_roles()` / `_resolve_twitch_roles()`.
-
----
-
-## Notes Persistantes (Mémoire explicite LLM)
-
-Permet au LLM de stocker des notes structurées à long terme, distinctes de la mémoire Qdrant
-(qui est par-utilisateur). Les notes sont globales et survivent aux redémarrages.
-
-Table `persistent_notes` (SQLite) : `id`, `title` (UNIQUE), `content`, `created_at`, `updated_at`.
-`upsert_persistent_note(title, content)` — INSERT OR REPLACE sur conflict title.
-`delete_persistent_note(title) → bool` — retourne True si supprimé.
-`get_persistent_notes() → list[dict]` — toutes les notes, triées par updated_at DESC.
-
-### Tools LLM (`_NOTE_TOOLS` dans `bot/discord/handlers.py`)
-- `save_persistent_note` — crée ou met à jour une note (title, content)
-- `delete_persistent_note` — supprime une note par titre
-
-Ces tools sont **injectés inconditionnellement** dans chaque appel `complete_with_tools()` sur
-Discord et Twitch. `_NOTE_TOOLS` est défini dans `discord/handlers.py` et importé par `twitch/handlers.py`.
-
-### Injection dans le prompt
-`build_system_prompt(persistent_notes=...)` — les notes sont injectées dans un bloc
-`--- Notes persistantes ---` après le contexte mémoire global. Le paramètre accepte
-`list[dict]` avec clés `title` et `content`, ou `None`.
-
-### Dashboard
-Sous-onglet "Notes persistantes" dans l'onglet Mémoire. Routes :
-`GET /api/admin/notes`, `POST /api/admin/notes`, `PUT /api/admin/notes/{note_id}`,
-`DELETE /api/admin/notes/{note_id}`.
+Rate limit: max 10 active+paused tasks per user. Recurring tasks auto-pause after 3 consecutive failures. `reload_all()` at boot reschedules active tasks, marks missed `once` tasks.
 
 ---
 
 ## SessionManager
 
-Suit les conversations par canal. Après 20min d'inactivité (`SESSION_TIMEOUT_SECONDS`) :
-analyse LLM via `secondary_llm.complete()` → extrait les faits durables par participant → `memory.add()`.
-Ne stocke que les sessions de ≥ 2 messages. Format d'analyse : `### pseudo\n- fait\n...`
+Tracks conversations per channel. After 20min inactivity (`SESSION_TIMEOUT_SECONDS`): secondary LLM extracts durable facts per participant → `memory.add()`. Only sessions ≥ 2 messages. Format: `### pseudo\n- fait\n...`

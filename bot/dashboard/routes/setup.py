@@ -137,6 +137,7 @@ async def list_instances(request: Request) -> dict:
             "slug": slug, "port": port,
             "docker_status": docker_status,
             "created_at": r["created_at"],
+            "update_available": (INSTANCES_DIR / slug / "data" / "update_available").exists(),
         })
     return {"instances": instances}
 
@@ -297,6 +298,42 @@ async def update_instance_now(slug: str) -> dict:
         raise HTTPException(status_code=500, detail=result.stderr[:500])
     logger.info("Instance {} updated via dashboard", slug)
     return {"ok": True}
+
+
+@admin_router.post("/instances/{slug}/publish-update")
+async def publish_instance_update(slug: str) -> dict:
+    """Pose le flag update_available dans le dossier data de l'instance."""
+    _validate_slug(slug)
+    flag_path = INSTANCES_DIR / slug / "data" / "update_available"
+    if not flag_path.parent.exists():
+        raise HTTPException(status_code=404, detail="Instance introuvable")
+    flag_path.touch()
+    logger.info("Update published for instance {}", slug)
+    return {"ok": True}
+
+
+@admin_router.delete("/instances/{slug}/publish-update")
+async def cancel_instance_update(slug: str) -> dict:
+    """Retire le flag update_available (annule la publication)."""
+    _validate_slug(slug)
+    flag_path = INSTANCES_DIR / slug / "data" / "update_available"
+    flag_path.unlink(missing_ok=True)
+    logger.info("Update publication cancelled for instance {}", slug)
+    return {"ok": True}
+
+
+@admin_router.post("/instances/publish-all-updates")
+async def publish_all_instance_updates() -> dict:
+    """Pose le flag update_available pour toutes les instances."""
+    count = 0
+    for d in INSTANCES_DIR.iterdir():
+        if d.is_dir() and (d / "docker-compose.yml").exists():
+            flag = d / "data" / "update_available"
+            if flag.parent.exists():
+                flag.touch()
+                count += 1
+    logger.info("Update published for {} instance(s)", count)
+    return {"ok": True, "count": count}
 
 
 @admin_router.post("/webhook/update")
