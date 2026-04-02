@@ -358,11 +358,16 @@ def _detect_text_mentions(message, bot) -> list[str]:
         if display_name is None:
             display_name = member_map.get(token_lower)
 
-        # 3. Fuzzy match
+        # 3. Fuzzy match — only for tokens whose length is close to a known name
         if display_name is None:
             best_ratio = 0.0
             best_name: str | None = None
+            tlen = len(token_lower)
             for name_lower, dname in member_map.items():
+                # Skip names whose length ratio makes 0.75 similarity impossible
+                nlen = len(name_lower)
+                if nlen == 0 or min(tlen, nlen) / max(tlen, nlen) < 0.5:
+                    continue
                 ratio = difflib.SequenceMatcher(None, token_lower, name_lower).ratio()
                 if ratio > best_ratio:
                     best_ratio = ratio

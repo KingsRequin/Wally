@@ -170,7 +170,7 @@ async def main() -> None:
     discord_bot.graph = graph
     if graph.ready:
         from bot.discord.social import SocialTracker
-        discord_bot.social = SocialTracker(graph)
+        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id)
         discord_bot.social.start()
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search

@@ -17,8 +17,9 @@ class SocialTracker:
 
     FLUSH_INTERVAL = 300  # 5 minutes
 
-    def __init__(self, graph: "GraphService"):
+    def __init__(self, graph: "GraphService", group_id: str | None = None):
         self._graph = graph
+        self._group_id = group_id
         # Buffers: (user_a, user_b, signal_type) -> {count, last_seen, metadata}
         self._buffer: dict[tuple[str, str, str], dict[str, Any]] = defaultdict(
             lambda: {"count": 0, "last_seen": 0.0, "metadata": {}}
@@ -56,6 +57,7 @@ class SocialTracker:
                     content=content,
                     author="system",
                     source="social_tracker",
+                    group_id=self._group_id,
                 )
                 flushed += 1
             except Exception as exc:

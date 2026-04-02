@@ -5636,14 +5636,9 @@ async function deleteNote(id) {
 
 // ── Public Social Graph Tab ───────────────────────────────────────────────────
 
-var _publicGraphLoaded = false;
-
 async function loadPublicGraph() {
   var panel = document.getElementById('tab-graph');
   if (!panel) return;
-  // Only fetch once per session — re-render on subsequent visits without refetch
-  if (_publicGraphLoaded) return;
-  _publicGraphLoaded = true;
   await _renderGraph(panel, '/api/public/social-graph/data', false);
 }
 
