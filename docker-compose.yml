@@ -51,7 +51,7 @@ services:
       - ./logs:/logs
       - ./.env:/dotenv
       - ./config.yaml:/config.yaml
-    command: sh -c "chown -R 1000:1000 /data /logs && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
+    command: sh -c "chown -R 1000:1000 /data /logs && chown -R 7474:7474 /data/neo4j && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
     restart: "no"
 
   wally:
