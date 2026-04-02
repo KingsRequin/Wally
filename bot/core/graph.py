@@ -1,6 +1,7 @@
 """GraphService — Graphiti facade for Wally's knowledge graph."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -60,6 +61,11 @@ class GraphService:
     def ready(self) -> bool:
         return self._ready and self._graphiti is not None
 
+    @staticmethod
+    def _sanitize_group_id(group_id: str) -> str:
+        """Replace characters not allowed by Graphiti (only alphanumeric, - and _)."""
+        return re.sub(r"[^a-zA-Z0-9_-]", "-", group_id)
+
     async def add_episode(
         self,
         content: str,
@@ -75,7 +81,7 @@ class GraphService:
         if not self.ready:
             return None
         try:
-            gid = group_id or self._config.graphiti.group_id
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
             result = await self._graphiti.add_episode(
                 name=f"{source} message",
                 episode_body=f"{author}: {content}",
@@ -106,7 +112,7 @@ class GraphService:
         if not self.ready:
             return []
         try:
-            gid = group_id or self._config.graphiti.group_id
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
             edges = await self._graphiti.search(
                 query=query,
                 group_ids=[gid],
@@ -130,7 +136,7 @@ class GraphService:
         if not self.ready:
             return 0.0
         try:
-            gid = group_id or self._config.graphiti.group_id
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
             edges = await self._graphiti.search(
                 query=f"{user_a} {user_b}",
                 group_ids=[gid],

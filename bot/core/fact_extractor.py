@@ -390,7 +390,7 @@ class FactExtractor:
                         content=msg.get("content", ""),
                         author=msg.get("author", "unknown"),
                         source=platform,
-                        group_id=f"{platform}:{channel_id}",
+                        group_id=channel_id,
                     ))
 
             # Clean up DB
