@@ -9,122 +9,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=6">
-  <link rel="stylesheet" href="/static/theme.css?v=6" id="theme-link">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
-<script>
-// Detect mobile: touch + small screen OR mobile user agent
-(function() {
-  var mobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  var isMobile = (('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth <= 1024) || mobileUA;
-  if (isMobile) document.body.classList.add('is-mobile');
-  window.addEventListener('resize', function() {
-    var wasMobile = document.body.classList.contains('is-mobile');
-    var nowMobile = (window.innerWidth <= 1024) || mobileUA;
-    if (nowMobile && !wasMobile) {
-      document.body.classList.add('is-mobile');
-      if (typeof switchMode === 'function') switchMode(typeof currentMode !== 'undefined' ? currentMode : 'public');
-    } else if (!nowMobile && wasMobile) {
-      document.body.classList.remove('is-mobile');
-      if (typeof switchMode === 'function') switchMode(typeof currentMode !== 'undefined' ? currentMode : 'public');
-    }
-  });
-})();
-</script>
-
-<!-- Naker Background (desktop only — disabled on mobile/touch for perf & usability) -->
-<div id="naker-bg"></div>
-<canvas id="naker-blurred" aria-hidden="true"></canvas>
-<script>
-if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in window)) {
-  window.addEventListener('load', function() {
-    var s = document.createElement('script');
-    s.async = true;
-    s.defer = true;
-    s.setAttribute('data-who', 'Made with naker.io');
-    s.setAttribute('data-option', '{|environment|:{|gradient|:|radial|,|sensitivity|:0.57,|colorStart|:[0,0,0,1],|colorEnd|:[0,0,0,1]},|particle|:{|life|:5,|power|:0.32,|texture|:|https://res.cloudinary.com/naker-io/image/upload/v1566560053/star_07.png|,|number|:432,|colorStart|:[255,255,255,0.13],|colorEnd|:[149,232,227,1],|sizeStart|:0.38,|sizeEnd|:0.76,|direction1|:{|x|:0,|y|:0,|z|:0},|direction2|:{|x|:0,|y|:0,|z|:0}},|waterMark|:false}');
-    s.setAttribute('data-container', '#naker-bg');
-    s.src = 'https://d23jutsnau9x47.cloudfront.net/back/v1.0.9/viewer.js';
-    document.getElementById('naker-bg').appendChild(s);
-  });
-}
-</script>
 
 <div class="app-wrapper">
 
-  <!-- Admin Control Bar -->
-  <div class="control-bar" id="control-bar" style="display:none">
-    <div class="control-bar-group">
-      <div class="control-bar-indicator">
-        <span class="control-bar-dot" id="discord-dot"></span>
-        <span class="control-bar-label">Discord</span>
-        <button class="control-bar-btn" id="discord-toggle-btn" onclick="toggleBotAdapter('discord')">Stop</button>
-      </div>
-      <div class="control-bar-indicator">
-        <span class="control-bar-dot" id="twitch-dot"></span>
-        <span class="control-bar-label">Twitch</span>
-        <button class="control-bar-btn" id="twitch-toggle-btn" onclick="toggleBotAdapter('twitch')">Stop</button>
-      </div>
-    </div>
-    <div class="control-bar-group" id="update-group" style="display:none">
-      <button class="control-bar-btn update" id="update-available-btn" onclick="triggerSelfUpdate()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v6m0 0l3-3m-3 3L9 5M12 22v-6m0 0l3 3m-3-3l-3 3M2 12h6m0 0L5 9m3 3l-3 3M22 12h-6m0 0l3-3m-3 3l3 3"/></svg>
-        Update dispo
-      </button>
-    </div>
-    <div class="control-bar-group">
-      <span id="version-badge" style="font-size:11px;color:rgba(255,255,255,0.3);font-family:monospace;letter-spacing:0.02em"></span>
-    </div>
-    <div class="control-bar-group">
-      <button class="control-bar-btn restart" id="restart-btn" onclick="restartContainer()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        Restart
-      </button>
-    </div>
-  </div>
-
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo">W</div>
+    <div class="sidebar-logo">W <span style="color:var(--text-muted);font-size:12px;font-weight:400;margin-left:6px;">Admin</span></div>
 
-    <nav class="sidebar-nav" id="nav-public">
-      <a class="sidebar-item active" data-tab="status" onclick="showTab('status')" href="javascript:void(0)" aria-label="Statut">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <span>Status</span>
-      </a>
-      <a class="sidebar-item" data-tab="chat" onclick="showTab('chat')" href="javascript:void(0)" aria-label="Chat">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>Chat</span>
-      </a>
-      <a class="sidebar-item" data-tab="gallery" onclick="showTab('gallery')" href="javascript:void(0)" aria-label="Galerie">
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-        <span>Galerie</span>
-      </a>
-      <a class="sidebar-item" data-tab="journal-detail" onclick="showTab('journal-detail')" href="javascript:void(0)" aria-label="Journal détaillé">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-        <span>Info</span>
-      </a>
-      <a class="sidebar-item" data-tab="roadmap" onclick="showTab('roadmap')" href="javascript:void(0)" aria-label="Roadmap">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-        <span>Roadmap</span>
-      </a>
-      <a class="sidebar-item" data-tab="graph" onclick="showTab('graph')" href="javascript:void(0)" aria-label="Graphe social">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-        <span>Réseau</span>
-      </a>
-    </nav>
-
-    <div class="sidebar-divider" id="sidebar-divider" style="display:none"></div>
-
-    <nav class="sidebar-nav" id="nav-admin" style="display:none">
-      <a class="sidebar-item mobile-back-btn" onclick="switchMode('public')" href="javascript:void(0)" aria-label="Retour">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>
-        <span>Retour</span>
-      </a>
-      <a class="sidebar-item" data-tab="admin-parametres" onclick="showTab('admin-parametres')" href="javascript:void(0)" aria-label="Paramètres">
+    <nav class="sidebar-nav" id="nav-admin">
+      <a class="sidebar-item active" data-tab="admin-parametres" onclick="showTab('admin-parametres')" href="javascript:void(0)" aria-label="Paramètres">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        <span>Params</span>
+        <span>Paramètres</span>
       </a>
       <a class="sidebar-item" data-tab="admin-memoire" onclick="showTab('admin-memoire')" href="javascript:void(0)" aria-label="Mémoire">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
@@ -133,7 +31,7 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
       </a>
       <a class="sidebar-item" data-tab="admin-costs" onclick="showTab('admin-costs')" href="javascript:void(0)" aria-label="Couts">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <span>Couts</span>
+        <span>Coûts</span>
         <span id="costs-badge" class="sidebar-badge" style="display:none">!</span>
       </a>
       <a class="sidebar-item" data-tab="admin-actions" onclick="showTab('admin-actions')" href="javascript:void(0)" aria-label="Actions">
@@ -151,119 +49,50 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
     </nav>
 
     <div class="sidebar-spacer"></div>
-
-    <button class="sidebar-mode-btn" id="sidebar-mode-toggle" onclick="toggleMode()" aria-label="Basculer mode admin">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-      <span>Admin</span>
-    </button>
   </aside>
 
   <!-- Main Content -->
   <main class="main-content">
 
-    <!-- STATUS TAB -->
-    <div class="tab-content active" id="tab-status">
-      <!-- Row 1: Top Widgets -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <!-- Uptime -->
-        <div class="card relative overflow-hidden border-t-2 border-t-cyan-500/30">
-          <div class="card-title">UPTIME</div>
-          <div class="card-value text-cyan-400" id="uptime" style="text-shadow:0 0 10px rgba(6,182,212,0.7)" aria-live="polite">—</div>
-          <p class="text-xs text-gray-500 mt-1">Depuis le dernier demarrage</p>
-          <div class="absolute bottom-0 right-0 w-1/2 h-12 opacity-50">
-            <svg class="w-full h-full stroke-cyan-400 fill-none" preserveAspectRatio="none" viewBox="0 0 100 50"><path d="M0,50 Q20,40 50,45 T100,10" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
-          </div>
+    <!-- Admin Control Bar -->
+    <div class="control-bar" id="control-bar" style="display:none">
+      <div class="control-bar-group">
+        <div class="control-bar-indicator">
+          <span class="control-bar-dot" id="discord-dot"></span>
+          <span class="control-bar-label">Discord</span>
+          <button class="control-bar-btn" id="discord-toggle-btn" onclick="toggleBotAdapter('discord')">Stop</button>
         </div>
-        <!-- Plateformes -->
-        <div class="card relative overflow-hidden border-t-2 border-t-green-500/30">
-          <div class="card-title">PLATEFORMES</div>
-          <ul class="space-y-3 mt-2">
-            <li class="flex items-center gap-2 text-lg">
-              <span class="status-dot offline" id="dot-discord" role="status" aria-label="Discord hors ligne"></span>
-              <span id="lbl-discord">Discord</span>
-            </li>
-            <li class="flex items-center gap-2 text-lg">
-              <span class="status-dot offline" id="dot-twitch" role="status" aria-label="Twitch hors ligne"></span>
-              <span id="lbl-twitch">Twitch</span>
-            </li>
-          </ul>
-          <div class="absolute bottom-0 right-0 w-1/2 h-12 opacity-50">
-            <svg class="w-full h-full stroke-green-400 fill-none" preserveAspectRatio="none" viewBox="0 0 100 50"><path d="M0,50 Q30,45 60,30 T100,5" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
-          </div>
-        </div>
-        <!-- Messages -->
-        <div class="card relative overflow-hidden border-t-2 border-t-blue-500/30">
-          <div class="card-title">MESSAGES TRAITES</div>
-          <div class="card-value text-blue-400" id="stat-messages" style="text-shadow:0 0 10px rgba(59,130,246,0.7)" aria-live="polite">—</div>
-          <p class="text-xs text-gray-500 mt-1" id="stat-messages-breakdown"></p>
-          <div class="absolute bottom-0 right-0 w-1/2 h-12 opacity-50">
-            <svg class="w-full h-full stroke-blue-400 fill-none" preserveAspectRatio="none" viewBox="0 0 100 50"><path d="M0,50 Q40,40 70,20 T100,15" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
-          </div>
+        <div class="control-bar-indicator">
+          <span class="control-bar-dot" id="twitch-dot"></span>
+          <span class="control-bar-label">Twitch</span>
+          <button class="control-bar-btn" id="twitch-toggle-btn" onclick="toggleBotAdapter('twitch')">Stop</button>
         </div>
       </div>
-
-      <!-- Row 2: Live Mood + Stream -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div class="card md:col-span-2 border-t-2 border-t-orange-500/20">
-          <div class="card-title">HUMEUR EN DIRECT</div>
-          <div id="gauges-public" role="group" aria-label="Emotions actuelles"></div>
-          <div id="mood-fatigue-line" style="display:none;"></div>
-          <div id="emotional-state-block" class="emotional-state-card" style="display:none;" aria-live="polite">
-            <span class="card-sublabel">ÉTAT ÉMOTIONNEL</span>
-            <p id="emotional-state-text"></p>
-          </div>
-          <div class="emotion-summary" id="emotion-summary" aria-live="polite" style="display:none;">—</div>
-        </div>
-        <div class="card border-t-2 border-t-purple-500/20" id="stream-card">
-          <div class="card-title">AZRAEL_TTV</div>
-          <div id="stream-content">Chargement...</div>
-        </div>
+      <div class="control-bar-group" id="update-group" style="display:none">
+        <button class="control-bar-btn update" id="update-available-btn" onclick="triggerSelfUpdate()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v6m0 0l3-3m-3 3L9 5M12 22v-6m0 0l3 3m-3-3l-3 3M2 12h6m0 0L5 9m3 3l-3 3M22 12h-6m0 0l3-3m-3 3l3 3"/></svg>
+          Update dispo
+        </button>
       </div>
-
-      <!-- Row 3: Mood Trends Graph -->
-      <div class="card border-t-2 border-t-cyan-500/20">
-        <div class="graph-header">
-          <span class="graph-title" id="graph-title">DERNIERE HEURE</span>
-          <div class="graph-range-btns">
-            <button class="graph-range-btn active" onclick="setGraphRange('1h')" aria-label="Derniere heure">1H</button>
-            <button class="graph-range-btn" onclick="setGraphRange('24h')" aria-label="Dernieres 24 heures">24H</button>
-            <button class="graph-range-btn" onclick="setGraphRange('7d')" aria-label="7 derniers jours">7J</button>
-            <button class="graph-range-btn" onclick="setGraphRange('30d')" aria-label="30 derniers jours">30J</button>
-          </div>
-        </div>
-        <canvas id="emotionCanvas" height="165" aria-label="Graphique historique des emotions"></canvas>
-        <div id="emotion-graph-legend" class="graph-legend"></div>
-        <div id="emotion-averages" style="display:none"></div>
+      <div class="control-bar-group">
+        <span id="version-badge" style="font-size:11px;color:var(--text-muted);font-family:monospace;letter-spacing:0.02em"></span>
+      </div>
+      <div class="control-bar-group">
+        <button class="control-bar-btn restart" id="restart-btn" onclick="restartContainer()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Restart
+        </button>
       </div>
     </div>
 
-    <!-- ROADMAP TAB -->
-    <div class="tab-content" id="tab-roadmap">
-      <div id="roadmap-container">Chargement...</div>
-    </div>
+    <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
+    <div class="tab-content active" id="tab-admin-parametres"></div>
 
-    <!-- ADMIN CONFIG TAB -->
-    <div class="tab-content" id="tab-admin-config">
-      <div id="config-form-container">Chargement...</div>
-    </div>
-
-    <!-- ADMIN LOGS TAB (sub-nav rendered dynamically) -->
-    <div class="tab-content" id="tab-admin-logs"></div>
-
-    <!-- MEMORY + LINKS UNIFIED TAB (kept for sub-nav rendering) -->
-    <div class="tab-content" id="tab-memory"></div>
-
-    <!-- GLOBAL MEMORY TAB (kept for sub-nav rendering) -->
-    <div class="tab-content" id="tab-global-memory"></div>
-
-    <!-- MERGED MEMOIRE TAB -->
+    <!-- ADMIN MEMOIRE TAB -->
     <div class="tab-content" id="tab-admin-memoire"></div>
 
     <!-- ADMIN COSTS TAB (content rendered dynamically by renderCostsTab()) -->
     <div class="tab-content" id="tab-admin-costs"></div>
-
-    <!-- ADMIN MEMORY DASHBOARD TAB (kept for sub-nav rendering) -->
-    <div class="tab-content" id="tab-admin-memory-dash"></div>
 
     <!-- ADMIN ACTIONS TAB -->
     <div class="tab-content" id="tab-admin-actions"></div>
@@ -271,48 +100,8 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
     <!-- ADMIN PROMPTS TAB -->
     <div class="tab-content" id="tab-admin-prompts"></div>
 
-    <!-- ADMIN INSTANCES TAB -->
-    <div class="tab-content" id="tab-admin-instances"></div>
-
-    <!-- ADMIN TWITCH TAB (kept for internal use) -->
-    <div class="tab-content" id="tab-admin-twitch"></div>
-
-    <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
-    <div class="tab-content" id="tab-admin-parametres"></div>
-
     <!-- ADMIN SYSTEME TAB (Logs · Twitch · Overlay · Instances) -->
     <div class="tab-content" id="tab-admin-systeme"></div>
-
-    <!-- JOURNAL DETAIL TAB -->
-    <div class="tab-content" id="tab-journal-detail"></div>
-
-    <!-- CHAT TAB -->
-    <div class="tab-content" id="tab-chat"></div>
-
-    <!-- GALLERY TAB -->
-    <div id="tab-gallery" class="tab-content">
-      <div class="card-title" style="margin-bottom:16px">GALERIE</div>
-      <div class="gallery-controls">
-        <input type="text" id="gallery-search" placeholder="Rechercher..." class="neo-input">
-        <select id="gallery-sort" class="neo-select">
-          <option value="date">Par date</option>
-          <option value="votes">Par flammes</option>
-        </select>
-        <select id="gallery-user-filter" class="neo-select">
-          <option value="">Tous les utilisateurs</option>
-        </select>
-      </div>
-      <div id="gallery-grid" class="gallery-grid"></div>
-      <button id="gallery-load-more" class="neo-btn" style="display:none;margin-top:16px" onclick="loadMoreGallery()">Charger plus</button>
-    </div>
-
-    <!-- PUBLIC SOCIAL GRAPH TAB -->
-    <div id="tab-graph" class="tab-content"></div>
-
-    <!-- MERGED OVERLAY TAB (toggle + config) -->
-    <div id="tab-admin-overlay" class="tab-content">
-      <div id="overlay-config-container"></div>
-    </div>
 
   </main>
 </div>
@@ -336,16 +125,5 @@ if (window.matchMedia('(min-width: 769px)').matches && !('ontouchstart' in windo
 <div id="toast-container" aria-live="assertive"></div>
 
 <script src="/static/app.js?v=6"></script>
-
-<script>
-  // Applique les variants de layout et tab-style depuis les CSS vars du thème
-  (function() {
-    var style = getComputedStyle(document.documentElement);
-    var layout = style.getPropertyValue('--layout-variant').trim().replace(/"/g, '') || 'sidebar-left';
-    var tabStyle = style.getPropertyValue('--tab-style').trim().replace(/"/g, '') || 'icons-only';
-    document.body.setAttribute('data-layout', layout);
-    document.body.setAttribute('data-tab-style', tabStyle);
-  })();
-</script>
 </body>
 </html>

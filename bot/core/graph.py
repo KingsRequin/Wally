@@ -66,6 +66,37 @@ class GraphService:
         """Replace characters not allowed by Graphiti (only alphanumeric, - and _)."""
         return re.sub(r"[^a-zA-Z0-9_-]", "-", group_id)
 
+    # ── Pre-ingestion filters ──
+
+    _DISCORD_MENTION_RE = re.compile(r"<@[!&]?\d+>")
+    _EMOJI_ONLY_RE = re.compile(
+        r"^[\s\U0001f600-\U0001f64f\U0001f300-\U0001f5ff"
+        r"\U0001f680-\U0001f6ff\U0001f900-\U0001f9ff"
+        r"\U00002702-\U000027b0\U0000fe0f]+$"
+    )
+    _MIN_CONTENT_LENGTH = 20  # ignore very short messages
+
+    @classmethod
+    def _clean_content(cls, content: str) -> str | None:
+        """Clean and validate content before ingestion.
+
+        Returns cleaned content or None if the message should be skipped.
+        """
+        text = content.strip()
+        if len(text) < cls._MIN_CONTENT_LENGTH:
+            return None
+        # Strip Discord mentions (role/user) — they produce garbage entities
+        text = cls._DISCORD_MENTION_RE.sub("", text).strip()
+        if len(text) < cls._MIN_CONTENT_LENGTH:
+            return None
+        # Skip emoji-only
+        if cls._EMOJI_ONLY_RE.match(text):
+            return None
+        # Skip media/URL-only
+        if text.startswith("http") and " " not in text:
+            return None
+        return text
+
     async def add_episode(
         self,
         content: str,
@@ -77,15 +108,32 @@ class GraphService:
         """Ingest a message into the knowledge graph.
 
         Returns extracted entities/edges summary or None on failure.
+        Skips messages that are too short, emoji-only, or contain only
+        unresolved Discord mentions.
         """
         if not self.ready:
             return None
+
+        # Skip unknown authors — they create useless "unknown" entities
+        # Allow "social_tracker" source (pre-formatted signals) through
+        if not author or (author.lower() in ("unknown",) and source != "social_tracker"):
+            return None
+
+        cleaned = self._clean_content(content)
+        if cleaned is None:
+            return None
+
         try:
             gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
             result = await self._graphiti.add_episode(
                 name=f"{source} message",
-                episode_body=f"{author}: {content}",
-                source_description=f"{source} chat",
+                episode_body=f"{author}: {cleaned}",
+                source_description=(
+                    f"Conversation francophone sur {source}. "
+                    "Extraire les entités (personnes, lieux, sujets) et relations en français. "
+                    "Les noms d'entités doivent être des noms propres ou des sujets clairs, "
+                    "jamais des phrases complètes ou du contenu de message."
+                ),
                 source=EpisodeType.message,
                 reference_time=datetime.now(timezone.utc),
                 group_id=gid,

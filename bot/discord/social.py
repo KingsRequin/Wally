@@ -55,7 +55,7 @@ class SocialTracker:
                 content = self._format_signal(user_a, user_b, signal_type, data)
                 await self._graph.add_episode(
                     content=content,
-                    author="system",
+                    author="social_tracker",
                     source="social_tracker",
                     group_id=self._group_id,
                 )

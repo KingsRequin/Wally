@@ -8,11 +8,11 @@
 
 const AUTH_KEY = 'wally_token';
 const EMOTION_COLORS = {
-  anger:    '#ef4444',
-  joy:      '#eab308',
-  curiosity:'#22c55e',
-  sadness:  '#3b82f6',
-  boredom:  '#a855f7',
+  anger:    '#f85149',
+  joy:      '#d29e0b',
+  curiosity:'#3fb950',
+  sadness:  '#58a6ff',
+  boredom:  '#a371f7',
 };
 const EMOTION_EMOJIS = {
   anger: '😤', joy: '😊', sadness: '😢', curiosity: '🤔', boredom: '😴',
@@ -55,9 +55,7 @@ const PLATFORM_ICONS = {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let currentMode = 'public';
-let currentTab  = 'status';
-let emotionSSE  = null;
+let currentTab  = 'admin-parametres';
 let logSSE      = null;
 function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -66,10 +64,6 @@ let _twitchPendingRestart = false;
 let actionSSE   = null;
 let logFilter   = 'ALL';
 let currentEmotions = {};
-let currentGraphSince = null;
-let _graphMeta  = null;
-let _rafPending = false;
-let hiddenEmotions = new Set(SECONDARY_LABELS); // secondaries hidden by default
 let currentMood        = {};
 let currentFatigue     = {};
 let currentSecondaries = [];
@@ -101,11 +95,6 @@ const SECONDARY_ADJ_FR = {
   contempt:    'méprisant',
   wonder:      'émerveillé',
 };
-
-// ── Web Chat state ──────────────────────────────────────────────
-let _chatWs = null;
-let _chatUser = null;
-let _chatTypingTimer = null;
 
 // -- Bot Control Bar ----------------------------------------------
 var _controlBarInterval = null;
@@ -265,72 +254,14 @@ async function restartTwitchContainer() {
 
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
 
-function toggleMode() {
-  switchMode(currentMode === 'public' ? 'admin' : 'public');
-}
-
-function _isMobileNav() {
-  return document.body.classList.contains('is-mobile');
-}
-
-function switchMode(mode, restoreTab = null) {
-  if (mode === 'admin') {
-    if (!getToken()) { showAuthModal(); return; }
-  }
-  currentMode = mode;
-  document.body.classList.toggle('admin-mode', mode === 'admin');
-
-  const publicNav = document.getElementById('nav-public');
-  const adminNav = document.getElementById('nav-admin');
-  const divider = document.getElementById('sidebar-divider');
-  const modeBtn = document.getElementById('sidebar-mode-toggle');
-
-  if (_isMobileNav()) {
-    // Mobile: swap nav groups — show one at a time
-    publicNav.style.display = mode === 'admin' ? 'none' : 'flex';
-    adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
-    if (divider) divider.style.display = 'none';
-    // Update toggle button: back arrow + "Retour" label in admin, lock icon in public
-    if (modeBtn) {
-      modeBtn.classList.toggle('active', mode === 'admin');
-      const svg = modeBtn.querySelector('svg');
-      const span = modeBtn.querySelector('span');
-      if (svg) {
-        svg.innerHTML = mode === 'admin'
-          ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>'
-          : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>';
-      }
-      if (span) {
-        span.textContent = mode === 'admin' ? 'Retour' : 'Admin';
-        span.style.display = mode === 'admin' ? 'block' : '';
-      }
-    }
-  } else {
-    // Desktop: show both nav groups
-    publicNav.style.display = 'flex';
-    adminNav.style.display = mode === 'admin' ? 'flex' : 'none';
-    if (divider) divider.style.display = mode === 'admin' ? 'block' : 'none';
-    if (modeBtn) modeBtn.classList.toggle('active', mode === 'admin');
-  }
-
-  // Control bar
-  showControlBar(mode === 'admin');
-  if (mode === 'admin') {
-    startControlBarPolling();
-  } else {
-    stopControlBarPolling();
-  }
-
-  const firstTab = restoreTab || (mode === 'public' ? 'status' : 'admin-parametres');
-  showTab(firstTab);
-
-  if (mode === 'admin') {
-    // Ensure log-stream element exists (inside Système > Logs) before SSE starts
-    renderSystemeTab();
-    startLogSSE();
-  } else {
-    stopLogSSE();
-  }
+function enterAdmin() {
+  if (!getToken()) { showAuthModal(); return; }
+  document.getElementById('nav-admin').style.display = 'flex';
+  showControlBar(true);
+  startControlBarPolling();
+  renderSystemeTab();
+  startLogSSE();
+  showTab('admin-parametres');
 }
 
 function showTab(tabId) {
@@ -355,33 +286,22 @@ function showTab(tabId) {
   const btn = document.querySelector(`.sidebar-item[data-tab="${tabId}"]`);
   if (btn) btn.classList.add('active');
 
-  const content = document.getElementById(`tab-${tabId}`);
-  if (content) content.classList.add('active');
+  const pane = document.getElementById(`tab-${tabId}`);
+  if (pane) pane.classList.add('active');
 
   currentTab = tabId;
-  location.hash = `${currentMode}/${tabId}`;
+  location.hash = tabId;
 
-  if (tabId === 'status') {
-    loadStreamStatus();
-    requestAnimationFrame(() => loadEmotionHistory(currentGraphSince));
-  }
-  if (tabId === 'roadmap') loadRoadmap();
-  if (tabId === 'chat') renderChatTab();
-  if (tabId === 'journal-detail') renderJournalDetailTab();
-  if (tabId === 'memory' && !document.getElementById('mem-grid')) renderMemoryTab();
-  if (tabId !== 'memory' && tabId !== 'admin-memoire' && _memLinkMode) { cancelLinkMode(); }
-  if (tabId === 'global-memory') renderGlobalMemoryTab();
-  if (tabId === 'gallery') loadGallery(true);
-  if (tabId === 'admin-overlay') loadOverlayTab();
-  if (tabId === 'admin-costs') renderCostsTab();
-  if (tabId === 'admin-memory-dash') loadMemoryDashboard();
-  if (tabId === 'admin-memoire') renderMemoireTab();
-  if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
-  if (tabId === 'admin-prompts') renderPromptsTab();
-  if (tabId === 'admin-twitch') loadTwitchChannelsTab();
+  if (tabId !== 'admin-memoire' && _memLinkMode) { cancelLinkMode(); }
   if (tabId === 'admin-parametres') renderParametresTab();
   if (tabId === 'admin-systeme') renderSystemeTab();
-  if (tabId === 'graph') loadPublicGraph();
+  if (tabId === 'admin-memoire') renderMemoireTab();
+  if (tabId === 'admin-costs') renderCostsTab();
+  if (tabId === 'admin-memory-dash') loadMemoryDashboard();
+  if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (tabId === 'admin-prompts') renderPromptsTab();
+  if (tabId === 'admin-overlay') loadOverlayTab();
+  if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollCostsBadge();
   pollLinksBadge();
 }
@@ -403,7 +323,7 @@ async function submitToken() {
     hideAuthModal();
     document.getElementById('token-input').value = '';
     _sessionExpiredFired = false;
-    switchMode('admin');
+    enterAdmin();
     toast('Accès admin accordé', 'success');
   } else {
     toast('Token invalide', 'error');
@@ -425,7 +345,7 @@ async function apiFetch(url, opts = {}) {
       toast('Session expirée', 'error');
     }
     clearToken();
-    switchMode('public');
+    showAuthModal();
     return null;
   }
   return r;
@@ -462,42 +382,7 @@ function dismissToast(el) {
   setTimeout(() => el.remove(), 200);
 }
 
-// ── Status polling ────────────────────────────────────────────────────────────
-
-async function loadStatus() {
-  const r = await fetch('/api/public/status');
-  if (!r.ok) return;
-  const d = await r.json();
-
-  const s = Math.floor(d.uptime_seconds);
-  const days = Math.floor(s / 86400);
-  const hrs  = Math.floor((s % 86400) / 3600);
-  const mins = Math.floor((s % 3600) / 60);
-  document.getElementById('uptime').textContent =
-    days > 0 ? `${days}j ${hrs}h ${mins}m` : `${hrs}h ${mins}m`;
-
-  const setDot = (id, online) => {
-    const dot = document.getElementById(id);
-    dot.classList.toggle('online',  online);
-    dot.classList.toggle('offline', !online);
-    dot.setAttribute('aria-label', `${id.replace('dot-', '')} ${online ? 'en ligne' : 'hors ligne'}`);
-  };
-  setDot('dot-discord', d.discord_online);
-  setDot('dot-twitch',  d.twitch_online);
-  document.getElementById('stat-messages').textContent = d.total_messages.toLocaleString();
-
-  // Per-platform breakdown
-  const breakdownEl = document.getElementById('stat-messages-breakdown');
-  if (breakdownEl) {
-    const parts = [];
-    if (d.messages_discord) parts.push(`Discord ${d.messages_discord}`);
-    if (d.messages_twitch) parts.push(`Twitch ${d.messages_twitch}`);
-    if (d.messages_web) parts.push(`Web ${d.messages_web}`);
-    breakdownEl.textContent = parts.length ? parts.join(' · ') : '';
-  }
-}
-
-// ── Emotions SSE ──────────────────────────────────────────────────────────────
+// ── Emotion gauges ────────────────────────────────────────────────────────────
 
 function buildGauges(containerId, editable) {
   const c = document.getElementById(containerId);
@@ -549,16 +434,6 @@ function updateEmotionGauges(payload) {
   }
   updateMoodFatigueLine(currentMood, currentFatigue);
   updateEmotionalStateBlock(payload, currentMood, currentFatigue, currentSecondaries);
-  updateFavicon(payload);
-}
-
-function updateEmotionSummary(emotions) {
-  const dominant = EMOTIONS.filter(e => emotions[e] >= 0.4);
-  const el = document.getElementById('emotion-summary');
-  if (!el) return;
-  if (dominant.length === 0) { el.textContent = 'Wally est dans un état neutre.'; return; }
-  const names = { anger:'en colère', joy:'joyeux', sadness:'triste', curiosity:'curieux', boredom:'ennuyé' };
-  el.textContent = `Wally est ${dominant.map(e => names[e]).join(' et ')}.`;
 }
 
 function updateMoodFatigueLine(mood, fatigue) {
@@ -661,22 +536,6 @@ function updateEmotionalStateBlock(emotions, mood, fatigue, secondaries) {
   el.style.display = 'block';
 }
 
-function updateFavicon(emotions) {
-  const dominant = EMOTIONS.reduce((a, b) => (emotions[a] > emotions[b] ? a : b));
-  const color = emotions[dominant] >= 0.2 ? EMOTION_COLORS[dominant] : '#888888';
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='${color}'/><circle cx='16' cy='16' r='14' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='1.5'/></svg>`;
-  document.getElementById('favicon').href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-function startEmotionSSE() {
-  if (emotionSSE) emotionSSE.close();
-  emotionSSE = new EventSource('/api/public/sse/emotions');
-  emotionSSE.onmessage = (e) => {
-    try { updateEmotionGauges(JSON.parse(e.data)); } catch {}
-  };
-  emotionSSE.onerror = () => {};
-}
-
 // ── Canvas helpers ────────────────────────────────────────────────────────────
 
 function _canvasContentWidth(canvas) {
@@ -684,29 +543,6 @@ function _canvasContentWidth(canvas) {
   if (!parent) return canvas.offsetWidth || 800;
   const cs = getComputedStyle(parent);
   return Math.floor(parent.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) || 800;
-}
-
-// ── Emotion canvas graph ──────────────────────────────────────────────────────
-
-async function loadEmotionHistory(since) {
-  const url = since != null
-    ? `/api/public/emotions/history?since=${since}`
-    : '/api/public/emotions/history';
-  const r = await fetch(url);
-  if (!r.ok) return;
-  const { history } = await r.json();
-
-  if (!history || history.length < 2) {
-    showGraphEmpty('emotionCanvas', 'Pas assez de données pour cette période.');
-    const avgEl = document.getElementById('emotion-averages');
-    if (avgEl) avgEl.style.display = 'none';
-    _graphMeta = null;
-    return;
-  }
-
-  drawEmotionGraph(history);
-  renderEmotionAverages(history);
-  buildEmotionLegend();
 }
 
 function showGraphEmpty(canvasId, message) {
@@ -729,289 +565,11 @@ function showGraphEmpty(canvasId, message) {
   ctx.fillText(message, W / 2, H / 2);
 }
 
-function setGraphRange(range) {
-  const now = Date.now() / 1000;
-  const titles = {
-    '1h':  '📈 DERNIÈRE HEURE',
-    '24h': '📈 DERNIÈRES 24H',
-    '7d':  '📈 7 DERNIERS JOURS',
-    '30d': '📈 30 DERNIERS JOURS',
-  };
-  const offsets = { '1h': 3600, '24h': 86400, '7d': 7*86400, '30d': 30*86400 };
-  currentGraphSince = now - offsets[range];
-
-  const titleEl = document.getElementById('graph-title');
-  if (titleEl) titleEl.textContent = titles[range];
-
-  const btnLabels = { '1h': '1H', '24h': '24H', '7d': '7J', '30d': '30J' };
-  document.querySelectorAll('.graph-range-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.textContent === btnLabels[range]);
-  });
-
-  loadEmotionHistory(currentGraphSince);
-}
-
-function renderEmotionAverages(history) {
-  const el = document.getElementById('emotion-averages');
-  if (!el) return;
-  if (!history || history.length < 2) { el.style.display = 'none'; return; }
-  const avgs = {};
-  for (const e of EMOTIONS) {
-    const sum = history.reduce((acc, snap) => acc + (snap[e] ?? 0), 0);
-    avgs[e] = sum / history.length;
-  }
-  el.innerHTML = EMOTIONS.map(e =>
-    `<span style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]} ${avgs[e].toFixed(2)}</span>`
-  ).join('');
-  el.style.display = 'flex';
-}
-
-// ── Interactive legend ───────────────────────────────────────────────────────
-
-function buildEmotionLegend() {
-  const el = document.getElementById('emotion-graph-legend');
-  if (!el) return;
-
-  const primaryItems = EMOTIONS.map(e => {
-    const hidden = hiddenEmotions.has(e);
-    return `<div class="graph-legend-item ${hidden ? 'hidden-emotion' : ''}"
-                 onclick="toggleEmotion('${e}')" title="Cliquer pour ${hidden ? 'afficher' : 'masquer'}">
-      <span class="legend-line" style="background:${EMOTION_COLORS[e]}"></span>
-      <span>${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}</span>
-    </div>`;
-  });
-
-  const secondaryItems = SECONDARY_LABELS.map(name => {
-    const hidden = hiddenEmotions.has(name);
-    const color  = SECONDARY_COLORS[name];
-    const label  = SECONDARY_LABELS_FR[name] || name;
-    return `<div class="secondary-legend-item ${hidden ? 'hidden-emotion' : ''}"
-                 onclick="toggleEmotion('${name}')" title="${hidden ? 'Afficher' : 'Masquer'} ${label}">
-      <span class="secondary-legend-dash" style="color:${color}"></span>
-      <span style="color:${color}">${label}</span>
-    </div>`;
-  });
-
-  el.innerHTML = primaryItems.join('') + secondaryItems.join('');
-}
-
-function toggleEmotion(emotion) {
-  if (hiddenEmotions.has(emotion)) hiddenEmotions.delete(emotion);
-  else hiddenEmotions.add(emotion);
-  buildEmotionLegend();
-  if (_graphMeta) drawEmotionGraph(_graphMeta.history);
-}
-
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function _computeSecondaryActivations(history) {
-  const activations = [];
-  for (let i = 1; i < history.length; i++) {
-    const prev = history[i - 1];
-    const curr = history[i];
-    for (const [name, def] of Object.entries(SECONDARY_DEFS)) {
-      let threshA, threshB;
-      if (Array.isArray(def.threshold)) {
-        threshA = def.threshold[0];
-        threshB = def.threshold[1];
-      } else {
-        threshA = def.threshold;
-        threshB = def.threshold;
-      }
-      const prevActive = (prev[def.a] ?? 0) >= threshA && (prev[def.b] ?? 0) >= threshB;
-      const currActive = (curr[def.a] ?? 0) >= threshA && (curr[def.b] ?? 0) >= threshB;
-      if (!prevActive && currActive) {
-        activations.push({ name, index: i });
-      }
-    }
-  }
-  return activations;
-}
-
-function drawEmotionGraph(history) {
-  const canvas = document.getElementById('emotionCanvas');
-  if (!canvas || !history || history.length < 2) return;
-
-  const W = _canvasContentWidth(canvas);
-  const H = 165;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width  = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-
-  ctx.fillStyle = '#11151c';
-  ctx.fillRect(0, 0, W, H);
-
-  const PAD = { top: 10, bottom: 24, left: 4, right: 4 };
-  const gW = W - PAD.left - PAD.right;
-  const gH = H - PAD.top - PAD.bottom;
-
-  const tMin = history[0].snapshot_at;
-  const tMax = history[history.length - 1].snapshot_at;
-  const tRange = tMax - tMin || 1;
-
-  _graphMeta = { history, tMin, tRange, PAD, gW, gH, W, H };
-
-  // Grid
-  ctx.lineWidth = 1;
-  for (let pct = 0.25; pct <= 1.0; pct += 0.25) {
-    const y = PAD.top + (1 - pct) * gH;
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, y);
-    ctx.lineTo(W - PAD.right, y);
-    ctx.stroke();
-  }
-
-  // Time ticks
-  {
-    const rawRange = tMax - tMin;
-    let tickStep, tickMode;
-    if (rawRange <= 1.1 * 3600) { tickStep = 600; tickMode = 'minute'; }
-    else if (rawRange <= 27 * 3600) { tickStep = 7200; tickMode = 'hour'; }
-    else if (rawRange <= 8 * 86400) { tickStep = 86400; tickMode = 'day'; }
-    else { tickStep = 172800; tickMode = 'day'; }
-
-    let firstTick;
-    if (tickMode === 'minute') firstTick = Math.ceil(tMin / 600) * 600;
-    else if (tickMode === 'hour') firstTick = Math.ceil(tMin / 3600) * 3600;
-    else {
-      const d = new Date(tMin * 1000);
-      d.setHours(0, 0, 0, 0);
-      if (d.getTime() / 1000 < tMin) d.setDate(d.getDate() + 1);
-      firstTick = d.getTime() / 1000;
-    }
-
-    ctx.globalAlpha = 1;
-    for (let t = firstTick; t <= tMax; t += tickStep) {
-      const x = PAD.left + ((t - tMin) / tRange) * gW;
-      if (x < PAD.left + 40 || x > W - PAD.right - 40) continue;
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, PAD.top);
-      ctx.lineTo(x, PAD.top + gH);
-      ctx.stroke();
-
-      const label = tickMode === 'minute'
-        ? new Date(t * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
-        : tickMode === 'hour'
-          ? new Date(t * 1000).toLocaleTimeString('fr', { hour: '2-digit' })
-          : new Date(t * 1000).toLocaleDateString('fr', { day: 'numeric', month: 'numeric' });
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(label, x, H - 8);
-    }
-  }
-
-  // Emotion lines + area fill
-  const visibleEmotions = EMOTIONS.filter(e => !hiddenEmotions.has(e));
-
-  for (const e of visibleEmotions) {
-    let firstX = 0, lastX = 0;
-
-    ctx.beginPath();
-    ctx.strokeStyle = EMOTION_COLORS[e];
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.85;
-    history.forEach((snap, i) => {
-      const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
-      const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
-      if (i === 0) { ctx.moveTo(x, y); firstX = x; }
-      else ctx.lineTo(x, y);
-      lastX = x;
-    });
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.globalAlpha = 1;
-    history.forEach((snap, i) => {
-      const x = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
-      const y = PAD.top  + (1 - (snap[e] ?? 0)) * gH;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.lineTo(lastX,  PAD.top + gH);
-    ctx.lineTo(firstX, PAD.top + gH);
-    ctx.closePath();
-    const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
-    grad.addColorStop(0, hexToRgba(EMOTION_COLORS[e], 0.2));
-    grad.addColorStop(1, hexToRgba(EMOTION_COLORS[e], 0.01));
-    ctx.fillStyle = grad;
-    ctx.fill();
-  }
-
-  ctx.globalAlpha = 1;
-
-  // Secondary emotion activation markers (vertical dashed lines)
-  const activations = _computeSecondaryActivations(history);
-  for (const { name, index } of activations) {
-    if (hiddenEmotions.has(name)) continue;
-    const snap  = history[index];
-    const x     = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
-    const color = SECONDARY_COLORS[name];
-    const label = SECONDARY_LABELS_FR[name] || name;
-
-    ctx.save();
-    ctx.setLineDash([3, 3]);
-    ctx.strokeStyle = color;
-    ctx.lineWidth   = 1.5;
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(x, PAD.top);
-    ctx.lineTo(x, PAD.top + gH);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle   = color;
-    ctx.font        = '9px Inter, sans-serif';
-    ctx.textAlign   = 'left';
-    const labelX = Math.min(x + 3, W - PAD.right - 60);
-    ctx.fillText(label, labelX, PAD.top + 10);
-    ctx.restore();
-  }
-
-  // Time axis endpoints
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.font = '10px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText(new Date(tMin * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }), PAD.left, H - 8);
-  ctx.textAlign = 'right';
-  ctx.fillText(new Date(tMax * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }), W - PAD.right, H - 8);
-}
-
-// ── Stream status ─────────────────────────────────────────────────────────────
-
-async function loadStreamStatus() {
-  const r = await fetch('/api/public/twitch/stream');
-  if (!r.ok) return;
-  const d = await r.json();
-  const el = document.getElementById('stream-content');
-
-  if (d.live) {
-    el.innerHTML = `
-      <div class="stream-live-badge"><span class="dot"></span> LIVE</div>
-      <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${escHtml(d.title || '')}</div>
-      <div style="color:var(--text-muted);margin-bottom:4px;font-size:0.85rem">${escHtml(d.category || '')}</div>
-      <div style="font-size:1.4rem;font-weight:800;color:var(--c-curiosity)">${(d.viewers || 0).toLocaleString()} viewers</div>
-    `;
-  } else {
-    el.innerHTML = `
-      <div class="stream-offline-badge"><span class="dot"></span> OFFLINE</div>
-      ${d.started_at ? `<div style="color:var(--text-muted);margin-top:6px;font-size:0.85rem">Dernier stream : ${new Date(d.started_at).toLocaleString('fr')}</div>` : ''}
-    `;
-  }
 }
 
 function escHtml(str) {
@@ -1097,13 +655,13 @@ async function renderConfigForm(cfg) {
       </div>
       <div id="openai-specific-settings">
         <div class="field-group">
-          <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+          <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
           <select id="cfg-reasoning-effort">
             ${REASONING_EFFORTS.map(e => `<option value="${e}" ${e === cfg.openai.reasoning_effort ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
           </select>
         </div>
         <div class="field-group">
-          <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+          <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
           <select id="cfg-text-verbosity">
             ${TEXT_VERBOSITIES.map(v => `<option value="${v}" ${v === cfg.openai.text_verbosity ? 'selected' : ''}>${v.toUpperCase()}</option>`).join('')}
           </select>
@@ -1111,7 +669,7 @@ async function renderConfigForm(cfg) {
       </div>
       <div id="claude-specific-settings" style="display:none">
         <div class="field-group">
-          <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">Claude only</span></label>
+          <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:var(--text-muted)">Claude only</span></label>
           <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
             ${THINKING_TYPES.map(t => `<option value="${t}" ${t === (cfg.llm?.primary?.thinking_type || 'disabled') ? 'selected' : ''}>${t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)'}</option>`).join('')}
           </select>
@@ -1121,12 +679,12 @@ async function renderConfigForm(cfg) {
           <select id="cfg-thinking-effort">
             ${THINKING_EFFORTS.map(e => `<option value="${e}" ${e === (cfg.llm?.primary?.thinking_effort || 'medium') ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
           </select>
-          <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
         </div>
         <div id="thinking-budget-group" class="field-group" style="display:none">
           <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
           <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
-          <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
         </div>
       </div>
       <div class="field-group">
@@ -1140,7 +698,7 @@ async function renderConfigForm(cfg) {
     <!-- Émotions — lambdas (boredom exclu : monte avec l'inactivité, pas de decay) -->
     <div class="card config-section">
       <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
       ${Object.entries(cfg.emotions).filter(([name]) => name !== 'boredom').map(([name, ec]) => {
         const lam = ec.decay_lambda;
         const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
@@ -1149,18 +707,18 @@ async function renderConfigForm(cfg) {
         <div class="field-group" style="display:flex;align-items:center;gap:12px">
           <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}; min-width:100px">${name.toUpperCase()} λ</label>
           <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this, '${name}')">
-          <span id="decay-time-${name}" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
+          <span id="decay-time-${name}" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
         </div>`;
       }).join('')}
 
       <!-- Boredom rise config -->
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08)">
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:12px">
           <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'}; min-width:100px">BOREDOM ↑/h</label>
           <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2}" style="width:90px" oninput="updateBoredomTime(this)">
-          <span id="boredom-time-info" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${(() => { const r = cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2; if (r <= 0) return '∞'; const h = 1/r; return h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; })()}</strong></span>
+          <span id="boredom-time-info" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${(() => { const r = cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2; if (r <= 0) return '∞'; const h = 1/r; return h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; })()}</strong></span>
         </div>
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
       </div>
 
       <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
@@ -1194,7 +752,7 @@ async function renderConfigForm(cfg) {
         <select id="cfg-notif-channel" style="width:100%">
           <option value="">Désactivé</option>
         </select>
-        <p style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
+        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
       </div>
       <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
     </div>
@@ -1209,12 +767,12 @@ async function renderConfigForm(cfg) {
       <div class="field-group">
         <label class="field-label" for="cfg-spam-max">Messages max</label>
         <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Nombre de messages avant déclenchement</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Nombre de messages avant déclenchement</p>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
         <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Période de temps pour compter les messages</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Période de temps pour compter les messages</p>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
@@ -1223,12 +781,12 @@ async function renderConfigForm(cfg) {
       <div class="field-group">
         <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
         <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
         <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
       </div>
       <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
     </div>
@@ -1690,7 +1248,7 @@ async function loadVisitorsInPanel() {
   const conns = data.connections || [];
 
   if (conns.length === 0) {
-    el.innerHTML = '<div class="card"><p style="color:rgba(255,255,255,0.45)">Aucune connexion enregistrée</p></div>';
+    el.innerHTML = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
     return;
   }
 
@@ -1728,200 +1286,18 @@ async function loadVisitorsInPanel() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-// ── Naker blur behind cards ──────────────────────────────────────────────────
-
-function initNakerBlur() {
-  const blurred = document.getElementById('naker-blurred');
-  if (!blurred) return;
-  const ctx = blurred.getContext('2d');
-  let src = null;
-
-  function findSource() {
-    if (src) return src;
-    const el = document.querySelector('#naker-bg canvas');
-    if (el) { src = el; return src; }
-    return null;
-  }
-
-  function loop() {
-    const s = findSource();
-    if (s && s.width && s.height) {
-      if (blurred.width !== s.width || blurred.height !== s.height) {
-        blurred.width = s.width;
-        blurred.height = s.height;
-      }
-      ctx.clearRect(0, 0, blurred.width, blurred.height);
-      ctx.drawImage(s, 0, 0);
-      blurred.style.opacity = '1';
-    }
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
-  // Start naker blur mirror (delayed to let naker init)
-  setTimeout(initNakerBlur, 1000);
-
-  buildGauges('gauges-public', false);
-
-  await loadStatus();
-  startEmotionSSE();
-  setInterval(loadStatus, 30000);
-
-  loadStreamStatus();
-  requestAnimationFrame(() => setGraphRange('1h'));
-  pollCostsBadge();
-  pollLinksBadge();
-  pollOverlayStatus();
-
-  // ── Tooltip hover — emotion graph ─────────────────────────────────────
-  const emotionCanvas = document.getElementById('emotionCanvas');
-  if (emotionCanvas) {
-    emotionCanvas.addEventListener('mousemove', (ev) => {
-      if (!_graphMeta || _rafPending) return;
-      const clientX = ev.clientX;
-      _rafPending = true;
-      requestAnimationFrame(() => {
-        _rafPending = false;
-        const { history, tMin, tRange, PAD, gW, gH, W, H } = _graphMeta;
-        const rect = emotionCanvas.getBoundingClientRect();
-        const mouseX = clientX - rect.left;
-
-        let nearest = null, minDist = Infinity;
-        for (const snap of history) {
-          const sx = PAD.left + ((snap.snapshot_at - tMin) / tRange) * gW;
-          const dist = Math.abs(sx - mouseX);
-          if (dist < minDist) { minDist = dist; nearest = snap; }
-        }
-
-        drawEmotionGraph(history);
-        if (!nearest) return;
-
-        const ctx = emotionCanvas.getContext('2d');
-        const visibleEmotions = EMOTIONS.filter(e => !hiddenEmotions.has(e));
-        const tw = 150;
-        const th = 12 + visibleEmotions.length * 16 + 8;
-        const tx = Math.min(mouseX + 12, W - tw - 4);
-        const ty = 8;
-
-        // Glass tooltip background
-        ctx.fillStyle = 'rgba(17,21,28,0.88)';
-        ctx.strokeStyle = 'rgba(0,212,255,0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(tx, ty, tw, th, 10);
-        else { ctx.moveTo(tx + 10, ty); ctx.lineTo(tx + tw - 10, ty); ctx.quadraticCurveTo(tx + tw, ty, tx + tw, ty + 10); ctx.lineTo(tx + tw, ty + th - 10); ctx.quadraticCurveTo(tx + tw, ty + th, tx + tw - 10, ty + th); ctx.lineTo(tx + 10, ty + th); ctx.quadraticCurveTo(tx, ty + th, tx, ty + th - 10); ctx.lineTo(tx, ty + 10); ctx.quadraticCurveTo(tx, ty, tx + 10, ty); }
-        ctx.fill();
-        ctx.stroke();
-
-        // Inner highlight
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(tx + 12, ty + 1);
-        ctx.lineTo(tx + tw - 12, ty + 1);
-        ctx.stroke();
-
-        ctx.textAlign = 'left';
-        ctx.font = '10px monospace';
-        visibleEmotions.forEach((e, i) => {
-          ctx.fillStyle = EMOTION_COLORS[e];
-          ctx.fillText(
-            `${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}: ${(nearest[e] ?? 0).toFixed(2)}`,
-            tx + 10, ty + 18 + i * 16
-          );
-        });
-      });
-    });
-    emotionCanvas.addEventListener('mouseleave', () => {
-      if (_graphMeta) drawEmotionGraph(_graphMeta.history);
-    });
+  // Check if already authenticated
+  if (getToken()) {
+    enterAdmin();
+  } else {
+    showAuthModal();
   }
 
-  // ── Tooltip hover — cost graph ────────────────────────────────────────
-  const costCanvas = document.getElementById('costCanvas');
-  if (costCanvas) {
-    costCanvas.addEventListener('mousemove', (ev) => {
-      if (!_costGraphMeta || _costRafPending) return;
-      const clientX = ev.clientX;
-      _costRafPending = true;
-      requestAnimationFrame(() => {
-        _costRafPending = false;
-        const { current, PAD, gW, gH, W, H, xStep, maxCost } = _costGraphMeta;
-        const rect = costCanvas.getBoundingClientRect();
-        const mouseX = clientX - rect.left;
-
-        let nearestIdx = 0, minDist = Infinity;
-        for (let i = 0; i < current.length; i++) {
-          const sx = PAD.left + i * xStep;
-          const dist = Math.abs(sx - mouseX);
-          if (dist < minDist) { minDist = dist; nearestIdx = i; }
-        }
-
-        drawCostGraph(current, _costGraphMeta.previous);
-        const d = current[nearestIdx];
-        if (!d) return;
-
-        const ctx = costCanvas.getContext('2d');
-        const px = PAD.left + nearestIdx * xStep;
-        const py = PAD.top + (1 - d.cost / maxCost) * gH;
-
-        // Vertical line
-        ctx.strokeStyle = 'rgba(255,215,0,0.3)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.moveTo(px, PAD.top);
-        ctx.lineTo(px, PAD.top + gH);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Point
-        ctx.beginPath();
-        ctx.arc(px, py, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#FFD700';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Tooltip
-        const label = `${d.date}  $${d.cost.toFixed(4)}`;
-        ctx.font = '11px monospace';
-        const tw = ctx.measureText(label).width + 20;
-        const th = 26;
-        const ttx = Math.min(Math.max(px - tw / 2, 2), W - tw - 2);
-        const tty = Math.max(py - th - 10, 2);
-
-        ctx.fillStyle = 'rgba(17,21,28,0.9)';
-        ctx.strokeStyle = 'rgba(255,215,0,0.25)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(ttx, tty, tw, th, 6);
-        else { ctx.rect(ttx, tty, tw, th); }
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#FFD700';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, ttx + tw / 2, tty + 17);
-      });
-    });
-    costCanvas.addEventListener('mouseleave', () => {
-      if (_costGraphMeta) drawCostGraph(_costGraphMeta.current, _costGraphMeta.previous);
-    });
-  }
-
-  // Restore mode+tab from hash
+  // Restore tab from hash
   const hash = location.hash.replace('#', '');
-  if (hash) {
-    const [hashMode, hashTab] = hash.split('/');
-    if (hashMode === 'admin' && getToken()) {
-      switchMode('admin', hashTab || null);
-    } else if (hashMode === 'public' && hashTab) {
-      showTab(hashTab);
-    }
+  if (hash && getToken()) {
+    showTab(hash);
   }
 });
 
@@ -1949,8 +1325,8 @@ const MEM_CATEGORIES = [
   { key: '', label: 'Non classé', css: 'other', color: '#64748b' },
 ];
 
-function renderMemoryTab() {
-  const el = document.getElementById('tab-memory');
+function renderMemoryTab(targetEl) {
+  const el = targetEl || document.getElementById('tab-memory') || document.getElementById('memoire-sub-users');
   if (!el) return;
   // Build toolbar with rows for responsive layout
   var toolbar = document.createElement('div');
@@ -2266,7 +1642,7 @@ async function openUserModal(userId, userData) {
   var aliasHtml = '<div class="mem-linked-section" id="alias-section-' + escAttr(userId) + '">'
     + '<div class="mem-linked-title">Alias connus</div>'
     + '<div class="mem-linked-pills" id="alias-pills-' + escAttr(userId) + '">'
-    + (aliases.length === 0 ? '<span style="color:rgba(255,255,255,0.35);font-size:0.8rem">Aucun alias</span>' : '')
+    + (aliases.length === 0 ? '<span style="color:var(--text-muted);font-size:0.8rem">Aucun alias</span>' : '')
     + aliases.map(function(a) {
         var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
         var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
@@ -2466,7 +1842,7 @@ function startModalEditMemory(userId, memoryId) {
   if (actionsDiv) actionsDiv.style.display = 'none';
   textEl.outerHTML = '<div style="display:flex;gap:6px;align-items:center;flex:1">'
     + '<input type="text" id="edit-mem-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
-    + ' style="flex:1;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:4px 8px;color:#e2e8f0"'
+    + ' style="flex:1;font-size:11px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:#e2e8f0"'
     + ' onkeydown="if(event.key===\'Enter\') submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\'); if(event.key===\'Escape\') reopenModal(\'' + escAttr(userId) + '\');">'
     + '<button class="mem-entry-action" onclick="submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\')" style="opacity:1;font-size:11px">OK</button>'
     + '<button class="mem-entry-action" onclick="reopenModal(\'' + escAttr(userId) + '\')" style="opacity:1;font-size:11px">✕</button>'
@@ -2591,7 +1967,7 @@ async function _refreshAliasPills(userId) {
   var container = document.getElementById('alias-pills-' + userId);
   if (!container) return;
   container.innerHTML = aliases.length === 0
-    ? '<span style="color:rgba(255,255,255,0.35);font-size:0.8rem">Aucun alias</span>'
+    ? '<span style="color:var(--text-muted);font-size:0.8rem">Aucun alias</span>'
     : aliases.map(function(a) {
         var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
         var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
@@ -2671,8 +2047,8 @@ async function handleMemLinkClick(targetUserId, targetName, targetPlatform) {
 
 // ── Global memory (dedicated tab) ─────────────────────────────────────────────
 
-function renderGlobalMemoryTab() {
-  const el = document.getElementById('tab-global-memory');
+function renderGlobalMemoryTab(targetEl) {
+  const el = targetEl || document.getElementById('tab-global-memory') || document.getElementById('memoire-sub-global');
   if (!el) return;
   el.innerHTML = `
     <div style="max-width:800px;margin:0 auto;padding:20px">
@@ -2803,74 +2179,6 @@ async function deleteGlobalMemory(memoryId) {
   } else {
     toast('Erreur suppression', 'error');
   }
-}
-
-// ── Roadmap ──────────────────────────────────────────────────────────────────
-
-async function loadRoadmap() {
-  const r = await fetch('/api/public/roadmap');
-  if (!r.ok) return;
-  const data = await r.json();
-  renderRoadmap(data);
-}
-
-function renderRoadmap(data) {
-  const el = document.getElementById('roadmap-container');
-  if (!el) return;
-
-  const { sections, stats } = data;
-  const pct = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
-
-  let html = `
-    <div class="card roadmap-progress">
-      <span class="roadmap-progress-text">${stats.done} / ${stats.total} tâches</span>
-      <div class="roadmap-progress-bar">
-        <div class="roadmap-progress-fill" style="width:${pct}%"></div>
-      </div>
-      <span class="roadmap-progress-text">${pct}%</span>
-    </div>
-  `;
-
-  for (const section of sections) {
-    html += `<div class="roadmap-section">`;
-    html += `<div class="roadmap-section-title">${escHtml(section.title)}</div>`;
-
-    for (const item of section.items) {
-      const cls = item.done ? 'done' : 'todo';
-      const check = item.done ? '✓' : '○';
-      const checkColor = item.done ? 'var(--c-online)' : 'var(--accent)';
-
-      html += `<div class="card roadmap-item ${cls}">`;
-      html += `<div class="roadmap-item-header">`;
-      html += `<span class="roadmap-check" style="color:${checkColor}">${check}</span>`;
-      html += `<span class="roadmap-item-title">${escHtml(item.title)}</span>`;
-      html += `</div>`;
-
-      if (item.description) {
-        html += `<div class="roadmap-item-desc">${escHtml(item.description)}</div>`;
-      }
-
-      if (item.sub_items.length > 0) {
-        html += `<div class="roadmap-sub-list">`;
-        for (const sub of item.sub_items) {
-          const subCls = sub.done ? 'done' : '';
-          const subCheck = sub.done ? '✓' : '○';
-          const subColor = sub.done ? 'var(--c-online)' : 'var(--text-dim)';
-          html += `<div class="roadmap-sub-item ${subCls}">`;
-          html += `<span class="roadmap-sub-check" style="color:${subColor}">${subCheck}</span>`;
-          html += `<span>${escHtml(sub.title)}</span>`;
-          html += `</div>`;
-        }
-        html += `</div>`;
-      }
-
-      html += `</div>`;
-    }
-
-    html += `</div>`;
-  }
-
-  el.innerHTML = html;
 }
 
 // ── Liaisons de comptes (fonctions utilitaires conservées) ─────────────────────
@@ -3137,7 +2445,7 @@ function renderCostBreakdown(containerId, data, keyField) {
         <span>${escHtml(label)}</span>
         <span style="color:#FFD700;font-family:var(--font-mono)">$${d.total.toFixed(2)}</span>
       </div>
-      <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">
+      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
         <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#FFD700,#ffe066);border-radius:2px;transition:width 0.4s ease"></div>
       </div>
     </div>`;
@@ -3156,7 +2464,7 @@ function renderCostUsers(users) {
         <span>${escHtml(u.username)}</span>
         <span style="color:#FFD700;font-family:var(--font-mono)">$${u.total.toFixed(2)}</span>
       </div>
-      <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">
+      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
         <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#FFD700,#ffe066);border-radius:2px;transition:width 0.4s ease"></div>
       </div>
     </div>`;
@@ -3248,7 +2556,7 @@ function drawFeaturePie(data) {
     swatch.style.cssText = 'display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0;background:' + FEATURE_COLORS[i % FEATURE_COLORS.length] + ';';
 
     const name = document.createElement('span');
-    name.style.cssText = 'flex:1;color:rgba(255,255,255,0.85);';
+    name.style.cssText = 'flex:1;color:var(--text-primary);';
     name.textContent = item.feature || 'autre';
 
     const cost = document.createElement('span');
@@ -3256,7 +2564,7 @@ function drawFeaturePie(data) {
     cost.textContent = '$' + item.cost.toFixed(4);
 
     const pct = document.createElement('span');
-    pct.style.cssText = 'color:rgba(255,255,255,0.4);min-width:42px;text-align:right;';
+    pct.style.cssText = 'color:var(--text-muted);min-width:42px;text-align:right;';
     pct.textContent = (item.pct !== undefined ? item.pct.toFixed(1) : (item.cost / total * 100).toFixed(1)) + '%';
 
     row.appendChild(swatch);
@@ -3288,7 +2596,7 @@ async function loadCostPrices() {
   ['Modèle', 'Input / 1k tokens', 'Output / 1k tokens'].forEach(function(label) {
     const th = document.createElement('th');
     th.textContent = label;
-    th.style.cssText = 'padding:6px 10px;text-align:left;color:rgba(255,255,255,0.45);font-size:0.75rem;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;';
+    th.style.cssText = 'padding:6px 10px;text-align:left;color:var(--text-secondary);font-size:0.75rem;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;';
     hrow.appendChild(th);
   });
   thead.appendChild(hrow);
@@ -3299,11 +2607,11 @@ async function loadCostPrices() {
   models.forEach(function(model) {
     const info = prices[model];
     const tr = document.createElement('tr');
-    tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.04);';
+    tr.style.cssText = 'border-bottom:1px solid var(--border);';
 
     const tdModel = document.createElement('td');
     tdModel.textContent = model;
-    tdModel.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:rgba(255,255,255,0.8);font-family:var(--font-mono);';
+    tdModel.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:var(--text-primary);font-family:var(--font-mono);';
 
     const tdIn = document.createElement('td');
     tdIn.textContent = info.input_per_1k !== undefined ? '$' + info.input_per_1k.toFixed(6) : '—';
@@ -3337,7 +2645,7 @@ async function loadCostLogs(page) {
   ['Date/Heure', 'Modèle', 'Tokens In', 'Tokens Out', 'Coût', 'Purpose', 'Utilisateur'].forEach(function(label) {
     const th = document.createElement('th');
     th.textContent = label;
-    th.style.cssText = 'padding:6px 10px;text-align:left;color:rgba(255,255,255,0.45);font-size:0.75rem;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;';
+    th.style.cssText = 'padding:6px 10px;text-align:left;color:var(--text-secondary);font-size:0.75rem;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;';
     hrow.appendChild(th);
   });
   thead.appendChild(hrow);
@@ -3346,23 +2654,23 @@ async function loadCostLogs(page) {
   const tbody = document.createElement('tbody');
   (data.logs || []).forEach(function(log) {
     const tr = document.createElement('tr');
-    tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.04);';
+    tr.style.cssText = 'border-bottom:1px solid var(--border);';
 
     function cell(text, extraStyle) {
       const td = document.createElement('td');
       td.textContent = text !== null && text !== undefined ? String(text) : '—';
-      td.style.cssText = 'padding:5px 10px;font-size:0.78rem;' + (extraStyle || 'color:rgba(255,255,255,0.75);');
+      td.style.cssText = 'padding:5px 10px;font-size:0.78rem;' + (extraStyle || 'color:var(--text-primary);');
       return td;
     }
 
     const dt = log.datetime ? log.datetime.replace('T', ' ').slice(0, 19) : '—';
-    tr.appendChild(cell(dt, 'color:rgba(255,255,255,0.45);font-family:var(--font-mono);white-space:nowrap;'));
-    tr.appendChild(cell(log.model, 'color:rgba(255,255,255,0.75);font-family:var(--font-mono);'));
+    tr.appendChild(cell(dt, 'color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;'));
+    tr.appendChild(cell(log.model, 'color:var(--text-primary);font-family:var(--font-mono);'));
     tr.appendChild(cell(log.input_tokens !== undefined ? log.input_tokens.toLocaleString() : '—', 'color:#06b6d4;text-align:right;font-family:var(--font-mono);'));
     tr.appendChild(cell(log.output_tokens !== undefined ? log.output_tokens.toLocaleString() : '—', 'color:#eab308;text-align:right;font-family:var(--font-mono);'));
     tr.appendChild(cell(log.cost_usd !== undefined ? '$' + log.cost_usd.toFixed(6) : '—', 'color:#FFD700;font-family:var(--font-mono);'));
-    tr.appendChild(cell(log.purpose, 'color:rgba(255,255,255,0.6);'));
-    tr.appendChild(cell(log.username || '—', 'color:rgba(255,255,255,0.5);'));
+    tr.appendChild(cell(log.purpose, 'color:var(--text-secondary);'));
+    tr.appendChild(cell(log.username || '—', 'color:var(--text-secondary);'));
     tbody.appendChild(tr);
   });
   tableEl.appendChild(tbody);
@@ -3393,7 +2701,7 @@ async function loadCostLogs(page) {
   prevBtn.onclick = function() { loadCostLogs(currentPage - 1); };
 
   const info = document.createElement('span');
-  info.style.cssText = 'color:rgba(255,255,255,0.45);';
+  info.style.cssText = 'color:var(--text-secondary);';
   info.textContent = from + '–' + to + ' sur ' + total;
 
   const nextBtn = document.createElement('button');
@@ -3509,562 +2817,6 @@ function renderPendingLinks(proposals) {
   container.appendChild(wrapper);
 }
 
-// ── Chat Auth ───────────────────────────────────────────────────
-
-function getChatJwt() { return localStorage.getItem('chat_jwt'); }
-function getChatRefresh() { return localStorage.getItem('chat_refresh'); }
-function setChatTokens(jwt, refresh) {
-  localStorage.setItem('chat_jwt', jwt);
-  localStorage.setItem('chat_refresh', refresh);
-}
-function clearChatTokens() {
-  localStorage.removeItem('chat_jwt');
-  localStorage.removeItem('chat_refresh');
-  _chatUser = null;
-}
-
-async function chatCheckAuth() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('chat_code')) {
-    const code = params.get('chat_code');
-    window.history.replaceState({}, '', '/');
-    const resp = await fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(code));
-    if (resp.ok) {
-      const data = await resp.json();
-      setChatTokens(data.jwt, data.refresh_token);
-    }
-  }
-
-  const jwt = getChatJwt();
-  if (!jwt) return false;
-
-  const r = await fetch('/api/chat/auth/me', { headers: { Authorization: 'Bearer ' + jwt } });
-  if (r.ok) {
-    _chatUser = await r.json();
-    return true;
-  }
-
-  const refresh = getChatRefresh();
-  if (!refresh) { clearChatTokens(); return false; }
-
-  const rr = await fetch('/api/chat/auth/refresh', { headers: { Authorization: 'Bearer ' + refresh } });
-  if (rr.ok) {
-    const data = await rr.json();
-    setChatTokens(data.jwt, data.refresh_token);
-    return chatCheckAuth();
-  }
-
-  clearChatTokens();
-  return false;
-}
-
-// ── Chat Tab Render ─────────────────────────────────────────────
-
-async function renderChatTab() {
-  const el = document.getElementById('tab-chat');
-  if (!el) return;
-
-  const authed = await chatCheckAuth();
-
-  if (!authed) {
-    el.innerHTML = `
-      <div class="chat-login-prompt">
-        <div class="login-title">Avant de te connecter...</div>
-        <div class="login-subtitle">Wally a besoin de savoir qui tu es pour se souvenir de toi.</div>
-
-        <div class="login-why-block">
-          <div class="login-why-icon">🔗</div>
-          <div class="login-why-title">Pourquoi Discord ?</div>
-          <div class="login-why-text">
-            Wally utilise ton compte Discord comme identifiant pour rattacher tes souvenirs à ton profil.
-            C'est ce qui lui permet de te reconnaître et de se souvenir de tes échanges passés,
-            que ce soit ici ou sur le serveur Discord.
-          </div>
-        </div>
-
-        <div class="login-cards">
-          <div class="login-card" style="--card-accent: var(--c-curiosity)">
-            <div class="login-card-icon" aria-hidden="true">🧠</div>
-            <div class="login-card-title">Ta mémoire personnelle</div>
-            <div class="login-card-text">Au fil de vos échanges, Wally retient tes goûts, ton humour, tes sujets favoris. Chaque conversation devient plus naturelle.</div>
-          </div>
-          <div class="login-card" style="--card-accent: var(--c-joy)">
-            <div class="login-card-icon" aria-hidden="true">🔒</div>
-            <div class="login-card-title">Données minimales</div>
-            <div class="login-card-text">Seuls ton pseudo, ton ID et ton avatar Discord sont récupérés. Aucun accès à tes messages, serveurs ou liste d'amis.</div>
-          </div>
-          <div class="login-card" style="--card-accent: var(--c-sadness)">
-            <div class="login-card-icon" aria-hidden="true">📦</div>
-            <div class="login-card-title">Hébergement local</div>
-            <div class="login-card-text">Tout est stocké sur le serveur de Wally. Rien ne transite par des services tiers. Tes données restent chez moi.</div>
-          </div>
-          <div class="login-card" style="--card-accent: var(--c-anger)">
-            <div class="login-card-icon" aria-hidden="true">🗑️</div>
-            <div class="login-card-title">Droit de regard</div>
-            <div class="login-card-text">Tu peux consulter tes souvenirs à tout moment. Pour une suppression, fais-en la demande à KingsRequin sur Discord.</div>
-          </div>
-        </div>
-
-        <a href="/api/chat/auth/login" class="chat-login-btn">
-          <svg width="20" height="15" viewBox="0 0 71 55" fill="white"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.4.2a.2.2 0 0 0-.2.1 40.8 40.8 0 0 0-1.8 3.7 54 54 0 0 0-16.2 0A37.4 37.4 0 0 0 25.4.3a.2.2 0 0 0-.2-.1A58.4 58.4 0 0 0 10.5 4.9a.2.2 0 0 0-.1.1C1.5 18.7-.9 32.2.3 45.5v.2a58.9 58.9 0 0 0 17.8 9a.2.2 0 0 0 .3-.1 42.1 42.1 0 0 0 3.6-5.9.2.2 0 0 0-.1-.3 38.8 38.8 0 0 1-5.5-2.6.2.2 0 0 1 0-.4l1.1-.9a.2.2 0 0 1 .2 0 42 42 0 0 0 35.8 0 .2.2 0 0 1 .2 0l1.1.9a.2.2 0 0 1 0 .3 36.4 36.4 0 0 1-5.5 2.7.2.2 0 0 0-.1.3 47.3 47.3 0 0 0 3.6 5.8.2.2 0 0 0 .3.1A58.7 58.7 0 0 0 70.5 45.7v-.2c1.4-15-2.3-28.4-9.8-40.1a.2.2 0 0 0-.1-.1zM23.7 37.3c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1zm23.2 0c-3.5 0-6.3-3.2-6.3-7.1s2.8-7.1 6.3-7.1 6.4 3.2 6.3 7.1c0 3.9-2.8 7.1-6.3 7.1z"/></svg>
-          Se connecter avec Discord
-        </a>
-      </div>`;
-    return;
-  }
-
-  el.innerHTML = `
-    <div class="chat-container">
-      <div class="chat-hero">
-        <div class="chat-hero-side chat-hero-emotions" id="chat-hero-emotions"></div>
-        <div class="chat-hero-center">
-          <img class="chat-hero-avatar" id="chat-wally-avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="Wally">
-          <div class="chat-hero-name">Wally</div>
-          <div class="chat-hero-status" id="chat-avatar-status">neutre</div>
-          <div class="chat-hero-user">
-            <strong>${escHtml(_chatUser.username)}</strong>
-            <button onclick="chatLogout()" style="font-size:0.65rem;padding:2px 8px" class="btn">Déconnexion</button>
-          </div>
-        </div>
-        <div class="chat-hero-side chat-hero-memories" id="chat-hero-memories">
-          <div class="chat-hero-side-title">
-            Ce que Wally sait de toi
-            <button class="chat-mem-expand-btn" onclick="chatOpenMemoryPanel()" title="Voir tout">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-            </button>
-          </div>
-          <div class="chat-hero-memories-list" id="chat-memories-list">
-            <span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Chargement...</span>
-          </div>
-        </div>
-        <button class="chat-mem-mobile-btn" onclick="chatOpenMemoryPanel()" title="Ce que Wally sait de toi">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M10 21h4"/></svg>
-        </button>
-      </div>
-      <div class="chat-session-bar">
-        <span class="chat-session-label" id="chat-session-label">Aujourd'hui</span>
-        <button class="chat-session-back-today" id="chat-back-today" onclick="chatBackToToday()" style="display:none" title="Retour à aujourd'hui">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-          Aujourd'hui
-        </button>
-        <button class="chat-session-btn" onclick="chatToggleSessionPanel()" title="Sessions précédentes">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        </button>
-      </div>
-      <div class="chat-session-panel" id="chat-session-panel" style="display:none">
-        <div class="chat-session-panel-title">Sessions précédentes</div>
-        <div class="chat-session-list" id="chat-session-list">
-          <span style="color:rgba(255,255,255,0.3);font-size:0.75rem">Chargement...</span>
-        </div>
-      </div>
-      <div class="chat-messages" id="chat-messages"></div>
-      <div class="chat-typing" id="chat-typing">Wally réfléchit...</div>
-      <div class="chat-cooldown-msg" id="chat-cooldown"></div>
-      <div class="chat-input-bar">
-        <input type="text" id="chat-input" placeholder="Envoyer un message..." maxlength="2000"
-               onkeydown="if(event.key==='Enter') chatSend()">
-        <button class="btn btn-success" onclick="chatSend()">Envoyer</button>
-      </div>
-    </div>`;
-
-  // Memory panel overlay (inserted once into the page)
-  if (!document.getElementById('chat-memory-panel')) {
-    document.body.insertAdjacentHTML('beforeend', `
-      <div class="chat-mem-overlay" id="chat-memory-panel" onclick="chatCloseMemoryPanel(event)">
-        <div class="chat-mem-panel">
-          <div class="chat-mem-panel-header">
-            <span class="chat-mem-panel-title">Ce que Wally sait de toi</span>
-            <button class="chat-mem-panel-close" onclick="chatCloseMemoryPanel()">&times;</button>
-          </div>
-          <div class="chat-mem-panel-body" id="chat-mem-panel-body">
-            <span style="color:rgba(255,255,255,0.3)">Chargement...</span>
-          </div>
-        </div>
-      </div>`);
-  }
-
-  chatBuildHeroEmotions();
-  chatConnectWs();
-  chatStartAvatarUpdates();
-  chatLoadMyMemories();
-  setupSlashAutocomplete();
-}
-
-function chatLogout() {
-  clearChatTokens();
-  if (_chatWs) { _chatWs.close(); _chatWs = null; }
-  renderChatTab();
-}
-
-// ── Chat WebSocket ──────────────────────────────────────────────
-
-function chatConnectWs() {
-  if (_chatWs) {
-    _chatWs._intentionalClose = true;
-    _chatWs.close();
-    _chatWs = null;
-  }
-  const jwt = getChatJwt();
-  if (!jwt) return;
-
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  _chatWs = new WebSocket(`${proto}//${location.host}/ws/chat?token=${jwt}`);
-
-  _chatWs.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.type === 'history') {
-      const el = document.getElementById('chat-messages');
-      if (el) el.innerHTML = '';
-      (data.messages || []).forEach(m => chatAppendMessage(m));
-      chatScrollBottom();
-    } else if (data.type === 'message') {
-      chatAppendMessage(data);
-      chatScrollBottom();
-      chatHideTyping();
-    } else if (data.type === 'typing') {
-      chatShowTyping();
-    } else if (data.type === 'system') {
-      chatAppendSystem(data.content || '');
-      chatScrollBottom();
-    } else if (data.type === 'cooldown') {
-      const el = document.getElementById('chat-cooldown');
-      if (el) {
-        el.textContent = `Cooldown: attends ${data.remaining_seconds}s`;
-        setTimeout(() => { el.textContent = ''; }, 3000);
-      }
-    } else if (data.type === 'image_generating') {
-      chatAppendImageGenerating(data);
-      chatScrollBottom();
-    } else if (data.type === 'image_result') {
-      chatReplaceImageResult(data);
-      chatScrollBottom();
-    } else if (data.type === 'image_cancelled') {
-      chatReplaceImageCancelled(data);
-      chatScrollBottom();
-    } else if (data.type === 'vote_result') {
-      chatUpdateVoteState(data);
-    } else if (data.type === 'title_updated') {
-      chatUpdateEmbedTitle(data);
-    }
-  };
-
-  _chatWs.onclose = function() {
-    if (this._intentionalClose) return;
-    _chatWs = null;
-    setTimeout(() => { if (getChatJwt()) chatConnectWs(); }, 3000);
-  };
-}
-
-function chatAppendMessage(msg) {
-  const el = document.getElementById('chat-messages');
-  if (!el) return;
-  const isWally = msg.is_wally;
-  const avatarSrc = isWally
-    ? (document.getElementById('chat-wally-avatar')?.src || '/static/avatar/emotions/neutral/idle.gif')
-    : (msg.avatar_url || '');
-  const avatarHtml = avatarSrc
-    ? `<img class="chat-msg-avatar" src="${escAttr(avatarSrc)}" alt="">`
-    : `<div class="chat-msg-avatar" style="background:var(--accent)"></div>`;
-
-  const time = msg.created_at
-    ? new Date(msg.created_at * 1000).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
-    : '';
-
-  const div = document.createElement('div');
-  div.className = `chat-msg ${isWally ? 'wally' : 'user'}`;
-  div.innerHTML = `
-    ${avatarHtml}
-    <div class="chat-msg-bubble">
-      <div class="chat-msg-username ${isWally ? 'wally' : ''}">${escHtml(msg.username)} <span class="chat-msg-time">${time}</span></div>
-      <div class="chat-msg-content">${escHtml(msg.content)}</div>
-    </div>`;
-  el.appendChild(div);
-}
-
-function chatAppendSystem(text) {
-  const el = document.getElementById('chat-messages');
-  if (!el) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg system';
-  const inner = document.createElement('div');
-  inner.className = 'chat-msg-system';
-  inner.textContent = text;
-  div.appendChild(inner);
-  el.appendChild(div);
-}
-
-function chatScrollBottom() {
-  const el = document.getElementById('chat-messages');
-  if (el) el.scrollTop = el.scrollHeight;
-}
-
-function chatShowTyping() {
-  const el = document.getElementById('chat-typing');
-  if (el) el.classList.add('visible');
-  clearTimeout(_chatTypingTimer);
-  _chatTypingTimer = setTimeout(chatHideTyping, 30000);
-}
-
-function chatHideTyping() {
-  const el = document.getElementById('chat-typing');
-  if (el) el.classList.remove('visible');
-}
-
-function chatSend() {
-  const input = document.getElementById('chat-input');
-  const content = input?.value.trim();
-  if (!content || !_chatWs || _chatWs.readyState !== WebSocket.OPEN) return;
-  _chatWs.send(JSON.stringify({ type: 'message', content }));
-  input.value = '';
-}
-
-// ── Mobile virtual keyboard handling ────────────────────────────
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    const chatInput = document.getElementById('chat-input');
-    if (chatInput && document.activeElement === chatInput) {
-      requestAnimationFrame(() => chatInput.scrollIntoView({ block: 'nearest' }));
-    }
-  });
-}
-
-// ── Chat Hero: Emotions panel ───────────────────────────────────
-
-function chatBuildHeroEmotions() {
-  const el = document.getElementById('chat-hero-emotions');
-  if (!el) return;
-  let html = '<div class="chat-hero-side-title">Humeur</div>';
-  for (const e of EMOTIONS) {
-    html += `
-      <div class="chat-hero-gauge">
-        <span class="chat-hero-gauge-icon" style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]}</span>
-        <div class="chat-hero-gauge-track">
-          <div class="chat-hero-gauge-fill ${e}" id="chat-fill-${e}"></div>
-        </div>
-      </div>`;
-  }
-  el.innerHTML = html;
-  chatUpdateHeroEmotions();
-}
-
-function chatUpdateHeroEmotions() {
-  if (typeof currentEmotions === 'undefined' || !currentEmotions) return;
-  for (const e of EMOTIONS) {
-    const fill = document.getElementById(`chat-fill-${e}`);
-    if (fill) fill.style.width = `${((currentEmotions[e] ?? 0) * 100).toFixed(1)}%`;
-  }
-}
-
-// ── Chat Sessions ───────────────────────────────────────────────
-
-let _chatViewingDate = null; // null = today (live), string = archived day
-
-async function chatToggleSessionPanel() {
-  const panel = document.getElementById('chat-session-panel');
-  if (!panel) return;
-  if (panel.style.display === 'none') {
-    panel.style.display = 'block';
-    await chatLoadSessions();
-  } else {
-    panel.style.display = 'none';
-  }
-}
-
-async function chatLoadSessions() {
-  const list = document.getElementById('chat-session-list');
-  if (!list) return;
-  const jwt = getChatJwt();
-  if (!jwt) return;
-  try {
-    const r = await fetch('/api/chat/sessions', {
-      headers: { 'Authorization': `Bearer ${jwt}` },
-    });
-    const data = await r.json();
-    const dates = data.dates || [];
-    const today = new Date().toISOString().slice(0, 10);
-    if (dates.length === 0) {
-      list.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.75rem;padding:8px">Aucune session</div>';
-      return;
-    }
-    list.innerHTML = dates.map(d => {
-      const isToday = d === today;
-      const isActive = isToday ? !_chatViewingDate : _chatViewingDate === d;
-      const label = isToday ? "Aujourd'hui" : _formatSessionDate(d);
-      return `<button class="chat-session-item${isActive ? ' active' : ''}" onclick="chatLoadDay('${d}')">${label}</button>`;
-    }).join('');
-  } catch (e) {
-    list.innerHTML = '<div style="color:var(--c-anger);font-size:0.75rem;padding:8px">Erreur</div>';
-  }
-}
-
-function _formatSessionDate(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00');
-  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-  const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
-  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
-}
-
-async function chatLoadDay(dateStr) {
-  const today = new Date().toISOString().slice(0, 10);
-  const label = document.getElementById('chat-session-label');
-  const el = document.getElementById('chat-messages');
-  const inputBar = document.querySelector('.chat-input-bar');
-  const backBtn = document.getElementById('chat-back-today');
-
-  if (dateStr === today) {
-    // Back to live mode
-    _chatViewingDate = null;
-    if (label) label.textContent = "Aujourd'hui";
-    if (inputBar) inputBar.style.display = '';
-    if (backBtn) backBtn.style.display = 'none';
-    // Reconnect WS to get today's messages
-    chatConnectWs();
-  } else {
-    _chatViewingDate = dateStr;
-    if (label) label.textContent = _formatSessionDate(dateStr);
-    if (inputBar) inputBar.style.display = 'none'; // hide input for archived sessions
-    if (backBtn) backBtn.style.display = '';
-    // Load archived day via REST
-    const jwt = getChatJwt();
-    if (!jwt || !el) return;
-    try {
-      const r = await fetch(`/api/chat/history/${dateStr}`, {
-        headers: { 'Authorization': `Bearer ${jwt}` },
-      });
-      const data = await r.json();
-      el.innerHTML = '';
-      (data.messages || []).forEach(m => chatAppendMessage(m));
-      chatScrollBottom();
-    } catch (e) {
-      if (el) el.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);padding:40px">Erreur de chargement</div>';
-    }
-  }
-  // Close panel & refresh list
-  const panel = document.getElementById('chat-session-panel');
-  if (panel) panel.style.display = 'none';
-}
-
-function chatBackToToday() {
-  const today = new Date().toISOString().slice(0, 10);
-  chatLoadDay(today);
-}
-
-// ── Chat Hero: Memories panel ───────────────────────────────────
-
-async function chatLoadMyMemories() {
-  const el = document.getElementById('chat-memories-list');
-  if (!el) return;
-
-  const jwt = getChatJwt();
-  if (!jwt) { el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Non connecté</span>'; return; }
-
-  try {
-    const r = await fetch('/api/chat/my-memories', {
-      headers: { 'Authorization': `Bearer ${jwt}` },
-    });
-    if (!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    const memories = data.memories || [];
-    _chatMemoriesCache = memories;
-
-    if (memories.length === 0) {
-      el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Aucun souvenir</span>';
-    } else {
-      el.innerHTML = memories.map(m =>
-        `<div class="chat-hero-memory-item">${escHtml(m)}</div>`
-      ).join('');
-    }
-
-    // Also update the expanded panel if it exists
-    const panelBody = document.getElementById('chat-mem-panel-body');
-    if (panelBody) _renderMemoryPanelBody(panelBody, memories);
-  } catch {
-    el.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.7rem">Indisponible</span>';
-  }
-}
-
-// ── Chat Memory Panel ───────────────────────────────────────────
-
-let _chatMemoriesCache = null;
-
-function chatOpenMemoryPanel(evt) {
-  const overlay = document.getElementById('chat-memory-panel');
-  if (!overlay) return;
-  overlay.classList.add('open');
-
-  const body = document.getElementById('chat-mem-panel-body');
-  if (body && _chatMemoriesCache !== null) {
-    _renderMemoryPanelBody(body, _chatMemoriesCache);
-  }
-}
-
-function chatCloseMemoryPanel(evt) {
-  if (evt && evt.target !== evt.currentTarget) return;
-  const overlay = document.getElementById('chat-memory-panel');
-  if (overlay) overlay.classList.remove('open');
-}
-
-function _renderMemoryPanelBody(el, memories) {
-  if (memories.length === 0) {
-    el.innerHTML = '<div style="color:rgba(255,255,255,0.35);text-align:center;padding:32px 0">Wally ne sait encore rien de toi. Discute avec lui !</div>';
-    return;
-  }
-  el.innerHTML = memories.map(m =>
-    `<div class="chat-mem-panel-item">${escHtml(m)}</div>`
-  ).join('');
-}
-
-// ── Chat Avatar ─────────────────────────────────────────────────
-
-function chatStartAvatarUpdates() {
-  setInterval(chatUpdateAvatar, 5000);
-  chatUpdateAvatar();
-}
-
-function chatUpdateAvatar() {
-  if (typeof currentEmotions === 'undefined' || !currentEmotions) return;
-  chatUpdateHeroEmotions();
-
-  const emotions = currentEmotions;
-  let dominant = 'neutral';
-  let maxVal = 0.2;
-
-  for (const emotion of EMOTIONS) {
-    const value = emotions[emotion] ?? 0;
-    if (value > maxVal) {
-      dominant = emotion;
-      maxVal = value;
-    }
-  }
-
-  let tier = 'idle';
-  if (dominant !== 'neutral') {
-    if (maxVal >= 0.7) tier = 'high';
-    else if (maxVal >= 0.4) tier = 'mid';
-    else tier = 'low';
-  }
-
-  const basePath = dominant === 'neutral'
-    ? '/static/avatar/emotions/neutral/idle'
-    : `/static/avatar/emotions/${dominant}/${tier}`;
-
-  const img = document.getElementById('chat-wally-avatar');
-  if (!img) return;
-
-  const gifUrl = basePath + '.gif';
-  const pngUrl = basePath + '.png';
-
-  const testImg = new Image();
-  testImg.onload = () => { img.src = gifUrl; };
-  testImg.onerror = () => { img.src = pngUrl; };
-  testImg.src = gifUrl;
-
-  const statusEl = document.getElementById('chat-avatar-status');
-  if (statusEl) {
-    const labels = { neutral: 'neutre', joy: 'joyeux', anger: 'en colère', sadness: 'triste', curiosity: 'curieux', boredom: 'ennuyé' };
-    statusEl.textContent = labels[dominant] || dominant;
-  }
-}
 
 // ── Overlay toggle ──────────────────────────────────────────────────────────
 
@@ -4109,7 +2861,7 @@ async function loadVisitors() {
   const conns = data.connections || [];
 
   if (conns.length === 0) {
-    el.innerHTML = '<div class="card"><p style="color:rgba(255,255,255,0.45)">Aucune connexion enregistrée</p></div>';
+    el.innerHTML = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
     return;
   }
 
@@ -4172,7 +2924,7 @@ async function loadMemoryDashboard() {
   // All user-provided data is escaped via escHtml() before injection
   let questionsHtml = '';
   if (pending.length === 0) {
-    questionsHtml = '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune question en attente</p>';
+    questionsHtml = '<p style="color:var(--text-secondary);padding:8px">Aucune question en attente</p>';
   } else {
     questionsHtml = '<div class="mem-dash-questions">';
     for (const q of pending) {
@@ -4184,7 +2936,7 @@ async function loadMemoryDashboard() {
           <div class="mem-dash-q-info">
             <span class="mem-dash-q-prio" style="background:${prioColor}"></span>
             <strong>${name}</strong>
-            <span style="color:rgba(255,255,255,0.45);margin-left:8px">tentative ${parseInt(q.attempts, 10)}/3</span>
+            <span style="color:var(--text-secondary);margin-left:8px">tentative ${parseInt(q.attempts, 10)}/3</span>
           </div>
           <div class="mem-dash-q-memory">${escHtml(q.memory_text)}</div>
           <div class="mem-dash-q-question" id="mem-q-text-${qId}">${escHtml(q.question)}</div>
@@ -4212,7 +2964,7 @@ async function loadMemoryDashboard() {
         </div>`;
     }
   } else {
-    barsHtml = '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune donnée</p>';
+    barsHtml = '<p style="color:var(--text-secondary);padding:8px">Aucune donnée</p>';
   }
 
   // KPI values are integers from the backend, safe to inject
@@ -4322,12 +3074,10 @@ function renderParametresTab() {
         <button class="mem-subnav-pill active" data-subtab="emotions" onclick="switchParametresSubTab('emotions')">Émotions</button>
         <button class="mem-subnav-pill" data-subtab="llm" onclick="switchParametresSubTab('llm')">LLM</button>
         <button class="mem-subnav-pill" data-subtab="images" onclick="switchParametresSubTab('images')">Images</button>
-        <button class="mem-subnav-pill" data-subtab="apparence" onclick="switchParametresSubTab('apparence')">Apparence</button>
       </div>
       <div class="mem-subnav-content active" id="parametres-sub-emotions"></div>
       <div class="mem-subnav-content" id="parametres-sub-llm"></div>
       <div class="mem-subnav-content" id="parametres-sub-images"></div>
-      <div class="mem-subnav-content" id="parametres-sub-apparence"></div>
     `;
   }
 
@@ -4352,9 +3102,6 @@ function switchParametresSubTab(subtab) {
     _renderParametresLLM(panel);
   } else if (subtab === 'images') {
     _renderParametresImages(panel);
-  } else if (subtab === 'apparence') {
-    _renderParametresApparence(panel);
-    loadTheme();
   }
 }
 
@@ -4392,7 +3139,7 @@ async function _renderParametresEmotions(panel) {
     return `<div class="field-group" style="display:flex;align-items:center;gap:12px">
       <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'};min-width:100px">${name.toUpperCase()} λ</label>
       <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this,'${name}')">
-      <span id="decay-time-${name}" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
+      <span id="decay-time-${name}" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
     </div>`;
   }).join('');
   const boredomRise = cfg.emotions.boredom && cfg.emotions.boredom.boredom_rise_per_hour != null ? cfg.emotions.boredom.boredom_rise_per_hour : 1.2;
@@ -4400,15 +3147,15 @@ async function _renderParametresEmotions(panel) {
   const boredomLabel = boredomH === Infinity ? '∞' : boredomH < 1 ? Math.round(boredomH*60)+' min' : Math.round(boredomH*10)/10+' h';
   lambdaCard.innerHTML = `
     <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-    <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+    <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
     ${lambdaRows}
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08)">
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:12px">
         <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'};min-width:100px">BOREDOM ↑/h</label>
         <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${boredomRise}" style="width:90px" oninput="updateBoredomTime(this)">
-        <span id="boredom-time-info" style="font-size:0.8rem;color:rgba(255,255,255,0.5);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${boredomLabel}</strong></span>
+        <span id="boredom-time-info" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${boredomLabel}</strong></span>
       </div>
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
     </div>
     <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
   `;
@@ -4444,7 +3191,7 @@ async function _renderParametresEmotions(panel) {
       <select id="cfg-notif-channel" style="width:100%">
         <option value="">Désactivé</option>
       </select>
-      <p style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
+      <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
     </div>
     <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
   `;
@@ -4461,12 +3208,12 @@ async function _renderParametresEmotions(panel) {
     <div class="field-group">
       <label class="field-label" for="cfg-spam-max">Messages max</label>
       <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Nombre de messages avant déclenchement</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Nombre de messages avant déclenchement</p>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
       <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Période de temps pour compter les messages</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Période de temps pour compter les messages</p>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
@@ -4475,12 +3222,12 @@ async function _renderParametresEmotions(panel) {
     <div class="field-group">
       <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
       <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
       <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
-      <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
     </div>
     <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
   `;
@@ -4547,13 +3294,13 @@ async function _renderParametresLLM(panel) {
     </div>
     <div id="openai-specific-settings">
       <div class="field-group">
-        <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+        <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
         <select id="cfg-reasoning-effort">
           ${REASONING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === cfg.openai.reasoning_effort ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
         </select>
       </div>
       <div class="field-group">
-        <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">OpenAI only</span></label>
+        <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
         <select id="cfg-text-verbosity">
           ${TEXT_VERBOSITIES.map(function(v) { return '<option value="' + v + '"' + (v === cfg.openai.text_verbosity ? ' selected' : '') + '>' + v.toUpperCase() + '</option>'; }).join('')}
         </select>
@@ -4561,7 +3308,7 @@ async function _renderParametresLLM(panel) {
     </div>
     <div id="claude-specific-settings" style="display:none">
       <div class="field-group">
-        <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:rgba(255,255,255,0.3)">Claude only</span></label>
+        <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:var(--text-muted)">Claude only</span></label>
         <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
           ${THINKING_TYPES.map(function(t) { return '<option value="' + t + '"' + (t === (cfg.llm?.primary?.thinking_type || 'disabled') ? ' selected' : '') + '>' + (t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)') + '</option>'; }).join('')}
         </select>
@@ -4571,12 +3318,12 @@ async function _renderParametresLLM(panel) {
         <select id="cfg-thinking-effort">
           ${THINKING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === (cfg.llm?.primary?.thinking_effort || 'medium') ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
         </select>
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
       </div>
       <div id="thinking-budget-group" class="field-group" style="display:none">
         <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
         <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
-        <p style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
       </div>
     </div>
     <div class="field-group">
@@ -4688,161 +3435,6 @@ async function saveImageGenConfigParams() {
   if (r && r.ok) toast('Config image sauvegardée', 'success');
 }
 
-// ── Apparence Sub-Tab ─────────────────────────────────────────────────────────
-
-function _renderParametresApparence(panel) {
-  if (!panel || panel.children.length > 0) return;
-
-  panel.innerHTML = `
-    <div class="section-card">
-      <h3 class="section-title">Couleurs</h3>
-      <div class="config-grid">
-        <div class="config-row">
-          <label>Couleur d\'accent</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="color" id="theme-accent-picker" oninput="onThemeColorInput(\'accent_color\', this.value)">
-            <input type="text" id="theme-accent-hex" class="config-input" style="width:100px" placeholder="#06b6d4"
-                   oninput="onThemeHexInput(\'accent_color\', \'theme-accent-picker\', this.value)">
-          </div>
-        </div>
-        <div class="config-row">
-          <label>Fond général</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="color" id="theme-bg-picker" oninput="onThemeColorInput(\'bg_color\', this.value)">
-            <input type="text" id="theme-bg-hex" class="config-input" style="width:100px" placeholder="#11151c"
-                   oninput="onThemeHexInput(\'bg_color\', \'theme-bg-picker\', this.value)">
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="section-card" style="margin-top:16px">
-      <h3 class="section-title">Layout</h3>
-      <div class="config-grid">
-        <div class="config-row">
-          <label>Disposition</label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <label class="radio-option">
-              <input type="radio" name="layout-variant" value="sidebar-left" onchange="onThemeRadio(\'layout_variant\', this.value)">
-              Sidebar gauche
-            </label>
-            <label class="radio-option" style="opacity:0.5">
-              <input type="radio" name="layout-variant" value="sidebar-top" disabled>
-              Navigation top <span class="badge-soon">à venir</span>
-            </label>
-            <label class="radio-option" style="opacity:0.5">
-              <input type="radio" name="layout-variant" value="sidebar-mini" disabled>
-              Sidebar mini <span class="badge-soon">à venir</span>
-            </label>
-          </div>
-        </div>
-        <div class="config-row">
-          <label>Style onglets</label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <label class="radio-option">
-              <input type="radio" name="tab-style" value="icons-only" onchange="onThemeRadio(\'tab_style\', this.value)">
-              Icônes seules
-            </label>
-            <label class="radio-option" style="opacity:0.5">
-              <input type="radio" name="tab-style" value="icons-labels" disabled>
-              Icônes + labels <span class="badge-soon">à venir</span>
-            </label>
-            <label class="radio-option" style="opacity:0.5">
-              <input type="radio" name="tab-style" value="text-only" disabled>
-              Texte seul <span class="badge-soon">à venir</span>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
-      <button class="btn-primary" onclick="saveTheme()">Enregistrer</button>
-      <span id="theme-save-status" style="font-size:13px;color:#94a3b8"></span>
-    </div>
-  `;
-}
-
-// ── Theming ────────────────────────────────────────────────────────────────────
-
-let _themeChanges = {};
-
-async function loadTheme() {
-  try {
-    const r = await fetch('/api/admin/theme', { headers: { Authorization: `Bearer ${TOKEN}` } });
-    if (!r.ok) return;
-    const t = await r.json();
-    const accentPicker = document.getElementById('theme-accent-picker');
-    const accentHex = document.getElementById('theme-accent-hex');
-    const bgPicker = document.getElementById('theme-bg-picker');
-    const bgHex = document.getElementById('theme-bg-hex');
-    if (accentPicker) { accentPicker.value = t.accent_color; accentHex.value = t.accent_color; }
-    if (bgPicker) { bgPicker.value = t.bg_color; bgHex.value = t.bg_color; }
-    const layoutRadio = document.querySelector(`input[name="layout-variant"][value="${t.layout_variant}"]`);
-    if (layoutRadio) layoutRadio.checked = true;
-    const tabRadio = document.querySelector(`input[name="tab-style"][value="${t.tab_style}"]`);
-    if (tabRadio) tabRadio.checked = true;
-    _themeChanges = {};
-  } catch (e) { console.warn('loadTheme failed', e); }
-}
-
-function onThemeColorInput(field, hexValue) {
-  const hexId = field === 'accent_color' ? 'theme-accent-hex' : 'theme-bg-hex';
-  const hexInput = document.getElementById(hexId);
-  if (hexInput) hexInput.value = hexValue;
-  _themeChanges[field] = hexValue;
-  _applyThemePreview(field, hexValue);
-}
-
-function onThemeHexInput(field, pickerId, hexValue) {
-  if (/^#[0-9a-fA-F]{6}$/.test(hexValue)) {
-    const picker = document.getElementById(pickerId);
-    if (picker) picker.value = hexValue;
-    _themeChanges[field] = hexValue;
-    _applyThemePreview(field, hexValue);
-  }
-}
-
-function onThemeRadio(field, value) {
-  _themeChanges[field] = value;
-}
-
-function _applyThemePreview(field, value) {
-  const map = { accent_color: '--accent', bg_color: '--bg-body' };
-  const cssVar = map[field];
-  if (cssVar) document.documentElement.style.setProperty(cssVar, value);
-}
-
-function _reloadThemeCss() {
-  const link = document.getElementById('theme-link');
-  if (!link) return;
-  link.href = `/static/theme.css?v=${Date.now()}`;
-}
-
-async function saveTheme() {
-  const status = document.getElementById('theme-save-status');
-  if (Object.keys(_themeChanges).length === 0) {
-    if (status) status.textContent = 'Aucune modification.';
-    return;
-  }
-  try {
-    const r = await fetch('/api/admin/theme', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify(_themeChanges),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      if (status) status.textContent = `Erreur: ${err.detail || r.status}`;
-      return;
-    }
-    _themeChanges = {};
-    if (status) { status.textContent = 'Sauvegardé \u2713'; setTimeout(() => { status.textContent = ''; }, 3000); }
-    _reloadThemeCss();
-  } catch (e) {
-    if (status) status.textContent = 'Erreur réseau';
-  }
-}
 
 // ── Système Tab (Logs · Twitch · Overlay · Instances) ────────────────────────
 
@@ -5010,7 +3602,7 @@ async function _renderSystemeTwitch(panel) {
     + _authCard('streamer', '📺', 'Compte Streamer', streamerConnected, status && status.streamer.username, STREAMER_SCOPES)
     + '</div>'
     + restartHtml
-    + '<hr style="border-color:rgba(255,255,255,0.08);margin:16px 0">'
+    + '<hr style="border-color:var(--border);margin:16px 0">'
     + '<div style="font-size:0.7em;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">Chaines invitees</div>'
     + '<div id="guest-channels-list">' + channelsHtml + '</div>'
     + '<div id="twitch-channels-add">'
@@ -5262,12 +3854,12 @@ function renderCostsTab() {
           <div class="card" id="kpi-month">
             <div class="card-title">MOIS EN COURS</div>
             <div class="card-value" id="cost-month-total">—</div>
-            <div id="cost-month-change" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+            <div id="cost-month-change" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
           </div>
           <div class="card" id="kpi-forecast">
             <div class="card-title">PREVISION FIN MOIS</div>
             <div class="card-value" id="cost-forecast">—</div>
-            <div id="cost-forecast-detail" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+            <div id="cost-forecast-detail" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
           </div>
           <div class="card" id="kpi-today">
             <div class="card-title">AUJOURD'HUI</div>
@@ -5280,7 +3872,7 @@ function renderCostsTab() {
           <div class="card" id="kpi-threshold">
             <div class="card-title">SEUIL D'ALERTE</div>
             <div class="card-value" id="cost-threshold">—</div>
-            <div id="cost-threshold-pct" style="color:rgba(255,255,255,0.45);font-size:0.75rem;margin-top:6px"></div>
+            <div id="cost-threshold-pct" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
           </div>
         </div>
         <!-- Cost Graph -->
@@ -5294,7 +3886,7 @@ function renderCostsTab() {
             </div>
           </div>
           <canvas id="costCanvas" height="165" aria-label="Graphique des couts journaliers"></canvas>
-          <div id="cost-graph-legend" style="display:flex;gap:16px;padding:6px 10px;font-size:0.72rem;color:rgba(255,255,255,0.45)">
+          <div id="cost-graph-legend" style="display:flex;gap:16px;padding:6px 10px;font-size:0.72rem;color:var(--text-secondary)">
             <span>&#9473; Periode courante</span>
             <span style="opacity:0.5">&#9477; Periode precedente</span>
           </div>
@@ -5320,7 +3912,7 @@ function renderCostsTab() {
         <div class="card" id="cost-alert-bar" style="margin-top:24px;display:none">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span id="cost-alert-text"></span>
-            <span id="cost-alert-pct" style="color:rgba(255,255,255,0.45)"></span>
+            <span id="cost-alert-pct" style="color:var(--text-secondary)"></span>
           </div>
         </div>
       </div>
@@ -5464,28 +4056,14 @@ function switchMemoireSubTab(subtab) {
   if (panel) panel.classList.add('active');
 
   if (subtab === 'users') {
-    // Move memory tab content into the sub-panel
-    const memTab = document.getElementById('tab-memory');
-    if (!document.getElementById('mem-grid')) renderMemoryTab();
-    if (memTab && panel && memTab.children.length > 0 && panel.children.length === 0) {
-      while (memTab.firstChild) panel.appendChild(memTab.firstChild);
-    }
+    if (!document.getElementById('mem-grid')) renderMemoryTab(panel);
   } else if (subtab === 'global') {
-    const gmTab = document.getElementById('tab-global-memory');
-    renderGlobalMemoryTab();
-    if (gmTab && panel && gmTab.children.length > 0 && panel.children.length === 0) {
-      while (gmTab.firstChild) panel.appendChild(gmTab.firstChild);
-    }
+    if (panel.children.length === 0) renderGlobalMemoryTab(panel);
   } else if (subtab === 'dashboard') {
-    const mdTab = document.getElementById('tab-admin-memory-dash');
     if (panel && panel.children.length === 0) {
-      // Temporarily point loadMemoryDashboard to our sub-panel
-      const origId = mdTab ? mdTab.id : null;
-      if (mdTab) mdTab.id = '_tmp_mem_dash';
       panel.id = 'tab-admin-memory-dash';
       loadMemoryDashboard().then(function() {
         panel.id = 'memoire-sub-dashboard';
-        if (mdTab && origId) mdTab.id = origId;
       });
     }
   } else if (subtab === 'notes') {
@@ -5500,7 +4078,7 @@ function switchMemoireSubTab(subtab) {
 
 async function loadNotesTab(panel) {
   if (!panel) return;
-  panel.innerHTML = '<p style="color:rgba(255,255,255,0.45);padding:16px">Chargement...</p>';
+  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement...</p>';
 
   const r = await apiFetch('/api/admin/notes');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
@@ -5511,14 +4089,14 @@ async function loadNotesTab(panel) {
   let html = '<div class="card mb-4">';
   html += '<div class="card-title">AJOUTER UNE NOTE</div>';
   html += '<div style="display:flex;flex-direction:column;gap:8px" id="' + addFormId + '">';
-  html += '<input id="note-new-title" class="input" placeholder="Titre" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;color:#fff" />';
-  html += '<textarea id="note-new-content" class="input" rows="3" placeholder="Contenu" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;color:#fff;resize:vertical"></textarea>';
+  html += '<input id="note-new-title" class="input" placeholder="Titre" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff" />';
+  html += '<textarea id="note-new-content" class="input" rows="3" placeholder="Contenu" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;resize:vertical"></textarea>';
   html += '<button class="btn btn-sm" onclick="saveNewNote()">Enregistrer</button>';
   html += '</div></div>';
-  html += '<p style="color:rgba(255,255,255,0.4);font-size:0.82rem;margin:0 0 12px;padding:0 4px">Règles et engagements toujours injectés dans chaque conversation. Pour les infos critiques que le bot doit garder en tête.</p>';
+  html += '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 12px;padding:0 4px">Règles et engagements toujours injectés dans chaque conversation. Pour les infos critiques que le bot doit garder en tête.</p>';
 
   if (notes.length === 0) {
-    html += '<p style="color:rgba(255,255,255,0.45);padding:8px">Aucune note persistante</p>';
+    html += '<p style="color:var(--text-secondary);padding:8px">Aucune note persistante</p>';
   } else {
     html += '<div class="card"><div class="card-title">NOTES DU BOT (' + notes.length + ')</div><div id="notes-list">';
     for (const n of notes) {
@@ -5538,9 +4116,9 @@ function renderNoteRow(n) {
   return '<div class="mem-dash-q-row" id="note-row-' + id + '" style="flex-direction:column;align-items:flex-start;gap:6px">'
     + '<div style="display:flex;justify-content:space-between;width:100%;align-items:center">'
     + '<strong>' + title + '</strong>'
-    + '<span style="color:rgba(255,255,255,0.35);font-size:11px">' + date + '</span>'
+    + '<span style="color:var(--text-muted);font-size:11px">' + date + '</span>'
     + '</div>'
-    + '<div id="note-content-' + id + '" style="color:rgba(255,255,255,0.7);font-size:13px;white-space:pre-wrap">' + content + '</div>'
+    + '<div id="note-content-' + id + '" style="color:var(--text-primary);font-size:13px;white-space:pre-wrap">' + content + '</div>'
     + '<div class="mem-dash-q-actions">'
     + '<button class="btn btn-sm btn-outline" onclick="editNote(' + id + ')">Modifier</button>'
     + '<button class="btn btn-sm btn-danger" onclick="deleteNote(' + id + ')">Supprimer</button>'
@@ -5602,14 +4180,6 @@ async function deleteNote(id) {
   }
 }
 
-// ── Public Social Graph Tab ───────────────────────────────────────────────────
-
-async function loadPublicGraph() {
-  var panel = document.getElementById('tab-graph');
-  if (!panel) return;
-  await _renderGraph(panel, '/api/public/social-graph/data', false);
-}
-
 // ── Social Graph Tab (vis-network) ──────────────────────────────────────────
 
 async function loadGraphTab(panel) {
@@ -5619,7 +4189,7 @@ async function loadGraphTab(panel) {
 
 async function _renderGraph(panel, apiUrl, isAdmin) {
   if (!panel) return;
-  panel.innerHTML = '<p style="color:rgba(255,255,255,0.45);padding:16px">Chargement du graphe...</p>';
+  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement du graphe...</p>';
 
   // Lazy-load vis-network from CDN
   if (typeof vis === 'undefined') {
@@ -5649,7 +4219,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
   h2.style.cssText = 'margin:0;font-size:1.3rem';
   h2.textContent = 'Graphe social';
   var subtitle = document.createElement('p');
-  subtitle.style.cssText = 'margin:4px 0 0;font-size:0.82rem;color:rgba(255,255,255,0.45)';
+  subtitle.style.cssText = 'margin:4px 0 0;font-size:0.82rem;color:var(--text-secondary)';
   subtitle.textContent = 'Relations et interactions entre les membres du serveur.';
   titleBlock.appendChild(h2);
   titleBlock.appendChild(subtitle);
@@ -5657,7 +4227,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
   var pfx = isAdmin ? 'admin' : 'pub';
   var statsEl = document.createElement('span');
   statsEl.id = pfx + '-graph-stats';
-  statsEl.style.cssText = 'font-size:0.75rem;padding:4px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:rgba(255,255,255,0.6)';
+  statsEl.style.cssText = 'font-size:0.75rem;padding:4px 10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;color:var(--text-secondary)';
 
   header.appendChild(titleBlock);
   header.appendChild(statsEl);
@@ -5668,7 +4238,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
   card.style.cssText = 'padding:0;overflow:hidden;position:relative;min-height:500px';
   var graphContainer = document.createElement('div');
   graphContainer.id = pfx + '-graph-container';
-  graphContainer.style.cssText = 'width:100%;height:600px;background:rgba(0,0,0,0.2);border-radius:12px';
+  graphContainer.style.cssText = 'width:100%;height:600px;background:var(--bg-canvas);border-radius:12px';
   card.appendChild(graphContainer);
   wrapper.appendChild(card);
 
@@ -5692,7 +4262,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
   var r = isAdmin ? await apiFetch(apiUrl) : await fetch(apiUrl);
   if (!r || !r.ok) {
     graphContainer.textContent = 'Graphe non disponible \u2014 Neo4j non connect\u00e9';
-    graphContainer.style.cssText += ';color:rgba(255,255,255,0.4);padding:40px;text-align:center';
+    graphContainer.style.cssText += ';color:var(--text-muted);padding:40px;text-align:center';
     return;
   }
   var data = await r.json();
@@ -5701,24 +4271,81 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
 
   if (!data.nodes.length) {
     graphContainer.textContent = 'Aucune donn\u00e9e dans le graphe. Les relations appara\u00eetront au fil des conversations.';
-    graphContainer.style.cssText += ';color:rgba(255,255,255,0.4);padding:40px;text-align:center';
+    graphContainer.style.cssText += ';color:var(--text-muted);padding:40px;text-align:center';
     return;
   }
 
-  // Color map for edge types
+  // Color map and French labels for edge types
   var edgeColors = {
     'voice': '#a855f7',
     'vocal': '#a855f7',
     'reply': '#3b82f6',
+    'replied': '#3b82f6',
+    'responds': '#3b82f6',
     'r\u00e9pondu': '#3b82f6',
     'mention': '#3b82f6',
+    'mentioned': '#3b82f6',
     'mentionn\u00e9': '#3b82f6',
     'reaction': '#eab308',
+    'reacted': '#eab308',
     'r\u00e9agi': '#eab308',
     'thread': '#6b7280',
     'game': '#22c55e',
+    'played': '#22c55e',
     'jou\u00e9': '#22c55e',
+    'knows': '#06b6d4',
+    'friends': '#06b6d4',
+    'related': '#06b6d4',
+    'interacts': '#06b6d4',
+    'talked': '#3b82f6',
+    'discussed': '#3b82f6',
+    'shared': '#eab308',
+    'helped': '#22c55e',
+    'likes': '#eab308',
+    'dislikes': '#ef4444',
   };
+
+  var edgeTranslations = {
+    'relates_to': 'li\u00e9 \u00e0',
+    'knows': 'conna\u00eet',
+    'friends': 'amis',
+    'friends_with': 'amis avec',
+    'interacts': 'interagit',
+    'interacts_with': 'interagit avec',
+    'talked': 'a parl\u00e9',
+    'talked_to': 'a parl\u00e9 \u00e0',
+    'discussed': 'a discut\u00e9',
+    'discussed_with': 'a discut\u00e9 avec',
+    'replied': 'a r\u00e9pondu',
+    'replied_to': 'a r\u00e9pondu \u00e0',
+    'responds': 'r\u00e9pond',
+    'responds_to': 'r\u00e9pond \u00e0',
+    'mentioned': 'a mentionn\u00e9',
+    'mention': 'mention',
+    'reacted': 'a r\u00e9agi',
+    'reaction': 'r\u00e9action',
+    'voice': 'vocal',
+    'played': 'a jou\u00e9',
+    'played_with': 'a jou\u00e9 avec',
+    'game': 'jeu',
+    'shared': 'a partag\u00e9',
+    'helped': 'a aid\u00e9',
+    'likes': 'aime',
+    'dislikes': 'n\'aime pas',
+    'related': 'li\u00e9',
+  };
+
+  function translateEdgeType(type) {
+    if (!type) return 'relation';
+    var t = type.toLowerCase().replace(/_/g, '_');
+    if (edgeTranslations[t]) return edgeTranslations[t];
+    // Try without underscores
+    var clean = t.replace(/_/g, ' ');
+    for (var key in edgeTranslations) {
+      if (clean.indexOf(key.replace(/_/g, ' ')) !== -1) return edgeTranslations[key];
+    }
+    return type;
+  }
 
   function getEdgeColor(type) {
     if (!type) return '#06b6d4';
@@ -5751,7 +4378,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
       id: i,
       from: e.source,
       to: e.target,
-      label: e.type || '',
+      label: translateEdgeType(e.type),
       title: e.fact || '',
       color: { color: getEdgeColor(e.type), highlight: '#fff', opacity: 0.7 },
       font: { color: 'rgba(255,255,255,0.5)', size: 10, strokeWidth: 0 },
@@ -5788,7 +4415,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
 
         if (node.summary) {
           var summaryEl = document.createElement('p');
-          summaryEl.style.cssText = 'color:rgba(255,255,255,0.7);margin:0 0 12px';
+          summaryEl.style.cssText = 'color:var(--text-primary);margin:0 0 12px';
           summaryEl.textContent = node.summary;
           detailContent.appendChild(summaryEl);
         }
@@ -5802,11 +4429,11 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
             var color = getEdgeColor(edge.type);
 
             var row = document.createElement('div');
-            row.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+            row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--border)';
 
             var typeSpan = document.createElement('span');
             typeSpan.style.cssText = 'color:' + color + ';font-weight:600';
-            typeSpan.textContent = edge.type || 'relation';
+            typeSpan.textContent = translateEdgeType(edge.type);
             row.appendChild(typeSpan);
 
             var arrow = document.createTextNode(' \u2192 ' + (other || '?'));
@@ -5815,7 +4442,7 @@ async function _renderGraph(panel, apiUrl, isAdmin) {
             if (edge.fact) {
               row.appendChild(document.createElement('br'));
               var factSpan = document.createElement('span');
-              factSpan.style.cssText = 'color:rgba(255,255,255,0.5);font-size:0.8rem';
+              factSpan.style.cssText = 'color:var(--text-secondary);font-size:0.8rem';
               factSpan.textContent = edge.fact;
               row.appendChild(factSpan);
             }
@@ -5848,11 +4475,11 @@ function loadOverlayTab() {
     toggleCard.innerHTML = `
       <div class="card-title">OVERLAY ON/OFF</div>
       <div style="display:flex;align-items:center;gap:16px">
-        <span style="color:rgba(255,255,255,0.55);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
+        <span style="color:var(--text-secondary);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
         <div class="overlay-switch" id="overlay-switch-tab" style="cursor:pointer" onclick="toggleOverlayFromTab()">
           <div class="overlay-switch-knob"></div>
         </div>
-        <span id="overlay-status-label" style="font-size:0.78rem;color:rgba(255,255,255,0.45)"></span>
+        <span id="overlay-status-label" style="font-size:0.78rem;color:var(--text-secondary)"></span>
       </div>
     `;
     container.parentElement.insertBefore(toggleCard, container);
@@ -5894,590 +4521,6 @@ async function pollOverlayStatusForTab() {
   } catch {}
 }
 
-// ── Journal détaillé ────────────────────────────────────────────────────────
-
-function renderJournalDetailTab() {
-  const el = document.getElementById('tab-journal-detail');
-  if (!el || el.querySelector('.jd-container')) return;
-
-  el.innerHTML = `
-    <div class="jd-container">
-      <div class="jd-header">
-        <h2 class="jd-title">Comment fonctionne Wally ?</h2>
-        <p class="jd-subtitle">Découvre ce qui se passe dans la tête de Wally, étape par étape. Clique sur « Aller plus loin » pour voir le code source et les détails techniques.</p>
-      </div>
-
-      <!-- Section 1: Cycle de vie d'un message -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-curiosity)">1</span>
-          <h3>Cycle de vie d'un message</h3>
-        </div>
-        <div class="jd-body">
-          <p>Quand quelqu'un envoie un message sur Discord ou Twitch, Wally le reçoit et lance une série d'étapes en quelques secondes :</p>
-          <p>D'abord, il <strong>détecte la langue</strong> du message (français, anglais…) pour répondre dans la bonne langue. Ensuite, il <strong>analyse le ton émotionnel</strong> grâce à NRCLex, un dictionnaire qui associe chaque mot à des émotions (joie, colère, tristesse…). En parallèle, il <strong>consulte sa mémoire</strong> : que sait-il sur l'auteur du message ? Quels sont ses goûts, ses sujets favoris ?</p>
-          <p>Avec toutes ces informations, il <strong>construit un prompt personnalisé</strong> : sa personnalité (qui il est, comment il parle), son humeur actuelle, les souvenirs pertinents, et les derniers messages de la conversation. Ce prompt est envoyé à <strong>OpenAI</strong>, qui génère la réponse.</p>
-          <p>En arrière-plan, Wally met à jour le <strong>score de confiance</strong> de l'utilisateur et enregistre le <strong>coût de l'appel API</strong>.</p>
-
-          <div class="jd-pipeline">
-            <span class="jd-pipe-step" style="background: #5865F2">📨 Message</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">🌍 Langue</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">🧠 Émotion</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">💾 Mémoire</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">✍️ Prompt</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">🤖 OpenAI</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step" style="background: var(--c-curiosity)">💬 Réponse</span>
-          </div>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — le pipeline en code</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/discord/handlers.py — handle_message()</div>
-              <pre><code>async def handle_message(self, message):
-    # 1. Détection de la langue (asyncio.to_thread pour ne pas bloquer)
-    lang = await asyncio.to_thread(detect_language, message.content)
-
-    # 2. Analyse émotionnelle via NRCLex (aussi en thread séparé)
-    trust = await self.db.get_trust_score(platform, user_id)
-    emotion_result = await self.emotion.process_message(
-        text, trust_score=trust, context_messages=context
-    )
-
-    # 3. Recherche en mémoire (Qdrant — similarité vectorielle)
-    memories = await self.memory.search(user_id, message.content)
-
-    # 4. Construction du prompt (persona + émotion + mémoire + contexte)
-    prompt = self.prompt_builder.build(
-        emotion_state=self.emotion.get_state(),
-        memories=memories,
-        context=recent_messages
-    )
-
-    # 5. Appel OpenAI → réponse
-    response = await self.openai.complete(prompt)
-
-    # 6. Post-traitement : trust score, coût, extraction de faits
-    await self._post_process(message, response)</code></pre>
-              <p class="jd-tech-note">Le pipeline est entièrement <strong>asynchrone</strong>. Les opérations CPU-bound (NRCLex, détection de langue) tournent dans <code>asyncio.to_thread()</code> pour ne pas bloquer la boucle événementielle — ce qui permet à Wally de continuer à écouter les autres messages pendant qu'il traite celui-ci.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 2: Système émotionnel -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-joy); color: #000">2</span>
-          <h3>Système émotionnel</h3>
-        </div>
-        <div class="jd-body">
-          <p>Wally ressent <strong>5 émotions en permanence</strong>, chacune mesurée entre 0.0 (absente) et 1.0 (maximale) :</p>
-
-          <div class="jd-gauges">
-            <div class="jd-gauge"><span class="jd-gauge-label">Colère</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:15%;background:var(--c-anger)"></div></div></div>
-            <div class="jd-gauge"><span class="jd-gauge-label">Joie</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:65%;background:var(--c-joy)"></div></div></div>
-            <div class="jd-gauge"><span class="jd-gauge-label">Tristesse</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:10%;background:var(--c-sadness)"></div></div></div>
-            <div class="jd-gauge"><span class="jd-gauge-label">Curiosité</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:45%;background:var(--c-curiosity)"></div></div></div>
-            <div class="jd-gauge"><span class="jd-gauge-label">Ennui</span><div class="jd-gauge-track"><div class="jd-gauge-fill" style="width:30%;background:var(--c-boredom)"></div></div></div>
-          </div>
-
-          <p>Chaque message fait bouger ces émotions. Un compliment booste la <strong>joie</strong>, une insulte monte la <strong>colère</strong>, une question intéressante pique la <strong>curiosité</strong>. L'impact dépend aussi du <strong>score de confiance</strong> de l'auteur : un inconnu (trust bas) provoque des réactions plus vives qu'un habitué.</p>
-          <p>Avec le temps, chaque émotion <strong>retombe naturellement vers zéro</strong>, comme un humain qui se calme. La vitesse de retombée est différente pour chaque émotion — la colère s'apaise en quelques heures, la tristesse persiste plus longtemps. L'<strong>ennui</strong> est spécial : il monte linéairement quand personne n'interagit avec Wally.</p>
-          <p>Si un utilisateur déclenche la colère au-delà d'un seuil trop souvent, Wally le <strong>mute temporairement</strong> : il ne répond plus avec du texte, seulement avec des réactions emoji (💩 ⛔ 😤).</p>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — décroissance exponentielle et formules</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/core/emotion.py — _apply_decay()</div>
-              <pre><code># Formule de décroissance : E(t) = E₀ × e^(−λ × Δt)
-# Chaque émotion a son propre λ (lambda) configurable dans config.yaml
-
-def _apply_decay(self):
-    now = time.time()
-    dt = now - self._last_decay
-    for emotion in EMOTIONS:
-        lam = self._lambdas[emotion]
-        self._state[emotion] *= math.exp(-lam * dt)
-        if self._state[emotion] < DECAY_FLOOR:
-            self._state[emotion] = 0.0
-    self._last_decay = now</code></pre>
-              <p class="jd-tech-note"><strong>Décroissance exponentielle</strong> : un λ élevé = retombée rapide. Δt est mesuré en <strong>heures</strong>. Un task en arrière-plan applique cette décroissance toutes les 60 secondes. L'ennui monte linéairement pendant l'inactivité (configurable via <code>boredom_rise_per_hour</code>).</p>
-              <p class="jd-tech-note"><strong>Trust score et colère</strong> : quand le trust score est bas (&lt;0.3), les deltas de colère sont amplifiés. Un nouvel utilisateur (trust=0.0) provoquera une réaction de colère plus forte qu'un habitué (trust=0.8). C'est un mécanisme de protection naturel.</p>
-              <p class="jd-tech-note"><strong>Suppression bidirectionnelle</strong> : quand une émotion monte, elle érode partiellement ses contraires. Joie → colère (×0.8), joie → tristesse (×0.8), colère → joie (×0.4). De plus, à chaque tick de decay, si colère et joie coexistent, elles s'érodent mutuellement en continu (compétition, K=0.05). Colère et ennui peuvent coexister — c'est intentionnel.</p>
-              <p class="jd-tech-note"><strong>Timeout</strong> : si la colère dépasse le seuil configuré N fois pour un même utilisateur, il est mute pendant X minutes (configurable). Pendant ce mute, Wally réagit uniquement avec des emoji.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 3: Mémoire -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-sadness)">3</span>
-          <h3>Mémoire</h3>
-        </div>
-        <div class="jd-body">
-          <p>Wally a <strong>trois types de mémoire</strong> :</p>
-          <p><strong>La mémoire courte</strong> — les derniers messages de la conversation en cours. Wally garde en tête les N derniers échanges (configurable) pour garder le fil. Quand cette fenêtre devient trop grande, il la résume automatiquement via un modèle secondaire pour économiser des tokens.</p>
-          <p><strong>La mémoire longue</strong> — des faits extraits automatiquement au fil du temps et stockés dans une base vectorielle (Qdrant). « Aime les crevettes », « fan d'Apex Legends », « déteste le lundi matin », « a un chat qui s'appelle Pixel ». Ces faits sont extraits par le <strong>FactExtractor</strong>, qui analyse les conversations par batch après une période d'inactivité.</p>
-          <p>Quand Wally reçoit un message, il cherche dans sa mémoire longue les souvenirs les plus <strong>pertinents par similarité sémantique</strong> — pas juste par mots-clés, mais par sens. Si tu parles de « mon félin », il retrouvera le souvenir de Pixel même si le mot « chat » n'apparaît pas.</p>
-          <p>Par défaut, chaque plateforme a sa propre mémoire (namespace <code>discord:user_id</code> vs <code>twitch:username</code>). Mais un administrateur peut <strong>lier manuellement</strong> les profils Discord et Twitch d'un même utilisateur pour que Wally partage ses souvenirs entre les deux.</p>
-          <p><strong>Alias et mentions tierces</strong> — Wally sait que "melio" et "Meliodas" sont la même personne grâce à une table d'alias (<code>user_aliases</code>). Quand il détecte un pseudo connu dans la conversation (même s'il n'est pas l'auteur du message), il charge automatiquement ses souvenirs et les injecte dans le contexte. Si le pseudo est inconnu mais ressemble à quelqu'un qu'il connaît (via correspondance floue à 75%), il note discrètement la ressemblance. Les alias sont extraits automatiquement par le FactExtractor ou ajoutés manuellement depuis le dashboard (modal utilisateur > section "Alias connus").</p>
-          <p><strong>La mémoire globale</strong> — des connaissances partagées par toute la communauté : liens importants, événements du serveur, ressources communes. Contrairement à la mémoire individuelle, ces faits sont consultés <strong>pour chaque requête</strong>, peu importe qui pose la question. Les administrateurs peuvent gérer ces connaissances via l'onglet « Mémoire » du dashboard, et le FactExtractor les détecte aussi automatiquement dans les conversations.</p>
-          <p><strong>Maintenance automatique</strong> — Wally ne se contente pas de stocker des souvenirs, il les entretient. Chaque nouveau souvenir est évalué pour sa complétude : si une information est vague ou incomplète (une date sans mois, un lieu non précisé), Wally note une question à poser et la glisse naturellement dans une prochaine conversation. Chaque soir, 30 minutes avant son journal, il fait le tri : il supprime les faits périmés, reformule les vagues, et identifie de nouvelles questions. Maximum 1 question par conversation, maximum 3 tentatives — Wally insiste, mais pas trop.</p>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — Qdrant, embeddings, trust score</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/core/memory.py — search() + FactExtractor</div>
-              <pre><code># Recherche par similarité vectorielle dans Qdrant
-async def search(self, user_id, query, limit=5):
-    results = await self.client.search(
-        collection="memories",
-        query=query,
-        filter={"user_id": user_id},
-        limit=limit
-    )
-    return [r.payload for r in results]
-
-# FactExtractor : extraction de faits par batch
-# Après 20min d'inactivité dans un canal, le FactExtractor
-# analyse la conversation et extrait les faits durables :
-# "### pseudo\n- fait 1\n- fait 2\n..."
-# Chaque fait est stocké via memory.add() dans Qdrant.</code></pre>
-              <p class="jd-tech-note"><strong>QdrantMemoryStore</strong> gère l'accès direct à <strong>Qdrant</strong> (base vectorielle auto-hébergée) : embedding via OpenAI <code>text-embedding-3-small</code>, stockage avec payloads structurés (texte, catégorie, date, source), et recherche par similarité avec filtrage natif.</p>
-              <p class="jd-tech-note"><strong>Trust score</strong> : chaque utilisateur a un score de confiance (0.0 → 1.0) qui évolue avec le temps. +0.01 par interaction positive, -0.05 pour les comportements toxiques. Le score part à 0.0 — la confiance se mérite.</p>
-              <p class="jd-tech-note"><strong>Sliding window</strong> : la mémoire courte garde les N derniers messages. Quand le nombre de tokens dépasse un seuil, les messages les plus anciens sont résumés par un modèle secondaire et remplacés par un bloc résumé.</p>
-              <p class="jd-tech-note"><strong>Memory scoring</strong> : chaque <code>memory.add()</code> déclenche un appel LLM secondaire (<code>_evaluate</code>) qui évalue la complétude du souvenir. Les questions générées sont stockées dans <code>memory_questions</code> et injectées dans le prompt (max 1 par conversation, max 3 tentatives). Si le nouveau souvenir répond à une question existante, elle est automatiquement résolue. Les questions épuisées (3 tentatives) sont re-proposées après 24h via le champ <code>last_attempt_at</code>.</p>
-              <p class="jd-tech-note"><strong>Nettoyage quotidien</strong> : cron 30min avant le journal (<code>run_memory_cleanup</code>). Passe en revue les souvenirs des 20 utilisateurs les plus actifs, identifie les faits périmés/vagues via LLM, et applique suppressions + reformulations via le store Qdrant directement.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 4: Personnalité -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-anger)">4</span>
-          <h3>Personnalité</h3>
-        </div>
-        <div class="jd-body">
-          <p>La personnalité de Wally est définie dans <strong>4 fichiers texte</strong> (Markdown), chacun avec un rôle précis :</p>
-          <p><strong>SOUL.md</strong> — Son âme. Qui il est fondamentalement : un pote loyal, un peu cynique, avec un humour pince-sans-rire. Ce fichier définit les valeurs profondes qui ne changent jamais, peu importe l'humeur.</p>
-          <p><strong>IDENTITY.md</strong> — Son histoire. D'où il vient, ce qu'il aime (la tech, les jeux, la musique), ses opinions, ses running jokes. C'est ce qui le rend unique et cohérent dans le temps.</p>
-          <p><strong>VOICE.md</strong> — Comment il parle. Son registre de langue, ses tics verbaux, la longueur de ses réponses, quand il utilise des emoji et quand il n'en met pas. Le style, pas le fond.</p>
-          <p><strong>EXEMPLES.md</strong> — Des exemples concrets de réponses « à la Wally » pour calibrer le ton. Le modèle s'en inspire sans les copier.</p>
-          <p>À chaque message, ces 4 fichiers sont <strong>assemblés dans cet ordre</strong> et injectés dans le prompt système. L'émotion dominante du moment ajoute une <strong>directive comportementale</strong> tirée de <strong>EMOTIONS.md</strong> — si Wally est joyeux, il est plus bavard et taquin ; s'il est en colère, ses réponses sont courtes et impatientes.</p>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — PersonaService et prompt building</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/core/persona.py + bot/core/prompts.py</div>
-              <pre><code># PersonaService charge les 4 fichiers persona au démarrage
-# Ordre canonique : SOUL → IDENTITY → VOICE → EXEMPLES
-persona_block = PersonaService.load()
-# → Un seul bloc texte injecté dans le system prompt
-
-# EMOTIONS.md est parsé séparément en {emotion: directive}
-# Sections délimitées par "## emotion_name"
-# Ex: "## anger" → "Tes réponses sont courtes et impatientes."
-
-# PromptBuilder assemble le prompt final :
-# [persona_block] + [emotion_directive] + [memories] + [context]
-prompt = PromptBuilder.build(
-    emotion_state=current_emotions,
-    memories=relevant_memories,
-    context=recent_messages
-)</code></pre>
-              <p class="jd-tech-note">Les fichiers persona sont chargés au démarrage et mis en cache. La commande <code>/wally reload-persona</code> permet de les recharger à chaud sans redémarrer le bot.</p>
-              <p class="jd-tech-note"><strong>Directive émotionnelle</strong> : le prompt ne dit jamais « tu es en colère » — il dit « tes réponses sont courtes et impatientes ». C'est un choix de design : on décrit le comportement, pas l'état interne. Le LLM interprète mieux des instructions concrètes.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 5: Journal quotidien -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-curiosity)">5</span>
-          <h3>Journal quotidien</h3>
-        </div>
-        <div class="jd-body">
-          <p>Chaque soir, Wally <strong>écrit son journal de la journée</strong>. C'est un texte rédigé avec ses propres mots, comme un vrai journal intime.</p>
-          <p>Il commence par compiler <strong>toutes les conversations de la journée</strong> depuis sa base de données. Il identifie les <strong>moments forts</strong> : les pics d'émotion (quand il a ri, quand il s'est énervé, quand il était curieux) et qui les a déclenchés.</p>
-          <p>Il note les <strong>statistiques</strong> : combien de messages, combien de participants uniques, les top 5 des plus actifs, les heures de pointe, la répartition Discord vs Twitch.</p>
-          <p>Puis il rédige un <strong>résumé narratif</strong> de sa journée. Pour les grosses journées (beaucoup de messages), il utilise une technique de résumé multi-passes : il découpe en blocs de 30 messages, résume chaque bloc, puis synthétise les résumés en un texte final.</p>
-          <p>Il génère aussi un <strong>graphe d'émotions</strong> (image PNG) montrant l'évolution de ses 5 émotions au cours de la journée, et <strong>forme des opinions</strong> sur les sujets récurrents qu'il a rencontrés (fire-and-forget, en arrière-plan).</p>
-          <p>Si Wally a visité des chaînes Twitch invitées dans la journée, il les mentionne dans son journal comme des <strong>petits voyages</strong> : nom de la chaîne, durée de la visite, ambiance et moments notables, rédigés à la première personne.</p>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — DailyJournal et sources de données</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/core/journal.py — DailyJournal</div>
-              <pre><code># Sources de données (ordre de priorité / fallback) :
-# 1. daily_log (SQLite) — tous les messages du jour, survit aux redémarrages
-# 2. Discord channel history — fallback API si daily_log vide
-# 3. RAM context windows — buffers mémoire de la session en cours
-# 4. Qdrant memory — faits stockés en mémoire longue
-
-# Taille dynamique du journal :
-# &lt; 50 messages → 150-250 mots
-# 50-200 messages → 250-400 mots
-# &gt; 200 messages → 400-600 mots
-
-# Multi-pass summarization pour les grosses journées :
-# 1. Découper en chunks de 30 messages
-# 2. Résumer chaque chunk via modèle secondaire
-# 3. Synthétiser les résumés en texte final
-
-# Le journal inclut aussi :
-# - Comparaison hebdo (émotions vs moyenne 7 jours)
-# - Le journal de la veille (pour la continuité narrative)
-# - Un graphe Matplotlib (PNG) des émotions du jour
-# - Les visites Twitch du jour (twitch_visits_block) :
-#   chaque visite = résumé LLM carnet de voyage (channel, durée, ambiance)</code></pre>
-              <p class="jd-tech-note">Le journal est déclenché par <strong>apscheduler</strong> (cron async) à une heure configurable. Il peut aussi être déclenché manuellement via <code>/wally journal</code>.</p>
-              <p class="jd-tech-note">Le résultat est découpé en messages de max 1900 caractères (limite Discord = 2000) et posté dans le salon configuré. Le graphe PNG est envoyé en pièce jointe.</p>
-              <p class="jd-tech-note"><strong>Formation d'opinions</strong> : en parallèle du journal, Wally analyse les sujets récurrents de la journée et forme des opinions nuancées qu'il stocke en mémoire. C'est un processus fire-and-forget qui enrichit sa personnalité au fil du temps.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 6: Galerie d'images et vision -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: var(--c-joy); color: #000">6</span>
-          <h3>Galerie d'images et vision</h3>
-        </div>
-        <div class="jd-body">
-          <p>Wally peut <strong>générer des images</strong> via la commande <code>/imagine</code> sur Discord ou dans le chat web. Pendant la génération, un <strong>GIF de chargement</strong> aléatoire s'affiche avec des phrases rotatives toutes les 5 secondes. Le modèle secondaire génère ensuite un <strong>titre court et créatif</strong>, et l'image finale remplace l'embed de chargement.</p>
-          <p>Chaque image est sauvegardée dans la <strong>galerie</strong>, accessible depuis le dashboard. Les utilisateurs peuvent <strong>voter</strong> avec une flamme (toggle), trier par date ou par votes, filtrer par créateur, et le créateur peut <strong>modifier le titre</strong> de son image.</p>
-          <p>Wally a aussi la <strong>vision</strong> : quand quelqu'un envoie une image en pièce jointe, il la voit et peut la commenter. Et quand quelqu'un <strong>répond à une image qu'il a générée</strong>, il sait que c'est la sienne — il reconnaît le titre, le prompt original, et peut en discuter naturellement.</p>
-          <p>Des <strong>limites configurables</strong> empêchent les abus : limite journalière globale et par utilisateur. Le coût de chaque génération est logué dans la base de données.</p>
-
-          <div class="jd-pipeline">
-            <span class="jd-pipe-step" style="background: var(--c-joy); color: #000">✨ /imagine</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">🎨 OpenAI Images</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">📝 Titre LLM</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step">💾 Galerie</span>
-            <span class="jd-pipe-arrow">→</span>
-            <span class="jd-pipe-step" style="background: var(--c-anger)">🔥 Votes</span>
-          </div>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — génération et vision</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/discord/commands/imagine.py + bot/discord/handlers.py</div>
-              <pre><code># Génération d'image
-result = await openai.generate_image(prompt, sender_id)
-
-# Titre auto via modèle secondaire
-title = await openai.complete_secondary(
-    "Génère un titre court et créatif (max 6 mots)...",
-    purpose="image_title"
-)
-
-# Vision : quand on répond à un message avec une image
-# Wally récupère l'image du message référencé
-if message.reference:
-    ref_msg = message.reference.resolved
-    # Extrait les URLs d'images (attachments + embeds)
-    # Si c'est une image de Wally → contexte enrichi :
-    # "[Tu as généré cette image. Titre: X. Prompt: Y]"
-    # Sinon → "[L'utilisateur répond à une image.]"</code></pre>
-              <p class="jd-tech-note"><strong>Vision multimodale</strong> : les URLs d'images sont passées à OpenAI via le paramètre <code>image_urls</code>. Le modèle voit l'image et peut la décrire, la commenter ou répondre à des questions dessus.</p>
-              <p class="jd-tech-note"><strong>Reconnaissance d'auteur</strong> : quand le message référencé vient de Wally lui-même, le contexte injecté précise « c'est une image que TU as générée », avec le titre et le prompt original. Wally peut ainsi en parler naturellement.</p>
-              <p class="jd-tech-note"><strong>Stockage</strong> : images sur disque (<code>data/gallery/</code>), métadonnées dans SQLite (<code>gallery_images</code> + <code>gallery_votes</code>). Coût logué dans <code>cost_log</code>.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 7: Architecture -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: #ff8800">7</span>
-          <h3>Architecture</h3>
-        </div>
-        <div class="jd-body">
-          <p>Wally est un <strong>programme Python unique</strong> (monolithe modulaire) qui gère Discord et Twitch en parallèle dans la même boucle asynchrone.</p>
-          <p>Les deux plateformes partagent le <strong>même cerveau</strong> : le même moteur d'émotions, la même mémoire, la même personnalité, le même client OpenAI. C'est de l'<strong>injection de dépendances</strong> : les services sont créés une seule fois au démarrage, puis passés aux adaptateurs Discord et Twitch.</p>
-          <p>Les souvenirs sont stockés dans <strong>Qdrant</strong>, une base de données spécialisée dans la recherche par similarité vectorielle. Les données opérationnelles (coûts, trust scores, timeouts, logs) sont dans <strong>SQLite</strong> via aiosqlite (async).</p>
-          <p>Le tout tourne dans <strong>2 conteneurs Docker</strong> : un pour Wally (bot + dashboard web), un pour Qdrant. Qdrant a un healthcheck, et Wally attend qu'il soit prêt avant de démarrer.</p>
-
-          <div class="jd-arch-diagram">
-            <div class="jd-arch-row">
-              <div class="jd-arch-box" style="border-color: #5865F2">
-                <strong>Discord Bot</strong><br><span>discord.py 2.x</span>
-              </div>
-              <div class="jd-arch-box" style="border-color: #9146FF">
-                <strong>Twitch Bot</strong><br><span>twitchio 2.x</span>
-              </div>
-              <div class="jd-arch-box" style="border-color: var(--accent)">
-                <strong>Dashboard Web</strong><br><span>FastAPI + SSE</span>
-              </div>
-            </div>
-            <div class="jd-arch-arrow">↓ injection de dépendances ↓</div>
-            <div class="jd-arch-row">
-              <div class="jd-arch-box jd-arch-core">
-                <strong>Core Services</strong><br>
-                <span>EmotionEngine · MemoryService · OpenAIClient · PersonaService · ActionService · Config</span>
-              </div>
-            </div>
-            <div class="jd-arch-arrow">↓ stockage ↓</div>
-            <div class="jd-arch-row">
-              <div class="jd-arch-box" style="border-color: var(--c-anger)">
-                <strong>Qdrant</strong><br><span>Mémoire vectorielle</span>
-              </div>
-              <div class="jd-arch-box" style="border-color: var(--c-joy)">
-                <strong>SQLite</strong><br><span>Coûts, trust, logs</span>
-              </div>
-              <div class="jd-arch-box" style="border-color: var(--c-curiosity)">
-                <strong>OpenAI API</strong><br><span>GPT / o-series</span>
-              </div>
-            </div>
-          </div>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — main.py et asyncio.gather()</summary>
-            <div class="jd-code-block">
-              <div class="jd-file-path">bot/main.py — point d'entrée</div>
-              <pre><code># Injection de dépendances : tout est créé une fois, partagé partout
-config = Config.load()
-db = await Database.create(config)
-emotion = EmotionEngine(config)
-memory = MemoryService(config)
-openai_client = OpenAIClient(config, db)
-persona = PersonaService(config)
-
-# Les deux bots reçoivent les mêmes services
-discord_bot = WallyDiscord(config, db, emotion, memory, openai_client, persona)
-twitch_bot = WallyTwitch(config, db, emotion, memory, openai_client, persona)
-dashboard = create_dashboard(config, db, emotion, memory, openai_client)
-
-# Tout tourne en parallèle dans la même boucle événementielle
-await asyncio.gather(
-    discord_bot.start(token),
-    twitch_bot.start(),
-    dashboard.serve()
-)</code></pre>
-              <p class="jd-tech-note"><strong>asyncio.gather()</strong> lance les 3 services en parallèle dans la même boucle événementielle Python. Pas besoin de multi-threading ou de multi-processing — l'async/await suffit car tout le I/O est non-bloquant.</p>
-              <p class="jd-tech-note"><strong>Docker</strong> : le <code>docker-compose.yml</code> définit 2 services. Wally dépend de Qdrant avec <code>condition: service_healthy</code> (healthcheck sur <code>/healthz</code>). La config et les données sont montées en volumes — pas besoin de rebuild pour changer la config.</p>
-              <p class="jd-tech-note"><strong>Hot-reload</strong> : <code>config.save()</code> écrit la config en mémoire directement dans <code>config.yaml</code>. Les changements via le dashboard sont appliqués instantanément sans redémarrage.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- Section 8: ActionService -->
-      <section class="jd-section">
-        <div class="jd-section-header">
-          <span class="jd-num" style="background: #06b6d4">8</span>
-          <h3>Actions planifiées</h3>
-        </div>
-        <div class="jd-body">
-          <p>Wally peut <strong>créer ses propres tâches planifiées</strong> quand on lui demande. « Rappelle-moi d'acheter du pain à 18h », « ping-moi toutes les 30 minutes pour boire de l'eau » — il comprend la demande, crée la tâche, et l'exécute au moment voulu.</p>
-          <p>Il dispose de <strong>3 outils</strong> via tool calling :</p>
-          <ul style="margin:0.5rem 0;padding-left:1.5rem;color:rgba(255,255,255,0.7)">
-            <li><strong>create_action_task</strong> — créer un rappel ponctuel, récurrent ou cron</li>
-            <li><strong>cancel_action_task</strong> — annuler par ID ou en langage naturel (« arrête le rappel du pain »)</li>
-            <li><strong>list_action_tasks</strong> — lister ses tâches actives</li>
-          </ul>
-          <p>Les rappels ponctuels et récurrents ont des <strong>permissions séparées</strong> — on peut autoriser les rappels simples pour tout le monde mais réserver les récurrents aux modérateurs. Côté Discord, les permissions utilisent les <strong>vrais rôles du serveur</strong> (multi-sélection par guilde). Côté Twitch, la hiérarchie fixe (everyone → subscriber → vip → moderator → admin) est conservée. Tout est configurable depuis l'onglet <strong>Actions</strong> du dashboard.</p>
-          <p>Quand un rappel se déclenche, <strong>Wally le formule avec sa personnalité</strong> et son humeur du moment — le message passe par le pipeline complet (persona, émotions, directives). Les tâches <strong>survivent aux redémarrages</strong> et les changements sont visibles <strong>en temps réel</strong> sur le dashboard via SSE.</p>
-
-          <details class="jd-details">
-            <summary>🔍 Aller plus loin — architecture interne</summary>
-            <div class="jd-code-block">
-              <p class="jd-tech-note"><strong>4 services</strong> : <code>ActionRegistry</code> (catalogue + ACL), <code>ActionScheduler</code> (persistence + apscheduler), <code>ActionExecutor</code> (routing + livraison), <code>ActionService</code> (façade LLM).</p>
-              <p class="jd-tech-note"><strong>Scheduler partagé</strong> : un seul <code>AsyncIOScheduler</code> pour le journal quotidien ET les tâches planifiées — pas de conflit.</p>
-              <p class="jd-tech-note"><strong>Sécurité</strong> : max 10 tâches par utilisateur, intervalle minimum 5 minutes, pas d'escalade de privilèges, isolation (un user ne voit que ses tâches).</p>
-              <p class="jd-tech-note"><strong>Auto-pause</strong> : après 3 échecs consécutifs, une tâche récurrente est mise en pause automatiquement avec le motif d'erreur visible dans le dashboard.</p>
-              <p class="jd-tech-note"><strong>Permissions Discord</strong> : table <code>action_permissions_discord</code> avec clé composite <code>(action_type, guild_id, role_id)</code>. Cache in-memory dans <code>ActionRegistry._discord_perms</code>. Endpoint <code>/api/actions/discord-roles</code> expose les rôles depuis le cache gateway de discord.py.</p>
-              <p class="jd-tech-note"><strong>SSE actions</strong> : <code>/api/admin/sse/actions</code> — fan-out par queue, événements broadcast depuis <code>ActionScheduler</code> via callback <code>on_change</code>.</p>
-            </div>
-          </details>
-        </div>
-      </section>
-    </div>`;
-}
-
-// ── Debounce utility ──────────────────────────────────────────────────────────
-
-function debounce(fn, ms) {
-  let t;
-  return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
-}
-
-// ── Gallery ───────────────────────────────────────────────────────────────────
-
-let _galleryOffset = 0;
-const _galleryLimit = 20;
-
-async function loadGallery(reset) {
-  if (reset) _galleryOffset = 0;
-  const search = document.getElementById('gallery-search')?.value || '';
-  const sort = document.getElementById('gallery-sort')?.value || 'date';
-  const userFilter = document.getElementById('gallery-user-filter')?.value || '';
-  const params = new URLSearchParams({ sort_by: sort, limit: _galleryLimit, offset: _galleryOffset });
-  if (search) params.set('search', search);
-  if (userFilter) params.set('user_filter', userFilter);
-  const r = await fetch('/api/public/gallery?' + params);
-  if (!r.ok) return;
-  const data = await r.json();
-  const grid = document.getElementById('gallery-grid');
-  if (reset) grid.textContent = '';
-  data.images.forEach(function(img) { grid.appendChild(renderGalleryCard(img)); });
-  document.getElementById('gallery-load-more').style.display = data.images.length >= _galleryLimit ? '' : 'none';
-  _galleryOffset += data.images.length;
-}
-
-function loadMoreGallery() { loadGallery(false); }
-
-function renderGalleryCard(img) {
-  const card = document.createElement('div');
-  card.className = 'gallery-card';
-  card.dataset.id = img.id;
-  const dateStr = img.created_at ? new Date(img.created_at + 'Z').toLocaleString('fr-FR') : '';
-
-  const imgEl = document.createElement('img');
-  imgEl.src = '/api/public/gallery/' + img.id + '/image';
-  imgEl.alt = img.title || '';
-  imgEl.loading = 'lazy';
-  imgEl.onclick = function() { openLightbox(img.id); };
-  card.appendChild(imgEl);
-
-  const info = document.createElement('div');
-  info.className = 'gallery-card-info';
-
-  const title = document.createElement('div');
-  title.className = 'gallery-card-title';
-  title.textContent = img.title || 'Sans titre';
-  info.appendChild(title);
-
-  const prompt = document.createElement('div');
-  prompt.className = 'gallery-card-prompt';
-  prompt.title = img.prompt || '';
-  prompt.textContent = img.prompt || '';
-  info.appendChild(prompt);
-
-  const meta = document.createElement('div');
-  meta.className = 'gallery-card-meta';
-  const userSpan = document.createElement('span');
-  userSpan.textContent = img.username;
-  const dateSpan = document.createElement('span');
-  dateSpan.textContent = dateStr;
-  meta.appendChild(userSpan);
-  meta.appendChild(dateSpan);
-  info.appendChild(meta);
-  card.appendChild(info);
-
-  const footer = document.createElement('div');
-  footer.className = 'gallery-card-footer';
-
-  const flameBtn = document.createElement('button');
-  flameBtn.className = 'flame-btn' + (img.user_voted ? ' active' : '');
-  flameBtn.onclick = function(e) { e.stopPropagation(); toggleFlame(img.id, flameBtn); };
-  flameBtn.textContent = '';
-  const fireText = document.createTextNode('🔥 ');
-  const voteSpan = document.createElement('span');
-  voteSpan.textContent = img.votes || 0;
-  flameBtn.appendChild(fireText);
-  flameBtn.appendChild(voteSpan);
-  footer.appendChild(flameBtn);
-
-  if (currentMode === 'admin') {
-    const delBtn = document.createElement('button');
-    delBtn.className = 'gallery-delete-btn';
-    delBtn.textContent = '🗑️';
-    delBtn.onclick = function(e) { e.stopPropagation(); deleteGalleryImage(img.id); };
-    footer.appendChild(delBtn);
-  }
-
-  card.appendChild(footer);
-  return card;
-}
-
-async function toggleFlame(imageId, btn) {
-  const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + (getChatJwt() || '') }
-  });
-  if (!r.ok) {
-    if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
-    return;
-  }
-  const data = await r.json();
-  btn.classList.toggle('active', data.voted);
-  const detail = await fetch('/api/public/gallery/' + imageId);
-  if (detail.ok) {
-    const img = await detail.json();
-    btn.querySelector('span').textContent = img.votes || 0;
-  }
-}
-
-async function deleteGalleryImage(imageId) {
-  if (!confirm('Supprimer cette image ?')) return;
-  const r = await apiFetch('/api/admin/gallery/' + imageId, { method: 'DELETE' });
-  if (r && r.ok) {
-    const card = document.querySelector('.gallery-card[data-id="' + imageId + '"]');
-    if (card) card.remove();
-    toast('Image supprimée', 'success');
-  }
-}
-
-function openLightbox(imageId) {
-  fetch('/api/public/gallery/' + imageId).then(function(r) { return r.json(); }).then(function(img) {
-    const dateStr = img.created_at ? new Date(img.created_at + 'Z').toLocaleString('fr-FR') : '';
-    const lb = document.createElement('div');
-    lb.className = 'gallery-lightbox';
-    lb.onclick = function(e) { if (e.target === lb) lb.remove(); };
-
-    const closeSpan = document.createElement('span');
-    closeSpan.className = 'gallery-lightbox-close';
-    closeSpan.textContent = '\u00d7';
-    closeSpan.onclick = function() { lb.remove(); };
-    lb.appendChild(closeSpan);
-
-    const lbImg = document.createElement('img');
-    lbImg.src = '/api/public/gallery/' + img.id + '/image';
-    lbImg.alt = '';
-    lb.appendChild(lbImg);
-
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'gallery-lightbox-info';
-    const h3 = document.createElement('h3');
-    h3.textContent = img.title || 'Sans titre';
-    infoDiv.appendChild(h3);
-    const p = document.createElement('p');
-    p.textContent = img.prompt || '';
-    infoDiv.appendChild(p);
-    const metaDiv = document.createElement('div');
-    metaDiv.className = 'meta';
-    metaDiv.textContent = (img.username || '') + ' — ' + dateStr;
-    infoDiv.appendChild(metaDiv);
-    lb.appendChild(infoDiv);
-
-    document.body.appendChild(lb);
-  });
-}
-
-// Gallery event listeners (initialized on DOMContentLoaded)
-document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('gallery-search')?.addEventListener('input', debounce(function() { loadGallery(true); }, 400));
-  document.getElementById('gallery-sort')?.addEventListener('change', function() { loadGallery(true); });
-  document.getElementById('gallery-user-filter')?.addEventListener('change', function() { loadGallery(true); });
-});
 
 // ── Overlay Config (Admin) ────────────────────────────────────────────────────
 
@@ -6720,251 +4763,6 @@ async function testOverlayImage() {
   else if (r && r.status === 429) toast('Une image est déjà affichée', 'error');
 }
 
-// ── Slash Commands Autocomplete ───────────────────────────────────────────────
-
-const SLASH_COMMANDS = [
-  { name: '/imagine', desc: 'Générer une image', adminOnly: false },
-  { name: '/scan', desc: 'Scanner la mémoire du chat', adminOnly: true },
-];
-let _slashSelectedIdx = -1;
-
-function setupSlashAutocomplete() {
-  const chatInput = document.getElementById('chat-input');
-  if (!chatInput) return;
-
-  let popup = document.getElementById('slash-popup');
-  if (!popup) {
-    popup = document.createElement('div');
-    popup.id = 'slash-popup';
-    popup.className = 'slash-autocomplete';
-    chatInput.parentElement.style.position = 'relative';
-    chatInput.parentElement.insertBefore(popup, chatInput);
-  }
-
-  chatInput.addEventListener('input', function() {
-    const val = chatInput.value;
-    if (!val.startsWith('/')) { hideSlashPopup(); return; }
-    const prefix = val.split(' ')[0].toLowerCase();
-    if (val.includes(' ') && val.split(' ').length > 1) { hideSlashPopup(); return; }
-    const isAdmin = !!getToken();
-    const filtered = SLASH_COMMANDS.filter(function(c) { return c.name.startsWith(prefix) && (!c.adminOnly || isAdmin); });
-    if (filtered.length === 0) { hideSlashPopup(); return; }
-    renderSlashPopup(filtered);
-  });
-
-  chatInput.addEventListener('keydown', function(e) {
-    const popup = document.getElementById('slash-popup');
-    if (!popup || !popup.classList.contains('visible')) return;
-    const items = popup.querySelectorAll('.slash-item');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      _slashSelectedIdx = Math.min(_slashSelectedIdx + 1, items.length - 1);
-      items.forEach(function(it, i) { it.classList.toggle('selected', i === _slashSelectedIdx); });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      _slashSelectedIdx = Math.max(_slashSelectedIdx - 1, 0);
-      items.forEach(function(it, i) { it.classList.toggle('selected', i === _slashSelectedIdx); });
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      if (_slashSelectedIdx >= 0 && _slashSelectedIdx < items.length) {
-        selectSlashCommand(items[_slashSelectedIdx].dataset.name);
-      } else if (items.length === 1) {
-        selectSlashCommand(items[0].dataset.name);
-      }
-    }
-  });
-}
-
-function renderSlashPopup(commands) {
-  const popup = document.getElementById('slash-popup');
-  if (!popup) return;
-  _slashSelectedIdx = -1;
-  popup.textContent = '';
-  commands.forEach(function(c) {
-    const item = document.createElement('div');
-    item.className = 'slash-item';
-    item.dataset.name = c.name;
-    item.onclick = function() { selectSlashCommand(c.name); };
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'slash-item-name';
-    nameSpan.textContent = c.name;
-    const descSpan = document.createElement('span');
-    descSpan.className = 'slash-item-desc';
-    descSpan.textContent = c.desc;
-    item.appendChild(nameSpan);
-    item.appendChild(descSpan);
-    popup.appendChild(item);
-  });
-  popup.classList.add('visible');
-}
-
-function hideSlashPopup() {
-  const popup = document.getElementById('slash-popup');
-  if (popup) popup.classList.remove('visible');
-  _slashSelectedIdx = -1;
-}
-
-function selectSlashCommand(name) {
-  const chatInput = document.getElementById('chat-input');
-  if (chatInput) {
-    chatInput.value = name + ' ';
-    chatInput.focus();
-  }
-  hideSlashPopup();
-}
-
-// ── Chat Image Embeds ─────────────────────────────────────────────────────────
-
-function chatAppendImageGenerating(data) {
-  const el = document.getElementById('chat-messages');
-  if (!el) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg wally';
-  div.id = 'chat-embed-' + data.id;
-
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-msg-bubble';
-  const embed = document.createElement('div');
-  embed.className = 'chat-image-embed';
-  const loading = document.createElement('div');
-  loading.className = 'embed-loading';
-  const icon = document.createElement('div');
-  icon.style.fontSize = '2rem';
-  icon.style.marginBottom = '8px';
-  icon.textContent = '🎨';
-  loading.appendChild(icon);
-  const msg = document.createElement('div');
-  msg.textContent = 'Génération en cours...';
-  loading.appendChild(msg);
-  const promptDiv = document.createElement('div');
-  promptDiv.style.fontSize = '0.75rem';
-  promptDiv.style.color = 'rgba(255,255,255,0.35)';
-  promptDiv.style.marginTop = '4px';
-  promptDiv.textContent = data.prompt || '';
-  loading.appendChild(promptDiv);
-  embed.appendChild(loading);
-  bubble.appendChild(embed);
-  div.appendChild(bubble);
-  el.appendChild(div);
-}
-
-function chatReplaceImageResult(data) {
-  const existing = document.getElementById('chat-embed-' + data.id);
-  const dateStr = data.created_at ? new Date(data.created_at + 'Z').toLocaleString('fr-FR') : '';
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'chat-msg wally';
-  wrapper.id = 'chat-embed-' + data.id;
-
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-msg-bubble';
-  const embed = document.createElement('div');
-  embed.className = 'chat-image-embed';
-
-  const imgEl = document.createElement('img');
-  imgEl.src = '/api/public/gallery/' + data.image_id + '/image';
-  imgEl.alt = data.title || '';
-  imgEl.style.cursor = 'pointer';
-  imgEl.onclick = function() { openLightbox(data.image_id); };
-  embed.appendChild(imgEl);
-
-  const infoDiv = document.createElement('div');
-  infoDiv.className = 'embed-info';
-  const titleDiv = document.createElement('div');
-  titleDiv.className = 'embed-title';
-  titleDiv.id = 'chat-embed-title-' + data.image_id;
-  titleDiv.textContent = data.title || 'Sans titre';
-  infoDiv.appendChild(titleDiv);
-  const promptDiv = document.createElement('div');
-  promptDiv.className = 'embed-prompt';
-  promptDiv.textContent = data.prompt || '';
-  infoDiv.appendChild(promptDiv);
-  const footerDiv = document.createElement('div');
-  footerDiv.className = 'embed-footer';
-  footerDiv.textContent = (data.username || '') + ' — ' + dateStr;
-  infoDiv.appendChild(footerDiv);
-  embed.appendChild(infoDiv);
-
-  const actions = document.createElement('div');
-  actions.className = 'embed-actions';
-  const flameBtn = document.createElement('button');
-  flameBtn.className = 'flame-btn';
-  flameBtn.onclick = function() { toggleFlameEmbed(data.image_id, flameBtn); };
-  flameBtn.appendChild(document.createTextNode('🔥 '));
-  const vSpan = document.createElement('span');
-  vSpan.textContent = '0';
-  flameBtn.appendChild(vSpan);
-  actions.appendChild(flameBtn);
-  embed.appendChild(actions);
-
-  bubble.appendChild(embed);
-  wrapper.appendChild(bubble);
-
-  if (existing) {
-    existing.replaceWith(wrapper);
-  } else {
-    const container = document.getElementById('chat-messages');
-    if (container) container.appendChild(wrapper);
-  }
-}
-
-function chatReplaceImageCancelled(data) {
-  const existing = document.getElementById('chat-embed-' + data.id);
-  if (!existing) return;
-  existing.textContent = '';
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-msg-bubble';
-  const embed = document.createElement('div');
-  embed.className = 'chat-image-embed';
-  const infoDiv = document.createElement('div');
-  infoDiv.className = 'embed-info';
-  const titleDiv = document.createElement('div');
-  titleDiv.className = 'embed-title';
-  titleDiv.style.color = 'var(--c-anger)';
-  titleDiv.textContent = 'Génération annulée';
-  infoDiv.appendChild(titleDiv);
-  const reasonDiv = document.createElement('div');
-  reasonDiv.className = 'embed-prompt';
-  reasonDiv.textContent = data.reason || 'Erreur inconnue';
-  infoDiv.appendChild(reasonDiv);
-  embed.appendChild(infoDiv);
-  bubble.appendChild(embed);
-  existing.appendChild(bubble);
-}
-
-function chatUpdateVoteState(data) {
-  const embedEl = document.getElementById('chat-embed-' + data.id);
-  if (!embedEl) return;
-  const btn = embedEl.querySelector('.flame-btn');
-  if (btn) {
-    btn.classList.toggle('active', data.voted);
-    const span = btn.querySelector('span');
-    if (span && data.votes !== undefined) span.textContent = data.votes;
-  }
-}
-
-function chatUpdateEmbedTitle(data) {
-  const el = document.getElementById('chat-embed-title-' + data.image_id);
-  if (el) el.textContent = data.title || 'Sans titre';
-}
-
-async function toggleFlameEmbed(imageId, btn) {
-  const r = await fetch('/api/public/gallery/' + imageId + '/vote', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + (getChatJwt() || '') }
-  });
-  if (!r.ok) {
-    if (r.status === 401) toast('Connectez-vous au chat pour voter', 'error');
-    return;
-  }
-  const data = await r.json();
-  btn.classList.toggle('active', data.voted);
-  const detail = await fetch('/api/public/gallery/' + imageId);
-  if (detail.ok) {
-    const img = await detail.json();
-    btn.querySelector('span').textContent = img.votes || 0;
-  }
-}
 
 // ── Actions Tab ──────────────────────────────────────────────────────────────
 
@@ -7125,7 +4923,7 @@ async function loadActionTasks() {
   if (!container) return;
   container.textContent = '';
   var loading = document.createElement('div');
-  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
   loading.textContent = 'Chargement...';
   container.appendChild(loading);
 
@@ -7143,7 +4941,7 @@ async function loadActionTasks() {
 
   if (tasks.length === 0) {
     var empty = document.createElement('div');
-    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
     empty.textContent = 'Aucune tâche en cours';
     container.appendChild(empty);
     return;
@@ -7162,7 +4960,7 @@ async function loadCompletedTasks() {
   if (!container) return;
   container.textContent = '';
   var loading = document.createElement('div');
-  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
   loading.textContent = 'Chargement...';
   container.appendChild(loading);
 
@@ -7181,7 +4979,7 @@ async function loadCompletedTasks() {
 
   if (tasks.length === 0) {
     var empty = document.createElement('div');
-    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
     empty.textContent = 'Aucune tâche terminée';
     container.appendChild(empty);
     return;
@@ -7377,7 +5175,7 @@ async function loadActionPermissions() {
   if (!container) return;
   container.textContent = '';
   var loading = document.createElement('div');
-  loading.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+  loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
   loading.textContent = 'Chargement...';
   container.appendChild(loading);
 
@@ -7394,7 +5192,7 @@ async function loadActionPermissions() {
 
   if (perms.length === 0) {
     var empty = document.createElement('div');
-    empty.style.cssText = 'color:rgba(255,255,255,0.4);text-align:center;padding:32px';
+    empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
     empty.textContent = 'Aucune permission configur\u00e9e';
     container.appendChild(empty);
     return;
@@ -7453,7 +5251,7 @@ var _promptsFile = null;
 async function renderPromptsTab() {
   var el = document.getElementById('tab-admin-prompts');
   if (!el) return;
-  el.innerHTML = '<div style="padding:24px;color:rgba(255,255,255,0.4)">Chargement...</div>';
+  el.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Chargement...</div>';
 
   await _loadPromptsModels();
 
@@ -7488,7 +5286,7 @@ function _renderPromptsUI(el) {
   el.innerHTML = `
     <div style="display:flex;flex-direction:column;height:100%;gap:0">
       <!-- Toolbar -->
-      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <div class="card-title" style="margin:0;flex:0 0 auto">PROMPTS</div>
         <div class="mem-subnav" style="margin-bottom:0;margin-left:auto">
           <button class="mem-subnav-pill ${_promptsSection==='persona'?'active':''}" onclick="switchPromptsSection('persona')">Persona</button>
@@ -7498,22 +5296,22 @@ function _renderPromptsUI(el) {
       <!-- Body -->
       <div style="display:flex;flex:1;min-height:0;overflow:hidden">
         <!-- File list -->
-        <div style="width:190px;flex-shrink:0;border-right:1px solid rgba(255,255,255,0.07);overflow-y:auto;padding:8px">
-          ${fileList || '<div style="padding:12px;font-size:12px;color:rgba(255,255,255,0.3)">Aucun fichier</div>'}
+        <div style="width:190px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:8px">
+          ${fileList || '<div style="padding:12px;font-size:12px;color:var(--text-muted)">Aucun fichier</div>'}
         </div>
         <!-- Editor -->
         <div style="flex:1;display:flex;flex-direction:column;min-width:0;padding:12px 16px;gap:8px">
           ${_promptsFile ? `
             <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-              <span style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.6)">${_promptsFile}</span>
+              <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">${_promptsFile}</span>
               <button class="btn-primary" onclick="savePromptFile()" style="font-size:12px;padding:6px 14px">💾 Sauvegarder</button>
             </div>
-            <textarea id="prompt-editor" style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:rgba(255,255,255,0.87);padding:14px;font-size:13px;font-family:monospace;resize:vertical;line-height:1.6;outline:none;min-height:calc(100vh - 310px);width:100%;box-sizing:border-box" spellcheck="false">${escapeHtml(content)}</textarea>
+            <textarea id="prompt-editor" style="flex:1;background:var(--bg-canvas);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);padding:14px;font-size:13px;font-family:monospace;resize:vertical;line-height:1.6;outline:none;min-height:calc(100vh - 310px);width:100%;box-sizing:border-box" spellcheck="false">${escapeHtml(content)}</textarea>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:22px">
-              <div id="prompt-token-info" style="display:flex;gap:16px;font-size:11px;color:rgba(255,255,255,0.35)"></div>
+              <div id="prompt-token-info" style="display:flex;gap:16px;font-size:11px;color:var(--text-muted)"></div>
               <div id="prompt-save-status" style="font-size:12px"></div>
             </div>
-          ` : '<div style="color:rgba(255,255,255,0.3);font-size:13px;padding-top:40px;text-align:center">Sélectionne un fichier</div>'}
+          ` : '<div style="color:var(--text-muted);font-size:13px;padding-top:40px;text-align:center">Sélectionne un fichier</div>'}
         </div>
       </div>
     </div>`;
@@ -7527,14 +5325,14 @@ function _renderPromptsUI(el) {
 
   // Styles inline pour les items de fichier
   document.querySelectorAll('.prompt-file-item').forEach(function(item) {
-    item.style.cssText = 'padding:8px 12px;border-radius:8px;font-size:12px;cursor:pointer;color:rgba(255,255,255,0.6);transition:all .15s;margin-bottom:2px';
+    item.style.cssText = 'padding:8px 12px;border-radius:8px;font-size:12px;cursor:pointer;color:var(--text-secondary);transition:all .15s;margin-bottom:2px';
     if (item.classList.contains('active')) {
       item.style.background = 'rgba(6,182,212,0.15)';
       item.style.color = 'rgb(6,182,212)';
       item.style.borderLeft = '2px solid rgb(6,182,212)';
     }
     item.addEventListener('mouseenter', function() {
-      if (!item.classList.contains('active')) item.style.background = 'rgba(255,255,255,0.05)';
+      if (!item.classList.contains('active')) item.style.background = 'var(--bg-surface)';
     });
     item.addEventListener('mouseleave', function() {
       if (!item.classList.contains('active')) item.style.background = '';
@@ -7614,11 +5412,11 @@ function _updatePromptTokenInfo(text) {
   _promptsModels.forEach(function(p) {
     var costStr;
     if (p.usd === null) {
-      costStr = '<strong style="color:rgba(255,255,255,0.4)">prix inconnu</strong>';
+      costStr = '<strong style="color:var(--text-muted)">prix inconnu</strong>';
     } else {
       var cost = (tokens / 1_000_000) * p.usd;
       var costFmt = cost < 0.0001 ? ('< $0.0001') : ('$' + cost.toFixed(4));
-      costStr = '<strong style="color:rgba(255,255,255,0.55)">' + costFmt + '</strong>';
+      costStr = '<strong style="color:var(--text-secondary)">' + costFmt + '</strong>';
     }
     parts.push('<span>' + p.label + ' : ' + costStr + '/appel</span>');
   });
