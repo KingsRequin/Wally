@@ -82,6 +82,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
+      - ./public-ui:/app/public-ui
       - ./.env:/app/.env
       - ./ROADMAP.md:/app/ROADMAP.md:ro
       - ./bot/dashboard/static:/app/bot/dashboard/static:ro
