@@ -339,14 +339,12 @@ function showTab(tabId) {
     'admin-config': 'admin-parametres',
     'admin-logs':   'admin-systeme',
     'admin-overlay': 'admin-systeme',
-    'admin-instances': 'admin-systeme',
     'admin-twitch': 'admin-systeme',
   };
   if (_legacyRedirect[tabId]) {
     // Set the appropriate sub-tab before redirecting
     if (tabId === 'admin-logs') _systemeSubTab = 'logs';
     else if (tabId === 'admin-overlay') _systemeSubTab = 'overlay';
-    else if (tabId === 'admin-instances') _systemeSubTab = 'instances';
     else if (tabId === 'admin-twitch') _systemeSubTab = 'twitch';
     tabId = _legacyRedirect[tabId];
   }
@@ -380,7 +378,6 @@ function showTab(tabId) {
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
-  if (tabId === 'admin-instances') renderInstancesTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   if (tabId === 'admin-parametres') renderParametresTab();
   if (tabId === 'admin-systeme') renderSystemeTab();
@@ -4860,22 +4857,11 @@ function renderSystemeTab() {
         <button class="mem-subnav-pill active" data-subtab="logs" onclick="switchSystemeSubTab('logs')">Logs</button>
         <button class="mem-subnav-pill" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
         <button class="mem-subnav-pill" data-subtab="overlay" onclick="switchSystemeSubTab('overlay')">Overlay</button>
-        <button class="mem-subnav-pill" data-subtab="instances" onclick="switchSystemeSubTab('instances')" style="display:none">Instances</button>
       </div>
       <div class="mem-subnav-content active" id="systeme-sub-logs"></div>
       <div class="mem-subnav-content" id="systeme-sub-twitch"></div>
       <div class="mem-subnav-content" id="systeme-sub-overlay"></div>
-      <div class="mem-subnav-content" id="systeme-sub-instances"></div>
     `;
-    // Afficher le bouton Instances uniquement sur le bot principal
-    apiFetch('/api/admin/config').then(async r => {
-      if (!r || !r.ok) return;
-      const data = await r.json();
-      if (data.is_main) {
-        const btn = el.querySelector('[data-subtab="instances"]');
-        if (btn) btn.style.display = '';
-      }
-    });
   }
 
   switchSystemeSubTab(_systemeSubTab);
@@ -4899,8 +4885,6 @@ function switchSystemeSubTab(subtab) {
     _renderSystemeTwitch(panel);
   } else if (subtab === 'overlay') {
     _renderSystemeOverlay(panel);
-  } else if (subtab === 'instances') {
-    _renderSystemeInstances(panel);
   }
 }
 
@@ -5257,22 +5241,6 @@ async function saveOverlayImageConfigSysteme() {
   }};
   const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
   if (r && r.ok) toast('Config overlay sauvegardée', 'success');
-}
-
-function _renderSystemeInstances(panel) {
-  if (!panel) return;
-  // Delegate to renderInstancesTab — move content
-  const instEl = document.getElementById('tab-admin-instances');
-  if (panel.children.length === 0) {
-    renderInstancesTab();
-    if (instEl && instEl.children.length > 0) {
-      while (instEl.firstChild) panel.appendChild(instEl.firstChild);
-    }
-  } else {
-    // Refresh invites and instances
-    loadInvites();
-    loadInstances();
-  }
 }
 
 // ── Costs Tab with sub-nav (Résumé · Détail) ─────────────────────────────────
@@ -7451,311 +7419,6 @@ async function updateActionPerm(actionType, field, value) {
   toast('Permission mise \u00e0 jour', 'success');
 }
 
-// ── Instances tab ─────────────────────────────────────────────────────────────
-
-function _makeGlassCard(withBottomMargin) {
-  var card = document.createElement('div');
-  card.style.cssText = 'background:rgba(255,255,255,0.03);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem;box-shadow:0 4px 6px rgba(0,0,0,0.1)' + (withBottomMargin ? ';margin-bottom:12px' : '');
-  return card;
-}
-
-function renderInstancesTab() {
-  var el = document.getElementById('tab-admin-instances');
-  if (!el) return;
-  el.textContent = '';
-
-  var header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px';
-  var h3 = document.createElement('h3');
-  h3.style.cssText = 'margin:0;font-size:1.1rem;font-weight:700;color:#e2e8f0';
-  h3.textContent = 'Instances';
-  var btnGroup = document.createElement('div');
-  btnGroup.style.cssText = 'display:flex;gap:8px;align-items:center';
-  var notifyAllBtn = document.createElement('button');
-  notifyAllBtn.className = 'btn btn-sm';
-  notifyAllBtn.style.cssText = 'color:rgba(6,182,212,0.9)';
-  notifyAllBtn.textContent = '🔔 Notifier tout';
-  notifyAllBtn.onclick = notifyAllInstancesUpdate;
-  var genBtn = document.createElement('button');
-  genBtn.className = 'btn btn-sm';
-  genBtn.textContent = '+ Générer un lien';
-  genBtn.onclick = generateInvite;
-  btnGroup.appendChild(notifyAllBtn);
-  btnGroup.appendChild(genBtn);
-  header.appendChild(h3);
-  header.appendChild(btnGroup);
-  el.appendChild(header);
-
-  var invCard = _makeGlassCard(true);
-  var invTitle = document.createElement('div');
-  invTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:10px';
-  invTitle.textContent = "Liens d'invitation";
-  var invList = document.createElement('div');
-  invList.id = 'invites-list';
-  invList.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.45)';
-  invList.textContent = 'Chargement...';
-  invCard.appendChild(invTitle);
-  invCard.appendChild(invList);
-  el.appendChild(invCard);
-
-  var instCard = _makeGlassCard(false);
-  var instHeader = document.createElement('div');
-  instHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
-  var instTitle = document.createElement('div');
-  instTitle.style.cssText = 'font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.6)';
-  instTitle.textContent = 'Instances actives';
-  var publishAllBtn = document.createElement('button');
-  publishAllBtn.className = 'btn btn-sm';
-  publishAllBtn.textContent = '📤 Publier à tous';
-  publishAllBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
-  publishAllBtn.onclick = async function() {
-    var r = await apiFetch('/api/admin/setup/instances/publish-all-updates', { method: 'POST' });
-    if (r && r.ok) { toast('Update publiée pour toutes les instances', 'success'); setTimeout(loadInstances, 500); }
-    else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
-  };
-  instHeader.appendChild(instTitle);
-  instHeader.appendChild(publishAllBtn);
-  var instList = document.createElement('div');
-  instList.id = 'instances-list';
-  instList.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.45)';
-  instList.textContent = 'Chargement...';
-  var wizardLink = document.createElement('a');
-  wizardLink.href = '/setup/preview';
-  wizardLink.target = '_blank';
-  wizardLink.rel = 'noopener noreferrer';
-  wizardLink.style.cssText = 'display:inline-block;margin-top:10px;font-size:0.75rem;color:#06b6d4;text-decoration:underline;cursor:pointer';
-  wizardLink.textContent = 'Ouvrir le wizard en mode test';
-  instCard.appendChild(instHeader);
-  instCard.appendChild(instList);
-  instCard.appendChild(wizardLink);
-  el.appendChild(instCard);
-
-  loadInvites();
-  loadInstances();
-}
-
-async function loadInvites() {
-  try {
-    var resp = await apiFetch('/api/admin/setup/invites');
-    var data = await resp.json();
-    var el = document.getElementById('invites-list');
-    if (!el) return;
-    el.textContent = '';
-    if (!data.invites || data.invites.length === 0) {
-      el.textContent = 'Aucun lien généré';
-      return;
-    }
-    var statusColors = { pending: '#06b6d4', used: '#22c55e', expired: 'rgba(239,68,68,0.6)', revoked: 'rgba(255,255,255,0.2)' };
-    data.invites.forEach(function(inv) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
-      var left = document.createElement('div');
-      var tokenSpan = document.createElement('span');
-      tokenSpan.style.cssText = 'font-family:monospace;font-size:12px;color:rgba(255,255,255,0.6)';
-      tokenSpan.textContent = inv.token;
-      var statusSpan = document.createElement('span');
-      statusSpan.style.cssText = 'margin-left:8px;font-size:12px;color:' + (statusColors[inv.status] || 'rgba(255,255,255,0.4)');
-      statusSpan.textContent = inv.status;
-      left.appendChild(tokenSpan);
-      left.appendChild(statusSpan);
-      if (inv.slug) {
-        var slugSpan = document.createElement('span');
-        slugSpan.style.cssText = 'margin-left:8px;font-size:12px;color:rgba(255,255,255,0.3)';
-        slugSpan.textContent = '\u2192 ' + inv.slug;
-        left.appendChild(slugSpan);
-      }
-      row.appendChild(left);
-      if (inv.status === 'pending') {
-        var btnGroup = document.createElement('div');
-        btnGroup.style.cssText = 'display:flex;gap:6px';
-        var copyBtn = document.createElement('button');
-        copyBtn.className = 'btn btn-sm';
-        copyBtn.title = 'Copier le lien';
-        copyBtn.textContent = '\uD83D\uDCCB';
-        copyBtn.onclick = (function(t) { return function() { copyInviteLink(t); }; })(inv.token_full || inv.token);
-        var revokeBtn = document.createElement('button');
-        revokeBtn.className = 'btn btn-sm btn-danger';
-        revokeBtn.textContent = 'Révoquer';
-        revokeBtn.onclick = (function(t) { return function() { revokeInvite(t); }; })(inv.token_full || inv.token);
-        btnGroup.appendChild(copyBtn);
-        btnGroup.appendChild(revokeBtn);
-        row.appendChild(btnGroup);
-      }
-      el.appendChild(row);
-    });
-  } catch(e) { console.error('loadInvites', e); }
-}
-
-async function loadInstances() {
-  try {
-    var resp = await apiFetch('/api/admin/setup/instances');
-    var data = await resp.json();
-    var el = document.getElementById('instances-list');
-    if (!el) return;
-    el.textContent = '';
-    if (!data.instances || data.instances.length === 0) {
-      el.textContent = 'Aucune instance créée';
-      return;
-    }
-    for (var i = 0; i < data.instances.length; i++) {
-      var inst = data.instances[i];
-      var running = inst.docker_status === 'running';
-
-      // Charger la config de notification
-      var cfg = {};
-      try {
-        var cr = await apiFetch('/api/admin/setup/instances/' + inst.slug + '/update-config');
-        if (cr && cr.ok) cfg = await cr.json();
-      } catch(e) {}
-
-      var card = document.createElement('div');
-      card.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px;margin-bottom:10px';
-
-      // Ligne principale
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
-      var left = document.createElement('div');
-      var nameSpan = document.createElement('span');
-      nameSpan.style.cssText = 'font-weight:600;color:rgba(255,255,255,0.85)';
-      nameSpan.textContent = inst.slug;
-      var statusSpan = document.createElement('span');
-      statusSpan.style.cssText = 'margin-left:8px;font-size:12px;color:' + (running ? '#22c55e' : 'rgba(239,68,68,0.7)');
-      statusSpan.textContent = '\u25CF ' + inst.docker_status;
-      var portSpan = document.createElement('span');
-      portSpan.style.cssText = 'margin-left:8px;font-size:12px;color:rgba(255,255,255,0.3)';
-      portSpan.textContent = ':' + inst.port;
-      var instVersionSpan = document.createElement('span');
-      instVersionSpan.style.cssText = 'margin-left:10px;font-size:11px;color:rgba(255,255,255,0.2);font-family:monospace';
-      instVersionSpan.textContent = '…';
-      if (running) {
-        fetch('http://' + window.location.hostname + ':' + inst.port + '/api/public/status')
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(d) {
-            if (!d || !d.git_hash || d.git_hash === 'unknown') { instVersionSpan.textContent = ''; return; }
-            instVersionSpan.textContent = 'build ' + d.git_hash + ' · ' + _formatBuildDate(d.build_date);
-          })
-          .catch(function() { instVersionSpan.textContent = ''; });
-      } else {
-        instVersionSpan.textContent = '';
-      }
-      left.appendChild(nameSpan);
-      left.appendChild(statusSpan);
-      left.appendChild(portSpan);
-      left.appendChild(instVersionSpan);
-      row.appendChild(left);
-
-      var btnGroup = document.createElement('div');
-      btnGroup.style.cssText = 'display:flex;gap:6px';
-      var toggleBtn = document.createElement('button');
-      toggleBtn.className = 'btn btn-sm';
-      if (running) {
-        toggleBtn.style.color = 'rgba(239,68,68,0.8)';
-        toggleBtn.textContent = 'Stop';
-        toggleBtn.onclick = (function(s) { return function() { instanceAction(s, 'stop'); }; })(inst.slug);
-      } else {
-        toggleBtn.style.color = 'rgba(34,197,94,0.8)';
-        toggleBtn.textContent = 'Start';
-        toggleBtn.onclick = (function(s) { return function() { instanceAction(s, 'start'); }; })(inst.slug);
-      }
-      btnGroup.appendChild(toggleBtn);
-      row.appendChild(btnGroup);
-      card.appendChild(row);
-
-      // Canal de notification + boutons update
-      var updateRow = document.createElement('div');
-      updateRow.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
-      var chanInput = document.createElement('input');
-      chanInput.type = 'text';
-      chanInput.placeholder = 'ID du salon Discord';
-      chanInput.value = cfg.notify_channel_id || '';
-      chanInput.style.cssText = 'flex:1;min-width:150px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.85);padding:5px 9px;font-size:12px;font-family:monospace;outline:none';
-      chanInput.dataset.slug = inst.slug;
-
-      var saveBtn = document.createElement('button');
-      saveBtn.className = 'btn btn-sm';
-      saveBtn.textContent = 'Enregistrer';
-      saveBtn.style.cssText = 'font-size:11px;padding:4px 10px';
-      saveBtn.onclick = (function(input, s) {
-        return async function() {
-          var r = await apiFetch('/api/admin/setup/instances/' + s + '/update-config', {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ notify_channel_id: input.value.trim() })
-          });
-          if (r && r.ok) toast('Canal enregistré', 'success');
-          else toast('Erreur', 'error');
-        };
-      })(chanInput, inst.slug);
-
-      var notifyBtn = document.createElement('button');
-      notifyBtn.className = 'btn btn-sm';
-      notifyBtn.textContent = '🔔 Notifier';
-      notifyBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(6,182,212,0.9)';
-      notifyBtn.onclick = (function(s) {
-        return async function() {
-          var r = await apiFetch('/api/admin/setup/instances/' + s + '/notify-update', { method: 'POST' });
-          if (r && r.ok) toast('Notification envoyée à ' + s, 'success');
-          else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
-        };
-      })(inst.slug);
-
-      updateRow.appendChild(chanInput);
-      updateRow.appendChild(saveBtn);
-      updateRow.appendChild(notifyBtn);
-
-      if (inst.update_available) {
-        var cancelUpdateBtn = document.createElement('button');
-        cancelUpdateBtn.className = 'btn btn-sm';
-        cancelUpdateBtn.textContent = '✓ Publiée — Annuler';
-        cancelUpdateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(34,197,94,0.9)';
-        cancelUpdateBtn.onclick = (function(s) {
-          return async function() {
-            var r = await apiFetch('/api/admin/setup/instances/' + s + '/publish-update', { method: 'DELETE' });
-            if (r && r.ok) { toast('Update annulée pour ' + s, 'success'); setTimeout(loadInstances, 500); }
-            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
-          };
-        })(inst.slug);
-        updateRow.appendChild(cancelUpdateBtn);
-        var applyUpdateBtn = document.createElement('button');
-        applyUpdateBtn.className = 'btn btn-sm';
-        applyUpdateBtn.textContent = '🚀 Appliquer';
-        applyUpdateBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9);margin-left:4px';
-        applyUpdateBtn.onclick = (function(s, btn) {
-          return async function() {
-            btn.disabled = true; btn.textContent = '⏳ En cours…';
-            var r = await apiFetch('/api/admin/setup/instances/' + s + '/update', { method: 'POST' });
-            if (r && r.ok) { toast('Mise à jour lancée pour ' + s + ' — redémarrage en cours', 'success'); setTimeout(loadInstances, 3000); }
-            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); btn.disabled = false; btn.textContent = '🚀 Appliquer'; }
-          };
-        })(inst.slug, applyUpdateBtn);
-        updateRow.appendChild(applyUpdateBtn);
-      } else {
-        var publishBtn = document.createElement('button');
-        publishBtn.className = 'btn btn-sm';
-        publishBtn.textContent = '📤 Publier update';
-        publishBtn.style.cssText = 'font-size:11px;padding:4px 10px;color:rgba(251,191,36,0.9)';
-        publishBtn.onclick = (function(s) {
-          return async function() {
-            var r = await apiFetch('/api/admin/setup/instances/' + s + '/publish-update', { method: 'POST' });
-            if (r && r.ok) { toast('Update publiée pour ' + s, 'success'); setTimeout(loadInstances, 500); }
-            else { var d = r ? await r.json() : {}; toast('Erreur : ' + (d.detail || '?'), 'error'); }
-          };
-        })(inst.slug);
-        updateRow.appendChild(publishBtn);
-      }
-      card.appendChild(updateRow);
-      el.appendChild(card);
-    }
-  } catch(e) { console.error('loadInstances', e); }
-}
-
-async function notifyAllInstancesUpdate() {
-  var r = await apiFetch('/api/admin/setup/notify-all-updates', { method: 'POST' });
-  if (!r || !r.ok) { toast('Erreur lors de la notification', 'error'); return; }
-  var data = await r.json();
-  var ok = data.results.filter(function(x) { return x.ok; }).length;
-  var fail = data.results.length - ok;
-  toast(ok + ' notification(s) envoyée(s)' + (fail ? ', ' + fail + ' erreur(s)' : ''), fail ? 'error' : 'success');
-}
 
 async function generateInvite() {
   try {
@@ -7781,50 +7444,26 @@ async function revokeInvite(token) {
   loadInvites();
 }
 
-async function instanceAction(slug, action) {
-  var r = await apiFetch('/api/admin/setup/instances/' + slug + '/' + action, { method: 'POST' });
-  if (r && r.ok) {
-    toast('Instance ' + slug + ' : ' + action, 'success');
-  } else {
-    toast('Erreur action ' + action, 'error');
-  }
-  setTimeout(loadInstances, 1500);
-}
-
 // ── Prompts & Persona Management ─────────────────────────────────────────────
 
 var _promptsData = null;        // { persona: {}, system_prompts: {} }
-var _promptsInstance = 'main';  // 'main' | slug
 var _promptsSection = 'persona'; // 'persona' | 'system'
 var _promptsFile = null;
-var _promptsInstances = [];
 
 async function renderPromptsTab() {
   var el = document.getElementById('tab-admin-prompts');
   if (!el) return;
   el.innerHTML = '<div style="padding:24px;color:rgba(255,255,255,0.4)">Chargement...</div>';
 
-  // Charger instances + config modèles en parallèle
-  var [ri] = await Promise.all([
-    apiFetch('/api/admin/setup/instances'),
-    _loadPromptsModels(),
-  ]);
-  _promptsInstances = (ri && ri.ok) ? (await ri.json()).instances || [] : [];
+  await _loadPromptsModels();
 
   await _loadPromptsData();
   _renderPromptsUI(el);
 }
 
 async function _loadPromptsData() {
-  if (_promptsInstance === 'main') {
-    var r = await apiFetch('/api/admin/prompts');
-    _promptsData = (r && r.ok) ? await r.json() : { persona: {}, system_prompts: {} };
-  } else {
-    var r2 = await apiFetch('/api/admin/setup/instances/' + _promptsInstance + '/persona');
-    var personaData = (r2 && r2.ok) ? (await r2.json()).persona : {};
-    _promptsData = { persona: personaData, system_prompts: {} };
-  }
-  // Sélectionner le premier fichier si aucun sélectionné ou si fichier invalide
+  var r = await apiFetch('/api/admin/prompts');
+  _promptsData = (r && r.ok) ? await r.json() : { persona: {}, system_prompts: {} };
   var files = _promptsSection === 'persona'
     ? Object.keys(_promptsData.persona)
     : Object.keys(_promptsData.system_prompts);
@@ -7841,12 +7480,6 @@ function _renderPromptsUI(el) {
     ? (_promptsSection === 'persona' ? _promptsData.persona[_promptsFile] : _promptsData.system_prompts[_promptsFile])
     : '';
 
-  // Sélecteur de bot
-  var instanceOpts = '<option value="main">Bot principal</option>';
-  _promptsInstances.forEach(function(inst) {
-    instanceOpts += '<option value="' + inst.slug + '"' + (_promptsInstance === inst.slug ? ' selected' : '') + '>' + inst.slug + '</option>';
-  });
-
   // Liste de fichiers
   var fileList = currentFiles.map(function(f) {
     return '<div class="prompt-file-item' + (f === _promptsFile ? ' active' : '') + '" onclick="selectPromptFile(\'' + f + '\')">' + f.replace('.md','') + '</div>';
@@ -7857,12 +7490,9 @@ function _renderPromptsUI(el) {
       <!-- Toolbar -->
       <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap">
         <div class="card-title" style="margin:0;flex:0 0 auto">PROMPTS</div>
-        <select onchange="switchPromptsInstance(this.value)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.87);padding:5px 10px;font-size:13px">
-          ${instanceOpts}
-        </select>
         <div class="mem-subnav" style="margin-bottom:0;margin-left:auto">
           <button class="mem-subnav-pill ${_promptsSection==='persona'?'active':''}" onclick="switchPromptsSection('persona')">Persona</button>
-          ${_promptsInstance === 'main' ? '<button class="mem-subnav-pill ' + (_promptsSection==='system'?'active':'') + '" onclick="switchPromptsSection(\'system\')">Système</button>' : ''}
+          <button class="mem-subnav-pill ${_promptsSection==='system'?'active':''}" onclick="switchPromptsSection('system')">Système</button>
         </div>
       </div>
       <!-- Body -->
@@ -8000,14 +7630,6 @@ function selectPromptFile(filename) {
   _renderPromptsUI(document.getElementById('tab-admin-prompts'));
 }
 
-async function switchPromptsInstance(val) {
-  _promptsInstance = val;
-  _promptsSection = 'persona';
-  _promptsFile = null;
-  await _loadPromptsData();
-  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
-}
-
 async function switchPromptsSection(section) {
   _promptsSection = section;
   _promptsFile = null;
@@ -8022,15 +7644,9 @@ async function savePromptFile() {
   status.textContent = 'Sauvegarde...';
   status.style.color = 'rgba(255,255,255,0.4)';
 
-  var url, r;
-  if (_promptsInstance === 'main') {
-    var type = _promptsSection === 'persona' ? 'persona' : 'system';
-    url = '/api/admin/prompts/' + type + '/' + _promptsFile;
-  } else {
-    url = '/api/admin/setup/instances/' + _promptsInstance + '/persona/' + _promptsFile;
-  }
-
-  r = await apiFetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ content }) });
+  var type = _promptsSection === 'persona' ? 'persona' : 'system';
+  var url = '/api/admin/prompts/' + type + '/' + _promptsFile;
+  var r = await apiFetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ content }) });
   if (r && r.ok) {
     // Mettre à jour le cache local
     if (_promptsSection === 'persona') _promptsData.persona[_promptsFile] = content;
