@@ -104,6 +104,9 @@ class UpdateChecker:
                     if tr.status_code != 200:
                         return None
                     token = tr.json().get("token", "")
+                    if not token:
+                        logger.warning("UpdateChecker: GHCR token vide")
+                        return None
                     r = await client.get(manifest_url, headers={"Accept": accept, "Authorization": f"Bearer {token}"})
                 if r.status_code == 200:
                     return r.headers.get("Docker-Content-Digest")
