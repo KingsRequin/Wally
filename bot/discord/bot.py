@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -146,7 +147,7 @@ class WallyDiscord(commands.Bot):
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            from bot.core.provisioner import INSTANCES_DIR
+            INSTANCES_DIR = Path("/opt/stacks/wally-instances")
             compose_path = INSTANCES_DIR / slug / "docker-compose.yml"
             if not compose_path.exists():
                 await interaction.followup.send(f"Instance `{slug}` introuvable.", ephemeral=True)

@@ -110,6 +110,7 @@ llm:
 | `memory_search_min_score` | `0.5` | Score Qdrant minimum pour les reponses normales |
 | `memory_context_max_tokens` | `800` | Budget tokens pour le bloc memoire dans le prompt |
 | `spontaneous_memory_probability` | `0.2` | Chance de rappel spontane sur souvenir pertinent |
+| `update_image` | `""` | Référence image GHCR pour la détection auto de mise à jour (ex: `ghcr.io/user/wally-ai:latest`) |
 
 ### Section `discord`
 
@@ -175,7 +176,7 @@ Accessible sur le port `8080`. Deux modes :
 - **Overlay** : controle overlay OBS pour images
 - **Couts** : graphes de couts API par modele/periode
 - **Actions** : taches planifiees, permissions par role
-- **Barre de controle** : statut Discord/Twitch, boutons stop/start, restart container
+- **Barre de controle** : statut Discord/Twitch, boutons stop/start, bouton "Mise à jour disponible" (amber, auto-détecté via GHCR)
 
 ---
 
@@ -230,9 +231,24 @@ bot/
 
 ## Docker
 
-Trois services : `wally` (bot principal), `qdrant` (base vectorielle), `cloudflared` (tunnel optionnel).
+Deux services : `wally` (bot principal) et `qdrant` (base vectorielle). `cloudflared` peut être ajouté optionnellement pour un tunnel.
 
-Le socket Docker est monte dans le container Wally pour permettre le restart depuis le dashboard.
+Le socket Docker est monte dans le container Wally pour permettre le restart et la mise à jour depuis le dashboard.
+
+---
+
+## Mise à jour
+
+Configurer `bot.update_image` dans `config.yaml` avec la référence de l'image GHCR :
+
+```yaml
+bot:
+  update_image: "ghcr.io/ton-user/wally-ai:latest"
+```
+
+Le bot vérifie toutes les heures si une nouvelle image est disponible. Quand c'est le cas, un bouton amber "Mise à jour disponible" apparaît dans le panel admin. Un clic déclenche `docker compose pull && docker compose up -d --force-recreate` — le container se recrée avec la nouvelle image.
+
+Laisser `update_image` vide pour désactiver le polling.
 
 ---
 
