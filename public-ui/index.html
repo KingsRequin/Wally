@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wally</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="app-shell">
+    <nav class="tab-nav">
+      <div class="tab-nav-inner">
+        <button class="tab-btn active" data-tab="status">
+          <span class="tab-icon">●</span> Statut
+        </button>
+        <button class="tab-btn" data-tab="chat">
+          <span class="tab-icon">◎</span> Chat
+        </button>
+        <button class="tab-btn" data-tab="gallery">
+          <span class="tab-icon">◫</span> Galerie
+        </button>
+        <button class="tab-btn" data-tab="journal">
+          <span class="tab-icon">◈</span> Journal
+        </button>
+        <button class="tab-btn" data-tab="about">
+          <span class="tab-icon">◇</span> À propos
+        </button>
+      </div>
+    </nav>
+
+    <main id="tab-content"></main>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box" id="modal-box">
+      <button class="modal-close" id="modal-close">✕</button>
+      <img class="modal-img" id="modal-img" src="" alt="">
+      <div class="modal-caption" id="modal-caption"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
