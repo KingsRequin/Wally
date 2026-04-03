@@ -1344,6 +1344,17 @@ class Database:
             return None
         return {"date": row["date"], "content": row["content"], "word_count": int(row["word_count"])}
 
+    async def get_journal_entries(self, limit: int = 30) -> list[dict]:
+        """Retourne les N dernières entrées du journal archivé."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT date, content, word_count, created_at FROM journal_archive ORDER BY date DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
     # ── Emotion averages ──────────────────────────────────────────────────
 
     async def get_emotion_averages(self, since: float) -> dict | None:
