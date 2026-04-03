@@ -3,6 +3,7 @@ import { emotions, onEmotionUpdate } from '../app.js';
 
 let _pollInterval = null;
 let _container = null;
+let _unsubEmo = null;
 
 const EMO_COLORS = {
   anger: '#ef4444', joy: '#eab308', curiosity: '#22c55e',
@@ -192,11 +193,12 @@ async function fetchAndRender() {
 }
 
 export function mount(el) {
+  clearInterval(_pollInterval);
   _container = el;
   fetchAndRender();
   _pollInterval = setInterval(fetchAndRender, 30000);
 
-  onEmotionUpdate((emo) => {
+  _unsubEmo = onEmotionUpdate((emo) => {
     const barsEl = document.getElementById('status-emo-bars');
     if (!barsEl) return;
     barsEl.textContent = '';
@@ -211,4 +213,5 @@ export function unmount() {
   clearInterval(_pollInterval);
   _pollInterval = null;
   _container = null;
+  if (_unsubEmo) { _unsubEmo(); _unsubEmo = null; }
 }

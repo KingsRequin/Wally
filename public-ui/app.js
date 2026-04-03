@@ -8,7 +8,13 @@ import { mount as mountAbout, unmount as unmountAbout } from './tabs/about.js';
 // ── Shared emotion state ──
 export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
 const emotionListeners = [];
-export function onEmotionUpdate(fn) { emotionListeners.push(fn); }
+export function onEmotionUpdate(fn) {
+  emotionListeners.push(fn);
+  return () => {
+    const i = emotionListeners.indexOf(fn);
+    if (i !== -1) emotionListeners.splice(i, 1);
+  };
+}
 function notifyEmotions() { emotionListeners.forEach(fn => fn({ ...emotions })); }
 
 // ── SSE emotions ──

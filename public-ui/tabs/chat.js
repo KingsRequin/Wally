@@ -3,6 +3,7 @@ import { emotions, onEmotionUpdate } from '../app.js';
 
 let _ws = null;
 let _container = null;
+let _unsubEmo = null;
 
 const EMO_COLORS = { anger:'#ef4444', joy:'#eab308', curiosity:'#22c55e', sadness:'#3b82f6', boredom:'#a855f7' };
 const EMO_LABELS = { anger:'Colère', joy:'Joie', curiosity:'Curiosité', sadness:'Tristesse', boredom:'Ennui' };
@@ -45,7 +46,7 @@ function buildLoginGate() {
 
   const btn = document.createElement('a');
   btn.className = 'discord-btn';
-  btn.href = '/auth/discord';
+  btn.href = '/api/chat/auth/login';
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
@@ -313,6 +314,29 @@ export function mount(el) {
   _container = el;
   el.textContent = '';
 
+  // Handle OAuth callback: exchange code for JWT
+  const urlParams = new URLSearchParams(location.search);
+  const oauthCode = urlParams.get('code');
+  if (oauthCode) {
+    // Clean up URL
+    history.replaceState({}, '', location.pathname + location.hash);
+    fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(oauthCode))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.token) {
+          localStorage.setItem('discord_jwt', data.token);
+        }
+        mount(el);
+      })
+      .catch(() => mount(el));
+    el.textContent = '';
+    const loading = document.createElement('div');
+    loading.className = 'empty-state';
+    loading.textContent = 'Connexion en cours…';
+    el.appendChild(loading);
+    return;
+  }
+
   const token = getToken();
   if (!token) {
     el.appendChild(buildLoginGate());
@@ -322,7 +346,8 @@ export function mount(el) {
   // Decode JWT to get user info (basic, no verify — server validates)
   let user = { username: 'Utilisateur', avatar_url: '' };
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(b64));
     user.username = payload.username || payload.sub || 'Utilisateur';
     user.avatar_url = payload.avatar_url || '';
   } catch (_) {}
@@ -330,7 +355,7 @@ export function mount(el) {
   el.appendChild(buildChatLayout(user));
 
   // Live avatar updates
-  onEmotionUpdate((emo) => {
+  _unsubEmo = onEmotionUpdate((emo) => {
     const avatarEl = document.getElementById('chat-wally-avatar');
     if (avatarEl) avatarEl.src = getAvatarUrl(emo);
 
@@ -368,4 +393,5 @@ export function mount(el) {
 export function unmount() {
   if (_ws) { _ws.close(); _ws = null; }
   _container = null;
+  if (_unsubEmo) { _unsubEmo(); _unsubEmo = null; }
 }
