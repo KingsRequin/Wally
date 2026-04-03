@@ -63,6 +63,7 @@ class JournalEntry:
     date_str: str
     parts: list[str] = field(default_factory=list)
     last_ts: float = 0.0
+    chart_path: str | None = None  # local path after download
 
     def full_content(self) -> str:
         return "\n\n".join(p.strip() for p in self.parts if p.strip())
@@ -101,12 +102,13 @@ async def run(limit: int) -> None:
 
         print(f"→ Lecture de {limit} messages depuis #{channel.name} (oldest_first)…")
 
-        # Collect all bot messages oldest→newest
+        # Collect all bot messages oldest→newest (text + image attachments)
         bot_id = client.user.id
         raw_messages: list[discord.Message] = []
         async for msg in channel.history(limit=limit, oldest_first=True):
-            if msg.author.id == bot_id and msg.content.strip():
-                raw_messages.append(msg)
+            if msg.author.id == bot_id:
+                if msg.content.strip() or msg.attachments:
+                    raw_messages.append(msg)
 
         print(f"  {len(raw_messages)} messages du bot trouvés")
 
@@ -129,19 +131,37 @@ async def run(limit: int) -> None:
                     skipped += 1
                     current = None
                     continue
-                # Body = everything after the first line
                 body = content.split("\n", 1)[1].strip() if "\n" in content else ""
                 current = JournalEntry(date_str=date_str, parts=[body] if body else [], last_ts=ts)
                 entries.append(current)
 
-            elif current is not None:
-                # Check time gap — if within window, append as continuation
-                if ts - current.last_ts <= MAX_GAP_SECONDS:
+            elif current is not None and ts - current.last_ts <= MAX_GAP_SECONDS:
+                # Emotion chart: "# Historique de mes émotions" + attachment — download via Discord
+                if content.startswith("# Historique") and msg.attachments:
+                    img_att = next(
+                        (a for a in msg.attachments if not a.content_type or 'image' in a.content_type),
+                        msg.attachments[0] if msg.attachments else None,
+                    )
+                    if img_att and current.chart_path is None:
+                        charts_dir = Path("data/journal_charts")
+                        charts_dir.mkdir(parents=True, exist_ok=True)
+                        chart_file = charts_dir / f"{current.date_str}.png"
+                        if not chart_file.exists():
+                            print(f"    → téléchargement chart {current.date_str}…")
+                            try:
+                                await img_att.save(chart_file)
+                                print(f"    ✓ chart OK ({chart_file.stat().st_size // 1024} Ko)")
+                            except Exception as e:
+                                print(f"    ⚠ chart : {e}")
+                                chart_file = None
+                        if chart_file and chart_file.exists():
+                            current.chart_path = str(chart_file)
+                    current.last_ts = ts
+                elif content:
                     current.parts.append(content)
                     current.last_ts = ts
-                else:
-                    # Gap too large — not part of this journal
-                    current = None
+            else:
+                current = None
 
         print(f"  {len(entries)} entrées de journal détectées\n")
 
@@ -150,14 +170,16 @@ async def run(limit: int) -> None:
                 full = entry.full_content()
                 wc = entry.word_count()
                 await db.execute(
-                    "INSERT INTO journal_archive (date, content, word_count, created_at) "
-                    "VALUES (?, ?, ?, ?) "
+                    "INSERT INTO journal_archive (date, content, word_count, created_at, chart_path) "
+                    "VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT(date) DO UPDATE SET content=excluded.content, "
-                    "word_count=excluded.word_count, created_at=excluded.created_at",
-                    (entry.date_str, full, wc, time.time()),
+                    "word_count=excluded.word_count, created_at=excluded.created_at, "
+                    "chart_path=COALESCE(excluded.chart_path, chart_path)",
+                    (entry.date_str, full, wc, time.time(), entry.chart_path),
                 )
                 imported += 1
-                print(f"  ✓ {entry.date_str}  ({wc} mots, {len(entry.parts)} partie(s))")
+                chart_info = " + chart" if entry.chart_path else ""
+                print(f"  ✓ {entry.date_str}  ({wc} mots, {len(entry.parts)} partie(s)){chart_info}")
             await db.commit()
 
         print(f"\nImport terminé : {imported} entrées importées, {skipped} ignorées.")

@@ -150,6 +150,18 @@ function renderEntryCard(entry) {
   body.className = 'entry-body';
   renderMarkdown(entry.content || '', body);
   card.appendChild(body);
+
+  if (entry.has_chart) {
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'entry-chart';
+    const chartImg = document.createElement('img');
+    chartImg.src = `/api/public/journal/${entry.date}/chart`;
+    chartImg.alt = 'Historique des émotions';
+    chartImg.loading = 'lazy';
+    chartWrap.appendChild(chartImg);
+    card.appendChild(chartWrap);
+  }
+
   return card;
 }
 

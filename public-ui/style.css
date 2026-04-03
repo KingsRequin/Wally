@@ -364,6 +364,14 @@ body {
 .entry-body strong { color: rgba(255,255,255,0.9); }
 .entry-body em { color: rgba(255,255,255,0.6); font-style: italic; }
 .entry-body s { color: rgba(255,255,255,0.35); }
+.entry-chart {
+  padding: 0 18px 18px;
+}
+.entry-chart img {
+  width: 100%; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: block;
+}
 
 /* ── About tab ── */
 .pipeline {

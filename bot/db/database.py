@@ -434,6 +434,12 @@ class Database:
             await conn.commit()
         except Exception:
             pass
+        # Migration: add chart_path to journal_archive
+        try:
+            await conn.execute("ALTER TABLE journal_archive ADD COLUMN chart_path TEXT DEFAULT NULL")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass  # colonne déjà présente
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
@@ -1320,13 +1326,14 @@ class Database:
 
     # ── Journal archive ────────────────────────────────────────────────────
 
-    async def insert_journal(self, date: str, content: str, word_count: int) -> None:
+    async def insert_journal(self, date: str, content: str, word_count: int, chart_path: str | None = None) -> None:
         await self.execute(
-            "INSERT INTO journal_archive (date, content, word_count, created_at) "
-            "VALUES (?, ?, ?, ?) "
+            "INSERT INTO journal_archive (date, content, word_count, created_at, chart_path) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(date) DO UPDATE SET content=excluded.content, "
-            "word_count=excluded.word_count, created_at=excluded.created_at",
-            (date, content, word_count, time.time()),
+            "word_count=excluded.word_count, created_at=excluded.created_at, "
+            "chart_path=COALESCE(excluded.chart_path, chart_path)",
+            (date, content, word_count, time.time(), chart_path),
         )
 
     async def get_yesterday_journal(self, today: str | None = None) -> dict | None:
@@ -1347,7 +1354,7 @@ class Database:
     async def get_journal_entries(self, limit: int = 30) -> list[dict]:
         """Retourne les N dernières entrées du journal archivé."""
         rows = await self.fetch_all(
-            "SELECT date, content, word_count, created_at FROM journal_archive ORDER BY date DESC LIMIT ?",
+            "SELECT date, content, word_count, created_at, chart_path FROM journal_archive ORDER BY date DESC LIMIT ?",
             (limit,),
         )
         result = []

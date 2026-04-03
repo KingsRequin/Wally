@@ -600,8 +600,18 @@ class DailyJournal:
         if archive and self._db is not None:
             try:
                 word_count = len(journal_text.split())
+                # Save emotion chart PNG to disk if available
+                chart_path: str | None = None
+                if chart_buf is not None:
+                    from pathlib import Path
+                    charts_dir = Path("data/journal_charts")
+                    charts_dir.mkdir(parents=True, exist_ok=True)
+                    chart_file = charts_dir / f"{effective_date.isoformat()}.png"
+                    chart_buf.seek(0)
+                    chart_file.write_bytes(chart_buf.read())
+                    chart_path = str(chart_file)
                 await self._db.insert_journal(
-                    effective_date.isoformat(), journal_text, word_count,
+                    effective_date.isoformat(), journal_text, word_count, chart_path,
                 )
                 logger.info("Journal archived ({n} words)", n=word_count)
             except Exception as exc:
