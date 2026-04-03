@@ -228,16 +228,12 @@ function buildEdgeTooltip(edge) {
   frag.appendChild(countEl);
 
   const facts = (edge.facts || []).slice(0, 3);
-  if (facts.length) {
-    const ul = document.createElement('ul');
-    ul.style.cssText = 'margin:4px 0 0;padding-left:14px;font-size:0.68rem;color:rgba(255,255,255,0.6);line-height:1.5;';
-    facts.forEach(f => {
-      const li = document.createElement('li');
-      li.textContent = f.length > 80 ? f.slice(0, 80) + '…' : f;
-      ul.appendChild(li);
-    });
-    frag.appendChild(ul);
-  }
+  facts.forEach(f => {
+    const row = document.createElement('div');
+    row.style.cssText = 'font-size:0.68rem;color:rgba(255,255,255,0.6);line-height:1.4;margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.08);';
+    row.textContent = f.length > 90 ? f.slice(0, 90) + '…' : f;
+    frag.appendChild(row);
+  });
   return frag;
 }
 
