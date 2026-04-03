@@ -1346,14 +1346,18 @@ class Database:
 
     async def get_journal_entries(self, limit: int = 30) -> list[dict]:
         """Retourne les N dernières entrées du journal archivé."""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT date, content, word_count, created_at FROM journal_archive ORDER BY date DESC LIMIT ?",
-                (limit,),
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        rows = await self.fetch_all(
+            "SELECT date, content, word_count, created_at FROM journal_archive ORDER BY date DESC LIMIT ?",
+            (limit,),
+        )
+        result = []
+        for row in rows:
+            entry = dict(row)
+            if entry.get("created_at") and isinstance(entry["created_at"], (int, float)):
+                from datetime import datetime, timezone
+                entry["created_at"] = datetime.fromtimestamp(entry["created_at"], tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+            result.append(entry)
+        return result
 
     # ── Emotion averages ──────────────────────────────────────────────────
 
