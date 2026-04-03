@@ -199,7 +199,8 @@ function hitTestEdge(edges, mx, my, W, H) {
 
 function buildNodeTooltip(node) {
   const frag = document.createDocumentFragment();
-  const nameEl = document.createElement('strong');
+  const nameEl = document.createElement('div');
+  nameEl.style.cssText = 'font-weight:600;';
   nameEl.textContent = node.name;
   frag.appendChild(nameEl);
   if (node.summary) {
