@@ -19,6 +19,19 @@ if TYPE_CHECKING:
     from bot.dashboard.state import AppState
 
 router = APIRouter()
+public_router = APIRouter()
+
+
+def _extract_user_id_from_jwt(request: Request) -> str | None:
+    """Returns 'discord:{discord_id}' from the Bearer JWT, or None if invalid/missing."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    payload = decode_jwt(token, _jwt_secret_raw())
+    if not payload:
+        return None
+    return f"discord:{payload['discord_id']}"
 
 
 @dataclass
@@ -493,6 +506,33 @@ async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser, quer
     except Exception as exc:
         logger.error("/scan web-chat failed: {e}", e=exc)
         await _send_to(ws, {"type": "system", "content": f"❌ Erreur: {exc}"})
+
+
+@public_router.get("/memory/me")
+async def get_my_memory(request: Request) -> dict:
+    """Retourne les souvenirs et scores de relation de l'utilisateur connecté."""
+    user_id = _extract_user_id_from_jwt(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    state = request.app.state.wally
+    records = await state.memory.store.get_all(user_id)
+
+    facts = [r.text for r in records if r.category in ("FAIT", "LANG")]
+    preferences = [r.text for r in records if r.category == "PREF"]
+
+    parts = user_id.split(":", 1)
+    platform = parts[0] if len(parts) == 2 else "discord"
+    raw_id = parts[1] if len(parts) == 2 else user_id
+
+    trust = await state.db.get_trust_score(platform, raw_id)
+    love = await state.db.get_love_score(platform, raw_id)
+
+    return {
+        "facts": facts,
+        "preferences": preferences,
+        "relation": {"trust": round(trust, 3), "love": round(love, 3)},
+    }
 
 
 async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.0) -> None:
