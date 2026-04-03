@@ -177,6 +177,12 @@ async def main() -> None:
         _bot_names = frozenset(n.lower() for n in config.bot.trigger_names)
         discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id, bot_names=_bot_names)
         discord_bot.social.start()
+
+    # Community detection nocturne
+    from bot.core.graph_jobs import schedule_community_detection
+    if graph.ready:
+        schedule_community_detection(graph, shared_scheduler)
+
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
