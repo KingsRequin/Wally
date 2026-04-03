@@ -89,3 +89,65 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 window.addEventListener('hashchange', route);
 route();
+
+// ── Stars canvas ──
+(function initStars() {
+  const canvas = document.getElementById('stars');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const stars = [];
+  for (let i = 0; i < 130; i++) {
+    stars.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r: Math.random() * 1.3 + 0.3,
+      alpha: Math.random(),
+      da: (Math.random() * 0.004 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: (Math.random() - 0.5) * 0.15,
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of stars) {
+      // Gentle mouse attraction — force proportional to 1/dist, capped
+      const distX = mouse.x - s.x;
+      const distY = mouse.y - s.y;
+      const dist = Math.sqrt(distX * distX + distY * distY) || 1;
+      const force = Math.min(60 / (dist * dist), 0.012);
+      s.vx += distX * force;
+      s.vy += distY * force;
+      // Dampen velocity
+      s.vx *= 0.97;
+      s.vy *= 0.97;
+      s.x += s.vx;
+      s.y += s.vy;
+      // Wrap around edges
+      if (s.x < 0) s.x = canvas.width;
+      if (s.x > canvas.width) s.x = 0;
+      if (s.y < 0) s.y = canvas.height;
+      if (s.y > canvas.height) s.y = 0;
+      // Twinkle
+      s.alpha += s.da;
+      if (s.alpha <= 0.05 || s.alpha >= 1) s.da = -s.da;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, s.alpha)).toFixed(3)})`;
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}());

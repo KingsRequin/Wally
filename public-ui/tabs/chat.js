@@ -316,15 +316,16 @@ export function mount(el) {
 
   // Handle OAuth callback: exchange code for JWT
   const urlParams = new URLSearchParams(location.search);
-  const oauthCode = urlParams.get('code');
+  const oauthCode = urlParams.get('chat_code');
   if (oauthCode) {
     // Clean up URL
     history.replaceState({}, '', location.pathname + location.hash);
     fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(oauthCode))
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data && data.token) {
-          localStorage.setItem('discord_jwt', data.token);
+        if (data && data.jwt) {
+          localStorage.setItem('discord_jwt', data.jwt);
+          if (data.refresh_token) localStorage.setItem('discord_refresh', data.refresh_token);
         }
         mount(el);
       })

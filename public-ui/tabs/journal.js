@@ -45,7 +45,7 @@ function renderEntryCard(entry) {
   left.appendChild(dateEl);
   const subEl = document.createElement('div');
   subEl.className = 'entry-sub-text';
-  subEl.textContent = (entry.word_count || 0) + ' mots · généré à 23h00';
+  subEl.textContent = (entry.word_count || 0) + ' mots · généré à 21h00';
   left.appendChild(subEl);
   header.appendChild(left);
 
@@ -99,7 +99,7 @@ export function mount(el) {
         const empty = document.createElement('div');
         empty.className = 'empty-state glass';
         empty.style.padding = '40px';
-        empty.textContent = "Aucune entrée de journal pour l'instant.";
+        empty.textContent = "Le journal est généré chaque soir à 21h00. Aucune entrée pour le moment.";
         el.appendChild(empty);
         return;
       }

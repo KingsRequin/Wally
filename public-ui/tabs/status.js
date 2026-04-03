@@ -68,14 +68,14 @@ function renderStatus(el, status, stream) {
   const discordLine = document.createElement('div');
   discordLine.style.marginBottom = '6px';
   const discordDot = document.createElement('span');
-  discordDot.className = 'dot ' + (status.discord_connected ? 'dot-on' : 'dot-off');
+  discordDot.className = 'dot ' + (status.discord_online ? 'dot-on' : 'dot-off');
   discordLine.appendChild(discordDot);
   discordLine.appendChild(document.createTextNode('Discord'));
   cardConn.appendChild(discordLine);
 
   const twitchLine = document.createElement('div');
   const twitchDot = document.createElement('span');
-  twitchDot.className = 'dot ' + (status.twitch_connected ? 'dot-on' : 'dot-off');
+  twitchDot.className = 'dot ' + (status.twitch_online ? 'dot-on' : 'dot-off');
   twitchLine.appendChild(twitchDot);
   twitchLine.appendChild(document.createTextNode('Twitch'));
   cardConn.appendChild(twitchLine);
@@ -97,11 +97,11 @@ function renderStatus(el, status, stream) {
   cardMsg.appendChild(msgLabel);
   const msgVal = document.createElement('div');
   msgVal.className = 'card-value';
-  msgVal.textContent = (status.messages_processed || 0).toLocaleString('fr');
+  msgVal.textContent = (status.total_messages || 0).toLocaleString('fr');
   cardMsg.appendChild(msgVal);
   const msgSub = document.createElement('div');
   msgSub.className = 'card-sub';
-  msgSub.textContent = 'Discord : ' + (status.discord_messages || 0) + ' · Web : ' + (status.web_messages || 0);
+  msgSub.textContent = 'Discord : ' + (status.messages_discord || 0) + ' · Twitch : ' + (status.messages_twitch || 0) + ' · Web : ' + (status.messages_web || 0);
   cardMsg.appendChild(msgSub);
   grid.appendChild(cardMsg);
 

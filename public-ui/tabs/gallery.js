@@ -12,7 +12,7 @@ function buildGalleryItem(img, delay) {
   item.style.animationDelay = (delay * 0.05) + 's';
 
   const imgEl = document.createElement('img');
-  imgEl.src = img.url;
+  imgEl.src = `/api/public/gallery/${img.id}/image`;
   imgEl.alt = img.prompt || '';
   imgEl.loading = 'lazy';
   item.appendChild(imgEl);
@@ -32,12 +32,12 @@ function buildGalleryItem(img, delay) {
 
   item.appendChild(overlay);
 
-  item.addEventListener('click', () => openModal(img.url, img.prompt || ''));
+  item.addEventListener('click', () => openModal(`/api/public/gallery/${img.id}/image`, img.prompt || ''));
   return item;
 }
 
 async function loadImages(grid, append) {
-  const res = await fetch(`/api/public/gallery?limit=${LIMIT}&offset=${_offset}&sort=${_sort}`)
+  const res = await fetch(`/api/public/gallery?limit=${LIMIT}&offset=${_offset}&sort_by=${_sort}`)
     .then(r => r.json())
     .catch(() => ({ images: [] }));
 
