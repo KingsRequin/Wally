@@ -20,9 +20,10 @@ class SocialTracker:
     # Voice sessions older than this are considered stale (bot restart, missed leave events)
     _VOICE_SESSION_TTL = 4 * 3600  # 4 hours
 
-    def __init__(self, graph: "GraphService", group_id: str | None = None):
+    def __init__(self, graph: "GraphService", group_id: str | None = None, bot_names: frozenset[str] | None = None):
         self._graph = graph
         self._group_id = group_id
+        self._bot_names: frozenset[str] = bot_names or frozenset()
         # Buffers: (user_a, user_b, signal_type) -> {count, last_seen, metadata}
         self._buffer: dict[tuple[str, str, str], dict[str, Any]] = defaultdict(
             lambda: {"count": 0, "last_seen": 0.0, "metadata": {}}
@@ -32,6 +33,10 @@ class SocialTracker:
         # Active game sessions: game_name -> {display_name}  (for dedup / stop tracking)
         self._active_games: dict[str, set[str]] = defaultdict(set)
         self._flush_task: asyncio.Task | None = None
+
+    def _involves_bot(self, *names: str) -> bool:
+        """Return True if any name matches a known bot identifier."""
+        return bool(self._bot_names) and any(n.lower() in self._bot_names for n in names)
 
     def start(self) -> None:
         """Start the periodic flush loop."""
@@ -95,18 +100,24 @@ class SocialTracker:
     # ── Event handlers ──
 
     def on_reply(self, author_name: str, replied_to_name: str) -> None:
+        if self._involves_bot(author_name, replied_to_name):
+            return
         # Directional: author → target (do NOT normalize alphabetically)
         key = (author_name, replied_to_name, "reply")
         self._buffer[key]["count"] += 1
         self._buffer[key]["last_seen"] = time.time()
 
     def on_mention(self, author_name: str, mentioned_name: str) -> None:
+        if self._involves_bot(author_name, mentioned_name):
+            return
         # Directional: author → target (do NOT normalize alphabetically)
         key = (author_name, mentioned_name, "mention")
         self._buffer[key]["count"] += 1
         self._buffer[key]["last_seen"] = time.time()
 
     def on_reaction(self, reactor_name: str, message_author_name: str) -> None:
+        if self._involves_bot(reactor_name, message_author_name):
+            return
         if reactor_name == message_author_name:
             return
         # Directional: reactor → message author (do NOT normalize alphabetically)
@@ -115,6 +126,8 @@ class SocialTracker:
         self._buffer[key]["last_seen"] = time.time()
 
     def on_thread_message(self, author_name: str, other_participant: str) -> None:
+        if self._involves_bot(author_name, other_participant):
+            return
         if author_name == other_participant:
             return
         a, b = self._key(author_name, other_participant)
@@ -123,6 +136,8 @@ class SocialTracker:
 
     def on_game_start(self, user_name: str, game: str) -> None:
         """Record user starting a game; fire one signal per existing co-player."""
+        if self._involves_bot(user_name):
+            return
         now = time.time()
         for other in self._active_games[game]:
             a, b = self._key(user_name, other)
@@ -134,6 +149,8 @@ class SocialTracker:
 
     def on_game_stop(self, user_name: str, game: str) -> None:
         """Remove user from active game session."""
+        if self._involves_bot(user_name):
+            return
         self._active_games[game].discard(user_name)
         if not self._active_games[game]:
             del self._active_games[game]
@@ -165,10 +182,14 @@ class SocialTracker:
 
     def on_voice_join(self, channel_id: int, user_id: int, display_name: str) -> None:
         """Track when a user joins a voice channel."""
+        if self._involves_bot(display_name):
+            return
         self._voice_sessions[channel_id][user_id] = (time.time(), display_name)
 
     def on_voice_leave(self, channel_id: int, user_id: int, display_name: str) -> None:
         """When a user leaves voice, record co-presence with others still in channel."""
+        if self._involves_bot(display_name):
+            return
         session = self._voice_sessions.get(channel_id, {}).pop(user_id, None)
         if session is None:
             return

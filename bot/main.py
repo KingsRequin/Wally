@@ -174,7 +174,8 @@ async def main() -> None:
     discord_bot.graph = graph
     if graph.ready:
         from bot.discord.social import SocialTracker
-        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id)
+        _bot_names = frozenset(n.lower() for n in config.bot.trigger_names)
+        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id, bot_names=_bot_names)
         discord_bot.social.start()
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search

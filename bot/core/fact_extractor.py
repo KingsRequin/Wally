@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 _MIN_LENGTH = 15
 
+_DISCORD_SYNTAX_RE = re.compile(
+    r"<@[!&]?\d+>|<#\d+>|<:\w+:\d+>|<a:\w+:\d+>|<t:\d+(?::[tTdDfFR])?>"
+)
+
 # URLs that are never memorable (GIF/media/image hosting)
 _MEDIA_URL_RE = re.compile(
     r"https?://(?:"
@@ -274,6 +278,11 @@ class FactExtractor:
         This is a synchronous method that schedules async work; it can be
         called from any synchronous context inside the event loop.
         """
+        # Strip Discord-specific syntax before storing (mentions, channels, emojis, timestamps)
+        content = _DISCORD_SYNTAX_RE.sub("", content).strip()
+        if not content:
+            return
+
         buf = self._get_buffer(channel_id)
         buf["last_activity"] = time.time()
         buf["platform"] = platform

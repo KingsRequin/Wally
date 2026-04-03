@@ -68,7 +68,13 @@ class GraphService:
 
     # ── Pre-ingestion filters ──
 
-    _DISCORD_MENTION_RE = re.compile(r"<@[!&]?\d+>")
+    _DISCORD_SYNTAX_RE = re.compile(
+        r"<@[!&]?\d+>"                      # @user / @role mentions
+        r"|<#\d+>"                           # #channel mentions
+        r"|<:\w+:\d+>"                       # :custom_emoji:
+        r"|<a:\w+:\d+>"                      # :animated_emoji:
+        r"|<t:\d+(?::[tTdDfFR])?>"          # Discord timestamps
+    )
     _EMOJI_ONLY_RE = re.compile(
         r"^[\s"
         r"\U0001f600-\U0001f64f"   # emoticons
@@ -94,8 +100,9 @@ class GraphService:
         text = content.strip()
         if len(text) < cls._MIN_CONTENT_LENGTH:
             return None
-        # Strip Discord mentions (role/user) — they produce garbage entities
-        text = cls._DISCORD_MENTION_RE.sub("", text).strip()
+        # Strip all Discord-specific syntax — they produce garbage entities
+        text = cls._DISCORD_SYNTAX_RE.sub("", text)
+        text = " ".join(text.split())  # normalize multiple spaces
         if len(text) < cls._MIN_CONTENT_LENGTH:
             return None
         # Skip emoji-only
@@ -140,8 +147,9 @@ class GraphService:
                 episode_body=cleaned if is_social else f"{author}: {cleaned}",
                 source_description=(
                     "Signal d'interaction sociale entre utilisateurs Discord. "
-                    "Extraire uniquement les noms de personnes mentionnées et leurs relations. "
-                    "Les noms d'entités doivent être des noms propres uniquement."
+                    "Extraire uniquement les noms de personnes humaines et leurs relations. "
+                    "Ne pas créer d'entité pour des bots, IA, ou assistants virtuels. "
+                    "Les noms d'entités doivent être des prénoms ou pseudos d'utilisateurs réels uniquement."
                 ) if is_social else (
                     f"Conversation francophone sur {source}. "
                     "Extraire les entités (personnes, lieux, sujets) et relations en français. "
