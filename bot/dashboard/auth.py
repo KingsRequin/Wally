@@ -29,6 +29,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in _SSE_EXEMPT:
             return await call_next(request)
 
+        # Langfuse proxy — iframe cannot send Bearer token; Langfuse has its own auth
+        if request.url.path.startswith("/api/admin/langfuse/"):
+            return await call_next(request)
+
         token = self._state.config.bot.dashboard_token
         if not token:
             return JSONResponse(

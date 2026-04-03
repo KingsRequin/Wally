@@ -519,8 +519,7 @@ canvas {
   flex-wrap: wrap;
 }
 
-.graph-range-btn,
-.cost-range-btn {
+.graph-range-btn {
   padding: 4px 12px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -533,14 +532,12 @@ canvas {
   font-family: var(--font);
 }
 
-.graph-range-btn:hover,
-.cost-range-btn:hover {
+.graph-range-btn:hover {
   background: var(--bg-overlay);
   color: var(--text-primary);
 }
 
-.graph-range-btn.active,
-.cost-range-btn.active {
+.graph-range-btn.active {
   background: rgba(88, 166, 255, 0.1);
   color: var(--accent);
   border-color: rgba(88, 166, 255, 0.3);
@@ -1805,45 +1802,6 @@ select option, .neo-select option {
 
 /* ── Costs ────────────────────────────────────────────────────── */
 
-.cost-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.cost-kpi {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.cost-alert-bar {
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  margin-bottom: 16px;
-}
-
-.cost-alert-bar.ok {
-  background: rgba(63, 185, 80, 0.1);
-  border: 1px solid rgba(63, 185, 80, 0.2);
-  color: var(--success);
-}
-
-.cost-alert-bar.warning {
-  background: rgba(210, 158, 11, 0.1);
-  border: 1px solid rgba(210, 158, 11, 0.2);
-  color: var(--warning);
-}
-
-.cost-alert-bar.critical {
-  background: rgba(248, 81, 73, 0.1);
-  border: 1px solid rgba(248, 81, 73, 0.2);
-  color: var(--danger);
-}
 
 /* ── Actions Tab ──────────────────────────────────────────────── */
 
@@ -3042,7 +3000,7 @@ button:focus-visible {
 
   .log-stream { height: calc(100vh - 200px); max-height: 400px; }
 
-  .graph-range-btn, .cost-range-btn {
+  .graph-range-btn {
     min-width: 40px;
     min-height: 36px;
     padding: 6px 12px;

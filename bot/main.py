@@ -59,6 +59,7 @@ async def main() -> None:
     from bot.core.language import LanguageDetector
     from bot.core.journal import DailyJournal
     from bot.core.persona import PersonaService
+    from bot.core.tracing import init_tracing, shutdown_tracing
 
     # ── Load config and database ──────────────────────────────────────────────
     config = Config.load(os.getenv("CONFIG_PATH", "config.yaml"))
@@ -80,6 +81,9 @@ async def main() -> None:
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     await db.sync_memory_users_from_qdrant(qdrant_url)
     logger.info("Memory users sync from Qdrant complete")
+
+    # ── Tracing ──────────────────────────────────────────────────────────────
+    init_tracing()
 
     # ── Core services ─────────────────────────────────────────────────────────
     emotion = EmotionEngine(config, db=db)          # db injecté
@@ -507,6 +511,7 @@ async def main() -> None:
     try:
         await asyncio.gather(*tasks)
     finally:
+        shutdown_tracing()
         await graph.close()
         if update_checker:
             await update_checker.stop()

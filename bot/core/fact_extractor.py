@@ -362,13 +362,15 @@ class FactExtractor:
                 flush_count = _SAFETY_CAP - _PARTIAL_KEEP
                 to_flush = all_messages[:flush_count]
                 to_keep = all_messages[flush_count:]
-                buf["messages"] = to_keep
+                buf["messages"] = to_keep  # cleared before any await — new msgs go here safely
                 cutoff_ts = to_flush[-1]["timestamp"] if to_flush else 0.0
             else:
                 to_flush = all_messages
-                buf["messages"] = []
+                buf["messages"] = []       # cleared before any await — new msgs go here safely
                 buf["reply_chain_active"] = False
-                cutoff_ts = None
+                # Use last message's timestamp so messages appended during the LLM await
+                # (which land in the now-empty buf["messages"]) are NOT deleted by DB cleanup.
+                cutoff_ts = to_flush[-1]["timestamp"] if to_flush else 0.0
 
             if not to_flush:
                 return
@@ -383,7 +385,7 @@ class FactExtractor:
                     e=exc,
                 )
 
-            # Ingest into knowledge graph (non-blocking, fire-and-forget)
+            # Ingest into knowledge graph — throttled to avoid flooding Neo4j
             if self._graph is not None and self._graph.ready:
                 # Discord: server-wide group_id (matches SocialTracker + search)
                 # Twitch: per-channel group_id
@@ -391,23 +393,25 @@ class FactExtractor:
                     gid: str | None = self._config.graphiti.group_id
                 else:
                     gid = f"{platform}:{channel_id.split(':', 1)[-1]}"
-                for msg in to_flush:
-                    self._fire(self._graph.add_episode(
-                        content=msg.get("content", ""),
-                        author=msg.get("author", "unknown"),
-                        source=platform,
-                        group_id=gid,
-                    ))
+                _sem = asyncio.Semaphore(3)  # max 3 concurrent Neo4j calls per flush
 
-            # Clean up DB
-            if self._db is not None:
-                try:
-                    if partial and cutoff_ts is not None:
-                        await self._db.delete_session_messages_before(
-                            channel_id, cutoff_ts
+                async def _ingest(msg: dict) -> None:
+                    async with _sem:
+                        await self._graph.add_episode(
+                            content=msg.get("content", ""),
+                            author=msg.get("display_name", ""),
+                            source=platform,
+                            group_id=gid,
                         )
-                    else:
-                        await self._db.delete_session_messages(channel_id)
+
+                for msg in to_flush:
+                    self._fire(_ingest(msg))
+
+            # Clean up DB — use cutoff_ts for both partial and full flush so that
+            # messages appended to buf["messages"] during the LLM await are not deleted.
+            if self._db is not None and cutoff_ts is not None:
+                try:
+                    await self._db.delete_session_messages_before(channel_id, cutoff_ts)
                 except Exception as exc:
                     logger.warning(
                         "FactExtractor DB cleanup failed for {ch}: {e}",
@@ -672,6 +676,9 @@ class FactExtractor:
                 tasks.append(self._do_flush(channel_id, partial=False))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        # Wait for any fire-and-forget graph ingest tasks still in flight
+        if self._bg_tasks:
+            await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
 
     async def restore_buffers(self) -> None:
         """Restore in-memory buffers from DB after a restart."""
@@ -698,5 +705,10 @@ class FactExtractor:
                     n=len(rows),
                     c=len(self._buffers),
                 )
+                # Trigger flush for any channel that already meets the threshold
+                for channel_id, buf in list(self._buffers.items()):
+                    count = len(buf["messages"])
+                    if count >= _FLUSH_THRESHOLD:
+                        self._fire(self._do_flush(channel_id, partial=count >= _SAFETY_CAP))
         except Exception as exc:
             logger.warning("FactExtractor.restore_buffers failed: {e}", e=exc)

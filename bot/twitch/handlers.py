@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from bot.core.prompts import assemble_memory_context
+from bot.core.tracing import create_trace, create_span
 from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS, _third_party_mention_context
 
 if TYPE_CHECKING:
@@ -201,6 +202,18 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if bot.is_on_cooldown(user_id):
         return
 
+    trace = create_trace(
+        name="twitch:message",
+        user_id=f"twitch:{author}",
+        platform="twitch",
+        channel_id=channel_id,
+        metadata={
+            "author": author,
+            "emotion_state": bot.emotion.get_state(),
+            "channel": channel_name,
+        },
+    )
+
     try:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
@@ -209,6 +222,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             bot.memory.search(platform, user_id, content, context_messages=prelude),
             bot.memory.search_global(content),
         )
+        create_span(trace, name="memory:search", input={"query": content}, output={"context_length": len(mem_context or "")})
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:
@@ -392,12 +406,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 system_prompt, openai_messages, tools, _tool_executor,
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
+                trace=trace,
             )
         else:
             reply = await bot.llm.complete(
                 system_prompt, openai_messages,
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
+                trace=trace,
             )
 
         # Strip [react:] tag (no emoji reactions on Twitch)
@@ -513,10 +529,17 @@ async def _announce_overlay_image(
         )
 
         # 1. Générer le message LLM (le plus lent)
+        overlay_trace = create_trace(
+            name="twitch:overlay_announce",
+            platform="twitch",
+            channel_id=channel_id,
+            metadata={"channel": channel_name, "image_title": title},
+        )
         reply = await bot.llm.complete(
             system_prompt,
             [{"role": "user", "content": user_content}],
             purpose="twitch_overlay_announce",
+            trace=overlay_trace,
         )
 
         # Strip react tag
@@ -584,10 +607,18 @@ async def _spontaneous_respond_twitch(
             + prelude_block
             + f"\n[{author}]: {content}"
         )
+        spontaneous_trace = create_trace(
+            name="twitch:spontaneous",
+            user_id=f"twitch:{author}",
+            platform="twitch",
+            channel_id=channel_id,
+            metadata={"author": author, "channel": channel_name, "has_recall": bool(recall_memory)},
+        )
         reply = await bot.llm.complete(
             system_prompt,
             [{"role": "user", "content": user_content}],
             purpose="twitch_spontaneous",
+            trace=spontaneous_trace,
         )
         # Strip react tag (no reactions on Twitch)
         if reply.startswith("[react:"):

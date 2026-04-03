@@ -245,7 +245,7 @@ class GraphitiConfig:
     neo4j_password: str = "changeme"
     llm_model: str = "gpt-5-nano"
     community_detection: bool = False
-    group_id: str = "discord:default"
+    group_id: str = "discord-default"
     affinity_weights: dict[str, float] = field(default_factory=lambda: {
         "voice": 3.0, "reply": 2.0, "mention": 1.5,
         "reaction": 1.0, "thread": 1.0, "game": 2.5,

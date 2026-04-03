@@ -42,16 +42,65 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: wally-langfuse-db
+    networks:
+      - wally-net
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=${LANGFUSE_DB_PASSWORD:-langfuse_secret}
+      - POSTGRES_DB=langfuse
+    volumes:
+      - ./data/langfuse-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: wally-langfuse
+    networks:
+      - wally-net
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse_secret}@langfuse-db:5432/langfuse
+      - NEXTAUTH_URL=${LANGFUSE_EXTERNAL_URL:-http://langfuse:3000}
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
+      - SALT=${LANGFUSE_SALT}
+      - LANGFUSE_INIT_ORG_ID=wally
+      - LANGFUSE_INIT_ORG_NAME=Wally
+      - LANGFUSE_INIT_PROJECT_ID=wally-bot
+      - LANGFUSE_INIT_PROJECT_NAME=Wally Bot
+      - LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_INIT_PROJECT_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_INIT_USER_EMAIL=${LANGFUSE_INIT_USER_EMAIL:-admin@wally.local}
+      - LANGFUSE_INIT_USER_PASSWORD=${LANGFUSE_INIT_USER_PASSWORD}
+      - HOSTNAME=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   init-perms:
     image: alpine:3.19
     container_name: wally-init-perms
     user: "0:0"
     volumes:
       - ./data:/data
+      - ./data/langfuse-db:/data/langfuse-db
       - ./logs:/logs
       - ./.env:/dotenv
       - ./config.yaml:/config.yaml
-    command: sh -c "chown -R 1000:1000 /data /logs && chown -R 7474:7474 /data/neo4j && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
+    command: sh -c "chown -R 1000:1000 /data /logs && chown -R 7474:7474 /data/neo4j && chown -R 70:70 /data/langfuse-db && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
     restart: "no"
 
   wally:
@@ -102,4 +151,16 @@ services:
       - TUNNEL_TOKEN=${CLOUDFLARED_WALLY_TOKEN}
     depends_on:
       - wally
+    restart: unless-stopped
+  cloudflaredLangfuse:
+    image: cloudflare/cloudflared:latest
+    container_name: langfuse-cloudflared
+    command: tunnel --no-autoupdate run
+    networks:
+      - wally-net
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_LANGFUSE_TOKEN}
+    depends_on:
+      langfuse:
+        condition: service_healthy
     restart: unless-stopped

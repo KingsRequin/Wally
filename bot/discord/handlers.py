@@ -14,6 +14,7 @@ import discord
 from loguru import logger
 
 from bot.core.prompts import assemble_memory_context
+from bot.core.tracing import create_trace, create_span
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -554,6 +555,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         # Text-based nickname detection (e.g. "kings", "Requin" without @)
         for display_name in _detect_text_mentions(message, bot):
             bot.social.on_mention(message.author.display_name, display_name)
+        # Thread co-participation: record interaction with thread owner
+        if isinstance(message.channel, discord.Thread):
+            owner = message.channel.owner
+            if owner and not owner.bot and owner != message.author:
+                bot.social.on_thread_message(message.author.display_name, owner.display_name)
 
     # Spam detection — track all messages in allowed channels
     if channel_allowed and message.guild:
@@ -681,6 +687,18 @@ async def _respond(
     try:
         await message.add_reaction("🔍")
 
+        trace = create_trace(
+            name="discord:message",
+            user_id=f"discord:{user_id}",
+            platform="discord",
+            channel_id=str(message.channel.id),
+            metadata={
+                "author": _author_label(message.author),
+                "emotion_state": bot.emotion.get_state(),
+                "guild": message.guild.name if message.guild else None,
+            },
+        )
+
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
 
@@ -688,6 +706,7 @@ async def _respond(
             bot.memory.search(platform, user_id, message.content, context_messages=prelude),
             bot.memory.search_global(message.content),
         )
+        create_span(trace, name="memory:search", input={"query": message.content}, output={"context_length": len(mem_context or "")})
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:
@@ -782,6 +801,7 @@ async def _respond(
         # Knowledge graph context (Graphiti)
         graph_context = ""
         if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
+            _graph_facts_count = 0
             try:
                 graph_results = await bot.graph.search(
                     query=message.content,
@@ -791,9 +811,12 @@ async def _respond(
                 if graph_results:
                     facts = [r["fact"] for r in graph_results if r.get("fact")]
                     if facts:
+                        _graph_facts_count = len(facts)
                         graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(f"- {f}" for f in facts)
             except Exception:
                 pass
+            finally:
+                create_span(trace, name="graph:search", input={"query": message.content}, output={"facts_count": _graph_facts_count})
 
         situation: dict = {"platform": "Discord"}
         if message.guild:
@@ -979,12 +1002,14 @@ async def _respond(
                     purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
+                    trace=trace,
                 )
             else:
                 reply = await bot.llm.complete(
                     system_prompt, openai_messages, purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
+                    trace=trace,
                 )
                 tools_called = []
 

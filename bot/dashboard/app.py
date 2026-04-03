@@ -94,22 +94,16 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
         task = asyncio.create_task(_snapshot_task(state))
         cleanup_task = asyncio.create_task(_chat_cleanup_task(state))
-        notif_task = asyncio.create_task(_cost_notification_task(state))
         logger.info("Dashboard started on port 8080")
         yield
         task.cancel()
         cleanup_task.cancel()
-        notif_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
         try:
             await cleanup_task
-        except asyncio.CancelledError:
-            pass
-        try:
-            await notif_task
         except asyncio.CancelledError:
             pass
         logger.info("Dashboard shutdown")
@@ -120,7 +114,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, costs, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, graph
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, graph, langfuse_proxy
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -141,7 +135,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(sse.admin_router, prefix="/api/admin")
     app.include_router(memory.router, prefix="/api/admin")
     app.include_router(links.router, prefix="/api/admin")
-    app.include_router(costs.router, prefix="/api/admin")
+    app.include_router(langfuse_proxy.router, prefix="/api/admin")
     app.include_router(gallery.admin_router, prefix="/api/admin")
     app.include_router(graph.router, prefix="/api/admin")
     app.include_router(actions.router, prefix="/api/actions")
@@ -242,27 +236,6 @@ async def _snapshot_task(state: "AppState") -> None:
             logger.warning("Failed periodic emotion snapshot: {e}", e=exc)
 
 
-async def _cost_notification_task(state: "AppState") -> None:
-    """Vérifie les coûts toutes les 30 minutes et envoie des alertes Discord si nécessaire."""
-    from datetime import datetime
-    while True:
-        await asyncio.sleep(1800)  # 30 min
-        try:
-            if state.notifications is None:
-                continue
-            threshold = state.config.bot.cost_alert_threshold
-            if threshold <= 0:
-                continue
-            month_start = datetime.now().replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0
-            ).timestamp()
-            stats = await state.db.get_cost_stats(month_start)
-            current = stats["total"]
-            pct = round(current / threshold * 100, 1)
-            status = "critical" if pct >= 80 else "warning" if pct >= 60 else "ok"
-            await state.notifications.notify_cost_alert(status, pct, current, threshold)
-        except Exception as exc:
-            logger.warning("Cost notification check failed: {e}", e=exc)
 
 
 async def _chat_cleanup_task(state: "AppState") -> None:

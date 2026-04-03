@@ -71,7 +71,6 @@ let currentSecondaries = [];
 // ── Tab sub-navigation state ──────────────────────────────────────
 let _parametresSubTab = 'emotions';
 let _systemeSubTab    = 'logs';
-let _costsSubTab      = 'resume';
 
 const MOOD_ADJ_FR = {
   anger: 'irritable', joy: 'joyeux', sadness: 'mélancolique',
@@ -296,13 +295,12 @@ function showTab(tabId) {
   if (tabId === 'admin-parametres') renderParametresTab();
   if (tabId === 'admin-systeme') renderSystemeTab();
   if (tabId === 'admin-memoire') renderMemoireTab();
-  if (tabId === 'admin-costs') renderCostsTab();
+  if (tabId === 'admin-langfuse') renderLangfuseTab();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
   if (tabId === 'admin-overlay') loadOverlayTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
-  pollCostsBadge();
   pollLinksBadge();
 }
 
@@ -2224,509 +2222,6 @@ async function unlinkAccounts(id) {
   }
 }
 
-// ── Admin costs ────────────────────────────────────────────────────────────────
-
-let currentCostRange = '7d';
-let _costGraphMeta = null;
-let _costRafPending = false;
-let _costsLogsPage = 1;
-
-async function loadCosts() {
-  const days = { '7d': 7, '30d': 30, '90d': 90 }[currentCostRange] || 7;
-
-  const [summaryR, dailyR, modelR, purposeR, usersR, alertR] = await Promise.all([
-    apiFetch('/api/admin/costs/summary'),
-    apiFetch(`/api/admin/costs/daily?days=${days}`),
-    apiFetch(`/api/admin/costs/breakdown/model?days=${days}`),
-    apiFetch(`/api/admin/costs/breakdown/purpose?days=${days}`),
-    apiFetch(`/api/admin/costs/top-users?days=${days}&limit=10`),
-    apiFetch('/api/admin/costs/alert'),
-  ]);
-
-  if (!summaryR || !summaryR.ok) return;
-
-  const summary = await summaryR.json();
-  const daily = await dailyR.json();
-  const models = await modelR.json();
-  const purposes = await purposeR.json();
-  const users = await usersR.json();
-  const alert = await alertR.json();
-
-  // KPIs
-  document.getElementById('cost-month-total').textContent = `$${summary.total.toFixed(2)}`;
-  const changeEl = document.getElementById('cost-month-change');
-  if (summary.pct_change !== 0) {
-    const arrow = summary.pct_change < 0 ? '▼' : '▲';
-    const color = summary.pct_change < 0 ? '#00E5A0' : '#FF4D4D';
-    changeEl.innerHTML = `<span style="color:${color}">${arrow} ${Math.abs(summary.pct_change).toFixed(1)}% vs mois préc.</span>`;
-  } else {
-    changeEl.textContent = '';
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const todayEntry = daily.current.find(d => d.date === today);
-  document.getElementById('cost-today-total').textContent = `$${(todayEntry ? todayEntry.cost : 0).toFixed(2)}`;
-
-  document.getElementById('cost-avg-msg').textContent = `$${summary.avg_per_msg.toFixed(4)}`;
-
-  // Forecast KPI
-  const forecastEl = document.getElementById('cost-forecast');
-  if (forecastEl && summary.forecast !== undefined) {
-    forecastEl.textContent = `$${summary.forecast.toFixed(2)}`;
-    const forecastColor = summary.forecast > alert.threshold ? '#FF4D4D' : '#00E5A0';
-    forecastEl.style.color = forecastColor;
-    const detailEl = document.getElementById('cost-forecast-detail');
-    if (detailEl) detailEl.textContent = `J${summary.days_elapsed}/${summary.days_in_month} — moy. $${(summary.total / summary.days_elapsed).toFixed(2)}/j`;
-  }
-
-  // Threshold KPI
-  const threshEl = document.getElementById('cost-threshold');
-  threshEl.textContent = `$${alert.threshold.toFixed(2)}`;
-  const pctEl = document.getElementById('cost-threshold-pct');
-  pctEl.textContent = `${alert.pct_used.toFixed(1)}% utilisé`;
-  const threshColor = alert.status === 'critical' ? '#FF4D4D' : alert.status === 'warning' ? '#FFD700' : '#00E5A0';
-  threshEl.style.color = threshColor;
-  pctEl.style.color = threshColor;
-
-  // Graph
-  if (!daily.current || daily.current.length === 0) {
-    showGraphEmpty('costCanvas', 'Aucune donnée de coûts pour cette période.');
-  } else {
-    drawCostGraph(daily.current, daily.previous);
-  }
-
-  // Breakdowns
-  renderCostBreakdown('cost-by-model', models, 'model');
-  renderCostBreakdown('cost-by-purpose', purposes, 'category');
-  renderCostUsers(users);
-
-  // Alert bar
-  updateCostAlertBar(alert);
-  updateCostBadge(alert);
-
-  // Detail tab sections
-  _costsLogsPage = 1;
-  loadCostsByFeature(days);
-  loadCostPrices();
-  loadCostLogs(1);
-}
-
-function setCostRange(range) {
-  currentCostRange = range;
-  const titles = { '7d': '💸 7 DERNIERS JOURS', '30d': '💸 30 DERNIERS JOURS', '90d': '💸 90 DERNIERS JOURS' };
-  const el = document.getElementById('cost-graph-title');
-  if (el) el.textContent = titles[range];
-
-  document.querySelectorAll('.cost-range-btn').forEach(btn => {
-    const labels = { '7d': '7J', '30d': '30J', '90d': '90J' };
-    btn.classList.toggle('active', btn.textContent === labels[range]);
-  });
-
-  loadCosts();
-}
-
-function drawCostGraph(current, previous) {
-  const canvas = document.getElementById('costCanvas');
-  if (!canvas || !current || current.length < 1) return;
-
-  const W = _canvasContentWidth(canvas);
-  const H = 165;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-
-  ctx.fillStyle = '#11151c';
-  ctx.fillRect(0, 0, W, H);
-
-  const PAD = { top: 10, bottom: 40, left: 50, right: 10 };
-  const gW = W - PAD.left - PAD.right;
-  const gH = H - PAD.top - PAD.bottom;
-
-  const allCosts = [...current.map(d => d.cost), ...(previous || []).map(d => d.cost)];
-  const maxCost = Math.max(...allCosts, 0.01);
-
-  const xStep = current.length > 1 ? gW / (current.length - 1) : gW;
-
-  // Y grid
-  ctx.lineWidth = 1;
-  const ySteps = 4;
-  for (let i = 0; i <= ySteps; i++) {
-    const pct = i / ySteps;
-    const y = PAD.top + (1 - pct) * gH;
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, y);
-    ctx.lineTo(W - PAD.right, y);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`$${(maxCost * pct).toFixed(2)}`, PAD.left - 4, y + 3);
-  }
-
-  // X axis labels
-  ctx.textAlign = 'center';
-  const labelEvery = current.length > 14 ? Math.ceil(current.length / 7) : (current.length > 7 ? 2 : 1);
-  current.forEach((d, i) => {
-    if (i % labelEvery !== 0 && i !== current.length - 1) return;
-    const x = PAD.left + i * xStep;
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.font = '10px monospace';
-    const parts = d.date.split('-');
-    ctx.fillText(`${parts[2]}/${parts[1]}`, x, H - 26);
-  });
-
-  // Previous period (dashed)
-  if (previous && previous.length > 0) {
-    const prevXStep = previous.length > 1 ? gW / (previous.length - 1) : gW;
-    ctx.beginPath();
-    ctx.strokeStyle = '#4DA6FF';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.globalAlpha = 0.4;
-    previous.forEach((d, i) => {
-      const x = PAD.left + i * prevXStep;
-      const y = PAD.top + (1 - d.cost / maxCost) * gH;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-  }
-
-  // Current period (solid + area)
-  ctx.beginPath();
-  ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 2;
-  let firstX = 0, lastX = 0;
-  current.forEach((d, i) => {
-    const x = PAD.left + i * xStep;
-    const y = PAD.top + (1 - d.cost / maxCost) * gH;
-    if (i === 0) { ctx.moveTo(x, y); firstX = x; }
-    else ctx.lineTo(x, y);
-    lastX = x;
-  });
-  ctx.stroke();
-
-  // Area fill
-  ctx.beginPath();
-  current.forEach((d, i) => {
-    const x = PAD.left + i * xStep;
-    const y = PAD.top + (1 - d.cost / maxCost) * gH;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.lineTo(lastX, PAD.top + gH);
-  ctx.lineTo(firstX, PAD.top + gH);
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + gH);
-  grad.addColorStop(0, 'rgba(255, 215, 0, 0.2)');
-  grad.addColorStop(1, 'rgba(255, 215, 0, 0.01)');
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  _costGraphMeta = { current, previous, PAD, gW, gH, W, H, xStep, maxCost };
-}
-
-function renderCostBreakdown(containerId, data, keyField) {
-  const el = document.getElementById(containerId);
-  if (!el || !data || data.length === 0) { if (el) el.innerHTML = '<span style="color:var(--text-dim)">—</span>'; return; }
-
-  const maxTotal = data[0].total;
-  el.innerHTML = data.map(d => {
-    const pct = maxTotal > 0 ? (d.total / maxTotal * 100) : 0;
-    const label = d[keyField] || 'Inconnu';
-    return `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:3px">
-        <span>${escHtml(label)}</span>
-        <span style="color:#FFD700;font-family:var(--font-mono)">$${d.total.toFixed(2)}</span>
-      </div>
-      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#FFD700,#ffe066);border-radius:2px;transition:width 0.4s ease"></div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function renderCostUsers(users) {
-  const el = document.getElementById('cost-top-users');
-  if (!el || !users || users.length === 0) { if (el) el.innerHTML = '<span style="color:var(--text-dim)">—</span>'; return; }
-
-  const maxTotal = users[0].total;
-  el.innerHTML = users.map(u => {
-    const pct = maxTotal > 0 ? (u.total / maxTotal * 100) : 0;
-    return `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:3px">
-        <span>${escHtml(u.username)}</span>
-        <span style="color:#FFD700;font-family:var(--font-mono)">$${u.total.toFixed(2)}</span>
-      </div>
-      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#FFD700,#ffe066);border-radius:2px;transition:width 0.4s ease"></div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function updateCostAlertBar(alert) {
-  const bar = document.getElementById('cost-alert-bar');
-  if (!bar) return;
-
-  if (alert.status === 'ok') { bar.style.display = 'none'; return; }
-
-  bar.style.display = 'block';
-  const color = alert.status === 'critical' ? '#FF4D4D' : '#FFD700';
-  bar.style.borderColor = color;
-  bar.style.background = alert.status === 'critical'
-    ? 'rgba(255,77,77,0.08)' : 'rgba(255,215,0,0.08)';
-
-  document.getElementById('cost-alert-text').innerHTML =
-    `<span style="color:${color}">⚠ Seuil d'alerte : <strong>$${alert.threshold.toFixed(2)}</strong></span>`;
-  document.getElementById('cost-alert-pct').textContent = `${alert.pct_used.toFixed(1)}% utilisé`;
-}
-
-function updateCostBadge(alert) {
-  const badge = document.getElementById('costs-badge');
-  if (!badge) return;
-  badge.style.display = alert.status === 'critical' ? 'flex' : 'none';
-}
-
-const FEATURE_COLORS = ['#06b6d4','#eab308','#22c55e','#ef4444','#a855f7','#f97316','#3b82f6','#ec4899'];
-
-function drawFeaturePie(data) {
-  const canvas = document.getElementById('featurePieCanvas');
-  if (!canvas) return;
-
-  const W = _canvasContentWidth(canvas);
-  const H = 200;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-
-  ctx.fillStyle = 'transparent';
-  ctx.clearRect(0, 0, W, H);
-
-  if (!data || data.length === 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Aucune donnée', W / 2, H / 2);
-    return;
-  }
-
-  const total = data.reduce(function(s, d) { return s + d.cost; }, 0);
-  if (total <= 0) return;
-
-  const cx = W / 2;
-  const cy = H / 2;
-  const radius = Math.min(cx, cy) - 10;
-
-  let startAngle = -Math.PI / 2;
-  data.forEach(function(item, i) {
-    const slice = (item.cost / total) * 2 * Math.PI;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, radius, startAngle, startAngle + slice);
-    ctx.closePath();
-    ctx.fillStyle = FEATURE_COLORS[i % FEATURE_COLORS.length];
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    startAngle += slice;
-  });
-
-  // Legend in feature-bars div
-  const barsEl = document.getElementById('feature-bars');
-  if (!barsEl) return;
-  while (barsEl.firstChild) barsEl.removeChild(barsEl.firstChild);
-
-  data.forEach(function(item, i) {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.82rem;';
-
-    const swatch = document.createElement('span');
-    swatch.style.cssText = 'display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0;background:' + FEATURE_COLORS[i % FEATURE_COLORS.length] + ';';
-
-    const name = document.createElement('span');
-    name.style.cssText = 'flex:1;color:var(--text-primary);';
-    name.textContent = item.feature || 'autre';
-
-    const cost = document.createElement('span');
-    cost.style.cssText = 'font-family:var(--font-mono);color:#FFD700;';
-    cost.textContent = '$' + item.cost.toFixed(4);
-
-    const pct = document.createElement('span');
-    pct.style.cssText = 'color:var(--text-muted);min-width:42px;text-align:right;';
-    pct.textContent = (item.pct !== undefined ? item.pct.toFixed(1) : (item.cost / total * 100).toFixed(1)) + '%';
-
-    row.appendChild(swatch);
-    row.appendChild(name);
-    row.appendChild(cost);
-    row.appendChild(pct);
-    barsEl.appendChild(row);
-  });
-}
-
-async function loadCostsByFeature(days) {
-  const r = await apiFetch('/api/admin/costs/by-feature?days=' + days);
-  if (!r || !r.ok) return;
-  const data = await r.json();
-  requestAnimationFrame(() => drawFeaturePie(data));
-}
-
-async function loadCostPrices() {
-  const r = await apiFetch('/api/admin/costs/prices');
-  if (!r || !r.ok) return;
-  const prices = await r.json();
-
-  const tableEl = document.getElementById('cost-prices-table');
-  if (!tableEl) return;
-  while (tableEl.firstChild) tableEl.removeChild(tableEl.firstChild);
-
-  const thead = document.createElement('thead');
-  const hrow = document.createElement('tr');
-  ['Modèle', 'Input / 1k tokens', 'Output / 1k tokens'].forEach(function(label) {
-    const th = document.createElement('th');
-    th.textContent = label;
-    th.style.cssText = 'padding:6px 10px;text-align:left;color:var(--text-secondary);font-size:0.75rem;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;';
-    hrow.appendChild(th);
-  });
-  thead.appendChild(hrow);
-  tableEl.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-  const models = Object.keys(prices).sort();
-  models.forEach(function(model) {
-    const info = prices[model];
-    const tr = document.createElement('tr');
-    tr.style.cssText = 'border-bottom:1px solid var(--border);';
-
-    const tdModel = document.createElement('td');
-    tdModel.textContent = model;
-    tdModel.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:var(--text-primary);font-family:var(--font-mono);';
-
-    const tdIn = document.createElement('td');
-    tdIn.textContent = info.input_per_1k !== undefined ? '$' + info.input_per_1k.toFixed(6) : '—';
-    tdIn.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:#06b6d4;font-family:var(--font-mono);';
-
-    const tdOut = document.createElement('td');
-    tdOut.textContent = info.output_per_1k !== undefined ? '$' + info.output_per_1k.toFixed(6) : '—';
-    tdOut.style.cssText = 'padding:6px 10px;font-size:0.8rem;color:#eab308;font-family:var(--font-mono);';
-
-    tr.appendChild(tdModel);
-    tr.appendChild(tdIn);
-    tr.appendChild(tdOut);
-    tbody.appendChild(tr);
-  });
-  tableEl.appendChild(tbody);
-}
-
-async function loadCostLogs(page) {
-  _costsLogsPage = page || 1;
-  const days = { '7d': 7, '30d': 30, '90d': 90 }[currentCostRange] || 7;
-  const r = await apiFetch('/api/admin/costs/logs?days=' + days + '&page=' + _costsLogsPage + '&limit=50');
-  if (!r || !r.ok) return;
-  const data = await r.json();
-
-  const tableEl = document.getElementById('cost-logs-table');
-  if (!tableEl) return;
-  while (tableEl.firstChild) tableEl.removeChild(tableEl.firstChild);
-
-  const thead = document.createElement('thead');
-  const hrow = document.createElement('tr');
-  ['Date/Heure', 'Modèle', 'Tokens In', 'Tokens Out', 'Coût', 'Purpose', 'Utilisateur'].forEach(function(label) {
-    const th = document.createElement('th');
-    th.textContent = label;
-    th.style.cssText = 'padding:6px 10px;text-align:left;color:var(--text-secondary);font-size:0.75rem;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;';
-    hrow.appendChild(th);
-  });
-  thead.appendChild(hrow);
-  tableEl.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-  (data.logs || []).forEach(function(log) {
-    const tr = document.createElement('tr');
-    tr.style.cssText = 'border-bottom:1px solid var(--border);';
-
-    function cell(text, extraStyle) {
-      const td = document.createElement('td');
-      td.textContent = text !== null && text !== undefined ? String(text) : '—';
-      td.style.cssText = 'padding:5px 10px;font-size:0.78rem;' + (extraStyle || 'color:var(--text-primary);');
-      return td;
-    }
-
-    const dt = log.datetime ? log.datetime.replace('T', ' ').slice(0, 19) : '—';
-    tr.appendChild(cell(dt, 'color:var(--text-secondary);font-family:var(--font-mono);white-space:nowrap;'));
-    tr.appendChild(cell(log.model, 'color:var(--text-primary);font-family:var(--font-mono);'));
-    tr.appendChild(cell(log.input_tokens !== undefined ? log.input_tokens.toLocaleString() : '—', 'color:#06b6d4;text-align:right;font-family:var(--font-mono);'));
-    tr.appendChild(cell(log.output_tokens !== undefined ? log.output_tokens.toLocaleString() : '—', 'color:#eab308;text-align:right;font-family:var(--font-mono);'));
-    tr.appendChild(cell(log.cost_usd !== undefined ? '$' + log.cost_usd.toFixed(6) : '—', 'color:#FFD700;font-family:var(--font-mono);'));
-    tr.appendChild(cell(log.purpose, 'color:var(--text-secondary);'));
-    tr.appendChild(cell(log.username || '—', 'color:var(--text-secondary);'));
-    tbody.appendChild(tr);
-  });
-  tableEl.appendChild(tbody);
-
-  // Pagination
-  const paginEl = document.getElementById('cost-logs-pagination');
-  if (!paginEl) return;
-  while (paginEl.firstChild) paginEl.removeChild(paginEl.firstChild);
-
-  const total = data.total || 0;
-  const limit = data.limit || 50;
-  const currentPage = data.page || 1;
-  const totalPages = Math.ceil(total / limit);
-
-  if (totalPages <= 1) return;
-
-  const from = Math.min((currentPage - 1) * limit + 1, total);
-  const to = Math.min(currentPage * limit, total);
-
-  const paginWrap = document.createElement('div');
-  paginWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 0;font-size:0.82rem;';
-
-  const prevBtn = document.createElement('button');
-  prevBtn.textContent = 'Précédent';
-  prevBtn.className = 'btn-secondary';
-  prevBtn.style.cssText = 'padding:4px 12px;font-size:0.78rem;';
-  prevBtn.disabled = currentPage <= 1;
-  prevBtn.onclick = function() { loadCostLogs(currentPage - 1); };
-
-  const info = document.createElement('span');
-  info.style.cssText = 'color:var(--text-secondary);';
-  info.textContent = from + '–' + to + ' sur ' + total;
-
-  const nextBtn = document.createElement('button');
-  nextBtn.textContent = 'Suivant';
-  nextBtn.className = 'btn-secondary';
-  nextBtn.style.cssText = 'padding:4px 12px;font-size:0.78rem;';
-  nextBtn.disabled = currentPage >= totalPages;
-  nextBtn.onclick = function() { loadCostLogs(currentPage + 1); };
-
-  paginWrap.appendChild(prevBtn);
-  paginWrap.appendChild(info);
-  paginWrap.appendChild(nextBtn);
-  paginEl.appendChild(paginWrap);
-}
-
-async function pollCostsBadge() {
-  if (!getToken()) return;
-  try {
-    const r = await apiFetch('/api/admin/costs/alert');
-    if (!r || !r.ok) return;
-    const alert = await r.json();
-    updateCostBadge(alert);
-  } catch (e) { /* ignore */ }
-}
-
 async function pollLinksBadge() {
   if (!getToken()) return;
   try {
@@ -3835,183 +3330,374 @@ async function saveOverlayImageConfigSysteme() {
   if (r && r.ok) toast('Config overlay sauvegardée', 'success');
 }
 
-// ── Costs Tab with sub-nav (Résumé · Détail) ─────────────────────────────────
+// ── Langfuse Tab ─────────────────────────────────────────────────────────────
 
+var _langfuseDays = 7;
 
-function renderCostsTab() {
-  const el = document.getElementById('tab-admin-costs');
+async function renderLangfuseTab() {
+  var el = document.getElementById('tab-admin-langfuse');
   if (!el) return;
-
-  if (!el.querySelector('.mem-subnav')) {
-    el.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="resume" onclick="switchCostsSubTab('resume')">Résumé</button>
-        <button class="mem-subnav-pill" data-subtab="detail" onclick="switchCostsSubTab('detail')">Détail</button>
-      </div>
-      <div class="mem-subnav-content active" id="costs-sub-resume">
-        <!-- KPI Row -->
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-          <div class="card" id="kpi-month">
-            <div class="card-title">MOIS EN COURS</div>
-            <div class="card-value" id="cost-month-total">—</div>
-            <div id="cost-month-change" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
-          </div>
-          <div class="card" id="kpi-forecast">
-            <div class="card-title">PREVISION FIN MOIS</div>
-            <div class="card-value" id="cost-forecast">—</div>
-            <div id="cost-forecast-detail" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
-          </div>
-          <div class="card" id="kpi-today">
-            <div class="card-title">AUJOURD'HUI</div>
-            <div class="card-value" id="cost-today-total">—</div>
-          </div>
-          <div class="card" id="kpi-avg">
-            <div class="card-title">COUT / MSG</div>
-            <div class="card-value" id="cost-avg-msg">—</div>
-          </div>
-          <div class="card" id="kpi-threshold">
-            <div class="card-title">SEUIL D'ALERTE</div>
-            <div class="card-value" id="cost-threshold">—</div>
-            <div id="cost-threshold-pct" style="color:var(--text-secondary);font-size:0.75rem;margin-top:6px"></div>
-          </div>
-        </div>
-        <!-- Cost Graph -->
-        <div class="card mb-6">
-          <div class="graph-header">
-            <span class="graph-title" id="cost-graph-title">7 DERNIERS JOURS</span>
-            <div class="graph-range-btns">
-              <button class="cost-range-btn active" onclick="setCostRange('7d')" aria-label="7 derniers jours">7J</button>
-              <button class="cost-range-btn" onclick="setCostRange('30d')" aria-label="30 derniers jours">30J</button>
-              <button class="cost-range-btn" onclick="setCostRange('90d')" aria-label="90 derniers jours">90J</button>
-            </div>
-          </div>
-          <canvas id="costCanvas" height="165" aria-label="Graphique des couts journaliers"></canvas>
-          <div id="cost-graph-legend" style="display:flex;gap:16px;padding:6px 10px;font-size:0.72rem;color:var(--text-secondary)">
-            <span>&#9473; Periode courante</span>
-            <span style="opacity:0.5">&#9477; Periode precedente</span>
-          </div>
-        </div>
-      </div>
-      <div class="mem-subnav-content" id="costs-sub-detail">
-        <!-- Breakdowns -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="card">
-            <div class="card-title">PAR MODELE</div>
-            <div id="cost-by-model">—</div>
-          </div>
-          <div class="card">
-            <div class="card-title">PAR PURPOSE</div>
-            <div id="cost-by-purpose">—</div>
-          </div>
-          <div class="card">
-            <div class="card-title">TOP UTILISATEURS</div>
-            <div id="cost-top-users">—</div>
-          </div>
-        </div>
-        <!-- Alert bar -->
-        <div class="card" id="cost-alert-bar" style="margin-top:24px;display:none">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <span id="cost-alert-text"></span>
-            <span id="cost-alert-pct" style="color:var(--text-secondary)"></span>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // Inject new detail sections (par fonctionnalité, prix tokens, journal) if not yet built
-  const detailEl = document.getElementById('costs-sub-detail');
-  if (detailEl && !detailEl.querySelector('#feature-bars')) {
-    // ── Section 1: Par fonctionnalité ──
-    const sec1 = document.createElement('div');
-    sec1.className = 'card';
-    sec1.style.marginBottom = '24px';
-
-    const title1 = document.createElement('div');
-    title1.className = 'card-title';
-    title1.textContent = 'PAR FONCTIONNALITÉ';
-    sec1.appendChild(title1);
-
-    const pieCanvas = document.createElement('canvas');
-    pieCanvas.id = 'featurePieCanvas';
-    pieCanvas.height = 200;
-    pieCanvas.setAttribute('aria-label', 'Camembert des coûts par fonctionnalité');
-    pieCanvas.style.cssText = 'display:block;width:100%;';
-    sec1.appendChild(pieCanvas);
-
-    const featureBars = document.createElement('div');
-    featureBars.id = 'feature-bars';
-    featureBars.style.cssText = 'margin-top:16px;';
-    sec1.appendChild(featureBars);
-
-    // ── Section 2: Prix des tokens ──
-    const sec2 = document.createElement('div');
-    sec2.className = 'card';
-    sec2.style.marginBottom = '24px';
-
-    const title2 = document.createElement('div');
-    title2.className = 'card-title';
-    title2.textContent = 'PRIX DES TOKENS';
-    sec2.appendChild(title2);
-
-    const pricesWrap = document.createElement('div');
-    pricesWrap.style.cssText = 'overflow-x:auto;';
-    const pricesTable = document.createElement('table');
-    pricesTable.id = 'cost-prices-table';
-    pricesTable.style.cssText = 'width:100%;border-collapse:collapse;';
-    pricesWrap.appendChild(pricesTable);
-    sec2.appendChild(pricesWrap);
-
-    // ── Section 4: Journal des appels ──
-    const sec4 = document.createElement('div');
-    sec4.className = 'card';
-    sec4.style.marginTop = '24px';
-
-    const title4 = document.createElement('div');
-    title4.className = 'card-title';
-    title4.textContent = 'JOURNAL DES APPELS';
-    sec4.appendChild(title4);
-
-    const logsWrap = document.createElement('div');
-    logsWrap.style.cssText = 'overflow-x:auto;';
-    const logsTable = document.createElement('table');
-    logsTable.id = 'cost-logs-table';
-    logsTable.style.cssText = 'width:100%;border-collapse:collapse;';
-    logsWrap.appendChild(logsTable);
-    sec4.appendChild(logsWrap);
-
-    const logsPagin = document.createElement('div');
-    logsPagin.id = 'cost-logs-pagination';
-    sec4.appendChild(logsPagin);
-
-    // Insert sec1 and sec2 before the existing breakdowns grid
-    const breakdownsGrid = detailEl.querySelector('.grid');
-    detailEl.insertBefore(sec2, breakdownsGrid);
-    detailEl.insertBefore(sec1, sec2);
-
-    // Append sec4 (journal) after breakdowns grid, before alert bar
-    const alertBar = document.getElementById('cost-alert-bar');
-    if (alertBar) {
-      detailEl.insertBefore(sec4, alertBar);
-    } else {
-      detailEl.appendChild(sec4);
-    }
-  }
-
-  switchCostsSubTab(_costsSubTab);
-  loadCosts();
+  await _loadLangfuseStats(el);
 }
 
-function switchCostsSubTab(subtab) {
-  _costsSubTab = subtab;
-  const el = document.getElementById('tab-admin-costs');
-  if (!el) return;
-  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
+async function _loadLangfuseStats(el) {
+  el.textContent = '';
+  var loader = document.createElement('div');
+  loader.textContent = 'Chargement des données Langfuse…';
+  loader.style.cssText = 'padding:40px;text-align:center;color:var(--text-muted);';
+  el.appendChild(loader);
+
+  var resp = await apiFetch('/api/admin/langfuse-stats?days=' + _langfuseDays).catch(() => null);
+  if (!resp || !resp.ok) {
+    loader.textContent = 'Langfuse indisponible ou non configuré.';
+    return;
+  }
+  var data = await resp.json();
+  if (data.error) { loader.textContent = data.error; return; }
+
+  el.textContent = '';
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'padding:20px;display:flex;flex-direction:column;gap:20px;';
+  el.appendChild(wrap);
+
+  // ── Header bar (period selector + external link) ──
+  _lfHeader(wrap, data);
+  // ── Summary cards ──
+  _lfSummary(wrap, data.summary);
+  // ── Two-column: models + trend chart ──
+  _lfColumns(wrap, data);
+  // ── Recent traces ──
+  _lfTraces(wrap, data.recent_traces, data.external_url);
+  // ── Top users ──
+  _lfUsers(wrap, data.top_users);
+}
+
+function _lfCard() {
+  var d = document.createElement('div');
+  d.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;backdrop-filter:blur(10px);';
+  return d;
+}
+
+function _lfHeader(wrap, data) {
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;';
+
+  var left = document.createElement('div');
+  left.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  var title = document.createElement('h2');
+  title.textContent = 'Langfuse';
+  title.style.cssText = 'margin:0;font-size:18px;font-weight:600;';
+  left.appendChild(title);
+
+  var sel = document.createElement('select');
+  sel.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--text-primary);padding:4px 8px;font-size:12px;';
+  [7, 14, 30].forEach(function(d) {
+    var o = document.createElement('option');
+    o.value = d; o.textContent = d + ' jours';
+    if (d === _langfuseDays) o.selected = true;
+    sel.appendChild(o);
   });
-  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const panel = document.getElementById('costs-sub-' + subtab);
-  if (panel) panel.classList.add('active');
+  sel.onchange = function() {
+    _langfuseDays = parseInt(sel.value);
+    _loadLangfuseStats(document.getElementById('tab-admin-langfuse'));
+  };
+  left.appendChild(sel);
+  bar.appendChild(left);
+
+  if (data.external_url) {
+    var link = document.createElement('a');
+    link.href = data.external_url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = 'Ouvrir Langfuse ↗';
+    link.style.cssText = 'font-size:13px;color:var(--accent);text-decoration:none;';
+    bar.appendChild(link);
+  }
+  wrap.appendChild(bar);
+}
+
+function _lfSummary(wrap, s) {
+  var grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;';
+
+  var items = [
+    {label: 'Coût total', value: '$' + (s.total_cost || 0).toFixed(4), color: '#06b6d4'},
+    {label: 'Traces', value: String(s.total_traces || 0), color: '#22c55e'},
+    {label: 'Tokens IN', value: _fmtNum(s.total_input_tokens || 0), color: '#eab308'},
+    {label: 'Tokens OUT', value: _fmtNum(s.total_output_tokens || 0), color: '#a855f7'},
+    {label: 'Latence moy.', value: (s.avg_latency_ms || 0) + ' ms', color: '#3b82f6'},
+  ];
+  items.forEach(function(it) {
+    var card = _lfCard();
+    card.style.padding = '16px';
+    var val = document.createElement('div');
+    val.textContent = it.value;
+    val.style.cssText = 'font-size:22px;font-weight:700;color:' + it.color + ';';
+    var lbl = document.createElement('div');
+    lbl.textContent = it.label;
+    lbl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:4px;';
+    card.appendChild(val);
+    card.appendChild(lbl);
+    grid.appendChild(card);
+  });
+  wrap.appendChild(grid);
+}
+
+function _fmtNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function _lfColumns(wrap, data) {
+  var row = document.createElement('div');
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;';
+
+  // ── Models table ──
+  var mCard = _lfCard();
+  var mTitle = document.createElement('h3');
+  mTitle.textContent = 'Coûts par modèle';
+  mTitle.style.cssText = 'margin:0 0 12px;font-size:14px;font-weight:600;';
+  mCard.appendChild(mTitle);
+
+  if (!data.by_model || !data.by_model.length) {
+    var empty = document.createElement('p');
+    empty.textContent = 'Aucune donnée';
+    empty.style.cssText = 'color:var(--text-muted);font-size:13px;';
+    mCard.appendChild(empty);
+  } else {
+    var maxCost = data.by_model[0].cost || 1;
+    data.by_model.forEach(function(m) {
+      var r = document.createElement('div');
+      r.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;';
+
+      var name = document.createElement('span');
+      name.textContent = m.model;
+      name.style.cssText = 'width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+
+      var barBg = document.createElement('div');
+      barBg.style.cssText = 'flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;';
+      var barFill = document.createElement('div');
+      var pct = maxCost > 0 ? (m.cost / maxCost * 100) : 0;
+      barFill.style.cssText = 'height:100%;background:#06b6d4;border-radius:3px;width:' + pct + '%;';
+      barBg.appendChild(barFill);
+
+      var cost = document.createElement('span');
+      cost.textContent = '$' + m.cost.toFixed(4);
+      cost.style.cssText = 'width:70px;text-align:right;color:var(--text-muted);flex-shrink:0;';
+
+      r.appendChild(name);
+      r.appendChild(barBg);
+      r.appendChild(cost);
+      mCard.appendChild(r);
+    });
+  }
+  row.appendChild(mCard);
+
+  // ── Trend chart (SVG) ──
+  var cCard = _lfCard();
+  var cTitle = document.createElement('h3');
+  cTitle.textContent = 'Tendance (' + _langfuseDays + 'j)';
+  cTitle.style.cssText = 'margin:0 0 12px;font-size:14px;font-weight:600;';
+  cCard.appendChild(cTitle);
+
+  if (!data.by_day || !data.by_day.length) {
+    var empty2 = document.createElement('p');
+    empty2.textContent = 'Aucune donnée';
+    empty2.style.cssText = 'color:var(--text-muted);font-size:13px;';
+    cCard.appendChild(empty2);
+  } else {
+    cCard.appendChild(_lfChart(data.by_day));
+  }
+  row.appendChild(cCard);
+  wrap.appendChild(row);
+}
+
+function _lfChart(days) {
+  var W = 400, H = 120, PAD = 30;
+  var maxCost = Math.max.apply(null, days.map(function(d) { return d.cost; })) || 0.001;
+  var maxTraces = Math.max.apply(null, days.map(function(d) { return d.traces; })) || 1;
+  var n = days.length;
+
+  var ns = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + (H + PAD));
+  svg.style.cssText = 'width:100%;height:auto;';
+
+  // Cost area + line
+  var costPts = days.map(function(d, i) {
+    var x = n > 1 ? (i / (n - 1)) * (W - 20) + 10 : W / 2;
+    var y = H - (d.cost / maxCost) * (H - 20) + 10;
+    return x + ',' + y;
+  });
+  var area = document.createElementNS(ns, 'polygon');
+  var areaPoints = costPts.join(' ') + ' ' + (n > 1 ? (W - 10) : W / 2) + ',' + H + ' 10,' + H;
+  area.setAttribute('points', areaPoints);
+  area.setAttribute('fill', 'rgba(6,182,212,0.15)');
+  svg.appendChild(area);
+
+  var line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', costPts.join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', '#06b6d4');
+  line.setAttribute('stroke-width', '2');
+  svg.appendChild(line);
+
+  // Traces bars (subtle)
+  days.forEach(function(d, i) {
+    var x = n > 1 ? (i / (n - 1)) * (W - 20) + 10 : W / 2;
+    var barH = (d.traces / maxTraces) * (H - 20);
+    var rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', x - 4);
+    rect.setAttribute('y', H - barH + 10);
+    rect.setAttribute('width', 8);
+    rect.setAttribute('height', barH);
+    rect.setAttribute('fill', 'rgba(34,197,94,0.2)');
+    rect.setAttribute('rx', '2');
+    svg.appendChild(rect);
+  });
+
+  // Dots on cost line
+  days.forEach(function(d, i) {
+    var x = n > 1 ? (i / (n - 1)) * (W - 20) + 10 : W / 2;
+    var y = H - (d.cost / maxCost) * (H - 20) + 10;
+    var c = document.createElementNS(ns, 'circle');
+    c.setAttribute('cx', x); c.setAttribute('cy', y);
+    c.setAttribute('r', '3'); c.setAttribute('fill', '#06b6d4');
+    svg.appendChild(c);
+  });
+
+  // X-axis labels (first, middle, last)
+  var labelIndices = n <= 3 ? days.map(function(_, i) { return i; }) : [0, Math.floor(n / 2), n - 1];
+  labelIndices.forEach(function(i) {
+    var x = n > 1 ? (i / (n - 1)) * (W - 20) + 10 : W / 2;
+    var txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', x); txt.setAttribute('y', H + PAD - 5);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill', 'rgba(255,255,255,0.4)');
+    txt.setAttribute('font-size', '10');
+    txt.textContent = days[i].date.slice(5); // MM-DD
+    svg.appendChild(txt);
+  });
+
+  // Legend
+  var leg = document.createElement('div');
+  leg.style.cssText = 'display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text-muted);';
+  var l1 = document.createElement('span');
+  l1.textContent = '● Coût ($)';
+  l1.style.color = '#06b6d4';
+  var l2 = document.createElement('span');
+  l2.textContent = '█ Traces';
+  l2.style.color = 'rgba(34,197,94,0.6)';
+  leg.appendChild(l1); leg.appendChild(l2);
+
+  var container = document.createElement('div');
+  container.appendChild(svg);
+  container.appendChild(leg);
+  return container;
+}
+
+function _lfTraces(wrap, traces, extUrl) {
+  var card = _lfCard();
+  var title = document.createElement('h3');
+  title.textContent = 'Traces récentes';
+  title.style.cssText = 'margin:0 0 12px;font-size:14px;font-weight:600;';
+  card.appendChild(title);
+
+  if (!traces || !traces.length) {
+    var empty = document.createElement('p');
+    empty.textContent = 'Aucune trace enregistrée.';
+    empty.style.cssText = 'color:var(--text-muted);font-size:13px;';
+    card.appendChild(empty);
+    wrap.appendChild(card);
+    return;
+  }
+
+  var tbl = document.createElement('div');
+  tbl.style.cssText = 'overflow-x:auto;max-height:320px;overflow-y:auto;';
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'display:grid;grid-template-columns:140px 1fr 100px 80px 80px;gap:8px;padding:8px 4px;font-size:11px;color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.08);position:sticky;top:0;background:rgba(13,17,23,0.95);';
+  ['Date', 'Nom', 'Utilisateur', 'Latence', 'Coût'].forEach(function(h) {
+    var s = document.createElement('span');
+    s.textContent = h;
+    s.style.fontWeight = '600';
+    hdr.appendChild(s);
+  });
+  tbl.appendChild(hdr);
+
+  traces.forEach(function(t) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:140px 1fr 100px 80px 80px;gap:8px;padding:6px 4px;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.04);';
+
+    var date = document.createElement('span');
+    date.textContent = t.timestamp ? new Date(t.timestamp).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    date.style.cssText = 'color:var(--text-muted);';
+
+    var name = document.createElement('span');
+    name.textContent = t.name || '—';
+    name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+
+    var user = document.createElement('span');
+    var uid = t.user_id || '';
+    user.textContent = uid.includes(':') ? uid.split(':')[1] : uid || '—';
+    user.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);';
+
+    var lat = document.createElement('span');
+    lat.textContent = t.latency_ms ? t.latency_ms + ' ms' : '—';
+    lat.style.cssText = 'text-align:right;color:var(--text-muted);';
+
+    var cost = document.createElement('span');
+    cost.textContent = t.cost ? '$' + t.cost.toFixed(4) : '—';
+    cost.style.cssText = 'text-align:right;';
+
+    row.appendChild(date);
+    row.appendChild(name);
+    row.appendChild(user);
+    row.appendChild(lat);
+    row.appendChild(cost);
+    tbl.appendChild(row);
+  });
+
+  card.appendChild(tbl);
+  wrap.appendChild(card);
+}
+
+function _lfUsers(wrap, users) {
+  if (!users || !users.length) return;
+  var card = _lfCard();
+  var title = document.createElement('h3');
+  title.textContent = 'Top utilisateurs';
+  title.style.cssText = 'margin:0 0 12px;font-size:14px;font-weight:600;';
+  card.appendChild(title);
+
+  var maxCost = users[0].cost || 1;
+  users.forEach(function(u) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;';
+
+    var name = document.createElement('span');
+    name.textContent = u.display_name;
+    name.style.cssText = 'width:120px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+
+    var barBg = document.createElement('div');
+    barBg.style.cssText = 'flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;';
+    var barFill = document.createElement('div');
+    var pct = maxCost > 0 ? (u.cost / maxCost * 100) : 0;
+    barFill.style.cssText = 'height:100%;background:#a855f7;border-radius:3px;width:' + pct + '%;';
+    barBg.appendChild(barFill);
+
+    var info = document.createElement('span');
+    info.textContent = u.traces + ' traces · $' + u.cost.toFixed(4);
+    info.style.cssText = 'width:130px;text-align:right;color:var(--text-muted);flex-shrink:0;';
+
+    row.appendChild(name);
+    row.appendChild(barBg);
+    row.appendChild(info);
+    card.appendChild(row);
+  });
+  wrap.appendChild(card);
 }
 
 // ── Merged Mémoire Tab (Users + Global + Dashboard) ──────────────────────────

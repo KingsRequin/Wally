@@ -38,6 +38,7 @@ class WallyDiscord(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.presences = True  # required for on_presence_update (privileged intent)
         super().__init__(command_prefix="!", intents=intents)
 
         self.config = config
@@ -129,6 +130,17 @@ class WallyDiscord(commands.Bot):
             return  # message not in cache, author unknown
         if author != user:
             self.social.on_reaction(user.display_name, author.display_name)
+
+    async def on_presence_update(self, before, after) -> None:
+        # `before` and `after` are discord.Member objects directly
+        if after.bot or not self.social or not after.guild:
+            return
+        before_games = {a.name for a in (before.activities or []) if isinstance(a, discord.Game)}
+        after_games = {a.name for a in (after.activities or []) if isinstance(a, discord.Game)}
+        for game in after_games - before_games:
+            self.social.on_game_start(after.display_name, game)
+        for game in before_games - after_games:
+            self.social.on_game_stop(after.display_name, game)
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)

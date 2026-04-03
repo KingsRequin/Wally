@@ -26,12 +26,13 @@ def test_self_reaction_ignored():
     assert len(tracker._buffer) == 0
 
 
-def test_key_normalization():
+def test_mention_directional():
+    """Mentions are directional — Zorro→Alice and Alice→Zorro are separate keys."""
     tracker = SocialTracker(_make_graph())
     tracker.on_mention("Zorro", "Alice")
     tracker.on_mention("Alice", "Zorro")
-    key = ("Alice", "Zorro", "mention")
-    assert tracker._buffer[key]["count"] == 2
+    assert tracker._buffer[("Zorro", "Alice", "mention")]["count"] == 1
+    assert tracker._buffer[("Alice", "Zorro", "mention")]["count"] == 1
 
 
 def test_voice_join_and_leave():
@@ -45,8 +46,10 @@ def test_voice_join_and_leave():
 
 
 def test_game_together():
+    """Both users start the same game — one co-presence signal recorded."""
     tracker = SocialTracker(_make_graph())
-    tracker.on_game_together("Alice", "Bob", "Apex Legends")
+    tracker.on_game_start("Alice", "Apex Legends")
+    tracker.on_game_start("Bob", "Apex Legends")
     key = ("Alice", "Bob", "game")
     assert tracker._buffer[key]["count"] == 1
     assert tracker._buffer[key]["metadata"]["game"] == "Apex Legends"

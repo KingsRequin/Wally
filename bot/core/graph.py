@@ -70,9 +70,18 @@ class GraphService:
 
     _DISCORD_MENTION_RE = re.compile(r"<@[!&]?\d+>")
     _EMOJI_ONLY_RE = re.compile(
-        r"^[\s\U0001f600-\U0001f64f\U0001f300-\U0001f5ff"
-        r"\U0001f680-\U0001f6ff\U0001f900-\U0001f9ff"
-        r"\U00002702-\U000027b0\U0000fe0f]+$"
+        r"^[\s"
+        r"\U0001f600-\U0001f64f"   # emoticons
+        r"\U0001f300-\U0001f5ff"   # symbols & pictographs
+        r"\U0001f680-\U0001f6ff"   # transport & map
+        r"\U0001f900-\U0001f9ff"   # supplemental symbols
+        r"\U0001fa00-\U0001fa6f"   # chess, medical
+        r"\U0001fa70-\U0001faff"   # symbols extended-A
+        r"\U00002600-\U000026ff"   # misc symbols (☀ ⚡ etc.)
+        r"\U00002700-\U000027bf"   # dingbats
+        r"\U0000200d"              # zero-width joiner (family emojis)
+        r"\U0000fe0f"              # variation selector-16
+        r"]+$"
     )
     _MIN_CONTENT_LENGTH = 20  # ignore very short messages
 
@@ -125,10 +134,15 @@ class GraphService:
 
         try:
             gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
+            is_social = source == "social_tracker"
             result = await self._graphiti.add_episode(
                 name=f"{source} message",
-                episode_body=f"{author}: {cleaned}",
+                episode_body=cleaned if is_social else f"{author}: {cleaned}",
                 source_description=(
+                    "Signal d'interaction sociale entre utilisateurs Discord. "
+                    "Extraire uniquement les noms de personnes mentionnées et leurs relations. "
+                    "Les noms d'entités doivent être des noms propres uniquement."
+                ) if is_social else (
                     f"Conversation francophone sur {source}. "
                     "Extraire les entités (personnes, lieux, sujets) et relations en français. "
                     "Les noms d'entités doivent être des noms propres ou des sujets clairs, "
@@ -191,9 +205,15 @@ class GraphService:
                 num_results=20,
             )
             weights = self._config.graphiti.affinity_weights
+            a_lower = user_a.lower()
+            b_lower = user_b.lower()
             score = 0.0
             for edge in edges:
                 fact = (edge.fact or "").lower()
+                # Only count edges that mention both users — search returns nearby edges
+                # that may involve only one of them (false positives).
+                if a_lower not in fact and b_lower not in fact:
+                    continue
                 if "vocal" in fact:
                     score += weights.get("voice", 3.0)
                 elif "répondu" in fact:
