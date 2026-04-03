@@ -1,11 +1,194 @@
 // public-ui/tabs/gallery.js
-import { openModal } from '../app.js';
 
 let _container = null;
 let _sort = 'date';
 let _offset = 0;
+let _search = '';
 const LIMIT = 24;
 
+// ── Gallery modal custom ──
+let _modalOverlay = null;
+
+function getJwt() {
+  return localStorage.getItem('discord_jwt') || null;
+}
+
+function authHeaders() {
+  const jwt = getJwt();
+  return jwt ? { Authorization: 'Bearer ' + jwt } : {};
+}
+
+function buildGalleryModal() {
+  if (_modalOverlay) return _modalOverlay;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'gallery-modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeGalleryModal();
+  });
+
+  const box = document.createElement('div');
+  box.className = 'gallery-modal-box';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'gallery-modal-close';
+  closeBtn.textContent = '✕';
+  closeBtn.setAttribute('aria-label', 'Fermer');
+  closeBtn.addEventListener('click', closeGalleryModal);
+  box.appendChild(closeBtn);
+
+  const img = document.createElement('img');
+  img.className = 'gallery-modal-img';
+  img.id = 'gallery-modal-img';
+  box.appendChild(img);
+
+  const meta = document.createElement('div');
+  meta.className = 'gallery-modal-meta';
+  meta.id = 'gallery-modal-meta';
+  box.appendChild(meta);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  _modalOverlay = overlay;
+  return overlay;
+}
+
+function closeGalleryModal() {
+  if (_modalOverlay) _modalOverlay.classList.remove('open');
+}
+
+function formatDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+async function openGalleryModal(imageId) {
+  const overlay = buildGalleryModal();
+  const imgEl = document.getElementById('gallery-modal-img');
+  const metaEl = document.getElementById('gallery-modal-meta');
+
+  // Show immediately with loading state
+  imgEl.src = `/api/public/gallery/${imageId}/image`;
+  imgEl.alt = '';
+  metaEl.textContent = '';
+  overlay.classList.add('open');
+
+  // Fetch details
+  let data = null;
+  try {
+    const res = await fetch(`/api/public/gallery/${imageId}`, { headers: authHeaders() });
+    if (res.ok) data = await res.json();
+  } catch (_) {}
+
+  if (!data) return;
+
+  imgEl.alt = data.title || data.prompt || '';
+  metaEl.textContent = '';
+
+  // Title row
+  const titleEl = document.createElement('div');
+  titleEl.className = 'gallery-modal-title';
+  titleEl.textContent = data.title || data.prompt || '';
+  metaEl.appendChild(titleEl);
+
+  // Author + date row
+  const authRow = document.createElement('div');
+  authRow.className = 'gallery-modal-authrow';
+  if (data.username) {
+    const authorEl = document.createElement('span');
+    authorEl.className = 'gallery-modal-author';
+    authorEl.textContent = data.username;
+    authRow.appendChild(authorEl);
+  }
+  if (data.created_at) {
+    const sep = document.createElement('span');
+    sep.className = 'gallery-modal-sep';
+    sep.textContent = '·';
+    authRow.appendChild(sep);
+    const dateEl = document.createElement('span');
+    dateEl.className = 'gallery-modal-date';
+    dateEl.textContent = formatDate(data.created_at);
+    authRow.appendChild(dateEl);
+  }
+  metaEl.appendChild(authRow);
+
+  // Vote row
+  const voteRow = document.createElement('div');
+  voteRow.className = 'gallery-modal-voterow';
+
+  const voteBtn = document.createElement('button');
+  voteBtn.className = 'gallery-modal-vote-btn' + (data.user_voted ? ' voted' : '');
+  const heartEl = document.createElement('span');
+  heartEl.textContent = '♥';
+  voteBtn.appendChild(heartEl);
+  const voteCount = document.createElement('span');
+  voteCount.className = 'gallery-modal-vote-count';
+  voteCount.textContent = String(data.votes || 0);
+  voteBtn.appendChild(voteCount);
+
+  voteBtn.addEventListener('click', async () => {
+    if (!getJwt()) {
+      showVoteToast('Connecte-toi pour voter');
+      return;
+    }
+    try {
+      const r = await fetch(`/api/public/gallery/${imageId}/vote`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (r.ok) {
+        const result = await r.json();
+        const current = parseInt(voteCount.textContent, 10) || 0;
+        voteCount.textContent = String(result.voted ? current + 1 : Math.max(0, current - 1));
+        voteBtn.classList.toggle('voted', result.voted);
+      }
+    } catch (_) {}
+  });
+
+  voteRow.appendChild(voteBtn);
+  metaEl.appendChild(voteRow);
+
+  // Badges row (model, quality, size)
+  const badges = [data.model, data.quality, data.size].filter(Boolean);
+  if (badges.length) {
+    const badgeRow = document.createElement('div');
+    badgeRow.className = 'gallery-modal-badges';
+    badges.forEach(b => {
+      const badge = document.createElement('span');
+      badge.className = 'gallery-modal-badge';
+      badge.textContent = b;
+      badgeRow.appendChild(badge);
+    });
+    metaEl.appendChild(badgeRow);
+  }
+
+  // Full prompt (only if different from title)
+  const hasTitle = Boolean(data.title);
+  const promptText = data.prompt || '';
+  if (hasTitle && promptText && promptText !== data.title) {
+    const promptEl = document.createElement('div');
+    promptEl.className = 'gallery-modal-prompt';
+    promptEl.textContent = promptText;
+    metaEl.appendChild(promptEl);
+  }
+}
+
+function showVoteToast(msg) {
+  const existing = document.querySelector('.vote-toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = 'vote-toast';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.classList.add('visible'), 10);
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// ── Gallery item builder ──
 function buildGalleryItem(img, delay) {
   const item = document.createElement('div');
   item.className = 'gallery-item';
@@ -22,24 +205,63 @@ function buildGalleryItem(img, delay) {
 
   const prompt = document.createElement('div');
   prompt.className = 'gallery-prompt';
-  prompt.textContent = img.prompt || '';
+  prompt.textContent = img.title || img.prompt || '';
   overlay.appendChild(prompt);
 
-  const votes = document.createElement('div');
-  votes.className = 'gallery-votes';
-  votes.textContent = (img.votes || 0) + ' votes';
-  overlay.appendChild(votes);
+  // Votes display + vote button
+  const votesRow = document.createElement('div');
+  votesRow.className = 'gallery-votes-row';
 
+  const votesLabel = document.createElement('span');
+  votesLabel.className = 'gallery-votes';
+  votesLabel.textContent = (img.votes || 0) + ' ♥';
+  votesRow.appendChild(votesLabel);
+
+  const voteBtn = document.createElement('button');
+  voteBtn.className = 'gallery-vote-btn' + (img.user_voted ? ' voted' : '');
+  voteBtn.setAttribute('aria-label', 'Voter');
+  voteBtn.textContent = img.user_voted ? '♥' : '♡';
+  voteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!getJwt()) {
+      showVoteToast('Connecte-toi pour voter');
+      return;
+    }
+    try {
+      const r = await fetch(`/api/public/gallery/${img.id}/vote`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (r.ok) {
+        const result = await r.json();
+        const current = parseInt(votesLabel.textContent, 10) || 0;
+        voteBtn.classList.toggle('voted', result.voted);
+        voteBtn.textContent = result.voted ? '♥' : '♡';
+        votesLabel.textContent = (result.voted ? current + 1 : Math.max(0, current - 1)) + ' ♥';
+      }
+    } catch (_) {}
+  });
+  votesRow.appendChild(voteBtn);
+
+  overlay.appendChild(votesRow);
   item.appendChild(overlay);
 
-  item.addEventListener('click', () => openModal(`/api/public/gallery/${img.id}/image`, img.prompt || ''));
+  item.addEventListener('click', () => openGalleryModal(img.id));
   return item;
 }
 
+// ── Load images ──
 async function loadImages(grid, append) {
-  const res = await fetch(`/api/public/gallery?limit=${LIMIT}&offset=${_offset}&sort_by=${_sort}`)
-    .then(r => r.json())
-    .catch(() => ({ images: [] }));
+  const params = new URLSearchParams({
+    limit: LIMIT,
+    offset: _offset,
+    sort_by: _sort,
+  });
+  if (_search.trim()) params.set('search', _search.trim());
+
+  const res = await fetch('/api/public/gallery?' + params.toString(), {
+    headers: authHeaders(),
+  }).then(r => r.json()).catch(() => ({ images: [] }));
 
   const images = res.images || [];
   if (!append) { grid.textContent = ''; }
@@ -52,14 +274,16 @@ async function loadImages(grid, append) {
   return images.length === LIMIT;
 }
 
+// ── Mount ──
 export function mount(el) {
   _container = el;
   _offset = 0;
+  _search = '';
   el.textContent = '';
 
   const wrap = document.createElement('div');
 
-  // Filters
+  // Filters bar
   const filters = document.createElement('div');
   filters.className = 'gallery-filters';
 
@@ -70,6 +294,26 @@ export function mount(el) {
 
   const grid = document.createElement('div');
   grid.className = 'gallery-grid';
+
+  let searchDebounce = null;
+
+  // Search input
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'gallery-search';
+  searchInput.placeholder = 'Rechercher…';
+  searchInput.setAttribute('aria-label', 'Rechercher dans la galerie');
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      _search = searchInput.value;
+      _offset = 0;
+      loadImages(grid, false).then(hasMore => {
+        loadMoreBtn.style.display = hasMore ? '' : 'none';
+      });
+    }, 300);
+  });
+  filters.appendChild(searchInput);
 
   filterDefs.forEach(({ label, value }) => {
     const btn = document.createElement('button');
@@ -86,6 +330,7 @@ export function mount(el) {
     });
     filters.appendChild(btn);
   });
+
   wrap.appendChild(filters);
   wrap.appendChild(grid);
 
@@ -105,8 +350,16 @@ export function mount(el) {
   });
 
   el.appendChild(wrap);
+
+  // Keyboard close
+  document.addEventListener('keydown', _handleKeydown);
+}
+
+function _handleKeydown(e) {
+  if (e.key === 'Escape') closeGalleryModal();
 }
 
 export function unmount() {
   _container = null;
+  document.removeEventListener('keydown', _handleKeydown);
 }

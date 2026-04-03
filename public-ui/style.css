@@ -290,6 +290,22 @@ body {
 .gallery-item:hover .gallery-overlay { opacity: 1; }
 .gallery-prompt { font-size: 0.65rem; color: rgba(255,255,255,0.85); text-align: center; line-height: 1.3; }
 .gallery-votes { font-size: 0.7rem; color: var(--accent); font-weight: 600; }
+.gallery-votes-row { display: flex; align-items: center; gap: 6px; }
+.gallery-vote-btn {
+  background: transparent; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px;
+  color: rgba(255,255,255,0.7); font-size: 0.75rem; padding: 2px 6px; cursor: pointer;
+  line-height: 1; transition: all 0.15s;
+}
+.gallery-vote-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(6,182,212,0.12); }
+.gallery-vote-btn.voted { border-color: var(--accent); color: var(--accent); background: rgba(6,182,212,0.18); }
+.gallery-search {
+  flex: 1 1 120px; min-width: 80px; max-width: 220px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 0.8rem;
+  padding: 6px 12px; outline: none; transition: border-color 0.2s;
+}
+.gallery-search::placeholder { color: var(--text-muted); }
+.gallery-search:focus { border-color: var(--accent); }
 .load-more {
   width: 100%; margin-top: 16px; padding: 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -432,6 +448,67 @@ body {
 }
 .modal-img { max-width: 80vw; max-height: 75vh; border-radius: 10px; display: block; }
 .modal-caption { font-size: 0.78rem; color: var(--text-muted); margin-top: 10px; text-align: center; }
+
+/* ── Gallery modal custom ── */
+.gallery-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.88);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1100; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.gallery-modal-overlay.open { opacity: 1; pointer-events: auto; }
+.gallery-modal-box {
+  background: rgba(15,15,22,0.97); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+  max-width: 92vw; max-height: 92vh;
+  display: flex; flex-direction: column; gap: 12px;
+  position: relative; overflow-y: auto;
+}
+.gallery-modal-close {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(255,255,255,0.08); border: none; border-radius: 6px;
+  color: var(--text); width: 28px; height: 28px; cursor: pointer;
+  font-size: 0.8rem; line-height: 1; transition: background 0.15s;
+}
+.gallery-modal-close:hover { background: rgba(255,255,255,0.15); }
+.gallery-modal-img { max-width: 80vw; max-height: 68vh; border-radius: 12px; display: block; object-fit: contain; }
+.gallery-modal-meta { display: flex; flex-direction: column; gap: 8px; }
+.gallery-modal-title { font-size: 0.95rem; font-weight: 600; color: var(--text); line-height: 1.4; }
+.gallery-modal-authrow { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); }
+.gallery-modal-author { color: var(--accent); }
+.gallery-modal-sep { opacity: 0.4; }
+.gallery-modal-date { }
+.gallery-modal-voterow { display: flex; align-items: center; gap: 8px; }
+.gallery-modal-vote-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-muted); font-size: 0.82rem;
+  padding: 5px 12px; cursor: pointer; transition: all 0.15s;
+}
+.gallery-modal-vote-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(6,182,212,0.1); }
+.gallery-modal-vote-btn.voted { border-color: var(--accent); color: var(--accent); background: rgba(6,182,212,0.18); }
+.gallery-modal-vote-count { font-weight: 600; }
+.gallery-modal-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.gallery-modal-badge {
+  font-size: 0.68rem; color: var(--text-muted);
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 5px; padding: 2px 7px;
+}
+.gallery-modal-prompt {
+  font-size: 0.72rem; color: var(--text-muted); line-height: 1.5;
+  border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px;
+}
+
+/* ── Vote toast ── */
+.vote-toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(8px);
+  background: rgba(15,15,22,0.95); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 18px;
+  font-size: 0.82rem; color: var(--text); z-index: 1200;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+.vote-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* ── Misc ── */
 .empty-state { text-align: center; padding: 40px; color: var(--text-muted); font-size: 0.85rem; }
