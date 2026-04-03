@@ -233,6 +233,41 @@ class GraphService:
             logger.warning("Affinity calculation failed: {e}", e=exc)
             return 0.0
 
+    async def get_social_context(
+        self,
+        group_id: str | None = None,
+        min_strength: int = 3,
+        limit: int = 10,
+    ) -> list[tuple[str, str, int]]:
+        """Return top social pairs as (name_a, name_b, strength) sorted by strength desc.
+
+        Uses a direct Cypher query — no LLM call, no Graphiti search overhead.
+        """
+        if not self.ready:
+            return []
+        try:
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
+            result = await self._graphiti.driver.execute_query(
+                "MATCH (a:Entity {group_id: $gid})-[r:RELATES_TO]-(b:Entity {group_id: $gid}) "
+                "WHERE r.invalid_at IS NULL "
+                "  AND a.name <> 'unknown' AND b.name <> 'unknown' "
+                "  AND a.name <> 'system' AND b.name <> 'system' "
+                "  AND NOT a.name CONTAINS '<@' AND NOT b.name CONTAINS '<@' "
+                "WITH a.name AS ua, b.name AS ub, count(r) AS strength "
+                "WHERE strength >= $min_strength "
+                "RETURN ua, ub, strength "
+                "ORDER BY strength DESC "
+                "LIMIT $limit",
+                params={"gid": gid, "min_strength": min_strength, "limit": limit},
+            )
+            return [
+                (record["ua"], record["ub"], record["strength"])
+                for record in result.records
+            ]
+        except Exception as exc:
+            logger.warning("Social context query failed: {e}", e=exc)
+            return []
+
     async def close(self) -> None:
         """Shutdown Graphiti and close Neo4j connection."""
         if self._graphiti is not None:

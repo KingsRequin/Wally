@@ -106,3 +106,32 @@ async def test_get_affinity_cypher_direct():
     svc._graphiti.driver.execute_query.assert_called_once()
     call_args = svc._graphiti.driver.execute_query.call_args
     assert "RELATES_TO" in call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_get_social_context_returns_pairs():
+    """get_social_context() returns list of (name_a, name_b, strength) tuples."""
+    svc = GraphService(_make_config())
+    svc._ready = True
+    svc._graphiti = MagicMock()
+
+    # Mock : 2 paires, strength 12 et 4
+    def _rec(ua, ub, strength):
+        r = MagicMock()
+        r.__getitem__ = lambda self, k: {"ua": ua, "ub": ub, "strength": strength}[k]
+        return r
+
+    mock_result = MagicMock()
+    mock_result.records = [_rec("Keychka", "Azrael", 12), _rec("Saphira", "Keychka", 4)]
+    svc._graphiti.driver = AsyncMock()
+    svc._graphiti.driver.execute_query = AsyncMock(return_value=mock_result)
+
+    pairs = await svc.get_social_context()
+    assert pairs == [("Keychka", "Azrael", 12), ("Saphira", "Keychka", 4)]
+
+
+@pytest.mark.asyncio
+async def test_get_social_context_returns_empty_when_not_ready():
+    svc = GraphService(_make_config())
+    pairs = await svc.get_social_context()
+    assert pairs == []
