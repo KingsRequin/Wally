@@ -15,6 +15,7 @@ import os
 from openai import AsyncOpenAI, RateLimitError, APIStatusError
 
 from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE, FALLBACK_IMAGE_RESPONSE
+from bot.core.tracing import create_generation
 
 if TYPE_CHECKING:
     from bot.db.database import Database
@@ -175,6 +176,7 @@ class OpenAILLMClient(BaseLLMClient):
     async def _complete_responses_api(
         self, messages: list[dict], purpose: str,
         user_id: str | None = None, max_tokens: int | None = None,
+        trace=None,
     ) -> str:
         kwargs: dict = {
             "model": self._model,
@@ -202,11 +204,14 @@ class OpenAILLMClient(BaseLLMClient):
                 self._model, response.usage.input_tokens, response.usage.output_tokens,
                 cached_input_tokens=cached,
             )
-            await self._db.log_cost(
-                self._model,
-                response.usage.input_tokens,
-                response.usage.output_tokens,
-                cost, purpose, user_id=user_id,
+            create_generation(
+                trace,
+                name=purpose,
+                model=self._model,
+                input=messages,
+                output=text,
+                usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens, "total": response.usage.input_tokens + response.usage.output_tokens},
+                metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
             )
             logger.info(
                 "OpenAI {model} (Responses) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
@@ -223,6 +228,7 @@ class OpenAILLMClient(BaseLLMClient):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         max_tokens: int | None = None,
+        trace=None,
     ) -> str:
         effective_max_tokens = max_tokens or self._max_tokens
         full_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -240,6 +246,7 @@ class OpenAILLMClient(BaseLLMClient):
                 try:
                     return await self._complete_responses_api(
                         full_messages, purpose, user_id=user_id, max_tokens=effective_max_tokens,
+                        trace=trace,
                     )
                 except RateLimitError:
                     wait = 2 ** attempt
@@ -282,9 +289,14 @@ class OpenAILLMClient(BaseLLMClient):
                     self._model, usage.prompt_tokens, usage.completion_tokens,
                     cached_input_tokens=cached,
                 )
-                await self._db.log_cost(
-                    self._model, usage.prompt_tokens, usage.completion_tokens, cost, purpose,
-                    user_id=user_id,
+                create_generation(
+                    trace,
+                    name=purpose,
+                    model=self._model,
+                    input=full_messages,
+                    output=response.choices[0].message.content.strip(),
+                    usage={"input": usage.prompt_tokens, "output": usage.completion_tokens, "total": usage.prompt_tokens + usage.completion_tokens},
+                    metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
                 )
                 logger.info(
                     "OpenAI {model} — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
@@ -326,6 +338,7 @@ class OpenAILLMClient(BaseLLMClient):
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
+        trace=None,
     ) -> tuple[str, list[str]]:
         use_responses = _uses_responses_api(self._model)
         tools_called: list[str] = []
@@ -333,12 +346,12 @@ class OpenAILLMClient(BaseLLMClient):
         if use_responses:
             return await self._complete_with_tools_responses(
                 system_prompt, messages, tools, tool_executor,
-                purpose, image_urls, user_id, tools_called,
+                purpose, image_urls, user_id, tools_called, trace=trace,
             )
         else:
             return await self._complete_with_tools_chat(
                 system_prompt, messages, tools, tool_executor,
-                purpose, image_urls, user_id, tools_called,
+                purpose, image_urls, user_id, tools_called, trace=trace,
             )
 
     async def _complete_with_tools_responses(
@@ -351,6 +364,7 @@ class OpenAILLMClient(BaseLLMClient):
         image_urls: list[str] | None,
         user_id: str | None,
         tools_called: list[str],
+        trace=None,
     ) -> tuple[str, list[str]]:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -418,7 +432,15 @@ class OpenAILLMClient(BaseLLMClient):
 
             text = response.output_text
             cost = estimate_cost(self._model, total_input, total_output, cached_input_tokens=total_cached)
-            await self._db.log_cost(self._model, total_input, total_output, cost, purpose, user_id=user_id)
+            create_generation(
+                trace,
+                name=purpose,
+                model=self._model,
+                input=full_messages,
+                output=text,
+                usage={"input": total_input, "output": total_output, "total": total_input + total_output},
+                metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
+            )
             logger.info(
                 "OpenAI {model} (Responses+tools) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
                 model=self._model, inp=total_input, out=total_output, cost=cost, purpose=purpose,
@@ -440,6 +462,7 @@ class OpenAILLMClient(BaseLLMClient):
         image_urls: list[str] | None,
         user_id: str | None,
         tools_called: list[str],
+        trace=None,
     ) -> tuple[str, list[str]]:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -506,7 +529,15 @@ class OpenAILLMClient(BaseLLMClient):
                     msg = response.choices[0].message
 
                 cost = estimate_cost(self._model, total_input, total_output, cached_input_tokens=total_cached)
-                await self._db.log_cost(self._model, total_input, total_output, cost, purpose, user_id=user_id)
+                create_generation(
+                    trace,
+                    name=purpose,
+                    model=self._model,
+                    input=full_messages,
+                    output=msg.content.strip() if msg.content else FALLBACK_RESPONSE,
+                    usage={"input": total_input, "output": total_output, "total": total_input + total_output},
+                    metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
+                )
                 logger.info(
                     "OpenAI {model} (Chat+tools) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
                     model=self._model, inp=total_input, out=total_output, cost=cost, purpose=purpose,
@@ -540,6 +571,7 @@ class OpenAILLMClient(BaseLLMClient):
         schema_name: str = "response",
         purpose: str = "structured",
         user_id: str | None = None,
+        trace=None,
     ) -> dict:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -597,9 +629,14 @@ class OpenAILLMClient(BaseLLMClient):
                             self._model, response.usage.input_tokens,
                             response.usage.output_tokens, cached_input_tokens=cached,
                         )
-                        await self._db.log_cost(
-                            self._model, response.usage.input_tokens,
-                            response.usage.output_tokens, cost, purpose, user_id=user_id,
+                        create_generation(
+                            trace,
+                            name=purpose,
+                            model=self._model,
+                            input=full_messages,
+                            output=text,
+                            usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens, "total": response.usage.input_tokens + response.usage.output_tokens},
+                            metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
                         )
                         logger.info(
                             "OpenAI {model} (Responses/structured) — {inp}in/{out}out tokens, "
@@ -675,9 +712,14 @@ class OpenAILLMClient(BaseLLMClient):
                         self._model, usage.prompt_tokens, usage.completion_tokens,
                         cached_input_tokens=cached,
                     )
-                    await self._db.log_cost(
-                        self._model, usage.prompt_tokens, usage.completion_tokens,
-                        cost, purpose, user_id=user_id,
+                    create_generation(
+                        trace,
+                        name=purpose,
+                        model=self._model,
+                        input=full_messages,
+                        output=choice.message.content,
+                        usage={"input": usage.prompt_tokens, "output": usage.completion_tokens, "total": usage.prompt_tokens + usage.completion_tokens},
+                        metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
                     )
                     logger.info(
                         "OpenAI {model} (Chat/structured) — {inp}in/{out}out tokens, "
@@ -788,7 +830,15 @@ class OpenAILLMClient(BaseLLMClient):
         file_path.write_bytes(image_data)
 
         cost_usd = self.estimate_image_cost(model, quality, size)
-        await self._db.log_cost(model, 0, 0, cost_usd, purpose="image_generation", user_id=sender_id)
+        create_generation(
+            None,
+            name="image_generation",
+            model=model,
+            input=prompt,
+            output=None,
+            usage={"input": 0, "output": 0},
+            metadata={"purpose": "image_generation", "user_id": sender_id, "cost_usd": cost_usd, "quality": quality, "size": size},
+        )
 
         revised = getattr(response.data[0], "revised_prompt", None)
 

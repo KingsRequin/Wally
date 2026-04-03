@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 
 FALLBACK_RESPONSE = (
@@ -34,6 +34,7 @@ class BaseLLMClient(ABC):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         max_tokens: int | None = None,
+        trace: Any = None,
     ) -> str:
         """Generate a text completion.
 
@@ -50,6 +51,7 @@ class BaseLLMClient(ABC):
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
+        trace: Any = None,
     ) -> tuple[str, list[str]]:
         """Generate a completion with function calling support.
 
@@ -69,6 +71,7 @@ class BaseLLMClient(ABC):
         schema_name: str = "response",
         purpose: str = "structured",
         user_id: str | None = None,
+        trace: Any = None,
     ) -> dict:
         """Generate a structured JSON output conforming to the given schema.
 

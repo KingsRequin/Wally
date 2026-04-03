@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Callable, Awaitable
 from loguru import logger
 
 from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE, FALLBACK_IMAGE_RESPONSE
+from bot.core.tracing import create_generation
 
 if TYPE_CHECKING:
     from bot.db.database import Database
@@ -183,6 +184,7 @@ class ClaudeLLMClient(BaseLLMClient):
 
     async def _log_usage(
         self, usage, purpose: str, user_id: str | None = None,
+        trace=None, messages=None, output_text=None,
     ) -> float:
         input_tokens = usage.input_tokens
         output_tokens = usage.output_tokens
@@ -193,9 +195,14 @@ class ClaudeLLMClient(BaseLLMClient):
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_creation,
         )
-        await self._db.log_cost(
-            self._model, input_tokens, output_tokens, cost, purpose,
-            user_id=user_id,
+        create_generation(
+            trace,
+            name=purpose,
+            model=self._model,
+            input=messages,
+            output=output_text,
+            usage={"input": input_tokens, "output": output_tokens, "total": input_tokens + output_tokens},
+            metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
         )
         cache_info = ""
         if cache_read or cache_creation:
@@ -262,6 +269,7 @@ class ClaudeLLMClient(BaseLLMClient):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         max_tokens: int | None = None,
+        trace=None,
     ) -> str:
         claude_messages = _convert_messages_for_claude(messages)
         effective_max = max_tokens or self._max_tokens
@@ -294,11 +302,15 @@ class ClaudeLLMClient(BaseLLMClient):
             if output_config:
                 kwargs["output_config"] = output_config
             response = await self._client.messages.create(**kwargs)
-            await self._log_usage(response.usage, purpose, user_id=user_id)
             # Extract text blocks only (skip thinking blocks)
             text_blocks = [b for b in response.content if b.type == "text"]
             text = text_blocks[0].text if text_blocks else ""
-            return text.strip() if text else fallback
+            result_text = text.strip() if text else fallback
+            await self._log_usage(
+                response.usage, purpose, user_id=user_id,
+                trace=trace, messages=claude_messages, output_text=result_text,
+            )
+            return result_text
 
         result = await self._call_with_retry(_call, purpose, fallback=fallback)
         return result if result is not None else fallback
@@ -312,6 +324,7 @@ class ClaudeLLMClient(BaseLLMClient):
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
+        trace=None,
     ) -> tuple[str, list[str]]:
         claude_messages = _convert_messages_for_claude(messages)
         claude_tools = _convert_tools_to_claude(tools)
@@ -440,8 +453,14 @@ class ClaudeLLMClient(BaseLLMClient):
                 cache_read_tokens=total_cache_read,
                 cache_creation_tokens=total_cache_creation,
             )
-            await self._db.log_cost(
-                self._model, total_input, total_output, cost, purpose, user_id=user_id,
+            create_generation(
+                trace,
+                name=purpose,
+                model=self._model,
+                input=claude_messages,
+                output=text,
+                usage={"input": total_input, "output": total_output, "total": total_input + total_output},
+                metadata={"purpose": purpose, "user_id": user_id, "temperature": self._temperature},
             )
             cache_info = ""
             if total_cache_read or total_cache_creation:
@@ -465,6 +484,7 @@ class ClaudeLLMClient(BaseLLMClient):
         schema_name: str = "response",
         purpose: str = "structured",
         user_id: str | None = None,
+        trace=None,
     ) -> dict:
         """Generate structured JSON output using a tool-based approach.
 
@@ -502,7 +522,10 @@ class ClaudeLLMClient(BaseLLMClient):
                 )
 
                 if response.usage:
-                    await self._log_usage(response.usage, purpose, user_id=user_id)
+                    await self._log_usage(
+                        response.usage, purpose, user_id=user_id,
+                        trace=trace, messages=claude_messages, output_text=str(response.content),
+                    )
 
                 # Extract the tool_use block
                 for block in response.content:
