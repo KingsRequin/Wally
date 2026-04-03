@@ -516,23 +516,31 @@ async def get_my_memory(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Authentication required")
 
     state = request.app.state.wally
-    records = await state.memory.store.get_all(user_id)
+    store = state.memory.store
+    if store is None:
+        return {"facts": [], "preferences": [], "relation": {"trust": 0.0, "love": 0.0}}
 
-    facts = [r.text for r in records if r.category in ("FAIT", "LANG")]
-    preferences = [r.text for r in records if r.category == "PREF"]
+    try:
+        records = await store.get_all(user_id)
 
-    parts = user_id.split(":", 1)
-    platform = parts[0] if len(parts) == 2 else "discord"
-    raw_id = parts[1] if len(parts) == 2 else user_id
+        facts = [r.text for r in records if r.category in ("FAIT", "LANG")]
+        preferences = [r.text for r in records if r.category == "PREF"]
 
-    trust = await state.db.get_trust_score(platform, raw_id)
-    love = await state.db.get_love_score(platform, raw_id)
+        parts = user_id.split(":", 1)
+        platform = parts[0] if len(parts) == 2 else "discord"
+        raw_id = parts[1] if len(parts) == 2 else user_id
 
-    return {
-        "facts": facts,
-        "preferences": preferences,
-        "relation": {"trust": round(trust, 3), "love": round(love, 3)},
-    }
+        trust = await state.db.get_trust_score(platform, raw_id)
+        love = await state.db.get_love_score(platform, raw_id)
+
+        return {
+            "facts": facts,
+            "preferences": preferences,
+            "relation": {"trust": round(trust, 3), "love": round(love, 3)},
+        }
+    except Exception as exc:
+        logger.warning("get_my_memory failed for {u}: {e}", u=user_id, e=exc)
+        return {"facts": [], "preferences": [], "relation": {"trust": 0.0, "love": 0.0}}
 
 
 async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.0) -> None:

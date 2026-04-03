@@ -1,8 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-VALID_JWT_PAYLOAD = {"user_id": "discord:123456789"}
-
 @pytest.mark.asyncio
 async def test_memory_me_returns_data(async_client):
     from bot.dashboard.routes import chat as chat_routes
