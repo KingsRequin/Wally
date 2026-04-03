@@ -57,9 +57,33 @@ async def _graph_data(request: Request) -> dict:
             params={"gid": gid},
         )
         # Only keep edges where both ends exist in filtered nodes
-        edges = [
+        raw_edges = [
             dict(record) for record in result.records
             if record["source"] in node_ids and record["target"] in node_ids
+        ]
+
+        # Dédupliquer par paire (source, target) et agréger les facts + weight
+        from collections import defaultdict
+        pair_data: dict[tuple, dict] = defaultdict(lambda: {"facts": [], "types": set()})
+        for e in raw_edges:
+            key = (e["source"], e["target"])
+            pair_data[key]["facts"].append(e["fact"] or "")
+            pair_data[key]["types"].add(e["type"] or "")
+            # Conserver les noms pour la lisibilité côté client
+            pair_data[key]["source_name"] = e["source_name"]
+            pair_data[key]["target_name"] = e["target_name"]
+
+        edges = [
+            {
+                "source": src,
+                "target": tgt,
+                "weight": len(data["facts"]),
+                "facts": [f for f in data["facts"] if f],
+                "types": list(data["types"]),
+                "source_name": data["source_name"],
+                "target_name": data["target_name"],
+            }
+            for (src, tgt), data in pair_data.items()
         ]
 
         return {"nodes": nodes, "edges": edges}
