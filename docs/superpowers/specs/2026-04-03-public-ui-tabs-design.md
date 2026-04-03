@@ -70,11 +70,26 @@ public-ui/
 
 **Avant connexion :** Écran de login avec avatar Wally animé (pulse), bouton Discord OAuth, aperçu de l'interface flouté derrière.
 
-**Après connexion :**
-- Barre utilisateur en haut (avatar Discord, nom, bouton déconnexion)
-- Zone messages : bulles bot (cyan) + bulles user (indigo), animation `msgIn` au chargement, indicateur de frappe (3 points animés)
-- Sidebar mémoire (260px) : sections FAITS / PRÉFÉRENCES + scores relation (affinité, confiance) récupérés via `GET /api/public/memory/me` *(nouvel endpoint à créer, JWT requis)*
-- Input + bouton envoi
+**Après connexion — layout 3 colonnes :**
+
+- **Colonne gauche — Wally (220px)** :
+  - Avatar GIF animé identique à l'overlay OBS : `/static/avatar/emotions/{emotion}/{tier}.gif`
+  - Même logique que `overlay.html` : émotion dominante > 0.2, tier = low/mid/high (seuils 0.4/0.7)
+  - Mis à jour via SSE `/api/public/sse/emotions`
+  - Émotion dominante affichée en texte sous l'avatar
+  - 5 mini-barres d'émotions en temps réel
+  - Dot "En ligne"
+
+- **Colonne centrale — Messages** :
+  - Bulles bot (cyan) + bulles user (indigo), animation `msgIn` au chargement
+  - Indicateur de frappe (3 points animés)
+  - Barre utilisateur en haut (avatar Discord, nom, bouton déconnexion)
+
+- **Colonne droite — Mémoire (240px)** :
+  - Sections FAITS / PRÉFÉRENCES + scores relation (affinité, confiance)
+  - Récupérés via `GET /api/public/memory/me` *(nouvel endpoint à créer, JWT requis)*
+
+- **Input** : barre fixe en bas sur toute la largeur
 
 **Transport :** WebSocket existant (`/ws/chat`).
 
