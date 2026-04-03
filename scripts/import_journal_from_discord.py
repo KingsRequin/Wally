@@ -34,12 +34,17 @@ MONTH_FR = {
 }
 _DATE_RE = re.compile(r"(\d{1,2})\s+(\w+)\s+(\d{4})", re.IGNORECASE)
 _ISO_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+_SLASH_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 
 
 def _parse_journal_date(header_line: str) -> str | None:
     m = _ISO_RE.search(header_line)
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    m = _SLASH_RE.search(header_line)
+    if m:
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return f"{year}-{month:02d}-{day:02d}"
     m = _DATE_RE.search(header_line)
     if m:
         day, month_str, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
