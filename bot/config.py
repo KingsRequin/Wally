@@ -250,6 +250,7 @@ class GraphitiConfig:
         "voice": 3.0, "reply": 2.0, "mention": 1.5,
         "reaction": 1.0, "thread": 1.0, "game": 2.5,
     })
+    graph_context_max_tokens: int = 400
 
 
 @dataclass

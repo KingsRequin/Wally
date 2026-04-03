@@ -18,6 +18,7 @@ def _make_config(enabled=False):
         "voice": 3.0, "reply": 2.0, "mention": 1.5,
         "reaction": 1.0, "thread": 1.0, "game": 2.5,
     }
+    config.graphiti.graph_context_max_tokens = 400
     return config
 
 

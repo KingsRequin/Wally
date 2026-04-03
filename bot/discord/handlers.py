@@ -803,16 +803,32 @@ async def _respond(
         if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
             _graph_facts_count = 0
             try:
+                _author_lbl = _author_label(message.author)
                 graph_results = await bot.graph.search(
-                    query=message.content,
+                    query=f"{_author_lbl}: {message.content}",
                     group_id=None,  # falls back to config.graphiti.group_id (discord-default)
-                    num_results=5,
+                    num_results=10,
                 )
                 if graph_results:
-                    facts = [r["fact"] for r in graph_results if r.get("fact")]
-                    if facts:
-                        _graph_facts_count = len(facts)
-                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(f"- {f}" for f in facts)
+                    # Filtrer les facts invalidés
+                    valid_results = [r for r in graph_results if r.get("invalid_at") is None]
+                    facts_lines = []
+                    token_budget = bot.config.graphiti.graph_context_max_tokens
+                    used = 0
+                    for r in valid_results:
+                        fact = r.get("fact", "")
+                        if not fact:
+                            continue
+                        valid_at = r.get("valid_at")
+                        date_str = f"  [depuis {str(valid_at)[:10]}]" if valid_at else ""
+                        line = f"• {fact}{date_str}"
+                        used += len(line) // 4  # approximation tokens
+                        if used > token_budget:
+                            break
+                        facts_lines.append(line)
+                    if facts_lines:
+                        _graph_facts_count = len(facts_lines)
+                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(facts_lines)
             except Exception:
                 pass
             finally:
