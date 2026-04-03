@@ -166,6 +166,7 @@ def _check_spontaneous_trigger(
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
 _memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
+_social_context_cooldowns: dict[int, float] = {}  # rate-limit social context per channel
 _spam_tracker: dict[tuple[str, str], deque] = {}
 
 
@@ -834,6 +835,27 @@ async def _respond(
             finally:
                 create_span(trace, name="graph:search", input={"query": message.content}, output={"facts_count": _graph_facts_count})
 
+        # Social context — relations sociales du serveur (rate-limited 60s/channel)
+        social_context = ""
+        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
+            chan_id = message.channel.id
+            now = time.time()
+            if now - _social_context_cooldowns.get(chan_id, 0) >= 60:
+                _social_context_cooldowns[chan_id] = now
+                try:
+                    pairs = await bot.graph.get_social_context()
+                    if pairs:
+                        def _label(s: int) -> str:
+                            if s >= 10:
+                                return "très proches"
+                            if s >= 5:
+                                return "proches"
+                            return "interagissent"
+                        lines = [f"• {a} ↔ {b}  ({_label(s)})" for a, b, s in pairs]
+                        social_context = "--- Relations sociales connues ---\n" + "\n".join(lines)
+                except Exception:
+                    pass
+
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -854,6 +876,7 @@ async def _respond(
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             graph_context=graph_context,
+            social_context=social_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)

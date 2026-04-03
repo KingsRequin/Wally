@@ -280,3 +280,22 @@ def test_build_system_prompt_omits_empty_graph_context():
         graph_context="",
     )
     assert "Connaissances du graphe" not in prompt
+
+
+def test_social_context_injected():
+    builder = PromptBuilder()
+    prompt = builder.build_system_prompt(
+        emotion_state={"joy": 0.5, "anger": 0.0, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.1},
+        social_context="--- Relations sociales connues ---\n• Keychka ↔ Azrael  (très proches)",
+    )
+    assert "Relations sociales connues" in prompt
+    assert "Keychka ↔ Azrael" in prompt
+
+
+def test_social_context_empty_not_injected():
+    builder = PromptBuilder()
+    prompt = builder.build_system_prompt(
+        emotion_state={"joy": 0.5, "anger": 0.0, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.1},
+        social_context="",
+    )
+    assert "Relations sociales" not in prompt
