@@ -18,6 +18,38 @@ function authHeaders() {
   return jwt ? { Authorization: 'Bearer ' + jwt } : {};
 }
 
+// Tente de rafraîchir le JWT via le refresh token. Retourne true si succès.
+async function tryRefresh() {
+  const refresh = localStorage.getItem('discord_refresh');
+  if (!refresh) return false;
+  try {
+    const r = await fetch('/api/chat/auth/refresh', {
+      headers: { Authorization: 'Bearer ' + refresh },
+    });
+    if (!r.ok) {
+      localStorage.removeItem('discord_jwt');
+      localStorage.removeItem('discord_refresh');
+      return false;
+    }
+    const data = await r.json();
+    if (data.jwt) localStorage.setItem('discord_jwt', data.jwt);
+    if (data.refresh_token) localStorage.setItem('discord_refresh', data.refresh_token);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// fetch avec retry automatique sur 401 (refresh JWT transparent)
+async function authedFetch(url, options = {}) {
+  const res = await fetch(url, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } });
+  if (res.status !== 401) return res;
+  // Token expiré — on tente le refresh
+  const refreshed = await tryRefresh();
+  if (!refreshed) return res; // renvoie le 401 original
+  return fetch(url, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } });
+}
+
 function buildGalleryModal() {
   if (_modalOverlay) return _modalOverlay;
 
@@ -77,7 +109,7 @@ async function openGalleryModal(imageId) {
   // Fetch details
   let data = null;
   try {
-    const res = await fetch(`/api/public/gallery/${imageId}`, { headers: authHeaders() });
+    const res = await authedFetch(`/api/public/gallery/${imageId}`);
     if (res.ok) data = await res.json();
   } catch (_) {}
 
@@ -129,19 +161,18 @@ async function openGalleryModal(imageId) {
 
   voteBtn.addEventListener('click', async () => {
     if (!getJwt()) {
-      showVoteToast('Connecte-toi pour voter');
+      showVoteToast('Connecte-toi via le chat pour voter');
       return;
     }
     try {
-      const r = await fetch(`/api/public/gallery/${imageId}/vote`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
+      const r = await authedFetch(`/api/public/gallery/${imageId}/vote`, { method: 'POST' });
       if (r.ok) {
         const result = await r.json();
         const current = parseInt(voteCount.textContent, 10) || 0;
         voteCount.textContent = String(result.voted ? current + 1 : Math.max(0, current - 1));
         voteBtn.classList.toggle('voted', result.voted);
+      } else if (r.status === 401) {
+        showVoteToast('Session expirée — reconnecte-toi dans le Chat');
       }
     } catch (_) {}
   });
@@ -224,20 +255,19 @@ function buildGalleryItem(img, delay) {
   voteBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!getJwt()) {
-      showVoteToast('Connecte-toi pour voter');
+      showVoteToast('Connecte-toi via le chat pour voter');
       return;
     }
     try {
-      const r = await fetch(`/api/public/gallery/${img.id}/vote`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
+      const r = await authedFetch(`/api/public/gallery/${img.id}/vote`, { method: 'POST' });
       if (r.ok) {
         const result = await r.json();
         const current = parseInt(votesLabel.textContent, 10) || 0;
         voteBtn.classList.toggle('voted', result.voted);
         voteBtn.textContent = result.voted ? '♥' : '♡';
         votesLabel.textContent = (result.voted ? current + 1 : Math.max(0, current - 1)) + ' ♥';
+      } else if (r.status === 401) {
+        showVoteToast('Session expirée — reconnecte-toi dans le Chat');
       }
     } catch (_) {}
   });
@@ -259,9 +289,8 @@ async function loadImages(grid, append) {
   });
   if (_search.trim()) params.set('search', _search.trim());
 
-  const res = await fetch('/api/public/gallery?' + params.toString(), {
-    headers: authHeaders(),
-  }).then(r => r.json()).catch(() => ({ images: [] }));
+  const res = await authedFetch('/api/public/gallery?' + params.toString())
+    .then(r => r.json()).catch(() => ({ images: [] }));
 
   const images = res.images || [];
   if (!append) { grid.textContent = ''; }

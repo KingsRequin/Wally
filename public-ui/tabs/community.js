@@ -7,144 +7,120 @@ let _tooltip   = null;
 let _rafId     = null;
 let _mounted   = false;
 
-const PLATFORM_COLORS = { discord: '#5865f2', twitch: '#9146ff' };
-const DEFAULT_COLOR   = '#06b6d4';
-const MIN_RADIUS      = 6;
-const MAX_RADIUS      = 20;
-const MAX_TICKS       = 500;
-const REPULSION       = 3000;
-const ATTRACTION      = 0.03;
-const DAMPING         = 0.85;
-const CENTER_FORCE    = 0.008;
+// API retourne des nœuds Graphiti/Neo4j : { id, name, summary, labels:["Entity"|...] }
+// et des arêtes : { source, target, type, fact, source_name, target_name }
+
+const DEFAULT_COLOR  = '#06b6d4';
+const MIN_RADIUS     = 8;
+const MAX_RADIUS     = 22;
+const MAX_TICKS      = 600;
+const REPULSION      = 4000;
+const ATTRACTION     = 0.025;
+const DAMPING        = 0.82;
+const CENTER_FORCE   = 0.01;
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-function nodeRadius(count, minCount, maxCount) {
-  if (maxCount === minCount) return (MIN_RADIUS + MAX_RADIUS) / 2;
-  const t = (count - minCount) / (maxCount - minCount);
+// Couleur par type de nœud (labels Graphiti)
+function nodeColor(n) {
+  const labels = n.labels || [];
+  if (labels.includes('User') || labels.includes('Person')) return '#5865f2';
+  if (labels.includes('Community')) return '#9146ff';
+  return DEFAULT_COLOR;
+}
+
+function nodeRadius(degree, minDeg, maxDeg) {
+  if (maxDeg === minDeg) return (MIN_RADIUS + MAX_RADIUS) / 2;
+  const t = (degree - minDeg) / (maxDeg - minDeg);
   return MIN_RADIUS + t * (MAX_RADIUS - MIN_RADIUS);
 }
 
-function buildGraph(data) {
-  const nodes = (data.nodes || []).map(n => ({ ...n }));
-  const edges = (data.edges || []);
-  return { nodes, edges };
-}
-
-function initPositions(nodes, width, height) {
-  nodes.forEach(n => {
-    n.x  = Math.random() * (width  - 80) + 40;
-    n.y  = Math.random() * (height - 80) + 40;
-    n.vx = 0;
-    n.vy = 0;
-  });
-}
-
-function tick(nodes, edges, width, height) {
-  const cx = width  / 2;
-  const cy = height / 2;
-
-  // Reset forces
+function tick(nodes, edges, W, H) {
+  const cx = W / 2, cy = H / 2;
   nodes.forEach(n => { n.fx = 0; n.fy = 0; });
 
-  // Repulsion (Coulomb) — O(n²)
+  // Répulsion Coulomb
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i], b = nodes[j];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist2 = dx * dx + dy * dy + 0.01;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist2 = dx * dx + dy * dy + 1;
       const force = REPULSION / dist2;
       const dist  = Math.sqrt(dist2);
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
       a.fx -= fx; a.fy -= fy;
       b.fx += fx; b.fy += fy;
     }
   }
 
-  // Attraction (spring) along edges
+  // Attraction ressort sur les arêtes
   edges.forEach(e => {
-    const a = nodes.find(n => n.id === e.source);
-    const b = nodes.find(n => n.id === e.target);
+    const a = e._a, b = e._b;
     if (!a || !b) return;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
-    const force = ATTRACTION * dist * (e.weight || 1);
-    const fx = (dx / dist) * force;
-    const fy = (dy / dist) * force;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+    const force = ATTRACTION * dist;
+    const fx = (dx / dist) * force, fy = (dy / dist) * force;
     a.fx += fx; a.fy += fy;
     b.fx -= fx; b.fy -= fy;
   });
 
-  // Centering force
+  // Force de centrage
   nodes.forEach(n => {
     n.fx += (cx - n.x) * CENTER_FORCE;
     n.fy += (cy - n.y) * CENTER_FORCE;
   });
 
-  // Integrate
+  // Intégration
   nodes.forEach(n => {
     n.vx = (n.vx + n.fx) * DAMPING;
     n.vy = (n.vy + n.fy) * DAMPING;
-    n.x  = clamp(n.x + n.vx, MAX_RADIUS, width  - MAX_RADIUS);
-    n.y  = clamp(n.y + n.vy, MAX_RADIUS, height - MAX_RADIUS);
+    n.x = clamp(n.x + n.vx, n.r + 2, W - n.r - 2);
+    n.y = clamp(n.y + n.vy, n.r + 2, H - n.r - 2);
   });
 }
 
-function drawFrame(ctx, nodes, edges, radii, width, height) {
-  ctx.clearRect(0, 0, width, height);
+function drawFrame(ctx, nodes, edges, W, H) {
+  ctx.clearRect(0, 0, W, H);
 
-  // Draw edges
+  // Arêtes
   edges.forEach(e => {
-    const a = nodes.find(n => n.id === e.source);
-    const b = nodes.find(n => n.id === e.target);
+    const a = e._a, b = e._b;
     if (!a || !b) return;
-    const w = clamp((e.weight || 1) * 0.5, 0.5, 4);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth   = w;
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth   = 1.5;
     ctx.stroke();
   });
 
-  // Draw nodes
+  // Nœuds + labels
+  ctx.font = '11px Inter, sans-serif';
+  ctx.textAlign = 'center';
   nodes.forEach(n => {
-    const r     = radii.get(n.id);
-    const color = PLATFORM_COLORS[n.platform] || DEFAULT_COLOR;
+    const color = n.color;
+    // Cercle
     ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = color + 'cc'; // 80% opacity
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fillStyle = color + 'bb';
     ctx.fill();
     ctx.strokeStyle = color;
     ctx.lineWidth   = 1.5;
     ctx.stroke();
+    // Label
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText(n.name || n.id, n.x, n.y + n.r + 13);
   });
 }
 
-function hitTest(nodes, radii, mx, my) {
+function hitTest(nodes, mx, my) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
-    const r = radii.get(n.id);
     const dx = mx - n.x, dy = my - n.y;
-    if (dx * dx + dy * dy <= r * r) return n;
+    if (dx * dx + dy * dy <= n.r * n.r) return n;
   }
   return null;
-}
-
-function positionTooltip(tooltip, mx, my, canvasRect) {
-  const offsetX = 14, offsetY = -10;
-  let left = mx + offsetX;
-  let top  = my + offsetY;
-  // keep within viewport
-  const tw = tooltip.offsetWidth  || 160;
-  const th = tooltip.offsetHeight || 40;
-  if (left + tw > canvasRect.right  - canvasRect.left) left = mx - tw - offsetX;
-  if (top  + th > canvasRect.bottom - canvasRect.top)  top  = my - th - 4;
-  tooltip.style.left = left + 'px';
-  tooltip.style.top  = top  + 'px';
 }
 
 export function mount(el) {
@@ -155,10 +131,10 @@ export function mount(el) {
   const wrap = document.createElement('div');
   wrap.className = 'community-wrap glass';
 
-  const title = document.createElement('div');
-  title.className = 'community-title';
-  title.textContent = 'Communauté';
-  wrap.appendChild(title);
+  const titleEl = document.createElement('div');
+  titleEl.className = 'community-title';
+  titleEl.textContent = 'Communauté';
+  wrap.appendChild(titleEl);
 
   const loading = document.createElement('div');
   loading.className = 'empty-state';
@@ -189,23 +165,60 @@ function _renderGraph(wrap, data) {
     return;
   }
 
-  const { nodes, edges } = buildGraph(data);
+  const rawNodes = data.nodes || [];
+  const rawEdges = data.edges || [];
 
-  // Legend
+  // Degré de chaque nœud (nombre d'arêtes connectées) → radius
+  const degreeMap = new Map();
+  rawNodes.forEach(n => degreeMap.set(n.id, 0));
+  rawEdges.forEach(e => {
+    degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+    degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+  });
+  const degrees  = [...degreeMap.values()];
+  const minDeg   = Math.min(...degrees);
+  const maxDeg   = Math.max(...degrees);
+
+  // Construire les nœuds enrichis
+  const nodes = rawNodes.map(n => ({
+    ...n,
+    x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
+    r:     nodeRadius(degreeMap.get(n.id) || 0, minDeg, maxDeg),
+    color: nodeColor(n),
+    name:  n.name || n.id,
+  }));
+
+  // Map id → node pour résolution rapide des arêtes
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+
+  // Construire les arêtes avec références résolues
+  const edges = rawEdges
+    .map(e => ({ ...e, _a: nodeById.get(e.source), _b: nodeById.get(e.target) }))
+    .filter(e => e._a && e._b);
+
+  // Légende
   const legend = document.createElement('div');
   legend.className = 'community-legend';
-  [['Discord', '#5865f2'], ['Twitch', '#9146ff']].forEach(([label, color]) => {
+  const legendEntries = [
+    ['Entités', DEFAULT_COLOR],
+    ['Utilisateurs', '#5865f2'],
+  ];
+  // n'afficher que les types présents
+  const hasUsers = nodes.some(n => (n.labels||[]).some(l => ['User','Person'].includes(l)));
+  (hasUsers ? legendEntries : legendEntries.slice(0, 1)).forEach(([label, color]) => {
     const item = document.createElement('div');
     item.className = 'community-legend-item';
     const dot = document.createElement('span');
     dot.className = 'community-legend-dot';
     dot.style.background = color;
-    const lbl = document.createElement('span');
-    lbl.textContent = label;
     item.appendChild(dot);
-    item.appendChild(lbl);
+    item.appendChild(document.createTextNode(label));
     legend.appendChild(item);
   });
+  const edgeNote = document.createElement('div');
+  edgeNote.style.cssText = 'font-size:0.7rem;color:rgba(255,255,255,0.3);margin-left:auto;';
+  edgeNote.textContent = nodes.length + ' nœuds · ' + edges.length + ' liens';
+  legend.appendChild(edgeNote);
   wrap.appendChild(legend);
 
   // Canvas
@@ -217,92 +230,110 @@ function _renderGraph(wrap, data) {
   _tooltip = document.createElement('div');
   _tooltip.className = 'community-tooltip';
   _tooltip.style.display = 'none';
-  _tooltip.style.position = 'absolute';
   wrap.appendChild(_tooltip);
 
-  // Precompute radii
-  const counts = nodes.map(n => n.message_count || 0);
-  const minC   = Math.min(...counts);
-  const maxC   = Math.max(...counts);
-  const radii  = new Map(nodes.map(n => [n.id, nodeRadius(n.message_count || 0, minC, maxC)]));
-
-  // Size canvas to container
+  // Taille canvas
   function resizeCanvas() {
     const rect = wrap.getBoundingClientRect();
-    const W = Math.max(rect.width  || 600, 300);
-    const H = Math.max(rect.height || 400, 300) - 80; // subtract legend+title
+    const W = Math.max(rect.width  || 700, 320);
+    const H = Math.max(rect.height || 500, 340) - 90;
     _canvas.width  = W;
     _canvas.height = H;
     return { W, H };
   }
 
-  let { W, H } = resizeCanvas();
-  initPositions(nodes, W, H);
+  // Laisser le layout se stabiliser avant de lire les dimensions
+  requestAnimationFrame(() => {
+    let { W, H } = resizeCanvas();
 
-  const ctx = _canvas.getContext('2d');
-  let tickCount = 0;
-  let frozen    = false;
+    // Positions initiales en cercle pour éviter l'entassement au départ
+    nodes.forEach((n, i) => {
+      const angle = (i / nodes.length) * Math.PI * 2;
+      const r = Math.min(W, H) * 0.3;
+      n.x = W / 2 + Math.cos(angle) * r;
+      n.y = H / 2 + Math.sin(angle) * r;
+    });
 
-  function animate() {
-    if (!_mounted) return;
-    if (!frozen) {
-      tick(nodes, edges, W, H);
-      tickCount++;
-      if (tickCount >= MAX_TICKS) frozen = true;
+    const ctx = _canvas.getContext('2d');
+    let tickCount = 0, frozen = false;
+
+    function animate() {
+      if (!_mounted) return;
+      if (!frozen) {
+        tick(nodes, edges, W, H);
+        tickCount++;
+        if (tickCount >= MAX_TICKS) frozen = true;
+      }
+      drawFrame(ctx, nodes, edges, W, H);
+      _rafId = requestAnimationFrame(animate);
     }
-    drawFrame(ctx, nodes, edges, radii, W, H);
-    _rafId = requestAnimationFrame(animate);
-  }
+    animate();
 
-  animate();
+    // Hover tooltip
+    _canvas.addEventListener('mousemove', (e) => {
+      const rect = _canvas.getBoundingClientRect();
+      const scaleX = _canvas.width  / rect.width;
+      const scaleY = _canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top)  * scaleY;
+      const hit = hitTest(nodes, mx, my);
+      if (hit) {
+        _tooltip.textContent = '';
+        const name = document.createElement('strong');
+        name.textContent = hit.name;
+        _tooltip.appendChild(name);
+        if (hit.summary) {
+          const sum = document.createElement('div');
+          sum.style.cssText = 'font-size:0.7rem;color:rgba(255,255,255,0.5);margin-top:3px;max-width:220px;line-height:1.4;white-space:pre-wrap;';
+          // Tronquer le résumé si trop long
+          sum.textContent = hit.summary.length > 120 ? hit.summary.slice(0, 120) + '…' : hit.summary;
+          _tooltip.appendChild(sum);
+        }
+        _tooltip.style.display = 'block';
+        // Position relative au wrap
+        const wRect = wrap.getBoundingClientRect();
+        let left = e.clientX - wRect.left + 12;
+        let top  = e.clientY - wRect.top  - 10;
+        const tw = 220, th = 60;
+        if (left + tw > wRect.width)  left = e.clientX - wRect.left - tw - 12;
+        if (top  + th > wRect.height) top  = e.clientY - wRect.top  - th - 4;
+        _tooltip.style.left = left + 'px';
+        _tooltip.style.top  = top  + 'px';
+        _canvas.style.cursor = 'pointer';
+      } else {
+        _tooltip.style.display = 'none';
+        _canvas.style.cursor = 'default';
+      }
+    });
 
-  // Hover tooltip via mousemove on canvas
-  _canvas.addEventListener('mousemove', (e) => {
-    const rect = _canvas.getBoundingClientRect();
-    const mx   = e.clientX - rect.left;
-    const my   = e.clientY - rect.top;
-    const hit  = hitTest(nodes, radii, mx, my);
-    if (hit) {
-      _tooltip.textContent = '';
-      const namePart = document.createElement('strong');
-      namePart.textContent = hit.label || hit.id;
-      _tooltip.appendChild(namePart);
-      _tooltip.appendChild(document.createTextNode(' — ' + (hit.message_count || 0) + ' msg'));
-      _tooltip.style.display = 'block';
-      positionTooltip(_tooltip, mx, my, { left: 0, top: 0, right: W, bottom: H });
-      _canvas.style.cursor = 'pointer';
-    } else {
+    _canvas.addEventListener('mouseleave', () => {
       _tooltip.style.display = 'none';
-      _canvas.style.cursor = 'default';
-    }
-  });
+    });
 
-  _canvas.addEventListener('mouseleave', () => {
-    _tooltip.style.display = 'none';
-    _canvas.style.cursor = 'default';
-  });
+    // Clic → nudge pour relancer la simulation
+    _canvas.addEventListener('click', (e) => {
+      const rect = _canvas.getBoundingClientRect();
+      const scaleX = _canvas.width  / rect.width;
+      const scaleY = _canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top)  * scaleY;
+      const hit = hitTest(nodes, mx, my);
+      if (hit) {
+        hit.vx += (Math.random() - 0.5) * 30;
+        hit.vy += (Math.random() - 0.5) * 30;
+        frozen = false; tickCount = 0;
+      }
+    });
 
-  // Click on node to unfreeze (allow re-simulation)
-  _canvas.addEventListener('click', (e) => {
-    const rect = _canvas.getBoundingClientRect();
-    const mx   = e.clientX - rect.left;
-    const my   = e.clientY - rect.top;
-    const hit  = hitTest(nodes, radii, mx, my);
-    if (hit) {
-      // Nudge the node to kick it free
-      hit.vx += (Math.random() - 0.5) * 20;
-      hit.vy += (Math.random() - 0.5) * 20;
-      frozen    = false;
-      tickCount = 0;
-    }
-  });
-
-  // Resize handler
-  window.addEventListener('resize', () => {
-    const dims = resizeCanvas();
-    W = dims.W; H = dims.H;
-    frozen    = false;
-    tickCount = 0;
+    // Resize
+    const ro = window.ResizeObserver
+      ? new ResizeObserver(() => {
+          const dims = resizeCanvas();
+          W = dims.W; H = dims.H;
+          frozen = false; tickCount = 0;
+        })
+      : null;
+    if (ro) ro.observe(wrap);
   });
 }
 
