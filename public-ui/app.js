@@ -90,14 +90,18 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 window.addEventListener('hashchange', route);
 route();
 
-// ── Stars canvas ──
+// ── Stars canvas — parallax 3D ──
 (function initStars() {
   const canvas = document.getElementById('stars');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+  // Smooth mouse offset (normalised -0.5..0.5, lerped)
+  let targetMX = 0, targetMY = 0, curMX = 0, curMY = 0;
+  window.addEventListener('mousemove', e => {
+    targetMX = e.clientX / window.innerWidth - 0.5;
+    targetMY = e.clientY / window.innerHeight - 0.5;
+  });
 
   function resize() {
     canvas.width = window.innerWidth;
@@ -106,44 +110,49 @@ route();
   resize();
   window.addEventListener('resize', resize);
 
+  // depth 0..1: 0 = far (tiny, moves little), 1 = close (bigger, moves more)
   const stars = [];
-  for (let i = 0; i < 130; i++) {
+  for (let i = 0; i < 150; i++) {
+    const depth = Math.random();               // parallax layer
     stars.push({
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
-      r: Math.random() * 1.3 + 0.3,
+      bx: Math.random() * window.innerWidth,   // base position
+      by: Math.random() * window.innerHeight,
+      r: 0.3 + depth * 1.4,                   // size proportional to depth
       alpha: Math.random(),
-      da: (Math.random() * 0.004 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
-      vx: (Math.random() - 0.5) * 0.15,
-      vy: (Math.random() - 0.5) * 0.15,
+      da: (Math.random() * 0.003 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
+      dx: (Math.random() - 0.5) * 0.08,       // slow drift
+      dy: (Math.random() - 0.5) * 0.08,
+      depth,
     });
   }
 
+  const MAX_SHIFT = 60; // px max parallax shift for the closest layer
+
   function draw() {
+    // Lerp toward target mouse position
+    curMX += (targetMX - curMX) * 0.06;
+    curMY += (targetMY - curMY) * 0.06;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const s of stars) {
-      // Gentle mouse attraction — force proportional to 1/dist, capped
-      const distX = mouse.x - s.x;
-      const distY = mouse.y - s.y;
-      const dist = Math.sqrt(distX * distX + distY * distY) || 1;
-      const force = Math.min(60 / (dist * dist), 0.012);
-      s.vx += distX * force;
-      s.vy += distY * force;
-      // Dampen velocity
-      s.vx *= 0.97;
-      s.vy *= 0.97;
-      s.x += s.vx;
-      s.y += s.vy;
-      // Wrap around edges
-      if (s.x < 0) s.x = canvas.width;
-      if (s.x > canvas.width) s.x = 0;
-      if (s.y < 0) s.y = canvas.height;
-      if (s.y > canvas.height) s.y = 0;
+      // Slow drift of base position
+      s.bx += s.dx;
+      s.by += s.dy;
+      if (s.bx < 0) s.bx = canvas.width;
+      if (s.bx > canvas.width) s.bx = 0;
+      if (s.by < 0) s.by = canvas.height;
+      if (s.by > canvas.height) s.by = 0;
+
+      // Parallax offset — deeper stars shift more
+      const rx = s.bx + curMX * MAX_SHIFT * s.depth;
+      const ry = s.by + curMY * MAX_SHIFT * s.depth;
+
       // Twinkle
       s.alpha += s.da;
       if (s.alpha <= 0.05 || s.alpha >= 1) s.da = -s.da;
+
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.arc(rx, ry, s.r, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, s.alpha)).toFixed(3)})`;
       ctx.fill();
     }
