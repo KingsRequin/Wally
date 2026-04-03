@@ -88,6 +88,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 window.addEventListener('hashchange', route);
+
+// If returning from Discord OAuth, navigate to #chat before routing
+if (new URLSearchParams(location.search).get('chat_code')) {
+  location.hash = 'chat';
+}
+
 route();
 
 // ── Stars canvas — parallax 3D ──

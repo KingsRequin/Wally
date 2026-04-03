@@ -66,6 +66,7 @@ function parseInline(text, container) {
 
 function renderMarkdown(text, container) {
   const HEADING = /^(#{1,3})\s+(.+)$/;
+  const SMALL_HEADING = /^-#\s+(.+)$/;
   const BLOCKQUOTE = /^>\s?(.*)/;
 
   const blocks = text.split(/\n{2,}/);
@@ -74,8 +75,22 @@ function renderMarkdown(text, container) {
     const lines = block.split('\n');
     const firstLine = lines[0];
     const hMatch = firstLine.match(HEADING);
+    const smMatch = firstLine.match(SMALL_HEADING);
 
-    if (hMatch) {
+    if (smMatch) {
+      const el = document.createElement('div');
+      el.className = 'md-small-heading';
+      parseInline(smMatch[1], el);
+      container.appendChild(el);
+      if (lines.length > 1) {
+        const p = document.createElement('p');
+        lines.slice(1).forEach((line, i) => {
+          parseInline(line, p);
+          if (i < lines.length - 2) p.appendChild(document.createElement('br'));
+        });
+        container.appendChild(p);
+      }
+    } else if (hMatch) {
       const level = Math.min(hMatch[1].length + 2, 6); // h3-h5
       const el = document.createElement('h' + level);
       el.className = 'md-heading';

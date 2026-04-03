@@ -184,11 +184,20 @@ function buildChatLayout(user) {
   _ws.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'typing') {
+      if (data.type === 'history') {
+        // Restore today's messages on (re)connect
+        const msgs = data.messages || [];
+        msgs.forEach(msg => {
+          addBubble(msgList, msg.content, msg.is_wally ? 'bot' : 'user');
+        });
+      } else if (data.type === 'typing') {
         showTyping(msgList);
       } else if (data.type === 'message') {
         removeTyping(msgList);
-        addBubble(msgList, data.content, 'bot');
+        // Skip echo: user messages are already shown locally when sent
+        if (data.is_wally !== false) {
+          addBubble(msgList, data.content, 'bot');
+        }
       }
     } catch (_) {}
   };

@@ -135,9 +135,12 @@ body {
 
 /* ── Status tab ── */
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.status-card-fullwidth { grid-column: 1 / -1; }
 .card-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; }
 .card-value { font-size: 1.4rem; font-weight: 700; }
 .card-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+.stream-link-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 12px; font-size: 0.75rem; font-weight: 600; color: #9146ff; background: rgba(145, 70, 255, 0.08); border: 1px solid rgba(145, 70, 255, 0.25); border-radius: 8px; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
+.stream-link-btn:hover { background: rgba(145, 70, 255, 0.16); border-color: rgba(145, 70, 255, 0.45); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .dot-on { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
 .dot-off { background: rgba(255,255,255,0.2); }
@@ -350,6 +353,7 @@ body {
 .entry-body .md-heading { color: rgba(255,255,255,0.88); font-weight: 700; margin: 16px 0 6px; font-size: 0.95rem; }
 .entry-body h3.md-heading { font-size: 0.92rem; }
 .entry-body h4.md-heading, .entry-body h5.md-heading { font-size: 0.86rem; color: rgba(255,255,255,0.7); }
+.entry-body .md-small-heading { font-size: 0.78rem; font-weight: 600; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.06em; margin: 14px 0 4px; }
 .entry-body .md-blockquote {
   border-left: 3px solid rgba(6,182,212,0.5);
   margin: 8px 0; padding: 6px 14px;

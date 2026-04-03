@@ -35,4 +35,5 @@ async def get_status(request: Request) -> dict:
         "messages_web": state.message_count_web,
         "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
         "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
+        "twitch_channel": os.getenv("TWITCH_BROADCASTER_LOGIN", ""),
     }
