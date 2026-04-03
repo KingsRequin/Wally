@@ -78,3 +78,31 @@ async def test_fact_extractor_calls_graph_add_episode():
 
     extractor = FactExtractor(config, memory, llm, graph=graph)
     assert extractor._graph is graph
+
+
+@pytest.mark.asyncio
+async def test_get_affinity_cypher_direct():
+    """get_affinity() uses Cypher query, not semantic search."""
+    svc = GraphService(_make_config())
+    svc._ready = True
+    svc._graphiti = MagicMock()
+
+    # Mock du driver : retourne 2 arêtes de type "vocal" et 1 "reply"
+    mock_record_voice = MagicMock()
+    mock_record_voice.__getitem__ = lambda self, k: {"type": "EN_VOCAL_AVEC", "cnt": 2}[k]
+    mock_record_reply = MagicMock()
+    mock_record_reply.__getitem__ = lambda self, k: {"type": "REPOND_A", "cnt": 1}[k]
+
+    mock_result = MagicMock()
+    mock_result.records = [mock_record_voice, mock_record_reply]
+    svc._graphiti.driver = AsyncMock()
+    svc._graphiti.driver.execute_query = AsyncMock(return_value=mock_result)
+
+    score = await svc.get_affinity("Alice", "Bob")
+    # voice × 2 = 6.0, reply × 1 = 2.0 → total 8.0
+    assert score == 8.0
+
+    # Vérifier que execute_query a bien été appelé (pas graphiti.search)
+    svc._graphiti.driver.execute_query.assert_called_once()
+    call_args = svc._graphiti.driver.execute_query.call_args
+    assert "RELATES_TO" in call_args[0][0]

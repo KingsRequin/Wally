@@ -202,39 +202,33 @@ class GraphService:
             return []
 
     async def get_affinity(self, user_a: str, user_b: str, group_id: str | None = None) -> float:
-        """Calculate affinity score between two users based on graph edges."""
+        """Calculate affinity score between two users using a direct Cypher query."""
         if not self.ready:
             return 0.0
         try:
             gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
-            edges = await self._graphiti.search(
-                query=f"{user_a} {user_b}",
-                group_ids=[gid],
-                num_results=20,
+            result = await self._graphiti.driver.execute_query(
+                "MATCH (a:Entity {group_id: $gid})-[r:RELATES_TO]-(b:Entity {group_id: $gid}) "
+                "WHERE toLower(a.name) = $name_a AND toLower(b.name) = $name_b "
+                "  AND r.invalid_at IS NULL "
+                "RETURN r.name AS type, count(r) AS cnt",
+                params={"gid": gid, "name_a": user_a.lower(), "name_b": user_b.lower()},
             )
             weights = self._config.graphiti.affinity_weights
-            a_lower = user_a.lower()
-            b_lower = user_b.lower()
+            _TYPE_TO_WEIGHT = {
+                "EN_VOCAL_AVEC": weights.get("voice", 3.0),
+                "REPOND_A": weights.get("reply", 2.0),
+                "MENTIONNE": weights.get("mention", 1.5),
+                "REAGIT_A": weights.get("reaction", 1.0),
+                "THREAD_COMMUN": weights.get("thread", 1.0),
+                "JOUE_AVEC": weights.get("game", 2.5),
+            }
             score = 0.0
-            for edge in edges:
-                fact = (edge.fact or "").lower()
-                # Only count edges that mention both users — search returns nearby edges
-                # that may involve only one of them (false positives).
-                if a_lower not in fact and b_lower not in fact:
-                    continue
-                if "vocal" in fact:
-                    score += weights.get("voice", 3.0)
-                elif "répondu" in fact:
-                    score += weights.get("reply", 2.0)
-                elif "mentionné" in fact:
-                    score += weights.get("mention", 1.5)
-                elif "réagi" in fact:
-                    score += weights.get("reaction", 1.0)
-                elif "thread" in fact:
-                    score += weights.get("thread", 1.0)
-                elif "joué" in fact:
-                    score += weights.get("game", 2.5)
-            return score
+            for record in result.records:
+                edge_type = record["type"] or ""
+                cnt = record["cnt"] or 0
+                score += _TYPE_TO_WEIGHT.get(edge_type, 0.5) * cnt
+            return round(score, 2)
         except Exception as exc:
             logger.warning("Affinity calculation failed: {e}", e=exc)
             return 0.0
