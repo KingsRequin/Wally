@@ -39,7 +39,9 @@ def _estimate_claude_cost(
         CLAUDE_FALLBACK_COST,
     )
     # Non-cached input = total input - cache_read - cache_creation
-    non_cached = input_tokens - cache_read_tokens - cache_creation_tokens
+    # Clamp to 0 — in rare edge cases Anthropic may report cache_read + cache_creation
+    # slightly above input_tokens (rounding), which would produce a negative cost.
+    non_cached = max(0, input_tokens - cache_read_tokens - cache_creation_tokens)
     return (
         non_cached * costs[0]
         + cache_read_tokens * costs[0] * CLAUDE_CACHE_DISCOUNT
@@ -177,8 +179,13 @@ class ClaudeLLMClient(BaseLLMClient):
         return None
 
     def _build_output_config(self) -> dict | None:
-        """Build output_config with effort level (used with adaptive thinking)."""
-        if self._thinking_type in ("adaptive", "enabled") and self._thinking_effort != "high":
+        """Build output_config with effort level.
+
+        Only valid for adaptive thinking — the Anthropic API documents output_config.effort
+        exclusively for adaptive mode. Injecting it for enabled (fixed budget_tokens) has
+        no documented effect and risks a 400 on non-high effort values.
+        """
+        if self._thinking_type == "adaptive" and self._thinking_effort != "high":
             return {"effort": self._thinking_effort}
         return None
 

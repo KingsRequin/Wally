@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+from asyncio import gather
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -26,8 +28,6 @@ async def langfuse_config() -> JSONResponse:
 @router.get("/langfuse-stats", include_in_schema=False)
 async def langfuse_stats(request: Request, days: int = 7) -> JSONResponse:
     """Agrège traces, coûts, métriques depuis l'API Langfuse."""
-    import httpx
-
     if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
         return JSONResponse({"error": "Langfuse keys not configured"}, status_code=503)
 
@@ -36,14 +36,11 @@ async def langfuse_stats(request: Request, days: int = 7) -> JSONResponse:
 
     try:
         async with httpx.AsyncClient(auth=auth, timeout=15.0) as client:
-            # Fetch daily metrics + recent traces in parallel
-            from asyncio import gather
-
-            metrics_req = client.get(f"{base}/metrics/daily")
-            traces_p1 = client.get(f"{base}/traces", params={"limit": 100, "page": 1})
-            traces_p2 = client.get(f"{base}/traces", params={"limit": 100, "page": 2})
-
-            metrics_resp, tp1, tp2 = await gather(metrics_req, traces_p1, traces_p2)
+            metrics_resp, tp1, tp2 = await gather(
+                client.get(f"{base}/metrics/daily"),
+                client.get(f"{base}/traces", params={"limit": 100, "page": 1}),
+                client.get(f"{base}/traces", params={"limit": 100, "page": 2}),
+            )
 
             metrics_resp.raise_for_status()
             tp1.raise_for_status()
@@ -52,6 +49,8 @@ async def langfuse_stats(request: Request, days: int = 7) -> JSONResponse:
             traces_raw = tp1.json().get("data", [])
             if tp2.status_code == 200:
                 traces_raw += tp2.json().get("data", [])
+            elif tp2.status_code not in (404, 204):
+                logger.debug("Langfuse traces page 2 returned {code}", code=tp2.status_code)
 
     except Exception as exc:
         logger.warning("Langfuse stats fetch error: {e}", e=exc)
@@ -126,19 +125,21 @@ async def langfuse_stats(request: Request, days: int = 7) -> JSONResponse:
             user_agg[uid]["traces"] += 1
             user_agg[uid]["cost"] += t.get("totalCost", 0) or 0
 
-    # Resolve display names from DB
+    # Resolve display names from DB (memory_users schema: user_id, username)
     db = getattr(request.app.state, "wally", None)
     db_ref = getattr(db, "db", None) if db else None
     user_names: dict[str, str] = {}
     if db_ref:
         try:
             rows = await db_ref.fetch_all(
-                "SELECT platform_id, display_name FROM memory_users"
+                "SELECT user_id, username FROM memory_users"
             )
             for row in rows:
-                user_names[row["platform_id"]] = row["display_name"]
-        except Exception:
-            pass
+                uid = row["user_id"]
+                name = row["username"] or uid.split(":")[-1]
+                user_names[uid] = name
+        except Exception as exc:
+            logger.debug("Langfuse stats: failed to resolve user names: {e}", e=exc)
 
     top_users = sorted(
         [
