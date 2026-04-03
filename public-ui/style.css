@@ -201,7 +201,10 @@ body {
 .bubble { max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 0.85rem; line-height: 1.5; animation: msgIn 0.25s ease both; }
 @keyframes msgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 .bubble-bot { background: rgba(6,182,212,0.12); border: 1px solid rgba(6,182,212,0.2); align-self: flex-start; }
+.bubble-bot p { margin: 0 0 6px; } .bubble-bot p:last-child { margin-bottom: 0; }
+.bubble-bot strong { color: rgba(255,255,255,0.95); }
 .bubble-user { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.25); align-self: flex-end; }
+.bubble-system { align-self: center; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); font-size: 0.75rem; font-style: italic; border-radius: 8px; padding: 6px 12px; max-width: 90%; }
 .typing-indicator { display: flex; gap: 4px; align-items: center; padding: 10px 14px; }
 .typing-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: typingBounce 1s ease infinite; }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }

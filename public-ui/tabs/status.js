@@ -1,9 +1,11 @@
 // public-ui/tabs/status.js
 import { emotions, onEmotionUpdate } from '../app.js';
 
-let _pollInterval = null;
-let _container = null;
-let _unsubEmo = null;
+let _pollInterval   = null;
+let _historyInterval = null;
+let _historyData    = null;   // cache — ne refetch pas à chaque render
+let _container      = null;
+let _unsubEmo       = null;
 
 const EMO_COLORS = {
   anger: '#ef4444', joy: '#eab308', curiosity: '#22c55e',
@@ -47,13 +49,13 @@ function buildEmoBar(name, value) {
   return { row, fill, pct };
 }
 
-// ── Sparkline chart for emotion history ──
+// ── Sparkline chart ──
 function drawHistoryChart(canvas, history) {
   if (!history || history.length < 2) return;
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth || 600;
   const H = canvas.clientHeight || 120;
-  canvas.width = W * dpr;
+  canvas.width  = W * dpr;
   canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
@@ -61,11 +63,8 @@ function drawHistoryChart(canvas, history) {
   const PAD = { top: 12, right: 12, bottom: 24, left: 8 };
   const cW = W - PAD.left - PAD.right;
   const cH = H - PAD.top - PAD.bottom;
-
   const emos = ['anger', 'joy', 'curiosity', 'sadness', 'boredom'];
   const n = history.length;
-
-  // X axis: time labels
   const tMin = history[0].snapshot_at;
   const tMax = history[n - 1].snapshot_at;
 
@@ -82,12 +81,11 @@ function drawHistoryChart(canvas, history) {
     ctx.stroke();
   }
 
-  // Draw each emotion line
+  // Emotion lines
   emos.forEach(emo => {
-    const color = EMO_COLORS[emo];
     ctx.beginPath();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = EMO_COLORS[emo];
     ctx.globalAlpha = 0.85;
     history.forEach((snap, i) => {
       const x = xOf(i);
@@ -100,31 +98,24 @@ function drawHistoryChart(canvas, history) {
 
   // Time labels
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font = `${10 * dpr / dpr}px Inter, sans-serif`;
+  ctx.font = '10px Inter, sans-serif';
   ctx.textAlign = 'center';
-  const labelTimes = [tMin, (tMin + tMax) / 2, tMax];
-  labelTimes.forEach(t => {
+  [tMin, (tMin + tMax) / 2, tMax].forEach(t => {
     const x = PAD.left + ((t - tMin) / (tMax - tMin)) * cW;
     const d = new Date(t * 1000);
     ctx.fillText(d.getHours() + 'h' + String(d.getMinutes()).padStart(2, '0'), x, H - 4);
   });
+}
 
-  // Legend
-  const legX = PAD.left;
-  let legY = PAD.top + 2;
-  emos.forEach(emo => {
-    ctx.beginPath();
-    ctx.strokeStyle = EMO_COLORS[emo];
-    ctx.lineWidth = 2;
-    ctx.moveTo(legX, legY);
-    ctx.lineTo(legX + 14, legY);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.textAlign = 'left';
-    ctx.fillText(EMO_LABELS[emo], legX + 18, legY + 3);
-    legX; // unused, drawn relative
-    legY += 14;
-  });
+// ── Fetch history (séparé du poll status) ──
+async function fetchHistory() {
+  try {
+    const r = await fetch('/api/public/emotions/history?since=' + Math.floor(Date.now() / 1000 - 86400));
+    const data = await r.json();
+    _historyData = (data.history || []).filter(s => s.snapshot_at);
+    const canvas = document.getElementById('status-emo-history-canvas');
+    if (canvas && _historyData.length >= 2) drawHistoryChart(canvas, _historyData);
+  } catch (_) {}
 }
 
 function renderStatus(el, status, stream) {
@@ -231,7 +222,7 @@ function renderStatus(el, status, stream) {
       if (stream.category || stream.game) {
         const game = document.createElement('div');
         game.className = 'card-sub';
-        game.textContent = stream.category || stream.game || '';
+        game.textContent = stream.category || stream.game;
         cardStream.appendChild(game);
       }
 
@@ -267,7 +258,6 @@ function renderStatus(el, status, stream) {
       cardStream.appendChild(offline);
     }
 
-    // Twitch channel link
     const channelLogin = status.twitch_channel || '';
     if (channelLogin) {
       const btn = document.createElement('a');
@@ -291,7 +281,7 @@ function renderStatus(el, status, stream) {
 
   el.appendChild(grid);
 
-  // ── Card: Historique des émotions (async) ──
+  // ── Card: Historique des émotions ──
   const cardHist = document.createElement('div');
   cardHist.className = 'card status-card-fullwidth';
   cardHist.style.marginTop = '0';
@@ -305,30 +295,33 @@ function renderStatus(el, status, stream) {
   canvas.style.cssText = 'width:100%;height:140px;display:block;';
   cardHist.appendChild(canvas);
 
-  // Legend inline
+  // Légende HTML (pas sur le canvas)
   const legRow = document.createElement('div');
   legRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;';
-  ['anger','joy','curiosity','sadness','boredom'].forEach(emo => {
+  ['anger', 'joy', 'curiosity', 'sadness', 'boredom'].forEach(emo => {
     const item = document.createElement('div');
     item.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:0.7rem;color:rgba(255,255,255,0.55);';
-    const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:20px;height:2px;background:${EMO_COLORS[emo]};border-radius:2px;`;
-    item.appendChild(dot);
+    const swatch = document.createElement('span');
+    swatch.style.cssText = `display:inline-block;width:20px;height:2px;background:${EMO_COLORS[emo]};border-radius:2px;`;
+    item.appendChild(swatch);
     item.appendChild(document.createTextNode(EMO_LABELS[emo]));
     legRow.appendChild(item);
   });
   cardHist.appendChild(legRow);
   grid.appendChild(cardHist);
 
-  // Fetch & draw after layout
-  fetch('/api/public/emotions/history?since=' + Math.floor(Date.now() / 1000 - 86400))
-    .then(r => r.json())
-    .then(data => {
-      const history = (data.history || []).filter(s => s.snapshot_at);
-      if (history.length < 2) return;
-      drawHistoryChart(canvas, history);
-    })
-    .catch(() => {});
+  // Dessin immédiat depuis le cache si disponible
+  if (_historyData && _historyData.length >= 2) {
+    setTimeout(() => drawHistoryChart(canvas, _historyData), 0);
+  }
+
+  // Redimensionnement automatique
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      if (_historyData && _historyData.length >= 2) drawHistoryChart(canvas, _historyData);
+    });
+    ro.observe(canvas);
+  }
 }
 
 async function fetchAndRender() {
@@ -342,9 +335,14 @@ async function fetchAndRender() {
 
 export function mount(el) {
   clearInterval(_pollInterval);
+  clearInterval(_historyInterval);
   _container = el;
+
   fetchAndRender();
-  _pollInterval = setInterval(fetchAndRender, 30000);
+  fetchHistory();
+
+  _pollInterval    = setInterval(fetchAndRender, 30000);
+  _historyInterval = setInterval(fetchHistory, 300000); // toutes les 5 min
 
   _unsubEmo = onEmotionUpdate((emo) => {
     const barsEl = document.getElementById('status-emo-bars');
@@ -359,7 +357,10 @@ export function mount(el) {
 
 export function unmount() {
   clearInterval(_pollInterval);
-  _pollInterval = null;
-  _container = null;
+  clearInterval(_historyInterval);
+  _pollInterval    = null;
+  _historyInterval = null;
+  _historyData     = null;
+  _container       = null;
   if (_unsubEmo) { _unsubEmo(); _unsubEmo = null; }
 }

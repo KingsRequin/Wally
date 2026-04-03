@@ -1,4 +1,5 @@
 // public-ui/tabs/journal.js
+import { parseInline, renderMarkdown } from '../markdown.js';
 
 let _container = null;
 
@@ -15,6 +16,18 @@ function formatDateLong(dateStr) {
   return d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 }
 
+// Extrait l'heure HHhMM depuis un ISO string UTC "2026-04-03T21:00:00"
+// Traité comme UTC puis converti en heure locale du navigateur
+function formatGenTime(isoStr) {
+  if (!isoStr) return null;
+  try {
+    const d = new Date(isoStr + 'Z'); // force UTC parsing
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+  } catch (_) {
+    return null;
+  }
+}
+
 function detectEmoBadges(content) {
   const badges = [];
   const patterns = [
@@ -25,103 +38,9 @@ function detectEmoBadges(content) {
     { key: 'boredom',   color: EMO_COLORS.boredom,    label: 'Ennui' },
   ];
   patterns.forEach(p => {
-    const re = new RegExp(p.label, 'i');
-    if (re.test(content)) badges.push(p);
+    if (new RegExp(p.label, 'i').test(content)) badges.push(p);
   });
   return badges;
-}
-
-// ── Discord Markdown → DOM ──
-// Supports: # h1-3, **bold**, *italic*, _italic_, ~~strike~~, `code`, > blockquote
-function parseInline(text, container) {
-  // Split text by inline tokens using matchAll (avoids exec/shell confusion)
-  const INLINE = /(\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|~~(.+?)~~|`(.+?)`)/gs;
-  let last = 0;
-  const tokens = [];
-  for (const m of text.matchAll(INLINE)) {
-    if (m.index > last) tokens.push({ type: 'text', val: text.slice(last, m.index) });
-    if (m[2] !== undefined)      tokens.push({ type: 'strong', val: m[2] });
-    else if (m[3] !== undefined) tokens.push({ type: 'em',     val: m[3] });
-    else if (m[4] !== undefined) tokens.push({ type: 'em',     val: m[4] });
-    else if (m[5] !== undefined) tokens.push({ type: 'del',    val: m[5] });
-    else if (m[6] !== undefined) tokens.push({ type: 'code',   val: m[6] });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) tokens.push({ type: 'text', val: text.slice(last) });
-
-  for (const tok of tokens) {
-    if (tok.type === 'text') {
-      container.appendChild(document.createTextNode(tok.val));
-    } else if (tok.type === 'strong') {
-      const el = document.createElement('strong'); el.textContent = tok.val; container.appendChild(el);
-    } else if (tok.type === 'em') {
-      const el = document.createElement('em'); el.textContent = tok.val; container.appendChild(el);
-    } else if (tok.type === 'del') {
-      const el = document.createElement('s'); el.textContent = tok.val; container.appendChild(el);
-    } else if (tok.type === 'code') {
-      const el = document.createElement('code'); el.className = 'md-code'; el.textContent = tok.val; container.appendChild(el);
-    }
-  }
-}
-
-function renderMarkdown(text, container) {
-  const HEADING = /^(#{1,3})\s+(.+)$/;
-  const SMALL_HEADING = /^-#\s+(.+)$/;
-  const BLOCKQUOTE = /^>\s?(.*)/;
-
-  const blocks = text.split(/\n{2,}/);
-  for (const block of blocks) {
-    if (!block.trim()) continue;
-    const lines = block.split('\n');
-    const firstLine = lines[0];
-    const hMatch = firstLine.match(HEADING);
-    const smMatch = firstLine.match(SMALL_HEADING);
-
-    if (smMatch) {
-      const el = document.createElement('div');
-      el.className = 'md-small-heading';
-      parseInline(smMatch[1], el);
-      container.appendChild(el);
-      if (lines.length > 1) {
-        const p = document.createElement('p');
-        lines.slice(1).forEach((line, i) => {
-          parseInline(line, p);
-          if (i < lines.length - 2) p.appendChild(document.createElement('br'));
-        });
-        container.appendChild(p);
-      }
-    } else if (hMatch) {
-      const level = Math.min(hMatch[1].length + 2, 6); // h3-h5
-      const el = document.createElement('h' + level);
-      el.className = 'md-heading';
-      parseInline(hMatch[2], el);
-      container.appendChild(el);
-      if (lines.length > 1) {
-        const p = document.createElement('p');
-        lines.slice(1).forEach((line, i) => {
-          parseInline(line, p);
-          if (i < lines.length - 2) p.appendChild(document.createElement('br'));
-        });
-        container.appendChild(p);
-      }
-    } else if (lines.every(l => BLOCKQUOTE.test(l))) {
-      const bq = document.createElement('blockquote');
-      bq.className = 'md-blockquote';
-      lines.forEach((line, i) => {
-        const m = line.match(BLOCKQUOTE);
-        parseInline(m ? m[1] : line, bq);
-        if (i < lines.length - 1) bq.appendChild(document.createElement('br'));
-      });
-      container.appendChild(bq);
-    } else {
-      const p = document.createElement('p');
-      lines.forEach((line, i) => {
-        parseInline(line, p);
-        if (i < lines.length - 1) p.appendChild(document.createElement('br'));
-      });
-      container.appendChild(p);
-    }
-  }
 }
 
 function renderEntryCard(entry) {
@@ -136,16 +55,17 @@ function renderEntryCard(entry) {
   dateEl.className = 'entry-date-text';
   dateEl.textContent = formatDateLong(entry.date);
   left.appendChild(dateEl);
+
   const subEl = document.createElement('div');
   subEl.className = 'entry-sub-text';
-  subEl.textContent = (entry.word_count || 0) + ' mots · généré à 21h00';
+  const genTime = formatGenTime(entry.created_at);
+  subEl.textContent = (entry.word_count || 0) + ' mots' + (genTime ? ' · généré à ' + genTime : '');
   left.appendChild(subEl);
   header.appendChild(left);
 
   const badges = document.createElement('div');
   badges.className = 'badges';
-  const detectedBadges = detectEmoBadges(entry.content || '');
-  detectedBadges.forEach(b => {
+  detectEmoBadges(entry.content || '').forEach(b => {
     const span = document.createElement('span');
     span.className = 'badge';
     span.textContent = b.label;
@@ -155,7 +75,7 @@ function renderEntryCard(entry) {
     const g = parseInt(hex.substring(2,4), 16);
     const bl = parseInt(hex.substring(4,6), 16);
     span.style.borderColor = `rgba(${r},${g},${bl},0.3)`;
-    span.style.background = `rgba(${r},${g},${bl},0.08)`;
+    span.style.background  = `rgba(${r},${g},${bl},0.08)`;
     badges.appendChild(span);
   });
   header.appendChild(badges);
@@ -192,7 +112,7 @@ export function mount(el) {
         const empty = document.createElement('div');
         empty.className = 'empty-state glass';
         empty.style.padding = '40px';
-        empty.textContent = "Le journal est généré chaque soir à 21h00. Aucune entrée pour le moment.";
+        empty.textContent = 'Le journal est généré chaque soir à 21h00. Aucune entrée pour le moment.';
         el.appendChild(empty);
         return;
       }
@@ -212,7 +132,7 @@ export function mount(el) {
 
       let activeItem = null;
 
-      // entries are DESC (newest first) — reverse to display oldest→newest left→right
+      // entries DESC → reverse pour afficher oldest→newest gauche→droite
       const orderedEntries = [...entries].reverse();
 
       orderedEntries.forEach((entry, idx) => {
@@ -250,7 +170,7 @@ export function mount(el) {
       wrap.appendChild(entryArea);
       el.appendChild(wrap);
 
-      // Scroll timeline to show most recent (rightmost) entry
+      // Scroll timeline vers l'entrée la plus récente (droite)
       setTimeout(() => { tlScroll.scrollLeft = tlScroll.scrollWidth; }, 50);
     })
     .catch(() => {
