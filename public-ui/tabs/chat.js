@@ -9,6 +9,59 @@ let _mounted     = false;
 let _retryDelay  = 1000;
 let _retryTimer  = null;
 
+// ── Date navigation state ──
+let _currentDate = null;   // null = today (live WS mode)
+let _msgListRef  = null;
+let _inputRef    = null;
+let _sendBtnRef  = null;
+let _dateDisplayRef = null;
+let _nextBtnRef  = null;
+let _autocompleteDropdown = null;
+
+const DATE_MIN = new Date('2026-03-01');
+
+const IMAGINE_SUGGESTIONS = [
+  'un paysage cyberpunk sous la pluie',
+  'portrait impressionniste de Wally',
+  'ville futuriste vue du ciel, style anime',
+  'forêt enchantée la nuit, bioluminescence',
+  'chat robot dans un café parisien',
+];
+
+function todayStr() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateFR(dateStr) {
+  const [y, m, day] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function isToday(dateStr) {
+  return dateStr === todayStr();
+}
+
+function prevDay(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+function nextDay(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+function isAtMin(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt <= DATE_MIN;
+}
+
 const EMO_COLORS = { anger:'#ef4444', joy:'#eab308', curiosity:'#22c55e', sadness:'#3b82f6', boredom:'#a855f7' };
 const EMO_LABELS = { anger:'Colère', joy:'Joie', curiosity:'Curiosité', sadness:'Tristesse', boredom:'Ennui' };
 
@@ -289,10 +342,46 @@ function buildChatLayout(user) {
   const msgList = document.createElement('div');
   msgList.className = 'messages-list';
   msgList.id = 'chat-messages';
+
+  // ── Date navigation bar ──
+  const dateBar = document.createElement('div');
+  dateBar.className = 'chat-date-bar';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'chat-date-btn';
+  prevBtn.textContent = '‹ Préc.';
+  dateBar.appendChild(prevBtn);
+
+  const dateDisplay = document.createElement('span');
+  dateDisplay.className = 'chat-date-label';
+  dateDisplay.textContent = formatDateFR(todayStr());
+  _dateDisplayRef = dateDisplay;
+  dateBar.appendChild(dateDisplay);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'chat-date-btn';
+  nextBtn.textContent = 'Suiv. ›';
+  nextBtn.disabled = true; // today — no next
+  _nextBtnRef = nextBtn;
+  dateBar.appendChild(nextBtn);
+
+  msgCol.appendChild(dateBar);
   msgCol.appendChild(msgList);
+
+  // ── Input row wrapper (for autocomplete positioning) ──
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'chat-input-wrap';
 
   const inputRow = document.createElement('div');
   inputRow.className = 'chat-input-row';
+
+  // 🎨 Imagine button
+  const imagineBtn = document.createElement('button');
+  imagineBtn.className = 'chat-imagine-btn';
+  imagineBtn.title = 'Générer une image';
+  imagineBtn.textContent = '🎨';
+  inputRow.appendChild(imagineBtn);
+
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'chat-input';
@@ -303,8 +392,12 @@ function buildChatLayout(user) {
   sendBtn.textContent = 'Envoyer';
   inputRow.appendChild(input);
   inputRow.appendChild(sendBtn);
-  msgCol.appendChild(inputRow);
+  inputWrap.appendChild(inputRow);
+  msgCol.appendChild(inputWrap);
   layout.appendChild(msgCol);
+
+  _inputRef   = input;
+  _sendBtnRef = sendBtn;
 
   // ── Colonne mémoire ──
   const memCol = document.createElement('div');
@@ -316,16 +409,155 @@ function buildChatLayout(user) {
   memCol.appendChild(memLoading);
   layout.appendChild(memCol);
 
+  // ── Autocomplete dropdown ──
+  function buildAutocomplete() {
+    const dd = document.createElement('div');
+    dd.className = 'imagine-autocomplete';
+    dd.style.display = 'none';
+    IMAGINE_SUGGESTIONS.forEach(sug => {
+      const item = document.createElement('div');
+      item.className = 'imagine-suggestion';
+      item.textContent = sug;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // don't blur input
+        input.value = '/imagine ' + sug;
+        hideAutocomplete();
+        input.focus();
+      });
+      dd.appendChild(item);
+    });
+    inputWrap.appendChild(dd);
+    _autocompleteDropdown = dd;
+    return dd;
+  }
+
+  const autocomplete = buildAutocomplete();
+
+  function showAutocomplete() {
+    autocomplete.style.display = 'block';
+  }
+  function hideAutocomplete() {
+    autocomplete.style.display = 'none';
+  }
+
+  input.addEventListener('input', () => {
+    if (input.value.startsWith('/imagine ')) {
+      showAutocomplete();
+    } else {
+      hideAutocomplete();
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { hideAutocomplete(); return; }
+    if (e.key === 'Enter') { hideAutocomplete(); sendMessage(); }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!inputWrap.contains(e.target)) hideAutocomplete();
+  }, { capture: false });
+
+  // 🎨 imagine button
+  imagineBtn.addEventListener('click', () => {
+    if (!input.value.startsWith('/imagine ')) {
+      input.value = '/imagine ';
+    }
+    input.focus();
+    showAutocomplete();
+  });
+
   // ── Envoi de message ──
   function sendMessage() {
     const text = input.value.trim();
     if (!text || !_ws || _ws.readyState !== WebSocket.OPEN) return;
+    if (_currentDate !== null) return; // lecture seule — historique passé
     addBubble(msgList, text, 'user');
     _ws.send(JSON.stringify({ type: 'message', content: text }));
     input.value = '';
   }
   sendBtn.addEventListener('click', sendMessage);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+  // ── Date navigation ──
+  function setLiveMode() {
+    _currentDate = null;
+    _dateDisplayRef.textContent = formatDateFR(todayStr());
+    _nextBtnRef.disabled = true;
+    prevBtn.disabled = false;
+    input.disabled   = false;
+    sendBtn.disabled = false;
+    input.placeholder = 'Écrire à Wally…';
+    // Re-show WS indicator
+    const wsLabel = document.getElementById('chat-ws-label');
+    if (wsLabel) wsLabel.parentElement.style.visibility = '';
+    // Clear history messages and reconnect WS so it sends history
+    msgList.textContent = '';
+    if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
+    connectWs(msgList, getToken());
+  }
+
+  function setHistoryMode(dateStr) {
+    _currentDate = dateStr;
+    _dateDisplayRef.textContent = formatDateFR(dateStr);
+    _nextBtnRef.disabled = isToday(nextDay(dateStr));
+    prevBtn.disabled = isAtMin(dateStr);
+    input.disabled   = true;
+    sendBtn.disabled = true;
+    input.placeholder = 'Lecture seule — historique du ' + formatDateFR(dateStr);
+    // Hide WS indicator (not meaningful in history mode)
+    const wsLabel = document.getElementById('chat-ws-label');
+    if (wsLabel) wsLabel.parentElement.style.visibility = 'hidden';
+    loadHistory(dateStr);
+  }
+
+  function loadHistory(dateStr) {
+    const token = getToken();
+    msgList.textContent = '';
+    const loadingMsg = document.createElement('div');
+    loadingMsg.className = 'bubble bubble-system';
+    loadingMsg.textContent = 'Chargement de l\'historique…';
+    msgList.appendChild(loadingMsg);
+
+    fetch('/api/chat/history/' + dateStr, { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        msgList.textContent = '';
+        const msgs = (data && data.messages) ? data.messages : [];
+        if (!msgs.length) {
+          const empty = document.createElement('div');
+          empty.className = 'bubble bubble-system';
+          empty.textContent = 'Aucun message ce jour-là.';
+          msgList.appendChild(empty);
+        } else {
+          msgs.forEach(msg => addBubble(msgList, msg.content, msg.is_wally ? 'bot' : 'user'));
+        }
+      })
+      .catch(() => {
+        msgList.textContent = '';
+        const errEl = document.createElement('div');
+        errEl.className = 'bubble bubble-system';
+        errEl.textContent = 'Impossible de charger l\'historique.';
+        msgList.appendChild(errEl);
+      });
+  }
+
+  prevBtn.addEventListener('click', () => {
+    const from = _currentDate || todayStr();
+    const p = prevDay(from);
+    if (isAtMin(p)) { prevBtn.disabled = true; }
+    setHistoryMode(p);
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (!_nextBtnRef || _nextBtnRef.disabled) return;
+    const n = nextDay(_currentDate);
+    if (isToday(n)) {
+      // Restore input placeholder
+      input.placeholder = 'Écrire à Wally…';
+      setLiveMode();
+    } else {
+      setHistoryMode(n);
+    }
+  });
 
   // ── WebSocket ──
   const token = getToken();
@@ -467,7 +699,14 @@ export function mount(el) {
 }
 
 export function unmount() {
-  _mounted = false;
+  _mounted    = false;
+  _currentDate = null;
+  _msgListRef  = null;
+  _inputRef    = null;
+  _sendBtnRef  = null;
+  _dateDisplayRef = null;
+  _nextBtnRef  = null;
+  _autocompleteDropdown = null;
   clearTimeout(_retryTimer);
   _retryTimer  = null;
   _retryDelay  = 1000;

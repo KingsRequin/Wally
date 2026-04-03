@@ -4,6 +4,7 @@ import { mount as mountChat, unmount as unmountChat } from './tabs/chat.js';
 import { mount as mountGallery, unmount as unmountGallery } from './tabs/gallery.js';
 import { mount as mountJournal, unmount as unmountJournal } from './tabs/journal.js';
 import { mount as mountAbout, unmount as unmountAbout } from './tabs/about.js';
+import { mount as mountCommunity, unmount as unmountCommunity } from './tabs/community.js';
 
 // ── Shared emotion state ──
 export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
@@ -48,11 +49,12 @@ function closeModal() { overlay.classList.remove('open'); }
 
 // ── Router ──
 const TABS = {
-  status:  { mount: mountStatus,  unmount: unmountStatus },
-  chat:    { mount: mountChat,    unmount: unmountChat },
-  gallery: { mount: mountGallery, unmount: unmountGallery },
-  journal: { mount: mountJournal, unmount: unmountJournal },
-  about:   { mount: mountAbout,   unmount: unmountAbout },
+  status:    { mount: mountStatus,    unmount: unmountStatus },
+  chat:      { mount: mountChat,      unmount: unmountChat },
+  gallery:   { mount: mountGallery,   unmount: unmountGallery },
+  journal:   { mount: mountJournal,   unmount: unmountJournal },
+  community: { mount: mountCommunity, unmount: unmountCommunity },
+  about:     { mount: mountAbout,     unmount: unmountAbout },
 };
 
 let currentTab = null;
