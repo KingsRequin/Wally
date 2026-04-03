@@ -347,6 +347,23 @@ body {
 .entry-body { padding: 16px 18px; font-size: 0.86rem; color: rgba(255,255,255,0.65); line-height: 1.75; }
 .entry-body p { margin-bottom: 10px; }
 .entry-body p:last-child { margin-bottom: 0; }
+.entry-body .md-heading { color: rgba(255,255,255,0.88); font-weight: 700; margin: 16px 0 6px; font-size: 0.95rem; }
+.entry-body h3.md-heading { font-size: 0.92rem; }
+.entry-body h4.md-heading, .entry-body h5.md-heading { font-size: 0.86rem; color: rgba(255,255,255,0.7); }
+.entry-body .md-blockquote {
+  border-left: 3px solid rgba(6,182,212,0.5);
+  margin: 8px 0; padding: 6px 14px;
+  color: rgba(255,255,255,0.45); font-style: italic;
+  background: rgba(6,182,212,0.05); border-radius: 0 6px 6px 0;
+}
+.entry-body .md-code {
+  background: rgba(255,255,255,0.08); border-radius: 4px;
+  padding: 1px 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.82em;
+  color: var(--accent);
+}
+.entry-body strong { color: rgba(255,255,255,0.9); }
+.entry-body em { color: rgba(255,255,255,0.6); font-style: italic; }
+.entry-body s { color: rgba(255,255,255,0.35); }
 
 /* ── About tab ── */
 .pipeline {
