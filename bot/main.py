@@ -110,6 +110,7 @@ async def main() -> None:
 
     memory.set_openai_client(secondary_llm)
     memory.set_db(db)
+    memory.set_graph(graph)
     await memory.load_aliases(db)
     emotion.set_openai_client(secondary_llm)
     logger.info("MemoryService and LLM clients initialized")
