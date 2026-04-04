@@ -425,3 +425,86 @@ async def test_search_top_match_empty_query():
     assert result is None
     result2 = await svc.search_top_match("discord", "12345", "   ")
     assert result2 is None
+
+
+# ── Graphiti routing tests ─────────────────────────────────────────────────
+
+def _make_memory_with_graph(memory_write=False, memory_primary=False, memory_dual_read=True):
+    """Helper: MemoryService with graph set and config flags."""
+    from bot.core.memory import MemoryService
+    from unittest.mock import MagicMock, AsyncMock
+
+    config = MagicMock()
+    config.bot.memory_search_min_score = 0.5
+    config.bot.memory_context_max_tokens = 800
+    config.graphiti.memory_write = memory_write
+    config.graphiti.memory_primary = memory_primary
+    config.graphiti.memory_dual_read = memory_dual_read
+    config.graphiti.group_id = "discord:default"
+
+    svc = MemoryService(config)
+
+    graph = AsyncMock()
+    graph.ready = True
+    svc.set_graph(graph)
+
+    return svc, graph
+
+
+@pytest.mark.asyncio
+async def test_set_graph_stores_reference():
+    """set_graph() stores the graph service reference."""
+    from bot.core.memory import MemoryService
+    from unittest.mock import MagicMock, AsyncMock
+
+    config = MagicMock()
+    svc = MemoryService(config)
+    graph = AsyncMock()
+    svc.set_graph(graph)
+    assert svc._graph is graph
+
+
+@pytest.mark.asyncio
+async def test_add_routes_to_graphiti_when_memory_write_true():
+    """add() calls graph_memory.add_user_fact when memory_write=True."""
+    from unittest.mock import patch, AsyncMock as AM
+    svc, graph = _make_memory_with_graph(memory_write=True)
+
+    with patch("bot.core.memory.graph_memory") as mock_gm:
+        mock_gm.add_user_fact = AM()
+        await svc.add("discord", "123456", "aime le café", username="KingsRequin", category="PREF")
+
+    mock_gm.add_user_fact.assert_called_once()
+    call_kwargs = mock_gm.add_user_fact.call_args[1]
+    assert call_kwargs["username"] == "KingsRequin"
+    assert call_kwargs["content"] == "aime le café"
+    assert call_kwargs["category"] == "PREF"
+
+
+@pytest.mark.asyncio
+async def test_add_skips_qdrant_when_memory_write_true():
+    """add() does NOT call _store.upsert when memory_write=True."""
+    from unittest.mock import patch, AsyncMock as AM, MagicMock
+    svc, graph = _make_memory_with_graph(memory_write=True)
+    svc._store = MagicMock()
+    svc._store.upsert = AM()
+
+    with patch("bot.core.memory.graph_memory") as mock_gm:
+        mock_gm.add_user_fact = AM()
+        await svc.add("discord", "123456", "aime le café", username="KingsRequin")
+
+    svc._store.upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_add_uses_qdrant_when_memory_write_false():
+    """add() calls _store.upsert (Qdrant) when memory_write=False (default)."""
+    from unittest.mock import AsyncMock as AM, MagicMock
+    svc, graph = _make_memory_with_graph(memory_write=False)
+    svc._store = MagicMock()
+    svc._store.upsert = AM()
+    svc._store_init_attempted = True  # skip lazy init
+
+    await svc.add("discord", "123456", "aime le café", username="KingsRequin")
+
+    svc._store.upsert.assert_called_once()

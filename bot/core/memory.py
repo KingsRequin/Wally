@@ -17,6 +17,7 @@ from loguru import logger
 
 from bot.core.memory_store import MemoryMetadata, MemoryRecord, QdrantMemoryStore
 from bot.core.prompts import load_prompt
+from bot.core import graph_memory
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -65,6 +66,7 @@ class MemoryService:
         self._prelude_windows: dict[str, list[dict]] = {}
         self._openai: Optional["BaseLLMClient"] = None
         self._db: Optional[object] = None
+        self._graph = None
         # Strong refs pour les tâches fire-and-forget (consolidation, etc.)
         self._bg_tasks: set[asyncio.Task] = set()
         # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
@@ -77,6 +79,9 @@ class MemoryService:
 
     def set_db(self, db) -> None:
         self._db = db
+
+    def set_graph(self, graph) -> None:
+        self._graph = graph
 
     def _fire(self, coro) -> asyncio.Task:
         t = asyncio.create_task(coro)
@@ -162,6 +167,19 @@ class MemoryService:
     async def add(self, platform: str, user_id: str, content: str,
                   username: str = "", emotion_context: str = "",
                   category: str = "") -> None:
+        # Route to Graphiti when memory_write flag is enabled
+        if getattr(self._config.graphiti, "memory_write", False) and self._graph:
+            self._fire(graph_memory.add_user_fact(
+                graph=self._graph,
+                config=self._config,
+                platform=platform,
+                user_id=user_id,
+                username=username,
+                content=content,
+                category=category or "FAIT",
+                alias_cache=self._alias_cache,
+            ))
+            return
         self._init_store()
         if self._store is None:
             return
