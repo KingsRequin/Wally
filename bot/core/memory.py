@@ -264,6 +264,9 @@ class MemoryService:
 
     async def _post_add_maintenance(self, uid: str, content: str) -> None:
         """Run consolidation (if threshold exceeded) or evaluation — single get_all."""
+        # Graphiti handles deduplication natively — skip Qdrant maintenance
+        if getattr(self._config.graphiti, "memory_write", False):
+            return
         if self._store is None:
             return
         lock = self._maintenance_locks.setdefault(uid, asyncio.Lock())
