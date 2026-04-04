@@ -128,6 +128,53 @@ def test_uses_responses_api_detection():
 
 
 @pytest.mark.asyncio
+async def test_complete_stream_yields_chunks():
+    """complete_stream() yields text chunks from streaming API."""
+    client, _ = make_client(model="gpt-4o", reasoning_effort=None)
+
+    async def mock_stream_iter():
+        for text in ["Bonjour", " monde", "!"]:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = text
+            yield chunk
+        # Final chunk with no content
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = None
+        yield chunk
+
+    with patch.object(client._client.chat.completions, "create", AsyncMock(return_value=mock_stream_iter())):
+        chunks = []
+        async for chunk in client.complete_stream("sys", [{"role": "user", "content": "hi"}]):
+            chunks.append(chunk)
+
+    assert chunks == ["Bonjour", " monde", "!"]
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_responses_api_yields_single_chunk():
+    """Responses API models (o1/o3/o4) yield the full response as one chunk."""
+    client, _ = make_client(model="o3", reasoning_effort="medium")
+    with patch.object(client, "complete", AsyncMock(return_value="full response text")):
+        chunks = []
+        async for chunk in client.complete_stream("sys", [{"role": "user", "content": "hi"}]):
+            chunks.append(chunk)
+    assert chunks == ["full response text"]
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_error_yields_fallback():
+    """On API error, complete_stream() yields FALLBACK_RESPONSE."""
+    client, _ = make_client(model="gpt-4o", reasoning_effort=None)
+    with patch.object(client._client.chat.completions, "create", AsyncMock(side_effect=Exception("boom"))):
+        chunks = []
+        async for chunk in client.complete_stream("sys", [{"role": "user", "content": "hi"}]):
+            chunks.append(chunk)
+    assert chunks == [FALLBACK_RESPONSE]
+
+
+@pytest.mark.asyncio
 async def test_responses_api_passes_reasoning_effort():
     client, db = make_client(reasoning_effort="high", text_verbosity="low")
 

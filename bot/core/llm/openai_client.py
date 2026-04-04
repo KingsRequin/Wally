@@ -329,6 +329,53 @@ class OpenAILLMClient(BaseLLMClient):
 
         return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
 
+    async def complete_stream(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        purpose: str = "response",
+        image_urls: list[str] | None = None,
+        user_id: str | None = None,
+        trace=None,
+    ):
+        """Stream completion as text chunks.
+
+        Responses API models (o1/o3/o4) do not support streaming — they yield the
+        full response as a single chunk via complete().
+        """
+        if _uses_responses_api(self._model):
+            result = await self.complete(
+                system_prompt, messages, purpose=purpose,
+                image_urls=image_urls, user_id=user_id, trace=trace,
+            )
+            yield result
+            return
+
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+        if image_urls:
+            last_msg = dict(full_messages[-1])
+            last_msg["content"] = self._build_image_content(
+                last_msg["content"], image_urls, False
+            )
+            full_messages[-1] = last_msg
+
+        try:
+            stream = await self._client.chat.completions.create(
+                model=self._model,
+                messages=full_messages,
+                temperature=self._temperature,
+                max_completion_tokens=self._max_tokens,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+        except Exception as exc:
+            logger.error("OpenAI streaming error: {e}", e=exc)
+            yield FALLBACK_RESPONSE
+
     async def complete_with_tools(
         self,
         system_prompt: str,
