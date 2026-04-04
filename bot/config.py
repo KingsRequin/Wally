@@ -251,6 +251,9 @@ class GraphitiConfig:
         "reaction": 1.0, "thread": 1.0, "game": 2.5,
     })
     graph_context_max_tokens: int = 400
+    memory_write: bool = False      # true = écriture vers Graphiti, Qdrant gelé
+    memory_primary: bool = False    # true = lecture depuis Graphiti en priorité
+    memory_dual_read: bool = True   # true = merge Graphiti + Qdrant (transition)
 
 
 @dataclass
