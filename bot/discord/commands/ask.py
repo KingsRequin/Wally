@@ -21,7 +21,7 @@ class AskCog(commands.Cog):
             platform = "discord"
 
             trust = await self.bot.db.get_trust_score(platform, user_id)
-            mem_context = await self.bot.memory.search(platform, user_id, question)
+            mem_context = await self.bot.memory.search(platform, user_id, question, username_hint=interaction.user.display_name)
             context_msgs = await self.bot.memory.get_context_summarized_if_needed(
                 str(interaction.channel_id)
             )

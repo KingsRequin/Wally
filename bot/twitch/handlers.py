@@ -219,7 +219,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         trust = await bot.db.get_trust_score(platform, user_id)
 
         mem_context, global_context = await asyncio.gather(
-            bot.memory.search(platform, user_id, content, context_messages=prelude),
+            bot.memory.search(platform, user_id, content, context_messages=prelude, username_hint=author),
             bot.memory.search_global(content),
         )
         create_span(trace, name="memory:search", input={"query": content}, output={"context_length": len(mem_context or "")})

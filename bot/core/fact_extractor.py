@@ -626,7 +626,7 @@ class FactExtractor:
             else:
                 plat, raw_id = "discord", canonical_uid
 
-            await self._memory.add(plat, raw_id, orphan_text)
+            await self._memory.add(plat, raw_id, orphan_text, username=nickname)
 
             # Delete orphan memories if supported
             if hasattr(self._memory, "delete_user_memories"):

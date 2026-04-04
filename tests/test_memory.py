@@ -591,15 +591,14 @@ async def test_merge_contexts_empty_qdrant():
 
 
 @pytest.mark.asyncio
-async def test_post_add_maintenance_skipped_when_memory_write_true():
-    """_post_add_maintenance() returns early when memory_write=True (Graphiti deduplicates natively)."""
+async def test_post_add_maintenance_runs_when_store_available():
+    """_post_add_maintenance() calls get_all when store is available (no longer has a memory_write guard — add() returns early instead)."""
     from unittest.mock import AsyncMock as AM, MagicMock
-    svc, graph = _make_memory_with_graph(memory_write=True)
+    svc, graph = _make_memory_with_graph(memory_write=False)
     svc._store = MagicMock()
     svc._store.get_all = AM(return_value=[])
     svc._store_init_attempted = True
 
-    # Should return immediately without calling get_all
     await svc._post_add_maintenance("discord:123456", "test content")
 
-    svc._store.get_all.assert_not_called()
+    svc._store.get_all.assert_called_once_with("discord:123456")

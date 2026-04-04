@@ -176,6 +176,7 @@ class ImagineCog(commands.Cog):
                 await self.bot.memory.add(
                     "discord", str(interaction.user.id),
                     f"{interaction.user.display_name} a généré une image : {title}",
+                    username=interaction.user.display_name,
                 )
             except Exception as e:
                 logger.warning("Failed to add image memory: {e}", e=e)

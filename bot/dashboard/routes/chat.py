@@ -233,7 +233,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
                     "web:chat", "discord", discord_raw_id,
                     username, content,
                 )
-            mem_context = await state.memory.search("discord", discord_raw_id, content)
+            mem_context = await state.memory.search("discord", discord_raw_id, content, username_hint=username)
 
             context_messages = await state.memory.get_context_summarized_if_needed("web:chat")
             situation = {"platform": "Web", "channel": "Chat public"}
@@ -411,7 +411,7 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
 
         # Memory
         try:
-            await state.memory.add("discord", str(user.discord_id), f"{user.username} a généré une image : {title}")
+            await state.memory.add("discord", str(user.discord_id), f"{user.username} a généré une image : {title}", username=user.username)
         except Exception as e:
             logger.warning("Failed to add image memory: {e}", e=e)
 

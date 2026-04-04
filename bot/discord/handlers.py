@@ -168,6 +168,7 @@ _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous
 _memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
 _social_context_cooldowns: dict[int, float] = {}  # rate-limit social context per channel
 _spam_tracker: dict[tuple[str, str], deque] = {}
+_processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
 
 
 def _fire(coro) -> asyncio.Task:
@@ -458,7 +459,7 @@ async def _third_party_mention_context(
             if len(uid_parts) == 2:
                 third_platform, third_raw_id = uid_parts
                 try:
-                    memories_text = await bot.memory.search(third_platform, third_raw_id, query=token)
+                    memories_text = await bot.memory.search(third_platform, third_raw_id, query=token, username_hint=token)
                     if memories_text:
                         # Find username for display
                         display = third_raw_id
@@ -494,6 +495,16 @@ async def _third_party_mention_context(
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
+
+    # Dedup: Discord can replay events on WebSocket reconnect — skip already-processed messages
+    _now = time.time()
+    if message.id in _processed_message_ids:
+        logger.debug("Duplicate on_message event for id={}, skipping", message.id)
+        return
+    _processed_message_ids[message.id] = _now
+    # Purge entries older than 120s to avoid unbounded growth
+    for _mid in [k for k, v in _processed_message_ids.items() if _now - v > 120]:
+        del _processed_message_ids[_mid]
 
     # Dashboard message counter
     if getattr(bot, "dashboard_state", None) is not None:
@@ -704,7 +715,7 @@ async def _respond(
         trust = await bot.db.get_trust_score(platform, user_id)
 
         mem_context, global_context = await asyncio.gather(
-            bot.memory.search(platform, user_id, message.content, context_messages=prelude),
+            bot.memory.search(platform, user_id, message.content, context_messages=prelude, username_hint=message.author.display_name),
             bot.memory.search_global(message.content),
         )
         create_span(trace, name="memory:search", input={"query": message.content}, output={"context_length": len(mem_context or "")})
