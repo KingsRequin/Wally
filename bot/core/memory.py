@@ -525,10 +525,6 @@ class MemoryService:
 
             # Run searches (parallel if context available)
             if context_query and context_query != query.strip():
-
-                async def _empty() -> list[MemoryRecord]:
-                    return []
-
                 primary_coro = self._store.search(query, user_id=uid, limit=5, min_score=min_score)
                 context_coro = self._store.search(context_query, user_id=uid, limit=5, min_score=min_score)
                 direct_results, context_results = await asyncio.gather(
