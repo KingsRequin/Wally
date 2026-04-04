@@ -283,8 +283,7 @@ class GraphService:
                 "MATCH (e:Entity {group_id: $gid}) "
                 "WHERE toLower(e.name) = toLower($name) "
                 "RETURN e.uuid AS uuid LIMIT 1",
-                gid=gid,
-                name=username,
+                params={"gid": gid, "name": username},
             )
             if result.records:
                 return result.records[0]["uuid"]
@@ -293,8 +292,7 @@ class GraphService:
                 "MATCH (e:Entity {group_id: $gid}) "
                 "WHERE toLower(e.name) CONTAINS toLower($name) "
                 "RETURN e.uuid AS uuid LIMIT 1",
-                gid=gid,
-                name=username,
+                params={"gid": gid, "name": username},
             )
             if result.records:
                 return result.records[0]["uuid"]
