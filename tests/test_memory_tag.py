@@ -88,14 +88,6 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.config.bot.love_decay_lambda = 0.02
     bot.llm.complete = AsyncMock(return_value="Réponse de Wally")
     bot.llm.complete_with_tools = AsyncMock(return_value=("Réponse de Wally", []))
-    _stream_mock = MagicMock(name="complete_stream")
-
-    async def _fake_complete_stream(*args, **kwargs):
-        _stream_mock(*args, **kwargs)
-        yield "Réponse de Wally"
-
-    bot.llm.complete_stream = _fake_complete_stream
-    bot.llm._stream_mock = _stream_mock
     bot.memory.search = AsyncMock(return_value="")
     bot.memory.search_global = AsyncMock(return_value="")
     bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
@@ -155,7 +147,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.fact_extractor.record_message.assert_called_once()
 
     # La target notice identifiant le destinataire est incluse dans le user_content
-    llm_call = bot.llm._stream_mock.call_args
+    llm_call = bot.llm.complete_with_tools.call_args
     user_content = llm_call.args[1][0]["content"]
     assert "Tu réponds à **TestUser" in user_content
     assert "Ne confonds JAMAIS" in user_content

@@ -263,14 +263,6 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     bot.apex_api = apex_api
 
     bot.llm.complete_with_tools = AsyncMock(return_value=("Il est Diamond 2", ["apex_legends"]))
-    _stream_mock = MagicMock(name="complete_stream")
-
-    async def _fake_complete_stream(*args, **kwargs):
-        _stream_mock(*args, **kwargs)
-        yield "Il est Diamond 2"
-
-    bot.llm.complete_stream = _fake_complete_stream
-    bot.llm._stream_mock = _stream_mock
 
     msg = MagicMock()
     msg.content = "wally c'est quoi le rank de Daltoosh"
@@ -292,10 +284,10 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, msg, "12345", "99999", [])
 
-    # complete_stream called with apex tool in tools kwarg
-    bot.llm._stream_mock.assert_called_once()
-    call_kwargs = bot.llm._stream_mock.call_args.kwargs
-    tools_passed = call_kwargs["tools"]
+    # complete_with_tools called with apex tool
+    bot.llm.complete_with_tools.assert_awaited_once()
+    call_args = bot.llm.complete_with_tools.call_args
+    tools_passed = call_args.args[2]
     tool_names = [t["function"]["name"] for t in tools_passed]
     assert "apex_legends" in tool_names
     # Response sent

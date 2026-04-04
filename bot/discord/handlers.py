@@ -90,9 +90,6 @@ def _resolve_discord_roles(member) -> list[str]:
     return roles
 
 _REACT_TAG_RE = re.compile(r"^\[react:(.+?)\]\s*")
-_REACT_TAG_PREFIX_RE = re.compile(r"^\[react:[^\]]+\]\s*")
-DISCORD_MSG_LIMIT = 1990
-_STREAM_EDIT_INTERVAL = 1.0
 
 _LAUGH_WORDS = {"mdr", "lol", "ptdr", "xd", "haha", "😂", "🤣"}
 _POSITIVE_WORDS = {"gg", "bravo", "trop bien", "bien joué", "incroyable"}
@@ -656,76 +653,6 @@ def _is_list_item(line: str) -> bool:
     return bool(_LIST_RE.match(line))
 
 
-async def _stream_to_discord(
-    message: discord.Message,
-    llm,
-    system_prompt: str,
-    openai_messages: list[dict],
-    image_urls: list[str] | None,
-    user_id: str,
-    trace,
-    tools: list[dict] | None = None,
-    tool_executor=None,
-) -> tuple[str, "discord.Message | None"]:
-    """Stream LLM response into a Discord message via progressive edits.
-
-    Sends a placeholder '…' reply immediately, then edits it with accumulated
-    tokens every _STREAM_EDIT_INTERVAL seconds. Returns (full_text, placeholder_msg).
-    On total failure, returns (FALLBACK_RESPONSE, placeholder_msg).
-    When tools are provided, passes them to complete_stream() for tool-aware streaming.
-    """
-    from bot.core.llm.base import FALLBACK_RESPONSE as _FALLBACK
-
-    placeholder = await message.reply("…")
-    full_text = ""
-    last_edit = asyncio.get_event_loop().time()
-
-    try:
-        async for chunk in llm.complete_stream(
-            system_prompt,
-            openai_messages,
-            purpose="discord_response",
-            image_urls=image_urls,
-            user_id=user_id,
-            trace=trace,
-            tools=tools,
-            tool_executor=tool_executor,
-        ):
-            full_text += chunk
-            now = asyncio.get_event_loop().time()
-            if now - last_edit >= _STREAM_EDIT_INTERVAL and full_text.strip() not in ("", "…"):
-                display = _REACT_TAG_PREFIX_RE.sub("", full_text)
-                try:
-                    await placeholder.edit(content=display[:DISCORD_MSG_LIMIT])
-                    last_edit = now
-                except Exception:
-                    pass
-    except Exception as exc:
-        logger.error("Streaming error in _stream_to_discord: {e}", e=exc)
-
-    if not full_text.strip():
-        full_text = _FALLBACK
-
-    # Final edit with clean text (react tag stripped)
-    display_final = _REACT_TAG_PREFIX_RE.sub("", full_text)
-    try:
-        await placeholder.edit(content=display_final[:DISCORD_MSG_LIMIT])
-    except Exception:
-        pass
-
-    # Handle overflow: send the rest as follow-up messages
-    if len(display_final) > DISCORD_MSG_LIMIT:
-        rest = display_final[DISCORD_MSG_LIMIT:]
-        while rest:
-            await asyncio.sleep(0.4)
-            try:
-                await message.channel.send(rest[:DISCORD_MSG_LIMIT])
-            except Exception:
-                break
-            rest = rest[DISCORD_MSG_LIMIT:]
-
-    return full_text, placeholder
-
 
 async def _send_in_parts(message: discord.Message, text: str) -> int | None:
     """Split text on newlines, group consecutive list items, send as separate messages."""
@@ -1126,19 +1053,27 @@ async def _respond(
                 return json.dumps(result)
             return f"Unknown tool: {name}"
 
-        tools_called = []
-        full_text, placeholder_msg = await _stream_to_discord(
-            message,
-            bot.llm,
-            system_prompt,
-            openai_messages,
-            image_urls or None,
-            f"discord:{message.author.id}",
-            trace,
-            tools=tools if tools else None,
-            tool_executor=_tool_executor if tools else None,
-        )
-        react_emoji, reply = _parse_react_tag(full_text)
+        async with message.channel.typing():
+            if tools:
+                reply, tools_called = await bot.llm.complete_with_tools(
+                    system_prompt, openai_messages, tools, _tool_executor,
+                    purpose="discord_response",
+                    image_urls=image_urls or None,
+                    user_id=f"discord:{message.author.id}",
+                    trace=trace,
+                )
+            else:
+                reply = await bot.llm.complete(
+                    system_prompt, openai_messages, purpose="discord_response",
+                    image_urls=image_urls or None,
+                    user_id=f"discord:{message.author.id}",
+                    trace=trace,
+                )
+                tools_called = []
+
+        # Parse optional [react:emoji] tag from LLM response
+        react_emoji, reply = _parse_react_tag(reply)
+
         try:
             await message.remove_reaction("🔍", bot.user)
         except Exception:
@@ -1148,12 +1083,14 @@ async def _respond(
                 await message.remove_reaction(emoji, bot.user)
             except Exception:
                 pass
+
         if react_emoji:
             try:
                 await message.add_reaction(react_emoji)
             except Exception:
                 pass
-        reply_msg_id = placeholder_msg.id if placeholder_msg else None
+
+        reply_msg_id = await _send_in_parts(message, reply)
         if reply_msg_id and getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
 

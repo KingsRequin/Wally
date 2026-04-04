@@ -60,16 +60,6 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.llm.complete = AsyncMock(return_value="Bonjour!")
     bot.llm.complete_with_tools = AsyncMock(return_value=("Bonjour!", []))
 
-    # complete_stream is an async generator — wrap it so call_args is recorded
-    _stream_mock = MagicMock(name="complete_stream")
-
-    async def _fake_complete_stream(*args, **kwargs):
-        _stream_mock(*args, **kwargs)
-        yield "Bonjour!"
-
-    bot.llm.complete_stream = _fake_complete_stream
-    bot.llm._stream_mock = _stream_mock  # expose for assertions
-
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
 
@@ -189,7 +179,7 @@ async def test_respond_includes_context_block_when_present():
     message = make_message(content="wally continue")
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
-    call_args = bot.llm._stream_mock.call_args
+    call_args = bot.llm.complete_with_tools.call_args
     assert "[ctx block]" in call_args.args[1][0]["content"]
 
 
@@ -258,7 +248,7 @@ async def test_first_contact_injects_welcome_context():
     message = make_message(content="wally salut")
     with patch("bot.discord.handlers.asyncio.create_task"):
         await handle_message(bot, message)
-    call_args = bot.llm._stream_mock.call_args
+    call_args = bot.llm.complete_with_tools.call_args
     user_content = call_args[0][1][0]["content"]
     assert "première fois" in user_content
 
@@ -294,7 +284,7 @@ async def test_prelude_included_in_prompt_on_mention():
 
     bot.prompts.build_prelude_block.assert_called_once_with(prelude_msgs)
     # Le prelude doit apparaître dans user_content envoyé à OpenAI
-    call_args = bot.llm._stream_mock.call_args
+    call_args = bot.llm.complete_with_tools.call_args
     user_content = call_args[0][1][0]["content"]  # messages[0]["content"]
     assert "[PRELUDE]" in user_content
 
@@ -354,7 +344,7 @@ async def test_channel_history_permission_error_graceful():
     # build_prelude_block appelé avec liste vide (graceful degradation)
     bot.prompts.build_prelude_block.assert_called_once_with([])
     # La réponse est quand même envoyée
-    bot.llm._stream_mock.assert_called_once()
+    bot.llm.complete_with_tools.assert_called_once()
 
 
 # ── Vision ────────────────────────────────────────────────────────────────────
@@ -370,7 +360,7 @@ async def test_respond_extracts_image_urls():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.llm._stream_mock.call_args.kwargs
+    call_kwargs = bot.llm.complete_with_tools.call_args.kwargs
     assert call_kwargs["image_urls"] == ["https://cdn.discord.com/img.png"]
 
 
@@ -383,7 +373,7 @@ async def test_respond_limits_4_images():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.llm._stream_mock.call_args.kwargs
+    call_kwargs = bot.llm.complete_with_tools.call_args.kwargs
     assert len(call_kwargs["image_urls"]) == 4
 
 
@@ -398,7 +388,7 @@ async def test_respond_no_text_uses_default_prompt():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_args = bot.llm._stream_mock.call_args
+    call_args = bot.llm.complete_with_tools.call_args
     user_content = call_args.args[1][0]["content"]
     assert "Regarde cette image." in user_content
 
@@ -446,7 +436,7 @@ async def test_respond_no_images_no_image_urls_kwarg():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.llm._stream_mock.call_args.kwargs
+    call_kwargs = bot.llm.complete_with_tools.call_args.kwargs
     assert call_kwargs.get("image_urls") is None
 
 
@@ -459,7 +449,7 @@ async def test_respond_non_image_attachment_ignored():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await _respond(bot, message, "12345", "99999", [])
 
-    call_kwargs = bot.llm._stream_mock.call_args.kwargs
+    call_kwargs = bot.llm.complete_with_tools.call_args.kwargs
     assert call_kwargs.get("image_urls") is None
 
 
@@ -542,53 +532,3 @@ async def test_post_process_no_image_description_without_images():
     bot.llm_secondary.complete.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_stream_to_discord_edits_placeholder():
-    """_stream_to_discord sends a placeholder then edits it with streamed text."""
-    from bot.discord.handlers import _stream_to_discord
-    from unittest.mock import AsyncMock, MagicMock
-
-    message = AsyncMock()
-    placeholder = AsyncMock()
-    placeholder.id = 999
-    message.reply = AsyncMock(return_value=placeholder)
-
-    async def fake_stream(*args, **kwargs):
-        for chunk in ["Bonjour", " toi", " !"]:
-            yield chunk
-
-    llm = MagicMock()
-    llm.complete_stream = fake_stream
-
-    full_text, msg = await _stream_to_discord(
-        message, llm, "sys", [{"role": "user", "content": "hi"}], None, "discord:123", None
-    )
-
-    assert full_text == "Bonjour toi !"
-    assert msg is placeholder
-    placeholder.edit.assert_awaited()
-
-
-@pytest.mark.asyncio
-async def test_stream_to_discord_fallback_on_empty():
-    """_stream_to_discord uses FALLBACK_RESPONSE when stream yields nothing."""
-    from bot.discord.handlers import _stream_to_discord
-    from bot.core.llm.base import FALLBACK_RESPONSE
-    from unittest.mock import AsyncMock, MagicMock
-
-    message = AsyncMock()
-    placeholder = AsyncMock()
-    message.reply = AsyncMock(return_value=placeholder)
-
-    async def empty_stream(*args, **kwargs):
-        return
-        yield  # make it a generator
-
-    llm = MagicMock()
-    llm.complete_stream = empty_stream
-
-    full_text, msg = await _stream_to_discord(
-        message, llm, "sys", [{"role": "user", "content": "hi"}], None, "discord:123", None
-    )
-
-    assert full_text == FALLBACK_RESPONSE
