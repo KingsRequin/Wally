@@ -530,3 +530,55 @@ async def test_post_process_no_image_description_without_images():
     )
 
     bot.llm_secondary.complete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_to_discord_edits_placeholder():
+    """_stream_to_discord sends a placeholder then edits it with streamed text."""
+    from bot.discord.handlers import _stream_to_discord
+    from unittest.mock import AsyncMock, MagicMock
+
+    message = AsyncMock()
+    placeholder = AsyncMock()
+    placeholder.id = 999
+    message.reply = AsyncMock(return_value=placeholder)
+
+    async def fake_stream(*args, **kwargs):
+        for chunk in ["Bonjour", " toi", " !"]:
+            yield chunk
+
+    llm = MagicMock()
+    llm.complete_stream = fake_stream
+
+    full_text, msg = await _stream_to_discord(
+        message, llm, "sys", [{"role": "user", "content": "hi"}], None, "discord:123", None
+    )
+
+    assert full_text == "Bonjour toi !"
+    assert msg is placeholder
+    placeholder.edit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stream_to_discord_fallback_on_empty():
+    """_stream_to_discord uses FALLBACK_RESPONSE when stream yields nothing."""
+    from bot.discord.handlers import _stream_to_discord
+    from bot.core.llm.base import FALLBACK_RESPONSE
+    from unittest.mock import AsyncMock, MagicMock
+
+    message = AsyncMock()
+    placeholder = AsyncMock()
+    message.reply = AsyncMock(return_value=placeholder)
+
+    async def empty_stream(*args, **kwargs):
+        return
+        yield  # make it a generator
+
+    llm = MagicMock()
+    llm.complete_stream = empty_stream
+
+    full_text, msg = await _stream_to_discord(
+        message, llm, "sys", [{"role": "user", "content": "hi"}], None, "discord:123", None
+    )
+
+    assert full_text == FALLBACK_RESPONSE
