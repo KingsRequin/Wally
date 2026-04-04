@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 
 
 FALLBACK_RESPONSE = (
@@ -76,4 +76,22 @@ class BaseLLMClient(ABC):
         """Generate a structured JSON output conforming to the given schema.
 
         Raises RuntimeError on truncation or total failure.
+        """
+
+    @abstractmethod
+    async def complete_stream(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        purpose: str = "response",
+        image_urls: list[str] | None = None,
+        user_id: str | None = None,
+        trace: Any = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream a text completion as an async generator of text chunks.
+
+        Yields text deltas as they arrive from the model.
+        On error, yields FALLBACK_RESPONSE as a single chunk and stops.
+        Implementations that do not support native streaming (e.g. Responses API
+        models) yield the full response as a single chunk.
         """
