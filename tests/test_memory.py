@@ -508,3 +508,83 @@ async def test_add_uses_qdrant_when_memory_write_false():
     await svc.add("discord", "123456", "aime le café", username="KingsRequin")
 
     svc._store.upsert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_returns_graphiti_when_memory_primary_true():
+    """search() calls graph_memory.search_user_facts when memory_primary=True."""
+    from unittest.mock import patch, AsyncMock as AM
+    svc, graph = _make_memory_with_graph(memory_primary=True, memory_dual_read=False)
+
+    with patch("bot.core.memory.graph_memory") as mock_gm:
+        mock_gm.search_user_facts = AM(return_value="KingsRequin aime le café")
+        result = await svc.search("discord", "123456", "café", username_hint="KingsRequin")
+
+    mock_gm.search_user_facts.assert_called_once()
+    assert "KingsRequin aime le café" in result
+
+
+@pytest.mark.asyncio
+async def test_search_dual_read_merges_results():
+    """search() merges Graphiti + Qdrant results when memory_primary=True + dual_read=True."""
+    from unittest.mock import patch, AsyncMock as AM, MagicMock
+    svc, graph = _make_memory_with_graph(memory_primary=True, memory_dual_read=True)
+
+    # Setup fake Qdrant store
+    fake_record = MagicMock()
+    fake_record.text = "souvenir qdrant"
+    fake_record.score = 0.8
+    svc._store = MagicMock()
+    svc._store.search = AM(return_value=[fake_record])
+    svc._store_init_attempted = True
+
+    with patch("bot.core.memory.graph_memory") as mock_gm:
+        mock_gm.search_user_facts = AM(return_value="fait graphiti")
+        result = await svc.search("discord", "123456", "test", username_hint="KingsRequin")
+
+    assert "fait graphiti" in result
+    assert "souvenir qdrant" in result
+
+
+@pytest.mark.asyncio
+async def test_search_uses_qdrant_when_memory_primary_false():
+    """search() uses Qdrant only when memory_primary=False (default)."""
+    from unittest.mock import patch, AsyncMock as AM, MagicMock
+    svc, graph = _make_memory_with_graph(memory_primary=False)
+
+    fake_record = MagicMock()
+    fake_record.text = "souvenir qdrant"
+    fake_record.score = 0.9
+    svc._store = MagicMock()
+    svc._store.search = AM(return_value=[fake_record])
+    svc._store_init_attempted = True
+
+    with patch("bot.core.memory.graph_memory") as mock_gm:
+        mock_gm.search_user_facts = AM(return_value="fait graphiti")
+        result = await svc.search("discord", "123456", "test")
+
+    mock_gm.search_user_facts.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_merge_contexts_graphiti_first():
+    """_merge_contexts() puts Graphiti result first, Qdrant second."""
+    from bot.core.memory import MemoryService
+    from unittest.mock import MagicMock
+    config = MagicMock()
+    svc = MemoryService(config)
+    result = svc._merge_contexts("fait graphiti", "souvenir qdrant")
+    # Graphiti first
+    assert result.index("fait graphiti") < result.index("souvenir qdrant")
+
+
+@pytest.mark.asyncio
+async def test_merge_contexts_empty_qdrant():
+    """_merge_contexts() returns only Graphiti when Qdrant is empty."""
+    from bot.core.memory import MemoryService
+    from unittest.mock import MagicMock
+    config = MagicMock()
+    svc = MemoryService(config)
+    result = svc._merge_contexts("fait graphiti", "")
+    assert result == "fait graphiti"
+    assert "---" not in result

@@ -480,6 +480,30 @@ class MemoryService:
     async def search(
         self, platform: str, user_id: str, query: str,
         context_messages: list[dict] | None = None,
+        username_hint: str = "",
+    ) -> str:
+        if not query or not query.strip():
+            return ""
+
+        # Route to Graphiti when memory_primary flag is enabled
+        if getattr(self._config.graphiti, "memory_primary", False) and self._graph:
+            graphiti_ctx = await graph_memory.search_user_facts(
+                graph=self._graph,
+                config=self._config,
+                username=username_hint or user_id,
+                query=query,
+            )
+            if getattr(self._config.graphiti, "memory_dual_read", True):
+                qdrant_ctx = await self._qdrant_search(platform, user_id, query, context_messages)
+                return self._merge_contexts(graphiti_ctx, qdrant_ctx)
+            return graphiti_ctx
+
+        # Existing Qdrant path
+        return await self._qdrant_search(platform, user_id, query, context_messages)
+
+    async def _qdrant_search(
+        self, platform: str, user_id: str, query: str,
+        context_messages: list[dict] | None = None,
     ) -> str:
         self._init_store()
         if self._store is None:
@@ -535,6 +559,20 @@ class MemoryService:
         except Exception as exc:
             logger.warning("Memory search failed: {e}", e=exc)
             return ""
+
+    @staticmethod
+    def _merge_contexts(graphiti_ctx: str, qdrant_ctx: str) -> str:
+        """Merge Graphiti (priority) and Qdrant memory contexts.
+
+        Graphiti first (recent, deduplicated), Qdrant below separated by ---
+        Returns empty string if both are empty.
+        """
+        parts = []
+        if graphiti_ctx and graphiti_ctx.strip():
+            parts.append(graphiti_ctx.strip())
+        if qdrant_ctx and qdrant_ctx.strip():
+            parts.append(qdrant_ctx.strip())
+        return "\n---\n".join(parts)
 
     async def search_top_match(
         self, platform: str, user_id: str, query: str,
