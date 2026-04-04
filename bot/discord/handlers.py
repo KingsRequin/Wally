@@ -941,8 +941,15 @@ async def _respond(
             except Exception as e:
                 logger.debug("Failed to fetch referenced message images: {e}", e=e)
 
-        # Texte à envoyer (substitution si message image-only)
-        text_content = message.content or ("Regarde cette image." if image_urls else "")
+        # Texte à envoyer — ajoute un marqueur image si texte+image pour que le LLM traite l'image
+        if image_urls and message.content:
+            n = len(image_urls)
+            img_tag = "[Image jointe]" if n == 1 else f"[{n} images jointes]"
+            text_content = f"{message.content}\n{img_tag}"
+        elif image_urls:
+            text_content = "Regarde cette image."
+        else:
+            text_content = message.content or ""
 
         author_label = _author_label(message.author)
         target_notice = (
