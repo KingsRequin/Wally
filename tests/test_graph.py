@@ -136,3 +136,77 @@ async def test_get_social_context_returns_empty_when_not_ready():
     svc = GraphService(_make_config())
     pairs = await svc.get_social_context()
     assert pairs == []
+
+
+@pytest.mark.asyncio
+async def test_get_entity_uuid_found():
+    """get_entity_uuid() returns UUID string when entity exists."""
+    svc = GraphService(_make_config())
+    svc._ready = True
+    svc._graphiti = MagicMock()
+
+    mock_record = MagicMock()
+    mock_record.__getitem__ = lambda self, k: "uuid-abc-123" if k == "uuid" else None
+
+    mock_result = MagicMock()
+    mock_result.records = [mock_record]
+    svc._graphiti.driver = AsyncMock()
+    svc._graphiti.driver.execute_query = AsyncMock(return_value=mock_result)
+
+    result = await svc.get_entity_uuid("KingsRequin")
+    assert result == "uuid-abc-123"
+    svc._graphiti.driver.execute_query.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_entity_uuid_not_found_returns_none():
+    """get_entity_uuid() returns None when entity doesn't exist."""
+    svc = GraphService(_make_config())
+    svc._ready = True
+    svc._graphiti = MagicMock()
+
+    mock_result = MagicMock()
+    mock_result.records = []
+    svc._graphiti.driver = AsyncMock()
+    svc._graphiti.driver.execute_query = AsyncMock(return_value=mock_result)
+
+    result = await svc.get_entity_uuid("UnknownUser")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_entity_uuid_returns_none_when_not_ready():
+    """get_entity_uuid() returns None when graph not ready."""
+    svc = GraphService(_make_config())
+    result = await svc.get_entity_uuid("KingsRequin")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_search_by_entity_with_center_node():
+    """search_by_entity() calls graphiti.search with center_node_uuid."""
+    svc = GraphService(_make_config())
+    svc._ready = True
+    svc._graphiti = MagicMock()
+
+    mock_edge = MagicMock()
+    mock_edge.fact = "KingsRequin aime le café"
+    mock_edge.valid_at = None
+    mock_edge.invalid_at = None
+    svc._graphiti.search = AsyncMock(return_value=[mock_edge])
+
+    results = await svc.search_by_entity("café", "uuid-abc-123", limit=5)
+    assert len(results) == 1
+    assert results[0]["fact"] == "KingsRequin aime le café"
+
+    call_kwargs = svc._graphiti.search.call_args[1]
+    assert call_kwargs.get("center_node_uuid") == "uuid-abc-123"
+    assert call_kwargs.get("num_results") == 5
+
+
+@pytest.mark.asyncio
+async def test_search_by_entity_returns_empty_when_not_ready():
+    """search_by_entity() returns [] when graph not ready."""
+    svc = GraphService(_make_config())
+    results = await svc.search_by_entity("café", "uuid-abc-123")
+    assert results == []

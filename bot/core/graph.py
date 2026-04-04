@@ -268,6 +268,75 @@ class GraphService:
             logger.warning("Social context query failed: {e}", e=exc)
             return []
 
+    async def get_entity_uuid(self, username: str, group_id: str | None = None) -> str | None:
+        """Look up the UUID of a Neo4j entity by username.
+
+        Tries an exact match first, then a CONTAINS fallback.
+        Returns None if not found or on error.
+        """
+        if not self.ready:
+            return None
+        try:
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
+            # Exact match
+            result = await self._graphiti.driver.execute_query(
+                "MATCH (e:Entity {group_id: $gid}) "
+                "WHERE toLower(e.name) = toLower($name) "
+                "RETURN e.uuid AS uuid LIMIT 1",
+                gid=gid,
+                name=username,
+            )
+            if result.records:
+                return result.records[0]["uuid"]
+            # Fallback: partial match
+            result = await self._graphiti.driver.execute_query(
+                "MATCH (e:Entity {group_id: $gid}) "
+                "WHERE toLower(e.name) CONTAINS toLower($name) "
+                "RETURN e.uuid AS uuid LIMIT 1",
+                gid=gid,
+                name=username,
+            )
+            if result.records:
+                return result.records[0]["uuid"]
+            return None
+        except Exception as exc:
+            logger.warning("get_entity_uuid failed for {u}: {e}", u=username, e=exc)
+            return None
+
+    async def search_by_entity(
+        self,
+        query: str,
+        center_node_uuid: str,
+        limit: int = 8,
+        group_id: str | None = None,
+    ) -> list[dict]:
+        """Search the knowledge graph centred on a specific entity node.
+
+        Filters out invalidated edges (invalid_at is not None).
+        Returns list of {"fact": ..., "valid_at": ...} dicts.
+        """
+        if not self.ready:
+            return []
+        try:
+            gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
+            edges = await self._graphiti.search(
+                query=query,
+                group_ids=[gid],
+                center_node_uuid=center_node_uuid,
+                num_results=limit,
+            )
+            return [
+                {
+                    "fact": edge.fact,
+                    "valid_at": str(edge.valid_at) if edge.valid_at else None,
+                }
+                for edge in edges
+                if edge.invalid_at is None
+            ]
+        except Exception as exc:
+            logger.warning("search_by_entity failed: {e}", e=exc)
+            return []
+
     async def close(self) -> None:
         """Shutdown Graphiti and close Neo4j connection."""
         if self._graphiti is not None:
