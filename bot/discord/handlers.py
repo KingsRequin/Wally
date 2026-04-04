@@ -664,12 +664,15 @@ async def _stream_to_discord(
     image_urls: list[str] | None,
     user_id: str,
     trace,
+    tools: list[dict] | None = None,
+    tool_executor=None,
 ) -> tuple[str, "discord.Message | None"]:
     """Stream LLM response into a Discord message via progressive edits.
 
     Sends a placeholder '…' reply immediately, then edits it with accumulated
     tokens every _STREAM_EDIT_INTERVAL seconds. Returns (full_text, placeholder_msg).
     On total failure, returns (FALLBACK_RESPONSE, placeholder_msg).
+    When tools are provided, passes them to complete_stream() for tool-aware streaming.
     """
     from bot.core.llm.base import FALLBACK_RESPONSE as _FALLBACK
 
@@ -685,6 +688,8 @@ async def _stream_to_discord(
             image_urls=image_urls,
             user_id=user_id,
             trace=trace,
+            tools=tools,
+            tool_executor=tool_executor,
         ):
             full_text += chunk
             now = asyncio.get_event_loop().time()
@@ -1121,62 +1126,36 @@ async def _respond(
                 return json.dumps(result)
             return f"Unknown tool: {name}"
 
-        if tools:
-            async with message.channel.typing():
-                reply, tools_called = await bot.llm.complete_with_tools(
-                    system_prompt, openai_messages, tools, _tool_executor,
-                    purpose="discord_response",
-                    image_urls=image_urls or None,
-                    user_id=f"discord:{message.author.id}",
-                    trace=trace,
-                )
-            react_emoji, reply = _parse_react_tag(reply)
+        tools_called = []
+        full_text, placeholder_msg = await _stream_to_discord(
+            message,
+            bot.llm,
+            system_prompt,
+            openai_messages,
+            image_urls or None,
+            f"discord:{message.author.id}",
+            trace,
+            tools=tools if tools else None,
+            tool_executor=_tool_executor if tools else None,
+        )
+        react_emoji, reply = _parse_react_tag(full_text)
+        try:
+            await message.remove_reaction("🔍", bot.user)
+        except Exception:
+            pass
+        for emoji in _reaction_emojis:
             try:
-                await message.remove_reaction("🔍", bot.user)
+                await message.remove_reaction(emoji, bot.user)
             except Exception:
                 pass
-            for emoji in _reaction_emojis:
-                try:
-                    await message.remove_reaction(emoji, bot.user)
-                except Exception:
-                    pass
-            if react_emoji:
-                try:
-                    await message.add_reaction(react_emoji)
-                except Exception:
-                    pass
-            reply_msg_id = await _send_in_parts(message, reply)
-            if reply_msg_id and getattr(bot, "reaction_tracker", None):
-                bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
-        else:
-            tools_called = []
-            full_text, placeholder_msg = await _stream_to_discord(
-                message,
-                bot.llm,
-                system_prompt,
-                openai_messages,
-                image_urls or None,
-                f"discord:{message.author.id}",
-                trace,
-            )
-            react_emoji, reply = _parse_react_tag(full_text)
+        if react_emoji:
             try:
-                await message.remove_reaction("🔍", bot.user)
+                await message.add_reaction(react_emoji)
             except Exception:
                 pass
-            for emoji in _reaction_emojis:
-                try:
-                    await message.remove_reaction(emoji, bot.user)
-                except Exception:
-                    pass
-            if react_emoji:
-                try:
-                    await message.add_reaction(react_emoji)
-                except Exception:
-                    pass
-            reply_msg_id = placeholder_msg.id if placeholder_msg else None
-            if reply_msg_id and getattr(bot, "reaction_tracker", None):
-                bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
+        reply_msg_id = placeholder_msg.id if placeholder_msg else None
+        if reply_msg_id and getattr(bot, "reaction_tracker", None):
+            bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
 
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)

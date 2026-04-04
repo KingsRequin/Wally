@@ -330,8 +330,28 @@ class ClaudeLLMClient(BaseLLMClient):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         trace=None,
+        tools: list[dict] | None = None,
+        tool_executor=None,
     ):
-        """Stream completion as text chunks via Anthropic messages.stream()."""
+        """Stream completion as text chunks via Anthropic messages.stream().
+
+        When tools are provided, falls back to complete_with_tools() and yields
+        the result as a single chunk (Claude streaming with tool calls is complex).
+        """
+        if tools and tool_executor:
+            # Fallback: use complete_with_tools, yield result as single chunk
+            try:
+                reply, _ = await self.complete_with_tools(
+                    system_prompt, messages, tools, tool_executor,
+                    purpose=purpose, image_urls=image_urls, user_id=user_id, trace=trace,
+                )
+            except Exception as exc:
+                logger.error("Claude complete_with_tools fallback error: {e}", e=exc)
+                reply = FALLBACK_RESPONSE
+            yield reply
+            return
+
+        # True streaming (no tools)
         claude_messages = _convert_messages_for_claude(messages)
         effective_max = self._max_tokens
 

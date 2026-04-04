@@ -87,11 +87,14 @@ class BaseLLMClient(ABC):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         trace: Any = None,
+        tools: list[dict] | None = None,
+        tool_executor: Optional[Callable[[str, str], Awaitable[str]]] = None,
     ) -> AsyncGenerator[str, None]:
         """Stream a text completion as an async generator of text chunks.
 
-        Yields text deltas as they arrive from the model.
+        Yields text deltas as they arrive. When tools are provided and the model
+        requests tool calls, executes them via tool_executor and streams the
+        final response. Implementations without tool streaming support fall back
+        to complete_with_tools() and yield the result as a single chunk.
         On error, yields FALLBACK_RESPONSE as a single chunk and stops.
-        Implementations that do not support native streaming (e.g. Responses API
-        models) yield the full response as a single chunk.
         """

@@ -337,11 +337,14 @@ class OpenAILLMClient(BaseLLMClient):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         trace=None,
+        tools: list[dict] | None = None,
+        tool_executor=None,
     ):
-        """Stream completion as text chunks.
+        """Stream completion as text chunks, with optional tool call support.
 
-        Responses API models (o1/o3/o4) do not support streaming — they yield the
-        full response as a single chunk via complete().
+        Responses API models yield the full response as a single chunk via complete().
+        When tools are provided and the model requests tool calls, executes them
+        and continues streaming the final response.
         """
         if _uses_responses_api(self._model):
             result = await self.complete(
@@ -351,27 +354,82 @@ class OpenAILLMClient(BaseLLMClient):
             yield result
             return
 
-        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        current_messages = [{"role": "system", "content": system_prompt}] + list(messages)
 
         if image_urls:
-            last_msg = dict(full_messages[-1])
+            last_msg = dict(current_messages[-1])
             last_msg["content"] = self._build_image_content(
                 last_msg["content"], image_urls, False
             )
-            full_messages[-1] = last_msg
+            current_messages[-1] = last_msg
 
         try:
-            stream = await self._client.chat.completions.create(
-                model=self._model,
-                messages=full_messages,
-                temperature=self._temperature,
-                max_completion_tokens=self._max_tokens,
-                stream=True,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
+            while True:
+                create_kwargs: dict = dict(
+                    model=self._model,
+                    messages=current_messages,
+                    temperature=self._temperature,
+                    max_completion_tokens=self._max_tokens,
+                    stream=True,
+                )
+                if tools:
+                    create_kwargs["tools"] = tools
+
+                stream = await self._client.chat.completions.create(**create_kwargs)
+
+                text_parts: list[str] = []
+                tool_calls_acc: dict[int, dict] = {}
+                finish_reason: str | None = None
+
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    finish_reason = choice.finish_reason or finish_reason
+                    delta = choice.delta
+
+                    if delta.content:
+                        text_parts.append(delta.content)
+                        yield delta.content
+
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                            if tc.id:
+                                tool_calls_acc[idx]["id"] += tc.id
+                            if tc.function:
+                                if tc.function.name:
+                                    tool_calls_acc[idx]["name"] += tc.function.name
+                                if tc.function.arguments:
+                                    tool_calls_acc[idx]["arguments"] += tc.function.arguments
+
+                if finish_reason == "tool_calls" and tool_calls_acc and tool_executor:
+                    sorted_tcs = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": "".join(text_parts) or None,
+                        "tool_calls": [
+                            {
+                                "id": tc["id"],
+                                "type": "function",
+                                "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                            }
+                            for tc in sorted_tcs
+                        ],
+                    })
+                    for tc in sorted_tcs:
+                        result = await tool_executor(tc["name"], tc["arguments"])
+                        current_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result,
+                        })
+                    # Continue loop: next iteration streams the final response after tool calls
+                else:
+                    break
+
         except Exception as exc:
             logger.error("OpenAI streaming error: {e}", e=exc)
             yield FALLBACK_RESPONSE
