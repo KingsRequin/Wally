@@ -322,6 +322,43 @@ class ClaudeLLMClient(BaseLLMClient):
         result = await self._call_with_retry(_call, purpose, fallback=fallback)
         return result if result is not None else fallback
 
+    async def complete_stream(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        purpose: str = "response",
+        image_urls: list[str] | None = None,
+        user_id: str | None = None,
+        trace=None,
+    ):
+        """Stream completion as text chunks via Anthropic messages.stream()."""
+        claude_messages = _convert_messages_for_claude(messages)
+        effective_max = self._max_tokens
+
+        if image_urls and claude_messages:
+            last_msg = dict(claude_messages[-1])
+            last_msg["content"] = _build_claude_image_content(
+                last_msg["content"] if isinstance(last_msg["content"], str) else str(last_msg["content"]),
+                image_urls,
+            )
+            claude_messages[-1] = last_msg
+
+        kwargs = dict(
+            model=self._model,
+            max_tokens=effective_max,
+            system=self._build_system_with_caching(system_prompt),
+            messages=claude_messages,
+            temperature=self._temperature,
+        )
+
+        try:
+            async with self._client.messages.stream(**kwargs) as stream:
+                async for text_delta in stream.text_stream:
+                    yield text_delta
+        except Exception as exc:
+            logger.error("Claude streaming error: {e}", e=exc)
+            yield FALLBACK_RESPONSE
+
     async def complete_with_tools(
         self,
         system_prompt: str,
