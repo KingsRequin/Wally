@@ -425,15 +425,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             reply = reply[:477] + "..."
 
         if channel_name in bot._channel_ids:
-            # Chaîne invitée : envoi via IRC (pas d'autorisation broadcaster requise)
+            # Chaîne invitée : envoi via IRC — mention @author pour simuler une réponse
             irc_channel = bot.get_channel(channel_name)
             if irc_channel:
-                await irc_channel.send(reply)
+                await irc_channel.send(f"@{author} {reply}")
             else:
                 logger.warning("IRC non connecté pour {ch}, réponse ignorée", ch=channel_name)
         else:
-            # Chaîne home : envoi via Helix API
-            await bot.twitch_api.send_message(text=reply)
+            # Chaîne home : envoi via Helix API avec reply thread
+            msg_id = getattr(payload, "message_id", None) or None
+            await bot.twitch_api.send_message(
+                text=reply,
+                reply_parent_message_id=msg_id,
+            )
         bot.set_cooldown(user_id)
 
         if getattr(bot, "reaction_tracker", None):

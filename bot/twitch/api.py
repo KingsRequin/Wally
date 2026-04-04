@@ -27,10 +27,16 @@ class TwitchAPI:
         self._bot_id = bot_id
         self._broadcaster_id = broadcaster_id
 
-    async def send_message(self, text: str, broadcaster_id: Optional[str] = None) -> None:
+    async def send_message(
+        self,
+        text: str,
+        broadcaster_id: Optional[str] = None,
+        reply_parent_message_id: Optional[str] = None,
+    ) -> None:
         """POST /helix/chat/messages. Retry once on 401 after bot token refresh.
 
         broadcaster_id: chaîne cible. Si None, utilise self._broadcaster_id (chaîne home).
+        reply_parent_message_id: ID du message parent pour créer un thread de réponse.
         """
         target = broadcaster_id or self._broadcaster_id
         try:
@@ -42,11 +48,12 @@ class TwitchAPI:
                             "Authorization": f"Bearer {self._tm.bot_token}",
                             "Client-Id": self._client_id,
                         },
-                        json={
+                        json={k: v for k, v in {
                             "broadcaster_id": target,
                             "sender_id": self._bot_id,
                             "message": text,
-                        },
+                            "reply_parent_message_id": reply_parent_message_id,
+                        }.items() if v is not None},
                         timeout=10,
                     )
                     if resp.status_code == 401:

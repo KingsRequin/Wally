@@ -220,7 +220,7 @@ class ChatMessageData:
       broadcaster.name — broadcaster_user_login
     """
 
-    __slots__ = "chatter", "message", "broadcaster"
+    __slots__ = "chatter", "message", "broadcaster", "message_id"
 
     def __init__(self, client, data: dict):
         # Use twitchio's create_user to get PartialUser objects
@@ -231,6 +231,7 @@ class ChatMessageData:
         self.broadcaster = client.client.create_user(
             int(data["broadcaster_user_id"]), data["broadcaster_user_login"]
         )
+        self.message_id: str = data.get("message_id", "")
 
 
 class _ChatMessageText:

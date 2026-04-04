@@ -95,3 +95,29 @@ async def test_send_message_no_retry_if_refresh_fails():
         mock_http.post = AsyncMock(return_value=unauthorized)
         await api.send_message("fail")
     assert mock_http.post.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_with_reply_parent():
+    """reply_parent_message_id is included in the JSON body when provided."""
+    api = make_api()
+    ok = make_http_response(200)
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        mock_http = MockClient.return_value.__aenter__.return_value
+        mock_http.post = AsyncMock(return_value=ok)
+        await api.send_message("hello", reply_parent_message_id="msg-abc-123")
+    body = mock_http.post.call_args.kwargs["json"]
+    assert body["reply_parent_message_id"] == "msg-abc-123"
+
+
+@pytest.mark.asyncio
+async def test_send_message_without_reply_parent_omits_field():
+    """reply_parent_message_id is NOT in the JSON body when not provided."""
+    api = make_api()
+    ok = make_http_response(200)
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        mock_http = MockClient.return_value.__aenter__.return_value
+        mock_http.post = AsyncMock(return_value=ok)
+        await api.send_message("hello")
+    body = mock_http.post.call_args.kwargs["json"]
+    assert "reply_parent_message_id" not in body
