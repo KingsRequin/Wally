@@ -9,6 +9,8 @@ import discord
 from discord.ext import commands
 from loguru import logger
 
+from bot.discord.events import register_events
+
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
@@ -83,6 +85,8 @@ class WallyDiscord(commands.Bot):
         await self.add_cog(TestCog(self))
         await self.add_cog(ImagineCog(self))
 
+        register_events(self)
+
         # Sync slash commands — wrap in try/except so a 403 (bot not yet in guild) doesn't crash startup
         try:
             import os
@@ -101,46 +105,6 @@ class WallyDiscord(commands.Bot):
     async def on_ready(self) -> None:
         self._start_time = time.time()
         logger.info("Discord bot ready as {user}", user=self.user)
-
-    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
-        if not self.reaction_tracker:
-            return
-        if payload.user_id == self.user.id:
-            return
-        member = payload.member
-        is_bot = member.bot if member else False
-        self.reaction_tracker.record_discord_reaction(
-            payload.message_id, str(payload.emoji), is_bot,
-        )
-
-    async def on_voice_state_update(self, member, before, after) -> None:
-        if member.bot or not self.social:
-            return
-        if before.channel != after.channel:
-            if before.channel:
-                self.social.on_voice_leave(before.channel.id, member.id, member.display_name)
-            if after.channel:
-                self.social.on_voice_join(after.channel.id, member.id, member.display_name)
-
-    async def on_reaction_add(self, reaction, user) -> None:
-        if user.bot or not self.social:
-            return
-        author = reaction.message.author
-        if author is None:
-            return  # message not in cache, author unknown
-        if author != user:
-            self.social.on_reaction(user.display_name, author.display_name)
-
-    async def on_presence_update(self, before, after) -> None:
-        # `before` and `after` are discord.Member objects directly
-        if after.bot or not self.social or not after.guild:
-            return
-        before_games = {a.name for a in (before.activities or []) if isinstance(a, discord.Game)}
-        after_games = {a.name for a in (after.activities or []) if isinstance(a, discord.Game)}
-        for game in after_games - before_games:
-            self.social.on_game_start(after.display_name, game)
-        for game in before_games - after_games:
-            self.social.on_game_stop(after.display_name, game)
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)
