@@ -19,6 +19,8 @@ from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
+from bot.twitch.commands import dispatch_command
+
 
 def _resolve_twitch_roles(badges: list) -> list[str]:
     """Map Twitch badges to the action permission hierarchy."""
@@ -83,39 +85,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if channel_name in active_visits:
         active_visits[channel_name]["msg_count"] += 1
 
-    # Overlay image command
-    overlay_cfg = bot.config.overlay_image
-    if overlay_cfg.enabled and content.strip().lower() == overlay_cfg.command.lower():
-        ds = getattr(bot, "dashboard_state", None)
-        if ds is not None:
-            image = await bot.db.get_random_gallery_image(overlay_cfg.random_filter)
-            if image:
-                payload_img = {
-                    "image_url": f"/api/public/gallery/{image['id']}/image",
-                    "title": image.get("title") or "",
-                    "username": image["username"],
-                    "display_duration": overlay_cfg.display_duration,
-                    "animation_in": overlay_cfg.animation_in,
-                    "animation_out": overlay_cfg.animation_out,
-                    "animation_duration": overlay_cfg.animation_duration,
-                }
-                # Générer le message LLM puis envoyer image + texte ensemble
-                _fire(_announce_overlay_image(bot, channel_name, channel_id, image, ds, payload_img))
-        return  # Don't process further
-
-    # !mood command
-    if content.strip().lower() == "!mood":
-        state = bot.emotion.get_state()
-        emojis = {"anger": "😤", "joy": "😄", "sadness": "😢", "curiosity": "🤔", "boredom": "😑"}
-        labels = {"anger": "Colère", "joy": "Joie", "sadness": "Tristesse", "curiosity": "Curiosité", "boredom": "Ennui"}
-        parts = [f"{emojis[e]} {labels[e]} {int(state[e]*100)}%" for e in ("anger", "joy", "sadness", "curiosity", "boredom")]
-        mood_text = "Humeur de Wally — " + " | ".join(parts)
-        if channel_name in bot._channel_ids:
-            irc_channel = bot.get_channel(channel_name)
-            if irc_channel:
-                await irc_channel.send(mood_text)
-        else:
-            await bot.twitch_api.send_message(text=mood_text)
+    # Dispatch commandes ! (overlay, !mood, !code, …)
+    if await dispatch_command(bot, payload, content, author, channel_name):
         return
 
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
@@ -136,7 +107,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     })
     if author.lower() in _KNOWN_BOTS:
         return
-    badges = getattr(payload.chatter, "badges", []) or []
+    badges = getattr(payload, "badges", []) or []
     badge_ids = {b.id if hasattr(b, "id") else str(b) for b in badges}
     if "bot" in badge_ids:
         return
@@ -389,7 +360,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     platform=args.get("platform", "PC"),
                 )
             if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
-                badges = getattr(payload.chatter, "badges", []) or []
+                badges = getattr(payload, "badges", []) or []
                 user_roles = _resolve_twitch_roles(badges)
                 result = await action_service.execute_tool(
                     name, args,
