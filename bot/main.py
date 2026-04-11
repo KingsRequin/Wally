@@ -51,15 +51,8 @@ async def main() -> None:
 
     from bot.config import Config
     from bot.db.database import Database
-    from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
-    from bot.core.llm import create_llm_client
-    from bot.core.llm.openai_client import OpenAILLMClient
-    from bot.core.prompts import PromptBuilder
-    from bot.core.language import LanguageDetector
-    from bot.core.journal import DailyJournal
-    from bot.core.persona import PersonaService
     from bot.core.tracing import init_tracing, shutdown_tracing
+    from bot.bootstrap import build_core_services
 
     # ── Load config and database ──────────────────────────────────────────────
     config = Config.load(os.getenv("CONFIG_PATH", "config.yaml"))
@@ -86,86 +79,28 @@ async def main() -> None:
     init_tracing()
 
     # ── Core services ─────────────────────────────────────────────────────────
-    emotion = EmotionEngine(config, db=db)          # db injecté
-    await emotion.load_state()                      # charge l'état persisté
-    emotion.start_decay_task()                      # APRÈS load_state
-    logger.info("EmotionEngine started with decay task")
+    svc = await build_core_services(config, db, qdrant_url)
+    emotion          = svc.emotion
+    memory           = svc.memory
+    graph            = svc.graph
+    primary_llm      = svc.primary_llm
+    secondary_llm    = svc.secondary_llm
+    image_client     = svc.image_client
+    prompts          = svc.prompts
+    language         = svc.language
+    persona          = svc.persona
+    journal          = svc.journal
+    action_registry  = svc.action_registry
+    action_executor  = svc.action_executor
+    action_scheduler = svc.action_scheduler
+    action_service   = svc.action_service
+    fact_extractor   = svc.fact_extractor
+    reaction_tracker = svc.reaction_tracker
+    web_search       = svc.web_search
+    apex_api         = svc.apex_api
+    shared_scheduler = svc.shared_scheduler
 
-    memory = MemoryService(config)
-
-    from bot.core.graph import GraphService
-    graph = GraphService(config)
-    await graph.initialize()
-
-    # ── LLM clients ────────────────────────────────────────────────────────
-    primary_llm = create_llm_client(config.llm.primary, db)
-    secondary_llm = create_llm_client(config.llm.secondary, db)
-    # Image client is always OpenAI (Claude has no image generation API)
-    image_client = OpenAILLMClient(
-        model=config.llm.primary.model,  # model irrelevant for images
-        db=db,
-    )
-    logger.info("LLM clients created — primary: {p}, secondary: {s}",
-                p=type(primary_llm).__name__, s=type(secondary_llm).__name__)
-
-    memory.set_openai_client(secondary_llm)
-    memory.set_db(db)
-    memory.set_graph(graph)
-    await memory.load_aliases(db)
-    emotion.set_openai_client(secondary_llm)
-    logger.info("MemoryService and LLM clients initialized")
-
-    from bot.core.web_search import WebSearchService
-
-    web_search = WebSearchService(config, db)
-    if web_search.available:
-        logger.info("WebSearchService initialized (Tavily)")
-    else:
-        logger.warning("WebSearchService disabled — TAVILY_API_KEY missing or tavily-python not installed")
-
-    from bot.core.apex_api import ApexLegendsService
-
-    apex_api = ApexLegendsService()
-    if apex_api.available:
-        logger.info("ApexLegendsService initialized")
-    else:
-        logger.warning("ApexLegendsService disabled — APEX_API_KEY missing")
-
-    prompts = PromptBuilder()
-    language = LanguageDetector(config.bot.language_default)
-    persona = PersonaService()
-    logger.info("PromptBuilder, LanguageDetector, and PersonaService initialized")
-
-    journal = DailyJournal(config, primary_llm, secondary_llm, emotion, memory, db=db)
-    logger.info("DailyJournal initialized")
-
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from bot.core.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService, ActionDefinition
-
-    # Shared scheduler
-    shared_scheduler = AsyncIOScheduler()
-
-    # Action services
-    action_registry = ActionRegistry(db)
-    await action_registry.load_permissions()
-
-    action_executor = ActionExecutor(action_registry)
-
-    from bot.dashboard.routes.sse import broadcast_action_event
-    action_scheduler = ActionScheduler(db, action_executor, shared_scheduler, on_change=broadcast_action_event)
-
-    action_service = ActionService(action_registry, action_scheduler, db)
-    logger.info("ActionService initialized")
-
-    from bot.core.fact_extractor import FactExtractor
-    from bot.core.reaction_tracker import ReactionTracker
-
-    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db, graph=graph)
-    await fact_extractor.restore_buffers()
-    logger.info("FactExtractor initialized")
-
-    reaction_tracker = ReactionTracker(emotion, db)
-    logger.info("ReactionTracker initialized")
+    from bot.core.actions import ActionDefinition
 
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
