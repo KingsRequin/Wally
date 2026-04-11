@@ -321,9 +321,9 @@ async def test_setup_mood_tab_displays_percentage():
 async def test_send_env_tab_includes_env_view(monkeypatch):
     """_send_env_tab envoie un message avec une EnvView (pas juste du texte)."""
     from bot.discord.commands.setup import _send_env_tab, EnvView
-    import bot.discord.commands.setup as setup_module
+    import bot.discord.commands.setup.env as env_module
 
-    monkeypatch.setattr(setup_module, "is_env_complete",
+    monkeypatch.setattr(env_module, "is_env_complete",
                         lambda path=".env": ["OPENAI_API_KEY"])
 
     bot_obj = make_bot()
@@ -344,10 +344,10 @@ async def test_send_env_tab_includes_env_view(monkeypatch):
 async def test_env_openai_modal_saves_key(monkeypatch):
     """EnvOpenAIModal.on_submit appelle update_env_file avec OPENAI_API_KEY."""
     from bot.discord.commands.setup import EnvOpenAIModal
-    import bot.discord.commands.setup as setup_module
+    import bot.discord.commands.setup.env as env_module
 
     saved = {}
-    monkeypatch.setattr(setup_module, "update_env_file",
+    monkeypatch.setattr(env_module, "update_env_file",
                         lambda path, updates: saved.update(updates))
 
     modal = EnvOpenAIModal({})
