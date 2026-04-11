@@ -72,7 +72,7 @@ async def test_gift_sub_applies_joy_delta():
     assert handler is not None
 
     payload = make_gift_payload(total=5)
-    with patch("bot.twitch.events._generate_and_send", new_callable=AsyncMock):
+    with patch("bot.twitch.events.social._generate_and_send", new_callable=AsyncMock):
         await handler(payload)
 
     bot.emotion.apply_delta.assert_called_once_with("joy", 0.5)
@@ -93,7 +93,7 @@ async def test_gift_sub_uses_payload_total_not_cumulative():
     async def fake_send(b, channel, template, **kwargs):
         captured.update(kwargs)
 
-    with patch("bot.twitch.events._generate_and_send", side_effect=fake_send):
+    with patch("bot.twitch.events.social._generate_and_send", side_effect=fake_send):
         await handler(payload)
 
     assert captured["amount"] == 3   # payload.total
@@ -114,7 +114,7 @@ async def test_gift_sub_anonymous_uses_anonyme():
     async def fake_send(b, channel, template, **kwargs):
         captured.update(kwargs)
 
-    with patch("bot.twitch.events._generate_and_send", side_effect=fake_send):
+    with patch("bot.twitch.events.social._generate_and_send", side_effect=fake_send):
         await handler(payload)
 
     assert captured["username"] == "Anonyme"
@@ -128,7 +128,7 @@ async def test_gift_sub_inactive_skips():
     register_events(bot)
     handler = handlers["event_eventsub_notification_subscription_gift"]
 
-    with patch("bot.twitch.events._generate_and_send", new_callable=AsyncMock) as mock_send:
+    with patch("bot.twitch.events.social._generate_and_send", new_callable=AsyncMock) as mock_send:
         await handler(make_gift_payload())
     mock_send.assert_not_awaited()
 
@@ -145,7 +145,7 @@ async def test_subscription_end_no_message_sent():
     assert handler is not None
 
     payload = make_sub_end_payload()
-    with patch("bot.twitch.events._generate_and_send", new_callable=AsyncMock) as mock_send:
+    with patch("bot.twitch.events.social._generate_and_send", new_callable=AsyncMock) as mock_send:
         await handler(payload)
     mock_send.assert_not_awaited()
     bot.twitch_api.send_message.assert_not_awaited()
@@ -163,7 +163,7 @@ async def test_chat_message_handler_calls_handle_message():
     assert handler is not None
 
     payload = make_chat_payload(content="wally salut")
-    with patch("bot.twitch.events.handle_message", new_callable=AsyncMock) as mock_handle:
+    with patch("bot.twitch.events.social.handle_message", new_callable=AsyncMock) as mock_handle:
         await handler(payload)
     mock_handle.assert_awaited_once_with(bot, payload.data)
 

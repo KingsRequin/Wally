@@ -78,7 +78,7 @@ def make_payload(content="wally salut", author_name="streamer",
     payload.message.text = content
     payload.chatter.name = author_name
     payload.chatter.id = author_id
-    payload.chatter.badges = badges if badges is not None else []
+    payload.badges = badges if badges is not None else []
     payload.broadcaster.name = channel
     return payload
 
