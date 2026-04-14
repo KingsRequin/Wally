@@ -288,3 +288,19 @@ class SocialMixin:
                 entry["created_at"] = datetime.fromtimestamp(entry["created_at"], tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
             result.append(entry)
         return result
+
+    async def get_journals_last_n_days(self, n: int, before_date: str) -> list[dict]:
+        """Retourne les n derniers journaux archivés strictement avant before_date,
+        ordonnés du plus ancien au plus récent (chronologique).
+
+        before_date : ISO 8601 (YYYY-MM-DD), exclu.
+        """
+        rows = await self.fetch_all(
+            "SELECT date, content, word_count FROM journal_archive "
+            "WHERE date < ? ORDER BY date DESC LIMIT ?",
+            (before_date, n),
+        )
+        return [
+            {"date": row["date"], "content": row["content"], "word_count": int(row["word_count"])}
+            for row in reversed(rows)
+        ]

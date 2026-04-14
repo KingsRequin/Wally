@@ -382,3 +382,41 @@ def test_generate_emotion_chart_returns_none_with_less_than_2():
 async def test_test_command_cog_exists():
     from bot.discord.commands.test_cmd import TestCog
     assert TestCog is not None
+
+
+# ── Task 9: get_journals_last_n_days ──
+
+@pytest.mark.asyncio
+async def test_get_journals_last_n_days_basic(db):
+    await db.insert_journal("2026-04-10", "Jour 10", 2)
+    await db.insert_journal("2026-04-11", "Jour 11", 2)
+    await db.insert_journal("2026-04-12", "Jour 12", 2)
+    result = await db.get_journals_last_n_days(n=4, before_date="2026-04-13")
+    assert len(result) == 3
+    assert result[0]["date"] == "2026-04-10"
+    assert result[2]["date"] == "2026-04-12"
+    assert result[0]["content"] == "Jour 10"
+
+
+@pytest.mark.asyncio
+async def test_get_journals_last_n_days_excludes_before_date(db):
+    await db.insert_journal("2026-04-12", "Hier", 2)
+    await db.insert_journal("2026-04-13", "Aujourd'hui", 2)
+    result = await db.get_journals_last_n_days(n=4, before_date="2026-04-13")
+    assert len(result) == 1
+    assert result[0]["date"] == "2026-04-12"
+
+
+@pytest.mark.asyncio
+async def test_get_journals_last_n_days_respects_n(db):
+    for i in range(1, 8):
+        await db.insert_journal(f"2026-04-0{i}", f"Jour {i}", 2)
+    result = await db.get_journals_last_n_days(n=4, before_date="2026-04-08")
+    assert len(result) == 4
+    assert result[0]["date"] == "2026-04-04"
+
+
+@pytest.mark.asyncio
+async def test_get_journals_last_n_days_empty(db):
+    result = await db.get_journals_last_n_days(n=4, before_date="2026-04-13")
+    assert result == []
