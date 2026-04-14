@@ -377,6 +377,83 @@ async def test_respond_limits_4_images():
     assert len(call_kwargs["image_urls"]) == 4
 
 
+# ── Mirror pass ────────────────────────────────────────────────────────────
+
+class _FakeLLMSecondary:
+    def __init__(self, response: str):
+        self._response = response
+
+    async def complete(self, system_prompt, messages, purpose=None, **kwargs):
+        return self._response
+
+
+class _FakeMemory:
+    def __init__(self, prelude):
+        self._prelude = prelude
+
+    def get_prelude(self, channel_id):
+        return self._prelude
+
+
+class _FakeBot:
+    def __init__(self, secondary_response: str, prelude=None):
+        self.llm_secondary = _FakeLLMSecondary(secondary_response)
+        self.memory = _FakeMemory(prelude or [])
+
+
+@pytest.mark.asyncio
+async def test_mirror_pass_returns_draft_on_ok(monkeypatch):
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "check this" if name == "response_mirror_system" else fallback)
+    bot = _FakeBot("OK")
+    result = await _mirror_pass(bot, "ch1", "Ouais bof.", "user likes cats")
+    assert result == "Ouais bof."
+
+
+@pytest.mark.asyncio
+async def test_mirror_pass_returns_corrected_on_fix(monkeypatch):
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "check this" if name == "response_mirror_system" else fallback)
+    bot = _FakeBot("Ah tiens, t'as toujours pas réparé ton vélo !")
+    result = await _mirror_pass(bot, "ch1", "Ah ouais c'est sympa ce truc là non ?", "user has a broken bike")
+    assert result == "Ah tiens, t'as toujours pas réparé ton vélo !"
+
+
+@pytest.mark.asyncio
+async def test_mirror_pass_skips_short_reply(monkeypatch):
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "check this")
+    bot = _FakeBot("something different")
+    result = await _mirror_pass(bot, "ch1", "ok", "mem")
+    assert result == "ok"
+
+
+@pytest.mark.asyncio
+async def test_mirror_pass_returns_draft_on_llm_error(monkeypatch):
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "check this")
+
+    class _BrokenLLM:
+        async def complete(self, *a, **kw):
+            raise RuntimeError("LLM unavailable")
+
+    class _Bot:
+        llm_secondary = _BrokenLLM()
+        memory = _FakeMemory([])
+
+    result = await _mirror_pass(_Bot(), "ch1", "Ouais c'est pas terrible comme idée en fait.", "mem")
+    assert result == "Ouais c'est pas terrible comme idée en fait."
+
+
+@pytest.mark.asyncio
+async def test_mirror_pass_skips_when_no_prompt(monkeypatch):
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "")
+    bot = _FakeBot("corrected text")
+    result = await _mirror_pass(bot, "ch1", "Ouais c'est pas terrible comme idée en fait.", "mem")
+    assert result == "Ouais c'est pas terrible comme idée en fait."
+
+
 @pytest.mark.asyncio
 async def test_respond_no_text_uses_default_prompt():
     """Message image-only : le texte envoyé à OpenAI est 'Regarde cette image.'"""

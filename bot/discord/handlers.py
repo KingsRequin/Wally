@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.core.prompts import assemble_memory_context
+from bot.core.prompts import assemble_memory_context, load_prompt
 from bot.core.tracing import create_trace, create_span
 
 if TYPE_CHECKING:
@@ -178,6 +178,55 @@ def _fire(coro) -> asyncio.Task:
     return t
 
 
+async def _mirror_pass(
+    bot: "WallyDiscord",
+    channel_id: str,
+    draft: str,
+    mem_context: str,
+) -> str:
+    """Pass secondaire : détecte et corrige patterns répétitifs ou mémoire ratée.
+
+    Retourne le draft inchangé en cas d'erreur ou si aucun défaut n'est trouvé.
+    Skippé si la réponse est trop courte (monosyllabes intentionnels).
+    """
+    if len(draft) < 30:
+        return draft
+
+    system = load_prompt("response_mirror_system")
+    if not system:
+        return draft
+
+    try:
+        current_prelude = bot.memory.get_prelude(channel_id)
+        recent_wally = [
+            m["content"] for m in current_prelude
+            if m.get("author") == "Wally"
+        ][-3:]
+
+        parts: list[str] = []
+        if recent_wally:
+            parts.append("Dernières réponses de Wally dans ce canal :\n" + "\n---\n".join(recent_wally))
+        if mem_context:
+            parts.append(f"Souvenirs connus sur l'utilisateur :\n{mem_context}")
+        parts.append(f"Réponse à analyser :\n{draft}")
+
+        user_msg = "\n\n".join(parts)
+
+        corrected = await bot.llm_secondary.complete(
+            system,
+            [{"role": "user", "content": user_msg}],
+            purpose="response_mirror",
+        )
+        corrected = corrected.strip()
+        if not corrected or corrected.upper() == "OK":
+            return draft
+        return corrected
+
+    except Exception as exc:
+        logger.warning("Mirror pass failed: {e}", e=exc)
+        return draft
+
+
 async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = None) -> list[dict]:
     """Fallback cold start : récupère l'historique Discord via API.
     Retourne les messages en ordre chronologique (plus ancien en premier).
@@ -253,7 +302,6 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     anger = bot.emotion.get_state().get("anger", 0.0)
 
     # Generate LLM warning
-    from bot.core.prompts import load_prompt
     system = load_prompt("spam_warning_system", "Dis à l'utilisateur de se calmer.")
     user_msg = (
         f"L'utilisateur {username} a envoyé {len(dq)} messages "
@@ -494,6 +542,10 @@ async def _third_party_mention_context(
 
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
+        return
+
+    # Ignore entièrement les guilds blacklistés (ex: serveurs de test/notification)
+    if message.guild and message.guild.id in bot.config.discord.ignored_guilds:
         return
 
     # Dedup: Discord can replay events on WebSocket reconnect — skip already-processed messages
@@ -1071,6 +1123,9 @@ async def _respond(
                 )
                 tools_called = []
 
+        # Mirror pass — detect and fix repetitive patterns or missed memories
+        reply = await _mirror_pass(bot, str(message.channel.id), reply, mem_context)
+
         # Parse optional [react:emoji] tag from LLM response
         react_emoji, reply = _parse_react_tag(reply)
 
@@ -1169,7 +1224,6 @@ async def _post_process(
         # Génère une description courte de l'image et la stocke en mémoire long-terme
         if image_urls and getattr(bot, "llm_secondary", None):
             try:
-                from bot.core.prompts import load_prompt
                 img_system = load_prompt(
                     "image_describe_system",
                     "Décris cette image en une phrase courte (max 30 mots).",
