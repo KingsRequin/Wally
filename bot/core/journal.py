@@ -62,6 +62,21 @@ _CLEANUP_SYSTEM = load_prompt(
         '{"delete": [], "update": [], "questions": []}'
     ),
 )
+_NARRATIVE_SYNTHESIS_SYSTEM = load_prompt(
+    "journal_narrative_synthesis_system",
+    fallback=(
+        "Tu reçois des entrées de journal de Wally. Produis une narrative thématique "
+        "de 8 à 12 lignes texte brut sur les thèmes récurrents, absences et fils non résolus."
+    ),
+)
+_JOURNAL_VOICE_PASS_SYSTEM = load_prompt(
+    "journal_voice_pass_system",
+    fallback=(
+        "Tu reçois un brouillon de journal de Wally. Insuffle la vraie voix intérieure : "
+        "auto-interruptions, flux non linéaire, pensée du soir honnête. "
+        "Retourne le journal réécrit directement en markdown Discord."
+    ),
+)
 _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
 _CHUNK_SIZE = 30
@@ -510,6 +525,25 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to get yesterday's journal: {e}", e=exc)
 
+        # ── Narrative synthesis of last 4 days ──
+        narrative_block = ""
+        if self._db is not None:
+            try:
+                past_journals = await self._db.get_journals_last_n_days(
+                    n=4, before_date=effective_date.isoformat()
+                )
+                if len(past_journals) >= 2:
+                    combined = "\n\n---\n\n".join(
+                        f"[{j['date']}]\n{j['content']}" for j in past_journals
+                    )
+                    narrative_block = await self._llm_secondary.complete(
+                        _NARRATIVE_SYNTHESIS_SYSTEM,
+                        [{"role": "user", "content": combined}],
+                        purpose="journal_narrative_synthesis",
+                    )
+            except Exception as exc:
+                logger.warning("Failed to build journal narrative synthesis: {e}", e=exc)
+
         # ── Gallery of the day ──
         gallery_block = ""
         if self._db is not None:
@@ -562,6 +596,8 @@ class DailyJournal:
         sections.append(f"Ton état émotionnel actuel : {emotions_text}")
         if yesterday_block:
             sections.append(yesterday_block)
+        if narrative_block:
+            sections.append(f"Ce que tu as vécu cette semaine :\n\n{narrative_block}")
         if gallery_block:
             sections.append(gallery_block)
         if twitch_visits_block:
@@ -582,6 +618,17 @@ class DailyJournal:
             [{"role": "user", "content": user_msg}],
             purpose="daily_journal",
         )
+
+        # ── Voice pass — insuffle la vraie voix intérieure ──
+        if journal_text:
+            try:
+                journal_text = await self._llm_secondary.complete(
+                    _JOURNAL_VOICE_PASS_SYSTEM,
+                    [{"role": "user", "content": journal_text}],
+                    purpose="journal_voice_pass",
+                )
+            except Exception as exc:
+                logger.warning("Journal voice pass failed: {e}", e=exc)
 
         # ── Emotion chart image (F10) ──
         chart_buf = _generate_emotion_chart(snapshots) if snapshots else None

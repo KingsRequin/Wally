@@ -283,7 +283,8 @@ async def test_journal_injects_stats_and_word_range(tmp_path):
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
 
-    assert len(captured_journal_prompt) == 1
+    assert len(captured_journal_prompt) >= 1
+    # First call is always the main journal prompt (voice pass is a subsequent call)
     prompt = captured_journal_prompt[0]
     assert "Messages : 60" in prompt
     assert "250 à 400" in prompt
