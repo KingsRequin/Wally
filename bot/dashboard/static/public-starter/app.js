@@ -1,220 +1,244 @@
-// app.js — Wally Public UI Starter
-// Appelle uniquement /api/public/* (aucune authentification requise)
+// public-ui/app.js
+import { mount as mountStatus, unmount as unmountStatus } from './tabs/status.js';
+import { mount as mountChat, unmount as unmountChat } from './tabs/chat.js';
+import { mount as mountGallery, unmount as unmountGallery } from './tabs/gallery.js';
+import { mount as mountJournal, unmount as unmountJournal } from './tabs/journal.js';
+import { mount as mountAbout, unmount as unmountAbout } from './tabs/about.js';
+import { mount as mountCommunity, unmount as unmountCommunity } from './tabs/community.js';
 
-var EMOTION_COLORS = {
-  anger:    'var(--anger)',
-  joy:      'var(--joy)',
-  curiosity:'var(--curiosity)',
-  sadness:  'var(--sadness)',
-  boredom:  'var(--boredom)',
-};
-var EMOTION_LABELS = {
-  anger:'Colère', joy:'Joie', curiosity:'Curiosité', sadness:'Tristesse', boredom:'Ennui',
-};
-
-// ── Utilitaires DOM ───────────────────────────────────────────────────────────
-
-function setText(id, val) {
-  var el = document.getElementById(id);
-  if (el) el.textContent = val;
-}
-
-function setClass(id, cls) {
-  var el = document.getElementById(id);
-  if (el) el.className = cls;
-}
-
-function el(tag, cls, text) {
-  var e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
-// ── Status ────────────────────────────────────────────────────────────────────
-
-async function loadStatus() {
-  try {
-    var r = await fetch('/api/public/status');
-    if (!r.ok) return;
-    var d = await r.json();
-
-    var online = d.discord_online || d.twitch_online;
-    setClass('dot-discord', 'dot ' + (d.discord_online ? 'online' : 'offline'));
-    setClass('dot-twitch',  'dot ' + (d.twitch_online  ? 'online' : 'offline'));
-    setText('lbl-discord', d.discord_online ? 'Discord' : 'Discord (hors ligne)');
-    setText('lbl-twitch',  d.twitch_online  ? 'Twitch'  : 'Twitch (hors ligne)');
-
-    if (d.uptime_seconds != null) setText('uptime', formatUptime(d.uptime_seconds));
-
-    var hs = document.getElementById('header-status');
-    if (hs) {
-      hs.textContent = online ? 'En ligne' : 'Hors ligne';
-      hs.style.color  = online ? 'var(--curiosity)' : 'var(--text-muted)';
-    }
-  } catch (_) {}
-}
-
-function formatUptime(s) {
-  var h = Math.floor(s / 3600);
-  var m = Math.floor((s % 3600) / 60);
-  if (h > 0) return h + 'h ' + m + 'm';
-  return m + 'm';
-}
-
-// ── Stream Twitch ─────────────────────────────────────────────────────────────
-
-async function loadStream() {
-  try {
-    var r = await fetch('/api/public/twitch/stream');
-    if (!r.ok) return;
-    var d = await r.json();
-    var container = document.getElementById('stream-content');
-    if (!container) return;
-
-    container.textContent = '';
-    if (d.stream_live) {
-      container.appendChild(el('div', 'stream-game',    d.game_name  || ''));
-      container.appendChild(el('div', 'stream-title',   d.title      || ''));
-      container.appendChild(el('div', 'stream-viewers', (d.viewer_count || 0) + ' spectateurs'));
-    } else {
-      container.appendChild(el('span', 'stream-offline', 'Hors ligne'));
-    }
-  } catch (_) {}
-}
-
-// ── Emotions (SSE + fallback polling) ─────────────────────────────────────────
-
-function initEmotions() {
-  var container = document.getElementById('emotions-container');
-  if (!container) return;
-
-  Object.keys(EMOTION_COLORS).forEach(function(name) {
-    var row     = el('div', 'emotion-row');
-    var label   = el('span', 'emotion-name', EMOTION_LABELS[name]);
-    var barBg   = el('div', 'emotion-bar-bg');
-    var fill    = el('div', 'emotion-bar-fill');
-    var pctSpan = el('span', 'emotion-pct', '0%');
-
-    fill.id             = 'bar-' + name;
-    pctSpan.id          = 'pct-' + name;
-    fill.style.width      = '0%';
-    fill.style.background = EMOTION_COLORS[name];
-
-    barBg.appendChild(fill);
-    row.appendChild(label);
-    row.appendChild(barBg);
-    row.appendChild(pctSpan);
-    container.appendChild(row);
-  });
-
-  var sse = new EventSource('/api/public/sse/emotions');
-  sse.addEventListener('emotion_update', function(e) {
-    try { updateBars(JSON.parse(e.data)); } catch (_) {}
-  });
-  sse.onerror = function() {
-    sse.close();
-    setTimeout(pollEmotions, 5000);
+// ── Shared emotion state ──
+export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
+const emotionListeners = [];
+export function onEmotionUpdate(fn) {
+  emotionListeners.push(fn);
+  return () => {
+    const i = emotionListeners.indexOf(fn);
+    if (i !== -1) emotionListeners.splice(i, 1);
   };
 }
+function notifyEmotions() { emotionListeners.forEach(fn => fn({ ...emotions })); }
 
-async function pollEmotions() {
-  try {
-    var r = await fetch('/api/public/emotions/history');
-    if (r.ok) {
-      var data = await r.json();
-      if (data.length) updateBars(data[data.length - 1]);
-    }
-  } catch (_) {}
-  setTimeout(pollEmotions, 10000);
+// ── SSE emotions ──
+function connectSSE() {
+  const es = new EventSource('/api/public/sse/emotions');
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      Object.assign(emotions, data);
+      notifyEmotions();
+    } catch (_) {}
+  };
+  es.onerror = () => setTimeout(connectSSE, 5000);
+}
+connectSSE();
+
+// ── Modal ──
+const overlay = document.getElementById('modal-overlay');
+const modalImg = document.getElementById('modal-img');
+const modalCaption = document.getElementById('modal-caption');
+document.getElementById('modal-close').addEventListener('click', closeModal);
+overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+export function openModal(src, caption) {
+  modalImg.src = src;
+  modalImg.alt = caption || '';
+  modalCaption.textContent = caption || '';
+  overlay.classList.add('open');
+}
+function closeModal() { overlay.classList.remove('open'); }
+
+// ── Router ──
+const TABS = {
+  status:    { mount: mountStatus,    unmount: unmountStatus },
+  chat:      { mount: mountChat,      unmount: unmountChat },
+  gallery:   { mount: mountGallery,   unmount: unmountGallery },
+  journal:   { mount: mountJournal,   unmount: unmountJournal },
+  community: { mount: mountCommunity, unmount: unmountCommunity },
+  about:     { mount: mountAbout,     unmount: unmountAbout },
+};
+
+let currentTab = null;
+
+function syncNav(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  const sheetTabs = ['community', 'about'];
+  const moreBtn = document.getElementById('bnav-more-btn');
+  if (moreBtn) moreBtn.classList.toggle('active', sheetTabs.includes(tabName));
 }
 
-function updateBars(state) {
-  Object.keys(EMOTION_COLORS).forEach(function(name) {
-    var val  = state[name] || 0;
-    var pct  = Math.round(val * 100);
-    var fill = document.getElementById('bar-' + name);
-    var span = document.getElementById('pct-' + name);
-    if (fill) fill.style.width = pct + '%';
-    if (span) span.textContent = pct + '%';
-  });
+function closeSheet() {
+  const bnavSheet   = document.getElementById('bnav-sheet');
+  const bnavOverlay = document.getElementById('bnav-sheet-overlay');
+  const moreBtn     = document.getElementById('bnav-more-btn');
+  bnavSheet?.classList.remove('open');
+  bnavOverlay?.classList.remove('open');
+  if (bnavSheet) bnavSheet.setAttribute('aria-hidden', 'true');
+  if (moreBtn)   moreBtn.setAttribute('aria-expanded', 'false');
+}
 
-  var dominant = Object.keys(EMOTION_COLORS).reduce(function(a, b) {
-    return (state[a] || 0) >= (state[b] || 0) ? a : b;
-  });
-  var stateEl = document.getElementById('emotion-state');
-  if (stateEl) {
-    if ((state[dominant] || 0) > 0.3) {
-      stateEl.style.display = 'block';
-      stateEl.textContent   = 'Émotion dominante : ' + EMOTION_LABELS[dominant];
-    } else {
-      stateEl.style.display = 'none';
-    }
+function route() {
+  const hash = location.hash.slice(1) || 'status';
+  const tabName = TABS[hash] ? hash : 'status';
+
+  if (currentTab && TABS[currentTab]?.unmount) {
+    TABS[currentTab].unmount();
   }
+
+  syncNav(tabName);
+  closeSheet();
+
+  const content = document.getElementById('tab-content');
+  content.style.animation = 'none';
+  content.offsetHeight;
+  content.style.animation = '';
+
+  TABS[tabName].mount(content);
+  currentTab = tabName;
 }
 
-// ── Galerie ───────────────────────────────────────────────────────────────────
+// Desktop nav clicks
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+});
 
-async function loadGallery() {
-  try {
-    var r = await fetch('/api/public/gallery?limit=6&sort=date');
-    if (!r.ok) return;
-    var data   = await r.json();
-    var images = data.images || data;
-    if (!images || !images.length) return;
+// Mobile bottom-nav clicks
+document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+});
 
-    var card = document.getElementById('gallery-card');
-    var grid = document.getElementById('gallery-grid');
-    if (!card || !grid) return;
+// Sheet items clicks
+document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+});
 
-    card.style.display = 'block';
-    grid.textContent   = '';
-
-    images.slice(0, 6).forEach(function(img) {
-      var thumb = el('div', 'gallery-thumb');
-      var image = document.createElement('img');
-      image.src     = '/api/public/gallery/' + img.id + '/image';
-      image.alt     = img.prompt || '';
-      image.loading = 'lazy';
-      image.addEventListener('click', (function(src, caption) {
-        return function() { openModal(src, caption); };
-      })(image.src, img.prompt || ''));
-      thumb.appendChild(image);
-      grid.appendChild(thumb);
-    });
-  } catch (_) {}
+// "Plus" button — toggle sheet
+const _moreBtn = document.getElementById('bnav-more-btn');
+const _sheet   = document.getElementById('bnav-sheet');
+const _sheetOverlay = document.getElementById('bnav-sheet-overlay');
+if (_moreBtn && _sheet) {
+  _moreBtn.addEventListener('click', () => {
+    const isOpen = _sheet.classList.contains('open');
+    if (isOpen) {
+      closeSheet();
+    } else {
+      _sheet.classList.add('open');
+      _sheetOverlay?.classList.add('open');
+      _sheet.setAttribute('aria-hidden', 'false');
+      _moreBtn.setAttribute('aria-expanded', 'true');
+    }
+  });
+}
+if (_sheetOverlay) {
+  _sheetOverlay.addEventListener('click', closeSheet);
 }
 
-function openModal(src, caption) {
-  var bg  = document.getElementById('modal-bg');
-  var img = document.getElementById('modal-img');
-  var cap = document.getElementById('modal-caption');
-  if (!bg || !img) return;
-  img.src = src;
-  if (cap) cap.textContent = caption;
-  bg.classList.add('open');
+window.addEventListener('hashchange', route);
+
+// If returning from Discord OAuth, navigate to #chat before routing
+if (new URLSearchParams(location.search).get('chat_code')) {
+  location.hash = 'chat';
 }
 
-function closeModal() {
-  var bg = document.getElementById('modal-bg');
-  if (bg) bg.classList.remove('open');
-}
+route();
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Stars canvas — parallax 3D ──
+(function initStars() {
+  const canvas = document.getElementById('stars');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
 
-document.addEventListener('DOMContentLoaded', function() {
-  loadStatus();
-  initEmotions();
-  loadStream();
-  loadGallery();
+  // Smooth mouse/gyro offset (normalised -0.5..0.5, lerped)
+  let targetMX = 0, targetMY = 0, curMX = 0, curMY = 0;
 
-  var bg      = document.getElementById('modal-bg');
-  var closeBtn = document.getElementById('modal-close');
-  if (closeBtn) closeBtn.addEventListener('click', closeModal);
-  if (bg) bg.addEventListener('click', function(e) {
-    if (e.target === bg) closeModal();
+  window.addEventListener('mousemove', e => {
+    targetMX = e.clientX / window.innerWidth - 0.5;
+    targetMY = e.clientY / window.innerHeight - 0.5;
   });
 
-  setInterval(loadStatus, 30000);
-  setInterval(loadStream, 30000);
-});
+  // Mobile: accelerometer parallax via DeviceOrientation
+  // Request permission on iOS 13+ on first interaction
+  function enableGyro() {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().catch(() => {});
+    }
+    window.addEventListener('deviceorientation', e => {
+      // gamma = left/right tilt (-90..90), beta = front/back (-180..180)
+      targetMX = Math.max(-0.5, Math.min(0.5, (e.gamma || 0) / 40));
+      targetMY = Math.max(-0.5, Math.min(0.5, ((e.beta || 0) - 30) / 60));
+    }, { passive: true });
+  }
+
+  // Trigger gyro on first touch (iOS permission gate)
+  window.addEventListener('touchstart', enableGyro, { once: true });
+  // Android / non-gated — enable directly
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission !== 'function') {
+    enableGyro();
+  }
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // depth 0..1: 0 = far (tiny, moves little), 1 = close (bigger, moves more)
+  const stars = [];
+  for (let i = 0; i < 150; i++) {
+    const depth = Math.random();               // parallax layer
+    stars.push({
+      bx: Math.random() * window.innerWidth,   // base position
+      by: Math.random() * window.innerHeight,
+      r: 0.3 + depth * 1.4,                   // size proportional to depth
+      alpha: Math.random(),
+      da: (Math.random() * 0.003 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
+      dx: (Math.random() - 0.5) * 0.08,       // slow drift
+      dy: (Math.random() - 0.5) * 0.08,
+      depth,
+    });
+  }
+
+  const MAX_SHIFT = 120; // px max parallax shift for the closest layer
+
+  function draw() {
+    // Lerp toward target mouse position
+    curMX += (targetMX - curMX) * 0.06;
+    curMY += (targetMY - curMY) * 0.06;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of stars) {
+      // Slow drift of base position
+      s.bx += s.dx;
+      s.by += s.dy;
+      if (s.bx < 0) s.bx = canvas.width;
+      if (s.bx > canvas.width) s.bx = 0;
+      if (s.by < 0) s.by = canvas.height;
+      if (s.by > canvas.height) s.by = 0;
+
+      // Parallax offset — deeper stars shift more
+      const rx = s.bx + curMX * MAX_SHIFT * s.depth;
+      const ry = s.by + curMY * MAX_SHIFT * s.depth;
+
+      // Twinkle
+      s.alpha += s.da;
+      if (s.alpha <= 0.05 || s.alpha >= 1) s.da = -s.da;
+
+      ctx.beginPath();
+      ctx.arc(rx, ry, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, s.alpha)).toFixed(3)})`;
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}());

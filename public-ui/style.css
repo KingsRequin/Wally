@@ -686,3 +686,146 @@ body {
   .status-grid { grid-template-columns: 1fr; }
   .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
 }
+
+/* ── Bottom Nav (mobile) ── */
+.bottom-nav,
+.bnav-sheet,
+.bnav-sheet-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Masquer la tab-nav desktop */
+  .tab-nav { display: none; }
+
+  /* Afficher la bottom-nav */
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 62px;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Espace pour ne pas masquer le contenu */
+  .app-shell {
+    padding-bottom: 74px;
+  }
+
+  .bnav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.2s;
+    padding: 0;
+    min-width: 0;
+  }
+  .bnav-btn:hover,
+  .bnav-btn.active { color: var(--accent); }
+
+  .bnav-icon {
+    font-size: 1.05rem;
+    line-height: 1;
+  }
+  .bnav-label {
+    font-size: 0.62rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* Sheet overlay */
+  .bnav-sheet-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 98;
+  }
+  .bnav-sheet-overlay.open { display: block; }
+
+  /* Sheet */
+  .bnav-sheet {
+    position: fixed;
+    bottom: 62px;
+    left: 0; right: 0;
+    background: rgba(15, 15, 22, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    z-index: 99;
+    padding: 8px 0 12px;
+    transform: translateY(100%);
+    transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .bnav-sheet.open { transform: translateY(0); }
+
+  .bnav-sheet-handle {
+    width: 36px; height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    margin: 0 auto 12px;
+  }
+
+  .bnav-sheet-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 24px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+  }
+  .bnav-sheet-item:hover { background: rgba(255,255,255,0.05); color: var(--accent); }
+  .bnav-sheet-item.active { color: var(--accent); }
+
+  .bnav-sheet-icon { font-size: 1rem; }
+}
+
+/* ── Graph control buttons ── */
+.graph-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+.graph-ctrl-btn {
+  width: 34px;
+  height: 34px;
+  background: rgba(15, 15, 22, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+  user-select: none;
+}
+.graph-ctrl-btn:hover { background: rgba(6,182,212,0.15); color: var(--accent); }

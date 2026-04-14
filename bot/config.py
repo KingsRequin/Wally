@@ -87,6 +87,7 @@ class DiscordConfig:
     channel_filter_mode: str = "blacklist"
     channel_whitelist: list[int] = field(default_factory=list)
     channel_blacklist: list[int] = field(default_factory=list)
+    ignored_guilds: list[int] = field(default_factory=list)
     emoji_reaction_probability: float = 0.05
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 

@@ -59,35 +59,86 @@ const TABS = {
 
 let currentTab = null;
 
+function syncNav(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  const sheetTabs = ['community', 'about'];
+  const moreBtn = document.getElementById('bnav-more-btn');
+  if (moreBtn) moreBtn.classList.toggle('active', sheetTabs.includes(tabName));
+}
+
+function closeSheet() {
+  const bnavSheet   = document.getElementById('bnav-sheet');
+  const bnavOverlay = document.getElementById('bnav-sheet-overlay');
+  const moreBtn     = document.getElementById('bnav-more-btn');
+  bnavSheet?.classList.remove('open');
+  bnavOverlay?.classList.remove('open');
+  if (bnavSheet) bnavSheet.setAttribute('aria-hidden', 'true');
+  if (moreBtn)   moreBtn.setAttribute('aria-expanded', 'false');
+}
+
 function route() {
   const hash = location.hash.slice(1) || 'status';
   const tabName = TABS[hash] ? hash : 'status';
 
-  // Unmount previous
-  if (currentTab && TABS[currentTab] && TABS[currentTab].unmount) {
+  if (currentTab && TABS[currentTab]?.unmount) {
     TABS[currentTab].unmount();
   }
 
-  // Update nav buttons
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
-  });
+  syncNav(tabName);
+  closeSheet();
 
   const content = document.getElementById('tab-content');
   content.style.animation = 'none';
-  content.offsetHeight; // reflow
+  content.offsetHeight;
   content.style.animation = '';
 
   TABS[tabName].mount(content);
   currentTab = tabName;
 }
 
-// Nav button clicks
+// Desktop nav clicks
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    location.hash = btn.dataset.tab;
-  });
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
 });
+
+// Mobile bottom-nav clicks
+document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+});
+
+// Sheet items clicks
+document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
+  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+});
+
+// "Plus" button — toggle sheet
+const _moreBtn = document.getElementById('bnav-more-btn');
+const _sheet   = document.getElementById('bnav-sheet');
+const _sheetOverlay = document.getElementById('bnav-sheet-overlay');
+if (_moreBtn && _sheet) {
+  _moreBtn.addEventListener('click', () => {
+    const isOpen = _sheet.classList.contains('open');
+    if (isOpen) {
+      closeSheet();
+    } else {
+      _sheet.classList.add('open');
+      _sheetOverlay?.classList.add('open');
+      _sheet.setAttribute('aria-hidden', 'false');
+      _moreBtn.setAttribute('aria-expanded', 'true');
+    }
+  });
+}
+if (_sheetOverlay) {
+  _sheetOverlay.addEventListener('click', closeSheet);
+}
 
 window.addEventListener('hashchange', route);
 

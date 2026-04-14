@@ -38,8 +38,8 @@
       </div>
     </nav>
 
-    <nav class="bottom-nav" id="bottom-nav">
-      <button class="bnav-btn active" data-tab="status">
+    <nav class="bottom-nav" id="bottom-nav" aria-label="Navigation mobile">
+      <button class="bnav-btn" data-tab="status">
         <span class="bnav-icon">&#9679;</span>
         <span class="bnav-label">Statut</span>
       </button>
@@ -55,15 +55,15 @@
         <span class="bnav-icon">&#9672;</span>
         <span class="bnav-label">Journal</span>
       </button>
-      <button class="bnav-btn bnav-more-btn" id="bnav-more-btn">
+      <button class="bnav-btn bnav-more-btn" id="bnav-more-btn" aria-haspopup="true" aria-expanded="false" aria-controls="bnav-sheet">
         <span class="bnav-icon">&#xB7;&#xB7;&#xB7;</span>
         <span class="bnav-label">Plus</span>
       </button>
     </nav>
 
     <div class="bnav-sheet-overlay" id="bnav-sheet-overlay"></div>
-    <div class="bnav-sheet" id="bnav-sheet">
-      <div class="bnav-sheet-handle"></div>
+    <div class="bnav-sheet" id="bnav-sheet" aria-hidden="true">
+      <div class="bnav-sheet-handle" aria-hidden="true"></div>
       <button class="bnav-sheet-item" data-tab="community">
         <span class="bnav-sheet-icon">&#9673;</span> Communauté
       </button>

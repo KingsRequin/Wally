@@ -130,9 +130,10 @@ class GraphService:
         if not self.ready:
             return None
 
-        # Skip unknown authors — they create useless "unknown" entities
-        # Allow "social_tracker" source (pre-formatted signals) through
-        if not author or (author.lower() in ("unknown",) and source != "social_tracker"):
+        is_social = source == "social_tracker"
+        # Skip unknown authors — they create useless "unknown" entities.
+        # Social signals (is_social=True) have no author by design — allow them through.
+        if not is_social and (not author or author.lower() == "unknown"):
             return None
 
         cleaned = self._clean_content(content)
@@ -141,20 +142,24 @@ class GraphService:
 
         try:
             gid = self._sanitize_group_id(group_id or self._config.graphiti.group_id)
-            is_social = source == "social_tracker"
             result = await self._graphiti.add_episode(
-                name=f"{source} message",
+                name="social signal" if is_social else "discord message",
                 episode_body=cleaned if is_social else f"{author}: {cleaned}",
                 source_description=(
-                    "Signal d'interaction sociale entre utilisateurs Discord. "
-                    "Extraire uniquement les noms de personnes humaines et leurs relations. "
-                    "Ne pas créer d'entité pour des bots, IA, ou assistants virtuels. "
-                    "Les noms d'entités doivent être des prénoms ou pseudos d'utilisateurs réels uniquement."
+                    # Social signals: structured person-to-person interactions
+                    "Social interaction signal between Discord users. "
+                    "ONLY extract human person names (first names or pseudonyms). "
+                    "DO NOT create entities for: bots, AI, virtual assistants, objects, "
+                    "concepts, places, food, games, websites, or any non-human thing. "
+                    "Entity names must be real human usernames or nicknames only."
                 ) if is_social else (
-                    f"Conversation francophone sur {source}. "
-                    "Extraire les entités (personnes, lieux, sujets) et relations en français. "
-                    "Les noms d'entités doivent être des noms propres ou des sujets clairs, "
-                    "jamais des phrases complètes ou du contenu de message."
+                    # Regular messages: also restrict to people only — topics and objects
+                    # pollute the social graph with non-person entities.
+                    f"Discord conversation in French. Author: {author}. "
+                    "ONLY extract human person names (first names, pseudonyms, usernames). "
+                    "DO NOT create entities for: objects, food, games, websites, concepts, "
+                    "places, or any non-human subject. "
+                    "If no human person names are mentioned, extract nothing."
                 ),
                 source=EpisodeType.message,
                 reference_time=datetime.now(timezone.utc),
@@ -202,7 +207,11 @@ class GraphService:
             return []
 
     async def get_affinity(self, user_a: str, user_b: str, group_id: str | None = None) -> float:
-        """Calculate affinity score between two users using a direct Cypher query."""
+        """Calculate affinity score between two users using a direct Cypher query.
+
+        Weights are inferred from the fact text (French social signal templates)
+        because Graphiti stores free-form fact descriptions, not typed edge enums.
+        """
         if not self.ready:
             return 0.0
         try:
@@ -211,23 +220,27 @@ class GraphService:
                 "MATCH (a:Entity {group_id: $gid})-[r:RELATES_TO]-(b:Entity {group_id: $gid}) "
                 "WHERE toLower(a.name) = $name_a AND toLower(b.name) = $name_b "
                 "  AND r.invalid_at IS NULL "
-                "RETURN r.name AS type, count(r) AS cnt",
+                "RETURN r.fact AS fact",
                 params={"gid": gid, "name_a": user_a.lower(), "name_b": user_b.lower()},
             )
             weights = self._config.graphiti.affinity_weights
-            _TYPE_TO_WEIGHT = {
-                "EN_VOCAL_AVEC": weights.get("voice", 3.0),
-                "REPOND_A": weights.get("reply", 2.0),
-                "MENTIONNE": weights.get("mention", 1.5),
-                "REAGIT_A": weights.get("reaction", 1.0),
-                "THREAD_COMMUN": weights.get("thread", 1.0),
-                "JOUE_AVEC": weights.get("game", 2.5),
-            }
             score = 0.0
             for record in result.records:
-                edge_type = record["type"] or ""
-                cnt = record["cnt"] or 0
-                score += _TYPE_TO_WEIGHT.get(edge_type, 0.5) * cnt
+                fact = (record["fact"] or "").lower()
+                if "vocal" in fact:
+                    score += weights.get("voice", 3.0)
+                elif "joué" in fact or "jeu" in fact:
+                    score += weights.get("game", 2.5)
+                elif "répondu" in fact:
+                    score += weights.get("reply", 2.0)
+                elif "mentionné" in fact:
+                    score += weights.get("mention", 1.5)
+                elif "réagi" in fact or "réaction" in fact:
+                    score += weights.get("reaction", 1.0)
+                elif "thread" in fact:
+                    score += weights.get("thread", 1.0)
+                else:
+                    score += 1.0
             return round(score, 2)
         except Exception as exc:
             logger.warning("Affinity calculation failed: {e}", e=exc)
