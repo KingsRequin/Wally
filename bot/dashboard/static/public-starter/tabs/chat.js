@@ -1,10 +1,9 @@
-// public-ui/tabs/chat.js
-import { emotions, onEmotionUpdate } from '../app.js';
+// public-ui/tabs/chat.js — arcade
+import { emotions } from '../app.js';
 import { renderMarkdown } from '../markdown.js';
 
 let _ws          = null;
 let _container   = null;
-let _unsubEmo    = null;
 let _mounted     = false;
 let _retryDelay  = 1000;
 let _retryTimer  = null;
@@ -62,9 +61,6 @@ function isAtMin(dateStr) {
   return dt <= DATE_MIN;
 }
 
-const EMO_COLORS = { anger:'#ef4444', joy:'#eab308', curiosity:'#22c55e', sadness:'#3b82f6', boredom:'#a855f7' };
-const EMO_LABELS = { anger:'Colère', joy:'Joie', curiosity:'Curiosité', sadness:'Tristesse', boredom:'Ennui' };
-
 function getAvatarUrl(emo) {
   let domEmo = 'curiosity', domVal = 0;
   for (const name of ['anger','joy','curiosity','sadness','boredom']) {
@@ -83,14 +79,14 @@ function getToken() {
 function setWsStatus(online) {
   const dot   = document.getElementById('chat-ws-dot');
   const label = document.getElementById('chat-ws-label');
-  if (dot)   dot.className = 'dot ' + (online ? 'dot-on' : 'dot-off');
-  if (label) label.textContent = online ? 'En ligne' : 'Reconnexion…';
+  if (dot)   dot.style.color = online ? 'var(--green)' : 'var(--muted)';
+  if (label) label.textContent = online ? 'en ligne' : 'reconnexion…';
 }
 
 // ── Bulle de message ──
 function addBubble(list, text, who) {
   const bubble = document.createElement('div');
-  bubble.className = 'bubble bubble-' + who;
+  bubble.className = 'chat-bubble chat-bubble-' + who;
   if (who === 'bot') {
     renderMarkdown(text, bubble);
   } else {
@@ -105,10 +101,10 @@ let _typingEl = null;
 function showTyping(list) {
   if (_typingEl) return;
   _typingEl = document.createElement('div');
-  _typingEl.className = 'bubble bubble-bot typing-indicator';
+  _typingEl.className = 'chat-bubble chat-bubble-bot chat-typing';
   for (let i = 0; i < 3; i++) {
     const dot = document.createElement('span');
-    dot.className = 'typing-dot';
+    dot.className = 'chat-typing-dot';
     _typingEl.appendChild(dot);
   }
   list.appendChild(_typingEl);
@@ -153,9 +149,9 @@ function connectWs(msgList, token) {
       } else if (data.type === 'image_generating') {
         removeTyping(msgList);
         const placeholder = document.createElement('div');
-        placeholder.className = 'bubble bubble-bot';
+        placeholder.className = 'chat-bubble chat-bubble-bot';
         placeholder.id = 'img-' + data.id;
-        placeholder.style.cssText = 'color:rgba(255,255,255,0.4);font-style:italic;font-size:0.82rem;';
+        placeholder.style.cssText = 'color:var(--muted);font-style:italic;';
         placeholder.textContent = '🎨 Génération en cours…';
         msgList.appendChild(placeholder);
         msgList.scrollTop = msgList.scrollHeight;
@@ -165,7 +161,7 @@ function connectWs(msgList, token) {
         let el = document.getElementById('img-' + data.id);
         if (!el) {
           el = document.createElement('div');
-          el.className = 'bubble bubble-bot';
+          el.className = 'chat-bubble chat-bubble-bot';
           msgList.appendChild(el);
         }
         el.id = '';
@@ -173,7 +169,7 @@ function connectWs(msgList, token) {
         el.textContent = '';
         if (data.title) {
           const titleEl = document.createElement('div');
-          titleEl.style.cssText = 'font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:6px;';
+          titleEl.style.cssText = 'font-size:16px;color:var(--muted2);margin-bottom:6px;';
           titleEl.textContent = data.title;
           el.appendChild(titleEl);
         }
@@ -195,7 +191,7 @@ function connectWs(msgList, token) {
 
       } else if (data.type === 'system') {
         const el = document.createElement('div');
-        el.className = 'bubble bubble-system';
+        el.className = 'chat-bubble chat-bubble-system';
         el.textContent = data.content;
         msgList.appendChild(el);
         msgList.scrollTop = msgList.scrollHeight;
@@ -216,8 +212,12 @@ function connectWs(msgList, token) {
 
 function buildLoginGate() {
   const wrap = document.createElement('div');
-  wrap.className = 'chat-login glass';
-  wrap.style.padding = '40px';
+  wrap.className = 'arc-card chat-login';
+
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'arc-eyebrow';
+  eyebrow.textContent = 'CHAT · WALLY';
+  wrap.appendChild(eyebrow);
 
   const img = document.createElement('img');
   img.className = 'chat-login-avatar';
@@ -226,17 +226,19 @@ function buildLoginGate() {
   wrap.appendChild(img);
 
   const title = document.createElement('div');
-  title.style.cssText = 'font-size:1.1rem;font-weight:700;';
-  title.textContent = 'Parler à Wally';
+  title.className = 'arc-h2';
+  title.style.cssText = 'font-size:clamp(20px,4vw,32px);margin:0;';
+  title.textContent = 'PARLER À WALLY';
   wrap.appendChild(title);
 
   const sub = document.createElement('div');
-  sub.style.cssText = 'font-size:0.82rem;color:rgba(255,255,255,0.4);max-width:280px;';
+  sub.className = 'arc-sub';
+  sub.style.cssText = 'margin:0;max-width:340px;';
   sub.textContent = 'Connecte-toi avec Discord pour accéder au chat.';
   wrap.appendChild(sub);
 
   const btn = document.createElement('a');
-  btn.className = 'discord-btn';
+  btn.className = 'chat-discord-btn';
   btn.href = '/api/chat/auth/login';
 
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -257,67 +259,34 @@ function buildChatLayout(user) {
   const layout = document.createElement('div');
   layout.className = 'chat-layout';
 
-  // ── Colonne Wally ──
-  const wallyCol = document.createElement('div');
-  wallyCol.className = 'chat-wally-col';
-
-  const avatar = document.createElement('img');
-  avatar.className = 'wally-avatar';
-  avatar.src = getAvatarUrl(emotions);
-  avatar.alt = 'Wally';
-  avatar.id = 'chat-wally-avatar';
-  wallyCol.appendChild(avatar);
-
-  const emoLabel = document.createElement('div');
-  emoLabel.className = 'wally-emotion-label';
-  emoLabel.id = 'chat-wally-emo-label';
-  const domEmo = Object.entries(emotions).sort((a,b) => b[1]-a[1])[0][0];
-  emoLabel.textContent = EMO_LABELS[domEmo] || domEmo;
-  wallyCol.appendChild(emoLabel);
-
-  const onlineLine = document.createElement('div');
-  onlineLine.className = 'wally-online';
-  const onlineDot = document.createElement('span');
-  onlineDot.className = 'dot dot-on';
-  onlineDot.id = 'chat-ws-dot';
-  onlineLine.appendChild(onlineDot);
-  const onlineLabel = document.createElement('span');
-  onlineLabel.id = 'chat-ws-label';
-  onlineLabel.textContent = 'En ligne';
-  onlineLine.appendChild(onlineLabel);
-  wallyCol.appendChild(onlineLine);
-
-  const miniBars = document.createElement('div');
-  miniBars.className = 'emo-bars';
-  miniBars.id = 'chat-emo-bars';
-  miniBars.style.width = '100%';
-  miniBars.style.marginTop = '8px';
-  Object.entries(emotions).forEach(([name, val]) => {
-    const row = document.createElement('div');
-    row.className = 'emo-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'emo-name';
-    lbl.style.fontSize = '0.65rem';
-    lbl.textContent = EMO_LABELS[name];
-    row.appendChild(lbl);
-    const track = document.createElement('div');
-    track.className = 'emo-track';
-    const fill = document.createElement('div');
-    fill.className = 'emo-fill';
-    fill.style.width = (val * 100).toFixed(1) + '%';
-    fill.style.background = EMO_COLORS[name];
-    track.appendChild(fill);
-    row.appendChild(track);
-    miniBars.appendChild(row);
-  });
-  wallyCol.appendChild(miniBars);
-
-  layout.appendChild(wallyCol);
-
-  // ── Colonne messages ──
+  // ── Colonne messages (panneau arcade) ──
   const msgCol = document.createElement('div');
-  msgCol.className = 'chat-messages-col';
+  msgCol.className = 'arc-card chat-messages-col';
 
+  // ── En-tête WALLY ──
+  const head = document.createElement('div');
+  head.className = 'chat-head';
+  const headDot = document.createElement('span');
+  headDot.className = 'chat-head-dot';
+  headDot.id = 'chat-ws-dot';
+  headDot.textContent = '●';
+  head.appendChild(headDot);
+  const headName = document.createElement('span');
+  headName.className = 'chat-head-name';
+  headName.textContent = 'WALLY';
+  head.appendChild(headName);
+  const headChan = document.createElement('span');
+  headChan.className = 'chat-head-chan';
+  headChan.textContent = '· twitch.tv/Azrael_TTV';
+  head.appendChild(headChan);
+  const wsLabel = document.createElement('span');
+  wsLabel.id = 'chat-ws-label';
+  wsLabel.className = 'chat-head-status';
+  wsLabel.textContent = 'en ligne';
+  head.appendChild(wsLabel);
+  msgCol.appendChild(head);
+
+  // ── User bar ──
   const userBar = document.createElement('div');
   userBar.className = 'chat-user-bar';
   const userAvatar = document.createElement('img');
@@ -389,7 +358,7 @@ function buildChatLayout(user) {
   input.placeholder = 'Écrire à Wally…';
   const sendBtn = document.createElement('button');
   sendBtn.className = 'chat-send';
-  sendBtn.textContent = 'Envoyer';
+  sendBtn.textContent = 'ENVOYER';
   inputRow.appendChild(input);
   inputRow.appendChild(sendBtn);
   inputWrap.appendChild(inputRow);
@@ -401,7 +370,7 @@ function buildChatLayout(user) {
 
   // ── Colonne mémoire ──
   const memCol = document.createElement('div');
-  memCol.className = 'memory-col';
+  memCol.className = 'arc-card memory-col';
   memCol.id = 'chat-memory-col';
   const memLoading = document.createElement('div');
   memLoading.className = 'empty-state';
@@ -487,8 +456,8 @@ function buildChatLayout(user) {
     sendBtn.disabled = false;
     input.placeholder = 'Écrire à Wally…';
     // Re-show WS indicator
-    const wsLabel = document.getElementById('chat-ws-label');
-    if (wsLabel) wsLabel.parentElement.style.visibility = '';
+    const wsLabelEl = document.getElementById('chat-ws-label');
+    if (wsLabelEl) wsLabelEl.style.visibility = '';
     // Clear history messages and reconnect WS so it sends history
     msgList.textContent = '';
     if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
@@ -504,8 +473,8 @@ function buildChatLayout(user) {
     sendBtn.disabled = true;
     input.placeholder = 'Lecture seule — historique du ' + formatDateFR(dateStr);
     // Hide WS indicator (not meaningful in history mode)
-    const wsLabel = document.getElementById('chat-ws-label');
-    if (wsLabel) wsLabel.parentElement.style.visibility = 'hidden';
+    const wsLabelEl = document.getElementById('chat-ws-label');
+    if (wsLabelEl) wsLabelEl.style.visibility = 'hidden';
     loadHistory(dateStr);
   }
 
@@ -513,7 +482,7 @@ function buildChatLayout(user) {
     const token = getToken();
     msgList.textContent = '';
     const loadingMsg = document.createElement('div');
-    loadingMsg.className = 'bubble bubble-system';
+    loadingMsg.className = 'chat-bubble chat-bubble-system';
     loadingMsg.textContent = 'Chargement de l\'historique…';
     msgList.appendChild(loadingMsg);
 
@@ -524,7 +493,7 @@ function buildChatLayout(user) {
         const msgs = (data && data.messages) ? data.messages : [];
         if (!msgs.length) {
           const empty = document.createElement('div');
-          empty.className = 'bubble bubble-system';
+          empty.className = 'chat-bubble chat-bubble-system';
           empty.textContent = 'Aucun message ce jour-là.';
           msgList.appendChild(empty);
         } else {
@@ -534,7 +503,7 @@ function buildChatLayout(user) {
       .catch(() => {
         msgList.textContent = '';
         const errEl = document.createElement('div');
-        errEl.className = 'bubble bubble-system';
+        errEl.className = 'chat-bubble chat-bubble-system';
         errEl.textContent = 'Impossible de charger l\'historique.';
         msgList.appendChild(errEl);
       });
@@ -661,41 +630,6 @@ export function mount(el) {
   } catch (_) {}
 
   el.appendChild(buildChatLayout(user));
-
-  // Mises à jour live avatar/émotions
-  _unsubEmo = onEmotionUpdate((emo) => {
-    const avatarEl = document.getElementById('chat-wally-avatar');
-    if (avatarEl) avatarEl.src = getAvatarUrl(emo);
-
-    const barsEl = document.getElementById('chat-emo-bars');
-    if (barsEl) {
-      barsEl.textContent = '';
-      Object.entries(emo).forEach(([name, val]) => {
-        const row = document.createElement('div');
-        row.className = 'emo-row';
-        const lbl = document.createElement('span');
-        lbl.className = 'emo-name';
-        lbl.style.fontSize = '0.65rem';
-        lbl.textContent = EMO_LABELS[name];
-        row.appendChild(lbl);
-        const track = document.createElement('div');
-        track.className = 'emo-track';
-        const fill = document.createElement('div');
-        fill.className = 'emo-fill';
-        fill.style.width = (val * 100).toFixed(1) + '%';
-        fill.style.background = EMO_COLORS[name];
-        track.appendChild(fill);
-        row.appendChild(track);
-        barsEl.appendChild(row);
-      });
-    }
-
-    const emoLabelEl = document.getElementById('chat-wally-emo-label');
-    if (emoLabelEl) {
-      const dom = Object.entries(emo).sort((a,b) => b[1]-a[1])[0][0];
-      emoLabelEl.textContent = EMO_LABELS[dom] || dom;
-    }
-  });
 }
 
 export function unmount() {
@@ -712,5 +646,4 @@ export function unmount() {
   _retryDelay  = 1000;
   if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
   _container = null;
-  if (_unsubEmo) { _unsubEmo(); _unsubEmo = null; }
 }

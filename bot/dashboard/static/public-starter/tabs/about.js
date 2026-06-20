@@ -1,70 +1,79 @@
-// public-ui/tabs/about.js
+// public-ui/tabs/about.js — arcade
 
 const PIPELINE_STEPS = [
   {
-    label: 'Message',
-    color: '#06b6d4',
+    label: 'Mention',
+    color: 'var(--pink)',
     detail: 'Un message arrive de Discord ou Twitch. Il est normalisé, la langue détectée automatiquement (langdetect), tagué avec la plateforme, l\'auteur, le canal source et un horodatage. Les messages contenant des images reçoivent une description IA en arrière-plan. Les bots connus et les comptes sans badge humain sont ignorés.'
   },
   {
+    label: 'Contexte',
+    color: 'var(--cyan)',
+    detail: 'Wally assemble le contexte de la conversation : fenêtre glissante des derniers messages, jour de la semaine, état du stream s\'il est en live. Le tout est combiné à la personnalité et aux émotions pour construire un prompt système cohérent avant d\'interroger le modèle.'
+  },
+  {
     label: 'Mémoire',
-    color: '#a855f7',
-    detail: 'Wally consulte sa mémoire vectorielle (Qdrant) via embeddings OpenAI. Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles. Un rappel spontané peut se déclencher aléatoirement si une mémoire dépasse le seuil de pertinence.'
-  },
-  {
-    label: 'Émotions',
-    color: '#ef4444',
-    detail: 'Cinq émotions coexistent : colère, joie, curiosité, tristesse, ennui. Chacune est un float 0–1 avec décroissance exponentielle propre (λ par émotion). Elles se suppriment mutuellement (joie atténue colère × 0,8, etc.) et entrent en compétition (−5 % mutuel si ≥ 0,3). La colère élevée déclenche un mode silence : Wally ne répond plus que par réactions emoji. L\'ennui monte linéairement en cas d\'inactivité prolongée.'
-  },
-  {
-    label: 'Personnalité',
-    color: '#eab308',
-    detail: 'Quatre blocs chargés depuis des fichiers Markdown : SOUL (philosophie profonde), IDENTITY (qui est Wally), VOICE (style d\'expression), EXEMPLES (exemples de réponses). L\'émotion dominante injecte des directives comportementales spécifiques. Si deux émotions dépassent 0,4 simultanément, un bloc COMPOSITE est activé à la place (ex : colère + joie → énergie agressive et sarcastique). Les directives varient aussi selon le jour de la semaine.'
-  },
-  {
-    label: 'LLM',
-    color: '#22c55e',
-    detail: 'Couche multi-provider : Claude (Anthropic) ou GPT (OpenAI) selon la configuration. Pour Claude : prompt caching, mode thinking adaptatif, tool use avec blocs thinking préservés. Pour GPT o1/o3/o4 : Responses API, reasoning_effort sans max_output_tokens. Le LLM reçoit le prompt système complet (personnalité + émotions + mémoire + contexte), l\'historique de conversation glissant, et peut appeler des outils (rappels, notes, recherche mémoire).'
+    color: 'var(--violet)',
+    detail: 'Wally consulte sa mémoire vectorielle (Qdrant). Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles. Un graphe social (Neo4j + Graphiti) enrichit le contexte relationnel.'
   },
   {
     label: 'Réponse',
-    color: '#3b82f6',
-    detail: 'La réponse est envoyée via l\'adaptateur approprié (Discord ou Twitch). En parallèle (arrière-plan) : le FactExtractor analyse le message pour en extraire des faits mémorables et les stocker dans Qdrant ; les émotions sont mises à jour selon l\'analyse de sentiment NRCLex ; les coûts LLM sont enregistrés en base. Des questions de suivi peuvent être générées pour enrichir la mémoire lors des prochaines interactions.'
+    color: 'var(--green)',
+    detail: 'Le LLM (DeepSeek) reçoit le prompt système complet (personnalité + émotions + mémoire + contexte) et l\'historique glissant, et peut appeler des outils (rappels, notes). La réponse part via l\'adaptateur approprié. En arrière-plan : le FactExtractor stocke les faits mémorables dans Qdrant, les émotions sont mises à jour (NRCLex), et les coûts LLM sont enregistrés.'
   },
 ];
 
 const PILLARS = [
   {
     title: 'Mémoire vectorielle',
-    color: '#a855f7',
-    desc: 'Wally se souvient de chaque utilisateur à long terme grâce à Qdrant. Faits, préférences, langue, relation — tout est encodé en embeddings OpenAI et retrouvé par similarité sémantique. Budget priorisé par catégorie : biographie > relation > questions en attente > blagues > opinions > mentions tierces.'
+    color: 'var(--violet)',
+    desc: 'Wally se souvient de chaque utilisateur à long terme grâce à Qdrant. Faits, préférences, langue, relation — tout est encodé en embeddings et retrouvé par similarité sémantique. Budget priorisé par catégorie : biographie > relation > questions en attente > blagues > opinions > mentions tierces.'
   },
   {
     title: 'Émotions en direct',
-    color: '#ef4444',
+    color: 'var(--pink)',
     desc: 'Cinq émotions coexistent et fluctuent en temps réel via décroissance exponentielle, suppression mutuelle et compétition. Elles influencent directement le ton des réponses, déclenchent des comportements spéciaux (mode silence), et sont visibles en direct sur cet écran et sur l\'overlay OBS du stream.'
   },
   {
     title: 'Personnalité profonde',
-    color: '#eab308',
+    color: 'var(--yellow)',
     desc: 'Une personnalité construite sur quatre blocs Markdown (SOUL, IDENTITY, VOICE, EXEMPLES) et enrichie par des états émotionnels composites. Les combinaisons de deux émotions dominantes activent des directives comportementales uniques — il existe plus de 10 états composites distincts.'
   },
   {
     title: 'Journal quotidien',
-    color: '#22c55e',
+    color: 'var(--green)',
     desc: 'Chaque soir à 21h00, Wally rédige un journal intime résumant sa journée : interactions marquantes, état émotionnel, pensées, visites Twitch. Ce journal narratif enrichit la cohérence de la personnalité dans le temps et est consultable ici.'
   },
   {
     title: 'Graphe social',
-    color: '#06b6d4',
+    color: 'var(--cyan)',
     desc: 'Un graphe de connaissances (Neo4j + Graphiti) modélise les relations entre utilisateurs, entités et événements. Les signaux sociaux (mentions, co-présence, interactions fréquentes) alimentent un score d\'affinité dynamique entre Wally et chaque membre de la communauté.'
   },
   {
     title: 'Multi-plateforme',
-    color: '#3b82f6',
+    color: 'var(--violet)',
     desc: 'Un seul processus asyncio gère Discord et Twitch simultanément via deux adaptateurs indépendants. Les mémoires, émotions et la personnalité sont partagées entre les deux plateformes — Wally reste cohérent qu\'il soit en train de streamer ou de discuter sur Discord.'
   },
 ];
+
+// Pile technique réelle (corrige les mensonges du mockup)
+const TECH = [
+  ['Python / asyncio', 'var(--cyan)'],
+  ['DeepSeek', 'var(--yellow)'],
+  ['aiosqlite', 'var(--green)'],
+  ['Qdrant', 'var(--pink)'],
+  ['Neo4j', 'var(--violet)'],
+  ['discord.py', 'var(--cyan)'],
+  ['twitchio', 'var(--violet)'],
+];
+
+function sectionTitle(text) {
+  const t = document.createElement('div');
+  t.className = 'arc-stat-label';
+  t.style.cssText = 'font-size:11px;color:var(--yellow);margin:0 0 14px;';
+  t.textContent = text;
+  return t;
+}
 
 export function mount(el) {
   el.textContent = '';
@@ -72,48 +81,48 @@ export function mount(el) {
   const wrap = document.createElement('div');
 
   // ── Header ──
-  const header = document.createElement('div');
-  header.className = 'glass';
-  header.style.cssText = 'padding:24px 28px;margin-bottom:20px;display:flex;align-items:center;gap:24px;';
+  const head = document.createElement('div');
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'arc-eyebrow';
+  eyebrow.textContent = 'LA NOTICE · WALLY';
+  const h2 = document.createElement('h2');
+  h2.className = 'arc-h2';
+  h2.textContent = 'À PROPOS';
+  const sub = document.createElement('div');
+  sub.className = 'arc-sub';
+  sub.textContent = 'un bot qui se souvient, qui ressent, et qui répond "feur".';
+  head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
+  wrap.appendChild(head);
 
-  const headerText = document.createElement('div');
-  const headerTitle = document.createElement('div');
-  headerTitle.style.cssText = 'font-size:1.3rem;font-weight:700;margin-bottom:8px;';
-  headerTitle.textContent = 'Wally';
-  headerText.appendChild(headerTitle);
-  const headerDesc = document.createElement('div');
-  headerDesc.style.cssText = 'font-size:0.85rem;color:rgba(255,255,255,0.55);line-height:1.65;max-width:680px;';
-  headerDesc.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio avec une couche LLM multi-provider (Claude · GPT), une mémoire vectorielle (Qdrant) et un graphe de connaissances (Neo4j).';
-  headerText.appendChild(headerDesc);
-  header.appendChild(headerText);
-  wrap.appendChild(header);
+  // ── Description ──
+  const descCard = document.createElement('div');
+  descCard.className = 'arc-card';
+  descCard.style.marginBottom = '18px';
+  const descText = document.createElement('div');
+  descText.style.cssText = 'font-size:20px;color:var(--text);line-height:1.5;';
+  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire vectorielle (Qdrant) et un graphe de connaissances (Neo4j).';
+  descCard.appendChild(descText);
+  wrap.appendChild(descCard);
 
-  // ── Tech stack ──
-  const techTitle = document.createElement('h3');
-  techTitle.style.cssText = 'font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:12px;';
-  techTitle.textContent = 'Stack technique';
-  wrap.appendChild(techTitle);
+  // ── Le gag officiel ──
+  const gagCard = document.createElement('div');
+  gagCard.className = 'arc-card';
+  gagCard.style.cssText = 'margin-bottom:18px;border-left:6px solid var(--pink);';
+  gagCard.appendChild(sectionTitle('LE GAG OFFICIEL'));
+  const gagBody = document.createElement('div');
+  gagBody.style.cssText = 'font-size:22px;color:var(--text);';
+  const q = document.createElement('span'); q.style.color = 'var(--muted2)'; q.textContent = 'quoi ';
+  const arrow = document.createElement('span'); arrow.style.color = 'var(--muted)'; arrow.textContent = '→ ';
+  const feur = document.createElement('span'); feur.style.color = 'var(--yellow)'; feur.textContent = 'feur.';
+  gagBody.appendChild(q); gagBody.appendChild(arrow); gagBody.appendChild(feur);
+  gagCard.appendChild(gagBody);
+  wrap.appendChild(gagCard);
 
-  const techRow = document.createElement('div');
-  techRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;';
-  const TECH = [
-    ['Python asyncio','#06b6d4'],['Discord.py','#5865f2'],['Twitchio','#9146ff'],
-    ['FastAPI','#22c55e'],['Claude · GPT','#eab308'],['Qdrant','#ef4444'],
-    ['Neo4j + Graphiti','#a855f7'],['NRCLex','#3b82f6'],['Langfuse','#f97316'],
-  ];
-  TECH.forEach(([name, color]) => {
-    const chip = document.createElement('span');
-    chip.style.cssText = `padding:4px 12px;border-radius:20px;font-size:0.72rem;font-weight:500;border:1px solid ${color}44;color:${color};background:${color}11;`;
-    chip.textContent = name;
-    techRow.appendChild(chip);
-  });
-  wrap.appendChild(techRow);
-
-  // ── Pipeline ──
-  const pipeTitle = document.createElement('h3');
-  pipeTitle.style.cssText = 'font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:16px;';
-  pipeTitle.textContent = 'Pipeline de traitement';
-  wrap.appendChild(pipeTitle);
+  // ── Pipeline « comment il fonctionne » ──
+  const pipeCard = document.createElement('div');
+  pipeCard.className = 'arc-card';
+  pipeCard.style.marginBottom = '18px';
+  pipeCard.appendChild(sectionTitle('COMMENT IL FONCTIONNE'));
 
   const pipelineEl = document.createElement('div');
   pipelineEl.className = 'pipeline';
@@ -124,64 +133,101 @@ export function mount(el) {
   let activeStep = null;
 
   PIPELINE_STEPS.forEach((step, i) => {
-    const stepWrap = document.createElement('div');
-    stepWrap.className = 'pipe-step';
-
     const node = document.createElement('div');
     node.className = 'pipe-node';
     node.textContent = step.label;
-    node.style.borderColor = step.color + '66';
+    node.style.borderColor = step.color;
     node.style.color = step.color;
-    node.style.background = step.color + '11';
 
     node.addEventListener('click', () => {
-      if (activeStep) {
-        activeStep.style.background = activeStep._origBg;
-        activeStep.style.boxShadow = '';
-      }
-      node._origBg = step.color + '11';
-      node.style.background = step.color + '22';
-      node.style.boxShadow = '0 0 12px ' + step.color + '44';
+      if (activeStep) activeStep.style.background = 'transparent';
+      node.style.background = 'rgba(124,77,255,.18)';
       activeStep = node;
       detailEl.textContent = step.detail;
-      detailEl.style.borderColor = step.color + '44';
-      detailEl.style.animation = 'none';
-      detailEl.offsetHeight;
-      detailEl.style.animation = '';
     });
 
-    stepWrap.appendChild(node);
+    pipelineEl.appendChild(node);
 
     if (i < PIPELINE_STEPS.length - 1) {
-      const arrow = document.createElement('span');
-      arrow.className = 'pipe-arrow';
-      arrow.textContent = '→';
-      stepWrap.appendChild(arrow);
+      const arrowEl = document.createElement('span');
+      arrowEl.className = 'pipe-arrow';
+      arrowEl.textContent = '→';
+      pipelineEl.appendChild(arrowEl);
     }
-
-    pipelineEl.appendChild(stepWrap);
   });
 
-  wrap.appendChild(pipelineEl);
-  wrap.appendChild(detailEl);
+  pipeCard.appendChild(pipelineEl);
+  pipeCard.appendChild(detailEl);
+  wrap.appendChild(pipeCard);
 
   // Activate first step by default
   const firstNode = pipelineEl.querySelector('.pipe-node');
   if (firstNode) firstNode.click();
 
-  // ── Pillars ──
-  const pillarsTitle = document.createElement('h3');
-  pillarsTitle.style.cssText = 'font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:16px;';
-  pillarsTitle.textContent = 'Les piliers de Wally';
+  // ── Ce qu'il retient / ignore ──
+  const memGrid = document.createElement('div');
+  memGrid.className = 'arc-grid';
+  memGrid.style.cssText = 'grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-bottom:18px;';
+
+  const keepCard = document.createElement('div');
+  keepCard.className = 'arc-card';
+  keepCard.style.borderLeft = '6px solid var(--green)';
+  keepCard.appendChild(sectionTitle('CE QU\'IL RETIENT'));
+  const keepList = document.createElement('div');
+  keepList.style.cssText = 'font-size:19px;color:var(--muted2);line-height:1.6;';
+  ['tes faits biographiques', 'tes préférences', 'ta langue habituelle', 'votre relation (confiance, affinité)', 'qui parle à qui dans la communauté'].forEach(t => {
+    const row = document.createElement('div');
+    row.textContent = '› ' + t;
+    keepList.appendChild(row);
+  });
+  keepCard.appendChild(keepList);
+  memGrid.appendChild(keepCard);
+
+  const ignoreCard = document.createElement('div');
+  ignoreCard.className = 'arc-card';
+  ignoreCard.style.borderLeft = '6px solid var(--muted)';
+  ignoreCard.appendChild(sectionTitle('CE QU\'IL IGNORE'));
+  const ignoreList = document.createElement('div');
+  ignoreList.style.cssText = 'font-size:19px;color:var(--muted2);line-height:1.6;';
+  ['les messages trop courts', 'les emojis seuls et les interjections', 'les GIF et liens média', 'les bots et comptes non humains'].forEach(t => {
+    const row = document.createElement('div');
+    row.textContent = '× ' + t;
+    ignoreList.appendChild(row);
+  });
+  ignoreCard.appendChild(ignoreList);
+  memGrid.appendChild(ignoreCard);
+
+  wrap.appendChild(memGrid);
+
+  // ── Sous le capot (stack corrigée) ──
+  const techCard = document.createElement('div');
+  techCard.className = 'arc-card';
+  techCard.style.marginBottom = '18px';
+  techCard.appendChild(sectionTitle('SOUS LE CAPOT'));
+  const techRow = document.createElement('div');
+  techRow.className = 'about-chips';
+  TECH.forEach(([name, color]) => {
+    const chip = document.createElement('span');
+    chip.className = 'about-chip';
+    chip.style.borderColor = color;
+    chip.style.color = color;
+    chip.textContent = name;
+    techRow.appendChild(chip);
+  });
+  techCard.appendChild(techRow);
+  wrap.appendChild(techCard);
+
+  // ── Piliers ──
+  const pillarsTitle = sectionTitle('LES PILIERS DE WALLY');
+  pillarsTitle.style.margin = '0 0 14px';
   wrap.appendChild(pillarsTitle);
 
   const pillarsGrid = document.createElement('div');
   pillarsGrid.className = 'pillars-grid';
 
-  PILLARS.forEach((pillar, i) => {
+  PILLARS.forEach((pillar) => {
     const card = document.createElement('div');
-    card.className = 'pillar-card';
-    card.style.animationDelay = (i * 0.08) + 's';
+    card.className = 'arc-card';
 
     const titleEl = document.createElement('div');
     titleEl.className = 'pillar-title';
