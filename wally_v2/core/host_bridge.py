@@ -29,7 +29,7 @@ class HostBridgeClient:
             return False
 
     async def git_apply(self, diff: str) -> None:
-        async with httpx.AsyncClient(transport=self._transport(), timeout=30.0) as c:
+        async with httpx.AsyncClient(transport=self._transport(), timeout=65.0) as c:
             r = await c.post(
                 "http://bridge/git-apply",
                 json={"diff": diff},

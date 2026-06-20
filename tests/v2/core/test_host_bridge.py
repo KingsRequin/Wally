@@ -8,7 +8,10 @@ from wally_v2.core.host_bridge import HostBridgeClient, HostBridgeError
 
 def make_transport(responses: dict):
     """responses: {"GET /health": (200, {...}), "POST /git-apply": (200, {...}), ...}"""
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            assert request.headers.get("X-Bridge-Secret") == "secret", \
+                f"Missing X-Bridge-Secret on {request.url.path}"
         key = f"{request.method} {request.url.path}"
         if key in responses:
             code, body = responses[key]

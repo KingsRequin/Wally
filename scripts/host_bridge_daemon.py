@@ -35,7 +35,12 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def _read_body(self) -> dict:
         n = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(n)) if n else {}
+        if not n:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n))
+        except json.JSONDecodeError:
+            return {}
 
     def do_GET(self):  # noqa: N802
         if self.path == "/health":
@@ -75,7 +80,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             if svc not in ALLOWED_SERVICES:
                 self._send(400, {"error": "service not allowed"})
                 return
-            cmd = f"docker compose -f {COMPOSE_FILE} build {svc} && docker compose -f {COMPOSE_FILE} up -d --force-recreate {svc}"
+            cmd = f"docker compose -f '{COMPOSE_FILE}' build {svc} && docker compose -f '{COMPOSE_FILE}' up -d --force-recreate {svc}"
             subprocess.Popen(cmd, shell=True, start_new_session=True)
             self._send(200, {"status": "rebuilding"})
 
@@ -84,7 +89,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             if svc not in ALLOWED_SERVICES:
                 self._send(400, {"error": "service not allowed"})
                 return
-            cmd = f"docker compose -f {COMPOSE_FILE} up -d --force-recreate {svc}"
+            cmd = f"docker compose -f '{COMPOSE_FILE}' up -d --force-recreate {svc}"
             subprocess.Popen(cmd, shell=True, start_new_session=True)
             self._send(200, {"status": "restarting"})
 
@@ -102,6 +107,8 @@ class UnixServer(socketserver.UnixStreamServer):
 
 
 if __name__ == "__main__":
+    if not BRIDGE_SECRET:
+        raise SystemExit("BRIDGE_SECRET env var must be set — refusing to start")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     with UnixServer(SOCKET_PATH, BridgeHandler) as s:
         logging.info("Bridge daemon listening on %s", SOCKET_PATH)
