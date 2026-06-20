@@ -13,39 +13,53 @@ if TYPE_CHECKING:
 
 
 class SocialTracker:
-    """Tracks social interactions and flushes to the knowledge graph."""
+    """Tracks social interactions and flushes to the knowledge graph.
+
+    All on_* methods accept Discord user IDs (str snowflakes) as identifiers.
+    Display names are registered via register_user() and resolved in _format_signal().
+    """
 
     FLUSH_INTERVAL = 300  # 5 minutes
-
-    # Voice sessions older than this are considered stale (bot restart, missed leave events)
     _VOICE_SESSION_TTL = 4 * 3600  # 4 hours
 
-    def __init__(self, graph: "GraphService", group_id: str | None = None, bot_names: frozenset[str] | None = None):
+    def __init__(self, graph: "GraphService", group_id: str | None = None,
+                 bot_id: int | None = None):
         self._graph = graph
         self._group_id = group_id
-        self._bot_names: frozenset[str] = bot_names or frozenset()
-        # Buffers: (user_a, user_b, signal_type) -> {count, last_seen, metadata}
+        self._bot_id: str | None = str(bot_id) if bot_id else None
+        # id → display_name resolution cache
+        self._id_to_name: dict[str, str] = {}
+        # Buffers: (user_a_id, user_b_id, signal_type) -> {count, last_seen, metadata}
         self._buffer: dict[tuple[str, str, str], dict[str, Any]] = defaultdict(
             lambda: {"count": 0, "last_seen": 0.0, "metadata": {}}
         )
-        # Voice state: channel_id -> {user_id: (join_time, display_name)}
-        self._voice_sessions: dict[int, dict[int, tuple[float, str]]] = defaultdict(dict)
-        # Active game sessions: game_name -> {display_name}  (for dedup / stop tracking)
+        # Voice state: channel_id -> {user_id (int): join_time}
+        self._voice_sessions: dict[int, dict[int, float]] = defaultdict(dict)
+        # Active game sessions: game_name -> {user_id (str)}
         self._active_games: dict[str, set[str]] = defaultdict(set)
         self._flush_task: asyncio.Task | None = None
 
-    def _involves_bot(self, *names: str) -> bool:
-        """Return True if any name matches a known bot identifier."""
-        return bool(self._bot_names) and any(n.lower() in self._bot_names for n in names)
+    def register_user(self, user_id: str, display_name: str) -> None:
+        """Register a Discord user ID → display name mapping."""
+        self._id_to_name[user_id] = display_name
+
+    def set_bot_id(self, bot_id: int) -> None:
+        """Set the bot's own Discord ID (called from on_ready)."""
+        self._bot_id = str(bot_id)
+
+    def _involves_bot(self, *ids: str) -> bool:
+        return self._bot_id is not None and self._bot_id in ids
+
+    def _resolve(self, user_id: str) -> str:
+        """Resolve a user ID to display name, falling back to the ID itself."""
+        return self._id_to_name.get(user_id, user_id)
 
     def start(self) -> None:
-        """Start the periodic flush loop."""
         if self._flush_task is None:
             self._flush_task = asyncio.create_task(self._flush_loop())
             logger.info("SocialTracker started (flush every {s}s)", s=self.FLUSH_INTERVAL)
 
     async def _flush_loop(self) -> None:
-        """Periodically flush buffered signals to Neo4j."""
         try:
             while True:
                 await asyncio.sleep(self.FLUSH_INTERVAL)
@@ -67,7 +81,7 @@ class SocialTracker:
                 content = self._format_signal(user_a, user_b, signal_type, data)
                 await self._graph.add_episode(
                     content=content,
-                    author="",          # pas d'auteur — évite de créer "social_tracker" comme entité
+                    author="",
                     source="social_tracker",
                     group_id=self._group_id,
                 )
@@ -78,132 +92,121 @@ class SocialTracker:
             logger.debug("SocialTracker flushed {n} signals", n=flushed)
         return flushed
 
-    def _format_signal(self, user_a: str, user_b: str, signal_type: str, data: dict) -> str:
-        """Format a social signal as natural language for Graphiti ingestion."""
+    def _format_signal(self, uid_a: str, uid_b: str, signal_type: str, data: dict) -> str:
+        """Format a social signal using resolved display names."""
+        name_a = self._resolve(uid_a)
+        name_b = self._resolve(uid_b)
         count = data["count"]
         meta = data.get("metadata", {})
         templates = {
-            "voice": f"{user_a} et {user_b} ont passé du temps en vocal ensemble ({count} sessions)",
-            "reply": f"{user_a} a répondu à {user_b} ({count} fois)",
-            "mention": f"{user_a} a mentionné {user_b} ({count} fois)",
-            "reaction": f"{user_a} a réagi aux messages de {user_b} ({count} fois)",
-            "thread": f"{user_a} et {user_b} ont participé au même thread ({count} fois)",
-            "game": f"{user_a} et {user_b} ont joué à {meta.get('game', 'un jeu')} ensemble ({count} fois)",
+            "voice":    f"{name_a} et {name_b} ont passé du temps en vocal ensemble ({count} sessions)",
+            "reply":    f"{name_a} a répondu à {name_b} ({count} fois)",
+            "mention":  f"{name_a} a mentionné {name_b} ({count} fois)",
+            "reaction": f"{name_a} a réagi aux messages de {name_b} ({count} fois)",
+            "thread":   f"{name_a} et {name_b} ont participé au même thread ({count} fois)",
+            "game":     f"{name_a} et {name_b} ont joué à {meta.get('game', 'un jeu')} ensemble ({count} fois)",
         }
-        return templates.get(signal_type, f"{user_a} interagit avec {user_b}")
+        return templates.get(signal_type, f"{name_a} interagit avec {name_b}")
 
     @staticmethod
     def _key(a: str, b: str) -> tuple[str, str]:
         """Normalize pair order (alphabetical) for consistent keys."""
         return (min(a, b), max(a, b))
 
-    # ── Event handlers ──
+    # ── Event handlers — all accept Discord user IDs (str) ──
 
-    def on_reply(self, author_name: str, replied_to_name: str) -> None:
-        if self._involves_bot(author_name, replied_to_name):
+    def on_reply(self, author_id: str, replied_to_id: str) -> None:
+        if self._involves_bot(author_id, replied_to_id):
             return
-        # Directional: author → target (do NOT normalize alphabetically)
-        key = (author_name, replied_to_name, "reply")
+        key = (author_id, replied_to_id, "reply")
         self._buffer[key]["count"] += 1
         self._buffer[key]["last_seen"] = time.time()
 
-    def on_mention(self, author_name: str, mentioned_name: str) -> None:
-        if self._involves_bot(author_name, mentioned_name):
+    def on_mention(self, author_id: str, mentioned_id: str) -> None:
+        if self._involves_bot(author_id, mentioned_id):
             return
-        # Directional: author → target (do NOT normalize alphabetically)
-        key = (author_name, mentioned_name, "mention")
+        key = (author_id, mentioned_id, "mention")
         self._buffer[key]["count"] += 1
         self._buffer[key]["last_seen"] = time.time()
 
-    def on_reaction(self, reactor_name: str, message_author_name: str) -> None:
-        if self._involves_bot(reactor_name, message_author_name):
+    def on_reaction(self, reactor_id: str, message_author_id: str) -> None:
+        if self._involves_bot(reactor_id, message_author_id):
             return
-        if reactor_name == message_author_name:
+        if reactor_id == message_author_id:
             return
-        # Directional: reactor → message author (do NOT normalize alphabetically)
-        key = (reactor_name, message_author_name, "reaction")
+        key = (reactor_id, message_author_id, "reaction")
         self._buffer[key]["count"] += 1
         self._buffer[key]["last_seen"] = time.time()
 
-    def on_thread_message(self, author_name: str, other_participant: str) -> None:
-        if self._involves_bot(author_name, other_participant):
+    def on_thread_message(self, author_id: str, owner_id: str) -> None:
+        if self._involves_bot(author_id, owner_id):
             return
-        if author_name == other_participant:
+        if author_id == owner_id:
             return
-        a, b = self._key(author_name, other_participant)
+        a, b = self._key(author_id, owner_id)
         self._buffer[(a, b, "thread")]["count"] += 1
         self._buffer[(a, b, "thread")]["last_seen"] = time.time()
 
-    def on_game_start(self, user_name: str, game: str) -> None:
-        """Record user starting a game; fire one signal per existing co-player."""
-        if self._involves_bot(user_name):
+    def on_game_start(self, user_id: str, game: str) -> None:
+        if self._involves_bot(user_id):
             return
         now = time.time()
-        for other in self._active_games[game]:
-            a, b = self._key(user_name, other)
+        for other_id in self._active_games[game]:
+            a, b = self._key(user_id, other_id)
             key = (a, b, "game")
             self._buffer[key]["count"] += 1
             self._buffer[key]["last_seen"] = now
             self._buffer[key]["metadata"]["game"] = game
-        self._active_games[game].add(user_name)
+        self._active_games[game].add(user_id)
 
-    def on_game_stop(self, user_name: str, game: str) -> None:
-        """Remove user from active game session."""
-        if self._involves_bot(user_name):
+    def on_game_stop(self, user_id: str, game: str) -> None:
+        if self._involves_bot(user_id):
             return
-        self._active_games[game].discard(user_name)
+        self._active_games[game].discard(user_id)
         if not self._active_games[game]:
             del self._active_games[game]
 
     def _emit_active_voice_signals(self) -> None:
-        """Emit a voice co-presence signal for every pair currently in the same channel.
-
-        Called before each flush so long sessions (where nobody leaves) still
-        generate signals even if no on_voice_leave event fires.
-        """
         now = time.time()
         for users in self._voice_sessions.values():
-            names = [(jt, name) for jt, name in users.values()]
-            for i, (_, name_a) in enumerate(names):
-                for _, name_b in names[i + 1:]:
-                    a, b = self._key(name_a, name_b)
+            uids = list(users.keys())
+            for i, uid_a in enumerate(uids):
+                for uid_b in uids[i + 1:]:
+                    a, b = self._key(str(uid_a), str(uid_b))
                     self._buffer[(a, b, "voice")]["count"] += 1
                     self._buffer[(a, b, "voice")]["last_seen"] = now
 
     def _cleanup_stale_voice_sessions(self) -> None:
-        """Remove voice sessions older than TTL (missed leave events, bot restart)."""
         cutoff = time.time() - self._VOICE_SESSION_TTL
         for ch_id in list(self._voice_sessions):
-            stale = [uid for uid, (jt, _) in self._voice_sessions[ch_id].items() if jt < cutoff]
+            stale = [uid for uid, jt in self._voice_sessions[ch_id].items() if jt < cutoff]
             for uid in stale:
                 del self._voice_sessions[ch_id][uid]
             if not self._voice_sessions[ch_id]:
                 del self._voice_sessions[ch_id]
 
     def on_voice_join(self, channel_id: int, user_id: int, display_name: str) -> None:
-        """Track when a user joins a voice channel."""
-        if self._involves_bot(display_name):
+        if self._involves_bot(str(user_id)):
             return
-        self._voice_sessions[channel_id][user_id] = (time.time(), display_name)
+        self.register_user(str(user_id), display_name)
+        self._voice_sessions[channel_id][user_id] = time.time()
 
     def on_voice_leave(self, channel_id: int, user_id: int, display_name: str) -> None:
-        """When a user leaves voice, record co-presence with others still in channel."""
-        if self._involves_bot(display_name):
+        if self._involves_bot(str(user_id)):
             return
-        session = self._voice_sessions.get(channel_id, {}).pop(user_id, None)
-        if session is None:
+        self.register_user(str(user_id), display_name)
+        join_time = self._voice_sessions.get(channel_id, {}).pop(user_id, None)
+        if join_time is None:
             return
-        # Record co-presence with everyone still in the channel
-        for other_uid, (_, other_name) in self._voice_sessions.get(channel_id, {}).items():
-            a, b = self._key(display_name, other_name)
+        uid_str = str(user_id)
+        for other_uid in list(self._voice_sessions.get(channel_id, {}).keys()):
+            a, b = self._key(uid_str, str(other_uid))
             self._buffer[(a, b, "voice")]["count"] += 1
             self._buffer[(a, b, "voice")]["last_seen"] = time.time()
-        # Clean up empty channels
         if not self._voice_sessions.get(channel_id):
             self._voice_sessions.pop(channel_id, None)
 
     async def stop(self) -> None:
-        """Stop flush loop and final flush."""
         if self._flush_task:
             self._flush_task.cancel()
             try:
