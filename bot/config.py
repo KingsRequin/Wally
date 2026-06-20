@@ -58,7 +58,6 @@ class LLMRoleConfig:
 class LLMConfig:
     primary: LLMRoleConfig
     secondary: LLMRoleConfig
-    fallback: LLMRoleConfig | None = None
 
 
 @dataclass
@@ -301,11 +300,9 @@ class Config:
         """
         if "llm" in raw:
             llm_raw = raw["llm"]
-            fb_raw = llm_raw.get("fallback")
             return LLMConfig(
                 primary=LLMRoleConfig(**llm_raw["primary"]),
                 secondary=LLMRoleConfig(**llm_raw["secondary"]),
-                fallback=LLMRoleConfig(**fb_raw) if fb_raw else None,
             )
         # Legacy fallback: build from openai section
         openai_raw = raw.get("openai", {})
