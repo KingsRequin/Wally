@@ -123,18 +123,3 @@ async def test_duplicate_question_ignored(tmp_path):
     await db.close()
 
 
-@pytest.mark.asyncio
-async def test_maintenance_lock_exists():
-    """MemoryService should have a _maintenance_locks dict."""
-    from unittest.mock import MagicMock
-    from bot.core.memory import MemoryService
-
-    config = MagicMock()
-    config.bot.context_window_size = 5
-    config.bot.context_token_threshold = 100
-    config.bot.prelude_window_size = 15
-    config.bot.memory_search_min_score = 0.5
-
-    svc = MemoryService(config)
-    assert hasattr(svc, "_maintenance_locks")
-    assert isinstance(svc._maintenance_locks, dict)

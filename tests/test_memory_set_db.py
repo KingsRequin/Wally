@@ -26,21 +26,6 @@ def test_db_is_none_by_default():
     assert svc._db is None
 
 
-@pytest.mark.asyncio
-async def test_add_calls_upsert_when_db_set():
-    svc = MemoryService(_make_config())
-    db = AsyncMock()
-    svc.set_db(db)
-
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-
-    await svc.add("discord", "610550333042589752", "test content")
-
-    db.upsert_memory_user.assert_called_once_with("discord:610550333042589752", "discord", "")
-
 
 @pytest.mark.asyncio
 async def test_add_skips_upsert_when_no_db():

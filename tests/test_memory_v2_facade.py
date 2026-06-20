@@ -11,7 +11,11 @@ def mem(tmp_path):
     from wally_v2.core.memory.facts import SQLiteFactStore
     from wally_v2.core.memory.retrieval import MemoryRetrieval
     db_path = str(tmp_path / "wally.db")
-    asyncio.get_event_loop().run_until_complete(create_v2_tables(db_path))
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(create_v2_tables(db_path))
+    finally:
+        loop.close()
     svc = MemoryService(SimpleNamespace())
 
     class _StubQdrant:

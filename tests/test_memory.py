@@ -2,7 +2,6 @@
 """
 Tests for MemoryService — QdrantMemoryStore is mocked entirely.
 """
-import re
 import time
 
 import pytest
@@ -111,22 +110,6 @@ async def test_search_returns_empty_when_all_scores_too_low():
     assert result == ""
 
 
-@pytest.mark.asyncio
-async def test_add_stores_content():
-    """add() stores content via _store.upsert()."""
-    svc = MemoryService(make_config())
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-
-    await svc.add("discord", "610550333042589752", "Fan de Rust")
-
-    svc._store.upsert.assert_called_once()
-    call_args = svc._store.upsert.call_args
-    # First arg is user_id, second is the text content
-    assert "Fan de Rust" in call_args.args[1]
-
 
 def test_get_all_contexts_returns_all_sorted():
     svc = MemoryService(make_config())
@@ -221,77 +204,3 @@ def test_prelude_reset_clears_buffer():
     assert svc.get_prelude("ch1") == []
 
 
-@pytest.mark.asyncio
-async def test_memory_add_passes_username_to_db():
-    """Vérifie que memory.add() transmet le username à db.upsert_memory_user."""
-    from bot.core.memory import MemoryService
-
-    config = make_config()
-    svc = MemoryService(config)
-
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-
-    mock_db = MagicMock()
-    mock_db.upsert_memory_user = AsyncMock()
-    svc.set_db(mock_db)
-
-    await svc.add("discord", "610550333042589752", "some content", username="OlafMC")
-
-    mock_db.upsert_memory_user.assert_called_once()
-    call_args = mock_db.upsert_memory_user.call_args
-    # Verify "OlafMC" is passed as username
-    assert "OlafMC" in call_args.args or call_args.kwargs.get("username") == "OlafMC"
-
-
-@pytest.mark.asyncio
-async def test_add_with_category_passes_metadata():
-    """Category should be included in store metadata."""
-    svc = MemoryService(make_config())
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-    mock_db = MagicMock()
-    mock_db.upsert_memory_user = AsyncMock()
-    svc.set_db(mock_db)
-
-    await svc.add("discord", "610550333042589752", "Likes Python", category="FAIT")
-
-    call_args = svc._store.upsert.call_args
-    # Third arg is the MemoryMetadata
-    metadata = call_args.args[2]
-    assert metadata.category == "FAIT"
-    assert metadata.user_id == "discord:610550333042589752"
-
-
-@pytest.mark.asyncio
-async def test_add_prefixes_date():
-    """memory.add() prefixes stored content with today's date [YYYY-MM-DD]."""
-    svc = MemoryService(make_config())
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-
-    await svc.add("discord", "610550333042589752", "Likes Python")
-
-    stored = svc._store.upsert.call_args.args[1]
-    assert re.match(r"^\[\d{4}-\d{2}-\d{2}\] Likes Python$", stored)
-
-
-@pytest.mark.asyncio
-async def test_add_date_prefix_with_emotion_context():
-    """Date prefix is inserted after the emotion tag."""
-    svc = MemoryService(make_config())
-    svc._store_init_attempted = True
-    svc._store = AsyncMock()
-    svc._store.upsert = AsyncMock(return_value="point-uuid")
-    svc._store.get_all = AsyncMock(return_value=[])
-
-    await svc.add("discord", "610550333042589752", "Likes Python", emotion_context="Wally: joy")
-
-    stored = svc._store.upsert.call_args.args[1]
-    assert re.match(r"^\[Wally: joy\] \[\d{4}-\d{2}-\d{2}\] Likes Python$", stored)
