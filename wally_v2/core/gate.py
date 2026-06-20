@@ -1,13 +1,15 @@
 # wally_v2/core/gate.py
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from loguru import logger
 
 from wally_v2.core.llm.base import BaseLLMClient
 from wally_v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
+
+_DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent / "persona" / "prompts"
 
 
 _GATE_SCHEMA = {
@@ -46,20 +48,23 @@ class ResponseGate:
         self,
         llm: BaseLLMClient,
         fact_store: SQLiteFactStore,
-        prompts_dir: str = "wally_v2/persona/prompts",
+        prompts_dir: str | Path = _DEFAULT_PROMPTS_DIR,
     ) -> None:
         self._llm = llm
         self._fact_store = fact_store
         self._system = self._load_system(prompts_dir)
 
     @staticmethod
-    def _load_system(prompts_dir: str) -> str:
-        path = os.path.join(prompts_dir, "gate_system.md")
+    def _load_system(prompts_dir: str | Path) -> str:
+        path = Path(prompts_dir) / "gate_system.md"
         try:
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip() or _FALLBACK_SYSTEM
+            content = path.read_text(encoding="utf-8").strip()
+            if content:
+                return content
+            logger.warning("gate_system.md est vide : {p}", p=path)
         except FileNotFoundError:
-            return _FALLBACK_SYSTEM
+            logger.warning("gate_system.md introuvable : {p}", p=path)
+        return _FALLBACK_SYSTEM
 
     async def decide(
         self,
