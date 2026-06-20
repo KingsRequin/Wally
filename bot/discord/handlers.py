@@ -8,11 +8,12 @@ import random
 import re
 import time
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import discord
 from loguru import logger
 
+from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.prompts import assemble_memory_context, load_prompt
 from bot.core.tracing import create_trace, create_span
 
@@ -218,7 +219,7 @@ async def _mirror_pass(
             purpose="response_mirror",
         )
         corrected = corrected.strip()
-        if not corrected or corrected.upper() == "OK":
+        if not corrected or corrected.upper() == "OK" or corrected == FALLBACK_RESPONSE:
             return draft
         return corrected
 
@@ -344,11 +345,12 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     return True
 
 
-def _detect_text_mentions(message, bot) -> list[str]:
+def _detect_text_mentions(message, bot) -> list[tuple[int, str]]:
     """Detect text-based mentions (nicknames without @) in a message.
 
     Checks alias cache first (exact), then member display names (exact),
-    then fuzzy match (SequenceMatcher >= 0.75). Returns display names only.
+    then fuzzy match (SequenceMatcher >= 0.75).
+    Returns list of (member_id, display_name) tuples.
     Skips bots, self, and already @mentioned members to avoid double-counting.
     """
     guild = message.guild
@@ -360,24 +362,24 @@ def _detect_text_mentions(message, bot) -> list[str]:
     if not tokens:
         return []
 
-    # Build member lookup: lower_name -> display_name (skip bots except Wally, skip self)
+    # Build member lookup: lower_name -> member (skip bots except Wally, skip self)
     bot_user = getattr(bot, "user", None)
-    member_map: dict[str, str] = {}
+    member_map: dict[str, Any] = {}
     for m in guild.members:
         if m.id == message.author.id:
             continue
         if m.bot and m != bot_user:
             continue
-        member_map[m.display_name.lower()] = m.display_name
+        member_map[m.display_name.lower()] = m
         if m.name.lower() != m.display_name.lower():
-            member_map[m.name.lower()] = m.display_name
+            member_map[m.name.lower()] = m
 
     if not member_map:
         return []
 
     # Already @mentioned — skip to avoid double-counting (include Wally)
-    already_mentioned = {
-        m.display_name for m in message.mentions
+    already_mentioned_ids = {
+        m.id for m in message.mentions
         if not m.bot or m == bot_user
     }
 
@@ -385,12 +387,12 @@ def _detect_text_mentions(message, bot) -> list[str]:
     if getattr(bot, "memory", None) is not None:
         alias_cache = bot.memory._alias_cache
 
-    found: list[str] = []
-    seen: set[str] = set()
+    found: list[tuple[int, str]] = []
+    seen_ids: set[int] = set()
 
     for token in tokens:
         token_lower = token.lower()
-        display_name: str | None = None
+        matched_member = None
 
         # 1. Alias cache exact match (nickname:{token} -> discord:user_id -> member)
         cache_key = f"nickname:{token_lower}"
@@ -399,36 +401,37 @@ def _detect_text_mentions(message, bot) -> list[str]:
             if canonical_uid.startswith("discord:"):
                 raw_id = canonical_uid[len("discord:"):]
                 try:
-                    member = guild.get_member(int(raw_id))
-                    if member and not member.bot and member.id != message.author.id:
-                        display_name = member.display_name
+                    m = guild.get_member(int(raw_id))
+                    if m and not m.bot and m.id != message.author.id:
+                        matched_member = m
                 except (ValueError, Exception):
                     pass
 
         # 2. Exact match against member display names / usernames
-        if display_name is None:
-            display_name = member_map.get(token_lower)
+        if matched_member is None:
+            matched_member = member_map.get(token_lower)
 
         # 3. Fuzzy match — only for tokens whose length is close to a known name
-        if display_name is None:
+        if matched_member is None:
             best_ratio = 0.0
-            best_name: str | None = None
+            best_member = None
             tlen = len(token_lower)
-            for name_lower, dname in member_map.items():
-                # Skip names whose length ratio makes 0.75 similarity impossible
+            for name_lower, m in member_map.items():
                 nlen = len(name_lower)
                 if nlen == 0 or min(tlen, nlen) / max(tlen, nlen) < 0.5:
                     continue
                 ratio = difflib.SequenceMatcher(None, token_lower, name_lower).ratio()
                 if ratio > best_ratio:
                     best_ratio = ratio
-                    best_name = dname
-            if best_ratio >= 0.75 and best_name:
-                display_name = best_name
+                    best_member = m
+            if best_ratio >= 0.75 and best_member:
+                matched_member = best_member
 
-        if display_name and display_name not in already_mentioned and display_name not in seen:
-            seen.add(display_name)
-            found.append(display_name)
+        if (matched_member is not None
+                and matched_member.id not in already_mentioned_ids
+                and matched_member.id not in seen_ids):
+            seen_ids.add(matched_member.id)
+            found.append((matched_member.id, matched_member.display_name))
 
     return found
 
@@ -611,19 +614,27 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             if hasattr(ref_msg, "author") and (
                 not ref_msg.author.bot or ref_msg.author == bot.user
             ):
-                bot.social.on_reply(message.author.display_name, ref_msg.author.display_name)
+                bot.social.register_user(str(message.author.id), message.author.display_name)
+                bot.social.register_user(str(ref_msg.author.id), ref_msg.author.display_name)
+                bot.social.on_reply(str(message.author.id), str(ref_msg.author.id))
         # Mention tracking (@mentions, include @Wally)
         for mentioned in message.mentions:
             if (not mentioned.bot or mentioned == bot.user) and mentioned != message.author:
-                bot.social.on_mention(message.author.display_name, mentioned.display_name)
+                bot.social.register_user(str(message.author.id), message.author.display_name)
+                bot.social.register_user(str(mentioned.id), mentioned.display_name)
+                bot.social.on_mention(str(message.author.id), str(mentioned.id))
         # Text-based nickname detection (e.g. "kings", "Requin" without @)
-        for display_name in _detect_text_mentions(message, bot):
-            bot.social.on_mention(message.author.display_name, display_name)
+        for member_id, member_display in _detect_text_mentions(message, bot):
+            bot.social.register_user(str(message.author.id), message.author.display_name)
+            bot.social.register_user(str(member_id), member_display)
+            bot.social.on_mention(str(message.author.id), str(member_id))
         # Thread co-participation: record interaction with thread owner
         if isinstance(message.channel, discord.Thread):
             owner = message.channel.owner
             if owner and not owner.bot and owner != message.author:
-                bot.social.on_thread_message(message.author.display_name, owner.display_name)
+                bot.social.register_user(str(message.author.id), message.author.display_name)
+                bot.social.register_user(str(owner.id), owner.display_name)
+                bot.social.on_thread_message(str(message.author.id), str(owner.id))
 
     # Spam detection — track all messages in allowed channels
     if channel_allowed and message.guild:
@@ -695,6 +706,58 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         return
 
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
+
+    # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
+    from wally_v2.core.gate import ResponseGate as _ResponseGate
+    if isinstance(getattr(bot, "response_gate", None), _ResponseGate):
+        from wally_v2.core.memory.facts import FactCategory
+        user_id_str = str(message.author.id)
+        emotion_state = bot.emotion.get_state()
+
+        rel_facts = []
+        desire_facts = []
+        try:
+            if hasattr(bot, "v2_memory") and bot.v2_memory is not None:
+                rel_facts = await bot.v2_memory.search(
+                    "relation", user_id_str, limit=3,
+                    categories=[FactCategory.REL, FactCategory.EMOTION]
+                )
+                desire_facts = await bot.v2_memory.search(
+                    "désir objectif", "wally:self", limit=2,
+                    categories=[FactCategory.DESIRE]
+                )
+        except Exception as e:
+            logger.debug("Gate context fetch failed (non-fatal): {e}", e=e)
+
+        gate_decision = await bot.response_gate.decide(
+            message_content=message.content,
+            author_user_id=user_id_str,
+            emotion_state=emotion_state,
+            relationship_facts=rel_facts,
+            active_desires=desire_facts,
+        )
+
+        if gate_decision.decision == "IGNORE":
+            logger.debug("Gate: IGNORE message from {user}", user=user_id_str)
+            return
+
+        if gate_decision.decision == "REACT" and gate_decision.emoji:
+            try:
+                await message.add_reaction(gate_decision.emoji)
+            except Exception as e:
+                logger.debug("Gate: REACT emoji failed: {e}", e=e)
+            return
+
+        if gate_decision.decision == "DEFER" and gate_decision.defer_seconds:
+            logger.debug(
+                "Gate: DEFER {sec}s for {user}",
+                sec=gate_decision.defer_seconds, user=user_id_str
+            )
+            # TODO Plan B : créer une action planifiée via ActionService
+            # Pour l'instant, fallback sur RESPOND pour ne pas bloquer
+            pass
+        # RESPOND : continue normalement
+
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
 
 

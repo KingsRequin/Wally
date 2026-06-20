@@ -62,6 +62,30 @@ class WallyDiscord(commands.Bot):
         self.dashboard_state = None  # type: ignore[assignment]
         self.reaction_tracker = None  # set by main.py after construction
 
+        # Gate V2 — optionnel, activé par response_gate.enabled dans config
+        self.response_gate = None   # type: ignore[assignment]
+        self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
+        if getattr(config, "response_gate", None) and config.response_gate.get("enabled", False):
+            import os as _os
+            from wally_v2.core.gate import ResponseGate
+            from wally_v2.core.memory.facts import SQLiteFactStore
+            from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
+            from bot.config import LLMRoleConfig
+            _db_path = _os.getenv("DB_PATH", "data/wally.db")
+            gate_llm = create_v2_llm(
+                LLMRoleConfig(
+                    provider="deepseek",
+                    model=config.response_gate.get("model", "deepseek-v4-flash"),
+                ),
+                db,
+            )
+            self.response_gate = ResponseGate(
+                llm=gate_llm,
+                fact_store=SQLiteFactStore(_db_path),
+                prompts_dir="wally_v2/persona/prompts",
+            )
+            logger.info("ResponseGate V2 initialisé (deepseek-v4-flash)")
+
     async def setup_hook(self) -> None:
         from bot.discord.commands.ask import AskCog
         from bot.discord.commands.status import StatusCog
@@ -105,6 +129,13 @@ class WallyDiscord(commands.Bot):
     async def on_ready(self) -> None:
         self._start_time = time.time()
         logger.info("Discord bot ready as {user}", user=self.user)
+        if self.social and self.user:
+            self.social.set_bot_id(self.user.id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild_id and interaction.guild_id in self.config.discord.ignored_guilds:
+            return False
+        return True
 
     async def on_error(self, event_method: str, *args, **kwargs) -> None:
         logger.exception("Discord error in {e}", e=event_method)
