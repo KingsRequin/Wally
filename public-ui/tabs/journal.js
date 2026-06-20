@@ -1,10 +1,12 @@
-// public-ui/tabs/journal.js
+// public-ui/tabs/journal.js — arcade
 import { parseInline, renderMarkdown } from '../markdown.js';
 
 let _container = null;
 
 const MONTH_SHORT = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
 const EMO_COLORS = { anger:'#ef4444', joy:'#eab308', curiosity:'#22c55e', sadness:'#3b82f6', boredom:'#a855f7' };
+const BORDER_CYCLE = ['var(--yellow)','var(--cyan)','var(--pink)','var(--green)','var(--violet)'];
+let _entryColorIdx = 0;
 
 function formatDateShort(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -46,6 +48,8 @@ function detectEmoBadges(content) {
 function renderEntryCard(entry) {
   const card = document.createElement('div');
   card.className = 'entry-card';
+  card.style.borderLeftColor = BORDER_CYCLE[_entryColorIdx % BORDER_CYCLE.length];
+  _entryColorIdx++;
 
   const header = document.createElement('div');
   header.className = 'entry-header';
@@ -100,9 +104,26 @@ function renderEntryCard(entry) {
   return card;
 }
 
+function buildHeader() {
+  const head = document.createElement('div');
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'arc-eyebrow';
+  eyebrow.textContent = 'JOURNAL INTIME · WALLY';
+  const h2 = document.createElement('h2');
+  h2.className = 'arc-h2';
+  h2.textContent = 'JOURNAL';
+  const sub = document.createElement('div');
+  sub.className = 'arc-sub';
+  sub.textContent = 'chaque soir à 21h, wally écrit sa journée.';
+  head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
+  return head;
+}
+
 export function mount(el) {
   _container = el;
+  _entryColorIdx = 0;
   el.textContent = '';
+  el.appendChild(buildHeader());
 
   fetch('/api/public/journal?limit=30')
     .then(r => r.json())
@@ -110,16 +131,14 @@ export function mount(el) {
       const entries = data.entries || [];
       if (!entries.length) {
         const empty = document.createElement('div');
-        empty.className = 'empty-state glass';
-        empty.style.padding = '40px';
+        empty.className = 'empty-state arc-card';
         empty.textContent = 'Le journal est généré chaque soir à 21h00. Aucune entrée pour le moment.';
         el.appendChild(empty);
         return;
       }
 
       const wrap = document.createElement('div');
-      wrap.className = 'glass';
-      wrap.style.padding = '20px';
+      wrap.className = 'arc-card';
 
       const tlScroll = document.createElement('div');
       tlScroll.className = 'tl-scroll';

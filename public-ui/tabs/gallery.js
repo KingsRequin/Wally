@@ -1,4 +1,4 @@
-// public-ui/tabs/gallery.js
+// public-ui/tabs/gallery.js — arcade
 
 let _container = null;
 let _sort = 'date';
@@ -231,13 +231,13 @@ function buildGalleryItem(img, delay) {
   imgEl.loading = 'lazy';
   item.appendChild(imgEl);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'gallery-overlay';
+  const meta = document.createElement('div');
+  meta.className = 'gallery-meta';
 
   const prompt = document.createElement('div');
   prompt.className = 'gallery-prompt';
   prompt.textContent = img.title || img.prompt || '';
-  overlay.appendChild(prompt);
+  meta.appendChild(prompt);
 
   // Votes display + vote button
   const votesRow = document.createElement('div');
@@ -273,8 +273,8 @@ function buildGalleryItem(img, delay) {
   });
   votesRow.appendChild(voteBtn);
 
-  overlay.appendChild(votesRow);
-  item.appendChild(overlay);
+  meta.appendChild(votesRow);
+  item.appendChild(meta);
 
   item.addEventListener('click', () => openGalleryModal(img.id));
   return item;
@@ -311,6 +311,20 @@ export function mount(el) {
   el.textContent = '';
 
   const wrap = document.createElement('div');
+
+  // Header arcade
+  const head = document.createElement('div');
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'arc-eyebrow';
+  eyebrow.textContent = 'CRÉATIONS · WALLY';
+  const h2 = document.createElement('h2');
+  h2.className = 'arc-h2';
+  h2.textContent = 'GALERIE';
+  const sub = document.createElement('div');
+  sub.className = 'arc-sub';
+  sub.textContent = 'les images générées par wally. votez pour vos préférées.';
+  head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
+  wrap.appendChild(head);
 
   // Filters bar
   const filters = document.createElement('div');

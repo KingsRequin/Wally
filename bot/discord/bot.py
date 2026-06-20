@@ -139,6 +139,11 @@ class WallyDiscord(commands.Bot):
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
 
             self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion, self.cognitive_feed)
+            # setup_hook runs after AppState is built+attached in main.py, so the
+            # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
+            _dash = getattr(self, "dashboard_state", None)
+            if _dash is not None:
+                _dash.cognitive_feed = self.cognitive_feed
             logger.info("CognitiveLoop V2 initialisée ({}/{} + {})", _provider, _model_pro, _model_flash)
 
         import os as _os_auto

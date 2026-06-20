@@ -1,4 +1,4 @@
-// public-ui/app.js
+// public-ui/app.js — arcade theme
 import { mount as mountStatus, unmount as unmountStatus } from './tabs/status.js';
 import { mount as mountChat, unmount as unmountChat } from './tabs/chat.js';
 import { mount as mountGallery, unmount as unmountGallery } from './tabs/gallery.js';
@@ -32,6 +32,13 @@ function connectSSE() {
 }
 connectSSE();
 
+// ── Cognitive SSE (live brain feed) ──
+export function connectCognitiveSSE(onEvent) {
+  const es = new EventSource('/api/public/sse/cognitive');
+  es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (_) {} };
+  return es; // caller closes on unmount
+}
+
 // ── Modal ──
 const overlay = document.getElementById('modal-overlay');
 const modalImg = document.getElementById('modal-img');
@@ -47,6 +54,31 @@ export function openModal(src, caption) {
 }
 function closeModal() { overlay.classList.remove('open'); }
 
+// ── Pixel flame sprite (box-shadow art) ──
+export function drawFlame(id, P = 4) {
+  const bm = [
+    ".....O.....", "....OOO....", "....OYO....", "...OOYOO...", "...OYYYO...",
+    "..OOYYYOO..", "..OYYWYYO..", ".OOYYWWYOO.", ".OYYWWWYYO.", ".OYYWWWYYO.",
+    ".OOYYWYYOO.", "..OYYYYYO..", "..OOYYYOO..", "...OOOOO.."
+  ];
+  const pal = { O: "#ff4d1f", Y: "#ffb020", W: "#fff2c2" };
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.position = "relative"; el.style.display = "inline-block";
+  el.style.width = (P * 11) + "px"; el.style.height = (P * 14) + "px";
+  const dot = document.createElement('i');
+  dot.style.position = "absolute"; dot.style.left = "0"; dot.style.top = "0";
+  dot.style.width = P + "px"; dot.style.height = P + "px";
+  const s = [];
+  for (let r = 0; r < bm.length; r++)
+    for (let c = 0; c < bm[r].length; c++) {
+      const ch = bm[r][c];
+      if (ch !== ".") s.push(`${c * P}px ${r * P}px 0 0 ${pal[ch]}`);
+    }
+  dot.style.boxShadow = s.join(",");
+  el.innerHTML = ''; el.appendChild(dot);
+}
+
 // ── Router ──
 const TABS = {
   status:    { mount: mountStatus,    unmount: unmountStatus },
@@ -60,28 +92,9 @@ const TABS = {
 let currentTab = null;
 
 function syncNav(tabName) {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  document.querySelectorAll('.arc-nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
-  document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
-  });
-  document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
-  });
-  const sheetTabs = ['community', 'about'];
-  const moreBtn = document.getElementById('bnav-more-btn');
-  if (moreBtn) moreBtn.classList.toggle('active', sheetTabs.includes(tabName));
-}
-
-function closeSheet() {
-  const bnavSheet   = document.getElementById('bnav-sheet');
-  const bnavOverlay = document.getElementById('bnav-sheet-overlay');
-  const moreBtn     = document.getElementById('bnav-more-btn');
-  bnavSheet?.classList.remove('open');
-  bnavOverlay?.classList.remove('open');
-  if (bnavSheet) bnavSheet.setAttribute('aria-hidden', 'true');
-  if (moreBtn)   moreBtn.setAttribute('aria-expanded', 'false');
 }
 
 function route() {
@@ -93,52 +106,21 @@ function route() {
   }
 
   syncNav(tabName);
-  closeSheet();
 
   const content = document.getElementById('tab-content');
+  content.innerHTML = '';
   content.style.animation = 'none';
-  content.offsetHeight;
+  void content.offsetHeight;
   content.style.animation = '';
 
   TABS[tabName].mount(content);
   currentTab = tabName;
+  window.scrollTo({ top: 0 });
 }
 
-// Desktop nav clicks
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+document.querySelectorAll('[data-tab]').forEach(el => {
+  el.addEventListener('click', () => { location.hash = el.dataset.tab; });
 });
-
-// Mobile bottom-nav clicks
-document.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
-  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
-});
-
-// Sheet items clicks
-document.querySelectorAll('.bnav-sheet-item').forEach(btn => {
-  btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
-});
-
-// "Plus" button — toggle sheet
-const _moreBtn = document.getElementById('bnav-more-btn');
-const _sheet   = document.getElementById('bnav-sheet');
-const _sheetOverlay = document.getElementById('bnav-sheet-overlay');
-if (_moreBtn && _sheet) {
-  _moreBtn.addEventListener('click', () => {
-    const isOpen = _sheet.classList.contains('open');
-    if (isOpen) {
-      closeSheet();
-    } else {
-      _sheet.classList.add('open');
-      _sheetOverlay?.classList.add('open');
-      _sheet.setAttribute('aria-hidden', 'false');
-      _moreBtn.setAttribute('aria-expanded', 'true');
-    }
-  });
-}
-if (_sheetOverlay) {
-  _sheetOverlay.addEventListener('click', closeSheet);
-}
 
 window.addEventListener('hashchange', route);
 
@@ -148,97 +130,142 @@ if (new URLSearchParams(location.search).get('chat_code')) {
 }
 
 route();
+drawFlame('spx-nav', 4);
 
-// ── Stars canvas — parallax 3D ──
-(function initStars() {
-  const canvas = document.getElementById('stars');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+// ── Animated arcade background (canvas) ──
+(function initBg() {
+  const cv = document.getElementById('bg-canvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  let W = 0, H = 0, mpx = null, mpy = null, raf = 0;
+  let embers = [], nodes = [], orbs = [];
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-  // Smooth mouse/gyro offset (normalised -0.5..0.5, lerped)
-  let targetMX = 0, targetMY = 0, curMX = 0, curMY = 0;
-
-  window.addEventListener('mousemove', e => {
-    targetMX = e.clientX / window.innerWidth - 0.5;
-    targetMY = e.clientY / window.innerHeight - 0.5;
-  });
-
-  // Mobile: accelerometer parallax via DeviceOrientation
-  // Request permission on iOS 13+ on first interaction
-  function enableGyro() {
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission().catch(() => {});
-    }
-    window.addEventListener('deviceorientation', e => {
-      // gamma = left/right tilt (-90..90), beta = front/back (-180..180)
-      targetMX = Math.max(-0.5, Math.min(0.5, (e.gamma || 0) / 40));
-      targetMY = Math.max(-0.5, Math.min(0.5, ((e.beta || 0) - 30) / 60));
-    }, { passive: true });
+  function currentMfx() {
+    try {
+      const v = localStorage.getItem('wally_mfx');
+      return ['grille', 'constellation', 'aimant', 'vortex', 'onde'].includes(v) ? v : 'aimant';
+    } catch (_) { return 'aimant'; }
   }
 
-  // Trigger gyro on first touch (iOS permission gate)
-  window.addEventListener('touchstart', enableGyro, { once: true });
-  // Android / non-gated — enable directly
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission !== 'function') {
-    enableGyro();
+  function newEmber() {
+    return { x: Math.random() * W, y: H + Math.random() * H, vy: 0.3 + Math.random() * 1.0,
+      size: 1 + Math.floor(Math.random() * 3), hue: Math.random(), drift: (Math.random() - 0.5) * 0.4, life: Math.random() * 6 };
+  }
+  function initParticles() {
+    embers = Array.from({ length: 64 }, newEmber);
+    nodes = Array.from({ length: 56 }, () => ({ x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5 }));
+    const cols = ["#ffd400", "#ff3b6b", "#43e0ff", "#bf94ff"];
+    orbs = Array.from({ length: 120 }, () => ({ ang: Math.random() * Math.PI * 2, rad: 24 + Math.random() * 250,
+      spd: (0.004 + Math.random() * 0.016) * (Math.random() < 0.5 ? 1 : -1),
+      size: 2 + Math.floor(Math.random() * 3), col: cols[Math.floor(Math.random() * cols.length)] }));
+  }
+
+  function fxGrille(ts, mx, my, sy) {
+    const step = 46;
+    const ox = (mx / W - 0.5) * -30, oy = (my / H - 0.5) * -30 - sy * 0.05;
+    ctx.lineWidth = 1;
+    for (let x = (ox % step) - step; x < W + step; x += step) {
+      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(x - mx) / 380)})`;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = (oy % step) - step; y < H + step; y += step) {
+      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(y - my) / 320)})`;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(mx, my, 0, mx, my, 220);
+    g.addColorStop(0, "rgba(124,77,255,0.18)"); g.addColorStop(1, "rgba(124,77,255,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  function fxConstellation(ts, mx, my) {
+    const ns = nodes, D = 124;
+    for (const n of ns) {
+      n.x += n.vx; n.y += n.vy;
+      if (n.x < 0 || n.x > W) n.vx *= -1;
+      if (n.y < 0 || n.y > H) n.vy *= -1;
+    }
+    ctx.lineWidth = 1;
+    for (let i = 0; i < ns.length; i++) {
+      const a = ns[i], dm = Math.hypot(a.x - mx, a.y - my);
+      if (dm < 190) { ctx.strokeStyle = `rgba(67,224,255,${0.45 * (1 - dm / 190)})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(mx, my); ctx.stroke(); }
+      for (let j = i + 1; j < ns.length; j++) {
+        const b = ns[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < D) {
+          const lit = dm < 170 || Math.hypot(b.x - mx, b.y - my) < 170;
+          ctx.strokeStyle = lit ? `rgba(67,224,255,${0.28 * (1 - d / D)})` : `rgba(124,77,255,${0.12 * (1 - d / D)})`;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+    for (const n of ns) {
+      const lit = Math.hypot(n.x - mx, n.y - my) < 170, s = lit ? 4 : 3;
+      ctx.fillStyle = lit ? "#43e0ff" : "rgba(190,148,255,.85)";
+      ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
+    }
+  }
+  function fxAimant(ts, mx, my) {
+    const step = 42, R = 140;
+    for (let x = step / 2; x < W; x += step)
+      for (let y = step / 2; y < H; y += step) {
+        const dx = x - mx, dy = y - my, d = Math.hypot(dx, dy) || 1;
+        if (d < R) {
+          const t = 1 - d / R, f = t * 42;
+          const px = x + dx / d * f, py = y + dy / d * f, gg = Math.round(59 + 153 * t);
+          ctx.fillStyle = `rgba(255,${gg},${Math.round(107 * (1 - t))},${0.5 + 0.5 * t})`;
+          const s = 2 + 2.5 * t; ctx.fillRect(px - s / 2, py - s / 2, s, s);
+        } else {
+          ctx.fillStyle = "rgba(170,150,230,0.22)";
+          ctx.fillRect(x - 1, y - 1, 2, 2);
+        }
+      }
+  }
+  function fxVortex(ts, mx, my) {
+    for (const o of orbs) {
+      o.ang += o.spd;
+      const x = mx + Math.cos(o.ang) * o.rad, y = my + Math.sin(o.ang) * o.rad * 0.62;
+      ctx.fillStyle = o.col; ctx.fillRect(x - o.size / 2, y - o.size / 2, o.size, o.size);
+    }
+  }
+  function fxOnde(ts, mx, my) {
+    const step = 40;
+    for (let x = step / 2; x < W; x += step)
+      for (let y = step / 2; y < H; y += step) {
+        const d = Math.hypot(x - mx, y - my);
+        const f = Math.max(0, Math.sin(d / 26 - ts / 260)) * Math.max(0, 1 - d / 540);
+        const s = 1.5 + 2.4 * f;
+        ctx.fillStyle = `rgba(67,224,255,${0.05 + 0.28 * f})`;
+        ctx.fillRect(x - s / 2, y - s / 2, s, s);
+      }
+  }
+  const FX = { grille: fxGrille, constellation: fxConstellation, aimant: fxAimant, vortex: fxVortex, onde: fxOnde };
+
+  function draw(ts) {
+    const sy = window.scrollY || 0;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+    for (const e of embers) {
+      e.y -= e.vy; e.x += e.drift;
+      if (e.y < -10) { Object.assign(e, newEmber()); e.y = H + 10; }
+      const col = e.hue < 0.5 ? "255,90,30" : (e.hue < 0.8 ? "255,180,40" : "255,60,120");
+      const a = 0.28 + 0.38 * Math.abs(Math.sin(ts / 500 + e.life));
+      ctx.fillStyle = `rgba(${col},${a})`;
+      ctx.fillRect(e.x, e.y, e.size, e.size);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    const mx = mpx == null ? W / 2 : mpx, my = mpy == null ? H / 2 : mpy;
+    (FX[currentMfx()] || fxAimant)(ts, mx, my, sy);
   }
 
   function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    initParticles();
   }
-  resize();
   window.addEventListener('resize', resize);
-
-  // depth 0..1: 0 = far (tiny, moves little), 1 = close (bigger, moves more)
-  const stars = [];
-  for (let i = 0; i < 150; i++) {
-    const depth = Math.random();               // parallax layer
-    stars.push({
-      bx: Math.random() * window.innerWidth,   // base position
-      by: Math.random() * window.innerHeight,
-      r: 0.3 + depth * 1.4,                   // size proportional to depth
-      alpha: Math.random(),
-      da: (Math.random() * 0.003 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
-      dx: (Math.random() - 0.5) * 0.08,       // slow drift
-      dy: (Math.random() - 0.5) * 0.08,
-      depth,
-    });
-  }
-
-  const MAX_SHIFT = 120; // px max parallax shift for the closest layer
-
-  function draw() {
-    // Lerp toward target mouse position
-    curMX += (targetMX - curMX) * 0.06;
-    curMY += (targetMY - curMY) * 0.06;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const s of stars) {
-      // Slow drift of base position
-      s.bx += s.dx;
-      s.by += s.dy;
-      if (s.bx < 0) s.bx = canvas.width;
-      if (s.bx > canvas.width) s.bx = 0;
-      if (s.by < 0) s.by = canvas.height;
-      if (s.by > canvas.height) s.by = 0;
-
-      // Parallax offset — deeper stars shift more
-      const rx = s.bx + curMX * MAX_SHIFT * s.depth;
-      const ry = s.by + curMY * MAX_SHIFT * s.depth;
-
-      // Twinkle
-      s.alpha += s.da;
-      if (s.alpha <= 0.05 || s.alpha >= 1) s.da = -s.da;
-
-      ctx.beginPath();
-      ctx.arc(rx, ry, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, s.alpha)).toFixed(3)})`;
-      ctx.fill();
-    }
-    requestAnimationFrame(draw);
-  }
-  draw();
+  window.addEventListener('mousemove', (e) => { mpx = e.clientX; mpy = e.clientY; });
+  resize();
+  const loop = (ts) => { draw(ts || 0); raf = requestAnimationFrame(loop); };
+  raf = requestAnimationFrame(loop);
 }());
