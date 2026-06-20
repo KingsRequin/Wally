@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Awaitable, Callable
-from uuid import uuid5, UUID, NAMESPACE_URL
+from uuid import uuid5, NAMESPACE_URL
 
 from loguru import logger
 from qdrant_client import AsyncQdrantClient

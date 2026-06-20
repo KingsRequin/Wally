@@ -17,6 +17,7 @@ class MemoryRetrieval:
     async def add_fact(self, fact: AtomicFact) -> int:
         """Persiste un fait en SQLite + indexe l'embedding dans Qdrant."""
         fact_id = await self._facts.add(fact)
+        await self._qdrant.ensure_collection()
         await self._qdrant.upsert(fact_id=fact_id, user_id=fact.user_id, content=fact.content)
         return fact_id
 

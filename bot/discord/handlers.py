@@ -708,8 +708,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
 
     # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
-    from wally_v2.core.gate import ResponseGate as _ResponseGate
-    if isinstance(getattr(bot, "response_gate", None), _ResponseGate):
+    if getattr(bot, "response_gate", None) is not None:
         from wally_v2.core.memory.facts import FactCategory
         user_id_str = str(message.author.id)
         emotion_state = bot.emotion.get_state()

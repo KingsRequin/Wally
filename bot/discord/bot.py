@@ -63,31 +63,41 @@ class WallyDiscord(commands.Bot):
         self.dashboard_state = None  # type: ignore[assignment]
         self.reaction_tracker = None  # set by main.py after construction
 
-        # Gate V2 — optionnel, activé par response_gate.enabled dans config
+        # Gate V2 — optionnel, activé par response_gate.enabled dans config.
+        # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
-        if getattr(config, "response_gate", None) and config.response_gate.get("enabled", False):
-            import os
+        # Stocker le db_path pour l'init async dans setup_hook
+        import os as _os
+        self._v2_db_path: str | None = (
+            _os.getenv("DB_PATH", "data/wally.db")
+            if getattr(config, "response_gate", None) and config.response_gate.get("enabled", False)
+            else None
+        )
+
+    async def setup_hook(self) -> None:
+        # Gate V2 init — must be async so we can call create_v2_tables before SQLiteFactStore
+        if self._v2_db_path is not None and self.response_gate is None:
+            from wally_v2.db.schema_v2 import create_v2_tables
             from wally_v2.core.gate import ResponseGate
             from wally_v2.core.memory.facts import SQLiteFactStore
             from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
-            _db_path = os.getenv("DB_PATH", "data/wally.db")
+            await create_v2_tables(self._v2_db_path)
             gate_llm = create_v2_llm(
                 LLMRoleConfig(
                     provider="deepseek",
-                    model=config.response_gate.get("model", "deepseek-v4-flash"),
+                    model=self.config.response_gate.get("model", "deepseek-v4-flash"),
                 ),
-                db,
+                self.db,
             )
             self.response_gate = ResponseGate(
                 llm=gate_llm,
-                fact_store=SQLiteFactStore(_db_path),
+                fact_store=SQLiteFactStore(self._v2_db_path),
                 prompts_dir=Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts",
             )
-            logger.info("ResponseGate V2 initialisé (deepseek-v4-flash)")
+            logger.info("ResponseGate V2 initialisé avec DB V2 créée ({})", self._v2_db_path)
 
-    async def setup_hook(self) -> None:
         from bot.discord.commands.ask import AskCog
         from bot.discord.commands.status import StatusCog
         from bot.discord.commands.mood import MoodCog
