@@ -248,8 +248,13 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
         return []
 
 
-def _is_channel_allowed(config, channel_id: int) -> bool:
+def _is_channel_allowed(config, channel_id: int, guild_id: int | None = None) -> bool:
     """Vérifie si Wally peut répondre dans ce canal selon le mode de filtrage."""
+    if guild_id is not None:
+        pgw = config.discord.per_guild_channel_whitelist
+        guild_wl = pgw.get(str(guild_id)) or pgw.get(guild_id)
+        if guild_wl is not None:
+            return channel_id in guild_wl
     mode = config.discord.channel_filter_mode
     if mode == "whitelist":
         wl = config.discord.channel_whitelist
@@ -567,7 +572,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         bot.dashboard_state.message_count_discord += 1
 
     user_id = str(message.author.id)
-    channel_allowed = _is_channel_allowed(bot.config, message.channel.id)
+    channel_allowed = _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
 
     # Contenu enrichi : inclut un tag [image] si des images sont jointes
     _has_images = any(

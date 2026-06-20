@@ -118,10 +118,15 @@ class WallyDiscord(commands.Bot):
             _prompts_dir = Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts"
             _persona_dir = Path(__file__).parent.parent / "persona"
 
+            _cog_cfg = self.config.cognitive_loop
+            _provider = _cog_cfg.get("provider", "deepseek")
+            _model_pro = _cog_cfg.get("model_pro", "deepseek-v4-pro")
+            _model_flash = _cog_cfg.get("model_flash", "deepseek-v4-flash")
+
             _fact_store = SQLiteFactStore(_db_path)
-            _mono_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-pro"), self.db)
-            _meta_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-flash"), self.db)
-            _persona_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-pro"), self.db)
+            _mono_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
+            _meta_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_flash), self.db)
+            _persona_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
 
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
@@ -131,7 +136,7 @@ class WallyDiscord(commands.Bot):
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store)
 
             self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion)
-            logger.info("CognitiveLoop V2 initialisée (deepseek-v4-pro thinking)")
+            logger.info("CognitiveLoop V2 initialisée ({}/{} + {})", _provider, _model_pro, _model_flash)
 
         import os as _os_auto
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")

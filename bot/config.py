@@ -58,6 +58,7 @@ class LLMRoleConfig:
 class LLMConfig:
     primary: LLMRoleConfig
     secondary: LLMRoleConfig
+    fallback: LLMRoleConfig | None = None
 
 
 @dataclass
@@ -88,6 +89,7 @@ class DiscordConfig:
     channel_whitelist: list[int] = field(default_factory=list)
     channel_blacklist: list[int] = field(default_factory=list)
     ignored_guilds: list[int] = field(default_factory=list)
+    per_guild_channel_whitelist: dict = field(default_factory=dict)
     emoji_reaction_probability: float = 0.05
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 
@@ -278,6 +280,8 @@ class Config:
     circadian: CircadianConfig = field(default_factory=CircadianConfig)
     spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
     graphiti: GraphitiConfig = field(default_factory=GraphitiConfig)
+    response_gate: dict = field(default_factory=dict)
+    cognitive_loop: dict = field(default_factory=dict)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
         "frustration": SecondaryEmotionDef(a="anger", b="boredom", threshold=0.3),
         "nostalgia": SecondaryEmotionDef(a="joy", b="sadness", threshold=0.3),
@@ -297,9 +301,11 @@ class Config:
         """
         if "llm" in raw:
             llm_raw = raw["llm"]
+            fb_raw = llm_raw.get("fallback")
             return LLMConfig(
                 primary=LLMRoleConfig(**llm_raw["primary"]),
                 secondary=LLMRoleConfig(**llm_raw["secondary"]),
+                fallback=LLMRoleConfig(**fb_raw) if fb_raw else None,
             )
         # Legacy fallback: build from openai section
         openai_raw = raw.get("openai", {})
@@ -392,6 +398,8 @@ class Config:
             else:
                 secondaries_cfg = None  # use default_factory
             graphiti_cfg = GraphitiConfig(**raw.get("graphiti", {}))
+            response_gate_cfg = raw.get("response_gate", {})
+            cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
             llm_config = cls._build_llm_config(raw)
@@ -428,6 +436,8 @@ class Config:
                 circadian=circadian_cfg,
                 spontaneous=spontaneous_cfg,
                 graphiti=graphiti_cfg,
+                response_gate=response_gate_cfg,
+                cognitive_loop=cognitive_loop_cfg,
                 **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
             )
         except (KeyError, TypeError) as e:
@@ -453,6 +463,8 @@ class Config:
             "overlay_image": asdict(self.overlay_image),
             "theme": asdict(self.theme),
             "graphiti": asdict(self.graphiti),
+            "response_gate": self.response_gate,
+            "cognitive_loop": self.cognitive_loop,
         }
         emotions_data = {k: asdict(v) for k, v in self.emotions.items()}
         emotions_data["mood"] = asdict(self.mood)

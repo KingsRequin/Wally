@@ -87,6 +87,14 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     # ── LLM clients ───────────────────────────────────────────────────────────
     primary_llm = create_llm_client(config.llm.primary, db)
     secondary_llm = create_llm_client(config.llm.secondary, db)
+    # Fallback LLM (autre provider) : si le primaire est down, on bascule
+    if config.llm.fallback is not None:
+        from wally_v2.core.llm.fallback import FallbackLLMClient
+        fb_client = create_llm_client(config.llm.fallback, db)
+        primary_llm = FallbackLLMClient(primary_llm, fb_client)
+        secondary_llm = FallbackLLMClient(secondary_llm, fb_client)
+        logger.info("Fallback LLM activé — secours: {}/{}",
+                    config.llm.fallback.provider, config.llm.fallback.model)
     # Image client is always OpenAI (Claude has no image generation API)
     image_client = OpenAILLMClient(
         model=config.llm.primary.model,  # model irrelevant for images

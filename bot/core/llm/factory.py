@@ -50,5 +50,19 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
         )
         return client
 
+    elif provider == "deepseek":
+        from wally_v2.core.llm.deepseek import DeepSeekLLMClient
+        client = DeepSeekLLMClient(
+            model=llm_config.model,
+            db=db,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
+        )
+        logger.info(
+            "Created DeepSeekLLMClient — model={model}, temp={temp}",
+            model=llm_config.model, temp=llm_config.temperature,
+        )
+        return client
+
     else:
-        raise ValueError(f"Unknown LLM provider: {provider!r}. Use 'openai' or 'claude'.")
+        raise ValueError(f"Unknown LLM provider: {provider!r}. Use 'openai', 'claude', or 'deepseek'.")

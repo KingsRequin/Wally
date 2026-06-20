@@ -131,6 +131,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
+      - ./bot/persona:/app/bot/persona
       - ./public-ui:/app/public-ui
       - ./.env:/app/.env
       - ./ROADMAP.md:/app/ROADMAP.md:ro
@@ -152,6 +153,12 @@ services:
     depends_on:
       - wally
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--no-autoupdate", "info"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
   cloudflaredLangfuse:
     image: cloudflare/cloudflared:latest
     container_name: langfuse-cloudflared
@@ -164,3 +171,9 @@ services:
       langfuse:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--no-autoupdate", "info"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
