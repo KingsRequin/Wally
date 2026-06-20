@@ -394,6 +394,7 @@ async def main() -> None:
         action_service=action_service,
         graph=graph,
         update_checker=update_checker,
+        cognitive_feed=getattr(discord_bot, "cognitive_feed", None),
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

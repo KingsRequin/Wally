@@ -68,6 +68,7 @@ class WallyDiscord(commands.Bot):
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
+        self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
@@ -109,6 +110,7 @@ class WallyDiscord(commands.Bot):
             from bot.v2.core.evolution_log import EvolutionLog
             from bot.v2.core.persona_manager import PersonaManager
             from bot.v2.core.cognitive_loop import CognitiveLoop
+            from bot.v2.core.cognitive_feed import CognitiveFeed
             from bot.v2.core.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
@@ -133,9 +135,10 @@ class WallyDiscord(commands.Bot):
             _attention = AttentionAgent(_fact_store, self.emotion)
             _mono = InnerMonologue(_mono_llm, _fact_store, _prompts_dir)
             _meta = MetaAgent(_meta_llm, _prompts_dir)
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store)
+            self.cognitive_feed = CognitiveFeed()
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
 
-            self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion)
+            self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion, self.cognitive_feed)
             logger.info("CognitiveLoop V2 initialisée ({}/{} + {})", _provider, _model_pro, _model_flash)
 
         import os as _os_auto
