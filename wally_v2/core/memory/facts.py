@@ -5,7 +5,6 @@ import aiosqlite
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Sequence
 
 from loguru import logger
 
@@ -124,11 +123,11 @@ class SQLiteFactStore:
         placeholders = ",".join("?" * len(ids))
         query = (
             f"SELECT * FROM atomic_facts "
-            f"WHERE id IN ({placeholders}) AND confidence >= ? AND status = 'active'"
+            f"WHERE id IN ({placeholders}) AND confidence >= ? AND status = ?"
         )
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(query, [*ids, min_confidence])
+            cursor = await db.execute(query, [*ids, min_confidence, FactStatus.ACTIVE.value])
             return [self._row_to_fact(r) for r in await cursor.fetchall()]
 
     async def mark_seen(self, fact_id: int) -> None:
@@ -169,8 +168,13 @@ class SQLiteFactStore:
             return cursor.lastrowid  # type: ignore[return-value]
 
     async def supersede(self, old_id: int, new_id: int) -> None:
-        """Marque old_id comme superseded et crée la relation supersedes new_id→old_id."""
+        """Marque old_id comme superseded et crée la relation supersedes new_id→old_id.
+
+        Les deux opérations sont atomiques : aiosqlite démarre un BEGIN implicite
+        avant le premier DML, et le commit() final valide les deux ensemble.
+        """
         async with aiosqlite.connect(self._db_path) as db:
+            await db.execute("BEGIN")
             await db.execute(
                 "UPDATE atomic_facts SET status = 'superseded' WHERE id = ?",
                 (old_id,),
@@ -181,6 +185,7 @@ class SQLiteFactStore:
                 (new_id, old_id, datetime.utcnow().isoformat()),
             )
             await db.commit()
+            logger.debug("supersede: fact {} superseded by {}", old_id, new_id)
 
     @staticmethod
     def _row_to_fact(row: aiosqlite.Row) -> AtomicFact:
@@ -196,5 +201,7 @@ class SQLiteFactStore:
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
         )
         fact.id = row["id"]
+        # Restore the persisted decay_rate (overrides __post_init__) so that facts
+        # keep the rate they were inserted with, even if DECAY_RATES changes later.
         fact.decay_rate = row["decay_rate"]
         return fact

@@ -58,8 +58,7 @@ async def test_get_by_user_filters_by_category(tmp_db_path):
     assert facts[0].category == FactCategory.FAIT
 
 
-@pytest.mark.asyncio
-async def test_decay_rates_match_spec(tmp_db_path):
+def test_decay_rates_match_spec():
     """Les decay_rates par défaut correspondent aux valeurs du spec."""
     assert DECAY_RATES[FactCategory.FAIT] == 0.001
     assert DECAY_RATES[FactCategory.DESIRE] == 0.02
