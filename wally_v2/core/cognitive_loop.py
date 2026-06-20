@@ -30,7 +30,7 @@ class CognitiveLoop:
         self._running = False
 
     def notify_activity(self, channel_id: int, author: str, content: str) -> None:
-        self._last_activity_ts = time.time()
+        self._last_activity_ts = time.monotonic()
         self._recent_interactions.append({
             "channel": str(channel_id),
             "author": author,
@@ -41,7 +41,7 @@ class CognitiveLoop:
             self._recent_interactions = self._recent_interactions[-20:]
 
     def _tick_interval(self) -> int:
-        elapsed = time.time() - self._last_activity_ts
+        elapsed = time.monotonic() - self._last_activity_ts
         if elapsed < 600:
             return TICK_ACTIVE
         if elapsed < 3600:
