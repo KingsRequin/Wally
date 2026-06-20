@@ -168,14 +168,15 @@ class MemoryService:
         await self._facts.delete_by_user(self._user_id(platform, user_id))
 
     async def reset_all(self) -> None:
+        # Les fenêtres de contexte (RAM) sont purgées indépendamment du backend V2.
+        self._context_windows.clear()
+        self._prelude_windows.clear()
         if self._facts is None:
             return
         import aiosqlite
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("DELETE FROM atomic_facts")
             await db.commit()
-        self._context_windows.clear()
-        self._prelude_windows.clear()
 
     # ── Sliding context window ────────────────────────────────────────────────
 
