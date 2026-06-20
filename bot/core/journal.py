@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from bot.core.emotion import EMOTIONS
+from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.memory_store import MemoryMetadata
 from bot.core.prompts import load_prompt
 
@@ -536,11 +537,13 @@ class DailyJournal:
                     combined = "\n\n---\n\n".join(
                         f"[{j['date']}]\n{j['content']}" for j in past_journals
                     )
-                    narrative_block = await self._llm_secondary.complete(
+                    result = await self._llm_secondary.complete(
                         _NARRATIVE_SYNTHESIS_SYSTEM,
                         [{"role": "user", "content": combined}],
                         purpose="journal_narrative_synthesis",
                     )
+                    if result and result != FALLBACK_RESPONSE:
+                        narrative_block = result
             except Exception as exc:
                 logger.warning("Failed to build journal narrative synthesis: {e}", e=exc)
 
@@ -622,11 +625,15 @@ class DailyJournal:
         # ── Voice pass — insuffle la vraie voix intérieure ──
         if journal_text:
             try:
-                journal_text = await self._llm_secondary.complete(
+                voice_result = await self._llm_secondary.complete(
                     _JOURNAL_VOICE_PASS_SYSTEM,
                     [{"role": "user", "content": journal_text}],
                     purpose="journal_voice_pass",
                 )
+                if voice_result and voice_result != FALLBACK_RESPONSE:
+                    journal_text = voice_result
+                else:
+                    logger.warning("Journal voice pass returned fallback — keeping primary output")
             except Exception as exc:
                 logger.warning("Journal voice pass failed: {e}", e=exc)
 

@@ -394,28 +394,6 @@ class FactExtractor:
                     e=exc,
                 )
 
-            # Ingest into knowledge graph — throttled to avoid flooding Neo4j
-            if self._graph is not None and self._graph.ready:
-                # Discord: server-wide group_id (matches SocialTracker + search)
-                # Twitch: per-channel group_id
-                if platform == "discord":
-                    gid: str | None = self._config.graphiti.group_id
-                else:
-                    gid = f"{platform}:{channel_id.split(':', 1)[-1]}"
-                _sem = asyncio.Semaphore(3)  # max 3 concurrent Neo4j calls per flush
-
-                async def _ingest(msg: dict) -> None:
-                    async with _sem:
-                        await self._graph.add_episode(
-                            content=msg.get("content", ""),
-                            author=msg.get("display_name", ""),
-                            source=platform,
-                            group_id=gid,
-                        )
-
-                for msg in to_flush:
-                    self._fire(_ingest(msg))
-
             # Clean up DB — use cutoff_ts for both partial and full flush so that
             # messages appended to buf["messages"] during the LLM await are not deleted.
             if self._db is not None and cutoff_ts is not None:

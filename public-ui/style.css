@@ -757,6 +757,7 @@ body {
 
   /* Sheet */
   .bnav-sheet {
+    display: block;
     position: fixed;
     bottom: 62px;
     left: 0; right: 0;
