@@ -26,3 +26,6 @@ data/
 
 # Public UI custom (volume Docker, propriété de l'utilisateur)
 public-ui/
+
+.serena/
+*.swp
