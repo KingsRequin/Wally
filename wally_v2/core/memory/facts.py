@@ -138,6 +138,22 @@ class SQLiteFactStore:
             )
             await db.commit()
 
+    async def delete_by_user(self, user_id: str) -> int:
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM atomic_facts WHERE user_id = ?", (user_id,)
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def count_by_user(self, user_id: str) -> int:
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM atomic_facts WHERE user_id = ?", (user_id,)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
     async def apply_decay(self) -> int:
         """Réduit confidence de decay_rate pour tous les faits actifs.
         Archive ceux dont confidence tombe sous 0.1. Retourne le nombre de lignes modifiées.

@@ -126,3 +126,17 @@ async def test_mark_seen_updates_last_seen_at(tmp_db_path):
     facts = await store.get_by_user("discord:123")
     # last_seen_at doit être plus récent que created_at
     assert facts[0].last_seen_at > facts[0].created_at
+
+
+@pytest.mark.asyncio
+async def test_delete_by_user_removes_only_that_user(tmp_db_path):
+    """delete_by_user() supprime uniquement les faits d'un utilisateur."""
+    store = SQLiteFactStore(tmp_db_path)
+    await store.add(AtomicFact(user_id="discord:1", content="a", category=FactCategory.FAIT))
+    await store.add(AtomicFact(user_id="discord:1", content="b", category=FactCategory.FAIT))
+    await store.add(AtomicFact(user_id="discord:2", content="c", category=FactCategory.FAIT))
+
+    deleted = await store.delete_by_user("discord:1")
+    assert deleted == 2
+    assert await store.count_by_user("discord:1") == 0
+    assert await store.count_by_user("discord:2") == 1
