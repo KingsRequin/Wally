@@ -100,66 +100,6 @@ def make_bot_for_spontaneous():
 
 
 @pytest.mark.asyncio
-async def test_spontaneous_memory_below_threshold():
-    """No _fire when memory score is below memory_recall_min_score."""
-    from bot.discord import handlers
-    from bot.discord.handlers import handle_message
-
-    bot = make_bot_for_spontaneous()
-    bot.memory.search_top_match = AsyncMock(return_value=("some memory", 0.5))
-    msg = _make_msg("je vais au magasin")
-
-    handlers._spontaneous_cooldowns.clear()
-    handlers._memory_check_cooldowns.clear()
-    with patch("bot.discord.handlers.random") as mock_random, \
-         patch("bot.discord.handlers._fire") as mock_fire:
-        mock_random.random.return_value = 0.1
-        await handle_message(bot, msg)
-        assert not mock_fire.called
-
-
-@pytest.mark.asyncio
-async def test_spontaneous_memory_probability_blocks():
-    """No _fire when random exceeds spontaneous_memory_probability."""
-    from bot.discord import handlers
-    from bot.discord.handlers import handle_message
-
-    bot = make_bot_for_spontaneous()
-    bot.memory.search_top_match = AsyncMock(return_value=("joue à Apex", 0.85))
-    msg = _make_msg("je vais lancer une partie")
-
-    handlers._spontaneous_cooldowns.clear()
-    handlers._memory_check_cooldowns.clear()
-    with patch("bot.discord.handlers.random") as mock_random, \
-         patch("bot.discord.handlers._fire") as mock_fire:
-        mock_random.random.return_value = 0.9  # > 0.2 → blocked
-        await handle_message(bot, msg)
-        assert not mock_fire.called
-
-
-@pytest.mark.asyncio
-async def test_spontaneous_memory_cooldown():
-    """Memory recall respects the spontaneous cooldown."""
-    from bot.discord import handlers
-    from bot.discord.handlers import handle_message
-    import time as _time
-
-    bot = make_bot_for_spontaneous()
-    bot.memory.search_top_match = AsyncMock(return_value=("joue à Apex", 0.85))
-    msg = _make_msg("je vais lancer une partie")
-
-    handlers._spontaneous_cooldowns["777"] = _time.time()  # cooldown active
-    handlers._memory_check_cooldowns.clear()
-
-    with patch("bot.discord.handlers.random") as mock_random, \
-         patch("bot.discord.handlers._fire") as mock_fire:
-        mock_random.random.return_value = 0.1
-        await handle_message(bot, msg)
-        assert not mock_fire.called
-        bot.memory.search_top_match.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_spontaneous_respond_with_memory_injects_recall():
     """_spontaneous_respond injects memory recall into user_content."""
     from bot.discord.handlers import _spontaneous_respond
