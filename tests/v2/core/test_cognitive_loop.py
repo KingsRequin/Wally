@@ -62,3 +62,44 @@ async def test_stop_cancels_task():
     loop._task = asyncio.create_task(asyncio.sleep(9999))
     await loop.stop()
     assert loop._task.cancelled() or loop._task.done()
+
+
+import pytest as _pytest_feed
+from unittest.mock import AsyncMock as _AM, MagicMock as _MM
+from bot.v2.core.attention_agent import AttentionContext as _ACtx
+from bot.v2.core.inner_monologue import MonologueResult as _MR
+from bot.v2.core.meta_agent import MetaDecision as _MD
+
+
+def _ctx_feed():
+    return _ACtx(
+        emotion_state={}, active_desires=[], active_goals=[],
+        recent_thoughts=[], recent_interactions=[], time_of_day="matin",
+    )
+
+
+@_pytest_feed.mark.asyncio
+async def test_tick_publishes_think_and_decide_to_feed():
+    feed = _MM()
+    attention, monologue, meta, dispatcher = _MM(), _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    monologue.generate = _AM(return_value=_MR(text="je réfléchis", thought_fact_id=1))
+    meta.decide = _AM(return_value=[_MD(action="THINK")])
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(attention, monologue, meta, dispatcher, None, feed)
+    await loop._tick()
+    published = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "THINK" in published and "DECIDE" in published
+    think = next(c.args[0] for c in feed.publish.call_args_list if c.args[0]["type"] == "THINK")
+    assert think["text"] == "je réfléchis"
+
+
+@_pytest_feed.mark.asyncio
+async def test_tick_without_feed_does_not_crash():
+    attention, monologue, meta, dispatcher = _MM(), _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    monologue.generate = _AM(return_value=_MR(text="x", thought_fact_id=1))
+    meta.decide = _AM(return_value=[_MD(action="THINK")])
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(attention, monologue, meta, dispatcher)
+    await loop._tick()

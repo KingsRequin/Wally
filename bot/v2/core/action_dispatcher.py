@@ -14,10 +14,12 @@ class ActionDispatcher:
         bot=None,
         persona_manager=None,
         fact_store=None,
+        feed=None,
     ) -> None:
         self._bot = bot
         self._persona = persona_manager
         self._facts = fact_store
+        self._feed = feed
 
     async def dispatch(self, decision: MetaDecision) -> None:
         action = decision.action
@@ -45,6 +47,8 @@ class ActionDispatcher:
             if channel:
                 await channel.send(message)
                 logger.info("Cognitive SPEAK → canal {} : {}", channel_id, message[:80])
+                if self._feed:
+                    self._feed.publish({"type": "SPEAK", "channel": channel_id, "detail": message})
             else:
                 logger.warning("SPEAK: canal {} introuvable", channel_id)
         except Exception as e:
@@ -67,6 +71,8 @@ class ActionDispatcher:
                     last_seen_at=now,
                 ))
                 logger.info("ACT create_memory: {}", content[:60])
+                if self._feed:
+                    self._feed.publish({"type": "ACT", "detail": f"create_memory: {content[:60]}"})
 
         elif act_name == "create_goal" and self._facts:
             desc = args.get("description", "")
@@ -80,6 +86,8 @@ class ActionDispatcher:
                     last_seen_at=now,
                 ))
                 logger.info("ACT create_goal: {}", desc[:60])
+                if self._feed:
+                    self._feed.publish({"type": "ACT", "detail": f"create_goal: {desc[:60]}"})
 
         elif act_name == "create_desire" and self._facts:
             content = args.get("content", "")
@@ -93,6 +101,8 @@ class ActionDispatcher:
                     last_seen_at=now,
                 ))
                 logger.info("ACT create_desire: {}", content[:60])
+                if self._feed:
+                    self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:60]}"})
 
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
@@ -125,5 +135,7 @@ class ActionDispatcher:
             return
         try:
             await self._persona.evolve(section, change)
+            if self._feed:
+                self._feed.publish({"type": "EVOLVE", "detail": section})
         except Exception as e:
             logger.warning("EVOLVE {}: {}", section, e)

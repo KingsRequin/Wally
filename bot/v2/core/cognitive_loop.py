@@ -18,12 +18,14 @@ class CognitiveLoop:
         meta_agent,
         action_dispatcher,
         emotion_engine=None,
+        feed=None,
     ) -> None:
         self._attention = attention_agent
         self._monologue = inner_monologue
         self._meta = meta_agent
         self._dispatcher = action_dispatcher
         self._emotion = emotion_engine
+        self._feed = feed
         self._last_activity_ts: float = 0.0
         self._recent_interactions: list[dict] = []
         self._task: asyncio.Task | None = None
@@ -52,8 +54,19 @@ class CognitiveLoop:
         try:
             emotion_state = self._emotion.get_state() if self._emotion is not None else {}
             context = await self._attention.build_context(emotion_state, self._recent_interactions)
+            if self._feed:
+                _last = self._recent_interactions[-1] if self._recent_interactions else {}
+                self._feed.publish({
+                    "type": "ATTN",
+                    "target": _last.get("author", "—"),
+                    "content_snippet": (_last.get("content") or "")[:160],
+                })
             result = await self._monologue.generate(context)
+            if self._feed:
+                self._feed.publish({"type": "THINK", "text": result.text})
             decisions = await self._meta.decide(result.text)
+            if self._feed:
+                self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))

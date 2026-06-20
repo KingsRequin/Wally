@@ -84,3 +84,22 @@ async def test_dispatch_evolve_delegates_to_persona_manager():
     decision = MetaDecision(action="EVOLVE", section="EMOTIONS", change="be more curious")
     await dispatcher.dispatch(decision)
     persona.evolve.assert_called_once_with("EMOTIONS", "be more curious")
+
+
+import pytest as _pytest_fd
+from unittest.mock import AsyncMock as _AMd, MagicMock as _MMd
+from bot.v2.core.action_dispatcher import ActionDispatcher as _AD
+from bot.v2.core.meta_agent import MetaDecision as _MDd
+
+
+@_pytest_fd.mark.asyncio
+async def test_speak_publishes_to_feed():
+    feed = _MMd()
+    channel = _MMd()
+    channel.send = _AMd()
+    bot = _MMd()
+    bot.get_channel.return_value = channel
+    disp = _AD(bot=bot, feed=feed)
+    await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "SPEAK" in types
