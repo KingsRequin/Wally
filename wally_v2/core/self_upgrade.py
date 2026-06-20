@@ -45,7 +45,12 @@ class SelfUpgrade:
             emoji = await self._await_reaction(msg, timeout=86400)
             if emoji == "✅":
                 await dm.send("⚡ Redémarrage en cours...")
-                await self._bridge.docker_restart("wally")
+                try:
+                    await self._bridge.docker_restart("wally")
+                    self._checker.update_available = False
+                except Exception as e:
+                    logger.error("SelfUpgrade docker_restart failed: {}", e)
+                    await dm.send(f"❌ Erreur restart: {e}")
             else:
                 self._checker.update_available = False
                 await dm.send("❌ Mise à jour ignorée.")

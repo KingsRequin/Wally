@@ -1,7 +1,5 @@
 import subprocess
-import sys
 import urllib.request
-from unittest.mock import MagicMock, patch, call
 
 
 class _MockResponse:

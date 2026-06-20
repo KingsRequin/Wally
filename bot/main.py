@@ -110,8 +110,7 @@ async def main() -> None:
     discord_bot.graph = graph
     if graph.ready:
         from bot.discord.social import SocialTracker
-        _bot_names = frozenset(n.lower() for n in config.bot.trigger_names)
-        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id, bot_names=_bot_names)
+        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id)
         discord_bot.social.start()
 
     # Community detection nocturne
@@ -123,6 +122,16 @@ async def main() -> None:
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
     discord_bot.reaction_tracker = reaction_tracker
+
+    # ── UpdateChecker ─────────────────────────────────────────────────────────
+    update_checker = None
+    if config.bot.update_image:
+        from bot.core.update_checker import UpdateChecker
+        update_checker = UpdateChecker(config.bot.update_image)
+        logger.info("UpdateChecker configured — image={}", config.bot.update_image)
+    else:
+        logger.info("UpdateChecker disabled — set bot.update_image in config.yaml to enable")
+    discord_bot.update_checker = update_checker
 
     @discord_bot.event
     async def on_message(message):
@@ -365,15 +374,6 @@ async def main() -> None:
 
     from bot.core.notifications import NotificationService
     notification_service = NotificationService(config, discord_bot)
-
-    # ── UpdateChecker ─────────────────────────────────────────────────────────
-    update_checker = None
-    if config.bot.update_image:
-        from bot.core.update_checker import UpdateChecker
-        update_checker = UpdateChecker(config.bot.update_image)
-        logger.info("UpdateChecker configured — image={}", config.bot.update_image)
-    else:
-        logger.info("UpdateChecker disabled — set bot.update_image in config.yaml to enable")
 
     dashboard_state = AppState(
         config=config,

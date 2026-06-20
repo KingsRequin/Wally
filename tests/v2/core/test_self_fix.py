@@ -1,6 +1,5 @@
 import asyncio
 import pytest
-from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
