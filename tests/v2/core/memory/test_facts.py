@@ -96,6 +96,22 @@ async def test_supersede_marks_old_fact(tmp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_decay_archives_below_threshold(tmp_db_path):
+    """apply_decay() archive les faits dont confidence tombe sous 0.1."""
+    store = SQLiteFactStore(tmp_db_path)
+    # confidence=0.11, decay_rate=THOUGHT=0.05 → résultat 0.06 < 0.1 → archived
+    fact = AtomicFact(
+        user_id="discord:123", content="pensée éphémère",
+        category=FactCategory.THOUGHT, confidence=0.11,
+    )
+    await store.add(fact)
+    await store.apply_decay()
+    # Ne doit plus apparaître dans les résultats actifs
+    facts = await store.get_by_user("discord:123", min_confidence=0.0)
+    assert len(facts) == 0  # archivé, status != active
+
+
+@pytest.mark.asyncio
 async def test_mark_seen_updates_last_seen_at(tmp_db_path):
     """mark_seen() met à jour last_seen_at."""
     store = SQLiteFactStore(tmp_db_path)

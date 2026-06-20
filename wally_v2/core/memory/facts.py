@@ -147,7 +147,7 @@ class SQLiteFactStore:
                 """UPDATE atomic_facts
                    SET confidence = MAX(0.0, confidence - decay_rate),
                        status = CASE
-                           WHEN confidence - decay_rate < 0.1 THEN 'archived'
+                           WHEN MAX(0.0, confidence - decay_rate) < 0.1 THEN 'archived'
                            ELSE status
                        END
                    WHERE status = 'active'"""
@@ -174,7 +174,6 @@ class SQLiteFactStore:
         avant le premier DML, et le commit() final valide les deux ensemble.
         """
         async with aiosqlite.connect(self._db_path) as db:
-            await db.execute("BEGIN")
             await db.execute(
                 "UPDATE atomic_facts SET status = 'superseded' WHERE id = ?",
                 (old_id,),
