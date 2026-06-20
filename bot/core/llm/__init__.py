@@ -6,7 +6,6 @@ __all__ = [
     "FALLBACK_RESPONSE",
     "FALLBACK_IMAGE_RESPONSE",
     "OpenAILLMClient",
-    "ClaudeLLMClient",
     "create_llm_client",
 ]
 
@@ -16,9 +15,6 @@ def __getattr__(name: str):
     if name == "OpenAILLMClient":
         from bot.core.llm.openai_client import OpenAILLMClient
         return OpenAILLMClient
-    if name == "ClaudeLLMClient":
-        from bot.core.llm.claude_client import ClaudeLLMClient
-        return ClaudeLLMClient
     if name == "create_llm_client":
         from bot.core.llm.factory import create_llm_client
         return create_llm_client

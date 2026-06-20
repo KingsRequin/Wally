@@ -13,44 +13,14 @@ if TYPE_CHECKING:
 
 
 def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMClient:
-    """Instantiate the right LLM client based on provider config."""
+    """Instantiate the text LLM client. DeepSeek is the only supported text provider.
+
+    OpenAI is reserved for image generation and is constructed directly in
+    bot/bootstrap.py — never through this factory.
+    """
     provider = llm_config.provider.lower()
 
-    if provider == "claude" or provider == "anthropic":
-        from bot.core.llm.claude_client import ClaudeLLMClient
-        client = ClaudeLLMClient(
-            model=llm_config.model,
-            db=db,
-            temperature=llm_config.temperature,
-            max_tokens=llm_config.max_tokens,
-            thinking_type=llm_config.thinking_type,
-            thinking_budget_tokens=llm_config.thinking_budget_tokens,
-            thinking_effort=llm_config.thinking_effort,
-        )
-        logger.info(
-            "Created ClaudeLLMClient — model={model}, temp={temp}, thinking={thinking}",
-            model=llm_config.model, temp=llm_config.temperature,
-            thinking=llm_config.thinking_type,
-        )
-        return client
-
-    elif provider == "openai":
-        from bot.core.llm.openai_client import OpenAILLMClient
-        client = OpenAILLMClient(
-            model=llm_config.model,
-            db=db,
-            temperature=llm_config.temperature,
-            max_tokens=llm_config.max_tokens,
-            reasoning_effort=llm_config.reasoning_effort,
-            text_verbosity=llm_config.text_verbosity,
-        )
-        logger.info(
-            "Created OpenAILLMClient — model={model}, temp={temp}",
-            model=llm_config.model, temp=llm_config.temperature,
-        )
-        return client
-
-    elif provider == "deepseek":
+    if provider == "deepseek":
         from bot.core.llm.deepseek import DeepSeekLLMClient
         client = DeepSeekLLMClient(
             model=llm_config.model,
@@ -64,5 +34,7 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
         )
         return client
 
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider!r}. Use 'openai', 'claude', or 'deepseek'.")
+    raise ValueError(
+        f"Unknown text LLM provider: {provider!r}. Only 'deepseek' is supported "
+        "(OpenAI is image-only, constructed directly in bootstrap)."
+    )
