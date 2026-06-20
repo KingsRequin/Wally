@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -94,8 +95,25 @@ class ActionDispatcher:
                 logger.info("ACT create_desire: {}", content[:60])
 
         elif act_name == "code_fix":
-            logger.warning(
-                "ACT code_fix reçu via cognitive loop — ignoré (Plan C seulement via owner DM)"
+            self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
+            if self_fix is None:
+                logger.warning(
+                    "ACT code_fix: SelfFix non disponible (BRIDGE_SECRET non configuré)"
+                )
+                return
+            requester_id = args.get("requester_discord_id", "")
+            if requester_id != "610550333042589752":
+                logger.warning("ACT code_fix refusé: {} n'est pas owner", requester_id)
+                return
+            from wally_v2.core.self_fix import FixRequest
+            asyncio.create_task(
+                self_fix.fix(
+                    FixRequest(
+                        requester_discord_id=requester_id,
+                        file_path=args.get("file_path", ""),
+                        description=args.get("description", ""),
+                    )
+                )
             )
 
         else:
