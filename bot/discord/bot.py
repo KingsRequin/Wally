@@ -68,9 +68,9 @@ class WallyDiscord(commands.Bot):
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
         # Stocker le db_path pour l'init async dans setup_hook
-        import os as _os
+        import os
         self._v2_db_path: str | None = (
-            _os.getenv("DB_PATH", "data/wally.db")
+            os.getenv("DB_PATH", "data/wally.db")
             if getattr(config, "response_gate", None) and config.response_gate.get("enabled", False)
             else None
         )

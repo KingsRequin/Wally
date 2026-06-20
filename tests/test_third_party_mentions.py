@@ -31,7 +31,7 @@ async def test_exact_alias_match_injects_memories():
     result = await _third_party_mention_context(bot, "discord", "alice_id", prelude, [])
     assert "Souvenirs sur" in result
     assert "Aime la fantasy" in result
-    bot.memory.search.assert_called_once_with("discord", "123456", query="Melio")
+    bot.memory.search.assert_called_once_with("discord", "123456", query="Melio", username_hint="Melio")
 
 
 @pytest.mark.asyncio

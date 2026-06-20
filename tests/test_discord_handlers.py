@@ -69,6 +69,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
 
     bot.web_search = None  # désactivé par défaut dans les tests
     bot.apex_api = None
+    bot.response_gate = None  # gate V2 désactivé dans les tests V1
 
     return bot
 
