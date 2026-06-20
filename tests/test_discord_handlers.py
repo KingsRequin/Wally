@@ -16,6 +16,9 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.config.bot.trigger_names = trigger_names or ["wally"]
     bot.config.bot.prelude_window_size = 5        # ← nouveau
     bot.config.discord.allowed_channels = []
+    bot.config.discord.channel_filter_mode = "blacklist"
+    bot.config.discord.channel_blacklist = []
+    bot.config.discord.per_guild_channel_whitelist = {}
     bot.config.discord.anger_trigger_threshold = 3
     bot.config.discord.timeout_minutes = 10
     bot.config.discord.emoji_reaction_probability = 0.05
