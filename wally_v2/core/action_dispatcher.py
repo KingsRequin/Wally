@@ -75,6 +75,7 @@ class ActionDispatcher:
                     content=desc,
                     category=FactCategory.GOAL,
                     confidence=1.0,
+                    decay_rate=0.005,
                     created_at=now,
                     last_seen_at=now,
                 ))
