@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,8 +38,6 @@ class PersonaManager:
         self._log = evolution_log
         self._llm = llm
         self._persona = persona_service
-        # In-process evolution counter (resets on restart — log is the durable source)
-        self._evolved_this_session: dict[str, int] = defaultdict(int)
 
     async def evolve(self, section: str, change_description: str) -> str:
         """Modify a persona section via LLM with daily guardrails. Returns new content."""
@@ -48,20 +45,20 @@ class PersonaManager:
         if guardrails is None:
             raise PersonaManagerError(f"Unknown section: {section}")
 
-        # Guard: evolutions per day for this manager instance (checked first)
-        session_count = self._evolved_this_session[section]
-        if session_count >= guardrails["max_evolutions_per_day"]:
-            raise PersonaManagerError(
-                f"Section {section} already evolved {session_count}x today "
-                f"(max {guardrails['max_evolutions_per_day']})"
-            )
-
         # Guard: accumulated change percent from prior evolutions (durable, log-based)
         pct = self._log.change_percent_today(section)
         if pct >= guardrails["max_change_percent"]:
             raise PersonaManagerError(
                 f"Section {section} already changed {pct:.0%} today "
                 f"(max {guardrails['max_change_percent']:.0%})"
+            )
+
+        # Guard: evolutions per day — log-based so restart-resilient
+        count = self._log.count_today(section)
+        if count >= guardrails["max_evolutions_per_day"]:
+            raise PersonaManagerError(
+                f"Section {section} already evolved {count}x today "
+                f"(max {guardrails['max_evolutions_per_day']})"
             )
 
         filepath = self._dir / SECTION_FILES[section]
@@ -83,8 +80,13 @@ class PersonaManager:
         )
         after_len = len(new_content)
 
+        change_ratio = abs(after_len - before_len) / max(before_len, 1)
+        if pct + change_ratio > guardrails["max_change_percent"]:
+            raise PersonaManagerError(
+                f"Proposed change ({change_ratio:.0%}) exceeds daily budget for {section}"
+            )
+
         filepath.write_text(new_content, encoding="utf-8")
-        self._evolved_this_session[section] += 1
 
         self._log.append(EvolutionEntry(
             timestamp=datetime.now(timezone.utc).isoformat(),
