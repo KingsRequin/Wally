@@ -84,7 +84,7 @@ class WallyDiscord(commands.Bot):
             from wally_v2.db.schema_v2 import create_v2_tables
             from wally_v2.core.gate import ResponseGate
             from wally_v2.core.memory.facts import SQLiteFactStore
-            from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
+            from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             await create_v2_tables(self._v2_db_path)
             gate_llm = create_v2_llm(
@@ -110,7 +110,7 @@ class WallyDiscord(commands.Bot):
             from wally_v2.core.persona_manager import PersonaManager
             from wally_v2.core.cognitive_loop import CognitiveLoop
             from wally_v2.core.memory.facts import SQLiteFactStore
-            from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
+            from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             import os as _os_cog
 

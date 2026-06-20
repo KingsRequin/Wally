@@ -6,7 +6,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from wally_v2.core.llm.base import BaseLLMClient
+from bot.core.llm.base import BaseLLMClient
 from wally_v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
 _DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent / "persona" / "prompts"
