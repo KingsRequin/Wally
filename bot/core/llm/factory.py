@@ -51,7 +51,7 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
         return client
 
     elif provider == "deepseek":
-        from wally_v2.core.llm.deepseek import DeepSeekLLMClient
+        from bot.core.llm.deepseek import DeepSeekLLMClient
         client = DeepSeekLLMClient(
             model=llm_config.model,
             db=db,

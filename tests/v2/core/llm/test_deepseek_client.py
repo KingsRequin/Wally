@@ -3,8 +3,8 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
-from wally_v2.core.llm.deepseek import DeepSeekLLMClient
-from wally_v2.core.llm.base import FALLBACK_RESPONSE
+from bot.core.llm.deepseek import DeepSeekLLMClient
+from bot.core.llm.base import FALLBACK_RESPONSE
 
 
 def make_client(thinking_type="disabled", max_tool_iters=6):

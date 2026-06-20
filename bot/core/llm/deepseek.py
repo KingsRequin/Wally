@@ -1,4 +1,4 @@
-# wally_v2/core/llm/deepseek.py
+# bot/core/llm/deepseek.py
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 from loguru import logger
 from openai import AsyncOpenAI
 
-from wally_v2.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE
+from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE
 
 
 class DeepSeekLLMClient(BaseLLMClient):
