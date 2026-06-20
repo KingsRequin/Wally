@@ -99,9 +99,13 @@ async def test_tool_call_reasoning_content_preserved():
     final_response = make_response("Voilà le résultat")
 
     call_count = 0
+    second_call_messages = None
+
     async def mock_create(**kwargs):
-        nonlocal call_count
+        nonlocal call_count, second_call_messages
         call_count += 1
+        if call_count == 2:
+            second_call_messages = kwargs["messages"]
         return tool_response if call_count == 1 else final_response
 
     client._client.chat.completions.create = mock_create
@@ -113,10 +117,15 @@ async def test_tool_call_reasoning_content_preserved():
         tool_executor=executor,
     )
 
-    # Vérifier que reasoning_content est dans le deuxième appel
-    # (on ne peut pas inspecter directement, mais si pas d'erreur 400 simulé, c'est ok)
     assert text == "Voilà le résultat"
     assert "get_info" in tools
+    # Vérifier que reasoning_content est bien dans le message assistant de l'historique
+    # envoyé au second appel API — c'est la contrainte DeepSeek critique (erreur 400 sinon)
+    assert second_call_messages is not None
+    assistant_msgs = [m for m in second_call_messages if m.get("role") == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert "reasoning_content" in assistant_msgs[0]
+    assert assistant_msgs[0]["reasoning_content"] == "je réfléchis"
 
 
 @pytest.mark.asyncio
