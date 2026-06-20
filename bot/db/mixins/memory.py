@@ -186,10 +186,7 @@ class MemoryMixin:
             # Ne pas recreer les alias deja lies (sinon ils reapparaissent en double)
             alias_map = await self.get_alias_map()
             alias_ids = set(alias_map.keys())
-            from bot.core.memory import GLOBAL_USER_ID
             for uid in user_ids:
-                if uid == GLOBAL_USER_ID:
-                    continue  # namespace global -- pas un vrai utilisateur
                 if uid in alias_ids:
                     continue  # alias lie -- ne pas recreer dans memory_users
                 if uid in before:

@@ -23,8 +23,6 @@ _SUMMARIZE_SYSTEM = load_prompt(
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
 
-GLOBAL_USER_ID = "global:server"
-
 
 class MemoryService:
     def __init__(self, config: "Config"):

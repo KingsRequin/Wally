@@ -166,7 +166,6 @@ def _check_spontaneous_trigger(
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
-_memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
 _social_context_cooldowns: dict[int, float] = {}  # rate-limit social context per channel
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)

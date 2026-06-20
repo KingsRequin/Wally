@@ -135,7 +135,6 @@ class PromptBuilder:
         self,
         emotion_state: dict[str, float],
         memory_context: str = "",
-        global_memory_context: str = "",
         situation: dict | None = None,
         persona_block: str = "",
         emotion_directives: dict[str, str] | None = None,
@@ -257,12 +256,6 @@ class PromptBuilder:
         # Trust/love relationship context (separate from semantic memories)
         if relationship_context:
             parts.append(f"\n--- Relation ---\n{relationship_context}")
-
-        # Global community memory
-        if global_memory_context:
-            parts.append(
-                f"\n--- Connaissances générales (communauté) ---\n{global_memory_context}"
-            )
 
         # Persistent notes (written by the LLM itself for long-term retention)
         if persistent_notes:
