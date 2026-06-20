@@ -35,7 +35,7 @@ async def make_embedding_fn(openai_client, db) -> Callable[[str], Awaitable[list
             tokens = getattr(usage, "total_tokens", 0) if usage else 0
             await db.log_cost(
                 model=_EMBEDDING_MODEL, input_tokens=tokens, output_tokens=0,
-                cost_usd=0.0, purpose="embedding", user_id=None,
+                cost_usd=(tokens / 1_000_000) * 0.02, purpose="embedding", user_id=None,
             )
         except Exception as e:
             logger.debug("Embedding cost log failed (non-fatal): {e}", e=e)

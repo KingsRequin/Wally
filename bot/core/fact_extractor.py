@@ -158,10 +158,6 @@ FACT_EXTRACTION_SCHEMA = {
                     "target_user_id": {
                         "anyOf": [{"type": "string"}, {"type": "null"}]
                     },
-                    "scope": {
-                        "type": "string",
-                        "enum": ["personal", "community"],
-                    },
                     "facts": {
                         "type": "array",
                         "items": {
@@ -178,7 +174,7 @@ FACT_EXTRACTION_SCHEMA = {
                         },
                     },
                 },
-                "required": ["target", "target_user_id", "scope", "facts"],
+                "required": ["target", "target_user_id", "facts"],
                 "additionalProperties": False,
             },
         },
