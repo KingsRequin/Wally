@@ -109,10 +109,11 @@ class ResponseGate:
                 defer_seconds=result.get("defer_seconds"),
                 reason=result.get("reason"),
             )
-            if decision.decision == "IGNORE" and decision.reason:
+            if decision.decision == "IGNORE":
+                reason_str = decision.reason or "aucune raison spécifiée"
                 await self._fact_store.add(AtomicFact(
                     user_id=author_user_id,
-                    content=f"Wally a choisi d'ignorer ce message — {decision.reason}",
+                    content=f"Wally a choisi d'ignorer ce message — {reason_str}",
                     category=FactCategory.EMOTION,
                     confidence=0.9,
                     source="gate",
