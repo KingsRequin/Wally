@@ -340,11 +340,80 @@ Vérification à deux niveaux : Gate + ActionDispatcher. Aucune exception.
 
 **host_bridge.py (daemon host, hors container) :**
 - Surveille `/shared/fix_request.json` (polling toutes les 5s)
-- Lance Claude Code avec timeout 10 minutes
+- Lance Claude Code avec timeout 15 minutes par tentative
 - Écrit le résultat dans `/shared/fix_result.json`
 - Volume Docker partagé : `/opt/stacks/wally-ai/shared/` ↔ `/shared/`
 - Déployé comme **service systemd** sur le host : `wally-host-bridge.service`, démarrage automatique
 - Docker compose ajoute le volume : `- /opt/stacks/wally-ai/shared:/shared`
+
+### 7.1.bis Gestion des rate limits Claude Code
+
+Claude Code peut atteindre la limite d'usage en cours de session ou avant même de démarrer. Le `host_bridge.py` gère les deux cas.
+
+**Détection :** la sortie stderr/stdout de Claude Code contient le pattern :
+```
+Claude AI usage limit reached. Try again after H:MM AM/PM.
+```
+ou variante. Regex : `r"usage limit.*?after\s+(\d{1,2}:\d{2}\s*[AP]M)"`
+
+**Timezone :** L'heure affichée par Claude Code est celle du **compte Anthropic** (typiquement UTC ou US Pacific — pas forcément Europe/Paris). `host_bridge.py` lit `CLAUDE_RATELIMIT_TZ` depuis l'env (défaut : `America/Los_Angeles`). La conversion se fait avec `zoneinfo` : on parse l'heure affichée dans la timezone configurée, on convertit en UTC pour calculer le `sleep`.
+
+```python
+from zoneinfo import ZoneInfo
+from datetime import datetime, date
+
+CLAUDE_TZ = ZoneInfo(os.environ.get("CLAUDE_RATELIMIT_TZ", "America/Los_Angeles"))
+SERVER_TZ = ZoneInfo("Europe/Paris")
+RATE_LIMIT_EXTRA_DELAY = int(os.environ.get("CLAUDE_RATELIMIT_DELAY_SECONDS", "300"))  # 5min par défaut
+
+def parse_retry_after(output: str) -> datetime | None:
+    """Parse 'Try again after H:MM AM/PM' → datetime UTC."""
+    m = re.search(r"after\s+(\d{1,2}:\d{2}\s*[AP]M)", output, re.IGNORECASE)
+    if not m:
+        return None
+    time_str = m.group(1).strip()
+    # Construire un datetime pour aujourd'hui dans la timezone Claude
+    naive = datetime.strptime(time_str, "%I:%M %p").replace(
+        year=date.today().year,
+        month=date.today().month,
+        day=date.today().day,
+    )
+    aware = naive.replace(tzinfo=CLAUDE_TZ)
+    # Si l'heure est déjà passée aujourd'hui → c'est demain
+    now_in_claude_tz = datetime.now(CLAUDE_TZ)
+    if aware < now_in_claude_tz:
+        aware = aware.replace(day=aware.day + 1)
+    return aware
+```
+
+**Cas 1 — Rate limit AVANT de démarrer :**
+```
+1. Lancer Claude Code → sortie immédiate avec rate limit
+2. Parser retry_after → calculer sleep = (retry_after - now) + RATE_LIMIT_EXTRA_DELAY
+3. Notifier le bot via fix_result.json status="rate_limited" + retry_at (ISO)
+4. Bot notifie l'owner : "Limite Claude atteinte. Je réessaie à {retry_at} heure Paris."
+5. host_bridge.py sleep jusqu'à retry_at
+6. Relancer Claude Code normalement
+```
+
+**Cas 2 — Rate limit EN COURS de session :**
+```
+1. Claude Code s'interrompt avec rate limit (output partiel capturé)
+2. Parser retry_after dans la sortie partielle
+3. Notifier le bot : "Session interrompue par rate limit. Reprise à {retry_at}."
+4. host_bridge.py sleep jusqu'à retry_at
+5. Relancer Claude Code avec contexte enrichi :
+   IS_SANDBOX=1 claude --dangerously-skip-permissions -p "
+   Bug: {desc}.
+   CONTEXTE: Une session précédente a été interrompue par rate limit.
+   Voici ce qui avait été fait avant l'interruption :
+   {partial_output}
+   Continue depuis là où tu t'es arrêté. Ne répète pas ce qui est déjà fait."
+```
+
+**Délai configurable :** `CLAUDE_RATELIMIT_DELAY_SECONDS` (défaut 300s = 5 min). Évite de tomber exactement sur la fenêtre de reset où le serveur peut encore être en cooldown.
+
+**Max retries :** 3 tentatives total (démarrage + 2 reprises après rate limit). Si la 3e échoue, status `failed_rate_limit`, notification owner.
 
 ### 7.2 Auto-upgrade (propositions de Wally)
 
@@ -503,6 +572,9 @@ autonomy:
   self_upgrade_enabled: true
   host_bridge_shared_dir: "/shared"
   watchdog_max_wait_seconds: 360
+  claude_ratelimit_tz: "America/Los_Angeles"   # timezone des heures affichées par Claude Code
+  claude_ratelimit_delay_seconds: 300           # délai tampon après reset (5 min)
+  claude_max_retries: 3                         # tentatives max (rate limit inclus)
 
 memory:
   fact_min_confidence_retrieval: 0.3
@@ -610,6 +682,8 @@ CREATE TABLE session_analyses (
 | Boucle cognitive consomme trop de tokens | Tick adaptatif + budget configurable |
 | Self-fix casse le bot | Watchdog + notification DM owner |
 | DeepSeek reasoning_content mal géré | Règle explicite dans DeepSeekLLMClient |
+| Claude Code rate limit interrompt self-fix | Parse retry_after + sleep + reprise avec contexte partiel, max 3 retries |
+| Timezone rate limit différente du serveur | `CLAUDE_RATELIMIT_TZ` configurable (défaut America/Los_Angeles), conversion zoneinfo |
 | Désirs contradictoires avec persona | Priorité persona > désirs dans le gate |
 | Persona Shadow dérive trop | Durée max 2h + validation Wally avant intégration |
 
