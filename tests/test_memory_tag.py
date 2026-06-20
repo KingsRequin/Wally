@@ -110,6 +110,8 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.apex_api = None
     bot.response_gate = None  # gate V2 désactivé dans les tests V1
     bot.cognitive_loop = None  # cognitive loop V2 désactivé dans les tests V1
+    bot.self_fix = None       # SelfFix V2 désactivé dans les tests V1
+    bot.self_upgrade = None   # SelfUpgrade V2 désactivé dans les tests V1
 
     message = MagicMock(spec=discord.Message)
     message.author.bot = False

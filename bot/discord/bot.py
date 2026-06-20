@@ -68,6 +68,8 @@ class WallyDiscord(commands.Bot):
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
+        self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
+        self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
         import os
         self._v2_db_path: str | None = (
@@ -131,6 +133,23 @@ class WallyDiscord(commands.Bot):
             self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion)
             logger.info("CognitiveLoop V2 initialisée (deepseek-v4-pro thinking)")
 
+        import os as _os_auto
+        _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
+        _bridge_secret = _os_auto.getenv("BRIDGE_SECRET", "")
+        if _bridge_socket and _bridge_secret and self.cognitive_loop is not None:
+            from wally_v2.core.host_bridge import HostBridgeClient
+            from wally_v2.core.self_fix import SelfFix
+            from wally_v2.core.self_upgrade import SelfUpgrade
+            _bridge = HostBridgeClient(_bridge_socket, _bridge_secret)
+            self.self_fix = SelfFix(self.llm_secondary, _bridge, self, repo_root="/app")
+            _checker = getattr(self, "update_checker", None)
+            if _checker is not None:
+                self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
+            logger.info(
+                "SelfFix initialisé (bridge={}){}", _bridge_socket,
+                " + SelfUpgrade" if self.self_upgrade is not None else "",
+            )
+
         from bot.discord.commands.ask import AskCog
         from bot.discord.commands.status import StatusCog
         from bot.discord.commands.mood import MoodCog
@@ -177,8 +196,12 @@ class WallyDiscord(commands.Bot):
             self.social.set_bot_id(self.user.id)
         if self.cognitive_loop is not None:
             self.cognitive_loop.start()
+        if self.self_upgrade is not None:
+            self.self_upgrade.start()
 
     async def close(self) -> None:
+        if self.self_upgrade is not None:
+            await self.self_upgrade.stop()
         if self.cognitive_loop is not None:
             await self.cognitive_loop.stop()
         await super().close()
