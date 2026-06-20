@@ -81,9 +81,9 @@ class WallyDiscord(commands.Bot):
     async def setup_hook(self) -> None:
         # Gate V2 init — must be async so we can call create_v2_tables before SQLiteFactStore
         if self._v2_db_path is not None and self.response_gate is None:
-            from wally_v2.db.schema_v2 import create_v2_tables
-            from wally_v2.core.gate import ResponseGate
-            from wally_v2.core.memory.facts import SQLiteFactStore
+            from bot.v2.db.schema_v2 import create_v2_tables
+            from bot.v2.core.gate import ResponseGate
+            from bot.v2.core.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             await create_v2_tables(self._v2_db_path)
@@ -97,25 +97,25 @@ class WallyDiscord(commands.Bot):
             self.response_gate = ResponseGate(
                 llm=gate_llm,
                 fact_store=SQLiteFactStore(self._v2_db_path),
-                prompts_dir=Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts",
+                prompts_dir=Path(__file__).parent.parent / "v2" / "persona" / "prompts",
             )
             logger.info("ResponseGate V2 initialisé avec DB V2 créée ({})", self._v2_db_path)
 
         if getattr(self.config, "cognitive_loop", None) and self.config.cognitive_loop.get("enabled", False):
-            from wally_v2.core.attention_agent import AttentionAgent
-            from wally_v2.core.inner_monologue import InnerMonologue
-            from wally_v2.core.meta_agent import MetaAgent
-            from wally_v2.core.action_dispatcher import ActionDispatcher
-            from wally_v2.core.evolution_log import EvolutionLog
-            from wally_v2.core.persona_manager import PersonaManager
-            from wally_v2.core.cognitive_loop import CognitiveLoop
-            from wally_v2.core.memory.facts import SQLiteFactStore
+            from bot.v2.core.attention_agent import AttentionAgent
+            from bot.v2.core.inner_monologue import InnerMonologue
+            from bot.v2.core.meta_agent import MetaAgent
+            from bot.v2.core.action_dispatcher import ActionDispatcher
+            from bot.v2.core.evolution_log import EvolutionLog
+            from bot.v2.core.persona_manager import PersonaManager
+            from bot.v2.core.cognitive_loop import CognitiveLoop
+            from bot.v2.core.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             import os as _os_cog
 
             _db_path = self._v2_db_path or _os_cog.getenv("DB_PATH", "data/wally.db")
-            _prompts_dir = Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts"
+            _prompts_dir = Path(__file__).parent.parent / "v2" / "persona" / "prompts"
             _persona_dir = Path(__file__).parent.parent / "persona"
 
             _cog_cfg = self.config.cognitive_loop
@@ -142,9 +142,9 @@ class WallyDiscord(commands.Bot):
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
         _bridge_secret = _os_auto.getenv("BRIDGE_SECRET", "")
         if _bridge_socket and _bridge_secret and self.cognitive_loop is not None:
-            from wally_v2.core.host_bridge import HostBridgeClient
-            from wally_v2.core.self_fix import SelfFix
-            from wally_v2.core.self_upgrade import SelfUpgrade
+            from bot.v2.core.host_bridge import HostBridgeClient
+            from bot.v2.core.self_fix import SelfFix
+            from bot.v2.core.self_upgrade import SelfUpgrade
             _bridge = HostBridgeClient(_bridge_socket, _bridge_secret)
             self.self_fix = SelfFix(self.llm_secondary, _bridge, self, repo_root="/app")
             _checker = getattr(self, "update_checker", None)

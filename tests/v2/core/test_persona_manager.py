@@ -1,8 +1,8 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
-from wally_v2.core.persona_manager import PersonaManager, PersonaManagerError
-from wally_v2.core.evolution_log import EvolutionLog
+from bot.v2.core.persona_manager import PersonaManager, PersonaManagerError
+from bot.v2.core.evolution_log import EvolutionLog
 
 
 def _make_manager(tmp_path, llm_response=None, evolution_log=None):
@@ -61,7 +61,7 @@ async def test_guardrail_max_evolutions_restart_resilient(tmp_path):
 
 @pytest.mark.asyncio
 async def test_guardrail_max_change_percent(tmp_path):
-    from wally_v2.core.evolution_log import EvolutionEntry
+    from bot.v2.core.evolution_log import EvolutionEntry
     from datetime import datetime, timezone
     log = EvolutionLog(tmp_path / "evolution_log.jsonl")
     # Simulate already 15% changed today for EMOTIONS (max is 15%)

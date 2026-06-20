@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from wally_v2.core.cognitive_loop import CognitiveLoop, TICK_ACTIVE, TICK_MODERATE, TICK_IDLE
+from bot.v2.core.cognitive_loop import CognitiveLoop, TICK_ACTIVE, TICK_MODERATE, TICK_IDLE
 
 
 def _make_loop():
@@ -10,15 +10,15 @@ def _make_loop():
     meta = MagicMock()
     dispatcher = MagicMock()
 
-    from wally_v2.core.attention_agent import AttentionContext
+    from bot.v2.core.attention_agent import AttentionContext
     attention.build_context = AsyncMock(return_value=AttentionContext(
         emotion_state={}, active_desires=[], active_goals=[],
         recent_thoughts=[], recent_interactions=[], time_of_day="evening",
     ))
-    from wally_v2.core.inner_monologue import MonologueResult
+    from bot.v2.core.inner_monologue import MonologueResult
     monologue.generate = AsyncMock(return_value=MonologueResult(text="pensée", thought_fact_id=1))
 
-    from wally_v2.core.meta_agent import MetaDecision
+    from bot.v2.core.meta_agent import MetaDecision
     meta.decide = AsyncMock(return_value=[MetaDecision(action="THINK")])
     dispatcher.dispatch = AsyncMock()
 

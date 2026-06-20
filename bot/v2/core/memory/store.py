@@ -1,4 +1,4 @@
-# wally_v2/core/memory/store.py
+# bot.v2/core/memory/store.py
 from __future__ import annotations
 
 from dataclasses import dataclass

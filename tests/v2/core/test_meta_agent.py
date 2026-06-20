@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from wally_v2.core.meta_agent import MetaAgent, MetaDecision, parse_decisions
+from bot.v2.core.meta_agent import MetaAgent, MetaDecision, parse_decisions
 
 
 def test_parse_think():

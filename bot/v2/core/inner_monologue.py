@@ -23,7 +23,7 @@ class InnerMonologue:
         user_msg = self._format_context(context)
         text = await self._llm.complete(self._system, [{"role": "user", "content": user_msg}])
 
-        from wally_v2.core.memory.facts import AtomicFact, FactCategory
+        from bot.v2.core.memory.facts import AtomicFact, FactCategory
         now = datetime.now(timezone.utc)
         thought = AtomicFact(
             user_id="wally:self",

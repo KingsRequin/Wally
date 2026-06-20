@@ -51,9 +51,9 @@ class MemoryService:
     def set_embedding_backend(
         self, db_path: str, qdrant_url: str, collection: str, embedding_fn
     ) -> None:
-        from wally_v2.core.memory.facts import SQLiteFactStore
-        from wally_v2.core.memory.store import QdrantEmbeddingStore
-        from wally_v2.core.memory.retrieval import MemoryRetrieval
+        from bot.v2.core.memory.facts import SQLiteFactStore
+        from bot.v2.core.memory.store import QdrantEmbeddingStore
+        from bot.v2.core.memory.retrieval import MemoryRetrieval
         self._db_path = db_path
         self._facts = SQLiteFactStore(db_path)
         qdrant = QdrantEmbeddingStore(
@@ -133,7 +133,7 @@ class MemoryService:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return
         from datetime import datetime, timezone
-        from wally_v2.core.memory.facts import AtomicFact, FactCategory
+        from bot.v2.core.memory.facts import AtomicFact, FactCategory
         try:
             cat = FactCategory(category)
         except ValueError:

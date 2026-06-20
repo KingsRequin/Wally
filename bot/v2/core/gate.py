@@ -1,4 +1,4 @@
-# wally_v2/core/gate.py
+# bot.v2/core/gate.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from bot.core.llm.base import BaseLLMClient
-from wally_v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
+from bot.v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
 _DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent / "persona" / "prompts"
 

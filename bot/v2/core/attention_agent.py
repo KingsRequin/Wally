@@ -24,7 +24,7 @@ class AttentionAgent:
         emotion_state: dict[str, float],
         recent_interactions: list[dict],
     ) -> AttentionContext:
-        from wally_v2.core.memory.facts import FactCategory, FactStatus
+        from bot.v2.core.memory.facts import FactCategory, FactStatus
 
         desires = await self._facts.search_by_category(
             FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=5

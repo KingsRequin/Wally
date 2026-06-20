@@ -2,8 +2,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from wally_v2.core.inner_monologue import InnerMonologue, MonologueResult
-from wally_v2.core.attention_agent import AttentionContext
+from bot.v2.core.inner_monologue import InnerMonologue, MonologueResult
+from bot.v2.core.attention_agent import AttentionContext
 
 
 def _make_context(emotion=None) -> AttentionContext:
@@ -47,7 +47,7 @@ async def test_generate_stores_thought_fact(tmp_path):
     await mono.generate(ctx)
     fact_store.add.assert_called_once()
     added_fact = fact_store.add.call_args.args[0]
-    from wally_v2.core.memory.facts import FactCategory
+    from bot.v2.core.memory.facts import FactCategory
     assert added_fact.category == FactCategory.THOUGHT
     assert added_fact.user_id == "wally:self"
     assert added_fact.content == "Je pense donc je suis."

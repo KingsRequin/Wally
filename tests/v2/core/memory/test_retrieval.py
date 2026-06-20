@@ -2,9 +2,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from wally_v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
-from wally_v2.core.memory.store import QdrantEmbeddingStore, SearchHit
-from wally_v2.core.memory.retrieval import MemoryRetrieval
+from bot.v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
+from bot.v2.core.memory.store import QdrantEmbeddingStore, SearchHit
+from bot.v2.core.memory.retrieval import MemoryRetrieval
 
 
 @pytest.mark.asyncio

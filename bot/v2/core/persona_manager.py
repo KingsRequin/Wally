@@ -5,7 +5,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from wally_v2.core.evolution_log import EvolutionEntry, EvolutionLog
+from bot.v2.core.evolution_log import EvolutionEntry, EvolutionLog
 
 SECTION_GUARDRAILS: dict[str, dict] = {
     "SOUL":       {"max_change_percent": 0.20, "max_evolutions_per_day": 1},

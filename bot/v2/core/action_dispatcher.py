@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from loguru import logger
 
-from wally_v2.core.meta_agent import MetaDecision
+from bot.v2.core.meta_agent import MetaDecision
 
 
 class ActionDispatcher:
@@ -51,7 +51,7 @@ class ActionDispatcher:
             logger.error("SPEAK failed: {}", e)
 
     async def _act(self, act_name: str, args: dict) -> None:
-        from wally_v2.core.memory.facts import AtomicFact, FactCategory
+        from bot.v2.core.memory.facts import AtomicFact, FactCategory
 
         now = datetime.now(timezone.utc)
 
@@ -105,7 +105,7 @@ class ActionDispatcher:
             if requester_id != "610550333042589752":
                 logger.warning("ACT code_fix refusé: {} n'est pas owner", requester_id)
                 return
-            from wally_v2.core.self_fix import FixRequest
+            from bot.v2.core.self_fix import FixRequest
             asyncio.create_task(
                 self_fix.fix(
                     FixRequest(

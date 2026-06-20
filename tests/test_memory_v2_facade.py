@@ -7,9 +7,9 @@ from bot.core.memory import MemoryService
 def mem(tmp_path):
     import asyncio
     from types import SimpleNamespace
-    from wally_v2.db.schema_v2 import create_v2_tables
-    from wally_v2.core.memory.facts import SQLiteFactStore
-    from wally_v2.core.memory.retrieval import MemoryRetrieval
+    from bot.v2.db.schema_v2 import create_v2_tables
+    from bot.v2.core.memory.facts import SQLiteFactStore
+    from bot.v2.core.memory.retrieval import MemoryRetrieval
     db_path = str(tmp_path / "wally.db")
     loop = asyncio.new_event_loop()
     try:

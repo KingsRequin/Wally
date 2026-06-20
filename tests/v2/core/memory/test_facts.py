@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timedelta
 
-from wally_v2.core.memory.facts import (
+from bot.v2.core.memory.facts import (
     AtomicFact, FactCategory, FactStatus, FactRelation,
     DECAY_RATES, SQLiteFactStore,
 )

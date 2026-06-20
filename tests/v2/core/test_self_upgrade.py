@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def make_upgrade(update_available=False):
-    from wally_v2.core.self_upgrade import SelfUpgrade
+    from bot.v2.core.self_upgrade import SelfUpgrade
 
     checker = MagicMock()
     checker.update_available = update_available

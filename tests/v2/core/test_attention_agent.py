@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from wally_v2.core.attention_agent import AttentionAgent, AttentionContext
-from wally_v2.core.memory.facts import AtomicFact, FactCategory, FactStatus
+from bot.v2.core.attention_agent import AttentionAgent, AttentionContext
+from bot.v2.core.memory.facts import AtomicFact, FactCategory, FactStatus
 
 
 def _make_fact(category: FactCategory, content: str = "test") -> AtomicFact:

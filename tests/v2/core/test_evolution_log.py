@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from datetime import date
-from wally_v2.core.evolution_log import EvolutionLog, EvolutionEntry
+from bot.v2.core.evolution_log import EvolutionLog, EvolutionEntry
 
 
 def _make_log(tmp_path) -> EvolutionLog:

@@ -13,7 +13,7 @@ def event_loop_policy():
 @pytest_asyncio.fixture
 async def tmp_db_path():
     """Base de données SQLite temporaire, supprimée après le test."""
-    from wally_v2.db.schema_v2 import create_v2_tables
+    from bot.v2.db.schema_v2 import create_v2_tables
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         path = f.name
     await create_v2_tables(path)

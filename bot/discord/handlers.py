@@ -702,7 +702,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
     if getattr(bot, "response_gate", None) is not None:
-        from wally_v2.core.memory.facts import FactCategory
+        from bot.v2.core.memory.facts import FactCategory
         user_id_str = str(message.author.id)
         emotion_state = bot.emotion.get_state()
 

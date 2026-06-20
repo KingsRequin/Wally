@@ -9,7 +9,7 @@ NON_OWNER_ID = "999999999999"
 
 
 def make_fix(tmp_path: Path, llm_diff: str = "--- a/x\n+++ b/x\n"):
-    from wally_v2.core.self_fix import SelfFix, FixRequest
+    from bot.v2.core.self_fix import SelfFix, FixRequest
 
     # create a real file in tmp_path
     src = tmp_path / "bot" / "core" / "emotion.py"
@@ -58,7 +58,7 @@ async def test_fix_rejected_if_not_owner(tmp_path):
 @pytest.mark.asyncio
 async def test_fix_rejected_if_file_missing(tmp_path):
     fixer, bridge, llm, dm, msg, bot, _, _ = make_fix(tmp_path)
-    from wally_v2.core.self_fix import FixRequest
+    from bot.v2.core.self_fix import FixRequest
     req = FixRequest(requester_discord_id=OWNER_ID, file_path="nonexistent.py", description="x")
     await fixer.fix(req)
     llm.complete.assert_not_called()
@@ -131,8 +131,8 @@ async def test_fix_cancels_on_timeout(tmp_path):
 
 @pytest.mark.asyncio
 async def test_action_dispatcher_code_fix_dispatches_to_self_fix():
-    from wally_v2.core.action_dispatcher import ActionDispatcher
-    from wally_v2.core.meta_agent import MetaDecision
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
 
     self_fix_mock = MagicMock()
     self_fix_mock.fix = AsyncMock()
@@ -158,8 +158,8 @@ async def test_action_dispatcher_code_fix_dispatches_to_self_fix():
 
 @pytest.mark.asyncio
 async def test_action_dispatcher_code_fix_rejects_non_owner():
-    from wally_v2.core.action_dispatcher import ActionDispatcher
-    from wally_v2.core.meta_agent import MetaDecision
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
 
     self_fix_mock = MagicMock()
     self_fix_mock.fix = AsyncMock()

@@ -1,10 +1,10 @@
-# wally_v2/core/memory/retrieval.py
+# bot.v2/core/memory/retrieval.py
 from __future__ import annotations
 
 from loguru import logger
 
-from wally_v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
-from wally_v2.core.memory.store import QdrantEmbeddingStore
+from bot.v2.core.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
+from bot.v2.core.memory.store import QdrantEmbeddingStore
 
 
 class MemoryRetrieval:

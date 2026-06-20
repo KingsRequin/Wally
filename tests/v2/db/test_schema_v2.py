@@ -3,7 +3,7 @@ import aiosqlite
 import tempfile
 import os
 
-from wally_v2.db.schema_v2 import create_v2_tables
+from bot.v2.db.schema_v2 import create_v2_tables
 
 
 @pytest.mark.asyncio

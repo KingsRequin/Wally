@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from wally_v2.core.memory.store import QdrantEmbeddingStore, SearchHit
+from bot.v2.core.memory.store import QdrantEmbeddingStore, SearchHit
 
 
 def make_store():

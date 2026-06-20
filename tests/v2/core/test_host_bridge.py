@@ -3,7 +3,7 @@ import pytest
 import httpx
 from unittest.mock import patch
 
-from wally_v2.core.host_bridge import HostBridgeClient, HostBridgeError
+from bot.v2.core.host_bridge import HostBridgeClient, HostBridgeError
 
 
 def make_transport(responses: dict):
