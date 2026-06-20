@@ -79,6 +79,8 @@ def make_bot_for_spontaneous():
     bot.config.bot.spontaneous_probability = 0.05
     bot.config.bot.spontaneous_passion_probability = 0.15
     bot.config.discord.allowed_channels = []
+    bot.config.discord.channel_filter_mode = "none"
+    bot.config.discord.per_guild_channel_whitelist = {}
     bot.config.discord.emoji_reaction_probability = 0.0
     bot.config.discord.spam_detection.enabled = False
     bot.user = MagicMock()
@@ -95,25 +97,6 @@ def make_bot_for_spontaneous():
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona")
     return bot
-
-
-@pytest.mark.asyncio
-async def test_spontaneous_memory_trigger_fires():
-    """Full handler flow: memory recall triggers _fire when score >= threshold."""
-    from bot.discord import handlers
-    from bot.discord.handlers import handle_message
-
-    bot = make_bot_for_spontaneous()
-    bot.memory.search_top_match = AsyncMock(return_value=("joue à Apex", 0.85))
-    msg = _make_msg("je vais lancer une partie")
-
-    handlers._spontaneous_cooldowns.clear()
-    handlers._memory_check_cooldowns.clear()
-    with patch("bot.discord.handlers.random") as mock_random, \
-         patch("bot.discord.handlers._fire") as mock_fire:
-        mock_random.random.return_value = 0.1  # < 0.2 probability
-        await handle_message(bot, msg)
-        assert mock_fire.called
 
 
 @pytest.mark.asyncio

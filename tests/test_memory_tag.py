@@ -51,6 +51,8 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot = MagicMock()
     bot.user = MagicMock()
     bot.config.discord.allowed_channels = []
+    bot.config.discord.channel_filter_mode = "none"
+    bot.config.discord.per_guild_channel_whitelist = {}
     bot.config.bot.trigger_names = ["wally"]
     bot.config.bot.prelude_window_size = 5
     bot.config.discord.anger_trigger_threshold = 3
