@@ -418,39 +418,6 @@ async def main() -> None:
     tasks.append(dashboard_server.serve())
     logger.info("Dashboard server added to gather on port 8080")
 
-    async def _sync_memory_counts() -> None:
-        """Sync memory_count from Qdrant for all users with stale counts (one-shot)."""
-        logger.info("_sync_memory_counts: démarrage (sleep 10s)")
-        await asyncio.sleep(10)
-        logger.info("_sync_memory_counts: réveil, lancement sync")
-        try:
-            memory._init_store()
-            store = memory.store
-            if store is None:
-                logger.warning("_sync_memory_counts: store None, abandon")
-                return
-            users = await db.list_memory_users()
-            stale = [u for u in users if not u.get("memory_count")]
-            logger.info("_sync_memory_counts: {n} utilisateurs à sync", n=len(stale))
-            if not stale:
-                return
-            updated = 0
-            for u in stale:
-                try:
-                    count = await store.count(u["user_id"])
-                    if count > 0:
-                        await db.execute(
-                            "UPDATE memory_users SET memory_count=? WHERE user_id=?",
-                            (count, u["user_id"]),
-                        )
-                        updated += 1
-                except Exception as exc:
-                    logger.debug("count failed for {uid}: {e}", uid=u["user_id"], e=exc)
-            logger.info("memory_count mis à jour pour {n}/{t} utilisateurs", n=updated, t=len(stale))
-        except Exception as exc:
-            logger.warning("_sync_memory_counts failed: {e}", e=exc)
-
-    tasks.append(_sync_memory_counts())
     try:
         await asyncio.gather(*tasks)
     finally:

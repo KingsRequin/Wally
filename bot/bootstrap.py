@@ -95,9 +95,18 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     logger.info("LLM clients created — primary: {p}, secondary: {s}",
                 p=type(primary_llm).__name__, s=type(secondary_llm).__name__)
 
+    import os as _os
+    from bot.core.embeddings import make_embedding_fn
+    _embed_fn = await make_embedding_fn(image_client._client, db)
+    _collection = _os.getenv("QDRANT_COLLECTION_NAME", "wally_v2_facts")
+    memory.set_embedding_backend(
+        db_path=_os.getenv("DB_PATH", "data/wally.db"),
+        qdrant_url=qdrant_url,
+        collection=_collection,
+        embedding_fn=_embed_fn,
+    )
     memory.set_openai_client(secondary_llm)
     memory.set_db(db)
-    memory.set_graph(graph)
     await memory.load_aliases(db)
     emotion.set_openai_client(secondary_llm)
     logger.info("MemoryService and LLM clients initialized")

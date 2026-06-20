@@ -174,6 +174,8 @@ class MemoryService:
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("DELETE FROM atomic_facts")
             await db.commit()
+        self._context_windows.clear()
+        self._prelude_windows.clear()
 
     # ── Sliding context window ────────────────────────────────────────────────
 
