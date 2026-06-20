@@ -5,75 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wally</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <canvas id="stars"></canvas>
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
-  <div class="blob blob-3"></div>
+  <canvas id="bg-canvas"></canvas>
+  <div class="crt-scanlines"></div>
+  <div class="crt-vignette"></div>
 
-  <div class="app-shell">
-    <nav class="tab-nav">
-      <div class="tab-nav-inner">
-        <button class="tab-btn active" data-tab="status">
-          <span class="tab-icon">●</span> Statut
-        </button>
-        <button class="tab-btn" data-tab="chat">
-          <span class="tab-icon">◎</span> Chat
-        </button>
-        <button class="tab-btn" data-tab="gallery">
-          <span class="tab-icon">◫</span> Galerie
-        </button>
-        <button class="tab-btn" data-tab="journal">
-          <span class="tab-icon">◈</span> Journal
-        </button>
-        <button class="tab-btn" data-tab="community">
-          <span class="tab-icon">◉</span> Communauté
-        </button>
-        <button class="tab-btn" data-tab="about">
-          <span class="tab-icon">◇</span> À propos
-        </button>
-      </div>
-    </nav>
-
-    <nav class="bottom-nav" id="bottom-nav" aria-label="Navigation mobile">
-      <button class="bnav-btn" data-tab="status">
-        <span class="bnav-icon">&#9679;</span>
-        <span class="bnav-label">Statut</span>
-      </button>
-      <button class="bnav-btn" data-tab="chat">
-        <span class="bnav-icon">&#9678;</span>
-        <span class="bnav-label">Chat</span>
-      </button>
-      <button class="bnav-btn" data-tab="gallery">
-        <span class="bnav-icon">&#9647;</span>
-        <span class="bnav-label">Galerie</span>
-      </button>
-      <button class="bnav-btn" data-tab="journal">
-        <span class="bnav-icon">&#9672;</span>
-        <span class="bnav-label">Journal</span>
-      </button>
-      <button class="bnav-btn bnav-more-btn" id="bnav-more-btn" aria-haspopup="true" aria-expanded="false" aria-controls="bnav-sheet">
-        <span class="bnav-icon">&#xB7;&#xB7;&#xB7;</span>
-        <span class="bnav-label">Plus</span>
-      </button>
-    </nav>
-
-    <div class="bnav-sheet-overlay" id="bnav-sheet-overlay"></div>
-    <div class="bnav-sheet" id="bnav-sheet" aria-hidden="true">
-      <div class="bnav-sheet-handle" aria-hidden="true"></div>
-      <button class="bnav-sheet-item" data-tab="community">
-        <span class="bnav-sheet-icon">&#9673;</span> Communauté
-      </button>
-      <button class="bnav-sheet-item" data-tab="about">
-        <span class="bnav-sheet-icon">&#9671;</span> À propos
-      </button>
+  <nav class="arc-nav">
+    <div class="arc-brand" data-tab="status">
+      <span class="flame" id="spx-nav"></span>
+      <span class="arc-wordmark">WALLY</span>
     </div>
+    <div class="arc-nav-tabs">
+      <button class="arc-nav-btn" data-tab="status">STATUT</button>
+      <button class="arc-nav-btn" data-tab="chat">CHAT</button>
+      <button class="arc-nav-btn" data-tab="gallery">GALERIE</button>
+      <button class="arc-nav-btn" data-tab="journal">JOURNAL</button>
+      <button class="arc-nav-btn" data-tab="community">COMMUNAUTÉ</button>
+      <button class="arc-nav-btn" data-tab="about">À PROPOS</button>
+    </div>
+    <div class="arc-online"><span class="dot"></span>EN LIGNE</div>
+  </nav>
 
-    <main id="tab-content"></main>
-  </div>
+  <main id="tab-content" class="arc-main"></main>
 
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box" id="modal-box">
@@ -82,6 +39,11 @@
       <div class="modal-caption" id="modal-caption"></div>
     </div>
   </div>
+
+  <footer class="arc-footer">
+    fait avec une petite flamme · © 2026 Wally ·
+    <span class="arc-link">github.com/KingsRequin/wally-ai</span>
+  </footer>
 
   <script type="module" src="/app.js"></script>
 </body>

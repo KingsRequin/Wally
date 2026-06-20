@@ -47,11 +47,11 @@ function detectEdgeType(facts) {
   if (text.includes('thread'))                        return 'thread';
   return 'default';
 }
-const MAX_TICKS      = 800;
-const REPULSION      = 14000;
+const MAX_TICKS      = 400;
+const REPULSION      = 8000;
 const ATTRACTION     = 0.018;
-const DAMPING        = 0.82;
-const CENTER_FORCE   = 0.008;
+const DAMPING        = 0.70;
+const CENTER_FORCE   = 0.010;
 const IDEAL_DIST     = 120;
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -110,8 +110,13 @@ function tick(nodes, edges, W, H) {
   nodes.forEach(n => {
     n.vx = (n.vx + n.fx) * DAMPING;
     n.vy = (n.vy + n.fy) * DAMPING;
-    n.x = clamp(n.x + n.vx, n.r + 2, W - n.r - 2);
-    n.y = clamp(n.y + n.vy, n.r + 2, H - n.r - 2);
+    const nx = n.x + n.vx;
+    const ny = n.y + n.vy;
+    // Annuler la vélocité si on touche un bord (évite le rebond)
+    if (nx < n.r + 2 || nx > W - n.r - 2) n.vx = 0;
+    if (ny < n.r + 2 || ny > H - n.r - 2) n.vy = 0;
+    n.x = clamp(nx, n.r + 2, W - n.r - 2);
+    n.y = clamp(ny, n.r + 2, H - n.r - 2);
   });
 }
 
@@ -636,9 +641,9 @@ function _renderGraph(wrap, data) {
       const hit = hitTestNode(nodes, mx, my, W, H);
       if (hit) {
         selectedNode = (selectedNode === hit) ? null : hit;  // toggle
-        hit.vx += (Math.random() - 0.5) * 30;
-        hit.vy += (Math.random() - 0.5) * 30;
-        frozen = false; tickCount = 0;
+        hit.vx += (Math.random() - 0.5) * 6;
+        hit.vy += (Math.random() - 0.5) * 6;
+        frozen = false; tickCount = Math.max(0, MAX_TICKS - 60);
       } else {
         selectedNode = null;  // clic dans le vide = désélection
       }
@@ -648,23 +653,23 @@ function _renderGraph(wrap, data) {
 
     btnIn.addEventListener('click', () => {
       _scale = clamp(_scale * 1.2, 0.15, 6);
-      frozen = false; tickCount = 0;
     });
     btnOut.addEventListener('click', () => {
       _scale = clamp(_scale / 1.2, 0.15, 6);
-      frozen = false; tickCount = 0;
     });
     btnReset.addEventListener('click', () => {
       _scale = 1; _offsetX = 0; _offsetY = 0;
       selectedNode = null;
-      frozen = false; tickCount = 0;
     });
 
     const ro = window.ResizeObserver
       ? new ResizeObserver(() => {
           const dims = resizeCanvas();
           W = dims.W; H = dims.H;
-          frozen = false; tickCount = 0;
+          // Reset vélocités pour éviter l'explosion après resize
+          nodes.forEach(n => { n.vx = 0; n.vy = 0; });
+          frozen = false;
+          tickCount = Math.max(0, MAX_TICKS - 80);
         })
       : null;
     if (ro) ro.observe(_canvas);
