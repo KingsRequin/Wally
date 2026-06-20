@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Host-side bridge daemon. Listens on a Unix socket, exposes whitelisted Docker/git operations."""
+import hmac
 import http.server
 import json
 import logging
@@ -20,7 +21,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         logging.info(fmt, *args)
 
     def _auth(self) -> bool:
-        return bool(BRIDGE_SECRET) and self.headers.get("X-Bridge-Secret") == BRIDGE_SECRET
+        return bool(BRIDGE_SECRET) and hmac.compare_digest(
+            self.headers.get("X-Bridge-Secret", ""), BRIDGE_SECRET
+        )
 
     def _send(self, code: int, data: dict) -> None:
         body = json.dumps(data).encode()
