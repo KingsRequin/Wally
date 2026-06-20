@@ -97,10 +97,15 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
 
     import os as _os
     from bot.core.embeddings import make_embedding_fn
+    from wally_v2.db.schema_v2 import create_v2_tables
+    _db_path = _os.getenv("DB_PATH", "data/wally.db")
+    # Garantit la table atomic_facts indépendamment du flag response_gate
+    # (le backend mémoire V2 y écrit toujours).
+    await create_v2_tables(_db_path)
     _embed_fn = await make_embedding_fn(image_client._client, db)
     _collection = _os.getenv("QDRANT_COLLECTION_NAME", "wally_v2_facts")
     memory.set_embedding_backend(
-        db_path=_os.getenv("DB_PATH", "data/wally.db"),
+        db_path=_db_path,
         qdrant_url=qdrant_url,
         collection=_collection,
         embedding_fn=_embed_fn,
