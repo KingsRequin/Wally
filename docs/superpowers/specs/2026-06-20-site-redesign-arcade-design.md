@@ -40,7 +40,7 @@ La `CognitiveLoop` V2 (`bot/v2/core/cognitive_loop.py`) et ses agents (InnerMono
 - **`GET /api/public/sse/cognitive`** (public, dans `bot/dashboard/routes/`) : stream SSE `data: {event}\n\n`. Réutilise le pattern fan-out de `sse.py`.
 - **`GET /api/public/cognitive/state`** (public) : snapshot des N derniers events (buffer) pour amorcer l'affichage avant le SSE.
 - Câblage : `CognitiveFeed` instancié dans bootstrap/bot wiring, injecté dans la CognitiveLoop + exposé via AppState pour les routes. Satisfait les tâches #14 (observabilité cognitive) et amorce #15.
-- **Confidentialité** : le flux peut révéler à qui Wally parle. Filtrer/anonymiser les contenus sensibles (tronquer, pas d'IDs bruts). À valider : exposer public vs admin-only. **Défaut spec : public mais contenu tronqué + pas d'ID Discord brut.**
+- **Confidentialité** : DÉCIDÉ (user 2026-06-20) — flux **PUBLIC et NON anonymisé**. Contenu complet (vrais noms/auteurs, monologue intégral, détails des décisions). Pas de troncature ni de masquage d'ID requis.
 
 ### 2. Classement communauté
 - **`GET /api/public/community/ranking`** (NEW) : top viewers par score d'affinité. Source : `trust_scores`/`love_scores` (DB) agrégés, ou poids du graphe social (Neo4j). Réponse : `{ranking: [{name, trait, score}]}`. Azrael = épinglé "intouchable/MAX" (règle métier du design).
