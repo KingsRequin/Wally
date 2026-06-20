@@ -12,6 +12,7 @@ async def test_add_fact_stores_in_sqlite_and_qdrant(tmp_db_path):
     """add_fact() écrit en SQLite ET dans Qdrant."""
     fact_store = SQLiteFactStore(tmp_db_path)
     qdrant_store = MagicMock()
+    qdrant_store.ensure_collection = AsyncMock()
     qdrant_store.upsert = AsyncMock()
 
     retrieval = MemoryRetrieval(fact_store, qdrant_store)

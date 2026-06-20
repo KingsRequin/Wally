@@ -39,9 +39,10 @@ def test_voice_join_and_leave():
     tracker = SocialTracker(_make_graph())
     tracker.on_voice_join(100, 1, "Alice")
     tracker.on_voice_join(100, 2, "Bob")
-    # Bob leaves — should record co-presence with Alice
+    # Bob leaves — should record co-presence with Alice.
+    # Buffer keys are ID-based (str snowflakes), normalized alphabetically.
     tracker.on_voice_leave(100, 2, "Bob")
-    key = ("Alice", "Bob", "voice")
+    key = ("1", "2", "voice")
     assert tracker._buffer[key]["count"] == 1
 
 
