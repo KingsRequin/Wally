@@ -186,6 +186,28 @@ class SQLiteFactStore:
             await db.commit()
             logger.debug("supersede: fact {} superseded by {}", old_id, new_id)
 
+    async def search_by_category(
+        self,
+        category: "FactCategory",
+        status: "FactStatus | None" = None,
+        limit: int = 10,
+    ) -> "list[AtomicFact]":
+        if status is None:
+            status = FactStatus.ACTIVE
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """SELECT id, user_id, content, category, confidence, decay_rate,
+                          status, emotional_context, source, created_at, last_seen_at
+                   FROM atomic_facts
+                   WHERE category = ? AND status = ?
+                   ORDER BY last_seen_at DESC
+                   LIMIT ?""",
+                (category.value, status.value, limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [self._row_to_fact(r) for r in rows]
+
     @staticmethod
     def _row_to_fact(row: aiosqlite.Row) -> AtomicFact:
         fact = AtomicFact(
