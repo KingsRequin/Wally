@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -82,7 +83,7 @@ class WallyDiscord(commands.Bot):
             self.response_gate = ResponseGate(
                 llm=gate_llm,
                 fact_store=SQLiteFactStore(_db_path),
-                prompts_dir="wally_v2/persona/prompts",
+                prompts_dir=Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts",
             )
             logger.info("ResponseGate V2 initialisé (deepseek-v4-flash)")
 
