@@ -67,6 +67,7 @@ class WallyDiscord(commands.Bot):
         # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
+        self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         # Stocker le db_path pour l'init async dans setup_hook
         import os
         self._v2_db_path: str | None = (
@@ -97,6 +98,38 @@ class WallyDiscord(commands.Bot):
                 prompts_dir=Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts",
             )
             logger.info("ResponseGate V2 initialisé avec DB V2 créée ({})", self._v2_db_path)
+
+        if getattr(self.config, "cognitive_loop", None) and self.config.cognitive_loop.get("enabled", False):
+            from wally_v2.core.attention_agent import AttentionAgent
+            from wally_v2.core.inner_monologue import InnerMonologue
+            from wally_v2.core.meta_agent import MetaAgent
+            from wally_v2.core.action_dispatcher import ActionDispatcher
+            from wally_v2.core.evolution_log import EvolutionLog
+            from wally_v2.core.persona_manager import PersonaManager
+            from wally_v2.core.cognitive_loop import CognitiveLoop
+            from wally_v2.core.memory.facts import SQLiteFactStore
+            from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
+            from bot.config import LLMRoleConfig
+            import os as _os_cog
+
+            _db_path = self._v2_db_path or _os_cog.getenv("DB_PATH", "data/wally.db")
+            _prompts_dir = Path(__file__).parent.parent.parent / "wally_v2" / "persona" / "prompts"
+            _persona_dir = Path(__file__).parent.parent / "persona"
+
+            _fact_store = SQLiteFactStore(_db_path)
+            _mono_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-pro"), self.db)
+            _meta_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-flash"), self.db)
+            _persona_llm = create_v2_llm(LLMRoleConfig(provider="deepseek", model="deepseek-v4-pro"), self.db)
+
+            _evo_log = EvolutionLog()
+            _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
+            _attention = AttentionAgent(_fact_store, self.emotion)
+            _mono = InnerMonologue(_mono_llm, _fact_store, _prompts_dir)
+            _meta = MetaAgent(_meta_llm, _prompts_dir)
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store)
+
+            self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion)
+            logger.info("CognitiveLoop V2 initialisée (deepseek-v4-pro thinking)")
 
         from bot.discord.commands.ask import AskCog
         from bot.discord.commands.status import StatusCog
@@ -142,6 +175,13 @@ class WallyDiscord(commands.Bot):
         logger.info("Discord bot ready as {user}", user=self.user)
         if self.social and self.user:
             self.social.set_bot_id(self.user.id)
+        if self.cognitive_loop is not None:
+            self.cognitive_loop.start()
+
+    async def close(self) -> None:
+        if self.cognitive_loop is not None:
+            await self.cognitive_loop.stop()
+        await super().close()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.guild_id and interaction.guild_id in self.config.discord.ignored_guilds:

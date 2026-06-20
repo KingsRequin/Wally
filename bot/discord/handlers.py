@@ -757,6 +757,14 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             pass
         # RESPOND : continue normalement
 
+    # Notifier la boucle cognitive de l'activité
+    if getattr(bot, "cognitive_loop", None) is not None:
+        bot.cognitive_loop.notify_activity(
+            channel_id=message.channel.id,
+            author=str(message.author.display_name),
+            content=message.content,
+        )
+
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
 
 
