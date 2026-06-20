@@ -89,9 +89,10 @@ class DeepSeekLLMClient(BaseLLMClient):
             usage = response.usage
             await self._db.log_cost(
                 model=response.model or self._model,
-                purpose=purpose,
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,
+                cost_usd=0.0,
+                purpose=purpose,
                 user_id=user_id,
             )
         except Exception as e:
