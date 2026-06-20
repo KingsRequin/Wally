@@ -1,4 +1,4 @@
-# bot.v2/core/memory/retrieval.py
+# bot/v2/core/memory/retrieval.py
 from __future__ import annotations
 
 from loguru import logger

@@ -1,4 +1,4 @@
-# bot.v2/core/memory/facts.py
+# bot/v2/core/memory/facts.py
 from __future__ import annotations
 
 import aiosqlite

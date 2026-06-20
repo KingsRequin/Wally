@@ -1,4 +1,4 @@
-# bot.v2/core/gate.py
+# bot/v2/core/gate.py
 from __future__ import annotations
 
 from dataclasses import dataclass

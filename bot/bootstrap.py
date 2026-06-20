@@ -103,7 +103,7 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     # (le backend mémoire V2 y écrit toujours).
     await create_v2_tables(_db_path)
     _embed_fn = await make_embedding_fn(image_client._client, db)
-    _collection = _os.getenv("QDRANT_COLLECTION_NAME", "bot.v2_facts")
+    _collection = _os.getenv("QDRANT_COLLECTION_NAME", "wally_v2_facts")
     memory.set_embedding_backend(
         db_path=_db_path,
         qdrant_url=qdrant_url,
