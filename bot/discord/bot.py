@@ -67,12 +67,12 @@ class WallyDiscord(commands.Bot):
         self.response_gate = None   # type: ignore[assignment]
         self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
         if getattr(config, "response_gate", None) and config.response_gate.get("enabled", False):
-            import os as _os
+            import os
             from wally_v2.core.gate import ResponseGate
             from wally_v2.core.memory.facts import SQLiteFactStore
             from wally_v2.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
-            _db_path = _os.getenv("DB_PATH", "data/wally.db")
+            _db_path = os.getenv("DB_PATH", "data/wally.db")
             gate_llm = create_v2_llm(
                 LLMRoleConfig(
                     provider="deepseek",
