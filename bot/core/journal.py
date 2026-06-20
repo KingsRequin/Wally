@@ -5,7 +5,7 @@ import asyncio
 import json
 import time
 from collections import Counter
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -15,7 +15,6 @@ from loguru import logger
 
 from bot.core.emotion import EMOTIONS
 from bot.core.llm import FALLBACK_RESPONSE
-from bot.core.memory_store import MemoryMetadata
 from bot.core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -301,100 +300,8 @@ class DailyJournal:
         self._fetch_history_cb = cb
 
     async def run_memory_cleanup(self) -> None:
-        """Passe en revue les souvenirs des utilisateurs actifs et nettoie."""
-        if self._db is None:
-            logger.warning("Memory cleanup: no DB available, skipping")
-            return
-
-        if self._memory.store is None:
-            logger.warning("Memory cleanup: memory store unavailable, skipping")
-            return
-
-        try:
-            users = await self._db.list_memory_users()
-        except Exception as exc:
-            logger.warning("Memory cleanup: failed to list users: {e}", e=exc)
-            return
-
-        # Max 20 users, sorted by last_updated (most recent first)
-        users = sorted(users, key=lambda u: u.get("last_updated", 0), reverse=True)[:20]
-        today_str = date.today().strftime("%d/%m/%Y")
-        cleanup_prompt = _CLEANUP_SYSTEM.replace("{date}", today_str)
-
-        total_deleted = 0
-        total_updated = 0
-        total_questions = 0
-
-        for user in users:
-            uid = user["user_id"]
-            try:
-                results = await self._memory.store.get_all(uid)
-                if len(results) < 5:
-                    continue
-
-                # Build numbered list for LLM
-                numbered = "\n".join(
-                    f"{i}. {r.text}" for i, r in enumerate(results)
-                )
-                # Include existing pending questions to avoid duplicates
-                pending = await self._db.get_all_pending_questions(uid)
-                pending_block = ""
-                if pending:
-                    plines = [f"- {q['question']}" for q in pending]
-                    pending_block = "\n\nQuestions déjà en attente (ne pas recréer) :\n" + "\n".join(plines)
-                raw = await self._llm_secondary.complete(
-                    cleanup_prompt,
-                    [{"role": "user", "content": numbered + pending_block}],
-                    purpose="memory_cleanup",
-                )
-                actions = json.loads(raw)
-
-                # Apply deletions
-                for idx in actions.get("delete", []):
-                    if isinstance(idx, int) and 0 <= idx < len(results):
-                        mem_id = results[idx].id
-                        if mem_id:
-                            await self._memory.store.delete(mem_id)
-                            total_deleted += 1
-
-                # Apply updates (delete old + upsert new)
-                for upd in actions.get("update", []):
-                    idx = upd.get("index")
-                    new_text = upd.get("new_text", "").strip()
-                    if isinstance(idx, int) and 0 <= idx < len(results) and new_text:
-                        old_id = results[idx].id
-                        if old_id:
-                            await self._memory.store.delete(old_id)
-                            metadata = MemoryMetadata(
-                                user_id=uid,
-                                category="FAIT",
-                                date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                                source="cleanup",
-                                platform=uid.split(":")[0],
-                            )
-                            await self._memory.store.upsert(uid, new_text, metadata)
-                            total_updated += 1
-
-                # Create questions (max 1 per user, skip low priority)
-                for q in actions.get("questions", [])[:1]:
-                    question = q.get("question", "").strip()
-                    priority = q.get("priority", "medium")
-                    if question and priority in ("high", "medium"):
-                        await self._db.insert_memory_question(uid, "", question, priority)
-                        total_questions += 1
-
-            except (json.JSONDecodeError, KeyError, TypeError) as exc:
-                logger.debug("Memory cleanup parse error for {uid}: {e}", uid=uid, e=exc)
-            except Exception as exc:
-                logger.warning("Memory cleanup failed for {uid}: {e}", uid=uid, e=exc)
-
-        # Cleanup old resolved questions
-        await self._db.cleanup_old_questions(max_age_days=30)
-
-        logger.info(
-            "Memory cleanup done: {d} deleted, {u} updated, {q} questions created",
-            d=total_deleted, u=total_updated, q=total_questions,
-        )
+        """Memory cleanup — désactivé (store V1 supprimé en SP2 Task 3)."""
+        logger.warning("Memory cleanup: store V1 removed, skipping")
 
     async def generate_and_send(self, archive: bool = True, target_date: date | None = None) -> None:
         channel_id = self._config.bot.journal_channel_id

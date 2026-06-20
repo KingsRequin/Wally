@@ -39,7 +39,6 @@ def _resolve_twitch_roles(badges: list) -> list[str]:
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}
-_memory_check_cooldowns: dict[str, float] = {}  # rate-limit Qdrant checks per channel
 
 
 def _fire(coro) -> asyncio.Task:
@@ -150,17 +149,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 _spontaneous_cooldowns[channel_id] = now
                 _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
         elif not trigger_type and cooldown_ok:
-            if now - _memory_check_cooldowns.get(channel_id, 0) >= 60:
-                _memory_check_cooldowns[channel_id] = now
-                match = await bot.memory.search_top_match("twitch", author, content)
-                if match and match[1] >= bot.config.bot.memory_recall_min_score:
-                    if random.random() < bot.config.bot.spontaneous_memory_probability:
-                        _spontaneous_cooldowns[channel_id] = now
-                        _fire(_spontaneous_respond_twitch(
-                            bot, channel_name, channel_id, author, content,
-                            recall_memory=match[0],
-                            prelude_snapshot=prelude,
-                        ))
+            pass
 
     # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
@@ -189,10 +178,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context, global_context = await asyncio.gather(
-            bot.memory.search(platform, user_id, content, context_messages=prelude, username_hint=author),
-            bot.memory.search_global(content),
-        )
+        mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude, username_hint=author)
         create_span(trace, name="memory:search", input={"query": content}, output={"context_length": len(mem_context or "")})
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
@@ -216,22 +202,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         # Priority 1: Semantic memories (already fetched)
         if mem_context:
             memory_parts.append((1, mem_context))
-
-        # Priority 2: Relationships
-        try:
-            rel_context = await bot.memory.search_relationships(platform, [user_id])
-            if rel_context:
-                memory_parts.append((2, "--- Relations connues entre les utilisateurs ---\n" + rel_context))
-        except Exception:
-            pass
-
-        # Priority 3: Pending memory question directive
-        try:
-            question_directive = await bot.memory.get_pending_question_directive(platform, user_id)
-            if question_directive:
-                memory_parts.append((3, question_directive))
-        except Exception:
-            pass
 
         # Priority 4: Recent successful jokes for this channel
         try:
@@ -297,7 +267,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
-            global_memory_context=global_context,
             situation=situation,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,

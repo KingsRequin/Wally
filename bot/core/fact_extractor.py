@@ -491,8 +491,6 @@ class FactExtractor:
             if not facts_list:
                 continue
 
-            scope = entry.get("scope", "personal")
-
             # Build text from fact objects (backward-compat: handle both str and dict)
             fact_items = []
             for f in facts_list:
@@ -500,16 +498,6 @@ class FactExtractor:
                     fact_items.append(f)
                 else:
                     fact_items.append({"text": str(f), "category": "FAIT"})
-
-            # Community-scope facts → global namespace
-            if scope == "community":
-                facts_text = "\n".join(f"- {fi['text']}" for fi in fact_items)
-                try:
-                    await self._memory.add_global(facts_text)
-                    stored_count += 1
-                except Exception as exc:
-                    logger.warning("memory.add_global failed: {e}", e=exc)
-                continue
 
             uid = entry.get("target_user_id")
             # Store each fact individually with its own category
