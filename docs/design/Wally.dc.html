@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;overflow-x:hidden;}
+  body{margin:0;background:#120a26;}
+  @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#7c4dff;border-radius:6px}
+  ::-webkit-scrollbar-track{background:rgba(124,77,255,.12)}
+  input::placeholder{color:#6f6597}
+</style>
+</helmet>
+<div style="position:relative;min-height:100vh;background:radial-gradient(130% 90% at 50% -10%,#2a1556,#120a26 65%);color:#ffe8c2;font-family:'VT323',monospace;">
+  <!-- ===== ANIMATED BACKGROUND ===== -->
+  <canvas id="bg-canvas" style="position:fixed;inset:0;z-index:0;pointer-events:none;width:100%;height:100%;"></canvas>
+  <div style="position:fixed;inset:0;z-index:0;pointer-events:none;background:repeating-linear-gradient(rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.2) 3px,rgba(0,0,0,0) 4px);"></div>
+  <div style="position:fixed;inset:0;z-index:0;pointer-events:none;box-shadow:inset 0 0 200px rgba(0,0,0,.55);"></div>
+
+  <!-- (fond unique : Aimant) -->
+
+  <!-- ===== NAV ===== -->
+  <nav style="position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:clamp(6px,1.4vw,18px);flex-wrap:wrap;padding:12px clamp(12px,3vw,32px);background:rgba(18,10,38,.82);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:2px solid rgba(124,77,255,.32);">
+    <div style="display:flex;align-items:center;gap:12px;cursor:pointer;" onClick="{{ goTop }}">
+      <div style="position:relative;width:44px;height:56px;animation:bob 1.6s ease-in-out infinite;"><i id="spx-nav"></i></div>
+      <span style="font-family:'Press Start 2P',monospace;font-size:clamp(14px,2vw,20px);color:#ffd400;text-shadow:2px 2px 0 #ff3b6b;">WALLY</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:clamp(8px,1.4vw,18px);flex-wrap:wrap;margin-left:clamp(6px,1.4vw,18px);font-size:clamp(15px,1.8vw,21px);">
+      <button onClick="{{ goStatut }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nStatut }};">STATUT</button>
+      <button onClick="{{ goChat }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nChat }};">CHAT</button>
+      <button onClick="{{ goGalerie }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nGalerie }};">GALERIE</button>
+      <button onClick="{{ goJournal }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nJournal }};">JOURNAL</button>
+      <button onClick="{{ goCommunaute }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nCommunaute }};">COMMUNAUTÉ</button>
+      <button onClick="{{ goApropos }}" style="background:none;border:none;cursor:pointer;font-family:'VT323',monospace;font-size:inherit;letter-spacing:1px;padding:4px 2px;white-space:nowrap;border-bottom:2px solid transparent;color:{{ nApropos }};">À PROPOS</button>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;font-family:'Press Start 2P',monospace;font-size:9px;color:#7CFC52;border:2px solid rgba(124,255,82,.4);border-radius:20px;padding:7px 12px;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#7CFC52;display:inline-block;box-shadow:0 0 8px #7CFC52;"></span>EN LIGNE
+    </div>
+  </nav>
+
+  <main style="position:relative;z-index:1;">
+
+    <!-- ===================== STATUT (accueil) ===================== -->
+    <section id="statut" data-screen-label="Statut" style="opacity:{{ revStatut }};transform:{{ tyStatut }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:1180px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:6px;">
+        <div style="position:relative;width:66px;height:84px;animation:bob 1.6s ease-in-out infinite;flex:none;"><i id="spx-hero"></i></div>
+        <div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">PANNEAU DE CONTRÔLE · WALLY</div>
+          <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(26px,6vw,54px);color:#ffd400;text-shadow:4px 4px 0 #ff3b6b,8px 8px 0 #7c4dff;letter-spacing:1px;margin:10px 0 4px;">STATUT</h2>
+        </div>
+      </div>
+      <div style="font-size:clamp(18px,2.4vw,24px);opacity:.85;margin-bottom:28px;">bonjour. wally tourne, tout va bien. (pour l'instant.)</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#43e0ff;letter-spacing:1px;">MESSAGES TRAITÉS</div>
+          <div style="font-size:clamp(34px,5vw,50px);color:#ffe8c2;line-height:1;margin-top:10px;">48 920</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff3b6b;letter-spacing:1px;">VIEWERS EN MÉMOIRE</div>
+          <div style="font-size:clamp(34px,5vw,50px);color:#ffe8c2;line-height:1;margin-top:10px;">2 380</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffd400;letter-spacing:1px;">TEMPS DE RÉPONSE</div>
+          <div style="font-size:clamp(34px,5vw,50px);color:#ffe8c2;line-height:1;margin-top:10px;">0.8<span style="font-size:24px;opacity:.7;">s</span></div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#7CFC52;letter-spacing:1px;">UPTIME</div>
+          <div style="font-size:clamp(34px,5vw,50px);color:#ffe8c2;line-height:1;margin-top:10px;">14j 06h</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:18px;">
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffd400;">ACTIVITÉ EN DIRECT</div>
+            <span style="font-size:20px;color:#7CFC52;">● live</span>
+          </div>
+          <div style="font-size:20px;line-height:1.45;">
+            <sc-for list="{{ log }}" as="row" hint-placeholder-count="6">
+              <div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(124,77,255,.12);">
+                <span style="color:#6f6597;flex:none;">{{ row.t }}</span>
+                <span style="flex:none;font-family:'Press Start 2P',monospace;font-size:8px;align-self:center;color:{{ row.tc }};">{{ row.tag }}</span>
+                <span style="opacity:.92;">{{ row.x }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+            <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffd400;margin-bottom:14px;">SERVICES</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:20px;">
+              <span style="border:2px solid rgba(124,255,82,.4);border-radius:20px;padding:5px 12px;"><span style="color:#7CFC52;">●</span> GPT-5</span>
+              <span style="border:2px solid rgba(124,255,82,.4);border-radius:20px;padding:5px 12px;"><span style="color:#7CFC52;">●</span> Twitch IRC</span>
+              <span style="border:2px solid rgba(124,255,82,.4);border-radius:20px;padding:5px 12px;"><span style="color:#7CFC52;">●</span> SQLite</span>
+              <span style="border:2px solid rgba(255,212,0,.4);border-radius:20px;padding:5px 12px;"><span style="color:#ffd400;">●</span> Perplexity</span>
+            </div>
+          </div>
+          <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:20px;">
+            <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffd400;margin-bottom:16px;">PERSONNALITÉ</div>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;margin-bottom:6px;">SARCASME</div><div style="display:flex;gap:3px;"><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:#ff3b6b;flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span></div></div>
+              <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;margin-bottom:6px;">HUMOUR</div><div style="display:flex;gap:3px;"><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span><span style="height:14px;background:#ffd400;flex:1;"></span></div></div>
+              <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;margin-bottom:6px;">MÉMOIRE</div><div style="display:flex;gap:3px;"><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:#43e0ff;flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span></div></div>
+              <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;margin-bottom:6px;">PATIENCE</div><div style="display:flex;gap:3px;"><span style="height:14px;background:#7c4dff;flex:1;"></span><span style="height:14px;background:#7c4dff;flex:1;"></span><span style="height:14px;background:#7c4dff;flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span><span style="height:14px;background:rgba(255,255,255,.12);flex:1;"></span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CHAT ===================== -->
+    <section id="chat" data-screen-label="Chat" style="opacity:{{ revChat }};transform:{{ tyChat }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:1180px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">PARLE-LUI (À TES RISQUES)</div>
+        <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,46px);color:#ffd400;text-shadow:3px 3px 0 #ff3b6b;letter-spacing:1px;margin:10px 0 4px;">CHAT</h2>
+        <div style="font-size:clamp(18px,2.4vw,24px);opacity:.85;margin-bottom:24px;">mentionne-le, balance ton message. il répond comme sur Twitch.</div>
+      </div>
+
+      <div style="max-width:780px;margin:0 auto;background:rgba(12,8,26,.7);border:2px solid rgba(124,77,255,.4);border-radius:12px;display:flex;flex-direction:column;height:min(600px,68vh);overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:2px solid rgba(124,77,255,.3);background:rgba(124,77,255,.1);">
+          <span style="width:9px;height:9px;border-radius:50%;background:#7CFC52;display:inline-block;box-shadow:0 0 8px #7CFC52;"></span>
+          <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffd400;">WALLY</span>
+          <span style="font-size:19px;color:#6f6597;">· twitch.tv/Azrael_TTV</span>
+        </div>
+        <div id="chat-scroll" style="flex:1;overflow-y:auto;padding:18px;font-size:clamp(18px,2.3vw,23px);line-height:1.5;">
+          <sc-for list="{{ messages }}" as="m" hint-placeholder-count="1">
+            <div style="margin-bottom:11px;">
+              <span style="font-weight:bold;color:{{ m.color }};">{{ m.name }}</span><span style="color:#6f6597;"> : </span><span style="color:#ffe8c2;">{{ m.text }}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+            <div style="color:#9b8ad4;font-style:italic;">wally écrit<span style="animation:blink 1s steps(1) infinite;">…</span></div>
+          </sc-if>
+        </div>
+        <div style="display:flex;gap:10px;padding:14px;border-top:2px solid rgba(124,77,255,.3);background:rgba(124,77,255,.06);">
+          <input value="{{ draft }}" onInput="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="@WallyTeBully ton message..." style="flex:1;background:rgba(0,0,0,.4);border:2px solid rgba(124,77,255,.4);border-radius:8px;color:#ffe8c2;font-family:'VT323',monospace;font-size:22px;padding:10px 14px;outline:none;" style-focus="border-color:#ffd400;" />
+          <button onClick="{{ send }}" style="background:#ffd400;color:#1a0a2e;border:none;border-radius:8px;font-family:'Press Start 2P',monospace;font-size:11px;padding:0 18px;cursor:pointer;box-shadow:0 4px 0 #9a7e00;">ENVOYER</button>
+        </div>
+      </div>
+      <div style="max-width:780px;margin:14px auto 0;font-size:19px;color:#6f6597;text-align:center;">astuce : tape « quoi » pour voir ce qui se passe.</div>
+    </section>
+
+    <!-- ===================== GALERIE ===================== -->
+    <section id="galerie" data-screen-label="Galerie" style="opacity:{{ revGalerie }};transform:{{ tyGalerie }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:1180px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">SES MEILLEURS MOMENTS</div>
+        <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,46px);color:#ffd400;text-shadow:3px 3px 0 #ff3b6b;letter-spacing:1px;margin:10px 0 4px;">GALERIE</h2>
+        <div style="font-size:clamp(18px,2.4vw,24px);opacity:.85;margin-bottom:28px;">clips, captures et punchlines. dépose les tiens.</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;">
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-1" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose un clip"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« feur. »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">2.3k vues · 187 feur</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-2" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose une capture"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« skill issue, mec. »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">1.1k vues · clutch</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-3" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose une capture"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« j'ai connu des bots plus rapides. »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">980 vues · roast</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-4" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose un clip"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« non. »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">4.7k vues · classique</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-5" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose une capture"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« demande à Azrael, moi je gère le chat. »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">760 vues · sagesse</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:12px;">
+          <image-slot id="gal-6" style="width:100%;height:170px;display:block;" shape="rounded" radius="8" placeholder="Dépose un clip"></image-slot>
+          <div style="font-size:22px;margin-top:12px;color:#ffe8c2;">« t'es sûr de toi, là ? »</div>
+          <div style="font-size:18px;color:#6f6597;margin-top:4px;">1.5k vues · doute</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== JOURNAL ===================== -->
+    <section id="journal" data-screen-label="Journal" style="opacity:{{ revJournal }};transform:{{ tyJournal }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:900px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">CARNET DE BORD · PATCH NOTES</div>
+        <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,46px);color:#ffd400;text-shadow:3px 3px 0 #ff3b6b;letter-spacing:1px;margin:10px 0 4px;">JOURNAL</h2>
+        <div style="font-size:clamp(18px,2.4vw,24px);opacity:.85;margin-bottom:30px;">tout ce que Wally a appris (ou désappris).</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;border-left:6px solid #ffd400;">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;">
+            <span style="font-family:'Press Start 2P',monospace;font-size:11px;background:#ffd400;color:#1a0a2e;padding:6px 10px;border-radius:6px;">v2.0</span>
+            <span style="font-size:20px;color:#6f6597;">juin 2026</span>
+            <span style="font-size:24px;color:#ffe8c2;">Passage à GPT-5</span>
+          </div>
+          <ul style="margin:0;padding-left:22px;font-size:21px;line-height:1.5;">
+            <li>nouveau moteur GPT-5, clash plus tranchant</li>
+            <li>latence réduite à 0.8s</li>
+            <li>réponses plafonnées à 120 tokens — droit au but</li>
+          </ul>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;border-left:6px solid #43e0ff;">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;">
+            <span style="font-family:'Press Start 2P',monospace;font-size:11px;background:#43e0ff;color:#06303a;padding:6px 10px;border-radius:6px;">MÉMOIRE</span>
+            <span style="font-size:20px;color:#6f6597;">mai 2026</span>
+            <span style="font-size:24px;color:#ffe8c2;">Wally n'oublie (presque) plus</span>
+          </div>
+          <ul style="margin:0;padding-left:22px;font-size:21px;line-height:1.5;">
+            <li>base SQLite : faits + souvenirs par viewer</li>
+            <li>index de recherche FTS</li>
+            <li>CLI : ingest · remember · search · forget</li>
+          </ul>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;border-left:6px solid #ff3b6b;">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;">
+            <span style="font-family:'Press Start 2P',monospace;font-size:11px;background:#ff3b6b;color:#fff;padding:6px 10px;border-radius:6px;">SCORING</span>
+            <span style="font-size:20px;color:#6f6597;">avril 2026</span>
+            <span style="font-size:24px;color:#ffe8c2;">Il vous note (en silence)</span>
+          </div>
+          <ul style="margin:0;padding-left:22px;font-size:21px;line-height:1.5;">
+            <li>score d'appréciation par viewer</li>
+            <li>détection du style d'humour</li>
+          </ul>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;border-left:6px solid #7c4dff;">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;">
+            <span style="font-family:'Press Start 2P',monospace;font-size:11px;background:#7c4dff;color:#fff;padding:6px 10px;border-radius:6px;">ANTI-FLOOD</span>
+            <span style="font-size:20px;color:#6f6597;">mars 2026</span>
+            <span style="font-size:24px;color:#ffe8c2;">Ne parle que si on l'appelle</span>
+          </div>
+          <ul style="margin:0;padding-left:22px;font-size:21px;line-height:1.5;">
+            <li>réponse uniquement sur mention</li>
+            <li>buffer circulaire des 20 derniers messages</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMMUNAUTÉ ===================== -->
+    <section id="communaute" data-screen-label="Communauté" style="opacity:{{ revCommunaute }};transform:{{ tyCommunaute }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:1080px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">LE CHAT, C'EST LA FAMILLE</div>
+        <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(22px,4.6vw,42px);color:#ffd400;text-shadow:3px 3px 0 #ff3b6b;letter-spacing:1px;margin:10px 0 4px;">COMMUNAUTÉ</h2>
+        <div style="font-size:clamp(18px,2.4vw,24px);opacity:.85;margin-bottom:28px;">Wally vit dans le chat d'Azrael_TTV.</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:18px;">
+        <div style="background:linear-gradient(135deg,rgba(145,70,255,.25),rgba(124,77,255,.08));border:2px solid rgba(124,77,255,.4);border-radius:10px;padding:22px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#bf94ff;margin-bottom:10px;">LA CHAÎNE</div>
+          <div style="font-size:30px;color:#ffe8c2;">twitch.tv/<span style="color:#ffd400;">Azrael_TTV</span></div>
+          <div style="font-size:20px;color:#9b8ad4;margin-top:8px;">là où la flamme prend feu, en live.</div>
+        </div>
+        <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#43e0ff;margin-bottom:12px;">POUR LE RÉVEILLER</div>
+          <div style="background:rgba(0,0,0,.4);border:1px dashed rgba(124,77,255,.5);border-radius:8px;padding:14px;font-size:22px;color:#7CFC52;">@WallyTeBully <span style="color:#6f6597;">salut, t'es réveillé ?</span></div>
+          <div style="font-size:19px;color:#9b8ad4;margin-top:10px;">sans mention, il t'ignore royalement.</div>
+        </div>
+      </div>
+
+      <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;">
+        <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffd400;margin-bottom:16px;">CLASSEMENT DES VIEWERS <span style="color:#6f6597;">(selon Wally)</span></div>
+        <div style="font-size:22px;">
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid rgba(124,77,255,.18);">
+            <span style="color:#ffd400;width:40px;flex:none;">#1</span><span style="flex:1;color:#ffe8c2;">zed</span><span style="color:#6f6597;flex:none;">taquin</span><span style="color:#43e0ff;width:70px;text-align:right;flex:none;">982</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid rgba(124,77,255,.18);">
+            <span style="color:#cdbff5;width:40px;flex:none;">#2</span><span style="flex:1;color:#ffe8c2;">gaby</span><span style="color:#6f6597;flex:none;">absurde</span><span style="color:#43e0ff;width:70px;text-align:right;flex:none;">870</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid rgba(124,77,255,.18);">
+            <span style="color:#cdbff5;width:40px;flex:none;">#3</span><span style="flex:1;color:#ffe8c2;">nairo</span><span style="color:#6f6597;flex:none;">sarcastique</span><span style="color:#43e0ff;width:70px;text-align:right;flex:none;">654</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid rgba(124,77,255,.18);">
+            <span style="color:#cdbff5;width:40px;flex:none;">#4</span><span style="flex:1;color:#ffe8c2;">luna</span><span style="color:#6f6597;flex:none;">wholesome</span><span style="color:#43e0ff;width:70px;text-align:right;flex:none;">540</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 6px;">
+            <span style="color:#ff3b6b;width:40px;flex:none;">∞</span><span style="flex:1;color:#ffd400;">Azrael <span style="font-size:17px;color:#6f6597;">(le boss)</span></span><span style="color:#6f6597;flex:none;">intouchable</span><span style="color:#ff3b6b;width:70px;text-align:right;flex:none;">MAX</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== À PROPOS ===================== -->
+    <section id="apropos" data-screen-label="À propos" style="opacity:{{ revApropos }};transform:{{ tyApropos }};transition:opacity .7s ease,transform .85s cubic-bezier(.2,.75,.2,1);max-width:980px;margin:0 auto;padding:clamp(50px,8vw,90px) clamp(16px,4vw,40px);">
+      <div style="">
+        <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;">
+          <div style="position:relative;width:77px;height:98px;animation:bob 1.6s ease-in-out infinite;"><i id="spx-about"></i></div>
+          <div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:1px;color:#9b8ad4;">QUI EST CE BOT</div>
+            <h2 style="font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,46px);color:#ffd400;text-shadow:3px 3px 0 #ff3b6b;letter-spacing:1px;margin:8px 0 0;">À PROPOS</h2>
+          </div>
+        </div>
+        <div style="font-size:clamp(19px,2.5vw,26px);line-height:1.55;margin:24px 0 30px;max-width:760px;">
+          Wally — alias <span style="color:#ffd400;">WallyTeBully</span> — est un bot Twitch IA taquin et sarcastique, propulsé au GPT-5. Une petite flamme avec beaucoup trop de répondant, qui vit dans le chat d'Azrael_TTV.
+        </div>
+      </div>
+
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#bf94ff;margin-bottom:14px;">COMMENT IL FONCTIONNE</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin-bottom:32px;font-size:19px;">
+          <div style="flex:1;min-width:130px;background:rgba(67,224,255,.1);border:2px solid #43e0ff;border-radius:8px;padding:14px;"><div style="color:#43e0ff;font-family:'Press Start 2P',monospace;font-size:8px;margin-bottom:8px;">1 · MENTION</div>quelqu'un l'appelle dans le chat</div>
+          <div style="align-self:center;color:#ffd400;font-size:26px;">→</div>
+          <div style="flex:1;min-width:130px;background:rgba(124,77,255,.1);border:2px solid #7c4dff;border-radius:8px;padding:14px;"><div style="color:#bf94ff;font-family:'Press Start 2P',monospace;font-size:8px;margin-bottom:8px;">2 · CONTEXTE</div>il lit les 20 derniers messages</div>
+          <div style="align-self:center;color:#ffd400;font-size:26px;">→</div>
+          <div style="flex:1;min-width:130px;background:rgba(255,59,107,.1);border:2px solid #ff3b6b;border-radius:8px;padding:14px;"><div style="color:#ff3b6b;font-family:'Press Start 2P',monospace;font-size:8px;margin-bottom:8px;">3 · MÉMOIRE</div>il pioche les faits utiles sur toi</div>
+          <div style="align-self:center;color:#ffd400;font-size:26px;">→</div>
+          <div style="flex:1;min-width:130px;background:rgba(255,212,0,.1);border:2px solid #ffd400;border-radius:8px;padding:14px;"><div style="color:#ffd400;font-family:'Press Start 2P',monospace;font-size:8px;margin-bottom:8px;">4 · RÉPONSE</div>GPT-5 réplique en ≤180 caractères</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:28px;">
+        <div style="background:rgba(124,255,82,.06);border:2px solid rgba(124,255,82,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#7CFC52;margin-bottom:12px;">CE QU'IL RETIENT</div>
+          <ul style="margin:0;padding-left:20px;font-size:20px;line-height:1.5;color:#ffe8c2;"><li>tes préférences déclarées</li><li>les rôles &amp; faits stables</li><li>les moments marquants</li><li>les anniversaires (365j / 90j / 30j)</li></ul>
+        </div>
+        <div style="background:rgba(255,59,107,.06);border:2px solid rgba(255,59,107,.3);border-radius:10px;padding:20px;">
+          <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ff3b6b;margin-bottom:12px;">CE QU'IL IGNORE</div>
+          <ul style="margin:0;padding-left:20px;font-size:20px;line-height:1.5;color:#ffe8c2;"><li>les blagues éphémères</li><li>la rage &amp; le sel du chat</li><li>les stats inexactes</li><li>les données sensibles</li></ul>
+        </div>
+      </div>
+
+      <div style="background:rgba(124,77,255,.08);border:2px solid rgba(124,77,255,.3);border-radius:10px;padding:22px;margin-bottom:28px;">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffd400;margin-bottom:12px;">LE GAG OFFICIEL</div>
+        <div style="font-size:24px;"><span style="color:#43e0ff;">toi</span> : quoi ?<br><span style="color:#ffd400;">wally</span> : feur.</div>
+      </div>
+
+      <div style="">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#bf94ff;margin-bottom:14px;">SOUS LE CAPOT</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:20px;">
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">Node.js</span>
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">GPT-5</span>
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">SQLite</span>
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">Twitch IRC</span>
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">Sequelize</span>
+          <span style="border:2px solid rgba(124,77,255,.4);border-radius:20px;padding:6px 14px;">better-sqlite3</span>
+        </div>
+      </div>
+    </section>
+
+    <footer style="position:relative;z-index:1;text-align:center;padding:40px 20px 50px;font-size:19px;color:#6f6597;border-top:2px solid rgba(124,77,255,.2);margin-top:20px;">
+      fait avec une petite flamme · © 2026 Wally · <span style="color:#bf94ff;">github.com/KingsRequin/wallyAi</span>
+    </footer>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    let bg = "embers";
+    try { bg = localStorage.getItem("wally_mfx") || "aimant"; } catch (e) {}
+    this.mfxOrder = ["grille", "constellation", "aimant", "vortex", "onde"];
+    this.mfxLabels = { grille: "GRILLE", constellation: "CONSTELLATION", aimant: "AIMANT", vortex: "VORTEX", onde: "ONDE" };
+    this.state = {
+      active: "statut",
+      seen: { statut: true },
+      draft: "",
+      loading: false,
+      mfx: this.mfxOrder.includes(bg) ? bg : "aimant",
+      messages: [{ name: "wally", color: "#ffd400", text: "tiens, de la visite. tu veux quoi ?" }],
+      log: [
+        { t: "14:32:09", tag: "AI", tc: "#ffd400", x: "réponse générée · 0.7s · 38 tokens" },
+        { t: "14:32:08", tag: "CHAT", tc: "#43e0ff", x: "@zed : wally t vraiment nul" },
+        { t: "14:31:54", tag: "MEM", tc: "#ff3b6b", x: "fait stocké · zed → aime Wingman" },
+        { t: "14:31:40", tag: "CHAT", tc: "#43e0ff", x: "@gaby : quoi" },
+        { t: "14:31:40", tag: "AI", tc: "#ffd400", x: "réponse : « feur »" }
+      ]
+    };
+    this.pool = [
+      { tag: "CHAT", tc: "#43e0ff", x: "@nairo : wally raconte une vanne" },
+      { tag: "AI", tc: "#ffd400", x: "réponse générée · 0.6s" },
+      { tag: "MEM", tc: "#ff3b6b", x: "fait ignoré · rage éphémère" },
+      { tag: "CHAT", tc: "#43e0ff", x: "@luna : quoi" },
+      { tag: "AI", tc: "#ffd400", x: "réponse : « feur »" },
+      { tag: "CHAT", tc: "#43e0ff", x: "@kibo : t plus lent que ma mémé" },
+      { tag: "AI", tc: "#ffd400", x: "mention détectée → réponse" },
+      { tag: "MEM", tc: "#ff3b6b", x: "score viewer +1 · gaby" },
+      { tag: "SYS", tc: "#7c4dff", x: "buffer 20 msgs · ok" },
+      { tag: "AI", tc: "#ffd400", x: "réponse : « skill issue. »" }
+    ];
+    this.mpx = null; this.mpy = null;
+  }
+  componentDidMount() {
+    this.drawFlame("spx-nav", 4);
+    this.drawFlame("spx-hero", 6);
+    this.drawFlame("spx-about", 7);
+    this.setupCanvas();
+    this.setupReveal();
+    this.setupActiveNav();
+    this.onMove = (e) => { this.mpx = e.clientX; this.mpy = e.clientY; };
+    window.addEventListener("mousemove", this.onMove);
+    this.logTimer = setInterval(() => this.tick(), 3000);
+  }
+  componentWillUnmount() {
+    clearInterval(this.logTimer);
+    cancelAnimationFrame(this.raf);
+    window.removeEventListener("mousemove", this.onMove);
+    window.removeEventListener("scroll", this.onScroll);
+    window.removeEventListener("resize", this._resize);
+  }
+  componentDidUpdate() {
+    const s = document.getElementById("chat-scroll");
+    if (s && this.state.loading) s.scrollTop = s.scrollHeight;
+  }
+  fxGrille(ts, mx, my, sy) {
+    const ctx = this.ctx, W = this.W, H = this.H, step = 46;
+    const ox = (mx / W - 0.5) * -30, oy = (my / H - 0.5) * -30 - sy * 0.05;
+    ctx.lineWidth = 1;
+    for (let x = (ox % step) - step; x < W + step; x += step) {
+      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(x - mx) / 380)})`;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = (oy % step) - step; y < H + step; y += step) {
+      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(y - my) / 320)})`;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(mx, my, 0, mx, my, 220);
+    g.addColorStop(0, "rgba(124,77,255,0.18)"); g.addColorStop(1, "rgba(124,77,255,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  fxConstellation(ts, mx, my) {
+    const ctx = this.ctx, W = this.W, H = this.H, ns = this.nodes, D = 124;
+    for (const n of ns) {
+      n.x += n.vx; n.y += n.vy;
+      if (n.x < 0 || n.x > W) n.vx *= -1;
+      if (n.y < 0 || n.y > H) n.vy *= -1;
+    }
+    ctx.lineWidth = 1;
+    for (let i = 0; i < ns.length; i++) {
+      const a = ns[i], dm = Math.hypot(a.x - mx, a.y - my);
+      if (dm < 190) { ctx.strokeStyle = `rgba(67,224,255,${0.45 * (1 - dm / 190)})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(mx, my); ctx.stroke(); }
+      for (let j = i + 1; j < ns.length; j++) {
+        const b = ns[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < D) {
+          const lit = dm < 170 || Math.hypot(b.x - mx, b.y - my) < 170;
+          ctx.strokeStyle = lit ? `rgba(67,224,255,${0.28 * (1 - d / D)})` : `rgba(124,77,255,${0.12 * (1 - d / D)})`;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+    for (const n of ns) {
+      const lit = Math.hypot(n.x - mx, n.y - my) < 170, s = lit ? 4 : 3;
+      ctx.fillStyle = lit ? "#43e0ff" : "rgba(190,148,255,.85)";
+      ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
+    }
+  }
+  fxAimant(ts, mx, my) {
+    const ctx = this.ctx, W = this.W, H = this.H, step = 42, R = 140;
+    for (let x = step / 2; x < W; x += step)
+      for (let y = step / 2; y < H; y += step) {
+        const dx = x - mx, dy = y - my, d = Math.hypot(dx, dy) || 1;
+        if (d < R) {
+          const t = 1 - d / R, f = t * 42;
+          const px = x + dx / d * f, py = y + dy / d * f, gg = Math.round(59 + 153 * t);
+          ctx.fillStyle = `rgba(255,${gg},${Math.round(107 * (1 - t))},${0.5 + 0.5 * t})`;
+          const s = 2 + 2.5 * t; ctx.fillRect(px - s / 2, py - s / 2, s, s);
+        } else {
+          ctx.fillStyle = "rgba(170,150,230,0.22)";
+          ctx.fillRect(x - 1, y - 1, 2, 2);
+        }
+      }
+  }
+  fxVortex(ts, mx, my) {
+    const ctx = this.ctx;
+    for (const o of this.orbs) {
+      o.ang += o.spd;
+      const x = mx + Math.cos(o.ang) * o.rad, y = my + Math.sin(o.ang) * o.rad * 0.62;
+      ctx.fillStyle = o.col; ctx.fillRect(x - o.size / 2, y - o.size / 2, o.size, o.size);
+    }
+  }
+  fxOnde(ts, mx, my) {
+    const ctx = this.ctx, W = this.W, H = this.H, step = 40;
+    for (let x = step / 2; x < W; x += step)
+      for (let y = step / 2; y < H; y += step) {
+        const d = Math.hypot(x - mx, y - my);
+        const f = Math.max(0, Math.sin(d / 26 - ts / 260)) * Math.max(0, 1 - d / 540);
+        const s = 1.5 + 2.4 * f;
+        ctx.fillStyle = `rgba(67,224,255,${0.05 + 0.28 * f})`;
+        ctx.fillRect(x - s / 2, y - s / 2, s, s);
+      }
+  }
+  setupReveal() {
+    const ids = ["statut", "chat", "galerie", "journal", "communaute", "apropos"];
+    const io = new IntersectionObserver((ents) => {
+      ents.forEach((en) => {
+        if (en.isIntersecting) {
+          const id = en.target.id;
+          this.setState((s) => ({ seen: { ...s.seen, [id]: true } }));
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    ids.forEach((id) => { const el = document.getElementById(id); if (el) io.observe(el); });
+  }
+  setupActiveNav() {
+    const ids = ["statut", "chat", "galerie", "journal", "communaute", "apropos"];
+    const io = new IntersectionObserver((ents) => {
+      ents.forEach((en) => { if (en.isIntersecting) this.setState({ active: en.target.id }); });
+    }, { rootMargin: "-45% 0px -50% 0px" });
+    ids.forEach((id) => { const el = document.getElementById(id); if (el) io.observe(el); });
+  }
+  drawFlame(id, P) {
+    const bm = [
+      ".....O.....", "....OOO....", "....OYO....", "...OOYOO...", "...OYYYO...",
+      "..OOYYYOO..", "..OYYWYYO..", ".OOYYWWYOO.", ".OYYWWWYYO.", ".OYYWWWYYO.",
+      ".OOYYWYYOO.", "..OYYYYYO..", "..OOYYYOO..", "...OOOOO..."
+    ];
+    const pal = { O: "#ff4d1f", Y: "#ffb020", W: "#fff2c2" };
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.position = "absolute"; el.style.left = "0"; el.style.top = "0";
+    el.style.display = "block"; el.style.background = "transparent";
+    el.style.width = P + "px"; el.style.height = P + "px";
+    const s = [];
+    for (let r = 0; r < bm.length; r++)
+      for (let c = 0; c < bm[r].length; c++) {
+        const ch = bm[r][c];
+        if (ch !== ".") s.push(`${c * P}px ${r * P}px 0 0 ${pal[ch]}`);
+      }
+    el.style.boxShadow = s.join(",");
+  }
+  setupCanvas() {
+    const cv = document.getElementById("bg-canvas");
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    this.ctx = ctx; this.cv = cv;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this._resize = () => {
+      this.W = window.innerWidth; this.H = window.innerHeight;
+      cv.width = this.W * dpr; cv.height = this.H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.initParticles();
+    };
+    window.addEventListener("resize", this._resize);
+    this._resize();
+    const loop = (ts) => { this.draw(ts || 0); this.raf = requestAnimationFrame(loop); };
+    this.raf = requestAnimationFrame(loop);
+  }
+  newEmber() {
+    return { x: Math.random() * this.W, y: this.H + Math.random() * this.H, vy: 0.3 + Math.random() * 1.0, size: 1 + Math.floor(Math.random() * 3), hue: Math.random(), drift: (Math.random() - 0.5) * 0.4, life: Math.random() * 6 };
+  }
+  initParticles() {
+    const W = this.W, H = this.H;
+    this.embers = Array.from({ length: 64 }, () => this.newEmber());
+    this.nodes = Array.from({ length: 56 }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5 }));
+    const cols = ["#ffd400", "#ff3b6b", "#43e0ff", "#bf94ff"];
+    this.orbs = Array.from({ length: 120 }, () => ({ ang: Math.random() * Math.PI * 2, rad: 24 + Math.random() * 250, spd: (0.004 + Math.random() * 0.016) * (Math.random() < 0.5 ? 1 : -1), size: 2 + Math.floor(Math.random() * 3), col: cols[Math.floor(Math.random() * cols.length)] }));
+  }
+  draw(ts) {
+    const ctx = this.ctx; if (!ctx) return;
+    const W = this.W, H = this.H, sy = window.scrollY || 0;
+    ctx.clearRect(0, 0, W, H);
+    // braises (toujours en ambiance)
+    ctx.globalCompositeOperation = "lighter";
+    for (const e of this.embers) {
+      e.y -= e.vy; e.x += e.drift;
+      if (e.y < -10) { Object.assign(e, this.newEmber()); e.y = H + 10; }
+      const col = e.hue < 0.5 ? "255,90,30" : (e.hue < 0.8 ? "255,180,40" : "255,60,120");
+      const a = 0.28 + 0.38 * Math.abs(Math.sin(ts / 500 + e.life));
+      ctx.fillStyle = `rgba(${col},${a})`;
+      ctx.fillRect(e.x, e.y, e.size, e.size);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    // couche interactive
+    const mx = this.mpx == null ? W / 2 : this.mpx, my = this.mpy == null ? H / 2 : this.mpy;
+    this.fxAimant(ts, mx, my);
+  }
+  tick() {
+    const r = this.pool[Math.floor(Math.random() * this.pool.length)];
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const t = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    this.setState((s) => ({ log: [{ t, tag: r.tag, tc: r.tc, x: r.x }, ...s.log].slice(0, 8) }));
+  }
+  cycleMouse = () => {
+    const i = this.mfxOrder.indexOf(this.state.mfx);
+    const next = this.mfxOrder[(i + 1) % this.mfxOrder.length];
+    try { localStorage.setItem("wally_mfx", next); } catch (e) {}
+    this.setState({ mfx: next });
+  };
+  go = (id) => {
+    const el = document.getElementById(id);
+    if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 66, behavior: "smooth" });
+  };
+  goTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  onDraft = (e) => this.setState({ draft: e.target.value });
+  onKey = (e) => { if (e.key === "Enter") { e.preventDefault(); this.send(); } };
+  fallback() {
+    const r = ["non.", "feur.", "skill issue.", "ouais ouais.", "demande à Azrael.", "ptdr non.", "t'es sérieux là ?", "mouais."];
+    return r[Math.floor(Math.random() * r.length)];
+  }
+  async askWally(msgs) {
+    if (!(window.claude && window.claude.complete)) throw new Error("no api");
+    const persona = "Tu es Wally (alias WallyTeBully), un bot Twitch IA taquin et sarcastique pour la chaîne d'Azrael_TTV. Réponds en français, ultra concis (1 phrase, ~180 caractères max), humour sec, références gaming. Tu peux répondre en un seul mot (ex: non, ouais, ptdr). Reste bon enfant, pas d'insultes graves, pas d'emojis à outrance. Ne te présente pas, réponds direct.";
+    const hist = msgs.slice(-8).map((m) => (m.name === "toi" ? "User" : "Wally") + ": " + m.text).join("\n");
+    const out = await window.claude.complete(persona + "\n\n" + hist + "\nWally:");
+    return (out || "").trim().replace(/^Wally\s*:\s*/i, "").slice(0, 220);
+  }
+  send = async () => {
+    const t = this.state.draft.trim();
+    if (!t || this.state.loading) return;
+    const base = [...this.state.messages, { name: "toi", color: "#43e0ff", text: t }];
+    this.setState({ messages: base, draft: "", loading: true });
+    const q = t.toLowerCase().replace(/[?!.\s]/g, "");
+    let reply;
+    if (q === "quoi") reply = "feur.";
+    else { try { reply = await this.askWally(base); } catch (e) { reply = this.fallback(); } }
+    if (!reply) reply = this.fallback();
+    this.setState((s) => ({ messages: [...s.messages, { name: "wally", color: "#ffd400", text: reply }], loading: false }));
+  };
+  renderVals() {
+    const p = this.state.active;
+    const n = (x) => (p === x ? "#ffd400" : "#cdbff5");
+    const seen = this.state.seen;
+    const rv = (x) => (seen[x] ? "1" : "0");
+    const ty = (x) => (seen[x] ? "none" : "translateY(34px)");
+    return {
+      revStatut: rv("statut"), tyStatut: ty("statut"),
+      revChat: rv("chat"), tyChat: ty("chat"),
+      revGalerie: rv("galerie"), tyGalerie: ty("galerie"),
+      revJournal: rv("journal"), tyJournal: ty("journal"),
+      revCommunaute: rv("communaute"), tyCommunaute: ty("communaute"),
+      revApropos: rv("apropos"), tyApropos: ty("apropos"),
+      mouseLabel: this.mfxLabels[this.state.mfx], cycleMouse: this.cycleMouse,
+      nStatut: n("statut"), nChat: n("chat"), nGalerie: n("galerie"),
+      nJournal: n("journal"), nCommunaute: n("communaute"), nApropos: n("apropos"),
+      goTop: this.goTop,
+      goStatut: () => this.go("statut"), goChat: () => this.go("chat"),
+      goGalerie: () => this.go("galerie"), goJournal: () => this.go("journal"),
+      goCommunaute: () => this.go("communaute"), goApropos: () => this.go("apropos"),
+      messages: this.state.messages, draft: this.state.draft, loading: this.state.loading,
+      onDraft: this.onDraft, onKey: this.onKey, send: this.send, log: this.state.log
+    };
+  }
+}
+</script>
+</body>
+</html>
