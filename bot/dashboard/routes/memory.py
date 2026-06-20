@@ -9,19 +9,9 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
-from bot.core.memory import GLOBAL_USER_ID
-from bot.core.memory_store import MemoryMetadata, MemoryRecord
 
 router = APIRouter()
 
-
-def _get_store(request: Request):
-    """Return the QdrantMemoryStore from MemoryService, or raise 503."""
-    state = request.app.state.wally
-    store = state.memory.store
-    if store is None:
-        raise HTTPException(503, detail="Memory store not available")
-    return store
 
 
 async def _resolve_missing_usernames(
@@ -261,49 +251,8 @@ async def register_user(body: RegisterUserRequest, request: Request):
 
 @router.get("/memory/users/{user_id}")
 async def get_user_memories(user_id: str, request: Request):
-    state = request.app.state.wally
-    store = _get_store(request)
-
-    def _source_platform(source_id: str) -> str:
-        return source_id.split(":")[0] if ":" in source_id else ""
-
-    def _record_to_dict(r: MemoryRecord, source: str) -> dict:
-        return {
-            "id": r.id,
-            "memory": r.text,
-            "category": r.category,
-            "source": source,
-            "source_platform": _source_platform(source),
-            "created_at": r.created_at,
-            "updated_at": r.created_at,
-        }
-
-    # Récupérer les mémoires du user principal
-    records = await store.get_all(user_id)
-    memories = [_record_to_dict(r, user_id) for r in records if r.text]
-
-    # Si cet utilisateur a des alias liés, inclure aussi leurs mémoires
-    accepted_links = await state.db.list_link_proposals(status="accepted")
-    alias_ids = [
-        link["alias_id"] for link in accepted_links
-        if link["canonical_id"] == user_id
-    ]
-    for alias_id in alias_ids:
-        try:
-            alias_records = await store.get_all(alias_id)
-            for r in alias_records:
-                if r.text:
-                    memories.append(_record_to_dict(r, alias_id))
-        except Exception as exc:
-            logger.warning("Échec lecture mémoires alias {a}: {e}", a=alias_id, e=exc)
-
-    # Trier par date (created_at), plus récent en premier
-    memories.sort(
-        key=lambda m: m.get("created_at") or "",
-        reverse=True,
-    )
-
-    return {"user_id": user_id, "memories": memories}
+    # V2 refonte — store supprimé
+    return {"user_id": user_id, "memories": [], "detail": "mémoire en refonte"}
 
 
 # ── POST /memory/users/{user_id}/memories ─────────────────────────────────────
@@ -316,42 +265,14 @@ class AddMemoryRequest(BaseModel):
 @router.post("/memory/users/{user_id}/memories")
 async def add_memory(user_id: str, body: AddMemoryRequest, request: Request):
     """Ajoute manuellement un souvenir à un utilisateur."""
-    content = body.content.strip()
-    if not content:
-        raise HTTPException(400, detail="Contenu requis")
-
-    store = _get_store(request)
-    state = request.app.state.wally
-
-    # Extraire plateforme depuis le user_id (format "platform:id")
-    platform = user_id.split(":")[0] if ":" in user_id else ""
-
-    meta = MemoryMetadata(
-        user_id=user_id,
-        category=body.category or "FAIT",
-        source=user_id,
-        platform=platform,
-    )
-    await store.upsert(user_id, content, meta)
-    logger.info("Souvenir ajouté manuellement pour {uid}: {c}", uid=user_id, c=content[:80])
-
-    # Assurer que l'utilisateur existe dans memory_users
-    await state.db.upsert_memory_user(user_id, platform)
-
-    return {"status": "ok", "user_id": user_id}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 # ── DELETE /memory/users/{user_id} ────────────────────────────────────────────
 
 @router.delete("/memory/users/{user_id}")
 async def delete_user(user_id: str, request: Request):
-    state = request.app.state.wally
-    store = _get_store(request)
-    await store.delete_by_user(user_id)
-    await state.db.execute(
-        "DELETE FROM memory_users WHERE user_id = ?", (user_id,)
-    )
-    return {"deleted": True}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 # ── PUT /memory/users/{user_id}/memories/{memory_id} ─────────────────────────
@@ -364,30 +285,14 @@ class UpdateMemoryRequest(BaseModel):
 @router.put("/memory/users/{user_id}/memories/{memory_id}")
 async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest, request: Request):
     """Modifie le contenu d'un souvenir existant."""
-    content = body.content.strip()
-    if not content:
-        raise HTTPException(400, detail="Contenu requis")
-
-    store = _get_store(request)
-    platform = user_id.split(":")[0] if ":" in user_id else ""
-    meta = MemoryMetadata(
-        user_id=user_id,
-        category=body.category or "FAIT",
-        source=user_id,
-        platform=platform,
-    )
-    await store.update(memory_id, content, meta)
-    logger.info("Souvenir modifié pour {uid}: {mid}", uid=user_id, mid=memory_id)
-    return {"status": "ok", "memory_id": memory_id}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 # ── DELETE /memory/users/{user_id}/memories/{memory_id} ──────────────────────
 
 @router.delete("/memory/users/{user_id}/memories/{memory_id}")
 async def delete_memory(user_id: str, memory_id: str, request: Request):
-    store = _get_store(request)
-    await store.delete(memory_id)
-    return {"deleted": True}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 # ── Global memory CRUD ────────────────────────────────────────────────────────
@@ -395,60 +300,25 @@ async def delete_memory(user_id: str, memory_id: str, request: Request):
 @router.get("/memory/global")
 async def list_global_memories(request: Request):
     """Liste toutes les mémoires globales (connaissances communauté)."""
-    store = _get_store(request)
-    records = await store.get_all(GLOBAL_USER_ID)
-    memories = [
-        {
-            "id": r.id,
-            "memory": r.text,
-            "created_at": r.created_at,
-            "updated_at": r.created_at,
-        }
-        for r in records
-        if r.text
-    ]
-    memories.sort(
-        key=lambda m: m.get("created_at") or "",
-        reverse=True,
-    )
-    return {"memories": memories}
+    return {"memories": [], "detail": "mémoire en refonte"}
 
 
 @router.post("/memory/global")
 async def add_global_memory(body: AddMemoryRequest, request: Request):
     """Ajoute une connaissance globale (communauté)."""
-    content = body.content.strip()
-    if not content:
-        raise HTTPException(400, detail="Contenu requis")
-    state = request.app.state.wally
-    await state.memory.add_global(content)
-    return {"status": "ok"}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 @router.put("/memory/global/{memory_id}")
 async def update_global_memory(memory_id: str, body: UpdateMemoryRequest, request: Request):
     """Modifie une mémoire globale."""
-    content = body.content.strip()
-    if not content:
-        raise HTTPException(400, detail="Contenu requis")
-    store = _get_store(request)
-    meta = MemoryMetadata(
-        user_id=GLOBAL_USER_ID,
-        category=body.category or "FAIT",
-        source="dashboard",
-        platform="",
-    )
-    await store.update(memory_id, content, meta)
-    logger.info("Global memory updated: {mid}", mid=memory_id)
-    return {"status": "ok", "memory_id": memory_id}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 @router.delete("/memory/global/{memory_id}")
 async def delete_global_memory(memory_id: str, request: Request):
     """Supprime une mémoire globale."""
-    store = _get_store(request)
-    await store.delete(memory_id)
-    return {"deleted": True}
+    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
 
 
 # ── GET /memory/aliases ───────────────────────────────────────────────────────
@@ -459,23 +329,8 @@ async def list_aliases(request: Request):
     aliases = await state.db.list_aliases()
     unresolved = await state.db.list_unresolved_aliases()
 
-    # Count facts for unresolved aliases (try/except — store may be unavailable)
-    store = None
-    try:
-        store = _get_store(request)
-    except Exception:
-        pass
-
-    unresolved_with_facts = []
-    for u in unresolved:
-        fact_count = 0
-        if store:
-            try:
-                count = await store.count(u["user_id"])
-                fact_count = count
-            except Exception:
-                pass
-        unresolved_with_facts.append({**u, "fact_count": fact_count})
+    # fact_count non disponible (store V1 supprimé — refonte V2 en cours)
+    unresolved_with_facts = [{**u, "fact_count": 0} for u in unresolved]
 
     return {"aliases": aliases, "unresolved": unresolved_with_facts}
 
@@ -637,20 +492,7 @@ async def sync_memory_users(request: Request):
             except Exception as e:
                 logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
 
-    # ── Update memory_count per user ──
-    store = state.memory.store
-    if store is not None:
-        for user in users:
-            uid = user["user_id"]
-            try:
-                count = await store.count(uid)
-                await state.db.execute(
-                    "UPDATE memory_users SET memory_count=? WHERE user_id=?",
-                    (count, uid),
-                )
-            except Exception as e:
-                logger.warning("memory_count update failed for {uid}: {e}", uid=uid, e=e)
-
+    # memory_count update omis (store V1 supprimé — refonte V2 en cours)
     return {"synced": n, "resolved": resolved}
 
 
@@ -735,32 +577,8 @@ async def resolve_usernames(request: Request):
 async def search_memories(request: Request, q: str | None = None):
     if not q or not q.strip():
         raise HTTPException(400, detail="q parameter required")
-    state = request.app.state.wally
-    store = _get_store(request)
-
-    users = await state.db.list_memory_users()
-    username_map = {u["user_id"]: u.get("username") for u in users}
-
-    all_results = []
-    for user in users:
-        uid = user["user_id"]
-        platform = user["platform"]
-        try:
-            records = await store.search(q, user_id=uid, limit=3, min_score=0.3)
-            for r in records:
-                if r.text:
-                    all_results.append({
-                        "user_id": uid,
-                        "username": username_map.get(uid),
-                        "platform": platform,
-                        "memory": r.text,
-                        "score": r.score,
-                    })
-        except Exception as exc:
-            logger.warning("Memory search failed for {uid}: {e}", uid=uid, e=exc)
-
-    all_results.sort(key=lambda x: x["score"], reverse=True)
-    return {"results": all_results}
+    # V2 refonte — store supprimé
+    return {"results": [], "detail": "mémoire en refonte"}
 
 
 # ── POST /memory/scan-web-chat ────────────────────────────────────────────────
@@ -836,33 +654,11 @@ async def memory_dashboard(request: Request):
     )
     q_stats = dict(await cursor.fetchone())
 
-    # 3. Nombre de souvenirs par utilisateur (top 20) via memory store count
-    users = await db.list_memory_users()
-    user_memory_counts: list[dict] = []
-    store = None
-    try:
-        store = _get_store(request)
-    except Exception:
-        pass
-
-    if store:
-        for u in users[:30]:  # limiter pour perf
-            try:
-                count = await store.count(u["user_id"])
-                user_memory_counts.append({
-                    "user_id": u["user_id"],
-                    "username": u.get("username") or u["user_id"],
-                    "platform": u["platform"],
-                    "count": count,
-                })
-            except Exception:
-                pass
-        user_memory_counts.sort(key=lambda x: x["count"], reverse=True)
-
+    # user_memory_counts non disponible (store V1 supprimé — refonte V2 en cours)
     return {
         "pending_questions": pending_questions,
         "question_stats": q_stats,
-        "user_memory_counts": user_memory_counts[:20],
+        "user_memory_counts": [],
     }
 
 

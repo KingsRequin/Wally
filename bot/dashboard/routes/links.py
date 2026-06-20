@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel
 
-from bot.core.memory_store import MemoryMetadata
 from bot.dashboard.routes.sse import broadcast_event
 
 router = APIRouter()
@@ -49,47 +48,12 @@ async def analyze_links(request: Request):
 
 
 async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
-    """Fusionne les mémoires de l'alias vers le canonical, puis nettoie."""
+    """Met à jour le cache d'alias. La fusion mémoire V1 est supprimée (refonte V2)."""
     state.memory.add_alias(alias_id, canonical_id)
-
-    store = state.memory.store
-    if store is None:
-        logger.warning("Memory store non disponible — liaison acceptée sans fusion mémoire")
-        return
-
-    try:
-        records = await store.get_all(alias_id)
-        total = 0
-        copied = 0
-        for rec in records:
-            if rec.text:
-                total += 1
-                try:
-                    meta = MemoryMetadata(
-                        user_id=canonical_id,
-                        category=rec.category,
-                        date=rec.date,
-                        source=rec.source,
-                        platform=rec.platform,
-                    )
-                    await store.upsert(canonical_id, rec.text, meta)
-                    copied += 1
-                except Exception as copy_err:
-                    logger.warning(
-                        "Échec copie mémoire {a} → {c}: {e}",
-                        a=alias_id, c=canonical_id, e=copy_err,
-                    )
-        if total > 0 and copied == total:
-            await store.delete_by_user(alias_id)
-            # Ne pas supprimer de memory_users : l'alias est masqué via
-            # user_links dans list_users, et on garde le username pour l'affichage
-        elif total > 0:
-            logger.warning(
-                "Fusion partielle {a} → {c}: {ok}/{n} — mémoires alias conservées",
-                a=alias_id, c=canonical_id, ok=copied, n=total,
-            )
-    except Exception as e:
-        logger.error("Erreur fusion mémoire: {e}", e=e)
+    logger.warning(
+        "Liaison {a} → {c} acceptée — fusion mémoire omise (store V1 supprimé)",
+        a=alias_id, c=canonical_id,
+    )
 
 
 async def _resolve_user_id(db, entered: str, platform: str) -> str | None:

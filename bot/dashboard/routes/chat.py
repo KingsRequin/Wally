@@ -333,31 +333,8 @@ async def my_memories(request: Request):
     discord_id = payload["discord_id"]
     user_id = f"discord:{discord_id}"
 
-    try:
-        store = state.memory.store
-        if store is None:
-            return {"memories": []}
-
-        records = await store.get_all(user_id)
-
-        # Include accepted alias memories
-        accepted_links = await state.db.list_link_proposals(status="accepted")
-        alias_ids = [link["alias_id"] for link in accepted_links if link["canonical_id"] == user_id]
-        for alias_id in alias_ids:
-            try:
-                records.extend(await store.get_all(alias_id))
-            except Exception:
-                pass
-
-        # Sort by most recent first
-        records.sort(
-            key=lambda r: r.created_at or "",
-            reverse=True,
-        )
-        return {"memories": [{"id": r.id, "memory": r.text} for r in records if r.text]}
-    except Exception as exc:
-        logger.warning("my-memories failed for {u}: {e}", u=discord_id, e=exc)
-        return {"memories": []}
+    # V2 refonte — store supprimé
+    return {"memories": []}
 
 
 async def _handle_imagine(state: "AppState", ws, user, prompt: str):
@@ -516,16 +493,8 @@ async def get_my_memory(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Authentication required")
 
     state = request.app.state.wally
-    store = state.memory.store
-    if store is None:
-        return {"facts": [], "preferences": [], "relation": {"trust": 0.0, "love": 0.0}}
 
     try:
-        records = await store.get_all(user_id)
-
-        facts = [r.text for r in records if r.category in ("FAIT", "LANG")]
-        preferences = [r.text for r in records if r.category == "PREF"]
-
         parts = user_id.split(":", 1)
         platform = parts[0] if len(parts) == 2 else "discord"
         raw_id = parts[1] if len(parts) == 2 else user_id
@@ -533,9 +502,10 @@ async def get_my_memory(request: Request) -> dict:
         trust = await state.db.get_trust_score(platform, raw_id)
         love = await state.db.get_love_score(platform, raw_id)
 
+        # facts/preferences non disponibles (store V1 supprimé — refonte V2 en cours)
         return {
-            "facts": facts,
-            "preferences": preferences,
+            "facts": [],
+            "preferences": [],
             "relation": {"trust": round(trust, 3), "love": round(love, 3)},
         }
     except Exception as exc:
