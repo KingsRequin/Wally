@@ -14,45 +14,26 @@ def make_memory_config():
 
 
 @pytest.mark.asyncio
-async def test_memory_add_prefixes_emotion_tag():
-    """Quand emotion_context est fourni, le contenu stocké est préfixé."""
+async def test_memory_add_no_backend_is_silent():
+    """Sans backend V2 initialisé, add() est silencieux (log WARNING, pas de crash)."""
     from bot.core.memory import MemoryService
     config = make_memory_config()
     memory = MemoryService(config)
-
-    memory._store_init_attempted = True
-    memory._store = AsyncMock()
-    memory._store.upsert = AsyncMock(return_value="point-uuid")
-    memory._store.get_all = AsyncMock(return_value=[])
-
-    await memory.add("discord", "610550333042589752", "bonjour !", emotion_context="Wally: joy")
-
-    memory._store.upsert.assert_called_once()
-    stored_content = memory._store.upsert.call_args.args[1]
-    assert stored_content.startswith("[Wally: joy]")
-    assert "bonjour !" in stored_content
-    # Date prefix should be present after emotion tag
-    assert re.search(r"\[\d{4}-\d{2}-\d{2}\]", stored_content)
+    # _retrieval is None by default — must not raise
+    await memory.add("discord", "610550333042589752", "bonjour !")
 
 
 @pytest.mark.asyncio
-async def test_memory_add_no_tag_when_empty_context():
-    """Quand emotion_context est vide, le contenu n'est pas modifié."""
+async def test_memory_add_extra_kwargs_accepted():
+    """Les anciens kwargs (emotion_context, username_hint) sont absorbés sans erreur."""
     from bot.core.memory import MemoryService
     config = make_memory_config()
     memory = MemoryService(config)
-
-    memory._store_init_attempted = True
-    memory._store = AsyncMock()
-    memory._store.upsert = AsyncMock(return_value="point-uuid")
-    memory._store.get_all = AsyncMock(return_value=[])
-
-    await memory.add("discord", "610550333042589752", "bonjour !", emotion_context="")
-
-    memory._store.upsert.assert_called_once()
-    stored_content = memory._store.upsert.call_args.args[1]
-    # Date prefix should be present even without emotion context
-    assert re.search(r"^\[\d{4}-\d{2}-\d{2}\] bonjour !$", stored_content)
+    # Should not raise TypeError even with legacy kwargs
+    await memory.add(
+        "discord", "610550333042589752", "bonjour !",
+        emotion_context="Wally: joy", username_hint="TestUser",
+    )
 
 
 @pytest.mark.asyncio
