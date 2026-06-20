@@ -253,11 +253,13 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
 
             messages = [{"role": "user", "content": user_content}]
 
+            _t0 = time.monotonic()
             reply = await state.primary_llm.complete(
                 system_prompt, messages,
                 purpose="web_response",
                 user_id=sender_id,
             )
+            state.record_response_time((time.monotonic() - _t0) * 1000.0)
 
             # Strip [react:emoji] tag — web chat doesn't support reactions
             _react_emoji, reply = _parse_react_tag(reply)

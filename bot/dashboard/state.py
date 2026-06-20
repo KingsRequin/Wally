@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
@@ -55,3 +56,17 @@ class AppState:
     message_count_web: int = 0
     overlay_visible: bool = True
     overlay_image_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    _response_times: deque = field(default_factory=lambda: deque(maxlen=50))
+
+    def _init_latency(self) -> None:
+        # for tests constructing via __new__ (bypassing dataclass __init__)
+        self._response_times = deque(maxlen=50)
+
+    def record_response_time(self, ms: float) -> None:
+        self._response_times.append(ms)
+
+    @property
+    def avg_response_ms(self):
+        if not self._response_times:
+            return None
+        return round(sum(self._response_times) / len(self._response_times), 1)
