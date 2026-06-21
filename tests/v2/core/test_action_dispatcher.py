@@ -437,6 +437,71 @@ async def test_act_reflect_self_is_cumulative(tmp_fact_store):
     assert latest.content == "deuxième récit"
 
 
+# ── Phase 3c : note_relation (opinion auto-dirigée sur les gens) ──
+
+@pytest.mark.asyncio
+async def test_act_note_relation_adds_rel_fact(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "drôle mais lourd quand il insiste"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.REL])
+    assert len(facts) == 1
+    assert facts[0].content == "Kaelis — drôle mais lourd quand il insiste"
+    assert facts[0].category == FactCategory.REL
+    assert facts[0].source == "opinion"
+    assert facts[0].confidence == 1.0
+    assert facts[0].user_id == "wally:self"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_note_relation_is_cumulative(tmp_fact_store):
+    """Pas d'archivage : les opinions s'accumulent (les plus récentes priment)."""
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "sympa"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "il m'agace finalement"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.REL])
+    assert len(facts) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args", [
+    {"about": "  ", "opinion": "sympa"},
+    {"about": "Kaelis", "opinion": "  "},
+    {"about": "Kaelis"},
+    {"opinion": "sympa"},
+    {},
+])
+async def test_act_note_relation_missing_args_noop(tmp_fact_store, args):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation", act_args=args,
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert facts == []
+
+
 # ── Phase 2c : dm (DM Discord, owner-only) ──
 
 OWNER_ID = "610550333042589752"

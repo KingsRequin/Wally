@@ -25,6 +25,9 @@ class AttentionContext:
     # Récit de soi : le dernier « qui je deviens » écrit par Wally (Phase 3b).
     # Dernier fait actif de source `self_narrative`. None si aucun.
     self_narrative: str | None = None
+    # Affinités : les opinions que Wally s'est formées sur les gens (Phase 3c).
+    # Faits REL sous wally:self, ~5 plus récentes. list[AtomicFact].
+    relationships: list = field(default_factory=list)
 
 
 class AttentionAgent:
@@ -81,6 +84,14 @@ class AttentionAgent:
         sn = await self._facts.get_latest_by_source("wally:self", "self_narrative")
         self_narrative = sn.content if sn else None
 
+        # Affinités : les opinions que Wally a formées sur les gens (Phase 3c).
+        # Faits REL sous wally:self ; get_by_user trie déjà par last_seen_at DESC,
+        # on garde les ~5 plus récentes.
+        rels = await self._facts.get_by_user(
+            "wally:self", categories=[FactCategory.REL]
+        )
+        relationships = rels[:5]
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -93,6 +104,7 @@ class AttentionAgent:
             emotional_drive=drive,
             preoccupation=preoccupation,
             self_narrative=self_narrative,
+            relationships=relationships,
         )
 
     async def _build_idle_seed(

@@ -101,6 +101,10 @@ class ReasoningAgent:
             lines.append(
                 f"**Là où tu en es de qui tu deviens :** {ctx.self_narrative}"
             )
+        if getattr(ctx, "relationships", None):
+            lines.append("**Ce que tu penses des gens (tes affinités) :**")
+            for rel in ctx.relationships:
+                lines.append(f"  · {rel.content}")
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {ctx.emotion_state}",

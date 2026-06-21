@@ -20,6 +20,7 @@ def _make_fact(category: FactCategory, content: str = "test") -> AtomicFact:
 @pytest.mark.asyncio
 async def test_build_context_returns_emotion_state():
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     agent = AttentionAgent(store)
@@ -44,6 +45,7 @@ async def test_build_context_loads_desires_goals_thoughts():
         return []
 
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(side_effect=fake_search)
     agent = AttentionAgent(store)
@@ -65,6 +67,7 @@ async def test_build_context_loads_desires_goals_thoughts():
 @pytest.mark.asyncio
 async def test_build_context_time_of_day_values():
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     agent = AttentionAgent(store)
@@ -75,6 +78,7 @@ async def test_build_context_time_of_day_values():
 @pytest.mark.asyncio
 async def test_build_context_truncates_interactions_to_10():
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     agent = AttentionAgent(store)
@@ -94,6 +98,7 @@ async def test_build_context_truncates_interactions_to_10():
 async def test_build_context_non_idle_has_no_seed():
     """En mode normal (idle=False), idle_seed est None."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
@@ -108,6 +113,7 @@ async def test_build_context_idle_produces_seed():
     d'une source disponible (souvenir, but, désir, émotion ou heure)."""
     memory = _make_fact(FactCategory.FAIT, "Kaelis aime le jazz")
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[memory])
@@ -123,6 +129,7 @@ async def test_build_context_idle_produces_seed():
 async def test_build_context_idle_excludes_thought_from_memory_seed():
     """sample_random est appelé en excluant THOUGHT (pas de pensée comme souvenir)."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
@@ -136,6 +143,7 @@ async def test_build_context_idle_excludes_thought_from_memory_seed():
 async def test_build_context_idle_falls_back_to_emotion_or_time():
     """Même sans souvenir/but/désir, l'heure ou l'émotion fournit une amorce."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
@@ -151,6 +159,7 @@ async def test_build_context_populates_emotional_drive_when_dominant():
     """Une émotion dominante au-dessus du seuil peuple emotional_drive."""
     from bot.v2.core.emotional_drive import _DRIVES
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
@@ -165,6 +174,7 @@ async def test_build_context_populates_emotional_drive_when_dominant():
 async def test_build_context_no_drive_when_neutral():
     """État neutre (aucune émotion au-dessus du seuil) → emotional_drive None."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
@@ -198,6 +208,7 @@ async def test_build_context_populates_preoccupation():
     """build_context peuple preoccupation depuis le dernier fait focus."""
     focus = _make_fact(FactCategory.THOUGHT, "comprendre Kaelis")
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(focus=focus))
@@ -211,6 +222,7 @@ async def test_build_context_populates_preoccupation():
 async def test_build_context_preoccupation_none_when_no_focus():
     """Aucun fait focus → preoccupation None."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
@@ -226,6 +238,7 @@ async def test_build_context_populates_self_narrative():
     """build_context peuple self_narrative depuis le dernier fait self_narrative."""
     sn = _make_fact(FactCategory.THOUGHT, "je deviens plus posé")
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(self_narrative=sn))
@@ -239,9 +252,56 @@ async def test_build_context_populates_self_narrative():
 async def test_build_context_self_narrative_none_when_absent():
     """Aucun fait self_narrative → self_narrative None."""
     store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
     agent = AttentionAgent(store)
     ctx = await agent.build_context({"joy": 0.5}, [])
     assert ctx.self_narrative is None
+
+
+# ── Phase 3c : affinités (opinions auto-dirigées sur les gens) ──
+
+@pytest.mark.asyncio
+async def test_build_context_populates_relationships():
+    """build_context peuple relationships depuis get_by_user("wally:self", [REL])."""
+    rel1 = _make_fact(FactCategory.REL, "Kaelis — drôle mais lourd")
+    rel2 = _make_fact(FactCategory.REL, "Azrael — je lui fais confiance")
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[rel1, rel2])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert ctx.relationships == [rel1, rel2]
+    store.get_by_user.assert_any_call("wally:self", categories=[FactCategory.REL])
+
+
+@pytest.mark.asyncio
+async def test_build_context_relationships_empty_when_none():
+    """Aucun fait REL → relationships liste vide."""
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert ctx.relationships == []
+
+
+@pytest.mark.asyncio
+async def test_build_context_relationships_capped_at_5():
+    """Seules les ~5 opinions les plus récentes sont gardées."""
+    rels = [_make_fact(FactCategory.REL, f"Pers{i} — avis {i}") for i in range(8)]
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=rels)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert len(ctx.relationships) == 5
+    assert ctx.relationships == rels[:5]

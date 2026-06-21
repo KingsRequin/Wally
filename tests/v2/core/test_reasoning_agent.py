@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from bot.v2.core.reasoning_agent import ReasoningAgent, ReasoningResult
 from bot.v2.core.attention_agent import AttentionContext
-from bot.v2.core.memory.facts import SQLiteFactStore, FactCategory, FactStatus
+from bot.v2.core.memory.facts import AtomicFact, SQLiteFactStore, FactCategory, FactStatus
 
 
 def _make_context(emotion=None) -> AttentionContext:
@@ -176,6 +176,42 @@ def test_self_narrative_absent_when_none(tmp_path, tmp_db_path):
     )
     rendered = agent._format_context(_make_context())
     assert "qui tu deviens" not in rendered
+
+
+# ── Phase 3c : rendu des affinités ──
+
+def test_relationships_rendered_when_present(tmp_path, tmp_db_path):
+    """_format_context rend les affinités si présentes."""
+    from datetime import datetime, timezone
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    now = datetime.now(timezone.utc)
+    rel1 = AtomicFact(
+        user_id="wally:self", content="Kaelis — drôle mais lourd",
+        category=FactCategory.REL, created_at=now, last_seen_at=now,
+    )
+    rel2 = AtomicFact(
+        user_id="wally:self", content="Azrael — je lui fais confiance",
+        category=FactCategory.REL, created_at=now, last_seen_at=now,
+    )
+    ctx = _make_context()
+    ctx.relationships = [rel1, rel2]
+    rendered = agent._format_context(ctx)
+    assert "Ce que tu penses des gens (tes affinités)" in rendered
+    assert "Kaelis — drôle mais lourd" in rendered
+    assert "Azrael — je lui fais confiance" in rendered
+
+
+def test_relationships_absent_when_empty(tmp_path, tmp_db_path):
+    """relationships vide (défaut) → rien d'injecté."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    rendered = agent._format_context(_make_context())
+    assert "tes affinités" not in rendered
 
 
 @pytest.mark.asyncio

@@ -279,6 +279,28 @@ class ActionDispatcher:
                     {"type": "ACT", "detail": f"récit de soi : {narrative[:50]}"}
                 )
 
+        elif act_name == "note_relation" and self._facts:
+            about = (args.get("about") or "").strip()
+            opinion = (args.get("opinion") or "").strip()
+            if not about or not opinion:
+                return
+            # Opinion cumulative : Wally se fait SES propres avis sur les gens,
+            # stockés sous wally:self (sa perspective). Pas d'archivage — ses
+            # opinions évoluent par accumulation, les plus récentes priment au
+            # surfaçage (get_by_user trie par last_seen_at DESC).
+            await self._facts.add(AtomicFact(
+                user_id="wally:self",
+                content=f"{about} — {opinion}",
+                category=FactCategory.REL,
+                source="opinion",
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+            logger.info("ACT note_relation: {} — {}", about, opinion[:50])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"opinion sur {about}"})
+
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
             if self_fix is None:
