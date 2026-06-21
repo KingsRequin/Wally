@@ -5,7 +5,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.core.web_search import WebSearchService, WEB_SEARCH_TOOL, IMAGE_SEARCH_TOOL
-from bot.core.openai_client import OpenAIClient, FALLBACK_RESPONSE
+from bot.core.llm.openai_client import OpenAILLMClient as OpenAIClient
+from bot.core.llm.base import FALLBACK_RESPONSE
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
