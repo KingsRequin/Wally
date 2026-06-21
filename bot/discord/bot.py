@@ -95,7 +95,7 @@ class WallyDiscord(commands.Bot):
             self.response_gate = ResponseGate(
                 llm=gate_llm,
                 fact_store=SQLiteFactStore(self._v2_db_path),
-                prompts_dir=Path(__file__).parent.parent / "v2" / "persona" / "prompts",
+                prompts_dir=Path(__file__).parent.parent / "intelligence" / "persona" / "prompts",
             )
             logger.info("ResponseGate V2 initialisé avec DB V2 créée ({})", self._v2_db_path)
 
@@ -114,7 +114,7 @@ class WallyDiscord(commands.Bot):
             import os as _os_cog
 
             _db_path = self._v2_db_path or _os_cog.getenv("DB_PATH", "data/wally.db")
-            _v2_persona_dir = Path(__file__).parent.parent / "v2" / "persona"
+            _v2_persona_dir = Path(__file__).parent.parent / "intelligence" / "persona"
             _prompts_dir = _v2_persona_dir / "prompts"
             _persona_dir = Path(__file__).parent.parent / "persona"
 

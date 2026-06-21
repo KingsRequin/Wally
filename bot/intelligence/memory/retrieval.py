@@ -1,4 +1,4 @@
-# bot/v2/core/memory/retrieval.py
+# bot/intelligence/memory/retrieval.py
 """Récupération de faits — FTS5 + scoring Generative-Agents (porté de jarvis-OS).
 
 Remplace l'ancien chemin Qdrant. Le score d'un fait pour une requête est le

@@ -16,7 +16,7 @@ def make_gate(llm_result: dict | None = None, llm_raises: bool = False):
     fact_store = MagicMock()
     fact_store.add = AsyncMock(return_value=1)
 
-    return ResponseGate(llm=llm, fact_store=fact_store, prompts_dir="bot/v2/persona/prompts")
+    return ResponseGate(llm=llm, fact_store=fact_store, prompts_dir="bot/intelligence/persona/prompts")
 
 
 EMOTION_STATE = {"anger": 0.1, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.1}

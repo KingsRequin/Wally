@@ -1,4 +1,4 @@
-# bot/v2/core/memory/vocab.py
+# bot/intelligence/memory/vocab.py
 """Vocabulaire fermé pour les faits mémoire — porté/adapté de jarvis-OS.
 
 Un fait est un triplet sujet-prédicat-objet + catégorie. Le prédicat et la

@@ -74,7 +74,7 @@ def test_render_empty_when_no_channels(tmp_path):
 def test_real_directory_eight_text_channels():
     """Le vrai fichier livré expose 8 canaux textuels (le forum exclu)."""
     import pathlib
-    real = pathlib.Path(__file__).parents[3] / "bot" / "v2" / "persona" / "CHANNELS.md"
+    real = pathlib.Path(__file__).parents[3] / "bot" / "intelligence" / "persona" / "CHANNELS.md"
     d = ChannelDirectory.load(real)
     assert len(d.speakable_ids()) == 8
     assert "1106526870956146779" not in d.speakable_ids()  # #suggestions forum

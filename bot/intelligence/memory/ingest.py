@@ -1,4 +1,4 @@
-# bot/v2/core/memory/ingest.py
+# bot/intelligence/memory/ingest.py
 """Pipeline d'ingestion mémoire : contenu → faits (LLM) → réconciliation 2 étages.
 
 Porté/adapté de jarvis-OS (`MemoryIngest`). jarvis est sync + mono-user ; Wally est
