@@ -59,32 +59,54 @@ and a coherent personality. Single Python asyncio process (modular monolith), tw
 ```
 bot/
 ├── main.py              # Entry point, DI wiring, asyncio.gather()
+├── bootstrap.py         # Service construction, DI injection
 ├── config.py            # Config singleton, hot-reload, config.save()
-├── core/
+├── core/                # Primitives sans LLM
+│   ├── llm/             # Couche LLM (base, deepseek, openai_client pour images, factory)
 │   ├── emotion.py       # Global emotion state, decay, NRCLex analysis
-│   ├── memory.py        # MemoryService: sliding context window, search, consolidation
-│   ├── memory_store.py  # QdrantMemoryStore: direct Qdrant access, embeddings, CRUD
-│   ├── openai_client.py # Backward-compat shim → redirects to core/llm/openai_client.py
-│   ├── prompts.py       # PromptBuilder, load_prompt(), emotion directives
 │   ├── language.py      # langdetect wrapper with fallback
-│   ├── journal.py       # Daily journal scheduler (apscheduler)
-│   ├── sessions.py      # SessionManager: suivi sessions, analyse LLM → mémoire
-│   ├── persona.py       # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
-│   ├── llm/             # Multi-provider LLM abstraction layer
-│   │   ├── base.py       # ABC BaseLLMClient: complete(), complete_with_tools(), complete_structured()
-│   │   ├── openai_client.py # OpenAILLMClient: Chat Completions + Responses API + generate_image()
-│   │   ├── claude_client.py # ClaudeLLMClient: Anthropic SDK, prompt caching, tool conversion
-│   │   └── factory.py    # create_llm_client(LLMRoleConfig, db) factory
-│   └── actions/         # ActionService: tâches planifiées via tool calling
-│       ├── registry.py  # ActionRegistry: catalogue + ACL par rôle
-│       ├── scheduler.py # ActionScheduler: persistence SQLite + apscheduler
-│       ├── executor.py  # ActionExecutor: routing + livraison messages
-│       └── service.py   # ActionService: facade LLM, tool definitions
+│   ├── reaction_tracker.py
+│   ├── update_checker.py
+│   ├── notifications.py
+│   ├── web_search.py
+│   ├── account_linker.py
+│   └── apex_api.py
+├── intelligence/        # Tout ce qui raisonne via LLM
+│   ├── memory/          # Mémoire sémantique (FTS5/SQLite)
+│   │   ├── service.py   # MemoryService: sliding context window, search, consolidation
+│   │   ├── facts.py     # SQLiteFactStore: faits S-P-O, AtomicFact
+│   │   ├── ingest.py    # MemoryIngest: dédup live, réconciliation 2 étages
+│   │   ├── retrieval.py # MemoryRetrieval: retrieval Generative-Agents
+│   │   └── vocab.py     # Vocabulaire fermé de prédicats
+│   ├── actions/         # ActionService: tâches planifiées via tool calling
+│   │   ├── registry.py
+│   │   ├── scheduler.py
+│   │   ├── executor.py
+│   │   └── service.py
+│   ├── cognitive_loop.py   # Boucle cognitive (tick, idle, ATTN/THINK/DECIDE/SPEAK)
+│   ├── cognitive_feed.py   # CognitiveFeed: fan-out SSE
+│   ├── reasoning_agent.py  # ReasoningAgent: génération de réponses
+│   ├── attention_agent.py  # AttentionAgent: scoring d'attention
+│   ├── action_dispatcher.py
+│   ├── gate.py             # ResponseGate: décision de répondre
+│   ├── channels.py         # ChannelDirectory
+│   ├── emotional_drive.py
+│   ├── evolution_log.py
+│   ├── inner_monologue.py
+│   ├── meta_agent.py
+│   ├── persona_manager.py
+│   ├── persona.py          # PersonaService: chargement SOUL/IDENTITY/VOICE/EMOTIONS
+│   ├── prompts.py          # PromptBuilder, load_prompt(), emotion directives
+│   ├── fact_extractor.py   # FactExtractor: extraction de faits mémorables
+│   ├── journal.py          # DailyJournal: journal quotidien (apscheduler)
+│   ├── self_fix.py
+│   ├── self_upgrade.py
+│   └── host_bridge.py
 ├── discord/
 │   ├── bot.py           # discord.py Bot subclass
 │   ├── handlers.py      # on_message, welcome logic, timeout reactions
 │   └── commands/        # /wally ask, memory, status, mood, journal, persona, imagine, setup
-├── persona/
+├── persona/             # Fichiers persona Markdown + prompts/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
 │   ├── EMOTIONS.md      # directives par émotion (sections ## emotion_name)
 │   ├── WEEKDAYS.md      # directives par jour (sections ## monday … sunday)
@@ -93,10 +115,12 @@ bot/
 │   └── prompts/         # templates système chargés via load_prompt("name")
 ├── twitch/
 │   ├── bot.py           # twitchio Bot, OAuth refresh, cooldowns
-│   ├── events.py        # follow/sub/resub/bits/raid handlers
+│   ├── events/          # follow/sub/resub/bits/raid handlers
 │   └── handlers.py      # Message routing, per-user cooldown
 └── db/
-    └── database.py      # aiosqlite: schema init + query helpers
+    ├── database.py      # aiosqlite: schema init + query helpers
+    ├── schema_v2.py     # DDL tables intelligence (atomic_facts, thoughts...)
+    └── mixins/
 ```
 
 ---
@@ -166,33 +190,17 @@ Rules: joy→anger 0.8×, joy→sadness 0.8×, anger→joy 0.4×. Bidirectional.
 ### Memory API Convention — CRITICAL
 `memory.add(platform, user_id, ...)` — `user_id` must be the **RAW id** (e.g. `"610550333042589752"`), never the prefixed form (`"discord:610550333042589752"`). The method builds `platform:user_id` internally. Same rule for `memory.search()`, `memory.get_all()`, `memory.delete_user_memories()`.
 
-Dashboard routes access the store directly via `memory.store` (returns `QdrantMemoryStore`) — callers must pass the full `platform:user_id` namespace directly.
-
-### Qdrant Manual Cleanup
-When fixing Qdrant entries (double-prefix, orphans), use `memory.store.update_payload()` directly.
-**Do NOT go through `MemoryService` methods** — `_user_id()` will strip prefixes and cause unintended deletions.
-
-### Payload Structure
-```json
-{"text": "...", "user_id": "discord:123", "category": "PREF", "date": "2026-03-25",
- "source": "fact_extractor", "platform": "discord", "created_at": "..."}
-```
-Categories: `FAIT` (biographical), `PREF` (preference), `LANG` (language), `REL` (relationship).
-
-Legacy fallback: `_point_to_record()` reads text via `text` → `data` → `memory` chain (old mem0 payloads stored in `data`).
+Memory backend: FTS5/SQLite (`bot/intelligence/memory/`). Facts stored as S-P-O triples (`AtomicFact`) via `SQLiteFactStore`. Dedup handled live by `MemoryIngest` (2-stage reconciliation).
 
 ### Platform Auto-Fix
 `Database._fix_platform()` detects mismatches by ID length: Discord snowflakes ≥13 digits, Twitch ≤12 digits.
-`sync_memory_users_from_qdrant` reads `QDRANT_COLLECTION_NAME` env var — each instance syncs from its own collection.
 
 ### FactExtractor
 - `_is_memorable()` rejects short messages (<15 chars), emoji-only, interjections, media/GIF URLs
 - `_extract_facts()` injects `list_aliases()` + `list_memory_users()` so the LLM can resolve absent users (e.g. "Azrael" → `discord:123`)
 
 ### Spontaneous Memory Recall
-After `_check_spontaneous_trigger()` returns None, `memory.search_top_match()` does a single Qdrant query. Fires spontaneous response if score ≥ `memory_recall_min_score` (0.75) and `random.random() < spontaneous_memory_probability` (0.2). Rate-limited: 1 query per 60s per channel via `_memory_check_cooldowns`.
-
-`search_top_match(platform, user_id, query) -> tuple[str, float] | None`
+After `_check_spontaneous_trigger()` returns None, a FTS5 search fires spontaneous response if score ≥ `memory_recall_min_score` (0.75) and `random.random() < spontaneous_memory_probability` (0.2). Rate-limited: 1 query per 60s per channel via `_memory_check_cooldowns`.
 
 ### Memory Context Budget
 `memory_context_max_tokens` (default 800). Priority order: (1) semantic memories (2) relationships (3) pending questions (4) jokes (5) opinions (6) third-party mentions. Trust/love scores in separate `--- Relation ---` block outside budget.
@@ -287,7 +295,7 @@ Multi-provider in `bot/core/llm/`. `LLMRoleConfig` dataclass in `config.py`. Fac
 - Thinking: `disabled` / `adaptive` (effort level) / `enabled` (fixed budget_tokens). Temperature forced to 1 when active. Thinking blocks preserved in tool use loops. **Incompatible with `complete_structured()`** — thinking disabled there.
 - Structured output: forced `tool_choice` with schema as `input_schema` (no native JSON mode)
 
-**Backward compat**: `bot/core/openai_client.py` re-exports `OpenAILLMClient as OpenAIClient`. Legacy `openai:` config section kept in sync with `llm:` section.
+Legacy `openai:` config section kept in sync with `llm:` section.
 
 ---
 

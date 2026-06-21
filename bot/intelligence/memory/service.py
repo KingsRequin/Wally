@@ -1,4 +1,4 @@
-# bot/core/memory.py
+# bot/intelligence/memory/service.py
 from __future__ import annotations
 
 import asyncio

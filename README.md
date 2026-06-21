@@ -189,26 +189,39 @@ Monolithe modulaire — un seul processus asyncio, modules communiquant via inje
 ```
 bot/
 ├── main.py                # Point d'entree, DI wiring, asyncio.gather()
+├── bootstrap.py           # Construction des services, injection DI
 ├── config.py              # Config dataclass, hot-reload, config.save()
-├── core/
+├── core/                  # Primitives sans LLM
+│   ├── llm/               # Abstraction LLM (base, deepseek, openai_client images, factory)
 │   ├── emotion.py         # EmotionEngine : etat, decroissance, NRCLex
-│   ├── memory.py          # MemoryService : fenetre glissante, search, consolidation
-│   ├── memory_store.py    # QdrantMemoryStore : acces direct Qdrant, embeddings, CRUD
-│   ├── prompts.py         # PromptBuilder, load_prompt(), directives emotionnelles
 │   ├── language.py        # Detection de langue (langdetect)
-│   ├── journal.py         # Journal quotidien (apscheduler)
-│   ├── sessions.py        # SessionManager : suivi sessions, analyse LLM
+│   ├── reaction_tracker.py
+│   ├── update_checker.py
+│   ├── notifications.py
+│   ├── web_search.py
+│   ├── account_linker.py
+│   └── apex_api.py
+├── intelligence/          # Tout ce qui raisonne via LLM
+│   ├── memory/            # Memoire semantique (FTS5/SQLite)
+│   │   ├── service.py     # MemoryService : fenetre glissante, search, consolidation
+│   │   ├── facts.py       # SQLiteFactStore : faits S-P-O, AtomicFact
+│   │   ├── ingest.py      # MemoryIngest : dedup live, reconciliation 2 etages
+│   │   ├── retrieval.py   # MemoryRetrieval : retrieval Generative-Agents
+│   │   └── vocab.py       # Vocabulaire ferme de predicats
+│   ├── actions/           # Taches planifiees via tool calling
+│   │   ├── registry.py    # Catalogue actions + ACL par role
+│   │   ├── scheduler.py   # Persistence SQLite + apscheduler
+│   │   ├── executor.py    # Routing + livraison messages
+│   │   └── service.py     # Facade LLM, tool definitions
+│   ├── cognitive_loop.py  # Boucle cognitive (tick, idle, ATTN/THINK/DECIDE/SPEAK)
+│   ├── cognitive_feed.py  # CognitiveFeed : fan-out SSE
+│   ├── reasoning_agent.py # ReasoningAgent : generation de reponses
+│   ├── attention_agent.py # AttentionAgent : scoring d'attention
+│   ├── gate.py            # ResponseGate : decision de repondre
 │   ├── persona.py         # PersonaService : chargement fichiers persona
-│   ├── llm/               # Abstraction LLM
-│   │   ├── base.py        # ABC BaseLLMClient
-│   │   ├── deepseek.py    # DeepSeekLLMClient — seul provider texte (primary/secondary)
-│   │   ├── openai_client.py # OpenAI — images + embeddings uniquement
-│   │   └── factory.py     # Factory create_llm_client() (DeepSeek only)
-│   └── actions/           # Taches planifiees via tool calling
-│       ├── registry.py    # Catalogue actions + ACL par role
-│       ├── scheduler.py   # Persistence SQLite + apscheduler
-│       ├── executor.py    # Routing + livraison messages
-│       └── service.py     # Facade LLM, tool definitions
+│   ├── prompts.py         # PromptBuilder, load_prompt(), directives emotionnelles
+│   ├── fact_extractor.py  # FactExtractor : extraction de faits memorables
+│   └── journal.py         # DailyJournal : journal quotidien (apscheduler)
 ├── discord/
 │   ├── bot.py             # WallyDiscord
 │   ├── handlers.py        # Pipeline message complet, spam, spontane
@@ -216,7 +229,7 @@ bot/
 ├── twitch/
 │   ├── bot.py             # WallyTwitch, cooldowns
 │   ├── handlers.py        # Pipeline message Twitch
-│   └── events.py          # follow/sub/resub/bits/raid
+│   └── events/            # follow/sub/resub/bits/raid
 ├── persona/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EMOTIONS.md
 │   └── prompts/           # Templates systeme charges via load_prompt()
@@ -226,7 +239,9 @@ bot/
 │   ├── routes/            # admin, memory, status, gallery, chat, sse, actions
 │   └── static/            # SPA vanilla JS + CSS glassmorphism
 └── db/
-    └── database.py        # aiosqlite : cost_log, trust_scores, gallery, actions, etc.
+    ├── database.py        # aiosqlite : cost_log, trust_scores, gallery, actions, etc.
+    ├── schema_v2.py       # DDL tables intelligence (atomic_facts, thoughts...)
+    └── mixins/
 ```
 
 ---
