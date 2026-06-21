@@ -307,6 +307,29 @@ async def test_speak_unknown_channel_redirected_to_last_active():
 
 
 @pytest.mark.asyncio
+async def test_speak_directory_channel_not_redirected():
+    """SPEAK vers un canal de l'annuaire (speakable_channels) SANS interaction
+    récente → choix proactif valide : dispatché tel quel, pas de redirection."""
+    attention, reasoning, dispatcher = _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    reasoning.reason = _AM(return_value=_RR(
+        thought_text="j'ai un meme à poster", thought_fact_id=1,
+        decisions=[_MD(action="SPEAK", channel_id="875450811151450143", message="lol")],
+    ))
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(
+        attention, reasoning, dispatcher,
+        speakable_channels={"875450811151450143", "875421532351000627"},
+    )
+    # aucune notify_activity → _recent_interactions vide, mais le canal est
+    # dans l'annuaire.
+    await loop._tick()
+    dispatcher.dispatch.assert_called_once()
+    dispatched = dispatcher.dispatch.call_args.args[0]
+    assert dispatched.channel_id == "875450811151450143"
+
+
+@pytest.mark.asyncio
 async def test_speak_no_active_channel_dropped():
     """SPEAK avec channel inconnu + AUCUNE interaction → décision abandonnée,
     dispatch jamais appelé."""

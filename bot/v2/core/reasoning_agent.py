@@ -28,10 +28,11 @@ class ReasoningAgent:
       `parse_decisions`.
     """
 
-    def __init__(self, llm, fact_store, prompts_dir: str | Path) -> None:
+    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "") -> None:
         self._llm = llm
         self._facts = fact_store
         self._system = (Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8")
+        self._channels_text = channels_text
 
     async def reason(self, context) -> ReasoningResult:
         user_msg = self._format_context(context)
@@ -83,6 +84,8 @@ class ReasoningAgent:
                 f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
                 f"garde ça interne.)"
             )
+        if self._channels_text:
+            lines.append(self._channels_text + "\n")
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {ctx.emotion_state}",

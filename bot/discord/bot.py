@@ -107,14 +107,22 @@ class WallyDiscord(commands.Bot):
             from bot.v2.core.persona_manager import PersonaManager
             from bot.v2.core.cognitive_loop import CognitiveLoop
             from bot.v2.core.cognitive_feed import CognitiveFeed
+            from bot.v2.core.channels import ChannelDirectory
             from bot.v2.core.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             import os as _os_cog
 
             _db_path = self._v2_db_path or _os_cog.getenv("DB_PATH", "data/wally.db")
-            _prompts_dir = Path(__file__).parent.parent / "v2" / "persona" / "prompts"
+            _v2_persona_dir = Path(__file__).parent.parent / "v2" / "persona"
+            _prompts_dir = _v2_persona_dir / "prompts"
             _persona_dir = Path(__file__).parent.parent / "persona"
+
+            # Annuaire des canaux (bind-mount, éditable à chaud) : permet à la
+            # cognition de choisir proactivement le bon canal et élargit la
+            # validation SPEAK à tout canal textuel listé.
+            _chan_dir = ChannelDirectory.load(_v2_persona_dir / "CHANNELS.md")
+            logger.info("ChannelDirectory : {} canal(aux) textuel(s) chargé(s)", len(_chan_dir.speakable_ids()))
 
             _cog_cfg = self.config.cognitive_loop
             _provider = _cog_cfg.get("provider", "deepseek")
@@ -129,11 +137,14 @@ class WallyDiscord(commands.Bot):
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
             _attention = AttentionAgent(_fact_store, self.emotion)
-            _reasoning = ReasoningAgent(_reasoning_llm, _fact_store, _prompts_dir)
+            _reasoning = ReasoningAgent(_reasoning_llm, _fact_store, _prompts_dir, channels_text=_chan_dir.render())
             self.cognitive_feed = CognitiveFeed()
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
 
-            self.cognitive_loop = CognitiveLoop(_attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed)
+            self.cognitive_loop = CognitiveLoop(
+                _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,
+                speakable_channels=_chan_dir.speakable_ids(),
+            )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
             _dash = getattr(self, "dashboard_state", None)

@@ -39,12 +39,15 @@ class CognitiveLoop:
         action_dispatcher,
         emotion_engine=None,
         feed=None,
+        speakable_channels: set[str] | None = None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
         self._dispatcher = action_dispatcher
         self._emotion = emotion_engine
         self._feed = feed
+        # Canaux textuels de l'annuaire où Wally peut parler proactivement.
+        self._speakable_channels = speakable_channels or set()
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
         self._last_thought: str = ""
@@ -137,10 +140,13 @@ class CognitiveLoop:
             decisions = result.decisions
             if self._feed:
                 self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})
-            # Routage SPEAK spontané : en cognition de fond, le channel_id est
-            # souvent halluciné. On le redirige vers le dernier canal réellement
-            # actif ; sans aucun canal connu, on n'envoie rien (pas de vide).
-            known_channels = {i["channel"] for i in self._recent_interactions}
+            # Routage SPEAK spontané : Wally peut viser N'IMPORTE QUEL canal
+            # textuel de l'annuaire (choix proactif : un meme → #memes, etc.) OU
+            # un canal récemment actif. Si le channel_id sort de ce périmètre
+            # (souvent halluciné en cognition de fond), on le redirige vers le
+            # dernier canal réellement actif ; sans aucun canal connu, on n'envoie
+            # rien (pas de vide).
+            known_channels = self._speakable_channels | {i["channel"] for i in self._recent_interactions}
             last_channel = self._recent_interactions[-1]["channel"] if self._recent_interactions else None
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
