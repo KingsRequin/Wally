@@ -224,13 +224,11 @@ class FactExtractor:
         memory: "MemoryService",
         llm: "BaseLLMClient",
         db=None,
-        graph=None,
     ) -> None:
         self._config = config
         self._memory = memory
         self._openai = llm
         self._db = db
-        self._graph = graph
         # channel_id → buffer dict
         self._buffers: dict[str, dict] = {}
         # Strong refs for fire-and-forget tasks
@@ -647,7 +645,7 @@ class FactExtractor:
                 tasks.append(self._do_flush(channel_id, partial=False))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        # Wait for any fire-and-forget graph ingest tasks still in flight
+        # Wait for any fire-and-forget background tasks still in flight
         if self._bg_tasks:
             await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
 

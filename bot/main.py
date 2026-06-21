@@ -78,7 +78,6 @@ async def main() -> None:
     svc = await build_core_services(config, db, qdrant_url)
     emotion          = svc.emotion
     memory           = svc.memory
-    graph            = svc.graph
     primary_llm      = svc.primary_llm
     secondary_llm    = svc.secondary_llm
     image_client     = svc.image_client
@@ -103,17 +102,6 @@ async def main() -> None:
 
     discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, prompts, language, persona)
     discord_bot.journal = journal
-    discord_bot.graph = graph
-    if graph.ready:
-        from bot.discord.social import SocialTracker
-        discord_bot.social = SocialTracker(graph, group_id=config.graphiti.group_id)
-        discord_bot.social.start()
-
-    # Community detection nocturne
-    from bot.core.graph_jobs import schedule_community_detection
-    if graph.ready:
-        schedule_community_detection(graph, shared_scheduler)
-
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
@@ -216,7 +204,6 @@ async def main() -> None:
             twitch_api=twitch_api,
             persona=persona,
         )
-        twitch_bot.graph = graph
         twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
@@ -388,7 +375,6 @@ async def main() -> None:
         fact_extractor=fact_extractor,
         notifications=notification_service,
         action_service=action_service,
-        graph=graph,
         update_checker=update_checker,
         cognitive_feed=getattr(discord_bot, "cognitive_feed", None),
     )
@@ -418,7 +404,6 @@ async def main() -> None:
     try:
         await asyncio.gather(*tasks)
     finally:
-        await graph.close()
         if update_checker:
             await update_checker.stop()
 

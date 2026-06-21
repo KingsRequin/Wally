@@ -233,22 +233,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             persistent_notes = []
 
-        # Knowledge graph context (Graphiti)
-        graph_context = ""
-        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
-            try:
-                graph_results = await bot.graph.search(
-                    query=content,
-                    group_id=f"twitch:{channel_name}",
-                    num_results=5,
-                )
-                if graph_results:
-                    facts = [r["fact"] for r in graph_results if r.get("fact")]
-                    if facts:
-                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(f"- {f}" for f in facts)
-            except Exception:
-                pass
-
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
@@ -262,7 +246,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             persistent_notes=persistent_notes or None,
-            graph_context=graph_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)

@@ -522,62 +522,6 @@ body {
 }
 .vote-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ── Community tab ── */
-.community-wrap {
-  padding: 20px;
-  min-height: calc(100vh - 180px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  position: relative;
-}
-.community-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
-}
-.community-legend {
-  display: flex;
-  gap: 16px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-.community-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.community-legend-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.community-canvas {
-  flex: 1;
-  width: 100%;
-  min-height: 360px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  display: block;
-}
-.community-tooltip {
-  pointer-events: none;
-  position: absolute;
-  background: rgba(15,15,20,0.92);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 0.78rem;
-  color: var(--text);
-  backdrop-filter: blur(8px);
-  z-index: 10;
-  white-space: normal;
-  max-width: 240px;
-}
-
 /* ── Chat date navigation ── */
 .chat-date-bar {
   display: flex;

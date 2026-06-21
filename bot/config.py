@@ -240,25 +240,6 @@ class ThemeConfig:
 
 
 @dataclass
-class GraphitiConfig:
-    enabled: bool = False
-    neo4j_uri: str = "bolt://neo4j:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "changeme"
-    llm_model: str = "gpt-5-nano"
-    community_detection: bool = False
-    group_id: str = "discord-default"
-    affinity_weights: dict[str, float] = field(default_factory=lambda: {
-        "voice": 3.0, "reply": 2.0, "mention": 1.5,
-        "reaction": 1.0, "thread": 1.0, "game": 2.5,
-    })
-    graph_context_max_tokens: int = 400
-    memory_write: bool = False      # true = écriture vers Graphiti, Qdrant gelé
-    memory_primary: bool = False    # true = lecture depuis Graphiti en priorité
-    memory_dual_read: bool = True   # true = merge Graphiti + Qdrant (transition)
-
-
-@dataclass
 class Config:
     bot: BotConfig
     openai: OpenAIConfig
@@ -278,7 +259,6 @@ class Config:
     emotional_memory: EmotionalMemoryConfig = field(default_factory=EmotionalMemoryConfig)
     circadian: CircadianConfig = field(default_factory=CircadianConfig)
     spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
-    graphiti: GraphitiConfig = field(default_factory=GraphitiConfig)
     response_gate: dict = field(default_factory=dict)
     cognitive_loop: dict = field(default_factory=dict)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
@@ -394,7 +374,6 @@ class Config:
                 }
             else:
                 secondaries_cfg = None  # use default_factory
-            graphiti_cfg = GraphitiConfig(**raw.get("graphiti", {}))
             response_gate_cfg = raw.get("response_gate", {})
             cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
@@ -432,7 +411,6 @@ class Config:
                 emotional_memory=emotional_memory_cfg,
                 circadian=circadian_cfg,
                 spontaneous=spontaneous_cfg,
-                graphiti=graphiti_cfg,
                 response_gate=response_gate_cfg,
                 cognitive_loop=cognitive_loop_cfg,
                 **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
@@ -459,7 +437,6 @@ class Config:
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
             "theme": asdict(self.theme),
-            "graphiti": asdict(self.graphiti),
             "response_gate": self.response_gate,
             "cognitive_loop": self.cognitive_loop,
         }

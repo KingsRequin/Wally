@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bot.discord.events import reactions, voice, presence
+from bot.discord.events import reactions
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -12,5 +12,3 @@ if TYPE_CHECKING:
 def register_events(bot: "WallyDiscord") -> None:
     """Enregistre tous les gateway event handlers Discord sur le bot."""
     reactions.register(bot)
-    voice.register(bot)
-    presence.register(bot)

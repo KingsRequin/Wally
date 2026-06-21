@@ -19,29 +19,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  neo4j:
-    image: neo4j:5-community
-    container_name: wally-neo4j
-    networks:
-      - wally-net
-    environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
-      - NEO4J_server_memory_heap_initial__size=512m
-      - NEO4J_server_memory_heap_max__size=512m
-      - NEO4J_server_memory_pagecache_size=256m
-    volumes:
-      - ./data/neo4j:/data
-    ports:
-      - "${NEO4J_BROWSER_PORT:-7474}:7474"
-      - "${NEO4J_BOLT_PORT:-7687}:7687"
-    healthcheck:
-      test: ["CMD", "neo4j", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    restart: unless-stopped
-
   init-perms:
     image: alpine:3.19
     container_name: wally-init-perms
@@ -51,7 +28,7 @@ services:
       - ./logs:/logs
       - ./.env:/dotenv
       - ./config.yaml:/config.yaml
-    command: sh -c "chown -R 1000:1000 /data /logs && chown -R 7474:7474 /data/neo4j && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
+    command: sh -c "chown -R 1000:1000 /data /logs && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
     restart: "no"
 
   wally:
@@ -70,8 +47,6 @@ services:
       init-perms:
         condition: service_completed_successfully
       qdrant:
-        condition: service_healthy
-      neo4j:
         condition: service_healthy
     environment:
       - TZ=Europe/Paris

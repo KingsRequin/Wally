@@ -14,7 +14,7 @@ const PIPELINE_STEPS = [
   {
     label: 'Mémoire',
     color: 'var(--violet)',
-    detail: 'Wally consulte sa mémoire vectorielle (Qdrant). Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles. Un graphe social (Neo4j + Graphiti) enrichit le contexte relationnel.'
+    detail: 'Wally consulte sa mémoire vectorielle (Qdrant). Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles.'
   },
   {
     label: 'Réponse',
@@ -45,11 +45,6 @@ const PILLARS = [
     desc: 'Chaque soir à 21h00, Wally rédige un journal intime résumant sa journée : interactions marquantes, état émotionnel, pensées, visites Twitch. Ce journal narratif enrichit la cohérence de la personnalité dans le temps et est consultable ici.'
   },
   {
-    title: 'Graphe social',
-    color: 'var(--cyan)',
-    desc: 'Un graphe de connaissances (Neo4j + Graphiti) modélise les relations entre utilisateurs, entités et événements. Les signaux sociaux (mentions, co-présence, interactions fréquentes) alimentent un score d\'affinité dynamique entre Wally et chaque membre de la communauté.'
-  },
-  {
     title: 'Multi-plateforme',
     color: 'var(--violet)',
     desc: 'Un seul processus asyncio gère Discord et Twitch simultanément via deux adaptateurs indépendants. Les mémoires, émotions et la personnalité sont partagées entre les deux plateformes — Wally reste cohérent qu\'il soit en train de streamer ou de discuter sur Discord.'
@@ -62,7 +57,6 @@ const TECH = [
   ['DeepSeek', 'var(--yellow)'],
   ['aiosqlite', 'var(--green)'],
   ['Qdrant', 'var(--pink)'],
-  ['Neo4j', 'var(--violet)'],
   ['discord.py', 'var(--cyan)'],
   ['twitchio', 'var(--violet)'],
 ];
@@ -100,7 +94,7 @@ export function mount(el) {
   descCard.style.marginBottom = '18px';
   const descText = document.createElement('div');
   descText.style.cssText = 'font-size:20px;color:var(--text);line-height:1.5;';
-  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire vectorielle (Qdrant) et un graphe de connaissances (Neo4j).';
+  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire vectorielle (Qdrant).';
   descCard.appendChild(descText);
   wrap.appendChild(descCard);
 
@@ -175,7 +169,7 @@ export function mount(el) {
   keepCard.appendChild(sectionTitle('CE QU\'IL RETIENT'));
   const keepList = document.createElement('div');
   keepList.style.cssText = 'font-size:19px;color:var(--muted2);line-height:1.6;';
-  ['tes faits biographiques', 'tes préférences', 'ta langue habituelle', 'votre relation (confiance, affinité)', 'qui parle à qui dans la communauté'].forEach(t => {
+  ['tes faits biographiques', 'tes préférences', 'ta langue habituelle', 'votre relation (confiance, affinité)'].forEach(t => {
     const row = document.createElement('div');
     row.textContent = '› ' + t;
     keepList.appendChild(row);

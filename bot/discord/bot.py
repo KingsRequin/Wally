@@ -55,8 +55,6 @@ class WallyDiscord(commands.Bot):
         self.language = language
         self.persona = persona
         self.journal = None  # set by main.py after construction
-        self.graph = None  # set by main.py after construction
-        self.social = None  # SocialTracker, set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
@@ -205,8 +203,6 @@ class WallyDiscord(commands.Bot):
     async def on_ready(self) -> None:
         self._start_time = time.time()
         logger.info("Discord bot ready as {user}", user=self.user)
-        if self.social and self.user:
-            self.social.set_bot_id(self.user.id)
         if self.cognitive_loop is not None:
             self.cognitive_loop.start()
         if self.self_upgrade is not None:

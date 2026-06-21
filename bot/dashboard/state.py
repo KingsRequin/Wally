@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from bot.core.fact_extractor import FactExtractor
     from bot.core.notifications import NotificationService
     from bot.core.actions import ActionService
-    from bot.core.graph import GraphService
     from bot.core.update_checker import UpdateChecker
     from bot.v2.core.cognitive_feed import CognitiveFeed
 
@@ -46,7 +45,6 @@ class AppState:
     fact_extractor: Optional["FactExtractor"] = None
     notifications: Optional["NotificationService"] = None
     action_service: Optional["ActionService"] = None
-    graph: Optional["GraphService"] = None
     update_checker: Optional["UpdateChecker"] = None
     cognitive_feed: Optional["CognitiveFeed"] = None
     start_time: float = field(default_factory=time.time)

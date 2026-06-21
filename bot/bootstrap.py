@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.graph import GraphService
     from bot.core.llm.base import BaseLLMClient
     from bot.core.llm.openai_client import OpenAILLMClient
     from bot.core.prompts import PromptBuilder
@@ -35,7 +34,6 @@ class CoreServices:
     db: "Database"
     emotion: "EmotionEngine"
     memory: "MemoryService"
-    graph: "GraphService"
     primary_llm: "BaseLLMClient"
     secondary_llm: "BaseLLMClient"
     image_client: "OpenAILLMClient"
@@ -58,7 +56,6 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     """Instancie tous les services core et retourne un CoreServices câblé."""
     from bot.core.emotion import EmotionEngine
     from bot.core.memory import MemoryService
-    from bot.core.graph import GraphService
     from bot.core.llm import create_llm_client
     from bot.core.llm.openai_client import OpenAILLMClient
     from bot.core.prompts import PromptBuilder
@@ -79,10 +76,8 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     emotion.start_decay_task()
     logger.info("EmotionEngine started with decay task")
 
-    # ── MemoryService + GraphService ──────────────────────────────────────────
+    # ── MemoryService ─────────────────────────────────────────────────────────
     memory = MemoryService(config)
-    graph = GraphService(config)
-    await graph.initialize()
 
     # ── LLM clients ───────────────────────────────────────────────────────────
     primary_llm = create_llm_client(config.llm.primary, db)
@@ -153,7 +148,7 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
     logger.info("ActionService initialized")
 
     # ── FactExtractor + ReactionTracker ───────────────────────────────────────
-    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db, graph=graph)
+    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db)
     await fact_extractor.restore_buffers()
     logger.info("FactExtractor initialized")
 
@@ -165,7 +160,6 @@ async def build_core_services(config: "Config", db: "Database", qdrant_url: str)
         db=db,
         emotion=emotion,
         memory=memory,
-        graph=graph,
         primary_llm=primary_llm,
         secondary_llm=secondary_llm,
         image_client=image_client,

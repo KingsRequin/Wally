@@ -114,7 +114,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, graph, journal, cognitive, community
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -123,10 +123,8 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(sse.public_router, prefix="/api/public")
     app.include_router(roadmap.router, prefix="/api/public")
     app.include_router(gallery.public_router, prefix="/api/public")
-    app.include_router(graph.public_router, prefix="/api/public")
     app.include_router(journal.public_router, prefix="/api/public")
     app.include_router(cognitive.public_router, prefix="/api/public")
-    app.include_router(community.public_router, prefix="/api/public")
 
     # Chat routes (public — JWT auth handled internally)
     app.include_router(chat_auth.router, prefix="/api/chat")
@@ -140,7 +138,6 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(memory.router, prefix="/api/admin")
     app.include_router(links.router, prefix="/api/admin")
     app.include_router(gallery.admin_router, prefix="/api/admin")
-    app.include_router(graph.router, prefix="/api/admin")
     app.include_router(actions.router, prefix="/api/actions")
     app.include_router(setup.admin_router, prefix="/api/admin/setup")
     app.include_router(setup.wizard_router, prefix="/api/setup")

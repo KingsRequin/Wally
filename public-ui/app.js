@@ -4,7 +4,6 @@ import { mount as mountChat } from './tabs/chat.js';
 import { mount as mountGallery } from './tabs/gallery.js';
 import { mount as mountJournal } from './tabs/journal.js';
 import { mount as mountAbout } from './tabs/about.js';
-import { mount as mountCommunity } from './tabs/community.js';
 
 // ── Shared emotion state ──
 export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
@@ -82,13 +81,12 @@ export function drawFlame(id, P = 4) {
 // ── Single-page sections ──
 // Toutes les sections sont montées en même temps et empilées verticalement.
 // La nav fait défiler (ancres) ; un scroll-spy met en surbrillance l'onglet actif.
-const TABS_ORDER = ['status', 'chat', 'gallery', 'journal', 'community', 'about'];
+const TABS_ORDER = ['status', 'chat', 'gallery', 'journal', 'about'];
 const TABS = {
   status:    mountStatus,
   chat:      mountChat,
   gallery:   mountGallery,
   journal:   mountJournal,
-  community: mountCommunity,
   about:     mountAbout,
 };
 

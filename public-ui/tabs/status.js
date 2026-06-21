@@ -245,7 +245,6 @@ function renderStatus(el, status, stream) {
   svcWrap.appendChild(svcPill('Discord', !!status.discord_online, true));
   svcWrap.appendChild(svcPill('Twitch', !!status.twitch_online, true));
   svcWrap.appendChild(svcPill('Qdrant', true));
-  svcWrap.appendChild(svcPill('Neo4j', true));
   svcCard.appendChild(svcWrap);
   right.appendChild(svcCard);
 

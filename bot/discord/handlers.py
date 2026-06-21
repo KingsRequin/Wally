@@ -165,7 +165,6 @@ def _check_spontaneous_trigger(
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
-_social_context_cooldowns: dict[int, float] = {}  # rate-limit social context per channel
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
 
@@ -348,97 +347,6 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     return True
 
 
-def _detect_text_mentions(message, bot) -> list[tuple[int, str]]:
-    """Detect text-based mentions (nicknames without @) in a message.
-
-    Checks alias cache first (exact), then member display names (exact),
-    then fuzzy match (SequenceMatcher >= 0.75).
-    Returns list of (member_id, display_name) tuples.
-    Skips bots, self, and already @mentioned members to avoid double-counting.
-    """
-    guild = message.guild
-    content = message.content
-    if not guild or not content:
-        return []
-
-    tokens = set(re.findall(r"[A-Za-z0-9_À-ÿ]{3,}", content))
-    if not tokens:
-        return []
-
-    # Build member lookup: lower_name -> member (skip bots except Wally, skip self)
-    bot_user = getattr(bot, "user", None)
-    member_map: dict[str, Any] = {}
-    for m in guild.members:
-        if m.id == message.author.id:
-            continue
-        if m.bot and m != bot_user:
-            continue
-        member_map[m.display_name.lower()] = m
-        if m.name.lower() != m.display_name.lower():
-            member_map[m.name.lower()] = m
-
-    if not member_map:
-        return []
-
-    # Already @mentioned — skip to avoid double-counting (include Wally)
-    already_mentioned_ids = {
-        m.id for m in message.mentions
-        if not m.bot or m == bot_user
-    }
-
-    alias_cache: dict[str, str] = {}
-    if getattr(bot, "memory", None) is not None:
-        alias_cache = bot.memory._alias_cache
-
-    found: list[tuple[int, str]] = []
-    seen_ids: set[int] = set()
-
-    for token in tokens:
-        token_lower = token.lower()
-        matched_member = None
-
-        # 1. Alias cache exact match (nickname:{token} -> discord:user_id -> member)
-        cache_key = f"nickname:{token_lower}"
-        if cache_key in alias_cache:
-            canonical_uid = alias_cache[cache_key]
-            if canonical_uid.startswith("discord:"):
-                raw_id = canonical_uid[len("discord:"):]
-                try:
-                    m = guild.get_member(int(raw_id))
-                    if m and not m.bot and m.id != message.author.id:
-                        matched_member = m
-                except (ValueError, Exception):
-                    pass
-
-        # 2. Exact match against member display names / usernames
-        if matched_member is None:
-            matched_member = member_map.get(token_lower)
-
-        # 3. Fuzzy match — only for tokens whose length is close to a known name
-        if matched_member is None:
-            best_ratio = 0.0
-            best_member = None
-            tlen = len(token_lower)
-            for name_lower, m in member_map.items():
-                nlen = len(name_lower)
-                if nlen == 0 or min(tlen, nlen) / max(tlen, nlen) < 0.5:
-                    continue
-                ratio = difflib.SequenceMatcher(None, token_lower, name_lower).ratio()
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_member = m
-            if best_ratio >= 0.75 and best_member:
-                matched_member = best_member
-
-        if (matched_member is not None
-                and matched_member.id not in already_mentioned_ids
-                and matched_member.id not in seen_ids):
-            seen_ids.add(matched_member.id)
-            found.append((matched_member.id, matched_member.display_name))
-
-    return found
-
-
 async def _third_party_mention_context(
     bot,
     platform: str,
@@ -608,36 +516,6 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         tracker.record_discord_reply(
             message.reference.message_id, message.content, message.author.bot,
         )
-
-    # Social signal capture
-    if getattr(bot, "social", None) is not None:
-        # Reply tracking (include replies to Wally)
-        if message.reference and message.reference.resolved:
-            ref_msg = message.reference.resolved
-            if hasattr(ref_msg, "author") and (
-                not ref_msg.author.bot or ref_msg.author == bot.user
-            ):
-                bot.social.register_user(str(message.author.id), message.author.display_name)
-                bot.social.register_user(str(ref_msg.author.id), ref_msg.author.display_name)
-                bot.social.on_reply(str(message.author.id), str(ref_msg.author.id))
-        # Mention tracking (@mentions, include @Wally)
-        for mentioned in message.mentions:
-            if (not mentioned.bot or mentioned == bot.user) and mentioned != message.author:
-                bot.social.register_user(str(message.author.id), message.author.display_name)
-                bot.social.register_user(str(mentioned.id), mentioned.display_name)
-                bot.social.on_mention(str(message.author.id), str(mentioned.id))
-        # Text-based nickname detection (e.g. "kings", "Requin" without @)
-        for member_id, member_display in _detect_text_mentions(message, bot):
-            bot.social.register_user(str(message.author.id), message.author.display_name)
-            bot.social.register_user(str(member_id), member_display)
-            bot.social.on_mention(str(message.author.id), str(member_id))
-        # Thread co-participation: record interaction with thread owner
-        if isinstance(message.channel, discord.Thread):
-            owner = message.channel.owner
-            if owner and not owner.bot and owner != message.author:
-                bot.social.register_user(str(message.author.id), message.author.display_name)
-                bot.social.register_user(str(owner.id), owner.display_name)
-                bot.social.on_thread_message(str(message.author.id), str(owner.id))
 
     # Spam detection — track all messages in allowed channels
     if channel_allowed and message.guild:
@@ -893,59 +771,6 @@ async def _respond(
         except Exception:
             persistent_notes = []
 
-        # Knowledge graph context (Graphiti)
-        graph_context = ""
-        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
-            try:
-                _author_lbl = _author_label(message.author)
-                graph_results = await bot.graph.search(
-                    query=f"{_author_lbl}: {message.content}",
-                    group_id=None,  # falls back to config.graphiti.group_id (discord-default)
-                    num_results=10,
-                )
-                if graph_results:
-                    # Filtrer les facts invalidés
-                    valid_results = [r for r in graph_results if r.get("invalid_at") is None]
-                    facts_lines = []
-                    token_budget = bot.config.graphiti.graph_context_max_tokens
-                    used = 0
-                    for r in valid_results:
-                        fact = r.get("fact", "")
-                        if not fact:
-                            continue
-                        valid_at = r.get("valid_at")
-                        date_str = f"  [depuis {str(valid_at)[:10]}]" if valid_at else ""
-                        line = f"• {fact}{date_str}"
-                        used += len(line) // 4  # approximation tokens
-                        if used > token_budget:
-                            break
-                        facts_lines.append(line)
-                    if facts_lines:
-                        graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(facts_lines)
-            except Exception:
-                pass
-
-        # Social context — relations sociales du serveur (rate-limited 60s/channel)
-        social_context = ""
-        if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
-            chan_id = message.channel.id
-            now = time.time()
-            if now - _social_context_cooldowns.get(chan_id, 0) >= 60:
-                _social_context_cooldowns[chan_id] = now
-                try:
-                    pairs = await bot.graph.get_social_context()
-                    if pairs:
-                        def _label(s: int) -> str:
-                            if s >= 10:
-                                return "très proches"
-                            if s >= 5:
-                                return "proches"
-                            return "interagissent"
-                        lines = [f"• {a} ↔ {b}  ({_label(s)})" for a, b, s in pairs]
-                        social_context = "--- Relations sociales connues ---\n" + "\n".join(lines)
-                except Exception:
-                    pass
-
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -964,8 +789,6 @@ async def _respond(
             persistent_notes=persistent_notes or None,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
-            graph_context=graph_context,
-            social_context=social_context,
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
