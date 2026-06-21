@@ -217,6 +217,7 @@ function renderStatus(el, status, stream) {
   feedCard.appendChild(feedHead);
   const feedList = document.createElement('div');
   feedList.id = 'cog-feed-list';
+  feedList.style.cssText = 'height:340px;max-height:340px;overflow-y:auto;';
   feedCard.appendChild(feedList);
   cols.appendChild(feedCard);
   renderFeed(feedList);
