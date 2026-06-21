@@ -49,6 +49,51 @@ def test_tick_interval_idle():
         assert TICK_IDLE <= v <= TICK_IDLE_MAX
 
 
+def test_tick_interval_idle_high_boredom_near_floor():
+    """Ennui élevé (0.9) → plafond ramené quasi au plancher : tous les tirages
+    restent proches de TICK_IDLE (5 min)."""
+    from bot.v2.core.cognitive_loop import TICK_IDLE_MAX
+    loop, *_ = _make_loop()
+    emotion = MagicMock()
+    emotion.get_state = MagicMock(return_value={"boredom": 0.9})
+    loop._emotion = emotion
+    loop._last_activity_ts = 0.0  # idle
+    # hi = 300 + 3300 * (1 - 0.9) = 630 → tirages dans [300, 630].
+    for _ in range(40):
+        v = loop._tick_interval()
+        assert TICK_IDLE <= v <= 630
+        assert v < TICK_IDLE_MAX
+
+
+def test_tick_interval_idle_low_boredom_can_reach_ceiling():
+    """Ennui faible → la plage va jusqu'au plafond (1 h) : sur de nombreux
+    tirages, au moins un dépasse largement le plancher."""
+    from bot.v2.core.cognitive_loop import TICK_IDLE_MAX
+    loop, *_ = _make_loop()
+    emotion = MagicMock()
+    emotion.get_state = MagicMock(return_value={"boredom": 0.0})
+    loop._emotion = emotion
+    loop._last_activity_ts = 0.0  # idle
+    seen_high = False
+    for _ in range(200):
+        v = loop._tick_interval()
+        assert TICK_IDLE <= v <= TICK_IDLE_MAX
+        if v > 2000:
+            seen_high = True
+    assert seen_high  # le plafond est réellement atteignable
+
+
+def test_tick_interval_idle_no_emotion_full_range():
+    """Sans EmotionEngine (boredom=0) → plage complète préservée."""
+    from bot.v2.core.cognitive_loop import TICK_IDLE_MAX
+    loop, *_ = _make_loop()  # emotion_engine None
+    assert loop._emotion is None
+    loop._last_activity_ts = 0.0
+    for _ in range(20):
+        v = loop._tick_interval()
+        assert TICK_IDLE <= v <= TICK_IDLE_MAX
+
+
 @pytest.mark.asyncio
 async def test_tick_calls_full_pipeline():
     loop, attention, reasoning, dispatcher = _make_loop()

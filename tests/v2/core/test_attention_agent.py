@@ -134,3 +134,32 @@ async def test_build_context_idle_falls_back_to_emotion_or_time():
     agent = AttentionAgent(store)
     ctx = await agent.build_context({}, [], idle=True)  # rien sauf l'heure
     assert ctx.idle_seed  # l'heure est toujours disponible
+
+
+# ── Phase 1b : pulsion émotionnelle ──
+
+@pytest.mark.asyncio
+async def test_build_context_populates_emotional_drive_when_dominant():
+    """Une émotion dominante au-dessus du seuil peuple emotional_drive."""
+    from bot.v2.core.emotional_drive import _DRIVES
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context(
+        {"boredom": 0.8, "anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0}, []
+    )
+    assert ctx.emotional_drive == _DRIVES["boredom"]
+
+
+@pytest.mark.asyncio
+async def test_build_context_no_drive_when_neutral():
+    """État neutre (aucune émotion au-dessus du seuil) → emotional_drive None."""
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context(
+        {"boredom": 0.2, "anger": 0.1, "joy": 0.1, "sadness": 0.0, "curiosity": 0.3}, []
+    )
+    assert ctx.emotional_drive is None

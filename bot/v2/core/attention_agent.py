@@ -16,6 +16,9 @@ class AttentionContext:
     spontaneous_outreach: list[dict] = field(default_factory=list)  # [{channel, unanswered, seconds_since}]
     # Amorce de vagabondage : présente uniquement en cognition idle, sinon None.
     idle_seed: str | None = None
+    # Pulsion émotionnelle : directive de comportement quand une émotion domine
+    # au-dessus du seuil (Phase 1b). None en état neutre.
+    emotional_drive: str | None = None
 
 
 class AttentionAgent:
@@ -58,6 +61,11 @@ class AttentionAgent:
                 emotion_state, desires, goals, tod, FactCategory
             )
 
+        # Pulsion émotionnelle : calculée à chaque tick (pas seulement en idle),
+        # pour orienter la décision aussi bien en conversation qu'en vagabondage.
+        from bot.v2.core.emotional_drive import emotional_drive
+        drive = emotional_drive(emotion_state)
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -67,6 +75,7 @@ class AttentionAgent:
             time_of_day=tod,
             spontaneous_outreach=spontaneous or [],
             idle_seed=idle_seed,
+            emotional_drive=drive,
         )
 
     async def _build_idle_seed(

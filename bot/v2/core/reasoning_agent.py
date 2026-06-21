@@ -72,6 +72,10 @@ class ReasoningAgent:
 
     def _format_context(self, ctx) -> str:
         lines: list[str] = []
+        if getattr(ctx, "emotional_drive", None):
+            lines.append(
+                f"**Ce que ton émotion te pousse à faire :** {ctx.emotional_drive}\n"
+            )
         if getattr(ctx, "idle_seed", None):
             lines.append(
                 f"**Personne ne te sollicite là.** Laisse ton esprit vagabonder "

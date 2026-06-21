@@ -60,8 +60,18 @@ class CognitiveLoop:
         if elapsed < 3600:
             return TICK_MODERATE
         # Seul/idle : l'esprit vagabonde par à-coups irréguliers (effet naturel),
-        # pas sur une horloge fixe. Intervalle aléatoire 5 min – 1 h.
-        return random.randint(TICK_IDLE, TICK_IDLE_MAX)
+        # pas sur une horloge fixe. Intervalle aléatoire 5 min – 1 h, mais l'ennui
+        # raccourcit le plafond (Phase 1b) : plus Wally s'ennuie, plus vite il
+        # vagabonde pour chercher de la stimulation. ennui=0 → plage complète ;
+        # ennui=1 → toujours 5 min.
+        boredom = 0.0
+        if self._emotion is not None:
+            try:
+                boredom = float(self._emotion.get_state().get("boredom", 0.0))
+            except Exception:
+                boredom = 0.0
+        hi = int(TICK_IDLE + (TICK_IDLE_MAX - TICK_IDLE) * (1.0 - min(1.0, max(0.0, boredom))))
+        return random.randint(TICK_IDLE, max(TICK_IDLE, hi))
 
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :
