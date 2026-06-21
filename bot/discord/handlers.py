@@ -247,11 +247,14 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
 
 def _is_channel_allowed(config, channel_id: int, guild_id: int | None = None) -> bool:
     """Vérifie si Wally peut répondre dans ce canal selon le mode de filtrage."""
-    if guild_id is not None:
-        pgw = config.discord.per_guild_channel_whitelist
-        guild_wl = pgw.get(str(guild_id)) or pgw.get(guild_id)
-        if guild_wl is not None:
-            return channel_id in guild_wl
+    if guild_id is None:
+        # DM channel — toujours autorisé (Wally peut lui-même initier des DM,
+        # les réponses doivent donc être traitées quel que soit le filtrage de guild).
+        return True
+    pgw = config.discord.per_guild_channel_whitelist
+    guild_wl = pgw.get(str(guild_id)) or pgw.get(guild_id)
+    if guild_wl is not None:
+        return channel_id in guild_wl
     mode = config.discord.channel_filter_mode
     if mode == "whitelist":
         wl = config.discord.channel_whitelist

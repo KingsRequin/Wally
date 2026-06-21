@@ -8,6 +8,27 @@ from loguru import logger
 
 from bot.v2.core.meta_agent import MetaDecision, parse_decisions
 
+_EMO_FR = {
+    "anger": "colère", "joy": "joie", "curiosity": "curiosité",
+    "sadness": "tristesse", "boredom": "ennui",
+}
+
+
+def _fmt_emotions(state: dict[str, float]) -> str:
+    """Formate les émotions de façon qualitative — pas de chiffres bruts."""
+    parts = []
+    for name, val in sorted(state.items(), key=lambda x: -x[1]):
+        if val >= 0.65:
+            intensity = "fort"
+        elif val >= 0.35:
+            intensity = "modéré"
+        elif val >= 0.15:
+            intensity = "léger"
+        else:
+            continue
+        parts.append(f"{_EMO_FR.get(name, name)} {intensity}")
+    return ", ".join(parts) if parts else "neutre"
+
 
 @dataclass
 class ReasoningResult:
@@ -107,7 +128,7 @@ class ReasoningAgent:
                 lines.append(f"  · {rel.content}")
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
-            f"**État émotionnel :** {ctx.emotion_state}",
+            f"**État émotionnel :** {_fmt_emotions(ctx.emotion_state)}",
         ])
         if ctx.active_desires:
             lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
