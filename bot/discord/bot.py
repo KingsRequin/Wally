@@ -101,8 +101,7 @@ class WallyDiscord(commands.Bot):
 
         if getattr(self.config, "cognitive_loop", None) and self.config.cognitive_loop.get("enabled", False):
             from bot.v2.core.attention_agent import AttentionAgent
-            from bot.v2.core.inner_monologue import InnerMonologue
-            from bot.v2.core.meta_agent import MetaAgent
+            from bot.v2.core.reasoning_agent import ReasoningAgent
             from bot.v2.core.action_dispatcher import ActionDispatcher
             from bot.v2.core.evolution_log import EvolutionLog
             from bot.v2.core.persona_manager import PersonaManager
@@ -120,28 +119,27 @@ class WallyDiscord(commands.Bot):
             _cog_cfg = self.config.cognitive_loop
             _provider = _cog_cfg.get("provider", "deepseek")
             _model_pro = _cog_cfg.get("model_pro", "deepseek-v4-pro")
-            _model_flash = _cog_cfg.get("model_flash", "deepseek-v4-flash")
 
             _fact_store = SQLiteFactStore(_db_path)
-            _mono_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
-            _meta_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_flash), self.db)
+            # Reasoning unifié : un seul appel (pense + décide) sur le modèle "pro"
+            # (celui qui portait le monologue intérieur).
+            _reasoning_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
             _persona_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
 
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
             _attention = AttentionAgent(_fact_store, self.emotion)
-            _mono = InnerMonologue(_mono_llm, _fact_store, _prompts_dir)
-            _meta = MetaAgent(_meta_llm, _prompts_dir)
+            _reasoning = ReasoningAgent(_reasoning_llm, _fact_store, _prompts_dir)
             self.cognitive_feed = CognitiveFeed()
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
 
-            self.cognitive_loop = CognitiveLoop(_attention, _mono, _meta, _dispatcher, self.emotion, self.cognitive_feed)
+            self.cognitive_loop = CognitiveLoop(_attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed)
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
             _dash = getattr(self, "dashboard_state", None)
             if _dash is not None:
                 _dash.cognitive_feed = self.cognitive_feed
-            logger.info("CognitiveLoop V2 initialisée ({}/{} + {})", _provider, _model_pro, _model_flash)
+            logger.info("CognitiveLoop V2 initialisée (reasoning unifié {}/{})", _provider, _model_pro)
 
         import os as _os_auto
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")

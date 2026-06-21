@@ -121,6 +121,36 @@ class DeepSeekLLMClient(BaseLLMClient):
             logger.error("DeepSeek complete() failed: {e}", e=e)
             return FALLBACK_RESPONSE
 
+    async def complete_with_reasoning(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        purpose: str = "reasoning",
+        user_id: str | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[str, str]:
+        """Un appel avec le mode *thinking* forcé. Retourne (content, reasoning).
+
+        - `reasoning` = `reasoning_content` exposé par DeepSeek = la pensée privée
+          (le `<think>`), jamais montrée telle quelle à l'utilisateur.
+        - `content` = la sortie publique (ici : la décision en tags d'action).
+        Si le serveur ne renvoie pas de reasoning, `reasoning` vaut "".
+        Fondation du reasoning unifié (un seul appel pense + décide).
+        """
+        try:
+            response = await self._client.chat.completions.create(
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                **self._api_params(thinking_override="enabled", max_tokens=max_tokens),
+            )
+            msg = response.choices[0].message
+            content = msg.content or ""
+            reasoning = getattr(msg, "reasoning_content", None) or ""
+            await self._log_cost(response, purpose, user_id)
+            return content, reasoning
+        except Exception as e:
+            logger.error("DeepSeek complete_with_reasoning() failed: {e}", e=e)
+            return "", ""
+
     async def complete_with_tools(
         self,
         system_prompt: str,

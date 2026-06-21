@@ -14,15 +14,13 @@ class CognitiveLoop:
     def __init__(
         self,
         attention_agent,
-        inner_monologue,
-        meta_agent,
+        reasoning_agent,
         action_dispatcher,
         emotion_engine=None,
         feed=None,
     ) -> None:
         self._attention = attention_agent
-        self._monologue = inner_monologue
-        self._meta = meta_agent
+        self._reasoning = reasoning_agent
         self._dispatcher = action_dispatcher
         self._emotion = emotion_engine
         self._feed = feed
@@ -85,10 +83,10 @@ class CognitiveLoop:
                     "target": _last.get("author", "—"),
                     "content_snippet": (_last.get("content") or "")[:160],
                 })
-            result = await self._monologue.generate(context)
+            result = await self._reasoning.reason(context)
             if self._feed:
-                self._feed.publish({"type": "THINK", "text": result.text})
-            decisions = await self._meta.decide(result.text)
+                self._feed.publish({"type": "THINK", "text": result.thought_text})
+            decisions = result.decisions
             if self._feed:
                 self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})
             for decision in decisions:

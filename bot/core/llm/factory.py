@@ -27,10 +27,13 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
             db=db,
             temperature=llm_config.temperature,
             max_tokens=llm_config.max_tokens,
+            thinking_type=llm_config.thinking_type,
+            thinking_effort=llm_config.thinking_effort,
         )
         logger.info(
-            "Created DeepSeekLLMClient — model={model}, temp={temp}",
+            "Created DeepSeekLLMClient — model={model}, temp={temp}, thinking={tt}/{te}",
             model=llm_config.model, temp=llm_config.temperature,
+            tt=llm_config.thinking_type, te=llm_config.thinking_effort,
         )
         return client
 
