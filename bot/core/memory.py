@@ -128,6 +128,14 @@ class MemoryService:
         """Backend de recherche V2 (MemoryRetrieval FTS5) ou None si non initialisé."""
         return self._retrieval
 
+    @property
+    def fact_store(self):
+        """Store SQLite des faits atomiques (SQLiteFactStore) ou None si non initialisé.
+
+        Exposé pour construire un MemoryIngest (réconciliation S-P-O) au bootstrap.
+        """
+        return self._facts
+
     async def add(self, platform: str, user_id: str, content: str,
                   category: str = "FAIT", username: str | None = None,
                   source: str = "fact_extractor", **_kw) -> None:

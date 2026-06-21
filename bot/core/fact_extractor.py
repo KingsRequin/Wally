@@ -9,11 +9,13 @@ from typing import TYPE_CHECKING, Optional
 from loguru import logger
 
 from bot.core.prompts import load_prompt
+from bot.v2.core.memory.vocab import PREDICATES
 
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.memory import MemoryService
     from bot.core.llm import BaseLLMClient
+    from bot.v2.core.memory.ingest import MemoryIngest
 
 _MIN_LENGTH = 15
 
@@ -163,13 +165,30 @@ FACT_EXTRACTION_SCHEMA = {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "text": {"type": "string"},
+                                "subject": {"type": "string"},
+                                "predicate": {
+                                    "type": "string",
+                                    "enum": sorted(PREDICATES),
+                                },
+                                "object": {"type": "string"},
                                 "category": {
                                     "type": "string",
                                     "enum": ["FAIT", "PREF", "LANG", "REL"],
                                 },
+                                "importance": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                },
+                                "text": {"type": "string"},
                             },
-                            "required": ["text", "category"],
+                            "required": [
+                                "subject",
+                                "predicate",
+                                "object",
+                                "category",
+                                "importance",
+                            ],
                             "additionalProperties": False,
                         },
                     },
@@ -224,11 +243,13 @@ class FactExtractor:
         memory: "MemoryService",
         llm: "BaseLLMClient",
         db=None,
+        ingest: "MemoryIngest | None" = None,
     ) -> None:
         self._config = config
         self._memory = memory
         self._openai = llm
         self._db = db
+        self._ingest = ingest
         # channel_id → buffer dict
         self._buffers: dict[str, dict] = {}
         # Strong refs for fire-and-forget tasks
@@ -400,6 +421,72 @@ class FactExtractor:
                         e=exc,
                     )
 
+    async def _store_fact(
+        self,
+        platform: str,
+        raw_id: str,
+        fact_item: dict,
+        fact_text: str,
+        category: str,
+        display: str,
+    ) -> bool:
+        """Persist one extracted fact, routing through S-P-O reconciliation when
+        possible, falling back to verbatim `memory.add()` otherwise.
+
+        Reconciliation (dedup of paraphrases) requires: a wired `MemoryIngest`,
+        and a `predicate` present and within the closed vocabulary. Any miss or
+        exception falls back to `memory.add()` so a fact is NEVER lost.
+
+        Returns True if the fact was stored (or confirmed), False on hard failure.
+        """
+        predicate = (fact_item.get("predicate") or "").strip()
+        subject = (fact_item.get("subject") or "").strip()
+        object_ = (fact_item.get("object") or "").strip()
+        try:
+            importance = float(fact_item.get("importance", 0.5))
+        except (TypeError, ValueError):
+            importance = 0.5
+
+        can_reconcile = (
+            self._ingest is not None
+            and predicate in PREDICATES
+            and subject
+            and object_
+        )
+        if can_reconcile:
+            try:
+                from bot.v2.core.memory.ingest import _Candidate
+
+                prefixed_uid = self._memory._user_id(platform, raw_id)
+                cand = _Candidate(
+                    subject=subject,
+                    predicate=predicate,
+                    object=object_,
+                    category=category,
+                    confidence_source="explicit",
+                    importance=importance,
+                )
+                await self._ingest.reconcile_candidate(prefixed_uid, cand)
+                return True
+            except Exception as exc:
+                logger.warning(
+                    "reconcile_candidate failed for {p}:{u}, falling back to add: {e}",
+                    p=platform, u=raw_id, e=exc,
+                )
+
+        # Fallback : add verbatim (dedup texte normalisé interne). Ne perd jamais un fait.
+        try:
+            await self._memory.add(
+                platform, raw_id, fact_text, category=category, username=display
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "memory.add fallback failed for {p}:{u}: {e}",
+                p=platform, u=raw_id, e=exc,
+            )
+            return False
+
     async def _extract_facts(
         self,
         messages: list[dict],
@@ -485,7 +572,7 @@ class FactExtractor:
             if not facts_list:
                 continue
 
-            # Build text from fact objects (backward-compat: handle both str and dict)
+            # Build fact objects (backward-compat: handle both str and dict)
             fact_items = []
             for f in facts_list:
                 if isinstance(f, dict):
@@ -496,8 +583,17 @@ class FactExtractor:
             uid = entry.get("target_user_id")
             # Store each fact individually with its own category
             for fi in fact_items:
-                fact_text = fi.get("text", "").strip()
                 category = fi.get("category", "FAIT")
+                # Texte lisible : `text` fourni, sinon dérivé du triplet S-P-O.
+                fact_text = (fi.get("text") or "").strip()
+                if not fact_text:
+                    fact_text = " ".join(
+                        p for p in (
+                            (fi.get("subject") or "").strip(),
+                            (fi.get("predicate") or "").strip(),
+                            (fi.get("object") or "").strip(),
+                        ) if p
+                    ).strip()
                 if not fact_text:
                     continue
                 if uid:
@@ -506,27 +602,13 @@ class FactExtractor:
                         plat, raw_id = uid.split(":", 1)
                     else:
                         plat, raw_id = platform, uid
-                    # Resolve display name from participants
-                    display = participants.get(raw_id, "")
-                    try:
-                        await self._memory.add(plat, raw_id, fact_text, category=category, username=display)
-                        stored_count += 1
-                    except Exception as exc:
-                        logger.warning(
-                            "memory.add failed for {uid}: {e}", uid=uid, e=exc
-                        )
                 else:
                     # Unknown user: store under unknown:<nickname>
-                    nickname = entry.get("target", "unknown")
-                    try:
-                        await self._memory.add("unknown", nickname, fact_text, category=category)
-                        stored_count += 1
-                    except Exception as exc:
-                        logger.warning(
-                            "memory.add failed for unknown:{nick}: {e}",
-                            nick=nickname,
-                            e=exc,
-                        )
+                    plat = "unknown"
+                    raw_id = entry.get("target", "unknown")
+                display = participants.get(raw_id, "") if uid else ""
+                if await self._store_fact(plat, raw_id, fi, fact_text, category, display):
+                    stored_count += 1
 
         # Process aliases
         for alias_entry in result.get("aliases", []):

@@ -267,7 +267,7 @@ class TestFactExtractorAnalyzeChannel:
                 "facts": [
                     {
                         "target": "Alice",
-                        "target_user_id": "discord:111",
+                        "target_user_id": "discord:610550333042589752",
                         "facts": ["Dev Python"],
                     }
                 ],
@@ -380,7 +380,7 @@ class TestFactExtractorAnalyzeChannel:
                     {
                         "nickname": "alice_twitch",
                         "resolved_to": "Alice",
-                        "resolved_user_id": "discord:111",
+                        "resolved_user_id": "discord:610550333042589752",
                         "confidence": 0.9,
                     }
                 ],
@@ -415,7 +415,7 @@ class TestFactExtractorAnalyzeChannel:
             "facts": [
                 {
                     "target": "Alice",
-                    "target_user_id": "discord:111",
+                    "target_user_id": "discord:610550333042589752",
                     "scope": "personal",
                     "facts": [
                         {"text": "Works as a developer", "category": "FAIT"},
@@ -429,7 +429,7 @@ class TestFactExtractorAnalyzeChannel:
         fe._db.list_memory_users = AsyncMock(return_value=[])
 
         messages = [
-            {"user_id": "111", "display_name": "Alice", "content": "I'm a developer living in Lyon"},
+            {"user_id": "610550333042589752", "display_name": "Alice", "content": "I'm a developer living in Lyon"},
         ]
         count = await fe._extract_facts(messages, "discord", "chan1")
         # Facts are stored individually (one call per fact)
@@ -447,7 +447,7 @@ class TestFactExtractorAnalyzeChannel:
             "facts": [
                 {
                     "target": "Bob",
-                    "target_user_id": "discord:222",
+                    "target_user_id": "discord:610550333042589753",
                     "scope": "personal",
                     "facts": [
                         {"text": "Prefers dark mode", "category": "PREF"},
@@ -462,7 +462,7 @@ class TestFactExtractorAnalyzeChannel:
         fe._db.list_memory_users = AsyncMock(return_value=[])
 
         messages = [
-            {"user_id": "222", "display_name": "Bob", "content": "I prefer dark mode and Python, I work at Google"},
+            {"user_id": "610550333042589753", "display_name": "Bob", "content": "I prefer dark mode and Python, I work at Google"},
         ]
         count = await fe._extract_facts(messages, "discord", "chan1")
         assert count == 3
@@ -510,7 +510,7 @@ class TestFactExtractorAnalyzeChannel:
                     {
                         "nickname": "maybe_alice",
                         "resolved_to": "Alice",
-                        "resolved_user_id": "discord:111",
+                        "resolved_user_id": "discord:610550333042589752",
                         "confidence": 0.5,
                     }
                 ],
@@ -536,3 +536,96 @@ class TestFactExtractorAnalyzeChannel:
 
         await asyncio.sleep(0)
         fe._db.upsert_alias.assert_not_called()
+
+
+# ── S-P-O reconciliation (paraphrase dedup) ──────────────────────────────────
+
+
+class TestFactExtractorReconciliation:
+    """Integration: two paraphrased messages → same canonical triplet → 1 fact.
+
+    Uses a real SQLiteFactStore + MemoryService + MemoryIngest (no network);
+    the extractor LLM is mocked to canonicalize both phrasings into the SAME
+    S-P-O triplet, exercising stage-1 deterministic dedup.
+    """
+
+    async def _make_fe(self, tmp_path):
+        from bot.config import Config  # noqa: F401 (typing only)
+        from bot.core.memory import MemoryService
+        from bot.v2.core.memory.ingest import MemoryIngest
+        from bot.v2.db.schema_v2 import create_v2_tables
+
+        db_path = str(tmp_path / "wally_recon.db")
+        await create_v2_tables(db_path)
+
+        config = MagicMock()
+        memory = MemoryService(config)
+        memory.set_embedding_backend(db_path=db_path)
+
+        llm = AsyncMock()  # arbiter LLM (unused for stage-1 exact match)
+        ingest = MemoryIngest(memory.fact_store, llm)
+
+        db = AsyncMock()
+        db.list_aliases = AsyncMock(return_value=[])
+        db.list_memory_users = AsyncMock(return_value=[])
+
+        openai = AsyncMock()
+        fe = FactExtractor(config, memory, openai, db, ingest=ingest)
+        return fe, memory
+
+    @pytest.mark.asyncio
+    async def test_paraphrases_dedup_to_single_fact(self, tmp_path):
+        fe, memory = await self._make_fe(tmp_path)
+
+        # Both extractions yield the SAME canonical triplet (Alice is développeur).
+        triplet = {
+            "subject": "Alice", "predicate": "is", "object": "développeur",
+            "category": "FAIT", "importance": 0.6,
+        }
+        fe._openai.complete_structured = AsyncMock(return_value={
+            "facts": [{
+                "target": "Alice", "target_user_id": "discord:610550333042589752",
+                "facts": [triplet],
+            }],
+            "aliases": [],
+        })
+
+        # Message 1 (one phrasing)
+        await fe._extract_facts(
+            [{"user_id": "610550333042589752", "display_name": "Alice",
+              "content": "je bosse comme développeur"}],
+            "discord", "ch1",
+        )
+        # Message 2 (a paraphrase → same triplet)
+        await fe._extract_facts(
+            [{"user_id": "610550333042589752", "display_name": "Alice",
+              "content": "mon métier c'est dev"}],
+            "discord", "ch1",
+        )
+
+        facts = await memory.fact_store.get_by_user("discord:610550333042589752")
+        assert len(facts) == 1  # reconciled, not duplicated
+        assert facts[0].support_count == 2
+        assert facts[0].subject == "Alice"
+        assert facts[0].predicate == "is"
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_predicate_out_of_vocab(self, tmp_path):
+        """No valid predicate → falls back to memory.add (fact never lost)."""
+        fe, memory = await self._make_fe(tmp_path)
+        fe._openai.complete_structured = AsyncMock(return_value={
+            "facts": [{
+                "target": "Bob", "target_user_id": "discord:610550333042589753",
+                "facts": [{"text": "habite à Lyon", "category": "FAIT"}],
+            }],
+            "aliases": [],
+        })
+        count = await fe._extract_facts(
+            [{"user_id": "610550333042589753", "display_name": "Bob",
+              "content": "j'habite à Lyon"}],
+            "discord", "ch1",
+        )
+        assert count == 1
+        facts = await memory.fact_store.get_by_user("discord:610550333042589753")
+        assert len(facts) == 1
+        assert facts[0].content == "habite à Lyon"

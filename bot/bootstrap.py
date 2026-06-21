@@ -140,7 +140,16 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     logger.info("ActionService initialized")
 
     # ── FactExtractor + ReactionTracker ───────────────────────────────────────
-    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db)
+    # MemoryIngest réutilise le store de faits (set_embedding_backend déjà appelé)
+    # pour la réconciliation S-P-O 2 étages (dédup des paraphrases).
+    from bot.v2.core.memory.ingest import MemoryIngest
+    mem_ingest = None
+    if memory.fact_store is not None:
+        mem_ingest = MemoryIngest(memory.fact_store, secondary_llm)
+        logger.info("MemoryIngest initialized (S-P-O reconciliation)")
+    else:
+        logger.warning("MemoryIngest non câblé — fact_store indisponible, fallback memory.add")
+    fact_extractor = FactExtractor(config, memory, secondary_llm, db=db, ingest=mem_ingest)
     await fact_extractor.restore_buffers()
     logger.info("FactExtractor initialized")
 

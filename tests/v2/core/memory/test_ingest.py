@@ -15,7 +15,7 @@ from bot.v2.db.schema_v2 import create_v2_tables
 from bot.v2.core.memory.facts import (
     AtomicFact, FactCategory, FactStatus, SQLiteFactStore, _normalize,
 )
-from bot.v2.core.memory.ingest import MemoryIngest, IngestResult
+from bot.v2.core.memory.ingest import MemoryIngest, IngestResult, _Candidate
 
 
 # ── Faux LLM ──────────────────────────────────────────────────────────────────
@@ -218,6 +218,29 @@ async def test_volatile_category_coexists_no_arbiter(store):
     assert "arbiter" not in llm2.calls  # pas d'arbitrage sur catégorie volatile
     facts = await store.get_by_user("discord:1")
     assert len(facts) == 2
+
+
+@pytest.mark.asyncio
+async def test_reconcile_candidate_new_then_confirm(store):
+    """reconcile_candidate sur un candidat pré-construit : 1er appel → new,
+    2e appel (même S-P-O) → confirmed, sans extraction LLM."""
+    llm = FakeLLM()  # extraction non utilisée ici
+    ingest = MemoryIngest(store, llm)
+
+    cand = _Candidate(
+        subject="KingsRequin", predicate="plays", object="Apex",
+        category="FAIT", confidence_source="explicit", importance=0.6,
+    )
+    kind1, fact1 = await ingest.reconcile_candidate("discord:1", cand)
+    assert kind1 == "new"
+    assert "extract" not in llm.calls  # aucune extraction déclenchée
+
+    kind2, fact2 = await ingest.reconcile_candidate("discord:1", cand)
+    assert kind2 == "confirmed"
+
+    facts = await store.get_by_user("discord:1")
+    assert len(facts) == 1  # pas de doublon
+    assert facts[0].support_count == 2
 
 
 def test_normalize_helper():

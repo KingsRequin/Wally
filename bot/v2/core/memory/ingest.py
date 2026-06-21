@@ -192,6 +192,17 @@ class MemoryIngest:
             return []
         return _parse_extract_response(raw)
 
+    # ── Point d'entrée public : réconciliation d'un candidat déjà extrait ──────
+
+    async def reconcile_candidate(self, user_id: str, cand: _Candidate) -> tuple:
+        """Réconcilie un candidat S-P-O DÉJÀ extrait (saute l'extraction LLM).
+
+        Permet à fact_extractor (qui fait sa propre extraction multi-user) de
+        réutiliser la réconciliation 2 étages. `user_id` doit déjà être préfixé
+        (`discord:<id>`). Retourne le même tuple que `_reconcile`.
+        """
+        return await self._reconcile(cand, user_id)
+
     # ── Étape 2 : réconciliation 2 étages ─────────────────────────────────────
 
     async def _reconcile(self, cand: _Candidate, user_id: str):

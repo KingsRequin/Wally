@@ -46,20 +46,47 @@ Indique ta confiance (0.0–1.0) dans chaque résolution.
 - Si aucun fait durable n'est détecté, retourne des listes vides.
 - Les faits doivent être des phrases courtes et factuelles.
 
-## Classification des faits par catégorie
+## Forme d'un fait : triplet sujet-prédicat-objet (S-P-O)
 
-Chaque fait doit être classé dans une catégorie :
-- "FAIT" : information factuelle (métier, lieu, âge, hobbies, etc.)
-- "PREF" : préférence ou goût (aime/n'aime pas, préfère, etc.)
+Chaque fait est un **triplet structuré** + une catégorie + une importance. Cette
+structure permet de dédupliquer automatiquement les paraphrases (deux phrasings
+différents du même fait produisent le même triplet → un seul souvenir).
+
+- `subject` : l'entité concernée — le plus souvent le pseudo de la personne cible
+  (ex: "Alice"). Pour un fait relationnel, le sujet est l'une des deux parties.
+- `predicate` : un verbe-relation **STRICTEMENT** dans ce vocabulaire fermé :
+  `is`, `has`, `prefers`, `dislikes`, `plays`, `uses`, `wants`, `plans`,
+  `believes`, `needs`, `feels`, `values`, `speaks`, `knows`, `relates_to`.
+  N'invente JAMAIS un prédicat hors de cette liste. Choisis le plus proche.
+- `object` : la valeur, **courte et canonique** (ex: "développeur", "Apex",
+  "Neovim", "français"). Pas de phrase, pas de ponctuation superflue. Forme
+  canonique stable d'une occurrence à l'autre.
+- `category` : "FAIT" | "PREF" | "LANG" | "REL" (voir ci-dessous).
+- `importance` : nombre dans [0,1] — combien ce fait est durable/important
+  (0.2 = anecdotique, 0.5 = normal, 0.8 = trait identitaire fort).
+
+Correspondance prédicat → catégorie (indicatif) :
+- `is`/`has`/`plays`/`uses`/`knows` → "FAIT"
+- `prefers`/`dislikes`/`values`/`believes` → "PREF"
+- `speaks` → "LANG"
+- `relates_to`/`knows` (relation sociale) → "REL"
+
+Exemples :
+- "je bosse comme dev" → `{"subject":"Alice","predicate":"is","object":"développeur","category":"FAIT","importance":0.6}`
+- "j'adore le café" → `{"subject":"Alice","predicate":"prefers","object":"café","category":"PREF","importance":0.4}`
+- "je joue à Apex" → `{"subject":"Bob","predicate":"plays","object":"Apex","category":"FAIT","importance":0.5}`
+
+### Catégories
+- "FAIT" : information factuelle (métier, lieu, âge, hobbies, possessions, jeux, outils)
+- "PREF" : préférence ou goût (aime/n'aime pas, préfère, valeurs, opinions)
 - "LANG" : langue parlée ou préférence linguistique
 - "REL" : relation avec une autre personne ou un autre utilisateur
 
 ### Faits relationnels (catégorie REL)
 Sois attentif aux dynamiques de groupe et relations entre utilisateurs :
-- Liens amicaux ou antagonistes : "Alice et Bob se charrient souvent", "Charlie est le modo respecté"
-- Duos récurrents : personnes qui interagissent régulièrement ensemble
-- Dynamiques de groupe : taquineries, rivalités amicales, entraide
-- Rôles sociaux : leader, troll bienveillant, sage du chat, newcomer intégré
-- Formule les faits REL en mentionnant les deux parties : "X et Y se taquinent" plutôt que juste "X taquine"
+- Liens amicaux ou antagonistes, duos récurrents, rôles sociaux (leader, modo respecté…)
+- Sujet = une partie, objet = l'autre partie + nature, prédicat = `relates_to` ou `knows`.
+  Ex: "Alice et Bob se charrient" → `{"subject":"Alice","predicate":"relates_to","object":"Bob : se charrient","category":"REL","importance":0.4}`
 
-Format de chaque fait : {"text": "le fait", "category": "FAIT|PREF|LANG|REL"}
+Format de chaque fait :
+`{"subject":"...","predicate":"<vocab>","object":"...","category":"FAIT|PREF|LANG|REL","importance":0.0-1.0}`
