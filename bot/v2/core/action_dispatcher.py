@@ -258,6 +258,27 @@ class ActionDispatcher:
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"focus: {focus[:50]}"})
 
+        elif act_name == "reflect_self" and self._facts:
+            narrative = args.get("narrative", "").strip()
+            if not narrative:
+                return
+            # Récit de soi cumulatif : on N'archive PAS les précédents (contraste
+            # avec set_focus). Chaque récit s'ajoute à la trace de l'identité.
+            await self._facts.add(AtomicFact(
+                user_id="wally:self",
+                content=narrative,
+                category=FactCategory.THOUGHT,
+                source="self_narrative",
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+            logger.info("ACT reflect_self: {}", narrative[:60])
+            if self._feed:
+                self._feed.publish(
+                    {"type": "ACT", "detail": f"récit de soi : {narrative[:50]}"}
+                )
+
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
             if self_fix is None:

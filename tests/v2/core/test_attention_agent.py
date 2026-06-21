@@ -177,6 +177,22 @@ async def test_build_context_no_drive_when_neutral():
 
 # ── Phase 3a : préoccupation courante (fil de pensée continu) ──
 
+def _latest_by_source(focus=None, self_narrative=None):
+    """Helper : side_effect pour get_latest_by_source qui distingue par source.
+
+    build_context interroge get_latest_by_source DEUX fois (source="focus" pour
+    la préoccupation, source="self_narrative" pour le récit de soi) ; un
+    return_value unique les confondrait. On route donc par argument `source`.
+    """
+    async def _fn(user_id, source, category=None):
+        if source == "focus":
+            return focus
+        if source == "self_narrative":
+            return self_narrative
+        return None
+    return _fn
+
+
 @pytest.mark.asyncio
 async def test_build_context_populates_preoccupation():
     """build_context peuple preoccupation depuis le dernier fait focus."""
@@ -184,11 +200,11 @@ async def test_build_context_populates_preoccupation():
     store = MagicMock()
     store.search_by_category = AsyncMock(return_value=[])
     store.sample_random = AsyncMock(return_value=[])
-    store.get_latest_by_source = AsyncMock(return_value=focus)
+    store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(focus=focus))
     agent = AttentionAgent(store)
     ctx = await agent.build_context({"joy": 0.5}, [])
     assert ctx.preoccupation == "comprendre Kaelis"
-    store.get_latest_by_source.assert_called_once_with("wally:self", "focus")
+    store.get_latest_by_source.assert_any_call("wally:self", "focus")
 
 
 @pytest.mark.asyncio
@@ -201,3 +217,31 @@ async def test_build_context_preoccupation_none_when_no_focus():
     agent = AttentionAgent(store)
     ctx = await agent.build_context({"joy": 0.5}, [])
     assert ctx.preoccupation is None
+
+
+# ── Phase 3b : récit de soi (qui je deviens) ──
+
+@pytest.mark.asyncio
+async def test_build_context_populates_self_narrative():
+    """build_context peuple self_narrative depuis le dernier fait self_narrative."""
+    sn = _make_fact(FactCategory.THOUGHT, "je deviens plus posé")
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(self_narrative=sn))
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert ctx.self_narrative == "je deviens plus posé"
+    store.get_latest_by_source.assert_any_call("wally:self", "self_narrative")
+
+
+@pytest.mark.asyncio
+async def test_build_context_self_narrative_none_when_absent():
+    """Aucun fait self_narrative → self_narrative None."""
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert ctx.self_narrative is None

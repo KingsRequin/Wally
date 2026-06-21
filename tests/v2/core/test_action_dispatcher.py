@@ -377,6 +377,66 @@ async def test_act_set_focus_empty_noop(tmp_fact_store):
     assert await tmp_fact_store.get_latest_by_source("wally:self", "focus") is None
 
 
+# ── Phase 3b : reflect_self (récit de soi cumulatif) ──
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_adds_narrative_fact(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self",
+        act_args={"narrative": "Je deviens un peu moins sec avec les gens."},
+    ))
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative")
+    assert latest is not None
+    assert latest.content == "Je deviens un peu moins sec avec les gens."
+    assert latest.category == FactCategory.THOUGHT
+    assert latest.source == "self_narrative"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_empty_noop(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "  "},
+    ))
+    assert await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative") is None
+
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_is_cumulative(tmp_fact_store):
+    """Le récit de soi s'accumule : 2 reflect_self → 2 faits actifs (pas d'archivage)."""
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "premier récit"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "deuxième récit"},
+    ))
+    # Les deux récits restent ACTIFS (cumulatif).
+    active = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT]
+    )
+    narratives = [f for f in active if f.source == "self_narrative"]
+    assert len(narratives) == 2
+    # Le dernier surfacé est le second.
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative")
+    assert latest.content == "deuxième récit"
+
+
 # ── Phase 2c : dm (DM Discord, owner-only) ──
 
 OWNER_ID = "610550333042589752"

@@ -153,6 +153,31 @@ def test_preoccupation_absent_when_none(tmp_path, tmp_db_path):
     assert "préoccupation du moment" not in rendered
 
 
+# ── Phase 3b : rendu du récit de soi ──
+
+def test_self_narrative_rendered_when_present(tmp_path, tmp_db_path):
+    """_format_context rend le récit de soi si présent."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    ctx = _make_context()
+    ctx.self_narrative = "je deviens moins sec avec les gens"
+    rendered = agent._format_context(ctx)
+    assert "Là où tu en es de qui tu deviens" in rendered
+    assert "je deviens moins sec avec les gens" in rendered
+
+
+def test_self_narrative_absent_when_none(tmp_path, tmp_db_path):
+    """self_narrative None (défaut) → rien d'injecté."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    rendered = agent._format_context(_make_context())
+    assert "qui tu deviens" not in rendered
+
+
 @pytest.mark.asyncio
 async def test_reason_passes_system_prompt(tmp_path, tmp_db_path):
     agent, llm, _ = _make_agent(

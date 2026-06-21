@@ -22,6 +22,9 @@ class AttentionContext:
     # Préoccupation courante : le fil de pensée persistant qui traverse les ticks
     # (Phase 3a). Dernier fait actif de source `focus`. None si aucun.
     preoccupation: str | None = None
+    # Récit de soi : le dernier « qui je deviens » écrit par Wally (Phase 3b).
+    # Dernier fait actif de source `self_narrative`. None si aucun.
+    self_narrative: str | None = None
 
 
 class AttentionAgent:
@@ -74,6 +77,10 @@ class AttentionAgent:
         latest = await self._facts.get_latest_by_source("wally:self", "focus")
         preoccupation = latest.content if latest else None
 
+        # Récit de soi : dernier « qui je deviens » écrit par Wally (Phase 3b).
+        sn = await self._facts.get_latest_by_source("wally:self", "self_narrative")
+        self_narrative = sn.content if sn else None
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -85,6 +92,7 @@ class AttentionAgent:
             idle_seed=idle_seed,
             emotional_drive=drive,
             preoccupation=preoccupation,
+            self_narrative=self_narrative,
         )
 
     async def _build_idle_seed(

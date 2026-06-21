@@ -97,6 +97,10 @@ class ReasoningAgent:
             lines.append(
                 f"**Ce que tu es et sais faire (ton self-model) :**\n{self._capabilities_text}\n"
             )
+        if getattr(ctx, "self_narrative", None):
+            lines.append(
+                f"**Là où tu en es de qui tu deviens :** {ctx.self_narrative}"
+            )
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {ctx.emotion_state}",
