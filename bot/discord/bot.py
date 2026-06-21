@@ -64,7 +64,6 @@ class WallyDiscord(commands.Bot):
         # Gate V2 — optionnel, activé par response_gate.enabled dans config.
         # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
         self.response_gate = None   # type: ignore[assignment]
-        self.v2_memory = None       # type: ignore[assignment]  # MemoryRetrieval — câblé en Plan B
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C

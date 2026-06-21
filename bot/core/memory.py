@@ -123,6 +123,11 @@ class MemoryService:
 
     # ── Long-term memory (V2 backend) ─────────────────────────────────────────
 
+    @property
+    def retrieval(self):
+        """Backend de recherche V2 (MemoryRetrieval FTS5) ou None si non initialisé."""
+        return self._retrieval
+
     async def add(self, platform: str, user_id: str, content: str,
                   category: str = "FAIT", username: str | None = None,
                   source: str = "fact_extractor", **_kw) -> None:
@@ -130,14 +135,25 @@ class MemoryService:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return
         from datetime import datetime, timezone
-        from bot.v2.core.memory.facts import AtomicFact, FactCategory
+        from bot.v2.core.memory.facts import AtomicFact, FactCategory, _normalize
         try:
             cat = FactCategory(category)
         except ValueError:
             cat = FactCategory.FAIT
+        uid = self._user_id(platform, user_id)
+        # Déduplication : si un fait actif de même contenu normalisé existe déjà
+        # pour cet utilisateur et cette catégorie, on le CONFIRME (support++,
+        # confiance++) au lieu de créer un doublon. Évite l'accumulation que
+        # l'ancien pipeline produisait (réinsertion verbatim à chaque extraction).
+        norm = _normalize(content)
+        if norm:
+            for f in await self._facts.get_by_user(uid, categories=[cat]):
+                if f.id and _normalize(f.content) == norm:
+                    await self._facts.confirm(f.id)
+                    return
         now = datetime.now(timezone.utc)
         await self._retrieval.add_fact(AtomicFact(
-            user_id=self._user_id(platform, user_id),
+            user_id=uid,
             content=content, category=cat, confidence=1.0,
             source=source, created_at=now, last_seen_at=now,
         ))

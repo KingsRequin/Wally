@@ -36,3 +36,24 @@ async def test_add_namespaces_user_id(mem):
     facts = await mem._facts.get_by_user("discord:12345678901234567")
     assert len(facts) == 1
     assert facts[0].user_id == "discord:12345678901234567"
+
+
+@pytest.mark.asyncio
+async def test_add_dedups_same_content(mem):
+    """Le même fait ajouté 2× → 1 seul fait confirmé (pas de doublon)."""
+    uid = "12345678901234567"  # snowflake 17 chiffres (évite le cross-platform fix)
+    await mem.add("discord", uid, "aime le café", category="PREF")
+    await mem.add("discord", uid, "Aime le café !", category="PREF")  # variante normalisée
+    facts = await mem._facts.get_by_user(f"discord:{uid}")
+    assert len(facts) == 1
+    assert facts[0].support_count == 2
+
+
+@pytest.mark.asyncio
+async def test_add_keeps_distinct_content(mem):
+    """Deux faits différents coexistent."""
+    uid = "12345678901234567"
+    await mem.add("discord", uid, "aime le café", category="PREF")
+    await mem.add("discord", uid, "déteste les bugs", category="PREF")
+    facts = await mem._facts.get_by_user(f"discord:{uid}")
+    assert len(facts) == 2

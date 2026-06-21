@@ -580,18 +580,21 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
     if getattr(bot, "response_gate", None) is not None:
         from bot.v2.core.memory.facts import FactCategory
-        user_id_str = str(message.author.id)
+        # Espace de clés mémoire : préfixé "discord:<id>" pour matcher ce que
+        # MemoryService écrit (sinon le gate lit/écrit dans un espace disjoint).
+        user_id_str = f"discord:{message.author.id}"
         emotion_state = bot.emotion.get_state()
 
         rel_facts = []
         desire_facts = []
         try:
-            if hasattr(bot, "v2_memory") and bot.v2_memory is not None:
-                rel_facts = await bot.v2_memory.search(
+            retrieval = getattr(getattr(bot, "memory", None), "retrieval", None)
+            if retrieval is not None:
+                rel_facts = await retrieval.search(
                     "relation", user_id_str, limit=3,
                     categories=[FactCategory.REL, FactCategory.EMOTION]
                 )
-                desire_facts = await bot.v2_memory.search(
+                desire_facts = await retrieval.search(
                     "désir objectif", "wally:self", limit=2,
                     categories=[FactCategory.DESIRE]
                 )
