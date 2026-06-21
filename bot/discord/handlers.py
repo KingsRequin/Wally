@@ -636,6 +636,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             channel_id=message.channel.id,
             author=str(message.author.display_name),
             content=message.content,
+            message_id=str(message.id),
         )
 
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)

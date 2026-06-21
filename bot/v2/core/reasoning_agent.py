@@ -108,8 +108,10 @@ class ReasoningAgent:
             )
             lines.append("**Interactions récentes :**")
             for msg in ctx.recent_interactions[-5:]:
+                mid = msg.get("message_id")
+                mid_part = f"(msg {mid}) " if mid else ""
                 lines.append(
-                    f"  [{msg.get('channel', '?')}] {msg.get('author', '?')}: "
+                    f"  [{msg.get('channel', '?')}] {mid_part}{msg.get('author', '?')}: "
                     f"{msg.get('content', '')[:100]}"
                 )
         if getattr(ctx, "spontaneous_outreach", None):

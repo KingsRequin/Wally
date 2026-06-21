@@ -31,6 +31,19 @@ def test_notify_activity_updates_ts():
     assert loop._last_activity_ts > 0
 
 
+def test_notify_activity_stores_message_id():
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hello", message_id="42")
+    assert loop._recent_interactions[-1]["message_id"] == "42"
+
+
+def test_notify_activity_message_id_optional():
+    """message_id absent → stocké à None (rétro-compat)."""
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    assert loop._recent_interactions[-1]["message_id"] is None
+
+
 def test_tick_interval_active():
     import time
     loop, *_ = _make_loop()

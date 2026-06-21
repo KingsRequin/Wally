@@ -60,7 +60,9 @@ class CognitiveLoop:
         self._task: asyncio.Task | None = None
         self._running = False
 
-    def notify_activity(self, channel_id: int, author: str, content: str) -> None:
+    def notify_activity(
+        self, channel_id: int, author: str, content: str, message_id: str | None = None
+    ) -> None:
         self._last_activity_ts = time.monotonic()
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
         # une suite : on remet le compteur « sans réponse » à zéro.
@@ -71,6 +73,7 @@ class CognitiveLoop:
             "channel": str(channel_id),
             "author": author,
             "content": content[:200],
+            "message_id": message_id,
             "ts": self._last_activity_ts,
         })
         if len(self._recent_interactions) > 20:

@@ -54,6 +54,35 @@ class ActionDispatcher:
         except Exception as e:
             logger.error("SPEAK failed: {}", e)
 
+    async def _react(self, channel_id: str, message_id: str, emoji: str) -> None:
+        """Réagit en emoji à un message récent. Geste léger et humain.
+
+        Ne crash jamais : un emoji invalide ou un manque de permissions est
+        simplement loggé en warning.
+        """
+        if not channel_id or not message_id or not emoji:
+            logger.warning("react: arguments manquants (channel/message/emoji)")
+            return
+        if self._bot is None:
+            logger.debug("react supprimé: bot non disponible")
+            return
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                logger.warning("react: canal introuvable {}", channel_id)
+                return
+            try:
+                message = await channel.fetch_message(int(message_id))
+            except Exception as e:
+                logger.warning("react: message {} introuvable: {}", message_id, e)
+                return
+            await message.add_reaction(emoji)
+            logger.info("Cognitive REACT {} → msg {}", emoji, message_id)
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"react {emoji}"})
+        except Exception as e:
+            logger.warning("react failed: {}", e)
+
     @staticmethod
     def _coerce_goal_id(act_name: str, raw) -> int | None:
         """Convertit goal_id en int (le LLM peut l'envoyer en str). Retourne None
@@ -142,6 +171,36 @@ class ActionDispatcher:
             logger.info("ACT fulfill_goal: #{} accompli", goal_id)
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"fulfill_goal #{goal_id}"})
+
+        elif act_name == "react":
+            await self._react(
+                args.get("channel_id", ""),
+                args.get("message_id", ""),
+                args.get("emoji", ""),
+            )
+
+        elif act_name == "note_to_self" and self._facts:
+            note = (args.get("note") or "").strip()
+            kind = args.get("kind", "reminder")
+            if not note:
+                return
+            cat = {
+                "mood": FactCategory.EMOTION,
+                "question": FactCategory.DESIRE,
+                "reminder": FactCategory.DESIRE,
+            }.get(kind, FactCategory.THOUGHT)
+            await self._facts.add(AtomicFact(
+                user_id="wally:self",
+                content=note,
+                category=cat,
+                source="note_to_self",
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+            logger.info("ACT note_to_self ({}): {}", kind, note[:60])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:50]}"})
 
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None

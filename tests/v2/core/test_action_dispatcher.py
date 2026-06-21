@@ -201,3 +201,112 @@ async def test_act_fulfill_goal_missing_id_no_crash(tmp_fact_store):
     await dispatcher.dispatch(MetaDecision(
         action="ACT", act_name="fulfill_goal", act_args={},
     ))
+
+
+# ── Phase 2b : react (réaction emoji) ──
+
+@pytest.mark.asyncio
+async def test_act_react_adds_reaction():
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    message = MagicMock()
+    message.add_reaction = AsyncMock()
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+    channel.fetch_message.assert_called_once_with(42)
+    message.add_reaction.assert_called_once_with("🔥")
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_react_channel_not_found_no_crash():
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot = MagicMock()
+    bot.get_channel.return_value = None
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_react_message_not_found_no_crash():
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(side_effect=Exception("not found"))
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_react_missing_args_noop():
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "", "message_id": "", "emoji": ""},
+    ))
+    bot.get_channel.assert_not_called()
+
+
+# ── Phase 2b : note_to_self (note privée) ──
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,expected", [
+    ("mood", "EMOTION"),
+    ("question", "DESIRE"),
+    ("reminder", "DESIRE"),
+    ("autre", "THOUGHT"),
+])
+async def test_act_note_to_self_category(tmp_fact_store, kind, expected):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "ne pas oublier ça", "kind": kind},
+    ))
+    facts = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory(expected)]
+    )
+    assert len(facts) == 1
+    assert facts[0].content == "ne pas oublier ça"
+    assert facts[0].source == "note_to_self"
+
+
+@pytest.mark.asyncio
+async def test_act_note_to_self_empty_noop(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self", act_args={"note": "  ", "kind": "mood"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert facts == []
