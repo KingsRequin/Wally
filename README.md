@@ -4,7 +4,7 @@ Wally est un bot IA pour Discord et Twitch avec une personnalite coherente, un e
 
 ## Fonctionnalites principales
 
-- **Multi-provider LLM** : OpenAI (GPT, O-series) et Anthropic Claude en parallele, configurable par role (primary/secondary)
+- **LLM DeepSeek** : `deepseek-v4-pro` (primary) et `deepseek-v4-flash` (secondary), configurable par role. OpenAI est reserve a la generation d'images et aux embeddings
 - **Etat emotionnel** : 5 emotions (anger, joy, sadness, curiosity, boredom) avec decroissance exponentielle, influence les reponses
 - **Memoire long-terme** : Qdrant (vecteurs) pour stocker faits, preferences, relations par utilisateur et plateforme
 - **Generation d'images** : via OpenAI Images API, galerie publique avec votes
@@ -22,8 +22,8 @@ Wally est un bot IA pour Discord et Twitch avec une personnalite coherente, un e
 | Outil | Version | Pourquoi |
 |---|---|---|
 | Docker + Docker Compose | >= 24 | Faire tourner le bot et Qdrant |
-| Cle API OpenAI | — | Reponses, images, embeddings |
-| Cle API Anthropic | _(optionnel)_ | Utiliser Claude comme provider LLM |
+| Cle API DeepSeek | — | Reponses (texte) — provider LLM principal |
+| Cle API OpenAI | — | Generation d'images + embeddings |
 | Application Discord | — | Token bot + intents |
 | Application Twitch | _(optionnel)_ | Token OAuth bot + client ID |
 
@@ -84,19 +84,21 @@ Toutes les valeurs peuvent etre modifiees a chaud via `/wally setup` (Discord) o
 ```yaml
 llm:
   primary:
-    provider: "claude"        # ou "openai"
-    model: "claude-sonnet-4-6-20260301"
-    temperature: 1.0
-    max_tokens: 1000
-    thinking_type: "adaptive" # Claude: disabled/enabled/adaptive
-    thinking_effort: "medium" # Claude adaptive: low/medium/high
+    provider: "deepseek"      # seul provider texte supporte
+    model: "deepseek-v4-pro"
+    temperature: 0.8
+    max_tokens: 8192
+    thinking_type: "disabled" # disabled/enabled
+    thinking_effort: "medium"
   secondary:
-    provider: "openai"
-    model: "gpt-5.1-mini"
+    provider: "deepseek"
+    model: "deepseek-v4-flash"
     temperature: 0.8
     max_tokens: 1000
-    reasoning_effort: "medium" # OpenAI-specific
+    reasoning_effort: "medium"
 ```
+
+> OpenAI n'est plus un provider texte — il est construit directement (hors `llm:`) pour la generation d'images et les embeddings.
 
 ### Section `bot`
 
@@ -197,11 +199,11 @@ bot/
 │   ├── journal.py         # Journal quotidien (apscheduler)
 │   ├── sessions.py        # SessionManager : suivi sessions, analyse LLM
 │   ├── persona.py         # PersonaService : chargement fichiers persona
-│   ├── llm/               # Abstraction multi-provider LLM
+│   ├── llm/               # Abstraction LLM
 │   │   ├── base.py        # ABC BaseLLMClient
-│   │   ├── openai_client.py # OpenAI Chat Completions + Responses API
-│   │   ├── claude_client.py # Anthropic Claude, prompt caching, extended thinking
-│   │   └── factory.py     # Factory create_llm_client()
+│   │   ├── deepseek.py    # DeepSeekLLMClient — seul provider texte (primary/secondary)
+│   │   ├── openai_client.py # OpenAI — images + embeddings uniquement
+│   │   └── factory.py     # Factory create_llm_client() (DeepSeek only)
 │   └── actions/           # Taches planifiees via tool calling
 │       ├── registry.py    # Catalogue actions + ACL par role
 │       ├── scheduler.py   # Persistence SQLite + apscheduler
