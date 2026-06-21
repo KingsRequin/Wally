@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -82,6 +83,37 @@ class ActionDispatcher:
                 self._feed.publish({"type": "ACT", "detail": f"react {emoji}"})
         except Exception as e:
             logger.warning("react failed: {}", e)
+
+    async def _dm(self, user_id: str, message: str) -> None:
+        """Envoie un DM Discord — réservé au créateur (owner) uniquement.
+
+        Sécurité stricte : Wally ne peut DM que son créateur, jamais un autre
+        membre. Ne crash jamais (DM fermés → Forbidden simplement loggé).
+        """
+        user_id = str(user_id or "").strip()
+        message = (message or "").strip()
+        if not user_id or not message:
+            logger.warning("dm: arguments manquants (user_id/message)")
+            return
+        if self._bot is None:
+            logger.debug("dm supprimé: bot non disponible")
+            return
+        owner_id = os.getenv("OWNER_DISCORD_ID", "610550333042589752")
+        if user_id != owner_id:
+            logger.warning("DM non autorisé vers {} (réservé au créateur)", user_id)
+            return
+        try:
+            try:
+                user = await self._bot.fetch_user(int(user_id))
+            except Exception as e:
+                logger.warning("dm: utilisateur {} introuvable: {}", user_id, e)
+                return
+            await user.send(message)
+            logger.info("Cognitive DM → {} : {}", user_id, message[:80])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"DM créateur : {message[:50]}"})
+        except Exception as e:
+            logger.warning("DM failed: {}", e)
 
     @staticmethod
     def _coerce_goal_id(act_name: str, raw) -> int | None:
@@ -178,6 +210,9 @@ class ActionDispatcher:
                 args.get("message_id", ""),
                 args.get("emoji", ""),
             )
+
+        elif act_name == "dm":
+            await self._dm(args.get("user_id", ""), args.get("message", ""))
 
         elif act_name == "note_to_self" and self._facts:
             note = (args.get("note") or "").strip()

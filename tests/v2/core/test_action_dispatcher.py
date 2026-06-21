@@ -310,3 +310,90 @@ async def test_act_note_to_self_empty_noop(tmp_fact_store):
     ))
     facts = await tmp_fact_store.get_by_user("wally:self")
     assert facts == []
+
+
+# ── Phase 2c : dm (DM Discord, owner-only) ──
+
+OWNER_ID = "610550333042589752"
+
+
+def _dm_bot():
+    """Bot mock avec fetch_user (AsyncMock) → user mock avec send (AsyncMock)."""
+    user = MagicMock()
+    user.send = AsyncMock()
+    bot = MagicMock()
+    bot.fetch_user = AsyncMock(return_value=user)
+    return bot, user
+
+
+@pytest.mark.asyncio
+async def test_act_dm_to_owner_sends(monkeypatch):
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "une vraie question ?"},
+    ))
+    bot.fetch_user.assert_called_once_with(int(OWNER_ID))
+    user.send.assert_called_once_with("une vraie question ?")
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_dm_to_non_owner_blocked(monkeypatch):
+    """Sécurité : DM vers un autre id que l'owner → send PAS appelé, pas de crash."""
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": "999999999999999999", "message": "salut"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_act_dm_missing_args_noop(monkeypatch):
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    dispatcher = ActionDispatcher(bot=bot)
+    # message vide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm", act_args={"user_id": OWNER_ID, "message": "  "},
+    ))
+    # user_id vide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm", act_args={"user_id": "", "message": "salut"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_act_dm_send_raises_no_crash(monkeypatch):
+    """user.send lève (DM fermés / Forbidden) → pas de crash, dispatch ne propage pas."""
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    user.send = AsyncMock(side_effect=Exception("DM fermés"))
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "coucou"},
+    ))
+    user.send.assert_called_once()
