@@ -54,8 +54,22 @@ class ActionDispatcher:
         except Exception as e:
             logger.error("SPEAK failed: {}", e)
 
+    @staticmethod
+    def _coerce_goal_id(act_name: str, raw) -> int | None:
+        """Convertit goal_id en int (le LLM peut l'envoyer en str). Retourne None
+        et log un warning si absent/invalide — ne crash jamais.
+        """
+        if raw is None:
+            logger.warning("ACT {}: 'goal_id' manquant", act_name)
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            logger.warning("ACT {}: goal_id invalide {!r}", act_name, raw)
+            return None
+
     async def _act(self, act_name: str, args: dict) -> None:
-        from bot.v2.core.memory.facts import AtomicFact, FactCategory
+        from bot.v2.core.memory.facts import AtomicFact, FactCategory, FactStatus
 
         now = datetime.now(timezone.utc)
 
@@ -103,6 +117,31 @@ class ActionDispatcher:
                 logger.info("ACT create_desire: {}", content[:60])
                 if self._feed:
                     self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:60]}"})
+
+        elif act_name == "advance_goal" and self._facts:
+            goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
+            step = (args.get("step") or "").strip()
+            if goal_id is None:
+                return
+            if not step:
+                logger.warning("ACT advance_goal: 'step' manquant pour #{}", goal_id)
+                return
+            ok = await self._facts.append_progress(goal_id, step)
+            if ok:
+                logger.info("ACT advance_goal: #{} {}", goal_id, step[:60])
+                if self._feed:
+                    self._feed.publish(
+                        {"type": "ACT", "detail": f"advance_goal #{goal_id}: {step[:50]}"}
+                    )
+
+        elif act_name == "fulfill_goal" and self._facts:
+            goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
+            if goal_id is None:
+                return
+            await self._facts.set_status(goal_id, FactStatus.ARCHIVED)
+            logger.info("ACT fulfill_goal: #{} accompli", goal_id)
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"fulfill_goal #{goal_id}"})
 
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None

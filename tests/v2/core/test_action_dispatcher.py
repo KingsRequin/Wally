@@ -103,3 +103,101 @@ async def test_speak_publishes_to_feed():
     await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
     types = [c.args[0]["type"] for c in feed.publish.call_args_list]
     assert "SPEAK" in types
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_appends_progress(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import AtomicFact, FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="Mon objectif", category=FactCategory.GOAL,
+    ))
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": gid, "step": "premier pas concret"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert "· premier pas concret" in facts[0].content
+    assert "— progression —" in facts[0].content
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_goal_id_as_str(tmp_fact_store):
+    """goal_id en str est accepté (le LLM peut l'envoyer ainsi)."""
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import AtomicFact, FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="But", category=FactCategory.GOAL,
+    ))
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": str(gid), "step": "un pas"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert "· un pas" in facts[0].content
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_missing_args_no_crash(tmp_fact_store):
+    """goal_id absent / invalide ne crash pas, ne modifie rien."""
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    # goal_id manquant
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal", act_args={"step": "un pas"},
+    ))
+    # goal_id invalide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": "abc", "step": "un pas"},
+    ))
+    # step manquant
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal", act_args={"goal_id": 1},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_fulfill_goal_archives(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import AtomicFact, FactCategory, FactStatus
+    from bot.v2.core.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="But à finir", category=FactCategory.GOAL,
+    ))
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="fulfill_goal", act_args={"goal_id": gid},
+    ))
+    active = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert active == []
+    archived = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.GOAL], status=FactStatus.ARCHIVED
+    )
+    assert len(archived) == 1
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_fulfill_goal_missing_id_no_crash(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="fulfill_goal", act_args={},
+    ))

@@ -90,7 +90,11 @@ class ReasoningAgent:
         if ctx.active_desires:
             lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
         if ctx.active_goals:
-            lines.append("**Objectifs :** " + " ; ".join(g.content for g in ctx.active_goals[:3]))
+            lines.append("**Tes objectifs en cours :**")
+            for g in ctx.active_goals[:3]:
+                gid = getattr(g, "id", None)
+                prefix = f"#{gid} — " if gid is not None else ""
+                lines.append(f"  {prefix}{g.content}")
         if ctx.recent_thoughts:
             lines.append(f"**Dernière pensée :** {ctx.recent_thoughts[0].content[:300]}")
         if ctx.recent_interactions:

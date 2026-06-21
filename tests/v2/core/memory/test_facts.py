@@ -169,3 +169,80 @@ async def test_sample_random_empty_db(tmp_db_path):
     """sample_random() sur une base vide renvoie []."""
     store = SQLiteFactStore(tmp_db_path)
     assert await store.sample_random(limit=3) == []
+
+
+@pytest.mark.asyncio
+async def test_set_status_changes_status(tmp_db_path):
+    """set_status() change le statut d'un fait (ex. GOAL → ARCHIVED)."""
+    store = SQLiteFactStore(tmp_db_path)
+    gid = await store.add(make_fact(content="un but", category=FactCategory.GOAL))
+    await store.set_status(gid, FactStatus.ARCHIVED)
+    active = await store.get_by_user("discord:123", categories=[FactCategory.GOAL])
+    assert active == []  # plus actif
+    archived = await store.get_by_user(
+        "discord:123", categories=[FactCategory.GOAL], status=FactStatus.ARCHIVED
+    )
+    assert len(archived) == 1
+
+
+@pytest.mark.asyncio
+async def test_append_progress_adds_line(tmp_db_path):
+    """append_progress() ajoute une ligne de progression sous un séparateur."""
+    store = SQLiteFactStore(tmp_db_path)
+    gid = await store.add(make_fact(content="Apprendre les goûts musicaux", category=FactCategory.GOAL))
+    assert await store.append_progress(gid, "demandé à Kaelis") is True
+    facts = await store.get_by_user("discord:123", categories=[FactCategory.GOAL])
+    content = facts[0].content
+    assert "Apprendre les goûts musicaux" in content  # intitulé conservé
+    assert "— progression —" in content
+    assert "· demandé à Kaelis" in content
+
+
+@pytest.mark.asyncio
+async def test_append_progress_caps_oldest_dropped(tmp_db_path):
+    """append_progress() cap à max_step_lines : les plus vieilles étapes tombent,
+    l'intitulé reste."""
+    store = SQLiteFactStore(tmp_db_path)
+    gid = await store.add(make_fact(content="Le but initial", category=FactCategory.GOAL))
+    for i in range(5):
+        await store.append_progress(gid, f"etape{i}", max_step_lines=3)
+    facts = await store.get_by_user("discord:123", categories=[FactCategory.GOAL])
+    content = facts[0].content
+    assert "Le but initial" in content       # intitulé conservé
+    assert "etape0" not in content           # plus vieilles jetées
+    assert "etape1" not in content
+    assert "etape2" in content
+    assert "etape3" in content
+    assert "etape4" in content
+
+
+@pytest.mark.asyncio
+async def test_append_progress_updates_last_seen(tmp_db_path):
+    """append_progress() met à jour last_seen_at."""
+    store = SQLiteFactStore(tmp_db_path)
+    fact = AtomicFact(
+        user_id="discord:123", content="but",
+        category=FactCategory.GOAL,
+        created_at=datetime.utcnow() - timedelta(hours=1),
+        last_seen_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    gid = await store.add(fact)
+    await store.append_progress(gid, "un pas")
+    facts = await store.get_by_user("discord:123", categories=[FactCategory.GOAL])
+    assert facts[0].last_seen_at > facts[0].created_at
+
+
+@pytest.mark.asyncio
+async def test_append_progress_returns_false_if_missing(tmp_db_path):
+    """append_progress() retourne False si le but n'existe pas."""
+    store = SQLiteFactStore(tmp_db_path)
+    assert await store.append_progress(99999, "un pas") is False
+
+
+@pytest.mark.asyncio
+async def test_append_progress_returns_false_if_inactive(tmp_db_path):
+    """append_progress() retourne False si le but n'est pas actif."""
+    store = SQLiteFactStore(tmp_db_path)
+    gid = await store.add(make_fact(content="but archivé", category=FactCategory.GOAL))
+    await store.set_status(gid, FactStatus.ARCHIVED)
+    assert await store.append_progress(gid, "un pas") is False

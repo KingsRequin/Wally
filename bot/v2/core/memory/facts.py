@@ -364,6 +364,75 @@ class SQLiteFactStore:
                 return []
         return [(self._row_to_fact(r), float(r["rank"])) for r in rows]
 
+    async def set_status(self, fact_id: int, status: FactStatus) -> None:
+        """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED)."""
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE atomic_facts SET status = ? WHERE id = ?",
+                (status.value, fact_id),
+            )
+            await db.commit()
+
+    # Séparateur entre l'intitulé d'un but et son journal de progression.
+    _PROGRESS_HEADER = "— progression —"
+
+    async def append_progress(
+        self, fact_id: int, step: str, max_step_lines: int = 8
+    ) -> bool:
+        """Journalise une étape concrète DANS le but lui-même (poursuite minimale).
+
+        Charge le fait `fact_id` ; s'il n'existe pas ou n'est pas actif, retourne
+        False (log warning). Sinon, ajoute une ligne `· {step}` sous un séparateur
+        `— progression —` (créé à la première étape). Garde au plus
+        `max_step_lines` lignes de progression (jette les plus anciennes, conserve
+        l'intitulé du but). Met à jour `content` + `last_seen_at` ; l'UPDATE
+        déclenche le trigger FTS qui ré-indexe automatiquement.
+        """
+        step = (step or "").strip()
+        if not step:
+            logger.warning("append_progress: étape vide pour fact #{}", fact_id)
+            return False
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT content, status FROM atomic_facts WHERE id = ?", (fact_id,)
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                logger.warning("append_progress: fait #{} introuvable", fact_id)
+                return False
+            if row["status"] != FactStatus.ACTIVE.value:
+                logger.warning(
+                    "append_progress: fait #{} inactif (status={})",
+                    fact_id, row["status"],
+                )
+                return False
+
+            content: str = row["content"] or ""
+            if self._PROGRESS_HEADER in content:
+                head, _, progress_block = content.partition(self._PROGRESS_HEADER)
+                head = head.rstrip("\n")
+                steps = [
+                    ln for ln in progress_block.splitlines() if ln.strip()
+                ]
+            else:
+                head = content.rstrip("\n")
+                steps = []
+
+            steps.append(f"· {step}")
+            # Cap : ne garde que les `max_step_lines` étapes les plus récentes.
+            if max_step_lines > 0 and len(steps) > max_step_lines:
+                steps = steps[-max_step_lines:]
+
+            new_content = head + "\n" + self._PROGRESS_HEADER + "\n" + "\n".join(steps)
+            await db.execute(
+                "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
+                (new_content, datetime.utcnow().isoformat(), fact_id),
+            )
+            await db.commit()
+        logger.debug("append_progress: but #{} +1 étape ({} au total)", fact_id, len(steps))
+        return True
+
     async def confirm(self, fact_id: int) -> None:
         """Renforce un fait existant sans dupliquer (observation CONFIRM) :
         support_count +1, confidence +0.05 (cap 0.99), last_seen_at = maintenant.
