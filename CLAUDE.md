@@ -244,25 +244,6 @@ Exclude model IDs containing: `realtime`, `preview`, `audio`, `vision`
 
 ---
 
-## Multi-Instance Setup
-
-`provision_instance(slug, port, data)` in `bot/core/provisioner.py` creates `INSTANCES_DIR/{slug}/` with `.env`, `config.yaml`, `bot/persona/`, `docker-compose.yml`.
-
-**Critical volume mounts:**
-- Prompts dir shared read-only from main bot via volume mount (symlinks don't resolve across containers)
-- Docker socket + CLI binary mounted for self-update capability
-- `_get_docker_gid()` reads GID of `/var/run/docker.sock` → injected as `group_add` in docker-compose
-
-**Self-update flag**: `INSTANCES_DIR/{slug}/data/update_available` — touched by main bot, read by instance via `Path("/app/data/update_available").exists()`.
-
-**Self-recreation**: `subprocess.Popen([...docker compose up -d --force-recreate...], start_new_session=True)` — `start_new_session=True` detaches so HTTP response returns before container stops.
-
-**is_main detection**: `GET /api/admin/config` returns `"is_main": INSTANCES_DIR.exists()`.
-
-Each instance uses `QDRANT_COLLECTION_NAME=wally_{slug}` for memory isolation on shared Qdrant.
-
----
-
 ## Dashboard Design System — Glassmorphism
 
 All new components must follow this style:

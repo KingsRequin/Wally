@@ -219,9 +219,19 @@ bot/
 │   ├── attention_agent.py # AttentionAgent : scoring d'attention
 │   ├── gate.py            # ResponseGate : decision de repondre
 │   ├── persona.py         # PersonaService : chargement fichiers persona
+│   ├── persona_manager.py
 │   ├── prompts.py         # PromptBuilder, load_prompt(), directives emotionnelles
 │   ├── fact_extractor.py  # FactExtractor : extraction de faits memorables
-│   └── journal.py         # DailyJournal : journal quotidien (apscheduler)
+│   ├── journal.py         # DailyJournal : journal quotidien (apscheduler)
+│   ├── action_dispatcher.py
+│   ├── channels.py
+│   ├── emotional_drive.py
+│   ├── evolution_log.py
+│   ├── inner_monologue.py
+│   ├── meta_agent.py
+│   ├── self_fix.py
+│   ├── self_upgrade.py
+│   └── host_bridge.py
 ├── discord/
 │   ├── bot.py             # WallyDiscord
 │   ├── handlers.py        # Pipeline message complet, spam, spontane
