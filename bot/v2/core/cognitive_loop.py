@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import random
+import re
 import time
 
 from loguru import logger
@@ -10,6 +12,23 @@ TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond
 TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
 TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
 TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _too_similar(a: str, b: str) -> bool:
+    """True si deux pensées sont quasi identiques (anti-rumination).
+
+    Normalise (lower, strip, espaces collés) ; True si égales, ou si le ratio de
+    similarité SequenceMatcher >= 0.92 sur les 400 premiers caractères.
+    """
+    if not a or not b:
+        return False
+    na = _WS_RE.sub(" ", a.strip().lower())
+    nb = _WS_RE.sub(" ", b.strip().lower())
+    if na == nb:
+        return True
+    return difflib.SequenceMatcher(None, na[:400], nb[:400]).ratio() >= 0.92
 
 
 class CognitiveLoop:
@@ -28,6 +47,7 @@ class CognitiveLoop:
         self._feed = feed
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
+        self._last_thought: str = ""
         self._recent_interactions: list[dict] = []
         # Conscience sociale : par canal, suivi des messages spontanés de Wally
         # restés sans réponse → injecté dans le monologue pour qu'il se régule
@@ -105,15 +125,37 @@ class CognitiveLoop:
                         "content_snippet": (_last.get("content") or "")[:160],
                     })
             result = await self._reasoning.reason(context)
+            # Anti-rumination : si la nouvelle pensée est quasi identique à la
+            # précédente, on se repose — pas de feed, pas de dispatch (le thought
+            # est déjà stocké par le ReasoningAgent ; les THOUGHT décaient vite).
+            if result.thought_text and _too_similar(result.thought_text, self._last_thought):
+                logger.debug("CognitiveLoop: pensée quasi identique, repos")
+                return
+            self._last_thought = result.thought_text
             if self._feed:
                 self._feed.publish({"type": "THINK", "text": result.thought_text})
             decisions = result.decisions
             if self._feed:
                 self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})
+            # Routage SPEAK spontané : en cognition de fond, le channel_id est
+            # souvent halluciné. On le redirige vers le dernier canal réellement
+            # actif ; sans aucun canal connu, on n'envoie rien (pas de vide).
+            known_channels = {i["channel"] for i in self._recent_interactions}
+            last_channel = self._recent_interactions[-1]["channel"] if self._recent_interactions else None
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
+                if decision.action == "SPEAK" and decision.channel_id not in known_channels:
+                    if last_channel:
+                        logger.debug(
+                            "CognitiveLoop: SPEAK canal {} inconnu → redirigé vers {}",
+                            decision.channel_id, last_channel,
+                        )
+                        decision.channel_id = last_channel
+                    else:
+                        logger.info("SPEAK abandonné : aucun canal actif où parler")
+                        continue
                 await self._dispatcher.dispatch(decision)
                 # Mémorise un message spontané pour la conscience sociale : tant
                 # que personne n'y répond, le compteur grimpe et le prochain

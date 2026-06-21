@@ -185,13 +185,16 @@ async def test_tick_without_feed_does_not_crash():
 
 @pytest.mark.asyncio
 async def test_speak_records_unanswered():
-    """Un SPEAK dispatché incrémente le compteur 'sans réponse' du canal."""
+    """Un SPEAK dispatché incrémente le compteur 'sans réponse' du canal.
+
+    Le canal SPEAK ("55") correspond à une interaction récente connue, donc il
+    n'est pas redirigé."""
     loop, attention, reasoning, dispatcher = _make_loop()
     reasoning.reason = AsyncMock(return_value=_RR(
         thought_text="yo", thought_fact_id=1,
         decisions=[_MD(action="SPEAK", channel_id="55", message="yo")],
     ))
-    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    loop.notify_activity(channel_id=55, author="Alice", content="hello")
     await loop._tick()
     assert loop._spontaneous["55"]["unanswered"] == 1
 
@@ -214,3 +217,104 @@ async def test_unanswered_passed_to_context():
     await loop._tick()
     spont = attention.build_context.call_args.kwargs["spontaneous"]
     assert spont and spont[0]["channel"] == "55" and spont[0]["unanswered"] == 2
+
+
+# ── Bug 1 : anti-rumination (pensées répétées en mode actif) ──
+
+def test_too_similar_identical():
+    from bot.v2.core.cognitive_loop import _too_similar
+    assert _too_similar("Je m'ennuie ici", "Je m'ennuie ici") is True
+    # normalisation : casse / espaces
+    assert _too_similar("Je  m'ennuie ICI ", "je m'ennuie ici") is True
+
+
+def test_too_similar_near_duplicate():
+    from bot.v2.core.cognitive_loop import _too_similar
+    a = "Je me demande ce que fait Azrael en ce moment, ça fait un moment."
+    b = "Je me demande ce que fait Azrael en ce moment, ça fait un moment !"
+    assert _too_similar(a, b) is True
+
+
+def test_too_similar_different():
+    from bot.v2.core.cognitive_loop import _too_similar
+    a = "Je me demande ce que fait Azrael en ce moment."
+    b = "Tiens, Bob parle de jazz, ça me rappelle un vieux souvenir."
+    assert _too_similar(a, b) is False
+
+
+def test_too_similar_empty():
+    from bot.v2.core.cognitive_loop import _too_similar
+    assert _too_similar("", "quelque chose") is False
+    assert _too_similar("quelque chose", "") is False
+
+
+@pytest.mark.asyncio
+async def test_tick_rests_on_duplicate_thought():
+    """Deux ticks renvoyant la MÊME thought_text → le 2e se repose : pas de
+    dispatch, pas de feed THINK republié."""
+    feed = _MM()
+    attention, reasoning, dispatcher = _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    reasoning.reason = _AM(return_value=_RR(
+        thought_text="exactement la même pensée", thought_fact_id=1,
+        decisions=[_MD(action="THINK")],
+    ))
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(attention, reasoning, dispatcher, None, feed)
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()   # 1er tick : pensée neuve → dispatch
+    await loop._tick()   # 2e tick : pensée identique → repos
+    assert dispatcher.dispatch.call_count == 1
+    think_count = sum(
+        1 for c in feed.publish.call_args_list if c.args[0]["type"] == "THINK"
+    )
+    assert think_count == 1
+
+
+@pytest.mark.asyncio
+async def test_tick_continues_on_distinct_thought():
+    """Deux ticks avec des pensées distinctes → les deux dispatchent."""
+    attention, reasoning, dispatcher = _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    reasoning.reason = _AM(side_effect=[
+        _RR(thought_text="première pensée", thought_fact_id=1, decisions=[_MD(action="THINK")]),
+        _RR(thought_text="seconde pensée totalement différente", thought_fact_id=2, decisions=[_MD(action="THINK")]),
+    ])
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(attention, reasoning, dispatcher)
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()
+    await loop._tick()
+    assert dispatcher.dispatch.call_count == 2
+
+
+# ── Bug 2 : routage SPEAK vers un vrai canal ──
+
+@pytest.mark.asyncio
+async def test_speak_unknown_channel_redirected_to_last_active():
+    """SPEAK avec channel halluciné inconnu + une interaction récente sur '55'
+    → la décision dispatchée vise '55'."""
+    loop, attention, reasoning, dispatcher = _make_loop()
+    reasoning.reason = AsyncMock(return_value=_RR(
+        thought_text="je veux dire un truc", thought_fact_id=1,
+        decisions=[_MD(action="SPEAK", channel_id="999999", message="yo")],
+    ))
+    loop.notify_activity(channel_id=55, author="Alice", content="hello")
+    await loop._tick()
+    dispatcher.dispatch.assert_called_once()
+    dispatched = dispatcher.dispatch.call_args.args[0]
+    assert dispatched.channel_id == "55"
+
+
+@pytest.mark.asyncio
+async def test_speak_no_active_channel_dropped():
+    """SPEAK avec channel inconnu + AUCUNE interaction → décision abandonnée,
+    dispatch jamais appelé."""
+    loop, attention, reasoning, dispatcher = _make_loop()
+    reasoning.reason = AsyncMock(return_value=_RR(
+        thought_text="je veux dire un truc dans le vide", thought_fact_id=1,
+        decisions=[_MD(action="SPEAK", channel_id="999999", message="yo")],
+    ))
+    # aucune notify_activity → _recent_interactions vide
+    await loop._tick()
+    dispatcher.dispatch.assert_not_called()

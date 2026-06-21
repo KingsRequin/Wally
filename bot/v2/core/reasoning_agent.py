@@ -98,6 +98,11 @@ class ReasoningAgent:
         if ctx.recent_thoughts:
             lines.append(f"**Dernière pensée :** {ctx.recent_thoughts[0].content[:300]}")
         if ctx.recent_interactions:
+            last_channel = ctx.recent_interactions[-1].get("channel", "?")
+            lines.append(
+                f"**Canal où tu peux parler maintenant :** {last_channel} "
+                f"(n'émets [SPEAK <id> ...] qu'avec cet id exact)"
+            )
             lines.append("**Interactions récentes :**")
             for msg in ctx.recent_interactions[-5:]:
                 lines.append(
