@@ -603,6 +603,8 @@ export function mount(el) {
         if (data && data.jwt) {
           localStorage.setItem('discord_jwt', data.jwt);
           if (data.refresh_token) localStorage.setItem('discord_refresh', data.refresh_token);
+          // Prévient app.js pour rafraîchir le widget d'auth sans recharger la page.
+          window.dispatchEvent(new CustomEvent('wally-auth-changed'));
         }
         mount(el);
       })

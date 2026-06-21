@@ -18,6 +18,41 @@ def test_parse_speak():
     assert d.message == "Bonjour tout le monde !"
 
 
+def test_parse_speak_french_quotes():
+    decisions = parse_decisions('[SPEAK 123456789 «Bonjour tout le monde !»]')
+    assert len(decisions) == 1
+    assert decisions[0].action == "SPEAK"
+    assert decisions[0].channel_id == "123456789"
+    assert decisions[0].message == "Bonjour tout le monde !"
+
+
+def test_parse_speak_curly_quotes():
+    decisions = parse_decisions('[SPEAK 42 “salut”]')
+    assert decisions[0].action == "SPEAK"
+    assert decisions[0].message == "salut"
+
+
+def test_parse_speak_inner_quotes():
+    decisions = parse_decisions('[SPEAK 42 "il a dit "non" hier"]')
+    assert decisions[0].action == "SPEAK"
+    assert decisions[0].message == 'il a dit "non" hier'
+
+
+def test_parse_speak_no_quotes():
+    decisions = parse_decisions('[SPEAK 42 salut ça va]')
+    assert decisions[0].action == "SPEAK"
+    assert decisions[0].message == "salut ça va"
+
+
+def test_parse_speak_alongside_think():
+    decisions = parse_decisions('[THINK]\n[SPEAK 99 "coucou"]')
+    actions = {d.action for d in decisions}
+    assert actions == {"THINK", "SPEAK"}
+    speak = next(d for d in decisions if d.action == "SPEAK")
+    assert speak.channel_id == "99"
+    assert speak.message == "coucou"
+
+
 def test_parse_act_create_goal():
     decisions = parse_decisions('[ACT create_goal {"description": "Explorer le jazz"}]')
     assert len(decisions) == 1

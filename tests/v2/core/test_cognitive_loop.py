@@ -117,3 +117,35 @@ async def test_tick_without_feed_does_not_crash():
     dispatcher.dispatch = _AM()
     loop = CognitiveLoop(attention, monologue, meta, dispatcher)
     await loop._tick()
+
+
+# ── Conscience sociale : auto-régulation des messages spontanés ──
+
+@pytest.mark.asyncio
+async def test_speak_records_unanswered():
+    """Un SPEAK dispatché incrémente le compteur 'sans réponse' du canal."""
+    loop, attention, monologue, meta, dispatcher = _make_loop()
+    meta.decide = AsyncMock(return_value=[_MD(action="SPEAK", channel_id="55", message="yo")])
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()
+    assert loop._spontaneous["55"]["unanswered"] == 1
+
+
+def test_user_reply_resets_unanswered():
+    """Quand l'user parle dans le canal, le compteur 'sans réponse' retombe à 0."""
+    loop, *_ = _make_loop()
+    loop._spontaneous["55"] = {"last_ts": 1.0, "unanswered": 3}
+    loop.notify_activity(channel_id=55, author="Bob", content="ah oui ?")
+    assert loop._spontaneous["55"]["unanswered"] == 0
+
+
+@pytest.mark.asyncio
+async def test_unanswered_passed_to_context():
+    """Les messages sans réponse sont transmis à build_context pour le monologue."""
+    import time
+    loop, attention, monologue, meta, dispatcher = _make_loop()
+    loop._spontaneous["55"] = {"last_ts": time.monotonic() - 120, "unanswered": 2}
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()
+    spont = attention.build_context.call_args.kwargs["spontaneous"]
+    assert spont and spont[0]["channel"] == "55" and spont[0]["unanswered"] == 2

@@ -218,17 +218,10 @@ function renderAuth() {
 
 renderAuth();
 
-// Retour OAuth : chat.js échange le code de façon asynchrone — on re-render
-// le widget dès que le JWT apparaît dans le localStorage.
-if (new URLSearchParams(location.search).get('chat_code')) {
-  let tries = 0;
-  const iv = setInterval(() => {
-    if (localStorage.getItem('discord_jwt') || ++tries > 20) {
-      clearInterval(iv);
-      renderAuth();
-    }
-  }, 300);
-}
+// Retour OAuth : chat.js échange le code de façon asynchrone puis émet
+// `wally-auth-changed` quand le JWT est posé — on re-render le widget aussitôt,
+// sans recharger la page.
+window.addEventListener('wally-auth-changed', renderAuth);
 
 // ── Animated arcade background (canvas) ──
 (function initBg() {

@@ -78,10 +78,15 @@ function buildEmoRow(name, value) {
 
 function renderEmoBars(target) {
   target.textContent = '';
-  Object.entries(emotions).forEach(([name, value]) => target.appendChild(buildEmoRow(name, value)));
+  // N'afficher que les 5 émotions primaires — le flux SSE ajoute aussi
+  // mood/fatigue/secondaries dans `emotions`, qui créeraient des barres vides.
+  Object.keys(EMO_LABELS).forEach((name) => target.appendChild(buildEmoRow(name, emotions[name])));
 }
 
 function renderFeed(listEl) {
+  // Auto-scroll : si l'utilisateur est déjà collé au bas, on suit les nouveaux
+  // événements ; s'il a remonté pour lire l'historique, on ne le dérange pas.
+  const atBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
   listEl.textContent = '';
   if (!_feedEvents.length) {
     const empty = document.createElement('div');
@@ -91,7 +96,8 @@ function renderFeed(listEl) {
     listEl.appendChild(empty);
     return;
   }
-  _feedEvents.slice(0, 12).forEach((e) => {
+  // Plus ancien en haut, plus récent en bas (style terminal).
+  _feedEvents.slice(0, 12).reverse().forEach((e) => {
     const row = document.createElement('div');
     row.className = 'feed-row';
     const t = document.createElement('span');
@@ -107,6 +113,7 @@ function renderFeed(listEl) {
     row.appendChild(t); row.appendChild(tag); row.appendChild(txt);
     listEl.appendChild(row);
   });
+  if (atBottom) listEl.scrollTop = listEl.scrollHeight;
 }
 
 function pushFeedEvent(e) {

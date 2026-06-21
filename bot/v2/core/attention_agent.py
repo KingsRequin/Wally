@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
@@ -12,6 +12,7 @@ class AttentionContext:
     recent_thoughts: list  # list[AtomicFact], 3 dernières
     recent_interactions: list[dict]  # [{channel, author, content, ts}]
     time_of_day: str  # "morning" | "afternoon" | "evening" | "night"
+    spontaneous_outreach: list[dict] = field(default_factory=list)  # [{channel, unanswered, seconds_since}]
 
 
 class AttentionAgent:
@@ -23,6 +24,7 @@ class AttentionAgent:
         self,
         emotion_state: dict[str, float],
         recent_interactions: list[dict],
+        spontaneous: list[dict] | None = None,
     ) -> AttentionContext:
         from bot.v2.core.memory.facts import FactCategory, FactStatus
 
@@ -53,4 +55,5 @@ class AttentionAgent:
             recent_thoughts=thoughts,
             recent_interactions=recent_interactions[-10:],
             time_of_day=tod,
+            spontaneous_outreach=spontaneous or [],
         )

@@ -29,11 +29,21 @@ class CognitiveLoop:
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
         self._recent_interactions: list[dict] = []
+        # Conscience sociale : par canal, suivi des messages spontanés de Wally
+        # restés sans réponse → injecté dans le monologue pour qu'il se régule
+        # lui-même (un humain n'insiste pas auprès de qui l'ignore).
+        # {channel_id: {"last_ts": monotonic, "unanswered": int}}
+        self._spontaneous: dict[str, dict] = {}
         self._task: asyncio.Task | None = None
         self._running = False
 
     def notify_activity(self, channel_id: int, author: str, content: str) -> None:
         self._last_activity_ts = time.monotonic()
+        # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
+        # une suite : on remet le compteur « sans réponse » à zéro.
+        st = self._spontaneous.get(str(channel_id))
+        if st is not None:
+            st["unanswered"] = 0
         self._recent_interactions.append({
             "channel": str(channel_id),
             "author": author,
@@ -58,8 +68,16 @@ class CognitiveLoop:
             return
         self._last_tick_activity_ts = self._last_activity_ts
         try:
+            now = time.monotonic()
             emotion_state = self._emotion.get_state() if self._emotion is not None else {}
-            context = await self._attention.build_context(emotion_state, self._recent_interactions)
+            spontaneous = [
+                {"channel": ch, "unanswered": st["unanswered"], "seconds_since": int(now - st["last_ts"])}
+                for ch, st in self._spontaneous.items()
+                if st["unanswered"] > 0
+            ]
+            context = await self._attention.build_context(
+                emotion_state, self._recent_interactions, spontaneous=spontaneous
+            )
             if self._feed:
                 _last = self._recent_interactions[-1] if self._recent_interactions else {}
                 self._feed.publish({
@@ -78,6 +96,15 @@ class CognitiveLoop:
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
                 await self._dispatcher.dispatch(decision)
+                # Mémorise un message spontané pour la conscience sociale : tant
+                # que personne n'y répond, le compteur grimpe et le prochain
+                # monologue verra qu'il parle dans le vide.
+                if decision.action == "SPEAK" and decision.channel_id:
+                    st = self._spontaneous.setdefault(
+                        str(decision.channel_id), {"last_ts": now, "unanswered": 0}
+                    )
+                    st["last_ts"] = time.monotonic()
+                    st["unanswered"] += 1
         except asyncio.CancelledError:
             raise
         except Exception as e:

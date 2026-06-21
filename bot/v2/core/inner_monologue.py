@@ -55,4 +55,12 @@ class InnerMonologue:
                     f"  [{msg.get('channel', '?')}] {msg.get('author', '?')}: "
                     f"{msg.get('content', '')[:100]}"
                 )
+        if getattr(ctx, "spontaneous_outreach", None):
+            lines.append("**Tes messages spontanés restés sans réponse :**")
+            for o in ctx.spontaneous_outreach:
+                mins = max(1, o.get("seconds_since", 0) // 60)
+                lines.append(
+                    f"  canal {o.get('channel', '?')} : {o.get('unanswered', 0)} message(s) "
+                    f"envoyé(s), aucune réponse depuis ~{mins} min."
+                )
         return "\n".join(lines)

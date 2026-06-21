@@ -14,6 +14,7 @@ Réponds avec un ou plusieurs tags d'action :
 Règles :
 - Si la pensée est purement introspective sans action claire → `[THINK]`
 - Ne génère `[SPEAK]` que si la pensée mentionne explicitement l'intention de parler à quelqu'un
+- N'émets PAS `[SPEAK]` si la pensée évoque des messages spontanés déjà restés sans réponse, ou si elle exprime de la retenue / l'envie de ne pas insister. Respecte ce recul : préfère `[THINK]`. Mieux vaut se taire que parler dans le vide.
 - `[EVOLVE]` uniquement si la pensée exprime une volonté claire de se modifier
 - Tu peux combiner plusieurs tags dans une réponse
 - Pour `[SPEAK]`, le message doit être court (max 500 chars), naturel, dans la langue habituelle de la conversation

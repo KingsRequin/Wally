@@ -8,8 +8,21 @@ from pathlib import Path
 from loguru import logger
 
 _THINK_RE = re.compile(r"\[THINK\]")
-_SPEAK_RE = re.compile(r'\[SPEAK\s+(\d+)\s+"([^"]+)"\]', re.DOTALL)
+# Message tolérant : guillemets droits, courbes, français « », ou aucun.
+# `(.+?)` non gourmand jusqu'au `]` final — les messages de chat ne contiennent
+# quasi jamais de `]`, mais tolèrent guillemets internes (cas qui cassait avant).
+_SPEAK_RE = re.compile(r'\[SPEAK\s+(\d+)\s+(.+?)\s*\]', re.DOTALL)
 _ACT_RE = re.compile(r"\[ACT\s+(\w+)\s+(\{.*?\})\]", re.DOTALL)
+
+_QUOTE_PAIRS = (('"', '"'), ('“', '”'), ('«', '»'), ("'", "'"))
+
+
+def _strip_quotes(s: str) -> str:
+    s = s.strip()
+    for open_q, close_q in _QUOTE_PAIRS:
+        if len(s) >= 2 and s.startswith(open_q) and s.endswith(close_q):
+            return s[1:-1].strip()
+    return s
 _EVOLVE_RE = re.compile(r'\[EVOLVE\s+(\w+)\s+"([^"]+)"\]', re.DOTALL)
 _SLEEP_RE = re.compile(r"\[SLEEP\s+(\d+)\]")
 
@@ -33,7 +46,9 @@ def parse_decisions(text: str) -> list[MetaDecision]:
         decisions.append(MetaDecision(action="THINK"))
 
     for m in _SPEAK_RE.finditer(text):
-        decisions.append(MetaDecision(action="SPEAK", channel_id=m.group(1), message=m.group(2)))
+        decisions.append(MetaDecision(
+            action="SPEAK", channel_id=m.group(1), message=_strip_quotes(m.group(2))
+        ))
 
     for m in _ACT_RE.finditer(text):
         try:
@@ -65,5 +80,9 @@ class MetaAgent:
             [{"role": "user", "content": monologue_text}],
         )
         decisions = parse_decisions(response)
+        # Observabilité #3 : le modèle a voulu parler mais le tag n'a pas été
+        # reconnu → on le rend visible au lieu de le perdre silencieusement.
+        if "SPEAK" in response and not any(d.action == "SPEAK" for d in decisions):
+            logger.warning("MetaAgent: intention SPEAK non parsée — réponse brute : {}", response[:300])
         logger.debug("MetaAgent: {} décision(s) — {}", len(decisions), [d.action for d in decisions])
         return decisions
