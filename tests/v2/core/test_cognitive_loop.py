@@ -55,15 +55,27 @@ async def test_tick_calls_full_pipeline():
 
 
 @pytest.mark.asyncio
-async def test_tick_skips_when_no_new_activity():
-    """Sans nouvelle activité depuis le dernier tick, on ne re-génère rien
-    (anti-rumination : pas de pensée répétée sur un contexte identique)."""
+async def test_tick_with_new_activity_is_not_idle():
+    """Un tick déclenché par une nouvelle activité pense la conversation
+    (idle=False)."""
     loop, attention, reasoning, dispatcher = _make_loop()
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
-    await loop._tick()              # 1er tick : traite l'activité
-    await loop._tick()              # 2e tick : aucune activité nouvelle → skip
-    attention.build_context.assert_called_once()
-    reasoning.reason.assert_called_once()
+    await loop._tick()
+    assert attention.build_context.call_args.kwargs["idle"] is False
+
+
+@pytest.mark.asyncio
+async def test_tick_idle_still_thinks():
+    """Sans nouvelle activité, le loop NE no-op PLUS : il pense en idle
+    (build_context reçoit idle=True, reason est appelé)."""
+    loop, attention, reasoning, dispatcher = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()              # 1er tick : conversation (idle=False)
+    await loop._tick()              # 2e tick : aucune activité nouvelle → idle
+    assert attention.build_context.call_count == 2
+    assert reasoning.reason.call_count == 2
+    # Le 2e appel doit être idle.
+    assert attention.build_context.call_args.kwargs["idle"] is True
 
 
 @pytest.mark.asyncio

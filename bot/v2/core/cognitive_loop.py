@@ -60,10 +60,10 @@ class CognitiveLoop:
         return TICK_IDLE
 
     async def _tick(self) -> None:
-        # Pas de nouvelle activité depuis le dernier tick → on ne re-génère pas
-        # une pensée sur un contexte identique (évite la rumination en boucle).
-        if self._last_activity_ts == self._last_tick_activity_ts:
-            return
+        # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :
+        # Wally pense quand même, mais à partir d'une amorce de nouveauté (souvenir,
+        # but, désir, émotion, heure) pour vagabonder sans ruminer le même contexte.
+        is_idle = (self._last_activity_ts == self._last_tick_activity_ts)
         self._last_tick_activity_ts = self._last_activity_ts
         try:
             now = time.monotonic()
@@ -74,15 +74,22 @@ class CognitiveLoop:
                 if st["unanswered"] > 0
             ]
             context = await self._attention.build_context(
-                emotion_state, self._recent_interactions, spontaneous=spontaneous
+                emotion_state, self._recent_interactions, spontaneous=spontaneous, idle=is_idle
             )
             if self._feed:
-                _last = self._recent_interactions[-1] if self._recent_interactions else {}
-                self._feed.publish({
-                    "type": "ATTN",
-                    "target": _last.get("author", "—"),
-                    "content_snippet": (_last.get("content") or "")[:160],
-                })
+                if is_idle:
+                    self._feed.publish({
+                        "type": "ATTN",
+                        "target": "—",
+                        "content_snippet": (getattr(context, "idle_seed", None) or "(vagabondage)")[:160],
+                    })
+                else:
+                    _last = self._recent_interactions[-1] if self._recent_interactions else {}
+                    self._feed.publish({
+                        "type": "ATTN",
+                        "target": _last.get("author", "—"),
+                        "content_snippet": (_last.get("content") or "")[:160],
+                    })
             result = await self._reasoning.reason(context)
             if self._feed:
                 self._feed.publish({"type": "THINK", "text": result.thought_text})

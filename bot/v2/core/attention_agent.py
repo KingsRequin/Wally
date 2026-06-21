@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -13,6 +14,8 @@ class AttentionContext:
     recent_interactions: list[dict]  # [{channel, author, content, ts}]
     time_of_day: str  # "morning" | "afternoon" | "evening" | "night"
     spontaneous_outreach: list[dict] = field(default_factory=list)  # [{channel, unanswered, seconds_since}]
+    # Amorce de vagabondage : présente uniquement en cognition idle, sinon None.
+    idle_seed: str | None = None
 
 
 class AttentionAgent:
@@ -25,6 +28,7 @@ class AttentionAgent:
         emotion_state: dict[str, float],
         recent_interactions: list[dict],
         spontaneous: list[dict] | None = None,
+        idle: bool = False,
     ) -> AttentionContext:
         from bot.v2.core.memory.facts import FactCategory, FactStatus
 
@@ -48,6 +52,12 @@ class AttentionAgent:
         else:
             tod = "night"
 
+        idle_seed: str | None = None
+        if idle:
+            idle_seed = await self._build_idle_seed(
+                emotion_state, desires, goals, tod, FactCategory
+            )
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -56,4 +66,44 @@ class AttentionAgent:
             recent_interactions=recent_interactions[-10:],
             time_of_day=tod,
             spontaneous_outreach=spontaneous or [],
+            idle_seed=idle_seed,
         )
+
+    async def _build_idle_seed(
+        self,
+        emotion_state: dict[str, float],
+        desires: list,
+        goals: list,
+        time_of_day: str,
+        fact_category,
+    ) -> str | None:
+        """Construit une amorce de vagabondage variée : choisit ALÉATOIREMENT
+        une source de nouveauté parmi celles disponibles, pour éviter de
+        ruminer toujours le même contexte.
+        """
+        seeds: list[str] = []
+
+        memories = await self._facts.sample_random(
+            limit=1, exclude_category=fact_category.THOUGHT
+        )
+        if memories:
+            seeds.append(f"Un souvenir qui te revient : {memories[0].content}")
+
+        if goals:
+            goal = random.choice(goals)
+            seeds.append(f"Ton objectif : {goal.content}")
+
+        if desires:
+            desire = random.choice(desires)
+            seeds.append(f"Un désir qui te travaille : {desire.content}")
+
+        if emotion_state:
+            dominant = max(emotion_state, key=emotion_state.get)
+            seeds.append(f"Ce que tu ressens surtout là : {dominant}")
+
+        if time_of_day:
+            seeds.append(f"C'est {time_of_day}.")
+
+        if not seeds:
+            return None
+        return random.choice(seeds)

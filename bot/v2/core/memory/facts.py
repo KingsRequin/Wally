@@ -273,6 +273,32 @@ class SQLiteFactStore:
                 rows = await cursor.fetchall()
         return [self._row_to_fact(r) for r in rows]
 
+    async def sample_random(
+        self,
+        limit: int = 3,
+        exclude_category: "FactCategory | None" = None,
+    ) -> "list[AtomicFact]":
+        """Pioche au hasard des faits ACTIVE (amorce de nouveauté pour la
+        cognition idle). `exclude_category` retire une catégorie (ex. THOUGHT,
+        pour ne pas ressortir une pensée comme « souvenir »).
+        """
+        query = (
+            "SELECT id, user_id, content, category, confidence, decay_rate, "
+            "status, emotional_context, source, created_at, last_seen_at "
+            "FROM atomic_facts WHERE status = ?"
+        )
+        params: list = [FactStatus.ACTIVE.value]
+        if exclude_category is not None:
+            query += " AND category != ?"
+            params.append(exclude_category.value)
+        query += " ORDER BY RANDOM() LIMIT ?"
+        params.append(limit)
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        return [self._row_to_fact(r) for r in rows]
+
     @staticmethod
     def _row_to_fact(row: aiosqlite.Row) -> AtomicFact:
         keys = row.keys()

@@ -71,10 +71,18 @@ class ReasoningAgent:
         )
 
     def _format_context(self, ctx) -> str:
-        lines: list[str] = [
+        lines: list[str] = []
+        if getattr(ctx, "idle_seed", None):
+            lines.append(
+                f"**Personne ne te sollicite là.** Laisse ton esprit vagabonder "
+                f"à partir de : {ctx.idle_seed}\n"
+                f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
+                f"garde ça interne.)"
+            )
+        lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {ctx.emotion_state}",
-        ]
+        ])
         if ctx.active_desires:
             lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
         if ctx.active_goals:

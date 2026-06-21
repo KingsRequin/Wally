@@ -84,3 +84,53 @@ async def test_build_context_truncates_interactions_to_10():
     # Should be the LAST 10 (indices 5-14)
     assert ctx.recent_interactions[0]["author"] == "user5"
     assert ctx.recent_interactions[-1]["author"] == "user14"
+
+
+@pytest.mark.asyncio
+async def test_build_context_non_idle_has_no_seed():
+    """En mode normal (idle=False), idle_seed est None."""
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [])
+    assert ctx.idle_seed is None
+
+
+@pytest.mark.asyncio
+async def test_build_context_idle_produces_seed():
+    """En mode idle, idle_seed est une amorce non vide construite à partir
+    d'une source disponible (souvenir, but, désir, émotion ou heure)."""
+    memory = _make_fact(FactCategory.FAIT, "Kaelis aime le jazz")
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[memory])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context(
+        {"joy": 0.8, "anger": 0.0, "boredom": 0.3}, [], idle=True
+    )
+    assert ctx.idle_seed
+    assert isinstance(ctx.idle_seed, str)
+
+
+@pytest.mark.asyncio
+async def test_build_context_idle_excludes_thought_from_memory_seed():
+    """sample_random est appelé en excluant THOUGHT (pas de pensée comme souvenir)."""
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    await agent.build_context({"joy": 0.5}, [], idle=True)
+    store.sample_random.assert_called_once()
+    assert store.sample_random.call_args.kwargs["exclude_category"] == FactCategory.THOUGHT
+
+
+@pytest.mark.asyncio
+async def test_build_context_idle_falls_back_to_emotion_or_time():
+    """Même sans souvenir/but/désir, l'heure ou l'émotion fournit une amorce."""
+    store = MagicMock()
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({}, [], idle=True)  # rien sauf l'heure
+    assert ctx.idle_seed  # l'heure est toujours disponible

@@ -140,3 +140,32 @@ async def test_delete_by_user_removes_only_that_user(tmp_db_path):
     assert deleted == 2
     assert await store.count_by_user("discord:1") == 0
     assert await store.count_by_user("discord:2") == 1
+
+
+@pytest.mark.asyncio
+async def test_sample_random_returns_active_facts(tmp_db_path):
+    """sample_random() renvoie uniquement des faits actifs, dans la limite."""
+    store = SQLiteFactStore(tmp_db_path)
+    for i in range(5):
+        await store.add(make_fact(content=f"fait {i}", category=FactCategory.FAIT))
+    sampled = await store.sample_random(limit=3)
+    assert len(sampled) == 3
+    assert all(f.status == FactStatus.ACTIVE for f in sampled)
+
+
+@pytest.mark.asyncio
+async def test_sample_random_excludes_category(tmp_db_path):
+    """sample_random(exclude_category=THOUGHT) ne renvoie aucun THOUGHT."""
+    store = SQLiteFactStore(tmp_db_path)
+    await store.add(make_fact(content="souvenir", category=FactCategory.FAIT))
+    await store.add(make_fact(content="pensée", category=FactCategory.THOUGHT))
+    sampled = await store.sample_random(limit=10, exclude_category=FactCategory.THOUGHT)
+    assert all(f.category != FactCategory.THOUGHT for f in sampled)
+    assert any(f.category == FactCategory.FAIT for f in sampled)
+
+
+@pytest.mark.asyncio
+async def test_sample_random_empty_db(tmp_db_path):
+    """sample_random() sur une base vide renvoie []."""
+    store = SQLiteFactStore(tmp_db_path)
+    assert await store.sample_random(limit=3) == []
