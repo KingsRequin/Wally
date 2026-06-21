@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.core.journal import DailyJournal
+from bot.intelligence.journal import DailyJournal
 
 
 def make_deps(journal_channel_id=12345, journal_time="03:00"):
@@ -90,7 +90,7 @@ def test_today_format():
 def test_start_configures_scheduler():
     config, llm, llm_secondary, emotion, memory = make_deps(journal_time="22:30")
     journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
-    with patch("bot.core.journal.AsyncIOScheduler") as MockScheduler:
+    with patch("bot.intelligence.journal.AsyncIOScheduler") as MockScheduler:
         mock_sched = MagicMock()
         MockScheduler.return_value = mock_sched
         journal.start()
@@ -135,14 +135,14 @@ async def test_build_context_text_multi_pass():
 # ── Arc émotionnel ────────────────────────────────────────────────────────────
 
 def test_build_emotion_arc_returns_empty_with_less_than_2_snapshots():
-    from bot.core.journal import _build_emotion_arc
+    from bot.intelligence.journal import _build_emotion_arc
     assert _build_emotion_arc([]) == ""
     assert _build_emotion_arc([{"snapshot_at": 0, "anger": 0.5, "joy": 0.0,
                                 "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}]) == ""
 
 
 def test_build_emotion_arc_formats_dominant_emotions():
-    from bot.core.journal import _build_emotion_arc
+    from bot.intelligence.journal import _build_emotion_arc
     import time
     now = time.time()
     snapshots = [
@@ -160,7 +160,7 @@ def test_build_emotion_arc_formats_dominant_emotions():
 
 
 def test_build_emotion_arc_omits_emotions_below_30_percent():
-    from bot.core.journal import _build_emotion_arc
+    from bot.intelligence.journal import _build_emotion_arc
     import time
     now = time.time()
     snapshots = [
@@ -177,7 +177,7 @@ def test_build_emotion_arc_omits_emotions_below_30_percent():
 
 def test_build_emotion_arc_labels():
     """Vérifie les 3 paliers de labels."""
-    from bot.core.journal import _build_emotion_arc
+    from bot.intelligence.journal import _build_emotion_arc
     import time
     now = time.time()
     snapshots = [
@@ -432,7 +432,7 @@ async def test_journal_includes_twitch_visits_block():
 
 # ── _emotion_tone_hint ────────────────────────────────────────────────────────
 
-from bot.core.journal import _emotion_tone_hint
+from bot.intelligence.journal import _emotion_tone_hint
 
 
 def test_emotion_tone_hint_anger():

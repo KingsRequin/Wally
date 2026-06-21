@@ -91,7 +91,7 @@ async def main() -> None:
     apex_api         = svc.apex_api
     shared_scheduler = svc.shared_scheduler
 
-    from bot.core.actions import ActionDefinition
+    from bot.intelligence.actions import ActionDefinition
 
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord

@@ -11,18 +11,18 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
-    from bot.core.persona import PersonaService
+    from bot.intelligence.memory.service import MemoryService
+    from bot.intelligence.persona import PersonaService
     from bot.core.llm import BaseLLMClient
     from bot.core.llm.openai_client import OpenAILLMClient
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
     from bot.discord.bot import WallyDiscord
     from bot.twitch.bot import WallyTwitch
-    from bot.core.prompts import PromptBuilder
-    from bot.core.fact_extractor import FactExtractor
+    from bot.intelligence.prompts import PromptBuilder
+    from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.notifications import NotificationService
-    from bot.core.actions import ActionService
+    from bot.intelligence.actions import ActionService
     from bot.core.update_checker import UpdateChecker
     from bot.intelligence.cognitive_feed import CognitiveFeed
 

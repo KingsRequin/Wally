@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.core.memory import MemoryService
+from bot.intelligence.memory.service import MemoryService
 
 
 def _make_config():
@@ -56,7 +56,7 @@ async def test_add_skips_upsert_when_store_none():
 @pytest.mark.asyncio
 async def test_append_message_writes_to_daily_log(tmp_path):
     """append_message doit écrire dans daily_log quand un db est injecté."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.db.database import Database
 
     config = MagicMock()

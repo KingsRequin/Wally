@@ -1,6 +1,6 @@
 import pytest
 
-from bot.core.memory import MemoryService
+from bot.intelligence.memory.service import MemoryService
 
 
 @pytest.fixture

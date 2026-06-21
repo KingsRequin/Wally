@@ -14,7 +14,7 @@ import discord
 from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
-from bot.core.prompts import assemble_memory_context, load_prompt
+from bot.intelligence.prompts import assemble_memory_context, load_prompt
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord

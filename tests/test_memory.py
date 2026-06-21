@@ -7,7 +7,7 @@ import time
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from bot.core.memory import MemoryService
+from bot.intelligence.memory.service import MemoryService
 
 
 def make_config(window_size=5, token_threshold=100):

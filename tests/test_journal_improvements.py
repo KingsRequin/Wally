@@ -99,7 +99,7 @@ async def test_get_emotion_averages_empty(db):
 
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
-from bot.core.memory import MemoryService
+from bot.intelligence.memory.service import MemoryService
 
 
 @pytest.mark.asyncio
@@ -207,7 +207,7 @@ async def test_peak_antispam_prevents_duplicate(tmp_path):
 
 # ── stats block + word range (Task 5) ──
 
-from bot.core.journal import _build_stats_block, _get_word_range
+from bot.intelligence.journal import _build_stats_block, _get_word_range
 
 
 def test_build_stats_block_basic():
@@ -242,7 +242,7 @@ def test_get_word_range():
 async def test_journal_injects_stats_and_word_range(tmp_path):
     """Stats block, word range, and peaks are injected in the journal prompt."""
     from unittest.mock import MagicMock, AsyncMock
-    from bot.core.journal import DailyJournal
+    from bot.intelligence.journal import DailyJournal
 
     db_inst = await Database.create(str(tmp_path / "test.db"))
     now = time.time()
@@ -294,7 +294,7 @@ async def test_journal_injects_stats_and_word_range(tmp_path):
 @pytest.mark.asyncio
 async def test_journal_archives_after_send(tmp_path):
     from unittest.mock import MagicMock, AsyncMock
-    from bot.core.journal import DailyJournal
+    from bot.intelligence.journal import DailyJournal
 
     db_inst = await Database.create(str(tmp_path / "test.db"))
     config = MagicMock()
@@ -325,7 +325,7 @@ async def test_journal_archives_after_send(tmp_path):
 @pytest.mark.asyncio
 async def test_journal_archive_false_does_not_archive(tmp_path):
     from unittest.mock import MagicMock, AsyncMock
-    from bot.core.journal import DailyJournal
+    from bot.intelligence.journal import DailyJournal
 
     db_inst = await Database.create(str(tmp_path / "test.db"))
     config = MagicMock()
@@ -354,7 +354,7 @@ async def test_journal_archive_false_does_not_archive(tmp_path):
 
 # ── Task 7: Emotion chart (F10) ──
 
-from bot.core.journal import _generate_emotion_chart
+from bot.intelligence.journal import _generate_emotion_chart
 
 
 def test_generate_emotion_chart_returns_bytes():

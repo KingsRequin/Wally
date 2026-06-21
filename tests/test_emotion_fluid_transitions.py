@@ -1,6 +1,6 @@
 """Tests for fluid directive transitions and secondary emotion injection."""
 import pytest
-from bot.core.prompts import _get_tier_fluid, PromptBuilder
+from bot.intelligence.prompts import _get_tier_fluid, PromptBuilder
 
 
 def test_tier_below_threshold_returns_none():

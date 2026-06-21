@@ -16,7 +16,7 @@ def make_config():
 @pytest.mark.asyncio
 async def test_load_aliases_populates_cache():
     """load_aliases charge le dict d'alias depuis la DB."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_config()
     memory = MemoryService(config)
 
@@ -30,7 +30,7 @@ async def test_load_aliases_populates_cache():
 
 def test_user_id_resolves_alias():
     """_user_id retourne le canonical_id quand un alias est connu."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_config()
     memory = MemoryService(config)
     memory._alias_cache = {"twitch:kingsrequin_ttv": "discord:123456789"}
@@ -41,7 +41,7 @@ def test_user_id_resolves_alias():
 
 def test_user_id_passthrough_when_no_alias():
     """_user_id retourne platform:user_id quand pas d'alias."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_config()
     memory = MemoryService(config)
 
@@ -53,7 +53,7 @@ def test_user_id_passthrough_when_no_alias():
 @pytest.mark.asyncio
 async def test_load_aliases_handles_db_error():
     """load_aliases ne crash pas si la DB échoue."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_config()
     memory = MemoryService(config)
 

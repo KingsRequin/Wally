@@ -1,5 +1,5 @@
 # tests/test_composite_emotions.py
-from bot.core.persona import PersonaService
+from bot.intelligence.persona import PersonaService
 
 
 def test_parse_composites_returns_5_keys(tmp_path):
@@ -36,7 +36,7 @@ from unittest.mock import patch
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from bot.core.prompts import PromptBuilder
+from bot.intelligence.prompts import PromptBuilder
 
 _EMOTIONS_FLAT = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
@@ -57,7 +57,7 @@ _COMPOSITE_DIRECTIVES = {
 }
 
 
-@patch("bot.core.prompts.datetime")
+@patch("bot.intelligence.prompts.datetime")
 def test_composite_replaces_atomics_when_both_mid(mock_dt):
     """joy=0.5 + curiosity=0.6 → composite curiosity_joy, pas les atomiques."""
     mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=ZoneInfo("Europe/Paris"))
@@ -72,7 +72,7 @@ def test_composite_replaces_atomics_when_both_mid(mock_dt):
     assert "curieux" not in result.lower()
 
 
-@patch("bot.core.prompts.datetime")
+@patch("bot.intelligence.prompts.datetime")
 def test_composite_not_triggered_when_one_below_mid(mock_dt):
     """joy=0.5 + curiosity=0.3 → atomiques normales (curiosity < 0.4)."""
     mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=ZoneInfo("Europe/Paris"))
@@ -86,7 +86,7 @@ def test_composite_not_triggered_when_one_below_mid(mock_dt):
     assert "chaleureux" in result.lower()
 
 
-@patch("bot.core.prompts.datetime")
+@patch("bot.intelligence.prompts.datetime")
 def test_composite_not_triggered_when_pair_unknown(mock_dt):
     """joy=0.5 + sadness=0.5 → paire joy_sadness inconnue → atomiques."""
     mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=ZoneInfo("Europe/Paris"))
@@ -100,7 +100,7 @@ def test_composite_not_triggered_when_pair_unknown(mock_dt):
     assert "mélancolique" in result.lower()
 
 
-@patch("bot.core.prompts.datetime")
+@patch("bot.intelligence.prompts.datetime")
 def test_composite_fallback_when_no_dict(mock_dt):
     """composite_directives=None → atomiques normales."""
     mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=ZoneInfo("Europe/Paris"))
@@ -122,7 +122,7 @@ def test_composite_key_is_alphabetically_sorted():
     assert key3 == "boredom_sadness"
 
 
-@patch("bot.core.prompts.datetime")
+@patch("bot.intelligence.prompts.datetime")
 def test_composite_not_triggered_when_only_one_dominant(mock_dt):
     """Seule joy=0.5 au-dessus de 0.2 → pas de composite."""
     mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=ZoneInfo("Europe/Paris"))

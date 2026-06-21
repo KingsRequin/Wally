@@ -15,12 +15,12 @@ from loguru import logger
 
 from bot.core.emotion import EMOTIONS
 from bot.core.llm import FALLBACK_RESPONSE
-from bot.core.prompts import load_prompt
+from bot.intelligence.prompts import load_prompt
 
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.core.llm import BaseLLMClient
 
 # Traduction des noms d'émotions internes (anglais) vers le français pour l'affichage

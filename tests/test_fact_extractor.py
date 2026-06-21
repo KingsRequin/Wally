@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.core.fact_extractor import _is_memorable, _is_media_url_only, FactExtractor
+from bot.intelligence.fact_extractor import _is_memorable, _is_media_url_only, FactExtractor
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -551,7 +551,7 @@ class TestFactExtractorReconciliation:
 
     async def _make_fe(self, tmp_path):
         from bot.config import Config  # noqa: F401 (typing only)
-        from bot.core.memory import MemoryService
+        from bot.intelligence.memory.service import MemoryService
         from bot.intelligence.memory.ingest import MemoryIngest
         from bot.db.schema_v2 import create_v2_tables
 

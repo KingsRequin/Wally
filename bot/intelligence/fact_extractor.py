@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
 
-from bot.core.prompts import load_prompt
+from bot.intelligence.prompts import load_prompt
 from bot.intelligence.memory.vocab import PREDICATES
 
 if TYPE_CHECKING:
     from bot.config import Config
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.core.llm import BaseLLMClient
     from bot.intelligence.memory.ingest import MemoryIngest
 

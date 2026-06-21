@@ -13,17 +13,17 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.core.llm.base import BaseLLMClient
     from bot.core.llm.openai_client import OpenAILLMClient
-    from bot.core.prompts import PromptBuilder
+    from bot.intelligence.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
-    from bot.core.journal import DailyJournal
-    from bot.core.persona import PersonaService
+    from bot.intelligence.journal import DailyJournal
+    from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
     from bot.core.apex_api import ApexLegendsService
-    from bot.core.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
-    from bot.core.fact_extractor import FactExtractor
+    from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
+    from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -55,17 +55,17 @@ class CoreServices:
 async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     """Instancie tous les services core et retourne un CoreServices câblé."""
     from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.core.llm import create_llm_client
     from bot.core.llm.openai_client import OpenAILLMClient
-    from bot.core.prompts import PromptBuilder
+    from bot.intelligence.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
-    from bot.core.journal import DailyJournal
-    from bot.core.persona import PersonaService
+    from bot.intelligence.journal import DailyJournal
+    from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
     from bot.core.apex_api import ApexLegendsService
-    from bot.core.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
-    from bot.core.fact_extractor import FactExtractor
+    from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
+    from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
     from bot.dashboard.routes.sse import broadcast_action_event
     from apscheduler.schedulers.asyncio import AsyncIOScheduler

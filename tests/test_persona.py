@@ -1,6 +1,6 @@
 # tests/test_persona.py
 import pytest
-from bot.core.persona import PersonaService
+from bot.intelligence.persona import PersonaService
 
 
 def test_load_all_files(tmp_path):

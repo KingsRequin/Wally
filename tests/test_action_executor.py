@@ -4,8 +4,8 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-from bot.core.actions.executor import ActionExecutor
-from bot.core.actions.registry import ActionDefinition, ActionRegistry
+from bot.intelligence.actions.executor import ActionExecutor
+from bot.intelligence.actions.registry import ActionDefinition, ActionRegistry
 
 
 @pytest.fixture

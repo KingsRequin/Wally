@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from bot.core.actions.scheduler import ActionScheduler
+from bot.intelligence.actions.scheduler import ActionScheduler
 
 TZ = ZoneInfo("Europe/Paris")
 

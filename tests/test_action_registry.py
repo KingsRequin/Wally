@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from bot.core.actions.registry import ActionRegistry, ActionDefinition
+from bot.intelligence.actions.registry import ActionRegistry, ActionDefinition
 
 
 @pytest.fixture

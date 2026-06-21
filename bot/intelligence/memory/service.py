@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
 
-from bot.core.prompts import load_prompt
+from bot.intelligence.prompts import load_prompt
 
 if TYPE_CHECKING:
     from bot.config import Config

@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     from bot.core.llm import BaseLLMClient
-    from bot.core.prompts import PromptBuilder
+    from bot.intelligence.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
-    from bot.core.persona import PersonaService
+    from bot.intelligence.persona import PersonaService
 
 
 class WallyTwitch(commands.Bot):
@@ -306,7 +306,7 @@ class WallyTwitch(commands.Bot):
         msg_count: int,
     ) -> None:
         """Génère un résumé LLM de la visite et persiste la ligne twitch_visits."""
-        from bot.core.prompts import load_prompt
+        from bot.intelligence.prompts import load_prompt
         left_at = time.time()
 
         summary: str | None = None

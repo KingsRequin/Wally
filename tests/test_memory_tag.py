@@ -16,7 +16,7 @@ def make_memory_config():
 @pytest.mark.asyncio
 async def test_memory_add_no_backend_is_silent():
     """Sans backend V2 initialisé, add() est silencieux (log WARNING, pas de crash)."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_memory_config()
     memory = MemoryService(config)
     # _retrieval is None by default — must not raise
@@ -26,7 +26,7 @@ async def test_memory_add_no_backend_is_silent():
 @pytest.mark.asyncio
 async def test_memory_add_extra_kwargs_accepted():
     """Les anciens kwargs (emotion_context, username_hint) sont absorbés sans erreur."""
-    from bot.core.memory import MemoryService
+    from bot.intelligence.memory.service import MemoryService
     config = make_memory_config()
     memory = MemoryService(config)
     # Should not raise TypeError even with legacy kwargs

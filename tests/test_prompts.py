@@ -1,5 +1,5 @@
 # tests/test_prompts.py
-from bot.core.prompts import PromptBuilder
+from bot.intelligence.prompts import PromptBuilder
 
 _EMOTIONS_FLAT = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
@@ -225,7 +225,7 @@ def test_missing_tiered_key_silently_skipped():
 
 
 def test_get_tier_returns_correct_level():
-    from bot.core.prompts import _get_tier
+    from bot.intelligence.prompts import _get_tier
     assert _get_tier(0.0) is None
     assert _get_tier(0.1) is None
     assert _get_tier(0.19) is None

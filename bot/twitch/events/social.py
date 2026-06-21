@@ -61,7 +61,7 @@ async def _generate_and_send(
 ) -> None:
     """Generate an OpenAI response from an event template and send via Helix API."""
     try:
-        from bot.core.prompts import PromptBuilder
+        from bot.intelligence.prompts import PromptBuilder
 
         formatted = PromptBuilder.format_event_message(template, **kwargs)
         from bot.twitch.handlers import _build_situation
