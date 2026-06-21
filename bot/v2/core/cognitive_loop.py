@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 
 from loguru import logger
 
-TICK_ACTIVE = 30       # < 10 min depuis dernière activité
-TICK_MODERATE = 120    # < 1h
-TICK_IDLE = 300        # > 1h
+TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond vive
+TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
+TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
+TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
 
 
 class CognitiveLoop:
@@ -57,7 +59,9 @@ class CognitiveLoop:
             return TICK_ACTIVE
         if elapsed < 3600:
             return TICK_MODERATE
-        return TICK_IDLE
+        # Seul/idle : l'esprit vagabonde par à-coups irréguliers (effet naturel),
+        # pas sur une horloge fixe. Intervalle aléatoire 5 min – 1 h.
+        return random.randint(TICK_IDLE, TICK_IDLE_MAX)
 
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :

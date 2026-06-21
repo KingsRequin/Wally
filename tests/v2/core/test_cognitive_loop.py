@@ -39,9 +39,14 @@ def test_tick_interval_active():
 
 
 def test_tick_interval_idle():
+    from bot.v2.core.cognitive_loop import TICK_IDLE_MAX
     loop, *_ = _make_loop()
     loop._last_activity_ts = 0.0  # epoch = très ancien
-    assert loop._tick_interval() == TICK_IDLE
+    # Idle = intervalle aléatoire 5 min – 1 h (effet naturel). On vérifie la plage
+    # sur plusieurs tirages.
+    for _ in range(20):
+        v = loop._tick_interval()
+        assert TICK_IDLE <= v <= TICK_IDLE_MAX
 
 
 @pytest.mark.asyncio
