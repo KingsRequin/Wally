@@ -17,6 +17,23 @@ _FTS_STOPWORDS: frozenset[str] = frozenset(
 )
 
 
+def _normalize(s: str) -> str:
+    """Normalise une chaîne pour comparer des objects de faits.
+
+    lower + strip + retrait de la ponctuation + collapse des espaces. Sert à
+    décider si deux objects désignent la même valeur (`_normalize(a) == _normalize(b)`).
+    Conserve les caractères alphanumériques unicode (lettres accentuées incluses)
+    et les espaces ; tout le reste (ponctuation, tirets…) est retiré.
+    """
+    if not s:
+        return ""
+    lowered = s.lower().strip()
+    # Retire la ponctuation (garde lettres/chiffres unicode + espaces).
+    cleaned = re.sub(r"[^\w\s]", "", lowered, flags=re.UNICODE)
+    # Collapse les espaces multiples.
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def _fts_match_query(query: str) -> str:
     """Transforme une requête libre en expression FTS5 MATCH sûre.
 
@@ -335,3 +352,56 @@ class SQLiteFactStore:
                 (datetime.utcnow().isoformat(), fact_id),
             )
             await db.commit()
+
+    async def find_active_match(
+        self,
+        user_id:   str,
+        subject:   str,
+        predicate: str,
+        category:  FactCategory,
+    ) -> AtomicFact | None:
+        """Étage 1 de la réconciliation : match déterministe.
+
+        Retourne l'unique fait ACTIVE du même (user_id, subject, predicate,
+        category), comparaison de subject/predicate insensible à la casse.
+        `None` si aucun. Strictement scopé par user_id (jamais cross-user).
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """SELECT * FROM atomic_facts
+                   WHERE user_id = ? AND status = ? AND category = ?
+                     AND LOWER(subject) = LOWER(?)
+                     AND LOWER(predicate) = LOWER(?)
+                   ORDER BY last_seen_at DESC
+                   LIMIT 1""",
+                (user_id, FactStatus.ACTIVE.value, category.value,
+                 subject, predicate),
+            )
+            row = await cursor.fetchone()
+            return self._row_to_fact(row) if row else None
+
+    async def find_overlap_siblings(
+        self,
+        user_id:     str,
+        subject:     str,
+        category:    FactCategory,
+        object_text: str,
+        limit:       int = 3,
+    ) -> list[AtomicFact]:
+        """Étage 2 : faits ACTIVE du même user+subject+category dont l'object/
+        content recouvre `object_text` (via FTS5). Filtre subject+category côté
+        Python (la FTS scope déjà user_id + status). Top `limit`.
+        """
+        hits = await self.search_fts(user_id, object_text, limit=10)
+        subj = _normalize(subject)
+        out: list[AtomicFact] = []
+        for fact, _score in hits:
+            if fact.category != category:
+                continue
+            if _normalize(fact.subject or "") != subj:
+                continue
+            out.append(fact)
+            if len(out) >= limit:
+                break
+        return out
