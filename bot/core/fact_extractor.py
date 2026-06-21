@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Optional
 from loguru import logger
 
 from bot.core.prompts import load_prompt
-from bot.v2.core.memory.vocab import PREDICATES
+from bot.intelligence.memory.vocab import PREDICATES
 
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.memory import MemoryService
     from bot.core.llm import BaseLLMClient
-    from bot.v2.core.memory.ingest import MemoryIngest
+    from bot.intelligence.memory.ingest import MemoryIngest
 
 _MIN_LENGTH = 15
 
@@ -455,7 +455,7 @@ class FactExtractor:
         )
         if can_reconcile:
             try:
-                from bot.v2.core.memory.ingest import _Candidate
+                from bot.intelligence.memory.ingest import _Candidate
 
                 prefixed_uid = self._memory._user_id(platform, raw_id)
                 cand = _Candidate(

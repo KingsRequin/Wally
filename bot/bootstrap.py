@@ -91,7 +91,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
                 p=type(primary_llm).__name__, s=type(secondary_llm).__name__)
 
     import os as _os
-    from bot.v2.db.schema_v2 import create_v2_tables
+    from bot.db.schema_v2 import create_v2_tables
     _db_path = _os.getenv("DB_PATH", "data/wally.db")
     # Garantit la table atomic_facts indépendamment du flag response_gate
     # (le backend mémoire V2 y écrit toujours).
@@ -142,7 +142,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     # ── FactExtractor + ReactionTracker ───────────────────────────────────────
     # MemoryIngest réutilise le store de faits (set_embedding_backend déjà appelé)
     # pour la réconciliation S-P-O 2 étages (dédup des paraphrases).
-    from bot.v2.core.memory.ingest import MemoryIngest
+    from bot.intelligence.memory.ingest import MemoryIngest
     mem_ingest = None
     if memory.fact_store is not None:
         mem_ingest = MemoryIngest(memory.fact_store, secondary_llm)

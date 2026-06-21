@@ -53,8 +53,8 @@ class MemoryService:
 
         La recherche passe par FTS5 BM25 (porté de jarvis-OS).
         """
-        from bot.v2.core.memory.facts import SQLiteFactStore
-        from bot.v2.core.memory.retrieval import MemoryRetrieval
+        from bot.intelligence.memory.facts import SQLiteFactStore
+        from bot.intelligence.memory.retrieval import MemoryRetrieval
         self._db_path = db_path
         self._facts = SQLiteFactStore(db_path)
         self._retrieval = MemoryRetrieval(self._facts)
@@ -143,7 +143,7 @@ class MemoryService:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return
         from datetime import datetime, timezone
-        from bot.v2.core.memory.facts import AtomicFact, FactCategory, _normalize
+        from bot.intelligence.memory.facts import AtomicFact, FactCategory, _normalize
         try:
             cat = FactCategory(category)
         except ValueError:

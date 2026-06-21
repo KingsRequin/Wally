@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from bot.core.notifications import NotificationService
     from bot.core.actions import ActionService
     from bot.core.update_checker import UpdateChecker
-    from bot.v2.core.cognitive_feed import CognitiveFeed
+    from bot.intelligence.cognitive_feed import CognitiveFeed
 
 
 @dataclass

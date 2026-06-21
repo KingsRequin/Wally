@@ -1,0 +1,589 @@
+import pytest
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture
+async def tmp_fact_store(tmp_path):
+    from bot.db.schema_v2 import create_v2_tables
+    from bot.intelligence.memory.facts import SQLiteFactStore
+    db_path = str(tmp_path / "test.db")
+    await create_v2_tables(db_path)
+    return SQLiteFactStore(db_path)
+
+
+@pytest.mark.asyncio
+async def test_act_create_memory(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    from bot.intelligence.meta_agent import MetaDecision
+    decision = MetaDecision(action="ACT", act_name="create_memory", act_args={"fact_content": "test memory content"})
+    await dispatcher.dispatch(decision)
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.THOUGHT])
+    assert len(facts) == 1
+    assert facts[0].content == "test memory content"
+    assert facts[0].category == FactCategory.THOUGHT
+    assert facts[0].confidence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_act_create_goal(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    from bot.intelligence.meta_agent import MetaDecision
+    decision = MetaDecision(action="ACT", act_name="create_goal", act_args={"description": "learn new skills"})
+    await dispatcher.dispatch(decision)
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert len(facts) == 1
+    assert facts[0].content == "learn new skills"
+    assert facts[0].category == FactCategory.GOAL
+    assert facts[0].decay_rate == 0.005
+
+
+@pytest.mark.asyncio
+async def test_act_create_desire(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    from bot.intelligence.meta_agent import MetaDecision
+    decision = MetaDecision(action="ACT", act_name="create_desire", act_args={"content": "explore music"})
+    await dispatcher.dispatch(decision)
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(facts) == 1
+    assert facts[0].content == "explore music"
+    assert facts[0].confidence == 0.8
+
+
+@pytest.mark.asyncio
+async def test_act_code_fix_is_noop(tmp_fact_store):
+    """code_fix MUST log a warning and do nothing — security constraint."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    from bot.intelligence.meta_agent import MetaDecision
+    decision = MetaDecision(action="ACT", act_name="code_fix", act_args={"path": "/etc/passwd", "code": "rm -rf /"})
+    with patch("bot.intelligence.action_dispatcher.logger") as mock_logger:
+        await dispatcher.dispatch(decision)
+        mock_logger.warning.assert_called_once()
+    # No facts must have been created
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert len(facts) == 0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_evolve_delegates_to_persona_manager():
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+    persona = MagicMock()
+    persona.evolve = AsyncMock()
+    dispatcher = ActionDispatcher(persona_manager=persona)
+    decision = MetaDecision(action="EVOLVE", section="EMOTIONS", change="be more curious")
+    await dispatcher.dispatch(decision)
+    persona.evolve.assert_called_once_with("EMOTIONS", "be more curious")
+
+
+import pytest as _pytest_fd
+from unittest.mock import AsyncMock as _AMd, MagicMock as _MMd
+from bot.intelligence.action_dispatcher import ActionDispatcher as _AD
+from bot.intelligence.meta_agent import MetaDecision as _MDd
+
+
+@_pytest_fd.mark.asyncio
+async def test_speak_publishes_to_feed():
+    feed = _MMd()
+    channel = _MMd()
+    channel.send = _AMd()
+    bot = _MMd()
+    bot.get_channel.return_value = channel
+    disp = _AD(bot=bot, feed=feed)
+    await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "SPEAK" in types
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_appends_progress(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import AtomicFact, FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="Mon objectif", category=FactCategory.GOAL,
+    ))
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": gid, "step": "premier pas concret"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert "· premier pas concret" in facts[0].content
+    assert "— progression —" in facts[0].content
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_goal_id_as_str(tmp_fact_store):
+    """goal_id en str est accepté (le LLM peut l'envoyer ainsi)."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import AtomicFact, FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="But", category=FactCategory.GOAL,
+    ))
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": str(gid), "step": "un pas"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert "· un pas" in facts[0].content
+
+
+@pytest.mark.asyncio
+async def test_act_advance_goal_missing_args_no_crash(tmp_fact_store):
+    """goal_id absent / invalide ne crash pas, ne modifie rien."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    # goal_id manquant
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal", act_args={"step": "un pas"},
+    ))
+    # goal_id invalide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal",
+        act_args={"goal_id": "abc", "step": "un pas"},
+    ))
+    # step manquant
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="advance_goal", act_args={"goal_id": 1},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_fulfill_goal_archives(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import AtomicFact, FactCategory, FactStatus
+    from bot.intelligence.meta_agent import MetaDecision
+
+    gid = await tmp_fact_store.add(AtomicFact(
+        user_id="wally:self", content="But à finir", category=FactCategory.GOAL,
+    ))
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="fulfill_goal", act_args={"goal_id": gid},
+    ))
+    active = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
+    assert active == []
+    archived = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.GOAL], status=FactStatus.ARCHIVED
+    )
+    assert len(archived) == 1
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_fulfill_goal_missing_id_no_crash(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="fulfill_goal", act_args={},
+    ))
+
+
+# ── Phase 2b : react (réaction emoji) ──
+
+@pytest.mark.asyncio
+async def test_act_react_adds_reaction():
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    message = MagicMock()
+    message.add_reaction = AsyncMock()
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+    channel.fetch_message.assert_called_once_with(42)
+    message.add_reaction.assert_called_once_with("🔥")
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_react_channel_not_found_no_crash():
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot = MagicMock()
+    bot.get_channel.return_value = None
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_react_message_not_found_no_crash():
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(side_effect=Exception("not found"))
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "123", "message_id": "42", "emoji": "🔥"},
+    ))
+
+
+@pytest.mark.asyncio
+async def test_act_react_missing_args_noop():
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "", "message_id": "", "emoji": ""},
+    ))
+    bot.get_channel.assert_not_called()
+
+
+# ── Phase 2b : note_to_self (note privée) ──
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,expected", [
+    ("mood", "EMOTION"),
+    ("question", "DESIRE"),
+    ("reminder", "DESIRE"),
+    ("autre", "THOUGHT"),
+])
+async def test_act_note_to_self_category(tmp_fact_store, kind, expected):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "ne pas oublier ça", "kind": kind},
+    ))
+    facts = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory(expected)]
+    )
+    assert len(facts) == 1
+    assert facts[0].content == "ne pas oublier ça"
+    assert facts[0].source == "note_to_self"
+
+
+@pytest.mark.asyncio
+async def test_act_note_to_self_empty_noop(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self", act_args={"note": "  ", "kind": "mood"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert facts == []
+
+
+# ── Phase 3a : set_focus (préoccupation courante) ──
+
+@pytest.mark.asyncio
+async def test_act_set_focus_adds_focus_fact(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus",
+        act_args={"focus": "comprendre pourquoi Kaelis m'évite"},
+    ))
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "focus")
+    assert latest is not None
+    assert latest.content == "comprendre pourquoi Kaelis m'évite"
+    assert latest.category == FactCategory.THOUGHT
+    assert latest.source == "focus"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_set_focus_archives_previous(tmp_fact_store):
+    """Un 2e set_focus archive le précédent : une seule préoccupation active."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory, FactStatus
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "première préoccupation"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "deuxième préoccupation"},
+    ))
+    # Le dernier focus actif est le second.
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "focus")
+    assert latest.content == "deuxième préoccupation"
+    # Un seul fait focus actif au total.
+    active = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT]
+    )
+    focus_active = [f for f in active if f.source == "focus"]
+    assert len(focus_active) == 1
+    # Le premier est archivé.
+    archived = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT], status=FactStatus.ARCHIVED
+    )
+    assert any(f.content == "première préoccupation" for f in archived)
+
+
+@pytest.mark.asyncio
+async def test_act_set_focus_empty_noop(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "  "},
+    ))
+    assert await tmp_fact_store.get_latest_by_source("wally:self", "focus") is None
+
+
+# ── Phase 3b : reflect_self (récit de soi cumulatif) ──
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_adds_narrative_fact(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self",
+        act_args={"narrative": "Je deviens un peu moins sec avec les gens."},
+    ))
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative")
+    assert latest is not None
+    assert latest.content == "Je deviens un peu moins sec avec les gens."
+    assert latest.category == FactCategory.THOUGHT
+    assert latest.source == "self_narrative"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_empty_noop(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "  "},
+    ))
+    assert await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative") is None
+
+
+@pytest.mark.asyncio
+async def test_act_reflect_self_is_cumulative(tmp_fact_store):
+    """Le récit de soi s'accumule : 2 reflect_self → 2 faits actifs (pas d'archivage)."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "premier récit"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="reflect_self", act_args={"narrative": "deuxième récit"},
+    ))
+    # Les deux récits restent ACTIFS (cumulatif).
+    active = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT]
+    )
+    narratives = [f for f in active if f.source == "self_narrative"]
+    assert len(narratives) == 2
+    # Le dernier surfacé est le second.
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "self_narrative")
+    assert latest.content == "deuxième récit"
+
+
+# ── Phase 3c : note_relation (opinion auto-dirigée sur les gens) ──
+
+@pytest.mark.asyncio
+async def test_act_note_relation_adds_rel_fact(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "drôle mais lourd quand il insiste"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.REL])
+    assert len(facts) == 1
+    assert facts[0].content == "Kaelis — drôle mais lourd quand il insiste"
+    assert facts[0].category == FactCategory.REL
+    assert facts[0].source == "opinion"
+    assert facts[0].confidence == 1.0
+    assert facts[0].user_id == "wally:self"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_note_relation_is_cumulative(tmp_fact_store):
+    """Pas d'archivage : les opinions s'accumulent (les plus récentes priment)."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.memory.facts import FactCategory
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "sympa"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation",
+        act_args={"about": "Kaelis", "opinion": "il m'agace finalement"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.REL])
+    assert len(facts) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args", [
+    {"about": "  ", "opinion": "sympa"},
+    {"about": "Kaelis", "opinion": "  "},
+    {"about": "Kaelis"},
+    {"opinion": "sympa"},
+    {},
+])
+async def test_act_note_relation_missing_args_noop(tmp_fact_store, args):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_relation", act_args=args,
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert facts == []
+
+
+# ── Phase 2c : dm (DM Discord, owner-only) ──
+
+OWNER_ID = "610550333042589752"
+
+
+def _dm_bot():
+    """Bot mock avec fetch_user (AsyncMock) → user mock avec send (AsyncMock)."""
+    user = MagicMock()
+    user.send = AsyncMock()
+    bot = MagicMock()
+    bot.fetch_user = AsyncMock(return_value=user)
+    return bot, user
+
+
+@pytest.mark.asyncio
+async def test_act_dm_to_owner_sends(monkeypatch):
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "une vraie question ?"},
+    ))
+    bot.fetch_user.assert_called_once_with(int(OWNER_ID))
+    user.send.assert_called_once_with("une vraie question ?")
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_dm_to_non_owner_blocked(monkeypatch):
+    """Sécurité : DM vers un autre id que l'owner → send PAS appelé, pas de crash."""
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": "999999999999999999", "message": "salut"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_act_dm_missing_args_noop(monkeypatch):
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    dispatcher = ActionDispatcher(bot=bot)
+    # message vide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm", act_args={"user_id": OWNER_ID, "message": "  "},
+    ))
+    # user_id vide
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm", act_args={"user_id": "", "message": "salut"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_act_dm_send_raises_no_crash(monkeypatch):
+    """user.send lève (DM fermés / Forbidden) → pas de crash, dispatch ne propage pas."""
+    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _dm_bot()
+    user.send = AsyncMock(side_effect=Exception("DM fermés"))
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "coucou"},
+    ))
+    user.send.assert_called_once()

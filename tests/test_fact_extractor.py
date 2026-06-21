@@ -552,8 +552,8 @@ class TestFactExtractorReconciliation:
     async def _make_fe(self, tmp_path):
         from bot.config import Config  # noqa: F401 (typing only)
         from bot.core.memory import MemoryService
-        from bot.v2.core.memory.ingest import MemoryIngest
-        from bot.v2.db.schema_v2 import create_v2_tables
+        from bot.intelligence.memory.ingest import MemoryIngest
+        from bot.db.schema_v2 import create_v2_tables
 
         db_path = str(tmp_path / "wally_recon.db")
         await create_v2_tables(db_path)

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
-from bot.v2.core.cognitive_feed import CognitiveFeed
+from bot.intelligence.cognitive_feed import CognitiveFeed
 from bot.dashboard.routes import cognitive
 
 

@@ -79,9 +79,9 @@ class WallyDiscord(commands.Bot):
     async def setup_hook(self) -> None:
         # Gate V2 init — must be async so we can call create_v2_tables before SQLiteFactStore
         if self._v2_db_path is not None and self.response_gate is None:
-            from bot.v2.db.schema_v2 import create_v2_tables
-            from bot.v2.core.gate import ResponseGate
-            from bot.v2.core.memory.facts import SQLiteFactStore
+            from bot.db.schema_v2 import create_v2_tables
+            from bot.intelligence.gate import ResponseGate
+            from bot.intelligence.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             await create_v2_tables(self._v2_db_path)
@@ -100,15 +100,15 @@ class WallyDiscord(commands.Bot):
             logger.info("ResponseGate V2 initialisé avec DB V2 créée ({})", self._v2_db_path)
 
         if getattr(self.config, "cognitive_loop", None) and self.config.cognitive_loop.get("enabled", False):
-            from bot.v2.core.attention_agent import AttentionAgent
-            from bot.v2.core.reasoning_agent import ReasoningAgent
-            from bot.v2.core.action_dispatcher import ActionDispatcher
-            from bot.v2.core.evolution_log import EvolutionLog
-            from bot.v2.core.persona_manager import PersonaManager
-            from bot.v2.core.cognitive_loop import CognitiveLoop
-            from bot.v2.core.cognitive_feed import CognitiveFeed
-            from bot.v2.core.channels import ChannelDirectory
-            from bot.v2.core.memory.facts import SQLiteFactStore
+            from bot.intelligence.attention_agent import AttentionAgent
+            from bot.intelligence.reasoning_agent import ReasoningAgent
+            from bot.intelligence.action_dispatcher import ActionDispatcher
+            from bot.intelligence.evolution_log import EvolutionLog
+            from bot.intelligence.persona_manager import PersonaManager
+            from bot.intelligence.cognitive_loop import CognitiveLoop
+            from bot.intelligence.cognitive_feed import CognitiveFeed
+            from bot.intelligence.channels import ChannelDirectory
+            from bot.intelligence.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
             from bot.config import LLMRoleConfig
             import os as _os_cog
@@ -168,9 +168,9 @@ class WallyDiscord(commands.Bot):
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
         _bridge_secret = _os_auto.getenv("BRIDGE_SECRET", "")
         if _bridge_socket and _bridge_secret and self.cognitive_loop is not None:
-            from bot.v2.core.host_bridge import HostBridgeClient
-            from bot.v2.core.self_fix import SelfFix
-            from bot.v2.core.self_upgrade import SelfUpgrade
+            from bot.intelligence.host_bridge import HostBridgeClient
+            from bot.intelligence.self_fix import SelfFix
+            from bot.intelligence.self_upgrade import SelfUpgrade
             _bridge = HostBridgeClient(_bridge_socket, _bridge_secret)
             self.self_fix = SelfFix(self.llm_secondary, _bridge, self, repo_root="/app")
             _checker = getattr(self, "update_checker", None)

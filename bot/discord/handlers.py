@@ -582,7 +582,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
     if getattr(bot, "response_gate", None) is not None:
-        from bot.v2.core.memory.facts import FactCategory
+        from bot.intelligence.memory.facts import FactCategory
         # Espace de clés mémoire : préfixé "discord:<id>" pour matcher ce que
         # MemoryService écrit (sinon le gate lit/écrit dans un espace disjoint).
         user_id_str = f"discord:{message.author.id}"
