@@ -28,11 +28,12 @@ class ReasoningAgent:
       `parse_decisions`.
     """
 
-    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "") -> None:
+    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "") -> None:
         self._llm = llm
         self._facts = fact_store
         self._system = (Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8")
         self._channels_text = channels_text
+        self._capabilities_text = capabilities_text
 
     async def reason(self, context) -> ReasoningResult:
         user_msg = self._format_context(context)
@@ -86,6 +87,10 @@ class ReasoningAgent:
             )
         if self._channels_text:
             lines.append(self._channels_text + "\n")
+        if self._capabilities_text:
+            lines.append(
+                f"**Ce que tu es et sais faire (ton self-model) :**\n{self._capabilities_text}\n"
+            )
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {ctx.emotion_state}",

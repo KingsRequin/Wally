@@ -9,7 +9,7 @@ from loguru import logger
 class PersonaService:
     """Charge et expose les fichiers de persona Markdown (SOUL, IDENTITY, VOICE, EMOTIONS)."""
 
-    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md"]  # ordre canonique pour persona_block
+    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md", "CAPABILITIES.md"]  # ordre canonique pour persona_block
 
     def __init__(self, persona_dir: str = "bot/persona"):
         self._dir = persona_dir

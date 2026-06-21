@@ -137,7 +137,19 @@ class WallyDiscord(commands.Bot):
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
             _attention = AttentionAgent(_fact_store, self.emotion)
-            _reasoning = ReasoningAgent(_reasoning_llm, _fact_store, _prompts_dir, channels_text=_chan_dir.render())
+            # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
+            # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
+            # et le désir de capacité (DM créateur plutôt que prétendre).
+            _caps_path = Path(__file__).parent.parent / "persona" / "CAPABILITIES.md"
+            _caps_text = _caps_path.read_text(encoding="utf-8") if _caps_path.exists() else ""
+            if _caps_text:
+                logger.info("CAPABILITIES.md chargé pour la cognition ({} chars)", len(_caps_text))
+            else:
+                logger.warning("CAPABILITIES.md introuvable : {}", _caps_path)
+            _reasoning = ReasoningAgent(
+                _reasoning_llm, _fact_store, _prompts_dir,
+                channels_text=_chan_dir.render(), capabilities_text=_caps_text,
+            )
             self.cognitive_feed = CognitiveFeed()
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
 

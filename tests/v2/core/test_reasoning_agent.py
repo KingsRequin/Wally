@@ -99,6 +99,34 @@ async def test_reason_both_empty_on_llm_error(tmp_path, tmp_db_path):
     assert [d.action for d in result.decisions] == ["THINK"]
 
 
+def _make_prompts_dir(tmp_path):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "reasoning_system.md").write_text("System reasoning test")
+    return prompts_dir
+
+
+def test_capabilities_text_injected_in_context(tmp_path, tmp_db_path):
+    """capabilities_text non vide → présent dans le contexte formaté."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+        capabilities_text="JE SUIS UN TEST",
+    )
+    rendered = agent._format_context(_make_context())
+    assert "JE SUIS UN TEST" in rendered
+
+
+def test_capabilities_text_absent_when_empty(tmp_path, tmp_db_path):
+    """capabilities_text vide (défaut) → rien d'injecté."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    rendered = agent._format_context(_make_context())
+    assert "self-model" not in rendered
+
+
 @pytest.mark.asyncio
 async def test_reason_passes_system_prompt(tmp_path, tmp_db_path):
     agent, llm, _ = _make_agent(

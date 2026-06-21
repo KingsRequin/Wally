@@ -45,6 +45,26 @@ def test_reload_picks_up_changes(tmp_path):
     assert "v1" not in ps.build_prompt_block()
 
 
+def test_capabilities_loaded_in_block(tmp_path):
+    """CAPABILITIES.md est chargé et concaténé dans le bloc persona."""
+    (tmp_path / "SOUL.md").write_text("âme")
+    (tmp_path / "CAPABILITIES.md").write_text(
+        "# CAPABILITIES\nVoici ce que je sais faire.\nJe n'ai pas de corps."
+    )
+    ps = PersonaService(persona_dir=str(tmp_path))
+    block = ps.build_prompt_block()
+    assert "ce que je sais faire" in block
+    assert "pas de corps" in block
+
+
+def test_capabilities_loaded_from_real_persona_dir():
+    """Le vrai bot/persona/CAPABILITIES.md est présent dans le bloc des réponses."""
+    ps = PersonaService(persona_dir="bot/persona")
+    block = ps.build_prompt_block()
+    assert "pas de corps" in block
+    assert "ce que je sais faire" in block.lower()
+
+
 def test_build_prompt_block_order(tmp_path):
     """SOUL apparaît avant IDENTITY, IDENTITY avant VOICE."""
     (tmp_path / "SOUL.md").write_text("SOUL_CONTENT")
