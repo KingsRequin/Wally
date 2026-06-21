@@ -17,13 +17,8 @@ def mem(tmp_path):
     finally:
         loop.close()
     svc = MemoryService(SimpleNamespace())
-
-    class _StubQdrant:
-        async def ensure_collection(self): pass
-        async def upsert(self, **kw): pass
-        async def search(self, **kw): return []  # force fallback get_by_user
     svc._facts = SQLiteFactStore(db_path)
-    svc._retrieval = MemoryRetrieval(svc._facts, _StubQdrant())
+    svc._retrieval = MemoryRetrieval(svc._facts)  # FTS5, plus de Qdrant
     return svc
 
 

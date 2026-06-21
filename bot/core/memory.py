@@ -49,19 +49,21 @@ class MemoryService:
         self._db = db
 
     def set_embedding_backend(
-        self, db_path: str, qdrant_url: str, collection: str, embedding_fn
+        self, db_path: str, qdrant_url: str = "", collection: str = "",
+        embedding_fn=None,
     ) -> None:
+        """Initialise le backend mémoire V2 (FTS5/SQLite, sans Qdrant).
+
+        Les paramètres qdrant_url/collection/embedding_fn sont conservés pour
+        compat d'appel (bootstrap) mais ignorés : la recherche passe désormais
+        par FTS5 BM25 (porté de jarvis-OS).
+        """
         from bot.v2.core.memory.facts import SQLiteFactStore
-        from bot.v2.core.memory.store import QdrantEmbeddingStore
         from bot.v2.core.memory.retrieval import MemoryRetrieval
         self._db_path = db_path
         self._facts = SQLiteFactStore(db_path)
-        qdrant = QdrantEmbeddingStore(
-            url=qdrant_url, collection_name=collection,
-            embedding_fn=embedding_fn, vector_size=1536,
-        )
-        self._retrieval = MemoryRetrieval(self._facts, qdrant)
-        logger.info("MemoryService backend V2 prêt (collection={})", collection)
+        self._retrieval = MemoryRetrieval(self._facts)
+        logger.info("MemoryService backend V2 prêt (FTS5)")
 
     def _fire(self, coro) -> asyncio.Task:
         t = asyncio.create_task(coro)
