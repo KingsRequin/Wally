@@ -9,6 +9,11 @@ CREATE TABLE IF NOT EXISTS atomic_facts (
     user_id       TEXT    NOT NULL,
     content       TEXT    NOT NULL,
     category      TEXT    NOT NULL,
+    subject       TEXT,
+    predicate     TEXT,
+    object        TEXT,
+    importance    REAL    NOT NULL DEFAULT 0.5,
+    support_count INTEGER NOT NULL DEFAULT 1,
     confidence    REAL    NOT NULL DEFAULT 1.0,
     decay_rate    REAL    NOT NULL DEFAULT 0.01,
     status        TEXT    NOT NULL DEFAULT 'active',
@@ -62,11 +67,66 @@ CREATE INDEX IF NOT EXISTS idx_facts_confidence
     ON atomic_facts(confidence);
 CREATE INDEX IF NOT EXISTS idx_upgrades_status
     ON pending_upgrades(status);
+
+-- Recherche plein-texte BM25 (porté de jarvis-OS, remplace Qdrant).
+-- Table FTS5 autonome indexée sur le texte rendu du fait (sujet/prédicat/objet/contenu).
+-- Tokenizer FR : retire les diacritiques pour matcher "cafe" ↔ "café".
+CREATE VIRTUAL TABLE IF NOT EXISTS atomic_facts_fts USING fts5(
+    text,
+    tokenize='unicode61 remove_diacritics 1'
+);
+
+CREATE TRIGGER IF NOT EXISTS atomic_facts_fts_ai AFTER INSERT ON atomic_facts BEGIN
+    INSERT INTO atomic_facts_fts(rowid, text) VALUES (
+        new.id,
+        trim(coalesce(new.subject,'')||' '||coalesce(new.predicate,'')||' '||
+             coalesce(new.object,'')||' '||coalesce(new.content,''))
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS atomic_facts_fts_ad AFTER DELETE ON atomic_facts BEGIN
+    DELETE FROM atomic_facts_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS atomic_facts_fts_au AFTER UPDATE ON atomic_facts BEGIN
+    DELETE FROM atomic_facts_fts WHERE rowid = old.id;
+    INSERT INTO atomic_facts_fts(rowid, text) VALUES (
+        new.id,
+        trim(coalesce(new.subject,'')||' '||coalesce(new.predicate,'')||' '||
+             coalesce(new.object,'')||' '||coalesce(new.content,''))
+    );
+END;
 """
+
+# Colonnes ajoutées à atomic_facts pour le modèle S-P-O (porté de jarvis).
+# Migration idempotente pour les DB existantes (SQLite n'a pas ADD COLUMN IF NOT EXISTS).
+_NEW_COLUMNS: list[tuple[str, str]] = [
+    ("subject",       "TEXT"),
+    ("predicate",     "TEXT"),
+    ("object",        "TEXT"),
+    ("importance",    "REAL NOT NULL DEFAULT 0.5"),
+    ("support_count", "INTEGER NOT NULL DEFAULT 1"),
+]
+
+
+async def _migrate_atomic_facts(db: aiosqlite.Connection) -> None:
+    """Ajoute les colonnes S-P-O manquantes sur une table atomic_facts existante."""
+    cursor = await db.execute("PRAGMA table_info(atomic_facts)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    for name, decl in _NEW_COLUMNS:
+        if name not in existing:
+            await db.execute(f"ALTER TABLE atomic_facts ADD COLUMN {name} {decl}")
 
 
 async def create_v2_tables(db_path: str) -> None:
-    """Crée les tables V2 si elles n'existent pas."""
+    """Crée les tables V2 si elles n'existent pas (idempotent)."""
     async with aiosqlite.connect(db_path) as db:
+        # Migration d'abord (ajoute les colonnes sur une table pré-existante),
+        # puis le script complet (triggers/FTS5 dépendent des colonnes).
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts'"
+        )
+        if await cursor.fetchone() is not None:
+            await _migrate_atomic_facts(db)
         await db.executescript(_SCHEMA_SQL)
         await db.commit()

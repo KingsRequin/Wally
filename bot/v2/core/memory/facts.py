@@ -1,12 +1,34 @@
 # bot/v2/core/memory/facts.py
 from __future__ import annotations
 
+import re
+
 import aiosqlite
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
 from loguru import logger
+
+# Mots vides FR/EN courts ignorés dans les requêtes FTS (réduit le bruit).
+_FTS_STOPWORDS: frozenset[str] = frozenset(
+    {"le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "à", "au",
+     "the", "a", "an", "of", "to", "is", "it", "in", "on", "for"}
+)
+
+
+def _fts_match_query(query: str) -> str:
+    """Transforme une requête libre en expression FTS5 MATCH sûre.
+
+    Chaque terme alphanumérique (≥2 car, hors stopwords) est mis entre guillemets
+    et combiné en OR. Évite les erreurs de syntaxe FTS5 dues à la ponctuation.
+    Retourne "" si aucun terme exploitable.
+    """
+    tokens = re.findall(r"\w+", query.lower(), flags=re.UNICODE)
+    terms = [t for t in tokens if len(t) >= 2 and t not in _FTS_STOPWORDS]
+    if not terms:
+        return ""
+    return " OR ".join(f'"{t}"' for t in terms)
 
 
 class FactCategory(str, Enum):
@@ -44,6 +66,13 @@ class AtomicFact:
     user_id:           str
     content:           str
     category:          FactCategory
+    # Triplet sujet-prédicat-objet (porté de jarvis-OS). Optionnel pour
+    # rétro-compat : un fait peut n'avoir que `content` (phrase libre).
+    subject:           str | None = None
+    predicate:         str | None = None
+    object_:           str | None = None
+    importance:        float = 0.5   # noté par le LLM [0,1], pour le ranking retrieval
+    support_count:     int = 1       # nb d'observations confirmant ce fait
     confidence:        float = 1.0
     status:            FactStatus = FactStatus.ACTIVE
     emotional_context: str | None = None
@@ -76,11 +105,14 @@ class SQLiteFactStore:
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 """INSERT INTO atomic_facts
-                   (user_id, content, category, confidence, decay_rate, status,
+                   (user_id, content, category, subject, predicate, object,
+                    importance, support_count, confidence, decay_rate, status,
                     emotional_context, source, created_at, last_seen_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     fact.user_id, fact.content, fact.category.value,
+                    fact.subject, fact.predicate, fact.object_,
+                    fact.importance, fact.support_count,
                     fact.confidence, fact.decay_rate, fact.status.value,
                     fact.emotional_context, fact.source,
                     fact.created_at.isoformat(), fact.last_seen_at.isoformat(),
@@ -226,10 +258,20 @@ class SQLiteFactStore:
 
     @staticmethod
     def _row_to_fact(row: aiosqlite.Row) -> AtomicFact:
+        keys = row.keys()
+
+        def _g(name: str, default=None):
+            return row[name] if name in keys else default
+
         fact = AtomicFact(
             user_id=row["user_id"],
             content=row["content"],
             category=FactCategory(row["category"]),
+            subject=_g("subject"),
+            predicate=_g("predicate"),
+            object_=_g("object"),
+            importance=_g("importance", 0.5),
+            support_count=_g("support_count", 1),
             confidence=row["confidence"],
             status=FactStatus(row["status"]),
             emotional_context=row["emotional_context"],
@@ -242,3 +284,54 @@ class SQLiteFactStore:
         # keep the rate they were inserted with, even if DECAY_RATES changes later.
         fact.decay_rate = row["decay_rate"]
         return fact
+
+    async def search_fts(
+        self,
+        user_id: str,
+        query: str,
+        limit: int = 10,
+        min_confidence: float = 0.3,
+    ) -> list[tuple[AtomicFact, float]]:
+        """Recherche plein-texte BM25 (FTS5) des faits actifs d'un user.
+
+        Retourne des tuples (fait, bm25) triés du plus pertinent au moins
+        pertinent. `bm25()` de SQLite renvoie un score où PLUS PETIT = MEILLEUR
+        (souvent négatif) ; on trie donc par bm25 croissant. Le filtrage par
+        `user_id`/status/confidence se fait via un JOIN sur la table de base.
+        """
+        match = _fts_match_query(query)
+        if not match:
+            return []
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            try:
+                cursor = await db.execute(
+                    """SELECT f.*, bm25(atomic_facts_fts) AS rank
+                       FROM atomic_facts_fts
+                       JOIN atomic_facts f ON f.id = atomic_facts_fts.rowid
+                       WHERE atomic_facts_fts MATCH ?
+                         AND f.user_id = ? AND f.status = ? AND f.confidence >= ?
+                       ORDER BY rank
+                       LIMIT ?""",
+                    (match, user_id, FactStatus.ACTIVE.value, min_confidence, limit),
+                )
+                rows = await cursor.fetchall()
+            except Exception as exc:  # FTS5 syntax error sur entrée exotique
+                logger.warning("search_fts MATCH failed for {!r}: {}", match, exc)
+                return []
+        return [(self._row_to_fact(r), float(r["rank"])) for r in rows]
+
+    async def confirm(self, fact_id: int) -> None:
+        """Renforce un fait existant sans dupliquer (observation CONFIRM) :
+        support_count +1, confidence +0.05 (cap 0.99), last_seen_at = maintenant.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                """UPDATE atomic_facts
+                   SET support_count = support_count + 1,
+                       confidence    = MIN(0.99, confidence + 0.05),
+                       last_seen_at  = ?
+                   WHERE id = ?""",
+                (datetime.utcnow().isoformat(), fact_id),
+            )
+            await db.commit()
