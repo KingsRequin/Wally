@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -139,69 +138,6 @@ class MemoryMixin:
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (apres fusion de comptes)."""
         await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))
-
-    async def sync_memory_users_from_qdrant(self, qdrant_url: str, collection_name: str | None = None) -> int:
-        """Imports into memory_users the user_ids found in Qdrant.
-
-        Returns the number of newly inserted users.
-        Silent if Qdrant is unavailable.
-        collection_name defaults to QDRANT_COLLECTION_NAME env var (fallback: "wally_memory").
-        """
-        import os
-        if collection_name is None:
-            collection_name = os.getenv("QDRANT_COLLECTION_NAME", "wally_memory")
-        try:
-            from qdrant_client import QdrantClient
-            client = QdrantClient(url=qdrant_url)
-            user_ids: set[str] = set()
-            offset = None
-            while True:
-                points, next_offset = await asyncio.to_thread(
-                    client.scroll,
-                    collection_name=collection_name,
-                    limit=100,
-                    with_payload=True,
-                    with_vectors=False,
-                    offset=offset,
-                )
-                for point in points:
-                    uid = (point.payload or {}).get("user_id")
-                    if uid and isinstance(uid, str) and ":" in uid:
-                        parts = uid.split(":")
-                        # Fix double-prefix (e.g. "discord:discord:123" -> "discord:123")
-                        if len(parts) >= 3 and parts[0] == parts[1]:
-                            uid = f"{parts[0]}:{':'.join(parts[2:])}"
-                            logger.warning("Sync: fixed double-prefix -> {uid}", uid=uid)
-                        # Fix cross-platform IDs before adding
-                        platform_prefix = uid.split(":")[0]
-                        uid, platform_prefix = self._fix_platform(uid, platform_prefix)
-                        if platform_prefix:  # skip malformed entries with empty prefix
-                            user_ids.add(uid)
-                if next_offset is None:
-                    break
-                offset = next_offset
-
-            inserted = 0
-            before = {u["user_id"] for u in await self.list_memory_users()}
-            # Ne pas recreer les alias deja lies (sinon ils reapparaissent en double)
-            alias_map = await self.get_alias_map()
-            alias_ids = set(alias_map.keys())
-            for uid in user_ids:
-                if uid in alias_ids:
-                    continue  # alias lie -- ne pas recreer dans memory_users
-                if uid in before:
-                    continue  # deja connu -- ne pas ecraser last_updated
-                platform = uid.split(":")[0]
-                await self.upsert_memory_user(uid, platform, username="")
-                inserted += 1
-
-            if inserted:
-                logger.info("sync_memory_users_from_qdrant: {n} nouveaux utilisateurs importes", n=inserted)
-            return inserted
-
-        except Exception as exc:
-            logger.warning("sync_memory_users_from_qdrant echoue: {e}", e=exc)
-            return 0
 
     async def list_memory_users(self, q: str | None = None, include_no_memory: bool = False) -> list[dict]:
         # LEFT JOIN avec trust_scores : la cle memory_users.user_id est "platform:raw_id"

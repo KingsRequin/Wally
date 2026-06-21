@@ -14,12 +14,12 @@ const PIPELINE_STEPS = [
   {
     label: 'Mémoire',
     color: 'var(--violet)',
-    detail: 'Wally consulte sa mémoire vectorielle (Qdrant). Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles.'
+    detail: 'Wally consulte sa mémoire (recherche plein-texte FTS5/SQLite). Il retrouve les souvenirs les plus pertinents sur l\'utilisateur : faits biographiques (FAIT), préférences (PREF), langue habituelle (LANG), et données relationnelles (REL). Les scores de confiance et d\'affinité sont injectés séparément. Un budget de tokens (800) priorise les souvenirs les plus utiles.'
   },
   {
     label: 'Réponse',
     color: 'var(--green)',
-    detail: 'Le LLM (DeepSeek) reçoit le prompt système complet (personnalité + émotions + mémoire + contexte) et l\'historique glissant, et peut appeler des outils (rappels, notes). La réponse part via l\'adaptateur approprié. En arrière-plan : le FactExtractor stocke les faits mémorables dans Qdrant, les émotions sont mises à jour (NRCLex), et les coûts LLM sont enregistrés.'
+    detail: 'Le LLM (DeepSeek) reçoit le prompt système complet (personnalité + émotions + mémoire + contexte) et l\'historique glissant, et peut appeler des outils (rappels, notes). La réponse part via l\'adaptateur approprié. En arrière-plan : le FactExtractor stocke les faits mémorables (FTS5/SQLite), les émotions sont mises à jour (NRCLex), et les coûts LLM sont enregistrés.'
   },
 ];
 
@@ -27,7 +27,7 @@ const PILLARS = [
   {
     title: 'Mémoire vectorielle',
     color: 'var(--violet)',
-    desc: 'Wally se souvient de chaque utilisateur à long terme grâce à Qdrant. Faits, préférences, langue, relation — tout est encodé en embeddings et retrouvé par similarité sémantique. Budget priorisé par catégorie : biographie > relation > questions en attente > blagues > opinions > mentions tierces.'
+    desc: 'Wally se souvient de chaque utilisateur à long terme via une recherche plein-texte FTS5 (SQLite). Faits, préférences, langue, relation — tout est indexé et retrouvé par pertinence BM25. Budget priorisé par catégorie : biographie > relation > questions en attente > blagues > opinions > mentions tierces.'
   },
   {
     title: 'Émotions en direct',
@@ -56,7 +56,7 @@ const TECH = [
   ['Python / asyncio', 'var(--cyan)'],
   ['DeepSeek', 'var(--yellow)'],
   ['aiosqlite', 'var(--green)'],
-  ['Qdrant', 'var(--pink)'],
+  ['SQLite FTS5', 'var(--pink)'],
   ['discord.py', 'var(--cyan)'],
   ['twitchio', 'var(--violet)'],
 ];
@@ -94,7 +94,7 @@ export function mount(el) {
   descCard.style.marginBottom = '18px';
   const descText = document.createElement('div');
   descText.style.cssText = 'font-size:20px;color:var(--text);line-height:1.5;';
-  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire vectorielle (Qdrant).';
+  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire plein-texte FTS5 (SQLite).';
   descCard.appendChild(descText);
   wrap.appendChild(descCard);
 

@@ -1,6 +1,6 @@
 # tests/test_memory.py
 """
-Tests for MemoryService — QdrantMemoryStore is mocked entirely.
+Tests for MemoryService — FTS5/SQLite backend.
 """
 import time
 

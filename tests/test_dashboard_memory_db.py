@@ -126,64 +126,6 @@ async def test_list_memory_users_filter_by_user_id_still_works():
     await db.close()
 
 
-from unittest.mock import MagicMock, patch
-
-
-@pytest.mark.asyncio
-async def test_sync_memory_users_from_qdrant_imports_new_users():
-    db = await Database.create(":memory:")
-
-    point_a = MagicMock()
-    point_a.payload = {"user_id": "discord:610550333042589111"}
-    point_b = MagicMock()
-    point_b.payload = {"user_id": "twitch:bob"}
-
-    # QdrantClient is imported inside the method → patch the source module
-    with patch("qdrant_client.QdrantClient") as MockClient:
-        client_instance = MockClient.return_value
-        client_instance.scroll.return_value = ([point_a, point_b], None)
-        n = await db.sync_memory_users_from_qdrant("http://localhost:6333")
-
-    assert n == 2
-    users = await db.list_memory_users()
-    user_ids = {u["user_id"] for u in users}
-    assert "discord:610550333042589111" in user_ids
-    assert "twitch:bob" in user_ids
-    await db.close()
-
-
-@pytest.mark.asyncio
-async def test_sync_memory_users_from_qdrant_skips_existing():
-    db = await Database.create(":memory:")
-    await db.upsert_memory_user("discord:610550333042589111", "discord", username="OlafMC")
-
-    point = MagicMock()
-    point.payload = {"user_id": "discord:610550333042589111"}
-
-    with patch("qdrant_client.QdrantClient") as MockClient:
-        client_instance = MockClient.return_value
-        client_instance.scroll.return_value = ([point], None)
-        n = await db.sync_memory_users_from_qdrant("http://localhost:6333")
-
-    assert n == 0
-    # No new users — but existing username is preserved
-    users = await db.list_memory_users()
-    assert users[0]["username"] == "OlafMC"
-    await db.close()
-
-
-@pytest.mark.asyncio
-async def test_sync_memory_users_from_qdrant_handles_qdrant_error():
-    db = await Database.create(":memory:")
-
-    with patch("qdrant_client.QdrantClient") as MockClient:
-        MockClient.side_effect = Exception("Qdrant unavailable")
-        n = await db.sync_memory_users_from_qdrant("http://localhost:6333")
-
-    assert n == 0
-    await db.close()
-
-
 @pytest.mark.asyncio
 async def test_memory_users_has_avatar_and_count_columns():
     db = await Database.create(":memory:")

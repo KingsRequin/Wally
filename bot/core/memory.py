@@ -48,15 +48,10 @@ class MemoryService:
     def set_db(self, db) -> None:
         self._db = db
 
-    def set_embedding_backend(
-        self, db_path: str, qdrant_url: str = "", collection: str = "",
-        embedding_fn=None,
-    ) -> None:
-        """Initialise le backend mémoire V2 (FTS5/SQLite, sans Qdrant).
+    def set_embedding_backend(self, db_path: str) -> None:
+        """Initialise le backend mémoire V2 (FTS5/SQLite).
 
-        Les paramètres qdrant_url/collection/embedding_fn sont conservés pour
-        compat d'appel (bootstrap) mais ignorés : la recherche passe désormais
-        par FTS5 BM25 (porté de jarvis-OS).
+        La recherche passe par FTS5 BM25 (porté de jarvis-OS).
         """
         from bot.v2.core.memory.facts import SQLiteFactStore
         from bot.v2.core.memory.retrieval import MemoryRetrieval
@@ -73,7 +68,7 @@ class MemoryService:
 
     def _user_id(self, platform: str, user_id: str) -> str:
         # Guard against double-prefix: if user_id already starts with "platform:",
-        # strip it to avoid "discord:discord:123456" in Qdrant.
+        # strip it to avoid "discord:discord:123456".
         if user_id.startswith(f"{platform}:"):
             user_id = user_id[len(platform) + 1:]
             logger.warning(

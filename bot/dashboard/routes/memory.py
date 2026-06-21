@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -407,8 +406,6 @@ async def resolve_alias(nickname: str, body: ResolveAliasRequest, request: Reque
 @router.post("/memory/sync")
 async def sync_memory_users(request: Request):
     state = request.app.state.wally
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    n = await state.db.sync_memory_users_from_qdrant(qdrant_url)
 
     # ── Resolve missing usernames + fetch avatars ──
     users = await state.db.list_memory_users(include_no_memory=True)
@@ -493,7 +490,7 @@ async def sync_memory_users(request: Request):
                 logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
 
     # memory_count update omis (store V1 supprimé — refonte V2 en cours)
-    return {"synced": n, "resolved": resolved}
+    return {"synced": 0, "resolved": resolved}
 
 
 # ── POST /memory/resolve-usernames ────────────────────────────────────────────

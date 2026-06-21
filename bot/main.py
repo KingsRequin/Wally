@@ -70,12 +70,8 @@ async def main() -> None:
     await db.cleanup_old_emotion_history(days=30)
     logger.info("Old emotion history cleaned up")
 
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    await db.sync_memory_users_from_qdrant(qdrant_url)
-    logger.info("Memory users sync from Qdrant complete")
-
     # ── Core services ─────────────────────────────────────────────────────────
-    svc = await build_core_services(config, db, qdrant_url)
+    svc = await build_core_services(config, db)
     emotion          = svc.emotion
     memory           = svc.memory
     primary_llm      = svc.primary_llm
