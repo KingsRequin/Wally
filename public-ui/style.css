@@ -974,6 +974,7 @@ input::placeholder { color: var(--muted); }
   font-size: 18px; padding: 6px 14px; outline: none; }
 .gallery-search:focus { border-color: var(--cyan); }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+@media (max-width: 560px) { .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; } }
 .gallery-item { background: var(--card-bg); border: 2px solid var(--card-border); border-radius: 10px;
   overflow: hidden; cursor: pointer; display: flex; flex-direction: column; transition: border-color .15s; }
 .gallery-item:hover { border-color: var(--violet); }
