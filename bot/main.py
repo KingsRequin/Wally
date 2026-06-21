@@ -51,7 +51,6 @@ async def main() -> None:
 
     from bot.config import Config
     from bot.db.database import Database
-    from bot.core.tracing import init_tracing, shutdown_tracing
     from bot.bootstrap import build_core_services
 
     # ── Load config and database ──────────────────────────────────────────────
@@ -74,9 +73,6 @@ async def main() -> None:
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     await db.sync_memory_users_from_qdrant(qdrant_url)
     logger.info("Memory users sync from Qdrant complete")
-
-    # ── Tracing ──────────────────────────────────────────────────────────────
-    init_tracing()
 
     # ── Core services ─────────────────────────────────────────────────────────
     svc = await build_core_services(config, db, qdrant_url)
@@ -422,7 +418,6 @@ async def main() -> None:
     try:
         await asyncio.gather(*tasks)
     finally:
-        shutdown_tracing()
         await graph.close()
         if update_checker:
             await update_checker.stop()

@@ -15,7 +15,6 @@ from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.prompts import assemble_memory_context, load_prompt
-from bot.core.tracing import create_trace, create_span
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -815,23 +814,10 @@ async def _respond(
     try:
         await message.add_reaction("🔍")
 
-        trace = create_trace(
-            name="discord:message",
-            user_id=f"discord:{user_id}",
-            platform="discord",
-            channel_id=str(message.channel.id),
-            metadata={
-                "author": _author_label(message.author),
-                "emotion_state": bot.emotion.get_state(),
-                "guild": message.guild.name if message.guild else None,
-            },
-        )
-
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
 
         mem_context = await bot.memory.search(platform, user_id, message.content, context_messages=prelude, username_hint=message.author.display_name)
-        create_span(trace, name="memory:search", input={"query": message.content}, output={"context_length": len(mem_context or "")})
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:
@@ -910,7 +896,6 @@ async def _respond(
         # Knowledge graph context (Graphiti)
         graph_context = ""
         if hasattr(bot, 'graph') and bot.graph and bot.graph.ready:
-            _graph_facts_count = 0
             try:
                 _author_lbl = _author_label(message.author)
                 graph_results = await bot.graph.search(
@@ -936,12 +921,9 @@ async def _respond(
                             break
                         facts_lines.append(line)
                     if facts_lines:
-                        _graph_facts_count = len(facts_lines)
                         graph_context = "\n--- Connaissances du graphe ---\n" + "\n".join(facts_lines)
             except Exception:
                 pass
-            finally:
-                create_span(trace, name="graph:search", input={"query": message.content}, output={"facts_count": _graph_facts_count})
 
         # Social context — relations sociales du serveur (rate-limited 60s/channel)
         social_context = ""
@@ -1155,14 +1137,12 @@ async def _respond(
                     purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
-                    trace=trace,
                 )
             else:
                 reply = await bot.llm.complete(
                     system_prompt, openai_messages, purpose="discord_response",
                     image_urls=image_urls or None,
                     user_id=f"discord:{message.author.id}",
-                    trace=trace,
                 )
                 tools_called = []
 

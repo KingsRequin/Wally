@@ -108,7 +108,6 @@ class DeepSeekLLMClient(BaseLLMClient):
         image_urls: list[str] | None = None,
         user_id: str | None = None,
         max_tokens: int | None = None,
-        trace: Any = None,
     ) -> str:
         try:
             response = await self._client.chat.completions.create(
@@ -131,7 +130,6 @@ class DeepSeekLLMClient(BaseLLMClient):
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
-        trace: Any = None,
     ) -> tuple[str, list[str]]:
         history = list(messages)
         tools_called: list[str] = []
@@ -203,7 +201,6 @@ class DeepSeekLLMClient(BaseLLMClient):
         schema_name: str = "response",
         purpose: str = "structured",
         user_id: str | None = None,
-        trace: Any = None,
     ) -> dict:
         """Force un tool_choice pour obtenir du JSON structuré conforme au schema."""
         tool_def = {
@@ -243,7 +240,6 @@ class DeepSeekLLMClient(BaseLLMClient):
         purpose: str = "response",
         image_urls: list[str] | None = None,
         user_id: str | None = None,
-        trace: Any = None,
         tools: list[dict] | None = None,
         tool_executor: Optional[Callable[[str, str], Awaitable[str]]] = None,
     ) -> AsyncGenerator[str, None]:
