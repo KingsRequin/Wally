@@ -127,6 +127,32 @@ def test_capabilities_text_absent_when_empty(tmp_path, tmp_db_path):
     assert "self-model" not in rendered
 
 
+# ── Phase 3a : rendu de la préoccupation courante ──
+
+def test_preoccupation_rendered_when_present(tmp_path, tmp_db_path):
+    """_format_context rend la préoccupation en tête si présente."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    ctx = _make_context()
+    ctx.preoccupation = "comprendre pourquoi Kaelis m'évite"
+    rendered = agent._format_context(ctx)
+    assert "Ta préoccupation du moment" in rendered
+    assert "comprendre pourquoi Kaelis m'évite" in rendered
+    assert "set_focus" in rendered
+
+
+def test_preoccupation_absent_when_none(tmp_path, tmp_db_path):
+    """preoccupation None (défaut) → rien d'injecté."""
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    rendered = agent._format_context(_make_context())
+    assert "préoccupation du moment" not in rendered
+
+
 @pytest.mark.asyncio
 async def test_reason_passes_system_prompt(tmp_path, tmp_db_path):
     agent, llm, _ = _make_agent(

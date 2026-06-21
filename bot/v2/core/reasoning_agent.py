@@ -74,6 +74,12 @@ class ReasoningAgent:
 
     def _format_context(self, ctx) -> str:
         lines: list[str] = []
+        if getattr(ctx, "preoccupation", None):
+            lines.append(
+                f"**Ta préoccupation du moment (ton fil de pensée) :** {ctx.preoccupation}\n"
+                f"(Fais-la avancer si ta pensée progresse — mets-la à jour via "
+                f"[ACT set_focus] ; sinon laisse-la mûrir.)"
+            )
         if getattr(ctx, "emotional_drive", None):
             lines.append(
                 f"**Ce que ton émotion te pousse à faire :** {ctx.emotional_drive}\n"

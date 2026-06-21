@@ -312,6 +312,71 @@ async def test_act_note_to_self_empty_noop(tmp_fact_store):
     assert facts == []
 
 
+# ── Phase 3a : set_focus (préoccupation courante) ──
+
+@pytest.mark.asyncio
+async def test_act_set_focus_adds_focus_fact(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory
+    from bot.v2.core.meta_agent import MetaDecision
+
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus",
+        act_args={"focus": "comprendre pourquoi Kaelis m'évite"},
+    ))
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "focus")
+    assert latest is not None
+    assert latest.content == "comprendre pourquoi Kaelis m'évite"
+    assert latest.category == FactCategory.THOUGHT
+    assert latest.source == "focus"
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "ACT" in types
+
+
+@pytest.mark.asyncio
+async def test_act_set_focus_archives_previous(tmp_fact_store):
+    """Un 2e set_focus archive le précédent : une seule préoccupation active."""
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.memory.facts import FactCategory, FactStatus
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "première préoccupation"},
+    ))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "deuxième préoccupation"},
+    ))
+    # Le dernier focus actif est le second.
+    latest = await tmp_fact_store.get_latest_by_source("wally:self", "focus")
+    assert latest.content == "deuxième préoccupation"
+    # Un seul fait focus actif au total.
+    active = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT]
+    )
+    focus_active = [f for f in active if f.source == "focus"]
+    assert len(focus_active) == 1
+    # Le premier est archivé.
+    archived = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.THOUGHT], status=FactStatus.ARCHIVED
+    )
+    assert any(f.content == "première préoccupation" for f in archived)
+
+
+@pytest.mark.asyncio
+async def test_act_set_focus_empty_noop(tmp_fact_store):
+    from bot.v2.core.action_dispatcher import ActionDispatcher
+    from bot.v2.core.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="set_focus", act_args={"focus": "  "},
+    ))
+    assert await tmp_fact_store.get_latest_by_source("wally:self", "focus") is None
+
+
 # ── Phase 2c : dm (DM Discord, owner-only) ──
 
 OWNER_ID = "610550333042589752"

@@ -237,6 +237,27 @@ class ActionDispatcher:
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:50]}"})
 
+        elif act_name == "set_focus" and self._facts:
+            focus = (args.get("focus") or "").strip()
+            if not focus:
+                return
+            # Une seule préoccupation active à la fois : archive la précédente.
+            old = await self._facts.get_latest_by_source("wally:self", "focus")
+            if old is not None and old.id is not None:
+                await self._facts.set_status(old.id, FactStatus.ARCHIVED)
+            await self._facts.add(AtomicFact(
+                user_id="wally:self",
+                content=focus,
+                category=FactCategory.THOUGHT,
+                source="focus",
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+            logger.info("ACT set_focus: {}", focus[:60])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"focus: {focus[:50]}"})
+
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
             if self_fix is None:

@@ -364,6 +364,33 @@ class SQLiteFactStore:
                 return []
         return [(self._row_to_fact(r), float(r["rank"])) for r in rows]
 
+    async def get_latest_by_source(
+        self,
+        user_id: str,
+        source: str,
+        category: "FactCategory | None" = None,
+    ) -> "AtomicFact | None":
+        """Retourne le fait ACTIVE le plus récent (id le plus grand) d'un user +
+        source donnés, avec catégorie optionnelle. None si aucun.
+
+        Sert à la « préoccupation courante » (Phase 3a) : le dernier fait actif de
+        source `focus` = le fil de pensée du moment.
+        """
+        query = (
+            "SELECT * FROM atomic_facts "
+            "WHERE user_id = ? AND source = ? AND status = ?"
+        )
+        params: list = [user_id, source, FactStatus.ACTIVE.value]
+        if category is not None:
+            query += " AND category = ?"
+            params.append(category.value)
+        query += " ORDER BY id DESC LIMIT 1"
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(query, params)
+            row = await cursor.fetchone()
+            return self._row_to_fact(row) if row else None
+
     async def set_status(self, fact_id: int, status: FactStatus) -> None:
         """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED)."""
         async with aiosqlite.connect(self._db_path) as db:

@@ -246,3 +246,59 @@ async def test_append_progress_returns_false_if_inactive(tmp_db_path):
     gid = await store.add(make_fact(content="but archivé", category=FactCategory.GOAL))
     await store.set_status(gid, FactStatus.ARCHIVED)
     assert await store.append_progress(gid, "un pas") is False
+
+
+# ── Phase 3a : get_latest_by_source (préoccupation courante) ──
+
+@pytest.mark.asyncio
+async def test_get_latest_by_source_none_when_empty(tmp_db_path):
+    """Aucun fait de la source demandée → None."""
+    store = SQLiteFactStore(tmp_db_path)
+    assert await store.get_latest_by_source("wally:self", "focus") is None
+
+
+@pytest.mark.asyncio
+async def test_get_latest_by_source_returns_most_recent(tmp_db_path):
+    """Renvoie le fait actif le plus récent (id le plus grand) de la source."""
+    store = SQLiteFactStore(tmp_db_path)
+    await store.add(AtomicFact(
+        user_id="wally:self", content="ancien focus",
+        category=FactCategory.THOUGHT, source="focus",
+    ))
+    await store.add(AtomicFact(
+        user_id="wally:self", content="focus récent",
+        category=FactCategory.THOUGHT, source="focus",
+    ))
+    latest = await store.get_latest_by_source("wally:self", "focus")
+    assert latest is not None
+    assert latest.content == "focus récent"
+
+
+@pytest.mark.asyncio
+async def test_get_latest_by_source_ignores_archived(tmp_db_path):
+    """Un fait archivé de la source n'est pas renvoyé."""
+    store = SQLiteFactStore(tmp_db_path)
+    fid = await store.add(AtomicFact(
+        user_id="wally:self", content="focus archivé",
+        category=FactCategory.THOUGHT, source="focus",
+    ))
+    await store.set_status(fid, FactStatus.ARCHIVED)
+    assert await store.get_latest_by_source("wally:self", "focus") is None
+
+
+@pytest.mark.asyncio
+async def test_get_latest_by_source_filters_category(tmp_db_path):
+    """La catégorie optionnelle filtre les résultats."""
+    store = SQLiteFactStore(tmp_db_path)
+    await store.add(AtomicFact(
+        user_id="wally:self", content="focus pensée",
+        category=FactCategory.THOUGHT, source="focus",
+    ))
+    assert await store.get_latest_by_source(
+        "wally:self", "focus", category=FactCategory.GOAL
+    ) is None
+    found = await store.get_latest_by_source(
+        "wally:self", "focus", category=FactCategory.THOUGHT
+    )
+    assert found is not None
+    assert found.content == "focus pensée"

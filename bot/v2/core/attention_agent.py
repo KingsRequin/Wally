@@ -19,6 +19,9 @@ class AttentionContext:
     # Pulsion émotionnelle : directive de comportement quand une émotion domine
     # au-dessus du seuil (Phase 1b). None en état neutre.
     emotional_drive: str | None = None
+    # Préoccupation courante : le fil de pensée persistant qui traverse les ticks
+    # (Phase 3a). Dernier fait actif de source `focus`. None si aucun.
+    preoccupation: str | None = None
 
 
 class AttentionAgent:
@@ -66,6 +69,11 @@ class AttentionAgent:
         from bot.v2.core.emotional_drive import emotional_drive
         drive = emotional_drive(emotion_state)
 
+        # Préoccupation courante : dernier fait actif de source `focus` (Phase 3a).
+        # Requêtée à chaque tick → persiste aussi à travers les redémarrages.
+        latest = await self._facts.get_latest_by_source("wally:self", "focus")
+        preoccupation = latest.content if latest else None
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -76,6 +84,7 @@ class AttentionAgent:
             spontaneous_outreach=spontaneous or [],
             idle_seed=idle_seed,
             emotional_drive=drive,
+            preoccupation=preoccupation,
         )
 
     async def _build_idle_seed(
