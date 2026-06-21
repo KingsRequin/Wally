@@ -17,6 +17,9 @@ JWT_ALGORITHM = "HS256"
 JWT_TTL = 3600  # 1 hour
 REFRESH_TTL = 30 * 86400  # 30 days
 
+# Propriétaire — seul Discord ID autorisé à obtenir un accès admin sans mot de passe.
+OWNER_DISCORD_ID = "610550333042589752"
+
 DISCORD_API = "https://discord.com/api/v10"
 DISCORD_AUTH_URL = "https://discord.com/api/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
@@ -207,3 +210,30 @@ async def me(request: Request):
         "username": payload["username"],
         "avatar_url": payload.get("avatar_url"),
     }
+
+
+# ── GET /chat/auth/admin-token ────────────────────────────────────────────────
+
+@router.get("/auth/admin-token")
+async def admin_token(request: Request):
+    """Échange un JWT Discord du propriétaire contre le token admin du dashboard.
+
+    Permet à l'owner (déjà authentifié via Discord) d'ouvrir /admin sans saisir
+    de mot de passe. Tout autre Discord ID est refusé.
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, detail="JWT required")
+
+    payload = decode_jwt(auth[7:], _jwt_secret(request))
+    if not payload:
+        raise HTTPException(401, detail="Invalid or expired token")
+
+    if str(payload.get("discord_id")) != OWNER_DISCORD_ID:
+        raise HTTPException(403, detail="Not authorized")
+
+    token = request.app.state.wally.config.bot.dashboard_token
+    if not token:
+        raise HTTPException(503, detail="dashboard_token not configured")
+
+    return {"token": token}

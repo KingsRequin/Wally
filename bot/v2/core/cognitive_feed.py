@@ -18,6 +18,10 @@ class CognitiveFeed:
         self._queue_maxsize = queue_maxsize
 
     def publish(self, event: dict) -> None:
+        # Anti-rumination : ignore un événement identique au précédent
+        # (même type + même contenu) — évite que le flux répète la même pensée.
+        if self._buffer and self._buffer[-1] == event:
+            return
         self._buffer.append(event)
         for q in list(self._queues):
             try:

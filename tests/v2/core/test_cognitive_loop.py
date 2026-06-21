@@ -48,11 +48,24 @@ def test_tick_interval_idle():
 @pytest.mark.asyncio
 async def test_tick_calls_full_pipeline():
     loop, attention, monologue, meta, dispatcher = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()
     attention.build_context.assert_called_once()
     monologue.generate.assert_called_once()
     meta.decide.assert_called_once()
     dispatcher.dispatch.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tick_skips_when_no_new_activity():
+    """Sans nouvelle activité depuis le dernier tick, on ne re-génère rien
+    (anti-rumination : pas de pensée répétée sur un contexte identique)."""
+    loop, attention, monologue, meta, dispatcher = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()              # 1er tick : traite l'activité
+    await loop._tick()              # 2e tick : aucune activité nouvelle → skip
+    attention.build_context.assert_called_once()
+    monologue.generate.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -87,6 +100,7 @@ async def test_tick_publishes_think_and_decide_to_feed():
     meta.decide = _AM(return_value=[_MD(action="THINK")])
     dispatcher.dispatch = _AM()
     loop = CognitiveLoop(attention, monologue, meta, dispatcher, None, feed)
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()
     published = [c.args[0]["type"] for c in feed.publish.call_args_list]
     assert "THINK" in published and "DECIDE" in published

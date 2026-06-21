@@ -265,12 +265,6 @@ async def _graph_data(request: Request) -> dict:
         return {"nodes": [], "edges": []}
 
 
-@public_router.get("/social-graph/data")
-async def get_graph_data_public(request: Request):
-    """Return nodes and edges for the social graph visualization (public)."""
-    return await _graph_data(request)
-
-
 @router.get("/social-graph/data")
 async def get_graph_data(request: Request):
     """Return nodes and edges for the social graph visualization (admin)."""

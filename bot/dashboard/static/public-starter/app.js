@@ -1,10 +1,10 @@
 // public-ui/app.js — arcade theme
-import { mount as mountStatus, unmount as unmountStatus } from './tabs/status.js';
-import { mount as mountChat, unmount as unmountChat } from './tabs/chat.js';
-import { mount as mountGallery, unmount as unmountGallery } from './tabs/gallery.js';
-import { mount as mountJournal, unmount as unmountJournal } from './tabs/journal.js';
-import { mount as mountAbout, unmount as unmountAbout } from './tabs/about.js';
-import { mount as mountCommunity, unmount as unmountCommunity } from './tabs/community.js';
+import { mount as mountStatus } from './tabs/status.js';
+import { mount as mountChat } from './tabs/chat.js';
+import { mount as mountGallery } from './tabs/gallery.js';
+import { mount as mountJournal } from './tabs/journal.js';
+import { mount as mountAbout } from './tabs/about.js';
+import { mount as mountCommunity } from './tabs/community.js';
 
 // ── Shared emotion state ──
 export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
@@ -79,17 +79,18 @@ export function drawFlame(id, P = 4) {
   el.innerHTML = ''; el.appendChild(dot);
 }
 
-// ── Router ──
+// ── Single-page sections ──
+// Toutes les sections sont montées en même temps et empilées verticalement.
+// La nav fait défiler (ancres) ; un scroll-spy met en surbrillance l'onglet actif.
+const TABS_ORDER = ['status', 'chat', 'gallery', 'journal', 'community', 'about'];
 const TABS = {
-  status:    { mount: mountStatus,    unmount: unmountStatus },
-  chat:      { mount: mountChat,      unmount: unmountChat },
-  gallery:   { mount: mountGallery,   unmount: unmountGallery },
-  journal:   { mount: mountJournal,   unmount: unmountJournal },
-  community: { mount: mountCommunity, unmount: unmountCommunity },
-  about:     { mount: mountAbout,     unmount: unmountAbout },
+  status:    mountStatus,
+  chat:      mountChat,
+  gallery:   mountGallery,
+  journal:   mountJournal,
+  community: mountCommunity,
+  about:     mountAbout,
 };
-
-let currentTab = null;
 
 function syncNav(tabName) {
   document.querySelectorAll('.arc-nav-btn').forEach(btn => {
@@ -97,40 +98,137 @@ function syncNav(tabName) {
   });
 }
 
-function route() {
-  const hash = location.hash.slice(1) || 'status';
-  const tabName = TABS[hash] ? hash : 'status';
+const _sections = {};
+(function buildSections() {
+  const main = document.getElementById('tab-content');
+  main.innerHTML = '';
+  TABS_ORDER.forEach(name => {
+    const sec = document.createElement('section');
+    sec.id = 'sec-' + name;
+    sec.className = 'arc-section';
+    main.appendChild(sec);
+    _sections[name] = sec;
+    TABS[name](sec);
+  });
+})();
 
-  if (currentTab && TABS[currentTab]?.unmount) {
-    TABS[currentTab].unmount();
-  }
-
-  syncNav(tabName);
-
-  const content = document.getElementById('tab-content');
-  content.innerHTML = '';
-  content.style.animation = 'none';
-  void content.offsetHeight;
-  content.style.animation = '';
-
-  TABS[tabName].mount(content);
-  currentTab = tabName;
-  window.scrollTo({ top: 0 });
+function scrollToSection(name) {
+  const sec = _sections[name];
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 document.querySelectorAll('[data-tab]').forEach(el => {
-  el.addEventListener('click', () => { location.hash = el.dataset.tab; });
+  el.addEventListener('click', () => {
+    const name = el.dataset.tab;
+    if (!_sections[name]) return;
+    scrollToSection(name);
+    history.replaceState(null, '', '#' + name);
+  });
 });
 
-window.addEventListener('hashchange', route);
-
-// If returning from Discord OAuth, navigate to #chat before routing
-if (new URLSearchParams(location.search).get('chat_code')) {
-  location.hash = 'chat';
+// Scroll-spy : surligne l'onglet de la section au centre du viewport
+if (window.IntersectionObserver) {
+  const spy = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) syncNav(e.target.id.replace('sec-', '')); });
+  }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+  TABS_ORDER.forEach(n => spy.observe(_sections[n]));
 }
 
-route();
+// Position initiale : ancre dans l'URL, ou section chat si retour OAuth Discord
+const _initial = (location.hash.slice(1) && _sections[location.hash.slice(1)])
+  ? location.hash.slice(1)
+  : (new URLSearchParams(location.search).get('chat_code') ? 'chat' : null);
+if (_initial) requestAnimationFrame(() => scrollToSection(_initial));
+syncNav(_initial || 'status');
+
 drawFlame('spx-nav', 4);
+
+// ── Auth widget (Discord) ──
+// Bouton de connexion Discord en haut à droite. Si l'owner est connecté,
+// un bouton ADMIN apparaît (token récupéré via le JWT, sans mot de passe).
+const OWNER_DISCORD_ID = '610550333042589752';
+
+function decodeJwt(t) {
+  try {
+    const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64));
+  } catch (_) { return null; }
+}
+
+function renderAuth() {
+  const host = document.getElementById('arc-auth');
+  if (!host) return;
+  host.textContent = '';
+
+  const jwt = localStorage.getItem('discord_jwt');
+  const p = jwt ? decodeJwt(jwt) : null;
+  const valid = p && (!p.exp || p.exp * 1000 > Date.now());
+
+  if (!valid) {
+    const btn = document.createElement('button');
+    btn.className = 'arc-auth-btn';
+    btn.textContent = 'CONNEXION DISCORD';
+    btn.addEventListener('click', () => { window.location.href = '/api/chat/auth/login'; });
+    host.appendChild(btn);
+    return;
+  }
+
+  const who = document.createElement('span');
+  who.className = 'arc-auth-user';
+  if (p.avatar_url) {
+    const img = document.createElement('img');
+    img.className = 'arc-auth-av';
+    img.src = p.avatar_url;
+    img.alt = '';
+    who.appendChild(img);
+  }
+  who.appendChild(document.createTextNode(p.username || 'connecté'));
+  host.appendChild(who);
+
+  if (String(p.discord_id) === OWNER_DISCORD_ID) {
+    const adm = document.createElement('button');
+    adm.className = 'arc-auth-btn admin';
+    adm.textContent = 'ADMIN';
+    adm.addEventListener('click', async () => {
+      adm.disabled = true;
+      try {
+        const r = await fetch('/api/chat/auth/admin-token', { headers: { Authorization: 'Bearer ' + jwt } });
+        if (!r.ok) throw new Error('denied');
+        const d = await r.json();
+        localStorage.setItem('wally_token', d.token);
+        window.location.href = '/admin';
+      } catch (_) {
+        adm.textContent = 'REFUSÉ';
+      }
+    });
+    host.appendChild(adm);
+  }
+
+  const out = document.createElement('button');
+  out.className = 'arc-auth-btn ghost';
+  out.textContent = '✕';
+  out.title = 'Déconnexion';
+  out.addEventListener('click', () => {
+    localStorage.removeItem('discord_jwt');
+    localStorage.removeItem('discord_refresh');
+    renderAuth();
+  });
+  host.appendChild(out);
+}
+
+renderAuth();
+
+// Retour OAuth : chat.js échange le code de façon asynchrone — on re-render
+// le widget dès que le JWT apparaît dans le localStorage.
+if (new URLSearchParams(location.search).get('chat_code')) {
+  let tries = 0;
+  const iv = setInterval(() => {
+    if (localStorage.getItem('discord_jwt') || ++tries > 20) {
+      clearInterval(iv);
+      renderAuth();
+    }
+  }, 300);
+}
 
 // ── Animated arcade background (canvas) ──
 (function initBg() {

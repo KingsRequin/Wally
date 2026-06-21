@@ -31,16 +31,21 @@ async def community_ranking(request: Request, limit: int = 10):
             pairs.append((plat, raw))
             meta.append((u, plat, raw))
         love = await db.get_love_scores_batch(pairs)
-        rows = []
+        # Dédup par nom canonique (insensible à la casse) — un même pseudo peut
+        # apparaître plusieurs fois (casse différente, doublons cross-platform).
+        # On garde l'entrée au meilleur score.
+        best: dict[str, dict] = {}
         for u, plat, raw in meta:
             name = (u.get("username") or "").strip()
             if not name or name.lower() == "azrael":
                 continue
             t = float(u.get("trust_score") or 0.0)
             lv = float(love.get((plat, raw), 0.0))
-            rows.append({"name": name, "trait": _trait(t, lv), "score": round((t + lv) * 500)})
-        rows.sort(key=lambda r: r["score"], reverse=True)
-        rows = rows[:limit]
+            row = {"name": name, "trait": _trait(t, lv), "score": round((t + lv) * 500)}
+            key = name.lower()
+            if key not in best or row["score"] > best[key]["score"]:
+                best[key] = row
+        rows = sorted(best.values(), key=lambda r: r["score"], reverse=True)[:limit]
     except Exception as e:  # never 500 the public page
         logger.warning("community/ranking failed: {}", e)
         rows = []

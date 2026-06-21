@@ -27,6 +27,7 @@ class CognitiveLoop:
         self._emotion = emotion_engine
         self._feed = feed
         self._last_activity_ts: float = 0.0
+        self._last_tick_activity_ts: float = 0.0
         self._recent_interactions: list[dict] = []
         self._task: asyncio.Task | None = None
         self._running = False
@@ -51,6 +52,11 @@ class CognitiveLoop:
         return TICK_IDLE
 
     async def _tick(self) -> None:
+        # Pas de nouvelle activité depuis le dernier tick → on ne re-génère pas
+        # une pensée sur un contexte identique (évite la rumination en boucle).
+        if self._last_activity_ts == self._last_tick_activity_ts:
+            return
+        self._last_tick_activity_ts = self._last_activity_ts
         try:
             emotion_state = self._emotion.get_state() if self._emotion is not None else {}
             context = await self._attention.build_context(emotion_state, self._recent_interactions)
