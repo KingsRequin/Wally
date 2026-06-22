@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import os
+import re
+import time
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -23,6 +26,7 @@ class ActionDispatcher:
         self._persona = persona_manager
         self._facts = fact_store
         self._feed = feed
+        self._last_focus_ts: float = 0.0
 
     async def dispatch(self, decision: MetaDecision) -> None:
         action = decision.action
@@ -259,8 +263,23 @@ class ActionDispatcher:
             focus = (args.get("focus") or "").strip()
             if not focus:
                 return
-            # Une seule préoccupation active à la fois : archive la précédente.
+            # Cooldown : pas plus d'un set_focus toutes les 10 min.
+            now_mono = time.monotonic()
+            if now_mono - self._last_focus_ts < 600:
+                logger.debug("set_focus ignoré (cooldown 10 min)")
+                return
+            # Récupérer le focus actuel pour la garde de similarité.
             old = await self._facts.get_latest_by_source("wally:self", "focus")
+            # Similarité : refuser si la reformulation est quasi identique (≥ 75%).
+            if old is not None and old.content:
+                _ws = re.compile(r"\s+")
+                na = _ws.sub(" ", focus.strip().lower())[:300]
+                nb = _ws.sub(" ", old.content.strip().lower())[:300]
+                if difflib.SequenceMatcher(None, na, nb).ratio() >= 0.85:
+                    logger.debug("set_focus ignoré (trop similaire : '{}')", old.content[:60])
+                    return
+            self._last_focus_ts = now_mono
+            # Une seule préoccupation active à la fois : archive la précédente.
             if old is not None and old.id is not None:
                 await self._facts.set_status(old.id, FactStatus.ARCHIVED)
             await self._facts.add(AtomicFact(

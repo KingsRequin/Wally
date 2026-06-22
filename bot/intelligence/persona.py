@@ -160,4 +160,7 @@ class PersonaService:
 
     def build_prompt_block(self) -> str:
         """Retourne les blocs SOUL → IDENTITY → VOICE concaténés."""
-        return "\n\n".join(v for v in self._blocks.values() if v)
+        from datetime import datetime
+        today = datetime.now().strftime("%A %d %B %Y")
+        blocks = [v.replace("{current_date}", today) for v in self._blocks.values() if v]
+        return "\n\n".join(blocks)

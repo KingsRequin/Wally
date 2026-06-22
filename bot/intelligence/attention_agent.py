@@ -32,6 +32,8 @@ class AttentionContext:
     host_metrics: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
     weather_fr: str | None = None
+    # Historique des SPEAKs cognitifs récents → anti-répétition dans le prompt.
+    recent_speaks: list[dict] = field(default_factory=list)
 
 
 class AttentionAgent:
@@ -45,6 +47,7 @@ class AttentionAgent:
         recent_interactions: list[dict],
         spontaneous: list[dict] | None = None,
         idle: bool = False,
+        recent_speaks: list[dict] | None = None,
     ) -> AttentionContext:
         from bot.intelligence.memory.facts import FactCategory, FactStatus
 
@@ -118,6 +121,7 @@ class AttentionAgent:
             relationships=relationships,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
+            recent_speaks=recent_speaks or [],
         )
 
     async def _build_idle_seed(

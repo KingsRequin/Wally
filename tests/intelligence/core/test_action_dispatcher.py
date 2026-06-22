@@ -346,6 +346,8 @@ async def test_act_set_focus_archives_previous(tmp_fact_store):
     await dispatcher.dispatch(MetaDecision(
         action="ACT", act_name="set_focus", act_args={"focus": "première préoccupation"},
     ))
+    # Simuler 10+ min écoulées pour bypasser le cooldown.
+    dispatcher._last_focus_ts = 0.0
     await dispatcher.dispatch(MetaDecision(
         action="ACT", act_name="set_focus", act_args={"focus": "deuxième préoccupation"},
     ))

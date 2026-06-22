@@ -57,6 +57,9 @@ class CognitiveLoop:
         # lui-même (un humain n'insiste pas auprès de qui l'ignore).
         # {channel_id: {"last_ts": monotonic, "unanswered": int}}
         self._spontaneous: dict[str, dict] = {}
+        # Historique des 5 derniers SPEAKs envoyés → injecté dans le contexte
+        # cognitif pour éviter les répétitions dans la même session.
+        self._recent_speaks: list[dict] = []
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -114,7 +117,8 @@ class CognitiveLoop:
                 if st["unanswered"] > 0
             ]
             context = await self._attention.build_context(
-                emotion_state, self._recent_interactions, spontaneous=spontaneous, idle=is_idle
+                emotion_state, self._recent_interactions, spontaneous=spontaneous, idle=is_idle,
+                recent_speaks=list(self._recent_speaks),
             )
             if self._feed:
                 if is_idle:
@@ -192,6 +196,13 @@ class CognitiveLoop:
                     )
                     st["last_ts"] = time.monotonic()
                     st["unanswered"] += 1
+                    self._recent_speaks.append({
+                        "channel": str(decision.channel_id),
+                        "content": (decision.message or "")[:200],
+                        "ts": time.time(),
+                    })
+                    if len(self._recent_speaks) > 5:
+                        self._recent_speaks = self._recent_speaks[-5:]
         except asyncio.CancelledError:
             raise
         except Exception as e:

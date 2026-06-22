@@ -65,7 +65,7 @@ def assemble_memory_context(parts: list[tuple[int, str]], max_tokens: int) -> st
         if used_tokens + estimated > max_tokens:
             remaining = int((max_tokens - used_tokens) * 4)
             if remaining > 50:
-                result_parts.append(text[:remaining])
+                result_parts.append(text[:remaining] + "…")
             break
         result_parts.append(text)
         used_tokens += estimated

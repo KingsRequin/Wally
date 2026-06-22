@@ -825,7 +825,7 @@ async def _respond(
 
         author_label = _author_label(message.author)
         target_notice = (
-            f"\n⚠️ Tu réponds à **{author_label}**. "
+            f"\n⚠️ Tu réponds à {author_label}. "
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -131,7 +132,18 @@ class ReasoningAgent:
             f"**État émotionnel :** {_fmt_emotions(ctx.emotion_state)}",
         ])
         if getattr(ctx, "host_metrics", None):
-            lines.append(f"**Ton serveur :** {ctx.host_metrics}")
+            # Supprimer les métriques si un SPEAK récent (<60 min) les mentionnait
+            # déjà — évite de répéter "56°C ça tient" à chaque tick idle.
+            _now = time.time()
+            _recent_sp = getattr(ctx, "recent_speaks", [])
+            _metrics_keywords = ("°C", "RAM", "charge", "CPU")
+            _already_spoken = any(
+                any(kw in sp.get("content", "") for kw in _metrics_keywords)
+                and _now - sp.get("ts", 0) < 3600
+                for sp in _recent_sp
+            )
+            if not _already_spoken:
+                lines.append(f"**Ton serveur :** {ctx.host_metrics}")
         if getattr(ctx, "weather_fr", None):
             lines.append(f"**Météo en France en ce moment :** {ctx.weather_fr}")
         if ctx.active_desires:
@@ -165,5 +177,16 @@ class ReasoningAgent:
                 lines.append(
                     f"  canal {o.get('channel', '?')} : {o.get('unanswered', 0)} message(s) "
                     f"envoyé(s), aucune réponse depuis ~{mins} min."
+                )
+        recent_speaks = getattr(ctx, "recent_speaks", [])
+        if recent_speaks:
+            _now = time.time()
+            lines.append("**Tes derniers messages envoyés spontanément :**")
+            for sp in recent_speaks[-3:]:
+                secs = int(_now - sp.get("ts", _now))
+                mins = max(1, secs // 60)
+                lines.append(
+                    f"  canal {sp.get('channel', '?')} (il y a ~{mins} min) : "
+                    f"{sp.get('content', '')[:120]}"
                 )
         return "\n".join(lines)

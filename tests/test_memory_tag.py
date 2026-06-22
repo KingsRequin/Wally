@@ -136,5 +136,5 @@ async def test_discord_handler_updates_context_window(tmp_path):
     # La target notice identifiant le destinataire est incluse dans le user_content
     llm_call = bot.llm.complete_with_tools.call_args
     user_content = llm_call.args[1][0]["content"]
-    assert "Tu réponds à **TestUser" in user_content
+    assert "Tu réponds à TestUser" in user_content
     assert "Ne confonds JAMAIS" in user_content
