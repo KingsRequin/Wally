@@ -28,8 +28,10 @@ class AttentionContext:
     # Affinités : les opinions que Wally s'est formées sur les gens (Phase 3c).
     # Faits REL sous wally:self, ~5 plus récentes. list[AtomicFact].
     relationships: list = field(default_factory=list)
-    # Températures de l'hôte physique (CPU, système). None si non disponible.
-    host_temps: str | None = None
+    # Métriques hôte : température CPU, charge, RAM. None si non disponible.
+    host_metrics: str | None = None
+    # Météo générale en France (sans ville). None si non disponible.
+    weather_fr: str | None = None
 
 
 class AttentionAgent:
@@ -94,9 +96,12 @@ class AttentionAgent:
         )
         relationships = rels[:5]
 
-        from bot.core.system_info import read_host_temps
+        from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
-        host_temps = await _asyncio.to_thread(read_host_temps)
+        host_metrics, weather_fr = await _asyncio.gather(
+            _asyncio.to_thread(read_host_metrics),
+            fetch_weather_france(),
+        )
 
         return AttentionContext(
             emotion_state=emotion_state,
@@ -111,7 +116,8 @@ class AttentionAgent:
             preoccupation=preoccupation,
             self_narrative=self_narrative,
             relationships=relationships,
-            host_temps=host_temps,
+            host_metrics=host_metrics,
+            weather_fr=weather_fr,
         )
 
     async def _build_idle_seed(

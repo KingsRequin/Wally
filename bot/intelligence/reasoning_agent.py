@@ -130,8 +130,10 @@ class ReasoningAgent:
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {_fmt_emotions(ctx.emotion_state)}",
         ])
-        if getattr(ctx, "host_temps", None):
-            lines.append(f"**Température de ton serveur :** {ctx.host_temps}")
+        if getattr(ctx, "host_metrics", None):
+            lines.append(f"**Ton serveur :** {ctx.host_metrics}")
+        if getattr(ctx, "weather_fr", None):
+            lines.append(f"**Météo en France en ce moment :** {ctx.weather_fr}")
         if ctx.active_desires:
             lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
         if ctx.active_goals:
