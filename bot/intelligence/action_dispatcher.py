@@ -111,7 +111,7 @@ class ActionDispatcher:
             await user.send(message)
             logger.info("Cognitive DM → {} : {}", user_id, message[:80])
             if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"DM créateur : {message[:120]}"})
+                self._feed.publish({"type": "ACT", "detail": f"DM créateur : {message[:300]}"})
         except Exception as e:
             logger.warning("DM failed: {}", e)
 
@@ -147,7 +147,7 @@ class ActionDispatcher:
                 ))
                 logger.info("ACT create_memory: {}", content[:60])
                 if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_memory: {content[:120]}"})
+                    self._feed.publish({"type": "ACT", "detail": f"create_memory: {content[:300]}"})
 
         elif act_name == "create_goal" and self._facts:
             desc = args.get("description", "")
@@ -162,7 +162,7 @@ class ActionDispatcher:
                 ))
                 logger.info("ACT create_goal: {}", desc[:60])
                 if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_goal: {desc[:120]}"})
+                    self._feed.publish({"type": "ACT", "detail": f"create_goal: {desc[:300]}"})
 
         elif act_name == "create_desire" and self._facts:
             content = args.get("content", "")
@@ -177,7 +177,7 @@ class ActionDispatcher:
                 ))
                 logger.info("ACT create_desire: {}", content[:60])
                 if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:120]}"})
+                    self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:300]}"})
 
         elif act_name == "advance_goal" and self._facts:
             goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
@@ -192,7 +192,7 @@ class ActionDispatcher:
                 logger.info("ACT advance_goal: #{} {}", goal_id, step[:60])
                 if self._feed:
                     self._feed.publish(
-                        {"type": "ACT", "detail": f"advance_goal #{goal_id}: {step[:120]}"}
+                        {"type": "ACT", "detail": f"advance_goal #{goal_id}: {step[:300]}"}
                     )
 
         elif act_name == "fulfill_goal" and self._facts:
@@ -235,7 +235,7 @@ class ActionDispatcher:
             ))
             logger.info("ACT note_to_self ({}): {}", kind, note[:60])
             if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:120]}"})
+                self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:300]}"})
 
         elif act_name == "set_focus" and self._facts:
             focus = (args.get("focus") or "").strip()
@@ -256,7 +256,7 @@ class ActionDispatcher:
             ))
             logger.info("ACT set_focus: {}", focus[:60])
             if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"focus: {focus[:120]}"})
+                self._feed.publish({"type": "ACT", "detail": f"focus: {focus[:300]}"})
 
         elif act_name == "reflect_self" and self._facts:
             narrative = args.get("narrative", "").strip()
@@ -276,7 +276,7 @@ class ActionDispatcher:
             logger.info("ACT reflect_self: {}", narrative[:60])
             if self._feed:
                 self._feed.publish(
-                    {"type": "ACT", "detail": f"récit de soi : {narrative[:120]}"}
+                    {"type": "ACT", "detail": f"récit de soi : {narrative[:300]}"}
                 )
 
         elif act_name == "note_relation" and self._facts:
