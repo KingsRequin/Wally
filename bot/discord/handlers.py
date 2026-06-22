@@ -531,10 +531,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
-    triggered = mentioned or any(
+    always_trigger = message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
+    triggered = always_trigger or mentioned or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
-    logger.info("on_message: channel_allowed={} triggered={} mentioned={} guild={} channel={}", channel_allowed, triggered, mentioned, getattr(message.guild, 'id', 'dm'), message.channel.id)
+    logger.info("on_message: channel_allowed={} triggered={} mentioned={} always={} guild={} channel={}", channel_allowed, triggered, mentioned, always_trigger, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if not triggered:
         # Passive emoji reaction on non-trigger messages (Discord only)
         if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
@@ -591,65 +592,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
 
-    # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
-    # Bypass si @mention directe : on ne peut pas ignorer quelqu'un qui @ping Wally.
-    if mentioned:
-        pass  # skip gate, toujours RESPOND
-    elif getattr(bot, "response_gate", None) is not None:
-        from bot.intelligence.memory.facts import FactCategory
-        # Espace de clés mémoire : préfixé "discord:<id>" pour matcher ce que
-        # MemoryService écrit (sinon le gate lit/écrit dans un espace disjoint).
-        user_id_str = f"discord:{message.author.id}"
-        emotion_state = bot.emotion.get_state()
-
-        rel_facts = []
-        desire_facts = []
-        try:
-            retrieval = getattr(getattr(bot, "memory", None), "retrieval", None)
-            if retrieval is not None:
-                rel_facts = await retrieval.search(
-                    "relation", user_id_str, limit=3,
-                    categories=[FactCategory.REL, FactCategory.EMOTION]
-                )
-                desire_facts = await retrieval.search(
-                    "désir objectif", "wally:self", limit=2,
-                    categories=[FactCategory.DESIRE]
-                )
-        except Exception as e:
-            logger.debug("Gate context fetch failed (non-fatal): {e}", e=e)
-
-        _recent_speaks = getattr(bot, "_wally_recent_speaks", {})
-        gate_decision = await bot.response_gate.decide(
-            message_content=message.content,
-            author_user_id=f"discord:{message.author.id}",
-            emotion_state=emotion_state,
-            relationship_facts=rel_facts,
-            active_desires=desire_facts,
-            is_mentioned=False,
-            is_triggered=True,
-            wally_last_message=_recent_speaks.get(message.channel.id),
-        )
-
-        if gate_decision.decision == "IGNORE":
-            logger.info("Gate: IGNORE message from discord:{uid} — {reason}", uid=message.author.id, reason=gate_decision.reason or "?")
-            return
-
-        if gate_decision.decision == "REACT" and gate_decision.emoji:
-            try:
-                await message.add_reaction(gate_decision.emoji)
-            except Exception as e:
-                logger.debug("Gate: REACT emoji failed: {e}", e=e)
-            return
-
-        if gate_decision.decision == "DEFER" and gate_decision.defer_seconds:
-            logger.debug(
-                "Gate: DEFER {sec}s for {user}",
-                sec=gate_decision.defer_seconds, user=user_id_str
-            )
-            # TODO Plan B : créer une action planifiée via ActionService
-            # Pour l'instant, fallback sur RESPOND pour ne pas bloquer
-            pass
-        # RESPOND : continue normalement
+    # Gate V2 désactivé sur les triggers : le LLM ignorait systématiquement même
+    # quand le nom était mentionné. Sur un trigger, Wally répond toujours.
 
     # Notifier la boucle cognitive de l'activité
     if getattr(bot, "cognitive_loop", None) is not None:

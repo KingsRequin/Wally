@@ -155,6 +155,13 @@ class CognitiveLoop:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
+                if decision.action == "SPEAK":
+                    ch_key = str(decision.channel_id or "")
+                    ch_st = self._spontaneous.get(ch_key, {})
+                    since_last = now - ch_st.get("last_ts", 0.0)
+                    if ch_st.get("unanswered", 0) > 0 and since_last < 300:
+                        logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s, {} sans réponse)", int(since_last), ch_st["unanswered"])
+                        continue
                 if decision.action == "SPEAK" and decision.channel_id not in known_channels:
                     if last_channel:
                         logger.debug(
