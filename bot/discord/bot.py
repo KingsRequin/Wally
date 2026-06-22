@@ -136,7 +136,7 @@ class WallyDiscord(commands.Bot):
                 channels_text=_chan_dir.render(), capabilities_text=_caps_text,
             )
             self.cognitive_feed = CognitiveFeed()
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed)
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None))
 
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,

@@ -204,6 +204,9 @@ async def main() -> None:
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
         twitch_bot.reaction_tracker = reaction_tracker
+        # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
+        # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
+        discord_bot._twitch_bot = twitch_bot
         register_events(twitch_bot)
         tasks.append(twitch_bot.start())
         logger.info("Twitch adapter configured and included in gather")

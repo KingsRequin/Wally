@@ -16,8 +16,10 @@ class ActionDispatcher:
         persona_manager=None,
         fact_store=None,
         feed=None,
+        twitch_bot=None,
     ) -> None:
         self._bot = bot
+        self._twitch_bot = twitch_bot
         self._persona = persona_manager
         self._facts = fact_store
         self._feed = feed
@@ -40,6 +42,19 @@ class ActionDispatcher:
     async def _speak(self, channel_id: str | None, message: str | None) -> None:
         if not channel_id or not message:
             return
+
+        # Si le stream est live, préférer Twitch au lieu de Discord.
+        twitch_bot = self._twitch_bot
+        if twitch_bot is not None and twitch_bot._stream_info.get("live"):
+            try:
+                await twitch_bot.twitch_api.send_message(text=message)
+                logger.info("Cognitive SPEAK → Twitch (stream live) : {}", message[:80])
+                if self._feed:
+                    self._feed.publish({"type": "SPEAK", "channel": "twitch", "detail": message})
+                return
+            except Exception as e:
+                logger.warning("SPEAK Twitch failed, fallback Discord: {}", e)
+
         if self._bot is None:
             logger.debug("SPEAK supprimé: bot non disponible (channel={})", channel_id)
             return
