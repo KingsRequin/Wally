@@ -85,6 +85,7 @@ def make_bot_for_spontaneous():
     bot.config.discord.spam_detection.enabled = False
     bot.user = MagicMock()
     bot.memory.search_top_match = AsyncMock(return_value=None)
+    bot.memory.search = AsyncMock(return_value="")
     bot.memory.get_prelude = MagicMock(return_value=[])
     bot.memory.append_prelude = MagicMock()
     bot.memory.append_message = MagicMock()

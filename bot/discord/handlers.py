@@ -1091,6 +1091,14 @@ async def _spontaneous_respond(
     """Generate and send a spontaneous (unsolicited) response."""
     try:
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(str(message.channel.id))
+        # Charger la mémoire de l'auteur si pas déjà fournie (#Q5).
+        if recall_memory is None and message.content:
+            user_id = str(message.author.id)
+            ctx_msgs = [{"content": m.get("content", "")} for m in prelude[-3:]]
+            recall_memory = await bot.memory.search(
+                "discord", user_id, message.content[:200],
+                context_messages=ctx_msgs,
+            )
         situation: dict = {"platform": "Discord"}
         if message.guild:
             situation["server"] = message.guild.name
@@ -1140,6 +1148,9 @@ async def _spontaneous_respond(
                 await message.add_reaction(react_emoji)
             except Exception:
                 pass
+
+        # Correction ton/langue (#Q6)
+        reply = await _mirror_pass(bot, str(message.channel.id), reply, recall_memory or "")
 
         # Send as a reply to the triggering message
         await message.reply(reply, mention_author=False)

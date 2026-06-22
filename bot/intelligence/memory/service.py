@@ -167,10 +167,23 @@ class MemoryService:
         ))
 
     async def search(self, platform: str, user_id: str, query: str,
-                     limit: int = 20, **_kw) -> str:
+                     limit: int = 20,
+                     context_messages: list[dict] | None = None,
+                     username_hint: str | None = None,
+                     **_kw) -> str:
         if self._retrieval is None:
             return ""
-        facts = await self._retrieval.search(query, self._user_id(platform, user_id), limit=limit)
+        # Enrichir la requête avec les derniers messages pour un retrieval plus contextuel.
+        enriched = query
+        if context_messages:
+            extra = " ".join(
+                m.get("content", "")[:80]
+                for m in context_messages[-3:]
+                if m.get("content")
+            )
+            if extra:
+                enriched = f"{query} {extra}".strip()
+        facts = await self._retrieval.search(enriched, self._user_id(platform, user_id), limit=limit)
         if not facts:
             return ""
         return "\n".join(f"- {f.content}" for f in facts)
