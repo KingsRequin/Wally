@@ -119,11 +119,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if getattr(bot, "cognitive_loop", None) is not None:
         try:
             bot.cognitive_loop.notify_activity(
-                channel_id=int(channel_id),
+                channel_id=channel_id,
                 author=author,
                 content=content,
             )
-        except (ValueError, TypeError):
+        except Exception:
             pass
     if getattr(bot, "fact_extractor", None) is not None:
         bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False)

@@ -1035,11 +1035,8 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
         if llm_deltas and llm_deltas.get("user_facts"):
-            await bot.memory.add(
-                platform, user_id,
-                "\n".join(llm_deltas["user_facts"]),
-                username=display_name,
-            )
+            for _fact in llm_deltas["user_facts"]:
+                await bot.memory.add(platform, user_id, _fact, username=display_name)
 
         # Génère une description courte de l'image et la stocke en mémoire long-terme
         if image_urls and getattr(bot, "llm_secondary", None):
