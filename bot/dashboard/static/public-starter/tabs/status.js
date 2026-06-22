@@ -290,11 +290,25 @@ function renderStatus(el, status, stream) {
 
 async function fetchAndRender() {
   if (!_container) return;
+  // Capture scroll state before DOM rebuild (renderStatus wipes el.textContent).
+  const prevList = document.getElementById('cog-feed-list');
+  const wasAtBottom = !prevList
+    || !prevList.scrollTop
+    || prevList.scrollHeight - prevList.scrollTop - prevList.clientHeight < 40;
+  const prevScroll = prevList ? prevList.scrollTop : 0;
+
   const [statusRes, streamRes] = await Promise.all([
     fetch('/api/public/status').then((r) => r.json()).catch(() => ({})),
     fetch('/api/public/twitch/stream').then((r) => r.json()).catch(() => null),
   ]);
   renderStatus(_container, statusRes, streamRes);
+
+  // Restore scroll after layout (new element is in DOM only after renderStatus returns).
+  requestAnimationFrame(() => {
+    const listEl = document.getElementById('cog-feed-list');
+    if (!listEl) return;
+    listEl.scrollTop = wasAtBottom ? listEl.scrollHeight : prevScroll;
+  });
 }
 
 async function seedFeed() {

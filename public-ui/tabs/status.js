@@ -84,9 +84,11 @@ function renderEmoBars(target) {
 }
 
 function renderFeed(listEl) {
-  // Auto-scroll : si l'utilisateur est déjà collé au bas, on suit les nouveaux
-  // événements ; s'il a remonté pour lire l'historique, on ne le dérange pas.
-  const atBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
+  // Auto-scroll : coller au bas si l'utilisateur n'a pas remonté, ou si c'est
+  // le premier rendu (scrollTop=0 → pas encore scrollé = on veut voir le bas).
+  // Capture AVANT le clear car textContent='' remet scrollTop à 0.
+  const savedScrollTop = listEl.scrollTop;
+  const atBottom = !savedScrollTop || listEl.scrollHeight - savedScrollTop - listEl.clientHeight < 40;
   listEl.textContent = '';
   if (!_feedEvents.length) {
     const empty = document.createElement('div');
@@ -114,6 +116,7 @@ function renderFeed(listEl) {
     listEl.appendChild(row);
   });
   if (atBottom) listEl.scrollTop = listEl.scrollHeight;
+  else listEl.scrollTop = savedScrollTop;
 }
 
 function pushFeedEvent(e) {
@@ -287,11 +290,25 @@ function renderStatus(el, status, stream) {
 
 async function fetchAndRender() {
   if (!_container) return;
+  // Capture scroll state before DOM rebuild (renderStatus wipes el.textContent).
+  const prevList = document.getElementById('cog-feed-list');
+  const wasAtBottom = !prevList
+    || !prevList.scrollTop
+    || prevList.scrollHeight - prevList.scrollTop - prevList.clientHeight < 40;
+  const prevScroll = prevList ? prevList.scrollTop : 0;
+
   const [statusRes, streamRes] = await Promise.all([
     fetch('/api/public/status').then((r) => r.json()).catch(() => ({})),
     fetch('/api/public/twitch/stream').then((r) => r.json()).catch(() => null),
   ]);
   renderStatus(_container, statusRes, streamRes);
+
+  // Restore scroll after layout (new element is in DOM only after renderStatus returns).
+  requestAnimationFrame(() => {
+    const listEl = document.getElementById('cog-feed-list');
+    if (!listEl) return;
+    listEl.scrollTop = wasAtBottom ? listEl.scrollHeight : prevScroll;
+  });
 }
 
 async function seedFeed() {
