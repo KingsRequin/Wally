@@ -461,7 +461,7 @@ async def _third_party_mention_context(
 
 
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
-    logger.debug("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
+    logger.info("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if message.author.bot:
         return
 
@@ -534,6 +534,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     triggered = mentioned or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
+    logger.info("on_message: channel_allowed={} triggered={} mentioned={} guild={} channel={}", channel_allowed, triggered, mentioned, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if not triggered:
         # Passive emoji reaction on non-trigger messages (Discord only)
         if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
@@ -591,7 +592,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
 
     # Gate V2 — décision RESPOND/IGNORE/REACT/DEFER
-    if getattr(bot, "response_gate", None) is not None:
+    # Bypass si @mention directe : on ne peut pas ignorer quelqu'un qui @ping Wally.
+    if mentioned:
+        pass  # skip gate, toujours RESPOND
+    elif getattr(bot, "response_gate", None) is not None:
         from bot.intelligence.memory.facts import FactCategory
         # Espace de clés mémoire : préfixé "discord:<id>" pour matcher ce que
         # MemoryService écrit (sinon le gate lit/écrit dans un espace disjoint).
@@ -617,16 +621,17 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         _recent_speaks = getattr(bot, "_wally_recent_speaks", {})
         gate_decision = await bot.response_gate.decide(
             message_content=message.content,
-            author_user_id=user_id_str,
+            author_user_id=f"discord:{message.author.id}",
             emotion_state=emotion_state,
             relationship_facts=rel_facts,
             active_desires=desire_facts,
-            is_mentioned=mentioned,
+            is_mentioned=False,
+            is_triggered=True,
             wally_last_message=_recent_speaks.get(message.channel.id),
         )
 
         if gate_decision.decision == "IGNORE":
-            logger.info("Gate: IGNORE message from {user} — {reason}", user=user_id_str, reason=gate_decision.reason or "?")
+            logger.info("Gate: IGNORE message from discord:{uid} — {reason}", uid=message.author.id, reason=gate_decision.reason or "?")
             return
 
         if gate_decision.decision == "REACT" and gate_decision.emoji:

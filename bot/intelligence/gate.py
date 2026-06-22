@@ -75,6 +75,7 @@ class ResponseGate:
         active_desires: list[AtomicFact],
         is_ignored: bool = False,
         is_mentioned: bool = False,
+        is_triggered: bool = False,
         wally_last_message: str | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
@@ -84,9 +85,15 @@ class ResponseGate:
         dominant_emotion, dominant_value = max(
             emotion_state.items(), key=lambda x: x[1], default=("boredom", 0.0)
         )
+        if is_triggered:
+            trigger_line = "L'utilisateur a appelé Wally par son nom — répondre est la norme, ignorer l'exception."
+        elif is_mentioned:
+            trigger_line = "@Wally mentionné directement."
+        else:
+            trigger_line = "Message passif dans le channel (sans appel direct à Wally)."
         context_parts = [
             f"Message reçu : {message_content[:500]}",
-            f"{'@Wally mentionné directement.' if is_mentioned else 'Message dans le channel (pas de mention directe).'}",
+            trigger_line,
             f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})",
         ]
         if wally_last_message:

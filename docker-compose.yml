@@ -40,7 +40,7 @@ services:
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
       - ./bot/persona:/app/bot/persona
-      - ./bot/v2/persona/CHANNELS.md:/app/bot/v2/persona/CHANNELS.md
+      - ./bot/intelligence/persona/CHANNELS.md:/app/bot/intelligence/persona/CHANNELS.md
       - ./public-ui:/app/public-ui
       - ./.env:/app/.env
       - ./ROADMAP.md:/app/ROADMAP.md:ro
