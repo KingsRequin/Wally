@@ -252,8 +252,11 @@ def _is_channel_allowed(config, channel_id: int, guild_id: int | None = None) ->
         # les réponses doivent donc être traitées quel que soit le filtrage de guild).
         return True
     pgw = config.discord.per_guild_channel_whitelist
-    guild_wl = pgw.get(str(guild_id)) or pgw.get(guild_id)
-    if guild_wl is not None:
+    guild_key = str(guild_id)
+    if guild_key in pgw:
+        guild_wl = pgw[guild_key]
+        if guild_wl is None:  # null dans config = tous les canaux autorisés
+            return True
         return channel_id in guild_wl
     mode = config.discord.channel_filter_mode
     if mode == "whitelist":
@@ -458,6 +461,7 @@ async def _third_party_mention_context(
 
 
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
+    logger.debug("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if message.author.bot:
         return
 
@@ -567,6 +571,12 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         return
 
     if not channel_allowed:
+        logger.info(
+            "Triggered by {user} but channel #{ch} (guild {g}) not allowed — skipping",
+            user=message.author.display_name,
+            ch=message.channel.id,
+            g=message.guild.id if message.guild else "dm",
+        )
         return
 
     guild_id = str(message.guild.id) if message.guild else "dm"
@@ -614,7 +624,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         )
 
         if gate_decision.decision == "IGNORE":
-            logger.debug("Gate: IGNORE message from {user}", user=user_id_str)
+            logger.info("Gate: IGNORE message from {user} — {reason}", user=user_id_str, reason=gate_decision.reason or "?")
             return
 
         if gate_decision.decision == "REACT" and gate_decision.emoji:
