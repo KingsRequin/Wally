@@ -75,6 +75,7 @@ class ResponseGate:
         active_desires: list[AtomicFact],
         is_ignored: bool = False,
         is_mentioned: bool = False,
+        wally_last_message: str | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -88,6 +89,8 @@ class ResponseGate:
             f"{'@Wally mentionné directement.' if is_mentioned else 'Message dans le channel (pas de mention directe).'}",
             f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})",
         ]
+        if wally_last_message:
+            context_parts.append(f"Wally vient de parler dans ce canal : \"{wally_last_message[:200]}\"")
         if relationship_facts:
             rel_summary = " | ".join(f.content for f in relationship_facts[:3])
             context_parts.append(f"Relation connue : {rel_summary}")

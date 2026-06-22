@@ -67,6 +67,7 @@ class WallyDiscord(commands.Bot):
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
+        self._wally_recent_speaks: dict[int, str] = {}  # channel_id → dernier texte envoyé
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
         import os

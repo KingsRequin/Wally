@@ -48,6 +48,9 @@ class ActionDispatcher:
             if channel:
                 await channel.send(message)
                 logger.info("Cognitive SPEAK → canal {} : {}", channel_id, message[:80])
+                _speaks = getattr(self._bot, "_wally_recent_speaks", None)
+                if _speaks is not None:
+                    _speaks[int(channel_id)] = message
                 if self._feed:
                     self._feed.publish({"type": "SPEAK", "channel": channel_id, "detail": message})
             else:

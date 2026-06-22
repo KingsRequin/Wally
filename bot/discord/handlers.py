@@ -614,6 +614,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         except Exception as e:
             logger.debug("Gate context fetch failed (non-fatal): {e}", e=e)
 
+        _recent_speaks = getattr(bot, "_wally_recent_speaks", {})
         gate_decision = await bot.response_gate.decide(
             message_content=message.content,
             author_user_id=user_id_str,
@@ -621,6 +622,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             relationship_facts=rel_facts,
             active_desires=desire_facts,
             is_mentioned=mentioned,
+            wally_last_message=_recent_speaks.get(message.channel.id),
         )
 
         if gate_decision.decision == "IGNORE":
@@ -1010,6 +1012,9 @@ async def _respond(
                 pass
 
         reply_msg_id = await _send_in_parts(message, reply)
+        _speaks = getattr(bot, "_wally_recent_speaks", None)
+        if _speaks is not None:
+            _speaks[message.channel.id] = reply
         if reply_msg_id and getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
 
