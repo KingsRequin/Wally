@@ -485,8 +485,9 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         bot.dashboard_state.message_count_discord += 1
 
     user_id = str(message.author.id)
-    # always_trigger_channels bypass channel_allowed (chambre de Wally, etc.)
-    _is_always_trigger = message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
+    # DMs et always_trigger_channels : tout message est un trigger
+    _is_dm = message.guild is None
+    _is_always_trigger = _is_dm or message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
     channel_allowed = _is_always_trigger or _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
 
     # Contenu enrichi : inclut un tag [image] si des images sont jointes
