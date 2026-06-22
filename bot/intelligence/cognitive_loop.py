@@ -156,21 +156,31 @@ class CognitiveLoop:
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
                 if decision.action == "SPEAK":
-                    ch_key = str(decision.channel_id or "")
-                    ch_st = self._spontaneous.get(ch_key, {})
-                    since_last = now - ch_st.get("last_ts", 0.0)
-                    if ch_st.get("unanswered", 0) > 0 and since_last < 300:
-                        logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s, {} sans réponse)", int(since_last), ch_st["unanswered"])
+                    # 1. Redirection canal inconnu (hallucination LLM) — AVANT le cooldown
+                    if decision.channel_id not in known_channels:
+                        if last_channel:
+                            logger.debug(
+                                "CognitiveLoop: SPEAK canal {} inconnu → redirigé vers {}",
+                                decision.channel_id, last_channel,
+                            )
+                            decision.channel_id = last_channel
+                        else:
+                            logger.info("SPEAK abandonné : aucun canal actif où parler")
+                            continue
+                    if decision.channel_id is None:
                         continue
-                if decision.action == "SPEAK" and decision.channel_id not in known_channels:
-                    if last_channel:
-                        logger.debug(
-                            "CognitiveLoop: SPEAK canal {} inconnu → redirigé vers {}",
-                            decision.channel_id, last_channel,
-                        )
-                        decision.channel_id = last_channel
-                    else:
-                        logger.info("SPEAK abandonné : aucun canal actif où parler")
+                    # 2. Cooldown progressif : 0 sans réponse → ok
+                    #    1 sans réponse → 5 min, 2 → 15 min, 3+ → bloqué
+                    ch_key = str(decision.channel_id)
+                    ch_st = self._spontaneous.get(ch_key, {})
+                    unanswered = ch_st.get("unanswered", 0)
+                    since_last = now - ch_st.get("last_ts", 0.0)
+                    if unanswered >= 3:
+                        logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
+                        continue
+                    cooldown = 300 if unanswered == 1 else 900 if unanswered == 2 else 0
+                    if cooldown and since_last < cooldown:
+                        logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
                         continue
                 await self._dispatcher.dispatch(decision)
                 # Mémorise un message spontané pour la conscience sociale : tant

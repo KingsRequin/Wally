@@ -461,7 +461,7 @@ async def _third_party_mention_context(
 
 
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
-    logger.info("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
+    logger.debug("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if message.author.bot:
         return
 
@@ -485,7 +485,9 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         bot.dashboard_state.message_count_discord += 1
 
     user_id = str(message.author.id)
-    channel_allowed = _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
+    # always_trigger_channels bypass channel_allowed (chambre de Wally, etc.)
+    _is_always_trigger = message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
+    channel_allowed = _is_always_trigger or _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
 
     # Contenu enrichi : inclut un tag [image] si des images sont jointes
     _has_images = any(
@@ -531,11 +533,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
-    always_trigger = message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
+    always_trigger = _is_always_trigger
     triggered = always_trigger or mentioned or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
-    logger.info("on_message: channel_allowed={} triggered={} mentioned={} always={} guild={} channel={}", channel_allowed, triggered, mentioned, always_trigger, getattr(message.guild, 'id', 'dm'), message.channel.id)
+    logger.debug("triggered={} mentioned={} always={} channel={}", triggered, mentioned, always_trigger, message.channel.id)
     if not triggered:
         # Passive emoji reaction on non-trigger messages (Discord only)
         if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
@@ -548,7 +550,6 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                     pass
         # Spontaneous intervention
         if channel_allowed and bot.config.bot.spontaneous_discord_enabled:
-            import time as _time
             state = bot.emotion.get_state()
             trigger_type = _check_spontaneous_trigger(
                 message.content,
@@ -557,7 +558,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 boredom=state.get("boredom", 0.0),
             )
             chan_id = str(message.channel.id)
-            now = _time.time()
+            now = time.time()
             cooldown = bot.config.bot.spontaneous_cooldown_seconds
             cooldown_ok = now - _spontaneous_cooldowns.get(chan_id, 0) >= cooldown
 

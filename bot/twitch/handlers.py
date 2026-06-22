@@ -116,6 +116,15 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author, content)
+    if getattr(bot, "cognitive_loop", None) is not None:
+        try:
+            bot.cognitive_loop.notify_activity(
+                channel_id=int(channel_id),
+                author=author,
+                content=content,
+            )
+        except (ValueError, TypeError):
+            pass
     if getattr(bot, "fact_extractor", None) is not None:
         bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False)
 
