@@ -28,6 +28,8 @@ class AttentionContext:
     # Affinités : les opinions que Wally s'est formées sur les gens (Phase 3c).
     # Faits REL sous wally:self, ~5 plus récentes. list[AtomicFact].
     relationships: list = field(default_factory=list)
+    # Températures de l'hôte physique (CPU, système). None si non disponible.
+    host_temps: str | None = None
 
 
 class AttentionAgent:
@@ -92,6 +94,10 @@ class AttentionAgent:
         )
         relationships = rels[:5]
 
+        from bot.core.system_info import read_host_temps
+        import asyncio as _asyncio
+        host_temps = await _asyncio.to_thread(read_host_temps)
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -105,6 +111,7 @@ class AttentionAgent:
             preoccupation=preoccupation,
             self_narrative=self_narrative,
             relationships=relationships,
+            host_temps=host_temps,
         )
 
     async def _build_idle_seed(
