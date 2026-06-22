@@ -59,7 +59,7 @@ _STABLE_CATEGORIES: frozenset[FactCategory] = frozenset(
     }
 )
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "persona" / "prompts"
+_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "persona" / "prompts"
 
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)

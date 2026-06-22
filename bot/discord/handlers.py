@@ -610,6 +610,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             emotion_state=emotion_state,
             relationship_facts=rel_facts,
             active_desires=desire_facts,
+            is_mentioned=mentioned,
         )
 
         if gate_decision.decision == "IGNORE":

@@ -9,7 +9,7 @@ from loguru import logger
 from bot.core.llm.base import BaseLLMClient
 from bot.intelligence.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
-_DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent / "persona" / "prompts"
+_DEFAULT_PROMPTS_DIR = Path(__file__).parent / "persona" / "prompts"
 
 
 _GATE_SCHEMA = {
@@ -74,6 +74,7 @@ class ResponseGate:
         relationship_facts: list[AtomicFact],
         active_desires: list[AtomicFact],
         is_ignored: bool = False,
+        is_mentioned: bool = False,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -84,6 +85,7 @@ class ResponseGate:
         )
         context_parts = [
             f"Message reçu : {message_content[:500]}",
+            f"{'@Wally mentionné directement.' if is_mentioned else 'Message dans le channel (pas de mention directe).'}",
             f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})",
         ]
         if relationship_facts:
