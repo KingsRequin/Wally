@@ -132,11 +132,21 @@ if (window.IntersectionObserver) {
   TABS_ORDER.forEach(n => spy.observe(_sections[n]));
 }
 
+// Empêcher le browser de restaurer automatiquement la position de scroll
+// (évite le conflit entre restauration + smooth scroll + scroll anchoring Chrome).
+history.scrollRestoration = 'manual';
+
 // Position initiale : ancre dans l'URL, ou section chat si retour OAuth Discord
 const _initial = (location.hash.slice(1) && _sections[location.hash.slice(1)])
   ? location.hash.slice(1)
   : (new URLSearchParams(location.search).get('chat_code') ? 'chat' : null);
-if (_initial) requestAnimationFrame(() => scrollToSection(_initial));
+if (_initial) {
+  // Attendre 'load' (polices + images stables) avant de scroller,
+  // sinon les layout shifts post-chargement décalent la destination.
+  const _doScroll = () => requestAnimationFrame(() => scrollToSection(_initial));
+  if (document.readyState === 'complete') _doScroll();
+  else window.addEventListener('load', _doScroll, { once: true });
+}
 syncNav(_initial || 'status');
 
 drawFlame('spx-nav', 4);
