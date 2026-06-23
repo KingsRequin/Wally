@@ -133,32 +133,49 @@ class AttentionAgent:
         fact_category,
     ) -> str | None:
         """Construit une amorce de vagabondage variée : choisit ALÉATOIREMENT
-        une source de nouveauté parmi celles disponibles, pour éviter de
-        ruminer toujours le même contexte.
+        une source de nouveauté parmi celles disponibles. Les seeds riches (souvenirs,
+        pensées passées, buts) sont prioritaires sur l'émotion pour éviter la spirale
+        d'auto-référence quand l'ennui domine.
         """
-        seeds: list[str] = []
+        rich_seeds: list[str] = []
+        fallback_seeds: list[str] = []
 
+        # Souvenir au hasard parmi les faits non-THOUGHT
         memories = await self._facts.sample_random(
             limit=1, exclude_category=fact_category.THOUGHT
         )
         if memories:
-            seeds.append(f"Un souvenir qui te revient : {memories[0].content}")
+            rich_seeds.append(f"Un souvenir qui te revient : {memories[0].content}")
+
+        # Pensée passée au hasard (inner monologue archivé) — donne du contenu
+        # concret au vagabondage au lieu de repartir du vide émotionnel
+        past_thoughts = await self._facts.sample_random(
+            limit=1, include_category=fact_category.THOUGHT
+        )
+        if past_thoughts:
+            rich_seeds.append(
+                f"Une pensée d'avant qui ressurgit : {past_thoughts[0].content[:200]}"
+            )
 
         if goals:
             goal = random.choice(goals)
-            seeds.append(f"Ton objectif : {goal.content}")
+            rich_seeds.append(f"Ton objectif : {goal.content}")
 
         if desires:
             desire = random.choice(desires)
-            seeds.append(f"Un désir qui te travaille : {desire.content}")
+            rich_seeds.append(f"Un désir qui te travaille : {desire.content}")
 
+        # Émotion dominante — seulement si ce n'est pas l'ennui qui domine fort
+        # (évite la boucle : ennui élevé → pense à l'ennui → reste ennuyé)
         if emotion_state:
             dominant = max(emotion_state, key=emotion_state.get)
-            seeds.append(f"Ce que tu ressens surtout là : {dominant}")
+            if not (dominant == "boredom" and emotion_state.get("boredom", 0.0) >= 0.5):
+                fallback_seeds.append(f"Ce que tu ressens surtout là : {dominant}")
 
         if time_of_day:
-            seeds.append(f"C'est {time_of_day}.")
+            fallback_seeds.append(f"C'est {time_of_day}.")
 
-        if not seeds:
+        pool = rich_seeds if rich_seeds else fallback_seeds
+        if not pool:
             return None
-        return random.choice(seeds)
+        return random.choice(pool)

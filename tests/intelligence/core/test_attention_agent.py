@@ -127,7 +127,10 @@ async def test_build_context_idle_produces_seed():
 
 @pytest.mark.asyncio
 async def test_build_context_idle_excludes_thought_from_memory_seed():
-    """sample_random est appelé en excluant THOUGHT (pas de pensée comme souvenir)."""
+    """sample_random est appelé deux fois en idle :
+    1. exclude_category=THOUGHT (souvenirs factuels)
+    2. include_category=THOUGHT (pensées passées pour alimenter le vagabondage)
+    """
     store = MagicMock()
     store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)
@@ -135,8 +138,10 @@ async def test_build_context_idle_excludes_thought_from_memory_seed():
     store.sample_random = AsyncMock(return_value=[])
     agent = AttentionAgent(store)
     await agent.build_context({"joy": 0.5}, [], idle=True)
-    store.sample_random.assert_called_once()
-    assert store.sample_random.call_args.kwargs["exclude_category"] == FactCategory.THOUGHT
+    assert store.sample_random.call_count == 2
+    calls_kwargs = [c.kwargs for c in store.sample_random.call_args_list]
+    assert any(kw.get("exclude_category") == FactCategory.THOUGHT for kw in calls_kwargs)
+    assert any(kw.get("include_category") == FactCategory.THOUGHT for kw in calls_kwargs)
 
 
 @pytest.mark.asyncio

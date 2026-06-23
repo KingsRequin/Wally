@@ -277,10 +277,11 @@ class SQLiteFactStore:
         self,
         limit: int = 3,
         exclude_category: "FactCategory | None" = None,
+        include_category: "FactCategory | None" = None,
     ) -> "list[AtomicFact]":
         """Pioche au hasard des faits ACTIVE (amorce de nouveauté pour la
-        cognition idle). `exclude_category` retire une catégorie (ex. THOUGHT,
-        pour ne pas ressortir une pensée comme « souvenir »).
+        cognition idle). `exclude_category` retire une catégorie ; `include_category`
+        restreint à une seule catégorie (ex. THOUGHT pour piocher dans le monologue passé).
         """
         query = (
             "SELECT id, user_id, content, category, confidence, decay_rate, "
@@ -288,7 +289,10 @@ class SQLiteFactStore:
             "FROM atomic_facts WHERE status = ?"
         )
         params: list = [FactStatus.ACTIVE.value]
-        if exclude_category is not None:
+        if include_category is not None:
+            query += " AND category = ?"
+            params.append(include_category.value)
+        elif exclude_category is not None:
             query += " AND category != ?"
             params.append(exclude_category.value)
         query += " ORDER BY RANDOM() LIMIT ?"

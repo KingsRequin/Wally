@@ -160,6 +160,15 @@ class CognitiveLoop:
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
                 if decision.action == "SPEAK":
+                    # 0. Canal silencieux depuis >2h en mode idle → ne pas crier dans le vide.
+                    #    Il peut continuer à THINK, mais pas à broadcaster vers personne.
+                    elapsed_since_activity = now - self._last_activity_ts
+                    if is_idle and self._last_activity_ts > 0 and elapsed_since_activity > 7200:
+                        logger.info(
+                            "CognitiveLoop: SPEAK supprimé (idle + silence {:.0f}min)",
+                            elapsed_since_activity / 60,
+                        )
+                        continue
                     # 1. Redirection canal inconnu (hallucination LLM) — AVANT le cooldown
                     if decision.channel_id not in known_channels:
                         if last_channel:
