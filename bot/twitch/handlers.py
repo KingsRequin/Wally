@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context
+from bot.core.conversation_log import new_trace_id
 from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS, _third_party_mention_context
 
 if TYPE_CHECKING:
@@ -61,6 +62,13 @@ def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
         situation["stream_title"] = stream.get("title")
         situation["stream_viewers"] = stream.get("viewers", 0)
     return situation
+
+
+def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
+    """Journalise un événement de conversation Twitch (no-op si logger absent)."""
+    clog = getattr(bot, "conv_log", None)
+    if clog is not None:
+        clog.log("twitch", channel, event_type, **fields)
 
 
 async def handle_message(bot: "WallyTwitch", payload) -> None:
@@ -133,6 +141,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if tracker:
         tracker.check_twitch_message(channel_id, content)
 
+    _trace = getattr(payload, "message_id", None) or new_trace_id("twitch")
+    _clog(
+        bot, channel_name, "message_in",
+        trace_id=_trace, author=author, author_id=user_id, content=content,
+    )
+
     # Spontaneous intervention (Twitch)
     if bot.config.bot.spontaneous_twitch_enabled:
         import time as _time
@@ -155,6 +169,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             )
             if random.random() < prob:
                 _spontaneous_cooldowns[channel_id] = now
+                _clog(
+                    bot, channel_name, "gate_decision",
+                    trace_id=_trace, triggered=False, spontaneous=True,
+                    trigger_type=trigger_type, decision="spontaneous",
+                )
                 _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
         elif not trigger_type and cooldown_ok:
             pass
@@ -169,6 +188,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
     if bot.is_on_cooldown(user_id):
         return
+
+    _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True, decision="respond")
 
     try:
         platform = "twitch"
@@ -284,6 +305,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         tools.extend(_NOTE_TOOLS)
 
         async def _tool_executor(name: str, arguments: str) -> str:
+            _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
             args = json.loads(arguments)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
@@ -319,8 +341,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 return json.dumps(result)
             return f"Unknown tool: {name}"
 
+        _llm_t0 = time.monotonic()
         if tools:
-            reply, _ = await bot.llm.complete_with_tools(
+            reply, _tools_called = await bot.llm.complete_with_tools(
                 system_prompt, openai_messages, tools, _tool_executor,
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
@@ -331,6 +354,23 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 purpose="twitch_response",
                 user_id=f"twitch:{author}",
             )
+            _tools_called = []
+
+        _emo = bot.emotion.get_state()
+        _dom = max(_emo, key=_emo.get) if _emo else None
+        _clog(
+            bot, channel_name, "llm_call",
+            trace_id=_trace,
+            model=getattr(bot.llm, "_model", "?"),
+            dominant_emotion=_dom,
+            emotion_value=round(_emo.get(_dom, 0.0), 3) if _dom else None,
+            tools_offered=[t.get("function", {}).get("name") for t in tools],
+            tools_called=_tools_called,
+            latency_ms=int((time.monotonic() - _llm_t0) * 1000),
+            system_prompt=system_prompt,
+            user_content=user_content,
+            raw_reply=reply,
+        )
 
         # Strip [react:] tag (no emoji reactions on Twitch)
         if reply.startswith("[react:"):
@@ -355,6 +395,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 reply_parent_message_id=msg_id,
             )
         bot.set_cooldown(user_id)
+        _clog(
+            bot, channel_name, "message_out",
+            trace_id=_trace, author="Wally", content=reply, parts=1,
+            send_mode="irc" if channel_name in bot._channel_ids else "helix",
+        )
 
         if getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
@@ -363,7 +408,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
 
-        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author))
+        _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author, trace_id=_trace, conv_channel=channel_name))
 
     except Exception as e:
         logger.error("Twitch message handling error: {e}", e=e)
@@ -378,6 +423,8 @@ async def _post_process(
     context_messages: list[dict] | None = None,
     channel_id: str = "",
     username: str = "",
+    trace_id: str = "",
+    conv_channel: str = "",
 ) -> None:
     try:
         llm_deltas = await bot.emotion.process_message(
@@ -403,6 +450,12 @@ async def _post_process(
 
         if llm_deltas and llm_deltas.get("user_facts"):
             await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]), username=username)
+        if trace_id:
+            _clog(
+                bot, conv_channel, "post_process",
+                trace_id=trace_id,
+                facts_extracted=len(llm_deltas.get("user_facts", [])) if llm_deltas else 0,
+            )
     except Exception as e:
         logger.error("Twitch post-process error: {e}", e=e)
 

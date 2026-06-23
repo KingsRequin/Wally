@@ -70,6 +70,11 @@ async def main() -> None:
     await db.cleanup_old_emotion_history(days=30)
     logger.info("Old emotion history cleaned up")
 
+    # ── Conversation logger ───────────────────────────────────────────────────
+    from bot.core.conversation_log import ConversationLogger
+    conv_log = ConversationLogger()
+    conv_log.start()
+
     # ── Core services ─────────────────────────────────────────────────────────
     svc = await build_core_services(config, db)
     emotion          = svc.emotion
@@ -102,6 +107,7 @@ async def main() -> None:
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
     discord_bot.reaction_tracker = reaction_tracker
+    discord_bot.conv_log = conv_log
 
     # ── UpdateChecker ─────────────────────────────────────────────────────────
     update_checker = None
@@ -204,6 +210,7 @@ async def main() -> None:
         twitch_bot.web_search = web_search
         twitch_bot.apex_api = apex_api
         twitch_bot.reaction_tracker = reaction_tracker
+        twitch_bot.conv_log = conv_log
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot
@@ -405,6 +412,7 @@ async def main() -> None:
     finally:
         if update_checker:
             await update_checker.stop()
+        await conv_log.stop()
 
 
 if __name__ == "__main__":

@@ -460,6 +460,20 @@ async def _third_party_mention_context(
     return "\n\n".join(parts)
 
 
+def _conv_channel(message: discord.Message) -> str:
+    """Segment de chemin pour le log de conversation : ``guild/canal`` (ou ``dm``)."""
+    guild = getattr(getattr(message, "guild", None), "name", None)
+    chan = getattr(message.channel, "name", None) or "dm"
+    return f"{guild}/{chan}" if guild else chan
+
+
+def _clog(bot: "WallyDiscord", channel: str, event_type: str, **fields) -> None:
+    """Journalise un événement de conversation si le logger est câblé (no-op sinon)."""
+    clog = getattr(bot, "conv_log", None)
+    if clog is not None:
+        clog.log("discord", channel, event_type, **fields)
+
+
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     logger.debug("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if message.author.bot:
@@ -517,6 +531,12 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 author_label, _enriched_content,
                 is_reply=message.reference is not None,
             )
+        _clog(
+            bot, _conv_channel(message), "message_in",
+            trace_id=str(message.id), author=author_label, author_id=user_id,
+            content=_enriched_content, is_reply=message.reference is not None,
+            has_images=_has_images,
+        )
     else:
         prelude = []
 
@@ -571,6 +591,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 )
                 if random.random() < prob:
                     _spontaneous_cooldowns[chan_id] = now
+                    _clog(
+                        bot, _conv_channel(message), "gate_decision",
+                        trace_id=str(message.id), triggered=False, spontaneous=True,
+                        trigger_type=trigger_type, decision="spontaneous",
+                    )
                     _fire(_spontaneous_respond(bot, message, prelude_snapshot=prelude))
         return
 
@@ -606,6 +631,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             message_id=str(message.id),
         )
 
+    _clog(
+        bot, _conv_channel(message), "gate_decision",
+        trace_id=str(message.id), triggered=True, mentioned=mentioned,
+        always_trigger=always_trigger, spontaneous=False, decision="respond",
+    )
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
 
 
@@ -617,11 +647,15 @@ def _is_list_item(line: str) -> bool:
 
 
 
-async def _send_in_parts(message: discord.Message, text: str) -> int | None:
-    """Split text on newlines, group consecutive list items, send as separate messages."""
+async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | None, int]:
+    """Split text on newlines, group consecutive list items, send as separate messages.
+
+    Retourne ``(id du premier message envoyé, nombre de parts)`` — le compte de
+    parts alimente l'event ``message_out`` (un reply découpé en N messages).
+    """
     lines = [line for line in text.split("\n") if line.strip()]
     if not lines:
-        return None
+        return None, 0
 
     # Group lines: consecutive list items are bundled into one message
     groups: list[str] = []
@@ -648,7 +682,7 @@ async def _send_in_parts(message: discord.Message, text: str) -> int | None:
     for group in groups[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
         await message.channel.send(group)
-    return first_msg.id
+    return first_msg.id, len(groups)
 
 
 async def _respond(
@@ -865,6 +899,10 @@ async def _respond(
         _reaction_emojis: set[str] = set()
 
         async def _tool_executor(name: str, arguments: str) -> str:
+            _clog(
+                bot, _conv_channel(message), "tool_called",
+                trace_id=str(message.id), tool=name, args=arguments,
+            )
             args = json.loads(arguments)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
@@ -924,6 +962,7 @@ async def _respond(
                 return json.dumps(result)
             return f"Unknown tool: {name}"
 
+        _llm_t0 = time.monotonic()
         async with message.channel.typing():
             if tools:
                 reply, tools_called = await bot.llm.complete_with_tools(
@@ -939,6 +978,22 @@ async def _respond(
                     user_id=f"discord:{message.author.id}",
                 )
                 tools_called = []
+
+        _emo = bot.emotion.get_state()
+        _dom = max(_emo, key=_emo.get) if _emo else None
+        _clog(
+            bot, _conv_channel(message), "llm_call",
+            trace_id=str(message.id),
+            model=getattr(bot.llm, "_model", "?"),
+            dominant_emotion=_dom,
+            emotion_value=round(_emo.get(_dom, 0.0), 3) if _dom else None,
+            tools_offered=[t.get("function", {}).get("name") for t in tools],
+            tools_called=tools_called,
+            latency_ms=int((time.monotonic() - _llm_t0) * 1000),
+            system_prompt=system_prompt,
+            user_content=user_content,
+            raw_reply=reply,
+        )
 
         # Mirror pass — detect and fix repetitive patterns or missed memories
         reply = await _mirror_pass(bot, str(message.channel.id), reply, mem_context)
@@ -962,7 +1017,13 @@ async def _respond(
             except Exception:
                 pass
 
-        reply_msg_id = await _send_in_parts(message, reply)
+        reply_msg_id, _parts = await _send_in_parts(message, reply)
+        _clog(
+            bot, _conv_channel(message), "message_out",
+            trace_id=str(message.id), author="Wally", content=reply,
+            parts=_parts, sent_msg_id=str(reply_msg_id) if reply_msg_id else None,
+            react_emoji=react_emoji,
+        )
         _speaks = getattr(bot, "_wally_recent_speaks", None)
         if _speaks is not None:
             _speaks[message.channel.id] = reply
@@ -989,6 +1050,8 @@ async def _respond(
             image_urls=image_urls or None,
             channel_id=str(message.channel.id),
             display_name=message.author.display_name,
+            trace_id=str(message.id),
+            conv_channel=_conv_channel(message),
         ))
 
     except Exception as e:
@@ -1010,6 +1073,8 @@ async def _post_process(
     image_urls: list[str] | None = None,
     channel_id: str = "",
     display_name: str = "",
+    trace_id: str = "",
+    conv_channel: str = "",
 ) -> None:
     try:
         llm_deltas = await bot.emotion.process_message(
@@ -1076,6 +1141,16 @@ async def _post_process(
                     uid=user_id,
                     m=bot.config.discord.timeout_minutes,
                 )
+
+        if trace_id:
+            _clog(
+                bot, conv_channel, "post_process",
+                trace_id=trace_id,
+                facts_extracted=len(llm_deltas.get("user_facts", [])) if llm_deltas else 0,
+                image_described=bool(image_urls),
+                trust_delta=round(llm_deltas["trust_delta"], 3) if llm_deltas else None,
+                anger=round(anger, 3),
+            )
     except Exception as e:
         logger.error("Post-process error: {e}", e=e)
 
