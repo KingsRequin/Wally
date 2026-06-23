@@ -13,6 +13,11 @@ TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
 TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
 TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
 
+# Après une réponse directe dans un canal, Wally ne relance pas de SPEAK proactif
+# avant ce délai : il a déjà eu son tour, un SPEAK ne ferait que récapituler /
+# ressasser une conversation close (bug du "repost" cognitif).
+REPLY_SPEAK_COOLDOWN = 600  # 10 min
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -60,6 +65,9 @@ class CognitiveLoop:
         # Historique des 5 derniers SPEAKs envoyés → injecté dans le contexte
         # cognitif pour éviter les répétitions dans la même session.
         self._recent_speaks: list[dict] = []
+        # Dernière réponse directe de Wally par canal (monotonic) — un SPEAK
+        # proactif est supprimé s'il suit de trop près une vraie réponse.
+        self._last_reply: dict[str, float] = {}
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -81,6 +89,14 @@ class CognitiveLoop:
         })
         if len(self._recent_interactions) > 20:
             self._recent_interactions = self._recent_interactions[-20:]
+
+    def notify_reply(self, channel_id) -> None:
+        """Wally vient de répondre directement dans ce canal (via les handlers).
+
+        Sert à supprimer un SPEAK proactif qui ne ferait que conclure / ressasser
+        une conversation à laquelle il vient déjà de participer.
+        """
+        self._last_reply[str(channel_id)] = time.monotonic()
 
     def _tick_interval(self) -> int:
         elapsed = time.monotonic() - self._last_activity_ts
@@ -194,6 +210,16 @@ class CognitiveLoop:
                     cooldown = 300 if unanswered == 1 else 900 if unanswered == 2 else 0
                     if cooldown and since_last < cooldown:
                         logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
+                        continue
+                    # 3. Anti-redondance : Wally vient de répondre directement dans
+                    #    ce canal → un SPEAK proactif ne ferait que récapituler une
+                    #    conversation close. On le supprime.
+                    last_reply = self._last_reply.get(ch_key, 0.0)
+                    if last_reply and (now - last_reply) < REPLY_SPEAK_COOLDOWN:
+                        logger.info(
+                            "CognitiveLoop: SPEAK supprimé (réponse directe il y a {:.0f}s dans ce canal)",
+                            now - last_reply,
+                        )
                         continue
                 await self._dispatcher.dispatch(decision)
                 # Mémorise un message spontané pour la conscience sociale : tant

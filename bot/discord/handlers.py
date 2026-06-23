@@ -1024,6 +1024,10 @@ async def _respond(
             parts=_parts, sent_msg_id=str(reply_msg_id) if reply_msg_id else None,
             react_emoji=react_emoji,
         )
+        # Signale à la boucle cognitive que Wally a déjà répondu ici → pas de SPEAK
+        # proactif redondant dans la foulée.
+        if getattr(bot, "cognitive_loop", None) is not None:
+            bot.cognitive_loop.notify_reply(message.channel.id)
         _speaks = getattr(bot, "_wally_recent_speaks", None)
         if _speaks is not None:
             _speaks[message.channel.id] = reply

@@ -400,6 +400,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             trace_id=_trace, author="Wally", content=reply, parts=1,
             send_mode="irc" if channel_name in bot._channel_ids else "helix",
         )
+        if getattr(bot, "cognitive_loop", None) is not None:
+            bot.cognitive_loop.notify_reply(channel_id)
 
         if getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
