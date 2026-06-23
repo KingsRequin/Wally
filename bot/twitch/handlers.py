@@ -304,7 +304,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
 
-        async def _tool_executor(name: str, arguments: str) -> str:
+        async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
             args = json.loads(arguments)
             if name == "save_persistent_note":
@@ -340,6 +340,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 )
                 return json.dumps(result)
             return f"Unknown tool: {name}"
+
+        async def _tool_executor(name: str, arguments: str) -> str:
+            result = await _tool_executor_impl(name, arguments)
+            _clog(bot, channel_name, "tool_result", trace_id=_trace, tool=name, result=str(result)[:500])
+            return result
 
         _llm_t0 = time.monotonic()
         if tools:
@@ -429,11 +434,25 @@ async def _post_process(
     conv_channel: str = "",
 ) -> None:
     try:
+        _emo_before = bot.emotion.get_state()
         llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             trigger_user=user_id, channel_id=channel_id, platform="twitch",
             user_id=user_id,
         )
+        _emo_after = bot.emotion.get_state()
+        if trace_id:
+            _deltas = {
+                k: round(_emo_after.get(k, 0.0) - _emo_before.get(k, 0.0), 3)
+                for k in ("anger", "joy", "sadness", "curiosity", "boredom")
+            }
+            if any(v != 0 for v in _deltas.values()):
+                _clog(
+                    bot, conv_channel, "emotion_change",
+                    trace_id=trace_id,
+                    deltas=_deltas,
+                    after={k: round(_emo_after.get(k, 0.0), 3) for k in ("anger", "joy", "sadness", "curiosity", "boredom")},
+                )
 
         if llm_deltas:
             await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])

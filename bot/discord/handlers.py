@@ -567,6 +567,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             if passive_emoji:
                 try:
                     await message.add_reaction(passive_emoji)
+                    _clog(
+                        bot, _conv_channel(message), "reaction",
+                        trace_id=str(message.id), emoji=passive_emoji, passive=True,
+                    )
                 except Exception:
                     pass
         # Spontaneous intervention
@@ -898,7 +902,7 @@ async def _respond(
 
         _reaction_emojis: set[str] = set()
 
-        async def _tool_executor(name: str, arguments: str) -> str:
+        async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(
                 bot, _conv_channel(message), "tool_called",
                 trace_id=str(message.id), tool=name, args=arguments,
@@ -962,6 +966,14 @@ async def _respond(
                 return json.dumps(result)
             return f"Unknown tool: {name}"
 
+        async def _tool_executor(name: str, arguments: str) -> str:
+            result = await _tool_executor_impl(name, arguments)
+            _clog(
+                bot, _conv_channel(message), "tool_result",
+                trace_id=str(message.id), tool=name, result=str(result)[:500],
+            )
+            return result
+
         _llm_t0 = time.monotonic()
         async with message.channel.typing():
             if tools:
@@ -996,7 +1008,14 @@ async def _respond(
         )
 
         # Mirror pass — detect and fix repetitive patterns or missed memories
+        _mirror_before = reply
         reply = await _mirror_pass(bot, str(message.channel.id), reply, mem_context)
+        if reply != _mirror_before:
+            _clog(
+                bot, _conv_channel(message), "mirror_pass",
+                trace_id=str(message.id),
+                before=_mirror_before[:400], after=reply[:400],
+            )
 
         # Parse optional [react:emoji] tag from LLM response
         react_emoji, reply = _parse_react_tag(reply)
@@ -1036,6 +1055,10 @@ async def _respond(
 
         if first_contact:
             await bot.db.mark_welcomed(user_id, guild_id)
+            _clog(
+                bot, _conv_channel(message), "welcome",
+                trace_id=str(message.id), user=_author_label(message.author),
+            )
 
         bot.memory.append_message(
             str(message.channel.id), _author_label(message.author), enriched_content or message.content, platform="discord"
@@ -1081,12 +1104,26 @@ async def _post_process(
     conv_channel: str = "",
 ) -> None:
     try:
+        _emo_before = bot.emotion.get_state()
         llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             image_urls=image_urls,
             trigger_user=user_id, channel_id=channel_id, platform="discord",
             user_id=user_id,
         )
+        _emo_after = bot.emotion.get_state()
+        if trace_id:
+            _emo_deltas = {
+                _k: round(_emo_after.get(_k, 0.0) - _emo_before.get(_k, 0.0), 3)
+                for _k in ("anger", "joy", "sadness", "curiosity", "boredom")
+            }
+            if any(_v != 0 for _v in _emo_deltas.values()):
+                _clog(
+                    bot, conv_channel, "emotion_change",
+                    trace_id=trace_id,
+                    deltas=_emo_deltas,
+                    after={_k: round(_emo_after.get(_k, 0.0), 3) for _k in _emo_deltas},
+                )
 
         if llm_deltas:
             await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
@@ -1144,6 +1181,12 @@ async def _post_process(
                     "User {uid} muted for {m} minutes",
                     uid=user_id,
                     m=bot.config.discord.timeout_minutes,
+                )
+                _clog(
+                    bot, conv_channel, "moderation",
+                    trace_id=trace_id, action="timeout",
+                    minutes=bot.config.discord.timeout_minutes,
+                    anger=round(anger, 3),
                 )
 
         if trace_id:
@@ -1236,7 +1279,14 @@ async def _spontaneous_respond(
                 pass
 
         # Correction ton/langue (#Q6)
+        _mirror_before = reply
         reply = await _mirror_pass(bot, str(message.channel.id), reply, recall_memory or "")
+        if reply != _mirror_before:
+            _clog(
+                bot, _conv_channel(message), "mirror_pass",
+                trace_id=str(message.id),
+                before=_mirror_before[:400], after=reply[:400],
+            )
 
         # Send as a reply to the triggering message
         await message.reply(reply, mention_author=False)

@@ -149,6 +149,75 @@ def audit(root: Path, platform, channel, date, slow_ms: int) -> None:
         print("✅ Aucune anomalie détectée sur ce périmètre.\n")
 
 
+def audit_cognitive(root: Path, date: str | None) -> None:
+    """Analyse le flux cognitif (cerveau) loggé sous ``cognitive/brain/*.jsonl``.
+
+    Ces events n'ont PAS de ``trace_id`` (ils ne passent donc pas par l'audit
+    par trace) : compteur par type, SPEAK réellement envoyés, SPEAK supprimés
+    (avec leur raison) et nombre de THINK ignorés (repos anti-rumination).
+    """
+    files = sorted((root / "cognitive" / "brain").glob("*.jsonl"))
+    if date:
+        files = [p for p in files if date in p.name]
+
+    if not files:
+        print(f"### 🧠 FLUX COGNITIF")
+        print("  (aucun flux cognitif)\n")
+        return
+
+    events: list[dict] = []
+    for path in files:
+        events.extend(_load(path))
+
+    counts: dict[str, int] = defaultdict(int)
+    for ev in events:
+        counts[ev.get("type", "?")] += 1
+
+    speaks = _of_type(events, "speak")
+    suppressed = _of_type(events, "speak_suppressed")
+    n_skipped = len(_of_type(events, "think_skipped"))
+
+    def _trunc(s, n=80):
+        s = (s or "").replace("\n", " ").strip()
+        return s[:n]
+
+    print(f"\n{'='*70}")
+    print(f"AUDIT FLUX COGNITIF — {len(files)} fichier(s), {len(events)} events")
+    print(f"{'='*70}\n")
+
+    ordered = ["attn", "think", "decide", "speak", "act", "evolve",
+               "speak_suppressed", "think_skipped"]
+    print("### 🧠 COMPTEUR PAR TYPE")
+    for t in ordered:
+        if counts.get(t):
+            print(f"  {t:<18} {counts[t]}")
+    for t in sorted(counts):
+        if t not in ordered:
+            print(f"  {t:<18} {counts[t]}")
+    print()
+
+    print(f"### 🗣️  SPEAK ENVOYÉS — {len(speaks)}")
+    for ev in speaks[:25]:
+        chan = ev.get("channel", "?")
+        text = ev.get("detail") or ev.get("text") or ev.get("message") or ""
+        print(f"  [{chan}] {repr(_trunc(text))}")
+    if len(speaks) > 25:
+        print(f"  … (+{len(speaks) - 25} autres)")
+    print()
+
+    print(f"### 🤐 SPEAK SUPPRIMÉS — {len(suppressed)}")
+    for ev in suppressed[:25]:
+        chan = ev.get("channel", "?")
+        reason = ev.get("reason", "?")
+        msg = _trunc(ev.get("message") or "")
+        print(f"  [{chan}] raison={reason} — {repr(msg)}")
+    if len(suppressed) > 25:
+        print(f"  … (+{len(suppressed) - 25} autres)")
+    print()
+
+    print(f"### 😴 THINK IGNORÉS (anti-rumination) — {n_skipped}\n")
+
+
 def dump_trace(root: Path, trace_id: str) -> None:
     """Affiche tous les events d'un trace_id donné, dans l'ordre chronologique."""
     found = []
@@ -180,6 +249,7 @@ def main() -> None:
     ap.add_argument("--date", help="YYYY-MM-DD")
     ap.add_argument("--trace", help="dump complet d'un trace_id précis")
     ap.add_argument("--slow-ms", type=int, default=8000, help="seuil de latence anormale (ms)")
+    ap.add_argument("--cognitive-only", action="store_true", help="n'analyse QUE le flux cognitif")
     args = ap.parse_args()
 
     root = Path(args.root)
@@ -188,8 +258,11 @@ def main() -> None:
         return
     if args.trace:
         dump_trace(root, args.trace)
+    elif args.cognitive_only:
+        audit_cognitive(root, args.date)
     else:
         audit(root, args.platform, args.channel, args.date, args.slow_ms)
+        audit_cognitive(root, args.date)
 
 
 if __name__ == "__main__":

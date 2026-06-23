@@ -447,6 +447,15 @@ class FactExtractor:
         except (TypeError, ValueError):
             importance = 0.5
 
+        _cl = getattr(self, "conv_log", None)
+        if _cl is not None:
+            _cl.log(
+                "facts", platform, "fact_stored",
+                user=raw_id, display=display, category=category,
+                subject=subject, predicate=predicate, object=object_,
+                text=(fact_text or "")[:300], importance=importance,
+            )
+
         can_reconcile = (
             self._ingest is not None
             and predicate in PREDICATES

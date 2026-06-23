@@ -108,6 +108,7 @@ async def main() -> None:
     discord_bot.apex_api = apex_api
     discord_bot.reaction_tracker = reaction_tracker
     discord_bot.conv_log = conv_log
+    fact_extractor.conv_log = conv_log
 
     # ── UpdateChecker ─────────────────────────────────────────────────────────
     update_checker = None
