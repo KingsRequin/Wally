@@ -135,12 +135,14 @@ class WallyDiscord(commands.Bot):
                 _reasoning_llm, _fact_store, _prompts_dir,
                 channels_text=_chan_dir.render(), capabilities_text=_caps_text,
             )
-            self.cognitive_feed = CognitiveFeed()
+            _conv_log = getattr(self, "conv_log", None)
+            self.cognitive_feed = CognitiveFeed(conv_log=_conv_log)
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None))
 
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,
                 speakable_channels=_chan_dir.speakable_ids(),
+                conv_log=_conv_log,
             )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).

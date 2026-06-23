@@ -12,10 +12,15 @@ class CognitiveFeed:
     used to seed a client before the SSE stream takes over.
     """
 
-    def __init__(self, buffer_size: int = 30, queue_maxsize: int = 50) -> None:
+    def __init__(
+        self, buffer_size: int = 30, queue_maxsize: int = 50, conv_log=None
+    ) -> None:
         self._buffer: deque[dict] = deque(maxlen=buffer_size)
         self._queues: list[asyncio.Queue] = []
         self._queue_maxsize = queue_maxsize
+        # Logger de conversation : tout le flux cognitif (ATTN/THINK/DECIDE/
+        # SPEAK/ACT/EVOLVE) est journalisé dans logs/conversations/cognitive/brain/.
+        self._conv_log = conv_log
 
     def publish(self, event: dict) -> None:
         # Anti-rumination : ignore un événement identique au précédent
@@ -23,6 +28,10 @@ class CognitiveFeed:
         if self._buffer and self._buffer[-1] == event:
             return
         self._buffer.append(event)
+        if self._conv_log is not None:
+            etype = str(event.get("type", "event")).lower()
+            fields = {k: v for k, v in event.items() if k != "type"}
+            self._conv_log.log("cognitive", "brain", etype, **fields)
         for q in list(self._queues):
             try:
                 q.put_nowait(event)

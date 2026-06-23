@@ -580,6 +580,17 @@ async def _spontaneous_respond_twitch(
             [{"role": "user", "content": user_content}],
             purpose="twitch_spontaneous",
         )
+        _spont_trace = new_trace_id("twitch_spont")
+        _emo = bot.emotion.get_state()
+        _dom = max(_emo, key=_emo.get) if _emo else None
+        _clog(
+            bot, channel_name, "llm_call",
+            trace_id=_spont_trace, kind="spontaneous",
+            model=getattr(bot.llm, "_model", "?"),
+            dominant_emotion=_dom,
+            emotion_value=round(_emo.get(_dom, 0.0), 3) if _dom else None,
+            system_prompt=system_prompt, user_content=user_content, raw_reply=reply,
+        )
         # Strip react tag (no reactions on Twitch)
         if reply.startswith("[react:"):
             import re as _re
@@ -593,6 +604,13 @@ async def _spontaneous_respond_twitch(
                 await irc_channel.send(reply)
         else:
             await bot.twitch_api.send_message(text=reply)
+        _clog(
+            bot, channel_name, "message_out",
+            trace_id=_spont_trace, kind="spontaneous", author="Wally",
+            content=reply, parts=1,
+        )
+        if getattr(bot, "cognitive_loop", None) is not None:
+            bot.cognitive_loop.notify_reply(channel_id)
 
         bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")

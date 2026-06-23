@@ -1216,6 +1216,16 @@ async def _spontaneous_respond(
                 [{"role": "user", "content": user_content}],
                 purpose="discord_spontaneous",
             )
+        _emo = bot.emotion.get_state()
+        _dom = max(_emo, key=_emo.get) if _emo else None
+        _clog(
+            bot, _conv_channel(message), "llm_call",
+            trace_id=str(message.id), kind="spontaneous",
+            model=getattr(bot.llm, "_model", "?"),
+            dominant_emotion=_dom,
+            emotion_value=round(_emo.get(_dom, 0.0), 3) if _dom else None,
+            system_prompt=system_prompt, user_content=user_content, raw_reply=reply,
+        )
 
         # Parse and apply react tag if present
         react_emoji, reply = _parse_react_tag(reply)
@@ -1230,6 +1240,13 @@ async def _spontaneous_respond(
 
         # Send as a reply to the triggering message
         await message.reply(reply, mention_author=False)
+        _clog(
+            bot, _conv_channel(message), "message_out",
+            trace_id=str(message.id), kind="spontaneous", author="Wally",
+            content=reply, parts=1, react_emoji=react_emoji,
+        )
+        if getattr(bot, "cognitive_loop", None) is not None:
+            bot.cognitive_loop.notify_reply(message.channel.id)
 
         bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
         bot.memory.append_message(

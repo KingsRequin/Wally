@@ -45,12 +45,16 @@ class CognitiveLoop:
         emotion_engine=None,
         feed=None,
         speakable_channels: set[str] | None = None,
+        conv_log=None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
         self._dispatcher = action_dispatcher
         self._emotion = emotion_engine
         self._feed = feed
+        # Journalise les décisions cognitives non publiées sur le feed —
+        # surtout les SPEAK *supprimés* (avec la raison), invisibles autrement.
+        self._conv_log = conv_log
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
         self._speakable_channels = speakable_channels or set()
         self._last_activity_ts: float = 0.0
@@ -97,6 +101,11 @@ class CognitiveLoop:
         une conversation à laquelle il vient déjà de participer.
         """
         self._last_reply[str(channel_id)] = time.monotonic()
+
+    def _log_cog(self, event_type: str, **fields) -> None:
+        """Journalise un événement cognitif dans logs/conversations/cognitive/brain/."""
+        if self._conv_log is not None:
+            self._conv_log.log("cognitive", "brain", event_type, **fields)
 
     def _tick_interval(self) -> int:
         elapsed = time.monotonic() - self._last_activity_ts
@@ -156,6 +165,11 @@ class CognitiveLoop:
             # est déjà stocké par le ReasoningAgent ; les THOUGHT décaient vite).
             if result.thought_text and _too_similar(result.thought_text, self._last_thought):
                 logger.debug("CognitiveLoop: pensée quasi identique, repos")
+                self._log_cog(
+                    "think_skipped",
+                    reason="pensée quasi identique au tick précédent",
+                    thought=(result.thought_text or "")[:200],
+                )
                 return
             self._last_thought = result.thought_text
             if self._feed:
@@ -184,6 +198,10 @@ class CognitiveLoop:
                             "CognitiveLoop: SPEAK supprimé (idle + silence {:.0f}min)",
                             elapsed_since_activity / 60,
                         )
+                        self._log_cog(
+                            "speak_suppressed", channel=str(decision.channel_id),
+                            reason="idle+silence>2h", message=(decision.message or "")[:200],
+                        )
                         continue
                     # 1. Redirection canal inconnu (hallucination LLM) — AVANT le cooldown
                     if decision.channel_id not in known_channels:
@@ -206,10 +224,20 @@ class CognitiveLoop:
                     since_last = now - ch_st.get("last_ts", 0.0)
                     if unanswered >= 3:
                         logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
+                        self._log_cog(
+                            "speak_suppressed", channel=ch_key,
+                            reason=f"{unanswered} messages sans réponse",
+                            message=(decision.message or "")[:200],
+                        )
                         continue
                     cooldown = 300 if unanswered == 1 else 900 if unanswered == 2 else 0
                     if cooldown and since_last < cooldown:
                         logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
+                        self._log_cog(
+                            "speak_suppressed", channel=ch_key,
+                            reason=f"cooldown {int(since_last)}s/{cooldown}s ({unanswered} sans réponse)",
+                            message=(decision.message or "")[:200],
+                        )
                         continue
                     # 3. Anti-redondance : Wally vient de répondre directement dans
                     #    ce canal → un SPEAK proactif ne ferait que récapituler une
@@ -219,6 +247,11 @@ class CognitiveLoop:
                         logger.info(
                             "CognitiveLoop: SPEAK supprimé (réponse directe il y a {:.0f}s dans ce canal)",
                             now - last_reply,
+                        )
+                        self._log_cog(
+                            "speak_suppressed", channel=ch_key,
+                            reason=f"réponse directe il y a {int(now - last_reply)}s (anti-récap)",
+                            message=(decision.message or "")[:200],
                         )
                         continue
                 await self._dispatcher.dispatch(decision)
