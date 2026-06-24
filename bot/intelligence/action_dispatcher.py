@@ -73,6 +73,7 @@ class ActionDispatcher:
             if channel:
                 await channel.send(message)
                 logger.info("Cognitive SPEAK → canal {} : {}", channel_id, message[:80])
+                self._record_self_message(str(channel_id), message)
                 _speaks = getattr(self._bot, "_wally_recent_speaks", None)
                 if _speaks is not None:
                     _speaks[int(channel_id)] = message
@@ -82,6 +83,23 @@ class ActionDispatcher:
                 logger.warning("SPEAK: canal {} introuvable", channel_id)
         except Exception as e:
             logger.error("SPEAK failed: {}", e)
+
+    def _record_self_message(self, channel_id: str, message: str) -> None:
+        """Enregistre un message sortant SPONTANÉ de Wally dans la mémoire de contexte.
+
+        Le chemin réactif (`handlers._respond`) lit cette mémoire pour bâtir le
+        contexte de conversation. Sans cet enregistrement, les messages de la boucle
+        cognitive (SPEAK / DM) restent invisibles au chemin réactif : Wally oublie
+        ses propres questions spontanées et les nie quand on lui répond.
+        """
+        memory = getattr(self._bot, "memory", None)
+        if memory is None:
+            return
+        try:
+            memory.append_prelude(channel_id, "Wally", message)
+            memory.append_message(channel_id, "Wally", message, platform="discord")
+        except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
+            logger.warning("Enregistrement contexte message spontané échoué: {}", e)
 
     async def _react(self, channel_id: str, message_id: str, emoji: str) -> None:
         """Réagit en emoji à un message récent. Geste léger et humain.
@@ -149,9 +167,12 @@ class ActionDispatcher:
             except Exception as e:
                 logger.warning("dm: utilisateur {} introuvable: {}", user_id, e)
                 return
-            await user.send(message)
+            sent = await user.send(message)
             self._last_dm_ts = now
             logger.info("Cognitive DM → {} : {}", user_id, message[:80])
+            channel = getattr(sent, "channel", None)
+            if channel is not None:
+                self._record_self_message(str(channel.id), message)
             if self._feed:
                 self._feed.publish({"type": "DM", "target": "créateur", "message": message[:300]})
         except Exception as e:

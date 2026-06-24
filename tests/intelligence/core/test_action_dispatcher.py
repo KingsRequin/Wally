@@ -105,6 +105,37 @@ async def test_speak_publishes_to_feed():
     assert "SPEAK" in types
 
 
+@_pytest_fd.mark.asyncio
+async def test_speak_records_wally_message_in_memory():
+    """Le SPEAK cognitif doit s'enregistrer dans le contexte que lit le chemin réactif,
+    sinon Wally oublie ses propres messages spontanés (bug d'amnésie)."""
+    channel = _MMd()
+    channel.send = _AMd()
+    bot = _MMd()
+    bot.get_channel.return_value = channel
+    disp = _AD(bot=bot)
+    await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
+    bot.memory.append_prelude.assert_called_once_with("123", "Wally", "salut")
+    bot.memory.append_message.assert_called_once_with("123", "Wally", "salut", platform="discord")
+
+
+@_pytest_fd.mark.asyncio
+async def test_dm_records_wally_message_in_memory():
+    """Le DM cognitif au créateur doit s'enregistrer dans le contexte du canal DM,
+    pour que Wally se souvienne de la question qu'il a posée."""
+    sent = _MMd()
+    sent.channel.id = 999
+    user = _MMd()
+    user.send = _AMd(return_value=sent)
+    bot = _MMd()
+    bot.fetch_user = _AMd(return_value=user)
+    disp = _AD(bot=bot)
+    await disp.dispatch(_MDd(action="ACT", act_name="dm",
+                             act_args={"user_id": "610550333042589752", "message": "coucou"}))
+    bot.memory.append_prelude.assert_called_once_with("999", "Wally", "coucou")
+    bot.memory.append_message.assert_called_once_with("999", "Wally", "coucou", platform="discord")
+
+
 @pytest.mark.asyncio
 async def test_act_advance_goal_appends_progress(tmp_fact_store):
     from bot.intelligence.action_dispatcher import ActionDispatcher
