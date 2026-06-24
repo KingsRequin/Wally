@@ -37,6 +37,8 @@ Wally ne se contente pas de répondre quand on lui parle. Il tourne une **boucle
 
 Wally peut **modifier son propre code**. Quand il décide qu'un correctif ou une amélioration est nécessaire, il émet une intention `[ACT code_fix {but}]`. Le créateur reçoit alors une demande d'autorisation en DM (✅/❌, but verbatim) ; une fois approuvée, **Claude Code s'exécute sur l'hôte** pour réaliser la modification. L'outil d'auto-modification est réservé au créateur.
 
+Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git : ses auto-modifications apparaissent dans l'historique sous l'auteur **`Wally (self-upgrade)`**, distinct des commits humains. Une partie de l'historique de ce repo a donc littéralement été écrite par le bot lui-même.
+
 ### 💾 Mémoire long-terme
 
 - **Faits S-P-O** (Sujet-Prédicat-Objet) stockés en **SQLite (FTS5)**, avec un **vocabulaire fermé** de prédicats.

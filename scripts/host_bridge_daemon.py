@@ -21,6 +21,12 @@ ALLOWED_SERVICES: set[str] = {"wally"}
 JOBS_DIR = Path(os.environ.get("CLAUDE_JOBS_DIR", str(REPO_ROOT / "data" / "claude_jobs")))
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/root/.local/bin/claude")
 CLAUDE_TIMEOUT = float(os.environ.get("CLAUDE_TIMEOUT", "1800"))
+# Auteur des commits que Wally se fait à lui-même (self-upgrade), pour les distinguer
+# clairement des commits humains dans l'historique git.
+WALLY_AUTHOR = os.environ.get(
+    "WALLY_GIT_AUTHOR",
+    "Wally (self-upgrade) <61652807+KingsRequin@users.noreply.github.com>",
+)
 _JOBS: dict[str, dict] = {}
 
 
@@ -250,7 +256,8 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             subprocess.run(["git", "add", "--", *new_paths], cwd=REPO_ROOT,
                            check=True, timeout=30)
             r = subprocess.run(
-                ["git", "commit", "-m", f"self-upgrade: {job.get('goal', '')}"[:200]],
+                ["git", "commit", "--author", WALLY_AUTHOR,
+                 "-m", f"self-upgrade: {job.get('goal', '')}"[:200]],
                 cwd=REPO_ROOT, capture_output=True, timeout=30,
             )
             if r.returncode != 0:
