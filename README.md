@@ -128,8 +128,8 @@ Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git :
 
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/KingsRequin/wally-ai.git wally-ai
-cd wally-ai
+git clone https://github.com/KingsRequin/Wally.git wally
+cd wally
 
 # 2. Créer le fichier d'environnement
 cp .env.example .env
