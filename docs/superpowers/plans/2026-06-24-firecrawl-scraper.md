@@ -19,7 +19,8 @@
 - Gestion d'erreur : tout handler top-level try/except, log, continue — jamais crash.
 - Firecrawl self-host : pas de clé API ; URL interne `http://firecrawl-api:3002`.
 - Valeurs par défaut : `inline_max_tokens=2000`, `auto_scrape_cooldown_s=30`, `daily_limit=200`.
-- Vérification finale OBLIGATOIRE avant « terminé » : `pytest -q` (suite complète) doit passer (baseline : échecs préexistants costs/spam tolérés, documentés dans MEMORY.md).
+- Vérification finale OBLIGATOIRE avant « terminé » : `python3 -m pytest -q` (suite complète) doit passer (baseline : échecs préexistants costs/spam tolérés, documentés dans MEMORY.md).
+- Invocation Python = `python3` (PAS de venv ; pytest 9.0.2 global). Tous les `pytest ...` / `python -c ...` du plan se lisent `python3 -m pytest ...` / `python3 -c ...`.
 
 ---
 
@@ -586,48 +587,12 @@ git commit -m "feat(scrape): wiring DI ScrapeService (bootstrap + main)"
 **Files:**
 - Modify: `bot/discord/handlers.py` (collecte tools ≈ ligne 1141 ; dispatch ≈ ligne 1174)
 - Modify: `bot/twitch/handlers.py` (collecte tools ≈ ligne 299 ; dispatch ≈ ligne 323)
-- Test: `tests/test_scrape_dispatch.py`
+- Test: aucun nouveau test unitaire — le dispatch est une transcription calquée verbatim sur le bloc `web_search`/`image_search` existant ; sa vérification est le check d'import (Step 6) + l'e2e Task 8. (Un test mockant la collecte ré-implémenterait la garde dans le test plutôt que de tester le handler réel — défaut connu, donc évité.)
 
 **Interfaces:**
 - Consumes: `bot.scrape` (Task 4), `ScrapeService.get_tool_definitions`, `ScrapeService.scrape`.
 
-- [ ] **Step 1: Write the failing test**
-
-```python
-# tests/test_scrape_dispatch.py
-import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-
-from bot.core.scrape import SCRAPE_TOOL
-
-
-def test_scrape_tool_exposed_when_available():
-    # Réplique la logique de collecte des tools côté handler.
-    scrape = MagicMock()
-    scrape.available = True
-    scrape.get_tool_definitions = MagicMock(return_value=[SCRAPE_TOOL])
-    tools = []
-    if scrape and scrape.available:
-        tools.extend(scrape.get_tool_definitions())
-    assert SCRAPE_TOOL in tools
-
-
-def test_scrape_tool_hidden_when_unavailable():
-    scrape = MagicMock()
-    scrape.available = False
-    tools = []
-    if scrape and scrape.available:
-        tools.extend(scrape.get_tool_definitions())
-    assert tools == []
-```
-
-- [ ] **Step 2: Run test to verify it fails or passes trivially**
-
-Run: `pytest tests/test_scrape_dispatch.py -v`
-Expected: PASS (ce test verrouille la logique de garde ; il documente le contrat). Si import échoue, c'est un FAIL réel à corriger.
-
-- [ ] **Step 3: Discord — collecte des tools**
+- [ ] **Step 1: Discord — collecte des tools**
 
 Dans `bot/discord/handlers.py`, après le bloc `web_search` qui fait `tools.extend(web_search.get_tool_definitions())` (≈ ligne 1141) :
 
@@ -637,7 +602,7 @@ Dans `bot/discord/handlers.py`, après le bloc `web_search` qui fait `tools.exte
             tools.extend(scrape.get_tool_definitions())
 ```
 
-- [ ] **Step 4: Discord — dispatch**
+- [ ] **Step 2: Discord — dispatch**
 
 Dans `_tool_executor_impl`, juste après le bloc `if name in ("web_search", "image_search"):` (≈ ligne 1183) :
 
@@ -652,7 +617,7 @@ Dans `_tool_executor_impl`, juste après le bloc `if name in ("web_search", "ima
                 return await scrape.scrape(args["url"])
 ```
 
-- [ ] **Step 5: Twitch — collecte + dispatch**
+- [ ] **Step 3: Twitch — collecte + dispatch**
 
 Dans `bot/twitch/handlers.py`, après `tools.extend(web_search.get_tool_definitions())` (≈ ligne 299) :
 
@@ -669,15 +634,15 @@ Dans le dispatch, après le bloc `if name in ("web_search", "image_search"):` (�
                 return await scrape.scrape(args["url"])
 ```
 
-- [ ] **Step 6: Run tests + import check**
+- [ ] **Step 4: Import check**
 
-Run: `pytest tests/test_scrape_dispatch.py -v && python -c "import bot.discord.handlers, bot.twitch.handlers; print('ok')"`
-Expected: PASS + `ok`
+Run: `python3 -c "import bot.discord.handlers, bot.twitch.handlers; print('ok')"`
+Expected: `ok` (aucune SyntaxError/ImportError)
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add bot/discord/handlers.py bot/twitch/handlers.py tests/test_scrape_dispatch.py
+git add bot/discord/handlers.py bot/twitch/handlers.py
 git commit -m "feat(scrape): tool scrape_url dispatch Discord + Twitch"
 ```
 
