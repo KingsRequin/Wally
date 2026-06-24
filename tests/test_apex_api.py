@@ -254,6 +254,7 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
 
     # No web search
     bot.web_search = None
+    bot.scrape = None
 
     # Apex API mock
     apex_api = MagicMock()

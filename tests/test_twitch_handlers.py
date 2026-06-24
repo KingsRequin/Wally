@@ -66,6 +66,7 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
     bot.web_search = None  # désactivé par défaut dans les tests
     bot.apex_api = None
+    bot.scrape = None  # ScrapeService désactivé par défaut dans les tests
 
     bot.config.bot.spontaneous_twitch_enabled = False  # désactivé pour éviter les MagicMock
 

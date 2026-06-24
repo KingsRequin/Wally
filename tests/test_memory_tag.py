@@ -91,6 +91,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.fact_extractor = MagicMock()
     bot.web_search = None
     bot.apex_api = None
+    bot.scrape = None  # ScrapeService désactivé par défaut dans les tests
     bot.response_gate = None  # gate V2 désactivé dans les tests V1
     bot.cognitive_loop = None  # cognitive loop V2 désactivé dans les tests V1
     bot.self_fix = None       # SelfFix V2 désactivé dans les tests V1

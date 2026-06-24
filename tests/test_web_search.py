@@ -408,6 +408,7 @@ async def test_discord_handler_adds_globe_reaction_on_search():
     web_search.search = AsyncMock(return_value="Search results")
     bot.web_search = web_search
     bot.apex_api = None
+    bot.scrape = None
 
     bot.llm.complete_with_tools = AsyncMock(return_value=("Answer from web", ["web_search"]))
 
@@ -485,6 +486,7 @@ async def test_discord_handler_no_search_when_quota_exceeded():
     web_search.is_quota_exceeded = AsyncMock(return_value=True)
     bot.web_search = web_search
     bot.apex_api = None
+    bot.scrape = None
 
     bot.llm.complete = AsyncMock(return_value="Regular response")
     bot.llm.complete_with_tools = AsyncMock(return_value=("Regular response", []))

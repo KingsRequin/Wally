@@ -1139,6 +1139,9 @@ async def _respond(
         web_search = getattr(bot, "web_search", None)
         if web_search and web_search.available and not await web_search.is_quota_exceeded():
             tools.extend(web_search.get_tool_definitions())
+        scrape = getattr(bot, "scrape", None)
+        if scrape and scrape.available and not await scrape.daily_limit_reached():
+            tools.extend(scrape.get_tool_definitions())
         apex_api = getattr(bot, "apex_api", None)
         if apex_api and apex_api.available:
             tools.append(apex_api.get_tool_definition())
@@ -1181,6 +1184,14 @@ async def _respond(
                 if name == "image_search":
                     return await web_search.search_images(args["query"])
                 return await web_search.search(args["query"])
+            if name == "scrape_url":
+                if "🌐" not in _reaction_emojis:
+                    try:
+                        await message.add_reaction("🌐")
+                        _reaction_emojis.add("🌐")
+                    except Exception:
+                        pass
+                return await scrape.scrape(args["url"])
             if name == "apex_legends":
                 if "🔫" not in _reaction_emojis:
                     try:
