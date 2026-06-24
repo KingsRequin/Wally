@@ -127,6 +127,86 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             subprocess.Popen(cmd, shell=True, start_new_session=True)
             self._send(200, {"status": "restarting"})
 
+        elif self.path == "/claude-run":
+            goal = body.get("goal", "").strip()
+            if not goal:
+                self._send(400, {"error": "goal vide"})
+                return
+            if any(j.get("state") == "running" for j in _JOBS.values()):
+                self._send(409, {"error": "un job Claude est déjà en cours"})
+                return
+            job_id = uuid.uuid4().hex
+            JOBS_DIR.mkdir(parents=True, exist_ok=True)
+            out_path = JOBS_DIR / f"{job_id}.out"
+            env = dict(os.environ)
+            env["IS_SANDBOX"] = "1"
+            outf = open(out_path, "wb")
+            proc = subprocess.Popen(
+                [CLAUDE_BIN, "--dangerously-skip-permissions", "-p", goal,
+                 "--output-format", "json"],
+                cwd=REPO_ROOT, env=env, stdout=outf, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            _JOBS[job_id] = {
+                "state": "running", "proc": proc, "outf": outf,
+                "out_path": str(out_path), "head_before": _git_head(),
+                "goal": goal, "started_at": time.time(),
+            }
+            logging.info("claude-run job %s lancé (goal=%.60s)", job_id, goal)
+            self._send(200, {"job_id": job_id})
+
+        elif self.path == "/claude-status":
+            job = _JOBS.get(body.get("job_id", ""))
+            if job is None:
+                self._send(404, {"error": "job inconnu"})
+                return
+            proc = job["proc"]
+            rc = proc.poll()
+            if rc is None:
+                if time.time() - job["started_at"] > CLAUDE_TIMEOUT:
+                    try:
+                        os.killpg(os.getpgid(proc.pid), 9)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    job["state"] = "failed"
+                    self._send(200, {"state": "failed", "exit_code": -1,
+                                     "result": "", "changed": False,
+                                     "head_changed": False,
+                                     "output_tail": "timeout dépassé"})
+                    return
+                self._send(200, {"state": "running"})
+                return
+            try:
+                job["outf"].close()
+            except OSError:
+                pass
+            raw = Path(job["out_path"]).read_text(errors="replace")
+            head_after = _git_head()
+            state = "done" if rc == 0 else "failed"
+            job["state"] = state
+            self._send(200, {
+                "state": state, "exit_code": rc,
+                "result": _extract_claude_result(raw),
+                "changed": bool(_git_status_porcelain()),
+                "head_changed": head_after != job["head_before"],
+                "output_tail": raw[-2000:],
+            })
+
+        elif self.path == "/claude-commit":
+            goal = body.get("goal", "")
+            if not _git_status_porcelain():
+                self._send(200, {"committed": False, "reason": "rien à committer"})
+                return
+            subprocess.run(["git", "add", "-A"], cwd=REPO_ROOT, check=True, timeout=30)
+            r = subprocess.run(
+                ["git", "commit", "-m", f"self-upgrade: {goal}"[:200]],
+                cwd=REPO_ROOT, capture_output=True, timeout=30,
+            )
+            if r.returncode != 0:
+                self._send(500, {"error": r.stderr.decode()})
+                return
+            self._send(200, {"committed": True, "hash": _git_head()})
+
         else:
             self._send(404, {"error": "not found"})
 
