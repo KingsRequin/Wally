@@ -165,6 +165,16 @@ def _author_label(member: discord.Member | discord.User) -> str:
     return display
 
 
+def _channel_origin(channel) -> str:
+    """Libellé lisible du lieu d'un message Discord, pour la provenance mémoire.
+
+    Ex. « Discord #discussions », « Discord MP ». Sert d'`origin` aux faits."""
+    if isinstance(channel, discord.DMChannel):
+        return "Discord MP"
+    name = getattr(channel, "name", None)
+    return f"Discord #{name}" if name else "Discord"
+
+
 def _format_reactions(
     emoji: str, target_label: str, target_content: str, on_own_message: bool
 ) -> str:
@@ -472,6 +482,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
             f"Wally a coupé {username} pour spam — trop de messages en peu de temps. "
             f"Il en a eu marre et a arrêté de lui répondre.",
             username=username,
+            origin=_channel_origin(message.channel),
         )
     except Exception as e:
         logger.warning("Failed to store spam memory: {e}", e=e)
@@ -664,6 +675,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 str(message.channel.id), "discord", user_id,
                 author_label, _enriched_content,
                 is_reply=message.reference is not None,
+                origin=_channel_origin(message.channel),
             )
         _clog(
             bot, _conv_channel(message), "message_in",
@@ -1113,7 +1125,8 @@ async def _respond(
                     return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
                 return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
             if name == "save_user_memory":
-                await bot.memory.add("discord", user_id, args["content"], username=_author_label(message.author))
+                await bot.memory.add("discord", user_id, args["content"], username=_author_label(message.author),
+                                     origin=_channel_origin(message.channel))
                 return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
 
             if name in ("web_search", "image_search"):
@@ -1288,6 +1301,7 @@ async def _respond(
             display_name=message.author.display_name,
             trace_id=str(message.id),
             conv_channel=_conv_channel(message),
+            origin=_channel_origin(message.channel),
         ))
 
     except Exception as e:
@@ -1311,6 +1325,7 @@ async def _post_process(
     display_name: str = "",
     trace_id: str = "",
     conv_channel: str = "",
+    origin: str = "",
 ) -> None:
     try:
         _emo_before = bot.emotion.get_state()
@@ -1351,7 +1366,8 @@ async def _post_process(
 
         if llm_deltas and llm_deltas.get("user_facts"):
             for _fact in llm_deltas["user_facts"]:
-                await bot.memory.add(platform, user_id, _fact, username=display_name)
+                await bot.memory.add(platform, user_id, _fact, username=display_name,
+                                     origin=origin or None)
 
         # Génère une description courte de l'image et la stocke en mémoire long-terme
         if image_urls and getattr(bot, "llm_secondary", None):
@@ -1369,7 +1385,8 @@ async def _post_process(
                 )
                 if img_desc and img_desc.strip():
                     fact = f"{display_name} a envoyé une image : {img_desc.strip()}"
-                    await bot.memory.add(platform, user_id, fact, username=display_name)
+                    await bot.memory.add(platform, user_id, fact, username=display_name,
+                                         origin=origin or None)
                     logger.debug("Image description stored for {u}: {d}", u=display_name, d=img_desc.strip())
             except Exception as e:
                 logger.warning("Image description failed: {e}", e=e)

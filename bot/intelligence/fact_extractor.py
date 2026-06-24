@@ -4,6 +4,7 @@ import asyncio
 import re
 import time
 import unicodedata
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
@@ -89,6 +90,49 @@ _INTERJECTION_PATTERNS = [
     re.compile(r"^she+sh+$"),
     re.compile(r"^be+t+$"),
 ]
+
+
+# ── Péremption des faits éphémères (TTL) ────────────────────────────────────────
+# Le LLM classe chaque fait par durée de vie ; le code calcule la date absolue
+# (déterministe). Garde-fou heuristique : un marqueur temporel explicite force un
+# TTL court même si le LLM a répondu "durable".
+_TTL_MARKERS: list[tuple[str, tuple[str, ...]]] = [
+    ("hours", ("ce soir", "cet aprem", "cet après-midi", "cet apres-midi",
+               "ce matin", "ce midi", "tout à l'heure", "tout a l'heure",
+               "tantôt", "tantot", "aujourd'hui", "aujourdhui",
+               "tonight", "this evening", "this morning", "this afternoon")),
+    ("days", ("demain", "après-demain", "apres-demain", "tomorrow")),
+    ("week", ("ce week-end", "ce weekend", "cette semaine", "this week",
+              "this weekend", "le week-end")),
+]
+
+# Durée ajoutée à la date d'énonciation selon le TTL.
+_TTL_DELTAS: dict[str, timedelta] = {
+    "day":  timedelta(days=1),
+    "days": timedelta(days=3),
+    "week": timedelta(days=7),
+}
+
+
+def _compute_expiry(ttl: str | None, fact_text: str, now: datetime) -> "datetime | None":
+    """Date de péremption (UTC naïf) d'un fait éphémère, ou None si durable.
+
+    `ttl` = classe de durée de vie estimée par le LLM (durable/hours/day/days/
+    week). Garde-fou : un marqueur temporel explicite dans le texte force le TTL
+    correspondant même si le LLM a répondu 'durable'.
+    """
+    text = (fact_text or "").lower()
+    for forced, markers in _TTL_MARKERS:
+        if any(m in text for m in markers):
+            ttl = forced
+            break
+    if not ttl or ttl == "durable":
+        return None
+    if ttl == "hours":
+        # Fin de la journée d'énonciation, au moins +6h.
+        end_of_day = now.replace(hour=23, minute=59, second=0, microsecond=0)
+        return max(end_of_day, now + timedelta(hours=6))
+    return now + _TTL_DELTAS.get(ttl, timedelta(days=3))
 
 
 def _is_emoji_only(text: str) -> bool:
@@ -181,6 +225,10 @@ FACT_EXTRACTION_SCHEMA = {
                                     "maximum": 1,
                                 },
                                 "text": {"type": "string"},
+                                "ttl": {
+                                    "type": "string",
+                                    "enum": ["durable", "hours", "day", "days", "week"],
+                                },
                             },
                             "required": [
                                 "subject",
@@ -274,6 +322,7 @@ class FactExtractor:
                 "flush_task": None,
                 "flush_lock": asyncio.Lock(),
                 "platform": "discord",
+                "origin": None,
             }
         return self._buffers[channel_id]
 
@@ -287,11 +336,15 @@ class FactExtractor:
         display_name: str,
         content: str,
         is_reply: bool = False,
+        origin: "str | None" = None,
     ) -> None:
         """Accumulate a message and trigger a flush when thresholds are met.
 
         This is a synchronous method that schedules async work; it can be
         called from any synchronous context inside the event loop.
+
+        `origin` = lieu précis lisible du canal (ex. « Discord #discussions »,
+        « Discord MP », « Twitch/azrael_ttv ») ; attaché aux faits extraits.
         """
         # Strip Discord-specific syntax before storing (mentions, channels, emojis, timestamps)
         content = _DISCORD_SYNTAX_RE.sub("", content).strip()
@@ -301,6 +354,8 @@ class FactExtractor:
         buf = self._get_buffer(channel_id)
         buf["last_activity"] = time.time()
         buf["platform"] = platform
+        if origin:
+            buf["origin"] = origin
 
         if is_reply:
             buf["reply_chain_active"] = True
@@ -380,6 +435,7 @@ class FactExtractor:
 
             all_messages = list(buf["messages"])
             platform = buf.get("platform", "discord")
+            origin = buf.get("origin")
 
             if partial:
                 # Flush first (_SAFETY_CAP - _PARTIAL_KEEP) messages, keep last _PARTIAL_KEEP
@@ -401,7 +457,7 @@ class FactExtractor:
 
             # Extract facts from flushed messages
             try:
-                await self._extract_facts(to_flush, platform, channel_id)
+                await self._extract_facts(to_flush, platform, channel_id, origin=origin)
             except Exception as exc:
                 logger.warning(
                     "FactExtractor._extract_facts failed for {ch}: {e}",
@@ -429,6 +485,8 @@ class FactExtractor:
         fact_text: str,
         category: str,
         display: str,
+        origin: "str | None" = None,
+        expires_at: "datetime | None" = None,
     ) -> bool:
         """Persist one extracted fact, routing through S-P-O reconciliation when
         possible, falling back to verbatim `memory.add()` otherwise.
@@ -474,6 +532,8 @@ class FactExtractor:
                     category=category,
                     confidence_source="explicit",
                     importance=importance,
+                    origin=origin,
+                    expires_at=expires_at,
                 )
                 await self._ingest.reconcile_candidate(prefixed_uid, cand)
                 return True
@@ -486,7 +546,8 @@ class FactExtractor:
         # Fallback : add verbatim (dedup texte normalisé interne). Ne perd jamais un fait.
         try:
             await self._memory.add(
-                platform, raw_id, fact_text, category=category, username=display
+                platform, raw_id, fact_text, category=category, username=display,
+                origin=origin, expires_at=expires_at,
             )
             return True
         except Exception as exc:
@@ -501,6 +562,7 @@ class FactExtractor:
         messages: list[dict],
         platform: str,
         channel_id: str,
+        origin: "str | None" = None,
     ) -> int:
         """Call the LLM to extract facts from a batch of messages.
 
@@ -616,7 +678,13 @@ class FactExtractor:
                     plat = "unknown"
                     raw_id = entry.get("target", "unknown")
                 display = participants.get(raw_id, "") if uid else ""
-                if await self._store_fact(plat, raw_id, fi, fact_text, category, display):
+                expires_at = _compute_expiry(
+                    fi.get("ttl"), fact_text, datetime.utcnow()
+                )
+                if await self._store_fact(
+                    plat, raw_id, fi, fact_text, category, display,
+                    origin=origin, expires_at=expires_at,
+                ):
                     stored_count += 1
 
         # Process aliases

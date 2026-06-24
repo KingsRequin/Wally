@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -110,6 +111,10 @@ class _Candidate:
     category:          str
     confidence_source: str
     importance:        float
+    # Métadonnées de provenance/temporalité (optionnelles ; portées jusqu'à
+    # l'AtomicFact via _make_fact). origin = lieu précis ; expires_at = péremption.
+    origin:            str | None = None
+    expires_at:        datetime | None = None
 
 
 @dataclass
@@ -337,6 +342,8 @@ class MemoryIngest:
             confidence=confidence,
             status=status,
             source="ingest",
+            origin=cand.origin,
+            expires_at=cand.expires_at,
         )
 
 

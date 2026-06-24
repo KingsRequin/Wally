@@ -66,10 +66,12 @@ class AskCog(commands.Cog):
 
             # Enregistrement dans la session active (mémoire long-terme via analyse)
             if getattr(self.bot, "fact_extractor", None) is not None:
+                from bot.discord.handlers import _channel_origin
                 self.bot.fact_extractor.record_message(
                     channel_id_str, "discord", user_id,
                     interaction.user.display_name, question,
                     is_reply=False,
+                    origin=_channel_origin(interaction.channel),
                 )
 
             _fire(_post_process(self.bot, question, platform, user_id, guild_id, trust))

@@ -123,3 +123,42 @@ async def test_duplicate_question_ignored(tmp_path):
     await db.close()
 
 
+# ── Péremption des faits éphémères (expires_at) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_expired_facts_excluded_from_recall_and_archived(tmp_path):
+    """Un fait éphémère périmé n'est jamais rappelé, et archive_expired() l'archive."""
+    from datetime import datetime, timedelta
+    from bot.db.schema_v2 import create_v2_tables
+    from bot.intelligence.memory.facts import (
+        SQLiteFactStore, AtomicFact, FactCategory, FactStatus,
+    )
+
+    path = str(tmp_path / "facts.db")
+    await create_v2_tables(path)
+    store = SQLiteFactStore(path)
+    now = datetime.utcnow()
+    uid = "discord:1"
+
+    await store.add(AtomicFact(user_id=uid, content="Azraël joue à Darktide",
+                               category=FactCategory.FAIT, subject="Azraël",
+                               predicate="plays", object_="Darktide"))
+    await store.add(AtomicFact(user_id=uid, content="Azraël donne un tuto ce soir",
+                               category=FactCategory.FAIT, subject="Azraël",
+                               predicate="plans", object_="tuto",
+                               expires_at=now - timedelta(hours=1)))
+
+    # Rappel : le fait périmé est filtré en temps réel.
+    hits = await store.search_fts(uid, "Azraël Darktide tuto", limit=10)
+    contents = [f.content for f, _ in hits]
+    assert "Azraël joue à Darktide" in contents
+    assert all("tuto" not in c for c in contents)
+
+    # Archivage : 1 fait périmé archivé, le durable reste actif.
+    n = await store.archive_expired()
+    assert n == 1
+    active = await store.get_by_user(uid, status=FactStatus.ACTIVE)
+    assert len(active) == 1 and active[0].content == "Azraël joue à Darktide"
+
+

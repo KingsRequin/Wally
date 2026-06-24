@@ -134,7 +134,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception:
             pass
     if getattr(bot, "fact_extractor", None) is not None:
-        bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False)
+        bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False,
+                                          origin=f"Twitch/{channel_name}")
 
     # Reaction tracking: scan for positive reactions in Twitch window
     tracker = getattr(bot, "reaction_tracker", None)
@@ -316,7 +317,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
                 return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
             if name == "save_user_memory":
-                await bot.memory.add("twitch", user_id, args["content"], username=author)
+                await bot.memory.add("twitch", user_id, args["content"], username=author,
+                                     origin=f"Twitch/{channel_name}")
                 return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
             if name in ("web_search", "image_search"):
                 if name == "image_search":
@@ -470,7 +472,8 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
         if llm_deltas and llm_deltas.get("user_facts"):
-            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]), username=username)
+            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]), username=username,
+                                 origin=f"Twitch/{conv_channel}" if conv_channel else None)
         if trace_id:
             _clog(
                 bot, conv_channel, "post_process",

@@ -64,6 +64,16 @@ différents du même fait produisent le même triplet → un seul souvenir).
 - `category` : "FAIT" | "PREF" | "LANG" | "REL" (voir ci-dessous).
 - `importance` : nombre dans [0,1] — combien ce fait est durable/important
   (0.2 = anecdotique, 0.5 = normal, 0.8 = trait identitaire fort).
+- `ttl` (optionnel) : durée de vie du fait. La plupart des faits sont **durables**
+  (omets `ttl` ou mets "durable"). Mais une **intention ou un événement daté**
+  cesse d'être vrai après un moment — marque-le éphémère pour qu'il s'efface :
+  - "hours" → valable seulement aujourd'hui (ex: "lance le stream après son petit
+    déj", "donne un tuto ce soir", "dispo ce matin", "repasse tout à l'heure")
+  - "days" → valable un jour ou deux (ex: "fait ça demain")
+  - "week" → valable cette semaine / ce week-end
+  Un goût, un trait ou un fait biographique ("aime le café", "est dev", "joue à
+  Apex") est TOUJOURS durable. Dans le doute sur une intention ponctuelle ("va
+  faire X bientôt"), choisis la durée la plus courte plausible.
 
 Correspondance prédicat → catégorie (indicatif) :
 - `is`/`has`/`plays`/`uses`/`knows` → "FAIT"
@@ -89,4 +99,4 @@ Sois attentif aux dynamiques de groupe et relations entre utilisateurs :
   Ex: "Alice et Bob se charrient" → `{"subject":"Alice","predicate":"relates_to","object":"Bob : se charrient","category":"REL","importance":0.4}`
 
 Format de chaque fait :
-`{"subject":"...","predicate":"<vocab>","object":"...","category":"FAIT|PREF|LANG|REL","importance":0.0-1.0}`
+`{"subject":"...","predicate":"<vocab>","object":"...","category":"FAIT|PREF|LANG|REL","importance":0.0-1.0,"ttl":"durable|hours|day|days|week"}`

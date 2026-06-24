@@ -1,10 +1,37 @@
 import asyncio
 import time
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.intelligence.fact_extractor import _is_memorable, _is_media_url_only, FactExtractor
+from bot.intelligence.fact_extractor import (
+    _is_memorable, _is_media_url_only, _compute_expiry, FactExtractor,
+)
+
+
+_NOW = datetime(2026, 6, 22, 17, 0, 0)
+
+
+def test_compute_expiry_durable_is_none():
+    assert _compute_expiry("durable", "Azraël joue à Darktide", _NOW) is None
+    assert _compute_expiry(None, "Alice est développeuse", _NOW) is None
+
+
+def test_compute_expiry_marker_overrides_durable():
+    # Garde-fou : un marqueur temporel force l'expiration même si le LLM dit durable.
+    exp = _compute_expiry("durable", "donne un tuto Darktide ce soir", _NOW)
+    assert exp is not None and exp.date() == _NOW.date()  # fin de journée même jour
+
+
+def test_compute_expiry_llm_ttl_respected():
+    assert _compute_expiry("days", "fera un truc bientôt", _NOW) is not None
+    assert _compute_expiry("week", "tournoi prévu", _NOW) > _NOW
+
+
+def test_compute_expiry_demain_marker():
+    exp = _compute_expiry(None, "il fait ça demain", _NOW)
+    assert exp is not None and exp > _NOW
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

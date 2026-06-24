@@ -173,10 +173,12 @@ class ImagineCog(commands.Cog):
 
             # Memory
             try:
+                from bot.discord.handlers import _channel_origin
                 await self.bot.memory.add(
                     "discord", str(interaction.user.id),
                     f"{interaction.user.display_name} a généré une image : {title}",
                     username=interaction.user.display_name,
+                    origin=_channel_origin(interaction.channel),
                 )
             except Exception as e:
                 logger.warning("Failed to add image memory: {e}", e=e)
