@@ -58,6 +58,15 @@ def read_host_metrics() -> str | None:
     return ", ".join(parts) if parts else None
 
 
+def cached_weather() -> str | None:
+    """Météo en cache, sans déclencher de requête réseau.
+
+    Le cache est alimenté par `fetch_weather_france()` dans la boucle cognitive.
+    Permet aux chemins de réponse synchrones (réactifs) d'y accéder sans await.
+    """
+    return _weather_cache[1]
+
+
 async def fetch_weather_france() -> str | None:
     """Météo générale en France via wttr.in (Paris comme référence).
 

@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from bot.core.system_info import cached_weather, read_host_metrics
+
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "persona", "prompts")
 
 
@@ -171,6 +173,22 @@ class PromptBuilder:
                 lines.append(f"Viewers : {viewers}")
             lines.append(f"Date et heure : {_now_fr()}")
             parts.append("\n".join(lines))
+
+        # Perception « corporelle » : Wally peut sentir l'état réel de sa machine
+        # hôte (température CPU, charge, RAM) comme un humain sent s'il a chaud.
+        # Injecté sur TOUS les chemins de réponse, pas seulement la boucle cognitive
+        # — sinon il nie avoir une température quand on l'interroge directement.
+        body_lines = []
+        if host_metrics := read_host_metrics():
+            body_lines.append(
+                f"Ta machine (ton « corps ») en ce moment : {host_metrics}. "
+                f"C'est TA température et TA charge réelles — n'en parle que si "
+                f"la conversation s'y prête."
+            )
+        if weather := cached_weather():
+            body_lines.append(f"Météo en France en ce moment : {weather}.")
+        if body_lines:
+            parts.append("\n--- Ton corps ---\n" + "\n".join(body_lines))
 
         # Inject weekday directive
         if weekday_directives:
