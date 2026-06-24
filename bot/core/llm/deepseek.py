@@ -11,6 +11,40 @@ from openai import AsyncOpenAI
 from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE
 
 
+# Coût DeepSeek par 1M tokens : (input cache hit, input cache miss, output) en USD.
+# Source : https://api-docs.deepseek.com/quick_start/pricing/ (vérifié 2026-06-24).
+# deepseek-chat / deepseek-reasoner = alias de flash, dépréciés le 2026-07-24.
+_DEEPSEEK_COSTS: dict[str, tuple[float, float, float]] = {
+    "deepseek-v4-pro": (0.003625, 0.435, 0.87),
+    "deepseek-v4-flash": (0.0028, 0.14, 0.28),
+    "deepseek-chat": (0.0028, 0.14, 0.28),
+    "deepseek-reasoner": (0.0028, 0.14, 0.28),
+}
+_DEEPSEEK_FALLBACK_COST = (0.0028, 0.14, 0.28)
+
+
+def _deepseek_cost(model: str, usage: Any) -> float:
+    """Coût USD d'un appel depuis l'`usage` retourné par l'API DeepSeek.
+
+    DeepSeek expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
+    (leur somme = `prompt_tokens`). Si absents (vieux modèle, mock), tout est
+    facturé au tarif cache miss. Le matching modèle privilégie le préfixe le
+    plus long (ex. `deepseek-v4-pro-2026...` → `deepseek-v4-pro`).
+    """
+    rates = _DEEPSEEK_COSTS.get(model) or next(
+        (v for k, v in sorted(_DEEPSEEK_COSTS.items(), key=lambda x: len(x[0]), reverse=True)
+         if model.startswith(k)),
+        _DEEPSEEK_FALLBACK_COST,
+    )
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    hit = getattr(usage, "prompt_cache_hit_tokens", None)
+    miss = getattr(usage, "prompt_cache_miss_tokens", None)
+    if hit is None or miss is None:
+        hit, miss = 0, prompt_tokens
+    completion = getattr(usage, "completion_tokens", 0) or 0
+    return (hit * rates[0] + miss * rates[1] + completion * rates[2]) / 1_000_000
+
+
 class DeepSeekLLMClient(BaseLLMClient):
     """Client DeepSeek V4 via OpenAI-compatible API.
 
@@ -87,11 +121,12 @@ class DeepSeekLLMClient(BaseLLMClient):
     async def _log_cost(self, response: Any, purpose: str, user_id: str | None) -> None:
         try:
             usage = response.usage
+            model = response.model or self._model
             await self._db.log_cost(
-                model=response.model or self._model,
+                model=model,
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,
-                cost_usd=0.0,
+                cost_usd=_deepseek_cost(model, usage),
                 purpose=purpose,
                 user_id=user_id,
             )
@@ -287,12 +322,20 @@ class DeepSeekLLMClient(BaseLLMClient):
             params = self._api_params()
             async with self._client.chat.completions.stream(
                 messages=[{"role": "system", "content": system_prompt}] + messages,
+                stream_options={"include_usage": True},
                 **params,
             ) as stream:
                 async for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta and delta.content:
                         yield delta.content
+                # Log du coût après épuisement du flux : l'usage (tokens + cache)
+                # n'arrive que dans le chunk final via stream_options.include_usage.
+                # Isolé : une erreur ici ne doit jamais injecter le fallback.
+                try:
+                    await self._log_cost(await stream.get_final_completion(), purpose, user_id)
+                except Exception as e:
+                    logger.debug("DeepSeek stream cost log failed (non-fatal): {e}", e=e)
         except Exception as e:
             logger.error("DeepSeek complete_stream() failed: {e}", e=e)
             yield FALLBACK_RESPONSE

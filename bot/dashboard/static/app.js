@@ -4408,6 +4408,11 @@ var _MODEL_PRICE_TABLE = {
   'claude-sonnet-4-6':   3.00,
   'claude-haiku-4':      0.80,
   'claude-haiku-4-5':    0.80,
+  // DeepSeek (input cache miss / 1M — https://api-docs.deepseek.com/quick_start/pricing/)
+  'deepseek-v4-pro':     0.435,
+  'deepseek-v4-flash':   0.14,
+  'deepseek-chat':       0.14,
+  'deepseek-reasoner':   0.14,
 };
 
 var _promptsModels = []; // [{ label, usd }] — peuplé depuis la config
