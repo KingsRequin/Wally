@@ -91,7 +91,7 @@ class SelfFix:
             return
 
         await dm.send("⚙️ Application + rebuild…")
-        await self._bridge.claude_commit(goal)
+        await self._bridge.claude_commit(job_id)
         await self._bridge.docker_rebuild("wally")
         result = (status.get("result") or "").strip()[:800]
         await dm.send(f"✅ **C'est fait** — je redémarre (~2 min).\n{result}")

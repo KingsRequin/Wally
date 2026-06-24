@@ -80,11 +80,11 @@ class HostBridgeClient:
                 raise HostBridgeError(r.json().get("error", "unknown error"))
             return r.json()
 
-    async def claude_commit(self, goal: str) -> dict:
+    async def claude_commit(self, job_id: str) -> dict:
         async with httpx.AsyncClient(transport=self._transport(), timeout=30.0) as c:
             r = await c.post(
                 "http://bridge/claude-commit",
-                json={"goal": goal},
+                json={"job_id": job_id},
                 headers=self._headers(),
             )
             if r.status_code != 200:

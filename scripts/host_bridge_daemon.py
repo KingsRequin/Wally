@@ -36,6 +36,24 @@ def _git_status_porcelain() -> str:
     return r.stdout.decode().strip()
 
 
+def _porcelain_paths() -> set[str]:
+    """Ensemble des chemins modifiés/ajoutés/supprimés dans le working tree.
+
+    Sert à isoler ce que Claude a touché PENDANT un run : on compare l'ensemble
+    avant le run et après. Évite qu'un fichier déjà modifié (non lié au run)
+    déclenche un faux commit/rebuild.
+    """
+    paths: set[str] = set()
+    for line in _git_status_porcelain().splitlines():
+        if not line.strip():
+            continue
+        rest = line[3:] if len(line) > 3 else line  # retire le code de statut "XY "
+        if " -> " in rest:  # rename : "orig -> new"
+            rest = rest.split(" -> ", 1)[1]
+        paths.add(rest.strip().strip('"'))
+    return paths
+
+
 def _extract_claude_result(raw: str) -> str:
     """claude -p --output-format json émet un objet JSON ; on en extrait le résultat."""
     raw = raw.strip()
@@ -157,6 +175,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             _JOBS[job_id] = {
                 "state": "running", "proc": proc, "outf": outf,
                 "out_path": str(out_path), "head_before": _git_head(),
+                "dirty_before": _porcelain_paths(),
                 "goal": goal, "started_at": time.time(),
             }
             logging.info("claude-run job %s lancé (goal=%.60s)", job_id, goal)
@@ -195,28 +214,39 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             head_after = _git_head()
             state = "done" if rc == 0 else "failed"
             job["state"] = state
+            # changed = uniquement ce que Claude a touché pendant le run
+            # (diff vs l'état sale d'avant), pas les fichiers déjà modifiés.
+            new_paths = _porcelain_paths() - job.get("dirty_before", set())
             self._send(200, {
                 "state": state, "exit_code": rc,
                 "result": _extract_claude_result(raw),
-                "changed": bool(_git_status_porcelain()),
+                "changed": bool(new_paths),
                 "head_changed": head_after != job["head_before"],
                 "output_tail": raw[-2000:],
             })
 
         elif self.path == "/claude-commit":
-            goal = body.get("goal", "")
-            if not _git_status_porcelain():
-                self._send(200, {"committed": False, "reason": "rien à committer"})
+            job = _JOBS.get(body.get("job_id", ""))
+            if job is None:
+                self._send(404, {"error": "job inconnu"})
                 return
-            subprocess.run(["git", "add", "-A"], cwd=REPO_ROOT, check=True, timeout=30)
+            # On ne commit QUE les fichiers que Claude a touchés pendant le run,
+            # pas les changements pré-existants (sinon commit bidon).
+            new_paths = sorted(_porcelain_paths() - job.get("dirty_before", set()))
+            if not new_paths:
+                self._send(200, {"committed": False, "reason": "aucun changement de Claude"})
+                return
+            subprocess.run(["git", "add", "--", *new_paths], cwd=REPO_ROOT,
+                           check=True, timeout=30)
             r = subprocess.run(
-                ["git", "commit", "-m", f"self-upgrade: {goal}"[:200]],
+                ["git", "commit", "-m", f"self-upgrade: {job.get('goal', '')}"[:200]],
                 cwd=REPO_ROOT, capture_output=True, timeout=30,
             )
             if r.returncode != 0:
                 self._send(500, {"error": r.stderr.decode()})
                 return
-            self._send(200, {"committed": True, "hash": _git_head()})
+            self._send(200, {"committed": True, "hash": _git_head(),
+                             "files": new_paths})
 
         else:
             self._send(404, {"error": "not found"})
