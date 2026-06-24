@@ -190,6 +190,51 @@ async def test_respond_includes_context_block_when_present():
     assert "[ctx block]" in call_args.args[1][0]["content"]
 
 
+def _make_reply_ref(content, author_id, display_name="X", name="x"):
+    ref = MagicMock()
+    ref.content = content
+    ref.author.id = author_id
+    ref.author.display_name = display_name
+    ref.author.name = name
+    ref.attachments = []
+    ref.embeds = []
+    return ref
+
+
+@pytest.mark.asyncio
+async def test_respond_injects_replied_message_from_wally():
+    """Reply Discord vers un ancien message de Wally → texte cité + attribution 'toi'."""
+    bot = make_bot()
+    message = make_message(content="wally et ça donne quoi?")
+    message.reference = MagicMock()
+    message.reference.message_id = 555
+    message.reference.resolved = _make_reply_ref(
+        "Voici ma réponse précédente sur le sujet", bot.user.id
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
+    assert "Voici ma réponse précédente sur le sujet" in content
+    assert "toi (Wally)" in content
+
+
+@pytest.mark.asyncio
+async def test_respond_injects_replied_message_attributes_other_author():
+    """Reply vers le message d'un tiers → texte cité attribué au bon auteur."""
+    bot = make_bot()
+    message = make_message(content="wally t'en penses quoi?")
+    message.reference = MagicMock()
+    message.reference.message_id = 556
+    message.reference.resolved = _make_reply_ref(
+        "Message original d'Alice", 88888, display_name="Alice", name="alice_xyz"
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
+    assert "Message original d'Alice" in content
+    assert "Alice (@alice_xyz)" in content
+
+
 # ── _post_process ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

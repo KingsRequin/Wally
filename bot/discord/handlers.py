@@ -952,48 +952,68 @@ async def _respond(
             if a.content_type and a.content_type.startswith("image/")
         ][:4]
 
-        # Si c'est une réponse, récupérer les images du message référencé
+        author_label = _author_label(message.author)
+
+        # Si c'est une réponse à un autre message, récupérer son contexte
+        # (texte cité + éventuelles images) pour que Wally sache à QUOI on répond,
+        # même si le message ciblé est sorti de la fenêtre de contexte glissante.
         replied_image_context = ""
-        if message.reference and message.reference.message_id and not image_urls:
+        replied_text_context = ""
+        if message.reference and message.reference.message_id:
             try:
                 ref_msg = message.reference.resolved
                 if ref_msg is None:
                     ref_msg = await message.channel.fetch_message(message.reference.message_id)
                 if ref_msg:
-                    # Images en attachments du message référencé
-                    _img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
-                    ref_images = [
-                        a.url for a in ref_msg.attachments
-                        if (a.content_type and a.content_type.startswith("image/"))
-                        or a.filename.lower().endswith(_img_exts)
-                    ]
-                    # Images dans les embeds (URLs CDN uniquement, pas attachment://)
-                    if not ref_images:
-                        for embed in ref_msg.embeds:
-                            if embed.image and embed.image.url and not embed.image.url.startswith("attachment://"):
-                                ref_images.append(embed.image.url)
-                    image_urls = ref_images[:4]
-                    if image_urls:
-                        # Contexte sur l'image référencée
-                        is_wally_image = ref_msg.author.id == bot.user.id
-                        ref_desc = ""
-                        for embed in ref_msg.embeds:
-                            if embed.title:
-                                ref_desc += f" Titre: {embed.title}."
-                            if embed.description:
-                                ref_desc += f" Prompt: {embed.description}"
-                        if is_wally_image:
-                            replied_image_context = (
-                                f"[L'utilisateur répond à une image que TU as générée avec /imagine."
-                                f"{ref_desc} Tu es l'auteur de cette image.]\n"
-                            )
-                        else:
-                            replied_image_context = (
-                                f"[L'utilisateur répond à un message contenant une image."
-                                f"{ref_desc}]\n"
-                            )
+                    # Texte du message cité (tronqué) — auteur attribué explicitement
+                    ref_text = " ".join((ref_msg.content or "").split())
+                    if ref_text:
+                        if len(ref_text) > 300:
+                            ref_text = ref_text[:300] + "…"
+                        ref_who = (
+                            "toi (Wally)" if ref_msg.author.id == bot.user.id
+                            else _author_label(ref_msg.author)
+                        )
+                        replied_text_context = (
+                            f"\n↪ [{author_label} répond à ce message de {ref_who}] : "
+                            f"« {ref_text} »\n"
+                        )
+                    # Images du message référencé — seulement si le message courant
+                    # n'en contient pas déjà
+                    if not image_urls:
+                        _img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+                        ref_images = [
+                            a.url for a in ref_msg.attachments
+                            if (a.content_type and a.content_type.startswith("image/"))
+                            or a.filename.lower().endswith(_img_exts)
+                        ]
+                        # Images dans les embeds (URLs CDN uniquement, pas attachment://)
+                        if not ref_images:
+                            for embed in ref_msg.embeds:
+                                if embed.image and embed.image.url and not embed.image.url.startswith("attachment://"):
+                                    ref_images.append(embed.image.url)
+                        image_urls = ref_images[:4]
+                        if image_urls:
+                            # Contexte sur l'image référencée
+                            is_wally_image = ref_msg.author.id == bot.user.id
+                            ref_desc = ""
+                            for embed in ref_msg.embeds:
+                                if embed.title:
+                                    ref_desc += f" Titre: {embed.title}."
+                                if embed.description:
+                                    ref_desc += f" Prompt: {embed.description}"
+                            if is_wally_image:
+                                replied_image_context = (
+                                    f"[L'utilisateur répond à une image que TU as générée avec /imagine."
+                                    f"{ref_desc} Tu es l'auteur de cette image.]\n"
+                                )
+                            else:
+                                replied_image_context = (
+                                    f"[L'utilisateur répond à un message contenant une image."
+                                    f"{ref_desc}]\n"
+                                )
             except Exception as e:
-                logger.debug("Failed to fetch referenced message images: {e}", e=e)
+                logger.debug("Failed to fetch referenced message: {e}", e=e)
 
         # Texte à envoyer — ajoute un marqueur image si texte+image pour que le LLM traite l'image
         if image_urls and message.content:
@@ -1005,7 +1025,6 @@ async def _respond(
         else:
             text_content = message.content or ""
 
-        author_label = _author_label(message.author)
         target_notice = (
             f"\n⚠️ Tu réponds à {author_label}. "
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
@@ -1017,6 +1036,7 @@ async def _respond(
             prelude_block
             + context_block
             + target_notice
+            + replied_text_context
             + replied_image_context
             + f"\n[{author_label}]: {text_content}"
         )
