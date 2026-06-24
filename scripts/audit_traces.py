@@ -309,11 +309,22 @@ def _timeline_summary(ev: dict) -> str:
     return f"{t}: {json.dumps(extra, ensure_ascii=False)[:120]}"
 
 
-def timeline(root: Path, date: str | None, channel: str | None) -> None:
+# Events de cognition PURE (sans effet visible) — condensés en « réflexion » en
+# mode --compact. Tout le reste (messages, gate, act concret, DM, émotions…) reste
+# affiché : on veut voir QUE quelque chose s'est passé, sans le pavé de monologue.
+_INTERNAL_TYPES = {"think", "attn", "decide", "think_skipped"}
+
+
+def timeline(root: Path, date: str | None, channel: str | None,
+             compact: bool = False) -> None:
     """Vue chronologique UNIFIÉE : entrelace tous les canaux + le flux cognitif
     (brain) triés par horodatage absolu. Indispensable pour suivre une séquence
     qui traverse réactif et cognitif (ex: un message spontané du cerveau qui
-    répond à une question déjà traitée en réactif)."""
+    répond à une question déjà traitée en réactif).
+
+    `compact` : regroupe les rafales de cognition pure (think/attn/decide)
+    consécutives en une seule ligne « 💭 réflexion ×N » — la chronologie reste
+    lisible tout en montrant qu'il y a eu de l'activité."""
     if not date:
         now = datetime.now(_TZ) if _TZ else datetime.now()
         date = now.strftime("%Y-%m-%d")
@@ -333,9 +344,28 @@ def timeline(root: Path, date: str | None, channel: str | None) -> None:
     rows.sort(key=lambda r: r[0])
     scope = channel if channel else "tous canaux"
     print(f"\n=== TIMELINE {date} — {len(rows)} events ({scope} + 🧠 brain) ===\n")
+
+    # État de regroupement des réflexions (mode compact).
+    run_count = 0
+    run_start = ""
+
+    def _flush_run() -> None:
+        nonlocal run_count, run_start
+        if run_count:
+            suffix = f" ({run_start})" if run_count == 1 else f" ×{run_count} (depuis {run_start})"
+            print(f"[{run_start}] {'🧠 brain':30.30} 💭 réflexion{suffix}")
+            run_count = 0
+
     for ts, source, ev in rows:
+        if compact and ev.get("type") in _INTERNAL_TYPES:
+            if run_count == 0:
+                run_start = _hhmmss(ts)
+            run_count += 1
+            continue
+        _flush_run()
         label = "🧠 brain" if "brain" in source else source
         print(f"[{_hhmmss(ts)}] {label:30.30} {_timeline_summary(ev)}")
+    _flush_run()
 
 
 def main() -> None:
@@ -349,6 +379,8 @@ def main() -> None:
     ap.add_argument("--cognitive-only", action="store_true", help="n'analyse QUE le flux cognitif")
     ap.add_argument("--timeline", action="store_true",
                     help="vue chronologique unifiée (tous canaux + brain entrelacés par ts)")
+    ap.add_argument("--compact", action="store_true",
+                    help="(avec --timeline) condense les rafales de réflexion interne en « 💭 réflexion ×N »")
     args = ap.parse_args()
 
     root = Path(args.root)
@@ -356,7 +388,7 @@ def main() -> None:
         print(f"Dossier introuvable : {root}")
         return
     if args.timeline:
-        timeline(root, args.date, args.channel)
+        timeline(root, args.date, args.channel, compact=args.compact)
     elif args.trace:
         dump_trace(root, args.trace)
     elif args.cognitive_only:
