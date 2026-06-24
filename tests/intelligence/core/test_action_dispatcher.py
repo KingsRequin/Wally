@@ -120,6 +120,29 @@ async def test_speak_records_wally_message_in_memory():
 
 
 @_pytest_fd.mark.asyncio
+async def test_speak_logged_to_conv_log_as_message_out():
+    """Le SPEAK cognitif est tracé dans le conv_log du canal (chronologie/débogage),
+    sinon un message spontané réellement envoyé n'apparaît dans aucun log de canal."""
+    channel = _MMd()
+    channel.send = _AMd()
+    channel.name = "chambre-de-wally"
+    channel.guild.name = "Le Purgatoire"
+    bot = _MMd()
+    bot.get_channel.return_value = channel
+    conv_log = _MMd()
+    bot.conv_log = conv_log
+    disp = _AD(bot=bot)
+    await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
+    conv_log.log.assert_called_once()
+    args, kwargs = conv_log.log.call_args
+    assert args[0] == "discord"
+    assert args[1] == "Le Purgatoire/chambre-de-wally"
+    assert args[2] == "message_out"
+    assert kwargs["kind"] == "cognitive"
+    assert kwargs["content"] == "salut"
+
+
+@_pytest_fd.mark.asyncio
 async def test_dm_records_wally_message_in_memory():
     """Le DM cognitif au créateur doit s'enregistrer dans le contexte du canal DM,
     pour que Wally se souvienne de la question qu'il a posée."""

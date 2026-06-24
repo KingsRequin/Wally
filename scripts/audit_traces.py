@@ -24,7 +24,14 @@ import argparse
 import json
 import re
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+
+try:
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Europe/Paris")
+except Exception:  # pragma: no cover
+    _TZ = None
 
 # Tournures qui annoncent une action — sert à repérer les "je vais faire ça" suivis de rien.
 _INTENT_RE = re.compile(
@@ -272,6 +279,65 @@ def dump_trace(root: Path, trace_id: str) -> None:
         print()
 
 
+def _hhmmss(ts: float) -> str:
+    dt = datetime.fromtimestamp(ts, _TZ) if _TZ else datetime.fromtimestamp(ts)
+    return dt.strftime("%H:%M:%S")
+
+
+def _timeline_summary(ev: dict) -> str:
+    """Résumé court d'un event pour la vue chronologique."""
+    t = ev.get("type", "?")
+    if t in ("message_in", "message_out"):
+        who = ev.get("author", "?")
+        content = " ".join((ev.get("content") or "").split())
+        kind = f"({ev['kind']})" if ev.get("kind") else ""
+        arrow = "← IN " if t == "message_in" else "→ OUT"
+        rep = " [reply]" if str(ev.get("is_reply")) == "True" else ""
+        return f"{arrow}{kind}{rep} {who}: {content[:120]}"
+    if t in ("think", "attn", "decide", "act"):
+        body = " ".join(
+            (ev.get("text") or ev.get("detail") or ev.get("content_snippet") or "").split()
+        )
+        tgt = ev.get("target")
+        tg = f"[{tgt}] " if tgt and tgt != "—" else ""
+        return f"{t.upper():7}{tg}{body[:120]}"
+    if t == "gate_decision":
+        return f"gate → {ev.get('decision')} (spontaneous={ev.get('spontaneous')})"
+    if t == "speak_suppressed":
+        return f"SPEAK supprimé — {ev.get('reason')}"
+    extra = {k: v for k, v in ev.items() if k not in ("ts", "type", "trace_id")}
+    return f"{t}: {json.dumps(extra, ensure_ascii=False)[:120]}"
+
+
+def timeline(root: Path, date: str | None, channel: str | None) -> None:
+    """Vue chronologique UNIFIÉE : entrelace tous les canaux + le flux cognitif
+    (brain) triés par horodatage absolu. Indispensable pour suivre une séquence
+    qui traverse réactif et cognitif (ex: un message spontané du cerveau qui
+    répond à une question déjà traitée en réactif)."""
+    if not date:
+        now = datetime.now(_TZ) if _TZ else datetime.now()
+        date = now.strftime("%Y-%m-%d")
+
+    rows: list[tuple[float, str, dict]] = []
+    for path in root.glob("**/*.jsonl"):
+        if date not in path.name:
+            continue
+        source = "/".join(path.relative_to(root).parts[:-1])
+        is_brain = "brain" in source
+        # Avec --channel : ce canal + le cerveau (pour voir les deux entrelacés).
+        if channel and channel.lower() not in source.lower() and not is_brain:
+            continue
+        for ev in _load(path):
+            rows.append((ev.get("ts", 0.0), source, ev))
+
+    rows.sort(key=lambda r: r[0])
+    scope = channel if channel else "tous canaux"
+    print(f"\n=== TIMELINE {date} — {len(rows)} events ({scope} + 🧠 brain) ===\n")
+    for ts, source, ev in rows:
+        label = "🧠 brain" if "brain" in source else source
+        print(f"[{_hhmmss(ts)}] {label:30.30} {_timeline_summary(ev)}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Audit des logs de conversation Wally")
     ap.add_argument("--root", default="logs/conversations", help="dossier racine des logs")
@@ -281,13 +347,17 @@ def main() -> None:
     ap.add_argument("--trace", help="dump complet d'un trace_id précis")
     ap.add_argument("--slow-ms", type=int, default=8000, help="seuil de latence anormale (ms)")
     ap.add_argument("--cognitive-only", action="store_true", help="n'analyse QUE le flux cognitif")
+    ap.add_argument("--timeline", action="store_true",
+                    help="vue chronologique unifiée (tous canaux + brain entrelacés par ts)")
     args = ap.parse_args()
 
     root = Path(args.root)
     if not root.exists():
         print(f"Dossier introuvable : {root}")
         return
-    if args.trace:
+    if args.timeline:
+        timeline(root, args.date, args.channel)
+    elif args.trace:
         dump_trace(root, args.trace)
     elif args.cognitive_only:
         audit_cognitive(root, args.date)

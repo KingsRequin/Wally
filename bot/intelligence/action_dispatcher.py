@@ -59,6 +59,9 @@ class ActionDispatcher:
             try:
                 await twitch_bot.twitch_api.send_message(text=message)
                 logger.info("Cognitive SPEAK → Twitch (stream live) : {}", message[:80])
+                _ch = (twitch_bot._stream_info.get("user_login")
+                       or twitch_bot._stream_info.get("user_name") or "stream")
+                self._log_speak("twitch", _ch, message)
                 if self._feed:
                     self._feed.publish({"type": "SPEAK", "channel": "twitch", "detail": message})
                 return
@@ -74,6 +77,9 @@ class ActionDispatcher:
                 await channel.send(message)
                 logger.info("Cognitive SPEAK → canal {} : {}", channel_id, message[:80])
                 self._record_self_message(str(channel_id), message)
+                guild = getattr(getattr(channel, "guild", None), "name", None)
+                chan = getattr(channel, "name", None) or "dm"
+                self._log_speak("discord", f"{guild}/{chan}" if guild else chan, message)
                 _speaks = getattr(self._bot, "_wally_recent_speaks", None)
                 if _speaks is not None:
                     _speaks[int(channel_id)] = message
@@ -83,6 +89,24 @@ class ActionDispatcher:
                 logger.warning("SPEAK: canal {} introuvable", channel_id)
         except Exception as e:
             logger.error("SPEAK failed: {}", e)
+
+    def _log_speak(self, platform: str, conv_channel: str, message: str) -> None:
+        """Trace un SPEAK cognitif comme message_out dans le conv_log du canal.
+
+        Sans ça, un message spontané réellement envoyé n'apparaît dans AUCUN log
+        de canal (seulement, indirectement, dans le brain) — invisible pour le
+        débogage chronologique. kind='cognitive' le distingue d'une réponse réactive.
+        """
+        clog = getattr(self._bot, "conv_log", None) or getattr(self._twitch_bot, "conv_log", None)
+        if clog is None:
+            return
+        try:
+            from bot.core.conversation_log import new_trace_id
+            clog.log(platform, conv_channel, "message_out",
+                     trace_id=new_trace_id("cognitive"), kind="cognitive",
+                     author="Wally", content=message)
+        except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
+            logger.warning("conv_log SPEAK échoué: {}", e)
 
     def _record_self_message(self, channel_id: str, message: str) -> None:
         """Enregistre un message sortant SPONTANÉ de Wally dans la mémoire de contexte.
