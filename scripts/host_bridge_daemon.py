@@ -13,6 +13,11 @@ import uuid
 from pathlib import Path
 
 SOCKET_PATH = os.environ.get("BRIDGE_SOCKET", "/opt/stacks/wally-ai/data/bridge.sock")
+# Le bot tourne dans le conteneur en tant que 1000:1000 et accède au socket via le
+# volume ./data. Le daemon (root) doit donc lui en donner la propriété, sinon le
+# socket recréé à chaque restart reste root:root et le conteneur perd l'accès.
+SOCKET_UID = int(os.environ.get("BRIDGE_SOCKET_UID", "1000"))
+SOCKET_GID = int(os.environ.get("BRIDGE_SOCKET_GID", "1000"))
 BRIDGE_SECRET = os.environ.get("BRIDGE_SECRET", "")
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/opt/stacks/wally-ai"))
 COMPOSE_FILE = str(REPO_ROOT / "docker-compose.yml")
@@ -277,6 +282,11 @@ class UnixServer(socketserver.UnixStreamServer):
             sock.unlink()
         super().server_bind()
         sock.chmod(0o660)
+        try:
+            os.chown(SOCKET_PATH, SOCKET_UID, SOCKET_GID)
+        except OSError as exc:
+            logging.warning("chown du socket impossible (%s) — le conteneur risque "
+                            "de ne pas pouvoir y accéder", exc)
 
 
 if __name__ == "__main__":
