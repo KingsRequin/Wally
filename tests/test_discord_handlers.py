@@ -4,6 +4,7 @@ Tests for Discord message handler pipeline.
 All Discord objects and services are mocked — no real bot connection needed.
 """
 import asyncio
+import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -191,8 +192,10 @@ async def test_respond_includes_context_block_when_present():
 
 
 def _make_reply_ref(content, author_id, display_name="X", name="x"):
-    ref = MagicMock()
+    # spec=discord.Message pour passer le garde isinstance() de _fetch_referenced_message
+    ref = MagicMock(spec=discord.Message)
     ref.content = content
+    ref.author = MagicMock()
     ref.author.id = author_id
     ref.author.display_name = display_name
     ref.author.name = name
@@ -233,6 +236,25 @@ async def test_respond_injects_replied_message_attributes_other_author():
     content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
     assert "Message original d'Alice" in content
     assert "Alice (@alice_xyz)" in content
+
+
+@pytest.mark.asyncio
+async def test_respond_enriches_memory_search_with_replied_message():
+    """La requête mémoire inclut le contenu du message cité — ancrage factuel
+    anti-confabulation : répondre 'j'ai po la ref' à un message parlant de jubeii
+    doit chercher 'jubeii' en mémoire, pas seulement 'j'ai po la ref'."""
+    bot = make_bot()
+    message = make_message(content="j'ai po la ref")
+    message.reference = MagicMock()
+    message.reference.message_id = 555
+    message.reference.resolved = _make_reply_ref(
+        "jubeii1979 qui dislikes froid", bot.user.id
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    query = bot.memory.search.call_args.args[2]
+    assert "jubeii1979" in query
+    assert "j'ai po la ref" in query
 
 
 # ── _post_process ─────────────────────────────────────────────────────────────
