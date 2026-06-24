@@ -57,3 +57,36 @@ class HostBridgeClient:
             )
             if r.status_code != 200:
                 raise HostBridgeError(r.json().get("error", "unknown error"))
+
+    async def claude_run(self, goal: str) -> str:
+        async with httpx.AsyncClient(transport=self._transport(), timeout=15.0) as c:
+            r = await c.post(
+                "http://bridge/claude-run",
+                json={"goal": goal},
+                headers=self._headers(),
+            )
+            if r.status_code != 200:
+                raise HostBridgeError(r.json().get("error", "unknown error"))
+            return r.json()["job_id"]
+
+    async def claude_status(self, job_id: str) -> dict:
+        async with httpx.AsyncClient(transport=self._transport(), timeout=15.0) as c:
+            r = await c.post(
+                "http://bridge/claude-status",
+                json={"job_id": job_id},
+                headers=self._headers(),
+            )
+            if r.status_code != 200:
+                raise HostBridgeError(r.json().get("error", "unknown error"))
+            return r.json()
+
+    async def claude_commit(self, goal: str) -> dict:
+        async with httpx.AsyncClient(transport=self._transport(), timeout=30.0) as c:
+            r = await c.post(
+                "http://bridge/claude-commit",
+                json={"goal": goal},
+                headers=self._headers(),
+            )
+            if r.status_code != 200:
+                raise HostBridgeError(r.json().get("error", "unknown error"))
+            return r.json()
