@@ -844,88 +844,185 @@ git commit -m "feat(scrape): auto-scrape du 1er lien collé (cooldown par canal)
 
 ---
 
-### Task 7: Infra Docker Firecrawl + env
+### Task 7: Infra Docker Firecrawl (stack séparée + réseau partagé)
+
+**Décision retenue :** Firecrawl vit dans sa **propre stack Dockge** à `/opt/stacks/firecrawl/`, basée sur le compose upstream **v2.11.0** quasi verbatim. Wally s'y connecte via un **réseau docker externe partagé**. Backend de file = **Postgres** (`nuq-postgres`) → on **retire FoundationDB** (`foundationdb` + `foundationdb-init` + volumes fdb, expérimental, opt-in seulement). Images **pré-buildées pinnées sur v2.11.0** (pas de build local). Stack finale = 5 services : `api`, `playwright-service`, `redis`, `rabbitmq`, `nuq-postgres`.
 
 **Files:**
-- Modify: `docker-compose.yml` (services Firecrawl + `depends_on` non bloquant sur `wally`)
-- Modify: `.env.example` (ajouter `FIRECRAWL_API_URL`)
-- Create: `firecrawl/.env.firecrawl` (variables Firecrawl, gitignoré si secrets) — voir note
-- Test: validation `docker compose config` + smoke test API
+- Create: `/opt/stacks/firecrawl/docker-compose.yml` (stack Firecrawl)
+- Create: `/opt/stacks/firecrawl/.env` (variables Firecrawl ; non committé)
+- Modify: `/opt/stacks/wally-ai/docker-compose.yml` (rattacher `wally` au réseau externe partagé)
+- Modify: `/opt/stacks/wally-ai/.env.example` (ajouter `FIRECRAWL_API_URL`)
+- Test: `docker compose config` + smoke test API depuis le conteneur Wally
 
 **Interfaces:**
-- Produces: services `firecrawl-api` (port interne 3002, réseau `wally-net`), `firecrawl-playwright`, `firecrawl-redis`, `firecrawl-rabbitmq`, `firecrawl-nuq-postgres`, `firecrawl-foundationdb`.
+- Produces: l'API Firecrawl joignable depuis le conteneur `wally` à `http://firecrawl-api:3002` (alias réseau).
 
-> **NOTE pour l'implémenteur :** la composition EXACTE des services et leurs variables d'env dépendent du **tag stable** retenu de Firecrawl. AVANT d'écrire ce bloc, récupérer le `docker-compose.yaml` du tag choisi (`https://github.com/firecrawl/firecrawl` → onglet releases/tags) et l'adapter : préfixer les noms de services par `firecrawl-`, les rattacher au réseau `wally-net`, NE PAS exposer de ports vers l'extérieur (réseau interne seulement), fixer `MAX_RAM=0.8` et `MAX_CPU=0.8`. Pinner les images sur des tags fixes (jamais `latest`/`main`).
+> **NOTE pour l'implémenteur :** Référence = `https://raw.githubusercontent.com/firecrawl/firecrawl/v2.11.0/docker-compose.yaml`. Les services internes se parlent par hostnames upstream (`redis`, `playwright-service`, `nuq-postgres`, `rabbitmq`) — **garder ces noms** dans la stack Firecrawl (réseau interne `backend`). Seul le service `api` reçoit en plus le réseau externe partagé avec un **alias `firecrawl-api`** pour que Wally le joigne sans ambiguïté.
 
-- [ ] **Step 1: Récupérer le compose du tag stable**
+- [ ] **Step 1: Créer le réseau externe partagé**
 
-Run: `curl -fsSL https://raw.githubusercontent.com/firecrawl/firecrawl/<TAG>/docker-compose.yaml -o /tmp/firecrawl-compose.yaml && head -50 /tmp/firecrawl-compose.yaml`
-Expected: le fichier compose du tag choisi (remplacer `<TAG>` par la release retenue, ex. `v1.x.x`).
+Run: `docker network create firecrawl-shared 2>/dev/null; docker network ls | grep firecrawl-shared`
+Expected: la ligne `firecrawl-shared` (créé, ou déjà existant).
 
-- [ ] **Step 2: Ajouter les services au `docker-compose.yml` de Wally**
+- [ ] **Step 2: Récupérer le compose de référence**
 
-Intégrer les services Firecrawl (préfixés `firecrawl-`) dans `docker-compose.yml`, tous sur `networks: [wally-net]`, sans `ports:` exposés. Exemple de squelette du service API (à compléter avec les env du tag) :
+Run: `curl -fsSL https://raw.githubusercontent.com/firecrawl/firecrawl/v2.11.0/docker-compose.yaml -o /tmp/firecrawl-2.11.0.yaml && grep -c 'service' /tmp/firecrawl-2.11.0.yaml`
+Expected: le fichier est téléchargé (sert de base ; on l'adapte ci-dessous).
+
+- [ ] **Step 3: Écrire `/opt/stacks/firecrawl/docker-compose.yml`**
+
+Adapter le compose upstream : images pinnées, FoundationDB retiré, caps mémoire réduits pour CT100, `api` ajouté au réseau partagé avec alias. Squelette cible :
 
 ```yaml
-  firecrawl-api:
-    image: ghcr.io/firecrawl/firecrawl:<TAG>
-    container_name: wally-firecrawl-api
-    networks:
-      - wally-net
+name: firecrawl
+
+networks:
+  backend:
+    driver: bridge
+  shared:
+    external: true
+    name: firecrawl-shared
+
+x-common-env: &common-env
+  REDIS_URL: redis://redis:6379
+  REDIS_RATE_LIMIT_URL: redis://redis:6379
+  PLAYWRIGHT_MICROSERVICE_URL: http://playwright-service:3000/scrape
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: postgres
+  POSTGRES_HOST: nuq-postgres
+  POSTGRES_PORT: 5432
+  USE_DB_AUTHENTICATION: "false"
+  NUM_WORKERS_PER_QUEUE: 4
+  CRAWL_CONCURRENT_REQUESTS: 4
+  MAX_CONCURRENT_JOBS: 3
+  BROWSER_POOL_SIZE: 2
+
+services:
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:v2.11.0
+    container_name: firecrawl-playwright
     environment:
-      - MAX_RAM=0.8
-      - MAX_CPU=0.8
-      - REDIS_URL=redis://firecrawl-redis:6379
-      # … reste des env du tag (playwright url, postgres, rabbitmq…) …
+      PORT: 3000
+      MAX_CONCURRENT_PAGES: 2
+      BLOCK_MEDIA: "true"
+    networks: [backend]
+    cpus: 2.0
+    mem_limit: 2G
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/firecrawl/firecrawl:v2.11.0
+    container_name: firecrawl-api
+    environment:
+      <<: *common-env
+      HOST: "0.0.0.0"
+      PORT: 3002
+      WORKER_PORT: 3005
+      EXTRACT_WORKER_PORT: 3004
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      ENV: local
     depends_on:
-      - firecrawl-redis
-      - firecrawl-playwright
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      nuq-postgres:
+        condition: service_started
+    networks:
+      backend:
+      shared:
+        aliases: [firecrawl-api]
+    cpus: 4.0
+    mem_limit: 3G
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: firecrawl-redis
+    command: redis-server --bind 0.0.0.0
+    networks: [backend]
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: firecrawl-rabbitmq
+    command: rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks: [backend]
+    restart: unless-stopped
+
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:v2.11.0
+    container_name: firecrawl-nuq-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    networks: [backend]
     restart: unless-stopped
 ```
 
-(Répéter pour `firecrawl-playwright`, `firecrawl-redis`, `firecrawl-rabbitmq`, `firecrawl-nuq-postgres`, `firecrawl-foundationdb` + init, selon le compose du tag.)
+> ⚠️ Le service `api` upstream a `command: node dist/src/harness.js --start-docker` et un volume `fdb-cluster-file`. Avec le backend Postgres (NUQ_BACKEND non défini), le volume FDB est inutile et omis ci-dessus. Si l'image pinnée exige un `command`/volume particulier, le récupérer depuis `/tmp/firecrawl-2.11.0.yaml` et l'ajouter SANS réintroduire FoundationDB. Le smoke test (Step 6) valide le bon démarrage.
 
-- [ ] **Step 3: `depends_on` non bloquant sur `wally`**
+- [ ] **Step 4: Rattacher `wally` au réseau partagé**
 
-Dans le service `wally`, ajouter sous `depends_on:` (à côté de `init-perms`) — SANS `condition: service_healthy` :
+Dans `/opt/stacks/wally-ai/docker-compose.yml`, déclarer le réseau externe et l'ajouter au service `wally`.
+
+Section `networks:` (haut du fichier) — ajouter :
 
 ```yaml
-      firecrawl-api:
-        condition: service_started
+  firecrawl-shared:
+    external: true
 ```
 
-- [ ] **Step 4: Variables d'environnement**
+Service `wally` — la clé `networks:` passe de `- wally-net` à :
 
-Dans `.env.example`, ajouter :
+```yaml
+    networks:
+      - wally-net
+      - firecrawl-shared
+```
+
+- [ ] **Step 5: Variables d'environnement**
+
+Dans `/opt/stacks/wally-ai/.env.example`, ajouter :
 
 ```bash
-# Firecrawl self-host (scraping). URL interne du réseau docker.
+# Firecrawl self-host (scraping). Hostname = alias réseau de la stack firecrawl.
 FIRECRAWL_API_URL=http://firecrawl-api:3002
 ```
 
-Puis dans le `.env` réel (non committé) : ajouter la même ligne.
+Ajouter la même ligne dans le `.env` réel (non committé). Créer `/opt/stacks/firecrawl/.env` (peut rester quasi vide : les valeurs par défaut du compose suffisent en self-host sans auth).
 
-- [ ] **Step 5: Valider la composition**
-
-Run: `docker compose config >/dev/null && echo "compose valide"`
-Expected: `compose valide` (aucune erreur YAML/référence).
-
-- [ ] **Step 6: Démarrer Firecrawl + smoke test**
+- [ ] **Step 6: Démarrer Firecrawl + smoke test depuis Wally**
 
 Run:
 ```bash
-docker compose up -d firecrawl-redis firecrawl-playwright firecrawl-api
-sleep 20
-docker compose exec wally sh -c 'curl -fsS -X POST http://firecrawl-api:3002/v1/scrape -H "Content-Type: application/json" -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"' | head -c 300
+cd /opt/stacks/firecrawl && docker compose config >/dev/null && echo "firecrawl compose valide"
+docker compose up -d
+sleep 30
+docker exec wally-bot sh -c 'curl -fsS -X POST http://firecrawl-api:3002/v1/scrape -H "Content-Type: application/json" -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"' | head -c 400
 ```
-Expected: une réponse JSON contenant du markdown (`"markdown": "..."`). Si erreur, ajuster les env du tag avant de continuer.
+Expected: `firecrawl compose valide` puis une réponse JSON contenant `"markdown"`. Si l'API ne répond pas, inspecter `docker compose -f /opt/stacks/firecrawl/docker-compose.yml logs api` et ajuster `command`/env d'après le compose upstream (sans FDB).
 
 - [ ] **Step 7: Commit**
 
 ```bash
+cd /opt/stacks/wally-ai
 git add docker-compose.yml .env.example
-git commit -m "feat(scrape): stack Firecrawl self-host dans docker-compose"
+git commit -m "feat(scrape): rattache wally au reseau partage Firecrawl"
 ```
+
+(La stack `/opt/stacks/firecrawl/` n'est pas dans le repo Wally — la documenter dans MEMORY.md à la fin.)
 
 ---
 
