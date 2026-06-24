@@ -7,6 +7,8 @@ import logging
 import os
 import socketserver
 import subprocess
+import time
+import uuid
 from pathlib import Path
 
 SOCKET_PATH = os.environ.get("BRIDGE_SOCKET", "/opt/stacks/wally-ai/data/bridge.sock")
@@ -14,6 +16,38 @@ BRIDGE_SECRET = os.environ.get("BRIDGE_SECRET", "")
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/opt/stacks/wally-ai"))
 COMPOSE_FILE = str(REPO_ROOT / "docker-compose.yml")
 ALLOWED_SERVICES: set[str] = {"wally"}
+
+JOBS_DIR = Path(os.environ.get("CLAUDE_JOBS_DIR", str(REPO_ROOT / "data" / "claude_jobs")))
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/root/.local/bin/claude")
+CLAUDE_TIMEOUT = float(os.environ.get("CLAUDE_TIMEOUT", "1800"))
+_JOBS: dict[str, dict] = {}
+
+
+def _git_head() -> str:
+    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT,
+                       capture_output=True, timeout=10)
+    return r.stdout.decode().strip()
+
+
+def _git_status_porcelain() -> str:
+    r = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT,
+                       capture_output=True, timeout=10)
+    return r.stdout.decode().strip()
+
+
+def _extract_claude_result(raw: str) -> str:
+    """claude -p --output-format json émet un objet JSON ; on en extrait le résultat."""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            val = obj.get("result") or obj.get("text") or ""
+            return str(val)[:1500]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return raw[-1500:]
 
 
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
