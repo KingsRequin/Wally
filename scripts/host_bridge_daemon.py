@@ -42,12 +42,18 @@ def _porcelain_paths() -> set[str]:
     Sert à isoler ce que Claude a touché PENDANT un run : on compare l'ensemble
     avant le run et après. Évite qu'un fichier déjà modifié (non lié au run)
     déclenche un faux commit/rebuild.
+
+    On lit la sortie BRUTE (pas via _git_status_porcelain qui .strip() le bloc et
+    retirerait l'espace de tête du statut de la 1re ligne → chemin décalé d'un char).
+    Format porcelain v1 : 2 chars de statut + 1 espace + chemin.
     """
+    r = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT,
+                       capture_output=True, timeout=10)
     paths: set[str] = set()
-    for line in _git_status_porcelain().splitlines():
-        if not line.strip():
+    for line in r.stdout.decode().split("\n"):
+        if len(line) <= 3:
             continue
-        rest = line[3:] if len(line) > 3 else line  # retire le code de statut "XY "
+        rest = line[3:]  # retire "XY " (statut + espace), sans toucher au reste
         if " -> " in rest:  # rename : "orig -> new"
             rest = rest.split(" -> ", 1)[1]
         paths.add(rest.strip().strip('"'))
