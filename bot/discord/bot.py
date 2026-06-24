@@ -11,6 +11,7 @@ from discord.ext import commands
 from loguru import logger
 
 from bot.discord.events import register_events
+from bot.discord.presence import PresenceService
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -41,7 +42,7 @@ class WallyDiscord(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        intents.presences = True  # required for on_presence_update (privileged intent)
+        intents.presences = True  # privileged — alimente le cache présence lu par PresenceService
         super().__init__(command_prefix="!", intents=intents)
 
         self.config = config
@@ -54,6 +55,9 @@ class WallyDiscord(commands.Bot):
         self.prompts = prompts
         self.language = language
         self.persona = persona
+        # Perception de la présence (statut + activité) des membres du serveur principal,
+        # en lecture seule depuis le cache discord.py. Voir bot/discord/presence.py.
+        self.presence = PresenceService(self)
         self.journal = None  # set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         self.vision = None  # VisionService — set by main.py after construction

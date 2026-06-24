@@ -165,6 +165,20 @@ def _author_label(member: discord.Member | discord.User) -> str:
     return display
 
 
+def _presence_line(bot: "WallyDiscord", user_id: str, display_name: str) -> str:
+    """Présence en direct de l'interlocuteur (statut + activité) ou "".
+
+    Lecture seule, serveur principal uniquement. Ne casse jamais une réponse :
+    toute erreur renvoie une chaîne vide."""
+    svc = getattr(bot, "presence", None)
+    if svc is None:
+        return ""
+    try:
+        return svc.describe(user_id, display_name) or ""
+    except Exception:
+        return ""
+
+
 def _channel_origin(channel) -> str:
     """Libellé lisible du lieu d'un message Discord, pour la provenance mémoire.
 
@@ -975,10 +989,13 @@ async def _respond(
         if isinstance(message.channel, discord.TextChannel):
             situation["channel"] = f"#{message.channel.name}"
 
+        presence_context = _presence_line(bot, user_id, message.author.display_name)
+
         system_prompt = bot.prompts.build_system_prompt(
             emotion_state=bot.emotion.get_state(),
             memory_context=mem_context,
             situation=situation,
+            presence_context=presence_context,
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,
@@ -1481,6 +1498,9 @@ async def _spontaneous_respond(
             emotion_state=bot.emotion.get_state(),
             memory_context=recall_memory or "",
             situation=situation,
+            presence_context=_presence_line(
+                bot, str(message.author.id), message.author.display_name
+            ),
             persona_block=bot.persona.build_prompt_block(),
             emotion_directives=bot.persona.emotion_directives,
             weekday_directives=bot.persona.weekday_directives,

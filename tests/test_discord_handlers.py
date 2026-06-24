@@ -160,6 +160,30 @@ async def test_muted_user_gets_reaction_not_reply():
 # ── _respond ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_respond_injects_presence_context():
+    bot = make_bot()
+    bot.presence.describe = MagicMock(return_value="TestUser est en ligne — joue à Valorant.")
+    message = make_message(content="wally salut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["presence_context"] == "TestUser est en ligne — joue à Valorant."
+    bot.presence.describe.assert_called_once_with("12345", "TestUser")
+
+
+@pytest.mark.asyncio
+async def test_respond_presence_failure_does_not_break():
+    bot = make_bot()
+    bot.presence.describe = MagicMock(side_effect=RuntimeError("boom"))
+    message = make_message(content="wally salut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["presence_context"] == ""
+    message.reply.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_respond_adds_and_removes_reaction():
     bot = make_bot()
     message = make_message()

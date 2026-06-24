@@ -147,6 +147,7 @@ class PromptBuilder:
         active_secondaries: list[tuple[str, float]] | None = None,
         mood_state: dict[str, float] | None = None,
         persistent_notes: list[dict] | None = None,
+        presence_context: str = "",
     ) -> str:
         parts = []
         if persona_block:
@@ -268,6 +269,11 @@ class PromptBuilder:
             )
             if _MEMORY_RECALL_DIRECTIVE:
                 parts.append(_MEMORY_RECALL_DIRECTIVE)
+
+        # Présence en direct de l'interlocuteur (statut + activité, comme dans
+        # la barre latérale Discord). Transitoire — hors budget mémoire.
+        if presence_context:
+            parts.append(f"\n--- Présence en direct ---\n{presence_context}")
 
         # Trust/love relationship context (separate from semantic memories)
         if relationship_context:
