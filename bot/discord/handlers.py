@@ -319,6 +319,8 @@ _bg_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
+_scrape_cooldowns: dict[str, float] = {}  # channel_id → last auto-scrape timestamp
+_URL_RE = re.compile(r"https?://[^\s<>\"]+")
 
 
 def _fire(coro) -> asyncio.Task:
@@ -881,6 +883,38 @@ async def _fetch_referenced_message(
     return None
 
 
+async def _auto_scrape_block(bot: "WallyDiscord", message: "discord.Message") -> str:
+    """Scrape le 1er lien web d'un message (cooldown par canal). Retourne un bloc ou ""."""
+    scrape = getattr(bot, "scrape", None)
+    if not scrape or not scrape.available:
+        return ""
+    if not bot.config.firecrawl.auto_scrape_links:
+        return ""
+
+    match = _URL_RE.search(message.content or "")
+    if not match:
+        return ""
+    url = match.group(0).rstrip(").,;")
+    if not scrape.is_scrapable_url(url):
+        return ""
+
+    channel_id = str(message.channel.id)
+    now = time.time()
+    last = _scrape_cooldowns.get(channel_id, 0.0)
+    if now - last < bot.config.firecrawl.auto_scrape_cooldown_s:
+        return ""
+    _scrape_cooldowns[channel_id] = now
+
+    try:
+        content = await scrape.scrape(url)
+    except Exception as exc:
+        logger.warning("Auto-scrape failed for {u}: {e}", u=url, e=exc)
+        return ""
+    if not content:
+        return ""
+    return f"--- Page web ---\n{content}\n"
+
+
 async def _respond(
     bot: "WallyDiscord",
     message: discord.Message,
@@ -1114,8 +1148,10 @@ async def _respond(
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
             "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
         )
+        auto_scrape_block = await _auto_scrape_block(bot, message)
         user_content = (
             prelude_block
+            + auto_scrape_block
             + context_block
             + target_notice
             + replied_text_context
