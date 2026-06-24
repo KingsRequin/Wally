@@ -101,13 +101,31 @@ class CognitiveLoop:
         if len(self._recent_interactions) > 20:
             self._recent_interactions = self._recent_interactions[-20:]
 
-    def notify_reply(self, channel_id) -> None:
+    def notify_reply(self, channel_id, content: str | None = None,
+                     author: str | None = None) -> None:
         """Wally vient de répondre directement dans ce canal (via les handlers).
 
-        Sert à supprimer un SPEAK proactif qui ne ferait que conclure / ressasser
-        une conversation à laquelle il vient déjà de participer.
+        Deux rôles :
+        1. Anti-récap court terme : `_last_reply` supprime un SPEAK proactif dans
+           les minutes qui suivent (REPLY_SPEAK_COOLDOWN).
+        2. **Anti-répétition** : inscrit la réponse de Wally dans
+           `_recent_interactions` pour que le flux cognitif voie la conversation
+           COMPLÈTE (question + réponse de Wally). Sans ça, le cognitif ne voit
+           que les messages des autres et croit qu'une question déjà traitée est
+           restée sans réponse → il y re-répond spontanément (bug du doublon).
         """
         self._last_reply[str(channel_id)] = time.monotonic()
+        if content:
+            self._recent_interactions.append({
+                "channel": str(channel_id),
+                "author": author or "Wally",
+                "content": content[:500],
+                "message_id": None,
+                "ts": time.monotonic(),
+                "is_self": True,
+            })
+            if len(self._recent_interactions) > 20:
+                self._recent_interactions = self._recent_interactions[-20:]
 
     def _log_cog(self, event_type: str, **fields) -> None:
         """Journalise un événement cognitif dans logs/conversations/cognitive/brain/."""

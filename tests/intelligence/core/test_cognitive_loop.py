@@ -44,6 +44,28 @@ def test_notify_activity_message_id_optional():
     assert loop._recent_interactions[-1]["message_id"] is None
 
 
+def test_notify_reply_records_wally_response_in_interactions():
+    """La réponse réactive de Wally entre dans _recent_interactions → le flux
+    cognitif voit la conversation complète et ne re-répond pas (anti-doublon)."""
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="tu streams quand ?")
+    loop.notify_reply(1, content="Jamais, j'ai pas de corps.", author="Wally")
+    last = loop._recent_interactions[-1]
+    assert last["author"] == "Wally"
+    assert "pas de corps" in last["content"]
+    assert last["is_self"] is True
+    assert loop._last_reply["1"] > 0  # anti-récap court terme toujours posé
+
+
+def test_notify_reply_without_content_keeps_old_behavior():
+    """Sans contenu, notify_reply ne pose que l'anti-récap (pas d'interaction)."""
+    loop, *_ = _make_loop()
+    before = len(loop._recent_interactions)
+    loop.notify_reply(1)
+    assert len(loop._recent_interactions) == before
+    assert loop._last_reply["1"] > 0
+
+
 def test_tick_interval_active():
     import time
     loop, *_ = _make_loop()

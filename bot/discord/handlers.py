@@ -1268,7 +1268,7 @@ async def _respond(
         # Signale à la boucle cognitive que Wally a déjà répondu ici → pas de SPEAK
         # proactif redondant dans la foulée.
         if getattr(bot, "cognitive_loop", None) is not None:
-            bot.cognitive_loop.notify_reply(message.channel.id)
+            bot.cognitive_loop.notify_reply(message.channel.id, content=reply)
         _speaks = getattr(bot, "_wally_recent_speaks", None)
         if _speaks is not None:
             _speaks[message.channel.id] = reply
@@ -1522,7 +1522,7 @@ async def _spontaneous_respond(
             content=reply, parts=1, react_emoji=react_emoji,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
-            bot.cognitive_loop.notify_reply(message.channel.id)
+            bot.cognitive_loop.notify_reply(message.channel.id, content=reply)
 
         bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
         bot.memory.append_message(

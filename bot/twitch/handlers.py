@@ -408,7 +408,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             send_mode="irc" if channel_name in bot._channel_ids else "helix",
         )
         if getattr(bot, "cognitive_loop", None) is not None:
-            bot.cognitive_loop.notify_reply(channel_id)
+            bot.cognitive_loop.notify_reply(channel_id, content=reply)
 
         if getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
@@ -632,7 +632,7 @@ async def _spontaneous_respond_twitch(
             content=reply, parts=1,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
-            bot.cognitive_loop.notify_reply(channel_id)
+            bot.cognitive_loop.notify_reply(channel_id, content=reply)
 
         bot.memory.append_prelude(channel_id, "Wally", reply)
         bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
