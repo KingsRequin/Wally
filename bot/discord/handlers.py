@@ -22,6 +22,14 @@ if TYPE_CHECKING:
 
 TIMEOUT_REACTIONS = ["💩", "⛔", "😤", "🙅", "😒"]
 
+# Emojis jugés assez marquants pour être signalés à Wally quand ils sont posés
+# sur le message d'un AUTRE membre (les réactions sur ses propres messages sont
+# toujours signalées, peu importe l'emoji).
+NOTABLE_REACTION_EMOJIS = {
+    "😂", "🤣", "❤️", "❤", "🔥", "💀", "😭", "👏", "💯",
+    "😱", "🤯", "👀", "😡", "🤮", "💩", "⛔", "😤",
+}
+
 _NOTE_TOOLS = [
     {
         "type": "function",
@@ -149,6 +157,78 @@ def _author_label(member: discord.Member | discord.User) -> str:
     if username and username != display:
         return f"{display} (@{username})"
     return display
+
+
+def _format_reactions(
+    emoji: str, target_label: str, target_content: str, on_own_message: bool
+) -> str:
+    """Construit la phrase de contexte décrivant une réaction emoji.
+
+    Retourne uniquement la partie « contenu » (sans le pseudo de l'auteur de la
+    réaction) : elle est injectée dans la fenêtre de contexte avec ce pseudo en
+    tête, rendu ensuite « [pseudo]: a réagi 😂 à ton message « ... » ».
+    """
+    snippet = (target_content or "").strip().replace("\n", " ")
+    if len(snippet) > 120:
+        snippet = snippet[:120].rstrip() + "…"
+    if on_own_message:
+        head = f"a réagi {emoji} à ton message"
+    else:
+        head = f"a réagi {emoji} au message de {target_label}"
+    return f"{head} « {snippet} »" if snippet else head
+
+
+async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionActionEvent) -> None:
+    """Injecte une réaction emoji dans le contexte du canal pour que Wally la perçoive.
+
+    Couvre (A) les réactions sur les messages de Wally et (B) les réactions
+    marquantes sur les messages des autres membres. Ne touche pas au tracking
+    émotionnel (ReactionTracker), qui reste géré séparément.
+    """
+    if getattr(bot, "memory", None) is None or bot.user is None:
+        return
+    if payload.user_id == bot.user.id:
+        return
+    if payload.guild_id and payload.guild_id in bot.config.discord.ignored_guilds:
+        return
+    member = payload.member
+    if member is not None and member.bot:
+        return
+
+    channel = bot.get_channel(payload.channel_id)
+    if channel is None:
+        return
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except Exception as e:
+        logger.debug("Réaction ignorée (fetch_message échoué) : {e}", e=e)
+        return
+
+    on_own_message = message.author.id == bot.user.id
+    emoji = str(payload.emoji)
+
+    if not on_own_message:
+        # Cas B : on ne signale que les réactions marquantes sur les messages
+        # d'autres humains (pas les bots, pas les auto-réactions).
+        if message.author.bot:
+            return
+        if payload.user_id == message.author.id:
+            return
+        if emoji not in NOTABLE_REACTION_EMOJIS:
+            return
+
+    reactor = member or bot.get_user(payload.user_id)
+    if reactor is None:
+        return
+
+    target_label = "Wally" if on_own_message else _author_label(message.author)
+    notice = _format_reactions(emoji, target_label, message.content, on_own_message)
+    channel_id = str(payload.channel_id)
+    bot.memory.append_message(channel_id, _author_label(reactor), notice, platform="discord")
+    logger.debug(
+        "Réaction injectée dans le contexte : {who} {notice} (canal {ch})",
+        who=_author_label(reactor), notice=notice, ch=channel_id,
+    )
 
 
 def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
