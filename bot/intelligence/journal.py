@@ -300,8 +300,11 @@ class DailyJournal:
         self._fetch_history_cb = cb
 
     async def run_memory_cleanup(self) -> None:
-        """Memory cleanup — désactivé (store V1 supprimé en SP2 Task 3)."""
-        logger.warning("Memory cleanup: store V1 removed, skipping")
+        """Maintenance mémoire quotidienne : archive les faits éphémères périmés."""
+        try:
+            await self._memory.cleanup_expired_facts()
+        except Exception as exc:
+            logger.warning("Memory cleanup failed: {e}", e=exc)
 
     async def generate_and_send(self, archive: bool = True, target_date: date | None = None) -> None:
         channel_id = self._config.bot.journal_channel_id

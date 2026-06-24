@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS atomic_facts (
     status        TEXT    NOT NULL DEFAULT 'active',
     emotional_context TEXT,
     source        TEXT,
+    origin        TEXT,
+    expires_at    TEXT,
     created_at    TEXT    NOT NULL,
     last_seen_at  TEXT    NOT NULL
 );
@@ -106,6 +108,8 @@ _NEW_COLUMNS: list[tuple[str, str]] = [
     ("object",        "TEXT"),
     ("importance",    "REAL NOT NULL DEFAULT 0.5"),
     ("support_count", "INTEGER NOT NULL DEFAULT 1"),
+    ("origin",        "TEXT"),
+    ("expires_at",    "TEXT"),
 ]
 
 

@@ -94,6 +94,12 @@ class AtomicFact:
     status:            FactStatus = FactStatus.ACTIVE
     emotional_context: str | None = None
     source:            str = "conversation"
+    # Lieu précis où le fait a été énoncé (ex. "Discord #discussions",
+    # "Discord MP", "Twitch/azrael_ttv"). None pour les faits internes (cognition).
+    origin:            str | None = None
+    # Péremption d'un fait éphémère (intention/événement daté). None = durable.
+    # Stocké en UTC naïf (isoformat sans tz) pour comparaison lexicographique sûre.
+    expires_at:        datetime | None = None
     created_at:        datetime = field(default_factory=datetime.utcnow)
     last_seen_at:      datetime = field(default_factory=datetime.utcnow)
     id:                int | None = None
@@ -124,14 +130,16 @@ class SQLiteFactStore:
                 """INSERT INTO atomic_facts
                    (user_id, content, category, subject, predicate, object,
                     importance, support_count, confidence, decay_rate, status,
-                    emotional_context, source, created_at, last_seen_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    emotional_context, source, origin, expires_at,
+                    created_at, last_seen_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     fact.user_id, fact.content, fact.category.value,
                     fact.subject, fact.predicate, fact.object_,
                     fact.importance, fact.support_count,
                     fact.confidence, fact.decay_rate, fact.status.value,
-                    fact.emotional_context, fact.source,
+                    fact.emotional_context, fact.source, fact.origin,
+                    fact.expires_at.isoformat() if fact.expires_at else None,
                     fact.created_at.isoformat(), fact.last_seen_at.isoformat(),
                 ),
             )
@@ -216,6 +224,24 @@ class SQLiteFactStore:
                            ELSE status
                        END
                    WHERE status = 'active'"""
+            )
+            await db.commit()
+            return result.rowcount
+
+    async def archive_expired(self) -> int:
+        """Archive les faits éphémères dont la date de péremption est passée.
+
+        Comparaison lexicographique sur l'ISO UTC naïf (cf. AtomicFact.expires_at).
+        Retourne le nombre de faits archivés.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            result = await db.execute(
+                """UPDATE atomic_facts
+                   SET status = 'archived'
+                   WHERE status = 'active'
+                     AND expires_at IS NOT NULL
+                     AND expires_at <= ?""",
+                (datetime.utcnow().isoformat(),),
             )
             await db.commit()
             return result.rowcount
@@ -323,6 +349,11 @@ class SQLiteFactStore:
             status=FactStatus(row["status"]),
             emotional_context=row["emotional_context"],
             source=row["source"] or "conversation",
+            origin=_g("origin"),
+            expires_at=(
+                datetime.fromisoformat(_g("expires_at"))
+                if _g("expires_at") else None
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
         )
@@ -358,9 +389,11 @@ class SQLiteFactStore:
                        JOIN atomic_facts f ON f.id = atomic_facts_fts.rowid
                        WHERE atomic_facts_fts MATCH ?
                          AND f.user_id = ? AND f.status = ? AND f.confidence >= ?
+                         AND (f.expires_at IS NULL OR f.expires_at > ?)
                        ORDER BY rank
                        LIMIT ?""",
-                    (match, user_id, FactStatus.ACTIVE.value, min_confidence, limit),
+                    (match, user_id, FactStatus.ACTIVE.value, min_confidence,
+                     datetime.utcnow().isoformat(), limit),
                 )
                 rows = await cursor.fetchall()
             except Exception as exc:  # FTS5 syntax error sur entrée exotique

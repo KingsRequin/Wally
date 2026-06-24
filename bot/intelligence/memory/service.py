@@ -138,7 +138,9 @@ class MemoryService:
 
     async def add(self, platform: str, user_id: str, content: str,
                   category: str = "FAIT", username: str | None = None,
-                  source: str = "fact_extractor", **_kw) -> None:
+                  source: str = "fact_extractor", origin: str | None = None,
+                  expires_at: "datetime | None" = None,
+                  **_kw) -> None:
         if self._retrieval is None:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return
@@ -163,8 +165,37 @@ class MemoryService:
         await self._retrieval.add_fact(AtomicFact(
             user_id=uid,
             content=content, category=cat, confidence=1.0,
-            source=source, created_at=now, last_seen_at=now,
+            source=source, origin=origin, expires_at=expires_at,
+            created_at=now, last_seen_at=now,
         ))
+
+    @staticmethod
+    def _fact_freshness(f) -> str:
+        """Indication temporelle pour un fait éphémère (qui a un `expires_at`).
+
+        Les faits déjà périmés sont filtrés en amont (search_fts) ; on n'annote
+        donc que les éphémères encore valides, pour que Wally situe dans le temps
+        ("tu prévoyais ça tout à l'heure / il y a 2 jours")."""
+        if getattr(f, "expires_at", None) is None:
+            return ""
+        from datetime import datetime, timezone
+        created = f.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_days = (datetime.now(timezone.utc) - created).total_seconds() / 86400
+        if age_days < 1:
+            return " (dit plus tôt aujourd'hui)"
+        if age_days < 2:
+            return " (dit hier)"
+        return f" (dit il y a {int(age_days)} jours)"
+
+    @classmethod
+    def _format_fact(cls, f) -> str:
+        line = f"- {f.content}"
+        origin = getattr(f, "origin", None)
+        if origin and not origin.startswith("internal"):
+            line += f" [{origin}]"
+        return line + cls._fact_freshness(f)
 
     async def search(self, platform: str, user_id: str, query: str,
                      limit: int = 20,
@@ -186,13 +217,26 @@ class MemoryService:
         facts = await self._retrieval.search(enriched, self._user_id(platform, user_id), limit=limit)
         if not facts:
             return ""
-        return "\n".join(f"- {f.content}" for f in facts)
+        return "\n".join(self._format_fact(f) for f in facts)
 
     async def get_all(self, platform: str, user_id: str) -> str:
         if self._facts is None:
             return ""
         facts = await self._facts.get_by_user(self._user_id(platform, user_id))
-        return "\n".join(f"- {f.content}" for f in facts)
+        return "\n".join(self._format_fact(f) for f in facts)
+
+    async def cleanup_expired_facts(self) -> int:
+        """Archive les faits éphémères dont la péremption est passée.
+
+        Appelée par le cron de maintenance mémoire. Le rappel (search_fts) filtre
+        déjà les expirés en temps réel ; cet archivage périodique les retire
+        définitivement des lectures par statut. Retourne le nombre archivé."""
+        if self._facts is None:
+            return 0
+        n = await self._facts.archive_expired()
+        if n:
+            logger.info("Memory cleanup: {n} faits éphémères périmés archivés", n=n)
+        return n
 
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
         if self._facts is None:
