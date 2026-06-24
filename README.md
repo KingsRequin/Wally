@@ -137,13 +137,17 @@ cp .env.example .env
 cp config.example.yaml config.yaml
 # Éditer config.yaml : changer dashboard_token, renseigner les IDs de salons éventuels
 
-# 4. Créer les dossiers de données
+# 4. Créer l'annuaire des canaux Discord (où Wally a le droit d'écrire)
+cp bot/intelligence/persona/CHANNELS.example.md bot/intelligence/persona/CHANNELS.md
+# Éditer CHANNELS.md avec tes propres IDs de salons (optionnel : Wally fonctionne sans)
+
+# 5. Créer les dossiers de données
 mkdir -p data logs
 
-# 5. Lancer
+# 6. Lancer
 docker compose up -d
 
-# 6. Vérifier que tout tourne
+# 7. Vérifier que tout tourne
 docker compose ps
 docker compose logs -f wally
 ```

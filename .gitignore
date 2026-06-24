@@ -9,6 +9,9 @@ config.yaml
 TODO.md
 ROADMAP.md
 
+# Annuaire des canaux Discord (décrit le serveur privé)
+bot/intelligence/persona/CHANNELS.md
+
 # Python
 __pycache__/
 *.pyc
