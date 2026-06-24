@@ -197,6 +197,15 @@ class TavilyConfig:
 
 
 @dataclass
+class FirecrawlConfig:
+    enabled: bool = True
+    inline_max_tokens: int = 2000
+    auto_scrape_links: bool = True
+    auto_scrape_cooldown_s: int = 30
+    daily_limit: int = 200
+
+
+@dataclass
 class WebChatConfig:
     cooldown_seconds: int = 10
     history_limit: int = 50
@@ -250,6 +259,7 @@ class Config:
     emotions: dict[str, EmotionDecayConfig]
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
+    firecrawl: FirecrawlConfig = field(default_factory=FirecrawlConfig)
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
@@ -333,6 +343,7 @@ class Config:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
+            firecrawl_raw = raw.get("firecrawl", {})
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
@@ -402,6 +413,7 @@ class Config:
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
+                firecrawl=FirecrawlConfig(**firecrawl_raw),
                 web_chat=WebChatConfig(**web_chat_raw),
                 image_generation=image_generation,
                 overlay_image=overlay_image,
@@ -434,6 +446,7 @@ class Config:
             "twitch": asdict(self.twitch),
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
             "tavily": asdict(self.tavily),
+            "firecrawl": asdict(self.firecrawl),
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
