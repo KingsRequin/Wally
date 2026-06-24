@@ -62,7 +62,7 @@ Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git :
 ### 🎭 Personnalité
 
 - Persona composée de fichiers Markdown (`SOUL`, `IDENTITY`, `VOICE`, `EXEMPLES`), directives par émotion, par jour de la semaine, et composites.
-- Rechargeable à chaud via `/wally reload-persona`.
+- Rechargeable à chaud via `/reload-persona`.
 
 ### 🛠️ Capacités
 
