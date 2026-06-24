@@ -1,7 +1,7 @@
 # tests/test_auto_scrape.py
 import time
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import bot.discord.handlers as H
 

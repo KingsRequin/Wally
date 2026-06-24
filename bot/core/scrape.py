@@ -1,6 +1,7 @@
 # bot/core/scrape.py
 from __future__ import annotations
 
+import ipaddress
 import os
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -76,6 +77,23 @@ class ScrapeService:
         path = parsed.path.lower()
         if path.endswith(_MEDIA_EXTENSIONS):
             return False
+        # SSRF guard: refuse les cibles internes / privées (le scrape est exécuté
+        # côté serveur par Firecrawl sur le réseau Docker interne).
+        host = parsed.hostname or ""
+        host_l = host.lower()
+        if host_l in ("localhost",) or host_l.endswith(".localhost"):
+            return False
+        # IP littérale → bloquer loopback / privé / link-local / réservé / non spécifié
+        try:
+            ip = ipaddress.ip_address(host)
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_unspecified or ip.is_multicast):
+                return False
+        except ValueError:
+            # pas une IP littérale → nom d'hôte. Bloquer les noms sans point
+            # (alias de services docker internes : firecrawl-api, redis, etc.).
+            if "." not in host_l:
+                return False
         return True
 
     async def daily_limit_reached(self) -> bool:
