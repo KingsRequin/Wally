@@ -15,7 +15,6 @@ from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import assemble_memory_context, load_prompt
-from bot.intelligence.self_fix import OWNER_DISCORD_ID
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -80,40 +79,6 @@ _NOTE_TOOLS = [
         },
     },
 ]
-
-# Outil de self-modification — exposé UNIQUEMENT au créateur (voir _respond).
-# Déclenche SelfFix : génère un diff, l'envoie au créateur en DM, application
-# seulement après approbation manuelle (✅). Wally ne doit l'utiliser que sur
-# demande explicite de son créateur, jamais de sa propre initiative.
-_SELF_MODIFY_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "request_self_modification",
-        "description": (
-            "Demande une modification de ton propre code source. À utiliser UNIQUEMENT "
-            "quand ton créateur te demande explicitement d'ajouter, corriger ou changer "
-            "une de tes fonctionnalités. Tu fournis le fichier concerné et une description "
-            "précise du changement. Ton créateur recevra le diff en privé et devra "
-            "l'approuver manuellement avant toute application. Ne l'utilise JAMAIS de ta "
-            "propre initiative ni pour quelqu'un d'autre que ton créateur."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "Chemin du fichier à modifier, relatif à la racine du projet (ex: bot/discord/handlers.py)",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Description précise et autosuffisante du changement à apporter",
-                },
-            },
-            "required": ["file_path", "description"],
-        },
-    },
-}
-
 
 def _resolve_discord_roles(member) -> list[str]:
     """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable."""
@@ -939,9 +904,6 @@ async def _respond(
         if action_service:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
-        # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
-        if str(message.author.id) == OWNER_DISCORD_ID and getattr(bot, "self_fix", None) is not None:
-            tools.append(_SELF_MODIFY_TOOL)
 
         _reaction_emojis: set[str] = set()
 
@@ -1007,27 +969,6 @@ async def _respond(
                     guild_id=guild_id,
                 )
                 return json.dumps(result)
-            if name == "request_self_modification":
-                if str(message.author.id) != OWNER_DISCORD_ID or getattr(bot, "self_fix", None) is None:
-                    return json.dumps({"status": "refused", "message": "Réservé au créateur, et mécanisme indisponible."})
-                from bot.intelligence.self_fix import FixRequest
-                file_path = args.get("file_path", "")
-                # Valider le chemin AVANT de promettre un DM : sinon le LLM annonce
-                # "c'est envoyé" alors que fix() abandonnera en silence.
-                _abs, path_err = bot.self_fix.resolve(file_path)
-                if path_err:
-                    return json.dumps({"status": "error", "message": path_err})
-                req = FixRequest(
-                    requester_discord_id=str(message.author.id),
-                    file_path=file_path,
-                    description=args.get("description", ""),
-                )
-                # fix() attend l'approbation (jusqu'à 1h) → ne pas bloquer la réponse.
-                _fire(bot.self_fix.fix(req))
-                return json.dumps({
-                    "status": "ok",
-                    "message": "Demande validée. Le diff arrive dans tes DM — valide avec ✅ ou refuse avec ❌.",
-                })
             return f"Unknown tool: {name}"
 
         async def _tool_executor(name: str, arguments: str) -> str:
