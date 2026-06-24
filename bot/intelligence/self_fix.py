@@ -25,7 +25,9 @@ class SelfFix:
         self._pending = False
         self._declined: set[str] = set()
 
-    async def request_upgrade(self, req: UpgradeRequest) -> None:
+    async def request_upgrade(self, req: UpgradeRequest, *, force: bool = False) -> None:
+        # force=True : demande explicite du créateur en conversation → on outrepasse
+        # le filtre _declined (sinon un goal déjà refusé serait ignoré en silence).
         goal = (req.goal or "").strip()
         if not goal:
             return
@@ -33,7 +35,7 @@ class SelfFix:
             logger.info("self-upgrade ignoré: un upgrade est déjà en attente")
             return
         norm = goal.lower()
-        if norm in self._declined:
+        if not force and norm in self._declined:
             logger.info("self-upgrade ignoré: goal déjà refusé — {}", goal[:60])
             return
         self._pending = True

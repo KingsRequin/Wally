@@ -15,6 +15,7 @@ from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import assemble_memory_context, load_prompt
+from bot.intelligence.self_fix import OWNER_DISCORD_ID, UpgradeRequest
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -79,6 +80,38 @@ _NOTE_TOOLS = [
         },
     },
 ]
+
+# Outil de self-modification — exposé UNIQUEMENT au créateur (voir l'assemblage des
+# tools). Quand le créateur demande explicitement d'ajouter/corriger une capacité,
+# Wally route vers le flux Claude Code : une demande d'autorisation 🧠 (✅/❌) est
+# envoyée en DM, et sur ✅ Claude Code écrit le code puis le bot se rebuild.
+_SELF_MODIFY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "request_self_modification",
+        "description": (
+            "Demande une modification de ton PROPRE code source. À utiliser UNIQUEMENT "
+            "quand ton créateur te demande explicitement d'ajouter, corriger ou changer "
+            "une de tes capacités/fonctionnalités (ex. « ajoute la lecture des réactions "
+            "emoji »). Tu décris le BUT recherché — pas le comment, Claude Code écrira le "
+            "code. Ton créateur recevra une demande d'autorisation 🧠 en DM (✅/❌) ; sur ✅, "
+            "Claude Code modifie le code et le bot redémarre. N'utilise JAMAIS "
+            "save_persistent_note pour ça, et ne prétends jamais avoir « envoyé la demande » "
+            "sans appeler cet outil. Réservé à ton créateur."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "Le but de la modification : la capacité ou correction voulue, formulée clairement (pas le détail technique).",
+                },
+            },
+            "required": ["goal"],
+        },
+    },
+}
+
 
 def _resolve_discord_roles(member) -> list[str]:
     """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable."""
@@ -904,6 +937,9 @@ async def _respond(
         if action_service:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
+        # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
+        if str(message.author.id) == OWNER_DISCORD_ID and getattr(bot, "self_fix", None) is not None:
+            tools.append(_SELF_MODIFY_TOOL)
 
         _reaction_emojis: set[str] = set()
 
@@ -969,6 +1005,19 @@ async def _respond(
                     guild_id=guild_id,
                 )
                 return json.dumps(result)
+            if name == "request_self_modification":
+                if str(message.author.id) != OWNER_DISCORD_ID or getattr(bot, "self_fix", None) is None:
+                    return json.dumps({"status": "refused", "message": "Réservé au créateur, et mécanisme indisponible."})
+                goal = (args.get("goal") or "").strip()
+                if not goal:
+                    return json.dumps({"status": "error", "message": "Précise le but de la modification que tu veux."})
+                # Demande explicite du créateur → force=True (outrepasse un refus précédent).
+                # request_upgrade attend la réaction ✅/❌ (jusqu'à 1h) → tâche de fond.
+                _fire(bot.self_fix.request_upgrade(UpgradeRequest(goal=goal), force=True))
+                return json.dumps({
+                    "status": "ok",
+                    "message": "Je t'envoie une demande d'autorisation 🧠 en DM avec le but reformulé — réagis ✅ pour que Claude Code s'en charge, ❌ pour annuler.",
+                })
             return f"Unknown tool: {name}"
 
         async def _tool_executor(name: str, arguments: str) -> str:

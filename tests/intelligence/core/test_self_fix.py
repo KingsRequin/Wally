@@ -65,6 +65,27 @@ async def test_refusal_does_not_run_claude_and_records_decline():
 
 
 @pytest.mark.asyncio
+async def test_force_bypasses_declined():
+    """Demande explicite du créateur (force=True) → outrepasse un refus précédent."""
+    fixer, bridge, bot, dm = make_fix(approval="❌")
+    await fixer.request_upgrade(req())  # refusé → goal mémorisé dans _declined
+    bridge.claude_run.assert_not_called()
+    # même goal, mais cette fois c'est le créateur qui demande explicitement
+    bot.wait_for = AsyncMock(return_value=_approval_reaction())
+    await fixer.request_upgrade(req(), force=True)
+    bridge.claude_run.assert_called_once()
+
+
+def _approval_reaction():
+    reaction = MagicMock()
+    reaction.emoji = "✅"
+    reaction.message.id = 7
+    user = MagicMock()
+    user.id = int(OWNER_ID)
+    return (reaction, user)
+
+
+@pytest.mark.asyncio
 async def test_timeout_cancels_without_running():
     fixer, bridge, bot, dm = make_fix()
     bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
