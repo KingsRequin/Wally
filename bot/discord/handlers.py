@@ -197,7 +197,13 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
 
     channel = bot.get_channel(payload.channel_id)
     if channel is None:
-        return
+        # En MP (et pour les canaux non encore mis en cache), get_channel renvoie
+        # None : on récupère le canal directement auprès de l'API.
+        try:
+            channel = await bot.fetch_channel(payload.channel_id)
+        except Exception as e:
+            logger.debug("Réaction ignorée (fetch_channel échoué) : {e}", e=e)
+            return
     try:
         message = await channel.fetch_message(payload.message_id)
     except Exception as e:
@@ -219,7 +225,11 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
 
     reactor = member or bot.get_user(payload.user_id)
     if reactor is None:
-        return
+        # En MP, payload.member est None et l'utilisateur peut ne pas être caché.
+        try:
+            reactor = await bot.fetch_user(payload.user_id)
+        except Exception:
+            return
 
     target_label = "Wally" if on_own_message else _author_label(message.author)
     notice = _format_reactions(emoji, target_label, message.content, on_own_message)

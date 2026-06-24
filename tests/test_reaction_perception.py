@@ -139,3 +139,29 @@ async def test_self_reaction_on_own_message_ignored():
     await _reactions_context(bot, _payload(user_id=50, member=bob, emoji="🔥"))
 
     bot.memory.append_message.assert_not_called()
+
+
+# ── DM (message privé) ─────────────────────────────────────────────────────
+# En MP : payload.guild_id est None, payload.member est None et le canal DM
+# n'est pas toujours en cache → bot.get_channel renvoie None. On doit alors
+# le récupérer via fetch_channel, et l'auteur de la réaction via fetch_user.
+
+@pytest.mark.asyncio
+async def test_dm_reaction_on_wally_message_injected():
+    from bot.discord.handlers import _reactions_context
+    azrael = _user(42, "azrael", "Azrael")
+    bot = _make_bot(message_author=_user(999, "Wally"))  # message de Wally en MP
+    ch = bot.get_channel.return_value
+    bot.get_channel = MagicMock(return_value=None)  # canal DM non caché
+    bot.fetch_channel = AsyncMock(return_value=ch)
+    bot.get_user = MagicMock(return_value=None)
+    bot.fetch_user = AsyncMock(return_value=azrael)
+
+    await _reactions_context(bot, _payload(member=None, guild_id=None))
+
+    bot.fetch_channel.assert_awaited_once_with(7)
+    bot.memory.append_message.assert_called_once()
+    args, kwargs = bot.memory.append_message.call_args
+    assert args[1] == "Azrael (@azrael)"
+    assert "à ton message" in args[2]
+    assert kwargs["platform"] == "discord"
