@@ -7,6 +7,10 @@ from loguru import logger
 
 OWNER_DISCORD_ID = "610550333042589752"
 
+# Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
+# d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
+_PROGRESS_EST_SECONDS = 300.0
+
 
 @dataclass
 class UpgradeRequest:
@@ -75,7 +79,17 @@ class SelfFix:
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
         job_id = await self._bridge.claude_run(goal)
 
-        status = await self._poll(job_id)
+        # Message d'avancement unique, édité au fil de l'eau (pas de spam).
+        prog_msg = await dm.send("⏳ Avancement estimé : ~5 %")
+
+        async def _progress(elapsed: float) -> None:
+            pct = min(95, max(5, int(100 * elapsed / _PROGRESS_EST_SECONDS)))
+            try:
+                await prog_msg.edit(content=f"⏳ Claude Code bosse… avancement estimé : ~{pct} %")
+            except Exception:  # noqa: BLE001 — l'affichage ne doit jamais casser le flux
+                pass
+
+        status = await self._poll(job_id, progress=_progress)
         if status is None:
             await dm.send("❌ Claude Code n'a pas répondu à temps — j'abandonne.")
             return
@@ -90,13 +104,19 @@ class SelfFix:
             await dm.send(f"🤔 Finalement aucun changement de code.\n{result}")
             return
 
-        await dm.send("⚙️ Application + rebuild…")
+        try:
+            await prog_msg.edit(content="⏳ Claude a fini — application + rebuild… ~100 %")
+        except Exception:  # noqa: BLE001
+            pass
         await self._bridge.claude_commit(job_id)
         await self._bridge.docker_rebuild("wally")
         result = (status.get("result") or "").strip()[:800]
-        await dm.send(f"✅ **C'est fait** — je redémarre (~2 min).\n{result}")
+        await dm.send(
+            "✅ **C'est implémenté et déployé !** Je redémarre avec la nouvelle "
+            f"version (~2 min).\n\n{result}"
+        )
 
-    async def _poll(self, job_id: str, max_wait: float = 1800.0) -> dict | None:
+    async def _poll(self, job_id: str, progress=None, max_wait: float = 1800.0) -> dict | None:
         waited = 0.0
         while waited <= max_wait:
             await asyncio.sleep(self._poll_interval)
@@ -104,6 +124,8 @@ class SelfFix:
             status = await self._bridge.claude_status(job_id)
             if status.get("state") != "running":
                 return status
+            if progress is not None:
+                await progress(waited)
         return None
 
     async def _notify(self, text: str) -> None:

@@ -130,6 +130,20 @@ async def test_empty_goal_is_ignored():
 
 
 @pytest.mark.asyncio
+async def test_progress_message_edited_during_run():
+    """Un message d'avancement est édité au fil des polls 'running'."""
+    seq = [{"state": "running"}, {"state": "running"},
+           {"state": "done", "exit_code": 0, "result": "ok", "changed": True,
+            "head_changed": False, "output_tail": ""}]
+    fixer, bridge, bot, dm = make_fix(status_seq=seq)
+    await fixer.request_upgrade(req())
+    msg = dm.send.return_value  # même mock renvoyé pour chaque dm.send
+    assert msg.edit.await_count >= 1
+    # le contenu d'au moins une édition mentionne un pourcentage
+    assert any("%" in c.kwargs.get("content", "") for c in msg.edit.await_args_list)
+
+
+@pytest.mark.asyncio
 async def test_polls_until_terminal():
     seq = [{"state": "running"}, {"state": "running"},
            {"state": "done", "exit_code": 0, "result": "ok", "changed": True,
