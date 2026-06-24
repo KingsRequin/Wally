@@ -15,6 +15,18 @@ _EMO_FR = {
 }
 
 
+def _one_line(text: str, limit: int = 220) -> str:
+    """Rend un texte sur une seule ligne, tronqué proprement avec ellipse.
+
+    Neutralise les retours à la ligne internes (qui casseraient le format
+    « [canal] auteur: … » et feraient perdre l'attribution à la 2e ligne) et
+    marque toute troncature par « … » — sans quoi un message simplement coupé à
+    l'affichage paraît *incomplet* à Wally, qui rumine alors la « suite » absente.
+    """
+    t = " ".join((text or "").split())
+    return t if len(t) <= limit else t[:limit].rstrip() + "…"
+
+
 def _fmt_emotions(state: dict[str, float]) -> str:
     """Formate les émotions de façon qualitative — pas de chiffres bruts."""
     parts = []
@@ -98,7 +110,7 @@ class ReasoningAgent:
         lines: list[str] = []
         if getattr(ctx, "preoccupation", None):
             lines.append(
-                f"**Ta préoccupation du moment (ton fil de pensée) :** {ctx.preoccupation}\n"
+                f"**Ta préoccupation du moment (ton fil de pensée) :** {_one_line(ctx.preoccupation, 400)}\n"
                 f"(Fais-la avancer si ta pensée progresse — mets-la à jour via "
                 f"[ACT set_focus] ; sinon laisse-la mûrir.)"
             )
@@ -155,7 +167,7 @@ class ReasoningAgent:
                 prefix = f"#{gid} — " if gid is not None else ""
                 lines.append(f"  {prefix}{g.content}")
         if ctx.recent_thoughts:
-            lines.append(f"**Dernière pensée :** {ctx.recent_thoughts[0].content[:300]}")
+            lines.append(f"**Dernière pensée :** {_one_line(ctx.recent_thoughts[0].content, 300)}")
         if ctx.recent_interactions:
             last_channel = ctx.recent_interactions[-1].get("channel", "?")
             lines.append(
@@ -168,7 +180,7 @@ class ReasoningAgent:
                 mid_part = f"(msg {mid}) " if mid else ""
                 lines.append(
                     f"  [{msg.get('channel', '?')}] {mid_part}{msg.get('author', '?')}: "
-                    f"{msg.get('content', '')[:100]}"
+                    f"{_one_line(msg.get('content', ''), 220)}"
                 )
         if getattr(ctx, "spontaneous_outreach", None):
             lines.append("**Tes messages spontanés restés sans réponse :**")

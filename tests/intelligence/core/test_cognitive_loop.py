@@ -301,6 +301,60 @@ async def test_tick_continues_on_distinct_thought():
     assert dispatcher.dispatch.call_count == 2
 
 
+@pytest.mark.asyncio
+async def test_tick_rests_on_thought_matching_window_not_just_previous():
+    """Anti-rumination sur fenêtre glissante : une pensée identique à l'avant-
+    dernière (mais distincte de la dernière) doit quand même reposer. L'ancienne
+    logique (comparaison au seul tick précédent) l'aurait laissée passer."""
+    attention, reasoning, dispatcher = _MM(), _MM(), _MM()
+    attention.build_context = _AM(return_value=_ctx_feed())
+    reasoning.reason = _AM(side_effect=[
+        _RR(thought_text="je rumine le bug emoji de KingsRequin", thought_fact_id=1, decisions=[_MD(action="THINK")]),
+        _RR(thought_text="tiens il fait beau en France aujourd'hui", thought_fact_id=2, decisions=[_MD(action="THINK")]),
+        _RR(thought_text="je rumine le bug emoji de KingsRequin", thought_fact_id=3, decisions=[_MD(action="THINK")]),
+    ])
+    dispatcher.dispatch = _AM()
+    loop = CognitiveLoop(attention, reasoning, dispatcher)
+    loop.notify_activity(channel_id=1, author="Alice", content="hello")
+    await loop._tick()
+    await loop._tick()
+    await loop._tick()
+    # tick3 rattrapé par la fenêtre (== tick1) → seuls les 2 premiers dispatchent.
+    assert dispatcher.dispatch.call_count == 2
+
+
+# ── Fix A : rendu propre des messages dans le prompt cognitif (_one_line) ──
+
+def test_one_line_short_unchanged():
+    from bot.intelligence.reasoning_agent import _one_line
+    assert _one_line("court message", 220) == "court message"
+
+
+def test_one_line_neutralizes_newlines():
+    from bot.intelligence.reasoning_agent import _one_line
+    assert _one_line("a\nb", 220) == "a b"
+    assert "\n" not in _one_line("ligne1\nligne2\nligne3", 220)
+
+
+def test_one_line_truncates_with_ellipsis():
+    from bot.intelligence.reasoning_agent import _one_line
+    out = _one_line("x" * 300, 220)
+    assert out.endswith("…")
+    assert len(out) <= 221
+
+
+def test_one_line_real_message_not_cut_at_mais():
+    """Régression : le message réel de 139 chars (qui était coupé pile à « mais »
+    par l'ancien [:100]) doit désormais être rendu entier, sans ellipse."""
+    from bot.intelligence.reasoning_agent import _one_line
+    msg = ("attention, tu ne réponds pas a chaque message au moins ?\n"
+           "il faut juste que tu puisses les lire, mais si tu réponds a chaque fois c'est trop")
+    out = _one_line(msg, 220)
+    assert out.endswith("c'est trop")
+    assert not out.endswith("mais")
+    assert "…" not in out  # 139 < 220 → aucune troncature
+
+
 # ── Bug 2 : routage SPEAK vers un vrai canal ──
 
 @pytest.mark.asyncio

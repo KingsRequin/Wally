@@ -59,7 +59,11 @@ class CognitiveLoop:
         self._speakable_channels = speakable_channels or set()
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
-        self._last_thought: str = ""
+        # Fenêtre glissante des dernières pensées émises → anti-rumination
+        # robuste : une reformulation du même thème étalée sur plusieurs ticks
+        # (qui échappe à la comparaison au seul tick précédent) est rattrapée en
+        # confrontant la nouvelle pensée à TOUTES les pensées récentes.
+        self._recent_thoughts: list[str] = []
         self._recent_interactions: list[dict] = []
         # Conscience sociale : par canal, suivi des messages spontanés de Wally
         # restés sans réponse → injecté dans le monologue pour qu'il se régule
@@ -87,7 +91,10 @@ class CognitiveLoop:
         self._recent_interactions.append({
             "channel": str(channel_id),
             "author": author,
-            "content": content[:200],
+            # Garde le message large : le rendu (reasoning_agent._one_line, 220)
+            # ajoute l'ellipse « … » au point de troncature. Couper trop court ici
+            # masquerait la fin et ferait croire à un message incomplet.
+            "content": content[:500],
             "message_id": message_id,
             "ts": self._last_activity_ts,
         })
@@ -163,15 +170,19 @@ class CognitiveLoop:
             # Anti-rumination : si la nouvelle pensée est quasi identique à la
             # précédente, on se repose — pas de feed, pas de dispatch (le thought
             # est déjà stocké par le ReasoningAgent ; les THOUGHT décaient vite).
-            if result.thought_text and _too_similar(result.thought_text, self._last_thought):
-                logger.debug("CognitiveLoop: pensée quasi identique, repos")
+            if result.thought_text and any(
+                _too_similar(result.thought_text, t) for t in self._recent_thoughts
+            ):
+                logger.debug("CognitiveLoop: pensée quasi identique (fenêtre récente), repos")
                 self._log_cog(
                     "think_skipped",
-                    reason="pensée quasi identique au tick précédent",
+                    reason="pensée quasi identique à une pensée récente",
                     thought=(result.thought_text or "")[:200],
                 )
                 return
-            self._last_thought = result.thought_text
+            self._recent_thoughts.append(result.thought_text)
+            if len(self._recent_thoughts) > 6:
+                self._recent_thoughts = self._recent_thoughts[-6:]
             if self._feed:
                 self._feed.publish({"type": "THINK", "text": result.thought_text})
             decisions = result.decisions
