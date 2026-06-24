@@ -63,6 +63,35 @@ async def test_fix_rejected_if_file_missing(tmp_path):
     await fixer.fix(req)
     llm.complete.assert_not_called()
     bridge.git_apply.assert_not_called()
+    # Le créateur DOIT être notifié de l'échec — jamais d'abandon silencieux.
+    dm.send.assert_called_once()
+    assert "n'existe pas" in dm.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_missing_file_suggests_real_candidate(tmp_path):
+    fixer, *_ = make_fix(tmp_path)
+    # emotion.py existe sous bot/core/ ; on demande un nom proche mais faux.
+    _abs, err = fixer.resolve("bot/discord/emotion.py")
+    assert _abs is None
+    assert "emotion.py" in err  # suggestion du vrai fichier
+
+
+@pytest.mark.asyncio
+async def test_resolve_blocks_path_traversal(tmp_path):
+    fixer, *_ = make_fix(tmp_path)
+    _abs, err = fixer.resolve("../../etc/passwd")
+    assert _abs is None
+    assert "hors du dépôt" in err
+
+
+@pytest.mark.asyncio
+async def test_fix_notifies_on_empty_diff(tmp_path):
+    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path, llm_diff="   ")
+    await fixer.fix(req_owner)
+    bridge.git_apply.assert_not_called()
+    dm.send.assert_called_once()
+    assert "aucun diff" in dm.send.call_args[0][0]
 
 
 @pytest.mark.asyncio

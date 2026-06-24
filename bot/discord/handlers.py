@@ -206,7 +206,13 @@ _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup
 def _fire(coro) -> asyncio.Task:
     t = asyncio.create_task(coro)
     _bg_tasks.add(t)
-    t.add_done_callback(_bg_tasks.discard)
+
+    def _done(task: asyncio.Task) -> None:
+        _bg_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.opt(exception=task.exception()).error("Tâche de fond échouée")
+
+    t.add_done_callback(_done)
     return t
 
 
@@ -1005,16 +1011,22 @@ async def _respond(
                 if str(message.author.id) != OWNER_DISCORD_ID or getattr(bot, "self_fix", None) is None:
                     return json.dumps({"status": "refused", "message": "Réservé au créateur, et mécanisme indisponible."})
                 from bot.intelligence.self_fix import FixRequest
+                file_path = args.get("file_path", "")
+                # Valider le chemin AVANT de promettre un DM : sinon le LLM annonce
+                # "c'est envoyé" alors que fix() abandonnera en silence.
+                _abs, path_err = bot.self_fix.resolve(file_path)
+                if path_err:
+                    return json.dumps({"status": "error", "message": path_err})
                 req = FixRequest(
                     requester_discord_id=str(message.author.id),
-                    file_path=args.get("file_path", ""),
+                    file_path=file_path,
                     description=args.get("description", ""),
                 )
                 # fix() attend l'approbation (jusqu'à 1h) → ne pas bloquer la réponse.
                 _fire(bot.self_fix.fix(req))
                 return json.dumps({
                     "status": "ok",
-                    "message": "Demande envoyée. Le diff arrive dans tes DM — valide avec ✅ ou refuse avec ❌.",
+                    "message": "Demande validée. Le diff arrive dans tes DM — valide avec ✅ ou refuse avec ❌.",
                 })
             return f"Unknown tool: {name}"
 
