@@ -159,7 +159,7 @@ class WallyDiscord(commands.Bot):
             from bot.intelligence.self_fix import SelfFix
             from bot.intelligence.self_upgrade import SelfUpgrade
             _bridge = HostBridgeClient(_bridge_socket, _bridge_secret)
-            self.self_fix = SelfFix(self.llm_secondary, _bridge, self, repo_root="/app")
+            self.self_fix = SelfFix(_bridge, self)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
