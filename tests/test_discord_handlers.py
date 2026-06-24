@@ -73,6 +73,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
 
     bot.web_search = None  # désactivé par défaut dans les tests
     bot.apex_api = None
+    bot.vision = None  # VisionService désactivé par défaut dans les tests
     bot.response_gate = None  # gate V2 désactivé dans les tests V1
     bot.cognitive_loop = None  # cognitive loop V2 désactivé dans les tests V1
     bot.self_fix = None       # SelfFix V2 désactivé dans les tests V1
@@ -642,6 +643,87 @@ async def test_respond_no_images_no_image_urls_kwarg():
     assert call_kwargs.get("image_urls") is None
 
 
+class _FakeVision:
+    """VisionService factice : retourne une analyse fixe."""
+
+    def __init__(self, analysis: str | None = "Un screenshot Valorant. Rang : Diamant 2. K/D/A : 21/14/7."):
+        self.available = True
+        self._analysis = analysis
+        self.calls: list[dict] = []
+
+    async def analyze(self, image_urls, caption="", purpose="image_analysis"):
+        self.calls.append({"image_urls": list(image_urls), "caption": caption})
+        return self._analysis
+
+
+@pytest.mark.asyncio
+async def test_respond_injects_vision_analysis():
+    """Quand VisionService voit l'image, son analyse est injectée dans le prompt."""
+    bot = make_bot()
+    bot.vision = _FakeVision()
+    message = make_message(
+        content="wally regarde mes stats",
+        attachments=[make_attachment("https://cdn.discord.com/val.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    # L'analyse réelle doit apparaître dans le user_content envoyé au LLM principal
+    user_content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
+    assert "ANALYSE VISUELLE" in user_content
+    assert "Diamant 2" in user_content
+    # Et la légende du message a bien été transmise au service de vision
+    assert bot.vision.calls[0]["caption"] == "wally regarde mes stats"
+
+
+@pytest.mark.asyncio
+async def test_respond_no_vision_injection_when_unavailable():
+    """VisionService indisponible : aucun bloc d'analyse injecté, pas de crash."""
+    bot = make_bot()  # bot.vision = None par défaut
+    message = make_message(
+        content="wally regarde",
+        attachments=[make_attachment("https://cdn.discord.com/img.png")],
+    )
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    user_content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
+    assert "ANALYSE VISUELLE" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_post_process_stores_vision_analysis():
+    """_post_process stocke l'analyse visuelle fournie comme fait mémoire."""
+    bot = make_bot()
+    bot.vision = _FakeVision()
+    await _post_process(
+        bot, "regarde", "discord", "12345", "99999", 0.5,
+        image_urls=["https://cdn.discord.com/val.png"],
+        image_analysis="Screenshot Apex. Rang : Prédateur. 3200 dégâts, 8 kills.",
+        display_name="Bob",
+    )
+    # L'analyse fournie est réutilisée telle quelle — pas de 2e appel vision
+    assert bot.vision.calls == []
+    stored = [c.args[2] for c in bot.memory.add.call_args_list]
+    assert any("Prédateur" in s and s.startswith("Bob a envoyé une image") for s in stored)
+
+
+@pytest.mark.asyncio
+async def test_post_process_computes_vision_when_no_analysis():
+    """Sans analyse pré-calculée, _post_process appelle VisionService lui-même."""
+    bot = make_bot()
+    bot.vision = _FakeVision(analysis="Une photo de chat roux endormi.")
+    await _post_process(
+        bot, "regarde", "discord", "12345", "99999", 0.5,
+        image_urls=["https://cdn.discord.com/cat.png"],
+        image_analysis=None,
+        display_name="Bob",
+    )
+    assert len(bot.vision.calls) == 1
+    stored = [c.args[2] for c in bot.memory.add.call_args_list]
+    assert any("chat roux" in s for s in stored)
+
+
 @pytest.mark.asyncio
 async def test_respond_non_image_attachment_ignored():
     """Les pièces jointes non-image (PDF, etc.) sont ignorées."""
@@ -695,9 +777,9 @@ async def test_respond_passes_image_urls_to_post_process():
 
 @pytest.mark.asyncio
 async def test_post_process_stores_image_description_in_memory():
-    """_post_process génère une description d'image via llm_secondary et la stocke en mémoire."""
+    """_post_process décrit l'image via VisionService (et non DeepSeek aveugle)."""
     bot = make_bot()
-    bot.llm_secondary.complete = AsyncMock(return_value="Un chat roux assis sur un clavier.")
+    bot.vision = _FakeVision(analysis="Un chat roux assis sur un clavier.")
 
     await _post_process(
         bot, "regarde mon chat", "discord", "12345", "99999", 0.5,
@@ -706,11 +788,11 @@ async def test_post_process_stores_image_description_in_memory():
         display_name="TestUser",
     )
 
-    # Vérifie que llm_secondary a été appelé pour décrire l'image
-    bot.llm_secondary.complete.assert_called_once()
-    call_kwargs = bot.llm_secondary.complete.call_args.kwargs
-    assert call_kwargs["purpose"] == "image_description"
-    assert call_kwargs["image_urls"] == ["https://example.com/cat.png"]
+    # La vision a été appelée pour décrire réellement l'image
+    assert len(bot.vision.calls) == 1
+    assert bot.vision.calls[0]["image_urls"] == ["https://example.com/cat.png"]
+    # Le LLM secondaire (DeepSeek) ne doit PAS être sollicité pour la description
+    bot.llm_secondary.complete.assert_not_called()
 
     # Vérifie que le fait est stocké en mémoire
     bot.memory.add.assert_called_once()

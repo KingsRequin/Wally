@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
     from bot.core.apex_api import ApexLegendsService
+    from bot.core.vision import VisionService
     from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
     from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
@@ -37,6 +38,7 @@ class CoreServices:
     primary_llm: "BaseLLMClient"
     secondary_llm: "BaseLLMClient"
     image_client: "OpenAILLMClient"
+    vision: "VisionService"
     prompts: "PromptBuilder"
     language: "LanguageDetector"
     persona: "PersonaService"
@@ -58,6 +60,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     from bot.intelligence.memory.service import MemoryService
     from bot.core.llm import create_llm_client
     from bot.core.llm.openai_client import OpenAILLMClient
+    from bot.core.vision import VisionService
     from bot.intelligence.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.intelligence.journal import DailyJournal
@@ -102,6 +105,25 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     await memory.load_aliases(db)
     emotion.set_openai_client(secondary_llm)
     logger.info("MemoryService and LLM clients initialized")
+
+    # ── VisionService ─────────────────────────────────────────────────────────
+    # Le bot tourne en DeepSeek-only (aveugle) : la perception d'image passe
+    # obligatoirement par un modèle OpenAI multimodal, distinct du client de
+    # génération d'images. Désactivé proprement si OPENAI_API_KEY est absente.
+    vision_client = None
+    if _os.environ.get("OPENAI_API_KEY"):
+        vision_client = OpenAILLMClient(
+            model=config.openai.secondary_model,  # gpt-5-nano : multimodal, peu coûteux
+            db=db,
+            temperature=0.3,
+            max_tokens=400,
+            reasoning_effort="low",
+        )
+    vision = VisionService(vision_client)
+    if vision.available:
+        logger.info("VisionService initialized (model={m})", m=config.openai.secondary_model)
+    else:
+        logger.warning("VisionService disabled — OPENAI_API_KEY missing")
 
     # ── Optional services ─────────────────────────────────────────────────────
     web_search = WebSearchService(config, db)
@@ -164,6 +186,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
         primary_llm=primary_llm,
         secondary_llm=secondary_llm,
         image_client=image_client,
+        vision=vision,
         prompts=prompts,
         language=language,
         persona=persona,

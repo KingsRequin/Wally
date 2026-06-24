@@ -1066,6 +1066,30 @@ async def _respond(
         else:
             text_content = message.content or ""
 
+        # ── Vision : le LLM principal est AVEUGLE (DeepSeek ignore image_urls).
+        # On analyse réellement l'image via VisionService et on injecte les faits
+        # dans le contexte texte, pour que Wally commente l'image au lieu d'inventer.
+        # L'analyse est réutilisée plus bas par _post_process (mémoire) sans 2e appel.
+        image_analysis: str | None = None
+        image_analysis_context = ""
+        if image_urls:
+            vision = getattr(bot, "vision", None)
+            if vision is not None and vision.available:
+                async with message.channel.typing():
+                    image_analysis = await vision.analyze(
+                        image_urls, caption=message.content or ""
+                    )
+                if image_analysis:
+                    image_analysis_context = (
+                        "\n[ANALYSE VISUELLE de l'image jointe — ce que tu VOIS "
+                        "réellement, des faits vérifiés ; commente-les, n'invente "
+                        f"rien d'autre] :\n{image_analysis}\n"
+                    )
+                    _clog(
+                        bot, _conv_channel(message), "image_analysis",
+                        trace_id=str(message.id), analysis=image_analysis[:500],
+                    )
+
         target_notice = (
             f"\n⚠️ Tu réponds à {author_label}. "
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
@@ -1079,6 +1103,7 @@ async def _respond(
             + target_notice
             + replied_text_context
             + replied_image_context
+            + image_analysis_context
             + f"\n[{author_label}]: {text_content}"
         )
 
@@ -1297,6 +1322,7 @@ async def _respond(
         _fire(_post_process(
             bot, text_content, platform, user_id, guild_id, trust, context_messages,
             image_urls=image_urls or None,
+            image_analysis=image_analysis,
             channel_id=str(message.channel.id),
             display_name=message.author.display_name,
             trace_id=str(message.id),
@@ -1321,6 +1347,7 @@ async def _post_process(
     trust: float,
     context_messages: list[dict] | None = None,
     image_urls: list[str] | None = None,
+    image_analysis: str | None = None,
     channel_id: str = "",
     display_name: str = "",
     trace_id: str = "",
@@ -1369,27 +1396,27 @@ async def _post_process(
                 await bot.memory.add(platform, user_id, _fact, username=display_name,
                                      origin=origin or None)
 
-        # Génère une description courte de l'image et la stocke en mémoire long-terme
-        if image_urls and getattr(bot, "llm_secondary", None):
+        # Stocke une description visuelle VÉRIDIQUE en mémoire long-terme.
+        # Le LLM principal/secondaire (DeepSeek) est aveugle → on s'appuie sur
+        # VisionService. On réutilise l'analyse déjà calculée dans _respond si
+        # disponible (zéro appel supplémentaire), sinon on la calcule ici.
+        if image_urls:
             try:
-                img_system = load_prompt(
-                    "image_describe_system",
-                    "Décris cette image en une phrase courte (max 30 mots).",
-                )
-                img_desc = await bot.llm_secondary.complete(
-                    img_system,
-                    [{"role": "user", "content": text or "Décris cette image."}],
-                    purpose="image_description",
-                    image_urls=image_urls,
-                    max_tokens=100,
-                )
-                if img_desc and img_desc.strip():
-                    fact = f"{display_name} a envoyé une image : {img_desc.strip()}"
+                analysis = image_analysis
+                if not analysis:
+                    vision = getattr(bot, "vision", None)
+                    if vision is not None and vision.available:
+                        analysis = await vision.analyze(image_urls, caption=text or "")
+                if analysis:
+                    summary = " ".join(analysis.split())
+                    if len(summary) > 240:
+                        summary = summary[:240].rstrip() + "…"
+                    fact = f"{display_name} a envoyé une image : {summary}"
                     await bot.memory.add(platform, user_id, fact, username=display_name,
                                          origin=origin or None)
-                    logger.debug("Image description stored for {u}: {d}", u=display_name, d=img_desc.strip())
+                    logger.debug("Image analysis stored for {u}", u=display_name)
             except Exception as e:
-                logger.warning("Image description failed: {e}", e=e)
+                logger.warning("Image analysis (memory) failed: {e}", e=e)
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8:

@@ -82,6 +82,7 @@ async def main() -> None:
     primary_llm      = svc.primary_llm
     secondary_llm    = svc.secondary_llm
     image_client     = svc.image_client
+    vision           = svc.vision
     prompts          = svc.prompts
     language         = svc.language
     persona          = svc.persona
@@ -106,6 +107,7 @@ async def main() -> None:
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.apex_api = apex_api
+    discord_bot.vision = vision
     discord_bot.reaction_tracker = reaction_tracker
     discord_bot.conv_log = conv_log
     fact_extractor.conv_log = conv_log
