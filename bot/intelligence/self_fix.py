@@ -11,6 +11,21 @@ OWNER_DISCORD_ID = "610550333042589752"
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
 _PROGRESS_EST_SECONDS = 300.0
 
+# Cadrage d'ingénierie préfixé à CHAQUE goal envoyé à Claude Code. Garantit un bon
+# framing même si Wally rédige un goal moyen (et empêche les hallucinations du type
+# « la fonction existe déjà » : on force la vérification de l'état réel du code).
+_GOAL_PREAMBLE = (
+    "Tu modifies le code du bot Discord/Twitch « Wally » (Python, asyncio). "
+    "AVANT de coder : vérifie l'état RÉEL du code — ne te fie PAS aux suppositions "
+    "de la demande (une fonction ou un fichier présenté comme « déjà prêt » peut très "
+    "bien ne pas exister). Implémente DIRECTEMENT, ne te contente pas d'analyser ou de "
+    "proposer. Lance la suite de tests (python3 -m pytest -q) et ne casse rien (échecs "
+    "pré-existants à ignorer : tests/test_web_search.py::test_complete_with_tools_logs_cost "
+    "et tests/test_dashboard_costs.py). Ajoute des tests pour ton code. Respecte le style "
+    "du projet : loguru (jamais print), async. Ne touche pas à public-ui/.\n\n"
+    "=== Objectif demandé ===\n"
+)
+
 
 @dataclass
 class UpgradeRequest:
@@ -77,7 +92,7 @@ class SelfFix:
             return
 
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
-        job_id = await self._bridge.claude_run(goal)
+        job_id = await self._bridge.claude_run(_GOAL_PREAMBLE + goal)
 
         # Message d'avancement unique, édité au fil de l'eau (pas de spam).
         prog_msg = await dm.send("⏳ Avancement estimé : ~5 %")
@@ -110,11 +125,15 @@ class SelfFix:
             pass
         await self._bridge.claude_commit(job_id)
         await self._bridge.docker_rebuild("wally")
-        result = (status.get("result") or "").strip()[:800]
-        await dm.send(
+        prefix = (
             "✅ **C'est implémenté et déployé !** Je redémarre avec la nouvelle "
-            f"version (~2 min).\n\n{result}"
+            "version (~2 min).\n\n"
         )
+        result = (status.get("result") or "").strip()
+        budget = 1900 - len(prefix)  # Discord plafonne à 2000 caractères
+        if len(result) > budget:
+            result = result[:budget].rstrip() + " …(résumé tronqué)"
+        await dm.send(prefix + result)
 
     async def _poll(self, job_id: str, progress=None, max_wait: float = 1800.0) -> dict | None:
         waited = 0.0

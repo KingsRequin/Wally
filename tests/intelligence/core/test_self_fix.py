@@ -49,7 +49,10 @@ async def test_approval_runs_claude_then_rebuilds():
     fixer, bridge, bot, dm = make_fix(approval="✅")
     await fixer.request_upgrade(req())
     bridge.claude_run.assert_called_once()
-    assert bridge.claude_run.call_args[0][0] == "voir les réactions emoji"
+    # le goal est préfixé d'un préambule d'ingénierie, mais doit le contenir
+    sent = bridge.claude_run.call_args[0][0]
+    assert "voir les réactions emoji" in sent
+    assert "vérifie l'état RÉEL du code" in sent  # préambule présent
     bridge.docker_rebuild.assert_called_once_with("wally")
 
 

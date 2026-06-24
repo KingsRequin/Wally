@@ -140,7 +140,12 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 self._send(400, {"error": "service not allowed"})
                 return
             cmd = f"docker compose -f '{COMPOSE_FILE}' build {svc} && docker compose -f '{COMPOSE_FILE}' up -d --force-recreate {svc}"
-            subprocess.Popen(cmd, shell=True, start_new_session=True)
+            # Passe GIT_HASH/BUILD_DATE pour que BOT_GIT_HASH ne soit pas 'unknown'
+            # après un rebuild autonome (sinon la version affichée est fausse).
+            env = dict(os.environ)
+            env["GIT_HASH"] = _git_head()[:7]
+            env["BUILD_DATE"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            subprocess.Popen(cmd, shell=True, start_new_session=True, env=env)
             self._send(200, {"status": "rebuilding"})
 
         elif self.path == "/docker-restart":

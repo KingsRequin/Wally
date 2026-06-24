@@ -112,7 +112,13 @@ _SELF_MODIFY_TOOL = {
             "properties": {
                 "goal": {
                     "type": "string",
-                    "description": "Le but de la modification : la capacité ou correction voulue, formulée clairement (pas le détail technique).",
+                    "description": (
+                        "Le but de la modification, rédigé PROPREMENT : un BUT clair et "
+                        "concret (le comportement voulu, pas les détails techniques), le "
+                        "périmètre exact (Discord/Twitch, DM ou serveur), UNE seule "
+                        "intention. Ne suppose JAMAIS l'état du code : ne prétends pas "
+                        "qu'une fonction ou un fichier 'existe déjà' — Claude vérifiera."
+                    ),
                 },
             },
             "required": ["goal"],
