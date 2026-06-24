@@ -365,20 +365,15 @@ class ActionDispatcher:
                     "ACT code_fix: SelfFix non disponible (BRIDGE_SECRET non configuré)"
                 )
                 return
-            requester_id = args.get("requester_discord_id", "")
-            if requester_id != "610550333042589752":
-                logger.warning("ACT code_fix refusé: {} n'est pas owner", requester_id)
+            goal = args.get("goal", "").strip()
+            if not goal:
+                logger.warning("ACT code_fix ignoré: goal vide")
                 return
-            from bot.intelligence.self_fix import FixRequest
-            asyncio.create_task(
-                self_fix.fix(
-                    FixRequest(
-                        requester_discord_id=requester_id,
-                        file_path=args.get("file_path", ""),
-                        description=args.get("description", ""),
-                    )
-                )
-            )
+            from bot.intelligence.self_fix import UpgradeRequest
+            asyncio.create_task(self_fix.request_upgrade(UpgradeRequest(goal=goal)))
+            logger.info("ACT code_fix: demande d'auto-modif — {}", goal[:60])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"auto-modif : {goal[:60]}"})
 
         else:
             logger.info("ACT {} non implémenté Plan B — ignoré", act_name)
