@@ -13,7 +13,7 @@ services:
       - ./bot/persona:/persona
       - ./.env:/dotenv
       - ./config.yaml:/config.yaml
-    command: sh -c "chown -R 1000:1000 /data /logs /persona && chmod -R 775 /data /logs /persona && chown 1000:1000 /dotenv /config.yaml"
+    command: sh -c "chown -R 1000:1000 /data /logs /persona && chmod -R 775 /data /logs && chown 1000:1000 /dotenv /config.yaml"
     restart: "no"
 
   wally:

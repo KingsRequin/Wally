@@ -217,6 +217,37 @@ def audit_cognitive(root: Path, date: str | None) -> None:
 
     print(f"### 😴 THINK IGNORÉS (anti-rumination) — {n_skipped}\n")
 
+    # Cycle de vie des goals : advance vs fulfill → repère ceux qui tournent en rond.
+    goal_adv: dict[str, int] = defaultdict(int)
+    goal_done: set[str] = set()
+    for ev in _of_type(events, "act"):
+        d = ev.get("detail") or ""
+        m = re.search(r"#(\d+)", d)
+        gid = m.group(1) if m else None
+        if d.startswith("advance_goal") and gid:
+            goal_adv[gid] += 1
+        elif d.startswith("fulfill_goal") and gid:
+            goal_done.add(gid)
+    looping = sorted(
+        ((g, n) for g, n in goal_adv.items() if g not in goal_done and n >= 3),
+        key=lambda x: -x[1],
+    )
+    print(f"### 🎯 GOALS — {len(goal_adv)} avancés, {len(goal_done)} clôturés")
+    if looping:
+        print("  🔁 tournent sans clôture (≥3 advance, 0 fulfill) :")
+        for g, n in looping[:15]:
+            print(f"     #{g} — {n} advances, jamais fulfill")
+    print()
+
+    dms = _of_type(events, "dm")
+    dm_supp = _of_type(events, "dm_suppressed")
+    print(f"### ✉️  DM CRÉATEUR — {len(dms)} envoyés, {len(dm_supp)} supprimés")
+    for ev in dms[:15]:
+        print(f"  → {repr(_trunc(ev.get('message') or ''))}")
+    for ev in dm_supp[:15]:
+        print(f"  ⊘ supprimé ({ev.get('reason', '?')}) — {repr(_trunc(ev.get('message') or ''))}")
+    print()
+
 
 def dump_trace(root: Path, trace_id: str) -> None:
     """Affiche tous les events d'un trace_id donné, dans l'ordre chronologique."""

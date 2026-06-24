@@ -534,7 +534,7 @@ async def test_act_dm_to_owner_sends(monkeypatch):
     bot.fetch_user.assert_called_once_with(int(OWNER_ID))
     user.send.assert_called_once_with("une vraie question ?")
     types = [c.args[0]["type"] for c in feed.publish.call_args_list]
-    assert "ACT" in types
+    assert "DM" in types
 
 
 @pytest.mark.asyncio

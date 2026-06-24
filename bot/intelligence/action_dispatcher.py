@@ -11,6 +11,11 @@ from loguru import logger
 
 from bot.intelligence.meta_agent import MetaDecision
 
+# Cooldown entre deux DM créateur proactifs : un humain ne relance pas son
+# interlocuteur toutes les cinq minutes. Filet de sécurité anti-harcèlement,
+# en complément de la directive du reasoning_system.
+DM_CREATOR_COOLDOWN = 7200  # 2h
+
 
 class ActionDispatcher:
     def __init__(
@@ -27,6 +32,7 @@ class ActionDispatcher:
         self._facts = fact_store
         self._feed = feed
         self._last_focus_ts: float = 0.0
+        self._last_dm_ts: float = 0.0
 
     async def dispatch(self, decision: MetaDecision) -> None:
         action = decision.action
@@ -124,6 +130,19 @@ class ActionDispatcher:
         if user_id != owner_id:
             logger.warning("DM non autorisé vers {} (réservé au créateur)", user_id)
             return
+        # Anti-harcèlement : pas de DM créateur proactif rapproché (relance d'un
+        # sujet en attente). Le reasoning_system décourage déjà ; ceci est le filet.
+        now = time.monotonic()
+        if self._last_dm_ts and (now - self._last_dm_ts) < DM_CREATOR_COOLDOWN:
+            mins = (now - self._last_dm_ts) / 60
+            logger.info("Cognitive DM supprimé (cooldown {:.0f}min)", mins)
+            if self._feed:
+                self._feed.publish({
+                    "type": "DM_SUPPRESSED",
+                    "reason": f"cooldown {int(mins)}min/{DM_CREATOR_COOLDOWN // 60}min",
+                    "message": message[:300],
+                })
+            return
         try:
             try:
                 user = await self._bot.fetch_user(int(user_id))
@@ -131,9 +150,10 @@ class ActionDispatcher:
                 logger.warning("dm: utilisateur {} introuvable: {}", user_id, e)
                 return
             await user.send(message)
+            self._last_dm_ts = now
             logger.info("Cognitive DM → {} : {}", user_id, message[:80])
             if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"DM créateur : {message[:300]}"})
+                self._feed.publish({"type": "DM", "target": "créateur", "message": message[:300]})
         except Exception as e:
             logger.warning("DM failed: {}", e)
 
