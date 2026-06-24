@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -88,8 +87,12 @@ class ScrapeService:
             return "Le scraping n'est pas disponible (Firecrawl non configuré)."
         if not self.is_scrapable_url(url):
             return "Cette URL ne peut pas être lue (média ou lien non supporté)."
-        if await self.daily_limit_reached():
-            return "Limite quotidienne de scraping atteinte."
+        try:
+            if await self.daily_limit_reached():
+                return "Limite quotidienne de scraping atteinte."
+        except Exception as exc:
+            logger.warning("daily_limit_reached error: {e}", e=exc)
+            return "Impossible de vérifier la limite quotidienne de scraping."
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

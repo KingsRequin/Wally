@@ -1,5 +1,4 @@
 # tests/test_scrape.py
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -94,3 +93,4 @@ async def test_scrape_firecrawl_down_graceful():
     with patch("httpx.AsyncClient.post", AsyncMock(side_effect=Exception("conn refused"))):
         out = await svc.scrape("https://example.com/a")
     assert out  # message dégradé, pas d'exception
+    assert "impossible" in out.lower()
