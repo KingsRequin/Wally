@@ -1,8 +1,13 @@
 # Worktrees
 .worktrees/
 
-# Secrets
+# Secrets & config locale (token admin + IDs Discord privés)
 .env
+config.yaml
+
+# Notes de dev internes (non publiées)
+TODO.md
+ROADMAP.md
 
 # Python
 __pycache__/

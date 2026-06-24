@@ -1,0 +1,269 @@
+# Exemple de configuration Wally.
+# Copier vers config.yaml puis ajuster :  cp config.example.yaml config.yaml
+# config.yaml est ignoré par git (il contient le token admin et des IDs Discord privés).
+# Toutes ces valeurs sont modifiables à chaud via /wally setup ou le dashboard web.
+bot:
+  context_token_threshold: 3000
+  context_window_size: 20
+  cost_alert_threshold: 25.0
+  dashboard_token: changeme          # ⚠️ mot de passe d'accès admin du dashboard — À CHANGER
+  emotion_inertia_factor: 0.5
+  emotion_peak_threshold: 0.7
+  journal_channel_id: null           # ID du salon Discord où publier le journal quotidien
+  journal_time: '21:00'
+  language_default: fr
+  link_min_confidence: 0.75
+  love_decay_lambda: 0.1
+  memory_context_max_tokens: 800
+  memory_recall_min_score: 0.75
+  memory_search_min_score: 0.5
+  notification_channel_id: null      # ID du salon de notifications
+  notification_guild_id: null
+  prelude_window_size: 15
+  spontaneous_cooldown_seconds: 300
+  spontaneous_discord_enabled: true
+  spontaneous_memory_probability: 0.2
+  spontaneous_passion_probability: 0.15
+  spontaneous_probability: 0.05
+  spontaneous_twitch_enabled: true
+  trigger_names:
+  - wally
+  update_image: ''                   # ex: ghcr.io/ton-user/wally-ai:latest (vide = polling désactivé)
+discord:
+  anger_trigger_threshold: 3
+  channel_blacklist: []              # IDs de salons où Wally n'intervient jamais
+  channel_filter_mode: blacklist
+  channel_whitelist: []
+  emoji_reaction_probability: 0.05
+  ignored_guilds: []
+  always_trigger_channels: []        # IDs de salons où chaque message est un trigger
+  per_guild_channel_whitelist: {}    # { "guild_id": [channel_id, ...] }
+  spam_detection:
+    enabled: true
+    exempt_channels: []
+    max_messages: 10
+    mute_minutes: 5
+    spam_anger_delta: 0.05
+    window_seconds: 120
+  timeout_minutes: 10
+emotions:
+  anger:
+    boredom_rise_per_hour: null
+    decay_lambda: 3.0
+  boredom:
+    boredom_rise_per_hour: 0.1
+    decay_lambda: 0.01
+  circadian:
+    enabled: true
+    periods:
+      afternoon:
+        anger: 1.0
+        boredom: 1.0
+        curiosity: 1.0
+        hours:
+        - 12
+        - 18
+        joy: 1.0
+        sadness: 1.0
+      evening:
+        anger: 1.0
+        boredom: 1.0
+        curiosity: 1.0
+        hours:
+        - 18
+        - 24
+        joy: 1.05
+        sadness: 1.05
+      morning:
+        anger: 0.9
+        boredom: 0.9
+        curiosity: 1.2
+        hours:
+        - 6
+        - 12
+        joy: 1.1
+        sadness: 0.9
+      night:
+        anger: 1.1
+        boredom: 1.0
+        curiosity: 0.9
+        hours:
+        - 0
+        - 6
+        joy: 1.0
+        sadness: 1.0
+    timezone: Europe/Paris
+    transition_minutes: 30
+  curiosity:
+    boredom_rise_per_hour: null
+    decay_lambda: 1.5
+  fatigue:
+    dampening: 0.7
+    recovery_rate: 0.1
+  habituation:
+    decay_factor: 0.5
+    exempt:
+    - anger
+    reset_seconds: 1800
+    threshold_count: 3
+    window_seconds: 600
+  joy:
+    boredom_rise_per_hour: null
+    decay_lambda: 1.5
+  memory:
+    amplification_factor: 0.3
+    decay_lambda_per_day: 0.01
+    learning_rate: 0.05
+    priming_factor: 0.05
+  mood:
+    alpha: 0.02
+    bias_factor: 0.3
+    decay_lambda: 0.1
+  sadness:
+    boredom_rise_per_hour: null
+    decay_lambda: 1.5
+  secondaries:
+    anxiety:
+      a: sadness
+      b: curiosity
+      threshold: 0.3
+    contempt:
+      a: anger
+      b: boredom
+      threshold:
+      - 0.4
+      - 0.5
+    frustration:
+      a: anger
+      b: boredom
+      threshold: 0.3
+    nostalgia:
+      a: joy
+      b: sadness
+      threshold: 0.3
+    pride:
+      a: joy
+      b: curiosity
+      threshold: 0.4
+    wonder:
+      a: curiosity
+      b: joy
+      threshold: 0.5
+  spontaneous:
+    events:
+      creative_spark:
+        effects:
+          boredom: -0.1
+          curiosity: 0.08
+        weight: 15
+      existential_ennui:
+        effects:
+          boredom: 0.08
+        weight: 10
+      pleasant_memory:
+        effects:
+          joy: 0.05
+        weight: 30
+      unpleasant_memory:
+        effects:
+          sadness: 0.05
+        weight: 8
+      wandering_thought:
+        effects:
+          curiosity: 0.05
+        weight: 30
+    max_delta: 0.1
+    probability_per_tick: 0.02
+image_generation:
+  background: auto
+  daily_limit: 10
+  format: png
+  model: gpt-image-1.5
+  per_user_limit: -1
+  quality: low
+  size: 1024x1024
+llm:
+  primary:
+    max_tokens: 8192
+    model: deepseek-v4-pro
+    provider: deepseek
+    reasoning_effort: medium
+    temperature: 0.8
+    text_verbosity: medium
+    thinking_budget_tokens: 10000
+    thinking_effort: medium
+    thinking_type: disabled
+  secondary:
+    max_tokens: 1000
+    model: deepseek-v4-flash
+    provider: deepseek
+    reasoning_effort: medium
+    temperature: 0.8
+    text_verbosity: medium
+    thinking_budget_tokens: 10000
+    thinking_effort: medium
+    thinking_type: disabled
+openai:
+  max_tokens: 8192
+  primary_model: claude-haiku-4-5-20251001
+  reasoning_effort: medium
+  secondary_model: gpt-5-nano
+  temperature: 0.8
+  text_verbosity: medium
+overlay_image:
+  animation_duration: 1.0
+  animation_in: bounceInLeft
+  animation_out: bounceOutLeft
+  command: '!image'
+  display_duration: 5
+  enabled: true
+  random_filter: all
+tavily:
+  monthly_limit: 200
+theme:
+  accent_color: '#06b6d4'
+  bg_color: '#11151c'
+  layout_variant: sidebar-left
+  sidebar_bg: rgba(255,255,255,0.02)
+  surface_color: rgba(255,255,255,0.03)
+  tab_style: icons-only
+twitch:
+  cooldown_seconds: 10
+  guest_channels: []
+twitch_events:
+  bits:
+    active: false
+    message: Merci pour les {amount} bits, {username} ! Tu es trop généreux !
+  follow:
+    active: false
+    message: Merci pour le follow, {username} ! Bienvenue dans le chat !
+  gift_sub:
+    active: false
+    message: '{username} vient d''offrir {amount} sub(s) ! Merci pour ta générosité
+      !'
+  raid:
+    active: false
+    message: Un raid de {raiders_count} personnes avec {username} ! Bienvenue à tous
+      !
+  resub:
+    active: false
+    message: Merci pour les {months} mois de sub, {username} ! Fidélité récompensée
+      !
+  sub:
+    active: false
+    message: Wow, merci pour le sub {username} ! Tu es incroyable !
+web_chat:
+  cooldown_seconds: 10
+  history_limit: 50
+  overlay_visible: false
+  random_avatar_chance: 0.05
+
+response_gate:
+  enabled: true
+  model: deepseek-v4-flash
+
+cognitive_loop:
+  enabled: true
+  provider: deepseek
+  model_pro: deepseek-v4-pro
+  model_flash: deepseek-v4-flash

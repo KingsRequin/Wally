@@ -1,148 +1,202 @@
-# Wally — AI Discord & Twitch Bot
+# Wally — Bot IA Discord & Twitch
 
-Wally est un bot IA pour Discord et Twitch avec une personnalite coherente, un etat emotionnel persistant, une memoire long-terme par utilisateur, et un dashboard web d'administration.
-
-## Fonctionnalites principales
-
-- **LLM DeepSeek** : `deepseek-v4-pro` (primary) et `deepseek-v4-flash` (secondary), configurable par role. OpenAI est reserve a la generation d'images et aux embeddings
-- **Etat emotionnel** : 5 emotions (anger, joy, sadness, curiosity, boredom) avec decroissance exponentielle, influence les reponses
-- **Memoire long-terme** : Qdrant (vecteurs) pour stocker faits, preferences, relations par utilisateur et plateforme
-- **Generation d'images** : via OpenAI Images API, galerie publique avec votes
-- **Actions planifiees** : rappels one-shot et recurrents via tool calling LLM
-- **Detection de spam** : tracking par canal, mute automatique, avertissement LLM
-- **Journal quotidien** : resume automatique de la journee publie sur Discord
-- **Dashboard web** : administration, monitoring emotions, logs, gestion memoire, galerie, chat web
-- **Interventions spontanees** : Wally reagit naturellement aux conversations selon ses passions et emotions
-- **Sessions** : suivi des conversations par canal, extraction de faits a la fin
+Wally est un bot IA pour Discord et Twitch doté d'une **personnalité cohérente**, d'un **état émotionnel persistant**, d'une **mémoire long-terme** par utilisateur, d'une **boucle cognitive autonome** (il pense, décide et intervient de lui-même) et d'un **dashboard web** d'administration.
 
 ---
 
-## Prerequis
+## ⚠️ À lire avant tout
+
+**Wally a été codé entièrement avec [Claude Code](https://claude.com/claude-code)** (l'agent CLI d'Anthropic). Du premier commit jusqu'aux dernières fonctionnalités, l'intégralité du code a été écrite par l'IA, sous ma direction.
+
+Le projet est **fourni tel quel (« as-is »)**, sans garantie ni engagement de support :
+
+- C'est un projet **personnel**, mis en public au cas où il intéresserait quelqu'un.
+- Je **corrige les bugs au fur et à mesure** que je les rencontre, sur mon temps libre. Il n'y a pas de roadmap ni de SLA.
+- Il peut contenir des bugs, des approximations ou des choix d'architecture discutables.
+- Aucune assistance n'est garantie. Les *issues* et *PR* sont les bienvenues mais peuvent rester sans réponse.
+
+Si tu reprends ce code, fais-le en connaissance de cause : lis-le, teste-le, adapte-le à ton besoin.
+
+---
+
+## Fonctionnalités
+
+### 🧠 Autonomie & boucle cognitive
+
+Wally ne se contente pas de répondre quand on lui parle. Il tourne une **boucle cognitive** en continu :
+
+- **Cycle ATTN → THINK → DECIDE → SPEAK → ACT** : il évalue l'attention que mérite ce qui se passe, réfléchit, décide d'agir ou non, puis parle ou exécute une action.
+- **Perception multi-salons** : il perçoit **tous les salons publics** (capture passive, comme sur Twitch) et peut intervenir spontanément quand c'est pertinent, sans qu'on le mentionne.
+- **Fil de pensée intérieur** (*inner monologue*) et **récit de soi** : il maintient une narration interne cohérente de qui il est et de ce qu'il vit.
+- **Buts** (*goals*) : il peut se fixer des objectifs, les poursuivre et les clôturer.
+- **Drive émotionnel & déclencheurs spontanés** : ses émotions et ses « passions » le poussent à initier des conversations.
+- **Droit au silence** : un *gate* décide s'il vaut mieux ne rien dire — il n'est pas obligé de répondre.
+- **Anti-rumination** : il ne re-réfléchit pas en boucle au même contexte tant qu'il n'y a pas de nouvelle activité.
+
+### 🔧 Auto-modification de code (self-upgrade via Claude Code)
+
+Wally peut **modifier son propre code**. Quand il décide qu'un correctif ou une amélioration est nécessaire, il émet une intention `[ACT code_fix {but}]`. Le créateur reçoit alors une demande d'autorisation en DM (✅/❌, but verbatim) ; une fois approuvée, **Claude Code s'exécute sur l'hôte** pour réaliser la modification. L'outil d'auto-modification est réservé au créateur.
+
+### 💾 Mémoire long-terme
+
+- **Faits S-P-O** (Sujet-Prédicat-Objet) stockés en **SQLite (FTS5)**, avec un **vocabulaire fermé** de prédicats.
+- **Déduplication live** à l'ajout + **réconciliation en 2 étages** (`MemoryIngest`).
+- **Retrieval type *Generative Agents*** (pertinence + récence + importance).
+- **Origine (lieu)** et **péremption (TTL/`expires_at`)** des faits : Wally sait où il a appris quelque chose et oublie ce qui devient obsolète.
+- **Rappel spontané** : il évoque de lui-même un souvenir pertinent en cours de conversation.
+- **Relations** : scores de confiance (*trust*) et d'affection (*love*) par utilisateur.
+- **Extraction automatique** de faits mémorables depuis les conversations et en fin de session.
+- **Mémoire d'images** : chaque image envoyée est décrite en une phrase et mémorisée.
+
+### ❤️ État émotionnel
+
+- **5 émotions** (colère, joie, tristesse, curiosité, ennui), chacune un flottant 0–1.
+- **Décroissance exponentielle** par émotion, **suppression** des émotions incompatibles, **compétition** entre émotions coexistantes.
+- **Rythme circadien**, **fatigue**, **habituation**, **humeur** (mood) lissée.
+- **Émotions secondaires** (anxiété, mépris, frustration, nostalgie, fierté, émerveillement) et **composites** dérivées de combinaisons.
+- L'émotion dominante module le comportement via des **directives injectées dans le prompt** (jamais « tu es en colère », mais « tes réponses sont courtes et impatientes »).
+- **Timeout/mute** : trop de colère → Wally passe en mode réactions uniquement.
+
+### 🎭 Personnalité
+
+- Persona composée de fichiers Markdown (`SOUL`, `IDENTITY`, `VOICE`, `EXEMPLES`), directives par émotion, par jour de la semaine, et composites.
+- Rechargeable à chaud via `/wally reload-persona`.
+
+### 🛠️ Capacités
+
+- **Génération d'images** via l'API OpenAI Images, **galerie publique** avec votes.
+- **Actions planifiées** : rappels one-shot et récurrents via *tool calling* LLM.
+- **Notes persistantes** créées par Wally.
+- **Recherche web** (Tavily).
+- **Détection de spam** : tracking par canal, mute automatique, avertissement généré par le LLM.
+- **Journal quotidien** : résumé automatique de la journée publié sur Discord.
+- **Sessions** : suivi des conversations par canal, extraction de faits durables à la fin.
+
+### 📺 Twitch
+
+- **Stream awareness** : Wally sait quand le live est en cours.
+- **Suivi des visites** sur les chaînes invitées, résumé LLM injecté dans le journal.
+- **Événements** : follow / sub / resub / gift sub / bits / raid (messages configurables).
+- Cooldowns par utilisateur, filtre anti-bots.
+
+### 🖥️ Dashboard & site public
+
+- **Site public arcade** : status temps réel, chat web, galerie, journal, et un **flux cognitif live** (SSE) qui montre le « cerveau » de Wally penser en direct.
+- **Dashboard admin** : configuration LLM/émotions/images, logs temps réel, gestion mémoire, coûts API, actions planifiées, prompts, système.
+- **Auth** : Bearer token (admin) + Discord OAuth2 (JWT pour le chat web).
+
+### ⚙️ Technique
+
+- **Multi-provider LLM** (DeepSeek en principal, couche d'abstraction `bot/core/llm/`), *prompt caching* côté Claude.
+- **Hot-reload** de la configuration sans redémarrage.
+- **Suivi des coûts** API par modèle/période.
+- **Auto-update** via GHCR (un bouton apparaît dans l'admin quand une nouvelle image est dispo).
+
+---
+
+## Prérequis
 
 | Outil | Version | Pourquoi |
 |---|---|---|
-| Docker + Docker Compose | >= 24 | Faire tourner le bot et Qdrant |
-| Cle API DeepSeek | — | Reponses (texte) — provider LLM principal |
-| Cle API OpenAI | — | Generation d'images + embeddings |
+| Docker + Docker Compose | >= 24 | Faire tourner le bot |
+| Clé API DeepSeek | — | Réponses (texte) — provider LLM principal |
+| Clé API OpenAI | — | Génération d'images |
 | Application Discord | — | Token bot + intents |
 | Application Twitch | _(optionnel)_ | Token OAuth bot + client ID |
+| Clé API Tavily | _(optionnel)_ | Recherche web |
+| Qdrant | _(optionnel)_ | Moteur vectoriel (la mémoire de base fonctionne sans, en SQLite) |
 
-### Creer l'application Discord
+### Créer l'application Discord
 
-1. Aller sur <https://discord.com/developers/applications> -> **New Application**
-2. **Bot** -> Activer **Message Content Intent** et **Server Members Intent**
-3. **OAuth2 -> URL Generator** : scopes `bot` + `applications.commands`, permissions `Send Messages`, `Add Reactions`, `Read Message History`
-4. Copier le **Token** -> `DISCORD_TOKEN` dans `.env`
+1. Aller sur <https://discord.com/developers/applications> → **New Application**
+2. **Bot** → activer **Message Content Intent** et **Server Members Intent**
+3. **OAuth2 → URL Generator** : scopes `bot` + `applications.commands`, permissions `Send Messages`, `Add Reactions`, `Read Message History`
+4. Copier le **Token** → `DISCORD_TOKEN` dans `.env`
 
-### Creer l'application Twitch (optionnel)
+### Créer l'application Twitch (optionnel)
 
-1. Aller sur <https://dev.twitch.tv/console> -> **Register Your Application**
-2. Categorie : **Chat Bot**, OAuth Redirect URL : `http://localhost`
-3. Copier **Client ID** -> `TWITCH_CLIENT_ID` et generer un **Client Secret** -> `TWITCH_CLIENT_SECRET`
-4. Generer un token OAuth pour le compte bot -> `BOT_ACCESS_TOKEN` dans `.env`
+1. Aller sur <https://dev.twitch.tv/console> → **Register Your Application**
+2. Catégorie : **Chat Bot**, OAuth Redirect URL : `http://localhost`
+3. Copier **Client ID** → `TWITCH_CLIENT_ID` et générer un **Client Secret** → `TWITCH_CLIENT_SECRET`
+4. Générer un token OAuth pour le compte bot → `BOT_ACCESS_TOKEN` dans `.env`
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Cloner le depot
-git clone <url-du-repo> wally-ai
+# 1. Cloner le dépôt
+git clone https://github.com/KingsRequin/wally-ai.git wally-ai
 cd wally-ai
 
-# 2. Creer le fichier d'environnement
+# 2. Créer le fichier d'environnement
 cp .env.example .env
-# Editer .env et remplir les valeurs requises
+# Éditer .env et remplir les valeurs requises (clés API, tokens…)
 
-# 3. Creer les dossiers de donnees
+# 3. Créer la configuration (token admin + IDs Discord)
+cp config.example.yaml config.yaml
+# Éditer config.yaml : changer dashboard_token, renseigner les IDs de salons éventuels
+
+# 4. Créer les dossiers de données
 mkdir -p data logs
 
-# 4. Lancer
+# 5. Lancer
 docker compose up -d
 
-# 5. Verifier que tout tourne
+# 6. Vérifier que tout tourne
 docker compose ps
 docker compose logs -f wally
 ```
 
-Qdrant devient healthy en ~10s, puis Wally demarre. Chercher dans les logs :
+Chercher dans les logs :
 ```
 Wally starting...
 Discord bot ready
-Twitch adapter configured
 Dashboard server added to gather on port 8080
 ```
+
+> `config.yaml` et `.env` sont ignorés par git : ils contiennent ton token admin et tes secrets. Pars toujours des fichiers `*.example`.
 
 ---
 
 ## Configuration — `config.yaml`
 
-Toutes les valeurs peuvent etre modifiees a chaud via `/wally setup` (Discord) ou le dashboard web. Les changements sont ecrits dans `config.yaml` immediatement sans redemarrage.
+Toutes les valeurs sont modifiables **à chaud** via `/wally setup` (Discord) ou le dashboard web. Les changements sont écrits dans `config.yaml` immédiatement, sans redémarrage. Voir `config.example.yaml` pour la liste complète et commentée.
 
 ### Section `llm`
 
 ```yaml
 llm:
   primary:
-    provider: "deepseek"      # seul provider texte supporte
+    provider: "deepseek"        # seul provider texte supporté
     model: "deepseek-v4-pro"
     temperature: 0.8
     max_tokens: 8192
-    thinking_type: "disabled" # disabled/enabled
-    thinking_effort: "medium"
+    thinking_type: "disabled"   # disabled / enabled
   secondary:
     provider: "deepseek"
     model: "deepseek-v4-flash"
     temperature: 0.8
     max_tokens: 1000
-    reasoning_effort: "medium"
 ```
 
-> OpenAI n'est plus un provider texte — il est construit directement (hors `llm:`) pour la generation d'images et les embeddings.
+> OpenAI n'est pas un provider texte — il est construit séparément (hors `llm:`) pour la génération d'images.
 
-### Section `bot`
+### Quelques clés `bot`
 
-| Cle | Defaut | Description |
+| Clé | Défaut | Description |
 |---|---|---|
-| `trigger_names` | `["wally"]` | Mots qui declenchent Wally dans un message |
-| `language_default` | `fr` | Langue de fallback si detection echoue |
-| `context_window_size` | `20` | Nb de messages gardes par salon dans la fenetre glissante |
-| `journal_time` | `"03:00"` | Heure de generation du journal quotidien |
-| `journal_channel_id` | `null` | ID du salon Discord ou publier le journal |
-| `memory_search_min_score` | `0.5` | Score Qdrant minimum pour les reponses normales |
-| `memory_context_max_tokens` | `800` | Budget tokens pour le bloc memoire dans le prompt |
-| `spontaneous_memory_probability` | `0.2` | Chance de rappel spontane sur souvenir pertinent |
-| `update_image` | `""` | Référence image GHCR pour la détection auto de mise à jour (ex: `ghcr.io/user/wally-ai:latest`) |
-
-### Section `discord`
-
-| Cle | Defaut | Description |
-|---|---|---|
-| `allowed_channels` | `[]` | Salons ou Wally repond (vide = tous) |
-| `anger_trigger_threshold` | `3` | Nb de declenchements sous colere avant mute |
-| `timeout_minutes` | `10` | Duree du mute en minutes |
-| `spam_detection.enabled` | `true` | Detection de spam automatique |
-| `spam_detection.max_messages` | `10` | Seuil de messages dans la fenetre |
-| `spam_detection.window_seconds` | `120` | Fenetre de temps pour le spam |
-
-### Section `twitch`
-
-| Cle | Defaut | Description |
-|---|---|---|
-| `channels` | `[]` | Chaines Twitch a rejoindre |
-| `cooldown_seconds` | `10` | Delai minimal entre deux reponses au meme utilisateur |
+| `trigger_names` | `["wally"]` | Mots qui déclenchent Wally dans un message |
+| `language_default` | `fr` | Langue de fallback si la détection échoue |
+| `context_window_size` | `20` | Nb de messages gardés par salon dans la fenêtre glissante |
+| `journal_time` | `"21:00"` | Heure de génération du journal quotidien |
+| `journal_channel_id` | `null` | ID du salon Discord où publier le journal |
+| `dashboard_token` | `changeme` | **Mot de passe d'accès admin du dashboard — à changer** |
+| `update_image` | `""` | Image GHCR pour l'auto-update (ex : `ghcr.io/user/wally-ai:latest`) |
 
 ### Section `emotions`
 
-Chaque emotion (`anger`, `joy`, `sadness`, `curiosity`, `boredom`) a un `decay_lambda` (vitesse de decroissance exponentielle).
-
-### Section `image_generation`
-
-| Cle | Defaut | Description |
-|---|---|---|
-| `model` | `gpt-image-1` | Modele OpenAI pour la generation d'images |
-| `daily_limit` | `20` | Limite quotidienne d'images |
-| `per_user_limit` | `5` | Limite par utilisateur par jour |
+Chaque émotion a un `decay_lambda` (vitesse de décroissance). On y configure aussi le circadien, la fatigue, l'habituation, les émotions secondaires et les événements spontanés.
 
 ---
 
@@ -150,159 +204,84 @@ Chaque emotion (`anger`, `joy`, `sadness`, `curiosity`, `boredom`) a un `decay_l
 
 | Commande | Description | Permissions |
 |---|---|---|
-| `/ask <question>` | Poser une question directement a Wally | Tout le monde |
-| `/mood` | Voir l'etat emotionnel actuel (5 barres) | Tout le monde |
-| `/status` | Uptime, modele actif, humeur, couts | Tout le monde |
-| `/imagine <prompt>` | Generer une image IA | Tout le monde |
-| `/memory <user>` | Voir la memoire long-terme d'un utilisateur | Administrateur |
-| `/journal [date]` | Declencher un journal (backfill optionnel) | Administrateur |
-| `/reload-persona` | Recharger les fichiers persona sans redemarrage | Administrateur |
+| `/ask <question>` | Poser une question directement à Wally | Tout le monde |
+| `/mood` | Voir l'état émotionnel actuel (5 barres) | Tout le monde |
+| `/status` | Uptime, modèle actif, humeur, coûts | Tout le monde |
+| `/imagine <prompt>` | Générer une image IA | Tout le monde |
+| `/memory <user>` | Voir la mémoire long-terme d'un utilisateur | Administrateur |
+| `/journal [date]` | Déclencher un journal (backfill optionnel) | Administrateur |
+| `/reload-persona` | Recharger les fichiers persona sans redémarrage | Administrateur |
 | `/setup` | Panneau de configuration interactif | Administrateur |
-
----
-
-## Dashboard Web
-
-Accessible sur le port `8080`. Deux modes :
-
-### Mode public (sans authentification)
-- **Status** : uptime, connectivite, compteurs de messages
-- **Chat** : chat web avec Wally via WebSocket
-- **Galerie** : images generees, recherche, votes
-- **Journal** : historique des journaux quotidiens
-
-### Mode admin (Bearer token)
-- **Config** : modeles LLM, provider, temperature, parametres bot
-- **Logs** : logs temps reel via SSE
-- **Memoire** : gestion utilisateurs, memoires, aliases, questions pendantes, memoire globale
-- **Overlay** : controle overlay OBS pour images
-- **Couts** : graphes de couts API par modele/periode
-- **Actions** : taches planifiees, permissions par role
-- **Barre de controle** : statut Discord/Twitch, boutons stop/start, bouton "Mise à jour disponible" (amber, auto-détecté via GHCR)
 
 ---
 
 ## Architecture
 
-Monolithe modulaire — un seul processus asyncio, modules communiquant via injection de dependances.
+Monolithe modulaire — un seul processus asyncio, deux adaptateurs (Discord, Twitch) partageant des services injectés.
 
 ```
 bot/
-├── main.py                # Point d'entree, DI wiring, asyncio.gather()
-├── bootstrap.py           # Construction des services, injection DI
-├── config.py              # Config dataclass, hot-reload, config.save()
-├── core/                  # Primitives sans LLM
-│   ├── llm/               # Abstraction LLM (base, deepseek, openai_client images, factory)
-│   ├── emotion.py         # EmotionEngine : etat, decroissance, NRCLex
-│   ├── language.py        # Detection de langue (langdetect)
-│   ├── reaction_tracker.py
+├── main.py              # Point d'entrée, DI wiring, asyncio.gather()
+├── bootstrap.py         # Construction des services, injection DI
+├── config.py            # Config dataclass, hot-reload, config.save()
+├── core/                # Primitives sans LLM
+│   ├── llm/             # Abstraction LLM (base, deepseek, openai images, factory)
+│   ├── emotion.py       # État émotionnel, décroissance, NRCLex
+│   ├── language.py      # Détection de langue (langdetect)
+│   ├── web_search.py    # Recherche web (Tavily)
 │   ├── update_checker.py
-│   ├── notifications.py
-│   ├── web_search.py
-│   ├── account_linker.py
-│   └── apex_api.py
-├── intelligence/          # Tout ce qui raisonne via LLM
-│   ├── memory/            # Memoire semantique (FTS5/SQLite)
-│   │   ├── service.py     # MemoryService : fenetre glissante, search, consolidation
-│   │   ├── facts.py       # SQLiteFactStore : faits S-P-O, AtomicFact
-│   │   ├── ingest.py      # MemoryIngest : dedup live, reconciliation 2 etages
-│   │   ├── retrieval.py   # MemoryRetrieval : retrieval Generative-Agents
-│   │   └── vocab.py       # Vocabulaire ferme de predicats
-│   ├── actions/           # Taches planifiees via tool calling
-│   │   ├── registry.py    # Catalogue actions + ACL par role
-│   │   ├── scheduler.py   # Persistence SQLite + apscheduler
-│   │   ├── executor.py    # Routing + livraison messages
-│   │   └── service.py     # Facade LLM, tool definitions
-│   ├── cognitive_loop.py  # Boucle cognitive (tick, idle, ATTN/THINK/DECIDE/SPEAK)
-│   ├── cognitive_feed.py  # CognitiveFeed : fan-out SSE
-│   ├── reasoning_agent.py # ReasoningAgent : generation de reponses
-│   ├── attention_agent.py # AttentionAgent : scoring d'attention
-│   ├── gate.py            # ResponseGate : decision de repondre
-│   ├── persona.py         # PersonaService : chargement fichiers persona
-│   ├── persona_manager.py
-│   ├── prompts.py         # PromptBuilder, load_prompt(), directives emotionnelles
-│   ├── fact_extractor.py  # FactExtractor : extraction de faits memorables
-│   ├── journal.py         # DailyJournal : journal quotidien (apscheduler)
-│   ├── action_dispatcher.py
-│   ├── channels.py
-│   ├── emotional_drive.py
-│   ├── evolution_log.py
-│   ├── inner_monologue.py
-│   ├── meta_agent.py
-│   ├── self_fix.py
-│   ├── self_upgrade.py
-│   └── host_bridge.py
-├── discord/
-│   ├── bot.py             # WallyDiscord
-│   ├── handlers.py        # Pipeline message complet, spam, spontane
-│   └── commands/          # ask, status, mood, memory, setup, imagine, journal, persona
-├── twitch/
-│   ├── bot.py             # WallyTwitch, cooldowns
-│   ├── handlers.py        # Pipeline message Twitch
-│   └── events/            # follow/sub/resub/bits/raid
-├── persona/
-│   ├── SOUL.md / IDENTITY.md / VOICE.md / EMOTIONS.md
-│   └── prompts/           # Templates systeme charges via load_prompt()
-├── dashboard/
-│   ├── app.py             # FastAPI app, middleware auth
-│   ├── state.py           # AppState dataclass
-│   ├── routes/            # admin, memory, status, gallery, chat, sse, actions
-│   └── static/            # SPA vanilla JS + CSS glassmorphism
-└── db/
-    ├── database.py        # aiosqlite : cost_log, trust_scores, gallery, actions, etc.
-    ├── schema_v2.py       # DDL tables intelligence (atomic_facts, thoughts...)
-    └── mixins/
+│   └── ...
+├── intelligence/        # Tout ce qui raisonne via LLM
+│   ├── memory/          # Mémoire sémantique (FTS5/SQLite) — faits S-P-O
+│   ├── actions/         # Actions planifiées via tool calling
+│   ├── cognitive_loop.py   # Boucle cognitive (ATTN/THINK/DECIDE/SPEAK)
+│   ├── cognitive_feed.py   # Fan-out SSE du flux cognitif
+│   ├── reasoning_agent.py  # Génération de réponses
+│   ├── attention_agent.py  # Scoring d'attention
+│   ├── gate.py             # Décision de répondre (droit au silence)
+│   ├── persona.py          # Chargement de la persona
+│   ├── fact_extractor.py   # Extraction de faits mémorables
+│   ├── journal.py          # Journal quotidien
+│   ├── self_upgrade.py     # Auto-modification de code via Claude Code
+│   ├── inner_monologue.py  # Fil de pensée intérieur
+│   └── ...
+├── discord/             # Bot Discord, handlers, commandes /wally
+├── twitch/              # Bot Twitch, handlers, events
+├── persona/             # Fichiers persona Markdown + prompts/
+├── dashboard/           # FastAPI + SPA (admin + site public arcade)
+└── db/                  # aiosqlite : schéma, mixins, requêtes
 ```
 
 ---
 
 ## Docker
 
-Deux services : `wally` (bot principal) et `qdrant` (base vectorielle). `cloudflared` peut être ajouté optionnellement pour un tunnel.
+Services : `init-perms` (permissions), `wally` (bot + dashboard, port 8080) et `cloudflared` (tunnel, optionnel). Le socket Docker est monté dans le container pour permettre le restart et l'auto-update depuis le dashboard.
 
-Le socket Docker est monte dans le container Wally pour permettre le restart et la mise à jour depuis le dashboard.
+`config.yaml`, `.env` et `data/` sont montés en volumes — pense à les créer avant le premier lancement.
 
----
+### Mise à jour automatique
 
-## Mise à jour
-
-Configurer `bot.update_image` dans `config.yaml` avec la référence de l'image GHCR :
-
-```yaml
-bot:
-  update_image: "ghcr.io/ton-user/wally-ai:latest"
-```
-
-Le bot vérifie toutes les heures si une nouvelle image est disponible. Quand c'est le cas, un bouton amber "Mise à jour disponible" apparaît dans le panel admin. Un clic déclenche `docker compose pull && docker compose up -d --force-recreate` — le container se recrée avec la nouvelle image.
-
-Laisser `update_image` vide pour désactiver le polling.
+Renseigne `bot.update_image` dans `config.yaml` avec la référence GHCR de l'image. Le bot vérifie chaque heure ; quand une nouvelle image existe, un bouton « Mise à jour disponible » apparaît dans l'admin et déclenche `docker compose pull && docker compose up -d --force-recreate`. Laisser vide pour désactiver.
 
 ---
 
-## Depannage
+## Dépannage
 
-### Qdrant n'est pas healthy
+### Wally ne répond pas sur Discord
+1. Vérifier que **Message Content Intent** est activé dans le portail Discord Developers
+2. Vérifier que `DISCORD_TOKEN` dans `.env` est correct
+3. Vérifier les permissions du bot dans le salon
 
-```bash
-ss -tlnp | grep 6333
-docker compose down && docker compose up -d
-```
+### Wally ne répond pas sur Twitch
+1. Vérifier `BOT_ACCESS_TOKEN` dans `.env`
+2. Vérifier les chaînes (en minuscules) dans la config Twitch
 
-### Wally ne repond pas sur Discord
+### Coûts élevés
+Utiliser `/wally status` ou l'onglet **Coûts** du dashboard. Réduire `max_tokens` ou changer de modèle via `/wally setup`.
 
-1. Verifier que **Message Content Intent** est active dans le portail Discord Developers
-2. Verifier que `DISCORD_TOKEN` dans `.env` est correct
-3. Verifier les permissions du bot dans le salon
+---
 
-### Wally ne repond pas sur Twitch
+## Licence & usage
 
-1. Verifier `BOT_ACCESS_TOKEN` dans `.env`
-2. Verifier les chaines dans `config.yaml > twitch > channels` (en minuscules)
-
-### Memoire (Qdrant)
-
-Si Qdrant est indisponible, Wally fonctionne sans memoire long-terme (mode degrade, log WARNING). Les donnees sont stockees dans `./data/qdrant/` sur l'hote.
-
-### Couts eleves
-
-Utiliser `/wally status` ou l'onglet Couts du dashboard. Reduire `max_tokens` ou changer de modele via `/wally setup` ou le dashboard.
+Projet personnel fourni tel quel, sans garantie. Codé avec Claude Code. Utilise-le, modifie-le, apprends-en ce que tu veux — à tes risques.
