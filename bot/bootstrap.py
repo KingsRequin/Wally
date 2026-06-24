@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from bot.intelligence.journal import DailyJournal
     from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
+    from bot.core.scrape import ScrapeService
     from bot.core.apex_api import ApexLegendsService
     from bot.core.vision import VisionService
     from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
@@ -50,6 +51,7 @@ class CoreServices:
     fact_extractor: "FactExtractor"
     reaction_tracker: "ReactionTracker"
     web_search: "WebSearchService"
+    scrape: "ScrapeService"
     apex_api: "ApexLegendsService"
     shared_scheduler: "AsyncIOScheduler"
 
@@ -66,6 +68,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     from bot.intelligence.journal import DailyJournal
     from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
+    from bot.core.scrape import ScrapeService
     from bot.core.apex_api import ApexLegendsService
     from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
     from bot.intelligence.fact_extractor import FactExtractor
@@ -131,6 +134,12 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
         logger.info("WebSearchService initialized (Tavily)")
     else:
         logger.warning("WebSearchService disabled — TAVILY_API_KEY missing or tavily-python not installed")
+
+    scrape = ScrapeService(config, db, summarizer=secondary_llm)
+    if scrape.available:
+        logger.info("ScrapeService initialized (Firecrawl)")
+    else:
+        logger.warning("ScrapeService disabled — FIRECRAWL_API_URL missing or disabled in config")
 
     apex_api = ApexLegendsService()
     if apex_api.available:
@@ -198,6 +207,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
         fact_extractor=fact_extractor,
         reaction_tracker=reaction_tracker,
         web_search=web_search,
+        scrape=scrape,
         apex_api=apex_api,
         shared_scheduler=shared_scheduler,
     )

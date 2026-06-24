@@ -94,6 +94,7 @@ async def main() -> None:
     fact_extractor   = svc.fact_extractor
     reaction_tracker = svc.reaction_tracker
     web_search       = svc.web_search
+    scrape           = svc.scrape
     apex_api         = svc.apex_api
     shared_scheduler = svc.shared_scheduler
 
@@ -106,6 +107,7 @@ async def main() -> None:
     discord_bot.journal = journal
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
+    discord_bot.scrape = scrape
     discord_bot.apex_api = apex_api
     discord_bot.vision = vision
     discord_bot.reaction_tracker = reaction_tracker
@@ -211,6 +213,7 @@ async def main() -> None:
         )
         twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
+        twitch_bot.scrape = scrape
         twitch_bot.apex_api = apex_api
         twitch_bot.reaction_tracker = reaction_tracker
         twitch_bot.conv_log = conv_log
