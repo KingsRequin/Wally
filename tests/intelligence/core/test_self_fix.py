@@ -1,161 +1,122 @@
 import asyncio
 import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
+from unittest.mock import AsyncMock, MagicMock
 
 OWNER_ID = "610550333042589752"
-NON_OWNER_ID = "999999999999"
 
 
-def make_fix(tmp_path: Path, llm_diff: str = "--- a/x\n+++ b/x\n"):
-    from bot.intelligence.self_fix import SelfFix, FixRequest
-
-    # create a real file in tmp_path
-    src = tmp_path / "bot" / "core" / "emotion.py"
-    src.parent.mkdir(parents=True)
-    src.write_text("# original\n")
-
-    llm = MagicMock()
-    llm.complete = AsyncMock(return_value=llm_diff)
+def make_fix(approval="✅", status_seq=None):
+    """Build a SelfFix with mocked bridge + bot. Default: approval ✅, job done+changed."""
+    from bot.intelligence.self_fix import SelfFix
 
     bridge = MagicMock()
-    bridge.git_apply = AsyncMock()
+    bridge.claude_run = AsyncMock(return_value="job123")
+    if status_seq is None:
+        status_seq = [{"state": "done", "exit_code": 0, "result": "fait",
+                       "changed": True, "head_changed": False, "output_tail": ""}]
+    bridge.claude_status = AsyncMock(side_effect=status_seq)
+    bridge.claude_commit = AsyncMock(return_value={"committed": True, "hash": "abc"})
     bridge.docker_rebuild = AsyncMock()
 
     bot = MagicMock()
-    owner = AsyncMock()
     dm = AsyncMock()
     msg = AsyncMock()
-    msg.id = 42
+    msg.id = 7
     dm.send = AsyncMock(return_value=msg)
     msg.add_reaction = AsyncMock()
+    owner = AsyncMock()
     owner.create_dm = AsyncMock(return_value=dm)
     bot.fetch_user = AsyncMock(return_value=owner)
 
-    fixer = SelfFix(llm, bridge, bot, repo_root=str(tmp_path))
-    req_owner = FixRequest(
-        requester_discord_id=OWNER_ID,
-        file_path="bot/core/emotion.py",
-        description="fix the bug",
-    )
-    req_non_owner = FixRequest(
-        requester_discord_id=NON_OWNER_ID,
-        file_path="bot/core/emotion.py",
-        description="fix",
-    )
-    return fixer, bridge, llm, dm, msg, bot, req_owner, req_non_owner
-
-
-@pytest.mark.asyncio
-async def test_fix_rejected_if_not_owner(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, _, req_non_owner = make_fix(tmp_path)
-    await fixer.fix(req_non_owner)
-    llm.complete.assert_not_called()
-    bridge.git_apply.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_fix_rejected_if_file_missing(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, _, _ = make_fix(tmp_path)
-    from bot.intelligence.self_fix import FixRequest
-    req = FixRequest(requester_discord_id=OWNER_ID, file_path="nonexistent.py", description="x")
-    await fixer.fix(req)
-    llm.complete.assert_not_called()
-    bridge.git_apply.assert_not_called()
-    # Le créateur DOIT être notifié de l'échec — jamais d'abandon silencieux.
-    dm.send.assert_called_once()
-    assert "n'existe pas" in dm.send.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_missing_file_suggests_real_candidate(tmp_path):
-    fixer, *_ = make_fix(tmp_path)
-    # emotion.py existe sous bot/core/ ; on demande un nom proche mais faux.
-    _abs, err = fixer.resolve("bot/discord/emotion.py")
-    assert _abs is None
-    assert "emotion.py" in err  # suggestion du vrai fichier
-
-
-@pytest.mark.asyncio
-async def test_resolve_blocks_path_traversal(tmp_path):
-    fixer, *_ = make_fix(tmp_path)
-    _abs, err = fixer.resolve("../../etc/passwd")
-    assert _abs is None
-    assert "hors du dépôt" in err
-
-
-@pytest.mark.asyncio
-async def test_fix_notifies_on_empty_diff(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path, llm_diff="   ")
-    await fixer.fix(req_owner)
-    bridge.git_apply.assert_not_called()
-    dm.send.assert_called_once()
-    assert "aucun diff" in dm.send.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_fix_sends_dm_with_diff_preview(tmp_path):
-    diff = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n"
-    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path, llm_diff=diff)
     reaction = MagicMock()
-    reaction.emoji = "❌"
+    reaction.emoji = approval
     reaction.message.id = msg.id
     user = MagicMock()
     user.id = int(OWNER_ID)
     bot.wait_for = AsyncMock(return_value=(reaction, user))
 
-    await fixer.fix(req_owner)
+    fixer = SelfFix(bridge, bot, poll_interval=0.0)
+    return fixer, bridge, bot, dm
 
-    llm.complete.assert_called_once()
-    dm.send.assert_called()
-    sent_text = dm.send.call_args_list[0][0][0]
-    assert "bot/core/emotion.py" in sent_text
-    assert "diff" in sent_text.lower() or "---" in sent_text or diff[:20] in sent_text
+
+def req(goal="voir les réactions emoji"):
+    from bot.intelligence.self_fix import UpgradeRequest
+    return UpgradeRequest(goal=goal)
 
 
 @pytest.mark.asyncio
-async def test_fix_applies_on_checkmark(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path)
-    reaction = MagicMock()
-    reaction.emoji = "✅"
-    reaction.message.id = msg.id
-    user = MagicMock()
-    user.id = int(OWNER_ID)
-    bot.wait_for = AsyncMock(return_value=(reaction, user))
-
-    await fixer.fix(req_owner)
-
-    bridge.git_apply.assert_called_once()
+async def test_approval_runs_claude_then_rebuilds():
+    fixer, bridge, bot, dm = make_fix(approval="✅")
+    await fixer.request_upgrade(req())
+    bridge.claude_run.assert_called_once()
+    assert bridge.claude_run.call_args[0][0] == "voir les réactions emoji"
     bridge.docker_rebuild.assert_called_once_with("wally")
 
 
 @pytest.mark.asyncio
-async def test_fix_cancels_on_cross(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path)
-    reaction = MagicMock()
-    reaction.emoji = "❌"
-    reaction.message.id = msg.id
-    user = MagicMock()
-    user.id = int(OWNER_ID)
-    bot.wait_for = AsyncMock(return_value=(reaction, user))
+async def test_refusal_does_not_run_claude_and_records_decline():
+    fixer, bridge, bot, dm = make_fix(approval="❌")
+    await fixer.request_upgrade(req())
+    bridge.claude_run.assert_not_called()
+    bridge.docker_rebuild.assert_not_called()
+    # second identical request is ignored (declined)
+    await fixer.request_upgrade(req())
+    bridge.claude_run.assert_not_called()
 
-    await fixer.fix(req_owner)
 
-    bridge.git_apply.assert_not_called()
+@pytest.mark.asyncio
+async def test_timeout_cancels_without_running():
+    fixer, bridge, bot, dm = make_fix()
+    bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
+    await fixer.request_upgrade(req())
+    bridge.claude_run.assert_not_called()
+    assert dm.send.call_count >= 2  # proposal + cancellation
+
+
+@pytest.mark.asyncio
+async def test_claude_failure_notifies_no_rebuild():
+    seq = [{"state": "failed", "exit_code": 1, "result": "", "changed": False,
+            "head_changed": False, "output_tail": "boom"}]
+    fixer, bridge, bot, dm = make_fix(status_seq=seq)
+    await fixer.request_upgrade(req())
+    bridge.docker_rebuild.assert_not_called()
+    assert any("échou" in c.args[0].lower() for c in dm.send.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_no_change_no_rebuild():
+    seq = [{"state": "done", "exit_code": 0, "result": "rien", "changed": False,
+            "head_changed": False, "output_tail": ""}]
+    fixer, bridge, bot, dm = make_fix(status_seq=seq)
+    await fixer.request_upgrade(req())
     bridge.docker_rebuild.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_fix_cancels_on_timeout(tmp_path):
-    fixer, bridge, llm, dm, msg, bot, req_owner, _ = make_fix(tmp_path)
-    bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
+async def test_head_changed_triggers_rebuild():
+    seq = [{"state": "done", "exit_code": 0, "result": "committed", "changed": False,
+            "head_changed": True, "output_tail": ""}]
+    fixer, bridge, bot, dm = make_fix(status_seq=seq)
+    await fixer.request_upgrade(req())
+    bridge.docker_rebuild.assert_called_once_with("wally")
 
-    await fixer.fix(req_owner)
 
-    bridge.git_apply.assert_not_called()
-    # DM cancellation message sent
-    assert dm.send.call_count >= 2  # initial preview + timeout msg
+@pytest.mark.asyncio
+async def test_empty_goal_is_ignored():
+    fixer, bridge, bot, dm = make_fix()
+    await fixer.request_upgrade(req(goal="   "))
+    bot.fetch_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_polls_until_terminal():
+    seq = [{"state": "running"}, {"state": "running"},
+           {"state": "done", "exit_code": 0, "result": "ok", "changed": True,
+            "head_changed": False, "output_tail": ""}]
+    fixer, bridge, bot, dm = make_fix(status_seq=seq)
+    await fixer.request_upgrade(req())
+    assert bridge.claude_status.call_count == 3
+    bridge.docker_rebuild.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -164,49 +125,30 @@ async def test_action_dispatcher_code_fix_dispatches_to_self_fix():
     from bot.intelligence.meta_agent import MetaDecision
 
     self_fix_mock = MagicMock()
-    self_fix_mock.fix = AsyncMock()
-
+    self_fix_mock.request_upgrade = AsyncMock()
     bot = MagicMock()
     bot.self_fix = self_fix_mock
 
     dispatcher = ActionDispatcher(bot=bot)
-    decision = MetaDecision(
-        action="ACT",
-        act_name="code_fix",
-        act_args={
-            "requester_discord_id": OWNER_ID,
-            "file_path": "bot/core/emotion.py",
-            "description": "fix the bug",
-        },
-    )
+    decision = MetaDecision(action="ACT", act_name="code_fix",
+                            act_args={"goal": "voir les réactions emoji"})
     await dispatcher.dispatch(decision)
-    await asyncio.sleep(0)  # let create_task run
-
-    self_fix_mock.fix.assert_called_once()
+    await asyncio.sleep(0)
+    self_fix_mock.request_upgrade.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_action_dispatcher_code_fix_rejects_non_owner():
+async def test_action_dispatcher_code_fix_ignores_empty_goal():
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
     self_fix_mock = MagicMock()
-    self_fix_mock.fix = AsyncMock()
-
+    self_fix_mock.request_upgrade = AsyncMock()
     bot = MagicMock()
     bot.self_fix = self_fix_mock
 
     dispatcher = ActionDispatcher(bot=bot)
-    decision = MetaDecision(
-        action="ACT",
-        act_name="code_fix",
-        act_args={
-            "requester_discord_id": NON_OWNER_ID,
-            "file_path": "bot/core/emotion.py",
-            "description": "fix",
-        },
-    )
+    decision = MetaDecision(action="ACT", act_name="code_fix", act_args={"goal": ""})
     await dispatcher.dispatch(decision)
     await asyncio.sleep(0)
-
-    self_fix_mock.fix.assert_not_called()
+    self_fix_mock.request_upgrade.assert_not_called()
