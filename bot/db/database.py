@@ -168,6 +168,14 @@ CREATE TABLE IF NOT EXISTS web_search_log (
 
 CREATE INDEX IF NOT EXISTS idx_web_search_log_ts ON web_search_log(timestamp);
 
+CREATE TABLE IF NOT EXISTS scrape_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    url TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scrape_log_ts ON scrape_log(timestamp);
+
 CREATE TABLE IF NOT EXISTS jokes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content TEXT NOT NULL,

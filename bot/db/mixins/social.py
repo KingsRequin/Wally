@@ -247,6 +247,23 @@ class SocialMixin:
         )
         return int(row["cnt"]) if row else 0
 
+    # ── Scrape log ──────────────────────────────────────────────────────────
+
+    async def log_scrape(self, url: str) -> None:
+        await self.execute(
+            "INSERT INTO scrape_log (timestamp, url) VALUES (?, ?)",
+            (time.time(), url),
+        )
+
+    async def count_scrapes_today(self) -> int:
+        now = datetime.now(_TZ_DB)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        row = await self.fetch_one(
+            "SELECT COUNT(*) AS cnt FROM scrape_log WHERE timestamp >= ?",
+            (day_start.timestamp(),),
+        )
+        return int(row["cnt"]) if row else 0
+
     # ── Journal archive ────────────────────────────────────────────────────
 
     async def insert_journal(self, date: str, content: str, word_count: int, chart_path: str | None = None) -> None:
