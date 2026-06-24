@@ -294,7 +294,7 @@ SOUL → IDENTITY → VOICE → EXEMPLES loaded as single block. `COMPOSITES.md`
 
 `load_prompt("name")` loads `bot/persona/prompts/name.md`. Templates loaded at module level (global vars) to avoid repeated I/O.
 
-`/wally reload-persona` reloads all persona files without restart.
+`/reload-persona` reloads all persona files without restart.
 
 ---
 
