@@ -5,6 +5,7 @@ import http.server
 import json
 import logging
 import os
+import signal
 import socketserver
 import subprocess
 import time
@@ -141,12 +142,18 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             env = dict(os.environ)
             env["IS_SANDBOX"] = "1"
             outf = open(out_path, "wb")
-            proc = subprocess.Popen(
-                [CLAUDE_BIN, "--dangerously-skip-permissions", "-p", goal,
-                 "--output-format", "json"],
-                cwd=REPO_ROOT, env=env, stdout=outf, stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
+            try:
+                proc = subprocess.Popen(
+                    [CLAUDE_BIN, "--dangerously-skip-permissions", "-p", goal,
+                     "--output-format", "json"],
+                    cwd=REPO_ROOT, env=env, stdout=outf, stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except OSError as e:
+                outf.close()
+                logging.error("claude-run échec spawn: %s", e)
+                self._send(500, {"error": f"impossible de lancer claude: {e}"})
+                return
             _JOBS[job_id] = {
                 "state": "running", "proc": proc, "outf": outf,
                 "out_path": str(out_path), "head_before": _git_head(),
@@ -165,8 +172,12 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             if rc is None:
                 if time.time() - job["started_at"] > CLAUDE_TIMEOUT:
                     try:
-                        os.killpg(os.getpgid(proc.pid), 9)
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                     except (ProcessLookupError, PermissionError):
+                        pass
+                    try:
+                        job["outf"].close()
+                    except OSError:
                         pass
                     job["state"] = "failed"
                     self._send(200, {"state": "failed", "exit_code": -1,
