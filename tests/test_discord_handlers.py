@@ -279,6 +279,57 @@ async def test_passive_capture_non_triggered_message():
 
 
 @pytest.mark.asyncio
+async def test_cognitive_loop_perceives_non_triggered_message():
+    """Le cerveau (cognitive_loop) perçoit les messages passifs des salons
+    autorisés, même sans mention — base de l'intervention spontanée pertinente."""
+    bot = make_bot()
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_activity = MagicMock()
+    message = make_message(content="juste un message normal")  # pas de trigger
+    await handle_message(bot, message)
+    bot.cognitive_loop.notify_activity.assert_called_once_with(
+        channel_id=message.channel.id,
+        author=str(message.author.display_name),
+        content=message.content,
+        message_id=str(message.id),
+    )
+    # toujours pas de réponse directe : le cerveau décidera seul d'intervenir
+    bot.llm.complete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cognitive_loop_not_notified_in_disallowed_channel():
+    """Salon non autorisé → le cerveau ne perçoit rien (pas de perception)."""
+    bot = make_bot()
+    bot.config.discord.channel_filter_mode = "whitelist"
+    bot.config.discord.channel_whitelist = [424242]  # le canal du message (777) n'y est pas
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_activity = MagicMock()
+    message = make_message(content="juste un message normal")
+    await handle_message(bot, message)
+    bot.cognitive_loop.notify_activity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cognitive_loop_notified_once_on_trigger():
+    """Sur un message qui mentionne Wally, notify_activity n'est appelé
+    qu'UNE fois (pas de double-feed après suppression du doublon)."""
+    bot = make_bot(trigger_names=["wally"])
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_activity = MagicMock()
+    bot.cognitive_loop.notify_reply = MagicMock()
+    message = make_message(content="wally bonjour")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await handle_message(bot, message)
+    bot.cognitive_loop.notify_activity.assert_called_once_with(
+        channel_id=message.channel.id,
+        author=str(message.author.display_name),
+        content=message.content,
+        message_id=str(message.id),
+    )
+
+
+@pytest.mark.asyncio
 async def test_prelude_included_in_prompt_on_mention():
     """build_prelude_block est appelé avec le prelude au moment de la mention."""
     bot = make_bot()

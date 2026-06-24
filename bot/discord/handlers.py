@@ -686,6 +686,23 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         if await _check_spam(bot, message):
             return
 
+    # Perception cognitive : le « cerveau » perçoit TOUS les messages des salons
+    # autorisés (pas seulement ceux qui mentionnent Wally), afin de pouvoir
+    # intervenir spontanément quand c'est pertinent sans avoir besoin d'être ping.
+    # Aligné sur le comportement Twitch (cf. twitch/handlers.py). La boucle
+    # cognitive applique ses propres garde-fous (cooldowns, anti-rumination,
+    # conscience sociale) avant tout SPEAK.
+    if channel_allowed and getattr(bot, "cognitive_loop", None) is not None:
+        try:
+            bot.cognitive_loop.notify_activity(
+                channel_id=message.channel.id,
+                author=str(message.author.display_name),
+                content=message.content,
+                message_id=str(message.id),
+            )
+        except Exception as e:
+            logger.warning("cognitive_loop.notify_activity failed: {e}", e=e)
+
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
     always_trigger = _is_always_trigger
@@ -759,15 +776,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     # Gate V2 désactivé sur les triggers : le LLM ignorait systématiquement même
     # quand le nom était mentionné. Sur un trigger, Wally répond toujours.
-
-    # Notifier la boucle cognitive de l'activité
-    if getattr(bot, "cognitive_loop", None) is not None:
-        bot.cognitive_loop.notify_activity(
-            channel_id=message.channel.id,
-            author=str(message.author.display_name),
-            content=message.content,
-            message_id=str(message.id),
-        )
+    # (La boucle cognitive a déjà été notifiée de l'activité plus haut, pour
+    # TOUS les messages des salons autorisés — pas seulement les triggers.)
 
     _clog(
         bot, _conv_channel(message), "gate_decision",
