@@ -1,8 +1,15 @@
 import asyncio
+import types
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 OWNER_ID = "610550333042589752"
+
+
+def _equip_owner(bot, owner=OWNER_ID):
+    """Équipe le mock bot d'un config exposant owner_discord_id."""
+    bot.config = types.SimpleNamespace(bot=types.SimpleNamespace(owner_discord_id=owner))
+    return bot
 
 
 def make_fix(approval="✅", status_seq=None):
@@ -19,6 +26,7 @@ def make_fix(approval="✅", status_seq=None):
     bridge.docker_rebuild = AsyncMock()
 
     bot = MagicMock()
+    _equip_owner(bot)
     dm = AsyncMock()
     msg = AsyncMock()
     msg.id = 7
@@ -195,6 +203,62 @@ async def test_timeout_records_outcome_in_memory():
     store = bot.memory.fact_store
     facts = [c.args[0] for c in store.add.await_args_list]
     assert any(f.user_id == "wally:self" for f in facts)
+
+
+@pytest.mark.asyncio
+async def test_owner_id_read_from_config_not_constant():
+    """_owner_id() doit lire config.bot.owner_discord_id, pas la constante module."""
+    from bot.intelligence.self_fix import SelfFix
+
+    bridge = MagicMock()
+    bot = MagicMock()
+    _equip_owner(bot, owner="999888777666555444")
+
+    fixer = SelfFix(bridge, bot, poll_interval=0.0)
+    assert fixer._owner_id() == "999888777666555444"
+
+
+@pytest.mark.asyncio
+async def test_empty_owner_skips_run_upgrade():
+    """Si owner_discord_id est vide dans config, _run_upgrade ne fait rien (early-return)."""
+    from bot.intelligence.self_fix import SelfFix, UpgradeRequest
+
+    bridge = MagicMock()
+    bridge.claude_run = AsyncMock(return_value="job123")
+    bridge.docker_rebuild = AsyncMock()
+    bot = MagicMock()
+    _equip_owner(bot, owner="")
+    bot.memory.fact_store.add = AsyncMock(return_value=1)
+
+    fixer = SelfFix(bridge, bot, poll_interval=0.0)
+    await fixer.request_upgrade(UpgradeRequest(goal="fix something"))
+    bridge.claude_run.assert_not_called()
+    bot.fetch_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reaction_check_uses_config_owner():
+    """_await_reaction.check compare user.id à config.bot.owner_discord_id, pas la constante."""
+    fixer, bridge, bot, dm = make_fix(approval="✅")
+    # Changer l'owner dans config vers un ID différent : la réaction du user original doit
+    # être rejetée (wait_for lève TimeoutError) → claude_run ne doit pas être appelé.
+    bot.config.bot.owner_discord_id = "111222333444555666"
+    # wait_for simule un timeout car le check va rejeter le user (id != 111222333444555666)
+    bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
+    await fixer.request_upgrade(req())
+    bridge.claude_run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_preamble_contains_bot_name():
+    """Le goal envoyé au LLM via claude_run doit contenir le nom du bot rendu (pas «{{BOT_NAME}}»)."""
+    import bot.intelligence.identity as identity
+    identity._NAME = "Wally"  # reset pour isoler le test
+    fixer, bridge, bot_mock, dm = make_fix(approval="✅")
+    await fixer.request_upgrade(req(goal="voir les réactions emoji"))
+    sent = bridge.claude_run.call_args[0][0]
+    assert "{{BOT_NAME}}" not in sent
+    assert "Wally" in sent
 
 
 @pytest.mark.asyncio

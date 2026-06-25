@@ -6,7 +6,7 @@ from datetime import datetime
 
 from loguru import logger
 
-OWNER_DISCORD_ID = "610550333042589752"
+from bot.intelligence.identity import render_identity
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
@@ -16,7 +16,7 @@ _PROGRESS_EST_SECONDS = 300.0
 # framing même si Wally rédige un goal moyen (et empêche les hallucinations du type
 # « la fonction existe déjà » : on force la vérification de l'état réel du code).
 _GOAL_PREAMBLE = (
-    "Tu modifies le code du bot Discord/Twitch « Wally » (Python, asyncio). "
+    "Tu modifies le code du bot Discord/Twitch « {{BOT_NAME}} » (Python, asyncio). "
     "AVANT de coder : vérifie l'état RÉEL du code — ne te fie PAS aux suppositions "
     "de la demande (une fonction ou un fichier présenté comme « déjà prêt » peut très "
     "bien ne pas exister). Implémente DIRECTEMENT, ne te contente pas d'analyser ou de "
@@ -45,6 +45,11 @@ class SelfFix:
         self._pending = False
         self._declined: set[str] = set()
 
+    def _owner_id(self) -> str:
+        """Lit l'ID Discord du créateur depuis config.bot.owner_discord_id."""
+        cfg = getattr(self._bot, "config", None)
+        return getattr(getattr(cfg, "bot", None), "owner_discord_id", "") or ""
+
     async def request_upgrade(self, req: UpgradeRequest, *, force: bool = False) -> None:
         # force=True : demande explicite du créateur en conversation → on outrepasse
         # le filtre _declined (sinon un goal déjà refusé serait ignoré en silence).
@@ -71,7 +76,11 @@ class SelfFix:
             self._pending = False
 
     async def _run_upgrade(self, goal: str, norm: str) -> None:
-        owner = await self._bot.fetch_user(int(OWNER_DISCORD_ID))
+        oid = self._owner_id()
+        if not oid:
+            logger.warning("self-upgrade: owner_discord_id non configuré — abandon")
+            return
+        owner = await self._bot.fetch_user(int(oid))
         dm = await owner.create_dm()
         msg = await dm.send(
             "🧠 **J'ai repéré une faiblesse que je voudrais corriger :**\n"
@@ -107,7 +116,7 @@ class SelfFix:
             goal, "Accepté par KingsRequin — Claude Code l'implémente. Ce n'est plus "
             "en attente d'autorisation."
         )
-        job_id = await self._bridge.claude_run(_GOAL_PREAMBLE + goal)
+        job_id = await self._bridge.claude_run(render_identity(_GOAL_PREAMBLE + goal))
 
         # Message d'avancement unique, édité au fil de l'eau (pas de spam).
         prog_msg = await dm.send("⏳ Avancement estimé : ~5 %")
@@ -207,16 +216,22 @@ class SelfFix:
     async def _notify(self, text: str) -> None:
         """DM best-effort au créateur. Ne propage jamais."""
         try:
-            owner = await self._bot.fetch_user(int(OWNER_DISCORD_ID))
+            oid = self._owner_id()
+            if not oid:
+                logger.warning("self-upgrade: owner_discord_id non configuré — notification ignorée")
+                return
+            owner = await self._bot.fetch_user(int(oid))
             dm = await owner.create_dm()
             await dm.send(text)
         except Exception:  # noqa: BLE001
             logger.exception("self-upgrade: impossible de notifier le créateur en DM")
 
     async def _await_reaction(self, msg, timeout: float) -> str:
+        owner_id = self._owner_id()
+
         def check(reaction, user):
             return (
-                str(user.id) == OWNER_DISCORD_ID
+                str(user.id) == owner_id
                 and str(reaction.emoji) in ("✅", "❌")
                 and reaction.message.id == msg.id
             )
