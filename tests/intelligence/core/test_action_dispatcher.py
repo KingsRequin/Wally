@@ -150,7 +150,7 @@ async def test_dm_records_wally_message_in_memory():
     sent.channel.id = 999
     user = _MMd()
     user.send = _AMd(return_value=sent)
-    bot = _MMd()
+    bot, _u = _bot_with_config(owner_id=OWNER_ID, name="Wally")
     bot.fetch_user = _AMd(return_value=user)
     disp = _AD(bot=bot)
     await disp.dispatch(_MDd(action="ACT", act_name="dm",
@@ -572,13 +572,24 @@ def _dm_bot():
     return bot, user
 
 
+def _bot_with_config(owner_id: str = OWNER_ID, name: str = "Wally"):
+    """Bot mock avec config.bot.owner_discord_id et config.bot.name configurés."""
+    bot, user = _dm_bot()
+    bot_cfg = MagicMock()
+    bot_cfg.owner_discord_id = owner_id
+    bot_cfg.name = name
+    config = MagicMock()
+    config.bot = bot_cfg
+    bot.config = config
+    return bot, user
+
+
 @pytest.mark.asyncio
-async def test_act_dm_to_owner_sends(monkeypatch):
-    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+async def test_act_dm_to_owner_sends():
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
-    bot, user = _dm_bot()
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
     feed = MagicMock()
     dispatcher = ActionDispatcher(bot=bot, feed=feed)
     await dispatcher.dispatch(MetaDecision(
@@ -592,13 +603,12 @@ async def test_act_dm_to_owner_sends(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_act_dm_to_non_owner_blocked(monkeypatch):
+async def test_act_dm_to_non_owner_blocked():
     """Sécurité : DM vers un autre id que l'owner → send PAS appelé, pas de crash."""
-    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
-    bot, user = _dm_bot()
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
     dispatcher = ActionDispatcher(bot=bot)
     await dispatcher.dispatch(MetaDecision(
         action="ACT", act_name="dm",
@@ -609,12 +619,11 @@ async def test_act_dm_to_non_owner_blocked(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_act_dm_missing_args_noop(monkeypatch):
-    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
+async def test_act_dm_missing_args_noop():
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
-    bot, user = _dm_bot()
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
     dispatcher = ActionDispatcher(bot=bot)
     # message vide
     await dispatcher.dispatch(MetaDecision(
@@ -629,13 +638,12 @@ async def test_act_dm_missing_args_noop(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_act_dm_send_raises_no_crash(monkeypatch):
+async def test_act_dm_send_raises_no_crash():
     """user.send lève (DM fermés / Forbidden) → pas de crash, dispatch ne propage pas."""
-    monkeypatch.setenv("OWNER_DISCORD_ID", OWNER_ID)
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
-    bot, user = _dm_bot()
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
     user.send = AsyncMock(side_effect=Exception("DM fermés"))
     dispatcher = ActionDispatcher(bot=bot)
     await dispatcher.dispatch(MetaDecision(
@@ -643,3 +651,69 @@ async def test_act_dm_send_raises_no_crash(monkeypatch):
         act_args={"user_id": OWNER_ID, "message": "coucou"},
     ))
     user.send.assert_called_once()
+
+
+# ── Task 6 : owner + étiquettes nom via config.bot ──
+
+@pytest.mark.asyncio
+async def test_dm_owner_via_config_accepted():
+    """_dm accepte l'owner configuré dans bot.config.bot.owner_discord_id."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
+    feed = MagicMock()
+    dispatcher = ActionDispatcher(bot=bot, feed=feed)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "via config"},
+    ))
+    bot.fetch_user.assert_called_once_with(int(OWNER_ID))
+    user.send.assert_called_once_with("via config")
+    types = [c.args[0]["type"] for c in feed.publish.call_args_list]
+    assert "DM" in types
+
+
+@pytest.mark.asyncio
+async def test_dm_non_owner_via_config_blocked():
+    """_dm bloque un non-owner même quand l'owner vient de config.bot."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _bot_with_config(owner_id=OWNER_ID, name="Wally")
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": "999999999999999999", "message": "non autorisé"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dm_owner_unconfigured_no_dm():
+    """Quand owner_discord_id est vide dans la config, aucun DM ne part (warning loggé)."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    bot, user = _bot_with_config(owner_id="", name="Wally")
+    dispatcher = ActionDispatcher(bot=bot)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="dm",
+        act_args={"user_id": OWNER_ID, "message": "sans owner configuré"},
+    ))
+    bot.fetch_user.assert_not_called()
+    user.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_speak_records_configured_bot_name():
+    """_record_self_message utilise le nom configuré dans config.bot.name, pas 'Wally' codé en dur."""
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    bot, _user = _bot_with_config(owner_id=OWNER_ID, name="Cindy")
+    bot.get_channel.return_value = channel
+    disp = _AD(bot=bot)
+    await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
+    bot.memory.append_prelude.assert_called_once_with("123", "Cindy", "salut")
+    bot.memory.append_message.assert_called_once_with("123", "Cindy", "salut", platform="discord")

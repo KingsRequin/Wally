@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import os
 import re
 import time
 from datetime import datetime, timezone
@@ -39,6 +38,22 @@ class ActionDispatcher:
         self._feed = feed
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
+
+    def _owner_id(self) -> str:
+        for b in (self._bot, self._twitch_bot):
+            cfg = getattr(b, "config", None)
+            oid = getattr(getattr(cfg, "bot", None), "owner_discord_id", "")
+            if isinstance(oid, str) and oid:
+                return oid
+        return ""
+
+    def _self_name(self) -> str:
+        for b in (self._bot, self._twitch_bot):
+            cfg = getattr(b, "config", None)
+            nm = getattr(getattr(cfg, "bot", None), "name", "")
+            if isinstance(nm, str) and nm:
+                return nm
+        return "Wally"
 
     async def dispatch(self, decision: MetaDecision) -> None:
         action = decision.action
@@ -110,7 +125,7 @@ class ActionDispatcher:
             from bot.core.conversation_log import new_trace_id
             clog.log(platform, conv_channel, "message_out",
                      trace_id=new_trace_id("cognitive"), kind="cognitive",
-                     author="Wally", content=message)
+                     author=self._self_name(), content=message)
         except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
             logger.warning("conv_log SPEAK échoué: {}", e)
 
@@ -126,8 +141,8 @@ class ActionDispatcher:
         if memory is None:
             return
         try:
-            memory.append_prelude(channel_id, "Wally", message)
-            memory.append_message(channel_id, "Wally", message, platform="discord")
+            memory.append_prelude(channel_id, self._self_name(), message)
+            memory.append_message(channel_id, self._self_name(), message, platform="discord")
         except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
             logger.warning("Enregistrement contexte message spontané échoué: {}", e)
 
@@ -174,7 +189,10 @@ class ActionDispatcher:
         if self._bot is None:
             logger.debug("dm supprimé: bot non disponible")
             return
-        owner_id = os.getenv("OWNER_DISCORD_ID", "610550333042589752")
+        owner_id = self._owner_id()
+        if not owner_id:
+            logger.warning("DM impossible: owner non configuré (owner_discord_id vide)")
+            return
         if user_id != owner_id:
             logger.warning("DM non autorisé vers {} (réservé au créateur)", user_id)
             return
