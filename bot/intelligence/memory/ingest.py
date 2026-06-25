@@ -28,6 +28,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from bot.intelligence.identity import render_identity
 from bot.intelligence.memory.facts import (
     AtomicFact,
     FactCategory,
@@ -81,10 +82,10 @@ _ARBITER_FALLBACK = (
 
 def _load_prompt(name: str, fallback: str) -> str:
     try:
-        return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
+        return render_identity((_PROMPTS_DIR / name).read_text(encoding="utf-8"))
     except OSError:
         logger.warning("ingest: prompt {} introuvable, fallback inline", name)
-        return fallback
+        return render_identity(fallback)
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────

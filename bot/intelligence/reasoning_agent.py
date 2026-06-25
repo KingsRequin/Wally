@@ -7,6 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from bot.intelligence.identity import render_identity
 from bot.intelligence.meta_agent import MetaDecision, parse_decisions
 
 _EMO_FR = {
@@ -65,7 +66,7 @@ class ReasoningAgent:
     def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "") -> None:
         self._llm = llm
         self._facts = fact_store
-        self._system = (Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8")
+        self._system = render_identity((Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8"))
         self._channels_text = channels_text
         self._capabilities_text = capabilities_text
 

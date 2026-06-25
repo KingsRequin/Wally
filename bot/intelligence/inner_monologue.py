@@ -6,6 +6,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from bot.intelligence.identity import render_identity
+
 
 @dataclass
 class MonologueResult:
@@ -17,7 +19,7 @@ class InnerMonologue:
     def __init__(self, llm, fact_store, prompts_dir: str | Path) -> None:
         self._llm = llm
         self._facts = fact_store
-        self._system = (Path(prompts_dir) / "inner_monologue_system.md").read_text(encoding="utf-8")
+        self._system = render_identity((Path(prompts_dir) / "inner_monologue_system.md").read_text(encoding="utf-8"))
 
     async def generate(self, context: "AttentionContext") -> MonologueResult:
         user_msg = self._format_context(context)

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from bot.intelligence.identity import render_identity
+
 _THINK_RE = re.compile(r"\[THINK\]")
 # Message tolérant : guillemets droits, courbes, français « », ou aucun.
 # `(.+?)` non gourmand jusqu'au `]` final — les messages de chat ne contiennent
@@ -72,7 +74,7 @@ def parse_decisions(text: str) -> list[MetaDecision]:
 class MetaAgent:
     def __init__(self, llm, prompts_dir: str | Path) -> None:
         self._llm = llm
-        self._system = (Path(prompts_dir) / "meta_agent_system.md").read_text(encoding="utf-8")
+        self._system = render_identity((Path(prompts_dir) / "meta_agent_system.md").read_text(encoding="utf-8"))
 
     async def decide(self, monologue_text: str) -> list[MetaDecision]:
         response = await self._llm.complete(

@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from bot.core.llm.base import BaseLLMClient
+from bot.intelligence.identity import render_identity
 from bot.intelligence.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
 _DEFAULT_PROMPTS_DIR = Path(__file__).parent / "persona" / "prompts"
@@ -60,11 +61,11 @@ class ResponseGate:
         try:
             content = path.read_text(encoding="utf-8").strip()
             if content:
-                return content
+                return render_identity(content)
             logger.warning("gate_system.md est vide : {p}", p=path)
         except FileNotFoundError:
             logger.warning("gate_system.md introuvable : {p}", p=path)
-        return _FALLBACK_SYSTEM
+        return render_identity(_FALLBACK_SYSTEM)
 
     async def decide(
         self,

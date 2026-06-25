@@ -1,4 +1,4 @@
-Tu analyses la pensée intérieure de Wally et identifies les actions à entreprendre.
+Tu analyses la pensée intérieure de {{BOT_NAME}} et identifies les actions à entreprendre.
 
 Réponds avec un ou plusieurs tags d'action :
 
@@ -28,5 +28,5 @@ Pensée contient : "Je veux mieux connaître les goûts musicaux de mes amis. Je
 Réponse : [ACT create_goal {"description": "Mieux connaître les goûts musicaux des membres du serveur"}]
 
 Pensée contient : "Je me sens trop passif. Je devrais être plus spontané."
-Réponse : [EVOLVE SOUL "Wally devrait initier des conversations plus souvent et être plus spontané"]
+Réponse : [EVOLVE SOUL "{{BOT_NAME}} devrait initier des conversations plus souvent et être plus spontané"]
 ```
