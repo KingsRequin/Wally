@@ -4,8 +4,6 @@ import asyncio
 
 from loguru import logger
 
-OWNER_DISCORD_ID = "610550333042589752"
-
 
 class SelfUpgrade:
     def __init__(self, update_checker, bridge, bot) -> None:
@@ -13,6 +11,11 @@ class SelfUpgrade:
         self._bridge = bridge
         self._bot = bot
         self._task: asyncio.Task | None = None
+
+    def _owner_id(self) -> str:
+        """Lit l'ID Discord du créateur depuis config.bot.owner_discord_id."""
+        cfg = getattr(self._bot, "config", None)
+        return getattr(getattr(cfg, "bot", None), "owner_discord_id", "") or ""
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
@@ -32,8 +35,12 @@ class SelfUpgrade:
                 await self._propose()
 
     async def _propose(self) -> None:
+        oid = self._owner_id()
+        if not oid:
+            logger.warning("SelfUpgrade: owner_discord_id non configuré — abandon")
+            return
         try:
-            owner = await self._bot.fetch_user(int(OWNER_DISCORD_ID))
+            owner = await self._bot.fetch_user(int(oid))
             dm = await owner.create_dm()
             msg = await dm.send(
                 "🔄 **Mise à jour Wally disponible.**\n"
@@ -60,9 +67,11 @@ class SelfUpgrade:
             logger.error("SelfUpgrade._propose failed: {}", e)
 
     async def _await_reaction(self, msg, timeout: float) -> str:
+        owner_id = self._owner_id()
+
         def check(reaction, user):
             return (
-                str(user.id) == OWNER_DISCORD_ID
+                str(user.id) == owner_id
                 and str(reaction.emoji) in ("✅", "❌")
                 and reaction.message.id == msg.id
             )
