@@ -55,6 +55,8 @@ async def main() -> None:
 
     # ── Load config and database ──────────────────────────────────────────────
     config = Config.load(os.getenv("CONFIG_PATH", "config.yaml"))
+    from bot.intelligence import identity as _identity
+    _identity.set_identity(config.bot)
     logger.info(
         "Config loaded — primary: {provider}/{model}, secondary: {s_provider}/{s_model}, triggers: {triggers}",
         provider=config.llm.primary.provider,
