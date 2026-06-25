@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import socket
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -79,21 +80,27 @@ class ScrapeService:
             return False
         # SSRF guard: refuse les cibles internes / privées (le scrape est exécuté
         # côté serveur par Firecrawl sur le réseau Docker interne).
-        host = parsed.hostname or ""
-        host_l = host.lower()
-        if host_l in ("localhost",) or host_l.endswith(".localhost"):
+        host_l = (parsed.hostname or "").lower().rstrip(".")
+        if host_l == "localhost" or host_l.endswith(".localhost"):
             return False
-        # IP littérale → bloquer loopback / privé / link-local / réservé / non spécifié
+        # Résout l'hôte en IP s'il s'agit d'un littéral, y compris les formes
+        # raccourcies/entières/hex (127.1, 2130706433, 0x7f000001) via inet_aton.
+        ip = None
         try:
-            ip = ipaddress.ip_address(host)
+            ip = ipaddress.ip_address(host_l)
+        except ValueError:
+            try:
+                ip = ipaddress.ip_address(socket.inet_aton(host_l))
+            except OSError:
+                ip = None
+        if ip is not None:
             if (ip.is_private or ip.is_loopback or ip.is_link_local
                     or ip.is_reserved or ip.is_unspecified or ip.is_multicast):
                 return False
-        except ValueError:
-            # pas une IP littérale → nom d'hôte. Bloquer les noms sans point
-            # (alias de services docker internes : firecrawl-api, redis, etc.).
-            if "." not in host_l:
-                return False
+        # pas une IP littérale → nom d'hôte. Bloquer les noms sans point
+        # (alias de services docker internes : firecrawl-api, redis, etc.).
+        elif "." not in host_l:
+            return False
         return True
 
     async def daily_limit_reached(self) -> bool:

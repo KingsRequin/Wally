@@ -63,8 +63,16 @@ def test_is_scrapable_url_ssrf_guard():
     assert svc.is_scrapable_url("http://172.16.0.1/") is False
     assert svc.is_scrapable_url("http://firecrawl-api:3002/") is False
     assert svc.is_scrapable_url("http://redis/") is False
+    # Formes d'IP raccourcies / entières / hex pointant vers le loopback
+    assert svc.is_scrapable_url("http://127.1/x") is False
+    assert svc.is_scrapable_url("http://2130706433/x") is False
+    assert svc.is_scrapable_url("http://0x7f000001/x") is False
+    # Point final (FQDN absolu) ne doit pas contourner le filtre
+    assert svc.is_scrapable_url("http://localhost./x") is False
+    assert svc.is_scrapable_url("http://firecrawl-api./x") is False
     # URL publique normale — doit retourner True
     assert svc.is_scrapable_url("https://example.com/article") is True
+    assert svc.is_scrapable_url("https://example.com./article") is True
 
 
 @pytest.mark.asyncio
