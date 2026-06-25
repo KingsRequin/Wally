@@ -62,7 +62,7 @@ class AskCog(commands.Cog):
             self.bot.memory.append_message(
                 channel_id_str, interaction.user.display_name, question
             )
-            self.bot.memory.append_message(channel_id_str, "Wally", reply)
+            self.bot.memory.append_message(channel_id_str, self.bot.config.bot.name, reply)
 
             # Enregistrement dans la session active (mémoire long-terme via analyse)
             if getattr(self.bot, "fact_extractor", None) is not None:

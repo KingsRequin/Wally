@@ -41,7 +41,7 @@ APEX_LEGENDS_TOOL = {
             "USE: 'les serveurs Apex marchent?' → server_status "
             "USE: 'il faut combien de points pour pred?' → predator "
             "NO USE: 'Apex c'est nul' → opinion, not a data request "
-            "NO USE: 'tu joues à Apex?' → casual question about Wally"
+            "NO USE: 'tu joues à Apex?' → casual question about the bot"
         ),
         "parameters": {
             "type": "object",

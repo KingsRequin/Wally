@@ -221,7 +221,8 @@ async def _heartbeat(ws: WebSocket) -> None:
 async def _wally_respond(state: AppState, sender_id: str, username: str, content: str) -> None:
     async with _get_lock():
         try:
-            await _broadcast({"type": "typing", "username": "Wally"})
+            bot_display = state.config.bot.name
+            await _broadcast({"type": "typing", "username": bot_display})
 
             discord_raw_id = sender_id.split(":")[1]
             trust = await state.db.get_trust_score("discord", discord_raw_id)
@@ -267,17 +268,17 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
 
             now = time.time()
             msg_id = await state.db.insert_chat_message(
-                "wally", "Wally", None, reply, True, now,
+                "wally", bot_display, None, reply, True, now,
             )
             await _broadcast({
                 "type": "message", "id": msg_id,
-                "sender_id": "wally", "username": "Wally",
+                "sender_id": "wally", "username": bot_display,
                 "avatar_url": None, "content": reply,
                 "is_wally": True, "created_at": now,
             })
 
-            state.memory.append_prelude("web:chat", "Wally", reply)
-            state.memory.append_message("web:chat", "Wally", reply, platform="discord")
+            state.memory.append_prelude("web:chat", bot_display, reply)
+            state.memory.append_message("web:chat", bot_display, reply, platform="discord")
 
             asyncio.create_task(_post_process(state, content, sender_id, trust))
 
