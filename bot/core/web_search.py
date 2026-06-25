@@ -42,19 +42,24 @@ WEB_SEARCH_TOOL = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the web for factual, time-sensitive information. "
-            "DECISION TEST: Would the answer change depending on today's date? "
-            "If YES and you don't know the current answer → search. "
-            "If NO or you can answer from conversation context → do NOT search. "
+            "Search the web for factual information. "
+            "DEFAULT TO SEARCHING whenever you're not fully certain: it's always better to "
+            "check than to invent or stay vague. Don't hesitate — search at the slightest doubt. "
+            "Search whenever ANY of these is true: the answer could depend on recent/current "
+            "info, OR you simply need more details to answer well, OR you're not 100% sure that "
+            "what you think you know is accurate and up to date. When unsure, SEARCH. "
             "\n"
-            "SEARCH: 'c'est quoi la dernière maj d'Apex?' → YES (patch notes change) "
-            "SEARCH: 'quel temps il fait à Paris?' → YES (weather changes daily) "
-            "SEARCH: 'combien coûte la PS5 Pro?' → YES (prices change) "
-            "NO SEARCH: 'on va dire que tu dors encore un peu' → NO (casual banter) "
-            "NO SEARCH: 'ah ouais t'as raison c'est Breach' → NO (user correcting you) "
-            "NO SEARCH: 'wally t'es nul' → NO (insult/joke) "
-            "NO SEARCH: 'merci pour l'info' → NO (acknowledgment) "
-            "NO SEARCH: 'c'est quoi ton avis sur Apex?' → NO (opinion, not fact)"
+            "SEARCH: 'c'est quoi la dernière maj d'Apex?' (patch notes change) "
+            "SEARCH: 'quel temps il fait à Paris?' (changes daily) "
+            "SEARCH: 'combien coûte la PS5 Pro?' (prices change) "
+            "SEARCH: 'c'est qui ce streamer/ce jeu/cette personne?' (not sure → check) "
+            "SEARCH: 'explique-moi X' when you're not certain of the details (verify before answering) "
+            "\n"
+            "Only SKIP the search for pure social talk where NO fact is involved: "
+            "NO SEARCH: 'on va dire que tu dors encore un peu' (banter) "
+            "NO SEARCH: 'wally t'es nul' (insult/joke) "
+            "NO SEARCH: 'merci pour l'info' (acknowledgment) "
+            "NO SEARCH: 'c'est quoi ton avis sur Apex?' (your own opinion, not a fact)"
         ),
         "parameters": {
             "type": "object",
