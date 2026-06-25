@@ -8,6 +8,8 @@ import time
 
 from loguru import logger
 
+from bot.intelligence.identity import bot_name
+
 TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond vive
 TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
 TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
@@ -118,7 +120,7 @@ class CognitiveLoop:
         if content:
             self._recent_interactions.append({
                 "channel": str(channel_id),
-                "author": author or "Wally",
+                "author": author or bot_name(),
                 "content": content[:500],
                 "message_id": None,
                 "ts": time.monotonic(),

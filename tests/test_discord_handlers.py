@@ -20,6 +20,7 @@ from bot.discord.handlers import (
 def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot = MagicMock()
     bot.user = MagicMock()
+    bot.config.bot.name = "Wally"
     bot.config.bot.trigger_names = trigger_names or ["wally"]
     bot.config.bot.prelude_window_size = 5        # ← nouveau
     bot.config.discord.allowed_channels = []
@@ -552,10 +553,16 @@ class _FakeMemory:
         return self._prelude
 
 
+class _FakeBotConfig:
+    class bot:
+        name = "Wally"
+
+
 class _FakeBot:
     def __init__(self, secondary_response: str, prelude=None):
         self.llm_secondary = _FakeLLMSecondary(secondary_response)
         self.memory = _FakeMemory(prelude or [])
+        self.config = _FakeBotConfig()
 
 
 @pytest.mark.asyncio
@@ -597,6 +604,7 @@ async def test_mirror_pass_returns_draft_on_llm_error(monkeypatch):
     class _Bot:
         llm_secondary = _BrokenLLM()
         memory = _FakeMemory([])
+        config = _FakeBotConfig()
 
     result = await _mirror_pass(_Bot(), "ch1", "Ouais c'est pas terrible comme idée en fait.", "mem")
     assert result == "Ouais c'est pas terrible comme idée en fait."
@@ -915,5 +923,65 @@ async def test_respond_sends_with_allowed_mentions():
     assert _ALLOWED_MENTIONS.everyone is False
     assert _ALLOWED_MENTIONS.roles is False
     assert _ALLOWED_MENTIONS.users is True
+
+
+# ── Cohérence stockage/filtre étiquette bot (config.bot.name) ─────────────────
+
+@pytest.mark.asyncio
+async def test_bot_label_uses_config_name_in_append():
+    """Avec config.bot.name='Cindy', les messages sortants sont étiquetés 'Cindy'
+    dans append_prelude et append_message — pas 'Wally' en dur."""
+    bot = make_bot()
+    bot.config.bot.name = "Cindy"
+    message = make_message(content="wally bonjour")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+
+    # append_prelude doit avoir reçu "Cindy"
+    prelude_calls = bot.memory.append_prelude.call_args_list
+    assert any(call.args[1] == "Cindy" for call in prelude_calls), (
+        "append_prelude n'a pas été appelé avec 'Cindy'. Appels: "
+        + str([c.args for c in prelude_calls])
+    )
+
+    # append_message doit avoir reçu "Cindy" (pour le message de réponse du bot)
+    msg_calls = bot.memory.append_message.call_args_list
+    assert any(call.args[1] == "Cindy" for call in msg_calls), (
+        "append_message n'a pas été appelé avec 'Cindy'. Appels: "
+        + str([c.args for c in msg_calls])
+    )
+
+
+@pytest.mark.asyncio
+async def test_bot_label_filter_matches_storage():
+    """Le filtre 'Dernières réponses' dans _mirror_pass retrouve les messages
+    étiquetés avec config.bot.name — cohérence stockage/lecture garantie
+    même si name='Cindy'."""
+    from bot.discord.handlers import _mirror_pass
+
+    bot = make_bot()
+    bot.config.bot.name = "Cindy"
+    # Simule un prelude contenant 2 messages étiquetés "Cindy" (comme stockés)
+    bot.memory.get_prelude = MagicMock(return_value=[
+        {"author": "Cindy", "content": "Salut, je suis Cindy !"},
+        {"author": "TestUser", "content": "Cool"},
+        {"author": "Cindy", "content": "Heureux de te voir."},
+    ])
+
+    # _mirror_pass est skippé si draft < 30 chars — on envoie un draft suffisant
+    draft = "Voici une réponse suffisamment longue pour ne pas être skippée."
+    await _mirror_pass(bot, "777", draft, "")
+
+    # Le LLM secondaire doit avoir reçu les réponses de Cindy (pas vide)
+    call_args = bot.llm_secondary.complete.call_args
+    assert call_args is not None, (
+        "_mirror_pass n'a pas appelé llm_secondary.complete — "
+        "vérifier le prompt response_mirror_system (chargé via load_prompt)."
+    )
+    user_msg = call_args.args[1][0]["content"] if call_args.args else ""
+    assert "Cindy" in user_msg or "Salut" in user_msg, (
+        "Le contexte 'Dernières réponses' est vide : le filtre ne retrouve pas "
+        "les messages étiquetés 'Cindy'. user_msg=" + user_msg[:200]
+    )
 
 

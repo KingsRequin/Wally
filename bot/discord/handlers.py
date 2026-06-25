@@ -326,7 +326,8 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
         except Exception:
             return
 
-    target_label = "Wally" if on_own_message else _author_label(message.author)
+    self_name = bot.config.bot.name
+    target_label = self_name if on_own_message else _author_label(message.author)
     notice = _format_reactions(emoji, target_label, message.content, on_own_message)
     channel_id = str(payload.channel_id)
     bot.memory.append_message(channel_id, _author_label(reactor), notice, platform="discord")
@@ -459,15 +460,16 @@ async def _mirror_pass(
         return draft
 
     try:
+        self_name = bot.config.bot.name
         current_prelude = bot.memory.get_prelude(channel_id)
         recent_wally = [
             m["content"] for m in current_prelude
-            if m.get("author") == "Wally"
+            if m.get("author") == self_name
         ][-3:]
 
         parts: list[str] = []
         if recent_wally:
-            parts.append("Dernières réponses de Wally dans ce canal :\n" + "\n---\n".join(recent_wally))
+            parts.append(f"Dernières réponses de {self_name} dans ce canal :\n" + "\n---\n".join(recent_wally))
         if mem_context:
             parts.append(f"Souvenirs connus sur l'utilisateur :\n{mem_context}")
         parts.append(f"Réponse à analyser :\n{draft}")
@@ -597,9 +599,10 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
 
     # Store memory fact
     try:
+        self_name = bot.config.bot.name
         await bot.memory.add(
             "discord", user_id,
-            f"Wally a coupé {username} pour spam — trop de messages en peu de temps. "
+            f"{self_name} a coupé {username} pour spam — trop de messages en peu de temps. "
             f"Il en a eu marre et a arrêté de lui répondre.",
             username=username,
             origin=_channel_origin(message.channel),
@@ -1210,7 +1213,7 @@ async def _respond(
                     if len(ref_text) > 300:
                         ref_text = ref_text[:300] + "…"
                     ref_who = (
-                        "toi (Wally)" if ref_msg.author.id == bot.user.id
+                        f"toi ({bot.config.bot.name})" if ref_msg.author.id == bot.user.id
                         else _author_label(ref_msg.author)
                     )
                     replied_text_context = (
@@ -1496,14 +1499,15 @@ async def _respond(
             except Exception:
                 pass
 
+        self_name = bot.config.bot.name
         reply_msg_id, _parts = await _send_in_parts(message, reply)
         _clog(
             bot, _conv_channel(message), "message_out",
-            trace_id=str(message.id), author="Wally", content=reply,
+            trace_id=str(message.id), author=self_name, content=reply,
             parts=_parts, sent_msg_id=str(reply_msg_id) if reply_msg_id else None,
             react_emoji=react_emoji,
         )
-        # Signale à la boucle cognitive que Wally a déjà répondu ici → pas de SPEAK
+        # Signale à la boucle cognitive que le bot a déjà répondu ici → pas de SPEAK
         # proactif redondant dans la foulée.
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(message.channel.id, content=reply)
@@ -1523,8 +1527,8 @@ async def _respond(
         bot.memory.append_message(
             str(message.channel.id), _author_label(message.author), enriched_content or message.content, platform="discord"
         )
-        bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
-        bot.memory.append_message(str(message.channel.id), "Wally", reply, platform="discord")
+        bot.memory.append_prelude(str(message.channel.id), self_name, reply)
+        bot.memory.append_message(str(message.channel.id), self_name, reply, platform="discord")
 
         # Persiste le display_name pour que le dashboard coûts affiche un nom lisible
         await bot.db.upsert_memory_user(
@@ -1763,17 +1767,18 @@ async def _spontaneous_respond(
         await message.reply(
             reply, mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
         )
+        self_name = bot.config.bot.name
         _clog(
             bot, _conv_channel(message), "message_out",
-            trace_id=str(message.id), kind="spontaneous", author="Wally",
+            trace_id=str(message.id), kind="spontaneous", author=self_name,
             content=reply, parts=1, react_emoji=react_emoji,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(message.channel.id, content=reply)
 
-        bot.memory.append_prelude(str(message.channel.id), "Wally", reply)
+        bot.memory.append_prelude(str(message.channel.id), self_name, reply)
         bot.memory.append_message(
-            str(message.channel.id), "Wally", reply, platform="discord"
+            str(message.channel.id), self_name, reply, platform="discord"
         )
         logger.info("Spontaneous intervention in #{ch}", ch=getattr(message.channel, 'name', 'dm'))
         if recall_memory:
