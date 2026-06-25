@@ -306,6 +306,25 @@ def _mood_emoji(emotion_state: dict[str, float]) -> str:
     return random.choice(_MOOD_EMOJIS[dominant])
 
 
+def _resolve_emoji(raw: str, guild: "discord.Guild | None"):
+    """Résout l'emoji renvoyé par le LLM en quelque chose que add_reaction accepte.
+
+    - Emote custom du serveur (nom, ":nom:" ou "<:nom:id>") → l'objet discord.Emoji.
+    - Sinon, emoji Unicode standard → la chaîne telle quelle.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+    if raw.startswith("<") and raw.endswith(">"):
+        return raw  # déjà au format custom <:nom:id> / <a:nom:id>
+    name = raw.strip(":")
+    if guild and name:
+        match = discord.utils.get(guild.emojis, name=name)
+        if match is not None:
+            return match
+    return raw
+
+
 _PASSION_KEYWORDS = {
     "bouchon", "bouchons", "silice", "chariot", "chariots",
     "néon", "néons", "ticket de caisse", "notice pliée",
@@ -834,6 +853,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             _rel = await _store.get_by_user(user_id, categories=[FactCategory.REL])
             _desires = await _store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
             _last = getattr(bot, "_wally_recent_speaks", {}).get(message.channel.id)
+            _guild_emojis = [e.name for e in message.guild.emojis] if message.guild else []
             _gd = await gate.decide(
                 message_content=message.content,
                 author_user_id=user_id,
@@ -843,6 +863,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 is_mentioned=mentioned,
                 is_triggered=True,
                 wally_last_message=_last,
+                available_emojis=_guild_emojis,
             )
             decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
         except Exception as e:
@@ -859,7 +880,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # emoji — son humeur, ou pourquoi il ne répond pas. Le gate fournit l'emoji
     # contextuel ; à défaut, fallback sur l'émotion dominante (résout toujours).
     if decision in ("IGNORE", "DEFER", "REACT"):
-        _emoji = gate_emoji or _mood_emoji(bot.emotion.get_state())
+        _raw = gate_emoji or _mood_emoji(bot.emotion.get_state())
+        _emoji = _resolve_emoji(_raw, message.guild)
         try:
             await message.add_reaction(_emoji)
         except Exception:

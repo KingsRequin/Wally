@@ -77,6 +77,7 @@ class ResponseGate:
         is_mentioned: bool = False,
         is_triggered: bool = False,
         wally_last_message: str | None = None,
+        available_emojis: list[str] | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -104,6 +105,12 @@ class ResponseGate:
         if active_desires:
             desire_summary = " | ".join(f.content for f in active_desires[:2])
             context_parts.append(f"Désirs actifs de Wally : {desire_summary}")
+        if available_emojis:
+            sample = ", ".join(f":{n}:" for n in available_emojis[:60])
+            context_parts.append(
+                f"Emotes custom du serveur (tu peux réagir avec : renvoie le nom "
+                f"entre deux-points, ex. :{available_emojis[0]}:) : {sample}"
+            )
 
         user_msg = "\n".join(context_parts)
 
