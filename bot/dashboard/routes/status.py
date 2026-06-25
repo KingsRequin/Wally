@@ -37,6 +37,6 @@ async def get_status(request: Request) -> dict:
         "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
         "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
         "twitch_channel": os.getenv("TWITCH_BROADCASTER_LOGIN", ""),
-        "owner_discord_id": state.config.bot.owner_discord_id,
-        "bot_name": state.config.bot.name,
+        "owner_discord_id": getattr(getattr(getattr(state, "config", None), "bot", None), "owner_discord_id", ""),
+        "bot_name": getattr(getattr(getattr(state, "config", None), "bot", None), "name", "Wally"),
     }
