@@ -306,10 +306,11 @@ def _mood_emoji(emotion_state: dict[str, float]) -> str:
     return random.choice(_MOOD_EMOJIS[dominant])
 
 
-def _resolve_emoji(raw: str, guild: "discord.Guild | None"):
+def _resolve_emoji(raw: str, bot: "WallyDiscord"):
     """Résout l'emoji renvoyé par le LLM en quelque chose que add_reaction accepte.
 
-    - Emote custom du serveur (nom, ":nom:" ou "<:nom:id>") → l'objet discord.Emoji.
+    - Emote custom (nom, ":nom:" ou "<:nom:id>") cherchée dans TOUS les serveurs du
+      bot (`bot.emojis`, animées incluses) → l'objet discord.Emoji (Nitro-like).
     - Sinon, emoji Unicode standard → la chaîne telle quelle.
     """
     if not raw:
@@ -318,8 +319,8 @@ def _resolve_emoji(raw: str, guild: "discord.Guild | None"):
     if raw.startswith("<") and raw.endswith(">"):
         return raw  # déjà au format custom <:nom:id> / <a:nom:id>
     name = raw.strip(":")
-    if guild and name:
-        match = discord.utils.get(guild.emojis, name=name)
+    if name:
+        match = discord.utils.get(bot.emojis, name=name)
         if match is not None:
             return match
     return raw
@@ -853,7 +854,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             _rel = await _store.get_by_user(user_id, categories=[FactCategory.REL])
             _desires = await _store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
             _last = getattr(bot, "_wally_recent_speaks", {}).get(message.channel.id)
-            _guild_emojis = [e.name for e in message.guild.emojis] if message.guild else []
+            # Toutes les emotes de TOUS les serveurs du bot (Nitro-like), dédupliquées.
+            _guild_emojis = list(dict.fromkeys(e.name for e in bot.emojis))
             _gd = await gate.decide(
                 message_content=message.content,
                 author_user_id=user_id,
@@ -881,7 +883,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # contextuel ; à défaut, fallback sur l'émotion dominante (résout toujours).
     if decision in ("IGNORE", "DEFER", "REACT"):
         _raw = gate_emoji or _mood_emoji(bot.emotion.get_state())
-        _emoji = _resolve_emoji(_raw, message.guild)
+        _emoji = _resolve_emoji(_raw, bot)
         try:
             await message.add_reaction(_emoji)
         except Exception:

@@ -108,8 +108,8 @@ class ResponseGate:
         if available_emojis:
             sample = ", ".join(f":{n}:" for n in available_emojis[:60])
             context_parts.append(
-                f"Emotes custom du serveur (tu peux réagir avec : renvoie le nom "
-                f"entre deux-points, ex. :{available_emojis[0]}:) : {sample}"
+                f"Emotes custom dispo (tous tes serveurs, animées incluses — tu peux "
+                f"réagir avec : renvoie le nom entre deux-points, ex. :{available_emojis[0]}:) : {sample}"
             )
 
         user_msg = "\n".join(context_parts)
