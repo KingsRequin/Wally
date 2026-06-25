@@ -17,9 +17,6 @@ JWT_ALGORITHM = "HS256"
 JWT_TTL = 3600  # 1 hour
 REFRESH_TTL = 30 * 86400  # 30 days
 
-# Propriétaire — seul Discord ID autorisé à obtenir un accès admin sans mot de passe.
-OWNER_DISCORD_ID = "610550333042589752"
-
 DISCORD_API = "https://discord.com/api/v10"
 DISCORD_AUTH_URL = "https://discord.com/api/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
@@ -229,7 +226,8 @@ async def admin_token(request: Request):
     if not payload:
         raise HTTPException(401, detail="Invalid or expired token")
 
-    if str(payload.get("discord_id")) != OWNER_DISCORD_ID:
+    owner = request.app.state.wally.config.bot.owner_discord_id
+    if not owner or str(payload.get("discord_id")) != owner:
         raise HTTPException(403, detail="Not authorized")
 
     token = request.app.state.wally.config.bot.dashboard_token
