@@ -154,7 +154,15 @@ drawFlame('spx-nav', 4);
 // ── Auth widget (Discord) ──
 // Bouton de connexion Discord en haut à droite. Si l'owner est connecté,
 // un bouton ADMIN apparaît (token récupéré via le JWT, sans mot de passe).
-const OWNER_DISCORD_ID = '610550333042589752';
+let OWNER_DISCORD_ID = '';
+
+async function loadOwnerId() {
+  try {
+    const r = await fetch('/api/public/status');
+    if (r.ok) { const d = await r.json(); OWNER_DISCORD_ID = String(d.owner_discord_id || ''); }
+  } catch (_) {}
+  renderAuth();
+}
 
 function decodeJwt(t) {
   try {
@@ -193,7 +201,7 @@ function renderAuth() {
   who.appendChild(document.createTextNode(p.username || 'connecté'));
   host.appendChild(who);
 
-  if (String(p.discord_id) === OWNER_DISCORD_ID) {
+  if (OWNER_DISCORD_ID && String(p.discord_id) === OWNER_DISCORD_ID) {
     const adm = document.createElement('button');
     adm.className = 'arc-auth-btn admin';
     adm.textContent = 'ADMIN';
@@ -224,7 +232,7 @@ function renderAuth() {
   host.appendChild(out);
 }
 
-renderAuth();
+loadOwnerId();
 
 // Retour OAuth : chat.js échange le code de façon asynchrone puis émet
 // `wally-auth-changed` quand le JWT est posé — on re-render le widget aussitôt,
