@@ -82,6 +82,18 @@ class WallyDiscord(commands.Bot):
             else None
         )
 
+    @staticmethod
+    def _self_modify_allowed(bridge_socket, bridge_secret, cognitive_loop, bot_cfg) -> bool:
+        """Prédicat : autorise le câblage SelfFix/SelfUpgrade uniquement si le flag
+        self_modify_enabled est actif dans la config du bot ET qu'un owner est défini."""
+        return bool(
+            bridge_socket
+            and bridge_secret
+            and cognitive_loop is not None
+            and getattr(bot_cfg, "self_modify_enabled", False)
+            and getattr(bot_cfg, "owner_discord_id", "")
+        )
+
     async def setup_hook(self) -> None:
         # create_v2_tables : nécessaire au gate ET aux autres composants V2.
         if self._v2_db_path is not None:
@@ -182,7 +194,7 @@ class WallyDiscord(commands.Bot):
         import os as _os_auto
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
         _bridge_secret = _os_auto.getenv("BRIDGE_SECRET", "")
-        if _bridge_socket and _bridge_secret and self.cognitive_loop is not None:
+        if self._self_modify_allowed(_bridge_socket, _bridge_secret, self.cognitive_loop, self.config.bot):
             from bot.intelligence.host_bridge import HostBridgeClient
             from bot.intelligence.self_fix import SelfFix
             from bot.intelligence.self_upgrade import SelfUpgrade
