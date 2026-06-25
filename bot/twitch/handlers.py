@@ -193,6 +193,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True, decision="respond")
 
     try:
+        self_name = bot.config.bot.name
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
 
@@ -409,7 +410,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         bot.set_cooldown(user_id)
         _clog(
             bot, channel_name, "message_out",
-            trace_id=_trace, author="Wally", content=reply, parts=1,
+            trace_id=_trace, author=self_name, content=reply, parts=1,
             send_mode="irc" if channel_name in bot._channel_ids else "helix",
         )
         if getattr(bot, "cognitive_loop", None) is not None:
@@ -419,8 +420,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
 
         bot.memory.append_message(channel_id, author, content, platform="twitch")
-        bot.memory.append_prelude(channel_id, "Wally", reply)
-        bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
+        bot.memory.append_prelude(channel_id, self_name, reply)
+        bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
 
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author, trace_id=_trace, conv_channel=channel_name))
 
@@ -495,6 +496,7 @@ async def _announce_overlay_image(
 ) -> None:
     """Generate LLM message first, then send overlay image + chat message simultaneously."""
     try:
+        self_name = bot.config.bot.name
         title = image.get("title") or "sans titre"
         creator = image.get("username") or "quelqu'un"
         prompt_text = image.get("prompt") or ""
@@ -557,8 +559,8 @@ async def _announce_overlay_image(
         else:
             await bot.twitch_api.send_message(text=reply)
 
-        bot.memory.append_prelude(channel_id, "Wally", reply)
-        bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
+        bot.memory.append_prelude(channel_id, self_name, reply)
+        bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
     except Exception as e:
         logger.error("Overlay image announce error: {e}", e=e)
 
@@ -571,6 +573,7 @@ async def _spontaneous_respond_twitch(
 ) -> None:
     """Generate and send a spontaneous Twitch response."""
     try:
+        self_name = bot.config.bot.name
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
         situation = _build_situation(bot, channel_name)
         system_prompt = bot.prompts.build_system_prompt(
@@ -633,14 +636,14 @@ async def _spontaneous_respond_twitch(
             await bot.twitch_api.send_message(text=reply)
         _clog(
             bot, channel_name, "message_out",
-            trace_id=_spont_trace, kind="spontaneous", author="Wally",
+            trace_id=_spont_trace, kind="spontaneous", author=self_name,
             content=reply, parts=1,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(channel_id, content=reply)
 
-        bot.memory.append_prelude(channel_id, "Wally", reply)
-        bot.memory.append_message(channel_id, "Wally", reply, platform="twitch")
+        bot.memory.append_prelude(channel_id, self_name, reply)
+        bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
         logger.info("Spontaneous intervention in twitch:{ch}", ch=channel_name)
 
     except Exception as e:

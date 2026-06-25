@@ -15,6 +15,7 @@ from bot.twitch.events import _bits_joy
 def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot = MagicMock()
     bot.config.bot.trigger_names = trigger_names or ["wally"]
+    bot.config.bot.name = "Wally"
     bot.config.bot.language_default = "fr"
     bot.config.twitch.cooldown_seconds = cooldown_seconds
 
@@ -262,3 +263,33 @@ async def test_handle_message_increments_visit_msg_count(monkeypatch):
                            author_id="200", channel="guestchannel")
     await handle_message(bot, payload)
     assert bot._active_visits["guestchannel"]["msg_count"] == 4
+
+
+# ── config.bot.name as memory label ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_memory_label_uses_config_bot_name(monkeypatch):
+    """append_prelude et append_message doivent utiliser config.bot.name, pas "Wally" hardcodé."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "cindybot")
+    bot = make_bot(trigger_names=["cindy"])
+    bot.config.bot.name = "Cindy"
+
+    payload = make_payload(content="cindy test", author_name="viewer1", author_id="55")
+    with patch("bot.twitch.handlers.asyncio.create_task"):
+        await handle_message(bot, payload)
+
+    # append_prelude doit être appelé avec "Cindy" (pour la réponse sortante)
+    prelude_calls = bot.memory.append_prelude.call_args_list
+    bot_prelude_call = next(
+        (c for c in prelude_calls if c.args[1] == "Cindy"),
+        None,
+    )
+    assert bot_prelude_call is not None, "append_prelude devrait être appelé avec 'Cindy'"
+
+    # append_message doit être appelé avec "Cindy" (pour la réponse sortante)
+    msg_calls = bot.memory.append_message.call_args_list
+    bot_msg_call = next(
+        (c for c in msg_calls if c.args[1] == "Cindy"),
+        None,
+    )
+    assert bot_msg_call is not None, "append_message devrait être appelé avec 'Cindy'"
