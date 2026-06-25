@@ -403,6 +403,32 @@ class ActionDispatcher:
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"opinion sur {about}"})
 
+        elif act_name == "note_emote" and self._facts:
+            emote = (args.get("emote") or "").strip().strip(":")
+            usage = (args.get("usage") or "").strip()
+            if not emote or not usage:
+                return
+            # Une seule note active par emote : archive la précédente sur la même
+            # emote (son usage peut se préciser au fil des explications du créateur).
+            existing = await self._facts.get_by_user(
+                "wally:emotes", categories=[FactCategory.PREF]
+            )
+            for f in existing:
+                if f.id is not None and f.content.lower().startswith(f"{emote.lower()} →"):
+                    await self._facts.set_status(f.id, FactStatus.ARCHIVED)
+            await self._facts.add(AtomicFact(
+                user_id="wally:emotes",
+                content=f"{emote} → {usage}",
+                category=FactCategory.PREF,
+                source="emote_note",
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+            logger.info("ACT note_emote: {} → {}", emote, usage[:50])
+            if self._feed:
+                self._feed.publish({"type": "ACT", "detail": f"emote apprise : :{emote}:"})
+
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
             if self_fix is None:

@@ -78,6 +78,7 @@ class ResponseGate:
         is_triggered: bool = False,
         wally_last_message: str | None = None,
         available_emojis: list[str] | None = None,
+        emoji_usage: list[str] | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -110,6 +111,11 @@ class ResponseGate:
             context_parts.append(
                 f"Emotes custom dispo (tous tes serveurs, animées incluses — tu peux "
                 f"réagir avec : renvoie le nom entre deux-points, ex. :{available_emojis[0]}:) : {sample}"
+            )
+        if emoji_usage:
+            context_parts.append(
+                "Usage que tu connais de certaines emotes (privilégie-les quand le contexte colle) : "
+                + " ; ".join(emoji_usage[:30])
             )
 
         user_msg = "\n".join(context_parts)

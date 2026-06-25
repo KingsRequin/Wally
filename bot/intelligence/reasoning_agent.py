@@ -139,6 +139,19 @@ class ReasoningAgent:
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:
                 lines.append(f"  · {rel.content}")
+        if getattr(ctx, "emotes_unknown", None):
+            sample = ", ".join(f":{n}:" for n in ctx.emotes_unknown[:20])
+            lines.append(
+                f"**Emotes custom dont tu ignores encore l'usage :** {sample}\n"
+                f"(Si l'une t'intrigue vraiment, tu peux demander à ton créateur en DM "
+                f"à quoi elle sert / quand l'utiliser — groupe plusieurs emotes en une "
+                f"seule question, reste rare, n'en fais pas un harcèlement. Quand il "
+                f"t'explique, enregistre-le via [ACT note_emote].)"
+            )
+        if getattr(ctx, "emotes_known", None):
+            lines.append(
+                "**Emotes dont tu connais l'usage :** " + " ; ".join(ctx.emotes_known[:10])
+            )
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {_fmt_emotions(ctx.emotion_state)}",

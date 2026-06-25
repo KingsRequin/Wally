@@ -856,6 +856,9 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             _last = getattr(bot, "_wally_recent_speaks", {}).get(message.channel.id)
             # Toutes les emotes de TOUS les serveurs du bot (Nitro-like), dédupliquées.
             _guild_emojis = list(dict.fromkeys(e.name for e in bot.emojis))
+            # Notes d'usage apprises ("nom → quand l'utiliser") → guide le choix.
+            _emote_notes = await _store.get_by_user("wally:emotes", categories=[FactCategory.PREF])
+            _emoji_usage = [f.content for f in _emote_notes]
             _gd = await gate.decide(
                 message_content=message.content,
                 author_user_id=user_id,
@@ -866,6 +869,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 is_triggered=True,
                 wally_last_message=_last,
                 available_emojis=_guild_emojis,
+                emoji_usage=_emoji_usage,
             )
             decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
         except Exception as e:

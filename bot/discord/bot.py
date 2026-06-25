@@ -146,7 +146,10 @@ class WallyDiscord(commands.Bot):
 
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
-            _attention = AttentionAgent(_fact_store, self.emotion)
+            _attention = AttentionAgent(
+                _fact_store, self.emotion,
+                emote_provider=lambda: [e.name for e in self.emojis],
+            )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
             # et le désir de capacité (DM créateur plutôt que prétendre).

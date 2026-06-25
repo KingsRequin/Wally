@@ -34,12 +34,19 @@ class AttentionContext:
     weather_fr: str | None = None
     # Historique des SPEAKs cognitifs récents → anti-répétition dans le prompt.
     recent_speaks: list[dict] = field(default_factory=list)
+    # Emotes custom : ce que Wally connaît ("nom → usage") et ce dont il ignore
+    # encore l'usage (noms seuls → candidates à une question au créateur).
+    emotes_known: list = field(default_factory=list)      # list[str] "nom → usage"
+    emotes_unknown: list = field(default_factory=list)     # list[str] noms
 
 
 class AttentionAgent:
-    def __init__(self, fact_store, emotion_engine=None) -> None:
+    def __init__(self, fact_store, emotion_engine=None, emote_provider=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
+        # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
+        # (typiquement [e.name for e in bot.emojis]). None → pas d'awareness emote.
+        self._emote_provider = emote_provider
 
     async def build_context(
         self,
@@ -99,6 +106,29 @@ class AttentionAgent:
         )
         relationships = rels[:5]
 
+        # Awareness emotes : croise les emotes dispo avec les notes d'usage apprises
+        # (faits PREF sous "wally:emotes", contenu "nom → usage").
+        emotes_known: list[str] = []
+        emotes_unknown: list[str] = []
+        if self._emote_provider is not None:
+            try:
+                names = list(dict.fromkeys(self._emote_provider() or []))
+            except Exception:
+                names = []
+            if names:
+                notes = await self._facts.get_by_user(
+                    "wally:emotes", categories=[FactCategory.PREF]
+                )
+                known_map = {
+                    n.content.split("→", 1)[0].strip().lower(): n.content
+                    for n in notes if "→" in n.content
+                }
+                for nm in names:
+                    if nm.lower() in known_map:
+                        emotes_known.append(known_map[nm.lower()])
+                    else:
+                        emotes_unknown.append(nm)
+
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
         host_metrics, weather_fr = await _asyncio.gather(
@@ -122,6 +152,8 @@ class AttentionAgent:
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             recent_speaks=recent_speaks or [],
+            emotes_known=emotes_known,
+            emotes_unknown=emotes_unknown,
         )
 
     async def _build_idle_seed(
