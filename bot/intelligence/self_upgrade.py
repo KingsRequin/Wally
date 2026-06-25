@@ -17,6 +17,11 @@ class SelfUpgrade:
         cfg = getattr(self._bot, "config", None)
         return getattr(getattr(cfg, "bot", None), "owner_discord_id", "") or ""
 
+    def _service(self) -> str:
+        """Dérive le nom du service Docker depuis config.bot.name (fallback 'wally')."""
+        name = getattr(getattr(getattr(self._bot, "config", None), "bot", None), "name", "") or "wally"
+        return name.lower()
+
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
 
@@ -53,7 +58,7 @@ class SelfUpgrade:
             if emoji == "✅":
                 await dm.send("⚡ Redémarrage en cours...")
                 try:
-                    await self._bridge.docker_restart("wally")
+                    await self._bridge.docker_restart(self._service())
                     self._checker.update_available = False
                 except Exception as e:
                     logger.error("SelfUpgrade docker_restart failed: {}", e)

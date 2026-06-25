@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 OWNER_ID = "610550333042589752"
 
 
-def _equip_owner(bot, owner=OWNER_ID):
-    """Équipe le mock bot d'un config exposant owner_discord_id."""
-    bot.config = types.SimpleNamespace(bot=types.SimpleNamespace(owner_discord_id=owner))
+def _equip_owner(bot, owner=OWNER_ID, name="Wally"):
+    """Équipe le mock bot d'un config exposant owner_discord_id et name."""
+    bot.config = types.SimpleNamespace(
+        bot=types.SimpleNamespace(owner_discord_id=owner, name=name)
+    )
     return bot
 
 
@@ -294,3 +296,66 @@ async def test_action_dispatcher_code_fix_ignores_empty_goal():
     await dispatcher.dispatch(decision)
     await asyncio.sleep(0)
     self_fix_mock.request_upgrade.assert_not_called()
+
+
+def test_service_returns_wally_lowercase_by_default():
+    """_service() retourne 'wally' quand config.bot.name='Wally'."""
+    from bot.intelligence.self_fix import SelfFix
+
+    bridge = MagicMock()
+    bot = MagicMock()
+    _equip_owner(bot, name="Wally")
+
+    fixer = SelfFix(bridge, bot)
+    assert fixer._service() == "wally"
+
+
+def test_service_returns_cindy_lowercase_when_name_cindy():
+    """_service() retourne 'cindy' quand config.bot.name='Cindy'."""
+    from bot.intelligence.self_fix import SelfFix
+
+    bridge = MagicMock()
+    bot = MagicMock()
+    _equip_owner(bot, name="Cindy")
+
+    fixer = SelfFix(bridge, bot)
+    assert fixer._service() == "cindy"
+
+
+@pytest.mark.asyncio
+async def test_approval_runs_claude_then_rebuilds_cindy_service():
+    """Avec config.bot.name='Cindy', docker_rebuild est appelé avec 'cindy'."""
+    from bot.intelligence.self_fix import SelfFix, UpgradeRequest
+
+    bridge = MagicMock()
+    bridge.claude_run = AsyncMock(return_value="job456")
+    bridge.claude_status = AsyncMock(return_value={
+        "state": "done", "exit_code": 0, "result": "fait",
+        "changed": True, "head_changed": False, "output_tail": "",
+    })
+    bridge.claude_commit = AsyncMock(return_value={"committed": True, "hash": "abc"})
+    bridge.docker_rebuild = AsyncMock()
+
+    bot = MagicMock()
+    _equip_owner(bot, name="Cindy")
+    dm = AsyncMock()
+    msg = AsyncMock()
+    msg.id = 8
+    dm.send = AsyncMock(return_value=msg)
+    msg.add_reaction = AsyncMock()
+    owner = AsyncMock()
+    owner.create_dm = AsyncMock(return_value=dm)
+    bot.fetch_user = AsyncMock(return_value=owner)
+    bot.memory.fact_store.add = AsyncMock(return_value=1)
+
+    reaction = MagicMock()
+    reaction.emoji = "✅"
+    reaction.message.id = msg.id
+    user = MagicMock()
+    user.id = int(OWNER_ID)
+    bot.wait_for = AsyncMock(return_value=(reaction, user))
+
+    fixer = SelfFix(bridge, bot, poll_interval=0.0)
+    await fixer.request_upgrade(UpgradeRequest(goal="améliorer quelque chose"))
+
+    bridge.docker_rebuild.assert_called_once_with("cindy")

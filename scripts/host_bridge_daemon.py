@@ -21,7 +21,9 @@ SOCKET_GID = int(os.environ.get("BRIDGE_SOCKET_GID", "1000"))
 BRIDGE_SECRET = os.environ.get("BRIDGE_SECRET", "")
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/opt/stacks/wally-ai"))
 COMPOSE_FILE = str(REPO_ROOT / "docker-compose.yml")
-ALLOWED_SERVICES: set[str] = {"wally"}
+ALLOWED_SERVICES: set[str] = set(
+    s.strip() for s in os.environ.get("ALLOWED_SERVICES", "wally").split(",") if s.strip()
+)
 
 JOBS_DIR = Path(os.environ.get("CLAUDE_JOBS_DIR", str(REPO_ROOT / "data" / "claude_jobs")))
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/root/.local/bin/claude")

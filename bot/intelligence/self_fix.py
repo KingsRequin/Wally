@@ -50,6 +50,11 @@ class SelfFix:
         cfg = getattr(self._bot, "config", None)
         return getattr(getattr(cfg, "bot", None), "owner_discord_id", "") or ""
 
+    def _service(self) -> str:
+        """Dérive le nom du service Docker depuis config.bot.name (fallback 'wally')."""
+        name = getattr(getattr(getattr(self._bot, "config", None), "bot", None), "name", "") or "wally"
+        return name.lower()
+
     async def request_upgrade(self, req: UpgradeRequest, *, force: bool = False) -> None:
         # force=True : demande explicite du créateur en conversation → on outrepasse
         # le filtre _declined (sinon un goal déjà refusé serait ignoré en silence).
@@ -157,7 +162,7 @@ class SelfFix:
         except Exception:  # noqa: BLE001
             pass
         await self._bridge.claude_commit(job_id)
-        await self._bridge.docker_rebuild("wally")
+        await self._bridge.docker_rebuild(self._service())
         prefix = (
             "✅ **C'est implémenté et déployé !** Je redémarre avec la nouvelle "
             "version (~2 min).\n\n"

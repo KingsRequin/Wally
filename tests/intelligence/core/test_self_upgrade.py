@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 OWNER_ID = "610550333042589752"
 
 
-def _equip_owner(bot, owner=OWNER_ID):
-    """Équipe le mock bot d'un config exposant owner_discord_id."""
-    bot.config = types.SimpleNamespace(bot=types.SimpleNamespace(owner_discord_id=owner))
+def _equip_owner(bot, owner=OWNER_ID, name="Wally"):
+    """Équipe le mock bot d'un config exposant owner_discord_id et name."""
+    bot.config = types.SimpleNamespace(
+        bot=types.SimpleNamespace(owner_discord_id=owner, name=name)
+    )
     return bot
 
 
@@ -135,3 +137,61 @@ async def test_reaction_check_uses_config_owner():
     await upgrade._propose()
 
     bridge.docker_restart.assert_not_called()
+
+
+def test_service_returns_wally_lowercase_by_default():
+    """_service() retourne 'wally' quand config.bot.name='Wally'."""
+    from bot.intelligence.self_upgrade import SelfUpgrade
+
+    checker = MagicMock()
+    bridge = MagicMock()
+    bot = MagicMock()
+    _equip_owner(bot, name="Wally")
+
+    upgrade = SelfUpgrade(checker, bridge, bot)
+    assert upgrade._service() == "wally"
+
+
+def test_service_returns_cindy_lowercase_when_name_cindy():
+    """_service() retourne 'cindy' quand config.bot.name='Cindy'."""
+    from bot.intelligence.self_upgrade import SelfUpgrade
+
+    checker = MagicMock()
+    bridge = MagicMock()
+    bot = MagicMock()
+    _equip_owner(bot, name="Cindy")
+
+    upgrade = SelfUpgrade(checker, bridge, bot)
+    assert upgrade._service() == "cindy"
+
+
+@pytest.mark.asyncio
+async def test_propose_restarts_cindy_service():
+    """Avec config.bot.name='Cindy', docker_restart est appelé avec 'cindy'."""
+    from bot.intelligence.self_upgrade import SelfUpgrade
+
+    checker = MagicMock()
+    bridge = MagicMock()
+    bridge.docker_restart = AsyncMock()
+    bot = MagicMock()
+    _equip_owner(bot, name="Cindy")
+    owner = AsyncMock()
+    dm = AsyncMock()
+    msg = AsyncMock()
+    msg.id = 456
+    dm.send = AsyncMock(return_value=msg)
+    msg.add_reaction = AsyncMock()
+    owner.create_dm = AsyncMock(return_value=dm)
+    bot.fetch_user = AsyncMock(return_value=owner)
+
+    reaction = MagicMock()
+    reaction.emoji = "✅"
+    reaction.message.id = msg.id
+    user = MagicMock()
+    user.id = int(OWNER_ID)
+    bot.wait_for = AsyncMock(return_value=(reaction, user))
+
+    upgrade = SelfUpgrade(checker, bridge, bot)
+    await upgrade._propose()
+
+    bridge.docker_restart.assert_called_once_with("cindy")
