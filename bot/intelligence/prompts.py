@@ -6,14 +6,20 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from bot.core.system_info import cached_weather, read_host_metrics
+from bot.intelligence.identity import render_identity
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "persona", "prompts")
 
 
-def load_prompt(name: str, fallback: str = "") -> str:
+def load_prompt(name: str, fallback: str = "", render: bool = True) -> str:
     """Charge un prompt système depuis bot/persona/prompts/{name}.md.
 
     Retourne `fallback` si le fichier est absent ou illisible.
+
+    Si `render` est True (défaut), les sentinelles {{BOT_NAME}} etc. sont
+    remplacées par les valeurs de l'identité active (render_identity).
+    Passe render=False pour obtenir le texte brut (utile pour les constantes
+    au niveau module chargées avant set_identity()).
     """
     from loguru import logger  # import local pour éviter les imports circulaires
 
@@ -22,13 +28,13 @@ def load_prompt(name: str, fallback: str = "") -> str:
         with open(path, encoding="utf-8") as f:
             content = f.read().strip()
             if content:
-                return content
+                return render_identity(content) if render else content
             logger.warning("Prompt file empty: {f}", f=path)
     except FileNotFoundError:
         logger.warning("Prompt file missing: {f}", f=path)
     except Exception as exc:
         logger.warning("Prompt file read error {f}: {e}", f=path, e=exc)
-    return fallback
+    return render_identity(fallback) if render else fallback
 
 _MEMORY_RECALL_DIRECTIVE = load_prompt("memory_recall_directive")
 

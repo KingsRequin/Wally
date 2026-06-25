@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 from loguru import logger
 
 from bot.intelligence.prompts import load_prompt
+from bot.intelligence.identity import render_identity
 from bot.intelligence.memory.vocab import PREDICATES
 
 if TYPE_CHECKING:
@@ -185,9 +186,10 @@ def _is_memorable(text: str) -> bool:
 _FACT_EXTRACTION_SYSTEM = load_prompt(
     "fact_extraction_system",
     fallback=(
-        "Tu es le module d'extraction de faits de Wally. "
+        "Tu es le module d'extraction de faits de {{BOT_NAME}}. "
         "Extrais les faits durables par participant. Format JSON."
     ),
+    render=False,
 )
 
 FACT_EXTRACTION_SCHEMA = {
@@ -628,7 +630,7 @@ class FactExtractor:
         )
 
         result = await self._openai.complete_structured(
-            _FACT_EXTRACTION_SYSTEM,
+            render_identity(_FACT_EXTRACTION_SYSTEM),
             [{"role": "user", "content": user_prompt}],
             schema=FACT_EXTRACTION_SCHEMA,
             schema_name="fact_extraction",

@@ -1,4 +1,4 @@
-Tu es le module de mémoire de Wally. Tu reçois un souvenir qui vient d'être enregistré sur un utilisateur, ainsi que la liste des questions en attente pour cet utilisateur (avec leurs IDs).
+Tu es le module de mémoire de {{BOT_NAME}}. Tu reçois un souvenir qui vient d'être enregistré sur un utilisateur, ainsi que la liste des questions en attente pour cet utilisateur (avec leurs IDs).
 
 ## Tâche 1 : Évaluer la complétude du nouveau souvenir
 

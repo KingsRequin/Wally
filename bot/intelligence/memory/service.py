@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from loguru import logger
 
 from bot.intelligence.prompts import load_prompt
+from bot.intelligence.identity import render_identity
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -16,9 +17,10 @@ if TYPE_CHECKING:
 _SUMMARIZE_SYSTEM = load_prompt(
     "memory_summarize_system",
     fallback=(
-        "Tu es le module de mémoire de Wally. Résume la conversation en 4 à 7 lignes, "
+        "Tu es le module de mémoire de {{BOT_NAME}}. Résume la conversation en 4 à 7 lignes, "
         "texte brut, sans titre."
     ),
+    render=False,
 )
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
@@ -335,7 +337,7 @@ class MemoryService:
                 f"[{m['author']}]: {m['content']}" for m in chunk
             )
             summary = await self._openai.complete(
-                _SUMMARIZE_SYSTEM,
+                render_identity(_SUMMARIZE_SYSTEM),
                 [{"role": "user", "content": chunk_text}],
                 purpose="context_summary",
             )
@@ -346,7 +348,7 @@ class MemoryService:
 
         combined = "\n---\n".join(summaries)
         return await self._openai.complete(
-            _SUMMARIZE_SYSTEM,
+            render_identity(_SUMMARIZE_SYSTEM),
             [{"role": "user", "content": combined}],
             purpose="context_summary_final",
         )
