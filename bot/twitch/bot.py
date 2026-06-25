@@ -316,9 +316,9 @@ class WallyTwitch(commands.Bot):
             system_prompt = load_prompt(
                 "twitch_visit_summary",
                 fallback=(
-                    "Tu es Wally. Résume en 3-5 lignes à la première personne "
-                    "ta visite sur la chaîne Twitch de {channel}, style carnet de voyage."
-                ).format(channel=channel),
+                    f"Tu es {self.config.bot.name}. Résume en 3-5 lignes à la première personne "
+                    f"ta visite sur la chaîne Twitch de {channel}, style carnet de voyage."
+                ),
             )
             if context:
                 messages_text = "\n".join(

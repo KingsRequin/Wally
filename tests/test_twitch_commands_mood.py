@@ -3,13 +3,14 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 
-def make_bot(channel_ids=None):
+def make_bot(channel_ids=None, bot_name="Wally"):
     bot = MagicMock()
     bot.emotion.get_state.return_value = {
         "anger": 0.2, "joy": 0.5, "sadness": 0.1, "curiosity": 0.3, "boredom": 0.0,
     }
     bot._channel_ids = channel_ids or {}
     bot.twitch_api.send_message = AsyncMock()
+    bot.config.bot.name = bot_name
     # IRC channel mock
     irc_channel = MagicMock()
     irc_channel.send = AsyncMock()
@@ -28,6 +29,17 @@ async def test_mood_sends_via_helix_on_home_channel():
     assert "Wally" in sent_text
     assert "Joie" in sent_text
     assert "50%" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_mood_uses_bot_name_from_config():
+    """Le préfixe 'Humeur de X' utilise bot.config.bot.name, pas 'Wally' hardcodé."""
+    from bot.twitch.commands.mood import handle_mood_command
+    bot = make_bot(channel_ids={}, bot_name="Cindy")
+    await handle_mood_command(bot, "streamer")
+    sent_text = bot.twitch_api.send_message.call_args.kwargs["text"]
+    assert sent_text.startswith("Humeur de Cindy —"), f"Attendu 'Humeur de Cindy —', obtenu: {sent_text}"
+    assert "Wally" not in sent_text, f"'Wally' hardcodé trouvé dans: {sent_text}"
 
 
 @pytest.mark.asyncio

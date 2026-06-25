@@ -16,7 +16,7 @@ async def handle_mood_command(bot: "WallyTwitch", channel_name: str) -> None:
         f"{emojis[e]} {labels[e]} {int(state[e]*100)}%"
         for e in ("anger", "joy", "sadness", "curiosity", "boredom")
     ]
-    mood_text = "Humeur de Wally — " + " | ".join(parts)
+    mood_text = f"Humeur de {bot.config.bot.name} — " + " | ".join(parts)
 
     if channel_name in bot._channel_ids:
         irc_channel = bot.get_channel(channel_name)
