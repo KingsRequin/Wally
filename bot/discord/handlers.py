@@ -287,6 +287,25 @@ def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
     return None
 
 
+# Emoji d'humeur — pour laisser un signe quand Wally choisit de NE PAS répondre :
+# il réagit quand même, avec un emoji qui dit son humeur / pourquoi il se tait.
+_MOOD_EMOJIS = {
+    "anger":     ["😒", "😤", "🙄"],
+    "boredom":   ["🥱", "😴", "😑"],
+    "sadness":   ["😔", "😞"],
+    "curiosity": ["🤔", "👀"],
+    "joy":       ["🙂", "😏"],
+}
+
+
+def _mood_emoji(emotion_state: dict[str, float]) -> str:
+    """Emoji reflétant l'émotion dominante de Wally. Résout TOUJOURS."""
+    dominant, value = max(emotion_state.items(), key=lambda x: x[1], default=("", 0.0))
+    if value < 0.15 or dominant not in _MOOD_EMOJIS:
+        return random.choice(["😶", "🤷", "💭"])
+    return random.choice(_MOOD_EMOJIS[dominant])
+
+
 _PASSION_KEYWORDS = {
     "bouchon", "bouchons", "silice", "chariot", "chariots",
     "néon", "néons", "ticket de caisse", "notice pliée",
@@ -836,12 +855,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         decision=decision.lower(), reason=gate_reason,
     )
 
-    if decision in ("IGNORE", "DEFER"):
-        return
-    if decision == "REACT":
-        _emoji = gate_emoji or _pick_passive_emoji(
-            message.content, bot.emotion.get_state().get("curiosity", 0.0)
-        ) or "👀"
+    # Non-réponse (IGNORE / DEFER / REACT) : Wally se tait MAIS laisse toujours un
+    # emoji — son humeur, ou pourquoi il ne répond pas. Le gate fournit l'emoji
+    # contextuel ; à défaut, fallback sur l'émotion dominante (résout toujours).
+    if decision in ("IGNORE", "DEFER", "REACT"):
+        _emoji = gate_emoji or _mood_emoji(bot.emotion.get_state())
         try:
             await message.add_reaction(_emoji)
         except Exception:
