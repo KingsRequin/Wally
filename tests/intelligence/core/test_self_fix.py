@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 OWNER_ID = "610550333042589752"
 
 
-def _equip_owner(bot, owner=OWNER_ID, name="Wally"):
-    """Équipe le mock bot d'un config exposant owner_discord_id et name."""
+def _equip_owner(bot, owner=OWNER_ID, name="Wally", creator="KingsRequin"):
+    """Équipe le mock bot d'un config exposant owner_discord_id, name, et creator_name."""
     bot.config = types.SimpleNamespace(
-        bot=types.SimpleNamespace(owner_discord_id=owner, name=name)
+        bot=types.SimpleNamespace(owner_discord_id=owner, name=name, creator_name=creator)
     )
     return bot
 
@@ -359,3 +359,25 @@ async def test_approval_runs_claude_then_rebuilds_cindy_service():
     await fixer.request_upgrade(UpgradeRequest(goal="améliorer quelque chose"))
 
     bridge.docker_rebuild.assert_called_once_with("cindy")
+
+
+@pytest.mark.asyncio
+async def test_outcome_uses_config_creator_name_not_constant():
+    """Les messages d'outcome doivent utiliser creator_name() (config) au lieu du hardcoded 'KingsRequin'."""
+    import bot.intelligence.identity as identity
+
+    fixer, bridge, bot, dm = make_fix(approval="✅")
+    # Changer le creator_name dans config vers "Bob"
+    bot.config.bot.creator_name = "Bob"
+    # Réinitialiser l'identité avec la nouvelle valeur
+    identity.set_identity(bot.config.bot)
+
+    await fixer.request_upgrade(req(goal="tester le nom du créateur"))
+
+    store = bot.memory.fact_store
+    facts = [c.args[0] for c in store.add.await_args_list]
+    blob = " ".join(f.content.lower() for f in facts)
+
+    # Vérifier que "Bob" est présent et non "KingsRequin"
+    assert "bob" in blob, f"Creator name 'Bob' not found in outcome. Content: {blob}"
+    assert "kingsrequin" not in blob, f"Hardcoded 'KingsRequin' should not appear. Content: {blob}"

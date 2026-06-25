@@ -6,7 +6,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from bot.intelligence.identity import render_identity
+from bot.intelligence.identity import render_identity, creator_name
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
@@ -103,7 +103,7 @@ class SelfFix:
             await dm.send("⏱ Pas de réponse — j'abandonne cette idée.")
             self._declined.add(norm)
             await self._record_outcome(
-                goal, "Aucune réponse de KingsRequin (timeout) — demande abandonnée, "
+                goal, f"Aucune réponse de {creator_name()} (timeout) — demande abandonnée, "
                 "ce n'est plus en attente d'autorisation."
             )
             return
@@ -112,13 +112,13 @@ class SelfFix:
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")
             self._declined.add(norm)
             await self._record_outcome(
-                goal, "Refusé par KingsRequin — abandonné, ne plus le reproposer ni l'attendre."
+                goal, f"Refusé par {creator_name()} — abandonné, ne plus le reproposer ni l'attendre."
             )
             return
 
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
         await self._record_outcome(
-            goal, "Accepté par KingsRequin — Claude Code l'implémente. Ce n'est plus "
+            goal, f"Accepté par {creator_name()} — Claude Code l'implémente. Ce n'est plus "
             "en attente d'autorisation."
         )
         job_id = await self._bridge.claude_run(render_identity(_GOAL_PREAMBLE + goal))
@@ -173,7 +173,7 @@ class SelfFix:
             result = result[:budget].rstrip() + " …(résumé tronqué)"
         await dm.send(prefix + result)
         await self._record_outcome(
-            goal, "Accepté par KingsRequin, implémenté par Claude Code et déployé. "
+            goal, f"Accepté par {creator_name()}, implémenté par Claude Code et déployé. "
             "Objectif ATTEINT — ne plus l'attendre ni le considérer en attente d'autorisation."
         )
 

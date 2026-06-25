@@ -30,6 +30,11 @@ def owner_id() -> str:
     return _OWNER
 
 
+def creator_name() -> str:
+    """Retourne le nom du créateur."""
+    return _CREATOR
+
+
 def render_identity(text: str) -> str:
     """Remplace les sentinelles {{BOT_NAME}}, {{CREATOR_NAME}}, {{OWNER_ID}} dans le texte."""
     return (text
