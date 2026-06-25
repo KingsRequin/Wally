@@ -35,6 +35,7 @@ from bot.discord.commands.setup.advanced import (
     DecayView,
 )
 from bot.discord.commands.setup.env import _send_env_tab, EnvView, EnvOpenAIModal
+from bot.intelligence.identity import bot_name
 
 __all__ = [
     "SetupCog",
@@ -128,17 +129,17 @@ class SetupCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(
-        name="setup", description="Panneau de configuration de Wally (admin)"
+        name="setup", description="Panneau de configuration du bot (admin)"
     )
     @app_commands.default_permissions(administrator=True)
     async def setup(self, interaction: discord.Interaction):
         missing = is_env_complete()
         if missing:
             content = (
-                "**Configuration de Wally** — Sélectionnez un niveau :\n"
+                f"**Configuration de {bot_name()}** — Sélectionnez un niveau :\n"
                 f"⚠️ Clés `.env` manquantes : {', '.join(missing)}"
             )
         else:
-            content = "**Configuration de Wally** — Sélectionnez un niveau :"
+            content = f"**Configuration de {bot_name()}** — Sélectionnez un niveau :"
         view = SetupView(self.bot)
         await interaction.response.send_message(content, view=view, ephemeral=True)

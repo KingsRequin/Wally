@@ -15,7 +15,7 @@ class JournalCog(commands.Cog):
 
     @app_commands.command(
         name="journal",
-        description="Génère et envoie le journal de Wally maintenant (admin)",
+        description="Génère et envoie le journal du bot maintenant (admin)",
     )
     @app_commands.describe(
         target_date="Date du journal à générer (YYYY-MM-DD). Vide = aujourd'hui.",

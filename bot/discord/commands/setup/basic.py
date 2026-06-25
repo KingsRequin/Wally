@@ -7,6 +7,7 @@ import discord
 from loguru import logger
 
 from bot.discord.commands.setup.utils import is_valid_model
+from bot.intelligence.identity import bot_name
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -398,7 +399,7 @@ class BasicTabSelect(discord.ui.Select):
         elif tab == "memory":
             view = MemoryView(self.bot)
             await interaction.response.send_message(
-                "**Mémoire de Wally**\n"
+                f"**Mémoire de {bot_name()}**\n"
                 "⚠️ Cette action efface le contexte de conversation et la mémoire long terme.",
                 view=view,
                 ephemeral=True,

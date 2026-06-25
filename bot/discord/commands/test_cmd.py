@@ -11,7 +11,7 @@ class TestCog(commands.Cog):
 
     @app_commands.command(
         name="test",
-        description="Teste une fonctionnalité de Wally (admin)",
+        description="Teste une fonctionnalité du bot (admin)",
     )
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

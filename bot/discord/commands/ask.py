@@ -11,8 +11,8 @@ class AskCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="ask", description="Pose une question directement à Wally")
-    @app_commands.describe(question="Ta question pour Wally")
+    @app_commands.command(name="ask", description="Pose une question directement au bot")
+    @app_commands.describe(question="Ta question pour le bot")
     async def ask(self, interaction: discord.Interaction, question: str):
         await interaction.response.defer(thinking=True)
         try:
