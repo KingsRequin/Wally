@@ -34,10 +34,12 @@ class AttentionContext:
     weather_fr: str | None = None
     # Historique des SPEAKs cognitifs récents → anti-répétition dans le prompt.
     recent_speaks: list[dict] = field(default_factory=list)
-    # Emotes custom : ce que Wally connaît ("nom → usage") et ce dont il ignore
-    # encore l'usage (noms seuls → candidates à une question au créateur).
-    emotes_known: list = field(default_factory=list)      # list[str] "nom → usage"
-    emotes_unknown: list = field(default_factory=list)     # list[str] noms
+    # Emotes custom : ce que Wally connaît ("<:nom:id> → usage") et ce dont il
+    # ignore encore l'usage (codes seuls → candidates à une question au créateur).
+    # On stocke le CODE postable "<:nom:id>", pas le nom nu, pour que Wally puisse
+    # réellement afficher l'emote dans son texte.
+    emotes_known: list = field(default_factory=list)      # list[str] "<:nom:id> → usage"
+    emotes_unknown: list = field(default_factory=list)     # list[str] codes "<:nom:id>"
 
 
 class AttentionAgent:
@@ -106,28 +108,41 @@ class AttentionAgent:
         )
         relationships = rels[:5]
 
-        # Awareness emotes : croise les emotes dispo avec les notes d'usage apprises
-        # (faits PREF sous "wally:emotes", contenu "nom → usage").
+        # Awareness emotes : croise les emotes dispo (paires (nom, code postable
+        # "<:nom:id>")) avec les notes d'usage apprises (faits PREF sous
+        # "wally:emotes", contenu "nom → usage"). On expose le CODE pour que Wally
+        # puisse vraiment afficher l'emote dans son texte, pas seulement la nommer.
         emotes_known: list[str] = []
         emotes_unknown: list[str] = []
         if self._emote_provider is not None:
             try:
-                names = list(dict.fromkeys(self._emote_provider() or []))
+                pairs = self._emote_provider() or []
             except Exception:
-                names = []
-            if names:
+                pairs = []
+            # Dédup par nom (une même emote peut exister sur plusieurs serveurs).
+            seen_names: set[str] = set()
+            emote_pairs: list[tuple[str, str]] = []
+            for name, code in pairs:
+                key = name.lower()
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+                emote_pairs.append((name, code))
+            if emote_pairs:
                 notes = await self._facts.get_by_user(
                     "wally:emotes", categories=[FactCategory.PREF]
                 )
-                known_map = {
-                    n.content.split("→", 1)[0].strip().lower(): n.content
+                usage_map = {
+                    n.content.split("→", 1)[0].strip().lower():
+                        n.content.split("→", 1)[1].strip()
                     for n in notes if "→" in n.content
                 }
-                for nm in names:
-                    if nm.lower() in known_map:
-                        emotes_known.append(known_map[nm.lower()])
+                for name, code in emote_pairs:
+                    usage = usage_map.get(name.lower())
+                    if usage:
+                        emotes_known.append(f"{code} → {usage}")
                     else:
-                        emotes_unknown.append(nm)
+                        emotes_unknown.append(code)
 
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio

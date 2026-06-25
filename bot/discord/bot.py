@@ -160,7 +160,10 @@ class WallyDiscord(commands.Bot):
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
-                emote_provider=lambda: [e.name for e in self.emojis],
+                # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
+                # format qu'un bot peut poster pour AFFICHER une emote custom dans
+                # son texte (le raccourci ":nom:" ne marche que côté client humain).
+                emote_provider=lambda: [(e.name, str(e)) for e in self.emojis],
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP

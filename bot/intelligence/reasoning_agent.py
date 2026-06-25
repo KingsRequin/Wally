@@ -140,18 +140,25 @@ class ReasoningAgent:
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:
                 lines.append(f"  · {rel.content}")
-        if getattr(ctx, "emotes_unknown", None):
-            sample = ", ".join(f":{n}:" for n in ctx.emotes_unknown[:20])
+        if getattr(ctx, "emotes_known", None) or getattr(ctx, "emotes_unknown", None):
             lines.append(
-                f"**Emotes custom dont tu ignores encore l'usage :** {sample}\n"
-                f"(Si l'une t'intrigue vraiment, tu peux demander à ton créateur en DM "
-                f"à quoi elle sert / quand l'utiliser — groupe plusieurs emotes en une "
-                f"seule question, reste rare, n'en fais pas un harcèlement. Quand il "
-                f"t'explique, enregistre-le via [ACT note_emote].)"
+                "**Emotes custom des serveurs.** Pour AFFICHER une emote dans ton "
+                "message, écris EXACTEMENT son code `<:nom:id>` (le raccourci `:nom:` "
+                "seul ne s'affiche pas pour un bot, il reste en texte brut). Colle le "
+                "code tel quel, sans le modifier."
             )
         if getattr(ctx, "emotes_known", None):
             lines.append(
-                "**Emotes dont tu connais l'usage :** " + " ; ".join(ctx.emotes_known[:10])
+                "Emotes dont tu connais l'usage : " + " ; ".join(ctx.emotes_known[:10])
+            )
+        if getattr(ctx, "emotes_unknown", None):
+            sample = ", ".join(ctx.emotes_unknown[:20])
+            lines.append(
+                f"Emotes dispo dont tu ignores encore l'usage (tu peux quand même les "
+                f"poster) : {sample}\n"
+                f"(Si l'une t'intrigue vraiment, demande à ton créateur en DM à quoi "
+                f"elle sert — groupe plusieurs emotes en une seule question, reste rare. "
+                f"Quand il t'explique, enregistre-le via [ACT note_emote].)"
             )
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",

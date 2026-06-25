@@ -165,6 +165,35 @@ def _author_label(member: discord.Member | discord.User) -> str:
     return display
 
 
+_USER_MENTION_RE = re.compile(r"<@!?(\d+)>")
+
+
+def _resolve_mentions(message: "discord.Message", content: str) -> str:
+    """Remplace les mentions brutes ``<@id>`` du texte par le pseudo lisible.
+
+    discord.py laisse les mentions sous forme d'identifiant nu dans
+    ``message.content`` ; sans cette résolution, le LLM ne voit qu'un nombre
+    (« <@792842038332358656> ») au lieu du pseudo de la personne pingée. On
+    s'appuie sur ``message.mentions`` (objets déjà résolus), avec repli sur le
+    cache du serveur. Lecture seule, ne casse jamais : un id introuvable est
+    laissé tel quel."""
+    if not content or "<@" not in content:
+        return content
+    by_id = {m.id: m for m in getattr(message, "mentions", []) or []}
+    guild = getattr(message, "guild", None)
+
+    def _sub(match: "re.Match") -> str:
+        uid = int(match.group(1))
+        member = by_id.get(uid)
+        if member is None and guild is not None:
+            member = guild.get_member(uid)
+        if member is None:
+            return match.group(0)
+        return f"@{member.display_name}"
+
+    return _USER_MENTION_RE.sub(_sub, content)
+
+
 # Mentions autorisées sur les messages que Wally envoie : il peut ping des
 # membres (<@id>) mais JAMAIS @everyone/@here ni un rôle entier — garde-fou
 # contre un ping de masse depuis un bot autonome. replied_user=True conserve
@@ -503,7 +532,7 @@ async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = N
             if m.id == exclude_id:
                 continue
             # Include Wally's own messages for context awareness
-            msgs.append({"author": _author_label(m.author), "content": m.content})
+            msgs.append({"author": _author_label(m.author), "content": _resolve_mentions(m, m.content)})
         msgs.reverse()  # Discord renvoie du plus récent au plus ancien
         return msgs[-limit:] if len(msgs) > limit else msgs
     except Exception as e:
@@ -777,7 +806,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         a.content_type and a.content_type.startswith("image/")
         for a in message.attachments
     )
-    _enriched_content = message.content or ""
+    _enriched_content = _resolve_mentions(message, message.content or "")
     if _has_images and not _enriched_content:
         n = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
         _enriched_content = f"[a envoyé {'une image' if n == 1 else f'{n} images'}]"
@@ -832,7 +861,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             bot.cognitive_loop.notify_activity(
                 channel_id=message.channel.id,
                 author=str(message.author.display_name),
-                content=message.content,
+                content=_resolve_mentions(message, message.content or ""),
                 message_id=str(message.id),
             )
         except Exception as e:
@@ -928,7 +957,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             _emote_notes = await _store.get_by_user("wally:emotes", categories=[FactCategory.PREF])
             _emoji_usage = [f.content for f in _emote_notes]
             _gd = await gate.decide(
-                message_content=message.content,
+                message_content=_resolve_mentions(message, message.content or ""),
                 author_user_id=user_id,
                 emotion_state=bot.emotion.get_state(),
                 relationship_facts=_rel,
@@ -1084,11 +1113,16 @@ async def _respond(
         # son contenu enrichit la recherche mémoire (sinon Wally cherche sur
         # "j'ai po la ref" → 0 fait → il comble le vide en inventant) et sert
         # plus bas à injecter la citation dans le prompt.
+        # Mentions <@id> → pseudo lisible, pour que le LLM voie QUI est pingé
+        # (recherche mémoire, citation, texte courant) au lieu d'un identifiant nu.
+        resolved_content = _resolve_mentions(message, message.content or "")
         ref_msg = await _fetch_referenced_message(message)
-        replied_quote = (ref_msg.content or "").strip() if ref_msg else ""
+        replied_quote = (
+            _resolve_mentions(ref_msg, ref_msg.content or "").strip() if ref_msg else ""
+        )
         search_query = (
-            f"{message.content}\n{replied_quote}".strip()
-            if replied_quote else message.content
+            f"{resolved_content}\n{replied_quote}".strip()
+            if replied_quote else resolved_content
         )
 
         mem_context = await bot.memory.search(platform, user_id, search_query, context_messages=prelude, username_hint=message.author.display_name)
@@ -1208,7 +1242,7 @@ async def _respond(
         if ref_msg is not None:
             try:
                 # Texte du message cité (tronqué) — auteur attribué explicitement
-                ref_text = " ".join((ref_msg.content or "").split())
+                ref_text = " ".join(_resolve_mentions(ref_msg, ref_msg.content or "").split())
                 if ref_text:
                     if len(ref_text) > 300:
                         ref_text = ref_text[:300] + "…"
@@ -1258,14 +1292,14 @@ async def _respond(
                 logger.debug("Failed to process referenced message: {e}", e=e)
 
         # Texte à envoyer — ajoute un marqueur image si texte+image pour que le LLM traite l'image
-        if image_urls and message.content:
+        if image_urls and resolved_content:
             n = len(image_urls)
             img_tag = "[Image jointe]" if n == 1 else f"[{n} images jointes]"
-            text_content = f"{message.content}\n{img_tag}"
+            text_content = f"{resolved_content}\n{img_tag}"
         elif image_urls:
             text_content = "Regarde cette image."
         else:
-            text_content = message.content or ""
+            text_content = resolved_content
 
         # ── Vision : le LLM principal est AVEUGLE (DeepSeek ignore image_urls).
         # On analyse réellement l'image via VisionService et on injecte les faits
@@ -1278,7 +1312,7 @@ async def _respond(
             if vision is not None and vision.available:
                 async with message.channel.typing():
                     image_analysis = await vision.analyze(
-                        image_urls, caption=message.content or ""
+                        image_urls, caption=resolved_content
                     )
                 if image_analysis:
                     image_analysis_context = (
@@ -1725,7 +1759,7 @@ async def _spontaneous_respond(
             + recall_block
             + prelude_block
             + mention_block
-            + f"\n[{_author_label(message.author)}]: {message.content}"
+            + f"\n[{_author_label(message.author)}]: {_resolve_mentions(message, message.content or '')}"
         )
 
         async with message.channel.typing():

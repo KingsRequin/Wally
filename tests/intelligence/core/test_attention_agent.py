@@ -65,6 +65,48 @@ async def test_build_context_loads_desires_goals_thoughts():
 
 
 @pytest.mark.asyncio
+async def test_build_context_emotes_expose_postable_code():
+    # Note d'usage apprise pour l'emote "pepe" (clé = nom nu, valeur = usage).
+    note = _make_fact(FactCategory.PREF, "pepe → quand quelqu'un est triste")
+
+    async def fake_get_by_user(user_id, categories=None):
+        return [note] if user_id == "wally:emotes" else []
+
+    store = MagicMock()
+    store.get_by_user = AsyncMock(side_effect=fake_get_by_user)
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+
+    # Le provider renvoie des paires (nom, code postable "<:nom:id>").
+    agent = AttentionAgent(
+        store,
+        emote_provider=lambda: [("pepe", "<:pepe:111>"), ("kek", "<:kek:222>")],
+    )
+    ctx = await agent.build_context({}, [])
+
+    # Emote connue → "<code> → usage" (le CODE postable, pas le nom nu).
+    assert ctx.emotes_known == ["<:pepe:111> → quand quelqu'un est triste"]
+    # Emote inconnue → le code postable seul (Wally peut quand même l'utiliser).
+    assert ctx.emotes_unknown == ["<:kek:222>"]
+
+
+@pytest.mark.asyncio
+async def test_build_context_emotes_dedup_by_name():
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+
+    # Même nom présent sur deux serveurs → une seule entrée (le premier code).
+    agent = AttentionAgent(
+        store,
+        emote_provider=lambda: [("pepe", "<:pepe:111>"), ("pepe", "<:pepe:999>")],
+    )
+    ctx = await agent.build_context({}, [])
+    assert ctx.emotes_unknown == ["<:pepe:111>"]
+
+
+@pytest.mark.asyncio
 async def test_build_context_time_of_day_values():
     store = MagicMock()
     store.get_by_user = AsyncMock(return_value=[])

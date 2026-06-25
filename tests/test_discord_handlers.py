@@ -13,6 +13,7 @@ from bot.discord.handlers import (
     _respond,
     _post_process,
     _build_mention_directory,
+    _resolve_mentions,
     _ALLOWED_MENTIONS,
 )
 
@@ -883,6 +884,37 @@ def test_build_mention_directory_lists_members_with_ids():
     assert "<@999>" not in directory
     # L'auteur (TestUser, 12345) est listé en premier
     assert directory.index("<@12345>") < directory.index("<@111>")
+
+
+def test_resolve_mentions_replaces_id_with_display_name():
+    message = make_message()
+    message.mentions = [_make_member(792, "Azrael", "azrael_x")]
+    out = _resolve_mentions(message, "salut <@792> ça va ?")
+    assert out == "salut @Azrael ça va ?"
+
+
+def test_resolve_mentions_handles_nickname_form_and_guild_fallback():
+    message = make_message()
+    message.mentions = []  # pas dans message.mentions → repli cache serveur
+    message.guild.get_member = MagicMock(
+        return_value=_make_member(111, "Bob", "bob")
+    )
+    # <@!id> (forme nickname) doit aussi être résolue
+    out = _resolve_mentions(message, "yo <@!111>")
+    assert out == "yo @Bob"
+
+
+def test_resolve_mentions_leaves_unknown_id_untouched():
+    message = make_message()
+    message.mentions = []
+    message.guild.get_member = MagicMock(return_value=None)
+    out = _resolve_mentions(message, "qui est <@404> ?")
+    assert out == "qui est <@404> ?"
+
+
+def test_resolve_mentions_noop_without_mention():
+    message = make_message()
+    assert _resolve_mentions(message, "aucune mention ici") == "aucune mention ici"
 
 
 def test_build_mention_directory_empty_for_dm():
