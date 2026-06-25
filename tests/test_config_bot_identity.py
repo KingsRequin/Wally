@@ -23,21 +23,25 @@ def test_config_load_save_roundtrip_identity(tmp_path):
 
     # Load the actual config.yaml
     src = "config.yaml"
-    raw = yaml.safe_load(open(src, encoding="utf-8"))
+    with open(src, encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
 
     # Modify identity fields
     raw["bot"]["name"] = "Cindy"
+    raw["bot"]["creator_name"] = "TestCreator"
     raw["bot"]["owner_discord_id"] = "123"
     raw["bot"]["self_modify_enabled"] = False
 
     # Write to temp file
     p = tmp_path / "c.yaml"
-    yaml.safe_dump(raw, open(p, "w", encoding="utf-8"))
+    with open(p, "w", encoding="utf-8") as f:
+        yaml.safe_dump(raw, f)
 
     # Load via Config.load
     cfg = Config.load(str(p))
 
     # Verify identity fields
     assert cfg.bot.name == "Cindy"
+    assert cfg.bot.creator_name == "TestCreator"
     assert cfg.bot.owner_discord_id == "123"
     assert cfg.bot.self_modify_enabled is False

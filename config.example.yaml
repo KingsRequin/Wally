@@ -6,12 +6,16 @@ bot:
   context_token_threshold: 3000
   context_window_size: 20
   cost_alert_threshold: 25.0
+  creator_name: KingsRequin          # nom de ton créateur (cité dans certains prompts)
   dashboard_token: changeme          # ⚠️ mot de passe d'accès admin du dashboard — À CHANGER
   emotion_inertia_factor: 0.5
   emotion_peak_threshold: 0.7
   journal_channel_id: null           # ID du salon Discord où publier le journal quotidien
   journal_time: '21:00'
   language_default: fr
+  name: Wally                        # nom du bot (journal, mémoire, prompts)
+  owner_discord_id: ''               # ⚠️ ton ID Discord — vide = fonctions créateur (DM, admin, self-modif) désactivées
+  self_modify_enabled: false         # auto-modification du code via Claude Code (réservé instance maître)
   link_min_confidence: 0.75
   love_decay_lambda: 0.1
   memory_context_max_tokens: 800
