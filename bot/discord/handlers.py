@@ -802,16 +802,52 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     first_contact = not await bot.db.is_welcomed(user_id, guild_id)
 
-    # Gate V2 désactivé sur les triggers : le LLM ignorait systématiquement même
-    # quand le nom était mentionné. Sur un trigger, Wally répond toujours.
-    # (La boucle cognitive a déjà été notifiée de l'activité plus haut, pour
-    # TOUS les messages des salons autorisés — pas seulement les triggers.)
+    # Gate : Wally décide s'il répond (RESPOND), se tait (IGNORE/DEFER) ou
+    # réagit juste en emoji (REACT) — même sur un trigger. Le silence est un
+    # choix autonome. Fallback RESPOND si le gate est absent ou échoue : jamais
+    # de blocage silencieux dû à une panne.
+    gate = getattr(bot, "response_gate", None)
+    decision, gate_reason, gate_emoji = "RESPOND", None, None
+    if gate is not None:
+        try:
+            from bot.intelligence.memory.facts import FactCategory
+            _store = gate._fact_store  # même paquet : accès interne assumé
+            _rel = await _store.get_by_user(user_id, categories=[FactCategory.REL])
+            _desires = await _store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+            _last = getattr(bot, "_wally_recent_speaks", {}).get(message.channel.id)
+            _gd = await gate.decide(
+                message_content=message.content,
+                author_user_id=user_id,
+                emotion_state=bot.emotion.get_state(),
+                relationship_facts=_rel,
+                active_desires=_desires,
+                is_mentioned=mentioned,
+                is_triggered=True,
+                wally_last_message=_last,
+            )
+            decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
+        except Exception as e:
+            logger.warning("gate.decide() failed, fallback RESPOND: {e}", e=e)
 
     _clog(
         bot, _conv_channel(message), "gate_decision",
         trace_id=str(message.id), triggered=True, mentioned=mentioned,
-        always_trigger=always_trigger, spontaneous=False, decision="respond",
+        always_trigger=always_trigger, spontaneous=False,
+        decision=decision.lower(), reason=gate_reason,
     )
+
+    if decision in ("IGNORE", "DEFER"):
+        return
+    if decision == "REACT":
+        _emoji = gate_emoji or _pick_passive_emoji(
+            message.content, bot.emotion.get_state().get("curiosity", 0.0)
+        ) or "👀"
+        try:
+            await message.add_reaction(_emoji)
+        except Exception:
+            pass
+        return
+
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
 
 

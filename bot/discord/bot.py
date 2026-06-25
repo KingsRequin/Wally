@@ -83,11 +83,31 @@ class WallyDiscord(commands.Bot):
         )
 
     async def setup_hook(self) -> None:
-        # Gate V2 désactivé sur les triggers — le LLM ignorait systématiquement.
-        # create_v2_tables reste nécessaire pour les autres composants V2.
+        # create_v2_tables : nécessaire au gate ET aux autres composants V2.
         if self._v2_db_path is not None:
             from bot.db.schema_v2 import create_v2_tables
             await create_v2_tables(self._v2_db_path)
+
+        # ResponseGate réactivé : avant toute réponse sur un trigger, Wally décide
+        # RESPOND / IGNORE / REACT / DEFER. Mode autonome — le silence est un
+        # choix légitime (cf. gate_system.md). Modèle flash, thinking off → la
+        # latence reste basse (~1s).
+        if (
+            self._v2_db_path is not None
+            and getattr(self.config, "response_gate", None)
+            and self.config.response_gate.get("enabled", False)
+        ):
+            from bot.intelligence.gate import ResponseGate
+            from bot.intelligence.memory.facts import SQLiteFactStore
+            from bot.core.llm.factory import create_llm_client as _create_gate_llm
+            from bot.config import LLMRoleConfig
+            _gate_provider = self.config.response_gate.get("provider", "deepseek")
+            _gate_model = self.config.response_gate.get("model", "deepseek-v4-flash")
+            _gate_llm = _create_gate_llm(
+                LLMRoleConfig(provider=_gate_provider, model=_gate_model), self.db
+            )
+            self.response_gate = ResponseGate(_gate_llm, SQLiteFactStore(self._v2_db_path))
+            logger.info("ResponseGate réactivé ({}/{})", _gate_provider, _gate_model)
 
         if getattr(self.config, "cognitive_loop", None) and self.config.cognitive_loop.get("enabled", False):
             from bot.intelligence.attention_agent import AttentionAgent
