@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 
 from loguru import logger
 
@@ -63,6 +64,9 @@ class SelfFix:
         except Exception as e:  # noqa: BLE001 — jamais d'échec silencieux
             logger.exception("self-upgrade a échoué")
             await self._notify(f"❌ Ma tentative d'auto-modification a échoué : {e}")
+            await self._record_outcome(
+                goal, f"A échoué techniquement ({e}) — non déployé, demande close."
+            )
         finally:
             self._pending = False
 
@@ -84,14 +88,25 @@ class SelfFix:
         except asyncio.TimeoutError:
             await dm.send("⏱ Pas de réponse — j'abandonne cette idée.")
             self._declined.add(norm)
+            await self._record_outcome(
+                goal, "Aucune réponse de KingsRequin (timeout) — demande abandonnée, "
+                "ce n'est plus en attente d'autorisation."
+            )
             return
 
         if emoji != "✅":
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")
             self._declined.add(norm)
+            await self._record_outcome(
+                goal, "Refusé par KingsRequin — abandonné, ne plus le reproposer ni l'attendre."
+            )
             return
 
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
+        await self._record_outcome(
+            goal, "Accepté par KingsRequin — Claude Code l'implémente. Ce n'est plus "
+            "en attente d'autorisation."
+        )
         job_id = await self._bridge.claude_run(_GOAL_PREAMBLE + goal)
 
         # Message d'avancement unique, édité au fil de l'eau (pas de spam).
@@ -107,16 +122,25 @@ class SelfFix:
         status = await self._poll(job_id, progress=_progress)
         if status is None:
             await dm.send("❌ Claude Code n'a pas répondu à temps — j'abandonne.")
+            await self._record_outcome(
+                goal, "Accepté mais Claude Code n'a pas répondu à temps — non déployé, à reproposer."
+            )
             return
         if status.get("state") != "done":
             tail = (status.get("output_tail") or "")[-500:]
             await dm.send(
                 f"❌ Claude Code a échoué (exit {status.get('exit_code')}).\n```\n{tail}\n```"
             )
+            await self._record_outcome(
+                goal, "Accepté mais Claude Code a échoué — non déployé, à reproposer."
+            )
             return
         if not status.get("changed") and not status.get("head_changed"):
             result = (status.get("result") or "").strip()[:500]
             await dm.send(f"🤔 Finalement aucun changement de code.\n{result}")
+            await self._record_outcome(
+                goal, "Accepté mais aucun changement de code n'était nécessaire — clôturé."
+            )
             return
 
         try:
@@ -134,6 +158,10 @@ class SelfFix:
         if len(result) > budget:
             result = result[:budget].rstrip() + " …(résumé tronqué)"
         await dm.send(prefix + result)
+        await self._record_outcome(
+            goal, "Accepté par KingsRequin, implémenté par Claude Code et déployé. "
+            "Objectif ATTEINT — ne plus l'attendre ni le considérer en attente d'autorisation."
+        )
 
     async def _poll(self, job_id: str, progress=None, max_wait: float = 1800.0) -> dict | None:
         waited = 0.0
@@ -146,6 +174,35 @@ class SelfFix:
             if progress is not None:
                 await progress(waited)
         return None
+
+    async def _record_outcome(self, goal: str, outcome: str) -> None:
+        """Réinjecte l'issue d'un code_fix dans la mémoire de Wally (wally:self).
+
+        Sans ce retour, le flux d'autorisation DM est totalement découplé de la
+        cognition : le goal qui a déclenché le code_fix reste « en attente
+        d'autorisation » et Wally rumine la demande indéfiniment, même après
+        acceptation et déploiement (le flag _pending est en mémoire seule, perdu
+        au restart qui suit le déploiement). Best-effort : ne propage jamais.
+        """
+        try:
+            memory = getattr(self._bot, "memory", None)
+            store = getattr(memory, "fact_store", None) if memory is not None else None
+            if store is None:
+                return
+            from bot.intelligence.memory.facts import AtomicFact, FactCategory
+            now = datetime.utcnow()
+            await store.add(AtomicFact(
+                user_id="wally:self",
+                content=f"[code_fix] {outcome} — demande : « {goal[:200]} »",
+                category=FactCategory.THOUGHT,
+                source="self_fix",
+                importance=0.9,
+                confidence=1.0,
+                created_at=now,
+                last_seen_at=now,
+            ))
+        except Exception:  # noqa: BLE001 — l'enregistrement ne doit jamais casser le flux
+            logger.exception("self-fix: impossible d'enregistrer l'issue en mémoire")
 
     async def _notify(self, text: str) -> None:
         """DM best-effort au créateur. Ne propage jamais."""

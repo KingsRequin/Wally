@@ -27,6 +27,8 @@ def make_fix(approval="✅", status_seq=None):
     owner = AsyncMock()
     owner.create_dm = AsyncMock(return_value=dm)
     bot.fetch_user = AsyncMock(return_value=owner)
+    # Mémoire de Wally : fact_store mockable pour vérifier le writeback d'issue.
+    bot.memory.fact_store.add = AsyncMock(return_value=1)
 
     reaction = MagicMock()
     reaction.emoji = approval
@@ -155,6 +157,44 @@ async def test_polls_until_terminal():
     await fixer.request_upgrade(req())
     assert bridge.claude_status.call_count == 3
     bridge.docker_rebuild.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deploy_records_outcome_in_memory():
+    """Après un déploiement réussi, Wally écrit en mémoire (wally:self) que le
+    code_fix est accepté+déployé. Sans ça, son goal reste 'en attente
+    d'autorisation' et il rumine la demande indéfiniment."""
+    fixer, bridge, bot, dm = make_fix(approval="✅")
+    await fixer.request_upgrade(req(goal="voir la présence en ligne"))
+    store = bot.memory.fact_store
+    assert store.add.await_count >= 1
+    facts = [c.args[0] for c in store.add.await_args_list]
+    assert all(f.user_id == "wally:self" for f in facts)
+    blob = " ".join(f.content.lower() for f in facts)
+    assert "présence en ligne" in blob  # le goal est rappelé
+    assert "déploy" in blob              # l'issue finale est consignée
+
+
+@pytest.mark.asyncio
+async def test_refusal_records_outcome_in_memory():
+    """Un refus est aussi consigné en mémoire pour que Wally cesse d'attendre."""
+    fixer, bridge, bot, dm = make_fix(approval="❌")
+    await fixer.request_upgrade(req(goal="un truc inutile"))
+    store = bot.memory.fact_store
+    facts = [c.args[0] for c in store.add.await_args_list]
+    assert any(f.user_id == "wally:self" and "refus" in f.content.lower()
+               for f in facts)
+
+
+@pytest.mark.asyncio
+async def test_timeout_records_outcome_in_memory():
+    """Un timeout d'autorisation est consigné (demande en suspens, plus en attente active)."""
+    fixer, bridge, bot, dm = make_fix()
+    bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
+    await fixer.request_upgrade(req(goal="encore un truc"))
+    store = bot.memory.fact_store
+    facts = [c.args[0] for c in store.add.await_args_list]
+    assert any(f.user_id == "wally:self" for f in facts)
 
 
 @pytest.mark.asyncio
