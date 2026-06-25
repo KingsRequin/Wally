@@ -32,6 +32,11 @@ class BotConfig:
     memory_context_max_tokens: int = 800
     love_decay_lambda: float = 0.1
     update_image: str = ""          # ex: "ghcr.io/user/wally-ai:latest" — vide = polling désactivé
+    # --- identité multi-instance ---
+    name: str = "Wally"
+    creator_name: str = "KingsRequin"
+    owner_discord_id: str = ""
+    self_modify_enabled: bool = False
 
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
