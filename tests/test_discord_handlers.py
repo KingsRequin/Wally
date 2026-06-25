@@ -8,7 +8,13 @@ import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.discord.handlers import handle_message, _respond, _post_process
+from bot.discord.handlers import (
+    handle_message,
+    _respond,
+    _post_process,
+    _build_mention_directory,
+    _ALLOWED_MENTIONS,
+)
 
 
 def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
@@ -839,5 +845,75 @@ async def test_post_process_no_image_description_without_images():
     )
 
     bot.llm_secondary.complete.assert_not_called()
+
+
+# ── Mentions <@id> ──────────────────────────────────────────────────────────────
+
+def _make_member(member_id, display_name, name, is_bot=False):
+    m = MagicMock()
+    m.id = member_id
+    m.display_name = display_name
+    m.name = name
+    m.bot = is_bot
+    return m
+
+
+def test_build_mention_directory_lists_members_with_ids():
+    message = make_message()
+    message.guild.members = [
+        _make_member(111, "Alice", "alice_x"),
+        _make_member(222, "Bob", "Bob"),
+        _make_member(999, "WallyBot", "wally", is_bot=True),
+    ]
+    directory = _build_mention_directory(message)
+    # Syntaxe expliquée + identifiants présents
+    assert "<@id>" in directory
+    assert "<@111>" in directory
+    assert "<@222>" in directory
+    assert "Alice (@alice_x)" in directory
+    # Les bots sont exclus
+    assert "<@999>" not in directory
+    # L'auteur (TestUser, 12345) est listé en premier
+    assert directory.index("<@12345>") < directory.index("<@111>")
+
+
+def test_build_mention_directory_empty_for_dm():
+    message = make_message()
+    message.guild = None
+    assert _build_mention_directory(message) == ""
+
+
+def test_build_mention_directory_respects_cap():
+    message = make_message()
+    message.guild.members = [
+        _make_member(1000 + i, f"User{i}", f"user{i}") for i in range(120)
+    ]
+    directory = _build_mention_directory(message, max_members=10)
+    assert directory.count("→ <@") == 10
+
+
+@pytest.mark.asyncio
+async def test_respond_injects_mention_directory():
+    bot = make_bot()
+    message = make_message(content="wally ping alice")
+    message.guild.members = [_make_member(111, "Alice", "alice_x")]
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    content = bot.llm.complete_with_tools.call_args.args[1][0]["content"]
+    assert "<@111>" in content
+    assert "Membres du serveur" in content
+
+
+@pytest.mark.asyncio
+async def test_respond_sends_with_allowed_mentions():
+    """Les réponses bloquent @everyone/@here/rôles mais autorisent les pings membres."""
+    bot = make_bot()
+    message = make_message(content="wally salut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    assert message.reply.call_args.kwargs["allowed_mentions"] is _ALLOWED_MENTIONS
+    assert _ALLOWED_MENTIONS.everyone is False
+    assert _ALLOWED_MENTIONS.roles is False
+    assert _ALLOWED_MENTIONS.users is True
 
 

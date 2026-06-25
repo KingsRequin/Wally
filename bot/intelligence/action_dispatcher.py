@@ -9,12 +9,18 @@ from datetime import datetime, timezone
 
 from loguru import logger
 
+import discord
+
 from bot.intelligence.meta_agent import MetaDecision
 
 # Cooldown entre deux DM créateur proactifs : un humain ne relance pas son
 # interlocuteur toutes les cinq minutes. Filet de sécurité anti-harcèlement,
 # en complément de la directive du reasoning_system.
 DM_CREATOR_COOLDOWN = 7200  # 2h
+
+# Garde-fou anti-ping de masse sur les prises de parole proactives : Wally peut
+# mentionner un membre (<@id>) mais jamais @everyone/@here ni un rôle entier.
+_ALLOWED_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 
 class ActionDispatcher:
@@ -74,7 +80,7 @@ class ActionDispatcher:
         try:
             channel = self._bot.get_channel(int(channel_id))
             if channel:
-                await channel.send(message)
+                await channel.send(message, allowed_mentions=_ALLOWED_MENTIONS)
                 logger.info("Cognitive SPEAK → canal {} : {}", channel_id, message[:80])
                 self._record_self_message(str(channel_id), message)
                 guild = getattr(getattr(channel, "guild", None), "name", None)

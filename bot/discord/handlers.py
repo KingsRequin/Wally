@@ -165,6 +165,71 @@ def _author_label(member: discord.Member | discord.User) -> str:
     return display
 
 
+# Mentions autorisées sur les messages que Wally envoie : il peut ping des
+# membres (<@id>) mais JAMAIS @everyone/@here ni un rôle entier — garde-fou
+# contre un ping de masse depuis un bot autonome. replied_user=True conserve
+# le ping de l'auteur sur les réponses (comportement discord.py par défaut).
+_ALLOWED_MENTIONS = discord.AllowedMentions(
+    everyone=False, roles=False, users=True, replied_user=True
+)
+
+# Borne le nombre de membres listés dans l'annuaire de mentions pour ne pas
+# gonfler le prompt sur un gros serveur.
+_MENTION_DIRECTORY_MAX = 80
+
+
+def _build_mention_directory(
+    message: discord.Message, *, max_members: int = _MENTION_DIRECTORY_MAX
+) -> str:
+    """Annuaire des membres mentionnables du serveur, pour le LLM.
+
+    Permet à Wally de ping correctement n'importe quel membre via la syntaxe
+    Discord ``<@id>``. Sans cet annuaire, le LLM ignore les identifiants et
+    écrit au mieux un texte « @pseudo » qui ne notifie personne.
+
+    Lecture seule, jamais bloquant : toute erreur (DM, intent members absent,
+    cache vide…) renvoie une chaîne vide. L'auteur du message courant est listé
+    en premier (le plus susceptible d'être mentionné)."""
+    guild = getattr(message, "guild", None)
+    if guild is None:
+        return ""
+    try:
+        members = list(getattr(guild, "members", []) or [])
+    except Exception:
+        return ""
+
+    ordered: list = []
+    seen: set[int] = set()
+
+    author = getattr(message, "author", None)
+    if (
+        author is not None
+        and not getattr(author, "bot", False)
+        and getattr(author, "id", None) is not None
+    ):
+        ordered.append(author)
+        seen.add(author.id)
+
+    for m in members:
+        mid = getattr(m, "id", None)
+        if mid is None or mid in seen or getattr(m, "bot", False):
+            continue
+        ordered.append(m)
+        seen.add(mid)
+
+    lines = [f"- {_author_label(m)} → <@{m.id}>" for m in ordered[:max_members]]
+    if not lines:
+        return ""
+
+    return (
+        "\n--- Membres du serveur (pour les mentionner) ---\n"
+        "Pour notifier (ping) un membre, insère son identifiant au format "
+        "<@id> dans ta réponse (ex : « salut <@123456> »). Le simple texte "
+        "« @pseudo » ne notifie personne. N'écris JAMAIS @everyone ni @here.\n"
+        + "\n".join(lines)
+    )
+
+
 def _presence_line(bot: "WallyDiscord", user_id: str, display_name: str) -> str:
     """Présence en direct de l'interlocuteur (statut + activité) ou "".
 
@@ -936,10 +1001,10 @@ async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | Non
     if current:
         groups.append("\n".join(current))
 
-    first_msg = await message.reply(groups[0])
+    first_msg = await message.reply(groups[0], allowed_mentions=_ALLOWED_MENTIONS)
     for group in groups[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
-        await message.channel.send(group)
+        await message.channel.send(group, allowed_mentions=_ALLOWED_MENTIONS)
     return first_msg.id, len(groups)
 
 
@@ -1231,11 +1296,13 @@ async def _respond(
             "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
         )
         auto_scrape_block = await _auto_scrape_block(bot, message)
+        mention_block = _build_mention_directory(message)
         user_content = (
             prelude_block
             + auto_scrape_block
             + context_block
             + target_notice
+            + mention_block
             + replied_text_context
             + replied_image_context
             + image_analysis_context
@@ -1646,12 +1713,14 @@ async def _spontaneous_respond(
                 f"Tu viens de te rappeler quelque chose en lien avec ce que dit "
                 f"{_author_label(message.author)}. Évoque-le naturellement.\n\n"
             )
+        mention_block = _build_mention_directory(message)
         user_content = (
             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
             "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
             "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
             + recall_block
             + prelude_block
+            + mention_block
             + f"\n[{_author_label(message.author)}]: {message.content}"
         )
 
@@ -1691,7 +1760,9 @@ async def _spontaneous_respond(
             )
 
         # Send as a reply to the triggering message
-        await message.reply(reply, mention_author=False)
+        await message.reply(
+            reply, mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
+        )
         _clog(
             bot, _conv_channel(message), "message_out",
             trace_id=str(message.id), kind="spontaneous", author="Wally",
