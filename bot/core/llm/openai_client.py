@@ -396,8 +396,11 @@ class OpenAILLMClient(BaseLLMClient):
                             for tc in sorted_tcs
                         ],
                     })
-                    for tc in sorted_tcs:
-                        result = await tool_executor(tc["name"], tc["arguments"])
+                    # Tool calls indépendants d'un même tour → exécution en parallèle.
+                    results = await asyncio.gather(
+                        *(tool_executor(tc["name"], tc["arguments"]) for tc in sorted_tcs)
+                    )
+                    for tc, result in zip(sorted_tcs, results):
                         current_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
@@ -575,7 +578,11 @@ class OpenAILLMClient(BaseLLMClient):
                     full_messages.append(msg)
                     for tc in msg.tool_calls:
                         tools_called.append(tc.function.name)
-                        result = await tool_executor(tc.function.name, tc.function.arguments)
+                    # Tool calls indépendants d'un même tour → exécution en parallèle.
+                    results = await asyncio.gather(
+                        *(tool_executor(tc.function.name, tc.function.arguments) for tc in msg.tool_calls)
+                    )
+                    for tc, result in zip(msg.tool_calls, results):
                         full_messages.append({
                             "role": "tool",
                             "tool_call_id": tc.id,

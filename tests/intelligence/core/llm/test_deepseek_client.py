@@ -129,6 +129,59 @@ async def test_tool_call_reasoning_content_preserved():
 
 
 @pytest.mark.asyncio
+async def test_parallel_tool_calls_execute_concurrently():
+    """Plusieurs tool_calls d'un même tour s'exécutent en parallèle, résultats ordonnés."""
+    import asyncio
+
+    client = make_client()
+    tcs = [
+        make_tool_call(name="web_search", arguments=f'{{"query": "q{i}"}}', call_id=f"tc_{i}")
+        for i in range(3)
+    ]
+    tool_response = make_response(content=None, tool_calls=tcs, reasoning_content="r")
+    final_response = make_response("fini")
+
+    call_count = 0
+    second_call_messages = None
+
+    async def mock_create(**kwargs):
+        nonlocal call_count, second_call_messages
+        call_count += 1
+        if call_count == 2:
+            second_call_messages = kwargs["messages"]
+        return tool_response if call_count == 1 else final_response
+
+    client._client.chat.completions.create = mock_create
+
+    # Détecteur de concurrence : si les exécutions se chevauchent, max_active > 1.
+    active = 0
+    max_active = 0
+
+    async def executor(name, arguments):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        return f"res-{json.loads(arguments)['query']}"
+
+    text, tools = await client.complete_with_tools(
+        "sys", [{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "web_search", "parameters": {}}}],
+        tool_executor=executor,
+    )
+
+    assert text == "fini"
+    assert tools == ["web_search", "web_search", "web_search"]
+    # Les 3 ont tourné simultanément → preuve de parallélisme (séquentiel donnerait 1).
+    assert max_active == 3
+    # Résultats ordonnés et correctement associés à leur tool_call_id.
+    tool_msgs = [m for m in second_call_messages if m.get("role") == "tool"]
+    assert [m["tool_call_id"] for m in tool_msgs] == ["tc_0", "tc_1", "tc_2"]
+    assert [m["content"] for m in tool_msgs] == ["res-q0", "res-q1", "res-q2"]
+
+
+@pytest.mark.asyncio
 async def test_no_tool_call_reasoning_content_excluded():
     """Si pas de tool_call, reasoning_content n'est PAS dans le message assistant."""
     client = make_client()

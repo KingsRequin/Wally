@@ -1,6 +1,7 @@
 # bot/core/llm/deepseek.py
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
@@ -230,14 +231,20 @@ class DeepSeekLLMClient(BaseLLMClient):
                 assistant_entry["reasoning_content"] = reasoning
             history.append(assistant_entry)
 
-            for tc in msg.tool_calls:
-                tools_called.append(tc.function.name)
+            # Les tool_calls d'un même tour sont indépendants → exécution en parallèle.
+            # (ex. plusieurs web_search enchaînés : 4×4s séquentiel → ~4s en parallèle)
+            async def _run_tool(tc):
                 args = self._safe_parse_args(tc.function.arguments)
                 try:
-                    result = await tool_executor(tc.function.name, json.dumps(args))
+                    return await tool_executor(tc.function.name, json.dumps(args))
                 except Exception as e:
-                    result = f"Tool error: {e}"
                     logger.warning("Tool executor error for {name}: {e}", name=tc.function.name, e=e)
+                    return f"Tool error: {e}"
+
+            for tc in msg.tool_calls:
+                tools_called.append(tc.function.name)
+            results = await asyncio.gather(*(_run_tool(tc) for tc in msg.tool_calls))
+            for tc, result in zip(msg.tool_calls, results):
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
