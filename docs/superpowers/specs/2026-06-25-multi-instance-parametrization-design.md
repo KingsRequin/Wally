@@ -64,23 +64,24 @@ bot:
   self_modify_enabled: true          # Wally=true ; instances tierces=false (défaut)
 ```
 
-Dataclass dans `bot/config.py` :
+**`BotConfig` existe DÉJÀ** dans `bot/config.py` (lignes 8-43, il porte `trigger_names`,
+`journal_time`, params spontanés…). On l'**ÉTEND** avec 4 champs (avec défauts, donc append en
+fin de dataclass) :
 
 ```python
-@dataclass
-class BotConfig:
+    # --- identité multi-instance (ajout) ---
     name: str = "Wally"
     creator_name: str = "KingsRequin"
     owner_discord_id: str = ""
     self_modify_enabled: bool = False
 ```
 
-- Ajout du champ `bot: BotConfig = field(default_factory=BotConfig)` à la dataclass `Config`.
-- `Config.load()` : `bot=BotConfig(**raw.get("bot", {}))`.
-- `Config.save()` / sérialisation (`asdict`) : inclure `"bot": asdict(self.bot)`.
-- Défauts choisis pour préserver le comportement actuel de Wally **uniquement quand son
-  `config.yaml` est renseigné** ; un `config.yaml` neuf (GitHub) démarre sûr : owner vide,
-  self-modif off.
+- `Config.load()` construit déjà `bot=BotConfig(**raw["bot"])` (ligne ~408) — l'ajout de champs
+  à défaut est rétro-compatible (un `bot:` sans ces clés prend les défauts).
+- `Config.save()` sérialise déjà via `asdict(self.bot)` (ligne ~442) → round-trip automatique.
+- `config.yaml` (section `bot:` existante) : ajouter `name`, `creator_name`, `owner_discord_id`,
+  `self_modify_enabled` avec les valeurs de Wally.
+- Défaut sûr pour GitHub : owner vide ⇒ fonctions créateur off, `self_modify_enabled=False`.
 
 ## Mécanisme d'injection de l'identité dans les prompts
 
@@ -88,24 +89,38 @@ class BotConfig:
 pas** utiliser `str.format`. **Contrainte 2 :** plusieurs prompts sont chargés au **niveau
 module** (`_JOURNAL_SYSTEM = load_prompt(...)`), avant que le config soit prêt.
 
-**Solution :** un helper unique de rendu par **remplacement de sentinelles**, appliqué **au
-moment de l'usage** (là où le config est disponible par DI), pas au chargement.
+**Solution — deux mécanismes, domaines distincts :**
 
+**(a) Rendu des prompts → `identity.py` (état module, posé une fois au démarrage).**
 ```python
 # bot/intelligence/identity.py
-def render_identity(text: str, bot_cfg: BotConfig) -> str:
-    return (text
-        .replace("{{BOT_NAME}}", bot_cfg.name)
-        .replace("{{CREATOR_NAME}}", bot_cfg.creator_name)
-        .replace("{{OWNER_ID}}", bot_cfg.owner_discord_id))
-```
+_NAME, _CREATOR, _OWNER = "Wally", "KingsRequin", ""
 
-- Les templates `.md` et les fallbacks inline passent `Wally`→`{{BOT_NAME}}`,
-  `KingsRequin`→`{{CREATOR_NAME}}`, `610550333042589752`→`{{OWNER_ID}}`.
-- Les sentinelles `{{...}}` n'entrent pas en collision avec le JSON `{...}` des prompts.
-- Au point d'envoi au LLM (méthodes qui ont déjà `self._config`/`config` injecté), on appelle
-  `render_identity(template, config.bot)` juste avant de construire le message.
-- Les étiquettes mémoire (`author="Wally"`) lisent directement `config.bot.name`.
+def set_identity(cfg) -> None:          # appelé 1× au boot, après Config.load
+    global _NAME, _CREATOR, _OWNER
+    _NAME = cfg.name or "Wally"
+    _CREATOR = cfg.creator_name or "KingsRequin"
+    _OWNER = cfg.owner_discord_id or ""
+
+def render_identity(text: str) -> str:  # appliqué à CHAQUE template de prompt
+    return (text.replace("{{BOT_NAME}}", _NAME)
+                .replace("{{CREATOR_NAME}}", _CREATOR)
+                .replace("{{OWNER_ID}}", _OWNER))
+```
+- Justification : les prompts sont chargés au **niveau module** (`journal.py`) ou à la
+  **construction** (`reasoning_agent`, `gate`) — le config n'y est pas toujours injecté.
+  `set_identity()` est posé une fois au boot (avant toute boucle), puis `render_identity()`
+  s'applique partout où un template part au LLM. Cohérent avec les globals déjà utilisés par
+  `load_prompt`.
+- Sentinelles `{{...}}` ⇒ pas de collision avec le JSON `{...}` des prompts (et **pas** de
+  `str.format`).
+
+**(b) Owner ID & nom dans le code runtime → lecture directe de l'objet config (pas de global).**
+- `self_fix`/`self_upgrade`/`action_dispatcher` reçoivent déjà le `bot` → `self._bot.config.bot.owner_discord_id`.
+- `chat_auth` : `request.app.state.wally.config.bot.owner_discord_id` (le fichier lit déjà
+  `…config.bot.dashboard_token`).
+- Étiquettes mémoire / `/mood` / `Journal de …` : `bot.config.bot.name` (config accessible sur
+  place).
 
 ## Changements par composant
 
@@ -126,15 +141,27 @@ def render_identity(text: str, bot_cfg: BotConfig) -> str:
 - **Owner vide ⇒** chaque fonction créateur court-circuite proprement (early-return / feature off).
 
 ### 5c — Nom du bot (identité fonctionnelle)
-- `bot/persona/prompts/*.md` (15 fichiers à `Wally`) : `Wally`→`{{BOT_NAME}}`.
-- `bot/intelligence/persona/prompts/reasoning_system.md` : `Wally`→`{{BOT_NAME}}`,
-  `KingsRequin`→`{{CREATOR_NAME}}`.
-- `bot/intelligence/journal.py` : fallbacks inline `Tu es Wally…` → sentinelles + rendu.
-- `bot/twitch/handlers.py` : `author="Wally"` (×7) → `config.bot.name`.
-- `bot/intelligence/action_dispatcher.py` : `author="Wally"` (×2) → `config.bot.name`.
-- `bot/twitch/bot.py:319` : prompt résumé de visite `Tu es Wally` → rendu.
-- `bot/twitch/commands/mood.py:19` : `Humeur de Wally` → `config.bot.name`.
-- `bot/intelligence/self_fix.py:19` : cadrage prompt `« Wally »` → rendu.
+**Prompts (sentinelle + `render_identity` au point d'usage/chargement) :**
+- `bot/persona/prompts/*.md` — **15 fichiers** à `Wally` → `{{BOT_NAME}}` ; rendu au site
+  d'appel des `load_prompt(...)` (journal, fact_extractor, image, session, response_mirror,
+  memory_*).
+- `bot/intelligence/persona/prompts/*.md` — **6 fichiers** : `gate_system.md` (13×),
+  `reasoning_system.md` (3× + owner+créateur), `meta_agent_system.md` (2×),
+  `inner_monologue_system.md`, `memory_arbiter.md`, `memory_extract.md`. `Wally`→`{{BOT_NAME}}`,
+  `KingsRequin`→`{{CREATOR_NAME}}`, `610550…`→`{{OWNER_ID}}`. Chargés à la construction de
+  `gate.py` (`_load_system`), `reasoning_agent.py` (`self._system = …read_text()`), etc. →
+  envelopper le `read_text()` par `render_identity(...)`.
+- `bot/intelligence/journal.py` : fallbacks inline `Tu es Wally…` → `{{BOT_NAME}}` ; aux sites
+  d'usage (`self._llm.complete(_JOURNAL_SYSTEM…)`) envelopper par `render_identity(...)`.
+- `bot/intelligence/self_fix.py:19` : cadrage prompt `« Wally »` → `render_identity`.
+- `bot/twitch/bot.py:319` : `twitch_visit_summary` `Tu es Wally` → `render_identity`.
+
+**Étiquettes/affichage runtime (lecture directe `config.bot.name`) :**
+- `bot/twitch/handlers.py` : `author="Wally"` (×7 : 412, 422, 423, 560, 561, 642, 643) → `bot.config.bot.name`.
+- `bot/intelligence/action_dispatcher.py` : `author="Wally"` (107, 123, 124) → nom depuis le bot dispo.
+- `bot/intelligence/journal.py:553` : `f"# Journal de Wally —"` → `self._config.bot.name`.
+- `bot/intelligence/journal.py:599-605` : `system_prompt` inline `Tu es Wally` → `self._config.bot.name`.
+- `bot/twitch/commands/mood.py:19` : `Humeur de Wally` → `bot.config.bot.name`.
 
 ### 5d — Bridge paramétrable
 - `bot/intelligence/host_bridge.py` : `docker_rebuild`/`docker_restart` reçoivent le **service
@@ -145,9 +172,14 @@ def render_identity(text: str, bot_cfg: BotConfig) -> str:
 - Côté bot : socket/secret du bridge déjà lus depuis l'environnement (à confirmer dans le plan).
 
 ### 5e — Garde `self_modify_enabled`
-- Au câblage (bootstrap) : `self_fix`/`self_upgrade` ne sont instanciés/branchés que si
-  `config.bot.self_modify_enabled and config.bot.owner_discord_id`.
-- L'outil `code_fix` (ActionDispatcher) est masqué/refusé quand la garde est off.
+- Câblage réel dans **`bot/discord/bot.py:183-190`** (pas bootstrap) : `SelfFix`/`SelfUpgrade`
+  sont construits si `_bridge_socket and _bridge_secret and self.cognitive_loop is not None`.
+  Ajouter `and self.config.bot.self_modify_enabled and self.config.bot.owner_discord_id`.
+- L'outil `code_fix` (ActionDispatcher) refusé quand la garde est off.
+
+### 5f — `set_identity` au démarrage
+- Appeler `identity.set_identity(config.bot)` une fois dans `main.py`, juste après
+  `Config.load()` et **avant** la construction des agents/boucles qui chargent des prompts.
 
 ## Découpage en phases (≤5 fichiers, vérif entre chaque)
 
