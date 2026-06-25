@@ -15,6 +15,7 @@ from loguru import logger
 
 from bot.core.emotion import EMOTIONS
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.intelligence.identity import render_identity
 from bot.intelligence.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -35,47 +36,53 @@ _EMOTION_FR = {
 _JOURNAL_SYSTEM = load_prompt(
     "journal_system",
     fallback=(
-        "Tu es Wally, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
+        "Tu es {{BOT_NAME}}, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
         "Rédige une entrée de journal en 3 à 5 paragraphes, à la première personne, "
         "ton sincère et introspectif. Respecte la fourchette de mots indiquée dans le contexte."
     ),
+    render=False,
 )
 _CHUNK_SYSTEM = load_prompt(
     "journal_chunk_system",
     fallback=(
-        "Tu es le module de mémoire de Wally. Résume le bloc de messages en 5 à 10 lignes, "
+        "Tu es le module de mémoire de {{BOT_NAME}}. Résume le bloc de messages en 5 à 10 lignes, "
         "texte brut, sans titre. Mentionne toujours qui a dit ou fait quoi par son pseudo exact."
     ),
+    render=False,
 )
 _FINAL_SYSTEM = load_prompt(
     "journal_final_system",
     fallback=(
-        "Tu es le module de mémoire de Wally. Synthétise les résumés en 10 à 20 lignes, "
+        "Tu es le module de mémoire de {{BOT_NAME}}. Synthétise les résumés en 10 à 20 lignes, "
         "texte brut, sans titre. Mentionne toujours qui a dit ou fait quoi par son pseudo exact."
     ),
+    render=False,
 )
 _CLEANUP_SYSTEM = load_prompt(
     "memory_cleanup_system",
     fallback=(
-        "Tu es le gestionnaire de mémoire long-terme de Wally. Analyse les souvenirs, "
+        "Tu es le gestionnaire de mémoire long-terme de {{BOT_NAME}}. Analyse les souvenirs, "
         'identifie les périmés et à reformuler. Retourne un JSON : '
         '{"delete": [], "update": [], "questions": []}'
     ),
+    render=False,
 )
 _NARRATIVE_SYNTHESIS_SYSTEM = load_prompt(
     "journal_narrative_synthesis_system",
     fallback=(
-        "Tu reçois des entrées de journal de Wally. Produis une narrative thématique "
+        "Tu reçois des entrées de journal de {{BOT_NAME}}. Produis une narrative thématique "
         "de 8 à 12 lignes texte brut sur les thèmes récurrents, absences et fils non résolus."
     ),
+    render=False,
 )
 _JOURNAL_VOICE_PASS_SYSTEM = load_prompt(
     "journal_voice_pass_system",
     fallback=(
-        "Tu reçois un brouillon de journal de Wally. Insuffle la vraie voix intérieure : "
+        "Tu reçois un brouillon de journal de {{BOT_NAME}}. Insuffle la vraie voix intérieure : "
         "auto-interruptions, flux non linéaire, pensée du soir honnête. "
         "Retourne le journal réécrit directement en markdown Discord."
     ),
+    render=False,
 )
 _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
@@ -448,7 +455,7 @@ class DailyJournal:
                         f"[{j['date']}]\n{j['content']}" for j in past_journals
                     )
                     result = await self._llm_secondary.complete(
-                        _NARRATIVE_SYNTHESIS_SYSTEM,
+                        render_identity(_NARRATIVE_SYNTHESIS_SYSTEM),
                         [{"role": "user", "content": combined}],
                         purpose="journal_narrative_synthesis",
                     )
@@ -527,7 +534,7 @@ class DailyJournal:
 
         # ── Generate with primary model (F11) ──
         journal_text = await self._llm.complete(
-            _JOURNAL_SYSTEM,
+            render_identity(_JOURNAL_SYSTEM),
             [{"role": "user", "content": user_msg}],
             purpose="daily_journal",
         )
@@ -536,7 +543,7 @@ class DailyJournal:
         if journal_text:
             try:
                 voice_result = await self._llm_secondary.complete(
-                    _JOURNAL_VOICE_PASS_SYSTEM,
+                    render_identity(_JOURNAL_VOICE_PASS_SYSTEM),
                     [{"role": "user", "content": journal_text}],
                     purpose="journal_voice_pass",
                 )
@@ -550,7 +557,7 @@ class DailyJournal:
         # ── Emotion chart image (F10) ──
         chart_buf = _generate_emotion_chart(snapshots) if snapshots else None
 
-        formatted = f"# Journal de Wally — {display_date}\n\n{journal_text}"
+        formatted = f"# Journal de {self._config.bot.name} — {display_date}\n\n{journal_text}"
         if self._send_cb:
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)
@@ -595,14 +602,15 @@ class DailyJournal:
     async def _form_opinions(self, summary_text: str) -> None:
         """Analyse le résumé du jour et forme/met à jour des opinions."""
         try:
+            bot_name = self._config.bot.name
             system_prompt = (
-                "Tu es Wally. Voici le résumé des conversations d'aujourd'hui. "
+                f"Tu es {bot_name}. Voici le résumé des conversations d'aujourd'hui. "
                 "Identifie les sujets qui reviennent régulièrement ou qui ont provoqué "
-                "des réactions fortes. Pour chaque sujet (max 3), formule une opinion "
-                "courte que Wally pourrait avoir, cohérente avec sa personnalité "
+                f"des réactions fortes. Pour chaque sujet (max 3), formule une opinion "
+                f"courte que {bot_name} pourrait avoir, cohérente avec sa personnalité "
                 "(aigri, sarcastique, mais avec des avis tranchés et parfois surprenants).\n\n"
                 "Retourne un JSON valide uniquement :\n"
-                '[{"topic": "nom du sujet", "opinion": "opinion courte de Wally"}]\n\n'
+                f'[{{"topic": "nom du sujet", "opinion": "opinion courte de {bot_name}"}}]\n\n'
                 "Si aucun sujet ne mérite une opinion, retourne []."
             )
             raw = await self._llm_secondary.complete(
@@ -634,7 +642,7 @@ class DailyJournal:
             chunk = messages[i : i + _CHUNK_SIZE]
             chunk_text = "\n".join(f"[{m['author']}]: {m['content']}" for m in chunk)
             s = await self._llm_secondary.complete(
-                _CHUNK_SYSTEM,
+                render_identity(_CHUNK_SYSTEM),
                 [{"role": "user", "content": chunk_text}],
                 purpose="journal_chunk_summary",
             )
@@ -645,7 +653,7 @@ class DailyJournal:
 
         combined = "\n---\n".join(summaries)
         return await self._llm_secondary.complete(
-            _FINAL_SYSTEM,
+            render_identity(_FINAL_SYSTEM),
             [{"role": "user", "content": combined}],
             purpose="journal_final_summary",
         )
