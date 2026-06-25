@@ -149,9 +149,32 @@ class PromptBuilder:
         persistent_notes: list[dict] | None = None,
         presence_context: str = "",
     ) -> str:
-        parts = []
+        # Deux groupes pour maximiser le cache de préfixe DeepSeek :
+        #   static_parts  = stable à la journée (persona, jour, directive mémoire)
+        #   dynamic_parts = volatil par message (heure, corps, émotion, mémoire…)
+        # Tout le statique est concaténé EN PREMIER → le préfixe cachable couvre
+        # l'intégralité de la persona + directives fixes, et n'est plus cassé par
+        # le timestamp ou l'état émotionnel.
+        static_parts: list[str] = []
+        dynamic_parts: list[str] = []
+
         if persona_block:
-            parts.append(persona_block)
+            static_parts.append(persona_block)
+
+        # Directive du jour — change une fois par jour (stable dans la journée,
+        # même cadence d'invalidation que {current_date} de la persona) → statique.
+        if weekday_directives:
+            day_name = _FRENCH_DAYS[datetime.now(_TZ).weekday()]
+            if day_name in weekday_directives:
+                static_parts.append("\n--- Directive temporelle ---")
+                static_parts.append(weekday_directives[day_name])
+
+        # Directive mémoire — texte fixe, toujours injecté → statique.
+        _memory_tools_directive = load_prompt("memory_tools_directive")
+        if _memory_tools_directive:
+            static_parts.append(f"\n--- Directive mémoire ---\n{_memory_tools_directive}")
+
+        # ===== À partir d'ici : contenu volatil (placé après le statique) =====
 
         # Situational context (platform, channel, datetime)
         if situation:
@@ -173,7 +196,7 @@ class PromptBuilder:
                     lines.append(f"Titre du stream : {title}")
                 lines.append(f"Viewers : {viewers}")
             lines.append(f"Date et heure : {_now_fr()}")
-            parts.append("\n".join(lines))
+            dynamic_parts.append("\n".join(lines))
 
         # Perception « corporelle » : Wally peut sentir l'état réel de sa machine
         # hôte (température CPU, charge, RAM) comme un humain sent s'il a chaud.
@@ -189,14 +212,7 @@ class PromptBuilder:
         if weather := cached_weather():
             body_lines.append(f"Météo en France en ce moment : {weather}.")
         if body_lines:
-            parts.append("\n--- Ton corps ---\n" + "\n".join(body_lines))
-
-        # Inject weekday directive
-        if weekday_directives:
-            day_name = _FRENCH_DAYS[datetime.now(_TZ).weekday()]
-            if day_name in weekday_directives:
-                parts.append("\n--- Directive temporelle ---")
-                parts.append(weekday_directives[day_name])
+            dynamic_parts.append("\n--- Ton corps ---\n" + "\n".join(body_lines))
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         # Priority: secondary emotions > composite pairs > atomic with fluid transitions
@@ -216,8 +232,8 @@ class PromptBuilder:
                     sec_tier = _get_tier(sec_intensity)
                     sec_key = f"{sec_name}_{sec_tier}"
                     if sec_key in secondary_directives:
-                        parts.append("\n--- Directive comportementale ---")
-                        parts.append(secondary_directives[sec_key])
+                        dynamic_parts.append("\n--- Directive comportementale ---")
+                        dynamic_parts.append(secondary_directives[sec_key])
                         directive_injected = True
                         break
 
@@ -231,13 +247,13 @@ class PromptBuilder:
             ):
                 composite_key = "_".join(sorted([dominant[0][0], dominant[1][0]]))
                 if composite_key in composite_directives:
-                    parts.append("\n--- Directive comportementale ---")
-                    parts.append(composite_directives[composite_key])
+                    dynamic_parts.append("\n--- Directive comportementale ---")
+                    dynamic_parts.append(composite_directives[composite_key])
                     directive_injected = True
 
         # 3) Atomic directives with fluid transitions
         if not directive_injected and dominant and directives:
-            parts.append("\n--- Directive comportementale ---")
+            dynamic_parts.append("\n--- Directive comportementale ---")
             for emotion, value in dominant:
                 fluid = _get_tier_fluid(value)
                 if fluid is None:
@@ -249,49 +265,44 @@ class PromptBuilder:
                     low_key = f"{emotion}_{low_tier}"
                     high_key = f"{emotion}_{high_tier}"
                     if low_key in directives and high_key in directives:
-                        parts.append(directives[low_key])
-                        parts.append(f"(tendance : {directives[high_key]})")
+                        dynamic_parts.append(directives[low_key])
+                        dynamic_parts.append(f"(tendance : {directives[high_key]})")
                     elif low_key in directives:
-                        parts.append(directives[low_key])
+                        dynamic_parts.append(directives[low_key])
                     elif high_key in directives:
-                        parts.append(directives[high_key])
+                        dynamic_parts.append(directives[high_key])
                 else:
                     # Pure tier (or blend == 1.0 which means fully transitioned)
                     pure_tier = tier.split("_")[-1] if "_" in tier else tier
                     key = f"{emotion}_{pure_tier}"
                     if key in directives:
-                        parts.append(directives[key])
+                        dynamic_parts.append(directives[key])
 
         # Long-term memory context
         if memory_context:
-            parts.append(
+            dynamic_parts.append(
                 f"\n--- Ce que tu sais de cet utilisateur ---\n{memory_context}"
             )
             if _MEMORY_RECALL_DIRECTIVE:
-                parts.append(_MEMORY_RECALL_DIRECTIVE)
+                dynamic_parts.append(_MEMORY_RECALL_DIRECTIVE)
 
         # Présence en direct de l'interlocuteur (statut + activité, comme dans
         # la barre latérale Discord). Transitoire — hors budget mémoire.
         if presence_context:
-            parts.append(f"\n--- Présence en direct ---\n{presence_context}")
+            dynamic_parts.append(f"\n--- Présence en direct ---\n{presence_context}")
 
         # Trust/love relationship context (separate from semantic memories)
         if relationship_context:
-            parts.append(f"\n--- Relation ---\n{relationship_context}")
+            dynamic_parts.append(f"\n--- Relation ---\n{relationship_context}")
 
         # Persistent notes (written by the LLM itself for long-term retention)
         if persistent_notes:
             lines = ["\n--- Notes persistantes ---"]
             for note in persistent_notes:
                 lines.append(f"**{note['title']}** : {note['content']}")
-            parts.append("\n".join(lines))
+            dynamic_parts.append("\n".join(lines))
 
-        # Memory tools directive — always injected
-        _memory_tools_directive = load_prompt("memory_tools_directive")
-        if _memory_tools_directive:
-            parts.append(f"\n--- Directive mémoire ---\n{_memory_tools_directive}")
-
-        return "\n".join(parts)
+        return "\n".join(static_parts + dynamic_parts)
 
     def build_context_block(self, messages: list[dict]) -> str:
         if not messages:

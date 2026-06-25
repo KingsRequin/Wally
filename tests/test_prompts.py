@@ -259,3 +259,33 @@ def test_memory_recall_directive_absent_when_no_memory():
     )
     assert "ça me rappelle" not in result.lower()
     assert "souvenir" not in result.lower()
+
+
+def test_static_blocks_precede_volatile_for_prefix_cache():
+    """Optimisation cache DeepSeek : tout le statique (persona, directive mémoire)
+    précède tout le volatil (heure, directive émotionnelle, mémoire user), pour
+    maximiser la longueur du préfixe cachable."""
+    pb = PromptBuilder()
+    result = pb.build_system_prompt(
+        emotion_state={"anger": 0.9, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0},
+        emotion_directives=_EMOTION_DIRECTIVES,
+        persona_block="PERSONA_MARKER Tu es Wally.",
+        memory_context="L'utilisateur s'appelle Alice.",
+        situation={"platform": "Discord", "channel": "#g"},
+    )
+    i_persona = result.index("PERSONA_MARKER")
+    i_emotion = result.index("furax")                       # directive émotionnelle (volatile)
+    i_memory = result.index("Alice")                        # mémoire user (volatile)
+    i_situation = result.index("Contexte situationnel")     # heure (volatile)
+
+    # Persona en tête
+    assert i_persona < i_emotion
+    assert i_persona < i_memory
+    assert i_persona < i_situation
+
+    # La directive mémoire est statique → doit précéder tout le volatil
+    assert "Directive mémoire" in result, "memory_tools_directive devrait être chargée"
+    i_memdir = result.index("Directive mémoire")
+    assert i_memdir < i_situation
+    assert i_memdir < i_emotion
+    assert i_memdir < i_memory
