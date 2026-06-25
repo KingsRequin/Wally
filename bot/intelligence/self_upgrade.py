@@ -47,8 +47,9 @@ class SelfUpgrade:
         try:
             owner = await self._bot.fetch_user(int(oid))
             dm = await owner.create_dm()
+            bot_name = getattr(getattr(getattr(self._bot, "config", None), "bot", None), "name", "") or "Wally"
             msg = await dm.send(
-                "🔄 **Mise à jour Wally disponible.**\n"
+                f"🔄 **Mise à jour {bot_name} disponible.**\n"
                 "Réagis ✅ pour appliquer (restart ~30s), ❌ pour ignorer.\n"
                 "_(Timeout 24h)_"
             )

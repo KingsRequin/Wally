@@ -7,6 +7,8 @@ from discord import app_commands
 from discord.ext import commands
 from loguru import logger
 
+from bot.intelligence.identity import bot_name
+
 DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 LOADING_GIFS_DIR = DATA_DIR / "loading_gifs"
 LOADING_PHRASES_FILE = DATA_DIR / "loading_phrases.txt"
@@ -15,9 +17,9 @@ LOADING_PHRASES_FILE = DATA_DIR / "loading_phrases.txt"
 def _load_phrases() -> list[str]:
     """Load loading phrases from file, one per line."""
     if not LOADING_PHRASES_FILE.exists():
-        return ["Wally peint..."]
+        return [f"{bot_name()} peint..."]
     lines = [l.strip() for l in LOADING_PHRASES_FILE.read_text(encoding="utf-8").splitlines() if l.strip()]
-    return lines or ["Wally peint..."]
+    return lines or [f"{bot_name()} peint..."]
 
 
 class GalleryView(discord.ui.View):

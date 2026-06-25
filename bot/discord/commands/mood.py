@@ -3,6 +3,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.intelligence.identity import bot_name
+
 EMOTION_EMOJIS = {
     "anger": "😤",
     "joy": "😄",
@@ -39,10 +41,10 @@ class MoodCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="mood", description="État émotionnel actuel de Wally")
+    @app_commands.command(name="mood", description="État émotionnel actuel du bot")
     async def mood(self, interaction: discord.Interaction):
         state = self.bot.emotion.get_state()
-        embed = discord.Embed(title="Humeur de Wally", color=discord.Color.orange())
+        embed = discord.Embed(title=f"Humeur de {bot_name()}", color=discord.Color.orange())
         for emotion, value in state.items():
             emoji = EMOTION_EMOJIS.get(emotion, "")
             label = EMOTION_LABELS.get(emotion, emotion.capitalize())

@@ -4,6 +4,8 @@ from discord import app_commands
 from discord.ext import commands
 from loguru import logger
 
+from bot.intelligence.identity import bot_name
+
 _PAGE_SIZE = 1800  # caractères par page (marge sous la limite Discord de 2000)
 
 
@@ -37,7 +39,7 @@ class MemoryPaginatedView(discord.ui.View):
     def _make_embed(self) -> discord.Embed:
         suffix = f" ({self.current + 1}/{len(self.pages)})" if len(self.pages) > 1 else ""
         return discord.Embed(
-            title=f"Mémoire de Wally — {self.user_name}{suffix}",
+            title=f"Mémoire de {bot_name()} — {self.user_name}{suffix}",
             description=self.pages[self.current],
             color=discord.Color.green(),
         )
@@ -63,7 +65,7 @@ class MemoryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="memory", description="Ce que Wally se souvient de toi")
+    @app_commands.command(name="memory", description="Ce que le bot retient de toi")
     @app_commands.describe(user="(Admin) Voir la mémoire d'un autre utilisateur")
     async def memory_show(self, interaction: discord.Interaction, user: discord.Member | None = None):
         # Voir les souvenirs de quelqu'un d'autre → admin requis
@@ -90,7 +92,7 @@ class MemoryCog(commands.Cog):
                 # Still show trust+love even with no memories
                 await interaction.followup.send(
                     embed=discord.Embed(
-                        title=f"Mémoire de Wally — {target.display_name}",
+                        title=f"Mémoire de {bot_name()} — {target.display_name}",
                         description=f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\nAucun souvenir.",
                         color=discord.Color.green(),
                     ),
