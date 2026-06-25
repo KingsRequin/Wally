@@ -15,7 +15,7 @@ from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import assemble_memory_context, load_prompt
-from bot.intelligence.self_fix import OWNER_DISCORD_ID, UpgradeRequest
+from bot.intelligence.self_fix import UpgradeRequest
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -1335,7 +1335,7 @@ async def _respond(
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
         # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
-        if str(message.author.id) == OWNER_DISCORD_ID and getattr(bot, "self_fix", None) is not None:
+        if str(message.author.id) == bot.config.bot.owner_discord_id and getattr(bot, "self_fix", None) is not None:
             tools.append(_SELF_MODIFY_TOOL)
 
         _reaction_emojis: set[str] = set()
@@ -1412,7 +1412,7 @@ async def _respond(
                 )
                 return json.dumps(result)
             if name == "request_self_modification":
-                if str(message.author.id) != OWNER_DISCORD_ID or getattr(bot, "self_fix", None) is None:
+                if str(message.author.id) != bot.config.bot.owner_discord_id or getattr(bot, "self_fix", None) is None:
                     return json.dumps({"status": "refused", "message": "Réservé au créateur, et mécanisme indisponible."})
                 goal = (args.get("goal") or "").strip()
                 if not goal:
