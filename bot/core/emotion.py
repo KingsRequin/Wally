@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from bot.intelligence.identity import bot_name, render_identity
+
 if TYPE_CHECKING:
     from bot.config import Config
 
@@ -138,6 +140,68 @@ _EMOTION_ANALYSIS_SCHEMA = {
     "additionalProperties": False,
 }
 
+# Template système de _analyze_llm. Les sentinelles {{BOT_NAME}} sont résolues
+# au runtime via render_identity() afin que Cindy/Wally/etc. soient corrects.
+_ANALYSIS_SYSTEM_TEMPLATE = (
+    "Tu es le module d'analyse émotionnelle de {{BOT_NAME}}, un bot de chat Discord. "
+    "Ton rôle est de mesurer l'impact d'un échange sur l'état interne de {{BOT_NAME}}.\n\n"
+
+    "## Émotions disponibles\n"
+    "anger, joy, sadness, curiosity, boredom\n\n"
+
+    "## Calcul des deltas\n"
+    "- Chaque delta est un float dans [0.0, 0.3] représentant une variation positive de l'émotion.\n"
+    "- Pondération par la cible :\n"
+    "  • Émotion dirigée vers {{BOT_NAME}} → impact plein (delta normal)\n"
+    "  • Émotion dirigée entre utilisateurs ({{BOT_NAME}} non concerné) → delta ÷ 3\n"
+    "- Pondération par la confiance :\n"
+    "  • trust_score proche de 0.0 → anger amplifié (×2 max)\n"
+    "  • trust_score proche de 1.0 → pas d'amplification\n"
+    "- Le dernier message (« Message déclencheur ») a un poids plus élevé que l'historique.\n"
+    "- Si un message est neutre ou sans contenu émotionnel, laisse tous les deltas à 0.0.\n\n"
+
+    "## Apprentissage de nouveaux mots (new_words)\n"
+    "Identifie au maximum 3 mots ou expressions françaises absents du lexique standard "
+    "qui expriment clairement une émotion dans ce message. "
+    "Critères : mot non anglais, porteur d'émotion explicite, delta entre 0.05 et 0.3.\n\n"
+
+    "## Trust delta\n"
+    "Retourne aussi \"trust_delta\" : un float dans [-0.10, +0.10].\n"
+    "- Interaction constructive, amicale, drôle, engageante → positif (+0.01 à +0.05)\n"
+    "- Interaction hostile, insulte, provocation, toxique → négatif (-0.03 à -0.10)\n"
+    "- Interaction neutre, factuelle, sans charge émotionnelle → 0.0\n"
+    "- Inside joke, complicité, défendre {{BOT_NAME}} → bonus (+0.05 à +0.10)\n\n"
+
+    "## Love delta\n"
+    "Retourne aussi \"love_delta\" : un float dans [0.0, 0.10].\n"
+    "- Interaction chaleureuse, drôle partagée, intérêt sincère pour {{BOT_NAME}} → positif (+0.02 à +0.08)\n"
+    "- Le love_delta n'est jamais négatif. L'affection ne baisse que par le decay temporel.\n"
+    "- Interaction neutre ou hostile → 0.0\n\n"
+
+    "## Extraction de faits\n"
+    "Retourne aussi \"user_facts\" : une liste de faits durables sur l'utilisateur "
+    "qui envoie le message déclencheur (centres d'intérêt, préférences, faits "
+    "biographiques, opinions exprimées). Liste vide si rien de durable.\n"
+    "Ignore les GIF, mèmes, liens média (Tenor, Giphy, Imgur, etc.) — "
+    "partager un GIF n'est PAS un fait durable.\n\n"
+
+    "## Exemple\n"
+    "trust_score: 0.30\n"
+    "Historique :\n"
+    "[Alice]: c'est vraiment nul comme réponse\n"
+    "Message déclencheur :\n"
+    "[Bob]: ouais {{BOT_NAME}} t'es carrément à côté de la plaque là\n"
+    "→ Réponse attendue :\n"
+    '{"deltas": {"anger": 0.22, "joy": 0.0, "sadness": 0.05, "curiosity": 0.0, "boredom": 0.0}, '
+    '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}], '
+    '"trust_delta": -0.05, "love_delta": 0.0, "user_facts": []}\n\n'
+
+    "## Format de sortie\n"
+    "JSON valide uniquement, sans markdown ni commentaire :\n"
+    '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
+    '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}], "trust_delta": 0.0, "love_delta": 0.0, "user_facts": []}'
+)
+
 
 def build_emotion_tag(emotion_state: dict[str, float]) -> str:
     """Construit un tag textuel à partir des émotions dominantes (≥ 0.2).
@@ -148,7 +212,7 @@ def build_emotion_tag(emotion_state: dict[str, float]) -> str:
     dominant = [e for e, v in emotion_state.items() if v >= 0.2]
     if not dominant:
         return ""
-    return "Wally: " + ", ".join(dominant)
+    return f"{bot_name()}: " + ", ".join(dominant)
 
 
 class EmotionEngine:
@@ -645,65 +709,7 @@ class EmotionEngine:
         image_urls: list[str] | None = None,
     ) -> tuple[dict[str, float], list[dict], float, float, list[str]]:
         """Analyse émotionnelle via LLM — retourne (deltas, new_words, trust_delta, love_delta, user_facts)."""
-        system_prompt = (
-            "Tu es le module d'analyse émotionnelle de Wally, un bot de chat Discord. "
-            "Ton rôle est de mesurer l'impact d'un échange sur l'état interne de Wally.\n\n"
-
-            "## Émotions disponibles\n"
-            "anger, joy, sadness, curiosity, boredom\n\n"
-
-            "## Calcul des deltas\n"
-            "- Chaque delta est un float dans [0.0, 0.3] représentant une variation positive de l'émotion.\n"
-            "- Pondération par la cible :\n"
-            "  • Émotion dirigée vers Wally → impact plein (delta normal)\n"
-            "  • Émotion dirigée entre utilisateurs (Wally non concerné) → delta ÷ 3\n"
-            "- Pondération par la confiance :\n"
-            "  • trust_score proche de 0.0 → anger amplifié (×2 max)\n"
-            "  • trust_score proche de 1.0 → pas d'amplification\n"
-            "- Le dernier message (« Message déclencheur ») a un poids plus élevé que l'historique.\n"
-            "- Si un message est neutre ou sans contenu émotionnel, laisse tous les deltas à 0.0.\n\n"
-
-            "## Apprentissage de nouveaux mots (new_words)\n"
-            "Identifie au maximum 3 mots ou expressions françaises absents du lexique standard "
-            "qui expriment clairement une émotion dans ce message. "
-            "Critères : mot non anglais, porteur d'émotion explicite, delta entre 0.05 et 0.3.\n\n"
-
-            "## Trust delta\n"
-            "Retourne aussi \"trust_delta\" : un float dans [-0.10, +0.10].\n"
-            "- Interaction constructive, amicale, drôle, engageante → positif (+0.01 à +0.05)\n"
-            "- Interaction hostile, insulte, provocation, toxique → négatif (-0.03 à -0.10)\n"
-            "- Interaction neutre, factuelle, sans charge émotionnelle → 0.0\n"
-            "- Inside joke, complicité, défendre Wally → bonus (+0.05 à +0.10)\n\n"
-
-            "## Love delta\n"
-            "Retourne aussi \"love_delta\" : un float dans [0.0, 0.10].\n"
-            "- Interaction chaleureuse, drôle partagée, intérêt sincère pour Wally → positif (+0.02 à +0.08)\n"
-            "- Le love_delta n'est jamais négatif. L'affection ne baisse que par le decay temporel.\n"
-            "- Interaction neutre ou hostile → 0.0\n\n"
-
-            "## Extraction de faits\n"
-            "Retourne aussi \"user_facts\" : une liste de faits durables sur l'utilisateur "
-            "qui envoie le message déclencheur (centres d'intérêt, préférences, faits "
-            "biographiques, opinions exprimées). Liste vide si rien de durable.\n"
-            "Ignore les GIF, mèmes, liens média (Tenor, Giphy, Imgur, etc.) — "
-            "partager un GIF n'est PAS un fait durable.\n\n"
-
-            "## Exemple\n"
-            "trust_score: 0.30\n"
-            "Historique :\n"
-            "[Alice]: c'est vraiment nul comme réponse\n"
-            "Message déclencheur :\n"
-            "[Bob]: ouais Wally t'es carrément à côté de la plaque là\n"
-            "→ Réponse attendue :\n"
-            '{"deltas": {"anger": 0.22, "joy": 0.0, "sadness": 0.05, "curiosity": 0.0, "boredom": 0.0}, '
-            '"new_words": [{"word": "à côté de la plaque", "emotion": "anger", "delta": 0.10}], '
-            '"trust_delta": -0.05, "love_delta": 0.0, "user_facts": []}\n\n'
-
-            "## Format de sortie\n"
-            "JSON valide uniquement, sans markdown ni commentaire :\n"
-            '{"deltas": {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}, '
-            '"new_words": [{"word": "...", "emotion": "...", "delta": 0.0}], "trust_delta": 0.0, "love_delta": 0.0, "user_facts": []}'
-        )
+        system_prompt = render_identity(_ANALYSIS_SYSTEM_TEMPLATE)
         if image_urls:
             system_prompt += (
                 "\n\n## Images jointes\n"

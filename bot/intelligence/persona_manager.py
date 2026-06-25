@@ -6,6 +6,7 @@ from pathlib import Path
 from loguru import logger
 
 from bot.intelligence.evolution_log import EvolutionEntry, EvolutionLog
+from bot.intelligence.identity import bot_name
 
 SECTION_GUARDRAILS: dict[str, dict] = {
     "SOUL":       {"max_change_percent": 0.20, "max_evolutions_per_day": 1},
@@ -66,7 +67,7 @@ class PersonaManager:
         before_len = len(current)
 
         system = (
-            f"Tu es Wally. Tu modifies ta propre section persona '{section}' de façon chirurgicale.\n"
+            f"Tu es {bot_name()}. Tu modifies ta propre section persona '{section}' de façon chirurgicale.\n"
             f"Consigne : {change_description}\n\n"
             "Règles :\n"
             "- Garde l'essence et le style existants\n"

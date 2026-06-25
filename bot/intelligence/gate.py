@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from bot.core.llm.base import BaseLLMClient
-from bot.intelligence.identity import render_identity
+from bot.intelligence.identity import bot_name, render_identity
 from bot.intelligence.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
 _DEFAULT_PROMPTS_DIR = Path(__file__).parent / "persona" / "prompts"
@@ -26,7 +26,7 @@ _GATE_SCHEMA = {
 }
 
 _FALLBACK_SYSTEM = (
-    "Tu es le filtre de réponse de Wally. Retourne une décision: RESPOND, IGNORE, REACT ou DEFER."
+    "Tu es le filtre de réponse de {{BOT_NAME}}. Retourne une décision: RESPOND, IGNORE, REACT ou DEFER."
 )
 
 
@@ -89,24 +89,24 @@ class ResponseGate:
             emotion_state.items(), key=lambda x: x[1], default=("boredom", 0.0)
         )
         if is_triggered:
-            trigger_line = "L'utilisateur a appelé Wally par son nom — répondre est la norme, ignorer l'exception."
+            trigger_line = f"L'utilisateur a appelé {bot_name()} par son nom — répondre est la norme, ignorer l'exception."
         elif is_mentioned:
-            trigger_line = "@Wally mentionné directement."
+            trigger_line = f"@{bot_name()} mentionné directement."
         else:
-            trigger_line = "Message passif dans le channel (sans appel direct à Wally)."
+            trigger_line = f"Message passif dans le channel (sans appel direct à {bot_name()})."
         context_parts = [
             f"Message reçu : {message_content[:500]}",
             trigger_line,
             f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})",
         ]
         if wally_last_message:
-            context_parts.append(f"Wally vient de parler dans ce canal : \"{wally_last_message[:200]}\"")
+            context_parts.append(f"{bot_name()} vient de parler dans ce canal : \"{wally_last_message[:200]}\"")
         if relationship_facts:
             rel_summary = " | ".join(f.content for f in relationship_facts[:3])
             context_parts.append(f"Relation connue : {rel_summary}")
         if active_desires:
             desire_summary = " | ".join(f.content for f in active_desires[:2])
-            context_parts.append(f"Désirs actifs de Wally : {desire_summary}")
+            context_parts.append(f"Désirs actifs de {bot_name()} : {desire_summary}")
         if available_emojis:
             sample = ", ".join(f":{n}:" for n in available_emojis[:60])
             context_parts.append(
@@ -139,7 +139,7 @@ class ResponseGate:
                 reason_str = decision.reason or "aucune raison spécifiée"
                 await self._fact_store.add(AtomicFact(
                     user_id=author_user_id,
-                    content=f"Wally a choisi d'ignorer ce message — {reason_str}",
+                    content=f"{bot_name()} a choisi d'ignorer ce message — {reason_str}",
                     category=FactCategory.EMOTION,
                     confidence=0.9,
                     source="gate",
