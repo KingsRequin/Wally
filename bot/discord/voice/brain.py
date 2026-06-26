@@ -110,7 +110,7 @@ _VOICE_GREETING_INSTRUCTION = (
 
 
 def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
-                  present_label: str = "", channel_name: str = "") -> str:
+                  present_label: str = "", channel_name: str = "", activity_label: str = "") -> str:
     """Construit le system prompt vocal (persona + émotions + contexte du salon)."""
     system_prompt = bot.prompts.build_voice_system(
         emotion_state=bot.emotion.get_state(),
@@ -132,14 +132,20 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
             "Tu es déjà présent avec elles depuis un moment — ne les re-salue pas à chaque message, "
             "discute normalement."
         )
+    if activity_label:
+        system_prompt += (
+            f"\n\nCe que font les présents en ce moment (jeu, musique…) : {activity_label}. "
+            "Tu peux le remarquer ou en parler si c'est pertinent."
+        )
     return system_prompt
 
 
 async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | None = None,
-                                  channel_name: str = "") -> str:
+                                  channel_name: str = "", activity_label: str = "") -> str:
     """Salutation parlée : à l'arrivée de Wally, ou à l'arrivée d'un nouveau venu (`newcomer`)."""
     try:
-        system_prompt = _voice_system(bot, present_label=present_label, channel_name=channel_name)
+        system_prompt = _voice_system(bot, present_label=present_label, channel_name=channel_name,
+                                      activity_label=activity_label)
         if newcomer:
             instruction = (
                 f"{newcomer} vient à l'instant de rejoindre le salon vocal où tu es déjà installé. "
@@ -165,6 +171,7 @@ async def generate_voice_reply(
     speaker_user_id: str,
     present_label: str = "",
     channel_name: str = "",
+    activity_label: str = "",
 ) -> str:
     """Assemble system_prompt (persona+émotions+présents) + messages, appelle complete_with_tools.
 
@@ -180,7 +187,7 @@ async def generate_voice_reply(
 
     system_prompt = _voice_system(
         bot, speaker_label=speaker_label, memory_context=memory_context or "",
-        present_label=present_label, channel_name=channel_name,
+        present_label=present_label, channel_name=channel_name, activity_label=activity_label,
     )
 
     # L'historique contient déjà la parole courante (consignée par handle_transcript),
@@ -275,6 +282,10 @@ async def handle_transcript(
             present_label = ", ".join(service.members_names())
         except Exception:  # noqa: BLE001
             present_label = ""
+        try:
+            activity_label = " ; ".join(service.members_activity())
+        except Exception:  # noqa: BLE001
+            activity_label = ""
 
         tools = getattr(service, "voice_tools", [])
         tool_executor = getattr(service, "tool_executor", None)
@@ -289,6 +300,7 @@ async def handle_transcript(
                 speaker_user_id=speaker_user_id,
                 present_label=present_label,
                 channel_name=getattr(service, "channel_name", ""),
+                activity_label=activity_label,
             )
         except Exception as e:  # noqa: BLE001
             logger.error("voice generate_voice_reply a échoué: {e}", e=e)

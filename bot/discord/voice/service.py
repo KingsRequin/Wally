@@ -107,6 +107,25 @@ class VoiceService:
             return []
         return [_member_label(m) for m in self._channel.members if not m.bot]
 
+    def members_activity(self) -> list[str]:
+        """Activité Discord (jeu, musique…) des présents, ex 'Alex joue à Valorant'."""
+        if not self._channel:
+            return []
+        presence = getattr(self._bot, "presence", None)
+        if presence is None:
+            return []
+        out: list[str] = []
+        for m in self._channel.members:
+            if m.bot:
+                continue
+            try:
+                snap = presence.get(m.id)
+            except Exception:  # noqa: BLE001
+                snap = None
+            if snap and snap.get("activities"):
+                out.append(f"{m.display_name} {', '.join(snap['activities'])}")
+        return out
+
     # ------------------------------------------------------------------
     # Join / Leave
     # ------------------------------------------------------------------
@@ -135,8 +154,10 @@ class VoiceService:
         """Wally salue brièvement en arrivant dans le salon vocal."""
         try:
             present = ", ".join(self.members_names())
+            activity = " ; ".join(self.members_activity())
             text = await generate_voice_greeting(
-                self._bot, present_label=present, channel_name=self.channel_name
+                self._bot, present_label=present, channel_name=self.channel_name,
+                activity_label=activity,
             )
             if text:
                 await self.speak(text)
@@ -150,8 +171,10 @@ class VoiceService:
         try:
             name = getattr(member, "display_name", str(member))
             present = ", ".join(self.members_names())
+            activity = " ; ".join(self.members_activity())
             text = await generate_voice_greeting(
-                self._bot, present_label=present, newcomer=name, channel_name=self.channel_name
+                self._bot, present_label=present, newcomer=name, channel_name=self.channel_name,
+                activity_label=activity,
             )
             if text:
                 await self.speak(text)
