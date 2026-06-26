@@ -258,6 +258,7 @@ class WallyDiscord(commands.Bot):
             if guild_id:
                 guild = discord.Object(id=guild_id)
                 self.tree.clear_commands(guild=guild)
+                self.tree.copy_global_to(guild=guild)  # pousse les commandes globales sur ce guild → sync instantané
                 await self.tree.sync(guild=guild)
             await self.tree.sync()
             logger.info("Discord slash commands synced")
