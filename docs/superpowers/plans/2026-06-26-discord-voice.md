@@ -141,7 +141,7 @@ Dans `requirements.txt`, sous `# Discord` :
 ```txt
 # Discord
 discord.py>=2.3.2
-discord-ext-voice-recv>=0.5.0
+discord-ext-voice-recv==0.5.2a179  # uniquement des pré-releases publiées ; pinner la version exacte (sinon pip rejette)
 PyNaCl>=1.5.0
 
 # Voice (STT/TTS)
