@@ -167,6 +167,16 @@ async def test_normal_message_does_not_leave():
     service.leave.assert_not_awaited()
 
 
+def test_stop_request_patterns():
+    from bot.discord.voice.brain import _is_stop_request
+    assert _is_stop_request("stop")
+    assert _is_stop_request("tais-toi wally")
+    assert _is_stop_request("chut")
+    assert _is_stop_request("la ferme")
+    assert not _is_stop_request("c'est top ça")   # 'top' != 'stop' (word boundary)
+    assert not _is_stop_request("je raconte ma journée")
+
+
 def test_leave_request_patterns():
     from bot.discord.voice.brain import _is_leave_request
     assert _is_leave_request("wally tu peux partir")

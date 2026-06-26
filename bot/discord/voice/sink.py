@@ -30,11 +30,13 @@ class WallyAudioSink(voice_recv.AudioSink):
         return False
 
     def write(self, user, data: voice_recv.VoiceData) -> None:
-        """Appelé pour chaque paquet audio reçu. user peut être None."""
+        """Appelé pour chaque paquet audio reçu. user peut être None.
+
+        On NE coupe PAS l'écoute pendant que Wally parle : `_on_segment` filtre alors
+        pour ne garder que les ordres d'arrêt (barge-in). Cela transcrit aussi la voix
+        de Wally renvoyée par les micros (larsen), mais elle est ignorée côté brain.
+        """
         if user is None:
-            return
-        # Anti-larsen : ignorer l'audio pendant que Wally parle.
-        if self._service.is_speaking:
             return
         try:
             if not data.pcm:

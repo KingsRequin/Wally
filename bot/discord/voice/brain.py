@@ -68,6 +68,20 @@ def _is_leave_request(transcript: str) -> bool:
     return bool(_LEAVE_RE.search(transcript or ""))
 
 
+# Mots d'arrêt stricts (peu susceptibles d'apparaître dans une réponse normale de Wally,
+# pour éviter qu'il se coupe lui-même via sa propre voix captée par un micro).
+_STOP_RE = re.compile(
+    r"\b(stop|tais[\s-]?toi|taisez[\s-]?vous|chut|la ferme|ta gueule|silence|"
+    r"stp arr[êe]te|wally stop)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_stop_request(transcript: str) -> bool:
+    """Vrai si la parole est un ordre d'arrêt (pour interrompre Wally pendant qu'il parle)."""
+    return bool(_STOP_RE.search(transcript or ""))
+
+
 def _is_named(transcript: str, trigger_names: list[str]) -> bool:
     """Vrai si Wally est nommé — tolère les déformations du STT (wallyd, wallie, wali…)."""
     low = transcript.lower()

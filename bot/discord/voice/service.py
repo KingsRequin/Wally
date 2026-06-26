@@ -14,7 +14,7 @@ from loguru import logger
 from bot.config import VoiceConfig
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
-from bot.discord.voice.brain import generate_voice_greeting, handle_transcript
+from bot.discord.voice.brain import _is_stop_request, generate_voice_greeting, handle_transcript
 from bot.discord.voice.providers import build_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import resolve_style
@@ -241,6 +241,14 @@ class VoiceService:
         finally:
             self.is_speaking = False
 
+    def stop_speaking(self) -> None:
+        """Coupe la lecture en cours (barge-in)."""
+        try:
+            if self._vc is not None and self._vc.is_playing():
+                self._vc.stop()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice stop_speaking a échoué: {e}", e=e)
+
     # ------------------------------------------------------------------
     # Callback interne — segment audio validé par VAD
     # ------------------------------------------------------------------
@@ -252,6 +260,13 @@ class VoiceService:
             self.quota.add_stt_seconds(len(pcm16k_mono) / 32000)  # 16 kHz mono 16-bit = 32000 o/s
             text = await self._stt.transcribe(pcm16k_mono)
             if not text:
+                return
+            # Pendant que Wally parle : on ne traite QUE les ordres d'arrêt (barge-in).
+            # Garde-fou anti-auto-coupure : segment court (une vraie commande est brève).
+            if self.is_speaking:
+                if len(pcm16k_mono) / 32000 <= 2.5 and _is_stop_request(text):
+                    logger.info("voice: interruption '{t}' → stop", t=text)
+                    self.stop_speaking()
                 return
             label = _member_label(user)
             self._current_speaker_id = str(user.id)
