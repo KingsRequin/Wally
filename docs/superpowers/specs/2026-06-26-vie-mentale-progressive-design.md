@@ -146,6 +146,49 @@ anglais → une régénération ; si encore anglais, publier quand même mais lo
 WARNING. Renforcer aussi la consigne « pense en français » dans le prompt système
 concerné.
 
+### Phase 6 — Conscience de ses capacités et de ses demandes
+
+**Problème (signalé par le créateur) :** Wally redemande des améliorations déjà
+livrées. Exemple réel : il y a 2 jours il a demandé à voir les réactions des
+gens sur les messages ; c'est livré (`reaction_tracker`), mais il l'a redemandé
+aujourd'hui. Deux causes structurelles :
+
+1. **Self-model périmé.** `bot/persona/CAPABILITIES.md` (chargé en
+   `capabilities_text`, injecté dans le prompt) est statique et diverge du livré :
+   il ne mentionne PAS la perception des réactions emoji, et dit encore « je
+   n'entends/parle pas en vocal (pas encore) » alors que le vocal est codé
+   (dormant). Wally « sait » donc qu'il ne peut pas faire ce qu'il fait déjà.
+2. **Aucune mémoire de ses demandes.** Les demandes `code_fix`
+   (`action_dispatcher.py:456`) partent en DM via le bridge **sans être
+   persistées** — `pending_upgrades` est vide. Rien ne l'empêche de redemander.
+
+Sans cette phase, la Phase 2 (introspection « qu'est-ce que tu voudrais
+améliorer ? ») AGGRAVE le problème en le poussant à redemander.
+
+**a. Registre des demandes d'amélioration.** Persister chaque demande `code_fix`
+(et chaque demande d'amélioration explicite formulée en DM) avec `{proposal,
+status: requested|delivered|declined, created_at, decided_at}`. Réutiliser la
+table `pending_upgrades` existante (sa forme convient déjà). Le chemin `code_fix`
+écrit à l'émission ; le flow de validation DM (`self_fix` / `self_upgrade`) met à
+jour le statut à la décision du créateur.
+
+**b. Self-model vivant.** Compléter d'abord `CAPABILITIES.md` (réactions emoji ;
+statut vocal réel). Puis, mécanisme durable : quand une demande passe à
+`delivered`, enregistrer la capacité acquise comme fait `source="capability"`
+sous `wally:self` ; `attention_agent.build_context` les expose et
+`reasoning_agent` les ajoute au bloc self-model — le self-model reflète le livré
+sans édition manuelle permanente.
+
+**c. Injection dans le contexte.** Nouveau bloc « Améliorations que tu as déjà
+demandées » (N dernières + statut) injecté dans le prompt, surtout pertinent pour
+les amorces introspection et avant toute nouvelle demande.
+
+**d. Garde-fou anti-redemande.** Avant d'émettre un `code_fix`, comparer
+sémantiquement (réutilise le comparateur de Phase 3 / le juge de Phase 1) la
+demande au self-model + aux demandes `delivered`/`requested` récentes. Si match →
+ne PAS renvoyer la demande ; injecter un rappel « tu as déjà ça » / « déjà demandé
+le {date}, statut {statut} ».
+
 ### Phase 5 — Nettoyage one-shot de la dette
 
 Script `scripts/dedupe_mental_state.py`, idempotent, **dry-run par défaut**
@@ -186,6 +229,10 @@ tick → build_context → reason() génère pensée
   statut/confidence.
 - **Phase 4 :** pensée en anglais → régénérée ; deux fois anglais → publiée +
   WARNING.
+- **Phase 6 :** demande `code_fix` → écrite dans `pending_upgrades` (statut
+  `requested`) ; validation DM → `delivered`, et capacité acquise visible dans le
+  self-model ; redemande d'une capacité déjà `delivered`/présente → bloquée +
+  rappel ; le bloc « déjà demandées » apparaît dans le contexte.
 - **Phase 5 :** fixture DB avec doublons connus → dry-run liste, `--apply`
   fusionne ; idempotent (2ᵉ run = 0 changement).
 - Baseline ~1010 tests verts à préserver (2 échecs préexistants connus : spam,
@@ -196,11 +243,13 @@ tick → build_context → reason() génère pensée
 Une phase par cycle, ≤5 fichiers, tests verts + validation avant la suivante
 (CLAUDE.md projet) :
 
-1. **Phase 1** — juge + focus mortel (impact maximal immédiat).
+1. **Phase 1** — juge + focus mortel (impact maximal immédiat sur la rumination).
 2. **Phase 5** — nettoyage dette (repartir sur une base saine).
-3. **Phase 2** — amorce/cadence/introspection.
-4. **Phase 3** — dédup écriture + outils.
-5. **Phase 4** — garde langue.
+3. **Phase 6** — conscience capacités/demandes (prérequis de l'introspection,
+   sinon Phase 2 aggrave le redemande).
+4. **Phase 2** — amorce/cadence/introspection (s'appuie sur 6).
+5. **Phase 3** — dédup écriture + outils.
+6. **Phase 4** — garde langue.
 
 ## Déploiement
 
