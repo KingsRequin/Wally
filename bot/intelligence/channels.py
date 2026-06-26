@@ -51,6 +51,10 @@ class ChannelDirectory:
     def speakable_ids(self) -> set[str]:
         return {c.id for c in self._channels if c.type == "text"}
 
+    def name_map(self) -> dict[str, str]:
+        """Mapping id → nom lisible, tous types de canaux confondus."""
+        return {c.id: c.name for c in self._channels}
+
     def is_speakable(self, channel_id: str) -> bool:
         return channel_id in self.speakable_ids()
 
