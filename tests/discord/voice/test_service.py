@@ -82,7 +82,7 @@ async def test_speak_mutes_listening_during_playback():
         await svc.speak("bonjour")
 
     assert svc.is_speaking is False  # remis à False après playback
-    svc._tts.synthesize.assert_awaited_once_with("bonjour")
+    svc._tts.synthesize.assert_awaited_once_with("bonjour", None)
 
 
 @pytest.mark.asyncio

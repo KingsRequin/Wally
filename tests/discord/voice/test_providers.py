@@ -34,11 +34,15 @@ async def test_azure_tts_returns_audio_bytes():
         result = MagicMock()
         result.reason = sdk.ResultReason.SynthesizingAudioCompleted
         result.audio_data = b"PCMDATA"
-        synth.speak_text_async.return_value.get.return_value = result
+        synth.speak_ssml_async.return_value.get.return_value = result
         sdk.SpeechSynthesizer.return_value = synth
-        tts = AzureTTS(key="k", region="r", voice="fr-FR-DeniseNeural")
-        audio = await tts.synthesize("salut")
+        tts = AzureTTS(key="k", region="r", voice="fr-FR-Marc:MAI-Voice-2")
+        audio = await tts.synthesize("salut", style="whispering")
         assert audio == b"PCMDATA"
+        # le SSML envoyé contient bien la voix et le style
+        ssml = synth.speak_ssml_async.call_args.args[0]
+        assert "fr-FR-Marc:MAI-Voice-2" in ssml
+        assert 'style="whispering"' in ssml
 
 def test_build_uses_config():
     cfg = VoiceConfig(language="fr-FR", azure_voice="fr-FR-DeniseNeural")

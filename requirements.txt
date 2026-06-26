@@ -1,6 +1,7 @@
 # Discord
-discord.py>=2.3.2
-discord-ext-voice-recv==0.5.2a179  # uniquement des pré-releases publiées ; pinner la version exacte (sinon pip rejette)
+discord.py[voice]>=2.6  # DAVE (chiffrement E2EE vocal Discord 2026) requiert discord.py récent
+# Fork vocolboy : ajoute le déchiffrement DAVE en RÉCEPTION (la lib d'origine plante "corrupted stream").
+discord-ext-voice-recv @ git+https://github.com/vocolboy/discord-ext-voice-recv.git@ee160c0f36516927b6214bc9d6babe524016770f
 PyNaCl>=1.5.0
 
 # Voice (STT/TTS)

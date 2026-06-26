@@ -37,6 +37,8 @@ class WallyAudioSink(voice_recv.AudioSink):
         if self._service.is_speaking:
             return
         try:
+            if not data.pcm:
+                return
             pcm16 = to_stt_format(data.pcm)  # 48k stéréo → 16k mono
             buf = self._frame_buf.setdefault(user.id, bytearray())
             buf.extend(pcm16)

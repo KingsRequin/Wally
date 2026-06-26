@@ -275,6 +275,21 @@ class WallyDiscord(commands.Bot):
         if self.self_upgrade is not None:
             self.self_upgrade.start()
 
+    async def on_voice_state_update(self, member, before, after) -> None:
+        """Salue les nouveaux arrivants dans le salon vocal où Wally est déjà présent."""
+        vs = getattr(self, "voice_service", None)
+        if vs is None or not vs.is_connected:
+            return
+        try:
+            if member.bot or (self.user and member.id == self.user.id):
+                return
+            joined = after.channel is not None and after.channel.id == vs.channel_id
+            was_here = before.channel is not None and before.channel.id == vs.channel_id
+            if joined and not was_here:
+                await vs.greet_newcomer(member)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("on_voice_state_update a échoué: {e}", e=e)
+
     async def close(self) -> None:
         if self.self_upgrade is not None:
             await self.self_upgrade.stop()

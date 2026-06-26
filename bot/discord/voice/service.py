@@ -14,10 +14,26 @@ from loguru import logger
 from bot.config import VoiceConfig
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
-from bot.discord.voice.brain import handle_transcript
+from bot.discord.voice.brain import generate_voice_greeting, handle_transcript
 from bot.discord.voice.providers import build_stt, build_tts
+from bot.discord.voice.style import resolve_style
 from bot.discord.voice.sink import WallyAudioSink
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
+
+
+def _ensure_opus() -> None:
+    """discord.py ne charge pas toujours libopus automatiquement (image slim).
+    Sans Opus, l'audio reçu n'est pas décodé (écoute morte) ni encodé (parole muette)."""
+    if discord.opus.is_loaded():
+        return
+    for name in ("libopus.so.0", "opus", "libopus.so"):
+        try:
+            discord.opus.load_opus(name)
+            logger.info("libopus chargé manuellement ({n})", n=name)
+            return
+        except Exception:  # noqa: BLE001
+            continue
+    logger.warning("libopus introuvable — le vocal ne pourra ni écouter ni parler")
 
 
 class VoiceService:
@@ -26,7 +42,14 @@ class VoiceService:
     def __init__(self, bot, cfg: VoiceConfig) -> None:
         self._bot = bot
         self._cfg = cfg
-        self._stt = build_stt(cfg)
+        _ensure_opus()
+        # Indices STT : nom de Wally + surnoms, pour mieux reconnaître quand on l'appelle.
+        stt_phrases: list[str] = []
+        try:
+            stt_phrases = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
+        except Exception:  # noqa: BLE001
+            pass
+        self._stt = build_stt(cfg, phrases=stt_phrases)
         self._tts = build_tts(cfg)
         self._vc: discord.VoiceClient | None = None
         self._channel = None
@@ -37,6 +60,7 @@ class VoiceService:
             bot, self, current_speaker_id=lambda: self._current_speaker_id
         )
         self.is_speaking: bool = False
+        self.is_responding: bool = False  # une seule réponse à la fois (conversation de groupe)
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None
 
@@ -57,6 +81,12 @@ class VoiceService:
         if not self._channel:
             return []
         return [m.id for m in self._channel.members if not m.bot]
+
+    def members_names(self) -> list[str]:
+        """Noms (display_name) des membres humains présents dans le salon."""
+        if not self._channel:
+            return []
+        return [m.display_name for m in self._channel.members if not m.bot]
 
     # ------------------------------------------------------------------
     # Join / Leave
@@ -79,6 +109,31 @@ class VoiceService:
         self._vc.listen(sink)
         self._auto_leave_task = loop.create_task(self._auto_leave_watch())
         logger.info("voice: rejoint le salon {c}", c=channel.id)
+        # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
+        loop.create_task(self._greet())
+
+    async def _greet(self) -> None:
+        """Wally salue brièvement en arrivant dans le salon vocal."""
+        try:
+            present = ", ".join(self.members_names())
+            text = await generate_voice_greeting(self._bot, present_label=present)
+            if text:
+                await self.speak(text)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice _greet a échoué: {e}", e=e)
+
+    async def greet_newcomer(self, member) -> None:
+        """Salue une personne qui vient de rejoindre le salon (anti-spam : pas si Wally parle déjà)."""
+        if self.is_speaking:
+            return
+        try:
+            name = getattr(member, "display_name", str(member))
+            present = ", ".join(self.members_names())
+            text = await generate_voice_greeting(self._bot, present_label=present, newcomer=name)
+            if text:
+                await self.speak(text)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice greet_newcomer a échoué: {e}", e=e)
 
     async def leave(self) -> None:
         """Quitte le salon vocal, stoppe l'écoute et le watchdog."""
@@ -107,9 +162,17 @@ class VoiceService:
         """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus)."""
         if not text or self._vc is None:
             return
+        # Style de voix : tag explicite de Wally ([murmure]…) sinon son humeur du moment.
+        try:
+            emotion_state = self._bot.emotion.get_state()
+        except Exception:  # noqa: BLE001
+            emotion_state = None
+        style, text = resolve_style(text, emotion_state)
+        if not text:
+            return
         self.is_speaking = True
         try:
-            pcm = await self._tts.synthesize(text)
+            pcm = await self._tts.synthesize(text, style)
             if not pcm:
                 return
             # AzureTTS → 48 kHz mono 16-bit ; discord.PCMAudio attend du stéréo.
