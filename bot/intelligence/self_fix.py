@@ -103,6 +103,7 @@ class SelfFix:
         except asyncio.TimeoutError:
             await dm.send("⏱ Pas de réponse — j'abandonne cette idée.")
             self._declined.add(norm)
+            self._remember_in_dm(dm, f"[self-fix abandonné — pas de réponse] {goal}")
             await self._record_outcome(
                 goal, f"Aucune réponse de {creator_name()} (timeout) — demande abandonnée, "
                 "ce n'est plus en attente d'autorisation."
@@ -112,6 +113,7 @@ class SelfFix:
         if emoji != "✅":
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")
             self._declined.add(norm)
+            self._remember_in_dm(dm, f"[self-fix refusé] {goal}")
             await self._record_outcome(
                 goal, f"Refusé par {creator_name()} — abandonné, ne plus le reproposer ni l'attendre."
             )
@@ -138,6 +140,7 @@ class SelfFix:
         status = await self._poll(job_id, progress=_progress)
         if status is None:
             await dm.send("❌ Claude Code n'a pas répondu à temps — j'abandonne.")
+            self._remember_in_dm(dm, f"[self-fix abandonné — Claude Code n'a pas répondu] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais Claude Code n'a pas répondu à temps — non déployé, à reproposer."
             )
@@ -147,6 +150,7 @@ class SelfFix:
             await dm.send(
                 f"❌ Claude Code a échoué (exit {status.get('exit_code')}).\n```\n{tail}\n```"
             )
+            self._remember_in_dm(dm, f"[self-fix échoué] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais Claude Code a échoué — non déployé, à reproposer."
             )
@@ -174,6 +178,7 @@ class SelfFix:
         if len(result) > budget:
             result = result[:budget].rstrip() + " …(résumé tronqué)"
         await dm.send(prefix + result)
+        self._remember_in_dm(dm, f"[self-fix déployé] {goal}")
         await self._record_outcome(
             goal, f"Accepté par {creator_name()}, implémenté par Claude Code et déployé. "
             "Objectif ATTEINT — ne plus l'attendre ni le considérer en attente d'autorisation."
