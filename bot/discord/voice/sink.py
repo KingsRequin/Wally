@@ -46,7 +46,7 @@ class WallyAudioSink(voice_recv.AudioSink):
                 del buf[:FRAME_BYTES]
                 out = seg.feed(frame)
                 if out:
-                    self._loop.create_task(self._on_segment(user, out))
+                    asyncio.run_coroutine_threadsafe(self._on_segment(user, out), self._loop)
         except Exception as e:  # noqa: BLE001
             logger.warning("WallyAudioSink.write a échoué: {e}", e=e)
 

@@ -12,6 +12,8 @@ from discord.ext import voice_recv
 from loguru import logger
 
 from bot.config import VoiceConfig
+
+POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
 from bot.discord.voice.brain import handle_transcript
 from bot.discord.voice.providers import build_stt, build_tts
 from bot.discord.voice.sink import WallyAudioSink
@@ -123,6 +125,7 @@ class VoiceService:
 
             self._vc.play(source, after=_after)
             await done.wait()
+            await asyncio.sleep(POST_SPEAK_MUTE_S)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice speak a échoué: {e}", e=e)
         finally:

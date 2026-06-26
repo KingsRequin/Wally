@@ -75,7 +75,8 @@ async def test_speak_mutes_listening_during_playback():
     svc._vc = vc
 
     with patch("bot.discord.voice.service.audioop") as mock_ao, \
-         patch("bot.discord.voice.service.discord") as mock_discord:
+         patch("bot.discord.voice.service.discord") as mock_discord, \
+         patch("bot.discord.voice.service.asyncio.sleep", new=AsyncMock()):
         mock_ao.tostereo = MagicMock(return_value=b"\x00\x00" * 200)
         mock_discord.PCMAudio = MagicMock()
         await svc.speak("bonjour")
@@ -115,7 +116,8 @@ async def test_speak_sets_is_speaking_then_resets():
     svc._vc = vc
 
     with patch("bot.discord.voice.service.audioop") as mock_ao, \
-         patch("bot.discord.voice.service.discord") as mock_discord:
+         patch("bot.discord.voice.service.discord") as mock_discord, \
+         patch("bot.discord.voice.service.asyncio.sleep", new=AsyncMock()):
         mock_ao.tostereo = MagicMock(return_value=b"\x00\x00" * 200)
         mock_discord.PCMAudio = MagicMock()
         await svc.speak("test")

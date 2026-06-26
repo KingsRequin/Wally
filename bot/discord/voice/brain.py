@@ -14,13 +14,9 @@ async def generate_voice_reply(
     history: list[dict],
     tools: list[dict],
     tool_executor,
-    speaker_user_id: str = "",
+    speaker_user_id: str,
 ) -> str:
     """Assemble system_prompt (persona+émotions) + messages, appelle complete_with_tools.
-
-    Signature finale (pour Task 5) :
-        generate_voice_reply(bot, speaker_label, transcript, history,
-                             tools, tool_executor, speaker_user_id="")
 
     `speaker_user_id` est le raw Discord snowflake (sans préfixe "discord:").
     Task 6 popule `service.voice_tools` et `service.tool_executor` — laisser None
@@ -65,6 +61,8 @@ async def handle_transcript(
     """Transcrit → gate → (si RESPOND) génère et fait parler Wally."""
     transcript = (transcript or "").strip()
     if not transcript:
+        return
+    if service.channel_id is None:
         return
 
     try:
