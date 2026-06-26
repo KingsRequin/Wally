@@ -16,6 +16,7 @@ from bot.config import VoiceConfig
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
 from bot.discord.voice.brain import generate_voice_greeting, handle_transcript
 from bot.discord.voice.providers import build_stt, build_tts
+from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import resolve_style
 from bot.discord.voice.sink import WallyAudioSink
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
@@ -74,6 +75,7 @@ class VoiceService:
         )
         self.is_speaking: bool = False
         self.is_responding: bool = False  # une seule réponse à la fois (conversation de groupe)
+        self.quota = VoiceQuota()  # suivi du quota Azure (STT/TTS) du mois
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None
 
@@ -191,6 +193,7 @@ class VoiceService:
         style, text = resolve_style(text, emotion_state)
         if not text:
             return
+        self.quota.add_tts_chars(len(text))
         self.is_speaking = True
         try:
             pcm = await self._tts.synthesize(text, style)
@@ -223,6 +226,7 @@ class VoiceService:
         """Transcrit un segment de parole et appelle le cerveau."""
         try:
             self._last_speech_ts = asyncio.get_running_loop().time()
+            self.quota.add_stt_seconds(len(pcm16k_mono) / 32000)  # 16 kHz mono 16-bit = 32000 o/s
             text = await self._stt.transcribe(pcm16k_mono)
             if not text:
                 return

@@ -32,4 +32,25 @@ class StatusCog(commands.Cog):
         embed.add_field(name="Humeur dominante", value=mood_str, inline=True)
         embed.add_field(name="Cout aujourd'hui", value=f"${daily_cost:.4f}", inline=True)
         embed.add_field(name="Cout ce mois", value=f"${monthly_cost:.4f}", inline=True)
+
+        # Quota vocal Azure (free tier) restant ce mois — seulement si le vocal est activé.
+        voice_cfg = getattr(self.bot.config, "voice", None)
+        if voice_cfg is not None and getattr(voice_cfg, "enabled", False):
+            try:
+                vs = getattr(self.bot, "voice_service", None)
+                if vs is not None and getattr(vs, "quota", None) is not None:
+                    snap = vs.quota.snapshot()
+                else:
+                    from bot.discord.voice.quota import VoiceQuota
+                    snap = VoiceQuota().snapshot()
+                stt_h, _r = divmod(int(snap["stt_remaining_seconds"]), 3600)
+                stt_m = _r // 60
+                tts_k = snap["tts_remaining_chars"] / 1000
+                embed.add_field(
+                    name="Vocal restant (ce mois)",
+                    value=f"🎙️ {stt_h}h{stt_m:02d} d'écoute · {tts_k:.0f}k caractères de voix",
+                    inline=False,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         await interaction.followup.send(embed=embed)
