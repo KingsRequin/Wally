@@ -158,6 +158,7 @@ class SelfFix:
         if not status.get("changed") and not status.get("head_changed"):
             result = (status.get("result") or "").strip()[:500]
             await dm.send(f"🤔 Finalement aucun changement de code.\n{result}")
+            self._remember_in_dm(dm, f"[self-fix sans changement] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais aucun changement de code n'était nécessaire — clôturé."
             )
