@@ -76,3 +76,22 @@ async def test_decide_is_ignored_bypasses_llm():
     result = await gate.decide("msg", "discord:123", EMOTION_STATE, [], [], is_ignored=True)
     assert result.decision == "IGNORE"
     gate._llm.complete_structured.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decide_dm_always_responds_without_llm():
+    """En DM (is_dm=True), gate retourne RESPOND sans appeler le LLM."""
+    gate = make_gate({"decision": "IGNORE"})  # le LLM dirait IGNORE...
+    result = await gate.decide("ca", "discord:123", EMOTION_STATE, [], [], is_dm=True)
+    assert result.decision == "RESPOND"           # ...mais le DM force RESPOND
+    gate._llm.complete_structured.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decide_dm_respects_ignored_user():
+    """is_ignored a priorité sur is_dm : un utilisateur banni reste ignoré."""
+    gate = make_gate()
+    result = await gate.decide("ca", "discord:123", EMOTION_STATE, [], [],
+                               is_dm=True, is_ignored=True)
+    assert result.decision == "IGNORE"
+    gate._llm.complete_structured.assert_not_called()

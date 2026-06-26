@@ -77,6 +77,7 @@ class ResponseGate:
         is_ignored: bool = False,
         is_mentioned: bool = False,
         is_triggered: bool = False,
+        is_dm: bool = False,
         wally_last_message: str | None = None,
         available_emojis: list[str] | None = None,
         emoji_usage: list[str] | None = None,
@@ -84,6 +85,10 @@ class ResponseGate:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
             return GateDecision(decision="IGNORE", reason="utilisateur marqué comme ignoré")
+        # DM 1:1 : l'utilisateur s'adresse forcément à Wally. Répondre est la règle ;
+        # le gate (conçu pour filtrer le bruit d'un salon) n'a pas lieu d'être ici.
+        if is_dm:
+            return GateDecision(decision="RESPOND", reason="DM 1:1 — réponse systématique")
 
         dominant_emotion, dominant_value = max(
             emotion_state.items(), key=lambda x: x[1], default=("boredom", 0.0)
