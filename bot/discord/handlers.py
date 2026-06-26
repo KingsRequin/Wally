@@ -16,6 +16,7 @@ from loguru import logger
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import assemble_memory_context, load_prompt
 from bot.intelligence.self_fix import UpgradeRequest
+from bot.discord.voice.tools import VOICE_TOOLS
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -1371,6 +1372,8 @@ async def _respond(
         if action_service:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
+        if getattr(bot, "voice_service", None) is not None:
+            tools += VOICE_TOOLS
         # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
         if str(message.author.id) == bot.config.bot.owner_discord_id and getattr(bot, "self_fix", None) is not None:
             tools.append(_SELF_MODIFY_TOOL)
@@ -1461,6 +1464,17 @@ async def _respond(
                     "status": "ok",
                     "message": "Je t'envoie une demande d'autorisation 🧠 en DM avec le but reformulé — réagis ✅ pour que Claude Code s'en charge, ❌ pour annuler.",
                 })
+            if name == "join_voice":
+                voice = getattr(message.author, "voice", None)
+                if voice is None or voice.channel is None:
+                    return json.dumps({"status": "denied", "message": "Tu n'es dans aucun salon vocal."})
+                await bot.voice_service.join(voice.channel)
+                return json.dumps({"status": "ok", "message": f"Rejoint {voice.channel.name}."})
+            if name == "leave_voice":
+                if getattr(bot, "voice_service", None) and bot.voice_service.is_connected:
+                    await bot.voice_service.leave()
+                    return json.dumps({"status": "ok", "message": "Quitté le vocal."})
+                return json.dumps({"status": "ok", "message": "Pas en vocal."})
             return f"Unknown tool: {name}"
 
         async def _tool_executor(name: str, arguments: str) -> str:

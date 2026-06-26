@@ -70,6 +70,7 @@ class WallyDiscord(commands.Bot):
         # Gate V2 — optionnel, activé par response_gate.enabled dans config.
         # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
         self.response_gate = None   # type: ignore[assignment]
+        self.voice_service = None   # type: ignore[assignment]  # VoiceService — câblé dans setup_hook
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
@@ -211,6 +212,19 @@ class WallyDiscord(commands.Bot):
                 "SelfFix initialisé (bridge={}){}", _bridge_socket,
                 " + SelfUpgrade" if self.self_upgrade is not None else "",
             )
+
+        self.voice_service = None
+        if getattr(self.config, "voice", None) and self.config.voice.enabled:
+            try:
+                from bot.discord.voice.service import VoiceService
+                self.voice_service = VoiceService(self, self.config.voice)
+                logger.info("VoiceService activé")
+            except Exception as e:  # noqa: BLE001
+                self.voice_service = None
+                logger.warning("VoiceService init échouée, vocal désactivé: {e}", e=e)
+        from bot.discord.commands.voice_cmd import VoiceCog
+        if self.voice_service is not None:
+            await self.add_cog(VoiceCog(self))
 
         from bot.discord.commands.ask import AskCog
         from bot.discord.commands.status import StatusCog
