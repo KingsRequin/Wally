@@ -1,8 +1,47 @@
 """Cerveau vocal : branchement gate + génération de la réponse parlée."""
+import asyncio
 import re
 from difflib import SequenceMatcher
 
 from loguru import logger
+
+
+def _history_to_context(history: list[dict], bot_name: str = "") -> list[dict]:
+    """Convertit l'historique vocal ({role, 'label: texte'}) en {author, content} pour l'analyse émotion."""
+    ctx: list[dict] = []
+    for m in history[-8:]:
+        content = m.get("content", "")
+        if m.get("role") == "assistant":
+            ctx.append({"author": bot_name or "moi", "content": content})
+        else:
+            author, sep, txt = content.partition(": ")
+            ctx.append({"author": author, "content": txt} if sep else {"author": "?", "content": content})
+    return ctx
+
+
+async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
+                              channel_id, channel_name, context_messages) -> None:
+    """En fond : fait bouger l'humeur de Wally + affinité + faits perso, à partir de la parole entendue."""
+    try:
+        deltas = await bot.emotion.process_message(
+            transcript,
+            context_messages=context_messages,
+            trigger_user=speaker_user_id,
+            channel_id=str(channel_id),
+            platform="discord",
+            user_id=speaker_user_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice emotion.process_message a échoué: {e}", e=e)
+        return
+    if deltas and deltas.get("user_facts"):
+        origin = (f"Vocal {channel_name}").strip()
+        for fact in deltas["user_facts"]:
+            try:
+                await bot.memory.add("discord", speaker_user_id, fact,
+                                     username=speaker_label, origin=origin)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("voice memory.add (user_fact) a échoué: {e}", e=e)
 
 _WORD_RE = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
 
@@ -177,6 +216,16 @@ async def handle_transcript(
     except Exception as e:  # noqa: BLE001
         logger.warning("voice notify_activity a échoué: {e}", e=e)
 
+    # Mémoire de groupe : extraction passive de faits durables (comme à l'écrit).
+    try:
+        bot.fact_extractor.record_message(
+            channel_id=str(service.channel_id), platform="discord",
+            user_id=speaker_user_id, display_name=speaker_label,
+            content=transcript, origin=f"Vocal {service.channel_name}".strip(),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice fact_extractor.record_message a échoué: {e}", e=e)
+
     # 2. Une seule réponse à la fois : si Wally répond déjà, la parole est juste consignée
     #    (il en tiendra compte dans sa prochaine réponse). Réservation atomique (aucun await ici).
     if getattr(service, "is_responding", False):
@@ -257,5 +306,15 @@ async def handle_transcript(
                 bot.cognitive_loop.notify_reply(service.channel_id, content=text)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice notify_reply a échoué: {e}", e=e)
+
+        # Émotions + affinité, en tâche de fond (n'ajoute pas de latence à la parole).
+        try:
+            ctx = _history_to_context(service.history, getattr(bot.config.bot, "name", ""))
+            asyncio.create_task(_voice_post_emotion(
+                bot, speaker_user_id, speaker_label, transcript,
+                service.channel_id, service.channel_name, ctx,
+            ))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice post-emotion a échoué: {e}", e=e)
     finally:
         service.is_responding = False

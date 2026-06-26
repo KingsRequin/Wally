@@ -1,4 +1,5 @@
 """Tests pour bot/discord/voice/brain.py — gate + génération réponse vocale."""
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from bot.intelligence.gate import GateDecision
@@ -23,6 +24,12 @@ def _bot(decision="RESPOND"):
     bot.persona.weekday_directives = {}
     bot.persona.composite_directives = {}
     bot.persona.secondary_directives = {}
+    # Lot A : émotions + mémoire vocale
+    bot.emotion.process_message = AsyncMock(return_value=None)
+    bot.fact_extractor.record_message = MagicMock()
+    bot.memory.add = AsyncMock()
+    bot.config.bot.name = "Wally"
+    bot.config.bot.trigger_names = ["wally"]
     return bot
 
 
@@ -116,6 +123,22 @@ async def test_speaking_while_busy_only_consigns():
     await handle_transcript(bot, service, "42", "Bob (@bob)", "wally encore ?")
     service.speak.assert_not_awaited()  # pas de 2e réponse
     assert service.history == [{"role": "user", "content": "Bob (@bob): wally encore ?"}]  # mais consigné
+
+
+@pytest.mark.asyncio
+async def test_voice_records_memory_and_updates_emotion():
+    """Lot A : chaque parole alimente la mémoire (fact_extractor) ; une réponse
+    déclenche la mise à jour émotionnelle en fond (process_message)."""
+    bot = _bot("RESPOND")
+    service = MagicMock()
+    service.speak = AsyncMock()
+    service.history = []
+    service.is_responding = False
+    service.channel_name = "Général"
+    await handle_transcript(bot, service, "42", "Alice (@alice)", "wally salut")
+    bot.fact_extractor.record_message.assert_called_once()  # mémoire de groupe
+    await asyncio.sleep(0)  # laisse tourner la tâche de fond
+    bot.emotion.process_message.assert_awaited()  # humeur mise à jour
 
 
 @pytest.mark.asyncio
