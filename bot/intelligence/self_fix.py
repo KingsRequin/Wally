@@ -6,7 +6,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from bot.intelligence.identity import render_identity, creator_name
+from bot.intelligence.identity import render_identity, creator_name, bot_name
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
@@ -96,6 +96,7 @@ class SelfFix:
         )
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
+        self._remember_in_dm(dm, f"[demande de self-fix] {goal}")
 
         try:
             emoji = await self._await_reaction(msg, timeout=self._approval_timeout)
@@ -117,6 +118,7 @@ class SelfFix:
             return
 
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
+        self._remember_in_dm(dm, f"[self-fix accepté] {goal}")
         await self._record_outcome(
             goal, f"Accepté par {creator_name()} — Claude Code l'implémente. Ce n'est plus "
             "en attente d'autorisation."
@@ -188,6 +190,19 @@ class SelfFix:
             if progress is not None:
                 await progress(waited)
         return None
+
+    def _remember_in_dm(self, dm, text: str) -> None:
+        """Injecte un message du flux self-fix dans le sliding context window du
+        DM créateur, pour que Wally en garde la trace conversationnelle et puisse
+        en reparler. Best-effort : ne propage jamais.
+        """
+        try:
+            memory = getattr(self._bot, "memory", None)
+            if memory is None:
+                return
+            memory.append_message(str(dm.id), bot_name(), text, platform="discord")
+        except Exception:  # noqa: BLE001 — la trace ne doit jamais casser le flux
+            logger.exception("self-fix: impossible d'inscrire le message dans l'historique DM")
 
     async def _record_outcome(self, goal: str, outcome: str) -> None:
         """Réinjecte l'issue d'un code_fix dans la mémoire de Wally (wally:self).
