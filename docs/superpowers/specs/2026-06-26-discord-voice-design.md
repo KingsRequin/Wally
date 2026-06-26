@@ -63,7 +63,7 @@ Trois portes pour **entrer**, trois portes pour **sortir** :
 - **Garde-fou :** seul un participant **présent dans le salon vocal** peut le faire partir
   oralement (on ignore toute demande de départ venant d'ailleurs ou d'une transcription parasite).
 - Avant de couper, Wally **confirme brièvement à voix haute** (« ok, je vous laisse »).
-- **Auto-leave** : après N minutes sans parole détectée, ou si le salon devient vide.
+- **Auto-leave** : après 2 minutes sans parole détectée, ou si le salon devient vide.
   Évite de rester connecté à transcrire dans le vide (protège le quota).
 
 ---
@@ -126,7 +126,7 @@ voice:
   tts_provider: azure
   language: fr-FR
   azure_voice: fr-FR-DeniseNeural   # voix Neural FR (à choisir)
-  auto_leave_minutes: 5             # auto-leave après N min sans parole
+  auto_leave_minutes: 2             # auto-leave après 2 min sans parole
   vad_aggressiveness: 2             # webrtcvad 0..3
 ```
 
