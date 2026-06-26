@@ -393,6 +393,7 @@ async def test_cognitive_loop_perceives_non_triggered_message():
         author=str(message.author.display_name),
         content=message.content,
         message_id=str(message.id),
+        is_dm=False,
     )
     # toujours pas de réponse directe : le cerveau décidera seul d'intervenir
     bot.llm.complete.assert_not_called()
@@ -427,6 +428,7 @@ async def test_cognitive_loop_notified_once_on_trigger():
         author=str(message.author.display_name),
         content=message.content,
         message_id=str(message.id),
+        is_dm=False,
     )
 
 

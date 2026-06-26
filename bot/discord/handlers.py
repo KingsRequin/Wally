@@ -868,6 +868,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 author=str(message.author.display_name),
                 content=_resolve_mentions(message, message.content or ""),
                 message_id=str(message.id),
+                is_dm=message.guild is None,
             )
         except Exception as e:
             logger.warning("cognitive_loop.notify_activity failed: {e}", e=e)
