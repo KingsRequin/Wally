@@ -179,6 +179,7 @@ class WallyDiscord(commands.Bot):
             _reasoning = ReasoningAgent(
                 _reasoning_llm, _fact_store, _prompts_dir,
                 channels_text=_chan_dir.render(), capabilities_text=_caps_text,
+                channel_names=_chan_dir.name_map(),
             )
             _conv_log = getattr(self, "conv_log", None)
             self.cognitive_feed = CognitiveFeed(conv_log=_conv_log)
