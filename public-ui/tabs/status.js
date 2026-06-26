@@ -208,12 +208,10 @@ function renderStatus(el, status, stream) {
   stats.appendChild(statCard('UPTIME', formatUptime(status.uptime_seconds), 'var(--green)'));
   el.appendChild(stats);
 
-  const cols = document.createElement('div');
-  cols.className = 'arc-grid';
-  cols.style.cssText = 'grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:18px;';
-
+  // ACTIVITÉ EN DIRECT — pleine largeur
   const feedCard = document.createElement('div');
   feedCard.className = 'arc-card';
+  feedCard.style.marginTop = '18px';
   const feedHead = document.createElement('div');
   feedHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;';
   const feedTitle = document.createElement('div');
@@ -229,11 +227,26 @@ function renderStatus(el, status, stream) {
   feedList.id = 'cog-feed-list';
   feedList.style.cssText = 'height:340px;max-height:340px;overflow-y:auto;';
   feedCard.appendChild(feedList);
-  cols.appendChild(feedCard);
+  el.appendChild(feedCard);
   renderFeed(feedList);
 
-  const right = document.createElement('div');
-  right.style.cssText = 'display:flex;flex-direction:column;gap:18px;';
+  // PERSONNALITÉ + SERVICES — même ligne
+  const cols = document.createElement('div');
+  cols.className = 'arc-grid';
+  cols.style.cssText = 'grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:18px;align-items:start;';
+
+  const emoCard = document.createElement('div');
+  emoCard.className = 'arc-card';
+  const emoTitle = document.createElement('div');
+  emoTitle.className = 'arc-stat-label';
+  emoTitle.style.cssText = 'font-size:11px;color:var(--yellow);margin-bottom:16px;';
+  emoTitle.textContent = 'PERSONNALITÉ';
+  emoCard.appendChild(emoTitle);
+  const bars = document.createElement('div');
+  bars.id = 'status-emo-bars';
+  renderEmoBars(bars);
+  emoCard.appendChild(bars);
+  cols.appendChild(emoCard);
 
   const svcCard = document.createElement('div');
   svcCard.className = 'arc-card';
@@ -249,22 +262,8 @@ function renderStatus(el, status, stream) {
   svcWrap.appendChild(svcPill('Twitch', !!status.twitch_online, true));
   svcWrap.appendChild(svcPill('Mémoire FTS5', true));
   svcCard.appendChild(svcWrap);
-  right.appendChild(svcCard);
+  cols.appendChild(svcCard);
 
-  const emoCard = document.createElement('div');
-  emoCard.className = 'arc-card';
-  const emoTitle = document.createElement('div');
-  emoTitle.className = 'arc-stat-label';
-  emoTitle.style.cssText = 'font-size:11px;color:var(--yellow);margin-bottom:16px;';
-  emoTitle.textContent = 'PERSONNALITÉ';
-  emoCard.appendChild(emoTitle);
-  const bars = document.createElement('div');
-  bars.id = 'status-emo-bars';
-  renderEmoBars(bars);
-  emoCard.appendChild(bars);
-  right.appendChild(emoCard);
-
-  cols.appendChild(right);
   el.appendChild(cols);
 
   const histCard = document.createElement('div');

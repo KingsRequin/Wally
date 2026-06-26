@@ -166,11 +166,13 @@ Sans cette phase, la Phase 2 (introspection « qu'est-ce que tu voudrais
 améliorer ? ») AGGRAVE le problème en le poussant à redemander.
 
 **a. Registre des demandes d'amélioration.** Persister chaque demande `code_fix`
-(et chaque demande d'amélioration explicite formulée en DM) avec `{proposal,
-status: requested|delivered|declined, created_at, decided_at}`. Réutiliser la
-table `pending_upgrades` existante (sa forme convient déjà). Le chemin `code_fix`
-écrit à l'émission ; le flow de validation DM (`self_fix` / `self_upgrade`) met à
-jour le statut à la décision du créateur.
+avec `{proposal, status: requested|delivered|declined, created_at, decided_at}`.
+Réutiliser la table `pending_upgrades` existante (sa forme convient déjà). Le
+chemin `code_fix` écrit à l'émission ; le flow de validation DM (`self_fix` /
+`self_upgrade`) met à jour le statut à la décision du créateur. **Périmètre
+décidé :** on se limite au canal structuré `[ACT code_fix]`. Les demandes
+d'amélioration formulées en DM en langage libre ne sont PAS captées pour
+l'instant (hors périmètre, à reconsidérer plus tard).
 
 **b. Self-model vivant.** Compléter d'abord `CAPABILITIES.md` (réactions emoji ;
 statut vocal réel). Puis, mécanisme durable : quand une demande passe à

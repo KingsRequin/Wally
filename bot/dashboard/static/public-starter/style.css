@@ -833,8 +833,8 @@ body { margin: 0; color: var(--text); font-family: var(--font-body); min-height:
 @media (max-width: 700px) { .arc-auth-user { display: none; } }
 
 .arc-main { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto;
-  padding: clamp(40px,7vw,80px) clamp(16px,4vw,40px); animation: fadeIn .4s ease; }
-.arc-section { scroll-margin-top: 90px; }
+  padding: clamp(12px,2vw,20px) clamp(16px,4vw,40px) clamp(40px,7vw,80px); animation: fadeIn .4s ease; }
+.arc-section { scroll-margin-top: 110px; }
 .arc-section + .arc-section { margin-top: clamp(48px,8vw,96px); padding-top: clamp(40px,6vw,64px);
   border-top: 2px solid rgba(124,77,255,.16); }
 .arc-footer { position: relative; z-index: 1; text-align: center; padding: 40px 20px 50px; font-size: 19px;
