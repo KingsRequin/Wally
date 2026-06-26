@@ -152,5 +152,5 @@ def test_initial_state():
     assert svc.channel_id is None
     assert svc.is_speaking is False
     assert svc.history == []
-    assert svc.voice_tools == []
-    assert svc.tool_executor is None
+    assert len(svc.voice_tools) == 2
+    assert svc.tool_executor is not None

@@ -15,6 +15,7 @@ from bot.config import VoiceConfig
 from bot.discord.voice.brain import handle_transcript
 from bot.discord.voice.providers import build_stt, build_tts
 from bot.discord.voice.sink import WallyAudioSink
+from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
 
 
 class VoiceService:
@@ -28,8 +29,11 @@ class VoiceService:
         self._vc: discord.VoiceClient | None = None
         self._channel = None
         self.history: list[dict] = []
-        self.voice_tools: list = []      # rempli en Task 6
-        self.tool_executor = None        # rempli en Task 6
+        self._current_speaker_id: str | None = None
+        self.voice_tools = VOICE_TOOLS
+        self.tool_executor = make_voice_tool_executor(
+            bot, self, current_speaker_id=lambda: self._current_speaker_id
+        )
         self.is_speaking: bool = False
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None
@@ -144,6 +148,7 @@ class VoiceService:
                 )
             else:
                 label = str(user)
+            self._current_speaker_id = str(user.id)
             await handle_transcript(
                 bot=self._bot,
                 service=self,
