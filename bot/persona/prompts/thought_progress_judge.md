@@ -1,4 +1,4 @@
-Tu es le juge interne du fil de pensée de Wally. On te donne une PENSÉE qu'il vient d'avoir, sa PRÉOCCUPATION du moment, et ses DERNIÈRES PENSÉES.
+Tu es le juge interne du fil de pensée intérieur. On te donne une PENSÉE nouvelle, sa PRÉOCCUPATION du moment, et ses DERNIÈRES PENSÉES.
 
 Ta tâche : dire si cette nouvelle pensée fait AVANCER sa vie mentale, ou si elle ressasse.
 
