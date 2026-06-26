@@ -1,4 +1,8 @@
-import audioop
+import warnings
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    import audioop
 
 import webrtcvad
 
@@ -21,7 +25,6 @@ class VadSegmenter:
     def __init__(self, aggressiveness: int, sample_rate: int = SAMPLE_RATE) -> None:
         self._vad = webrtcvad.Vad(aggressiveness)
         self._rate = sample_rate
-        self._buf = bytearray()
         self._voiced = bytearray()
         self._silence_run = 0
         self._in_speech = False
