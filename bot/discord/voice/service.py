@@ -21,6 +21,19 @@ from bot.discord.voice.sink import WallyAudioSink
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
 
 
+def _member_label(member) -> str:
+    """Libellé d'un locuteur : 'pseudo affiché (@username)'.
+
+    `username` (member.name) est le pseudo Discord NON modifiable ; `display_name`
+    est le pseudo affiché (nickname serveur / nom global, modifiable).
+    """
+    name = getattr(member, "name", None)
+    display = getattr(member, "display_name", None) or name or str(member)
+    if name and name != display:
+        return f"{display} (@{name})"
+    return display
+
+
 def _ensure_opus() -> None:
     """discord.py ne charge pas toujours libopus automatiquement (image slim).
     Sans Opus, l'audio reçu n'est pas décodé (écoute morte) ni encodé (parole muette)."""
@@ -76,6 +89,10 @@ class VoiceService:
     def channel_id(self) -> int | None:
         return self._channel.id if self._channel else None
 
+    @property
+    def channel_name(self) -> str:
+        return getattr(self._channel, "name", "") if self._channel else ""
+
     def members_in_channel(self) -> list[int]:
         """Retourne les IDs des membres non-bot présents dans le salon."""
         if not self._channel:
@@ -83,10 +100,10 @@ class VoiceService:
         return [m.id for m in self._channel.members if not m.bot]
 
     def members_names(self) -> list[str]:
-        """Noms (display_name) des membres humains présents dans le salon."""
+        """Libellés 'pseudo (@username)' des membres humains présents dans le salon."""
         if not self._channel:
             return []
-        return [m.display_name for m in self._channel.members if not m.bot]
+        return [_member_label(m) for m in self._channel.members if not m.bot]
 
     # ------------------------------------------------------------------
     # Join / Leave
@@ -116,7 +133,9 @@ class VoiceService:
         """Wally salue brièvement en arrivant dans le salon vocal."""
         try:
             present = ", ".join(self.members_names())
-            text = await generate_voice_greeting(self._bot, present_label=present)
+            text = await generate_voice_greeting(
+                self._bot, present_label=present, channel_name=self.channel_name
+            )
             if text:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
@@ -129,7 +148,9 @@ class VoiceService:
         try:
             name = getattr(member, "display_name", str(member))
             present = ", ".join(self.members_names())
-            text = await generate_voice_greeting(self._bot, present_label=present, newcomer=name)
+            text = await generate_voice_greeting(
+                self._bot, present_label=present, newcomer=name, channel_name=self.channel_name
+            )
             if text:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
@@ -205,15 +226,7 @@ class VoiceService:
             text = await self._stt.transcribe(pcm16k_mono)
             if not text:
                 return
-            # Résolution du label utilisateur (best-effort)
-            if hasattr(user, "display_name") and hasattr(user, "name"):
-                label = (
-                    f"{user.display_name} (@{user.name})"
-                    if user.display_name != user.name
-                    else user.display_name
-                )
-            else:
-                label = str(user)
+            label = _member_label(user)
             self._current_speaker_id = str(user.id)
             await handle_transcript(
                 bot=self._bot,
