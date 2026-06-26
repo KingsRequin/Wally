@@ -20,6 +20,9 @@ TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
 # ressasser une conversation close (bug du "repost" cognitif).
 REPLY_SPEAK_COOLDOWN = 600  # 10 min
 
+# Nombre de ressassements consécutifs d'un focus avant de le laisser mourir.
+RUMINATION_LIMIT = 2
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -48,6 +51,8 @@ class CognitiveLoop:
         feed=None,
         speakable_channels: set[str] | None = None,
         conv_log=None,
+        fact_store=None,
+        progress_judge=None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -57,6 +62,10 @@ class CognitiveLoop:
         # Journalise les décisions cognitives non publiées sur le feed —
         # surtout les SPEAK *supprimés* (avec la raison), invisibles autrement.
         self._conv_log = conv_log
+        self._facts = fact_store
+        self._progress_judge = progress_judge
+        # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
+        self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
         self._speakable_channels = speakable_channels or set()
         self._last_activity_ts: float = 0.0
@@ -156,6 +165,21 @@ class CognitiveLoop:
         hi = int(TICK_IDLE + (TICK_IDLE_MAX - TICK_IDLE) * (1.0 - min(1.0, max(0.0, boredom))))
         return random.randint(TICK_IDLE, max(TICK_IDLE, hi))
 
+    async def _expire_focus(self) -> None:
+        """Archive le focus actif ressassé → `preoccupation` redevient None au
+        prochain tick, et l'amorce de nouveauté reprend la main."""
+        if self._facts is None:
+            return
+        try:
+            focus = await self._facts.get_latest_by_source("wally:self", "focus")
+            fid = getattr(focus, "id", None) if focus else None
+            if fid is not None:
+                from bot.intelligence.memory.facts import FactStatus
+                await self._facts.set_status(fid, FactStatus.ARCHIVED)
+                logger.info("CognitiveLoop : focus ressassé expiré (#{})", fid)
+        except Exception as e:
+            logger.warning("_expire_focus a échoué : {}", e)
+
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :
         # Wally pense quand même, mais à partir d'une amorce de nouveauté (souvenir,
@@ -189,10 +213,42 @@ class CognitiveLoop:
                         "content_snippet": (_last.get("content") or "")[:160],
                     })
             result = await self._reasoning.reason(context)
-            # Anti-rumination : si la nouvelle pensée est quasi identique à la
-            # précédente, on se repose — pas de feed, pas de dispatch (le thought
-            # est déjà stocké par le ReasoningAgent ; les THOUGHT décaient vite).
-            if result.thought_text and any(
+            # Anti-rumination sémantique : le juge classe la pensée fraîche face au
+            # focus et aux pensées récentes. RESSASSE → on ne publie pas, on archive
+            # la pensée déjà stockée (sinon elle ré-amorce la boucle via recent_thoughts),
+            # et on rapproche le focus de sa mort. Fallback lexical si le juge échoue.
+            verdict = None
+            if self._progress_judge is not None and result.thought_text:
+                try:
+                    verdict = await self._progress_judge.judge(
+                        result.thought_text,
+                        getattr(context, "preoccupation", None),
+                        self._recent_thoughts,
+                    )
+                except Exception as e:
+                    logger.warning("ThoughtProgressJudge a échoué, fallback lexical : {}", e)
+                    verdict = None
+
+            if verdict == "RESSASSE":
+                from bot.intelligence.memory.facts import FactStatus
+                if self._facts is not None and result.thought_fact_id:
+                    try:
+                        await self._facts.set_status(result.thought_fact_id, FactStatus.ARCHIVED)
+                    except Exception as e:
+                        logger.warning("Archivage pensée ressassée échoué : {}", e)
+                self._focus_rumination_count += 1
+                self._log_cog(
+                    "think_skipped",
+                    reason="ressassement (juge de progression)",
+                    thought=(result.thought_text or "")[:200],
+                )
+                if self._focus_rumination_count >= RUMINATION_LIMIT:
+                    await self._expire_focus()
+                    self._focus_rumination_count = 0
+                return
+
+            # Fallback lexical : juge absent ou en échec → ancien filtre 0.92.
+            if verdict is None and result.thought_text and any(
                 _too_similar(result.thought_text, t) for t in self._recent_thoughts
             ):
                 logger.debug("CognitiveLoop: pensée quasi identique (fenêtre récente), repos")
@@ -202,6 +258,9 @@ class CognitiveLoop:
                     thought=(result.thought_text or "")[:200],
                 )
                 return
+
+            # PROGRESSE / DIVAGUE → la pensée vit ; le focus repart de zéro.
+            self._focus_rumination_count = 0
             self._recent_thoughts.append(result.thought_text)
             if len(self._recent_thoughts) > 6:
                 self._recent_thoughts = self._recent_thoughts[-6:]

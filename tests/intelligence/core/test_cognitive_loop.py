@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from bot.intelligence.cognitive_loop import CognitiveLoop, TICK_ACTIVE, TICK_MODERATE, TICK_IDLE
 
 
-def _make_loop():
+def _make_loop(verdict="PROGRESSE"):
     attention = MagicMock()
     reasoning = MagicMock()
     dispatcher = MagicMock()
@@ -13,15 +13,32 @@ def _make_loop():
     attention.build_context = AsyncMock(return_value=AttentionContext(
         emotion_state={}, active_desires=[], active_goals=[],
         recent_thoughts=[], recent_interactions=[], time_of_day="evening",
+        preoccupation="ma préoccupation",
     ))
     from bot.intelligence.reasoning_agent import ReasoningResult
     from bot.intelligence.meta_agent import MetaDecision
     reasoning.reason = AsyncMock(return_value=ReasoningResult(
-        thought_text="pensée", thought_fact_id=1, decisions=[MetaDecision(action="THINK")]
+        thought_text="pensée", thought_fact_id=7, decisions=[MetaDecision(action="THINK")]
     ))
     dispatcher.dispatch = AsyncMock()
 
-    return CognitiveLoop(attention, reasoning, dispatcher), attention, reasoning, dispatcher
+    facts = MagicMock()
+    facts.set_status = AsyncMock()
+    focus_fact = MagicMock()
+    focus_fact.id = 99
+    facts.get_latest_by_source = AsyncMock(return_value=focus_fact)
+
+    judge = MagicMock()
+    judge.judge = AsyncMock(return_value=verdict)
+
+    feed = MagicMock()
+    feed.publish = MagicMock()
+
+    loop = CognitiveLoop(
+        attention, reasoning, dispatcher, feed=feed,
+        fact_store=facts, progress_judge=judge,
+    )
+    return loop, attention, reasoning, dispatcher, facts, judge, feed
 
 
 def test_notify_activity_updates_ts():
@@ -131,7 +148,7 @@ def test_tick_interval_idle_no_emotion_full_range():
 
 @pytest.mark.asyncio
 async def test_tick_calls_full_pipeline():
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()
     attention.build_context.assert_called_once()
@@ -143,7 +160,7 @@ async def test_tick_calls_full_pipeline():
 async def test_tick_with_new_activity_is_not_idle():
     """Un tick déclenché par une nouvelle activité pense la conversation
     (idle=False)."""
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()
     assert attention.build_context.call_args.kwargs["idle"] is False
@@ -153,7 +170,7 @@ async def test_tick_with_new_activity_is_not_idle():
 async def test_tick_idle_still_thinks():
     """Sans nouvelle activité, le loop NE no-op PLUS : il pense en idle
     (build_context reçoit idle=True, reason est appelé)."""
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()              # 1er tick : conversation (idle=False)
     await loop._tick()              # 2e tick : aucune activité nouvelle → idle
@@ -224,7 +241,7 @@ async def test_speak_records_unanswered():
 
     Le canal SPEAK ("55") correspond à une interaction récente connue, donc il
     n'est pas redirigé."""
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     reasoning.reason = AsyncMock(return_value=_RR(
         thought_text="yo", thought_fact_id=1,
         decisions=[_MD(action="SPEAK", channel_id="55", message="yo")],
@@ -246,7 +263,7 @@ def test_user_reply_resets_unanswered():
 async def test_unanswered_passed_to_context():
     """Les messages sans réponse sont transmis à build_context pour le reasoning."""
     import time
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     loop._spontaneous["55"] = {"last_ts": time.monotonic() - 120, "unanswered": 2}
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
     await loop._tick()
@@ -383,7 +400,7 @@ def test_one_line_real_message_not_cut_at_mais():
 async def test_speak_unknown_channel_redirected_to_last_active():
     """SPEAK avec channel halluciné inconnu + une interaction récente sur '55'
     → la décision dispatchée vise '55'."""
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     reasoning.reason = AsyncMock(return_value=_RR(
         thought_text="je veux dire un truc", thought_fact_id=1,
         decisions=[_MD(action="SPEAK", channel_id="999999", message="yo")],
@@ -422,7 +439,7 @@ async def test_speak_directory_channel_not_redirected():
 async def test_speak_no_active_channel_dropped():
     """SPEAK avec channel inconnu + AUCUNE interaction → décision abandonnée,
     dispatch jamais appelé."""
-    loop, attention, reasoning, dispatcher = _make_loop()
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
     reasoning.reason = AsyncMock(return_value=_RR(
         thought_text="je veux dire un truc dans le vide", thought_fact_id=1,
         decisions=[_MD(action="SPEAK", channel_id="999999", message="yo")],
@@ -430,3 +447,52 @@ async def test_speak_no_active_channel_dropped():
     # aucune notify_activity → _recent_interactions vide
     await loop._tick()
     dispatcher.dispatch.assert_not_called()
+
+
+# ── Anti-rumination sémantique : juge de progression ──
+
+@pytest.mark.asyncio
+async def test_ressasse_not_published_and_thought_archived():
+    from bot.intelligence.memory.facts import FactStatus
+    loop, _a, _r, _d, facts, _j, feed = _make_loop(verdict="RESSASSE")
+    await loop._tick()
+    # Pensée ressassée : aucun THINK publié sur le feed.
+    think_published = any(c.args[0].get("type") == "THINK" for c in feed.publish.call_args_list)
+    assert not think_published
+    # La pensée déjà stockée (#7) est archivée.
+    facts.set_status.assert_any_await(7, FactStatus.ARCHIVED)
+    # Compteur incrémenté.
+    assert loop._focus_rumination_count == 1
+
+
+@pytest.mark.asyncio
+async def test_two_ressasse_expire_focus():
+    from bot.intelligence.memory.facts import FactStatus
+    loop, _a, _r, _d, facts, _j, _f = _make_loop(verdict="RESSASSE")
+    await loop._tick()
+    await loop._tick()
+    # Au 2e ressassement, le focus actif (#99) est archivé et le compteur remis à 0.
+    facts.set_status.assert_any_await(99, FactStatus.ARCHIVED)
+    assert loop._focus_rumination_count == 0
+
+
+@pytest.mark.asyncio
+async def test_progresse_published_and_counter_reset():
+    loop, _a, _r, _d, facts, _j, feed = _make_loop(verdict="PROGRESSE")
+    loop._focus_rumination_count = 1
+    await loop._tick()
+    think_published = any(c.args[0].get("type") == "THINK" for c in feed.publish.call_args_list)
+    assert think_published
+    assert "pensée" in loop._recent_thoughts
+    assert loop._focus_rumination_count == 0
+
+
+@pytest.mark.asyncio
+async def test_judge_failure_falls_back_to_lexical():
+    # Juge qui lève → on ne crashe pas ; la pensée est publiée (fallback : pas de
+    # doublon lexical dans la fenêtre vide).
+    loop, _a, _r, _d, _facts, judge, feed = _make_loop()
+    judge.judge = AsyncMock(side_effect=RuntimeError("LLM down"))
+    await loop._tick()
+    think_published = any(c.args[0].get("type") == "THINK" for c in feed.publish.call_args_list)
+    assert think_published
