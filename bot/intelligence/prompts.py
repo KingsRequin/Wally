@@ -310,6 +310,38 @@ class PromptBuilder:
 
         return "\n".join(static_parts + dynamic_parts)
 
+    def build_voice_system(
+        self,
+        emotion_state: dict[str, float],
+        memory_context: str = "",
+        speaker_label: str = "",
+        persona_block: str = "",
+        emotion_directives: dict[str, str] | None = None,
+        weekday_directives: dict[str, str] | None = None,
+        composite_directives: dict[str, str] | None = None,
+        secondary_directives: dict[str, str] | None = None,
+        active_secondaries: list[tuple[str, float]] | None = None,
+    ) -> str:
+        """Construit le system prompt vocal en réutilisant la machinerie persona+émotions.
+
+        Délègue à build_system_prompt avec un contexte situationnel minimal (vocal) ;
+        zéro duplication de la logique d'émotion.
+        """
+        situation = {"platform": "discord_vocal"}
+        if speaker_label:
+            situation["channel"] = f"vocal (locuteur : {speaker_label})"
+        return self.build_system_prompt(
+            emotion_state=emotion_state,
+            memory_context=memory_context,
+            situation=situation,
+            persona_block=persona_block,
+            emotion_directives=emotion_directives,
+            weekday_directives=weekday_directives,
+            composite_directives=composite_directives,
+            secondary_directives=secondary_directives,
+            active_secondaries=active_secondaries,
+        )
+
     def build_context_block(self, messages: list[dict]) -> str:
         if not messages:
             return ""
