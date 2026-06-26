@@ -292,6 +292,12 @@ async def handle_transcript(
             logger.info("voice: gate={d}, Wally ne parle pas", d=decision)
             return
 
+        # Feedback de latence : bref bip « j'ai entendu, je réfléchis » avant la génération LLM.
+        try:
+            await service.play_cue()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice play_cue a échoué: {e}", e=e)
+
         try:
             present_label = ", ".join(service.members_names())
         except Exception:  # noqa: BLE001

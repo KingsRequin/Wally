@@ -35,6 +35,23 @@ def _member_label(member) -> str:
     return display
 
 
+def _make_cue(freq: int = 620, ms: int = 150, sr: int = 48000, vol: float = 0.12) -> bytes:
+    """Génère un bref bip neutre (PCM 48 kHz stéréo 16-bit) pour signaler 'je réfléchis'."""
+    import math
+    import struct
+    n = int(sr * ms / 1000)
+    fade = max(1, int(sr * 0.012))  # fondu 12 ms pour éviter les clics
+    out = bytearray()
+    for i in range(n):
+        env = min(1.0, i / fade, (n - i) / fade)
+        s = int(vol * env * 32767 * math.sin(2 * math.pi * freq * i / sr))
+        out += struct.pack("<h", s)
+    return audioop.tostereo(bytes(out), 2, 1, 1)
+
+
+_THINKING_CUE = _make_cue()
+
+
 def _ensure_opus() -> None:
     """discord.py ne charge pas toujours libopus automatiquement (image slim).
     Sans Opus, l'audio reçu n'est pas décodé (écoute morte) ni encodé (parole muette)."""
@@ -240,6 +257,19 @@ class VoiceService:
             logger.warning("voice speak a échoué: {e}", e=e)
         finally:
             self.is_speaking = False
+
+    async def play_cue(self) -> None:
+        """Joue un bref bip 'je réfléchis' (feedback de latence) et attend sa fin."""
+        if self._vc is None or self.is_speaking:
+            return
+        try:
+            source = discord.PCMAudio(io.BytesIO(_THINKING_CUE))
+            done = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            self._vc.play(source, after=lambda _e: loop.call_soon_threadsafe(done.set))
+            await done.wait()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice play_cue a échoué: {e}", e=e)
 
     def stop_speaking(self) -> None:
         """Coupe la lecture en cours (barge-in)."""
