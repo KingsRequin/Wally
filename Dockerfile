@@ -5,7 +5,10 @@ ARG BUILD_DATE=unknown
 ENV BOT_GIT_HASH=$GIT_HASH
 ENV BOT_BUILD_DATE=$BUILD_DATE
 
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata docker.io && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata docker.io \
+    ffmpeg libopus0 libopus-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 wally
 WORKDIR /app

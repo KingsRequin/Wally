@@ -86,6 +86,17 @@ class SpamDetectionConfig:
 
 
 @dataclass
+class VoiceConfig:
+    enabled: bool = False
+    stt_provider: str = "azure"
+    tts_provider: str = "azure"
+    language: str = "fr-FR"
+    azure_voice: str = "fr-FR-DeniseNeural"  # voix FR à affiner plus tard
+    auto_leave_minutes: int = 2
+    vad_aggressiveness: int = 2  # webrtcvad 0..3
+
+
+@dataclass
 class DiscordConfig:
     anger_trigger_threshold: int
     timeout_minutes: int
@@ -269,6 +280,7 @@ class Config:
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
     theme: ThemeConfig = field(default_factory=ThemeConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
     mood: MoodConfig = field(default_factory=MoodConfig)
     fatigue: FatigueConfig = field(default_factory=FatigueConfig)
     habituation: HabituationConfig = field(default_factory=HabituationConfig)
@@ -353,6 +365,7 @@ class Config:
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
             theme = ThemeConfig(**raw.get("theme", {}))
+            voice_raw = dict(raw.get("voice", {}))
             # --- Organic emotion configs (nested under emotions:) ---
             emo_raw = raw.get("emotions", {})
             mood_cfg = MoodConfig(**emo_raw.get("mood", {}))
@@ -423,6 +436,7 @@ class Config:
                 image_generation=image_generation,
                 overlay_image=overlay_image,
                 theme=theme,
+                voice=VoiceConfig(**voice_raw),
                 mood=mood_cfg,
                 fatigue=fatigue_cfg,
                 habituation=habituation_cfg,
@@ -456,6 +470,7 @@ class Config:
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
             "theme": asdict(self.theme),
+            "voice": asdict(self.voice),
             "response_gate": self.response_gate,
             "cognitive_loop": self.cognitive_loop,
         }

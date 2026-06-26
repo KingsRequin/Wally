@@ -43,6 +43,7 @@ class WallyDiscord(commands.Bot):
         intents.message_content = True
         intents.members = True
         intents.presences = True  # privileged — alimente le cache présence lu par PresenceService
+        intents.voice_states = True  # rejoindre/quitter salons vocaux + détecter membres en VC
         super().__init__(command_prefix="!", intents=intents)
 
         self.config = config
