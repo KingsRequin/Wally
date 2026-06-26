@@ -82,7 +82,8 @@ class CognitiveLoop:
         self._running = False
 
     def notify_activity(
-        self, channel_id: int, author: str, content: str, message_id: str | None = None
+        self, channel_id: int, author: str, content: str,
+        message_id: str | None = None, is_dm: bool = False,
     ) -> None:
         self._last_activity_ts = time.monotonic()
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
@@ -98,6 +99,7 @@ class CognitiveLoop:
             # masquerait la fin et ferait croire à un message incomplet.
             "content": content[:500],
             "message_id": message_id,
+            "is_dm": is_dm,
             "ts": self._last_activity_ts,
         })
         if len(self._recent_interactions) > 20:
