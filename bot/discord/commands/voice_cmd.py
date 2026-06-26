@@ -29,5 +29,9 @@ class VoiceCog(commands.Cog):
         if not self.bot.voice_service.is_connected:
             await interaction.response.send_message("Je ne suis dans aucun vocal.", ephemeral=True)
             return
-        await self.bot.voice_service.leave()
-        await interaction.response.send_message("Je vous laisse 👋")
+        try:
+            await self.bot.voice_service.leave()
+            await interaction.response.send_message("Je vous laisse 👋")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("/leave a échoué: {e}", e=e)
+            await interaction.response.send_message("Impossible de quitter le vocal.", ephemeral=True)

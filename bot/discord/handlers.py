@@ -16,7 +16,11 @@ from loguru import logger
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import assemble_memory_context, load_prompt
 from bot.intelligence.self_fix import UpgradeRequest
-from bot.discord.voice.tools import VOICE_TOOLS
+
+try:
+    from bot.discord.voice.tools import VOICE_TOOLS
+except ImportError:
+    VOICE_TOOLS = []
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
