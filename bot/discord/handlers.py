@@ -961,6 +961,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             # Notes d'usage apprises ("nom → quand l'utiliser") → guide le choix.
             _emote_notes = await _store.get_by_user("wally:emotes", categories=[FactCategory.PREF])
             _emoji_usage = [f.content for f in _emote_notes]
+            _thread = []
+            try:
+                _thread = bot.memory.get_context(str(message.channel.id))[-5:]
+            except Exception:
+                _thread = []
             _gd = await gate.decide(
                 message_content=_resolve_mentions(message, message.content or ""),
                 author_user_id=user_id,
@@ -969,9 +974,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 active_desires=_desires,
                 is_mentioned=mentioned,
                 is_triggered=True,
+                is_dm=message.guild is None,
                 wally_last_message=_last,
                 available_emojis=_guild_emojis,
                 emoji_usage=_emoji_usage,
+                recent_messages=_thread,
             )
             decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
         except Exception as e:
