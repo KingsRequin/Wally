@@ -35,6 +35,7 @@ async def get_config(request: Request) -> dict:
         "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
         "image_generation": asdict(cfg.image_generation),
         "overlay_image": asdict(cfg.overlay_image),
+        "voice": asdict(cfg.voice),
     }
 
 
@@ -322,6 +323,31 @@ async def update_config(request: Request, body: dict) -> dict:
             oi.random_filter = val
         if "enabled" in d:
             oi.enabled = bool(d["enabled"])
+
+    # Voice config
+    if "voice" in body:
+        d = body["voice"]
+        v = cfg.voice
+        if "enabled" in d:
+            v.enabled = bool(d["enabled"])
+        if "azure_voice" in d:
+            v.azure_voice = str(d["azure_voice"])
+        if "language" in d:
+            v.language = str(d["language"])
+        if "auto_leave_minutes" in d:
+            val = int(d["auto_leave_minutes"])
+            if not (1 <= val <= 60):
+                raise HTTPException(400, "auto_leave_minutes must be 1-60")
+            v.auto_leave_minutes = val
+        if "vad_aggressiveness" in d:
+            val = int(d["vad_aggressiveness"])
+            if not (0 <= val <= 3):
+                raise HTTPException(400, "vad_aggressiveness must be 0-3")
+            v.vad_aggressiveness = val
+        # Hot-reload de la voix/seuils si le service vocal tourne (sinon pris au prochain boot).
+        vs = getattr(request.app.state.wally, "voice_service", None)
+        if vs is not None:
+            vs.reload_config(cfg.voice)
 
     cfg.save()
     return {"status": "saved"}

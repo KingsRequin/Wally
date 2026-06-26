@@ -55,6 +55,18 @@ def parse_style_tag(text: str) -> tuple[str | None, str]:
     return style, (clean or text)
 
 
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002190-\U000021FF"
+    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF️‍]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_unspeakable(text: str) -> str:
+    """Retire ce qui se prononce mal à l'oral (emojis, symboles décoratifs)."""
+    return _EMOJI_RE.sub("", text)
+
+
 def _strip_brackets(text: str) -> str:
     """Retire les crochets résiduels (tags/didascalies non reconnus) pour ne pas les lire à voix haute.
 
@@ -72,4 +84,4 @@ def resolve_style(text: str, emotion_state: dict[str, float] | None) -> tuple[st
     """Style final + texte à dire : le tag explicite de Wally prime sur l'humeur."""
     tag_style, clean = parse_style_tag(text)
     style = tag_style if tag_style is not None else mood_to_style(emotion_state)
-    return style, _strip_brackets(clean)
+    return style, _strip_unspeakable(_strip_brackets(clean))

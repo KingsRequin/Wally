@@ -112,6 +112,20 @@ class VoiceService:
     def channel_name(self) -> str:
         return getattr(self._channel, "name", "") if self._channel else ""
 
+    def reload_config(self, cfg: VoiceConfig) -> None:
+        """Recharge la config à chaud (voix, langue, seuils) sans redémarrer le bot."""
+        self._cfg = cfg
+        try:
+            phrases = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
+        except Exception:  # noqa: BLE001
+            phrases = []
+        try:
+            self._stt = build_stt(cfg, phrases=phrases)
+            self._tts = build_tts(cfg)
+            logger.info("VoiceService: config rechargée (voix={v})", v=cfg.azure_voice)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("VoiceService.reload_config a échoué: {e}", e=e)
+
     def members_in_channel(self) -> list[int]:
         """Retourne les IDs des membres non-bot présents dans le salon."""
         if not self._channel:

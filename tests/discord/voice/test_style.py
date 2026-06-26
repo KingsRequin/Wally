@@ -60,6 +60,12 @@ def test_resolve_strips_full_sentence_brackets():
     assert clean == "C'est pour une pizza ou t'as un truc à dire ?"
 
 
+def test_resolve_strips_emojis():
+    style, clean = resolve_style("super content de te voir 🔥😎", None)
+    assert "🔥" not in clean and "😎" not in clean
+    assert clean.strip() == "super content de te voir"
+
+
 def test_resolve_drops_short_stage_direction():
     # didascalie courte type [rire] au milieu → supprimée
     style, clean = resolve_style("ça me fait bien marrer [il rigole] franchement", None)

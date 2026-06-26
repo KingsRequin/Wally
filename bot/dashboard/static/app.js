@@ -2568,10 +2568,12 @@ function renderParametresTab() {
         <button class="mem-subnav-pill active" data-subtab="emotions" onclick="switchParametresSubTab('emotions')">Émotions</button>
         <button class="mem-subnav-pill" data-subtab="llm" onclick="switchParametresSubTab('llm')">LLM</button>
         <button class="mem-subnav-pill" data-subtab="images" onclick="switchParametresSubTab('images')">Images</button>
+        <button class="mem-subnav-pill" data-subtab="vocal" onclick="switchParametresSubTab('vocal')">Vocal</button>
       </div>
       <div class="mem-subnav-content active" id="parametres-sub-emotions"></div>
       <div class="mem-subnav-content" id="parametres-sub-llm"></div>
       <div class="mem-subnav-content" id="parametres-sub-images"></div>
+      <div class="mem-subnav-content" id="parametres-sub-vocal"></div>
     `;
   }
 
@@ -2596,7 +2598,94 @@ function switchParametresSubTab(subtab) {
     _renderParametresLLM(panel);
   } else if (subtab === 'images') {
     _renderParametresImages(panel);
+  } else if (subtab === 'vocal') {
+    _renderParametresVoice(panel);
   }
+}
+
+const _VOICE_OPTIONS = [
+  'fr-FR-Marc:MAI-Voice-2',
+  'fr-FR-Soleil:MAI-Voice-2',
+  'fr-FR-DeniseNeural',
+  'fr-FR-HenriNeural',
+  'fr-FR-RemyMultilingualNeural',
+  'fr-FR-VivienneMultilingualNeural',
+  'fr-FR-JeromeNeural',
+  'fr-FR-EloiseNeural',
+];
+
+async function _renderParametresVoice(panel) {
+  if (!panel) return;
+  panel.innerHTML = '';
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+  const v = cfg.voice || {};
+
+  const section = document.createElement('div');
+  section.className = 'overlay-section';
+  const title = document.createElement('h3');
+  title.textContent = 'Vocal (Discord)';
+  section.appendChild(title);
+
+  // Activé (checkbox)
+  const chk = document.createElement('input');
+  chk.type = 'checkbox'; chk.id = 'voice-enabled-p'; chk.checked = !!v.enabled;
+  section.appendChild(makeFormRow('Activé', chk));
+
+  // Voix (select)
+  const sel = document.createElement('select');
+  sel.id = 'voice-azure-p'; sel.className = 'neo-select';
+  const opts = _VOICE_OPTIONS.slice();
+  if (v.azure_voice && opts.indexOf(v.azure_voice) === -1) opts.unshift(v.azure_voice);
+  opts.forEach(function(o) {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    if (o === v.azure_voice) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  section.appendChild(makeFormRow('Voix', sel));
+
+  // Auto-leave (minutes)
+  const al = document.createElement('input');
+  al.type = 'number'; al.id = 'voice-autoleave-p'; al.className = 'neo-input';
+  al.min = 1; al.max = 60; al.value = v.auto_leave_minutes != null ? v.auto_leave_minutes : 2;
+  section.appendChild(makeFormRow('Auto-leave (min)', al));
+
+  // VAD agressivité (0-3)
+  const vad = document.createElement('select');
+  vad.id = 'voice-vad-p'; vad.className = 'neo-select';
+  ['0', '1', '2', '3'].forEach(function(o) {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    if (String(v.vad_aggressiveness) === o) opt.selected = true;
+    vad.appendChild(opt);
+  });
+  section.appendChild(makeFormRow('Sensibilité VAD (0-3)', vad));
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'neo-btn'; saveBtn.textContent = 'Sauvegarder';
+  saveBtn.onclick = saveVoiceConfigParams;
+  section.appendChild(saveBtn);
+
+  const note = document.createElement('p');
+  note.style.cssText = 'opacity:.6;font-size:.85em;margin-top:8px';
+  note.textContent = 'La voix et les seuils s\'appliquent à chaud. Activer/désactiver le vocal nécessite un redémarrage.';
+  section.appendChild(note);
+
+  panel.appendChild(section);
+}
+
+async function saveVoiceConfigParams() {
+  const body = { voice: {
+    enabled: document.getElementById('voice-enabled-p').checked,
+    azure_voice: document.getElementById('voice-azure-p').value,
+    auto_leave_minutes: parseInt(document.getElementById('voice-autoleave-p').value, 10),
+    vad_aggressiveness: parseInt(document.getElementById('voice-vad-p').value, 10),
+  }};
+  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.ok) toast('Config vocale sauvegardée', 'success');
+  else toast('Échec de la sauvegarde', 'error');
 }
 
 async function _renderParametresEmotions(panel) {
