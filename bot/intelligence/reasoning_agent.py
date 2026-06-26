@@ -63,12 +63,13 @@ class ReasoningAgent:
       `parse_decisions`.
     """
 
-    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "") -> None:
+    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "", channel_names: dict[str, str] | None = None) -> None:
         self._llm = llm
         self._facts = fact_store
         self._system = render_identity((Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8"))
         self._channels_text = channels_text
         self._capabilities_text = capabilities_text
+        self._channel_names = channel_names or {}
 
     async def reason(self, context) -> ReasoningResult:
         user_msg = self._format_context(context)
@@ -190,19 +191,45 @@ class ReasoningAgent:
         if ctx.recent_thoughts:
             lines.append(f"**Dernière pensée :** {_one_line(ctx.recent_thoughts[0].content, 300)}")
         if ctx.recent_interactions:
-            last_channel = ctx.recent_interactions[-1].get("channel", "?")
-            lines.append(
-                f"**Canal où tu peux parler maintenant :** {last_channel} "
-                f"(n'émets [SPEAK <id> ...] qu'avec cet id exact)"
+            recent = ctx.recent_interactions[-10:]
+            last = recent[-1]
+            last_name = self._channel_names.get(last.get("channel", ""), last.get("channel", "?"))
+            last_label = (
+                f"DM privé avec {last.get('author', '?')}" if last.get("is_dm")
+                else f"#{last_name}"
             )
-            lines.append("**Interactions récentes :**")
-            for msg in ctx.recent_interactions[-5:]:
-                mid = msg.get("message_id")
-                mid_part = f"(msg {mid}) " if mid else ""
-                lines.append(
-                    f"  [{msg.get('channel', '?')}] {mid_part}{msg.get('author', '?')}: "
-                    f"{_one_line(msg.get('content', ''), 220)}"
-                )
+            lines.append(
+                f"**Canal où tu peux parler maintenant :** {last_label} "
+                f"(id {last.get('channel', '?')} — n'émets [SPEAK <id> ...] qu'avec cet id exact)"
+            )
+            lines.append(
+                "**Conversations récentes — chaque bloc est une conversation SÉPARÉE.** "
+                "Ne ramène JAMAIS dans un canal un sujet entendu dans un autre. "
+                "Un bloc « DM privé » ne doit JAMAIS être évoqué ailleurs, et inversement."
+            )
+            # Regroupe en préservant l'ordre d'apparition des canaux.
+            groups: dict[str, list[dict]] = {}
+            order: list[str] = []
+            for msg in recent:
+                ch = msg.get("channel", "?")
+                if ch not in groups:
+                    groups[ch] = []
+                    order.append(ch)
+                groups[ch].append(msg)
+            for ch in order:
+                msgs = groups[ch]
+                if msgs[0].get("is_dm"):
+                    title = f"### DM privé avec {msgs[0].get('author', '?')}"
+                else:
+                    title = f"### #{self._channel_names.get(ch, ch)} (id {ch})"
+                lines.append(title)
+                for msg in msgs:
+                    mid = msg.get("message_id")
+                    mid_part = f"(msg {mid}) " if mid else ""
+                    lines.append(
+                        f"  {mid_part}{msg.get('author', '?')}: "
+                        f"{_one_line(msg.get('content', ''), 220)}"
+                    )
         if getattr(ctx, "spontaneous_outreach", None):
             lines.append("**Tes messages spontanés restés sans réponse :**")
             for o in ctx.spontaneous_outreach:
