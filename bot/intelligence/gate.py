@@ -81,6 +81,7 @@ class ResponseGate:
         wally_last_message: str | None = None,
         available_emojis: list[str] | None = None,
         emoji_usage: list[str] | None = None,
+        recent_messages: list[dict] | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -102,8 +103,17 @@ class ResponseGate:
         context_parts = [
             f"Message reçu : {message_content[:500]}",
             trigger_line,
-            f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})",
         ]
+        if recent_messages:
+            thread = "\n".join(
+                f"  {m.get('author', '?')}: {(m.get('content') or '')[:200]}"
+                for m in recent_messages[-5:]
+            )
+            context_parts.append(
+                "Fil récent du canal (pour juger si une réponse a du sens dans le contexte) :\n"
+                + thread
+            )
+        context_parts.append(f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})")
         if wally_last_message:
             context_parts.append(f"{bot_name()} vient de parler dans ce canal : \"{wally_last_message[:200]}\"")
         if relationship_facts:

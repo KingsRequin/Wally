@@ -95,3 +95,18 @@ async def test_decide_dm_respects_ignored_user():
                                is_dm=True, is_ignored=True)
     assert result.decision == "IGNORE"
     gate._llm.complete_structured.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decide_includes_recent_thread_in_prompt():
+    """Le fil récent passé à decide() apparaît dans le message envoyé au LLM."""
+    gate = make_gate({"decision": "RESPOND"})
+    thread = [
+        {"author": "KingsRequin", "content": "c'est nul ta blague"},
+        {"author": "Wally", "content": "assume, c'est le degré zéro"},
+    ]
+    await gate.decide("c'est pas déjà le cas ?", "discord:123", EMOTION_STATE, [], [],
+                      recent_messages=thread)
+    sent = gate._llm.complete_structured.call_args.kwargs["messages"][0]["content"]
+    assert "KingsRequin: c'est nul ta blague" in sent
+    assert "Wally: assume" in sent
