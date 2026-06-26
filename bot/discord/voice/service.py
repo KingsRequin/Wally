@@ -110,18 +110,15 @@ class VoiceService:
             pcm_stereo = audioop.tostereo(pcm, 2, 1, 1)
             source = discord.PCMAudio(io.BytesIO(pcm_stereo))
             done = asyncio.Event()
+            loop = asyncio.get_running_loop()
 
             def _after(err):
                 if err:
                     logger.warning("voice playback erreur: {e}", e=err)
-                done.set()
+                loop.call_soon_threadsafe(done.set)
 
             self._vc.play(source, after=_after)
-            # Attendre la fin de la lecture (vc.is_playing() revient False)
-            while self._vc.is_playing():
-                await asyncio.sleep(0.05)
-            # s'assurer que done est réglé si play se termine sans after
-            done.set()
+            await done.wait()
         except Exception as e:  # noqa: BLE001
             logger.warning("voice speak a échoué: {e}", e=e)
         finally:

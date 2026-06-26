@@ -63,8 +63,15 @@ async def test_speak_mutes_listening_during_playback():
     svc._tts.synthesize = AsyncMock(return_value=b"\x00\x00" * 100)
 
     vc = MagicMock()
-    vc.play = MagicMock()
-    vc.is_playing = MagicMock(return_value=False)
+
+    def play_and_fire(source, after=None):
+        # Simule la fin du playback : invoque le after callback immédiatement
+        # (passe par loop.call_soon_threadsafe dans le vrai code, mais ici
+        #  call_soon_threadsafe appelle done.set depuis le thread courant)
+        if after is not None:
+            after(None)
+
+    vc.play = play_and_fire
     svc._vc = vc
 
     with patch("bot.discord.voice.service.audioop") as mock_ao, \
@@ -96,11 +103,13 @@ async def test_speak_sets_is_speaking_then_resets():
     svc._tts.synthesize = AsyncMock(return_value=b"\x00\x00" * 100)
 
     vc = MagicMock()
-    vc.is_playing = MagicMock(return_value=False)
     speaking_states = []
 
     def capture_play(source, after=None):
         speaking_states.append(svc.is_speaking)
+        # Simule la fin du playback pour débloquer done.wait()
+        if after is not None:
+            after(None)
 
     vc.play = capture_play
     svc._vc = vc
