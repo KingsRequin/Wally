@@ -256,6 +256,14 @@ twitch_events:
   sub:
     active: false
     message: Wow, merci pour le sub {username} ! Tu es incroyable !
+voice:
+  enabled: false                # passer à true après avoir renseigné les clés Azure
+  stt_provider: azure
+  tts_provider: azure
+  language: fr-FR
+  azure_voice: fr-FR-DeniseNeural
+  auto_leave_minutes: 2
+  vad_aggressiveness: 2
 web_chat:
   cooldown_seconds: 10
   history_limit: 50

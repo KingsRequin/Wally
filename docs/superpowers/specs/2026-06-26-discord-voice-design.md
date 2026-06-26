@@ -220,3 +220,19 @@ Charge CPU modérée.
 - Aucun crash si Azure est indisponible.
 - Coût mensuel réel = 0 € sur l'usage cible (~3h/mois).
 - Suite de tests verte, sans appel réseau.
+
+---
+
+## Checklist de vérification manuelle (post-déploiement)
+
+À exécuter après rebuild image + déploiement, une fois `voice.enabled: true` et les clés Azure renseignées :
+
+- [ ] `/wally join` depuis un salon vocal → Wally rejoint le salon.
+- [ ] Parler « Wally tu es là ? » → il répond à voix haute en français.
+- [ ] Dire quelque chose hors-sujet → le gate peut le faire rester silencieux (selon contexte/émotions).
+- [ ] Wally ne réagit pas à sa propre voix (pas d'écho larsen).
+- [ ] « Wally tu peux partir » à l'oral → il confirme brièvement et quitte le salon.
+- [ ] `/wally leave` → il quitte le salon.
+- [ ] En texte « Wally viens en vocal » (depuis un salon vocal) → il rejoint via l'outil LLM.
+- [ ] Laisser le salon silencieux 2 minutes → auto-leave automatique.
+- [ ] Couper la clé Azure (ou la rendre invalide) → aucun crash, Wally reste muet en vocal, le bot texte continue.
