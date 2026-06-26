@@ -19,7 +19,7 @@ class ThoughtProgressJudge:
 
     async def judge(
         self, thought_text: str, focus: str | None, recent_thoughts: list[str]
-    ) -> str:
+    ) -> str | None:
         recents = "\n".join(f"- {t[:300]}" for t in (recent_thoughts or [])[-6:])
         user_msg = (
             f"PRÉOCCUPATION DU MOMENT :\n{focus or '(aucune)'}\n\n"
@@ -33,5 +33,5 @@ class ThoughtProgressJudge:
         for verdict in ("RESSASSE", "DIVAGUE", "PROGRESSE"):
             if verdict in upper:
                 return verdict
-        logger.debug("ThoughtProgressJudge : verdict illisible '{}' → PROGRESSE", reply)
-        return "PROGRESSE"
+        logger.debug("ThoughtProgressJudge : verdict illisible '{}' → None (fallback lexical)", reply)
+        return None

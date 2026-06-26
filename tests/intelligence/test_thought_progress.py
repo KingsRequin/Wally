@@ -32,10 +32,10 @@ async def test_judge_parses_verdict(reply, expected):
 
 
 @pytest.mark.asyncio
-async def test_judge_defaults_to_progresse_on_garbage():
+async def test_judge_returns_none_on_unreadable():
     judge, _ = _judge("je ne sais pas trop")
     out = await judge.judge("une pensée", None, [])
-    assert out == "PROGRESSE"
+    assert out is None
 
 
 @pytest.mark.asyncio
