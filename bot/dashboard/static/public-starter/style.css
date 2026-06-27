@@ -863,7 +863,11 @@ body { margin: 0; color: var(--text); font-family: var(--font-body); min-height:
 .feed-row { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(124,77,255,.12); font-size: 20px; }
 .feed-time { color: var(--muted); flex: none; }
 .feed-tag { flex: none; font-family: var(--font-head); font-size: 8px; align-self: center; }
-.feed-text { opacity: .92; word-break: break-word; }
+/* Contenu À LIRE (pensées, but, désirs) : police lisible + interligne aéré,
+   alors que le chrome (tags/titres) garde le pixel arcade. */
+.feed-text { opacity: .94; word-break: break-word;
+  font-family: system-ui, 'Inter', 'Segoe UI', sans-serif;
+  font-size: 16px; line-height: 1.55; letter-spacing: .1px; }
 
 .modal-overlay { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center;
   background: rgba(8,4,18,.85); padding: 24px; }
