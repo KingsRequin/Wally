@@ -70,6 +70,9 @@ class ReasoningAgent:
         self._channels_text = channels_text
         self._capabilities_text = capabilities_text
         self._channel_names = channel_names or {}
+        # Garde langue FR (Phase 4) : détecte un monologue parti en anglais.
+        from bot.core.language import LanguageDetector
+        self._lang = LanguageDetector("fr")
 
     async def reason(self, context) -> ReasoningResult:
         user_msg = self._format_context(context)
@@ -80,6 +83,23 @@ class ReasoningAgent:
         # La pensée privée = le raisonnement ; à défaut (serveur sans
         # reasoning_content), on retombe sur le content pour ne pas perdre la trace.
         thought_text = reasoning or content
+
+        # Garde langue FR (Phase 4) : si le monologue part en anglais, UNE
+        # régénération avec consigne renforcée. S'il reste anglais, on publie
+        # quand même (ne jamais bloquer le tick) mais on logge un WARNING.
+        if thought_text and self._lang.detect(thought_text) == "en":
+            logger.warning("ReasoningAgent: monologue en anglais → régénération FR")
+            fr_msg = (
+                user_msg
+                + "\n\n⚠️ IMPÉRATIF : pense et écris EXCLUSIVEMENT en français, "
+                "pas un mot d'anglais dans ton raisonnement."
+            )
+            content, reasoning = await self._llm.complete_with_reasoning(
+                self._system, [{"role": "user", "content": fr_msg}]
+            )
+            thought_text = reasoning or content
+            if thought_text and self._lang.detect(thought_text) == "en":
+                logger.warning("ReasoningAgent: toujours en anglais après régénération — publié tel quel")
         thought_fact_id: int | None = None
         if thought_text:
             from bot.intelligence.memory.facts import AtomicFact, FactCategory
