@@ -206,6 +206,10 @@ class ReasoningAgent:
                 f"elle sert — groupe plusieurs emotes en une seule question, reste rare. "
                 f"Quand il t'explique, enregistre-le via [ACT note_emote].)"
             )
+        if getattr(ctx, "social_receptivity", None):
+            lines.append(
+                f"**Rythme social (conscience, pas une consigne)** : {ctx.social_receptivity}"
+            )
         lines.extend([
             f"**Heure :** {ctx.time_of_day}",
             f"**État émotionnel :** {_fmt_emotions(ctx.emotion_state)}",
