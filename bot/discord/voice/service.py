@@ -92,6 +92,7 @@ class VoiceService:
         )
         self.is_speaking: bool = False
         self.is_responding: bool = False  # une seule réponse à la fois (conversation de groupe)
+        self._pending: tuple[str, str, str] | None = None  # dernière parole entendue pendant qu'il répond
         self.quota = VoiceQuota()  # suivi du quota Azure (STT/TTS) du mois
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None

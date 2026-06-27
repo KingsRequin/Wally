@@ -1,12 +1,11 @@
-"""Tests pour bot/discord/voice/brain.py — gate + génération réponse vocale."""
+"""Tests pour bot/discord/voice/brain.py — heuristique de prise de parole + génération réponse vocale."""
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from bot.intelligence.gate import GateDecision
 from bot.discord.voice.brain import handle_transcript, generate_voice_reply
 
 
-def _bot(decision="RESPOND"):
+def _bot():
     bot = MagicMock()
     bot.emotion.get_state.return_value = {
         "anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.3, "boredom": 0.0
@@ -14,9 +13,6 @@ def _bot(decision="RESPOND"):
     bot.emotion.get_secondary_emotions.return_value = []
     bot.memory.search = AsyncMock(return_value="")
     bot.llm.complete_with_tools = AsyncMock(return_value=("salut à tous", []))
-    bot.response_gate.decide = AsyncMock(
-        return_value=GateDecision(decision=decision, reason="r")
-    )
     bot.prompts.build_voice_system = MagicMock(return_value="SYSTEM")
     # Persona attributes — must mirror what _respond uses
     bot.persona.build_prompt_block.return_value = "PERSONA_BLOCK"
@@ -35,11 +31,12 @@ def _bot(decision="RESPOND"):
 
 @pytest.mark.asyncio
 async def test_respond_triggers_speak():
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally tu es là ?")
     service.speak.assert_awaited_once()
     assert service.speak.await_args.args[0] == "salut à tous"
@@ -47,11 +44,13 @@ async def test_respond_triggers_speak():
 
 @pytest.mark.asyncio
 async def test_ignore_does_not_speak():
-    bot = _bot("IGNORE")
+    """Parole anodine non adressée à Wally (pas nommé, pas une question) → il écoute, il ne parle pas."""
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
     await handle_transcript(bot, service, "42", "Alice (@alice)", "blabla")
     service.speak.assert_not_awaited()
 
@@ -60,13 +59,14 @@ async def test_ignore_does_not_speak():
 async def test_persona_parity_in_voice_prompt():
     """Vérifie que build_voice_system reçoit bien le bloc persona + toutes les
     directives émotionnelles, comme le chemin texte dans _respond."""
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
 
-    await handle_transcript(bot, service, "610550333042589752", "Bob (@bob)", "bonjour")
+    await handle_transcript(bot, service, "610550333042589752", "Bob (@bob)", "wally bonjour")
 
     # build_voice_system doit être appelé avec les args persona
     bot.prompts.build_voice_system.assert_called_once()
@@ -91,7 +91,7 @@ async def test_persona_parity_in_voice_prompt():
 async def test_group_history_consigned_before_reply():
     """La parole entendue est consignée dans le fil de groupe AVANT la réponse ;
     la réponse de Wally n'est ajoutée qu'APRÈS speak()."""
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     snap_at_speak: list = []
 
@@ -101,6 +101,7 @@ async def test_group_history_consigned_before_reply():
     service.speak = AsyncMock(side_effect=capture_speak)
     service.history = []
     service.is_responding = False
+    service._pending = None
 
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally ?")
 
@@ -115,25 +116,29 @@ async def test_group_history_consigned_before_reply():
 async def test_speaking_while_busy_only_consigns():
     """Si Wally répond déjà, une nouvelle parole est consignée mais ne déclenche pas
     de seconde réponse concurrente."""
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = True  # Wally est déjà en train de répondre
+    service._pending = None
     await handle_transcript(bot, service, "42", "Bob (@bob)", "wally encore ?")
     service.speak.assert_not_awaited()  # pas de 2e réponse
     assert service.history == [{"role": "user", "content": "Bob (@bob): wally encore ?"}]  # mais consigné
+    # La parole entendue n'est pas jetée : elle est mise en attente pour après.
+    assert service._pending == ("42", "Bob (@bob)", "wally encore ?")
 
 
 @pytest.mark.asyncio
 async def test_voice_records_memory_and_updates_emotion():
     """Lot A : chaque parole alimente la mémoire (fact_extractor) ; une réponse
     déclenche la mise à jour émotionnelle en fond (process_message)."""
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
     service.channel_name = "Général"
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally salut")
     bot.fact_extractor.record_message.assert_called_once()  # mémoire de groupe
@@ -144,12 +149,13 @@ async def test_voice_records_memory_and_updates_emotion():
 @pytest.mark.asyncio
 async def test_leave_request_disconnects():
     """Une demande de départ (même sans dire 'quitte le vocal') déconnecte vraiment."""
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.leave = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally tu peux partir maintenant")
     service.leave.assert_awaited_once()
     service.speak.assert_awaited_once()  # dit au revoir avant de couper
@@ -157,12 +163,13 @@ async def test_leave_request_disconnects():
 
 @pytest.mark.asyncio
 async def test_normal_message_does_not_leave():
-    bot = _bot("RESPOND")
+    bot = _bot()
     service = MagicMock()
     service.speak = AsyncMock()
     service.leave = AsyncMock()
     service.history = []
     service.is_responding = False
+    service._pending = None
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally tu fais quoi ce soir ?")
     service.leave.assert_not_awaited()
 

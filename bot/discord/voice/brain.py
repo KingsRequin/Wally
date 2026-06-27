@@ -97,6 +97,37 @@ def _is_named(transcript: str, trigger_names: list[str]) -> bool:
                 return True
     return False
 
+
+# Mots interrogatifs en début de phrase (le STT ne restitue pas toujours le « ? »).
+_QUESTION_STARTS = (
+    "est-ce", "est ce", "qu'est", "qu est", "c'est quoi", "c est quoi", "c'est qui",
+    "qui est", "qui veut", "comment", "pourquoi", "combien", "quand", "quel", "quelle",
+    "quels", "quelles", "où est", "ou est", "où es", "ou es",
+)
+
+
+def _is_question(transcript: str) -> bool:
+    """Vrai si la parole est (vraisemblablement) une question adressée au groupe."""
+    t = (transcript or "").strip().lower()
+    if not t:
+        return False
+    if t.endswith("?") or " ?" in t:
+        return True
+    return any(t.startswith(w) for w in _QUESTION_STARTS)
+
+
+def _should_respond_voice(transcript: str, history: list[dict], named: bool) -> bool:
+    """Décide localement (0 appel LLM) si Wally prend la parole en vocal.
+
+    Il répond quand : on le nomme, c'est une question au groupe, ou l'échange est en cours
+    (il est intervenu dans les deux derniers tours). Sinon il écoute les gens se parler.
+    `history` contient déjà la parole courante en dernier ; on regarde les tours précédents.
+    """
+    if named or _is_question(transcript):
+        return True
+    recent = history[:-1][-2:]  # deux tours avant la parole courante
+    return any(m.get("role") == "assistant" for m in recent)
+
 _VOICE_TARGET_NOTICE = (
     "CONTEXTE : tu es actuellement connecté dans un salon VOCAL Discord et tu parles à voix "
     "haute. Tu ENTENDS les gens parler (transcription) et tu leur réponds ORALEMENT — ce n'est "
@@ -249,106 +280,113 @@ async def handle_transcript(
     except Exception as e:  # noqa: BLE001
         logger.warning("voice fact_extractor.record_message a échoué: {e}", e=e)
 
-    # 2. Une seule réponse à la fois : si Wally répond déjà, la parole est juste consignée
-    #    (il en tiendra compte dans sa prochaine réponse). Réservation atomique (aucun await ici).
+    # 2. Décider de répondre (une seule réponse à la fois, file d'attente anti-drop).
+    await _maybe_respond(bot, service, speaker_user_id, speaker_label, transcript)
+
+
+async def _maybe_respond(
+    bot, service, speaker_user_id: str, speaker_label: str, transcript: str
+) -> None:
+    """Sérialise les réponses (une à la fois) SANS jeter la parole entendue entre-temps.
+
+    Si Wally répond déjà, on mémorise la dernière parole (`_pending`) au lieu de l'ignorer ;
+    elle sera traitée dès qu'il a fini. On ne garde que la plus récente pour ne pas répondre
+    à une enfilade de phrases périmées.
+    """
     if getattr(service, "is_responding", False):
+        service._pending = (speaker_user_id, speaker_label, transcript)
         return
     service.is_responding = True
     try:
-        # Filet déterministe : demande explicite de quitter le vocal → on déconnecte vraiment
-        # (sans dépendre du tool-calling du LLM, qui dit parfois "ok je pars" sans agir).
-        if _is_leave_request(transcript):
-            logger.info("voice: demande de départ détectée → déconnexion")
-            try:
-                await service.speak("Ok, je vous laisse. À plus !")
-            except Exception:  # noqa: BLE001
-                pass
-            await service.leave()
-            return
-
-        # Skip le gate si Wally est explicitement nommé → réponse plus rapide.
-        named = False
-        try:
-            trigger_names = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
-            named = _is_named(transcript, trigger_names)
-        except Exception:  # noqa: BLE001
-            pass
-
-        gate = getattr(bot, "response_gate", None)
-        decision = "RESPOND"
-        if gate is not None and not named:
-            try:
-                gd = await gate.decide(
-                    message_content=transcript,
-                    author_user_id=speaker_user_id,
-                    emotion_state=bot.emotion.get_state(),
-                    relationship_facts=[],
-                    active_desires=[],
-                    is_triggered=True,
-                )
-                decision = gd.decision
-            except Exception as e:  # noqa: BLE001
-                logger.warning("voice gate.decide a échoué, fallback RESPOND: {e}", e=e)
-
-        if decision != "RESPOND":
-            logger.info("voice: gate={d}, Wally ne parle pas", d=decision)
-            return
-
-        # Feedback de latence : bref bip « j'ai entendu, je réfléchis » avant la génération LLM.
-        try:
-            await service.play_cue()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("voice play_cue a échoué: {e}", e=e)
-
-        try:
-            present_label = ", ".join(service.members_names())
-        except Exception:  # noqa: BLE001
-            present_label = ""
-        try:
-            activity_label = " ; ".join(service.members_activity())
-        except Exception:  # noqa: BLE001
-            activity_label = ""
-
-        tools = getattr(service, "voice_tools", [])
-        tool_executor = getattr(service, "tool_executor", None)
-        try:
-            text = await generate_voice_reply(
-                bot=bot,
-                speaker_label=speaker_label,
-                transcript=transcript,
-                history=list(service.history),  # contient déjà la parole courante + le fil de groupe
-                tools=tools,
-                tool_executor=tool_executor,
-                speaker_user_id=speaker_user_id,
-                present_label=present_label,
-                channel_name=getattr(service, "channel_name", ""),
-                activity_label=activity_label,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.error("voice generate_voice_reply a échoué: {e}", e=e)
-            return
-
-        if not text:
-            return
-
-        await service.speak(text)
-        service.history.append({"role": "assistant", "content": text})
-        service.history[:] = service.history[-_HISTORY_MAX:]
-
-        try:
-            if getattr(bot, "cognitive_loop", None) is not None:
-                bot.cognitive_loop.notify_reply(service.channel_id, content=text)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("voice notify_reply a échoué: {e}", e=e)
-
-        # Émotions + affinité, en tâche de fond (n'ajoute pas de latence à la parole).
-        try:
-            ctx = _history_to_context(service.history, getattr(bot.config.bot, "name", ""))
-            asyncio.create_task(_voice_post_emotion(
-                bot, speaker_user_id, speaker_label, transcript,
-                service.channel_id, service.channel_name, ctx,
-            ))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("voice post-emotion a échoué: {e}", e=e)
+        current = (speaker_user_id, speaker_label, transcript)
+        while current is not None:
+            await _respond_once(bot, service, *current)
+            current = getattr(service, "_pending", None)
+            service._pending = None
     finally:
         service.is_responding = False
+
+
+async def _respond_once(
+    bot, service, speaker_user_id: str, speaker_label: str, transcript: str
+) -> None:
+    """Produit (au plus) une réponse parlée à une parole donnée. Le verrou est géré par l'appelant."""
+    # Filet déterministe : demande explicite de quitter le vocal → on déconnecte vraiment
+    # (sans dépendre du tool-calling du LLM, qui dit parfois "ok je pars" sans agir).
+    if _is_leave_request(transcript):
+        logger.info("voice: demande de départ détectée → déconnexion")
+        try:
+            await service.speak("Ok, je vous laisse. À plus !")
+        except Exception:  # noqa: BLE001
+            pass
+        await service.leave()
+        return
+
+    # Heuristique locale rapide (0 appel LLM) : décide si Wally prend la parole.
+    named = False
+    try:
+        trigger_names = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
+        named = _is_named(transcript, trigger_names)
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not _should_respond_voice(transcript, service.history, named):
+        logger.info("voice: parole pas adressée à Wally → il écoute")
+        return
+
+    # Feedback de latence : bref bip « j'ai entendu, je réfléchis » avant la génération LLM.
+    try:
+        await service.play_cue()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice play_cue a échoué: {e}", e=e)
+
+    try:
+        present_label = ", ".join(service.members_names())
+    except Exception:  # noqa: BLE001
+        present_label = ""
+    try:
+        activity_label = " ; ".join(service.members_activity())
+    except Exception:  # noqa: BLE001
+        activity_label = ""
+
+    tools = getattr(service, "voice_tools", [])
+    tool_executor = getattr(service, "tool_executor", None)
+    try:
+        text = await generate_voice_reply(
+            bot=bot,
+            speaker_label=speaker_label,
+            transcript=transcript,
+            history=list(service.history),  # contient déjà la parole courante + le fil de groupe
+            tools=tools,
+            tool_executor=tool_executor,
+            speaker_user_id=speaker_user_id,
+            present_label=present_label,
+            channel_name=getattr(service, "channel_name", ""),
+            activity_label=activity_label,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("voice generate_voice_reply a échoué: {e}", e=e)
+        return
+
+    if not text:
+        return
+
+    await service.speak(text)
+    service.history.append({"role": "assistant", "content": text})
+    service.history[:] = service.history[-_HISTORY_MAX:]
+
+    try:
+        if getattr(bot, "cognitive_loop", None) is not None:
+            bot.cognitive_loop.notify_reply(service.channel_id, content=text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice notify_reply a échoué: {e}", e=e)
+
+    # Émotions + affinité, en tâche de fond (n'ajoute pas de latence à la parole).
+    try:
+        ctx = _history_to_context(service.history, getattr(bot.config.bot, "name", ""))
+        asyncio.create_task(_voice_post_emotion(
+            bot, speaker_user_id, speaker_label, transcript,
+            service.channel_id, service.channel_name, ctx,
+        ))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice post-emotion a échoué: {e}", e=e)
