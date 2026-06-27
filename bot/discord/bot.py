@@ -75,6 +75,8 @@ class WallyDiscord(commands.Bot):
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
         self.upgrade_registry = None  # type: ignore[assignment]  # UpgradeRegistry (Phase 6)
+        self.social_rhythm = None   # type: ignore[assignment]  # SocialRhythm — câblé dans setup_hook
+        self._social_rhythm_db_path: str | None = None
         self._wally_recent_speaks: dict[int, str] = {}  # channel_id → dernier texte envoyé
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
@@ -166,6 +168,20 @@ class WallyDiscord(commands.Bot):
             # garde anti-redemande). Stocké pour réutilisation dans le bloc self-fix.
             from bot.intelligence.upgrade_registry import UpgradeRegistry
             self.upgrade_registry = UpgradeRegistry(_db_path)
+
+            # Rythme social appris : réceptivité de l'audience par créneau
+            # heure×semaine/weekend. Chargé depuis la DB, pré-chauffé une fois
+            # depuis les logs de conversation. Aucun seuil horaire codé.
+            from bot.intelligence.social_rhythm import SocialRhythm
+            _tz = getattr(getattr(self.config, "circadian", None), "timezone", "Europe/Paris")
+            self.social_rhythm = SocialRhythm(tz=_tz)
+            self._social_rhythm_db_path = _db_path
+            await self.social_rhythm.load(_db_path)
+            try:
+                self.social_rhythm.backfill_from_logs("logs/conversations")
+            except Exception as e:  # noqa: BLE001 — le backfill ne doit jamais bloquer le boot
+                logger.warning("SocialRhythm: backfill ignoré: {}", e)
+
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
                 # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
@@ -173,6 +189,7 @@ class WallyDiscord(commands.Bot):
                 # son texte (le raccourci ":nom:" ne marche que côté client humain).
                 emote_provider=lambda: [(e.name, str(e)) for e in self.emojis],
                 upgrade_registry=self.upgrade_registry,
+                social_rhythm=self.social_rhythm,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
@@ -201,6 +218,7 @@ class WallyDiscord(commands.Bot):
                 conv_log=_conv_log,
                 fact_store=_fact_store,
                 progress_judge=_progress_judge,
+                social_rhythm=self.social_rhythm,
             )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
@@ -313,6 +331,12 @@ class WallyDiscord(commands.Bot):
             await self.self_upgrade.stop()
         if self.cognitive_loop is not None:
             await self.cognitive_loop.stop()
+        # Sauvegarde du rythme social appris (best-effort) avant l'arrêt.
+        if self.social_rhythm is not None and self._social_rhythm_db_path:
+            try:
+                await self.social_rhythm.persist(self._social_rhythm_db_path)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("SocialRhythm.persist au close a échoué: {}", e)
         await super().close()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
