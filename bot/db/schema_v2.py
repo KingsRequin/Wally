@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS fact_relations (
     created_at    TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cognitive_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      REAL    NOT NULL,
+    type    TEXT    NOT NULL,
+    payload TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cog_events_id ON cognitive_events(id);
+
 CREATE TABLE IF NOT EXISTS thoughts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     content       TEXT    NOT NULL,
