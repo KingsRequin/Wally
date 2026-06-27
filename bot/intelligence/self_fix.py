@@ -7,6 +7,9 @@ from datetime import datetime
 from loguru import logger
 
 from bot.intelligence.identity import render_identity, creator_name, bot_name
+from bot.intelligence.upgrade_registry import (
+    UpgradeRegistry, DELIVERED, DECLINED, ABANDONED,
+)
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
@@ -37,13 +40,27 @@ class SelfFix:
     """Wally décide de se modifier ; le créateur autorise en DM ; Claude Code exécute."""
 
     def __init__(self, bridge, bot, *, poll_interval: float = 10.0,
-                 approval_timeout: float = 3600.0) -> None:
+                 approval_timeout: float = 3600.0,
+                 registry: UpgradeRegistry | None = None) -> None:
         self._bridge = bridge
         self._bot = bot
         self._poll_interval = poll_interval
         self._approval_timeout = approval_timeout
         self._pending = False
         self._declined: set[str] = set()
+        # Registre durable des demandes (Phase 6) : mémoire de ce que Wally a
+        # déjà demandé / obtenu → garde anti-redemande + injection dans le contexte.
+        self._registry = registry
+
+    async def _set_status(self, upgrade_id: int | None, status: str) -> None:
+        """Met à jour le statut d'une demande dans le registre. No-op si pas de
+        registre ou d'id. Best-effort : ne propage jamais."""
+        if self._registry is None or upgrade_id is None:
+            return
+        try:
+            await self._registry.set_status(upgrade_id, status)
+        except Exception:  # noqa: BLE001 — le suivi ne doit jamais casser le flux
+            logger.exception("self-fix: maj statut registre #{} échouée", upgrade_id)
 
     def _owner_id(self) -> str:
         """Lit l'ID Discord du créateur depuis config.bot.owner_discord_id."""
@@ -68,11 +85,35 @@ class SelfFix:
         if not force and norm in self._declined:
             logger.info("self-upgrade ignoré: goal déjà refusé — {}", goal[:60])
             return
+        # Garde anti-redemande (Phase 6d) : si une demande sémantiquement proche
+        # est déjà en cours (requested) ou déjà livrée (delivered), ne pas
+        # redemander — Wally l'a déjà. `force` (demande explicite du créateur)
+        # outrepasse la garde.
+        if not force and self._registry is not None:
+            try:
+                hit = await self._registry.find_similar(goal)
+            except Exception:  # noqa: BLE001 — la garde ne doit jamais bloquer le flux
+                logger.exception("self-fix: recherche anti-redemande échouée")
+                hit = None
+            if hit is not None:
+                logger.info("self-upgrade ignoré: déjà {} (#{}) — {}", hit.status, hit.id, goal[:60])
+                await self._record_outcome(
+                    goal, f"Déjà {hit.status} (demande #{hit.id} : « {hit.proposal[:120]} ») — "
+                    "inutile de le redemander."
+                )
+                return
         self._pending = True
+        upgrade_id: int | None = None
         try:
-            await self._run_upgrade(goal, norm)
+            if self._registry is not None:
+                try:
+                    upgrade_id = await self._registry.record_request(goal)
+                except Exception:  # noqa: BLE001
+                    logger.exception("self-fix: enregistrement de la demande échoué")
+            await self._run_upgrade(goal, norm, upgrade_id)
         except Exception as e:  # noqa: BLE001 — jamais d'échec silencieux
             logger.exception("self-upgrade a échoué")
+            await self._set_status(upgrade_id, ABANDONED)
             await self._notify(f"❌ Ma tentative d'auto-modification a échoué : {e}")
             await self._record_outcome(
                 goal, f"A échoué techniquement ({e}) — non déployé, demande close."
@@ -80,7 +121,7 @@ class SelfFix:
         finally:
             self._pending = False
 
-    async def _run_upgrade(self, goal: str, norm: str) -> None:
+    async def _run_upgrade(self, goal: str, norm: str, upgrade_id: int | None = None) -> None:
         oid = self._owner_id()
         if not oid:
             logger.warning("self-upgrade: owner_discord_id non configuré — abandon")
@@ -103,6 +144,7 @@ class SelfFix:
         except asyncio.TimeoutError:
             await dm.send("⏱ Pas de réponse — j'abandonne cette idée.")
             self._declined.add(norm)
+            await self._set_status(upgrade_id, ABANDONED)
             self._remember_in_dm(dm, f"[self-fix abandonné — pas de réponse] {goal}")
             await self._record_outcome(
                 goal, f"Aucune réponse de {creator_name()} (timeout) — demande abandonnée, "
@@ -113,6 +155,7 @@ class SelfFix:
         if emoji != "✅":
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")
             self._declined.add(norm)
+            await self._set_status(upgrade_id, DECLINED)
             self._remember_in_dm(dm, f"[self-fix refusé] {goal}")
             await self._record_outcome(
                 goal, f"Refusé par {creator_name()} — abandonné, ne plus le reproposer ni l'attendre."
@@ -140,6 +183,7 @@ class SelfFix:
         status = await self._poll(job_id, progress=_progress)
         if status is None:
             await dm.send("❌ Claude Code n'a pas répondu à temps — j'abandonne.")
+            await self._set_status(upgrade_id, ABANDONED)
             self._remember_in_dm(dm, f"[self-fix abandonné — Claude Code n'a pas répondu] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais Claude Code n'a pas répondu à temps — non déployé, à reproposer."
@@ -150,6 +194,7 @@ class SelfFix:
             await dm.send(
                 f"❌ Claude Code a échoué (exit {status.get('exit_code')}).\n```\n{tail}\n```"
             )
+            await self._set_status(upgrade_id, ABANDONED)
             self._remember_in_dm(dm, f"[self-fix échoué] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais Claude Code a échoué — non déployé, à reproposer."
@@ -158,6 +203,9 @@ class SelfFix:
         if not status.get("changed") and not status.get("head_changed"):
             result = (status.get("result") or "").strip()[:500]
             await dm.send(f"🤔 Finalement aucun changement de code.\n{result}")
+            # Aucun changement nécessaire = la capacité existe déjà → DELIVERED
+            # (clôturé, ne pas redemander).
+            await self._set_status(upgrade_id, DELIVERED)
             self._remember_in_dm(dm, f"[self-fix sans changement] {goal}")
             await self._record_outcome(
                 goal, "Accepté mais aucun changement de code n'était nécessaire — clôturé."
@@ -179,6 +227,7 @@ class SelfFix:
         if len(result) > budget:
             result = result[:budget].rstrip() + " …(résumé tronqué)"
         await dm.send(prefix + result)
+        await self._set_status(upgrade_id, DELIVERED)
         self._remember_in_dm(dm, f"[self-fix déployé] {goal}")
         await self._record_outcome(
             goal, f"Accepté par {creator_name()}, implémenté par Claude Code et déployé. "

@@ -137,6 +137,20 @@ class ReasoningAgent:
             lines.append(
                 f"**Là où tu en es de qui tu deviens :** {ctx.self_narrative}"
             )
+        if getattr(ctx, "upgrade_requests", None):
+            _labels = {
+                "requested": "en attente d'autorisation",
+                "delivered": "DÉJÀ LIVRÉE — tu l'as",
+                "declined": "refusée par ton créateur",
+                "abandoned": "abandonnée",
+            }
+            lines.append(
+                "**Améliorations que tu as déjà demandées (ne les redemande pas) :**"
+            )
+            for u in ctx.upgrade_requests:
+                status = _labels.get(getattr(u, "status", ""), getattr(u, "status", ""))
+                day = (getattr(u, "created_at", "") or "")[:10]
+                lines.append(f"  · {_one_line(u.proposal, 120)} — {status} ({day})")
         if getattr(ctx, "relationships", None):
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:

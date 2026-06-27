@@ -40,15 +40,21 @@ class AttentionContext:
     # réellement afficher l'emote dans son texte.
     emotes_known: list = field(default_factory=list)      # list[str] "<:nom:id> → usage"
     emotes_unknown: list = field(default_factory=list)     # list[str] codes "<:nom:id>"
+    # Demandes d'amélioration déjà émises (Phase 6) : mémoire de ce que Wally a
+    # demandé / obtenu → l'empêche de redemander une capacité déjà livrée.
+    upgrade_requests: list = field(default_factory=list)   # list[UpgradeRow]
 
 
 class AttentionAgent:
-    def __init__(self, fact_store, emotion_engine=None, emote_provider=None) -> None:
+    def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
+                 upgrade_registry=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
         # (typiquement [e.name for e in bot.emojis]). None → pas d'awareness emote.
         self._emote_provider = emote_provider
+        # Registre des demandes d'amélioration (Phase 6). None → bloc absent.
+        self._upgrade_registry = upgrade_registry
 
     async def build_context(
         self,
@@ -151,6 +157,14 @@ class AttentionAgent:
             fetch_weather_france(),
         )
 
+        # Demandes d'amélioration déjà émises (Phase 6) — best-effort.
+        upgrade_requests: list = []
+        if self._upgrade_registry is not None:
+            try:
+                upgrade_requests = await self._upgrade_registry.recent(limit=6)
+            except Exception:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+                upgrade_requests = []
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -169,6 +183,7 @@ class AttentionAgent:
             recent_speaks=recent_speaks or [],
             emotes_known=emotes_known,
             emotes_unknown=emotes_unknown,
+            upgrade_requests=upgrade_requests,
         )
 
     async def _build_idle_seed(

@@ -74,6 +74,7 @@ class WallyDiscord(commands.Bot):
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
+        self.upgrade_registry = None  # type: ignore[assignment]  # UpgradeRegistry (Phase 6)
         self._wally_recent_speaks: dict[int, str] = {}  # channel_id → dernier texte envoyé
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
@@ -160,12 +161,18 @@ class WallyDiscord(commands.Bot):
 
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
+            # Registre des demandes d'amélioration (Phase 6) : partagé entre la
+            # cognition (injection « déjà demandées ») et SelfFix (écriture +
+            # garde anti-redemande). Stocké pour réutilisation dans le bloc self-fix.
+            from bot.intelligence.upgrade_registry import UpgradeRegistry
+            self.upgrade_registry = UpgradeRegistry(_db_path)
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
                 # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
                 # format qu'un bot peut poster pour AFFICHER une emote custom dans
                 # son texte (le raccourci ":nom:" ne marche que côté client humain).
                 emote_provider=lambda: [(e.name, str(e)) for e in self.emojis],
+                upgrade_registry=self.upgrade_registry,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
@@ -210,7 +217,13 @@ class WallyDiscord(commands.Bot):
             from bot.intelligence.self_fix import SelfFix
             from bot.intelligence.self_upgrade import SelfUpgrade
             _bridge = HostBridgeClient(_bridge_socket, _bridge_secret)
-            self.self_fix = SelfFix(_bridge, self)
+            # Réutilise le registre créé par le bloc cognitif ; sinon en construit
+            # un (la cognition peut être désactivée mais l'auto-modif active).
+            if self.upgrade_registry is None:
+                from bot.intelligence.upgrade_registry import UpgradeRegistry
+                _reg_db = self._v2_db_path or _os_auto.getenv("DB_PATH", "data/wally.db")
+                self.upgrade_registry = UpgradeRegistry(_reg_db)
+            self.self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
