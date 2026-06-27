@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import aiosqlite
-from datetime import datetime
+import json
+import os
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -134,3 +136,41 @@ class SocialRhythm:
                 await db.commit()
         except Exception as e:  # noqa: BLE001
             logger.warning("SocialRhythm.persist a échoué: {}", e)
+
+    def backfill_from_logs(self, logs_dir: str) -> int:
+        """Pré-chauffe `ambient` en rejouant les 'message_in' horodatés des logs
+        Discord. Best-effort : un fichier illisible est ignoré ligne à ligne."""
+        base = os.path.join(logs_dir, "discord")
+        if not os.path.isdir(base):
+            return 0
+        events: list[datetime] = []
+        for channel in os.listdir(base):
+            cdir = os.path.join(base, channel)
+            if not os.path.isdir(cdir):
+                continue
+            for fname in os.listdir(cdir):
+                if not fname.endswith(".jsonl"):
+                    continue
+                try:
+                    with open(os.path.join(cdir, fname)) as fh:
+                        for line in fh:
+                            try:
+                                rec = json.loads(line)
+                            except Exception:  # noqa: BLE001 — ligne corrompue
+                                continue
+                            if rec.get("type") != "message_in":
+                                continue
+                            ts = rec.get("ts")
+                            if isinstance(ts, (int, float)):
+                                events.append(
+                                    datetime.fromtimestamp(ts, tz=timezone.utc)
+                                )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("SocialRhythm backfill: {} illisible: {}", fname, e)
+        events.sort()
+        for when in events:
+            self.record_incoming(when)
+        if events:
+            self._roll_day()  # replie le dernier jour rejoué
+        logger.info("SocialRhythm: backfill de {} messages depuis les logs", len(events))
+        return len(events)
