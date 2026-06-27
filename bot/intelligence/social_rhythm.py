@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiosqlite
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -86,3 +87,36 @@ class SocialRhythm:
         obs = (b["days"] + b["eng_obs"]) if b else 0
         conf = min(1.0, obs / self._n_conf)
         return PRIOR * (1 - conf) + observed * conf
+
+    # --- Persistance ----------------------------------------------------------
+    async def load(self, db_path: str) -> None:
+        try:
+            async with aiosqlite.connect(db_path) as db:
+                cur = await db.execute(
+                    "SELECT bin_key, avg, eng, days, eng_obs FROM social_rhythm_bins"
+                )
+                for key, avg, eng, days, eng_obs in await cur.fetchall():
+                    self._bins[key] = {
+                        "avg": avg, "eng": eng, "days": days,
+                        "eng_obs": eng_obs, "count": 0.0,
+                    }
+            logger.info("SocialRhythm: {} créneaux chargés", len(self._bins))
+        except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
+            logger.warning("SocialRhythm.load a échoué: {}", e)
+
+    async def persist(self, db_path: str) -> None:
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            now_iso = _dt.now(_tz.utc).isoformat()
+            async with aiosqlite.connect(db_path) as db:
+                for key, b in self._bins.items():
+                    await db.execute(
+                        "INSERT INTO social_rhythm_bins(bin_key, avg, eng, days, eng_obs, updated_at) "
+                        "VALUES (?,?,?,?,?,?) ON CONFLICT(bin_key) DO UPDATE SET "
+                        "avg=excluded.avg, eng=excluded.eng, days=excluded.days, "
+                        "eng_obs=excluded.eng_obs, updated_at=excluded.updated_at",
+                        (key, b["avg"], b["eng"], b["days"], b["eng_obs"], now_iso),
+                    )
+                await db.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("SocialRhythm.persist a échoué: {}", e)
