@@ -40,8 +40,8 @@ class SelfFix:
     """Wally décide de se modifier ; le créateur autorise en DM ; Claude Code exécute."""
 
     def __init__(self, bridge, bot, *, poll_interval: float = 10.0,
-                 approval_timeout: float = 3600.0,
-                 registry: UpgradeRegistry | None = None) -> None:
+                 approval_timeout: float = 72 * 3600.0,
+                 registry: UpgradeRegistry | None = None, gate=None) -> None:
         self._bridge = bridge
         self._bot = bot
         self._poll_interval = poll_interval
@@ -51,6 +51,8 @@ class SelfFix:
         # Registre durable des demandes (Phase 6) : mémoire de ce que Wally a
         # déjà demandé / obtenu → garde anti-redemande + injection dans le contexte.
         self._registry = registry
+        # Gate de sollicitation owner (un seul fil à la fois). None → pas de gate.
+        self._gate = gate
 
     async def _set_status(self, upgrade_id: int | None, status: str) -> None:
         """Met à jour le statut d'une demande dans le registre. No-op si pas de
@@ -102,6 +104,15 @@ class SelfFix:
                     "inutile de le redemander."
                 )
                 return
+        # Un seul fil de sollicitation owner à la fois : si un MP attend déjà sa
+        # réponse, on diffère sans envoyer — la cognition re-soulèvera plus tard.
+        if not force and self._gate is not None and self._gate.is_blocked():
+            logger.info("self-fix différé : une sollicitation owner est déjà en attente")
+            await self._record_outcome(
+                goal, "Différé — une autre sollicitation vers le créateur attend déjà sa "
+                "réponse ; à re-soulever plus tard."
+            )
+            return
         self._pending = True
         upgrade_id: int | None = None
         try:
@@ -133,22 +144,25 @@ class SelfFix:
             f"> {goal}\n\n"
             "Si tu autorises, **Claude Code** va modifier mon code dans ce sens "
             "(en autonomie), puis je redémarre avec la nouvelle version.\n"
-            "✅ autoriser · ❌ refuser · _(timeout 1h)_"
+            "✅ autoriser · ❌ refuser · _(prends ton temps)_"
         )
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
         self._remember_in_dm(dm, f"[demande de self-fix] {goal}")
+        # Un fil de sollicitation owner est désormais ouvert.
+        if self._gate is not None:
+            self._gate.mark_sent()
 
         try:
             emoji = await self._await_reaction(msg, timeout=self._approval_timeout)
         except asyncio.TimeoutError:
-            await dm.send("⏱ Pas de réponse — j'abandonne cette idée.")
-            self._declined.add(norm)
+            # Plus d'auto-refus : la demande n'est ni refusée ni blacklistée. Elle
+            # est simplement mise de côté (re-proposable). Pas de message « j'abandonne ».
             await self._set_status(upgrade_id, ABANDONED)
-            self._remember_in_dm(dm, f"[self-fix abandonné — pas de réponse] {goal}")
+            self._remember_in_dm(dm, f"[self-fix en attente — pas encore de réponse] {goal}")
             await self._record_outcome(
-                goal, f"Aucune réponse de {creator_name()} (timeout) — demande abandonnée, "
-                "ce n'est plus en attente d'autorisation."
+                goal, f"Pas encore de réponse de {creator_name()} — demande mise de côté, "
+                "ni refusée ni abandonnée définitivement ; à re-soulever plus tard."
             )
             return
 

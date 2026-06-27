@@ -106,7 +106,9 @@ async def test_timeout_cancels_without_running():
     bot.wait_for = AsyncMock(side_effect=asyncio.TimeoutError())
     await fixer.request_upgrade(req())
     bridge.claude_run.assert_not_called()
-    assert dm.send.call_count >= 2  # proposal + cancellation
+    # Plus d'auto-refus : sur absence de réponse, on ne renvoie PAS de message
+    # « j'abandonne » — seul le DM de proposition a été envoyé (demande différée).
+    assert dm.send.call_count == 1  # proposal seul, aucune annulation
 
 
 @pytest.mark.asyncio
