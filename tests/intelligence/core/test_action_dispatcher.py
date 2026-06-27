@@ -354,6 +354,44 @@ async def test_act_note_to_self_category(tmp_fact_store, kind, expected):
 
 
 @pytest.mark.asyncio
+async def test_act_note_to_self_reminder_schedules(tmp_fact_store):
+    """Un reminder avec in_minutes pose une échéance future (#A3)."""
+    from datetime import datetime
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "demander à KingsRequin s'il stream", "kind": "reminder",
+                  "in_minutes": 90},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert len(facts) == 1
+    assert facts[0].scheduled_at is not None
+    # échéance dans ~90 min (tolérance large)
+    delta_min = (facts[0].scheduled_at - datetime.utcnow()).total_seconds() / 60
+    assert 80 < delta_min < 100
+    # pas encore dû
+    assert await tmp_fact_store.get_due_facts(datetime.utcnow()) == []
+
+
+@pytest.mark.asyncio
+async def test_act_note_to_self_without_in_minutes_no_schedule(tmp_fact_store):
+    """Une note ordinaire (sans in_minutes) n'a pas d'échéance."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(fact_store=tmp_fact_store)
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "juste une pensée", "kind": "reminder"},
+    ))
+    facts = await tmp_fact_store.get_by_user("wally:self")
+    assert facts[0].scheduled_at is None
+
+
+@pytest.mark.asyncio
 async def test_act_note_to_self_empty_noop(tmp_fact_store):
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision

@@ -39,6 +39,14 @@ REPLY_SPEAK_COOLDOWN = 600  # 10 min
 # Nombre de ressassements consécutifs d'un focus avant de le laisser mourir.
 RUMINATION_LIMIT = 2
 
+# Boucle de feedback émotion→action→résultat (#A6) : les émotions de Wally
+# réagissent à l'issue sociale de ses prises de parole spontanées, comme un
+# humain. Magnitudes volontairement faibles (le moteur décroît + sature) ; ce
+# sont des constantes de réactivité (cf. facteurs de suppression d'emotion.py),
+# pas des seuils comportementaux appris (ça, c'est le rôle de SocialRhythm).
+SOCIAL_FEEDBACK_JOY = 0.1     # on lui répond → bouffée de joie
+SOCIAL_IGNORED_ANGER = 0.05  # ignoré malgré l'insistance → agacement (une fois)
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -117,7 +125,7 @@ class CognitiveLoop:
     def notify_activity(
         self, channel_id: int, author: str, content: str,
         message_id: str | None = None, is_dm: bool = False,
-        relevant: bool = False,
+        relevant: bool = False, user_key: str | None = None,
     ) -> None:
         self._last_activity_ts = time.monotonic()
         # Vivacité du créneau courant (signal ambient du rythme social) — best-effort.
@@ -142,7 +150,15 @@ class CognitiveLoop:
                     self._social_rhythm.record_spontaneous_outcome(True, _now_paris())
                 except Exception as e:  # noqa: BLE001
                     logger.warning("SocialRhythm outcome(+): {}", e)
+            # Feedback émotionnel positif (#A6) : on lui a répondu → un peu de joie.
+            if self._emotion is not None:
+                try:
+                    self._emotion.apply_delta("joy", SOCIAL_FEEDBACK_JOY)
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("apply_delta(joy) social feedback: {}", e)
             st["unanswered"] = 0
+            # Nouvel épisode d'engagement : la pénalité d'abandon pourra se reposer.
+            st["penalized"] = False
         self._recent_interactions.append({
             "channel": str(channel_id),
             "author": author,
@@ -152,10 +168,56 @@ class CognitiveLoop:
             "content": content[:500],
             "message_id": message_id,
             "is_dm": is_dm,
+            # "platform:raw_id" de l'auteur → enrichissement mémoire (#A1). None
+            # pour les sources qui ne l'exposent pas (rétro-compat).
+            "user_key": user_key,
             "ts": self._last_activity_ts,
         })
         if len(self._recent_interactions) > 20:
             self._recent_interactions = self._recent_interactions[-20:]
+
+    def notify_event(
+        self, channel_id, description: str, relevant: bool = False,
+    ) -> None:
+        """Perception d'un événement Discord HORS message (#A2) : réaction sur un
+        message, arrivée/départ d'un membre… Le « cerveau » V2 ne percevait que le
+        texte ; ces signaux lui échappaient entièrement.
+
+        L'événement entre dans `_recent_interactions` (marqué `is_event`) comme une
+        ligne descriptive auto-suffisante → build_context le voit et le reasoning
+        le rend dans le bon canal. `relevant=True` (ex. réaction sur un message de
+        Wally) réveille la cadence vive ; un événement passif (arrivée serveur) ne
+        fait que rafraîchir l'activité, laissant la cognition décider seule.
+        """
+        self._last_activity_ts = time.monotonic()
+        if relevant:
+            self._last_relevant_activity_ts = self._last_activity_ts
+        self._recent_interactions.append({
+            "channel": str(channel_id),
+            "author": "(événement)",
+            "content": description[:500],
+            "message_id": None,
+            "is_dm": False,
+            "user_key": None,
+            "is_event": True,
+            "ts": self._last_activity_ts,
+        })
+        if len(self._recent_interactions) > 20:
+            self._recent_interactions = self._recent_interactions[-20:]
+
+    def _penalize_if_ignored(self, st: dict) -> None:
+        """Feedback émotionnel négatif (#A6) : un canal qui ignore les relances de
+        Wally pique sa colère — UNE seule fois par épisode (le drapeau `penalized`
+        évite l'accumulation à chaque tick ; il est remis à zéro quand on lui
+        répond enfin, cf. notify_activity)."""
+        if st.get("penalized"):
+            return
+        st["penalized"] = True
+        if self._emotion is not None:
+            try:
+                self._emotion.apply_delta("anger", SOCIAL_IGNORED_ANGER)
+            except Exception as e:  # noqa: BLE001 — jamais bloquant
+                logger.warning("apply_delta(anger) social feedback: {}", e)
 
     def notify_reply(self, channel_id, content: str | None = None,
                      author: str | None = None) -> None:
@@ -251,9 +313,31 @@ class CognitiveLoop:
                 for ch, st in self._spontaneous.items()
                 if st["unanswered"] > 0
             ]
+            # Rappels programmés arrivés à échéance (#A3) : ils reviennent à la
+            # conscience comme amorce prioritaire, puis sont désarmés pour ne pas
+            # se redéclencher à chaque tick.
+            forced_seed = None
+            if self._facts is not None:
+                try:
+                    due = await self._facts.get_due_facts(datetime.utcnow())
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("get_due_facts: {}", e)
+                    due = []
+                if due:
+                    fact = due[0]
+                    forced_seed = (
+                        f"Un rappel que tu t'étais fixé est arrivé : {fact.content}"
+                    )
+                    fid = getattr(fact, "id", None)
+                    if fid is not None:
+                        try:
+                            await self._facts.clear_schedule(fid)
+                        except Exception as e:  # noqa: BLE001
+                            logger.warning("clear_schedule: {}", e)
             context = await self._attention.build_context(
                 emotion_state, self._recent_interactions, spontaneous=spontaneous, idle=is_idle,
                 recent_speaks=list(self._recent_speaks),
+                forced_seed=forced_seed,
             )
             if self._feed:
                 if is_idle:
@@ -378,6 +462,8 @@ class CognitiveLoop:
                                 self._social_rhythm.record_spontaneous_outcome(False, _now_paris())
                             except Exception:  # noqa: BLE001
                                 pass
+                        # Feedback émotionnel (#A6) : l'agacement monte, une fois.
+                        self._penalize_if_ignored(ch_st)
                         logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
                         self._log_cog(
                             "speak_suppressed", channel=ch_key,

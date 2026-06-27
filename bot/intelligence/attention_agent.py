@@ -55,6 +55,10 @@ class AttentionContext:
     # Affinités : les opinions que Wally s'est formées sur les gens (Phase 3c).
     # Faits REL sous wally:self, ~5 plus récentes. list[AtomicFact].
     relationships: list = field(default_factory=list)
+    # Mémoire des participants présents (#A1) : ce que Wally sait des auteurs des
+    # interactions récentes (facts SQLite FAIT/PREF/REL par utilisateur).
+    # [{"author": str, "facts": list[str]}]. Vide si personne d'identifié.
+    participant_memories: list[dict] = field(default_factory=list)
     # Métriques hôte : température CPU, charge, RAM. None si non disponible.
     host_metrics: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
@@ -78,7 +82,8 @@ class AttentionContext:
 
 class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
-                 upgrade_registry=None, social_rhythm=None) -> None:
+                 upgrade_registry=None, social_rhythm=None,
+                 journal_provider=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -88,6 +93,9 @@ class AttentionAgent:
         self._upgrade_registry = upgrade_registry
         # Rythme social appris (SocialRhythm). None → réceptivité neutre par défaut.
         self._social_rhythm = social_rhythm
+        # Callable async () -> str | None renvoyant le contenu du dernier journal
+        # quotidien (#A4). None → la boucle V2 reste aveugle au journal V1.
+        self._journal_provider = journal_provider
 
     async def build_context(
         self,
@@ -96,6 +104,7 @@ class AttentionAgent:
         spontaneous: list[dict] | None = None,
         idle: bool = False,
         recent_speaks: list[dict] | None = None,
+        forced_seed: str | None = None,
     ) -> AttentionContext:
         from bot.intelligence.memory.facts import FactCategory, FactStatus
 
@@ -126,8 +135,12 @@ class AttentionAgent:
         latest = await self._facts.get_latest_by_source("wally:self", "focus")
         preoccupation = latest.content if latest else None
 
+        # Amorce forcée (#A3) : un rappel programmé arrivé à échéance prime sur le
+        # vagabondage — il doit revenir tel quel à la conscience.
         idle_seed: str | None = None
-        if idle:
+        if forced_seed:
+            idle_seed = forced_seed
+        elif idle:
             idle_seed = await self._build_idle_seed(
                 emotion_state, desires, goals, tod, FactCategory, preoccupation
             )
@@ -148,6 +161,36 @@ class AttentionAgent:
             "wally:self", categories=[FactCategory.REL]
         )
         relationships = rels[:5]
+
+        # Mémoire des participants présents (#A1) : pour chaque auteur unique des
+        # 5 dernières interactions (hors messages de Wally lui-même), injecte ce
+        # que Wally sait de lui — ses faits durables (FAIT/PREF/REL). Sans ça, le
+        # « cerveau » voit des noms nus et décide à l'aveugle. Requiert un
+        # `user_key` ("platform:raw_id") posé par les adaptateurs ; les anciennes
+        # interactions sans clé sont simplement ignorées (best-effort).
+        participant_memories: list[dict] = []
+        seen_keys: set[str] = set()
+        for itx in reversed(recent_interactions[-5:]):
+            if itx.get("is_self"):
+                continue
+            key = itx.get("user_key")
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            try:
+                user_facts = await self._facts.get_by_user(
+                    key,
+                    categories=[FactCategory.FAIT, FactCategory.PREF, FactCategory.REL],
+                )
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: facts participant indisponibles ({}): {}", key, e)
+                continue
+            if user_facts:
+                participant_memories.append({
+                    "author": itx.get("author", "?"),
+                    "facts": [f.content for f in user_facts[:3]],
+                })
 
         # Awareness emotes : croise les emotes dispo (paires (nom, code postable
         # "<:nom:id>")) avec les notes d'usage apprises (faits PREF sous
@@ -226,6 +269,7 @@ class AttentionAgent:
             preoccupation=preoccupation,
             self_narrative=self_narrative,
             relationships=relationships,
+            participant_memories=participant_memories,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             recent_speaks=recent_speaks or [],
@@ -258,6 +302,26 @@ class AttentionAgent:
         if random.random() < _INTROSPECTION_PROB:
             return random.choice(_INTROSPECTION_SEEDS)
 
+        # Amorce sémantique (#A5) : quand une préoccupation traverse les ticks, le
+        # vagabondage rebondit sur un souvenir LIÉ (recherche FTS globale) plutôt
+        # que sur un tirage au hasard — la pensée avance au lieu de tourner en
+        # rond. On exclut les THOUGHT (pensées internes) pour ne pas ressortir le
+        # focus lui-même. À défaut de souvenir lié, on retombe sur l'amorce variée.
+        if preoccupation and hasattr(self._facts, "search_related"):
+            try:
+                related = await self._facts.search_related(
+                    preoccupation, limit=1, exclude_category=fact_category.THOUGHT
+                )
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: search_related indisponible: {}", e)
+                related = []
+            if related:
+                return (
+                    f"En repensant à « {preoccupation[:80]} », ça te rappelle : "
+                    f"{related[0].content}"
+                )
+
         rich_seeds: list[str] = []
         fallback_seeds: list[str] = []
 
@@ -281,6 +345,23 @@ class AttentionAgent:
             rich_seeds.append(
                 f"Une pensée d'avant qui ressurgit : {past_thoughts[0].content[:200]}"
             )
+
+        # Journal de la veille (#A4) : laisse le vagabondage rebondir sur ce que
+        # Wally a vécu/écrit, au lieu de repartir du vide. Extrait court ; exclu
+        # s'il recoupe le focus courant (anti ré-amorce).
+        if self._journal_provider is not None:
+            try:
+                journal = await self._journal_provider()
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: journal indisponible: {}", e)
+                journal = None
+            if journal:
+                snippet = journal.strip()[:200]
+                if snippet and not _seed_overlaps_focus(snippet, preoccupation):
+                    rich_seeds.append(
+                        f"Ce que tu écrivais dans ton dernier journal : {snippet}"
+                    )
 
         if goals:
             goal = random.choice(goals)

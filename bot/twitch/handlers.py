@@ -137,6 +137,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 author=author,
                 content=content,
                 relevant=_relevant,
+                user_key=f"twitch:{user_id}",
             )
         except Exception:
             pass
@@ -334,7 +335,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             if name in ("web_search", "image_search"):
                 if name == "image_search":
                     return await web_search.search_images(args["query"])
-                return await web_search.search(args["query"])
+                return await web_search.search(args["query"], platform="twitch")
             if name == "scrape_url":
                 return await scrape.scrape(args["url"])
             if name == "apex_legends":

@@ -355,3 +355,241 @@ async def test_build_context_relationships_capped_at_5():
     ctx = await agent.build_context({"joy": 0.5}, [])
     assert len(ctx.relationships) == 5
     assert ctx.relationships == rels[:5]
+
+
+# ── #A3 : amorce forcée (rappel programmé dû) ──
+
+@pytest.mark.asyncio
+async def test_forced_seed_overrides_idle_seed():
+    """forced_seed (rappel dû) court-circuite le tirage de vagabondage (#A3)."""
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context(
+        {"joy": 0.5}, [], idle=True, forced_seed="Un rappel : appeler KingsRequin",
+    )
+    assert ctx.idle_seed == "Un rappel : appeler KingsRequin"
+    # le tirage aléatoire n'est pas sollicité quand une amorce est forcée
+    store.sample_random.assert_not_awaited()
+
+
+# ── #A5 : amorce de vagabondage sémantique (liée à la préoccupation) ──
+
+@pytest.mark.asyncio
+async def test_idle_seed_semantic_when_preoccupation(monkeypatch):
+    """Préoccupation active → amorce tirée des souvenirs LIÉS, pas au hasard (#A5)."""
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
+    focus = _make_fact(FactCategory.THOUGHT, "comprendre Kaelis")
+    related = _make_fact(FactCategory.FAIT, "Kaelis aime le jazz")
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(focus=focus))
+    store.search_related = AsyncMock(return_value=[related])
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [], idle=True)
+    assert ctx.idle_seed and "Kaelis aime le jazz" in ctx.idle_seed
+    store.search_related.assert_awaited()
+    # la requête sémantique porte sur la préoccupation
+    assert "comprendre Kaelis" in store.search_related.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_idle_seed_no_semantic_query_without_preoccupation(monkeypatch):
+    """Sans préoccupation, aucune requête sémantique (vagabondage libre)."""
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)  # pas de focus
+    store.search_related = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)
+    await agent.build_context({"joy": 0.5}, [], idle=True)
+    store.search_related.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_idle_seed_falls_back_when_no_related_found(monkeypatch):
+    """Préoccupation active mais aucun souvenir lié → on retombe sur l'amorce normale."""
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
+    focus = _make_fact(FactCategory.THOUGHT, "comprendre Kaelis")
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(side_effect=_latest_by_source(focus=focus))
+    store.search_related = AsyncMock(return_value=[])  # rien de lié
+    agent = AttentionAgent(store)
+    ctx = await agent.build_context({"joy": 0.5}, [], idle=True)
+    assert ctx.idle_seed  # l'heure/émotion fournit toujours une amorce
+
+
+# ── #A4 : journal V1 visible par la boucle V2 (seed idle) ──
+
+@pytest.mark.asyncio
+async def test_idle_seed_uses_journal_when_available(monkeypatch):
+    """En idle, le dernier journal peut amorcer le vagabondage (#A4)."""
+    # Désactive l'introspection (1/3) pour atteindre la branche des seeds riches.
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])  # aucun souvenir/pensée
+    journal = AsyncMock(return_value="Aujourd'hui Kaelis m'a parlé de son projet de jeu.")
+    agent = AttentionAgent(store, journal_provider=journal)
+    ctx = await agent.build_context({}, [], idle=True)  # émotion vide → journal seul
+    assert ctx.idle_seed and "Kaelis" in ctx.idle_seed
+    journal.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_journal_not_queried_when_not_idle():
+    """Hors idle, on n'interroge pas le journal (économie d'I/O)."""
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    journal = AsyncMock(return_value="texte du journal")
+    agent = AttentionAgent(store, journal_provider=journal)
+    await agent.build_context({"joy": 0.5}, [], idle=False)
+    journal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_idle_seed_without_journal_provider_is_safe(monkeypatch):
+    """Aucun journal_provider injecté → pas d'erreur, amorce normale."""
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    agent = AttentionAgent(store)  # pas de journal_provider
+    ctx = await agent.build_context({}, [], idle=True)
+    assert ctx.idle_seed  # l'heure reste un fallback
+
+
+# ── #A1 : mémoire des participants dans le contexte cognitif ──
+
+def _user_fact(user_id: str, content: str) -> AtomicFact:
+    now = datetime.now(timezone.utc).isoformat()
+    return AtomicFact(
+        user_id=user_id, content=content, category=FactCategory.FAIT,
+        confidence=0.9, created_at=now, last_seen_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_context_injects_participant_memories():
+    """Pour chaque auteur présent (via user_key), build_context injecte ce que
+    Wally sait de lui (facts SQLite) dans participant_memories."""
+    facts_pierre = [
+        _user_fact("discord:111", "aime le jazz"),
+        _user_fact("discord:111", "vit à Lyon"),
+    ]
+
+    async def fake_get_by_user(user_id, min_confidence=0.3, categories=None, status=FactStatus.ACTIVE):
+        if user_id == "discord:111":
+            return facts_pierre
+        return []
+
+    store = MagicMock()
+    store.get_by_user = AsyncMock(side_effect=fake_get_by_user)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    interactions = [
+        {"channel": "1", "author": "Pierre", "content": "salut", "ts": 1.0,
+         "user_key": "discord:111"},
+    ]
+    ctx = await agent.build_context({"joy": 0.5}, interactions)
+    assert ctx.participant_memories == [
+        {"author": "Pierre", "facts": ["aime le jazz", "vit à Lyon"]}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_context_participant_memories_dedup_and_cap_3():
+    """Un même participant n'est interrogé qu'une fois et limité à 3 faits."""
+    facts = [_user_fact("discord:111", f"fait {i}") for i in range(5)]
+
+    async def fake_get_by_user(user_id, min_confidence=0.3, categories=None, status=FactStatus.ACTIVE):
+        return facts if user_id == "discord:111" else []
+
+    store = MagicMock()
+    store.get_by_user = AsyncMock(side_effect=fake_get_by_user)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    interactions = [
+        {"channel": "1", "author": "Pierre", "content": "a", "ts": 1.0, "user_key": "discord:111"},
+        {"channel": "1", "author": "Pierre", "content": "b", "ts": 2.0, "user_key": "discord:111"},
+    ]
+    ctx = await agent.build_context({"joy": 0.5}, interactions)
+    assert len(ctx.participant_memories) == 1
+    assert ctx.participant_memories[0]["author"] == "Pierre"
+    assert ctx.participant_memories[0]["facts"] == ["fait 0", "fait 1", "fait 2"]
+    # Un seul appel get_by_user pour ce participant (les autres = self/emotes).
+    participant_calls = [
+        c for c in store.get_by_user.call_args_list if c.args and c.args[0] == "discord:111"
+    ]
+    assert len(participant_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_build_context_participant_memories_skips_self_and_keyless():
+    """Les messages de Wally (is_self) et ceux sans user_key sont ignorés."""
+    store = MagicMock()
+    store.get_by_user = AsyncMock(return_value=[])
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    interactions = [
+        {"channel": "1", "author": "Wally", "content": "moi", "ts": 1.0,
+         "user_key": "discord:999", "is_self": True},
+        {"channel": "1", "author": "Anon", "content": "sans clé", "ts": 2.0},
+    ]
+    ctx = await agent.build_context({"joy": 0.5}, interactions)
+    assert ctx.participant_memories == []
+    # Aucun appel get_by_user avec la clé du message self.
+    assert not any(
+        c.args and c.args[0] == "discord:999" for c in store.get_by_user.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_context_participant_memories_only_last_5_authors():
+    """Seuls les auteurs des 5 dernières interactions sont enrichis."""
+    calls_seen = []
+
+    async def fake_get_by_user(user_id, min_confidence=0.3, categories=None, status=FactStatus.ACTIVE):
+        if user_id.startswith("discord:"):
+            calls_seen.append(user_id)
+            return [_user_fact(user_id, "x")]
+        return []
+
+    store = MagicMock()
+    store.get_by_user = AsyncMock(side_effect=fake_get_by_user)
+    store.search_by_category = AsyncMock(return_value=[])
+    store.sample_random = AsyncMock(return_value=[])
+    store.get_latest_by_source = AsyncMock(return_value=None)
+    agent = AttentionAgent(store)
+    interactions = [
+        {"channel": "1", "author": f"U{i}", "content": "m", "ts": float(i),
+         "user_key": f"discord:{i}"}
+        for i in range(8)
+    ]
+    ctx = await agent.build_context({"joy": 0.5}, interactions)
+    # Auteurs des 5 dernières interactions seulement (indices 3..7).
+    assert set(calls_seen) == {f"discord:{i}" for i in range(3, 8)}
+    assert len(ctx.participant_memories) == 5

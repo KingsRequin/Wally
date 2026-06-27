@@ -100,6 +100,9 @@ class AtomicFact:
     # Péremption d'un fait éphémère (intention/événement daté). None = durable.
     # Stocké en UTC naïf (isoformat sans tz) pour comparaison lexicographique sûre.
     expires_at:        datetime | None = None
+    # Échéance d'un rappel programmé (#A3) : quand ce fait doit revenir à la
+    # conscience. None = pas de planification. Même convention UTC naïf qu'au-dessus.
+    scheduled_at:      datetime | None = None
     created_at:        datetime = field(default_factory=datetime.utcnow)
     last_seen_at:      datetime = field(default_factory=datetime.utcnow)
     id:                int | None = None
@@ -130,9 +133,9 @@ class SQLiteFactStore:
                 """INSERT INTO atomic_facts
                    (user_id, content, category, subject, predicate, object,
                     importance, support_count, confidence, decay_rate, status,
-                    emotional_context, source, origin, expires_at,
+                    emotional_context, source, origin, expires_at, scheduled_at,
                     created_at, last_seen_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     fact.user_id, fact.content, fact.category.value,
                     fact.subject, fact.predicate, fact.object_,
@@ -140,6 +143,7 @@ class SQLiteFactStore:
                     fact.confidence, fact.decay_rate, fact.status.value,
                     fact.emotional_context, fact.source, fact.origin,
                     fact.expires_at.isoformat() if fact.expires_at else None,
+                    fact.scheduled_at.isoformat() if fact.scheduled_at else None,
                     fact.created_at.isoformat(), fact.last_seen_at.isoformat(),
                 ),
             )
@@ -354,6 +358,10 @@ class SQLiteFactStore:
                 datetime.fromisoformat(_g("expires_at"))
                 if _g("expires_at") else None
             ),
+            scheduled_at=(
+                datetime.fromisoformat(_g("scheduled_at"))
+                if _g("scheduled_at") else None
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
         )
@@ -400,6 +408,78 @@ class SQLiteFactStore:
                 logger.warning("search_fts MATCH failed for {!r}: {}", match, exc)
                 return []
         return [(self._row_to_fact(r), float(r["rank"])) for r in rows]
+
+    async def search_related(
+        self,
+        query: str,
+        limit: int = 5,
+        min_confidence: float = 0.3,
+        exclude_category: "FactCategory | None" = None,
+    ) -> list[AtomicFact]:
+        """Recherche plein-texte BM25 GLOBALE (#A5) — tous utilisateurs confondus,
+        contrairement à `search_fts` qui est cloisonnée par `user_id`. Sert à
+        amorcer le vagabondage sur des souvenirs liés à la préoccupation courante,
+        d'où qu'ils viennent. Triés du plus pertinent au moins pertinent ; les
+        faits périmés sont exclus. `exclude_category` retire une catégorie (ex.
+        THOUGHT) pour ne pas reboucler sur les pensées internes."""
+        match = _fts_match_query(query)
+        if not match:
+            return []
+        sql = (
+            "SELECT f.*, bm25(atomic_facts_fts) AS rank "
+            "FROM atomic_facts_fts "
+            "JOIN atomic_facts f ON f.id = atomic_facts_fts.rowid "
+            "WHERE atomic_facts_fts MATCH ? "
+            "AND f.status = ? AND f.confidence >= ? "
+            "AND (f.expires_at IS NULL OR f.expires_at > ?)"
+        )
+        params: list = [match, FactStatus.ACTIVE.value, min_confidence,
+                        datetime.utcnow().isoformat()]
+        if exclude_category is not None:
+            sql += " AND f.category != ?"
+            params.append(exclude_category.value)
+        sql += " ORDER BY rank LIMIT ?"
+        params.append(limit)
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            try:
+                cursor = await db.execute(sql, params)
+                rows = await cursor.fetchall()
+            except Exception as exc:  # FTS5 syntax error sur entrée exotique
+                logger.warning("search_related MATCH failed for {!r}: {}", match, exc)
+                return []
+        return [self._row_to_fact(r) for r in rows]
+
+    async def get_due_facts(
+        self,
+        now: datetime,
+        limit: int = 10,
+    ) -> list[AtomicFact]:
+        """Rappels programmés arrivés à échéance (#A3) : faits ACTIVE dont
+        `scheduled_at` est non nul et ≤ now, du plus ancien au plus récent. Sert
+        au tick cognitif à faire revenir un rappel à la conscience le moment venu.
+        Comparaison lexicographique sûre (isoformat UTC naïf, cf. `scheduled_at`)."""
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM atomic_facts "
+                "WHERE scheduled_at IS NOT NULL AND scheduled_at <= ? "
+                "AND status = ? "
+                "ORDER BY scheduled_at ASC LIMIT ?",
+                (now.isoformat(), FactStatus.ACTIVE.value, limit),
+            )
+            return [self._row_to_fact(r) for r in await cursor.fetchall()]
+
+    async def clear_schedule(self, fact_id: int) -> None:
+        """Désarme un rappel programmé (#A3) après qu'il a été ramené à la
+        conscience : `scheduled_at` → NULL. Le fait (désir) reste ACTIVE — seule
+        l'alarme est consommée, pour ne pas le re-déclencher à chaque tick."""
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE atomic_facts SET scheduled_at = NULL WHERE id = ?",
+                (fact_id,),
+            )
+            await db.commit()
 
     async def get_latest_by_source(
         self,

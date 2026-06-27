@@ -27,6 +27,8 @@ def _make_loop(verdict="PROGRESSE"):
     focus_fact = MagicMock()
     focus_fact.id = 99
     facts.get_latest_by_source = AsyncMock(return_value=focus_fact)
+    facts.get_due_facts = AsyncMock(return_value=[])
+    facts.clear_schedule = AsyncMock()
 
     judge = MagicMock()
     judge.judge = AsyncMock(return_value=verdict)
@@ -59,6 +61,110 @@ def test_notify_activity_message_id_optional():
     loop, *_ = _make_loop()
     loop.notify_activity(channel_id=1, author="Alice", content="hello")
     assert loop._recent_interactions[-1]["message_id"] is None
+
+
+def test_notify_activity_stores_user_key():
+    """user_key ("platform:raw_id") est conservé pour l'enrichissement mémoire (#A1)."""
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hi", user_key="discord:111")
+    assert loop._recent_interactions[-1]["user_key"] == "discord:111"
+
+
+def test_notify_activity_user_key_optional():
+    """user_key absent → stocké à None (rétro-compat)."""
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="Alice", content="hi")
+    assert loop._recent_interactions[-1]["user_key"] is None
+
+
+# ── #A6 : boucle feedback émotion→action→résultat ──
+
+def test_response_to_spontaneous_rewards_joy():
+    """Quelqu'un répond à un message spontané de Wally → bouffée de joie (#A6)."""
+    from bot.intelligence.cognitive_loop import SOCIAL_FEEDBACK_JOY
+    loop, *_ = _make_loop()
+    loop._emotion = MagicMock()
+    loop._spontaneous["1"] = {"last_ts": 0.0, "unanswered": 2}
+    loop.notify_activity(channel_id=1, author="Alice", content="oui pourquoi ?")
+    loop._emotion.apply_delta.assert_called_once_with("joy", SOCIAL_FEEDBACK_JOY)
+    # le compteur sans réponse est remis à zéro
+    assert loop._spontaneous["1"]["unanswered"] == 0
+
+
+def test_no_joy_when_not_a_response():
+    """Un message hors sollicitation spontanée ne déclenche aucune émotion."""
+    loop, *_ = _make_loop()
+    loop._emotion = MagicMock()
+    loop.notify_activity(channel_id=1, author="Alice", content="coucou")
+    loop._emotion.apply_delta.assert_not_called()
+
+
+def test_response_resets_ignored_penalty_flag():
+    """Une réponse rouvre un nouvel épisode : la pénalité d'abandon peut se reposer."""
+    loop, *_ = _make_loop()
+    loop._emotion = MagicMock()
+    loop._spontaneous["1"] = {"last_ts": 0.0, "unanswered": 3, "penalized": True}
+    loop.notify_activity(channel_id=1, author="Alice", content="présent")
+    assert loop._spontaneous["1"]["penalized"] is False
+
+
+def test_ignored_penalizes_anger_once():
+    """Être ignoré (≥3 sans réponse) pique la colère — une seule fois par épisode (#A6)."""
+    from bot.intelligence.cognitive_loop import SOCIAL_IGNORED_ANGER
+    loop, *_ = _make_loop()
+    loop._emotion = MagicMock()
+    st = {"last_ts": 0.0, "unanswered": 3}
+    loop._penalize_if_ignored(st)
+    loop._penalize_if_ignored(st)  # second appel : pas de double pénalité
+    loop._emotion.apply_delta.assert_called_once_with("anger", SOCIAL_IGNORED_ANGER)
+    assert st["penalized"] is True
+
+
+def test_penalize_if_ignored_safe_without_emotion():
+    """Sans moteur émotionnel injecté, la pénalité ne lève pas."""
+    loop, *_ = _make_loop()
+    loop._emotion = None
+    loop._penalize_if_ignored({"unanswered": 3})  # ne doit pas lever
+
+
+def test_notify_event_records_in_interactions():
+    """Un événement hors-message (réaction, arrivée) entre dans le flux perçu (#A2)."""
+    loop, *_ = _make_loop()
+    loop.notify_event(channel_id=5, description="Azrael vient de rejoindre le serveur")
+    last = loop._recent_interactions[-1]
+    assert last["channel"] == "5"
+    assert last["content"] == "Azrael vient de rejoindre le serveur"
+    assert last["is_event"] is True
+
+
+def test_notify_event_updates_activity_ts():
+    """Un événement réveille le cerveau (activité fraîche → tick non no-op)."""
+    loop, *_ = _make_loop()
+    assert loop._last_activity_ts == 0.0
+    loop.notify_event(channel_id=5, description="quelqu'un a réagi 👍")
+    assert loop._last_activity_ts > 0
+
+
+def test_notify_event_relevant_sets_relevant_ts():
+    """Un événement qui vise Wally (réaction sur SON message) → cadence vive."""
+    loop, *_ = _make_loop()
+    assert loop._last_relevant_activity_ts == 0.0
+    loop.notify_event(channel_id=5, description="Kaelis a réagi ❤️ à ton message", relevant=True)
+    assert loop._last_relevant_activity_ts > 0
+
+
+def test_notify_event_passive_keeps_relevant_ts_idle():
+    """Un événement passif (arrivée serveur) ne force pas la cadence vive."""
+    loop, *_ = _make_loop()
+    loop.notify_event(channel_id=5, description="Azrael vient de rejoindre le serveur")
+    assert loop._last_relevant_activity_ts == 0.0
+
+
+def test_notify_event_has_no_user_key():
+    """Un événement n'a pas de user_key → ignoré par l'enrichissement participant (#A1)."""
+    loop, *_ = _make_loop()
+    loop.notify_event(channel_id=5, description="x a réagi 👍")
+    assert loop._recent_interactions[-1].get("user_key") is None
 
 
 def test_notify_reply_records_wally_response_in_interactions():
@@ -181,6 +287,30 @@ async def test_tick_calls_full_pipeline():
     attention.build_context.assert_called_once()
     reasoning.reason.assert_called_once()
     dispatcher.dispatch.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tick_triggers_due_reminder():
+    """Un rappel programmé arrivé à échéance revient à la conscience puis est
+    désarmé pour ne pas se redéclencher (#A3)."""
+    from types import SimpleNamespace
+    loop, attention, reasoning, dispatcher, facts, *_ = _make_loop()
+    facts.get_due_facts = AsyncMock(return_value=[
+        SimpleNamespace(content="demander à KingsRequin s'il stream", id=5)
+    ])
+    await loop._tick()
+    forced = attention.build_context.call_args.kwargs.get("forced_seed")
+    assert forced and "KingsRequin" in forced
+    facts.clear_schedule.assert_awaited_once_with(5)
+
+
+@pytest.mark.asyncio
+async def test_tick_no_due_reminder_no_forced_seed():
+    """Sans rappel dû, aucune amorce forcée n'est injectée."""
+    loop, attention, reasoning, dispatcher, facts, judge, feed = _make_loop()
+    await loop._tick()
+    assert attention.build_context.call_args.kwargs.get("forced_seed") is None
+    facts.clear_schedule.assert_not_awaited()
 
 
 @pytest.mark.asyncio

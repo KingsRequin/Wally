@@ -165,3 +165,53 @@ async def test_dm_reaction_on_wally_message_injected():
     assert args[1] == "Azrael (@azrael)"
     assert "à ton message" in args[2]
     assert kwargs["platform"] == "discord"
+
+
+# ── #A2 : perception cognitive des réactions (notify_event) ─────────────────
+
+@pytest.mark.asyncio
+async def test_reaction_on_wally_message_feeds_cognitive_loop_relevant():
+    """Réaction sur un message de Wally → notify_event(relevant=True) : c'est un
+    feedback social qui le concerne directement."""
+    from bot.discord.handlers import _reactions_context
+    azrael = _user(42, "azrael", "Azrael")
+    bot = _make_bot(message_author=_user(999, "Wally"))
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_event = MagicMock()
+    await _reactions_context(bot, _payload(member=azrael))
+
+    bot.cognitive_loop.notify_event.assert_called_once()
+    _, kwargs = bot.cognitive_loop.notify_event.call_args
+    assert kwargs["relevant"] is True
+    assert "Azrael (@azrael)" in kwargs["description"]
+    assert "à ton message" in kwargs["description"]
+
+
+@pytest.mark.asyncio
+async def test_notable_reaction_on_other_message_feeds_cognitive_loop_passive():
+    """Réaction notable sur le message d'un AUTRE → notify_event(relevant=False)."""
+    from bot.discord.handlers import _reactions_context
+    azrael = _user(42, "azrael", "Azrael")
+    bob = _user(50, "bob", "Bob")
+    bot = _make_bot(message_author=bob)
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_event = MagicMock()
+    await _reactions_context(bot, _payload(member=azrael, emoji="🔥"))
+
+    bot.cognitive_loop.notify_event.assert_called_once()
+    _, kwargs = bot.cognitive_loop.notify_event.call_args
+    assert kwargs["relevant"] is False
+
+
+@pytest.mark.asyncio
+async def test_ignored_reaction_does_not_feed_cognitive_loop():
+    """Une réaction filtrée (bot, non marquante…) ne nourrit pas le cerveau."""
+    from bot.discord.handlers import _reactions_context
+    azrael = _user(42, "azrael", "Azrael")
+    bob = _user(50, "bob", "Bob")
+    bot = _make_bot(message_author=bob)
+    bot.cognitive_loop = MagicMock()
+    bot.cognitive_loop.notify_event = MagicMock()
+    await _reactions_context(bot, _payload(member=azrael, emoji="🥖"))  # non marquant
+
+    bot.cognitive_loop.notify_event.assert_not_called()

@@ -186,6 +186,11 @@ class ReasoningAgent:
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:
                 lines.append(f"  · {rel.content}")
+        if getattr(ctx, "participant_memories", None):
+            lines.append("**Ce que tu sais des personnes présentes :**")
+            for pm in ctx.participant_memories:
+                facts = " ; ".join(pm.get("facts", []))
+                lines.append(f"  · {pm.get('author', '?')} : {facts}")
         if getattr(ctx, "emotes_known", None) or getattr(ctx, "emotes_unknown", None):
             lines.append(
                 "**Emotes custom des serveurs.** Pour AFFICHER une emote dans ton "

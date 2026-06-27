@@ -186,6 +186,15 @@ class WallyDiscord(commands.Bot):
             except Exception as e:  # noqa: BLE001 — le backfill ne doit jamais bloquer le boot
                 logger.warning("SocialRhythm: backfill ignoré: {}", e)
 
+            async def _latest_journal_content() -> str | None:
+                # Dernier journal quotidien archivé → amorce de vagabondage (#A4).
+                try:
+                    entries = await self.db.get_journal_entries(limit=1)
+                    return entries[0]["content"] if entries else None
+                except Exception as e:  # noqa: BLE001 — jamais bloquant pour la cognition
+                    logger.warning("journal_provider: lecture échouée: {}", e)
+                    return None
+
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
                 # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
@@ -194,6 +203,7 @@ class WallyDiscord(commands.Bot):
                 emote_provider=lambda: [(e.name, str(e)) for e in self.emojis],
                 upgrade_registry=self.upgrade_registry,
                 social_rhythm=self.social_rhythm,
+                journal_provider=_latest_journal_content,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP

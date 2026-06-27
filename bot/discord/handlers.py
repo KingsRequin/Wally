@@ -364,11 +364,56 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
     target_label = self_name if on_own_message else _author_label(message.author)
     notice = _format_reactions(emoji, target_label, message.content, on_own_message)
     channel_id = str(payload.channel_id)
-    bot.memory.append_message(channel_id, _author_label(reactor), notice, platform="discord")
+    reactor_label = _author_label(reactor)
+    bot.memory.append_message(channel_id, reactor_label, notice, platform="discord")
     logger.debug(
         "Réaction injectée dans le contexte : {who} {notice} (canal {ch})",
-        who=_author_label(reactor), notice=notice, ch=channel_id,
+        who=reactor_label, notice=notice, ch=channel_id,
     )
+
+    # Perception cognitive (#A2) : le « cerveau » V2 ne voyait pas les réactions.
+    # Une réaction sur un message de Wally est un feedback social qui le concerne
+    # (cadence vive) ; une réaction marquante ailleurs reste une perception passive.
+    if getattr(bot, "cognitive_loop", None) is not None:
+        try:
+            bot.cognitive_loop.notify_event(
+                channel_id=payload.channel_id,
+                description=f"{reactor_label} {notice}",
+                relevant=on_own_message,
+            )
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.warning("cognitive_loop.notify_event (réaction) a échoué: {e}", e=e)
+
+
+async def _member_join_context(bot: "WallyDiscord", member) -> None:
+    """Perception cognitive (#A2) d'une arrivée de membre sur un serveur.
+
+    Le « cerveau » V2 ne percevait que le texte ; un nouveau venu était invisible.
+    On pousse l'événement dans le flux perçu (perception passive) : la cognition
+    décide seule si elle souhaite la bienvenue. Le canal proposé est le canal
+    système du serveur (lieu naturel d'accueil) ; à défaut, l'id du serveur sert
+    de simple contexte.
+    """
+    if getattr(member, "bot", False):
+        return
+    guild = getattr(member, "guild", None)
+    if guild is not None and guild.id in bot.config.discord.ignored_guilds:
+        return
+    cl = getattr(bot, "cognitive_loop", None)
+    if cl is None:
+        return
+    sys_channel = getattr(guild, "system_channel", None) if guild else None
+    channel_id = sys_channel.id if sys_channel is not None else (guild.id if guild else 0)
+    guild_name = getattr(guild, "name", "") if guild else ""
+    suffix = f" {guild_name}".rstrip()
+    try:
+        cl.notify_event(
+            channel_id=channel_id,
+            description=f"{_author_label(member)} vient de rejoindre le serveur{suffix}",
+            relevant=False,
+        )
+    except Exception as e:  # noqa: BLE001 — jamais bloquant
+        logger.warning("cognitive_loop.notify_event (arrivée membre) a échoué: {e}", e=e)
 
 
 def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
@@ -891,6 +936,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 message_id=str(message.id),
                 is_dm=message.guild is None,
                 relevant=_relevant,
+                user_key=f"discord:{message.author.id}",
             )
         except Exception as e:
             logger.warning("cognitive_loop.notify_activity failed: {e}", e=e)
@@ -1442,7 +1488,7 @@ async def _respond(
                         pass
                 if name == "image_search":
                     return await web_search.search_images(args["query"])
-                return await web_search.search(args["query"])
+                return await web_search.search(args["query"], platform="discord")
             if name == "scrape_url":
                 if "🌐" not in _reaction_emojis:
                     try:

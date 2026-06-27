@@ -438,16 +438,33 @@ class ActionDispatcher:
                 "question": FactCategory.DESIRE,
                 "reminder": FactCategory.DESIRE,
             }.get(kind, FactCategory.THOUGHT)
+            # Planification temporelle (#A3) : un délai relatif `in_minutes` pose une
+            # échéance (UTC naïf, cohérent avec get_due_facts) → le rappel reviendra
+            # à la conscience le moment venu via le tick cognitif. Borné à 7 jours.
+            scheduled_at = None
+            raw_minutes = args.get("in_minutes")
+            if raw_minutes is not None:
+                try:
+                    mins = int(raw_minutes)
+                except (TypeError, ValueError):
+                    mins = 0
+                if mins > 0:
+                    from datetime import timedelta
+                    scheduled_at = datetime.utcnow() + timedelta(minutes=min(mins, 7 * 24 * 60))
             await self._facts.add(AtomicFact(
                 user_id="wally:self",
                 content=note,
                 category=cat,
                 source="note_to_self",
                 confidence=1.0,
+                scheduled_at=scheduled_at,
                 created_at=now,
                 last_seen_at=now,
             ))
-            logger.info("ACT note_to_self ({}): {}", kind, note[:60])
+            logger.info(
+                "ACT note_to_self ({}): {}{}", kind, note[:60],
+                f" [dans {raw_minutes} min]" if scheduled_at else "",
+            )
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:300]}"})
 
