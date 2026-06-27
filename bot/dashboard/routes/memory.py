@@ -248,10 +248,43 @@ async def register_user(body: RegisterUserRequest, request: Request):
 
 # ── GET /memory/users/{user_id} ───────────────────────────────────────────────
 
+@router.get("/memory/self")
+async def get_wally_self(request: Request):
+    """Mémoire interne de Wally (#observability C2) : buts, désirs, pensées,
+    affinités, préoccupation courante."""
+    store = getattr(request.app.state.wally, "fact_store", None)
+    if store is None:
+        return {"goals": [], "desires": [], "thoughts": [], "relationships": [], "focus": None}
+    from bot.intelligence.memory.facts import FactCategory, FactStatus
+
+    async def _cat(cat, n):
+        rows = await store.search_by_category(cat, status=FactStatus.ACTIVE, limit=n)
+        return [r.content for r in rows]
+
+    rels = await store.get_by_user("wally:self", categories=[FactCategory.REL])
+    focus = await store.get_latest_by_source("wally:self", "focus")
+    return {
+        "goals": await _cat(FactCategory.GOAL, 10),
+        "desires": await _cat(FactCategory.DESIRE, 10),
+        "thoughts": await _cat(FactCategory.THOUGHT, 10),
+        "relationships": [r.content for r in rels[:10]],
+        "focus": focus.content if focus else None,
+    }
+
+
 @router.get("/memory/users/{user_id}")
 async def get_user_memories(user_id: str, request: Request):
-    # V2 refonte — store supprimé
-    return {"user_id": user_id, "memories": [], "detail": "mémoire en refonte"}
+    """Faits S-P-O mémorisés sur un utilisateur (#observability C1)."""
+    store = getattr(request.app.state.wally, "fact_store", None)
+    if store is None:
+        return {"user_id": user_id, "facts": []}
+    facts = await store.get_by_user(user_id)
+    return {"user_id": user_id, "facts": [{
+        "id": f.id, "content": f.content, "category": f.category.value,
+        "subject": f.subject, "predicate": f.predicate, "object": f.object_,
+        "confidence": f.confidence, "origin": f.origin,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+    } for f in facts]}
 
 
 # ── POST /memory/users/{user_id}/memories ─────────────────────────────────────
