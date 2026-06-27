@@ -50,9 +50,11 @@ def test_langue_reduite_au_code_court():
     assert stt._lang == "fr"
 
 
-def test_initial_prompt_biaise_vers_le_nom():
+def test_pas_de_biais_nom_en_initial_prompt():
+    # Anti-hallucination : on n'injecte PAS le nom en initial_prompt, sinon Whisper
+    # ressort « Wally wally » sur le bruit (ventilateur).
     stt = FasterWhisperSTT(model_size="small", language="fr-FR", phrases=["Wally", "wally"])
-    assert "Wally" in (stt._initial_prompt or "")
+    assert getattr(stt, "_initial_prompt", None) is None
 
 
 def test_init_ne_charge_pas_le_modele():
@@ -78,6 +80,10 @@ async def test_transcribe_convertit_pcm_en_float32_et_joint_les_segments():
     assert fake.received_audio.dtype == np.float32
     np.testing.assert_allclose(fake.received_audio, [0.0, 0.5, -0.5], atol=1e-4)
     assert fake.received_kwargs.get("language") == "fr"
+    # Anti-hallucination : VAD interne (Silero) actif, pas de conditionnement sur le passé.
+    assert fake.received_kwargs.get("vad_filter") is True
+    assert fake.received_kwargs.get("condition_on_previous_text") is False
+    assert fake.received_kwargs.get("initial_prompt") is None
 
 
 async def test_transcribe_renvoie_vide_sur_erreur():

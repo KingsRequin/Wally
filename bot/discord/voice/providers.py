@@ -84,9 +84,9 @@ class FasterWhisperSTT:
         self._device = device
         self._compute_type = compute_type
         self._cpu_threads = cpu_threads  # 0 = auto (CTranslate2 choisit)
-        names = [p for p in (phrases or []) if p]
-        # `initial_prompt` biaise le décodage vers le nom de Wally / ses surnoms.
-        self._initial_prompt = (", ".join(names) + ".") if names else None
+        # On NE biaise PAS le décodage vers le nom : un initial_prompt avec « Wally »
+        # fait halluciner « Wally wally » sur le bruit (ventilateur). Le VAD filtre suffit.
+        self._initial_prompt = None
         self._model = None  # chargé à la demande
         # Sérialise les transcriptions : une seule à la fois. Sinon, plusieurs segments
         # concurrents (multi-locuteurs) sur-souscrivent le CPU et la latence explose (pics aléatoires).
@@ -119,9 +119,14 @@ class FasterWhisperSTT:
             import numpy as np
             model = self._ensure_model()
             audio = np.frombuffer(pcm16k_mono, dtype=np.int16).astype(np.float32) / 32768.0
-            # beam_size=1 (greedy) → priorité latence ; le VAD a déjà isolé la parole.
+            # beam_size=1 (greedy) → priorité latence.
+            # vad_filter (Silero) : rejette le non-parole (bruit/ventilateur) → anti-hallucination.
+            # condition_on_previous_text=False : segments indépendants, évite la dérive.
             segments, _info = model.transcribe(
-                audio, language=self._lang, beam_size=1, initial_prompt=self._initial_prompt
+                audio, language=self._lang, beam_size=1,
+                initial_prompt=self._initial_prompt,
+                vad_filter=True,
+                condition_on_previous_text=False,
             )
             # Chaque segment whisper porte déjà un espace de tête → on strip avant de joindre.
             return " ".join(t for seg in segments if (t := seg.text.strip()))
