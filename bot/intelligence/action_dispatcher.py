@@ -54,12 +54,15 @@ class ActionDispatcher:
         fact_store=None,
         feed=None,
         twitch_bot=None,
+        gate=None,
     ) -> None:
         self._bot = bot
         self._twitch_bot = twitch_bot
         self._persona = persona_manager
         self._facts = fact_store
         self._feed = feed
+        # Gate de sollicitation owner (un seul fil à la fois). None → pas de gate.
+        self._gate = gate
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
 
@@ -220,6 +223,17 @@ class ActionDispatcher:
         if user_id != owner_id:
             logger.warning("DM non autorisé vers {} (réservé au créateur)", user_id)
             return
+        # Un seul fil de sollicitation owner à la fois : si un MP attend déjà sa
+        # réponse, on ne superpose pas une nouvelle sollicitation.
+        if self._gate is not None and self._gate.is_blocked():
+            logger.info("Cognitive DM supprimé (sollicitation owner déjà en attente)")
+            if self._feed:
+                self._feed.publish({
+                    "type": "DM_SUPPRESSED",
+                    "reason": "sollicitation owner déjà en attente de réponse",
+                    "message": message[:300],
+                })
+            return
         # Anti-harcèlement : pas de DM créateur proactif rapproché (relance d'un
         # sujet en attente). Le reasoning_system décourage déjà ; ceci est le filet.
         now = time.monotonic()
@@ -241,6 +255,8 @@ class ActionDispatcher:
                 return
             sent = await user.send(message)
             self._last_dm_ts = now
+            if self._gate is not None:
+                self._gate.mark_sent()
             logger.info("Cognitive DM → {} : {}", user_id, message[:80])
             channel = getattr(sent, "channel", None)
             if channel is not None:
