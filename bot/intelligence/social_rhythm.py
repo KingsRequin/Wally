@@ -88,6 +88,20 @@ class SocialRhythm:
         conf = min(1.0, obs / self._n_conf)
         return PRIOR * (1 - conf) + observed * conf
 
+    def describe(self, when: datetime) -> str:
+        """Phrase FR injectée dans le contexte cognitif (conscience, pas contrainte)."""
+        r = self.receptivity(when)
+        w = when.astimezone(self._tz)
+        jour = "ce week-end" if _daytype(w) == "we" else "en semaine"
+        if r < 0.2:
+            etat = ("le serveur est historiquement très calme à cette heure ; "
+                    "tes derniers messages à ce moment sont souvent restés sans réponse")
+        elif r < 0.5:
+            etat = "l'activité est plutôt faible à cette heure"
+        else:
+            etat = "c'est une heure où l'audience est généralement présente et réactive"
+        return f"Il est {w.hour}h {jour} : {etat} (réceptivité apprise {r:.2f})."
+
     # --- Persistance ----------------------------------------------------------
     async def load(self, db_path: str) -> None:
         try:

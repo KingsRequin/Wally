@@ -54,3 +54,17 @@ def test_engagement_pushes_receptivity_over_time():
         sr.record_spontaneous_outcome(False, _dt(day, 10))
     low = sr.receptivity(_dt(8, 10))
     assert low < high
+
+
+def test_describe_reflects_low_and_high():
+    sr = SocialRhythm(alpha=0.5, n_conf=3)
+    for day in range(1, 7):
+        for _ in range(20):
+            sr.record_incoming(_dt(day, 14))
+        sr.record_spontaneous_outcome(False, _dt(day, 3))
+        sr.record_spontaneous_outcome(True, _dt(day, 14))
+    low = sr.describe(_dt(8, 3))
+    high = sr.describe(_dt(8, 14))
+    assert isinstance(low, str) and low
+    assert isinstance(high, str) and high
+    assert low != high
