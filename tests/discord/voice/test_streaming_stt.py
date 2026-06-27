@@ -274,6 +274,36 @@ async def test_provider_injoignable_bascule_et_cache(server):
     assert prov._unreachable_until > 0  # injoignable mis en cache
 
 
+async def test_provider_session_perdue_en_cours_bascule_en_fallback(server):
+    """Le PC GPU tombe en pleine conversation : la session établie meurt → on doit la
+    retirer, armer le cache négatif et router le locuteur vers le batch local."""
+    finals = []
+
+    async def on_final(sid, text, ms):
+        finals.append((sid, text))
+
+    fallback = _FakeBatchSTT(text="repli local")
+    prov = _make_provider(server.url, fallback=fallback, health_cache_s=30.0)
+    prov.on_final = on_final
+
+    prov.feed_sync("A", b"\x01" * 640)
+    await _wait_until(lambda: "A" in prov._sessions and prov._sessions["A"].ready)
+
+    # Coupure : le serveur distant disparaît.
+    await server.stop()
+
+    # La session morte est détectée et retirée ; le distant passe en cache « injoignable ».
+    assert await _wait_until(lambda: "A" not in prov._sessions, timeout=3.0)
+    assert prov._unreachable_until > 0
+
+    # L'énoncé suivant est transcrit par le batch CPU local.
+    prov.speech_end_sync("A", b"\x01" * 640)
+    await _wait_until(lambda: len(finals) == 1)
+    await prov.close_all()
+    assert finals[0] == ("A", "repli local")
+    assert fallback.calls
+
+
 async def test_provider_session_inactive_est_fermee(server):
     prov = _make_provider(server.url, idle_timeout=0.05)
     prov.feed_sync("A", b"\x01" * 640)

@@ -35,17 +35,25 @@ class RemoteSTTSession:
         *,
         on_partial: Callable[[str], None],
         on_final: Callable[[str, float], None],
+        on_close: Callable[[], None] | None = None,
         connect=None,
         open_timeout: float = 5.0,
         ready_timeout: float = 35.0,
+        ping_interval: float = 5.0,
+        ping_timeout: float = 5.0,
         now_fn: Callable[[], float] | None = None,
     ) -> None:
         self._url = url
         self._on_partial = on_partial
         self._on_final = on_final
+        self._on_close = on_close
         self._connect = connect or websockets.connect
         self._open_timeout = open_timeout
         self._ready_timeout = ready_timeout
+        # Keepalive court : une coupure brutale (PC éteint / câble débranché, sans close TCP)
+        # est détectée en ~ping_interval+ping_timeout s au lieu des ~20-40 s par défaut.
+        self._ping_interval = ping_interval
+        self._ping_timeout = ping_timeout
         self._now = now_fn or time.monotonic
         self._ws = None
         self._sendq: asyncio.Queue = asyncio.Queue()
@@ -62,7 +70,10 @@ class RemoteSTTSession:
         """Connecte, attend `ready`. Retourne True si prêt à recevoir l'audio, False sinon
         (injoignable → `unreachable`, ou serveur plein → `server_full`)."""
         try:
-            self._ws = await self._connect(self._url, max_size=None, open_timeout=self._open_timeout)
+            self._ws = await self._connect(
+                self._url, max_size=None, open_timeout=self._open_timeout,
+                ping_interval=self._ping_interval, ping_timeout=self._ping_timeout,
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("RemoteSTTSession: connexion à {u} a échoué: {e}", u=self._url, e=e)
             self.unreachable = True
@@ -142,6 +153,13 @@ class RemoteSTTSession:
             logger.warning("RemoteSTTSession: réception a échoué: {e}", e=e)
         finally:
             self._ready_evt.set()  # ne jamais laisser start() bloqué
+            # Connexion fermée sans close() volontaire = session perdue (serveur tombé en
+            # pleine conversation) → on prévient le manager pour qu'il bascule en fallback.
+            if not self._closed and self._on_close is not None:
+                try:
+                    self._on_close()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("RemoteSTTSession on_close a échoué: {e}", e=e)
 
     def _safe_partial(self, text: str) -> None:
         try:
@@ -219,6 +237,7 @@ class RemoteStreamingSTT:
             self._url,
             on_partial=lambda text, _sid=sid: self._emit_partial(_sid, text),
             on_final=lambda text, ms, _sid=sid: self._emit_final(_sid, text, ms),
+            on_close=lambda _sid=sid: self._on_session_lost(_sid),
             connect=self._connect,
             open_timeout=self._open_timeout,
             ready_timeout=self._ready_timeout,
@@ -278,6 +297,21 @@ class RemoteStreamingSTT:
             self._unreachable_until = self._now() + self._health_cache_s
             logger.warning("RemoteStreamingSTT: serveur injoignable, fallback batch {t}s", t=self._health_cache_s)
         await sess.close()
+
+    def _on_session_lost(self, speaker_id: str) -> None:
+        """Une session distante établie a perdu sa connexion (serveur tombé en cours).
+
+        On la retire (libère le slot) et on arme le cache « injoignable » : la logique
+        existante route alors le locuteur vers le batch local (`feed_sync`/`speech_end_sync`),
+        et le distant sera retenté après `health_cache_s`."""
+        sess = self._sessions.pop(speaker_id, None)
+        if sess is None:
+            return  # déjà retirée (fermeture volontaire, idle, ou double notification)
+        self._start_tasks.pop(speaker_id, None)
+        self._unreachable_until = self._now() + self._health_cache_s
+        logger.warning("RemoteStreamingSTT: session {s} perdue → fallback batch {t}s",
+                       s=speaker_id, t=self._health_cache_s)
+        asyncio.create_task(sess.close())
 
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:
         t0 = self._now()
