@@ -106,7 +106,7 @@ class WebSearchService:
             )
         return count >= limit
 
-    async def search(self, query: str) -> str:
+    async def search(self, query: str, platform: str = "discord") -> str:
         """Execute a web search via Tavily and return formatted results as a string."""
         if not self._client:
             return "Web search is not available (no API key or tavily-python not installed)."
@@ -123,7 +123,7 @@ class WebSearchService:
 
             await self._db.log_web_search(query, len(response.get("results", [])))
 
-            return self._format_results(response)
+            return self._format_results(response, platform)
 
         except Exception as exc:
             logger.error("Tavily search error: {e}", e=exc)
@@ -158,7 +158,10 @@ class WebSearchService:
             logger.error("Tavily image search error: {e}", e=exc)
             return f"Image search failed: {exc}"
 
-    def _format_results(self, response: dict) -> str:
+    # Exposants Unicode pour les marqueurs de citation (1→¹ … 5→⁵).
+    _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+    def _format_results(self, response: dict, platform: str = "discord") -> str:
         parts = []
         answer = response.get("answer")
         if answer:
@@ -166,15 +169,36 @@ class WebSearchService:
 
         results = response.get("results", [])
         if results:
-            parts.append("\nSources:")
-            for r in results[:5]:
-                title = r.get("title", "")
-                url = r.get("url", "")
-                content = r.get("content", "")
-                # Truncate content to keep token usage reasonable
-                if len(content) > 300:
-                    content = content[:300] + "..."
-                parts.append(f"- {title} ({url})\n  {content}")
+            if platform == "discord":
+                # Citation façon Perplexity : on fournit au modèle un marqueur
+                # cliquable PRÊT À COLLER par source ([¹](<url>)), URL entre <>
+                # pour neutraliser l'aperçu de lien Discord qui gâche le message.
+                parts.append(
+                    "\nSources — quand une info de ta réponse vient d'une de ces "
+                    "sources, COLLE son marqueur cliquable juste après la phrase "
+                    "concernée (ex. « la PS5 Pro coûte 800€ [¹](<url>) »). Garde "
+                    "les chevrons <> autour de l'URL (sinon Discord affiche un "
+                    "aperçu moche). N'invente jamais de source ni de numéro :"
+                )
+                for i, r in enumerate(results[:5], start=1):
+                    sup = self._SUPERSCRIPTS[i]
+                    title = r.get("title", "")
+                    url = r.get("url", "")
+                    content = r.get("content", "")
+                    if len(content) > 300:
+                        content = content[:300] + "..."
+                    parts.append(f"[{sup}](<{url}>) {title} : {content}")
+            else:
+                # Chat brut (Twitch) : pas de markdown cliquable ni d'aperçu à
+                # neutraliser — on garde les sources lisibles en texte simple.
+                parts.append("\nSources:")
+                for r in results[:5]:
+                    title = r.get("title", "")
+                    url = r.get("url", "")
+                    content = r.get("content", "")
+                    if len(content) > 300:
+                        content = content[:300] + "..."
+                    parts.append(f"- {title} ({url})\n  {content}")
 
         return "\n".join(parts) if parts else "No results found."
 

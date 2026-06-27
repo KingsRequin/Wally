@@ -136,6 +136,52 @@ def test_format_results_empty():
     assert result == "No results found."
 
 
+def test_format_results_discord_gives_clickable_citation_markers():
+    """Discord : chaque source a un marqueur cliquable prêt à coller [¹](<url>),
+    URL entre <> (anti-aperçu), + consigne de citation façon Perplexity."""
+    config = make_config()
+    db = make_db()
+    service = WebSearchService(config, db)
+    service._client = MagicMock()
+
+    result = service._format_results(make_tavily_response(), platform="discord")
+    # marqueurs prêts à coller, URL entre <>
+    assert "[¹](<https://example.com/ai>)" in result
+    assert "[²](<https://example.com/ml>)" in result
+    # consigne de citation (mention des <> pour éviter l'aperçu)
+    assert "<>" in result
+    assert "AI is advancing rapidly" in result
+
+
+def test_format_results_twitch_no_markdown_citation():
+    """Twitch (chat brut) : pas de marqueur markdown cliquable, juste les sources."""
+    config = make_config()
+    db = make_db()
+    service = WebSearchService(config, db)
+    service._client = MagicMock()
+
+    result = service._format_results(make_tavily_response(), platform="twitch")
+    assert "[¹](" not in result
+    assert "https://example.com/ai" in result   # l'URL reste disponible
+
+
+@pytest.mark.asyncio
+async def test_search_passes_platform_to_format(monkeypatch):
+    """search() propage la plateforme au formatage des résultats."""
+    config = make_config()
+    db = make_db()
+    service = WebSearchService(config, db)
+    mock_client = AsyncMock()
+    mock_client.search = AsyncMock(return_value=make_tavily_response())
+    service._client = mock_client
+
+    captured = {}
+    orig = service._format_results
+    service._format_results = lambda resp, platform="discord": captured.setdefault("platform", platform) or orig(resp, platform)
+    await service.search("ai", platform="twitch")
+    assert captured["platform"] == "twitch"
+
+
 @pytest.mark.asyncio
 async def test_search_handles_tavily_error():
     config = make_config()
