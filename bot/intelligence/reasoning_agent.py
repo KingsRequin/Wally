@@ -121,12 +121,23 @@ class ReasoningAgent:
                 f"**Ce que ton émotion te pousse à faire :** {ctx.emotional_drive}\n"
             )
         if getattr(ctx, "idle_seed", None):
-            lines.append(
-                f"**Personne ne te sollicite là.** Laisse ton esprit vagabonder "
-                f"à partir de : {ctx.idle_seed}\n"
-                f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
-                f"garde ça interne.)"
-            )
+            # Quand aucun focus ne t'occupe (préoccupation absente/expirée),
+            # l'amorce PRIME : présentée comme une bifurcation franche pour éviter
+            # de retomber dans le fil qu'on vient de clore (Phase 2a).
+            if not getattr(ctx, "preoccupation", None):
+                lines.append(
+                    f"**Personne ne te sollicite, et tu as fait le tour de ce qui "
+                    f"t'occupait.** Pars sur du neuf, à partir de : {ctx.idle_seed}\n"
+                    f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
+                    f"garde ça interne. Ne reviens pas sur le sujet que tu viens de clore.)"
+                )
+            else:
+                lines.append(
+                    f"**Personne ne te sollicite là.** Laisse ton esprit vagabonder "
+                    f"à partir de : {ctx.idle_seed}\n"
+                    f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
+                    f"garde ça interne.)"
+                )
         if self._channels_text:
             lines.append(self._channels_text + "\n")
         if self._capabilities_text:
@@ -202,7 +213,11 @@ class ReasoningAgent:
                 gid = getattr(g, "id", None)
                 prefix = f"#{gid} — " if gid is not None else ""
                 lines.append(f"  {prefix}{g.content}")
-        if ctx.recent_thoughts:
+        # En vagabondage SANS focus, on n'injecte PAS la dernière pensée : c'est
+        # elle qui ré-amorce la boucle de rumination (l'amorce de nouveauté doit
+        # primer). On la garde quand un focus est en cours ou hors idle (Phase 2a).
+        _idle_no_focus = bool(getattr(ctx, "idle_seed", None)) and not getattr(ctx, "preoccupation", None)
+        if ctx.recent_thoughts and not _idle_no_focus:
             lines.append(f"**Dernière pensée :** {_one_line(ctx.recent_thoughts[0].content, 300)}")
         if ctx.recent_interactions:
             recent = ctx.recent_interactions[-10:]

@@ -863,12 +863,21 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # conscience sociale) avant tout SPEAK.
     if channel_allowed and getattr(bot, "cognitive_loop", None) is not None:
         try:
+            # « Pertinent » = le message vise Wally (@mention ou nom déclencheur)
+            # → cadence cognitive vive. Le DM est géré par is_dm. Le reste =
+            # perception passive (Phase 2c).
+            _trigger_names = getattr(getattr(bot.config, "bot", None), "trigger_names", []) or []
+            _content_lower = (message.content or "").lower()
+            _relevant = (bot.user in message.mentions) or any(
+                n.lower() in _content_lower for n in _trigger_names
+            )
             bot.cognitive_loop.notify_activity(
                 channel_id=message.channel.id,
                 author=str(message.author.display_name),
                 content=_resolve_mentions(message, message.content or ""),
                 message_id=str(message.id),
                 is_dm=message.guild is None,
+                relevant=_relevant,
             )
         except Exception as e:
             logger.warning("cognitive_loop.notify_activity failed: {e}", e=e)

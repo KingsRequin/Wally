@@ -232,7 +232,8 @@ async def handle_transcript(
     try:
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_activity(
-                channel_id=service.channel_id, author=speaker_label, content=transcript
+                channel_id=service.channel_id, author=speaker_label, content=transcript,
+                relevant=True,  # présence vocale active = interaction qui le concerne
             )
     except Exception as e:  # noqa: BLE001
         logger.warning("voice notify_activity a échoué: {e}", e=e)

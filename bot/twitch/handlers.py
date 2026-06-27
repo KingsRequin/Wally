@@ -126,10 +126,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     bot.memory.append_prelude(channel_id, author, content)
     if getattr(bot, "cognitive_loop", None) is not None:
         try:
+            # « Pertinent » = le message vise Wally (mention @nick ou nom déclencheur)
+            # → cadence cognitive vive ; sinon perception passive (Phase 2c).
+            _tb_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
+            _relevant = bool(_tb_nick and f"@{_tb_nick}" in content_lower) or any(
+                n.lower() in content_lower for n in bot.config.bot.trigger_names
+            )
             bot.cognitive_loop.notify_activity(
                 channel_id=channel_id,
                 author=author,
                 content=content,
+                relevant=_relevant,
             )
         except Exception:
             pass

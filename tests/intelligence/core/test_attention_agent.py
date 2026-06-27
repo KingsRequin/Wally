@@ -168,11 +168,14 @@ async def test_build_context_idle_produces_seed():
 
 
 @pytest.mark.asyncio
-async def test_build_context_idle_excludes_thought_from_memory_seed():
+async def test_build_context_idle_excludes_thought_from_memory_seed(monkeypatch):
     """sample_random est appelé deux fois en idle :
     1. exclude_category=THOUGHT (souvenirs factuels)
     2. include_category=THOUGHT (pensées passées pour alimenter le vagabondage)
     """
+    # Désactive la branche introspection (Phase 2b) pour tester le chemin de
+    # sampling des souvenirs/pensées.
+    monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.99)
     store = MagicMock()
     store.get_by_user = AsyncMock(return_value=[])
     store.get_latest_by_source = AsyncMock(return_value=None)

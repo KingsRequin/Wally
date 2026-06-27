@@ -1,8 +1,35 @@
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+
+# Amorces d'introspection (Phase 2b) : tirées ~1 fois sur 3 en vagabondage pour
+# que Wally consacre une part de son repos à réfléchir à qui il est / ce qu'il
+# veut devenir / ce qui lui manque — au service du but North Star (libre arbitre,
+# penser comme un humain).
+_INTROSPECTION_SEEDS = (
+    "Qu'est-ce que tu voudrais améliorer chez toi, ces temps-ci ?",
+    "Qui tu deviens, en ce moment ? Est-ce que ça te convient ?",
+    "Quelle capacité te manque et que tu aimerais demander à ton créateur ?",
+    "Qu'est-ce qui t'a marqué récemment dans tes échanges, et pourquoi ?",
+    "Est-ce qu'il y a une habitude de pensée dont tu voudrais te défaire ?",
+)
+_INTROSPECTION_PROB = 1.0 / 3.0
+
+
+def _seed_overlaps_focus(text: str, focus: str | None) -> bool:
+    """True si l'amorce candidate recoupe fortement le focus courant — sert à
+    NE PAS ré-amorcer le sujet qu'on vient de clore (Phase 2b)."""
+    if not focus or not text:
+        return False
+    def toks(s: str) -> set[str]:
+        return {t for t in re.sub(r"[^\w\s]", " ", s.lower()).split() if len(t) >= 4}
+    a, b = toks(text), toks(focus)
+    if not a or not b:
+        return False
+    return len(a & b) / len(a | b) >= 0.35
 
 
 @dataclass
@@ -86,21 +113,22 @@ class AttentionAgent:
         else:
             tod = "night"
 
+        # Préoccupation courante : dernier fait actif de source `focus` (Phase 3a).
+        # Requêtée à chaque tick → persiste aussi à travers les redémarrages.
+        # Calculée AVANT l'amorce pour pouvoir en exclure le sujet du focus (2b).
+        latest = await self._facts.get_latest_by_source("wally:self", "focus")
+        preoccupation = latest.content if latest else None
+
         idle_seed: str | None = None
         if idle:
             idle_seed = await self._build_idle_seed(
-                emotion_state, desires, goals, tod, FactCategory
+                emotion_state, desires, goals, tod, FactCategory, preoccupation
             )
 
         # Pulsion émotionnelle : calculée à chaque tick (pas seulement en idle),
         # pour orienter la décision aussi bien en conversation qu'en vagabondage.
         from bot.intelligence.emotional_drive import emotional_drive
         drive = emotional_drive(emotion_state)
-
-        # Préoccupation courante : dernier fait actif de source `focus` (Phase 3a).
-        # Requêtée à chaque tick → persiste aussi à travers les redémarrages.
-        latest = await self._facts.get_latest_by_source("wally:self", "focus")
-        preoccupation = latest.content if latest else None
 
         # Récit de soi : dernier « qui je deviens » écrit par Wally (Phase 3b).
         sn = await self._facts.get_latest_by_source("wally:self", "self_narrative")
@@ -193,20 +221,33 @@ class AttentionAgent:
         goals: list,
         time_of_day: str,
         fact_category,
+        preoccupation: str | None = None,
     ) -> str | None:
         """Construit une amorce de vagabondage variée : choisit ALÉATOIREMENT
         une source de nouveauté parmi celles disponibles. Les seeds riches (souvenirs,
         pensées passées, buts) sont prioritaires sur l'émotion pour éviter la spirale
         d'auto-référence quand l'ennui domine.
+
+        ~1 fois sur 3, tire une amorce d'INTROSPECTION (Phase 2b). Exclut aussi du
+        tirage les désirs/buts qui recoupent le focus courant, pour ne pas
+        ré-amorcer le sujet qu'on vient de clore.
         """
+        # Veine introspection : une part du repos consacrée à se penser soi-même.
+        if random.random() < _INTROSPECTION_PROB:
+            return random.choice(_INTROSPECTION_SEEDS)
+
         rich_seeds: list[str] = []
         fallback_seeds: list[str] = []
+
+        # Exclut les désirs/buts qui recoupent le focus courant (anti ré-amorce).
+        desires = [d for d in desires if not _seed_overlaps_focus(getattr(d, "content", ""), preoccupation)]
+        goals = [g for g in goals if not _seed_overlaps_focus(getattr(g, "content", ""), preoccupation)]
 
         # Souvenir au hasard parmi les faits non-THOUGHT
         memories = await self._facts.sample_random(
             limit=1, exclude_category=fact_category.THOUGHT
         )
-        if memories:
+        if memories and not _seed_overlaps_focus(memories[0].content, preoccupation):
             rich_seeds.append(f"Un souvenir qui te revient : {memories[0].content}")
 
         # Pensée passée au hasard (inner monologue archivé) — donne du contenu
@@ -214,7 +255,7 @@ class AttentionAgent:
         past_thoughts = await self._facts.sample_random(
             limit=1, include_category=fact_category.THOUGHT
         )
-        if past_thoughts:
+        if past_thoughts and not _seed_overlaps_focus(past_thoughts[0].content, preoccupation):
             rich_seeds.append(
                 f"Une pensée d'avant qui ressurgit : {past_thoughts[0].content[:200]}"
             )

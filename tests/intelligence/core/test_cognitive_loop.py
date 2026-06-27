@@ -86,7 +86,34 @@ def test_notify_reply_without_content_keeps_old_behavior():
 def test_tick_interval_active():
     import time
     loop, *_ = _make_loop()
-    loop._last_activity_ts = time.time()
+    # La cadence vive suit l'activité PERTINENTE (mention/DM/réponse), pas la
+    # perception passive (Phase 2c).
+    loop._last_relevant_activity_ts = time.monotonic()
+    assert loop._tick_interval() == TICK_ACTIVE
+
+
+def test_passive_activity_does_not_trigger_active_cadence():
+    """Un message de canal qui ne vise pas Wally (relevant=False) est perçu mais
+    ne déclenche pas la cadence vive : le tick reste en cadence idle."""
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="x", content="bla bla", relevant=False)
+    # perçu (recent_interactions) mais pas de cadence active
+    assert loop._recent_interactions
+    assert loop._last_relevant_activity_ts == 0.0
+    assert loop._tick_interval() >= TICK_IDLE
+
+
+def test_relevant_activity_triggers_active_cadence():
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="x", content="@wally salut", relevant=True)
+    assert loop._last_relevant_activity_ts > 0.0
+    assert loop._tick_interval() == TICK_ACTIVE
+
+
+def test_dm_is_always_relevant():
+    loop, *_ = _make_loop()
+    loop.notify_activity(channel_id=1, author="x", content="coucou", is_dm=True)
+    assert loop._last_relevant_activity_ts > 0.0
     assert loop._tick_interval() == TICK_ACTIVE
 
 

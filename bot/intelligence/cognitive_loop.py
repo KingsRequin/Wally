@@ -70,6 +70,11 @@ class CognitiveLoop:
         self._speakable_channels = speakable_channels or set()
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
+        # Activité qui VISE Wally (mention, réponse, DM, vocal) — distincte de la
+        # perception passive plein-canal. La cadence vive (TICK_ACTIVE) ne se
+        # déclenche que sur celle-ci : sinon ~90 pensées/h sur du vagabondage
+        # déclenché par du bruit de canal qui ne le concerne pas (Phase 2c).
+        self._last_relevant_activity_ts: float = 0.0
         # Fenêtre glissante des dernières pensées émises → anti-rumination
         # robuste : une reformulation du même thème étalée sur plusieurs ticks
         # (qui échappe à la comparaison au seul tick précédent) est rattrapée en
@@ -93,8 +98,15 @@ class CognitiveLoop:
     def notify_activity(
         self, channel_id: int, author: str, content: str,
         message_id: str | None = None, is_dm: bool = False,
+        relevant: bool = False,
     ) -> None:
         self._last_activity_ts = time.monotonic()
+        # Un DM ou un message qui mentionne Wally le VISE directement → cadence
+        # vive. La perception passive d'un canal (relevant=False) ne réveille pas
+        # la cognition rapide : elle reste perçue (recent_interactions) mais le
+        # tick suit la cadence idle.
+        if relevant or is_dm:
+            self._last_relevant_activity_ts = self._last_activity_ts
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
         # une suite : on remet le compteur « sans réponse » à zéro.
         st = self._spontaneous.get(str(channel_id))
@@ -128,6 +140,9 @@ class CognitiveLoop:
            restée sans réponse → il y re-répond spontanément (bug du doublon).
         """
         self._last_reply[str(channel_id)] = time.monotonic()
+        # Wally vient de répondre à quelqu'un qui l'a sollicité → conversation
+        # active qui le concerne : on garde la cadence vive.
+        self._last_relevant_activity_ts = time.monotonic()
         if content:
             self._recent_interactions.append({
                 "channel": str(channel_id),
@@ -146,7 +161,10 @@ class CognitiveLoop:
             self._conv_log.log("cognitive", "brain", event_type, **fields)
 
     def _tick_interval(self) -> int:
-        elapsed = time.monotonic() - self._last_activity_ts
+        # Cadence basée sur l'activité qui VISE Wally, pas la perception passive :
+        # un canal qui bouge sans le concerner ne le fait plus penser toutes les
+        # 30 s (Phase 2c).
+        elapsed = time.monotonic() - self._last_relevant_activity_ts
         if elapsed < 600:
             return TICK_ACTIVE
         if elapsed < 3600:

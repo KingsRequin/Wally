@@ -394,6 +394,7 @@ async def test_cognitive_loop_perceives_non_triggered_message():
         content=message.content,
         message_id=str(message.id),
         is_dm=False,
+        relevant=False,  # message passif → pas de cadence vive (Phase 2c)
     )
     # toujours pas de réponse directe : le cerveau décidera seul d'intervenir
     bot.llm.complete.assert_not_called()
@@ -429,6 +430,7 @@ async def test_cognitive_loop_notified_once_on_trigger():
         content=message.content,
         message_id=str(message.id),
         is_dm=False,
+        relevant=True,  # « wally bonjour » vise Wally → cadence vive (Phase 2c)
     )
 
 
