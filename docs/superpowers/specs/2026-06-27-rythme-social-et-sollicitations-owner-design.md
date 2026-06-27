@@ -56,8 +56,8 @@ Rôle unique : apprendre et restituer une **réceptivité ∈ [0,1]** pour l'ins
 **Découpage temporel — « créneaux ».**
 `heure (0–23) × type-de-jour {semaine, weekend}` = **48 créneaux**. Capture la distinction
 weekend (demandée par l'owner) tout en convergeant ~3,5× plus vite que 24×7 = 168 créneaux.
-Fuseau : réutilise `config.emotions.circadian.timezone` (`Europe/Paris`) — aucun nouveau
-réglage en dur.
+Fuseau : réutilise `config.circadian.timezone` (`Europe/Paris`, attribut racine de
+`Config`) — aucun nouveau réglage en dur.
 
 **Deux signaux appris par créneau, en moyenne mobile exponentielle (EMA) :**
 - `ambient` : volume de messages reçus dans les canaux → vivacité de l'audience à cette
@@ -131,8 +131,9 @@ class SocialRhythm:
 
 ### A3. Câblage DI
 
-`SocialRhythm` construit dans `bot/bootstrap.py`, chargé depuis la DB au boot, injecté dans
-`CognitiveLoop` et `AttentionAgent`. Optionnel `feed`/`conv_log` pour l'audit.
+`SocialRhythm` construit dans **`bot/discord/bot.py` `setup_hook`** (là où sont déjà
+construits `AttentionAgent`/`CognitiveLoop`, ≈ l.169-226), chargé depuis la DB au boot,
+injecté dans `CognitiveLoop` et `AttentionAgent`. Optionnel `feed`/`conv_log` pour l'audit.
 
 ---
 
@@ -186,8 +187,9 @@ laisser le portail porter la sémantique « n'insiste pas tant que je n'ai pas r
 
 ### B3. Câblage DI
 
-`OwnerOutreachGate` construit dans `bootstrap.py`, **partagé** entre `ActionDispatcher`,
-`SelfFix` et le handler `on_message` (via un attribut sur `bot`, p.ex. `bot.owner_gate`).
+`OwnerOutreachGate` construit dans **`bot/discord/bot.py` `setup_hook`**, **partagé** entre
+`ActionDispatcher`, `SelfFix` et le handler `on_message` (via un attribut sur `bot`, p.ex.
+`bot.owner_gate`).
 
 ---
 
