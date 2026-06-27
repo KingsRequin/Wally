@@ -240,10 +240,13 @@ async function openGoalModal() {
   try { data = await (await fetch('/api/public/cognitive/goal')).json(); } catch (_) {}
 
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,4,26,0.82);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,4,26,0.92);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
   const card = document.createElement('div');
   card.className = 'arc-card';
-  card.style.cssText = 'max-width:520px;width:100%;max-height:80vh;overflow-y:auto;';
+  // Fond OPAQUE (override le --card-bg semi-transparent de .arc-card) pour que le
+  // contenu de la page ne transparaisse pas sous la modale.
+  card.style.cssText = 'max-width:520px;width:100%;max-height:80vh;overflow-y:auto;'
+    + 'background:#1a1140;border-color:var(--cyan, #06b6d4);box-shadow:0 16px 56px rgba(0,0,0,0.65);';
   const head = document.createElement('div');
   head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
   const title = document.createElement('div');
