@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 from bot.intelligence.thought_progress import ThoughtProgressJudge, VERDICTS
 
-PROMPTS = Path("bot/persona/prompts")
+PROMPTS = Path("bot/intelligence/persona/prompts")
 
 
 def _judge(reply: str):
