@@ -25,6 +25,26 @@ if TYPE_CHECKING:
     from bot.intelligence.persona import PersonaService
 
 
+def parse_guild_ids(raw: str | None) -> list[int]:
+    """Parse DISCORD_GUILD_ID (un ou plusieurs IDs séparés par des virgules) → liste d'ints.
+
+    Ces serveurs reçoivent un sync instantané des slash commands (utile pour le dev/test ;
+    les commandes globales mettent ~1 h à se propager). Vides, 0 et entrées invalides ignorés.
+    """
+    out: list[int] = []
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            gid = int(part)
+        except ValueError:
+            continue
+        if gid:
+            out.append(gid)
+    return out
+
+
 class WallyDiscord(commands.Bot):
     def __init__(
         self,
@@ -313,12 +333,12 @@ class WallyDiscord(commands.Bot):
         # Sync slash commands — wrap in try/except so a 403 (bot not yet in guild) doesn't crash startup
         try:
             import os
-            guild_id = int(os.getenv("DISCORD_GUILD_ID", "0")) or None
-            if guild_id:
+            for guild_id in parse_guild_ids(os.getenv("DISCORD_GUILD_ID")):
                 guild = discord.Object(id=guild_id)
                 self.tree.clear_commands(guild=guild)
                 self.tree.copy_global_to(guild=guild)  # pousse les commandes globales sur ce guild → sync instantané
                 await self.tree.sync(guild=guild)
+                logger.info("Slash commands synced on guild {g}", g=guild_id)
             await self.tree.sync()
             logger.info("Discord slash commands synced")
         except discord.Forbidden:
