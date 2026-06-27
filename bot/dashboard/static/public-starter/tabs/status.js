@@ -8,6 +8,8 @@ let _container       = null;
 let _unsubEmo        = null;
 let _cognitiveES     = null;
 let _feedEvents      = [];
+let _historyBefore   = null;   // plus petit id chargé → pagination scroll-up
+let _loadingMore     = false;
 
 const EMO_COLORS = {
   anger: '#ef4444', joy: '#eab308', curiosity: '#22c55e',
@@ -17,10 +19,22 @@ const EMO_LABELS = {
   anger: 'COLÈRE', joy: 'JOIE', curiosity: 'CURIOSITÉ',
   sadness: 'TRISTESSE', boredom: 'ENNUI'
 };
-const TAGC = {
-  THINK: '#ffd400', SPEAK: '#43e0ff', ACT: '#7CFC52',
-  DECIDE: '#bf94ff', ATTN: '#ff3b6b', EVOLVE: '#ff8a3b', SLEEP: '#6f6597'
+// Métadonnées par type d'event : couleur, icône, libellé court lisible.
+const FEED_META = {
+  THINK:  { color: '#ffd400', icon: '💭', label: 'pense' },
+  SPEAK:  { color: '#43e0ff', icon: '🗣', label: 'parle' },
+  ACT:    { color: '#7CFC52', icon: '⚙', label: 'agit' },
+  REACT:  { color: '#7CFC52', icon: '😶', label: 'réagit' },
+  DM:     { color: '#43e0ff', icon: '✉', label: 'DM' },
+  DM_SUPPRESSED: { color: '#6f6597', icon: '🤐', label: 'DM retenu' },
+  DECIDE: { color: '#bf94ff', icon: '🎯', label: 'décide' },
+  ATTN:   { color: '#ff3b6b', icon: '👁', label: 'remarque' },
+  EVOLVE: { color: '#ff8a3b', icon: '🧬', label: 'évolue' },
+  SLEEP:  { color: '#6f6597', icon: '😴', label: 'somnole' },
 };
+function feedMeta(type) {
+  return FEED_META[type] || { color: '#fff', icon: '•', label: (type || '').toLowerCase() };
+}
 
 function formatUptime(seconds) {
   if (!seconds) return '—';
@@ -33,12 +47,23 @@ function formatUptime(seconds) {
 
 function feedText(e) {
   if (e.type === 'THINK') return e.text || '';
-  if (e.type === 'SPEAK') return '→ ' + (e.detail || '');
+  if (e.type === 'SPEAK') return (e.channel ? '#' + e.channel + ' ' : '→ ') + (e.detail || '');
+  if (e.type === 'REACT') return e.detail || ('a réagi ' + (e.emoji || ''));
+  if (e.type === 'DM') return '→ ' + (e.target || 'créateur') + ' : ' + (e.message || '');
+  if (e.type === 'DM_SUPPRESSED') return 'DM retenu (' + (e.reason || '') + ') : ' + (e.message || '');
   if (e.type === 'ATTN') return (e.target || '—') + ' : ' + (e.content_snippet || '');
   if (e.type === 'DECIDE') return (e.actions || []).join(' · ');
   if (e.type === 'ACT') return e.detail || '';
   if (e.type === 'EVOLVE') return 'persona → ' + (e.detail || '');
-  return e.detail || e.text || '';
+  return e.detail || e.text || e.message || '';
+}
+// Texte complet (dépliage) si présent et différent du snippet rendu.
+function feedFull(e) {
+  const full = e.full;
+  return (full && full !== (e.detail || '') && full !== feedText(e)) ? full : null;
+}
+function feedSig(e) {
+  return (e.type || '') + '|' + (e.text || e.detail || e.message || e.content_snippet || '');
 }
 
 function statCard(label, value, color) {
@@ -98,8 +123,10 @@ function renderFeed(listEl) {
     listEl.appendChild(empty);
     return;
   }
-  // Plus ancien en haut, plus récent en bas (style terminal).
-  _feedEvents.slice(0, 12).reverse().forEach((e) => {
+  // Plus ancien en haut, plus récent en bas (style terminal). On affiche tout
+  // l'historique chargé (capé à 200 lignes pour la perf), pas seulement 12.
+  _feedEvents.slice(0, 200).reverse().forEach((e) => {
+    const meta = feedMeta(e.type);
     const row = document.createElement('div');
     row.className = 'feed-row';
     const t = document.createElement('span');
@@ -107,11 +134,18 @@ function renderFeed(listEl) {
     t.textContent = e._t || '';
     const tag = document.createElement('span');
     tag.className = 'feed-tag';
-    tag.style.color = TAGC[e.type] || '#fff';
-    tag.textContent = e.type;
+    tag.style.color = meta.color;
+    tag.textContent = meta.icon + ' ' + meta.label;
     const txt = document.createElement('span');
     txt.className = 'feed-text';
-    txt.textContent = feedText(e);
+    const full = feedFull(e);
+    txt.textContent = (e._expanded && full) ? full : feedText(e);
+    if (full) {
+      row.style.cursor = 'pointer';
+      row.title = 'cliquer pour ' + (e._expanded ? 'replier' : 'déplier');
+      if (!e._expanded) txt.textContent += ' …';
+      row.addEventListener('click', () => { e._expanded = !e._expanded; renderFeed(listEl); });
+    }
     row.appendChild(t); row.appendChild(tag); row.appendChild(txt);
     listEl.appendChild(row);
   });
@@ -120,10 +154,16 @@ function renderFeed(listEl) {
 }
 
 function pushFeedEvent(e) {
+  // Dédup : le SSE rejoue le buffer récent au branchement, qui recoupe
+  // l'historique déjà chargé → on ignore un event identique aux 40 plus récents.
+  const sig = feedSig(e);
+  for (let i = 0; i < Math.min(_feedEvents.length, 40); i++) {
+    if (feedSig(_feedEvents[i]) === sig) return;
+  }
   const d = new Date();
   e._t = d.toLocaleTimeString('fr-FR');
   _feedEvents.unshift(e);
-  if (_feedEvents.length > 30) _feedEvents.pop();
+  if (_feedEvents.length > 300) _feedEvents.length = 300;
   const listEl = document.getElementById('cog-feed-list');
   if (listEl) renderFeed(listEl);
 }
@@ -167,6 +207,65 @@ async function fetchHistory() {
     const canvas = document.getElementById('status-emo-history-canvas');
     if (canvas && _historyData.length >= 2) drawHistoryChart(canvas, _historyData);
   } catch (_) {}
+}
+
+function _goalSection(title, items, emptyMsg) {
+  const wrap = document.createElement('div');
+  wrap.style.marginBottom = '14px';
+  const h = document.createElement('div');
+  h.className = 'arc-stat-label';
+  h.style.cssText = 'font-size:11px;color:var(--yellow);margin-bottom:6px;';
+  h.textContent = title;
+  wrap.appendChild(h);
+  if (!items || !items.length) {
+    const e = document.createElement('div');
+    e.className = 'feed-text';
+    e.style.color = 'var(--muted)';
+    e.textContent = emptyMsg;
+    wrap.appendChild(e);
+  } else {
+    items.forEach((it) => {
+      const d = document.createElement('div');
+      d.className = 'feed-text';
+      d.style.marginBottom = '4px';
+      d.textContent = '• ' + it;
+      wrap.appendChild(d);
+    });
+  }
+  return wrap;
+}
+
+async function openGoalModal() {
+  let data = { goals: [], preoccupation: null, desires: [] };
+  try { data = await (await fetch('/api/public/cognitive/goal')).json(); } catch (_) {}
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,4,26,0.82);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const card = document.createElement('div');
+  card.className = 'arc-card';
+  card.style.cssText = 'max-width:520px;width:100%;max-height:80vh;overflow-y:auto;';
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  const title = document.createElement('div');
+  title.className = 'arc-stat-label';
+  title.style.cssText = 'font-size:13px;color:var(--cyan);';
+  title.textContent = '🎯 DANS LA TÊTE DE WALLY';
+  const close = document.createElement('span');
+  close.style.cssText = 'cursor:pointer;font-size:22px;color:var(--pink);';
+  close.textContent = '✕';
+  head.appendChild(title); head.appendChild(close);
+  card.appendChild(head);
+  card.appendChild(_goalSection('SON BUT', data.goals, 'il vagabonde, aucun but fixé.'));
+  card.appendChild(_goalSection('SA PRÉOCCUPATION', data.preoccupation ? [data.preoccupation] : [], 'rien ne le préoccupe là.'));
+  card.appendChild(_goalSection('CE QUI LE TRAVAILLE', data.desires, 'aucun désir actif.'));
+  overlay.appendChild(card);
+
+  const remove = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') remove(); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) remove(); });
+  close.addEventListener('click', remove);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
 }
 
 function svcPill(label, on, warn) {
@@ -218,14 +317,23 @@ function renderStatus(el, status, stream) {
   feedTitle.className = 'arc-stat-label';
   feedTitle.style.cssText = 'font-size:11px;color:var(--yellow);';
   feedTitle.textContent = 'ACTIVITÉ EN DIRECT';
+  const headRight = document.createElement('div');
+  headRight.style.cssText = 'display:flex;align-items:center;gap:14px;';
+  const goalBtn = document.createElement('button');
+  goalBtn.className = 'arc-pill';
+  goalBtn.style.cssText = 'cursor:pointer;font-family:inherit;';
+  goalBtn.textContent = '🎯 son but';
+  goalBtn.addEventListener('click', openGoalModal);
   const live = document.createElement('span');
   live.style.cssText = 'font-size:20px;color:var(--green);';
   live.textContent = '● live';
-  feedHead.appendChild(feedTitle); feedHead.appendChild(live);
+  headRight.appendChild(goalBtn); headRight.appendChild(live);
+  feedHead.appendChild(feedTitle); feedHead.appendChild(headRight);
   feedCard.appendChild(feedHead);
   const feedList = document.createElement('div');
   feedList.id = 'cog-feed-list';
   feedList.style.cssText = 'height:340px;max-height:340px;overflow-y:auto;';
+  feedList.addEventListener('scroll', onFeedScroll);   // scroll-up → historique
   feedCard.appendChild(feedList);
   el.appendChild(feedCard);
   renderFeed(feedList);
@@ -311,13 +419,41 @@ async function fetchAndRender() {
 }
 
 async function seedFeed() {
+  // Amorce avec l'historique PERSISTANT (avec id → pagination scroll-up + full),
+  // du plus récent au plus ancien. Le SSE live prend ensuite le relais.
   try {
-    const data = await (await fetch('/api/public/cognitive/state')).json();
-    const evts = (data.events || []).slice(-12).reverse();
-    _feedEvents = evts.map((e) => ({ ...e, _t: '' }));
+    const data = await (await fetch('/api/public/cognitive/history?limit=40')).json();
+    const evts = (data.events || []);   // déjà décroissants (récent → ancien)
+    _feedEvents = evts.map((e) => ({ ...e, _t: e.ts ? new Date(e.ts * 1000).toLocaleTimeString('fr-FR') : '' }));
+    _historyBefore = (data.next_before !== undefined) ? data.next_before : null;
     const listEl = document.getElementById('cog-feed-list');
     if (listEl) renderFeed(listEl);
   } catch (_) {}
+}
+
+async function loadMoreHistory(listEl) {
+  if (_loadingMore || _historyBefore === null || _historyBefore === undefined) return;
+  _loadingMore = true;
+  try {
+    const data = await (await fetch('/api/public/cognitive/history?limit=40&before=' + _historyBefore)).json();
+    const evts = (data.events || []);
+    if (evts.length) {
+      const prevH = listEl.scrollHeight;
+      // events décroissants → les plus anciens vont en queue de _feedEvents.
+      evts.forEach((e) => _feedEvents.push({ ...e, _t: e.ts ? new Date(e.ts * 1000).toLocaleTimeString('fr-FR') : '' }));
+      _historyBefore = (data.next_before !== undefined) ? data.next_before : null;
+      renderFeed(listEl);
+      // Compense l'ajout en haut pour ne pas faire sauter la vue.
+      listEl.scrollTop += (listEl.scrollHeight - prevH);
+    } else {
+      _historyBefore = null;
+    }
+  } catch (_) {} finally { _loadingMore = false; }
+}
+
+function onFeedScroll(ev) {
+  const listEl = ev.currentTarget;
+  if (listEl.scrollTop < 40) loadMoreHistory(listEl);
 }
 
 export function mount(el) {
@@ -325,6 +461,8 @@ export function mount(el) {
   clearInterval(_historyInterval);
   _container = el;
   _feedEvents = [];
+  _historyBefore = null;
+  _loadingMore = false;
 
   fetchAndRender();
   fetchHistory();
