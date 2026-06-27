@@ -89,3 +89,66 @@ async def test_transcribe_renvoie_vide_sur_erreur():
 
     stt._model = _Boom()
     assert await stt.transcribe(b"\x00\x00") == ""
+
+
+async def test_transcribe_serialise_les_appels_concurrents():
+    """Une seule transcription à la fois (évite la sur-souscription CPU / les pics aléatoires)."""
+    import asyncio
+    import threading
+
+    stt = FasterWhisperSTT(model_size="small", language="fr-FR")
+    started = []
+    gate = threading.Event()
+
+    class _SlowModel:
+        def transcribe(self, audio, **k):
+            started.append(1)
+            if len(started) == 1:
+                gate.wait(timeout=2)  # le 1er bloque le thread
+            return ([_FakeSeg("x")], {})
+
+    stt._model = _SlowModel()
+    pcm = b"\x00\x00" * 100
+    t1 = asyncio.create_task(stt.transcribe(pcm))
+    await asyncio.sleep(0.1)
+    t2 = asyncio.create_task(stt.transcribe(pcm))
+    await asyncio.sleep(0.1)
+    assert len(started) == 1  # le 2e attend le lock, n'a pas démarré
+    gate.set()
+    await t1
+    await t2
+    assert len(started) == 2
+
+
+async def test_warmup_precharge_le_modele(monkeypatch):
+    stt = FasterWhisperSTT(model_size="small", language="fr-FR")
+    loaded = []
+
+    def fake_ensure():
+        loaded.append(1)
+        stt._model = "X"
+        return "X"
+
+    monkeypatch.setattr(stt, "_ensure_model", fake_ensure)
+    await stt.warmup()
+    assert loaded == [1]
+
+
+def test_cpu_threads_transmis_au_modele(monkeypatch):
+    import sys
+    import types
+    captured = {}
+
+    class _FakeWhisperModel:
+        def __init__(self, size, **kwargs):
+            captured["size"] = size
+            captured.update(kwargs)
+
+    mod = types.ModuleType("faster_whisper")
+    mod.WhisperModel = _FakeWhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", mod)
+
+    stt = FasterWhisperSTT(model_size="base", language="fr-FR", cpu_threads=4)
+    stt._ensure_model()
+    assert captured["size"] == "base"
+    assert captured["cpu_threads"] == 4

@@ -178,6 +178,10 @@ class VoiceService:
         )
         self._vc.listen(sink)
         self._auto_leave_task = loop.create_task(self._auto_leave_watch())
+        # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s sur le 1er segment.
+        _warmup = getattr(self._stt, "warmup", None)
+        if _warmup is not None:
+            loop.create_task(_warmup())
         logger.info("voice: rejoint le salon {c}", c=channel.id)
         # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
         loop.create_task(self._greet())

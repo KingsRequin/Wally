@@ -12,6 +12,7 @@ def _make_service():
     with patch("bot.discord.voice.service.build_stt"), \
          patch("bot.discord.voice.service.build_tts"):
         svc = VoiceService(bot, VoiceConfig(enabled=True))
+    svc._stt.warmup = AsyncMock()  # FasterWhisperSTT.warmup est une coroutine (pré-chargement)
     return svc
 
 

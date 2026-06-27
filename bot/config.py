@@ -97,6 +97,7 @@ class VoiceConfig:
     whisper_model: str = "small"  # faster-whisper : tiny|base|small|medium...
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    whisper_cpu_threads: int = 0  # 0 = auto ; les transcriptions sont sérialisées (1 à la fois)
 
 
 @dataclass

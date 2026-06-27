@@ -77,30 +77,42 @@ class FasterWhisperSTT:
         device: str = "cpu",
         compute_type: str = "int8",
         phrases: list[str] | None = None,
+        cpu_threads: int = 0,
     ) -> None:
         self._model_size = model_size
         self._lang = (language or "fr").split("-")[0]  # "fr-FR" → "fr"
         self._device = device
         self._compute_type = compute_type
+        self._cpu_threads = cpu_threads  # 0 = auto (CTranslate2 choisit)
         names = [p for p in (phrases or []) if p]
         # `initial_prompt` biaise le décodage vers le nom de Wally / ses surnoms.
         self._initial_prompt = (", ".join(names) + ".") if names else None
         self._model = None  # chargé à la demande
+        # Sérialise les transcriptions : une seule à la fois. Sinon, plusieurs segments
+        # concurrents (multi-locuteurs) sur-souscrivent le CPU et la latence explose (pics aléatoires).
+        self._lock = asyncio.Lock()
 
     def _ensure_model(self):
         if self._model is None:
             from faster_whisper import WhisperModel
             logger.info(
-                "FasterWhisperSTT: chargement du modèle '{m}' ({d}/{c})",
-                m=self._model_size, d=self._device, c=self._compute_type,
+                "FasterWhisperSTT: chargement du modèle '{m}' ({d}/{c}, threads={t})",
+                m=self._model_size, d=self._device, c=self._compute_type, t=self._cpu_threads,
             )
             self._model = WhisperModel(
-                self._model_size, device=self._device, compute_type=self._compute_type
+                self._model_size, device=self._device, compute_type=self._compute_type,
+                cpu_threads=self._cpu_threads,
             )
         return self._model
 
+    async def warmup(self) -> None:
+        """Pré-charge le modèle (évite les ~2,5 s du 1er segment et le double-chargement concurrent)."""
+        async with self._lock:
+            await asyncio.to_thread(self._ensure_model)
+
     async def transcribe(self, pcm16k_mono: bytes) -> str:
-        return await asyncio.to_thread(self._transcribe_sync, pcm16k_mono)
+        async with self._lock:  # une transcription à la fois
+            return await asyncio.to_thread(self._transcribe_sync, pcm16k_mono)
 
     def _transcribe_sync(self, pcm16k_mono: bytes) -> str:
         try:
@@ -188,6 +200,7 @@ def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToTex
             device=cfg.whisper_device,
             compute_type=cfg.whisper_compute_type,
             phrases=phrases,
+            cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
         )
     key, region = _azure_creds()
     return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases)
