@@ -5,15 +5,31 @@ import difflib
 import random
 import re
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from bot.intelligence.identity import bot_name
+from bot.intelligence.social_rhythm import R_REF
 
 TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond vive
 TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
 TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
 TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
+
+
+def _speak_pass_probability(receptivity: float) -> float:
+    """Proba de laisser passer un SPEAK spontané. ≥ R_REF → 1.0 (journée normale,
+    aucun frein) ; en-dessous, décroît linéairement → nuits quasi silencieuses.
+    Aucun seuil horaire : `receptivity` sort des stats apprises."""
+    if receptivity >= R_REF:
+        return 1.0
+    return max(0.0, receptivity / R_REF)
+
+
+def _now_paris() -> datetime:
+    return datetime.now(ZoneInfo("Europe/Paris"))
 
 # Après une réponse directe dans un canal, Wally ne relance pas de SPEAK proactif
 # avant ce délai : il a déjà eu son tour, un SPEAK ne ferait que récapituler /
@@ -53,6 +69,7 @@ class CognitiveLoop:
         conv_log=None,
         fact_store=None,
         progress_judge=None,
+        social_rhythm=None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -64,6 +81,8 @@ class CognitiveLoop:
         self._conv_log = conv_log
         self._facts = fact_store
         self._progress_judge = progress_judge
+        # Rythme social appris (SocialRhythm). None → aucun frein, cadence inchangée.
+        self._social_rhythm = social_rhythm
         # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
         self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
@@ -101,6 +120,12 @@ class CognitiveLoop:
         relevant: bool = False,
     ) -> None:
         self._last_activity_ts = time.monotonic()
+        # Vivacité du créneau courant (signal ambient du rythme social) — best-effort.
+        if self._social_rhythm is not None:
+            try:
+                self._social_rhythm.record_incoming(_now_paris())
+            except Exception as e:  # noqa: BLE001
+                logger.warning("SocialRhythm.record_incoming: {}", e)
         # Un DM ou un message qui mentionne Wally le VISE directement → cadence
         # vive. La perception passive d'un canal (relevant=False) ne réveille pas
         # la cognition rapide : elle reste perçue (recent_interactions) mais le
@@ -108,9 +133,15 @@ class CognitiveLoop:
         if relevant or is_dm:
             self._last_relevant_activity_ts = self._last_activity_ts
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
-        # une suite : on remet le compteur « sans réponse » à zéro.
+        # une suite : c'est une RÉPONSE → issue d'engagement positive, puis on
+        # remet le compteur « sans réponse » à zéro.
         st = self._spontaneous.get(str(channel_id))
-        if st is not None:
+        if st is not None and st.get("unanswered", 0) > 0:
+            if self._social_rhythm is not None:
+                try:
+                    self._social_rhythm.record_spontaneous_outcome(True, _now_paris())
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("SocialRhythm outcome(+): {}", e)
             st["unanswered"] = 0
         self._recent_interactions.append({
             "channel": str(channel_id),
@@ -181,6 +212,14 @@ class CognitiveLoop:
             except Exception:
                 boredom = 0.0
         hi = int(TICK_IDLE + (TICK_IDLE_MAX - TICK_IDLE) * (1.0 - min(1.0, max(0.0, boredom))))
+        # Réceptivité basse (nuit/creux appris) → plafond allongé : Wally vagabonde
+        # plus lentement quand l'audience est absente. Aucun seuil horaire codé.
+        if self._social_rhythm is not None:
+            try:
+                r = self._social_rhythm.receptivity(_now_paris())
+                hi = int(hi * (1.0 + 2.0 * (1.0 - max(0.0, min(1.0, r)))))
+            except Exception:  # noqa: BLE001
+                pass
         return random.randint(TICK_IDLE, max(TICK_IDLE, hi))
 
     async def _expire_focus(self) -> None:
@@ -333,6 +372,12 @@ class CognitiveLoop:
                     unanswered = ch_st.get("unanswered", 0)
                     since_last = now - ch_st.get("last_ts", 0.0)
                     if unanswered >= 3:
+                        # Canal qui ignore Wally → issue d'engagement négative.
+                        if self._social_rhythm is not None:
+                            try:
+                                self._social_rhythm.record_spontaneous_outcome(False, _now_paris())
+                            except Exception:  # noqa: BLE001
+                                pass
                         logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
                         self._log_cog(
                             "speak_suppressed", channel=ch_key,
@@ -364,6 +409,22 @@ class CognitiveLoop:
                             message=(decision.message or "")[:200],
                         )
                         continue
+                    # 4. Amortisseur appris : aux heures/jours où l'audience est
+                    #    peu réceptive (stats SocialRhythm), la parole spontanée ne
+                    #    passe que probabilistiquement. Au-dessus de R_REF : aucun frein.
+                    if self._social_rhythm is not None:
+                        try:
+                            r = self._social_rhythm.receptivity(_now_paris())
+                        except Exception:  # noqa: BLE001
+                            r = 1.0
+                        if random.random() >= _speak_pass_probability(r):
+                            logger.info("CognitiveLoop: SPEAK amorti (réceptivité {:.2f})", r)
+                            self._log_cog(
+                                "speak_suppressed", channel=str(decision.channel_id),
+                                reason=f"réceptivité apprise {r:.2f}",
+                                message=(decision.message or "")[:200],
+                            )
+                            continue
                 await self._dispatcher.dispatch(decision)
                 # Mémorise un message spontané pour la conscience sociale : tant
                 # que personne n'y répond, le compteur grimpe et le prochain
