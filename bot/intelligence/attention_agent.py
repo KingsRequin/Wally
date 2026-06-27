@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
 # Amorces d'introspection (Phase 2b) : tirées ~1 fois sur 3 en vagabondage pour
 # que Wally consacre une part de son repos à réfléchir à qui il est / ce qu'il
@@ -70,11 +70,15 @@ class AttentionContext:
     # Demandes d'amélioration déjà émises (Phase 6) : mémoire de ce que Wally a
     # demandé / obtenu → l'empêche de redemander une capacité déjà livrée.
     upgrade_requests: list = field(default_factory=list)   # list[UpgradeRow]
+    # Conscience du rythme social appris (SocialRhythm) — phrase FR injectée dans
+    # le prompt cognitif, et score brut [0,1] consommé par la boucle (amortisseur/cadence).
+    social_receptivity: str | None = None
+    receptivity_score: float = 0.5
 
 
 class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
-                 upgrade_registry=None) -> None:
+                 upgrade_registry=None, social_rhythm=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -82,6 +86,8 @@ class AttentionAgent:
         self._emote_provider = emote_provider
         # Registre des demandes d'amélioration (Phase 6). None → bloc absent.
         self._upgrade_registry = upgrade_registry
+        # Rythme social appris (SocialRhythm). None → réceptivité neutre par défaut.
+        self._social_rhythm = social_rhythm
 
     async def build_context(
         self,
@@ -103,7 +109,8 @@ class AttentionAgent:
             FactCategory.THOUGHT, status=FactStatus.ACTIVE, limit=3
         )
 
-        hour = datetime.now(timezone.utc).hour
+        from zoneinfo import ZoneInfo
+        hour = datetime.now(ZoneInfo("Europe/Paris")).hour
         if 5 <= hour < 12:
             tod = "morning"
         elif 12 <= hour < 17:
@@ -193,6 +200,19 @@ class AttentionAgent:
             except Exception:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
                 upgrade_requests = []
 
+        # Conscience du rythme social appris (SocialRhythm) — best-effort.
+        social_receptivity = None
+        receptivity_score = 0.5
+        if self._social_rhythm is not None:
+            try:
+                from zoneinfo import ZoneInfo
+                _now = datetime.now(ZoneInfo("Europe/Paris"))
+                receptivity_score = self._social_rhythm.receptivity(_now)
+                social_receptivity = self._social_rhythm.describe(_now)
+            except Exception as e:  # noqa: BLE001 — jamais bloquant
+                from loguru import logger
+                logger.warning("AttentionAgent: réceptivité indisponible: {}", e)
+
         return AttentionContext(
             emotion_state=emotion_state,
             active_desires=desires,
@@ -212,6 +232,8 @@ class AttentionAgent:
             emotes_known=emotes_known,
             emotes_unknown=emotes_unknown,
             upgrade_requests=upgrade_requests,
+            social_receptivity=social_receptivity,
+            receptivity_score=receptivity_score,
         )
 
     async def _build_idle_seed(
