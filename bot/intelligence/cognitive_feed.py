@@ -13,7 +13,8 @@ class CognitiveFeed:
     """
 
     def __init__(
-        self, buffer_size: int = 30, queue_maxsize: int = 50, conv_log=None
+        self, buffer_size: int = 30, queue_maxsize: int = 50, conv_log=None,
+        event_store=None,
     ) -> None:
         self._buffer: deque[dict] = deque(maxlen=buffer_size)
         self._queues: list[asyncio.Queue] = []
@@ -21,6 +22,8 @@ class CognitiveFeed:
         # Logger de conversation : tout le flux cognitif (ATTN/THINK/DECIDE/
         # SPEAK/ACT/EVOLVE) est journalisé dans logs/conversations/cognitive/brain/.
         self._conv_log = conv_log
+        # Historique persistant (#observability). None → live seulement.
+        self._event_store = event_store
 
     def publish(self, event: dict) -> None:
         # Anti-rumination : ignore un événement identique au précédent
@@ -37,6 +40,14 @@ class CognitiveFeed:
                 q.put_nowait(event)
             except asyncio.QueueFull:
                 pass
+        # Persistance de l'historique (sauf ATTN, trop fréquent/transitoire).
+        if self._event_store is not None and event.get("type") != "ATTN":
+            try:
+                asyncio.get_running_loop().create_task(
+                    self._event_store.append(dict(event))
+                )
+            except RuntimeError:
+                pass   # pas de loop (test sync) → on saute la persistance
 
     def snapshot(self) -> list[dict]:
         return list(self._buffer)
