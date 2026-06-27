@@ -160,6 +160,8 @@ class WallyDiscord(commands.Bot):
             _model_pro = _cog_cfg.get("model_pro", "deepseek-v4-pro")
 
             _fact_store = SQLiteFactStore(_db_path)
+            # Exposé pour les routes publiques (but courant, mémoire) — #observability.
+            self.fact_store = _fact_store
             # Reasoning unifié : un seul appel (pense + décide) sur le modèle "pro"
             # (celui qui portait le monologue intérieur).
             _reasoning_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
@@ -220,7 +222,12 @@ class WallyDiscord(commands.Bot):
                 channel_names=_chan_dir.name_map(),
             )
             _conv_log = getattr(self, "conv_log", None)
-            self.cognitive_feed = CognitiveFeed(conv_log=_conv_log)
+            # Historique persistant du flux cognitif (#observability) — rotation 1000.
+            from bot.intelligence.cognitive_event_store import CognitiveEventStore
+            self.cognitive_event_store = CognitiveEventStore(_db_path)
+            self.cognitive_feed = CognitiveFeed(
+                conv_log=_conv_log, event_store=self.cognitive_event_store,
+            )
             _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate)
 
             from bot.intelligence.thought_progress import ThoughtProgressJudge
@@ -239,6 +246,8 @@ class WallyDiscord(commands.Bot):
             _dash = getattr(self, "dashboard_state", None)
             if _dash is not None:
                 _dash.cognitive_feed = self.cognitive_feed
+                _dash.fact_store = self.fact_store
+                _dash.cognitive_event_store = self.cognitive_event_store
             logger.info("CognitiveLoop V2 initialisée (reasoning unifié {}/{})", _provider, _model_pro)
 
         import os as _os_auto

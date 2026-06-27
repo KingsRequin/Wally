@@ -47,6 +47,10 @@ class AppState:
     action_service: Optional["ActionService"] = None
     update_checker: Optional["UpdateChecker"] = None
     cognitive_feed: Optional["CognitiveFeed"] = None
+    # Exposés pour les routes publiques observability (but courant, mémoire,
+    # historique du flux) — propagés depuis le bot Discord au boot (cf. bot.py).
+    fact_store: object = None
+    cognitive_event_store: object = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
     message_count_discord: int = 0
