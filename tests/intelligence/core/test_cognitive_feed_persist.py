@@ -28,4 +28,9 @@ async def test_publish_skips_attn_persistence():
 @pytest.mark.asyncio
 async def test_publish_without_store_does_not_crash():
     feed = CognitiveFeed()              # event_store=None
-    feed.publish({"type": "THINK", "text": "ok"})   # ne doit pas lever
+    try:
+        feed.publish({"type": "THINK", "text": "ok"})
+    except Exception as exc:            # noqa: BLE001 — le test échoue si ça lève
+        pytest.fail(f"publish a levé sans event_store: {exc}")
+    # l'event reste tout de même bufferisé pour le live SSE
+    assert feed.snapshot()[-1]["text"] == "ok"
