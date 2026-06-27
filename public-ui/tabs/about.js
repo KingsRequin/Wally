@@ -49,6 +49,11 @@ const PILLARS = [
     color: 'var(--violet)',
     desc: 'Un seul processus asyncio gère Discord et Twitch simultanément via deux adaptateurs indépendants. Les mémoires, émotions et la personnalité sont partagées entre les deux plateformes — Wally reste cohérent qu\'il soit en train de streamer ou de discuter sur Discord.'
   },
+  {
+    title: 'Voix en vocal Discord',
+    color: 'var(--cyan)',
+    desc: 'Wally rejoint les salons vocaux : il écoute, transcrit en temps réel et répond à voix haute. Transcription en streaming sur GPU avec repli automatique sur le CPU local si le serveur est indisponible, et synthèse vocale jouée dès les premiers mots. Même personnalité, mémoire et émotions qu\'à l\'écrit.'
+  },
 ];
 
 // Pile technique réelle (corrige les mensonges du mockup)
@@ -94,7 +99,7 @@ export function mount(el) {
   descCard.style.marginBottom = '18px';
   const descText = document.createElement('div');
   descText.style.cssText = 'font-size:20px;color:var(--text);line-height:1.5;';
-  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire plein-texte FTS5 (SQLite).';
+  descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Il discute aussi bien à l\'écrit qu\'en vocal sur Discord. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire plein-texte FTS5 (SQLite).';
   descCard.appendChild(descText);
   wrap.appendChild(descCard);
 

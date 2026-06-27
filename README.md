@@ -74,6 +74,15 @@ Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git :
 - **Journal quotidien** : résumé automatique de la journée publié sur Discord.
 - **Sessions** : suivi des conversations par canal, extraction de faits durables à la fin.
 
+### 🎙️ Vocal Discord
+
+- **Wally parle et écoute en vocal** : il rejoint un salon vocal (`/join`), transcrit ce qui est dit et répond à voix haute — même personnalité, mémoire et émotions qu'à l'écrit.
+- **Transcription en streaming temps réel** (STT) : les partiels s'affinent au fil de la parole, sur un serveur GPU distant quand il est disponible.
+- **Repli automatique** : si le serveur GPU est éteint ou tombe en pleine conversation, Wally bascule tout seul sur une transcription locale (CPU), puis retente le GPU plus tard.
+- **Fin de parole à l'horloge** : comme Discord coupe le flux pendant les silences, un *watchdog* clôt l'énoncé après un court délai sans audio pour transcrire sans attendre.
+- **Synthèse vocale streamée** : la voix est jouée dès les premiers mots synthétisés (latence minimale).
+- **Conscience du salon** : il salue les arrivants et suit qui parle ; son style suit son humeur du moment.
+
 ### 📺 Twitch
 
 - **Stream awareness** : Wally sait quand le live est en cours.
