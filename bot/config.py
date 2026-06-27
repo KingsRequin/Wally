@@ -94,6 +94,9 @@ class VoiceConfig:
     azure_voice: str = "fr-FR-DeniseNeural"  # voix FR à affiner plus tard
     auto_leave_minutes: int = 2
     vad_aggressiveness: int = 2  # webrtcvad 0..3
+    # Discord supprime les silences → plus aucune frame quand on se tait, et le VAD ne voit
+    # jamais la fin de l'énoncé. Ce délai (s) sans frame clôt l'énoncé à l'horloge (flush_idle).
+    vad_silence_timeout_s: float = 0.6
     whisper_model: str = "small"  # faster-whisper : tiny|base|small|medium...
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"

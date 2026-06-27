@@ -97,6 +97,7 @@ class VoiceService:
         self._current_speaker_id: str | None = None
         self._stream_users: dict[str, object] = {}  # speaker_id → membre (streaming multi-locuteurs)
         self._maintain_task: asyncio.Task | None = None
+        self._silence_task: asyncio.Task | None = None  # watchdog fin-de-parole à l'horloge
         self.voice_tools = VOICE_TOOLS
         self.tool_executor = make_voice_tool_executor(
             bot, self, current_speaker_id=lambda: self._current_speaker_id
@@ -204,6 +205,7 @@ class VoiceService:
                 loop=loop,
                 on_frame=self._on_frame,
                 on_speech_end=self._on_speech_end,
+                silence_timeout_s=self._cfg.vad_silence_timeout_s,
             )
             self._maintain_task = loop.create_task(self._streaming.maintain())
             loop.create_task(self._streaming.warmup())  # pré-charge le fallback CPU local
@@ -213,11 +215,15 @@ class VoiceService:
                 aggressiveness=self._cfg.vad_aggressiveness,
                 on_segment=self._on_segment,
                 loop=loop,
+                silence_timeout_s=self._cfg.vad_silence_timeout_s,
             )
             # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s au 1er segment.
             _warmup = getattr(self._stt, "warmup", None)
             if _warmup is not None:
                 loop.create_task(_warmup())
+        # Watchdog fin-de-parole : Discord coupe le silence, donc le VAD ne voit jamais la fin ;
+        # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
+        self._silence_task = loop.create_task(self._silence_watch(sink))
         self._vc.listen(sink)
         self._auto_leave_task = loop.create_task(self._auto_leave_watch())
         logger.info("voice: rejoint le salon {c}", c=channel.id)
@@ -263,6 +269,9 @@ class VoiceService:
         if self._maintain_task is not None:
             self._maintain_task.cancel()
             self._maintain_task = None
+        if self._silence_task is not None:
+            self._silence_task.cancel()
+            self._silence_task = None
         if self._streaming is not None:
             try:
                 await self._streaming.close_all()  # ferme toutes les connexions WS distantes
@@ -448,6 +457,18 @@ class VoiceService:
         if user is None:
             return
         await self._dispatch_transcript(user, text, stt_ms)
+
+    async def _silence_watch(self, sink, interval: float = 0.15) -> None:
+        """Clôt à l'horloge l'énoncé d'un locuteur qui s'est tu (Discord coupe le silence →
+        le VAD local ne se déclenche jamais). Sans ça, le `final` distant ne part jamais."""
+        try:
+            while self._vc is not None:
+                await asyncio.sleep(interval)
+                sink.flush_idle()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice _silence_watch a échoué: {e}", e=e)
 
     # ------------------------------------------------------------------
     # Watchdog auto-leave

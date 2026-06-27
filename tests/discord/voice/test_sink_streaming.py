@@ -70,6 +70,81 @@ async def test_streaming_route_le_segment_vad_vers_on_speech_end(monkeypatch):
     assert ends == [(9, b"SEGMENT")]
 
 
+class _NeverEndsSeg:
+    """Segmenter qui ne clôt JAMAIS via le VAD (simule Discord qui coupe le silence),
+    mais dont flush() rend le segment accumulé une seule fois."""
+
+    def __init__(self, *a):
+        self.fed = 0
+        self._flushed = False
+
+    def feed(self, frame):
+        self.fed += 1
+        return None  # jamais de fin détectée par le VAD : pas de frames de silence
+
+    def flush(self):
+        if self.fed and not self._flushed:
+            self._flushed = True
+            return b"IDLESEG"
+        return None
+
+
+async def test_flush_idle_emet_le_segment_apres_silence_wallclock(monkeypatch):
+    """Streaming : parole puis plus aucune frame → flush_idle clôt l'énoncé à l'horloge."""
+    loop = asyncio.get_running_loop()
+    ends = []
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(sink_mod, "VadSegmenter", _NeverEndsSeg)
+    sink = WallyAudioSink(
+        service=None, aggressiveness=2, on_segment=None, loop=loop,
+        on_frame=lambda u, f: None,
+        on_speech_end=lambda u, seg: ends.append((u.id, seg)),
+        silence_timeout_s=0.6, now_fn=lambda: clock["now"],
+    )
+    sink.write(_User(5), _VoiceData(_stereo_48k(2)))  # parole en cours
+    await asyncio.sleep(0)
+
+    # Silence pas encore écoulé → aucun flush prématuré.
+    sink.flush_idle()
+    await asyncio.sleep(0)
+    assert ends == []
+
+    # Le temps avance au-delà du timeout sans nouvelle frame → l'énoncé est clos.
+    clock["now"] += 0.7
+    sink.flush_idle()
+    await asyncio.sleep(0)
+    assert ends == [(5, b"IDLESEG")]
+
+    # Idempotent : pas de double émission aux ticks suivants.
+    clock["now"] += 1.0
+    sink.flush_idle()
+    await asyncio.sleep(0)
+    assert ends == [(5, b"IDLESEG")]
+
+
+async def test_flush_idle_mode_batch_emet_via_on_segment(monkeypatch):
+    """Batch : même bug latent → flush_idle clôt l'énoncé via on_segment."""
+    loop = asyncio.get_running_loop()
+    segments = []
+    clock = {"now": 500.0}
+    monkeypatch.setattr(sink_mod, "VadSegmenter", _NeverEndsSeg)
+
+    async def on_segment(user, seg):
+        segments.append((user.id, seg))
+
+    sink = WallyAudioSink(
+        service=None, aggressiveness=2, on_segment=on_segment, loop=loop,
+        silence_timeout_s=0.6, now_fn=lambda: clock["now"],
+    )
+    sink.write(_User(8), _VoiceData(_stereo_48k(2)))
+    await asyncio.sleep(0.05)
+
+    clock["now"] += 0.7
+    sink.flush_idle()
+    await asyncio.sleep(0.05)
+    assert segments == [(8, b"IDLESEG")]
+
+
 async def test_mode_batch_route_le_segment_vers_on_segment(monkeypatch):
     """Sans on_frame/on_speech_end, le segment VAD passe par on_segment (comportement existant)."""
     loop = asyncio.get_running_loop()
