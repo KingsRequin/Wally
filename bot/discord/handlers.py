@@ -776,6 +776,14 @@ def _clog(bot: "WallyDiscord", channel: str, event_type: str, **fields) -> None:
         clog.log("discord", channel, event_type, **fields)
 
 
+def maybe_clear_owner_gate(gate, config, author_id: str, is_dm: bool) -> None:
+    """Libère le fil de sollicitation owner quand l'owner répond en DM."""
+    if gate is None or not is_dm:
+        return
+    if str(author_id) == str(getattr(getattr(config, "bot", None), "owner_discord_id", "")):
+        gate.clear()
+
+
 async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     logger.debug("on_message: author={} bot={} guild={} channel={}", message.author, message.author.bot, getattr(message.guild, 'id', 'dm'), message.channel.id)
     if message.author.bot:
@@ -803,6 +811,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     user_id = str(message.author.id)
     # DMs et always_trigger_channels : tout message est un trigger
     _is_dm = message.guild is None
+    # L'owner répond en DM → libère le fil de sollicitation (un seul à la fois).
+    maybe_clear_owner_gate(
+        getattr(bot, "owner_gate", None), bot.config,
+        author_id=user_id, is_dm=_is_dm,
+    )
     _is_always_trigger = _is_dm or message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
     channel_allowed = _is_always_trigger or _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
 

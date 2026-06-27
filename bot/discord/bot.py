@@ -77,6 +77,10 @@ class WallyDiscord(commands.Bot):
         self.upgrade_registry = None  # type: ignore[assignment]  # UpgradeRegistry (Phase 6)
         self.social_rhythm = None   # type: ignore[assignment]  # SocialRhythm — câblé dans setup_hook
         self._social_rhythm_db_path: str | None = None
+        # Gate de sollicitation owner partagé (self-fix + DM cognitif) : un seul
+        # fil de MP vers le créateur à la fois, libéré quand il répond en DM.
+        from bot.intelligence.owner_outreach import OwnerOutreachGate
+        self.owner_gate = OwnerOutreachGate()
         self._wally_recent_speaks: dict[int, str] = {}  # channel_id → dernier texte envoyé
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
@@ -207,7 +211,7 @@ class WallyDiscord(commands.Bot):
             )
             _conv_log = getattr(self, "conv_log", None)
             self.cognitive_feed = CognitiveFeed(conv_log=_conv_log)
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None))
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate)
 
             from bot.intelligence.thought_progress import ThoughtProgressJudge
             _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)
@@ -241,7 +245,7 @@ class WallyDiscord(commands.Bot):
                 from bot.intelligence.upgrade_registry import UpgradeRegistry
                 _reg_db = self._v2_db_path or _os_auto.getenv("DB_PATH", "data/wally.db")
                 self.upgrade_registry = UpgradeRegistry(_reg_db)
-            self.self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry)
+            self.self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry, gate=self.owner_gate)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
