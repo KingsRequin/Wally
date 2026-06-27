@@ -57,9 +57,11 @@ async def test_leave_disconnects():
 
 @pytest.mark.asyncio
 async def test_speak_mutes_listening_during_playback():
-    """speak() doit remettre is_speaking à False après la lecture."""
+    """speak() doit remettre is_speaking à False après la lecture (chemin batch)."""
     svc = _make_service()
-    svc._tts = MagicMock()
+    # spec=["synthesize"] → pas de synthesize_stream → force le fallback batch
+    # (le chemin streaming est couvert par test_streaming_audio.py).
+    svc._tts = MagicMock(spec=["synthesize"])
     svc._tts.synthesize = AsyncMock(return_value=b"\x00\x00" * 100)
 
     vc = MagicMock()

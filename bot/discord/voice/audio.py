@@ -1,9 +1,11 @@
+import threading
 import warnings
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     import audioop
 
+import discord
 import webrtcvad
 
 FRAME_MS = 20
@@ -17,6 +19,57 @@ def to_stt_format(pcm48k_stereo: bytes) -> bytes:
     mono = audioop.tomono(pcm48k_stereo, 2, 0.5, 0.5)
     converted, _ = audioop.ratecv(mono, 2, 1, 48000, SAMPLE_RATE, None)
     return converted
+
+
+class StreamingPCMSource(discord.AudioSource):
+    """Source audio Discord alimentée en continu — joue le TTS au fil de la synthèse.
+
+    Le producteur (TTS) appelle `feed()` avec des chunks PCM 48 kHz mono 16-bit à mesure
+    qu'ils arrivent, et `finish()` à la fin. Discord appelle `read()` toutes les 20 ms depuis
+    son thread de lecture ; on rend des frames stéréo de 20 ms (3840 o). La lecture démarre dès
+    le premier chunk au lieu d'attendre toute la synthèse → latence perçue bien moindre.
+    """
+
+    _FRAME_MONO = 1920    # 20 ms @ 48 kHz mono 16-bit
+    _FRAME_STEREO = 3840  # idem stéréo
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._cv = threading.Condition()
+        self._finished = False
+
+    def feed(self, pcm48k_mono: bytes) -> None:
+        with self._cv:
+            self._buf.extend(pcm48k_mono)
+            self._cv.notify()
+
+    def finish(self) -> None:
+        """Signale la fin du flux : read() videra le reste puis renverra b''."""
+        with self._cv:
+            self._finished = True
+            self._cv.notify_all()
+
+    def is_opus(self) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        with self._cv:
+            # Attend d'avoir un frame complet, sauf si le flux est terminé (évite le CPU à vide).
+            while len(self._buf) < self._FRAME_MONO and not self._finished:
+                self._cv.wait()
+            if len(self._buf) >= self._FRAME_MONO:
+                mono = bytes(self._buf[:self._FRAME_MONO])
+                del self._buf[:self._FRAME_MONO]
+            elif self._buf:  # fin : dernier frame partiel, paddé au silence
+                mono = bytes(self._buf).ljust(self._FRAME_MONO, b"\x00")
+                self._buf.clear()
+            else:
+                return b""  # terminé et vide → discord arrête la lecture
+        return audioop.tostereo(mono, 2, 1, 1)
+
+    def cleanup(self) -> None:
+        # Appelé par discord quand la lecture s'arrête : débloque un read() en attente.
+        self.finish()
 
 
 class VadSegmenter:

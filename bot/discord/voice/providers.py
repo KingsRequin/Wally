@@ -127,6 +127,29 @@ class AzureTTS:
     async def synthesize(self, text: str, style: str | None = None) -> bytes:
         return await asyncio.to_thread(self._synthesize_sync, text, style)
 
+    async def synthesize_stream(self, text: str, style: str | None, on_chunk) -> None:
+        """Synthèse en streaming : `on_chunk(pcm48k_mono)` est appelé au fil de l'audio produit,
+        ce qui permet de commencer à jouer dès le premier chunk (latence perçue minimale)."""
+        await asyncio.to_thread(self._stream_sync, text, style, on_chunk)
+
+    def _stream_sync(self, text: str, style: str | None, on_chunk) -> None:
+        try:
+            speech_cfg = speechsdk.SpeechConfig(subscription=self._key, region=self._region)
+            speech_cfg.set_speech_synthesis_output_format(
+                speechsdk.SpeechSynthesisOutputFormat.Raw48Khz16BitMonoPcm
+            )
+            synth = speechsdk.SpeechSynthesizer(speech_config=speech_cfg, audio_config=None)
+            result = synth.start_speaking_ssml_async(self._build_ssml(text, style)).get()
+            stream = speechsdk.AudioDataStream(result)
+            chunk = bytes(3840)
+            while True:
+                n = stream.read_data(chunk)
+                if n == 0:
+                    break
+                on_chunk(chunk[:n])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("AzureTTS.synthesize_stream a échoué: {e}", e=e)
+
     def _build_ssml(self, text: str, style: str | None) -> str:
         from xml.sax.saxutils import escape, quoteattr
         lang = "-".join(self._voice.split("-")[:2]) or "fr-FR"

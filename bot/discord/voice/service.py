@@ -251,27 +251,56 @@ class VoiceService:
         self.quota.add_tts_chars(len(text))
         self.is_speaking = True
         try:
-            pcm = await self._tts.synthesize(text, style)
-            if not pcm:
-                return
-            # AzureTTS → 48 kHz mono 16-bit ; discord.PCMAudio attend du stéréo.
-            pcm_stereo = audioop.tostereo(pcm, 2, 1, 1)
-            source = discord.PCMAudio(io.BytesIO(pcm_stereo))
-            done = asyncio.Event()
-            loop = asyncio.get_running_loop()
-
-            def _after(err):
-                if err:
-                    logger.warning("voice playback erreur: {e}", e=err)
-                loop.call_soon_threadsafe(done.set)
-
-            self._vc.play(source, after=_after)
-            await done.wait()
+            # Streaming si le provider TTS le supporte (joue dès le 1er chunk) ; sinon batch.
+            stream_fn = getattr(self._tts, "synthesize_stream", None)
+            if stream_fn is not None:
+                await self._speak_streaming(text, style, stream_fn)
+            else:
+                await self._speak_batch(text, style)
             await asyncio.sleep(POST_SPEAK_MUTE_S)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice speak a échoué: {e}", e=e)
         finally:
             self.is_speaking = False
+
+    async def _speak_streaming(self, text: str, style: str | None, stream_fn) -> None:
+        """Joue le TTS au fil de la synthèse via une source alimentée en continu (latence minimale)."""
+        from bot.discord.voice.audio import StreamingPCMSource
+        source = StreamingPCMSource()
+        done = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def _after(err):
+            if err:
+                logger.warning("voice playback erreur: {e}", e=err)
+            loop.call_soon_threadsafe(done.set)
+
+        self._vc.play(source, after=_after)
+        try:
+            # Les chunks PCM 48 kHz mono arrivent au fil de la synthèse → joués immédiatement.
+            await stream_fn(text, style, source.feed)
+        finally:
+            source.finish()  # garantit la fin de lecture même si la synthèse échoue
+        await done.wait()
+
+    async def _speak_batch(self, text: str, style: str | None) -> None:
+        """Synthèse complète puis lecture (fallback si le provider TTS ne streame pas)."""
+        pcm = await self._tts.synthesize(text, style)
+        if not pcm:
+            return
+        # 48 kHz mono 16-bit → stéréo pour discord.PCMAudio.
+        pcm_stereo = audioop.tostereo(pcm, 2, 1, 1)
+        source = discord.PCMAudio(io.BytesIO(pcm_stereo))
+        done = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def _after(err):
+            if err:
+                logger.warning("voice playback erreur: {e}", e=err)
+            loop.call_soon_threadsafe(done.set)
+
+        self._vc.play(source, after=_after)
+        await done.wait()
 
     async def play_cue(self) -> None:
         """Joue un bref bip 'je réfléchis' (feedback de latence) et attend sa fin."""
