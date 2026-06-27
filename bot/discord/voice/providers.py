@@ -62,6 +62,62 @@ class AzureSTT:
             return ""
 
 
+class FasterWhisperSTT:
+    """STT local (faster-whisper / CTranslate2). Entrée : PCM 16 kHz mono 16-bit. Sortie : texte.
+
+    Le modèle est chargé paresseusement au premier appel (et non au boot) pour ne rien charger
+    en RAM tant que le vocal n'est pas utilisé en mode whisper, et pour ne pas dépendre du
+    package `faster_whisper` quand un autre provider est configuré.
+    """
+
+    def __init__(
+        self,
+        model_size: str = "small",
+        language: str = "fr-FR",
+        device: str = "cpu",
+        compute_type: str = "int8",
+        phrases: list[str] | None = None,
+    ) -> None:
+        self._model_size = model_size
+        self._lang = (language or "fr").split("-")[0]  # "fr-FR" → "fr"
+        self._device = device
+        self._compute_type = compute_type
+        names = [p for p in (phrases or []) if p]
+        # `initial_prompt` biaise le décodage vers le nom de Wally / ses surnoms.
+        self._initial_prompt = (", ".join(names) + ".") if names else None
+        self._model = None  # chargé à la demande
+
+    def _ensure_model(self):
+        if self._model is None:
+            from faster_whisper import WhisperModel
+            logger.info(
+                "FasterWhisperSTT: chargement du modèle '{m}' ({d}/{c})",
+                m=self._model_size, d=self._device, c=self._compute_type,
+            )
+            self._model = WhisperModel(
+                self._model_size, device=self._device, compute_type=self._compute_type
+            )
+        return self._model
+
+    async def transcribe(self, pcm16k_mono: bytes) -> str:
+        return await asyncio.to_thread(self._transcribe_sync, pcm16k_mono)
+
+    def _transcribe_sync(self, pcm16k_mono: bytes) -> str:
+        try:
+            import numpy as np
+            model = self._ensure_model()
+            audio = np.frombuffer(pcm16k_mono, dtype=np.int16).astype(np.float32) / 32768.0
+            # beam_size=1 (greedy) → priorité latence ; le VAD a déjà isolé la parole.
+            segments, _info = model.transcribe(
+                audio, language=self._lang, beam_size=1, initial_prompt=self._initial_prompt
+            )
+            # Chaque segment whisper porte déjà un espace de tête → on strip avant de joindre.
+            return " ".join(t for seg in segments if (t := seg.text.strip()))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("FasterWhisperSTT.transcribe a échoué: {e}", e=e)
+            return ""
+
+
 class AzureTTS:
     """TTS Azure Neural. Sortie : PCM 48 kHz mono 16-bit (prêt pour Discord)."""
 
@@ -101,6 +157,15 @@ class AzureTTS:
 
 
 def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToText:
+    provider = (cfg.stt_provider or "azure").lower()
+    if provider in ("faster_whisper", "faster-whisper", "whisper"):
+        return FasterWhisperSTT(
+            model_size=cfg.whisper_model,
+            language=cfg.language,
+            device=cfg.whisper_device,
+            compute_type=cfg.whisper_compute_type,
+            phrases=phrases,
+        )
     key, region = _azure_creds()
     return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases)
 

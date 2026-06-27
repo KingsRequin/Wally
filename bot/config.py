@@ -88,12 +88,15 @@ class SpamDetectionConfig:
 @dataclass
 class VoiceConfig:
     enabled: bool = False
-    stt_provider: str = "azure"
+    stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU)
     tts_provider: str = "azure"
     language: str = "fr-FR"
     azure_voice: str = "fr-FR-DeniseNeural"  # voix FR à affiner plus tard
     auto_leave_minutes: int = 2
     vad_aggressiveness: int = 2  # webrtcvad 0..3
+    whisper_model: str = "small"  # faster-whisper : tiny|base|small|medium...
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
 
 
 @dataclass
