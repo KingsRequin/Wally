@@ -13,7 +13,7 @@ _ADMIN_PREFIX = "/api/admin/"
 # EventSource (SSE) cannot send custom headers — these paths bypass Bearer auth
 # and are only accessible on a trusted local network.
 # Twitch OAuth callback is a browser redirect from Twitch — no Bearer token possible.
-_SSE_EXEMPT = {"/api/admin/sse/logs", "/api/admin/sse/actions", "/api/admin/twitch/auth/callback"}
+_SSE_EXEMPT = {"/api/admin/sse/logs", "/api/admin/sse/actions", "/api/admin/sse/voice", "/api/admin/twitch/auth/callback"}
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):

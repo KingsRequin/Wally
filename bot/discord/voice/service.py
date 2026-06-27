@@ -332,7 +332,9 @@ class VoiceService:
         try:
             self._last_speech_ts = asyncio.get_running_loop().time()
             self.quota.add_stt_seconds(len(pcm16k_mono) / 32000)  # 16 kHz mono 16-bit = 32000 o/s
+            _t0 = asyncio.get_running_loop().time()
             text = await self._stt.transcribe(pcm16k_mono)
+            stt_ms = (asyncio.get_running_loop().time() - _t0) * 1000  # latence de transcription
             if not text:
                 return
             # Pendant que Wally parle : on ne traite QUE les ordres d'arrêt (barge-in).
@@ -350,6 +352,7 @@ class VoiceService:
                 speaker_user_id=str(user.id),
                 speaker_label=label,
                 transcript=text,
+                stt_ms=stt_ms,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("voice _on_segment a échoué: {e}", e=e)

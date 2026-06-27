@@ -195,6 +195,57 @@ def test_leave_request_patterns():
     assert not _is_leave_request("tu fais quoi wally")
 
 
+def _service_for_feed():
+    service = MagicMock()
+    service.speak = AsyncMock()
+    service.history = []
+    service.is_responding = False
+    service._pending = None
+    service.channel_id = 123
+    service.channel_name = "vocal-test"
+    return service
+
+
+@pytest.mark.asyncio
+async def test_publie_event_heard_avec_latence_stt():
+    bot = _bot()
+    bot.voice_feed = MagicMock()
+    service = _service_for_feed()
+    await handle_transcript(bot, service, "42", "Alex (@alex)", "il fait beau", stt_ms=850.0)
+    events = [c.args[0] for c in bot.voice_feed.publish.call_args_list]
+    heard = [e for e in events if e["type"] == "heard"]
+    assert len(heard) == 1
+    assert heard[0]["text"] == "il fait beau"
+    assert heard[0]["speaker"] == "Alex (@alex)"
+    assert heard[0]["stt_ms"] == 850
+    assert heard[0]["channel_name"] == "vocal-test"
+
+
+@pytest.mark.asyncio
+async def test_publie_event_reply_quand_wally_repond():
+    bot = _bot()
+    bot.voice_feed = MagicMock()
+    service = _service_for_feed()
+    await handle_transcript(bot, service, "42", "Alex", "wally tu es là ?")
+    events = [c.args[0] for c in bot.voice_feed.publish.call_args_list]
+    replies = [e for e in events if e["type"] == "reply"]
+    assert len(replies) == 1
+    assert replies[0]["text"] == "salut à tous"
+    assert "gen_ms" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_publie_event_ignored_quand_pas_adresse():
+    bot = _bot()
+    bot.voice_feed = MagicMock()
+    service = _service_for_feed()
+    await handle_transcript(bot, service, "42", "Alex", "il fait beau aujourd'hui")
+    events = [c.args[0] for c in bot.voice_feed.publish.call_args_list]
+    ignored = [e for e in events if e["type"] == "ignored"]
+    assert len(ignored) == 1
+    assert ignored[0]["text"] == "il fait beau aujourd'hui"
+
+
 @pytest.mark.asyncio
 async def test_generate_voice_reply_uses_speaker_user_id():
     """Vérifie que generate_voice_reply passe le bon user_id à memory.search."""

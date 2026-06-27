@@ -297,6 +297,7 @@ function showTab(tabId) {
   if (tabId === 'admin-memoire') renderMemoireTab();
   if (tabId === 'admin-memory-dash') loadMemoryDashboard();
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (tabId === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
   if (tabId === 'admin-overlay') loadOverlayTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
@@ -1149,6 +1150,99 @@ async function loadLogHistory() {
 
 function stopLogSSE() {
   if (logSSE) { logSSE.close(); logSSE = null; }
+}
+
+// ── Vocal (suivi/debug STT + réponses) ───────────────────────────────────────
+let voiceSSE = null;
+let _voiceEvents = [];
+const MAX_VOICE_EVENTS = 400;
+
+function renderVoiceTab() {
+  const el = document.getElementById('tab-admin-voice');
+  if (el.querySelector('#voice-stream')) return;  // déjà rendu
+  el.innerHTML = `
+    <div class="voice-debug">
+      <div class="voice-toolbar">
+        <h2 class="voice-title">🎙️ Suivi vocal <span id="voice-status" class="voice-status off">○ hors ligne</span></h2>
+        <div class="voice-filters">
+          <label><input type="checkbox" id="vf-heard" checked onchange="renderVoiceList()"> 🎤 entendu</label>
+          <label><input type="checkbox" id="vf-reply" checked onchange="renderVoiceList()"> 💬 réponses</label>
+          <label><input type="checkbox" id="vf-ignored" checked onchange="renderVoiceList()"> 🔇 ignorés</label>
+          <button class="control-bar-btn" onclick="clearVoice()">Vider</button>
+        </div>
+      </div>
+      <div id="voice-stream" class="voice-stream"></div>
+    </div>`;
+}
+
+function _voiceRow(e) {
+  const hh = new Date(e.ts ? e.ts * 1000 : Date.now()).toLocaleTimeString('fr-FR');
+  const chan = e.channel_name ? `<span class="v-chan">${escapeHtml(e.channel_name)}</span>` : '';
+  if (e.type === 'reply') {
+    return `<div class="v-row v-reply"><span class="v-time">${hh}</span><span class="v-ico">💬</span>`
+      + `<span class="v-who">${escapeHtml(e.speaker || 'Wally')}</span>`
+      + `<span class="v-text">${escapeHtml(e.text || '')}</span>`
+      + (e.gen_ms != null ? `<span class="v-lat">${e.gen_ms} ms</span>` : '') + `</div>`;
+  }
+  if (e.type === 'ignored') {
+    return `<div class="v-row v-ignored"><span class="v-time">${hh}</span><span class="v-ico">🔇</span>${chan}`
+      + `<span class="v-who">${escapeHtml(e.speaker || '?')}</span>`
+      + `<span class="v-text">${escapeHtml(e.text || '')}</span>`
+      + `<span class="v-reason">${escapeHtml(e.reason || 'ignoré')}</span></div>`;
+  }
+  return `<div class="v-row v-heard"><span class="v-time">${hh}</span><span class="v-ico">🎤</span>${chan}`
+    + `<span class="v-who">${escapeHtml(e.speaker || '?')}</span>`
+    + `<span class="v-text">${escapeHtml(e.text || '')}</span>`
+    + (e.stt_ms != null ? `<span class="v-lat">STT ${e.stt_ms} ms</span>` : '') + `</div>`;
+}
+
+function renderVoiceList() {
+  const el = document.getElementById('voice-stream');
+  if (!el) return;
+  const show = {
+    heard: document.getElementById('vf-heard')?.checked !== false,
+    reply: document.getElementById('vf-reply')?.checked !== false,
+    ignored: document.getElementById('vf-ignored')?.checked !== false,
+  };
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  el.innerHTML = _voiceEvents.filter(e => show[e.type] !== false).map(_voiceRow).join('')
+    || `<div class="voice-empty">En attente d'activité vocale… (Wally doit être dans un salon vocal)</div>`;
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+function _pushVoice(e) {
+  _voiceEvents.push(e);
+  if (_voiceEvents.length > MAX_VOICE_EVENTS) _voiceEvents = _voiceEvents.slice(-MAX_VOICE_EVENTS);
+}
+
+function clearVoice() { _voiceEvents = []; renderVoiceList(); }
+
+function _setVoiceStatus(txt, on) {
+  const s = document.getElementById('voice-status');
+  if (s) { s.textContent = txt; s.className = 'voice-status ' + (on ? 'on' : 'off'); }
+}
+
+async function startVoiceSSE() {
+  if (voiceSSE) voiceSSE.close();
+  if (!getToken()) return;
+  _voiceEvents = [];
+  // Historique persistant d'abord (recent() = décroissant → on inverse pour l'ordre chrono).
+  const r = await apiFetch('/api/admin/voice/history?limit=200');
+  if (r && r.ok) {
+    const { events } = await r.json();
+    (events || []).slice().reverse().forEach(_pushVoice);
+  }
+  renderVoiceList();
+  voiceSSE = new EventSource('/api/admin/sse/voice');
+  voiceSSE.onopen = () => _setVoiceStatus('● live', true);
+  voiceSSE.onerror = () => _setVoiceStatus('○ déconnecté', false);
+  voiceSSE.onmessage = (ev) => {
+    try { _pushVoice(JSON.parse(ev.data)); renderVoiceList(); } catch {}
+  };
+}
+
+function stopVoiceSSE() {
+  if (voiceSSE) { voiceSSE.close(); voiceSSE = null; }
 }
 
 const MAX_LOG_ENTRIES = 200;

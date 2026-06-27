@@ -51,6 +51,9 @@ class AppState:
     # historique du flux) — propagés depuis le bot Discord au boot (cf. bot.py).
     fact_store: object = None
     cognitive_event_store: object = None
+    # Suivi/debug du pipeline vocal (live SSE + historique) — propagés depuis bot.py.
+    voice_feed: object = None
+    voice_event_store: object = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
     message_count_discord: int = 0

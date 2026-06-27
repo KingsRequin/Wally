@@ -75,6 +75,7 @@ class WallyDiscord(commands.Bot):
         self.voice_service = None   # type: ignore[assignment]  # VoiceService — câblé dans setup_hook
         self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
         self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
+        self.voice_feed = None      # type: ignore[assignment]  # VoiceFeed (live SSE debug vocal)
         self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
         self.upgrade_registry = None  # type: ignore[assignment]  # UpgradeRegistry (Phase 6)
         self.social_rhythm = None   # type: ignore[assignment]  # SocialRhythm — câblé dans setup_hook
@@ -278,7 +279,18 @@ class WallyDiscord(commands.Bot):
         self.voice_service = None
         if getattr(self.config, "voice", None) and self.config.voice.enabled:
             try:
+                import os as _os_v
                 from bot.discord.voice.service import VoiceService
+                from bot.discord.voice.feed import VoiceFeed
+                from bot.discord.voice.event_store import VoiceEventStore
+                # Feed de debug vocal (live SSE + historique persistant), indépendant de la cognition.
+                _voice_db = getattr(self, "_v2_db_path", None) or _os_v.getenv("DB_PATH", "data/wally.db")
+                _voice_store = VoiceEventStore(_voice_db)
+                self.voice_feed = VoiceFeed(event_store=_voice_store)
+                _dash = getattr(self, "dashboard_state", None)
+                if _dash is not None:
+                    _dash.voice_feed = self.voice_feed
+                    _dash.voice_event_store = _voice_store
                 self.voice_service = VoiceService(self, self.config.voice)
                 logger.info("VoiceService activé")
             except Exception as e:  # noqa: BLE001

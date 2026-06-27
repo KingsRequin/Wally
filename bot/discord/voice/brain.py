@@ -247,8 +247,26 @@ async def generate_voice_reply(
 _HISTORY_MAX = 20  # fenêtre de contexte de groupe (toutes personnes confondues)
 
 
+def _voice_publish(bot, service, type_: str, **fields) -> None:
+    """Publie un événement de debug vocal sur le feed (live SSE + historique). Jamais bloquant."""
+    feed = getattr(bot, "voice_feed", None)
+    if feed is None:
+        return
+    event = {
+        "type": type_,
+        "channel_id": str(getattr(service, "channel_id", "")),
+        "channel_name": getattr(service, "channel_name", ""),
+        **fields,
+    }
+    try:
+        feed.publish(event)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("voice_feed.publish a échoué: {e}", e=e)
+
+
 async def handle_transcript(
-    bot, service, speaker_user_id: str, speaker_label: str, transcript: str
+    bot, service, speaker_user_id: str, speaker_label: str, transcript: str,
+    stt_ms: float = 0.0,
 ) -> None:
     """Consigne la parole dans le fil de groupe ; répond si pertinent (une réponse à la fois)."""
     transcript = (transcript or "").strip()
@@ -259,6 +277,10 @@ async def handle_transcript(
     #    même si Wally ne répond pas : il doit suivre ce que les gens se disent entre eux.
     service.history.append({"role": "user", "content": f"{speaker_label}: {transcript}"})
     service.history[:] = service.history[-_HISTORY_MAX:]
+
+    # Suivi/debug : ce que le STT a entendu (avec sa latence), publié quoi qu'il advienne.
+    _voice_publish(bot, service, "heard", speaker=speaker_label, speaker_id=speaker_user_id,
+                   text=transcript, stt_ms=round(stt_ms))
 
     try:
         if getattr(bot, "cognitive_loop", None) is not None:
@@ -311,6 +333,14 @@ async def _respond_once(
     bot, service, speaker_user_id: str, speaker_label: str, transcript: str
 ) -> None:
     """Produit (au plus) une réponse parlée à une parole donnée. Le verrou est géré par l'appelant."""
+    t0 = asyncio.get_running_loop().time()
+
+    def _gen_ms() -> int:
+        return round((asyncio.get_running_loop().time() - t0) * 1000)
+
+    wally_name = getattr(getattr(bot, "config", None), "bot", None)
+    wally_name = getattr(wally_name, "name", None) or "Wally"
+
     # Filet déterministe : demande explicite de quitter le vocal → on déconnecte vraiment
     # (sans dépendre du tool-calling du LLM, qui dit parfois "ok je pars" sans agir).
     if _is_leave_request(transcript):
@@ -319,6 +349,8 @@ async def _respond_once(
             await service.speak("Ok, je vous laisse. À plus !")
         except Exception:  # noqa: BLE001
             pass
+        _voice_publish(bot, service, "reply", speaker=wally_name,
+                       text="Ok, je vous laisse. À plus !", gen_ms=_gen_ms())
         await service.leave()
         return
 
@@ -332,6 +364,8 @@ async def _respond_once(
 
     if not _should_respond_voice(transcript, service.history, named):
         logger.info("voice: parole pas adressée à Wally → il écoute")
+        _voice_publish(bot, service, "ignored", speaker=speaker_label, speaker_id=speaker_user_id,
+                       text=transcript, reason="pas adressé à Wally")
         return
 
     # Feedback de latence : bref bip « j'ai entendu, je réfléchis » avant la génération LLM.
@@ -369,9 +403,13 @@ async def _respond_once(
         return
 
     if not text:
+        _voice_publish(bot, service, "ignored", speaker=speaker_label, speaker_id=speaker_user_id,
+                       text=transcript, reason="réponse vide")
         return
 
     await service.speak(text)
+    # Suivi/debug : la réponse de Wally + latence depuis la décision (gate + génération + TTS).
+    _voice_publish(bot, service, "reply", speaker=wally_name, text=text, gen_ms=_gen_ms())
     service.history.append({"role": "assistant", "content": text})
     service.history[:] = service.history[-_HISTORY_MAX:]
 

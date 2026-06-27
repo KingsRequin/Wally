@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS cognitive_events (
 );
 -- Pas d'index sur id : INTEGER PRIMARY KEY = alias du rowid, déjà indexé.
 
+-- Suivi/debug du pipeline vocal (STT entendu, réponse de Wally, décisions, latences).
+CREATE TABLE IF NOT EXISTS voice_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      REAL    NOT NULL,
+    type    TEXT    NOT NULL,
+    payload TEXT    NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS thoughts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     content       TEXT    NOT NULL,
