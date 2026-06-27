@@ -142,6 +142,22 @@ async def test_speak_logged_to_conv_log_as_message_out():
     assert kwargs["content"] == "salut"
 
 
+@pytest.mark.asyncio
+async def test_act_create_memory_event_carries_full(tmp_fact_store):
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+    feed = MagicMock()
+    long = "x" * 400
+    disp = ActionDispatcher(fact_store=tmp_fact_store, feed=feed)
+    await disp.dispatch(MetaDecision(action="ACT", act_name="create_memory",
+                                     act_args={"fact_content": long}))
+    ev = next(c.args[0] for c in feed.publish.call_args_list
+              if c.args and c.args[0].get("type") == "ACT")
+    assert len(ev["detail"]) <= 300
+    assert ev["full"] == f"create_memory: {long}"
+    assert ev["detail"] == f"create_memory: {long}"[:300]
+
+
 @_pytest_fd.mark.asyncio
 async def test_dm_records_wally_message_in_memory():
     """Le DM cognitif au créateur doit s'enregistrer dans le contexte du canal DM,

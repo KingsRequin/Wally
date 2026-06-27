@@ -66,6 +66,14 @@ class ActionDispatcher:
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
 
+    def _publish_act(self, label: str, body: str) -> None:
+        """Event ACT avec snippet (≤300) + texte complet (full, ≤2000) →
+        dépliable côté site (#observability A5)."""
+        if not self._feed:
+            return
+        full = f"{label}{body}"
+        self._feed.publish({"type": "ACT", "detail": full[:300], "full": full[:2000]})
+
     def _owner_id(self) -> str:
         for b in (self._bot, self._twitch_bot):
             cfg = getattr(b, "config", None)
@@ -265,7 +273,7 @@ class ActionDispatcher:
             if channel is not None:
                 self._record_self_message(str(channel.id), message)
             if self._feed:
-                self._feed.publish({"type": "DM", "target": "créateur", "message": message[:300]})
+                self._feed.publish({"type": "DM", "target": "créateur", "message": message[:300], "full": message[:2000]})
         except Exception as e:
             logger.warning("DM failed: {}", e)
 
@@ -300,8 +308,7 @@ class ActionDispatcher:
                     last_seen_at=now,
                 ))
                 logger.info("ACT create_memory: {}", content[:60])
-                if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_memory: {content[:300]}"})
+                self._publish_act("create_memory: ", content)
 
         elif act_name == "create_goal" and self._facts:
             desc = args.get("description", "")
@@ -315,8 +322,7 @@ class ActionDispatcher:
                     last_seen_at=now,
                 ))
                 logger.info("ACT create_goal: {}", desc[:60])
-                if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_goal: {desc[:300]}"})
+                self._publish_act("create_goal: ", desc)
 
         elif act_name == "create_desire" and self._facts:
             content = args.get("content", "")
@@ -333,8 +339,7 @@ class ActionDispatcher:
                 if dup is not None and dup.id is not None:
                     await self._facts.confirm(dup.id)
                     logger.info("ACT create_desire: doublon fusionné → #{} ({})", dup.id, content[:50])
-                    if self._feed:
-                        self._feed.publish({"type": "ACT", "detail": f"desire fusionné: {content[:300]}"})
+                    self._publish_act("desire fusionné: ", content)
                 else:
                     await self._facts.add(AtomicFact(
                         user_id="wally:self",
@@ -345,8 +350,7 @@ class ActionDispatcher:
                         last_seen_at=now,
                     ))
                     logger.info("ACT create_desire: {}", content[:60])
-                    if self._feed:
-                        self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:300]}"})
+                    self._publish_act("create_desire: ", content)
 
         elif act_name == "advance_goal" and self._facts:
             goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
@@ -359,10 +363,7 @@ class ActionDispatcher:
             ok = await self._facts.append_progress(goal_id, step)
             if ok:
                 logger.info("ACT advance_goal: #{} {}", goal_id, step[:60])
-                if self._feed:
-                    self._feed.publish(
-                        {"type": "ACT", "detail": f"advance_goal #{goal_id}: {step[:300]}"}
-                    )
+                self._publish_act(f"advance_goal #{goal_id}: ", step)
 
         elif act_name == "fulfill_goal" and self._facts:
             goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
@@ -468,8 +469,7 @@ class ActionDispatcher:
                 "ACT note_to_self ({}): {}{}", kind, note[:60],
                 f" [dans {raw_minutes} min]" if scheduled_at else "",
             )
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"note ({kind}): {note[:300]}"})
+            self._publish_act(f"note ({kind}): ", note)
 
         elif act_name == "set_focus" and self._facts:
             focus = (args.get("focus") or "").strip()
@@ -504,8 +504,7 @@ class ActionDispatcher:
                 last_seen_at=now,
             ))
             logger.info("ACT set_focus: {}", focus[:60])
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"focus: {focus[:300]}"})
+            self._publish_act("focus: ", focus)
 
         elif act_name == "reflect_self" and self._facts:
             narrative = args.get("narrative", "").strip()
@@ -523,10 +522,7 @@ class ActionDispatcher:
                 last_seen_at=now,
             ))
             logger.info("ACT reflect_self: {}", narrative[:60])
-            if self._feed:
-                self._feed.publish(
-                    {"type": "ACT", "detail": f"récit de soi : {narrative[:300]}"}
-                )
+            self._publish_act("récit de soi : ", narrative)
 
         elif act_name == "note_relation" and self._facts:
             about = (args.get("about") or "").strip()
