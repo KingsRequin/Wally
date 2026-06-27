@@ -36,6 +36,7 @@ services:
         condition: service_completed_successfully
     environment:
       - TZ=Europe/Paris
+      - HF_HOME=/app/data/hf-cache   # cache modèle faster-whisper dans le volume persistant ./data (évite le re-download à chaque restart)
     env_file: .env
     ports:
       - "0.0.0.0:8080:8080"
