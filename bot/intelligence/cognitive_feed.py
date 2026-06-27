@@ -24,6 +24,9 @@ class CognitiveFeed:
         self._conv_log = conv_log
         # Historique persistant (#observability). None → live seulement.
         self._event_store = event_store
+        # Réfs fortes des tâches de persistance fire-and-forget → évite leur GC
+        # prématuré et la perte silencieuse d'une exception future.
+        self._persist_tasks: set[asyncio.Task] = set()
 
     def publish(self, event: dict) -> None:
         # Anti-rumination : ignore un événement identique au précédent
@@ -43,9 +46,11 @@ class CognitiveFeed:
         # Persistance de l'historique (sauf ATTN, trop fréquent/transitoire).
         if self._event_store is not None and event.get("type") != "ATTN":
             try:
-                asyncio.get_running_loop().create_task(
+                task = asyncio.get_running_loop().create_task(
                     self._event_store.append(dict(event))
                 )
+                self._persist_tasks.add(task)
+                task.add_done_callback(self._persist_tasks.discard)
             except RuntimeError:
                 pass   # pas de loop (test sync) → on saute la persistance
 
