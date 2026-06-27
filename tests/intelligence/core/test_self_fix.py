@@ -383,3 +383,37 @@ async def test_outcome_uses_config_creator_name_not_constant():
     # Vérifier que "Bob" est présent et non "KingsRequin"
     assert "bob" in blob, f"Creator name 'Bob' not found in outcome. Content: {blob}"
     assert "kingsrequin" not in blob, f"Hardcoded 'KingsRequin' should not appear. Content: {blob}"
+
+
+# ── #observability A4 : issue self-fix publiée sur le feed cognitif ──
+
+@pytest.mark.asyncio
+async def test_set_status_publishes_outcome_to_feed():
+    """Chaque transition de statut publie l'issue sur le feed (visible sur le site)."""
+    from bot.intelligence.self_fix import SelfFix
+    from bot.intelligence.upgrade_registry import DELIVERED
+    feed = MagicMock()
+    bot = MagicMock(); bot.cognitive_feed = feed
+    registry = MagicMock(); registry.set_status = AsyncMock()
+    sf = SelfFix(bridge=MagicMock(), bot=bot, registry=registry)
+    sf._active_goal = "percevoir les réactions emoji"
+    await sf._set_status(5, DELIVERED)
+    evs = [c.args[0] for c in feed.publish.call_args_list if c.args]
+    assert any(
+        e["type"] == "ACT" and "auto-modif" in e["detail"]
+        and "déployée" in e["detail"]
+        and e["full"] == "percevoir les réactions emoji"
+        for e in evs
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_status_no_publish_without_active_goal():
+    """Sans goal actif, aucune publication feed (pas de bruit)."""
+    from bot.intelligence.self_fix import SelfFix
+    from bot.intelligence.upgrade_registry import DELIVERED
+    feed = MagicMock()
+    bot = MagicMock(); bot.cognitive_feed = feed
+    sf = SelfFix(bridge=MagicMock(), bot=bot, registry=None)
+    await sf._set_status(None, DELIVERED)
+    feed.publish.assert_not_called()

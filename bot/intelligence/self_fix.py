@@ -53,10 +53,28 @@ class SelfFix:
         self._registry = registry
         # Gate de sollicitation owner (un seul fil à la fois). None → pas de gate.
         self._gate = gate
+        # Goal de l'upgrade en cours (#observability A4) : permet à _set_status de
+        # publier l'issue (acceptée/refusée/déployée) sur le feed cognitif.
+        self._active_goal: str | None = None
 
     async def _set_status(self, upgrade_id: int | None, status: str) -> None:
-        """Met à jour le statut d'une demande dans le registre. No-op si pas de
-        registre ou d'id. Best-effort : ne propage jamais."""
+        """Met à jour le statut d'une demande dans le registre et publie l'issue
+        sur le feed cognitif (#observability A4). Best-effort : ne propage jamais."""
+        # Publication feed (indépendante du registre) : rend l'auto-modification
+        # visible de bout en bout sur le site (demande → acceptée/refusée/déployée).
+        goal = self._active_goal or ""
+        feed = getattr(self._bot, "cognitive_feed", None)
+        if feed is not None and goal:
+            _labels = {DELIVERED: "déployée", DECLINED: "refusée", ABANDONED: "abandonnée"}
+            label = _labels.get(status, status)
+            try:
+                feed.publish({
+                    "type": "ACT",
+                    "detail": f"auto-modif {label} : {goal[:200]}",
+                    "full": goal,
+                })
+            except Exception as e:  # noqa: BLE001 — le feed ne doit jamais casser le flux
+                logger.warning("self-fix feed.publish échoué: {}", e)
         if self._registry is None or upgrade_id is None:
             return
         try:
@@ -114,6 +132,7 @@ class SelfFix:
             )
             return
         self._pending = True
+        self._active_goal = goal   # suivi de l'issue sur le feed (#observability A4)
         upgrade_id: int | None = None
         try:
             if self._registry is not None:
