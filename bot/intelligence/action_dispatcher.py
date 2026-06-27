@@ -21,6 +21,30 @@ DM_CREATOR_COOLDOWN = 7200  # 2h
 # mentionner un membre (<@id>) mais jamais @everyone/@here ni un rôle entier.
 _ALLOWED_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
+# Mots vides pour la comparaison de désirs (Phase 3, dédup à l'écriture).
+_DESIRE_STOPWORDS = frozenset(
+    {"le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "que",
+     "qui", "est", "sur", "pour", "dans", "par", "pas", "ce", "ça", "il",
+     "je", "me", "mon", "ma", "mes", "si", "en", "au", "aux", "the", "and"}
+)
+
+
+def _desire_tokens(text: str) -> set[str]:
+    if not text:
+        return set()
+    cleaned = re.sub(r"[^\w\s]", " ", text.lower(), flags=re.UNICODE)
+    return {t for t in cleaned.split() if len(t) >= 3 and t not in _DESIRE_STOPWORDS}
+
+
+def _same_desire(a: str, b: str, threshold: float = 0.5) -> bool:
+    """True si deux désirs expriment la même intention (Jaccard de tokens ≥ seuil).
+    Robuste aux paraphrases qui partagent les mots porteurs (entités, verbes), là
+    où la similarité caractère échoue. Isolé pour pouvoir évoluer (cf. spec)."""
+    ta, tb = _desire_tokens(a), _desire_tokens(b)
+    if not ta or not tb:
+        return False
+    return len(ta & tb) / len(ta | tb) >= threshold
+
 
 class ActionDispatcher:
     def __init__(
@@ -278,17 +302,32 @@ class ActionDispatcher:
         elif act_name == "create_desire" and self._facts:
             content = args.get("content", "")
             if content:
-                await self._facts.add(AtomicFact(
-                    user_id="wally:self",
-                    content=content,
-                    category=FactCategory.DESIRE,
-                    confidence=0.8,
-                    created_at=now,
-                    last_seen_at=now,
-                ))
-                logger.info("ACT create_desire: {}", content[:60])
-                if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:300]}"})
+                # Dédup sémantique à l'écriture (Phase 3) : si un désir actif
+                # exprime déjà la même intention, on le RAFRAÎCHIT (support++ +
+                # last_seen) au lieu d'en empiler un paraphrasé de plus.
+                existing = await self._facts.search_by_category(
+                    FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=25
+                )
+                dup = next(
+                    (d for d in existing if _same_desire(content, d.content)), None
+                )
+                if dup is not None and dup.id is not None:
+                    await self._facts.confirm(dup.id)
+                    logger.info("ACT create_desire: doublon fusionné → #{} ({})", dup.id, content[:50])
+                    if self._feed:
+                        self._feed.publish({"type": "ACT", "detail": f"desire fusionné: {content[:300]}"})
+                else:
+                    await self._facts.add(AtomicFact(
+                        user_id="wally:self",
+                        content=content,
+                        category=FactCategory.DESIRE,
+                        confidence=0.8,
+                        created_at=now,
+                        last_seen_at=now,
+                    ))
+                    logger.info("ACT create_desire: {}", content[:60])
+                    if self._feed:
+                        self._feed.publish({"type": "ACT", "detail": f"create_desire: {content[:300]}"})
 
         elif act_name == "advance_goal" and self._facts:
             goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
@@ -314,6 +353,54 @@ class ActionDispatcher:
             logger.info("ACT fulfill_goal: #{} accompli", goal_id)
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"fulfill_goal #{goal_id}"})
+
+        elif act_name == "drop_desire" and self._facts:
+            # Clore un désir résolu / caduc (Phase 3). Accepte un id explicite ou
+            # une description (on archive le désir actif le plus proche).
+            raw_id = args.get("desire_id")
+            desc = (args.get("description") or "").strip()
+            target_id: int | None = None
+            if raw_id is not None:
+                try:
+                    target_id = int(raw_id)
+                except (TypeError, ValueError):
+                    target_id = None
+            if target_id is None and desc:
+                actives = await self._facts.search_by_category(
+                    FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=25
+                )
+                match = next((d for d in actives if _same_desire(desc, d.content)), None)
+                target_id = match.id if match else None
+            if target_id is not None:
+                await self._facts.set_status(target_id, FactStatus.ARCHIVED)
+                logger.info("ACT drop_desire: #{} archivé", target_id)
+                if self._feed:
+                    self._feed.publish({"type": "ACT", "detail": f"drop_desire #{target_id}"})
+            else:
+                logger.warning("ACT drop_desire: aucun désir cible ({!r}/{!r})", raw_id, desc[:50])
+
+        elif act_name == "doubt_memory" and self._facts:
+            # Marquer un souvenir comme non vérifié / hallucination probable
+            # (Phase 3) : needs_review + confiance / 2. id explicite ou description
+            # (recherche FTS dans la mémoire propre de Wally).
+            raw_id = args.get("fact_id")
+            desc = (args.get("description") or "").strip()
+            target_id = None
+            if raw_id is not None:
+                try:
+                    target_id = int(raw_id)
+                except (TypeError, ValueError):
+                    target_id = None
+            if target_id is None and desc:
+                hits = await self._facts.search_fts("wally:self", desc, limit=1)
+                target_id = hits[0][0].id if hits else None
+            if target_id is not None:
+                await self._facts.doubt(target_id)
+                logger.info("ACT doubt_memory: #{} marqué needs_review", target_id)
+                if self._feed:
+                    self._feed.publish({"type": "ACT", "detail": f"doubt_memory #{target_id}"})
+            else:
+                logger.warning("ACT doubt_memory: aucune cible ({!r}/{!r})", raw_id, desc[:50])
 
         elif act_name == "react":
             await self._react(

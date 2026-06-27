@@ -437,6 +437,20 @@ class SQLiteFactStore:
             )
             await db.commit()
 
+    async def doubt(self, fact_id: int) -> None:
+        """Marque un fait comme non vérifié / hallucination probable : passe en
+        `needs_review` et divise la confiance par deux. Réversible. Sert à l'outil
+        `doubt_memory` (Wally agit sur son obsession « inférence vs fait » au lieu
+        de la ruminer)."""
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                """UPDATE atomic_facts
+                   SET status = ?, confidence = confidence * 0.5
+                   WHERE id = ?""",
+                (FactStatus.NEEDS_REVIEW.value, fact_id),
+            )
+            await db.commit()
+
     # Séparateur entre l'intitulé d'un but et son journal de progression.
     _PROGRESS_HEADER = "— progression —"
 
