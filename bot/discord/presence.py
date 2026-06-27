@@ -32,7 +32,10 @@ class PresenceService:
 
     def __init__(self, client: discord.Client, guild_id: int | None = None):
         self._client = client
-        self._guild_id = guild_id or (int(os.getenv("DISCORD_GUILD_ID", "0")) or None)
+        # DISCORD_GUILD_ID peut lister plusieurs serveurs ; la présence suit le 1er (principal).
+        from bot.discord.guild_sync import parse_guild_ids
+        ids = parse_guild_ids(os.getenv("DISCORD_GUILD_ID"))
+        self._guild_id = guild_id or (ids[0] if ids else None)
         if self._guild_id is None:
             logger.warning(
                 "PresenceService : DISCORD_GUILD_ID absent — perception de présence désactivée"
