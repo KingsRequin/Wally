@@ -98,6 +98,15 @@ CREATE TRIGGER IF NOT EXISTS atomic_facts_fts_au AFTER UPDATE ON atomic_facts BE
              coalesce(new.object,'')||' '||coalesce(new.content,''))
     );
 END;
+
+CREATE TABLE IF NOT EXISTS social_rhythm_bins (
+    bin_key    TEXT    PRIMARY KEY,
+    avg        REAL    NOT NULL DEFAULT 0.0,
+    eng        REAL    NOT NULL DEFAULT 0.5,
+    days       INTEGER NOT NULL DEFAULT 0,
+    eng_obs    INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT    NOT NULL
+);
 """
 
 # Colonnes ajoutées à atomic_facts pour le modèle S-P-O (porté de jarvis).
