@@ -1171,8 +1171,22 @@ function renderVoiceTab() {
           <button class="control-bar-btn" onclick="clearVoice()">Vider</button>
         </div>
       </div>
+      <div id="voice-live" class="voice-live"></div>
       <div id="voice-stream" class="voice-stream"></div>
     </div>`;
+}
+
+// Transcriptions partielles en cours (STT streaming), par locuteur — éphémères, non historisées.
+let _voiceLive = {};
+
+function _renderVoiceLive() {
+  const el = document.getElementById('voice-live');
+  if (!el) return;
+  el.innerHTML = Object.values(_voiceLive).map(e =>
+    `<div class="v-row v-partial"><span class="v-ico">✍️</span>`
+    + `<span class="v-who">${escapeHtml(e.speaker || '?')}</span>`
+    + `<span class="v-text">${escapeHtml(e.text || '')}</span>`
+    + `<span class="v-live-dot">●</span></div>`).join('');
 }
 
 function _voiceRow(e) {
@@ -1215,7 +1229,7 @@ function _pushVoice(e) {
   if (_voiceEvents.length > MAX_VOICE_EVENTS) _voiceEvents = _voiceEvents.slice(-MAX_VOICE_EVENTS);
 }
 
-function clearVoice() { _voiceEvents = []; renderVoiceList(); }
+function clearVoice() { _voiceEvents = []; _voiceLive = {}; _renderVoiceLive(); renderVoiceList(); }
 
 function _setVoiceStatus(txt, on) {
   const s = document.getElementById('voice-status');
@@ -1226,6 +1240,7 @@ async function startVoiceSSE() {
   if (voiceSSE) voiceSSE.close();
   if (!getToken()) return;
   _voiceEvents = [];
+  _voiceLive = {}; _renderVoiceLive();
   // Historique persistant d'abord (recent() = décroissant → on inverse pour l'ordre chrono).
   const r = await apiFetch('/api/admin/voice/history?limit=200');
   if (r && r.ok) {
@@ -1237,7 +1252,18 @@ async function startVoiceSSE() {
   voiceSSE.onopen = () => _setVoiceStatus('● live', true);
   voiceSSE.onerror = () => _setVoiceStatus('○ déconnecté', false);
   voiceSSE.onmessage = (ev) => {
-    try { _pushVoice(JSON.parse(ev.data)); renderVoiceList(); } catch {}
+    try {
+      const e = JSON.parse(ev.data);
+      const key = e.speaker_id || e.speaker;
+      if (e.type === 'partial') {           // transcription live → bande, pas d'historique
+        if (key) { _voiceLive[key] = e; _renderVoiceLive(); }
+        return;
+      }
+      if (e.type === 'heard' && key && _voiceLive[key]) {  // final reçu → retire le live
+        delete _voiceLive[key]; _renderVoiceLive();
+      }
+      _pushVoice(e); renderVoiceList();
+    } catch {}
   };
 }
 

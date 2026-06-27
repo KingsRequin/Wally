@@ -20,14 +20,16 @@ class VoiceFeed:
         # Réfs fortes des tâches de persistance fire-and-forget (évite GC prématuré).
         self._persist_tasks: set[asyncio.Task] = set()
 
-    def publish(self, event: dict) -> None:
+    def publish(self, event: dict, *, persist: bool = True) -> None:
+        """Diffuse `event` aux abonnés SSE (live). Si `persist` est False, l'event n'est pas
+        écrit dans l'historique (cas des `partial` STT, trop volumineux/éphémères)."""
         self._buffer.append(event)
         for q in list(self._queues):
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
                 pass
-        if self._event_store is not None:
+        if persist and self._event_store is not None:
             try:
                 task = asyncio.get_running_loop().create_task(
                     self._event_store.append(dict(event))

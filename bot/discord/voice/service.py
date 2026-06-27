@@ -14,8 +14,13 @@ from loguru import logger
 from bot.config import VoiceConfig
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
-from bot.discord.voice.brain import _is_stop_request, generate_voice_greeting, handle_transcript
-from bot.discord.voice.providers import build_stt, build_tts
+from bot.discord.voice.brain import (
+    _is_stop_request,
+    _voice_publish,
+    generate_voice_greeting,
+    handle_transcript,
+)
+from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import resolve_style
 from bot.discord.voice.sink import WallyAudioSink
@@ -80,12 +85,18 @@ class VoiceService:
             stt_phrases = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
         except Exception:  # noqa: BLE001
             pass
-        self._stt = build_stt(cfg, phrases=stt_phrases)
+        # STT : streaming distant (remote_stream) ou batch (azure / faster_whisper).
+        self._streaming = None
+        self._stt = None
+        self._stt_phrases = stt_phrases
+        self._build_stt_pipeline(cfg, stt_phrases)
         self._tts = build_tts(cfg)
         self._vc: discord.VoiceClient | None = None
         self._channel = None
         self.history: list[dict] = []
         self._current_speaker_id: str | None = None
+        self._stream_users: dict[str, object] = {}  # speaker_id → membre (streaming multi-locuteurs)
+        self._maintain_task: asyncio.Task | None = None
         self.voice_tools = VOICE_TOOLS
         self.tool_executor = make_voice_tool_executor(
             bot, self, current_speaker_id=lambda: self._current_speaker_id
@@ -113,17 +124,30 @@ class VoiceService:
     def channel_name(self) -> str:
         return getattr(self._channel, "name", "") if self._channel else ""
 
+    def _build_stt_pipeline(self, cfg: VoiceConfig, phrases: list[str]) -> None:
+        """Construit le pipeline STT : streaming distant (remote_stream) ou batch."""
+        provider = (cfg.stt_provider or "").lower()
+        if provider in ("remote_stream", "remote-stream", "remote"):
+            self._streaming = build_streaming_stt(cfg, phrases=phrases)
+            self._streaming.on_partial = self._on_stream_partial
+            self._streaming.on_final = self._on_stream_final
+            self._stt = None
+        else:
+            self._streaming = None
+            self._stt = build_stt(cfg, phrases=phrases)
+
     def reload_config(self, cfg: VoiceConfig) -> None:
-        """Recharge la config à chaud (voix, langue, seuils) sans redémarrer le bot."""
+        """Recharge la config à chaud (voix, langue, seuils, provider STT) sans redémarrer."""
         self._cfg = cfg
         try:
             phrases = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
         except Exception:  # noqa: BLE001
             phrases = []
         try:
-            self._stt = build_stt(cfg, phrases=phrases)
+            self._build_stt_pipeline(cfg, phrases)
             self._tts = build_tts(cfg)
-            logger.info("VoiceService: config rechargée (voix={v})", v=cfg.azure_voice)
+            logger.info("VoiceService: config rechargée (voix={v}, stt={s})",
+                        v=cfg.azure_voice, s=cfg.stt_provider)
         except Exception as e:  # noqa: BLE001
             logger.warning("VoiceService.reload_config a échoué: {e}", e=e)
 
@@ -170,18 +194,32 @@ class VoiceService:
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
         loop = asyncio.get_running_loop()
         self._last_speech_ts = loop.time()
-        sink = WallyAudioSink(
-            service=self,
-            aggressiveness=self._cfg.vad_aggressiveness,
-            on_segment=self._on_segment,
-            loop=loop,
-        )
+        self._stream_users.clear()
+        if self._streaming is not None:
+            # Streaming distant : audio brut au fil de l'eau + fin de parole VAD locale (flush).
+            sink = WallyAudioSink(
+                service=self,
+                aggressiveness=self._cfg.vad_aggressiveness,
+                on_segment=None,
+                loop=loop,
+                on_frame=self._on_frame,
+                on_speech_end=self._on_speech_end,
+            )
+            self._maintain_task = loop.create_task(self._streaming.maintain())
+            loop.create_task(self._streaming.warmup())  # pré-charge le fallback CPU local
+        else:
+            sink = WallyAudioSink(
+                service=self,
+                aggressiveness=self._cfg.vad_aggressiveness,
+                on_segment=self._on_segment,
+                loop=loop,
+            )
+            # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s au 1er segment.
+            _warmup = getattr(self._stt, "warmup", None)
+            if _warmup is not None:
+                loop.create_task(_warmup())
         self._vc.listen(sink)
         self._auto_leave_task = loop.create_task(self._auto_leave_watch())
-        # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s sur le 1er segment.
-        _warmup = getattr(self._stt, "warmup", None)
-        if _warmup is not None:
-            loop.create_task(_warmup())
         logger.info("voice: rejoint le salon {c}", c=channel.id)
         # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
         loop.create_task(self._greet())
@@ -222,6 +260,15 @@ class VoiceService:
         if self._auto_leave_task is not None:
             self._auto_leave_task.cancel()
             self._auto_leave_task = None
+        if self._maintain_task is not None:
+            self._maintain_task.cancel()
+            self._maintain_task = None
+        if self._streaming is not None:
+            try:
+                await self._streaming.close_all()  # ferme toutes les connexions WS distantes
+            except Exception as e:  # noqa: BLE001
+                logger.warning("voice: fermeture des sessions streaming a échoué: {e}", e=e)
+        self._stream_users.clear()
         if self._vc is not None:
             try:
                 self._vc.stop_listening()
@@ -328,38 +375,79 @@ class VoiceService:
             logger.warning("voice stop_speaking a échoué: {e}", e=e)
 
     # ------------------------------------------------------------------
-    # Callback interne — segment audio validé par VAD
+    # Callback interne — segment audio validé par VAD (mode batch)
     # ------------------------------------------------------------------
 
     async def _on_segment(self, user, pcm16k_mono: bytes) -> None:
-        """Transcrit un segment de parole et appelle le cerveau."""
+        """Transcrit un segment de parole (STT batch) et appelle le cerveau."""
         try:
-            self._last_speech_ts = asyncio.get_running_loop().time()
             self.quota.add_stt_seconds(len(pcm16k_mono) / 32000)  # 16 kHz mono 16-bit = 32000 o/s
             _t0 = asyncio.get_running_loop().time()
             text = await self._stt.transcribe(pcm16k_mono)
             stt_ms = (asyncio.get_running_loop().time() - _t0) * 1000  # latence de transcription
-            if not text:
-                return
-            # Pendant que Wally parle : on ne traite QUE les ordres d'arrêt (barge-in).
-            # Garde-fou anti-auto-coupure : segment court (une vraie commande est brève).
-            if self.is_speaking:
-                if len(pcm16k_mono) / 32000 <= 2.5 and _is_stop_request(text):
-                    logger.info("voice: interruption '{t}' → stop", t=text)
-                    self.stop_speaking()
-                return
-            label = _member_label(user)
-            self._current_speaker_id = str(user.id)
-            await handle_transcript(
-                bot=self._bot,
-                service=self,
-                speaker_user_id=str(user.id),
-                speaker_label=label,
-                transcript=text,
-                stt_ms=stt_ms,
-            )
+            await self._dispatch_transcript(user, text, stt_ms)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice _on_segment a échoué: {e}", e=e)
+
+    async def _dispatch_transcript(self, user, text: str, stt_ms: float) -> None:
+        """Aiguille une transcription finale (batch ou streaming) vers le cerveau.
+
+        Pendant que Wally parle, seuls les ordres d'arrêt courts passent (barge-in) ; le
+        reste est ignoré (sa propre voix captée par les micros, ou parole hors-sujet)."""
+        text = (text or "").strip()
+        if not text:
+            return
+        self._last_speech_ts = asyncio.get_running_loop().time()
+        if self.is_speaking:
+            # Garde-fou anti-auto-coupure : une vraie commande d'arrêt est brève.
+            if len(text) <= 40 and _is_stop_request(text):
+                logger.info("voice: interruption '{t}' → stop", t=text)
+                self.stop_speaking()
+            return
+        label = _member_label(user)
+        self._current_speaker_id = str(user.id)
+        await handle_transcript(
+            bot=self._bot,
+            service=self,
+            speaker_user_id=str(user.id),
+            speaker_label=label,
+            transcript=text,
+            stt_ms=stt_ms,
+        )
+
+    # ------------------------------------------------------------------
+    # Callbacks internes — STT streaming distant
+    # ------------------------------------------------------------------
+
+    def _on_frame(self, user, frame: bytes) -> None:
+        """Frame brute de 20 ms (16 kHz mono) → streamée au serveur STT distant. Sync, sur la boucle."""
+        self._stream_users[str(user.id)] = user
+        try:
+            self._last_speech_ts = asyncio.get_running_loop().time()
+        except RuntimeError:
+            pass
+        if self._streaming is not None:
+            self._streaming.feed_sync(str(user.id), frame)
+
+    def _on_speech_end(self, user, segment: bytes) -> None:
+        """Fin de parole (VAD local) → flush distant (ou batch local en fallback). Sync, sur la boucle."""
+        self._stream_users[str(user.id)] = user
+        if self._streaming is not None:
+            self._streaming.speech_end_sync(str(user.id), segment)
+
+    def _on_stream_partial(self, speaker_id: str, text: str) -> None:
+        """Transcription partielle (live) → publiée sur le feed vocal (affichage temps réel, non persistée)."""
+        user = self._stream_users.get(speaker_id)
+        label = _member_label(user) if user is not None else speaker_id
+        _voice_publish(self._bot, self, "partial", persist=False,
+                       speaker=label, speaker_id=speaker_id, text=text)
+
+    async def _on_stream_final(self, speaker_id: str, text: str, stt_ms: float) -> None:
+        """Transcription finale (précise) → cerveau, comme un segment batch."""
+        user = self._stream_users.get(speaker_id)
+        if user is None:
+            return
+        await self._dispatch_transcript(user, text, stt_ms)
 
     # ------------------------------------------------------------------
     # Watchdog auto-leave

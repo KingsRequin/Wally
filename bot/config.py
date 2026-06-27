@@ -88,7 +88,7 @@ class SpamDetectionConfig:
 @dataclass
 class VoiceConfig:
     enabled: bool = False
-    stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU)
+    stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU) | "remote_stream" (GPU distant)
     tts_provider: str = "azure"
     language: str = "fr-FR"
     azure_voice: str = "fr-FR-DeniseNeural"  # voix FR à affiner plus tard
@@ -98,6 +98,12 @@ class VoiceConfig:
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_cpu_threads: int = 0  # 0 = auto ; les transcriptions sont sérialisées (1 à la fois)
+    # STT streaming distant (serveur RealtimeSTT GPU, cf docs/voice/REMOTE_STT_API.md)
+    remote_stt_url: str = "ws://192.168.1.49:9090"
+    remote_stt_max_connections: int = 2  # limite VRAM du serveur (2 sur RTX 4070 12 Go)
+    remote_stt_idle_timeout: float = 30.0  # ferme une session inactive (libère un slot serveur)
+    remote_stt_health_cache_s: float = 30.0  # durée du cache « serveur injoignable » avant retry
+    remote_stt_fallback: str = "faster_whisper"  # provider batch CPU si le distant est indispo
 
 
 @dataclass

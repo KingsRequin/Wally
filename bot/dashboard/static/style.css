@@ -3215,3 +3215,11 @@ body.is-mobile .mobile-back-btn {
 .v-reply { background:rgba(63,185,80,0.06); }
 .v-reply .v-who { color:#3fb950; }
 .v-ignored { opacity:0.62; }
+/* Bande de transcription live (partials STT streaming) — au-dessus de l'historique. */
+.voice-live { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
+.voice-live:empty { display:none; }
+.v-partial { background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.25); border-bottom:1px solid rgba(6,182,212,0.25); border-radius:6px; }
+.v-partial .v-who { color:#06b6d4; }
+.v-partial .v-text { color:var(--text-secondary); font-style:italic; }
+.v-live-dot { color:#06b6d4; flex-shrink:0; animation:voicePulse 1s ease-in-out infinite; }
+@keyframes voicePulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }

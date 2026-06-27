@@ -196,8 +196,9 @@ class AzureTTS:
             return b""
 
 
-def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToText:
-    provider = (cfg.stt_provider or "azure").lower()
+def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None) -> SpeechToText:
+    """Construit un STT batch (entrée = segment complet) pour le provider donné."""
+    provider = (provider or "azure").lower()
     if provider in ("faster_whisper", "faster-whisper", "whisper"):
         return FasterWhisperSTT(
             model_size=cfg.whisper_model,
@@ -209,6 +210,23 @@ def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToTex
         )
     key, region = _azure_creds()
     return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases)
+
+
+def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToText:
+    return _build_batch_stt(cfg.stt_provider, cfg, phrases)
+
+
+def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
+    """Construit le STT streaming distant (RemoteStreamingSTT) + son fallback batch CPU local."""
+    from bot.discord.voice.streaming import RemoteStreamingSTT
+    fallback = _build_batch_stt(cfg.remote_stt_fallback, cfg, phrases)
+    return RemoteStreamingSTT(
+        cfg.remote_stt_url,
+        fallback=fallback,
+        max_connections=cfg.remote_stt_max_connections,
+        idle_timeout=cfg.remote_stt_idle_timeout,
+        health_cache_s=cfg.remote_stt_health_cache_s,
+    )
 
 
 def build_tts(cfg: VoiceConfig) -> TextToSpeech:

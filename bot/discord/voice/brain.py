@@ -247,8 +247,11 @@ async def generate_voice_reply(
 _HISTORY_MAX = 20  # fenêtre de contexte de groupe (toutes personnes confondues)
 
 
-def _voice_publish(bot, service, type_: str, **fields) -> None:
-    """Publie un événement de debug vocal sur le feed (live SSE + historique). Jamais bloquant."""
+def _voice_publish(bot, service, type_: str, persist: bool = True, **fields) -> None:
+    """Publie un événement de debug vocal sur le feed (live SSE + historique). Jamais bloquant.
+
+    `persist=False` → live seulement (pas d'historique), pour les `partial` STT éphémères.
+    """
     feed = getattr(bot, "voice_feed", None)
     if feed is None:
         return
@@ -259,7 +262,7 @@ def _voice_publish(bot, service, type_: str, **fields) -> None:
         **fields,
     }
     try:
-        feed.publish(event)
+        feed.publish(event, persist=persist)
     except Exception as e:  # noqa: BLE001
         logger.warning("voice_feed.publish a échoué: {e}", e=e)
 
