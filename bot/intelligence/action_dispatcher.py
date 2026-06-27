@@ -198,7 +198,10 @@ class ActionDispatcher:
             await message.add_reaction(emoji)
             logger.info("Cognitive REACT {} → msg {}", emoji, message_id)
             if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"react {emoji}"})
+                self._feed.publish({
+                    "type": "REACT", "emoji": emoji, "channel": str(channel_id),
+                    "detail": f"a réagi {emoji}",
+                })
         except Exception as e:
             logger.warning("react failed: {}", e)
 

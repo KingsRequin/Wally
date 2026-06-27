@@ -279,7 +279,7 @@ async def test_act_react_adds_reaction():
     channel.fetch_message.assert_called_once_with(42)
     message.add_reaction.assert_called_once_with("🔥")
     types = [c.args[0]["type"] for c in feed.publish.call_args_list]
-    assert "ACT" in types
+    assert "REACT" in types
 
 
 @pytest.mark.asyncio
@@ -755,3 +755,26 @@ async def test_speak_records_configured_bot_name():
     await disp.dispatch(_MDd(action="SPEAK", channel_id="123", message="salut"))
     bot.memory.append_prelude.assert_called_once_with("123", "Cindy", "salut")
     bot.memory.append_message.assert_called_once_with("123", "Cindy", "salut", platform="discord")
+
+
+@pytest.mark.asyncio
+async def test_react_publishes_distinct_type():
+    """react doit publier un event REACT (pas ACT) avec les champs emoji+channel."""
+    feed = MagicMock()
+    bot = MagicMock()
+    channel = MagicMock()
+    bot.get_channel.return_value = channel
+    message = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    message.add_reaction = AsyncMock()
+    dispatcher = _AD(bot=bot, feed=feed)
+    await dispatcher.dispatch(_MDd(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "1", "message_id": "2", "emoji": "🔥"},
+    ))
+    types = [c.args[0].get("type") for c in feed.publish.call_args_list if c.args]
+    assert "REACT" in types
+    react_events = [c.args[0] for c in feed.publish.call_args_list if c.args and c.args[0].get("type") == "REACT"]
+    assert len(react_events) == 1
+    assert react_events[0]["emoji"] == "🔥"
+    assert react_events[0]["channel"] == "1"
