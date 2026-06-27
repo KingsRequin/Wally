@@ -1537,7 +1537,15 @@ async function syncMemoryUsers() {
 async function openUserModal(userId, userData) {
   // Fetch memories
   var memR = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
-  var memories = memR && memR.ok ? (await memR.json()).memories : [];
+  // Faits S-P-O V2 (#observability C3) — mappés au format de la modale.
+  var facts = memR && memR.ok ? ((await memR.json()).facts || []) : [];
+  var memories = facts.map(function(f) {
+    return {
+      memory_id: f.id, id: f.id, content: f.content, category: f.category,
+      created_at: f.created_at, updated_at: f.created_at,
+      confidence: f.confidence, origin: f.origin,
+    };
+  });
 
   // Fetch aliases
   var aliasesR = await apiFetch('/api/admin/aliases?canonical_uid=' + encodeURIComponent(userId));
@@ -3440,11 +3448,13 @@ function renderMemoireTab() {
         <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
         <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
+        <button class="mem-subnav-pill" data-subtab="self" onclick="switchMemoireSubTab('self')">Dans la tête de Wally</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
       <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
       <div class="mem-subnav-content" id="memoire-sub-notes"></div>
+      <div class="mem-subnav-content" id="memoire-sub-self"></div>
     `;
   }
 
@@ -3476,7 +3486,35 @@ function switchMemoireSubTab(subtab) {
     }
   } else if (subtab === 'notes') {
     if (panel) loadNotesTab(panel);
+  } else if (subtab === 'self') {
+    if (panel) renderWallySelfTab(panel);
   }
+}
+
+// ── « Dans la tête de Wally » : mémoire interne (#observability C4) ───────────
+
+async function renderWallySelfTab(panel) {
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement...</p>';
+  const r = await apiFetch('/api/admin/memory/self');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const d = await r.json();
+
+  function section(title, items, emptyMsg) {
+    var rows = (items && items.length)
+      ? items.map(function(it) { return '<li>' + escHtml(it) + '</li>'; }).join('')
+      : '<li style="color:var(--text-secondary)">' + emptyMsg + '</li>';
+    return '<div class="card" style="margin-bottom:16px">'
+      + '<h3 style="margin:0 0 10px">' + escHtml(title) + '</h3>'
+      + '<ul style="margin:0;padding-left:20px;line-height:1.7">' + rows + '</ul></div>';
+  }
+
+  panel.innerHTML = ''
+    + section('🎯 Ses buts', d.goals, 'aucun but actif')
+    + section('🔥 Ce qui le travaille (désirs)', d.desires, 'aucun désir actif')
+    + section('💭 Ses pensées récentes', d.thoughts, 'aucune pensée enregistrée')
+    + section('🤝 Ce qu\'il pense des gens (affinités)', d.relationships, 'aucune affinité formée')
+    + section('🧭 Sa préoccupation du moment', d.focus ? [d.focus] : [], 'rien ne le préoccupe');
 }
 
 
