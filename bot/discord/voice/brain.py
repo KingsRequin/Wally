@@ -443,7 +443,8 @@ async def _respond_once(
     except Exception:  # noqa: BLE001
         activity_label = ""
 
-    tools = getattr(service, "voice_tools", [])
+    from bot.discord.voice.tools import build_voice_tools
+    tools = await build_voice_tools(bot)
     tool_executor = getattr(service, "tool_executor", None)
     try:
         text = await generate_voice_reply(

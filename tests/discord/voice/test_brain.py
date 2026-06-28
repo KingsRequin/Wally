@@ -26,6 +26,8 @@ def _bot():
     bot.memory.add = AsyncMock()
     bot.config.bot.name = "Wally"
     bot.config.bot.trigger_names = ["wally"]
+    bot.web_search.available = False  # désactivé par défaut dans les tests brain
+    bot.web_search.is_quota_exceeded = AsyncMock(return_value=True)
     return bot
 
 
