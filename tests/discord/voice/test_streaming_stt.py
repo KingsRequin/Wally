@@ -324,6 +324,68 @@ async def test_provider_warmup_precharge_le_fallback(server):
 
 
 # ----------------------------------------------------------------------
+# Backoff exponentiel quand le serveur reste injoignable
+# ----------------------------------------------------------------------
+
+
+class _UnreachableSession:
+    """Session factice : la connexion échoue toujours (serveur injoignable)."""
+    unreachable = True
+    server_full = False
+
+    async def start(self) -> bool:
+        return False
+
+    async def close(self) -> None:
+        pass
+
+
+class _OkSession:
+    """Session factice : la connexion réussit."""
+    unreachable = False
+    server_full = False
+
+    async def start(self) -> bool:
+        return True
+
+    async def close(self) -> None:
+        pass
+
+
+async def test_injoignable_backoff_exponentiel():
+    clock = {"t": 100.0}
+    prov = _make_provider("ws://x", now_fn=lambda: clock["t"], health_cache_s=30.0)
+
+    await prov._open_and_watch("A", _UnreachableSession())
+    assert prov._unreachable_until == 130.0   # 1er échec → cache de base (30s)
+    await prov._open_and_watch("B", _UnreachableSession())
+    assert prov._unreachable_until == 160.0   # 2e → ×2 (60s)
+    await prov._open_and_watch("C", _UnreachableSession())
+    assert prov._unreachable_until == 220.0   # 3e → ×4 (120s)
+
+
+async def test_injoignable_backoff_plafonne():
+    clock = {"t": 0.0}
+    prov = _make_provider("ws://x", now_fn=lambda: clock["t"], health_cache_s=30.0)
+    for _ in range(10):
+        await prov._open_and_watch("S", _UnreachableSession())
+    # Plafonné à health_cache_s × _BACKOFF_MAX_MULT (pas d'explosion).
+    from bot.discord.voice.streaming import _BACKOFF_MAX_MULT
+    assert prov._unreachable_until == 30.0 * _BACKOFF_MAX_MULT
+
+
+async def test_succes_reinitialise_le_backoff():
+    clock = {"t": 0.0}
+    prov = _make_provider("ws://x", now_fn=lambda: clock["t"], health_cache_s=30.0)
+    await prov._open_and_watch("A", _UnreachableSession())   # échec 1 → 30
+    await prov._open_and_watch("B", _UnreachableSession())   # échec 2 → 60
+    await prov._open_and_watch("C", _OkSession())            # serveur revenu → reset
+    clock["t"] = 1000.0
+    await prov._open_and_watch("D", _UnreachableSession())   # échec → repart du cache de base
+    assert prov._unreachable_until == 1000.0 + 30.0
+
+
+# ----------------------------------------------------------------------
 # Construction (build_streaming_stt) + config
 # ----------------------------------------------------------------------
 

@@ -24,6 +24,7 @@ from loguru import logger
 
 _FLUSH = object()  # sentinelle « force la fin de l'énoncé » dans la file d'envoi
 _PREBUF_MAX = 250  # ~5 s de frames de 20 ms bufferisées avant `ready` (borne mémoire)
+_BACKOFF_MAX_MULT = 4  # plafond du backoff injoignable = health_cache_s × 4 (ex. 30s → 120s max)
 
 
 class RemoteSTTSession:
@@ -228,6 +229,7 @@ class RemoteStreamingSTT:
         self._fallback_speakers: set[str] = set()
         self._last_activity: dict[str, float] = {}
         self._unreachable_until: float = 0.0
+        self._consecutive_unreachable: int = 0  # backoff exponentiel : ↑ à chaque échec, remis à 0 au succès
         # Câblés par le service.
         self.on_partial: Callable[[str, str], None] | None = None
         self.on_final: Callable[[str, str, float], Awaitable[None]] | None = None
@@ -286,16 +288,28 @@ class RemoteStreamingSTT:
     def _remote_allowed(self, now: float) -> bool:
         return now >= self._unreachable_until and len(self._sessions) < self._max_connections
 
+    def _arm_unreachable_cache(self) -> None:
+        """Arme le cache « injoignable » avec un backoff exponentiel borné.
+
+        Plus le serveur reste mort, plus on espace les tentatives (chacune gâche ~open_timeout
+        de latence sur une parole) : 30s → 60s → 120s (plafond). Remis à zéro dès qu'une
+        connexion réussit (`_open_and_watch`)."""
+        self._consecutive_unreachable += 1
+        mult = min(2 ** (self._consecutive_unreachable - 1), _BACKOFF_MAX_MULT)
+        self._unreachable_until = self._now() + self._health_cache_s * mult
+
     async def _open_and_watch(self, speaker_id: str, sess: RemoteSTTSession) -> None:
         ok = await sess.start()
         if ok:
+            self._consecutive_unreachable = 0  # serveur revenu → on repart du cache de base
             return
         # Échec : retire la session (le slot se libère), met en cache si injoignable.
         self._sessions.pop(speaker_id, None)
         self._start_tasks.pop(speaker_id, None)
         if sess.unreachable:
-            self._unreachable_until = self._now() + self._health_cache_s
-            logger.warning("RemoteStreamingSTT: serveur injoignable, fallback batch {t}s", t=self._health_cache_s)
+            self._arm_unreachable_cache()
+            logger.warning("RemoteStreamingSTT: serveur injoignable, prochaine tentative dans {t}s",
+                           t=round(self._unreachable_until - self._now()))
         await sess.close()
 
     def _on_session_lost(self, speaker_id: str) -> None:
@@ -308,9 +322,9 @@ class RemoteStreamingSTT:
         if sess is None:
             return  # déjà retirée (fermeture volontaire, idle, ou double notification)
         self._start_tasks.pop(speaker_id, None)
-        self._unreachable_until = self._now() + self._health_cache_s
+        self._arm_unreachable_cache()
         logger.warning("RemoteStreamingSTT: session {s} perdue → fallback batch {t}s",
-                       s=speaker_id, t=self._health_cache_s)
+                       s=speaker_id, t=round(self._unreachable_until - self._now()))
         asyncio.create_task(sess.close())
 
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:
