@@ -1548,7 +1548,9 @@ async def _respond(
                 voice = getattr(message.author, "voice", None)
                 if voice is None or voice.channel is None:
                     return json.dumps({"status": "denied", "message": "Tu n'es dans aucun salon vocal."})
-                await bot.voice_service.join(voice.channel)
+                await bot.voice_service.join(
+                    voice.channel, inviter=getattr(message.author, "display_name", None)
+                )
                 return json.dumps({"status": "ok", "message": f"Rejoint {voice.channel.name}."})
             if name == "leave_voice":
                 if getattr(bot, "voice_service", None) and bot.voice_service.is_connected:

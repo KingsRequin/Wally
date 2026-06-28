@@ -18,7 +18,9 @@ class VoiceCog(commands.Cog):
             )
             return
         try:
-            await self.bot.voice_service.join(voice.channel)
+            await self.bot.voice_service.join(
+                voice.channel, inviter=getattr(interaction.user, "display_name", None)
+            )
             await interaction.response.send_message(f"J'arrive dans **{voice.channel.name}** 🎙️")
         except Exception as e:  # noqa: BLE001
             logger.warning("/join a échoué: {e}", e=e)

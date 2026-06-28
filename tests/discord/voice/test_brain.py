@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from bot.discord.voice.brain import handle_transcript, generate_voice_reply
+from bot.discord.voice.brain import handle_transcript, generate_voice_reply, generate_voice_greeting
 
 
 def _bot():
@@ -264,3 +264,46 @@ async def test_generate_voice_reply_uses_speaker_user_id():
     assert call_kwargs.get("user_id") == "123456789", (
         "memory.search appelé avec un user_id incorrect"
     )
+
+
+def _greeting_user_message(bot) -> str:
+    """Récupère le contenu du message user passé à bot.llm.complete par le greeting."""
+    bot.llm.complete.assert_awaited_once()
+    messages = bot.llm.complete.call_args.args[1]
+    return messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_greeting_arrivee_nomme_invitant():
+    """À l'arrivée, la salutation nomme la personne qui a invité Wally."""
+    bot = _bot()
+    bot.llm.complete = AsyncMock(return_value="salut Alex")
+    await generate_voice_greeting(
+        bot, present_label="Alex (@alex)", channel_name="Général", inviter="Alex",
+    )
+    msg = _greeting_user_message(bot)
+    assert "Alex" in msg and "demandé" in msg, "l'invitant n'est pas nommé dans l'instruction"
+    assert "Alex (@alex)" in msg, "la liste des présents n'est pas injectée dans l'instruction"
+
+
+@pytest.mark.asyncio
+async def test_greeting_arrivee_borne_singulier_pluriel():
+    """L'instruction d'arrivée encadre l'emploi de « vous » (évite « vous m'avez appelé » à 1 personne)."""
+    bot = _bot()
+    bot.llm.complete = AsyncMock(return_value="salut")
+    await generate_voice_greeting(
+        bot, present_label="Alex (@alex)", channel_name="Général", inviter="Alex",
+    )
+    msg = _greeting_user_message(bot)
+    assert "vous" in msg.lower(), "la consigne singulier/pluriel doit mentionner « vous »"
+
+
+@pytest.mark.asyncio
+async def test_greeting_arrivee_sans_invitant_reste_valide():
+    """Sans invitant connu, la salutation d'arrivée fonctionne quand même."""
+    bot = _bot()
+    bot.llm.complete = AsyncMock(return_value="bonjour")
+    out = await generate_voice_greeting(bot, present_label="Bob (@bob)", channel_name="Général")
+    assert out == "bonjour"
+    msg = _greeting_user_message(bot)
+    assert "demandé" not in msg, "ne doit pas inventer un invitant absent"

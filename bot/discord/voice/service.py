@@ -93,6 +93,7 @@ class VoiceService:
         self._tts = build_tts(cfg)
         self._vc: discord.VoiceClient | None = None
         self._channel = None
+        self._pending_inviter: str | None = None  # qui a demandé à Wally de venir (pour la salutation)
         self.history: list[dict] = []
         self._current_speaker_id: str | None = None
         self._stream_users: dict[str, object] = {}  # speaker_id → membre (streaming multi-locuteurs)
@@ -187,10 +188,13 @@ class VoiceService:
     # Join / Leave
     # ------------------------------------------------------------------
 
-    async def join(self, channel) -> None:
-        """Rejoint un salon vocal, attache le sink d'écoute, démarre le watchdog auto-leave."""
+    async def join(self, channel, inviter: str | None = None) -> None:
+        """Rejoint un salon vocal, attache le sink d'écoute, démarre le watchdog auto-leave.
+
+        `inviter` : nom de la personne qui a demandé à Wally de venir (injecté dans la salutation)."""
         if self._vc is not None:
             await self.leave()
+        self._pending_inviter = inviter
         self._channel = channel
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
         loop = asyncio.get_running_loop()
@@ -237,12 +241,14 @@ class VoiceService:
             activity = " ; ".join(self.members_activity())
             text = await generate_voice_greeting(
                 self._bot, present_label=present, channel_name=self.channel_name,
-                activity_label=activity,
+                activity_label=activity, inviter=self._pending_inviter,
             )
             if text:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice _greet a échoué: {e}", e=e)
+        finally:
+            self._pending_inviter = None
 
     async def greet_newcomer(self, member) -> None:
         """Salue une personne qui vient de rejoindre le salon (anti-spam : pas si Wally parle déjà)."""

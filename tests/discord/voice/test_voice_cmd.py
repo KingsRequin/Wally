@@ -13,7 +13,9 @@ async def test_join_uses_caller_voice_channel():
     inter.user.voice.channel = MagicMock()
     inter.response.send_message = AsyncMock()
     await cog.join.callback(cog, inter)
-    bot.voice_service.join.assert_awaited_once_with(inter.user.voice.channel)
+    bot.voice_service.join.assert_awaited_once_with(
+        inter.user.voice.channel, inviter=inter.user.display_name
+    )
 
 
 @pytest.mark.asyncio

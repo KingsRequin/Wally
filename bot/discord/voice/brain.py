@@ -148,12 +148,6 @@ _VOICE_TARGET_NOTICE = (
     "parle simplement, sans aucun tag."
 )
 
-_VOICE_GREETING_INSTRUCTION = (
-    "Tu viens tout juste d'être invité et de rejoindre le salon vocal. Salue les personnes "
-    "présentes brièvement et naturellement, en une seule phrase, dans ton style, à l'oral."
-)
-
-
 def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
                   present_label: str = "", channel_name: str = "", activity_label: str = "") -> str:
     """Construit le system prompt vocal (persona + émotions + contexte du salon)."""
@@ -186,18 +180,38 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
 
 
 async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | None = None,
-                                  channel_name: str = "", activity_label: str = "") -> str:
-    """Salutation parlée : à l'arrivée de Wally, ou à l'arrivée d'un nouveau venu (`newcomer`)."""
+                                  channel_name: str = "", activity_label: str = "",
+                                  inviter: str | None = None) -> str:
+    """Salutation parlée : à l'arrivée de Wally, ou à l'arrivée d'un nouveau venu (`newcomer`).
+
+    `inviter` : nom de la personne qui a demandé à Wally de venir (cas arrivée de Wally)."""
     try:
-        system_prompt = _voice_system(bot, present_label=present_label, channel_name=channel_name,
-                                      activity_label=activity_label)
         if newcomer:
+            # Wally est déjà installé → on garde le contexte « présents depuis un moment » du system.
+            system_prompt = _voice_system(bot, present_label=present_label, channel_name=channel_name,
+                                          activity_label=activity_label)
             instruction = (
                 f"{newcomer} vient à l'instant de rejoindre le salon vocal où tu es déjà installé. "
                 f"Accueille {newcomer} par son nom, brièvement et naturellement, en une seule phrase."
             )
         else:
-            instruction = _VOICE_GREETING_INSTRUCTION
+            # Arrivée de Wally : on NE met PAS les présents dans le system (il dirait « depuis un
+            # moment »), on les liste dans l'instruction et on borne le singulier/pluriel.
+            system_prompt = _voice_system(bot, channel_name=channel_name, activity_label=activity_label)
+            lines: list[str] = []
+            if inviter:
+                lines.append(f"{inviter} t'a demandé de venir dans le salon vocal, et tu viens d'arriver.")
+            else:
+                lines.append("Tu viens tout juste de rejoindre le salon vocal.")
+            if present_label:
+                lines.append(f"Personnes réellement présentes dans le salon : {present_label}.")
+            lines.append(
+                "Dis bonjour en arrivant, brièvement et naturellement, en une seule phrase, dans ton "
+                "style. Adresse-toi uniquement aux personnes réellement présentes listées ci-dessus, "
+                "n'en invente aucune, et n'emploie « vous » que s'il y a vraiment plusieurs personnes — "
+                "sinon parle au singulier."
+            )
+            instruction = " ".join(lines)
         messages = [{"role": "user", "content": instruction}]
         reply = await bot.llm.complete(system_prompt, messages, purpose="discord_voice_greeting")
         return reply or ""
