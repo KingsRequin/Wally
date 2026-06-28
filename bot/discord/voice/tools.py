@@ -39,6 +39,8 @@ async def build_voice_tools(bot) -> list[dict]:
     web = getattr(bot, "web_search", None)
     if web is not None and web.available and not await web.is_quota_exceeded():
         tools.append(WEB_SEARCH_TOOL)
+    from bot.discord.handlers import _NOTE_TOOLS
+    tools.extend(_NOTE_TOOLS)
     return tools
 
 
@@ -99,6 +101,18 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             if not query:
                 return json.dumps({"status": "error", "message": "Requête vide."})
             return await _search_aloud(bot, service, query)
+
+        if name == "save_persistent_note":
+            a = json.loads(arguments or "{}")
+            await bot.db.upsert_persistent_note(a["title"], a["content"])
+            return json.dumps({"status": "ok", "message": f"Note '{a['title']}' sauvegardée."})
+
+        if name == "delete_persistent_note":
+            a = json.loads(arguments or "{}")
+            deleted = await bot.db.delete_persistent_note(a["title"])
+            if deleted:
+                return json.dumps({"status": "ok", "message": f"Note '{a['title']}' supprimée."})
+            return json.dumps({"status": "not_found", "message": f"Note '{a['title']}' introuvable."})
 
         return json.dumps({"status": "error", "message": f"Outil inconnu: {name}"})
 
