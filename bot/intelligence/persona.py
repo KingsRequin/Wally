@@ -9,11 +9,14 @@ from loguru import logger
 class PersonaService:
     """Charge et expose les fichiers de persona Markdown (SOUL, IDENTITY, VOICE, EMOTIONS)."""
 
-    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md", "CAPABILITIES.md"]  # ordre canonique pour persona_block
+    _FILES = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md"]  # ordre canonique ; CAPABILITIES dérivé à part
+    _CAPS_FILE = "CAPABILITIES.md"
 
-    def __init__(self, persona_dir: str = "bot/persona"):
+    def __init__(self, persona_dir: str = "bot/persona", config=None):
         self._dir = persona_dir
+        self._config = config
         self._blocks: dict[str, str] = {}
+        self._caps_static: str = ""
         self._emotion_directives: dict[str, str] = {}
         self.reload()
 
@@ -31,6 +34,20 @@ class PersonaService:
             except Exception as exc:
                 logger.warning("Persona file read error {f}: {e}", f=filename, e=exc)
                 self._blocks[filename] = ""
+
+        # Self-model : la partie narrative stable est chargée à part ; les capacités
+        # « à bascule » (vocal…) sont dérivées de la config dans build_prompt_block,
+        # pour ne plus fossiliser (cf. self_model.build_self_model).
+        caps_path = os.path.join(self._dir, self._CAPS_FILE)
+        try:
+            with open(caps_path, encoding="utf-8") as f:
+                self._caps_static = f.read().strip()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: {f}", f=self._CAPS_FILE)
+            self._caps_static = ""
+        except Exception as exc:
+            logger.warning("Persona file read error {f}: {e}", f=self._CAPS_FILE, e=exc)
+            self._caps_static = ""
 
         self._emotion_directives = self._parse_emotions()
         self._weekday_directives = self._parse_weekdays()
@@ -159,8 +176,18 @@ class PersonaService:
         return self._weekday_directives
 
     def build_prompt_block(self) -> str:
-        """Retourne les blocs SOUL → IDENTITY → VOICE concaténés."""
+        """Retourne SOUL → IDENTITY → VOICE → EXEMPLES + le self-model dérivé."""
         from datetime import datetime
+
+        from bot.intelligence.self_model import build_self_model
+
         today = datetime.now().strftime("%A %d %B %Y")
         blocks = [v.replace("{current_date}", today) for v in self._blocks.values() if v]
+        self_model = (
+            build_self_model(self._caps_static, self._config)
+            if self._config is not None
+            else self._caps_static
+        )
+        if self_model:
+            blocks.append(self_model.replace("{current_date}", today))
         return "\n\n".join(blocks)

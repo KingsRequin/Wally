@@ -150,7 +150,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     # ── Prompts, language, persona ────────────────────────────────────────────
     prompts = PromptBuilder()
     language = LanguageDetector(config.bot.language_default)
-    persona = PersonaService()
+    persona = PersonaService(config=config)
     logger.info("PromptBuilder, LanguageDetector, and PersonaService initialized")
 
     # ── Journal ───────────────────────────────────────────────────────────────
