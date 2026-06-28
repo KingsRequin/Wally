@@ -215,9 +215,9 @@ class WallyDiscord(commands.Bot):
             # et le désir de capacité (DM créateur plutôt que prétendre).
             from bot.intelligence.self_model import build_self_model
             _caps_path = Path(__file__).parent.parent / "persona" / "CAPABILITIES.md"
-            _caps_static = _caps_path.read_text(encoding="utf-8") if _caps_path.exists() else ""
+            _caps_static = _caps_path.read_text(encoding="utf-8").strip() if _caps_path.exists() else ""
             _caps_text = build_self_model(_caps_static, self.config)
-            if _caps_text:
+            if _caps_static:
                 logger.info("CAPABILITIES.md chargé pour la cognition ({} chars)", len(_caps_text))
             else:
                 logger.warning("CAPABILITIES.md introuvable : {}", _caps_path)

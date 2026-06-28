@@ -17,9 +17,10 @@ def test_voice_enabled_states_capability_active():
 
 
 def test_voice_disabled_states_capability_inactive():
-    out = build_self_model("Je suis Wally.", _cfg(False))
+    out = build_self_model("Je n'ai pas de corps.", _cfg(False))
     assert "n'est pas activé" in out
     assert "parler en vocal" not in out
+    assert "Je n'ai pas de corps." in out
 
 
 def test_static_text_is_preserved():
