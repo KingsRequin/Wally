@@ -347,6 +347,11 @@ class WallyDiscord(commands.Bot):
             self.cognitive_loop.start()
         if self.self_upgrade is not None:
             self.self_upgrade.start()
+        from bot.discord.channel_health import report_dead_channels
+        try:
+            await report_dead_channels(self)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("channel_health au boot a échoué: {e}", e=e)
 
     async def on_voice_state_update(self, member, before, after) -> None:
         """Salue les nouveaux arrivants dans le salon vocal où Wally est déjà présent."""
