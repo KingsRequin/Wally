@@ -213,8 +213,10 @@ class WallyDiscord(commands.Bot):
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
             # et le désir de capacité (DM créateur plutôt que prétendre).
+            from bot.intelligence.self_model import build_self_model
             _caps_path = Path(__file__).parent.parent / "persona" / "CAPABILITIES.md"
-            _caps_text = _caps_path.read_text(encoding="utf-8") if _caps_path.exists() else ""
+            _caps_static = _caps_path.read_text(encoding="utf-8") if _caps_path.exists() else ""
+            _caps_text = build_self_model(_caps_static, self.config)
             if _caps_text:
                 logger.info("CAPABILITIES.md chargé pour la cognition ({} chars)", len(_caps_text))
             else:
