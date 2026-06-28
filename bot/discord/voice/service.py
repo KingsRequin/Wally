@@ -2,6 +2,7 @@
 import asyncio
 import io
 import warnings
+from collections import OrderedDict
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
@@ -105,7 +106,9 @@ class VoiceService:
         )
         self.is_speaking: bool = False
         self.is_responding: bool = False  # une seule réponse à la fois (conversation de groupe)
-        self._pending: tuple[str, str, str] | None = None  # dernière parole entendue pendant qu'il répond
+        # Paroles entendues pendant qu'il répond : une entrée par locuteur (id → (label, texte, ts)),
+        # traitées dans l'ordre d'arrivée. Remplace l'ancien slot unique qui jetait les autres.
+        self._pending_queue: "OrderedDict[str, tuple[str, str, float]]" = OrderedDict()
         self.quota = VoiceQuota()  # suivi du quota Azure (STT/TTS) du mois
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None

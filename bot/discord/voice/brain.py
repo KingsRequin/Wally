@@ -1,6 +1,7 @@
 """Cerveau vocal : branchement gate + génération de la réponse parlée."""
 import asyncio
 import re
+from collections import OrderedDict
 from difflib import SequenceMatcher
 
 from loguru import logger
@@ -366,25 +367,67 @@ async def handle_transcript(
     await _maybe_respond(bot, service, speaker_user_id, speaker_label, transcript)
 
 
+# File d'attente multi-locuteurs : pendant que Wally répond, on empile la parole entendue
+# au lieu de la jeter. Une entrée par locuteur (coalescing : on garde sa parole la plus
+# récente), traitée dans l'ordre d'arrivée (FIFO). Bornée pour ne pas répondre à du périmé —
+# c'est ce qui évite le « il répond aux questions précédentes » quand le groupe s'emballe.
+_PENDING_TTL_S = 18.0   # au-delà, une parole en attente est considérée caduque et ignorée
+_PENDING_MAX = 6        # nombre max de locuteurs en attente (borne le lag accumulé)
+
+
+def _now() -> float:
+    """Horloge monotone (boucle asyncio) — isolée pour pouvoir la simuler en test."""
+    return asyncio.get_running_loop().time()
+
+
+def _pending_dict(service) -> OrderedDict:
+    """File des paroles en attente, indexée par locuteur. Initialisée paresseusement."""
+    q = getattr(service, "_pending_queue", None)
+    if not isinstance(q, OrderedDict):
+        q = OrderedDict()
+        service._pending_queue = q
+    return q
+
+
+def _enqueue_pending(service, speaker_user_id: str, speaker_label: str, transcript: str) -> None:
+    """Empile (ou rafraîchit) la parole d'un locuteur en attente, en bornant la file."""
+    q = _pending_dict(service)
+    q.pop(speaker_user_id, None)  # coalescing : ré-insère en fin avec la parole la plus récente
+    q[speaker_user_id] = (speaker_label, transcript, _now())
+    while len(q) > _PENDING_MAX:
+        q.popitem(last=False)  # évince le plus ancien locuteur en attente
+
+
+def _next_pending(service):
+    """Défile la prochaine parole en attente encore valide (FIFO), en sautant les périmées."""
+    q = _pending_dict(service)
+    now = _now()
+    while q:
+        sid, (label, transcript, ts) = q.popitem(last=False)
+        if now - ts <= _PENDING_TTL_S:
+            return (sid, label, transcript)
+        logger.info("voice: parole en attente périmée ignorée ({label})", label=label)
+    return None
+
+
 async def _maybe_respond(
     bot, service, speaker_user_id: str, speaker_label: str, transcript: str
 ) -> None:
-    """Sérialise les réponses (une à la fois) SANS jeter la parole entendue entre-temps.
+    """Sérialise les réponses (une à la fois) SANS jeter la parole des autres locuteurs.
 
-    Si Wally répond déjà, on mémorise la dernière parole (`_pending`) au lieu de l'ignorer ;
-    elle sera traitée dès qu'il a fini. On ne garde que la plus récente pour ne pas répondre
-    à une enfilade de phrases périmées.
+    Si Wally répond déjà, la parole est empilée par locuteur (file FIFO bornée) au lieu d'être
+    ignorée : chaque personne qui s'adresse à lui est traitée à son tour. On ne garde qu'une
+    parole par locuteur (la plus récente) et on abandonne ce qui devient périmé.
     """
     if getattr(service, "is_responding", False):
-        service._pending = (speaker_user_id, speaker_label, transcript)
+        _enqueue_pending(service, speaker_user_id, speaker_label, transcript)
         return
     service.is_responding = True
     try:
         current = (speaker_user_id, speaker_label, transcript)
         while current is not None:
             await _respond_once(bot, service, *current)
-            current = getattr(service, "_pending", None)
-            service._pending = None
+            current = _next_pending(service)
     finally:
         service.is_responding = False
 

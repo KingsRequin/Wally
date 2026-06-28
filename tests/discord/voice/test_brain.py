@@ -1,5 +1,6 @@
 """Tests pour bot/discord/voice/brain.py — heuristique de prise de parole + génération réponse vocale."""
 import asyncio
+from collections import OrderedDict
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from bot.discord.voice.brain import handle_transcript, generate_voice_reply, generate_voice_greeting
@@ -123,12 +124,13 @@ async def test_speaking_while_busy_only_consigns():
     service.speak = AsyncMock()
     service.history = []
     service.is_responding = True  # Wally est déjà en train de répondre
-    service._pending = None
+    service._pending_queue = OrderedDict()
     await handle_transcript(bot, service, "42", "Bob (@bob)", "wally encore ?")
     service.speak.assert_not_awaited()  # pas de 2e réponse
     assert service.history == [{"role": "user", "content": "Bob (@bob): wally encore ?"}]  # mais consigné
-    # La parole entendue n'est pas jetée : elle est mise en attente pour après.
-    assert service._pending == ("42", "Bob (@bob)", "wally encore ?")
+    # La parole entendue n'est pas jetée : elle est mise en attente (file par locuteur) pour après.
+    assert "42" in service._pending_queue
+    assert service._pending_queue["42"][:2] == ("Bob (@bob)", "wally encore ?")
 
 
 @pytest.mark.asyncio
