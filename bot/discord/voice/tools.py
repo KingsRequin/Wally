@@ -41,6 +41,9 @@ async def build_voice_tools(bot) -> list[dict]:
         tools.append(WEB_SEARCH_TOOL)
     from bot.discord.handlers import _NOTE_TOOLS
     tools.extend(_NOTE_TOOLS)
+    action_service = getattr(bot, "action_service", None)
+    if action_service is not None:
+        tools.extend(action_service.get_tool_definitions())
     return tools
 
 
@@ -113,6 +116,34 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             if deleted:
                 return json.dumps({"status": "ok", "message": f"Note '{a['title']}' supprimée."})
             return json.dumps({"status": "not_found", "message": f"Note '{a['title']}' introuvable."})
+
+        if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
+            from bot.discord.handlers import _resolve_discord_roles
+            a = json.loads(arguments or "{}")
+            speaker_id = current_speaker_id()
+            channel = getattr(service, "_channel", None)
+            member = None
+            if channel is not None and speaker_id is not None:
+                member = next((m for m in channel.members if str(m.id) == str(speaker_id)), None)
+            user_roles = _resolve_discord_roles(member) if member is not None else []
+            admin_ids = [str(x) for x in getattr(bot.config, "admin_ids", [])]
+            if speaker_id is not None and str(speaker_id) in admin_ids:
+                user_roles.append("admin")
+            # Création → besoin d'un salon cible (la chambre). Refus propre sinon.
+            if name == "create_action_task":
+                bedroom = getattr(bot.config.bot, "bedroom_channel_id", None)
+                if bedroom is None:
+                    return json.dumps({"status": "denied",
+                                       "message": "Je ne sais pas encore où poster tes rappels."})
+                channel_id = str(bedroom)
+            else:
+                channel_id = None
+            guild_id = str(channel.guild.id) if channel is not None and getattr(channel, "guild", None) else None
+            result = await bot.action_service.execute_tool(
+                name, a, user_id=str(speaker_id), platform="discord",
+                user_roles=user_roles, channel_id=channel_id, guild_id=guild_id,
+            )
+            return json.dumps(result)
 
         return json.dumps({"status": "error", "message": f"Outil inconnu: {name}"})
 
