@@ -220,6 +220,49 @@ async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | 
         return ""
 
 
+_FILLER_FALLBACK = {
+    "amorce": "attends, je regarde ça",
+    "bruits": ["mh...", "ok je vois...", "deux secondes..."],
+}
+
+_FILLER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "amorce": {"type": "string"},
+        "bruits": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["amorce", "bruits"],
+}
+
+
+async def generate_search_filler(bot, query: str) -> dict:
+    """Génère, dans le style/l'humeur de Wally, une amorce parlée (« attends je cherche »)
+    et 2-3 petits bruits de réflexion. Un seul appel LLM ; repli déterministe si échec."""
+    try:
+        system_prompt = _voice_system(bot)
+        instruction = (
+            "Tu vas chercher une information sur internet, ça prend quelques secondes. "
+            f"Sujet de la recherche : « {query} ». "
+            "Donne 'amorce' : une courte phrase parlée, dans ton style, qui annonce que tu "
+            "regardes (ex. « attends, je vérifie ça »). Donne 'bruits' : 2 à 3 très courtes "
+            "onomatopées/interjections de réflexion à dire pendant que ça charge "
+            "(ex. « mh... », « ok je vois... »). Pas de markdown, pas d'emoji."
+        )
+        messages = [{"role": "user", "content": instruction}]
+        out = await bot.llm_secondary.complete_structured(
+            system_prompt, messages, _FILLER_SCHEMA,
+            schema_name="search_filler", purpose="discord_voice_search_filler",
+        )
+        amorce = (out.get("amorce") or "").strip()
+        bruits = [b.strip() for b in (out.get("bruits") or []) if b and b.strip()]
+        if not amorce:
+            return dict(_FILLER_FALLBACK)
+        return {"amorce": amorce, "bruits": bruits}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("generate_search_filler a échoué: {e}", e=e)
+        return dict(_FILLER_FALLBACK)
+
+
 async def generate_voice_reply(
     bot,
     speaker_label: str,
