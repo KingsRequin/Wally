@@ -22,6 +22,7 @@ bot:
   memory_recall_min_score: 0.75
   memory_search_min_score: 0.5
   notification_channel_id: null      # ID du salon de notifications
+  bedroom_channel_id: null            # ID du salon "chambre" — cible des rappels créés en vocal
   notification_guild_id: null
   prelude_window_size: 15
   spontaneous_cooldown_seconds: 300
