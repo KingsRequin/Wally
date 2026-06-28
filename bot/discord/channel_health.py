@@ -30,8 +30,8 @@ async def find_dead_channels(bot, channels_md_path) -> list[tuple[str, str]]:
     try:
         from bot.intelligence.channels import ChannelDirectory
         directory = ChannelDirectory.load(Path(channels_md_path))
-        for c in directory.channels:
-            candidates.append((int(c.id), f"CHANNELS.md ({c.name})"))
+        for cid, cname in directory.name_map().items():
+            candidates.append((int(cid), f"CHANNELS.md ({cname})"))
     except Exception as e:  # noqa: BLE001 — CHANNELS.md absent/illisible : on continue
         logger.warning("channel_health: CHANNELS.md illisible ({e})", e=e)
 

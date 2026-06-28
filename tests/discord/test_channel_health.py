@@ -44,6 +44,18 @@ async def test_report_dm_createur_si_mort(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_canal_de_channels_md_detecte(tmp_path):
+    bot = _bot_with_config()          # all config ids None
+    bot.get_channel.return_value = None
+    bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone"))
+    md = tmp_path / "CHANNELS.md"
+    md.write_text("111 | #test | text | un canal de test\n")
+    dead = await find_dead_channels(bot, md)
+    assert [d[0] for d in dead] == ["111"]
+    assert "CHANNELS.md" in dead[0][1]
+
+
+@pytest.mark.asyncio
 async def test_report_pas_de_dm_si_tout_vivant(tmp_path):
     bot = _bot_with_config(notif=111)
     bot.config.bot.owner_discord_id = "610550333042589752"
