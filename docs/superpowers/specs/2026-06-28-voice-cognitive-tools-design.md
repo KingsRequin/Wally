@@ -25,6 +25,13 @@ notifications système ne partent nulle part depuis un moment, en silence.
    (amorce parlée + petits bruits de réflexion), **dans le style/l'humeur de Wally**.
 3. Au démarrage du bot : **valider chaque channel id configuré** et prévenir si l'un est mort.
 
+## Contrainte transversale
+
+**Aucun message privé (DM) ne doit être envoyé à un utilisateur autre que le créateur**
+(`owner_discord_id`). Le seul DM autorisé dans ce chantier est l'alerte de santé des canaux
+adressée au créateur. Les rappels se délivrent dans un salon, jamais en DM à un tiers ; en
+l'absence de salon cible, ils sont refusés proprement (pas de repli DM).
+
 ## Hors périmètre
 
 - Délivrance vocale des rappels (« il le dit à l'oral si encore connecté ») — évolution future.
