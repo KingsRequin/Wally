@@ -51,7 +51,7 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
-    bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_topics = AsyncMock(return_value=[])
     bot.db.get_persistent_notes = AsyncMock(return_value=[])
 
     bot.prompts.build_system_prompt = MagicMock(return_value="system")

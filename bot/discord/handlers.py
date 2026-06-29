@@ -1254,14 +1254,16 @@ async def _respond(
         except Exception:
             pass
 
-        # Priority 5: Community opinions
+        # Priority 5: Community topics (sujets de communauté enrichis)
         try:
-            opinions = await bot.db.get_opinions(limit=10)
-            if opinions:
-                opinions_block = "--- Tes opinions sur les sujets de la communauté ---"
-                for o in opinions:
-                    opinions_block += f'\n- {o["topic"]} : "{o["opinion"]}"'
-                memory_parts.append((5, opinions_block))
+            topics = await bot.db.get_topics(limit=5)
+            if topics:
+                topics_block = "--- Sujets de la communauté ---"
+                for t in topics:
+                    names = ", ".join(p["name"] for p in t["participants"]) if t["participants"] else ""
+                    who = f" — {names} en parlent" if names else ""
+                    topics_block += f'\n- {t["name"]}{who} — ton avis : "{t["opinion"]}"'
+                memory_parts.append((5, topics_block))
         except Exception:
             pass
 

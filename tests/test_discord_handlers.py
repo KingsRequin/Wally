@@ -62,7 +62,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
 
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
-    bot.db.get_opinions = AsyncMock(return_value=[])
+    bot.db.get_topics = AsyncMock(return_value=[])
     bot.db.get_persistent_notes = AsyncMock(return_value=[])
 
     bot.language.detect = MagicMock(return_value="fr")
