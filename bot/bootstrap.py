@@ -186,7 +186,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
 
     # ── Consolidation nocturne de la mémoire ──────────────────────────────────
     from bot.intelligence.memory.consolidator import MemoryConsolidator
-    consolidator = MemoryConsolidator(db, secondary_llm, fact_extractor, memory)
+    consolidator = MemoryConsolidator(db, secondary_llm)
     journal.set_consolidator(consolidator)
     logger.info("MemoryConsolidator initialized")
 

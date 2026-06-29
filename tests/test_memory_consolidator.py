@@ -1,4 +1,5 @@
 # tests/test_memory_consolidator.py
+"""Tests TDD pour MemoryConsolidator — source = daily_log, résumé seul."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from bot.intelligence.memory.consolidator import MemoryConsolidator
@@ -6,60 +7,83 @@ from bot.intelligence.memory.consolidator import MemoryConsolidator
 
 def _make(rows):
     db = MagicMock()
-    db.get_recent_session_messages = AsyncMock(return_value=rows)
+    db.get_today_messages = AsyncMock(return_value=rows)
     db.insert_session_analysis = AsyncMock()
-    fact_extractor = MagicMock()
-    fact_extractor._extract_facts = AsyncMock(return_value=1)
     llm = MagicMock()
     llm.complete_structured = AsyncMock(return_value={"summary": "résumé test"})
-    memory = MagicMock()
-    return MemoryConsolidator(db, llm, fact_extractor, memory), db, fact_extractor, llm
+    return MemoryConsolidator(db, llm), db, llm
 
 
-def _msg(ch, uid="1", name="Alice", content="coucou les amis ça va"):
-    return {"channel_id": ch, "platform": "discord", "user_id": uid,
-            "display_name": name, "content": content, "timestamp": 1.0}
+def _msg(ch, author="Alice", content="coucou les amis ça va"):
+    return {
+        "channel_id": ch,
+        "platform": "discord",
+        "author": author,
+        "content": content,
+        "timestamp": 1.0,
+    }
 
 
 @pytest.mark.asyncio
 async def test_no_messages_is_noop():
-    c, db, fx, llm = _make([])
-    await c.consolidate_day(since=0.0)
-    fx._extract_facts.assert_not_awaited()
+    c, db, llm = _make([])
+    await c.consolidate_day()
     db.insert_session_analysis.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_channel_below_two_messages_skipped():
-    c, db, fx, llm = _make([_msg("A")])
-    await c.consolidate_day(since=0.0)
-    fx._extract_facts.assert_not_awaited()
+    c, db, llm = _make([_msg("A")])
+    await c.consolidate_day()
+    db.insert_session_analysis.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_channel_extracts_and_summarizes():
-    rows = [_msg("A", "1"), _msg("A", "2", "Bob")]
-    c, db, fx, llm = _make(rows)
-    await c.consolidate_day(since=0.0)
-    fx._extract_facts.assert_awaited_once()
-    args = fx._extract_facts.await_args.args
-    assert args[1] == "discord" and args[2] == "A"
+async def test_channel_summarized():
+    rows = [_msg("A", author="Alice"), _msg("A", author="Bob", content="salut ça roule")]
+    c, db, llm = _make(rows)
+    await c.consolidate_day()
+
     db.insert_session_analysis.assert_awaited_once()
-    ins = db.insert_session_analysis.await_args.args
-    assert ins[1] == "discord" and ins[2] == "A" and ins[3] == "résumé test"
+    args = db.insert_session_analysis.await_args.args
+    assert args[1] == "discord"      # platform
+    assert args[2] == "A"            # channel_id
+    assert args[3] == "résumé test"  # summary
+
+    # La convo passée au LLM doit contenir le contenu des messages
+    call_args = llm.complete_structured.await_args
+    user_content = call_args.args[1][0]["content"]
+    assert "coucou les amis ça va" in user_content
+    assert "salut ça roule" in user_content
 
 
 @pytest.mark.asyncio
 async def test_channels_isolated_on_error():
-    rows = [_msg("A", "1"), _msg("A", "2"), _msg("B", "1"), _msg("B", "2")]
-    c, db, fx, llm = _make(rows)
-    # Le canal A lève, B doit quand même être traité
-    async def boom(messages, platform, channel_id, origin=None):
-        if channel_id == "A":
-            raise RuntimeError("extract fail A")
-        return 1
-    fx._extract_facts.side_effect = boom
-    await c.consolidate_day(since=0.0)
-    # B a produit un résumé malgré l'échec de A
-    inserted_channels = [call.args[2] for call in db.insert_session_analysis.await_args_list]
-    assert "B" in inserted_channels and "A" not in inserted_channels
+    rows = [
+        _msg("A", author="AliceA", content="message du canal A"),
+        _msg("A", author="AliceA", content="encore canal A"),
+        _msg("B", author="BobB", content="message du canal B"),
+        _msg("B", author="BobB", content="encore canal B"),
+    ]
+    c, db, llm = _make(rows)
+
+    async def side_effect(system, messages, schema, **kwargs):
+        if "canal A" in messages[0]["content"]:
+            raise RuntimeError("boom canal A")
+        return {"summary": "résumé test"}
+
+    llm.complete_structured.side_effect = side_effect
+    await c.consolidate_day()  # ne doit pas lever
+
+    inserted = [call.args[2] for call in db.insert_session_analysis.await_args_list]
+    assert "B" in inserted
+    assert "A" not in inserted
+
+
+@pytest.mark.asyncio
+async def test_llm_failure_no_insert():
+    rows = [_msg("A"), _msg("A", author="Bob")]
+    c, db, llm = _make(rows)
+    llm.complete_structured.side_effect = RuntimeError("boom LLM")
+    await c.consolidate_day()  # ne doit pas lever
+    db.insert_session_analysis.assert_not_awaited()

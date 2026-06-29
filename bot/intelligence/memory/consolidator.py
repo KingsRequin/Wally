@@ -1,23 +1,24 @@
 # bot/intelligence/memory/consolidator.py
 """Consolidation nocturne de la mémoire.
 
-Relit les conversations du jour (messages de session persistés), en extrait les
-faits durables via le pipeline existant (FactExtractor._extract_facts →
-MemoryIngest, dédupé) et produit un résumé par canal stocké dans
+Lit les messages durables du jour (daily_log, rétention 7j) via
+get_today_messages() et produit un résumé par canal stocké dans
 session_analyses pour le recall cross-session.
+
+L'extraction de faits (S-P-O) n'est PAS faite ici : elle est déjà réalisée
+en continu par le live (flush à 600 s d'inactivité) et impossible proprement
+depuis daily_log (pas de user_id).
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from bot.intelligence.prompts import load_prompt
 
-if TYPE_CHECKING:
-    from bot.intelligence.fact_extractor import FactExtractor
-    from bot.intelligence.memory.service import MemoryService
+# Chargé une seule fois au niveau module — évite les I/O répétés
+_SUMMARY_PROMPT = load_prompt("memory_session_summary")
 
 _SUMMARY_SCHEMA = {
     "type": "object",
@@ -32,28 +33,26 @@ _SUMMARY_SCHEMA = {
 
 
 class MemoryConsolidator:
-    def __init__(self, db, llm_secondary, fact_extractor: "FactExtractor", memory: "MemoryService"):
+    def __init__(self, db, llm_secondary):
         self._db = db
         self._llm = llm_secondary
-        self._fact_extractor = fact_extractor
-        self._memory = memory
 
-    async def consolidate_day(self, since: float | None = None) -> None:
-        """Passe nocturne : faits + résumés pour chaque canal actif du jour."""
+    async def consolidate_day(self) -> None:
+        """Passe nocturne : résumés cross-session pour chaque canal actif du jour."""
         if self._db is None:
             return
-        if since is None:
-            now = datetime.now()
-            since = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
         try:
-            rows = await self._db.get_recent_session_messages(since)
+            rows = await self._db.get_today_messages()
         except Exception as e:  # noqa: BLE001 — non-fatal
-            logger.warning("Consolidation : lecture des messages échouée : {e}", e=e)
-            return
-        if not rows:
-            logger.debug("Consolidation : aucun message à consolider")
+            logger.warning("Consolidation : lecture daily_log échouée : {e}", e=e)
             return
 
+        if not rows:
+            logger.debug("Consolidation : aucun message à consolider aujourd'hui")
+            return
+
+        # Regrouper par canal en conservant la plateforme
         by_channel: dict[str, dict] = {}
         for r in rows:
             ch = by_channel.setdefault(
@@ -62,36 +61,41 @@ class MemoryConsolidator:
             ch["messages"].append(r)
 
         for channel_id, data in by_channel.items():
+            msgs = data["messages"]
+            platform = data["platform"]
+            if len(msgs) < 2:
+                continue
             try:
-                await self._consolidate_channel(channel_id, data["platform"], data["messages"])
+                summary = await self._summarize(msgs)
+                if summary:
+                    session_id = (
+                        f"{platform}:{channel_id}:{datetime.now().strftime('%Y-%m-%d')}"
+                    )
+                    await self._db.insert_session_analysis(
+                        session_id, platform, channel_id, summary
+                    )
             except Exception as e:  # noqa: BLE001 — un canal ne doit pas casser les autres
-                logger.warning("Consolidation canal {c} échouée : {e}", c=channel_id, e=e)
-        logger.info("Consolidation nocturne terminée : {n} canal(aux)", n=len(by_channel))
+                logger.warning(
+                    "Consolidation canal {c} échouée : {e}", c=channel_id, e=e
+                )
 
-    async def _consolidate_channel(self, channel_id: str, platform: str, messages: list[dict]) -> None:
-        if len(messages) < 2:
-            return
-        # (a) Faits durables — pipeline existant, réconciliation dédupe
-        await self._fact_extractor._extract_facts(
-            messages, platform, channel_id, origin="consolidation"
+        logger.info(
+            "Consolidation nocturne terminée : {n} canal(aux) traité(s)",
+            n=len(by_channel),
         )
-        # (b) Résumé de session pour le recall
-        summary = await self._summarize(messages)
-        if summary:
-            session_id = f"{platform}:{channel_id}:{datetime.now().strftime('%Y-%m-%d')}"
-            await self._db.insert_session_analysis(session_id, platform, channel_id, summary)
 
     async def _summarize(self, messages: list[dict]) -> str | None:
-        convo = "\n".join(f"{m['display_name']}: {m['content']}" for m in messages)
+        """Génère un résumé LLM de la conversation. Retourne None en cas d'échec."""
+        convo = "\n".join(f"{m['author']}: {m['content']}" for m in messages)
         try:
             result = await self._llm.complete_structured(
-                load_prompt("memory_session_summary"),
+                _SUMMARY_PROMPT,
                 [{"role": "user", "content": convo}],
                 _SUMMARY_SCHEMA,
                 schema_name="session_summary",
                 purpose="memory_consolidation",
             )
-        except Exception as e:  # noqa: BLE001 — non-fatal, on garde les faits extraits
+        except Exception as e:  # noqa: BLE001 — non-fatal
             logger.warning("Consolidation : résumé LLM échoué : {e}", e=e)
             return None
         return (result.get("summary") or "").strip() or None
