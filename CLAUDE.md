@@ -240,7 +240,7 @@ Exclude model IDs containing: `realtime`, `preview`, `audio`, `vision`
 - Two services: `wally` (port 8080) + `qdrant`. Wally `depends_on: qdrant: condition: service_healthy`.
 - Build version: `GIT_HASH` + `BUILD_DATE` build args → `BOT_GIT_HASH` / `BOT_BUILD_DATE` env vars → `/api/admin/bot/status`.
 - Dashboard: FastAPI + vanilla JS SPA. Auth: Bearer token (admin), Discord OAuth2 JWT (web chat).
-- Admin sidebar: 6 tabs — **Paramètres** (Émotions · LLM · Images), **Mémoire** (Utilisateurs · Questions · Notes · Global), **Coûts** (Résumé · Détail), **Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay · Instances). Legacy tab names redirect transparently.
+- Admin sidebar: 6 tabs — **Paramètres** (Émotions · LLM · Images), **Mémoire** (Utilisateurs · Questions · Notes · Global), **Actions**, **Prompts**, **Système** (Logs · Twitch · Overlay), **Vocal**. Legacy tab names redirect transparently. (L'onglet Coûts a été retiré : feature remplacée par Langfuse puis abandonnée ; `log_cost()` écrit toujours en DB mais sans UI.)
 
 ---
 
