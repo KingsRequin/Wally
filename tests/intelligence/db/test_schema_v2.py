@@ -8,7 +8,7 @@ from bot.db.schema_v2 import create_v2_tables
 
 @pytest.mark.asyncio
 async def test_create_v2_tables_creates_all_tables():
-    """create_v2_tables() crée les 5 tables sans erreur."""
+    """create_v2_tables() crée les tables attendues et retire thoughts."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
     try:
@@ -18,8 +18,9 @@ async def test_create_v2_tables_creates_all_tables():
                 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
             )
             tables = {row[0] for row in await cursor.fetchall()}
-        expected = {"atomic_facts", "fact_relations", "thoughts", "pending_upgrades", "session_analyses"}
+        expected = {"atomic_facts", "fact_relations", "pending_upgrades", "session_analyses"}
         assert expected.issubset(tables)
+        assert "thoughts" not in tables
     finally:
         os.unlink(db_path)
 

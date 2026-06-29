@@ -50,14 +50,6 @@ CREATE TABLE IF NOT EXISTS voice_events (
     payload TEXT    NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS thoughts (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    content       TEXT    NOT NULL,
-    meta_decision TEXT,
-    emotion_snapshot TEXT,
-    created_at    TEXT    NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS pending_upgrades (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     proposal      TEXT    NOT NULL,
@@ -71,6 +63,9 @@ CREATE TABLE IF NOT EXISTS pending_upgrades (
 CREATE TABLE IF NOT EXISTS session_analyses (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id    TEXT,
+    platform      TEXT,
+    channel_id    TEXT,
+    summary       TEXT,
     quality       REAL,
     issues        TEXT,
     successes     TEXT,
@@ -149,6 +144,22 @@ async def _migrate_atomic_facts(db: aiosqlite.Connection) -> None:
             await db.execute(f"ALTER TABLE atomic_facts ADD COLUMN {name} {decl}")
 
 
+_SESSION_ANALYSES_NEW_COLUMNS = [
+    ("platform", "TEXT"),
+    ("channel_id", "TEXT"),
+    ("summary", "TEXT"),
+]
+
+
+async def _migrate_session_analyses(db: aiosqlite.Connection) -> None:
+    """Ajoute les colonnes recall manquantes sur une table session_analyses existante."""
+    cursor = await db.execute("PRAGMA table_info(session_analyses)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    for name, decl in _SESSION_ANALYSES_NEW_COLUMNS:
+        if name not in existing:
+            await db.execute(f"ALTER TABLE session_analyses ADD COLUMN {name} {decl}")
+
+
 async def create_v2_tables(db_path: str) -> None:
     """Crée les tables V2 si elles n'existent pas (idempotent)."""
     async with aiosqlite.connect(db_path) as db:
@@ -159,5 +170,12 @@ async def create_v2_tables(db_path: str) -> None:
         )
         if await cursor.fetchone() is not None:
             await _migrate_atomic_facts(db)
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='session_analyses'"
+        )
+        if await cursor.fetchone() is not None:
+            await _migrate_session_analyses(db)
+        # Table morte (jamais écrite — les pensées vivent comme FactCategory.THOUGHT)
+        await db.execute("DROP TABLE IF EXISTS thoughts")
         await db.executescript(_SCHEMA_SQL)
         await db.commit()
