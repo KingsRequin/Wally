@@ -344,18 +344,6 @@ CREATE TABLE IF NOT EXISTS twitch_visits (
     summary     TEXT
 );
 
-CREATE TABLE IF NOT EXISTS session_analyses (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id       TEXT,
-    platform         TEXT,
-    channel_id       TEXT,
-    summary          TEXT,
-    quality          REAL,
-    issues           TEXT,
-    successes        TEXT,
-    improvement_note TEXT,
-    created_at       TEXT    NOT NULL
-);
 """
 
 

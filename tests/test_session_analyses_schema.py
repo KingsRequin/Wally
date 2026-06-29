@@ -1,10 +1,14 @@
 import pytest
+import aiosqlite
 from bot.db.database import Database
+from bot.db.schema_v2 import create_v2_tables
 
 
 @pytest.mark.asyncio
 async def test_session_analyses_has_new_columns(tmp_path):
-    db = await Database.create(str(tmp_path / "test.db"))
+    path = str(tmp_path / "test.db")
+    db = await Database.create(path)
+    await create_v2_tables(path)
     rows = await db.fetch_all("PRAGMA table_info(session_analyses)")
     cols = {r["name"] for r in rows}
     assert {"platform", "channel_id", "summary"} <= cols
@@ -13,18 +17,22 @@ async def test_session_analyses_has_new_columns(tmp_path):
 
 @pytest.mark.asyncio
 async def test_thoughts_table_dropped(tmp_path):
-    db = await Database.create(str(tmp_path / "test.db"))
-    rows = await db.fetch_all(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='thoughts'"
-    )
+    path = str(tmp_path / "test.db")
+    async with aiosqlite.connect(path) as raw:
+        await raw.execute("CREATE TABLE thoughts (id INTEGER PRIMARY KEY, content TEXT, created_at TEXT)")
+        await raw.commit()
+    await create_v2_tables(path)
+    async with aiosqlite.connect(path) as raw:
+        cursor = await raw.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='thoughts'"
+        )
+        rows = await cursor.fetchall()
     assert rows == []
-    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_migration_idempotent_on_legacy_table(tmp_path):
     # Simule une vieille DB avec l'ancien schéma session_analyses (sans les colonnes)
-    import aiosqlite
     path = str(tmp_path / "legacy.db")
     async with aiosqlite.connect(path) as raw:
         await raw.execute(
@@ -35,11 +43,15 @@ async def test_migration_idempotent_on_legacy_table(tmp_path):
         await raw.execute("CREATE TABLE thoughts (id INTEGER PRIMARY KEY, content TEXT, created_at TEXT)")
         await raw.commit()
     # create_v2_tables doit migrer sans lever, deux fois de suite
-    from bot.db.schema_v2 import create_v2_tables
     await create_v2_tables(path)
     await create_v2_tables(path)  # idempotent
     db = await Database.create(path)
     rows = await db.fetch_all("PRAGMA table_info(session_analyses)")
     cols = {r["name"] for r in rows}
     assert {"platform", "channel_id", "summary"} <= cols
+    # thoughts doit avoir été supprimée par create_v2_tables
+    rows_thoughts = await db.fetch_all(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='thoughts'"
+    )
+    assert rows_thoughts == []
     await db.close()
