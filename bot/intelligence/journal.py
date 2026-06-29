@@ -297,10 +297,15 @@ class DailyJournal:
         self._fetch_history_cb: Optional[Callable[..., Any]] = None
         self._bg_tasks: set[asyncio.Task] = set()
         self._consolidator = None
+        self._user_modeler = None
 
     def set_consolidator(self, consolidator) -> None:
         """Injecte le MemoryConsolidator lancé par le cron nocturne."""
         self._consolidator = consolidator
+
+    def set_user_modeler(self, user_modeler) -> None:
+        """Injecte le UserModeler lancé par le cron nocturne."""
+        self._user_modeler = user_modeler
 
     def set_send_callback(self, cb: Callable[..., Any]) -> None:
         """Inject an async callable: async def send(text: str) -> None"""
@@ -747,6 +752,16 @@ class DailyJournal:
                 replace_existing=True,
             )
             logger.info("Consolidation nocturne planifiée à {t}", t=time_str)
+        if self._user_modeler is not None:
+            self._scheduler.add_job(
+                self._user_modeler.refresh_profiles,
+                "cron",
+                hour=hour,
+                minute=minute,
+                id="user_model_refresh",
+                replace_existing=True,
+            )
+            logger.info("Modélisation des personnes planifiée à {t}", t=time_str)
         # Only start if we own the scheduler (no shared scheduler provided)
         if owns_scheduler:
             self._scheduler.start()
