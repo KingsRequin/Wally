@@ -230,6 +230,32 @@ class SocialMixin:
             (channel_id, cutoff_ts),
         )
 
+    async def insert_session_analysis(
+        self, session_id: str, platform: str, channel_id: str, summary: str
+    ) -> None:
+        """Écrit le résumé de session (upsert par session_id : un seul par canal/jour)."""
+        await self.execute(
+            "DELETE FROM session_analyses WHERE session_id = ?", (session_id,)
+        )
+        await self.execute(
+            "INSERT INTO session_analyses "
+            "(session_id, platform, channel_id, summary, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, platform, channel_id, summary, str(time.time())),
+        )
+
+    async def get_recent_session_summaries(
+        self, platform: str, channel_id: str, limit: int = 3
+    ) -> list[dict]:
+        """Retourne les derniers résumés de session d'un canal (recall cross-session)."""
+        rows = await self.fetch_all(
+            "SELECT summary, created_at FROM session_analyses "
+            "WHERE platform = ? AND channel_id = ? AND summary IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT ?",
+            (platform, channel_id, limit),
+        )
+        return [{"summary": r["summary"], "created_at": r["created_at"]} for r in rows]
+
     # ── Web search log ────────────────────────────────────────────────────────
 
     async def log_web_search(self, query: str, results_count: int) -> None:
