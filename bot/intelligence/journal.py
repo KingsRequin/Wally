@@ -598,9 +598,9 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to archive journal: {e}", e=exc)
 
-        # ── Opinion formation (fire-and-forget) ──
+        # ── Topic formation (fire-and-forget) ──
         if self._db is not None:
-            self._fire(self._form_opinions(context_text))
+            self._fire(self._form_topics(context_text))
 
     def _fire(self, coro) -> asyncio.Task:
         """Fire-and-forget with strong reference to prevent GC cancellation."""
@@ -609,37 +609,60 @@ class DailyJournal:
         t.add_done_callback(self._bg_tasks.discard)
         return t
 
-    async def _form_opinions(self, summary_text: str) -> None:
-        """Analyse le résumé du jour et forme/met à jour des opinions."""
+    _TOPIC_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "topics": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "participants": {"type": "array", "items": {"type": "string"}},
+                        "opinion": {"type": "string"},
+                    },
+                    "required": ["name", "opinion"],
+                },
+            }
+        },
+        "required": ["topics"],
+    }
+
+    async def _form_topics(self, summary_text: str) -> None:
+        """Analyse le résumé du jour et forme/met à jour les sujets de communauté."""
         try:
-            bot_name = self._config.bot.name
-            system_prompt = (
-                f"Tu es {bot_name}. Voici le résumé des conversations d'aujourd'hui. "
-                "Identifie les sujets qui reviennent régulièrement ou qui ont provoqué "
-                f"des réactions fortes. Pour chaque sujet (max 3), formule une opinion "
-                f"courte que {bot_name} pourrait avoir, cohérente avec sa personnalité "
-                "(aigri, sarcastique, mais avec des avis tranchés et parfois surprenants).\n\n"
-                "Retourne un JSON valide uniquement :\n"
-                f'[{{"topic": "nom du sujet", "opinion": "opinion courte de {bot_name}"}}]\n\n'
-                "Si aucun sujet ne mérite une opinion, retourne []."
+            existing = await self._db.get_topics(limit=15)
+            known = ", ".join(t["name"] for t in existing) or "(aucun)"
+            payload = (
+                f"Sujets déjà connus (réutilise ces noms si pertinent) : {known}\n\n"
+                f"Résumé du jour :\n{summary_text}"
             )
-            raw = await self._llm_secondary.complete(
-                system_prompt,
-                [{"role": "user", "content": summary_text}],
-                purpose="opinion_formation",
+            result = await self._llm_secondary.complete_structured(
+                load_prompt("topic_formation"),
+                [{"role": "user", "content": payload}],
+                self._TOPIC_SCHEMA,
+                schema_name="topics",
+                purpose="topic_formation",
             )
-            opinions = json.loads(raw)
-            if not isinstance(opinions, list):
-                return
-            for item in opinions[:3]:
-                topic = item.get("topic", "").strip()
-                opinion = item.get("opinion", "").strip()
-                if topic and opinion:
-                    await self._db.upsert_opinion(topic, opinion)
-                    logger.info("Opinion formed: {t} → {o}", t=topic, o=opinion[:50])
-            await self._db.cleanup_opinions(max_age_days=30, max_count=10)
-        except Exception as exc:
-            logger.warning("Opinion formation failed: {e}", e=exc)
+            for item in (result.get("topics") or [])[:3]:
+                name = (item.get("name") or "").strip()
+                opinion = (item.get("opinion") or "").strip()
+                if not name or not opinion:
+                    continue
+                summary = (item.get("summary") or "").strip()
+                participants = []
+                for pseudo in item.get("participants") or []:
+                    pseudo = (pseudo or "").strip()
+                    if not pseudo:
+                        continue
+                    uid = self._memory._alias_cache.get(f"nickname:{pseudo.lower()}")
+                    participants.append({"name": pseudo, "uid": uid})
+                await self._db.upsert_topic(name, summary, participants, opinion)
+                logger.info("Topic formed: {n}", n=name)
+            await self._db.cleanup_topics()
+        except Exception as exc:  # noqa: BLE001 — non-fatal
+            logger.warning("Topic formation failed: {e}", e=exc)
 
     async def _build_context_text(self, messages: list[dict]) -> str:
         total_chars = sum(len(m["content"]) for m in messages)

@@ -89,25 +89,15 @@ async def test_journal_header_uses_cindy_not_wally():
 
 
 @pytest.mark.asyncio
-async def test_opinions_system_prompt_uses_cindy_not_wally():
-    """_form_opinions inline system_prompt must use config.bot.name, not hardcoded 'Wally'."""
+async def test_topics_system_prompt_uses_cindy_not_wally():
+    """_form_topics system_prompt (from topic_formation.md) must render {{BOT_NAME}} as 'Cindy'."""
     journal = _make_cindy_journal()
 
-    captured_system = []
-
-    async def capture_complete(system, messages, purpose=""):
-        captured_system.append((purpose, system))
-        if purpose == "opinion_formation":
-            return '[{"topic": "test", "opinion": "une opinion"}]'
-        return "Texte généré."
-
-    journal._llm.complete = AsyncMock(side_effect=capture_complete)
-    journal._llm_secondary.complete = AsyncMock(side_effect=capture_complete)
-
-    # Provide a db mock for opinion storage
+    # Provide a db mock for topic storage
     db = MagicMock()
-    db.upsert_opinion = AsyncMock()
-    db.cleanup_opinions = AsyncMock()
+    db.get_topics = AsyncMock(return_value=[])
+    db.upsert_topic = AsyncMock()
+    db.cleanup_topics = AsyncMock()
     db.insert_journal = AsyncMock()
     db.get_emotion_snapshots_for_date = AsyncMock(return_value=[])
     db.get_yesterday_journal = AsyncMock(return_value=None)
@@ -117,18 +107,13 @@ async def test_opinions_system_prompt_uses_cindy_not_wally():
     db.get_emotion_weekly_avg = AsyncMock(return_value=None)
     journal._db = db
 
-    sent_messages = []
-    journal.set_send_callback(AsyncMock(side_effect=lambda text, **kw: sent_messages.append(text)))
+    journal._llm_secondary.complete_structured = AsyncMock(return_value={"topics": []})
 
-    await journal.generate_and_send()
+    await journal._form_topics("résumé de test")
 
-    # Wait for fire-and-forget opinions task to complete
-    import asyncio
-    await asyncio.gather(*journal._bg_tasks, return_exceptions=True)
+    assert journal._llm_secondary.complete_structured.called, "Expected complete_structured to be called"
+    system_prompt = journal._llm_secondary.complete_structured.call_args[0][0]
 
-    opinion_calls = [(p, s) for p, s in captured_system if p == "opinion_formation"]
-    assert opinion_calls, "Expected an opinion_formation call"
-    _, opinion_system = opinion_calls[0]
-
-    assert "Cindy" in opinion_system, f"Expected 'Cindy' in opinion system prompt, got: {opinion_system!r}"
-    assert "Wally" not in opinion_system, f"'Wally' should not appear in opinion system prompt"
+    assert "Cindy" in system_prompt, f"Expected 'Cindy' in topic_formation prompt, got: {system_prompt!r}"
+    assert "Wally" not in system_prompt, f"'Wally' should not appear in rendered topic prompt"
+    assert "{{BOT_NAME}}" not in system_prompt, "Unrendered sentinel found in topic system prompt"
