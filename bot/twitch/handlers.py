@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from bot.intelligence.prompts import assemble_memory_context
+from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
 from bot.core.conversation_log import new_trace_id
 from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS, _third_party_mention_context
 
@@ -228,6 +228,15 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         # Priority 1: Semantic memories (already fetched)
         if mem_context:
             memory_parts.append((1, mem_context))
+
+        # Priority 2: Résumés de sessions précédentes (cross-session recall)
+        try:
+            summaries = await bot.db.get_recent_session_summaries(platform, channel_id, limit=3)
+            recall_block = build_session_recall_block(summaries)
+            if recall_block:
+                memory_parts.append((2, recall_block))
+        except Exception:
+            pass
 
         # Priority 4: Recent successful jokes for this channel
         try:
