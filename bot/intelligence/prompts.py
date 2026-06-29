@@ -357,3 +357,15 @@ class PromptBuilder:
     @staticmethod
     def format_event_message(template: str, **kwargs) -> str:
         return template.format(**{k: v for k, v in kwargs.items()})
+
+
+def build_session_recall_block(summaries: list[dict]) -> str:
+    """Construit le bloc 'Sessions précédentes' (recall cross-session). Vide si rien."""
+    if not summaries:
+        return ""
+    lines = ["--- Sessions précédentes dans ce salon ---"]
+    for s in summaries:
+        text = (s.get("summary") or "").strip()
+        if text:
+            lines.append(f"- {text}")
+    return "\n".join(lines) if len(lines) > 1 else ""

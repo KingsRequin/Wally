@@ -14,7 +14,7 @@ import discord
 from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
-from bot.intelligence.prompts import assemble_memory_context, load_prompt
+from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block, load_prompt
 from bot.intelligence.self_fix import UpgradeRequest
 
 try:
@@ -1231,6 +1231,17 @@ async def _respond(
         # Priority 1: Semantic memories (already fetched)
         if mem_context:
             memory_parts.append((1, mem_context))
+
+        # Priority 2: Résumés de sessions précédentes (cross-session recall)
+        try:
+            summaries = await bot.db.get_recent_session_summaries(
+                platform, str(message.channel.id), limit=3
+            )
+            recall_block = build_session_recall_block(summaries)
+            if recall_block:
+                memory_parts.append((2, recall_block))
+        except Exception:
+            pass
 
         # Priority 4: Recent successful jokes for this channel
         try:
