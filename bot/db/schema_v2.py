@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS social_rhythm_bins (
     eng_obs    INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id    TEXT PRIMARY KEY,
+    portrait   TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 # Colonnes ajoutées à atomic_facts pour le modèle S-P-O (porté de jarvis).
