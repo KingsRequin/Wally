@@ -190,6 +190,12 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     journal.set_consolidator(consolidator)
     logger.info("MemoryConsolidator initialized")
 
+    # ── Modélisation des personnes (user model) ───────────────────────────────
+    from bot.intelligence.memory.user_modeler import UserModeler
+    user_modeler = UserModeler(db, secondary_llm)
+    journal.set_user_modeler(user_modeler)
+    logger.info("UserModeler initialized")
+
     reaction_tracker = ReactionTracker(emotion, db)
     logger.info("ReactionTracker initialized")
 
