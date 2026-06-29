@@ -296,6 +296,11 @@ class DailyJournal:
         self._send_cb: Optional[Callable[..., Any]] = None
         self._fetch_history_cb: Optional[Callable[..., Any]] = None
         self._bg_tasks: set[asyncio.Task] = set()
+        self._consolidator = None
+
+    def set_consolidator(self, consolidator) -> None:
+        """Injecte le MemoryConsolidator lancé par le cron nocturne."""
+        self._consolidator = consolidator
 
     def set_send_callback(self, cb: Callable[..., Any]) -> None:
         """Inject an async callable: async def send(text: str) -> None"""
@@ -732,6 +737,16 @@ class DailyJournal:
             "Memory cleanup scheduler started, fires at {h:02d}:{m:02d}",
             h=cleanup_dt.hour, m=cleanup_dt.minute,
         )
+        if self._consolidator is not None:
+            self._scheduler.add_job(
+                self._consolidator.consolidate_day,
+                "cron",
+                hour=hour,
+                minute=minute,
+                id="memory_consolidation",
+                replace_existing=True,
+            )
+            logger.info("Consolidation nocturne planifiée à {t}", t=time_str)
         # Only start if we own the scheduler (no shared scheduler provided)
         if owns_scheduler:
             self._scheduler.start()
