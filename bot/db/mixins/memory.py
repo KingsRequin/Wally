@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
@@ -402,3 +403,47 @@ class MemoryMixin:
             }
             for r in rows
         ]
+
+    # ── User profiles (portraits) ──────────────────────────────────────────────
+
+    async def upsert_user_profile(self, user_id: str, portrait: str) -> None:
+        """Écrit/remplace le portrait d'une personne (1 par user_id)."""
+        await self.execute(
+            "INSERT INTO user_profiles(user_id, portrait, updated_at) VALUES(?,?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "portrait=excluded.portrait, updated_at=excluded.updated_at",
+            (user_id, portrait, datetime.utcnow().isoformat()),
+        )
+
+    async def get_user_profile(self, user_id: str) -> str | None:
+        row = await self.fetch_one(
+            "SELECT portrait FROM user_profiles WHERE user_id=?", (user_id,)
+        )
+        return row["portrait"] if row else None
+
+    async def get_users_with_recent_facts(self, since_iso: str) -> list[str]:
+        """user_id distincts dont un fait actif a bougé depuis since_iso."""
+        rows = await self.fetch_all(
+            "SELECT DISTINCT user_id FROM atomic_facts "
+            "WHERE status='active' AND (last_seen_at >= ? OR created_at >= ?)",
+            (since_iso, since_iso),
+        )
+        return [r["user_id"] for r in rows]
+
+    async def get_active_facts_for_user(self, user_id: str, limit: int = 50) -> list[dict]:
+        rows = await self.fetch_all(
+            "SELECT content, category FROM atomic_facts "
+            "WHERE user_id=? AND status='active' AND confidence >= 0.3 "
+            "ORDER BY importance DESC, last_seen_at DESC LIMIT ?",
+            (user_id, limit),
+        )
+        return [{"content": r["content"], "category": r["category"]} for r in rows]
+
+    async def get_superseded_facts_for_user(self, user_id: str, limit: int = 20) -> list[dict]:
+        rows = await self.fetch_all(
+            "SELECT content, category FROM atomic_facts "
+            "WHERE user_id=? AND status='superseded' "
+            "ORDER BY last_seen_at DESC LIMIT ?",
+            (user_id, limit),
+        )
+        return [{"content": r["content"], "category": r["category"]} for r in rows]
