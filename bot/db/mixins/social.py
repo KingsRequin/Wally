@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime
 from typing import TYPE_CHECKING
@@ -122,6 +123,68 @@ class SocialMixin:
         await self.execute(
             "DELETE FROM opinions WHERE id NOT IN "
             "(SELECT id FROM opinions ORDER BY updated_at DESC LIMIT ?)",
+            (max_count,),
+        )
+
+    # ── Topics ────────────────────────────────────────────────────────────────────
+
+    async def upsert_topic(
+        self, name: str, summary: str, participants: list[dict], opinion: str
+    ) -> None:
+        """Insere un sujet ou le fusionne (participants unionnés, mention_count++)."""
+        now = time.time()
+        cur = await self._conn.execute(
+            "SELECT id, participants FROM topics WHERE name=?", (name,)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            await self.execute(
+                "INSERT INTO topics (name, summary, participants, opinion, "
+                "mention_count, last_seen_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                (name, summary, json.dumps(participants, ensure_ascii=False),
+                 opinion, 1, now, now),
+            )
+            return
+        existing = json.loads(row["participants"] or "[]")
+        merged: dict[str, dict] = {}
+        for p in existing + participants:
+            key = p.get("uid") or p.get("name")
+            if key:
+                merged[key] = p
+        await self.execute(
+            "UPDATE topics SET summary=?, participants=?, opinion=?, "
+            "mention_count=mention_count+1, last_seen_at=? WHERE id=?",
+            (summary, json.dumps(list(merged.values()), ensure_ascii=False),
+             opinion, now, row["id"]),
+        )
+
+    async def get_topics(self, limit: int = 10) -> list[dict]:
+        """Sujets les plus chauds d'abord (récence puis fréquence)."""
+        cur = await self._conn.execute(
+            "SELECT name, summary, participants, opinion, mention_count, last_seen_at "
+            "FROM topics ORDER BY last_seen_at DESC, mention_count DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "name": r["name"],
+                "summary": r["summary"],
+                "participants": json.loads(r["participants"] or "[]"),
+                "opinion": r["opinion"],
+                "mention_count": r["mention_count"],
+                "last_seen_at": r["last_seen_at"],
+            }
+            for r in rows
+        ]
+
+    async def cleanup_topics(self, max_age_days: int = 30, max_count: int = 15) -> None:
+        """Retire les sujets froids/anciens, garde les max_count plus récents."""
+        cutoff = time.time() - max_age_days * 86400
+        await self.execute("DELETE FROM topics WHERE last_seen_at < ?", (cutoff,))
+        await self.execute(
+            "DELETE FROM topics WHERE id NOT IN "
+            "(SELECT id FROM topics ORDER BY last_seen_at DESC LIMIT ?)",
             (max_count,),
         )
 
