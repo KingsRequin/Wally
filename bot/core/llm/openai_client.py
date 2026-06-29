@@ -519,6 +519,17 @@ class OpenAILLMClient(BaseLLMClient):
                 "OpenAI {model} (Responses+tools) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
                 model=self._model, inp=total_input, out=total_output, cost=cost, purpose=purpose,
             )
+            try:
+                await self._db.log_cost(
+                    model=self._model,
+                    input_tokens=total_input,
+                    output_tokens=total_output,
+                    cost_usd=cost,
+                    purpose=purpose,
+                    user_id=user_id,
+                )
+            except Exception as e:
+                logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
             return text, tools_called
 
         except Exception as exc:
@@ -610,6 +621,17 @@ class OpenAILLMClient(BaseLLMClient):
                     "OpenAI {model} (Chat+tools) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
                     model=self._model, inp=total_input, out=total_output, cost=cost, purpose=purpose,
                 )
+                try:
+                    await self._db.log_cost(
+                        model=self._model,
+                        input_tokens=total_input,
+                        output_tokens=total_output,
+                        cost_usd=cost,
+                        purpose=purpose,
+                        user_id=user_id,
+                    )
+                except Exception as e:
+                    logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
                 return msg.content.strip() if msg.content else FALLBACK_RESPONSE, tools_called
 
             except RateLimitError:
