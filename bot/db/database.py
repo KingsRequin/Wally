@@ -193,6 +193,17 @@ CREATE TABLE IF NOT EXISTS opinions (
     updated_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS topics (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL UNIQUE,
+    summary       TEXT,
+    participants  TEXT,
+    opinion       TEXT,
+    mention_count INTEGER NOT NULL DEFAULT 1,
+    last_seen_at  REAL    NOT NULL,
+    created_at    REAL    NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id TEXT NOT NULL,
