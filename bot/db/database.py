@@ -185,14 +185,6 @@ CREATE TABLE IF NOT EXISTS jokes (
     created_at REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS opinions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    topic TEXT NOT NULL UNIQUE,
-    opinion TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS topics (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT    NOT NULL UNIQUE,
@@ -477,6 +469,12 @@ class Database(
             await conn.commit()
         except aiosqlite.OperationalError:
             pass  # colonne déjà présente
+        # Topics remplace opinions — retire la table morte
+        try:
+            await conn.execute("DROP TABLE IF EXISTS opinions")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 

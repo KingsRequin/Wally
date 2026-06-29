@@ -241,7 +241,6 @@ async def test_discord_handler_adds_gun_reaction_on_apex():
     bot.memory.get_pending_question_directive = AsyncMock(return_value="")
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
-    bot.db.get_opinions = AsyncMock(return_value=[])
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.prompts.build_context_block = MagicMock(return_value="")
     bot.prompts.build_prelude_block = MagicMock(return_value="")

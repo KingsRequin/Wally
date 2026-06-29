@@ -97,35 +97,6 @@ class SocialMixin:
         rows = await cursor.fetchall()
         return [row["content"] for row in rows]
 
-    async def upsert_opinion(self, topic: str, opinion: str) -> None:
-        """Insere ou met a jour une opinion sur un sujet."""
-        now = time.time()
-        await self.execute(
-            "INSERT INTO opinions (topic, opinion, created_at, updated_at) VALUES (?,?,?,?)"
-            " ON CONFLICT(topic) DO UPDATE SET opinion=excluded.opinion, updated_at=excluded.updated_at",
-            (topic, opinion, now, now),
-        )
-
-    async def get_opinions(self, limit: int = 10) -> list[dict]:
-        """Retourne les opinions les plus recemment mises a jour."""
-        cursor = await self._conn.execute(
-            "SELECT topic, opinion FROM opinions ORDER BY updated_at DESC LIMIT ?",
-            (limit,),
-        )
-        rows = await cursor.fetchall()
-        return [{"topic": row["topic"], "opinion": row["opinion"]} for row in rows]
-
-    async def cleanup_opinions(self, max_age_days: int = 30, max_count: int = 10) -> None:
-        """Supprime les opinions expirees et garde les max_count plus recentes."""
-        cutoff = time.time() - max_age_days * 86400
-        await self.execute("DELETE FROM opinions WHERE updated_at < ?", (cutoff,))
-        # Keep only max_count most recent
-        await self.execute(
-            "DELETE FROM opinions WHERE id NOT IN "
-            "(SELECT id FROM opinions ORDER BY updated_at DESC LIMIT ?)",
-            (max_count,),
-        )
-
     # ── Topics ────────────────────────────────────────────────────────────────────
 
     async def upsert_topic(
