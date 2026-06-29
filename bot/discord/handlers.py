@@ -1281,6 +1281,13 @@ async def _respond(
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
 
+        # Portrait de la personne (user model) — non-fatal
+        person_context = ""
+        try:
+            person_context = await bot.db.get_user_profile(f"{platform}:{user_id}") or ""
+        except Exception:
+            pass
+
         # Fallback cold start si prelude vide
         if not prelude:
             prelude = await _fetch_discord_history(
@@ -1311,6 +1318,7 @@ async def _respond(
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
             relationship_context=relationship_context,
+            person_context=person_context,
             persistent_notes=persistent_notes or None,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),

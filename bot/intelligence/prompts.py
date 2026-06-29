@@ -149,6 +149,7 @@ class PromptBuilder:
         weekday_directives: dict[str, str] | None = None,
         composite_directives: dict[str, str] | None = None,
         relationship_context: str = "",
+        person_context: str = "",
         secondary_directives: dict[str, str] | None = None,
         active_secondaries: list[tuple[str, float]] | None = None,
         mood_state: dict[str, float] | None = None,
@@ -296,6 +297,10 @@ class PromptBuilder:
         # la barre latérale Discord). Transitoire — hors budget mémoire.
         if presence_context:
             dynamic_parts.append(f"\n--- Présence en direct ---\n{presence_context}")
+
+        # Portrait de la personne (user model)
+        if person_context:
+            dynamic_parts.append(f"\n--- Qui est cette personne ---\n{person_context}")
 
         # Trust/love relationship context (separate from semantic memories)
         if relationship_context:
