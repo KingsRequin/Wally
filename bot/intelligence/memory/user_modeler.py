@@ -8,14 +8,10 @@ régénère un portrait à partir de leurs faits actifs ET révolus (superseded)
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from bot.intelligence.prompts import load_prompt
-
-if TYPE_CHECKING:
-    pass
 
 _PORTRAIT_PROMPT = load_prompt("user_portrait")
 
