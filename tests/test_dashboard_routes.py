@@ -11,7 +11,7 @@ from bot.config import (
     BotConfig, OpenAIConfig, DiscordConfig, TwitchConfig,
     EmotionDecayConfig, TwitchEventConfig,
     ImageGenerationConfig, OverlayImageConfig,
-    LLMConfig, LLMRoleConfig,
+    LLMConfig, LLMRoleConfig, VoiceConfig,
 )
 
 
@@ -60,6 +60,7 @@ def _make_config():
     )
     cfg.image_generation = ImageGenerationConfig()
     cfg.overlay_image = OverlayImageConfig()
+    cfg.voice = VoiceConfig()
     cfg.save = MagicMock()
     return cfg
 
