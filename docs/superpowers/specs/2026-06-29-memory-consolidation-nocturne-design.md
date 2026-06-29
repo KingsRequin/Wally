@@ -1,7 +1,9 @@
 # Consolidation nocturne de la mémoire — Design
 
-**Statut :** approuvé (design)
+**Statut :** implémenté (révisé)
 **Date :** 2026-06-29
+
+> **Révision 2026-06-29 (post-revue finale).** La conception initiale sourçait `db.get_recent_session_messages` pour extraire à la fois les faits durables et un résumé. La revue finale a montré que `session_messages` est un buffer transitoire (~10 min, purgé à chaque flush du live) → quasi vide à l'heure du cron. **Correction livrée** : la consolidation lit **`daily_log`** (journal durable de la journée, `get_today_messages`, rétention 7j) et **produit uniquement le résumé de session** (cross-session recall). L'extraction de faits a été retirée de la passe nocturne : elle est déjà assurée en continu par le live (flush à 600 s d'inactivité) et `daily_log` n'a pas de `user_id` pour l'attribution. Le reste du design (déclencheur, stockage `session_analyses`, recall budgété/cloisonné) est inchangé. Le `MemoryConsolidator` ne dépend plus que de `(db, llm_secondary)`.
 **Contexte :** Dernier maillon manquant de la mémoire V2. La mémoire V2 (FTS5/SQLite, faits S-P-O, réconciliation 2 étages, retrieval Generative-Agents) est complète et déployée pour les chemins **synchrones** (extraction live message-par-message, recherche). Manque la dimension « vivante » : rien ne relit une conversation après coup, Wally ne « repense » jamais à ses journées et ne se souvient pas de ses sessions passées. Voir `project_v2_memory_health`.
 
 ## Objectif
