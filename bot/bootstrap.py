@@ -184,6 +184,12 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     await fact_extractor.restore_buffers()
     logger.info("FactExtractor initialized")
 
+    # ── Consolidation nocturne de la mémoire ──────────────────────────────────
+    from bot.intelligence.memory.consolidator import MemoryConsolidator
+    consolidator = MemoryConsolidator(db, secondary_llm, fact_extractor, memory)
+    journal.set_consolidator(consolidator)
+    logger.info("MemoryConsolidator initialized")
+
     reaction_tracker = ReactionTracker(emotion, db)
     logger.info("ReactionTracker initialized")
 
