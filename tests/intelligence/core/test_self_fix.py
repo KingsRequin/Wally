@@ -400,7 +400,7 @@ async def test_set_status_publishes_outcome_to_feed():
     await sf._set_status(5, DELIVERED)
     evs = [c.args[0] for c in feed.publish.call_args_list if c.args]
     assert any(
-        e["type"] == "ACT" and "auto-modif" in e["detail"]
+        e["type"] == "CODEFIX" and "auto-modif" in e["detail"]
         and "déployée" in e["detail"]
         and e["full"] == "percevoir les réactions emoji"
         for e in evs

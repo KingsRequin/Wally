@@ -15,6 +15,19 @@ from bot.intelligence.upgrade_registry import (
 # d'avancement indicatif (Claude -p n'émet rien avant la fin → estimation temporelle).
 _PROGRESS_EST_SECONDS = 300.0
 
+# Seuils d'avancement (%) republiés dans le cognitive_feed pendant un run self-mod.
+# Un seul event par palier franchi → le run reste visible sur le site sans noyer
+# le feed (buffer de 30 events).
+_FEED_THRESHOLDS = (25, 50, 75)
+
+
+def _next_threshold_crossed(pct: int, last: int) -> int | None:
+    """Plus haut seuil de _FEED_THRESHOLDS franchi par `pct` et pas encore publié
+    (strictement > last), ou None. Garantit un event par palier."""
+    crossed = [t for t in _FEED_THRESHOLDS if last < t <= pct]
+    return max(crossed) if crossed else None
+
+
 # Cadrage d'ingénierie préfixé à CHAQUE goal envoyé à Claude Code. Garantit un bon
 # framing même si Wally rédige un goal moyen (et empêche les hallucinations du type
 # « la fonction existe déjà » : on force la vérification de l'état réel du code).
@@ -56,6 +69,9 @@ class SelfFix:
         # Goal de l'upgrade en cours (#observability A4) : permet à _set_status de
         # publier l'issue (acceptée/refusée/déployée) sur le feed cognitif.
         self._active_goal: str | None = None
+        # Dernier palier d'avancement publié sur le feed pour le run en cours
+        # (réinitialisé à chaque nouvelle demande). Évite de republier le même palier.
+        self._last_feed_pct: int = 0
 
     async def _set_status(self, upgrade_id: int | None, status: str) -> None:
         """Met à jour le statut d'une demande dans le registre et publie l'issue
@@ -69,7 +85,7 @@ class SelfFix:
             label = _labels.get(status, status)
             try:
                 feed.publish({
-                    "type": "ACT",
+                    "type": "CODEFIX",
                     "detail": f"auto-modif {label} : {goal[:200]}",
                     "full": goal,
                 })
@@ -81,6 +97,27 @@ class SelfFix:
             await self._registry.set_status(upgrade_id, status)
         except Exception:  # noqa: BLE001 — le suivi ne doit jamais casser le flux
             logger.exception("self-fix: maj statut registre #{} échouée", upgrade_id)
+
+    def _publish_feed(self, detail: str, full: str | None = None) -> None:
+        """Publie un jalon de self-modification dans le cognitive_feed (type CODEFIX).
+        Best-effort : ne propage jamais (le feed ne doit pas casser le flux self-fix)."""
+        feed = getattr(self._bot, "cognitive_feed", None)
+        if feed is None:
+            return
+        try:
+            evt = {"type": "CODEFIX", "detail": detail}
+            if full:
+                evt["full"] = full
+            feed.publish(evt)
+        except Exception as e:  # noqa: BLE001 — le feed ne doit jamais casser le flux
+            logger.debug("self-fix CODEFIX publish échoué: {}", e)
+
+    def _maybe_publish_progress(self, pct: int) -> None:
+        """Publie un jalon de progression au franchissement d'un palier (25/50/75 %)."""
+        t = _next_threshold_crossed(pct, self._last_feed_pct)
+        if t is not None:
+            self._last_feed_pct = t
+            self._publish_feed(f"auto-modif en cours — avancement estimé ~{t} %")
 
     def _owner_id(self) -> str:
         """Lit l'ID Discord du créateur depuis config.bot.owner_discord_id."""
@@ -133,6 +170,8 @@ class SelfFix:
             return
         self._pending = True
         self._active_goal = goal   # suivi de l'issue sur le feed (#observability A4)
+        self._last_feed_pct = 0
+        self._publish_feed(f"Wally veut se modifier : {goal[:200]}", full=goal)
         upgrade_id: int | None = None
         try:
             if self._registry is not None:
@@ -202,6 +241,7 @@ class SelfFix:
             "en attente d'autorisation."
         )
         job_id = await self._bridge.claude_run(render_identity(_GOAL_PREAMBLE + goal))
+        self._publish_feed("validé par le créateur — Claude Code démarre")
 
         # Message d'avancement unique, édité au fil de l'eau (pas de spam).
         prog_msg = await dm.send("⏳ Avancement estimé : ~5 %")
@@ -212,6 +252,7 @@ class SelfFix:
                 await prog_msg.edit(content=f"⏳ Claude Code bosse… avancement estimé : ~{pct} %")
             except Exception:  # noqa: BLE001 — l'affichage ne doit jamais casser le flux
                 pass
+            self._maybe_publish_progress(pct)
 
         status = await self._poll(job_id, progress=_progress)
         if status is None:
@@ -249,6 +290,7 @@ class SelfFix:
             await prog_msg.edit(content="⏳ Claude a fini — application + rebuild… ~100 %")
         except Exception:  # noqa: BLE001
             pass
+        self._publish_feed("Claude a fini — application + rebuild en cours")
         await self._bridge.claude_commit(job_id)
         await self._bridge.docker_rebuild(self._service())
         prefix = (
