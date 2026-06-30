@@ -73,8 +73,15 @@ class ConversationLogger:
         self._dropped = 0
 
     # ── API publique ──────────────────────────────────────────────────────────
-    def log(self, platform: str, channel: str, event_type: str, **fields) -> None:
-        """Enfile un événement. Non bloquant ; drop silencieux si la file sature."""
+    def log(self, platform: str, channel: str, event_type: str, /, **fields) -> None:
+        """Enfile un événement. Non bloquant ; drop silencieux si la file sature.
+
+        `platform`/`channel`/`event_type` sont *positional-only* (`/`) : les events
+        cognitifs passent légitimement un champ métier `channel=` dans `**fields`
+        (ex. `_log_cog("speak_suppressed", channel=ch_key)`) — sans le `/`, ce kwarg
+        entrerait en collision avec le paramètre structurel `channel` et lèverait
+        `TypeError: got multiple values for argument 'channel'`.
+        """
         record: dict = {"ts": time.time(), "type": event_type}
         record.update(fields)
         for key, value in list(record.items()):

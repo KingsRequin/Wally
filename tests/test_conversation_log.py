@@ -74,6 +74,26 @@ async def test_appends_across_multiple_flushes(tmp_path):
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
 
 
+@pytest.mark.asyncio
+async def test_channel_field_does_not_collide_with_param(tmp_path):
+    """Régression : les events cognitifs passent `channel=` comme CHAMP métier.
+
+    Avant le fix (paramètres positional-only), `log("cognitive", "brain", evt,
+    channel="123")` levait `TypeError: got multiple values for argument 'channel'`
+    — ~170 erreurs/7j (SPEAK failed + ticks cognitifs avortés). Le champ doit
+    atterrir dans le record sans casser le paramètre structurel `channel="brain"`.
+    """
+    log = ConversationLogger(root=tmp_path)
+    log.start()
+    log.log("cognitive", "brain", "speak_suppressed", channel="123", reason="cooldown")
+    await log.stop()
+
+    rec = json.loads(_today_file(tmp_path, "cognitive", "brain").read_text(encoding="utf-8"))
+    assert rec["type"] == "speak_suppressed"
+    assert rec["channel"] == "123"      # champ métier préservé
+    assert rec["reason"] == "cooldown"
+
+
 def test_safe_segment_sanitizes_path_separators():
     assert _safe_segment("a/b\\c") == "a_b_c"
     assert _safe_segment("") == "unknown"
