@@ -184,7 +184,13 @@ class PersonaService:
         today = datetime.now().strftime("%A %d %B %Y")
         blocks = [v.replace("{current_date}", today) for v in self._blocks.values() if v]
         self_model = (
-            build_self_model(self._caps_static, self._config)
+            build_self_model(
+                self._caps_static, self._config,
+                # Dispo web côté persona : la clé Tavily vit dans l'env (le service
+                # WebSearchService n'est pas injecté ici). En prod la lib est
+                # installée, donc la présence de la clé suffit comme approximation.
+                web_available=bool(__import__("os").environ.get("TAVILY_API_KEY")),
+            )
             if self._config is not None
             else self._caps_static
         )

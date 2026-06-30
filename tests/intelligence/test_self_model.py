@@ -38,3 +38,14 @@ def test_derived_section_has_title():
 def test_malformed_config_falls_back_to_inactive():
     out = build_self_model("X", SimpleNamespace())  # pas d'attribut voice
     assert "n'est pas activé" in out
+
+
+def test_web_available_phrase_active():
+    out = build_self_model("", object(), web_available=True)
+    assert "chercher sur le web" in out.lower()
+    assert "indisponible" not in out.lower()
+
+
+def test_web_unavailable_phrase_inactive():
+    out = build_self_model("", object(), web_available=False)
+    assert "indisponible" in out.lower()

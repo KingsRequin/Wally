@@ -216,7 +216,8 @@ class WallyDiscord(commands.Bot):
             from bot.intelligence.self_model import build_self_model
             _caps_path = Path(__file__).parent.parent / "persona" / "CAPABILITIES.md"
             _caps_static = _caps_path.read_text(encoding="utf-8").strip() if _caps_path.exists() else ""
-            _caps_text = build_self_model(_caps_static, self.config)
+            _web_ok = bool(getattr(self, "web_search", None) and self.web_search.available)
+            _caps_text = build_self_model(_caps_static, self.config, web_available=_web_ok)
             if _caps_static:
                 logger.info("CAPABILITIES.md chargé pour la cognition ({} chars)", len(_caps_text))
             else:

@@ -15,16 +15,25 @@ _TOGGLE_CAPABILITIES = [
 
 _SECTION_TITLE = "## Mes capacités techniques actuelles"
 
+_WEB_ON = (
+    "Je peux chercher sur le web de moi-même quand une vraie curiosité me prend, "
+    "même sans qu'on me le demande."
+)
+_WEB_OFF = (
+    "Je pourrais chercher sur le web, mais c'est indisponible pour l'instant."
+)
 
-def build_self_model(static_text: str, config) -> str:
+
+def build_self_model(static_text: str, config, *, web_available: bool = False) -> str:
     """Assemble le self-model : narratif statique + capacités dérivées de l'état réel.
 
     `static_text` = CAPABILITIES.md nettoyé (vérités de personnage stables).
     `config` = la config runtime ; chaque capacité à bascule est évaluée contre elle.
+    `web_available` = dispo RÉELLE de la recherche web (Tavily configuré). Dérivée
+    d'un flag plutôt que de `config` car la clé vit dans l'environnement, pas la config.
 
-    Fonction pure : aucune I/O, aucune dépendance aux objets services montés
-    (donc insensible à l'ordre de montage au boot). Un `config` malformé fait
-    juste tomber la capacité en « inactive », jamais une exception.
+    Fonction pure : aucune I/O, insensible à l'ordre de montage. Un `config`
+    malformé fait juste tomber une capacité en « inactive », jamais une exception.
     """
     lines = []
     for condition, on_text, off_text in _TOGGLE_CAPABILITIES:
@@ -33,6 +42,7 @@ def build_self_model(static_text: str, config) -> str:
         except Exception:
             active = False
         lines.append(f"- {on_text if active else off_text}")
+    lines.append(f"- {_WEB_ON if web_available else _WEB_OFF}")
     derived = _SECTION_TITLE + "\n" + "\n".join(lines)
 
     static = (static_text or "").rstrip()
