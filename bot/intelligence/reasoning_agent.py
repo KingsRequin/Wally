@@ -130,6 +130,14 @@ class ReasoningAgent:
 
     def _format_context(self, ctx) -> str:
         lines: list[str] = []
+        if getattr(ctx, "web_finding", None):
+            lines.append(
+                "**Tu viens de chercher sur le web — voici ce que tu as trouvé :**\n"
+                f"{ctx.web_finding}\n"
+                "(Réagis à cette info : ce qu'elle t'apprend, ce que tu en penses. Tu peux "
+                "la mémoriser ([ACT create_memory]), la partager si c'est pertinent, ou "
+                "juste y réfléchir. Ne relance PAS de recherche maintenant.)"
+            )
         if getattr(ctx, "preoccupation", None):
             lines.append(
                 f"**Ta préoccupation du moment (ton fil de pensée) :** {_one_line(ctx.preoccupation, 400)}\n"

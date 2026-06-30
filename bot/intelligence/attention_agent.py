@@ -78,6 +78,10 @@ class AttentionContext:
     # le prompt cognitif, et score brut [0,1] consommé par la boucle (amortisseur/cadence).
     social_receptivity: str | None = None
     receptivity_score: float = 0.5
+    # Résultat d'une recherche web déclenchée par la cognition au tick courant
+    # (2e passe de raisonnement). None hors de ce cas. Muté par CognitiveLoop, pas
+    # calculé par build_context.
+    web_finding: str | None = None
 
 
 class AttentionAgent:
