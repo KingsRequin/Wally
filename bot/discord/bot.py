@@ -246,6 +246,8 @@ class WallyDiscord(commands.Bot):
                 fact_store=_fact_store,
                 progress_judge=_progress_judge,
                 social_rhythm=self.social_rhythm,
+                web_search=getattr(self, "web_search", None),
+                web_search_cooldown_s=self.config.tavily.cognitive_cooldown_minutes * 60,
             )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).

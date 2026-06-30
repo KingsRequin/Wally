@@ -78,6 +78,8 @@ class CognitiveLoop:
         fact_store=None,
         progress_judge=None,
         social_rhythm=None,
+        web_search=None,
+        web_search_cooldown_s: float = 2700.0,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -91,6 +93,11 @@ class CognitiveLoop:
         self._progress_judge = progress_judge
         # Rythme social appris (SocialRhythm). None → aucun frein, cadence inchangée.
         self._social_rhythm = social_rhythm
+        # Recherche web déclenchée par la cognition (chantier B self-model). None →
+        # capacité absente. Cooldown anti-boucle + horodatage du dernier appel.
+        self._web_search = web_search
+        self._web_search_cooldown_s = web_search_cooldown_s
+        self._web_search_cooldown_ts = 0.0
         # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
         self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
@@ -299,6 +306,56 @@ class CognitiveLoop:
         except Exception as e:
             logger.warning("_expire_focus a échoué : {}", e)
 
+    async def _maybe_web_search(self, context, result):
+        """Si la pensée demande une recherche web et que les gardes passent :
+        exécute la recherche, injecte le résultat dans le contexte, et relance UNE
+        2e passe de raisonnement. Sinon renvoie le `result` initial inchangé.
+
+        Ne fait jamais planter le tick : toute erreur → on garde la 1re pensée.
+        Une seule recherche par tick (appelé une fois, sans boucle, depuis _tick).
+        """
+        if self._web_search is None:
+            return result
+        ws = next(
+            (d for d in result.decisions
+             if d.action == "ACT" and d.act_name == "web_search"),
+            None,
+        )
+        if ws is None:
+            return result
+        query = (ws.act_args or {}).get("query")
+        if not query or not isinstance(query, str):
+            return result
+        now = time.monotonic()
+        if now - self._web_search_cooldown_ts < self._web_search_cooldown_s:
+            logger.debug("web_search cognitif ignoré (cooldown)")
+            return result
+        if not self._web_search.available:
+            return result
+        try:
+            if await self._web_search.is_quota_exceeded():
+                logger.info("web_search cognitif ignoré (quota Tavily dépassé)")
+                return result
+        except Exception as e:  # noqa: BLE001
+            logger.warning("is_quota_exceeded: {}", e)
+            return result
+        # Armer le cooldown AVANT l'appel : même un échec compte, pour ne pas
+        # marteler Tavily en boucle sur une erreur répétée.
+        self._web_search_cooldown_ts = now
+        try:
+            finding = await self._web_search.search(query, platform="discord")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("web_search cognitif a échoué: {}", e)
+            return result
+        if self._feed:
+            self._feed.publish({
+                "type": "ACT", "name": "web_search",
+                "content_snippet": query[:160],
+            })
+        context.web_finding = f"{query} → {finding}"
+        logger.debug("web_search cognitif : 2e passe de raisonnement sur « {} »", query[:60])
+        return await self._reasoning.reason(context)
+
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :
         # Wally pense quand même, mais à partir d'une amorce de nouveauté (souvenir,
@@ -354,6 +411,7 @@ class CognitiveLoop:
                         "content_snippet": (_last.get("content") or "")[:160],
                     })
             result = await self._reasoning.reason(context)
+            result = await self._maybe_web_search(context, result)
             # Anti-rumination sémantique : le juge classe la pensée fraîche face au
             # focus et aux pensées récentes. RESSASSE → on ne publie pas, on archive
             # la pensée déjà stockée (sinon elle ré-amorce la boucle via recent_thoughts),
