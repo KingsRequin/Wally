@@ -114,6 +114,14 @@ class WebSearchService:
         if await self.is_quota_exceeded():
             return "Web search quota exceeded for this month."
 
+        # Tavily rejette une requête composée UNIQUEMENT d'opérateurs `site:`
+        # (« Query cannot consist only of site: operators ») — le LLM en produit
+        # parfois. On court-circuite proprement plutôt que de lever une exception.
+        if not " ".join(
+            t for t in query.split() if not t.lower().startswith("site:")
+        ).strip():
+            return "Web search needs actual search terms, not only site: filters."
+
         try:
             response = await self._client.search(
                 query=query,

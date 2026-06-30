@@ -215,6 +215,24 @@ def build_emotion_tag(emotion_state: dict[str, float]) -> str:
     return f"{bot_name()}: " + ", ".join(dominant)
 
 
+def _coerce_facts(facts) -> list[str]:
+    """Normalise `user_facts` du LLM en liste de strings non vides.
+
+    Le schéma demande des strings, mais le LLM renvoie parfois des dicts
+    (`{"fact": "..."}`) ou des valeurs nulles. On extrait le texte et on jette
+    le reste, pour garantir le contrat `memory.add(content: str)`.
+    """
+    if not isinstance(facts, list):
+        return []
+    out: list[str] = []
+    for f in facts:
+        if isinstance(f, dict):
+            f = f.get("fact") or f.get("text") or f.get("content") or ""
+        if isinstance(f, str) and f.strip():
+            out.append(f.strip())
+    return out
+
+
 class EmotionEngine:
     # Taux de montée du boredom par heure d'inactivité (linéaire, clampé à 1.0)
     DEFAULT_BOREDOM_RISE_PER_HOUR: float = 1.2
@@ -757,6 +775,10 @@ class EmotionEngine:
             e: min(max(float(raw_deltas.get(e, 0.0)), 0.0), MAX_DELTA_PER_MESSAGE)
             for e in EMOTIONS
         }
+        # DeFensif : le schéma demande des strings, mais DeepSeek renvoie parfois
+        # des dicts (confusion avec new_words voisin) → `memory.add(content: str)`
+        # plante ensuite sur un `.lower()` (« 'dict' object has no attribute 'lower' »).
+        user_facts = _coerce_facts(user_facts)
         return deltas, new_words, trust_delta, love_delta, user_facts
 
     # ── Decay ─────────────────────────────────────────────────────────────────

@@ -368,6 +368,15 @@ class Database(
         conn = await aiosqlite.connect(path)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA foreign_keys = ON")
+        # Concurrence : la boucle cognitive, les handlers et les jobs nocturnes
+        # écrivent tous sur le même fichier. En journal rollback (défaut), un writer
+        # bloque tout → « database is locked » + échecs d'init FTS (atomic_facts_fts).
+        # WAL est PERSISTANT au niveau du fichier : appliqué une fois ici, il profite
+        # aussi aux connexions ad-hoc de la mémoire (facts.py / service.py).
+        # busy_timeout : on attend (jusqu'à 10 s) qu'un verrou se libère au lieu de
+        # lever immédiatement, le temps qu'un job nocturne long termine sa transaction.
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA busy_timeout = 10000")
         await conn.executescript(SCHEMA)
         await conn.commit()
         # Migration: ajouter username à memory_users si absent

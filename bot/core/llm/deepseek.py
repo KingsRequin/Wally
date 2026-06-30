@@ -285,25 +285,31 @@ class DeepSeekLLMClient(BaseLLMClient):
         }
         # Thinking désactivé pour le structured output (incompatible + inutile)
         params = self._api_params(thinking_override="disabled")
-        try:
-            response = await self._client.chat.completions.create(
-                messages=[{"role": "system", "content": system_prompt}] + messages,
-                tools=[tool_def],
-                tool_choice={"type": "function", "function": {"name": schema_name}},
-                **params,
-            )
-            msg = response.choices[0].message
-            if not msg.tool_calls:
-                raise RuntimeError(f"DeepSeek complete_structured: pas de tool_call dans la réponse")
-            raw_args = msg.tool_calls[0].function.arguments
-            result = self._safe_parse_args(raw_args)
-            if not result:
-                raise RuntimeError(f"DeepSeek complete_structured: JSON vide après repair")
-            await self._log_cost(response, purpose, user_id)
-            return result
-        except Exception as e:
-            logger.error("DeepSeek complete_structured() failed: {e}", e=e)
-            raise RuntimeError(f"DeepSeek structured output failed: {e}") from e
+        # « pas de tool_call » / « JSON vide après repair » sont souvent transitoires
+        # (non-déterminisme du LLM) → un réessai immédiat évite la majorité des échecs.
+        for attempt in range(2):
+            try:
+                response = await self._client.chat.completions.create(
+                    messages=[{"role": "system", "content": system_prompt}] + messages,
+                    tools=[tool_def],
+                    tool_choice={"type": "function", "function": {"name": schema_name}},
+                    **params,
+                )
+                msg = response.choices[0].message
+                if not msg.tool_calls:
+                    raise RuntimeError("DeepSeek complete_structured: pas de tool_call dans la réponse")
+                raw_args = msg.tool_calls[0].function.arguments
+                result = self._safe_parse_args(raw_args)
+                if not result:
+                    raise RuntimeError("DeepSeek complete_structured: JSON vide après repair")
+                await self._log_cost(response, purpose, user_id)
+                return result
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning("DeepSeek complete_structured() échec, réessai: {e}", e=e)
+                    continue
+                logger.error("DeepSeek complete_structured() failed: {e}", e=e)
+                raise RuntimeError(f"DeepSeek structured output failed: {e}") from e
 
     async def complete_stream(
         self,
