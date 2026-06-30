@@ -31,6 +31,7 @@ const FEED_META = {
   ATTN:   { color: '#ff3b6b', icon: '👁', label: 'remarque' },
   EVOLVE: { color: '#ff8a3b', icon: '🧬', label: 'évolue' },
   SLEEP:  { color: '#6f6597', icon: '😴', label: 'somnole' },
+  CODEFIX: { color: '#e879f9', icon: '🔧', label: 'se répare' },
 };
 function feedMeta(type) {
   return FEED_META[type] || { color: '#fff', icon: '•', label: (type || '').toLowerCase() };
@@ -55,6 +56,7 @@ function feedText(e) {
   if (e.type === 'DECIDE') return (e.actions || []).join(' · ');
   if (e.type === 'ACT') return e.detail || '';
   if (e.type === 'EVOLVE') return 'persona → ' + (e.detail || '');
+  if (e.type === 'CODEFIX') return e.detail || '';
   return e.detail || e.text || e.message || '';
 }
 // Texte complet (dépliage) si présent et différent du snippet rendu.
