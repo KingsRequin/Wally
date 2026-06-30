@@ -354,7 +354,11 @@ class CognitiveLoop:
             })
         context.web_finding = f"{query} → {finding}"
         logger.debug("web_search cognitif : 2e passe de raisonnement sur « {} »", query[:60])
-        return await self._reasoning.reason(context)
+        try:
+            return await self._reasoning.reason(context)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("web_search 2e passe échouée, pensée initiale conservée: {}", e)
+            return result
 
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :

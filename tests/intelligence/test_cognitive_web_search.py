@@ -117,3 +117,31 @@ async def test_empty_query_is_noop():
     ctx = SimpleNamespace(web_finding=None)
     await loop._maybe_web_search(ctx, _result(with_search=True, query=""))
     web.search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_exception_keeps_first_pass():
+    """web.search raises → 1st-pass result returned, no exception propagated."""
+    reasoning = MagicMock()
+    reasoning.reason = AsyncMock()
+    web = _web()
+    web.search = AsyncMock(side_effect=Exception("timeout"))
+    loop = _loop(reasoning, web)
+    ctx = SimpleNamespace(web_finding=None)
+    out = await loop._maybe_web_search(ctx, _result(with_search=True))
+    reasoning.reason.assert_not_called()
+    assert out.thought_fact_id == 1
+
+
+@pytest.mark.asyncio
+async def test_quota_check_exception_keeps_first_pass():
+    """is_quota_exceeded raises → search never called, 1st-pass result returned."""
+    reasoning = MagicMock()
+    reasoning.reason = AsyncMock()
+    web = _web()
+    web.is_quota_exceeded = AsyncMock(side_effect=Exception("boom"))
+    loop = _loop(reasoning, web)
+    ctx = SimpleNamespace(web_finding=None)
+    out = await loop._maybe_web_search(ctx, _result(with_search=True))
+    web.search.assert_not_called()
+    assert out.thought_fact_id == 1
