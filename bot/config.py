@@ -224,6 +224,9 @@ class TwitchEventConfig:
 @dataclass
 class TavilyConfig:
     monthly_limit: int = 200
+    # Délai minimal entre deux recherches web déclenchées par la cognition
+    # (pensées) — garde-fou anti-boucle, en plus du quota mensuel.
+    cognitive_cooldown_minutes: int = 45
 
 
 @dataclass
