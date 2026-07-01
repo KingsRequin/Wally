@@ -92,6 +92,63 @@ async def test_drop_desire_by_description(store):
     assert actives == []
 
 
+# --- note_to_self dedup (reminder/question → DESIRE) ----------------------- #
+
+@pytest.mark.asyncio
+async def test_note_to_self_reminder_merges_duplicate(store):
+    """Un reminder qui paraphrase un désir actif est fusionné, pas empilé
+    (même contrat que create_desire : le chemin note_to_self atterrit aussi
+    dans les DESIRE)."""
+    await _add_desire(store, "Ce soir quand le serveur est actif : lancer le sujet mks_zedd qui apprend le russe")
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Ce soir si le serveur s'anime : lancer le sujet mks_zedd et le russe", "kind": "reminder"},
+    ))
+    actives = await store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(actives) == 1                 # pas de doublon créé
+    assert actives[0].support_count == 2     # l'existant a été confirmé
+
+
+@pytest.mark.asyncio
+async def test_note_to_self_question_merges_duplicate(store):
+    """kind=question mappe aussi sur DESIRE → même dédup."""
+    await _add_desire(store, "Demander à KingsRequin quels animés il regarde en ce moment")
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Demander à KingsRequin ce qu'il regarde comme animés en ce moment", "kind": "question"},
+    ))
+    actives = await store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(actives) == 1
+
+
+@pytest.mark.asyncio
+async def test_note_to_self_distinct_reminder_is_added(store):
+    await _add_desire(store, "Demander à KingsRequin ses animés")
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Creuser l'origine du souvenir jubeii1979 Apex", "kind": "reminder"},
+    ))
+    actives = await store.search_by_category(FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=25)
+    assert len(actives) == 2
+
+
+@pytest.mark.asyncio
+async def test_note_to_self_scheduled_reminder_not_deduped(store):
+    """Un rappel à échéance précise (in_minutes) est une intention datée :
+    on ne le fusionne PAS, même s'il paraphrase un désir existant."""
+    await _add_desire(store, "lancer le sujet mks_zedd qui apprend le russe ce soir")
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "lancer le sujet mks_zedd et le russe", "kind": "reminder", "in_minutes": 60},
+    ))
+    actives = await store.search_by_category(FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=25)
+    assert len(actives) == 2
+
+
 # --- doubt_memory ---------------------------------------------------------- #
 
 @pytest.mark.asyncio

@@ -455,6 +455,26 @@ class ActionDispatcher:
                 if mins > 0:
                     from datetime import timedelta
                     scheduled_at = datetime.utcnow() + timedelta(minutes=min(mins, 7 * 24 * 60))
+            # Dédup sémantique pour les notes qui atterrissent dans les désirs
+            # (reminder/question → DESIRE), au même titre que create_desire : un
+            # désir déjà présent est rafraîchi au lieu d'empiler un paraphrasé de
+            # plus. On NE dédupe PAS une note à échéance explicite (in_minutes) :
+            # c'est une intention datée précise, pas du bruit.
+            if cat == FactCategory.DESIRE and scheduled_at is None:
+                existing = await self._facts.search_by_category(
+                    FactCategory.DESIRE, status=FactStatus.ACTIVE, limit=25
+                )
+                dup = next(
+                    (d for d in existing if _same_desire(note, d.content)), None
+                )
+                if dup is not None and dup.id is not None:
+                    await self._facts.confirm(dup.id)
+                    logger.info(
+                        "ACT note_to_self ({}): doublon fusionné → #{} ({})",
+                        kind, dup.id, note[:50],
+                    )
+                    self._publish_act(f"note fusionnée ({kind}): ", note)
+                    return
             await self._facts.add(AtomicFact(
                 user_id="wally:self",
                 content=note,

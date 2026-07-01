@@ -243,7 +243,11 @@ class ReasoningAgent:
         if getattr(ctx, "weather_fr", None):
             lines.append(f"**Météo en France en ce moment :** {ctx.weather_fr}")
         if ctx.active_desires:
-            lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
+            lines.append("**Désirs actifs :**")
+            for d in ctx.active_desires[:3]:
+                did = getattr(d, "id", None)
+                prefix = f"#{did} — " if did is not None else ""
+                lines.append(f"  {prefix}{d.content}")
         if ctx.active_goals:
             lines.append("**Tes objectifs en cours :**")
             for g in ctx.active_goals[:3]:

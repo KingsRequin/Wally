@@ -45,7 +45,9 @@ class InnerMonologue:
             f"**État émotionnel :** {ctx.emotion_state}",
         ]
         if ctx.active_desires:
-            lines.append("**Désirs actifs :** " + " ; ".join(d.content for d in ctx.active_desires[:3]))
+            lines.append("**Désirs actifs :** " + " ; ".join(
+                (f"#{d.id} {d.content}" if getattr(d, "id", None) is not None else d.content)
+                for d in ctx.active_desires[:3]))
         if ctx.active_goals:
             lines.append("**Objectifs :** " + " ; ".join(g.content for g in ctx.active_goals[:3]))
         if ctx.recent_thoughts:

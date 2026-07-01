@@ -70,3 +70,19 @@ async def test_generate_formats_emotion_in_user_message(tmp_path):
     await mono.generate(ctx)
     user_msg = llm.complete.call_args.args[1][0]["content"]
     assert "joy" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_active_desires_render_with_id(tmp_path):
+    """Les désirs sont présentés avec leur #id pour que Wally puisse en cibler
+    un précisément via drop_desire {"desire_id": N}."""
+    from bot.intelligence.memory.facts import AtomicFact, FactCategory
+    mono, llm, _ = _make_monologue(tmp_path, llm_response="pensée")
+    ctx = _make_context()
+    ctx.active_desires = [
+        AtomicFact(user_id="wally:self", content="lancer le sujet zedd", category=FactCategory.DESIRE, id=4015),
+    ]
+    await mono.generate(ctx)
+    user_msg = llm.complete.call_args.args[1][0]["content"]
+    assert "#4015" in user_msg
+    assert "lancer le sujet zedd" in user_msg

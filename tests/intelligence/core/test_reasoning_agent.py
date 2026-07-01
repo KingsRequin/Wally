@@ -54,6 +54,23 @@ async def test_reason_stores_reasoning_as_thought(tmp_path, tmp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_active_desires_render_with_id(tmp_path, tmp_db_path):
+    """Les désirs sont présentés avec leur #id pour que Wally puisse cibler
+    un doublon via drop_desire {"desire_id": N}."""
+    agent, llm, _ = _make_agent(
+        tmp_path, content="[THINK]", reasoning="pensée", db_path=tmp_db_path
+    )
+    ctx = _make_context()
+    ctx.active_desires = [
+        AtomicFact(user_id="wally:self", content="lancer le sujet zedd", category=FactCategory.DESIRE, id=4015),
+    ]
+    await agent.reason(ctx)
+    sent = str(llm.calls[0][1])
+    assert "#4015" in sent
+    assert "lancer le sujet zedd" in sent
+
+
+@pytest.mark.asyncio
 async def test_reason_parses_content_into_decisions(tmp_path, tmp_db_path):
     agent, _, _ = _make_agent(
         tmp_path,
