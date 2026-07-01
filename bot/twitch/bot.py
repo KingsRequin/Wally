@@ -142,17 +142,49 @@ class WallyTwitch(commands.Bot):
 
     async def _token_refresh_loop(self) -> None:
         # Refresh tokens every 3h (Twitch user tokens expire after 4h).
-        # twitchio v2 stores token strings in _Subscription objects — they cannot be
-        # updated in-flight, so restarting the EventSub client is the only reliable
-        # way to pick up refreshed tokens and avoid InvalidStateError on reconnect.
         try:
             while True:
                 await asyncio.sleep(3 * 3600)
-                logger.info("Periodic Twitch token refresh + EventSub restart")
-                await self.token_manager.startup_validate()
-                await self._restart_eventsub()
+                await self._refresh_tokens_and_maybe_restart_eventsub()
         except asyncio.CancelledError:
             pass
+
+    async def _refresh_tokens_and_maybe_restart_eventsub(self) -> None:
+        """Validate/refresh Twitch tokens, restarting EventSub only if a token changed.
+
+        twitchio v2 bakes token strings into its _Subscription objects and can't
+        update them in-flight, so a rotated token does require rebuilding the
+        EventSub client. But startup_validate() only rotates a token when it has
+        actually expired (401) — the common case leaves both tokens untouched.
+
+        Restarting EventSub unconditionally on every cycle tore down and recreated
+        every subscription needlessly, hammering Twitch's per-endpoint subscription
+        rate limit (429 Ratelimit Reached) and surfacing twitchio's internal
+        reconnect bugs (InvalidStateError, bad-frame noise). We now restart only
+        when a token really changed, and swallow any restart error as a concise
+        WARNING so it never leaks as an unhandled task traceback.
+        """
+        bot_before = self.token_manager.bot_token
+        streamer_before = self.token_manager.streamer_token
+        try:
+            await self.token_manager.startup_validate()
+        except Exception as exc:
+            logger.warning("Twitch token validation cycle failed: {e}", e=exc)
+            return
+
+        token_changed = (
+            self.token_manager.bot_token != bot_before
+            or self.token_manager.streamer_token != streamer_before
+        )
+        if not token_changed:
+            logger.debug("Twitch token refresh: tokens unchanged, EventSub left intact")
+            return
+
+        logger.info("Twitch token rotated — restarting EventSub to pick up new token")
+        try:
+            await self._restart_eventsub()
+        except Exception as exc:
+            logger.warning("EventSub restart after token refresh failed: {e}", e=exc)
 
     async def _resolve_missing_usernames(self) -> None:
         """Migration one-shot : nettoie et résout les entrées memory_users Twitch.

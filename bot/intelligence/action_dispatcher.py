@@ -203,6 +203,17 @@ class ActionDispatcher:
             except Exception as e:
                 logger.warning("react: message {} introuvable: {}", message_id, e)
                 return
+            # Idempotence : si Wally a DÉJÀ une réaction sur ce message, il ne
+            # réagit pas une seconde fois. Source de vérité = Discord lui-même
+            # (reaction.me), donc pas d'état à maintenir et survit aux reboots.
+            # Évite les rechutes en boucle sur un message figé pendant l'ennui.
+            try:
+                already = any(getattr(r, "me", False) for r in (message.reactions or []))
+            except TypeError:
+                already = False
+            if already:
+                logger.debug("react ignoré: déjà réagi au msg {}", message_id)
+                return
             await message.add_reaction(emoji)
             logger.info("Cognitive REACT {} → msg {}", emoji, message_id)
             if self._feed:

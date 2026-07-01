@@ -240,3 +240,35 @@ async def test_reason_passes_system_prompt(tmp_path, tmp_db_path):
     assert llm.calls
     system_arg = llm.calls[0][0]
     assert system_arg == "System reasoning test"
+
+
+@pytest.mark.asyncio
+async def test_first_pass_injects_fr_directive(tmp_path, tmp_db_path):
+    """La consigne FR renforcée est injectée DÈS la 1re passe (pas seulement en
+    régénération), placée à la fin du message user, juste avant la génération —
+    pour réduire à la source les dérapages en anglais."""
+    from bot.intelligence.reasoning_agent import _FR_DIRECTIVE
+
+    agent, llm, _ = _make_agent(
+        tmp_path, content="[THINK]", reasoning="pensée FR", db_path=tmp_db_path
+    )
+    await agent.reason(_make_context())
+    first_user_msg = llm.calls[0][1][0]["content"]
+    assert _FR_DIRECTIVE in first_user_msg
+    # La consigne est la toute dernière chose vue avant génération.
+    assert first_user_msg.rstrip().endswith(_FR_DIRECTIVE.rstrip())
+
+
+@pytest.mark.asyncio
+async def test_english_thought_triggers_single_regeneration(tmp_path, tmp_db_path):
+    """Le garde-fou de régénération reste intact : un monologue anglais déclenche
+    exactement UNE régénération (pas plus), la 2e passe étant le dernier recours."""
+    agent, llm, _ = _make_agent(
+        tmp_path,
+        content="[THINK]",
+        reasoning="I am so bored tonight, nothing interesting is happening here.",
+        db_path=tmp_db_path,
+    )
+    await agent.reason(_make_context())
+    # 1 appel initial + 1 régénération = 2 appels au total, pas davantage.
+    assert len(llm.calls) == 2

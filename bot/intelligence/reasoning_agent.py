@@ -15,6 +15,15 @@ _EMO_FR = {
     "sadness": "tristesse", "boredom": "ennui",
 }
 
+# Consigne de langue renforcée, injectée à la FIN du message user (juste avant la
+# génération) dès la 1re passe : le rappel placé au point de génération réduit à la
+# source les dérapages en anglais de DeepSeek. La même consigne sert de dernier
+# recours en régénération — source unique, formulation identique.
+_FR_DIRECTIVE = (
+    "⚠️ IMPÉRATIF : pense et écris EXCLUSIVEMENT en français, "
+    "pas un mot d'anglais dans ton raisonnement."
+)
+
 
 def _one_line(text: str, limit: int = 220) -> str:
     """Rend un texte sur une seule ligne, tronqué proprement avec ellipse.
@@ -75,7 +84,10 @@ class ReasoningAgent:
         self._lang = LanguageDetector("fr")
 
     async def reason(self, context) -> ReasoningResult:
-        user_msg = self._format_context(context)
+        # Consigne FR placée en toute fin de message user (au point de génération)
+        # dès la 1re passe : réduit à la source les monologues qui partent en
+        # anglais, au lieu de ne corriger qu'après coup par régénération.
+        user_msg = self._format_context(context) + "\n\n" + _FR_DIRECTIVE
         content, reasoning = await self._llm.complete_with_reasoning(
             self._system, [{"role": "user", "content": user_msg}]
         )
@@ -89,10 +101,12 @@ class ReasoningAgent:
         # quand même (ne jamais bloquer le tick) mais on logge un WARNING.
         if thought_text and self._lang.detect(thought_text) == "en":
             logger.warning("ReasoningAgent: monologue en anglais → régénération FR")
+            # user_msg se termine déjà par _FR_DIRECTIVE : on renchérit d'un cran
+            # (dernier recours) plutôt que de dupliquer la même consigne.
             fr_msg = (
                 user_msg
-                + "\n\n⚠️ IMPÉRATIF : pense et écris EXCLUSIVEMENT en français, "
-                "pas un mot d'anglais dans ton raisonnement."
+                + "\n\nTa dernière réponse était en anglais. RECOMMENCE en français, "
+                "intégralement — c'est non négociable."
             )
             content, reasoning = await self._llm.complete_with_reasoning(
                 self._system, [{"role": "user", "content": fr_msg}]

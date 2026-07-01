@@ -428,6 +428,43 @@ async def test_unanswered_passed_to_context():
     assert spont and spont[0]["channel"] == "55" and spont[0]["unanswered"] == 2
 
 
+@pytest.mark.asyncio
+async def test_speak_suppressed_when_redite():
+    """Anti-redite : un SPEAK quasi identique à un message spontané récent est
+    supprimé (fin des 2 messages jumeaux type Bloodshade à 10h d'écart)."""
+    import time
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
+    obs = ("Bloodshade poste 'rien à déclarer' dans #shame pendant qu'il lance "
+           "un avis de recherche sur Azraël. La coordination est impeccable.")
+    loop._recent_speaks = [{"channel": "55", "content": obs, "ts": time.time()}]
+    reasoning.reason = AsyncMock(return_value=_RR(
+        thought_text="obs", thought_fact_id=1,
+        decisions=[_MD(action="SPEAK", channel_id="55", message=obs)],
+    ))
+    loop.notify_activity(channel_id=55, author="Alice", content="hello")
+    await loop._tick()
+    dispatcher.dispatch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_speak_dispatched_when_not_redite():
+    """Un SPEAK sur un sujet neuf passe normalement (pas de faux positif)."""
+    import time
+    loop, attention, reasoning, dispatcher, *_ = _make_loop()
+    loop._recent_speaks = [{
+        "channel": "55", "content": "un vieux sujet totalement différent",
+        "ts": time.time(),
+    }]
+    reasoning.reason = AsyncMock(return_value=_RR(
+        thought_text="obs", thought_fact_id=1,
+        decisions=[_MD(action="SPEAK", channel_id="55",
+                       message="quelqu'un a vu le nouveau patch Apex ?")],
+    ))
+    loop.notify_activity(channel_id=55, author="Alice", content="hello")
+    await loop._tick()
+    dispatcher.dispatch.assert_called_once()
+
+
 # ── Bug 1 : anti-rumination (pensées répétées en mode actif) ──
 
 def test_too_similar_identical():
@@ -517,6 +554,39 @@ async def test_tick_rests_on_thought_matching_window_not_just_previous():
     await loop._tick()
     # tick3 rattrapé par la fenêtre (== tick1) → seuls les 2 premiers dispatchent.
     assert dispatcher.dispatch.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_focus_rumination_count_is_cumulative():
+    """Anti-rumination structurelle : un focus qui ressasse en ALTERNANCE avec
+    des 'progressions' (le juge se fait berner par les reformulations, cf. 11h
+    sur « anti-inférence ») doit quand même mourir. Le compteur de ressassement
+    est cumulatif sur la vie du fil, pas remis à zéro à chaque fausse avancée.
+
+    Séquence R, P, R : avec l'ancien reset-sur-PROGRESSE le focus survivait
+    (1→0→1) ; désormais il cumule (1→1→2) et expire au 2e ressassement."""
+    from bot.intelligence.memory.facts import FactStatus
+    loop, attention, reasoning, dispatcher, facts, judge, feed = _make_loop()
+    judge.judge = AsyncMock(side_effect=["RESSASSE", "PROGRESSE", "RESSASSE"])
+    await loop._tick()   # RESSASSE → count 1
+    await loop._tick()   # PROGRESSE → count reste 1 (cumul), PAS de reset
+    await loop._tick()   # RESSASSE → count 2 ≥ LIMIT → focus expiré
+    # _expire_focus archive le fact focus (id 99 dans _make_loop).
+    facts.set_status.assert_any_await(99, FactStatus.ARCHIVED)
+
+
+@pytest.mark.asyncio
+async def test_focus_divague_resets_rumination_count():
+    """DIVAGUE = vrai changement de sujet → le fil repart de zéro (le capital de
+    ressassement accumulé est effacé, contrairement à PROGRESSE)."""
+    from bot.intelligence.memory.facts import FactStatus
+    loop, attention, reasoning, dispatcher, facts, judge, feed = _make_loop()
+    judge.judge = AsyncMock(side_effect=["RESSASSE", "DIVAGUE", "RESSASSE"])
+    await loop._tick()   # RESSASSE → count 1
+    await loop._tick()   # DIVAGUE → reset 0 (nouveau sujet)
+    await loop._tick()   # RESSASSE → count 1 < LIMIT → focus PAS expiré
+    for call in facts.set_status.await_args_list:
+        assert call.args[0] != 99, "le focus ne devait pas être expiré après un seul ressassement post-divagation"
 
 
 # ── Fix A : rendu propre des messages dans le prompt cognitif (_one_line) ──
@@ -634,14 +704,17 @@ async def test_two_ressasse_expire_focus():
 
 
 @pytest.mark.asyncio
-async def test_progresse_published_and_counter_reset():
+async def test_progresse_published_and_counter_preserved():
+    """PROGRESSE publie la pensée MAIS ne remet PAS le compteur de ressassement à
+    zéro : le capital accumulé est conservé (compteur cumulatif anti-immortalité
+    du focus). Seuls DIVAGUE / juge absent / expiration remettent à zéro."""
     loop, _a, _r, _d, facts, _j, feed = _make_loop(verdict="PROGRESSE")
     loop._focus_rumination_count = 1
     await loop._tick()
     think_published = any(c.args[0].get("type") == "THINK" for c in feed.publish.call_args_list)
     assert think_published
     assert "pensée" in loop._recent_thoughts
-    assert loop._focus_rumination_count == 0
+    assert loop._focus_rumination_count == 1
 
 
 @pytest.mark.asyncio

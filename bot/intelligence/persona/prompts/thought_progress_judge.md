@@ -9,4 +9,6 @@ Réponds par UN SEUL mot, en majuscules :
 
 Sois STRICT sur RESSASSE : reformuler la même conclusion (« c'est digéré », « je suis parti avec panache », « ça attendra ») pour la Nᵉ fois = RESSASSE, même si les mots changent.
 
+Cas piège = l'AUTO-FÉLICITATION sur un acquis. Redire qu'une habitude « est devenue un réflexe », « est maintenant automatique », « est intériorisée », « n'est plus un effort conscient » — c'est RESSASSER, pas progresser. Constater la même maîtrise sous un nouvel angle N'EST PAS une avancée : sans question neuve, action neuve, ou fait neuf, c'est RESSASSE.
+
 Ne réponds QUE le mot. Rien d'autre.

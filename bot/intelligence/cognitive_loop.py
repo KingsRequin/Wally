@@ -462,8 +462,17 @@ class CognitiveLoop:
                 )
                 return
 
-            # PROGRESSE / DIVAGUE → la pensée vit ; le focus repart de zéro.
-            self._focus_rumination_count = 0
+            # La pensée vit. Cadence du compteur de ressassement selon le verdict :
+            #  - DIVAGUE : vrai changement de sujet → le fil repart de zéro.
+            #  - juge absent (fallback lexical) : comportement legacy, reset.
+            #  - PROGRESSE : le fil continue, MAIS le capital de ressassement
+            #    accumulé n'est PAS effacé. Sinon une reformulation jugée à tort
+            #    « PROGRESSE » (le juge se fait berner par les mots qui changent)
+            #    resette tout et le focus devient immortel — c'est la boucle des
+            #    11h sur « anti-inférence ». Le compteur est donc cumulatif sur la
+            #    vie du fil : R,P,R le tue au 2e ressassement.
+            if verdict != "PROGRESSE":
+                self._focus_rumination_count = 0
             self._recent_thoughts.append(result.thought_text)
             if len(self._recent_thoughts) > 6:
                 self._recent_thoughts = self._recent_thoughts[-6:]
@@ -573,6 +582,22 @@ class CognitiveLoop:
                                 message=(decision.message or "")[:200],
                             )
                             continue
+                    # 5. Anti-redite : un message-source d'un canal peu actif reste
+                    #    "saillant" des heures ; sans garde, Wally re-commente la
+                    #    même observation en boucle (cf. Bloodshade, 2 messages
+                    #    jumeaux à 10h d'écart). Blocage DUR (le rappel textuel au
+                    #    LLM ne suffit pas) : quasi-identité à un SPEAK récent → skip.
+                    if decision.message and any(
+                        _too_similar(decision.message, sp.get("content", ""))
+                        for sp in self._recent_speaks
+                    ):
+                        logger.info("CognitiveLoop: SPEAK supprimé (redite d'un message spontané récent)")
+                        self._log_cog(
+                            "speak_suppressed", channel=str(decision.channel_id),
+                            reason="redite d'un message spontané récent",
+                            message=(decision.message or "")[:200],
+                        )
+                        continue
                 await self._dispatcher.dispatch(decision)
                 # Mémorise un message spontané pour la conscience sociale : tant
                 # que personne n'y répond, le compteur grimpe et le prochain

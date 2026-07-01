@@ -782,6 +782,7 @@ async def test_react_publishes_distinct_type():
     bot.get_channel.return_value = channel
     message = MagicMock()
     channel.fetch_message = AsyncMock(return_value=message)
+    message.reactions = []
     message.add_reaction = AsyncMock()
     dispatcher = _AD(bot=bot, feed=feed)
     await dispatcher.dispatch(_MDd(
@@ -794,3 +795,48 @@ async def test_react_publishes_distinct_type():
     assert len(react_events) == 1
     assert react_events[0]["emoji"] == "🔥"
     assert react_events[0]["channel"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_react_skips_if_already_reacted():
+    """Idempotence REACT : si Wally a DÉJÀ une réaction sur ce message, il ne
+    réagit pas une 2e fois (fin des 7 réactions en boucle sur un msg figé)."""
+    feed = MagicMock()
+    bot = MagicMock()
+    channel = MagicMock()
+    bot.get_channel.return_value = channel
+    message = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    # Une réaction déjà posée par le bot lui-même (Discord: reaction.me == True).
+    own_reaction = MagicMock()
+    own_reaction.me = True
+    message.reactions = [own_reaction]
+    message.add_reaction = AsyncMock()
+    dispatcher = _AD(bot=bot, feed=feed)
+    await dispatcher.dispatch(_MDd(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "1", "message_id": "2", "emoji": "🤣"},
+    ))
+    message.add_reaction.assert_not_called()
+    react_events = [c.args[0] for c in feed.publish.call_args_list if c.args and c.args[0].get("type") == "REACT"]
+    assert react_events == []
+
+
+@pytest.mark.asyncio
+async def test_react_adds_when_others_reacted_but_not_bot():
+    """Réactions d'AUTRES membres seulement (reaction.me == False) → Wally réagit."""
+    bot = MagicMock()
+    channel = MagicMock()
+    bot.get_channel.return_value = channel
+    message = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    other_reaction = MagicMock()
+    other_reaction.me = False
+    message.reactions = [other_reaction]
+    message.add_reaction = AsyncMock()
+    dispatcher = _AD(bot=bot)
+    await dispatcher.dispatch(_MDd(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "1", "message_id": "2", "emoji": "🔥"},
+    ))
+    message.add_reaction.assert_awaited_once_with("🔥")
