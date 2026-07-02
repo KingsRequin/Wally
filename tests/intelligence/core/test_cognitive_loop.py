@@ -198,9 +198,14 @@ def test_tick_interval_active():
     assert loop._tick_interval() == TICK_ACTIVE
 
 
-def test_passive_activity_does_not_trigger_active_cadence():
+def test_passive_activity_does_not_trigger_active_cadence(monkeypatch):
     """Un message de canal qui ne vise pas Wally (relevant=False) est perçu mais
     ne déclenche pas la cadence vive : le tick reste en cadence idle."""
+    # `_tick_interval` mesure `time.monotonic() - _last_relevant_activity_ts` ;
+    # avec le champ resté à 0.0, l'écart vaut l'uptime réel de la machine. On le
+    # fige loin dans le temps pour que « idle » soit déterministe (sinon le test
+    # dépend de l'uptime : cf. reboot hôte → uptime < 1h → cadence MODERATE).
+    monkeypatch.setattr("time.monotonic", lambda: 1_000_000.0)
     loop, *_ = _make_loop()
     loop.notify_activity(channel_id=1, author="x", content="bla bla", relevant=False)
     # perçu (recent_interactions) mais pas de cadence active
@@ -223,10 +228,12 @@ def test_dm_is_always_relevant():
     assert loop._tick_interval() == TICK_ACTIVE
 
 
-def test_tick_interval_idle():
+def test_tick_interval_idle(monkeypatch):
     from bot.intelligence.cognitive_loop import TICK_IDLE_MAX
+    # Fige monotonic loin dans le futur → écart vs _last_relevant_activity_ts (0.0)
+    # > 1h → chemin idle, indépendamment de l'uptime réel de la machine.
+    monkeypatch.setattr("time.monotonic", lambda: 1_000_000.0)
     loop, *_ = _make_loop()
-    loop._last_activity_ts = 0.0  # epoch = très ancien
     # Idle = intervalle aléatoire 5 min – 1 h (effet naturel). On vérifie la plage
     # sur plusieurs tirages.
     for _ in range(20):
@@ -234,15 +241,15 @@ def test_tick_interval_idle():
         assert TICK_IDLE <= v <= TICK_IDLE_MAX
 
 
-def test_tick_interval_idle_high_boredom_near_floor():
+def test_tick_interval_idle_high_boredom_near_floor(monkeypatch):
     """Ennui élevé (0.9) → plafond ramené quasi au plancher : tous les tirages
     restent proches de TICK_IDLE (5 min)."""
     from bot.intelligence.cognitive_loop import TICK_IDLE_MAX
+    monkeypatch.setattr("time.monotonic", lambda: 1_000_000.0)  # force idle (cf. supra)
     loop, *_ = _make_loop()
     emotion = MagicMock()
     emotion.get_state = MagicMock(return_value={"boredom": 0.9})
     loop._emotion = emotion
-    loop._last_activity_ts = 0.0  # idle
     # hi = 300 + 3300 * (1 - 0.9) = 630 → tirages dans [300, 630].
     for _ in range(40):
         v = loop._tick_interval()
@@ -250,15 +257,15 @@ def test_tick_interval_idle_high_boredom_near_floor():
         assert v < TICK_IDLE_MAX
 
 
-def test_tick_interval_idle_low_boredom_can_reach_ceiling():
+def test_tick_interval_idle_low_boredom_can_reach_ceiling(monkeypatch):
     """Ennui faible → la plage va jusqu'au plafond (1 h) : sur de nombreux
     tirages, au moins un dépasse largement le plancher."""
     from bot.intelligence.cognitive_loop import TICK_IDLE_MAX
+    monkeypatch.setattr("time.monotonic", lambda: 1_000_000.0)  # force idle (cf. supra)
     loop, *_ = _make_loop()
     emotion = MagicMock()
     emotion.get_state = MagicMock(return_value={"boredom": 0.0})
     loop._emotion = emotion
-    loop._last_activity_ts = 0.0  # idle
     seen_high = False
     for _ in range(200):
         v = loop._tick_interval()
@@ -268,12 +275,12 @@ def test_tick_interval_idle_low_boredom_can_reach_ceiling():
     assert seen_high  # le plafond est réellement atteignable
 
 
-def test_tick_interval_idle_no_emotion_full_range():
+def test_tick_interval_idle_no_emotion_full_range(monkeypatch):
     """Sans EmotionEngine (boredom=0) → plage complète préservée."""
     from bot.intelligence.cognitive_loop import TICK_IDLE_MAX
+    monkeypatch.setattr("time.monotonic", lambda: 1_000_000.0)  # force idle (cf. supra)
     loop, *_ = _make_loop()  # emotion_engine None
     assert loop._emotion is None
-    loop._last_activity_ts = 0.0
     for _ in range(20):
         v = loop._tick_interval()
         assert TICK_IDLE <= v <= TICK_IDLE_MAX
