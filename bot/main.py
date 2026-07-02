@@ -45,6 +45,43 @@ def setup_logging() -> None:
     )
 
 
+async def _run_discord(
+    bot, token: str, *, max_attempts: int = 8, base_delay: float = 2.0
+) -> None:
+    """Login Discord avec retry, puis connexion websocket.
+
+    Équivaut à ``bot.start(token)`` (login + connect), mais réessaie le *login*
+    tant qu'il échoue sur une erreur réseau transitoire (panne DNS après un
+    redémarrage de l'hôte, coupure passagère). Sans ça, un unique échec au boot
+    laissait le process en zombie (le ``gather`` n'est pas supervisé).
+
+    ``setup_hook`` étant appelé en fin de ``login()`` réussi, il ne tourne
+    qu'une seule fois. Après ``max_attempts`` échecs, on relève l'exception :
+    le process s'arrête et Docker (``restart: unless-stopped``) relance le
+    conteneur. Un token invalide (``LoginFailure``, pas une ``OSError``) n'est
+    pas réessayé et remonte immédiatement.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await bot.login(token)
+            break
+        except OSError as e:
+            if attempt >= max_attempts:
+                logger.error(
+                    "Discord: login impossible après {} tentatives ({}) — abandon",
+                    attempt, e,
+                )
+                raise
+            delay = min(base_delay * 2 ** (attempt - 1), 30.0)
+            logger.warning(
+                "Discord: échec réseau au login (tentative {}/{}): {} — "
+                "nouvel essai dans {:.0f}s",
+                attempt, max_attempts, e, delay,
+            )
+            await asyncio.sleep(delay)
+    await bot.connect(reconnect=True)
+
+
 async def main() -> None:
     setup_logging()
     logger.info("Wally starting...")
@@ -199,7 +236,7 @@ async def main() -> None:
     twitch_bot = None
     twitch_api = None
 
-    tasks = [discord_bot.start(discord_token)]
+    tasks = [_run_discord(discord_bot, discord_token)]
     if token_manager.bot_token:
         twitch_api = TwitchAPI(
             token_manager=token_manager,
