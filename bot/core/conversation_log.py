@@ -72,6 +72,11 @@ class ConversationLogger:
         self._running = False
         self._dropped = 0
 
+    @property
+    def root(self) -> Path:
+        """Répertoire racine des logs (lecture seule) — utile au rattrapage boot."""
+        return self._root
+
     # ── API publique ──────────────────────────────────────────────────────────
     def log(self, platform: str, channel: str, event_type: str, /, **fields) -> None:
         """Enfile un événement. Non bloquant ; drop silencieux si la file sature.

@@ -85,6 +85,7 @@ class WallyDiscord(commands.Bot):
         from bot.intelligence.owner_outreach import OwnerOutreachGate
         self.owner_gate = OwnerOutreachGate()
         self._wally_recent_speaks: dict[int, str] = {}  # channel_id → dernier texte envoyé
+        self._catchup_done = False  # rattrapage boot lancé une seule fois par process
         self.self_upgrade = None    # type: ignore[assignment]  # SelfUpgrade V2 — câblé en Plan C
         # Stocker le db_path pour l'init async dans setup_hook
         import os
@@ -363,6 +364,15 @@ class WallyDiscord(commands.Bot):
         # pas le démarrage). Idempotent : ne décrit que les emotes sans note.
         from bot.discord.emote_describer import run_emote_description
         self.loop.create_task(run_emote_description(self))
+
+        # Rattrapage des interactions manquées pendant l'indisponibilité : scanne les
+        # salons depuis le dernier log et rejoue les messages qui mentionnent Wally ou
+        # répondent à l'un de ses messages. Une seule fois par process (on_ready peut
+        # refirer sur reconnexion), en tâche de fond pour ne pas retarder le démarrage.
+        if not self._catchup_done:
+            self._catchup_done = True
+            from bot.discord.catchup import run_catchup
+            self.loop.create_task(run_catchup(self))
 
     async def on_guild_emojis_update(self, guild, before, after) -> None:
         """Décrit à chaud les nouvelles emotes ajoutées à un serveur autorisé."""
