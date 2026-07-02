@@ -121,6 +121,10 @@ class DiscordConfig:
     per_guild_channel_whitelist: dict = field(default_factory=dict)
     always_trigger_channels: list[int] = field(default_factory=list)
     emoji_reaction_probability: float = 0.05
+    # Serveur principal dont Wally auto-décrit les emotes custom (cf.
+    # emote_describer). None → auto-détecté si le bot n'est que dans un serveur,
+    # sinon désactivé (log des serveurs disponibles au boot).
+    emote_guild_id: int | None = None
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 
 
