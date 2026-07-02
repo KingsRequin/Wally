@@ -131,33 +131,37 @@ class EmoteDescriber:
         return usage[:_MAX_USAGE_CHARS] if usage else None
 
 
-def _resolve_emote_guild(bot) -> "discord.Guild | None":
-    """Détermine le serveur principal dont on décrit les emotes.
+def _configured_guild_id(bot) -> int | None:
+    """`discord.emote_guild_id` s'il est configuré (None = tous les serveurs)."""
+    return getattr(
+        getattr(getattr(bot, "config", None), "discord", None), "emote_guild_id", None
+    )
 
-    Priorité : `config.discord.emote_guild_id` s'il est configuré et que le bot
-    y est présent ; sinon, si le bot n'est que dans UN serveur, celui-là ; sinon
-    None (ambigu — on log les serveurs pour que le créateur fixe la config).
+
+def _target_guilds(bot) -> list:
+    """Serveurs dont on décrit les emotes.
+
+    Par défaut TOUS les serveurs où est le bot (les emotes custom sont visibles
+    de partout où il est présent). `discord.emote_guild_id`, s'il est configuré,
+    restreint à ce seul serveur (échappatoire optionnelle).
     """
     guilds = list(getattr(bot, "guilds", []) or [])
-    configured = getattr(bot.config.discord, "emote_guild_id", None)
-    if configured:
-        for g in guilds:
-            if g.id == configured:
-                return g
+    configured = _configured_guild_id(bot)
+    if configured is None:
+        return guilds
+    match = [g for g in guilds if g.id == configured]
+    if not match:
         logger.warning(
             "EmoteDescriber: emote_guild_id={} configuré mais le bot n'y est pas",
             configured,
         )
-        return None
-    if len(guilds) == 1:
-        return guilds[0]
-    if len(guilds) > 1:
-        listing = ", ".join(f"{g.name} ({g.id})" for g in guilds)
-        logger.warning(
-            "EmoteDescriber: plusieurs serveurs et discord.emote_guild_id non "
-            "configuré → auto-description désactivée. Serveurs : {}", listing,
-        )
-    return None
+    return match
+
+
+def _guild_allowed(bot, guild) -> bool:
+    """Le serveur est-il dans le périmètre (tous, ou celui configuré) ?"""
+    configured = _configured_guild_id(bot)
+    return configured is None or getattr(guild, "id", None) == configured
 
 
 def _collect_emotes(guild) -> list[EmoteInfo]:
@@ -174,18 +178,20 @@ def _collect_emotes(guild) -> list[EmoteInfo]:
 async def run_emote_description(bot, guild=None) -> int:
     """Point d'entrée orchestré (boot / mise à jour d'emotes).
 
-    Résout le serveur principal (sauf si `guild` est fourni), collecte ses
-    emotes et lance `EmoteDescriber`. Best-effort : ne lève jamais.
+    Collecte les emotes de TOUS les serveurs ciblés (`guild` seul si fourni,
+    sinon `_target_guilds(bot)`) et lance `EmoteDescriber`. La dédup intra-run
+    de `describe_new` gère les noms d'emote présents sur plusieurs serveurs.
+    Best-effort : ne lève jamais.
     """
     try:
         vision = getattr(bot, "vision", None)
         fact_store = getattr(bot, "fact_store", None)
         if vision is None or not getattr(vision, "available", False) or fact_store is None:
             return 0
-        target = guild if guild is not None else _resolve_emote_guild(bot)
-        if target is None:
-            return 0
-        emotes = _collect_emotes(target)
+        targets = [guild] if guild is not None else _target_guilds(bot)
+        emotes: list[EmoteInfo] = []
+        for g in targets:
+            emotes.extend(_collect_emotes(g))
         if not emotes:
             return 0
         describer = EmoteDescriber(

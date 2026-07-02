@@ -7,7 +7,9 @@ from bot.discord.emote_describer import (
     EmoteDescriber,
     EmoteInfo,
     AUTO_SOURCE,
-    _resolve_emote_guild,
+    run_emote_description,
+    _target_guilds,
+    _guild_allowed,
 )
 from bot.intelligence.memory.facts import AtomicFact, FactCategory
 
@@ -167,12 +169,20 @@ async def test_feed_event_published():
     assert "chatGG" in feed.publish.call_args.args[0]["detail"]
 
 
-# ── _resolve_emote_guild ────────────────────────────────────────────────────
+# ── ciblage des serveurs (tous par défaut, un seul si emote_guild_id) ────────
 
-def _guild(gid, name="g"):
+def _emoji(name, url):
+    e = MagicMock()
+    e.name = name
+    e.url = url
+    return e
+
+
+def _guild(gid, name="g", emojis=()):
     g = MagicMock()
     g.id = gid
     g.name = name
+    g.emojis = list(emojis)
     return g
 
 
@@ -183,23 +193,43 @@ def _bot(guilds, emote_guild_id=None):
     return bot
 
 
-def test_resolve_uses_configured_guild():
-    g1, g2 = _guild(111, "azrael"), _guild(222, "test")
-    guild = _resolve_emote_guild(_bot([g1, g2], emote_guild_id=111))
-    assert guild is g1
-
-
-def test_resolve_falls_back_to_single_guild():
-    g1 = _guild(111)
-    guild = _resolve_emote_guild(_bot([g1], emote_guild_id=None))
-    assert guild is g1
-
-
-def test_resolve_none_when_multiple_and_unconfigured():
+def test_target_guilds_defaults_to_all():
     g1, g2 = _guild(111), _guild(222)
-    assert _resolve_emote_guild(_bot([g1, g2], emote_guild_id=None)) is None
+    assert _target_guilds(_bot([g1, g2])) == [g1, g2]
 
 
-def test_resolve_none_when_configured_guild_absent():
+def test_target_guilds_restricted_when_configured():
+    g1, g2 = _guild(111), _guild(222)
+    assert _target_guilds(_bot([g1, g2], emote_guild_id=222)) == [g2]
+
+
+def test_target_guilds_empty_when_configured_absent():
     g1 = _guild(111)
-    assert _resolve_emote_guild(_bot([g1], emote_guild_id=999)) is None
+    assert _target_guilds(_bot([g1], emote_guild_id=999)) == []
+
+
+def test_guild_allowed_all_by_default():
+    g1, g2 = _guild(111), _guild(222)
+    bot = _bot([g1, g2])
+    assert _guild_allowed(bot, g1) and _guild_allowed(bot, g2)
+
+
+def test_guild_allowed_restricted_when_configured():
+    g1, g2 = _guild(111), _guild(222)
+    bot = _bot([g1, g2], emote_guild_id=111)
+    assert _guild_allowed(bot, g1)
+    assert not _guild_allowed(bot, g2)
+
+
+@pytest.mark.asyncio
+async def test_run_describes_emotes_from_all_guilds():
+    """Sans emote_guild_id, run_emote_description couvre TOUS les serveurs."""
+    g1 = _guild(111, emojis=[_emoji("aaa", "http://x/a.png")])
+    g2 = _guild(222, emojis=[_emoji("bbb", "http://x/b.png")])
+    bot = _bot([g1, g2])
+    bot.vision = _vision()
+    bot.fact_store = _store()
+    bot.cognitive_feed = None
+    n = await run_emote_description(bot)
+    assert n == 2
+    assert bot.fact_store.add.await_count == 2

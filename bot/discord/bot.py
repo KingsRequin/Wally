@@ -358,18 +358,17 @@ class WallyDiscord(commands.Bot):
         except Exception as e:  # noqa: BLE001
             logger.warning("channel_health au boot a échoué: {e}", e=e)
 
-        # Auto-description des emotes custom du serveur principal (en tâche de
+        # Auto-description des emotes custom de tous les serveurs (en tâche de
         # fond : la vision peut enchaîner des dizaines d'appels, on ne bloque
         # pas le démarrage). Idempotent : ne décrit que les emotes sans note.
         from bot.discord.emote_describer import run_emote_description
         self.loop.create_task(run_emote_description(self))
 
     async def on_guild_emojis_update(self, guild, before, after) -> None:
-        """Décrit les nouvelles emotes ajoutées au serveur principal à chaud."""
+        """Décrit à chaud les nouvelles emotes ajoutées à un serveur autorisé."""
         try:
-            from bot.discord.emote_describer import _resolve_emote_guild, run_emote_description
-            target = _resolve_emote_guild(self)
-            if target is not None and guild.id == target.id and len(after) > len(before):
+            from bot.discord.emote_describer import _guild_allowed, run_emote_description
+            if _guild_allowed(self, guild) and len(after) > len(before):
                 await run_emote_description(self, guild=guild)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
             logger.warning("on_guild_emojis_update a échoué: {e}", e=e)
