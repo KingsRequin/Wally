@@ -17,6 +17,7 @@ from bot.db.mixins import (
     ChatMixin,
     GalleryMixin,
     ActionMixin,
+    RSSMixin,
 )
 
 SCHEMA = """
@@ -359,6 +360,7 @@ class Database(
     ChatMixin,
     GalleryMixin,
     ActionMixin,
+    RSSMixin,
 ):
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn

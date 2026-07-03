@@ -243,6 +243,34 @@ class FirecrawlConfig:
 
 
 @dataclass
+class RSSFeedDef:
+    name: str = ""
+    url: str = ""
+    # "stimulus" = amorce de pensée idle (friction externe, éphémère)
+    # "knowledge" = base cherchable, injectée quand le sujet est mentionné
+    role: str = "stimulus"
+    lang: str = "fr"
+    enabled: bool = True
+
+
+@dataclass
+class RSSFeedsConfig:
+    enabled: bool = True
+    poll_interval_minutes: int = 20
+    retention_days: int = 10
+    summary_max_chars: int = 300
+    # Fenêtres de fraîcheur : au-delà, un article n'amorce plus une pensée /
+    # n'est plus remonté par le recall knowledge.
+    stimulus_max_age_hours: int = 48
+    knowledge_max_age_days: int = 30
+    feeds: list[RSSFeedDef] = field(default_factory=lambda: [
+        RSSFeedDef(name="JeuxVideo.com", url="https://www.jeuxvideo.com/rss/rss.xml", role="stimulus", lang="fr"),
+        RSSFeedDef(name="Korben", url="https://korben.info/feedfull", role="stimulus", lang="fr"),
+        RSSFeedDef(name="Dexerto Apex", url="https://www.dexerto.com/apex-legends/feed/", role="knowledge", lang="en"),
+    ])
+
+
+@dataclass
 class WebChatConfig:
     cooldown_seconds: int = 10
     history_limit: int = 50
@@ -297,6 +325,7 @@ class Config:
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
     firecrawl: FirecrawlConfig = field(default_factory=FirecrawlConfig)
+    rss: RSSFeedsConfig = field(default_factory=RSSFeedsConfig)
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
@@ -382,6 +411,15 @@ class Config:
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
             firecrawl_raw = raw.get("firecrawl", {})
+            # RSS : liste imbriquée de flux (comme circadian/spontaneous).
+            rss_raw = dict(raw.get("rss", {}))
+            if rss_raw:
+                feeds_raw = rss_raw.pop("feeds", None)
+                if feeds_raw is not None:
+                    rss_raw["feeds"] = [RSSFeedDef(**fd) for fd in feeds_raw]
+                rss_cfg = RSSFeedsConfig(**rss_raw)
+            else:
+                rss_cfg = RSSFeedsConfig()
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
@@ -453,6 +491,7 @@ class Config:
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
                 firecrawl=FirecrawlConfig(**firecrawl_raw),
+                rss=rss_cfg,
                 web_chat=WebChatConfig(**web_chat_raw),
                 image_generation=image_generation,
                 overlay_image=overlay_image,
@@ -487,6 +526,7 @@ class Config:
             "twitch_events": {k: asdict(v) for k, v in self.twitch_events.items()},
             "tavily": asdict(self.tavily),
             "firecrawl": asdict(self.firecrawl),
+            "rss": asdict(self.rss),
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),

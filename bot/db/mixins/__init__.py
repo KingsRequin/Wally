@@ -6,6 +6,7 @@ from bot.db.mixins.social import SocialMixin
 from bot.db.mixins.chat import ChatMixin
 from bot.db.mixins.gallery import GalleryMixin
 from bot.db.mixins.actions import ActionMixin
+from bot.db.mixins.rss import RSSMixin
 
 __all__ = [
     "CostMixin",
@@ -16,4 +17,5 @@ __all__ = [
     "ChatMixin",
     "GalleryMixin",
     "ActionMixin",
+    "RSSMixin",
 ]

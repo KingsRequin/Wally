@@ -125,6 +125,50 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     portrait   TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Articles RSS captés comme stimulus externe (friction) ou base de connaissance.
+-- `role` = 'stimulus' (amorce de pensée idle, éphémère) | 'knowledge' (cherchable
+-- quand le sujet est mentionné). `injected_at` NULL tant que l'article n'a pas
+-- encore traversé les pensées (dédup du stimulus). Timestamps REAL epoch, comme
+-- les tables de log (web_search_log/scrape_log).
+CREATE TABLE IF NOT EXISTS rss_articles (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_name    TEXT    NOT NULL,
+    role         TEXT    NOT NULL DEFAULT 'stimulus',
+    guid         TEXT    NOT NULL,
+    title        TEXT    NOT NULL,
+    summary      TEXT,
+    link         TEXT,
+    lang         TEXT    NOT NULL DEFAULT 'fr',
+    published_at TEXT,
+    fetched_at   REAL    NOT NULL,
+    injected_at  REAL,
+    UNIQUE(feed_name, guid)
+);
+CREATE INDEX IF NOT EXISTS idx_rss_role_injected ON rss_articles(role, injected_at);
+CREATE INDEX IF NOT EXISTS idx_rss_fetched ON rss_articles(fetched_at);
+
+-- Recherche plein-texte BM25 pour le recall « knowledge » (titre + résumé).
+-- Même tokenizer FR sans diacritiques que atomic_facts_fts.
+CREATE VIRTUAL TABLE IF NOT EXISTS rss_articles_fts USING fts5(
+    text,
+    tokenize='unicode61 remove_diacritics 1'
+);
+
+CREATE TRIGGER IF NOT EXISTS rss_articles_fts_ai AFTER INSERT ON rss_articles BEGIN
+    INSERT INTO rss_articles_fts(rowid, text) VALUES (
+        new.id, trim(coalesce(new.title,'')||' '||coalesce(new.summary,'')));
+END;
+
+CREATE TRIGGER IF NOT EXISTS rss_articles_fts_ad AFTER DELETE ON rss_articles BEGIN
+    DELETE FROM rss_articles_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS rss_articles_fts_au AFTER UPDATE ON rss_articles BEGIN
+    DELETE FROM rss_articles_fts WHERE rowid = old.id;
+    INSERT INTO rss_articles_fts(rowid, text) VALUES (
+        new.id, trim(coalesce(new.title,'')||' '||coalesce(new.summary,'')));
+END;
 """
 
 # Colonnes ajoutées à atomic_facts pour le modèle S-P-O (porté de jarvis).

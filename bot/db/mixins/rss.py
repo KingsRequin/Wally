@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import re
+import time
+from typing import TYPE_CHECKING
+
+import aiosqlite
+
+if TYPE_CHECKING:
+    pass
+
+
+def _fts_or_query(text: str) -> str:
+    """Transforme un texte libre en requête FTS5 sûre (tokens ≥3 en OR).
+
+    Neutralise la syntaxe FTS (opérateurs, guillemets) en ne gardant que les
+    mots alphanumériques, chacun cité, joints par OR. Retourne "" si rien
+    d'exploitable (l'appelant court-circuite alors la recherche)."""
+    terms = [t for t in re.findall(r"\w+", text.lower()) if len(t) >= 3]
+    return " OR ".join(f'"{t}"' for t in terms)
+
+
+class RSSMixin:
+    _conn: aiosqlite.Connection
+
+    # Déclarés pour le type-check (implémentés dans Database)
+    async def fetch_all(self, query: str, params=()) -> list: ...
+    async def fetch_one(self, query: str, params=()) -> "aiosqlite.Row | None": ...
+    async def execute(self, query: str, params=()): ...
+
+    # ── Ingestion / dédup ─────────────────────────────────────────────────────
+
+    async def rss_upsert_article(
+        self,
+        *,
+        feed_name: str,
+        role: str,
+        guid: str,
+        title: str,
+        summary: str | None,
+        link: str | None,
+        lang: str,
+        published_at: str | None,
+    ) -> bool:
+        """Insère un article s'il est nouveau. Retourne True si nouvellement
+        inséré, False si déjà connu (dédup via UNIQUE(feed_name, guid))."""
+        async with self._conn.execute(
+            "INSERT OR IGNORE INTO rss_articles "
+            "(feed_name, role, guid, title, summary, link, lang, published_at, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (feed_name, role, guid, title, summary, link, lang, published_at, time.time()),
+        ) as cursor:
+            inserted = cursor.rowcount > 0
+        await self._conn.commit()
+        return inserted
+
+    # ── Stimulus (amorce de pensée idle) ──────────────────────────────────────
+
+    async def rss_next_stimulus(self, *, max_age_seconds: float) -> dict | None:
+        """Pioche l'article `stimulus` frais le plus récent jamais injecté, le
+        marque comme injecté (dédup) et le retourne. None si rien de dispo."""
+        cutoff = time.time() - max_age_seconds
+        row = await self.fetch_one(
+            "SELECT * FROM rss_articles "
+            "WHERE role = 'stimulus' AND injected_at IS NULL AND fetched_at >= ? "
+            "ORDER BY fetched_at DESC, id DESC LIMIT 1",
+            (cutoff,),
+        )
+        if not row:
+            return None
+        await self.execute(
+            "UPDATE rss_articles SET injected_at = ? WHERE id = ?",
+            (time.time(), row["id"]),
+        )
+        return dict(row)
+
+    # ── Knowledge (recall contextuel via FTS) ─────────────────────────────────
+
+    async def rss_search_knowledge(
+        self, query: str, *, limit: int = 2, max_age_seconds: float
+    ) -> list[dict]:
+        """Recherche BM25 dans les articles `knowledge` frais qui matchent la
+        requête. Retourne les plus pertinents (n'affecte pas injected_at)."""
+        match = _fts_or_query(query)
+        if not match:
+            return []
+        cutoff = time.time() - max_age_seconds
+        rows = await self.fetch_all(
+            "SELECT a.* FROM rss_articles a "
+            "JOIN rss_articles_fts f ON f.rowid = a.id "
+            "WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
+            "AND rss_articles_fts MATCH ? "
+            "ORDER BY bm25(rss_articles_fts) LIMIT ?",
+            (cutoff, match, limit),
+        )
+        return [dict(r) for r in rows]
+
+    # ── Purge (rétention) ─────────────────────────────────────────────────────
+
+    async def rss_purge_old(self, *, retention_seconds: float) -> int:
+        """Supprime les articles plus vieux que la fenêtre de rétention.
+        Retourne le nombre de lignes supprimées."""
+        cutoff = time.time() - retention_seconds
+        async with self._conn.execute(
+            "DELETE FROM rss_articles WHERE fetched_at < ?", (cutoff,)
+        ) as cursor:
+            deleted = cursor.rowcount
+        await self._conn.commit()
+        return deleted
