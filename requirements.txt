@@ -36,6 +36,9 @@ loguru>=0.7.2
 # Web search
 tavily-python>=0.5.0
 
+# RSS feeds (flux d'actualité injectés dans la cognition)
+feedparser>=6.0.11
+
 # Scheduler
 apscheduler>=3.10.4
 

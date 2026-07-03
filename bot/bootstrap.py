@@ -53,6 +53,7 @@ class CoreServices:
     web_search: "WebSearchService"
     scrape: "ScrapeService"
     apex_api: "ApexLegendsService"
+    rss_feed: "RSSFeedService"
     shared_scheduler: "AsyncIOScheduler"
 
 
@@ -147,6 +148,13 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     else:
         logger.warning("ApexLegendsService disabled — APEX_API_KEY missing")
 
+    from bot.core.rss_feed import RSSFeedService
+    rss_feed = RSSFeedService(config, db)
+    logger.info(
+        "RSSFeedService initialized ({n} feeds, enabled={e})",
+        n=len(config.rss.feeds), e=rss_feed.enabled,
+    )
+
     # ── Prompts, language, persona ────────────────────────────────────────────
     prompts = PromptBuilder()
     language = LanguageDetector(config.bot.language_default)
@@ -221,5 +229,6 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
         web_search=web_search,
         scrape=scrape,
         apex_api=apex_api,
+        rss_feed=rss_feed,
         shared_scheduler=shared_scheduler,
     )

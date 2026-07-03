@@ -135,6 +135,7 @@ async def main() -> None:
     web_search       = svc.web_search
     scrape           = svc.scrape
     apex_api         = svc.apex_api
+    rss_feed         = svc.rss_feed
     shared_scheduler = svc.shared_scheduler
 
     from bot.intelligence.actions import ActionDefinition
@@ -394,9 +395,10 @@ async def main() -> None:
     ))
 
     journal.start(scheduler=shared_scheduler)
+    rss_feed.start(shared_scheduler)
     await action_scheduler.reload_all()
     shared_scheduler.start()
-    logger.info("Shared scheduler started (journal + actions)")
+    logger.info("Shared scheduler started (journal + actions + rss)")
 
     # ── Dashboard ─────────────────────────────────────────────────────────────
     from bot.dashboard.app import create_dashboard_app
