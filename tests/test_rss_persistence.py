@@ -75,6 +75,28 @@ async def test_search_knowledge_fts(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_search_knowledge_orders_by_recency(tmp_path):
+    db = await _make_db(tmp_path)
+    # Deux patch notes Apex : l'ancien matche mieux en mots-clés, mais on veut
+    # le PLUS RÉCENT en premier (published_ts).
+    await db.rss_upsert_article(
+        feed_name="Dexerto Apex", role="knowledge", guid="old",
+        title="Apex Legends Season 24 patch notes patch patch",
+        summary="vieux patch", link="u1", lang="en", published_at="2026-01-01",
+        published_ts=1735689600.0,  # jan 2026
+    )
+    await db.rss_upsert_article(
+        feed_name="Dexerto Apex", role="knowledge", guid="new",
+        title="Apex Legends Season 29 patch notes",
+        summary="nouveau patch", link="u2", lang="en", published_at="2026-06-01",
+        published_ts=1748736000.0,  # juin 2026
+    )
+    hits = await db.rss_search_knowledge("dernier patch note apex", limit=2, max_age_seconds=10**12)
+    assert [h["guid"] for h in hits] == ["new", "old"]  # récent d'abord
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_search_knowledge_empty_query(tmp_path):
     db = await _make_db(tmp_path)
     await _add(db, role="knowledge", guid="k1", title="Apex")

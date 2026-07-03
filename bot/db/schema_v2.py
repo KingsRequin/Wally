@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS rss_articles (
     link         TEXT,
     lang         TEXT    NOT NULL DEFAULT 'fr',
     published_at TEXT,
+    published_ts REAL,
     fetched_at   REAL    NOT NULL,
     injected_at  REAL,
     UNIQUE(feed_name, guid)
@@ -210,6 +211,14 @@ async def _migrate_session_analyses(db: aiosqlite.Connection) -> None:
             await db.execute(f"ALTER TABLE session_analyses ADD COLUMN {name} {decl}")
 
 
+async def _migrate_rss_articles(db: aiosqlite.Connection) -> None:
+    """Ajoute published_ts (date de publication epoch, triable) si absent."""
+    cursor = await db.execute("PRAGMA table_info(rss_articles)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    if "published_ts" not in existing:
+        await db.execute("ALTER TABLE rss_articles ADD COLUMN published_ts REAL")
+
+
 async def create_v2_tables(db_path: str) -> None:
     """Crée les tables V2 si elles n'existent pas (idempotent)."""
     async with aiosqlite.connect(db_path) as db:
@@ -225,6 +234,11 @@ async def create_v2_tables(db_path: str) -> None:
         )
         if await cursor.fetchone() is not None:
             await _migrate_session_analyses(db)
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='rss_articles'"
+        )
+        if await cursor.fetchone() is not None:
+            await _migrate_rss_articles(db)
         # Table morte (jamais écrite — les pensées vivent comme FactCategory.THOUGHT)
         await db.execute("DROP TABLE IF EXISTS thoughts")
         await db.executescript(_SCHEMA_SQL)

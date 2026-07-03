@@ -41,14 +41,18 @@ class RSSMixin:
         link: str | None,
         lang: str,
         published_at: str | None,
+        published_ts: float | None = None,
     ) -> bool:
         """Insère un article s'il est nouveau. Retourne True si nouvellement
-        inséré, False si déjà connu (dédup via UNIQUE(feed_name, guid))."""
+        inséré, False si déjà connu (dédup via UNIQUE(feed_name, guid)).
+
+        `published_ts` = date de publication en epoch (triable), pour remonter
+        les actus les plus récentes en premier au recall knowledge."""
         async with self._conn.execute(
             "INSERT OR IGNORE INTO rss_articles "
-            "(feed_name, role, guid, title, summary, link, lang, published_at, fetched_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (feed_name, role, guid, title, summary, link, lang, published_at, time.time()),
+            "(feed_name, role, guid, title, summary, link, lang, published_at, published_ts, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (feed_name, role, guid, title, summary, link, lang, published_at, published_ts, time.time()),
         ) as cursor:
             inserted = cursor.rowcount > 0
         await self._conn.commit()
@@ -94,12 +98,16 @@ class RSSMixin:
         if not match:
             return []
         cutoff = time.time() - max_age_seconds
+        # Le FTS MATCH assure la pertinence (bon sujet) ; on trie ensuite par
+        # fraîcheur — pour un patch note, c'est la DERNIÈRE version qui compte,
+        # pas la plus « dense » en mots-clés. published_ts absent → fallback sur
+        # la date de récupération.
         rows = await self.fetch_all(
             "SELECT a.* FROM rss_articles a "
             "JOIN rss_articles_fts f ON f.rowid = a.id "
             "WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
             "AND rss_articles_fts MATCH ? "
-            "ORDER BY bm25(rss_articles_fts) LIMIT ?",
+            "ORDER BY COALESCE(a.published_ts, a.fetched_at) DESC LIMIT ?",
             (cutoff, match, limit),
         )
         return [dict(r) for r in rows]

@@ -11,6 +11,7 @@ jamais casser un tick ni le scheduler.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import html
 import re
 from datetime import datetime
@@ -116,6 +117,10 @@ class RSSFeedService:
                 entry.get("summary") or entry.get("description"),
                 cfg.summary_max_chars,
             )
+            # Date de publication en epoch (triable) : feedparser normalise en
+            # struct_time UTC. Sert à remonter l'actu la plus récente au recall.
+            tstruct = entry.get("published_parsed") or entry.get("updated_parsed")
+            published_ts = calendar.timegm(tstruct) if tstruct else None
             inserted = await self._db.rss_upsert_article(
                 feed_name=feed.name,
                 role=feed.role,
@@ -125,6 +130,7 @@ class RSSFeedService:
                 link=entry.get("link") or "",
                 lang=feed.lang,
                 published_at=entry.get("published") or entry.get("updated") or None,
+                published_ts=published_ts,
             )
             if inserted:
                 new += 1
