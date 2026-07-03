@@ -1348,6 +1348,10 @@ async def _respond(
                 mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
             logger.warning("rss_knowledge: injection ignorée: {}", e)
+        # Question d'actu + recall RSS positif → Wally a déjà l'info. On coupe les
+        # outils de lookup (offre ET exécution) : DeepSeek hallucine parfois un
+        # appel web_search même non offert, donc filtrer la liste ne suffit pas.
+        _suppress_lookup = bool(rss_block) and _is_news_query(message.content)
 
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
@@ -1556,6 +1560,15 @@ async def _respond(
                 bot, _conv_channel(message), "tool_called",
                 trace_id=str(message.id), tool=name, args=arguments,
             )
+            # Actu déjà couverte par le RSS : on refuse tout lookup externe, même
+            # si le modèle l'a appelé par réflexe (hallucination de tool non offert).
+            if _suppress_lookup and name in ("web_search", "image_search", "scrape_url", "apex_legends"):
+                logger.info("RSS: appel '{}' bloqué (actu déjà dans le contexte)", name)
+                return (
+                    "Inutile de chercher : tu as DÉJÀ les dernières actus dans ton "
+                    "contexte, section « Actus récentes ». Réponds directement avec "
+                    "ces articles et colle leur marqueur de source [¹](<url>)."
+                )
             args = json.loads(arguments)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
@@ -1658,18 +1671,17 @@ async def _respond(
             )
             return result
 
-        # Question d'actu + recall RSS positif → Wally a déjà l'info sous les yeux.
-        # On retire les outils de lookup redondants (web_search + apex_legends, dont
-        # l'action « news » est vide) pour qu'il réponde AVEC les articles et cite ses
-        # sources, au lieu d'aller chercher ailleurs par réflexe.
-        if rss_block and _is_news_query(message.content):
+        # Question d'actu + recall RSS positif → on retire les outils de lookup de
+        # l'offre (web_search / apex_legends / scrape_url). L'exécution est de toute
+        # façon bloquée dans _tool_executor_impl (le modèle en hallucine parfois un).
+        if _suppress_lookup:
             _before = len(tools)
             tools = [
                 t for t in tools
-                if t.get("function", {}).get("name") not in ("web_search", "apex_legends")
+                if t.get("function", {}).get("name") not in ("web_search", "scrape_url", "apex_legends")
             ]
             if len(tools) != _before:
-                logger.info("RSS: {} outil(s) de lookup coupé(s) (actu couverte par le RSS)",
+                logger.info("RSS: {} outil(s) de lookup retiré(s) de l'offre (actu couverte)",
                             _before - len(tools))
 
         _llm_t0 = time.monotonic()
