@@ -5,7 +5,18 @@ import pytest
 from bot.config import RSSFeedsConfig, RSSFeedDef
 from bot.db.database import Database
 from bot.db.schema_v2 import create_v2_tables
-from bot.discord.handlers import _rss_knowledge_context
+from bot.discord.handlers import _rss_knowledge_context, _is_news_query
+
+
+def test_is_news_query():
+    # Questions d'actu → True (les outils de lookup seront coupés)
+    for q in ["donne moi les dernières actus d'apex ?", "quoi de neuf sur Apex ?",
+              "la nouvelle mise à jour Apex", "c'est quoi le dernier patch ?",
+              "des nouveautés cette semaine ?", "la roadmap Apex"]:
+        assert _is_news_query(q), q
+    # Questions hors-actu → False (apex_legends reste dispo pour rang/stats)
+    for q in ["c'est quoi mon rang apex ?", "tu joues à quoi ?", "salut ça va ?"]:
+        assert not _is_news_query(q), q
 
 
 async def _make_db(tmp_path):

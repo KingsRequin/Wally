@@ -703,6 +703,21 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
 # Exposants Unicode pour les marqueurs de citation (mêmes que WebSearchService).
 _RSS_SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 
+# Marqueurs d'une question d'ACTUALITÉ (sous-chaînes, insensibles à la casse).
+# Quand le message en contient un ET que le recall RSS a matché, on coupe les
+# outils de lookup (web_search/apex_legends) : Wally répond avec les articles
+# qu'il a déjà, au lieu d'aller chercher ailleurs. Les questions hors-actu
+# (« mon rang apex ») ne matchent pas → apex_legends reste dispo.
+_RSS_NEWS_MARKERS = (
+    "actu", "news", "nouveaut", "nouvelle", "derni", "quoi de neuf", "neuf",
+    "maj", "mise à jour", "mise a jour", "patch", "sortie", "roadmap", "annonce",
+)
+
+
+def _is_news_query(text: str | None) -> bool:
+    t = (text or "").lower()
+    return any(m in t for m in _RSS_NEWS_MARKERS)
+
 
 async def _rss_knowledge_context(bot, text: str) -> str | None:
     """Recall RSS « knowledge » : si le message parle d'un sujet couvert par un
@@ -730,10 +745,10 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     if not articles:
         return None
     lines = [
-        "Actus récentes pertinentes (tes sources fiables — si tu utilises une de "
-        "ces infos, colle son marqueur cliquable juste après la phrase concernée, "
-        "ex. « ... [¹](<url>) »). Garde les chevrons <> autour de l'URL. N'invente "
-        "jamais d'URL ni de numéro :"
+        "Actus récentes que tu CONNAIS DÉJÀ sur ce sujet (inutile de chercher sur "
+        "le web, tu as l'info ci-dessous) — si tu t'appuies sur l'une, colle son "
+        "marqueur cliquable juste après la phrase concernée, ex. « ... [¹](<url>) ». "
+        "Garde les chevrons <> autour de l'URL. N'invente jamais d'URL ni de numéro :"
     ]
     for i, a in enumerate(articles, start=1):
         sup = _RSS_SUPERSCRIPTS[i]
@@ -1326,6 +1341,7 @@ async def _respond(
         # Recall RSS knowledge (ex. Apex) : injecté HORS budget mémoire pour que
         # les marqueurs de citation [¹](<url>) survivent à la troncature. Placé
         # avant les tools → le LLM a l'actu sous les yeux plutôt que de web_search.
+        rss_block = None
         try:
             rss_block = await _rss_knowledge_context(bot, message.content or "")
             if rss_block:
@@ -1641,6 +1657,20 @@ async def _respond(
                 trace_id=str(message.id), tool=name, result=str(result)[:500],
             )
             return result
+
+        # Question d'actu + recall RSS positif → Wally a déjà l'info sous les yeux.
+        # On retire les outils de lookup redondants (web_search + apex_legends, dont
+        # l'action « news » est vide) pour qu'il réponde AVEC les articles et cite ses
+        # sources, au lieu d'aller chercher ailleurs par réflexe.
+        if rss_block and _is_news_query(message.content):
+            _before = len(tools)
+            tools = [
+                t for t in tools
+                if t.get("function", {}).get("name") not in ("web_search", "apex_legends")
+            ]
+            if len(tools) != _before:
+                logger.info("RSS: {} outil(s) de lookup coupé(s) (actu couverte par le RSS)",
+                            _before - len(tools))
 
         _llm_t0 = time.monotonic()
         async with message.channel.typing():
