@@ -98,17 +98,22 @@ class RSSMixin:
         if not match:
             return []
         cutoff = time.time() - max_age_seconds
-        # Le FTS MATCH assure la pertinence (bon sujet) ; on trie ensuite par
-        # fraîcheur — pour un patch note, c'est la DERNIÈRE version qui compte,
-        # pas la plus « dense » en mots-clés. published_ts absent → fallback sur
-        # la date de récupération.
+        # Hybride pertinence + fraîcheur : on prend d'abord le pool des plus
+        # PERTINENTS (bm25) — ça écarte les articles hors-sujet qui ne partagent
+        # qu'un mot — puis parmi eux on remonte les plus RÉCENTS. Pour « dernier
+        # patch note », on veut le patch note le plus récent, pas la news la plus
+        # récente qui mentionne juste « apex ». published_ts absent → fallback.
+        pool = max(limit * 4, 8)
         rows = await self.fetch_all(
-            "SELECT a.* FROM rss_articles a "
-            "JOIN rss_articles_fts f ON f.rowid = a.id "
-            "WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
-            "AND rss_articles_fts MATCH ? "
-            "ORDER BY COALESCE(a.published_ts, a.fetched_at) DESC LIMIT ?",
-            (cutoff, match, limit),
+            "SELECT * FROM ("
+            "  SELECT a.*, bm25(rss_articles_fts) AS _rank "
+            "  FROM rss_articles a "
+            "  JOIN rss_articles_fts f ON f.rowid = a.id "
+            "  WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
+            "  AND rss_articles_fts MATCH ? "
+            "  ORDER BY _rank LIMIT ?"
+            ") ORDER BY COALESCE(published_ts, fetched_at) DESC LIMIT ?",
+            (cutoff, match, pool, limit),
         )
         return [dict(r) for r in rows]
 
