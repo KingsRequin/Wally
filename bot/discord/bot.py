@@ -201,6 +201,23 @@ class WallyDiscord(commands.Bot):
                     logger.warning("journal_provider: lecture échouée: {}", e)
                     return None
 
+            # RSS comme stimulus idle : peek du prochain article non montré, marqué
+            # consommé seulement s'il est retenu comme amorce (dans l'AttentionAgent).
+            _rss_cfg = self.config.rss
+            _rss_provider = _rss_consume = None
+            if _rss_cfg.enabled and _rss_cfg.feeds:
+                _rss_max_age = _rss_cfg.stimulus_max_age_hours * 3600
+
+                async def _rss_provider() -> dict | None:  # noqa: F811
+                    try:
+                        return await self.db.rss_peek_stimulus(max_age_seconds=_rss_max_age)
+                    except Exception as e:  # noqa: BLE001 — jamais bloquant pour la cognition
+                        logger.warning("rss_provider: peek échoué: {}", e)
+                        return None
+
+                async def _rss_consume(article: dict) -> None:  # noqa: F811
+                    await self.db.rss_mark_injected(article["id"])
+
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
                 # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
@@ -210,6 +227,8 @@ class WallyDiscord(commands.Bot):
                 upgrade_registry=self.upgrade_registry,
                 social_rhythm=self.social_rhythm,
                 journal_provider=_latest_journal_content,
+                rss_provider=_rss_provider,
+                rss_consume=_rss_consume,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP

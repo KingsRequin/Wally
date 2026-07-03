@@ -82,12 +82,16 @@ class AttentionContext:
     # (2e passe de raisonnement). None hors de ce cas. Muté par CognitiveLoop, pas
     # calculé par build_context.
     web_finding: str | None = None
+    # Article RSS retenu comme amorce de vagabondage au tick courant (stimulus
+    # externe). None hors de ce cas. Sert à publier un event d'observabilité côté
+    # CognitiveLoop ; l'article est déjà marqué consommé quand ce champ est posé.
+    rss_stimulus: dict | None = None
 
 
 class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
                  upgrade_registry=None, social_rhythm=None,
-                 journal_provider=None) -> None:
+                 journal_provider=None, rss_provider=None, rss_consume=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -100,6 +104,14 @@ class AttentionAgent:
         # Callable async () -> str | None renvoyant le contenu du dernier journal
         # quotidien (#A4). None → la boucle V2 reste aveugle au journal V1.
         self._journal_provider = journal_provider
+        # RSS (flux d'actualité comme stimulus idle) :
+        #   rss_provider : async () -> dict | None — PEEK du prochain article
+        #     stimulus non montré (sans le marquer).
+        #   rss_consume  : async (article: dict) -> None — marque l'article comme
+        #     injecté, appelé UNIQUEMENT si l'amorce RSS est réellement retenue.
+        # None → pas d'amorce RSS.
+        self._rss_provider = rss_provider
+        self._rss_consume = rss_consume
 
     async def build_context(
         self,
@@ -142,10 +154,11 @@ class AttentionAgent:
         # Amorce forcée (#A3) : un rappel programmé arrivé à échéance prime sur le
         # vagabondage — il doit revenir tel quel à la conscience.
         idle_seed: str | None = None
+        rss_stimulus: dict | None = None
         if forced_seed:
             idle_seed = forced_seed
         elif idle:
-            idle_seed = await self._build_idle_seed(
+            idle_seed, rss_stimulus = await self._build_idle_seed(
                 emotion_state, desires, goals, tod, FactCategory, preoccupation
             )
 
@@ -269,6 +282,7 @@ class AttentionAgent:
             time_of_day=tod,
             spontaneous_outreach=spontaneous or [],
             idle_seed=idle_seed,
+            rss_stimulus=rss_stimulus,
             emotional_drive=drive,
             preoccupation=preoccupation,
             self_narrative=self_narrative,
@@ -292,7 +306,7 @@ class AttentionAgent:
         time_of_day: str,
         fact_category,
         preoccupation: str | None = None,
-    ) -> str | None:
+    ) -> tuple[str | None, dict | None]:
         """Construit une amorce de vagabondage variée : choisit ALÉATOIREMENT
         une source de nouveauté parmi celles disponibles. Les seeds riches (souvenirs,
         pensées passées, buts) sont prioritaires sur l'émotion pour éviter la spirale
@@ -301,10 +315,14 @@ class AttentionAgent:
         ~1 fois sur 3, tire une amorce d'INTROSPECTION (Phase 2b). Exclut aussi du
         tirage les désirs/buts qui recoupent le focus courant, pour ne pas
         ré-amorcer le sujet qu'on vient de clore.
+
+        Retourne (amorce, article_rss_consommé). Le 2e élément n'est non-None que
+        si une amorce issue d'un flux RSS a réellement été retenue — auquel cas
+        l'article a été marqué consommé et sert d'event d'observabilité.
         """
         # Veine introspection : une part du repos consacrée à se penser soi-même.
         if random.random() < _INTROSPECTION_PROB:
-            return random.choice(_INTROSPECTION_SEEDS)
+            return random.choice(_INTROSPECTION_SEEDS), None
 
         # Amorce sémantique (#A5) : quand une préoccupation traverse les ticks, le
         # vagabondage rebondit sur un souvenir LIÉ (recherche FTS globale) plutôt
@@ -324,7 +342,7 @@ class AttentionAgent:
                 return (
                     f"En repensant à « {preoccupation[:80]} », ça te rappelle : "
                     f"{related[0].content}"
-                )
+                ), None
 
         rich_seeds: list[str] = []
         fallback_seeds: list[str] = []
@@ -375,6 +393,34 @@ class AttentionAgent:
             desire = random.choice(desires)
             rich_seeds.append(f"Un désir qui te travaille : {desire.content}")
 
+        # Flux RSS (stimulus externe) : une actu fraîche traverse les pensées,
+        # comme une friction garantie même quand le chat est silencieux. Simple
+        # source de plus dans le tirage (émergent, pas de proba forcée). PEEK
+        # seulement ici — l'article n'est marqué consommé que s'il est retenu.
+        rss_seed: str | None = None
+        rss_article: dict | None = None
+        if self._rss_provider is not None:
+            try:
+                rss_article = await self._rss_provider()
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: rss_provider indisponible: {}", e)
+                rss_article = None
+            title = (rss_article or {}).get("title", "")
+            if rss_article and title and not _seed_overlaps_focus(title, preoccupation):
+                lang_note = (
+                    " (article en anglais — réagis en français)"
+                    if rss_article.get("lang") and rss_article["lang"] != "fr" else ""
+                )
+                summary = rss_article.get("summary") or ""
+                rss_seed = (
+                    f"Une actu qui passe dans ton fil{lang_note} — "
+                    f"{rss_article.get('feed_name', '')} : « {title} ». {summary}"
+                ).strip()
+                rich_seeds.append(rss_seed)
+            else:
+                rss_article = None  # recoupe le focus / vide → ni retenu ni consommé
+
         # Émotion dominante — seulement si ce n'est pas l'ennui qui domine fort
         # (évite la boucle : ennui élevé → pense à l'ennui → reste ennuyé)
         if emotion_state:
@@ -387,5 +433,15 @@ class AttentionAgent:
 
         pool = rich_seeds if rich_seeds else fallback_seeds
         if not pool:
-            return None
-        return random.choice(pool)
+            return None, None
+        chosen = random.choice(pool)
+        # Consomme l'article RSS UNIQUEMENT s'il est celui retenu.
+        if rss_seed is not None and chosen == rss_seed and rss_article is not None:
+            if self._rss_consume is not None:
+                try:
+                    await self._rss_consume(rss_article)
+                except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                    from loguru import logger
+                    logger.warning("AttentionAgent: rss_consume échoué: {}", e)
+            return chosen, rss_article
+        return chosen, None

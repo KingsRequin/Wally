@@ -401,6 +401,14 @@ class CognitiveLoop:
                 forced_seed=forced_seed,
             )
             if self._feed:
+                rss_art = getattr(context, "rss_stimulus", None)
+                if rss_art:
+                    self._feed.publish({
+                        "type": "RSS",
+                        "feed": rss_art.get("feed_name", ""),
+                        "content_snippet": (rss_art.get("title") or "")[:160],
+                        "link": rss_art.get("link", ""),
+                    })
                 if is_idle:
                     self._feed.publish({
                         "type": "ATTN",

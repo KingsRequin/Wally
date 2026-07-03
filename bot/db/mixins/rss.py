@@ -56,9 +56,10 @@ class RSSMixin:
 
     # ── Stimulus (amorce de pensée idle) ──────────────────────────────────────
 
-    async def rss_next_stimulus(self, *, max_age_seconds: float) -> dict | None:
-        """Pioche l'article `stimulus` frais le plus récent jamais injecté, le
-        marque comme injecté (dédup) et le retourne. None si rien de dispo."""
+    async def rss_peek_stimulus(self, *, max_age_seconds: float) -> dict | None:
+        """Retourne l'article `stimulus` frais le plus récent jamais injecté,
+        SANS le marquer. Permet de ne le consommer que s'il est réellement
+        retenu comme amorce (sinon on brûlerait des articles jamais montrés)."""
         cutoff = time.time() - max_age_seconds
         row = await self.fetch_one(
             "SELECT * FROM rss_articles "
@@ -66,13 +67,21 @@ class RSSMixin:
             "ORDER BY fetched_at DESC, id DESC LIMIT 1",
             (cutoff,),
         )
-        if not row:
-            return None
+        return dict(row) if row else None
+
+    async def rss_mark_injected(self, article_id: int) -> None:
+        """Marque un article comme ayant traversé les pensées (dédup stimulus)."""
         await self.execute(
             "UPDATE rss_articles SET injected_at = ? WHERE id = ?",
-            (time.time(), row["id"]),
+            (time.time(), article_id),
         )
-        return dict(row)
+
+    async def rss_next_stimulus(self, *, max_age_seconds: float) -> dict | None:
+        """Peek + marque atomiquement (pioche l'article et le consomme)."""
+        article = await self.rss_peek_stimulus(max_age_seconds=max_age_seconds)
+        if article:
+            await self.rss_mark_injected(article["id"])
+        return article
 
     # ── Knowledge (recall contextuel via FTS) ─────────────────────────────────
 

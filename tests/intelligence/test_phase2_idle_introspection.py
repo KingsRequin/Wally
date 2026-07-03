@@ -71,8 +71,9 @@ async def test_idle_seed_introspection_fires(monkeypatch):
     agent = AttentionAgent(fact_store=None)
     # force la branche introspection
     monkeypatch.setattr("bot.intelligence.attention_agent.random.random", lambda: 0.0)
-    seed = await agent._build_idle_seed({}, [], [], "night", _FakeCat, None)
+    seed, rss = await agent._build_idle_seed({}, [], [], "night", _FakeCat, None)
     assert seed in _INTROSPECTION_SEEDS
+    assert rss is None
 
 
 @pytest.mark.asyncio
@@ -88,7 +89,7 @@ async def test_idle_seed_excludes_focused_desire(monkeypatch):
     focus = "jubeii1979 origine du souvenir Apex Legends floue"
     focused = SimpleNamespace(content="Creuser jubeii1979 origine souvenir Apex Legends")
     other = SimpleNamespace(content="Demander à Cluth ses jeux de course préférés")
-    seed = await agent._build_idle_seed({}, [focused, other], [], "night", _FakeCat, focus)
+    seed, _ = await agent._build_idle_seed({}, [focused, other], [], "night", _FakeCat, focus)
     # le désir lié au focus est exclu → seul "Cluth" peut sortir (ou un fallback)
     assert "jubeii" not in (seed or "").lower()
 
