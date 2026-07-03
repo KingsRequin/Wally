@@ -737,7 +737,7 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
         return None
     try:
         articles = await bot.db.rss_search_knowledge(
-            text, limit=2, max_age_seconds=cfg.knowledge_max_age_days * 86400
+            text, limit=3, max_age_seconds=cfg.knowledge_max_age_days * 86400
         )
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
         logger.warning("rss_knowledge: recherche échouée: {}", e)
@@ -745,10 +745,13 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     if not articles:
         return None
     lines = [
-        "Actus récentes que tu CONNAIS DÉJÀ sur ce sujet (inutile de chercher sur "
-        "le web, tu as l'info ci-dessous) — si tu t'appuies sur l'une, colle son "
-        "marqueur cliquable juste après la phrase concernée, ex. « ... [¹](<url>) ». "
-        "Garde les chevrons <> autour de l'URL. N'invente jamais d'URL ni de numéro :"
+        "Actus les plus RÉCENTES que tu CONNAIS DÉJÀ sur ce sujet (classées du plus "
+        "récent au plus ancien ; inutile de chercher sur le web, tu as l'info ci-"
+        "dessous). Choisis celle(s) qui répond(ent) vraiment à la question — pour un "
+        "« dernier patch note », prends le patch note le plus récent du lot. Quand tu "
+        "t'appuies sur l'une, colle son marqueur cliquable juste après la phrase "
+        "concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. N'invente jamais "
+        "d'URL ni de numéro :"
     ]
     for i, a in enumerate(articles, start=1):
         sup = _RSS_SUPERSCRIPTS[i]
