@@ -700,6 +700,50 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     return True
 
 
+# Exposants Unicode pour les marqueurs de citation (mêmes que WebSearchService).
+_RSS_SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+
+async def _rss_knowledge_context(bot, text: str) -> str | None:
+    """Recall RSS « knowledge » : si le message parle d'un sujet couvert par un
+    flux knowledge (ex. Apex, le jeu du serveur), remonte les articles récents
+    pertinents (FTS BM25) et les présente avec des marqueurs de citation prêts à
+    coller — AVANT que le LLM ne songe à chercher sur le web.
+
+    Réutilise la convention de web_search : `[¹](<url>)`, URL entre chevrons pour
+    neutraliser l'aperçu de lien Discord. Retourne None si rien de pertinent.
+    """
+    cfg = getattr(bot.config, "rss", None)
+    if not cfg or not cfg.enabled:
+        return None
+    if not any(getattr(f, "role", "") == "knowledge" and f.enabled for f in cfg.feeds):
+        return None
+    if not text or len(text.strip()) < 4:
+        return None
+    try:
+        articles = await bot.db.rss_search_knowledge(
+            text, limit=2, max_age_seconds=cfg.knowledge_max_age_days * 86400
+        )
+    except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
+        logger.warning("rss_knowledge: recherche échouée: {}", e)
+        return None
+    if not articles:
+        return None
+    lines = [
+        "Actus récentes pertinentes (tes sources fiables — si tu utilises une de "
+        "ces infos, colle son marqueur cliquable juste après la phrase concernée, "
+        "ex. « ... [¹](<url>) »). Garde les chevrons <> autour de l'URL. N'invente "
+        "jamais d'URL ni de numéro :"
+    ]
+    for i, a in enumerate(articles, start=1):
+        sup = _RSS_SUPERSCRIPTS[i]
+        url = a.get("link") or ""
+        title = a.get("title") or ""
+        summary = a.get("summary") or ""
+        lines.append(f"[{sup}](<{url}>) {title} : {summary}")
+    return "\n".join(lines)
+
+
 async def _third_party_mention_context(
     bot,
     platform: str,
@@ -1278,6 +1322,16 @@ async def _respond(
             pass
 
         mem_context = assemble_memory_context(memory_parts, max_tokens)
+
+        # Recall RSS knowledge (ex. Apex) : injecté HORS budget mémoire pour que
+        # les marqueurs de citation [¹](<url>) survivent à la troncature. Placé
+        # avant les tools → le LLM a l'actu sous les yeux plutôt que de web_search.
+        try:
+            rss_block = await _rss_knowledge_context(bot, message.content or "")
+            if rss_block:
+                mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
+        except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
+            logger.warning("rss_knowledge: injection ignorée: {}", e)
 
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
