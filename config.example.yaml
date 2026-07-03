@@ -223,6 +223,34 @@ overlay_image:
   display_duration: 5
   enabled: true
   random_filter: all
+rss:
+  # Flux RSS injectés dans la cognition de Wally.
+  #   role: stimulus  → une actu traverse ses pensées quand le chat est calme
+  #                     (friction externe ; il en parle ou l'ignore, au gré du gate)
+  #   role: knowledge → base cherchable, injectée quand on parle du sujet
+  #                     (ex. Apex) — évite qu'il aille chercher sur le web
+  enabled: true
+  poll_interval_minutes: 20      # fréquence de récupération des flux
+  retention_days: 10             # purge des articles plus vieux
+  summary_max_chars: 300         # troncature du résumé injecté
+  stimulus_max_age_hours: 48     # au-delà, un article n'amorce plus une pensée
+  knowledge_max_age_days: 30     # fenêtre de fraîcheur du recall knowledge
+  feeds:
+    - name: JeuxVideo.com
+      url: https://www.jeuxvideo.com/rss/rss.xml
+      role: stimulus
+      lang: fr
+      enabled: true
+    - name: Korben
+      url: https://korben.info/feedfull
+      role: stimulus
+      lang: fr
+      enabled: true
+    - name: Dexerto Apex
+      url: https://www.dexerto.com/apex-legends/feed/
+      role: knowledge
+      lang: en
+      enabled: true
 tavily:
   monthly_limit: 200
 theme:

@@ -32,6 +32,7 @@ const FEED_META = {
   EVOLVE: { color: '#ff8a3b', icon: '🧬', label: 'évolue' },
   SLEEP:  { color: '#6f6597', icon: '😴', label: 'somnole' },
   CODEFIX: { color: '#e879f9', icon: '🔧', label: 'se répare' },
+  RSS:    { color: '#ffb020', icon: '📰', label: "lit l'actu" },
 };
 function feedMeta(type) {
   return FEED_META[type] || { color: '#fff', icon: '•', label: (type || '').toLowerCase() };
@@ -57,6 +58,7 @@ function feedText(e) {
   if (e.type === 'ACT') return e.detail || '';
   if (e.type === 'EVOLVE') return 'persona → ' + (e.detail || '');
   if (e.type === 'CODEFIX') return e.detail || '';
+  if (e.type === 'RSS') return (e.feed ? e.feed + ' — ' : '') + (e.content_snippet || '');
   return e.detail || e.text || e.message || '';
 }
 // Texte complet (dépliage) si présent et différent du snippet rendu.

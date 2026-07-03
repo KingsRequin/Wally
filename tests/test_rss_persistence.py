@@ -113,9 +113,26 @@ def test_rss_config_defaults():
     assert roles["Dexerto Apex"] == "knowledge"
 
 
+def test_config_rss_missing_section_uses_defaults(tmp_path):
+    """Une config SANS section `rss:` retombe sur les 3 flux par défaut."""
+    import shutil
+    import yaml
+    from bot.config import Config
+
+    base = tmp_path / "config.yaml"
+    shutil.copy("config.example.yaml", base)
+    raw = yaml.safe_load(base.read_text(encoding="utf-8"))
+    raw.pop("rss", None)  # on retire la section pour tester le fallback
+    base.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    loaded = Config.load(str(base))
+    assert len(loaded.rss.feeds) == 3
+    assert {f.name for f in loaded.rss.feeds} == {"JeuxVideo.com", "Korben", "Dexerto Apex"}
+
+
 def test_config_rss_roundtrip(tmp_path):
-    """Sur une base de config réelle : absence de section `rss:` → défauts,
-    puis save()/load() préserve une config RSS personnalisée."""
+    """Sur config.example.yaml (qui définit une section `rss:`) : parse la
+    section réelle, puis save()/load() préserve une config personnalisée."""
     import shutil
     from bot.config import Config, RSSFeedDef
 
@@ -123,8 +140,9 @@ def test_config_rss_roundtrip(tmp_path):
     shutil.copy("config.example.yaml", base)
 
     loaded = Config.load(str(base))
-    # config.example.yaml n'a pas de section rss → on retombe sur les défauts
+    # config.example.yaml définit 3 flux (JVC + Korben stimulus, Dexerto knowledge)
     assert len(loaded.rss.feeds) == 3
+    assert {f.role for f in loaded.rss.feeds} == {"stimulus", "knowledge"}
 
     # Personnalise, sauvegarde, recharge
     loaded.rss.poll_interval_minutes = 15
