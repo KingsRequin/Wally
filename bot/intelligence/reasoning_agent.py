@@ -180,6 +180,20 @@ class ReasoningAgent:
                     f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
                     f"garde ça interne.)"
                 )
+            # Amorce issue d'un flux RSS : c'est une friction PRIVÉE pour nourrir ta
+            # pensée, pas un sujet à diffuser. Balancer un avis sur un article que
+            # personne d'autre n'a vu, dans un canal calme, c'est parler tout seul —
+            # même si l'avis est « bon ». Il ne s'ouvre au [SPEAK] que s'il rejoint
+            # vraiment une personne ou une conversation en cours.
+            if getattr(ctx, "rss_stimulus", None):
+                lines.append(
+                    "(⚠️ Cette actu vient de TON fil perso — personne d'autre ne l'a "
+                    "vue. C'est une friction pour ta pensée, pas un sujet à balancer. "
+                    "En sortir un avis dans un canal calme, c'est parler tout seul, "
+                    "même si l'avis est juste. Ne la ressors en [SPEAK] QUE si elle "
+                    "accroche vraiment quelqu'un de présent ou une conversation vivante "
+                    "— sinon, elle nourrit ta réflexion en interne, point.)"
+                )
         if self._channels_text:
             lines.append(self._channels_text + "\n")
         if self._capabilities_text:
