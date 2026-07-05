@@ -618,7 +618,11 @@ class CognitiveLoop:
                     st["unanswered"] += 1
                     self._recent_speaks.append({
                         "channel": str(decision.channel_id),
-                        "content": (decision.message or "")[:200],
+                        # Message COMPLET : la relecture (reasoning_agent) applique
+                        # elle-même `_one_line` (ellipse « … » explicite). Pré-tronquer
+                        # ici donnait à Wally une phrase coupée net qu'il prenait pour
+                        # de l'auto-censure et ruminait — cf. boucle « j'ai fini par con… ».
+                        "content": decision.message or "",
                         "ts": time.time(),
                     })
                     if len(self._recent_speaks) > 5:

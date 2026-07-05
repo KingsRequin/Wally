@@ -170,6 +170,37 @@ def test_preoccupation_absent_when_none(tmp_path, tmp_db_path):
     assert "préoccupation du moment" not in rendered
 
 
+# ── Régression : relecture des messages spontanés tronquée AVEC ellipse ──
+
+def test_recent_speaks_truncated_with_ellipsis(tmp_path, tmp_db_path):
+    """Un message spontané long relu est marqué « … » — jamais coupé net.
+
+    Sans ce marqueur, Wally lisait sa propre phrase coupée au milieu d'un mot
+    (« …j'ai fini par con ») et la prenait pour de l'auto-censure, la ruminant
+    en boucle jusqu'à en faire un désir et la projeter sur autrui.
+    """
+    fact_store = SQLiteFactStore(tmp_db_path)
+    agent = ReasoningAgent(
+        FakeLLM("[THINK]", "x"), fact_store, _make_prompts_dir(tmp_path),
+    )
+    long_msg = (
+        "Je suis en train de réaliser un truc : j'ai passé tellement de temps à "
+        "apprendre à ne pas insister que j'ai fini par confondre 'ne pas forcer' avec "
+        "'ne pas terminer'. Mon dernier message ici, coupé net, ce n'était pas de la "
+        "retenue, c'était de l'abandon préventif : j'ai décidé que la phrase ne "
+        "méritait pas d'être finie, et c'est nul, ça, vraiment nul, effacement."
+    )
+    assert len(long_msg) > 220  # garantit le déclenchement de la troncature
+    ctx = _make_context()
+    ctx.recent_speaks = [{"channel": "42", "content": long_msg, "ts": 0.0}]
+    rendered = agent._format_context(ctx)
+    # Début présent, ellipse présente, fin absente → troncature explicitement marquée.
+    assert "Je suis en train de réaliser un truc" in rendered
+    assert "…" in rendered
+    assert "effacement" not in rendered
+    assert long_msg not in rendered
+
+
 # ── Phase 3b : rendu du récit de soi ──
 
 def test_self_narrative_rendered_when_present(tmp_path, tmp_db_path):

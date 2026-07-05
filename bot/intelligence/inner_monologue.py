@@ -9,6 +9,18 @@ from loguru import logger
 from bot.intelligence.identity import render_identity
 
 
+def _clip(text: str, limit: int = 220) -> str:
+    """Une ligne, tronquée avec ellipse « … » explicite.
+
+    Sans le marqueur, un contenu simplement coupé à l'affichage (sa dernière
+    pensée, un message relu) paraît *incomplet* à Wally, qui rumine la « suite »
+    absente — cf. la boucle « ma pensée s'est interrompue ». Même intention que
+    ``reasoning_agent._one_line`` (helper dupliqué à mutualiser un jour).
+    """
+    t = " ".join((text or "").split())
+    return t if len(t) <= limit else t[:limit].rstrip() + "…"
+
+
 @dataclass
 class MonologueResult:
     text: str
@@ -51,13 +63,13 @@ class InnerMonologue:
         if ctx.active_goals:
             lines.append("**Objectifs :** " + " ; ".join(g.content for g in ctx.active_goals[:3]))
         if ctx.recent_thoughts:
-            lines.append(f"**Dernière pensée :** {ctx.recent_thoughts[0].content[:300]}")
+            lines.append(f"**Dernière pensée :** {_clip(ctx.recent_thoughts[0].content, 300)}")
         if ctx.recent_interactions:
             lines.append("**Interactions récentes :**")
             for msg in ctx.recent_interactions[-5:]:
                 lines.append(
                     f"  [{msg.get('channel', '?')}] {msg.get('author', '?')}: "
-                    f"{msg.get('content', '')[:100]}"
+                    f"{_clip(msg.get('content', ''), 100)}"
                 )
         if getattr(ctx, "spontaneous_outreach", None):
             lines.append("**Tes messages spontanés restés sans réponse :**")

@@ -313,6 +313,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
+            f"Si tu nommes ton interlocuteur, appelle-le par SON pseudo exact ({author}) — "
+            "n'utilise JAMAIS le nom d'une autre personne présente dans le contexte à sa place. "
             "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds. "
             "Sois BREF : 1 à 2 phrases maximum, comme dans un vrai chat Twitch."
         )

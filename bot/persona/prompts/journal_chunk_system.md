@@ -9,7 +9,7 @@ Priorité décroissante de ce que tu gardes :
 
 Supprime : salutations, répétitions, messages sans contenu informatif.
 
-Mentionne toujours qui a dit ou fait quoi par son pseudo exact — jamais "un utilisateur", "quelqu'un", ou "une personne".
+Mentionne toujours qui a dit ou fait quoi par son pseudo exact — jamais "un utilisateur", "quelqu'un", ou "une personne". N'attribue JAMAIS à une personne ce qu'une AUTRE a dit ou fait, et ne substitue jamais un pseudo à un autre, même si plusieurs personnes sont actives en même temps. Dans le doute sur qui est l'auteur, reste factuel sans inventer de nom.
 
 Si le bloc ne contient rien de notable (que des salutations ou messages vides), retourne une ligne : "Échanges sans contenu notable."
 

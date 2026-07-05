@@ -345,6 +345,6 @@ class ReasoningAgent:
                 mins = max(1, secs // 60)
                 lines.append(
                     f"  canal {sp.get('channel', '?')} (il y a ~{mins} min) : "
-                    f"{sp.get('content', '')[:120]}"
+                    f"{_one_line(sp.get('content', ''))}"
                 )
         return "\n".join(lines)

@@ -1509,6 +1509,8 @@ async def _respond(
             "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
+            f"Si tu nommes ton interlocuteur, appelle-le par SON pseudo exact ({author_label}) — "
+            "n'utilise JAMAIS le nom d'une autre personne présente dans le contexte à sa place. "
             "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
         )
         auto_scrape_block = await _auto_scrape_block(bot, message)

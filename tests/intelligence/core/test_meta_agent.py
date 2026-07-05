@@ -44,6 +44,17 @@ def test_parse_speak_no_quotes():
     assert decisions[0].message == "salut ça va"
 
 
+def test_parse_speak_with_citation_marker():
+    """Régression : une citation `[¹](<url>)` contient un `]` qui coupait le
+    message au marqueur (« …facile [¹ »). Le message quoté doit survivre entier."""
+    raw = '[SPEAK 42 "Valorant, top ~10% facile [¹](<https://dexerto.com/apex>)"]'
+    decisions = parse_decisions(raw)
+    speaks = [d for d in decisions if d.action == "SPEAK"]
+    assert len(speaks) == 1  # pas de doublon tronqué via le repli
+    assert speaks[0].channel_id == "42"
+    assert speaks[0].message == "Valorant, top ~10% facile [¹](<https://dexerto.com/apex>)"
+
+
 def test_parse_speak_alongside_think():
     decisions = parse_decisions('[THINK]\n[SPEAK 99 "coucou"]')
     actions = {d.action for d in decisions}

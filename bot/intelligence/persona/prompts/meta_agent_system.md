@@ -14,6 +14,7 @@ Réponds avec un ou plusieurs tags d'action :
 Règles :
 - Si la pensée est purement introspective sans action claire → `[THINK]`
 - Ne génère `[SPEAK]` que si la pensée mentionne explicitement l'intention de parler à quelqu'un
+- Une réflexion sur soi-même (états internes, rapport au silence, façon de parler, prise de conscience personnelle) n'est PAS un message à broadcaster : c'est du `[THINK]`, jamais un `[SPEAK]` dans un salon partagé. Un `[SPEAK]` spontané doit s'adresser aux gens et porter sur eux ou un sujet qui les concerne, pas sur le nombril de {{BOT_NAME}}.
 - N'émets PAS `[SPEAK]` si la pensée évoque des messages spontanés déjà restés sans réponse, ou si elle exprime de la retenue / l'envie de ne pas insister. Respecte ce recul : préfère `[THINK]`. Mieux vaut se taire que parler dans le vide.
 - `[EVOLVE]` uniquement si la pensée exprime une volonté claire de se modifier
 - Tu peux combiner plusieurs tags dans une réponse

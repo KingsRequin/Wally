@@ -10,9 +10,12 @@ from loguru import logger
 from bot.intelligence.identity import render_identity
 
 _THINK_RE = re.compile(r"\[THINK\]")
-# Message tolérant : guillemets droits, courbes, français « », ou aucun.
-# `(.+?)` non gourmand jusqu'au `]` final — les messages de chat ne contiennent
-# quasi jamais de `]`, mais tolèrent guillemets internes (cas qui cassait avant).
+# Deux passes pour SPEAK :
+#  1. Message ENTRE GUILLEMETS (forme canonique du prompt) : le terminateur est le
+#     guillemet fermant + `]`, ce qui tolère un `]` À L'INTÉRIEUR du message. Sans
+#     ça, une citation `[¹](<url>)` coupait le message au `]` du marqueur (« …facile [¹ »).
+#  2. Repli non-guillemeté : `(.+?)` non gourmand jusqu'au `]` — pour les messages nus.
+_SPEAK_QUOTED_RE = re.compile(r'\[SPEAK\s+(\d+)\s+["“«\'](.+?)["”»\']\s*\]', re.DOTALL)
 _SPEAK_RE = re.compile(r'\[SPEAK\s+(\d+)\s+(.+?)\s*\]', re.DOTALL)
 _ACT_RE = re.compile(r"\[ACT\s+(\w+)\s+(\{.*?\})\]", re.DOTALL)
 
@@ -47,7 +50,17 @@ def parse_decisions(text: str) -> list[MetaDecision]:
     for _ in _THINK_RE.finditer(text):
         decisions.append(MetaDecision(action="THINK"))
 
+    # Passe 1 (prioritaire) : messages entre guillemets, `]` interne toléré.
+    speak_spans: list[tuple[int, int]] = []
+    for m in _SPEAK_QUOTED_RE.finditer(text):
+        decisions.append(MetaDecision(
+            action="SPEAK", channel_id=m.group(1), message=m.group(2).strip()
+        ))
+        speak_spans.append(m.span())
+    # Passe 2 (repli) : messages nus, sauf ceux déjà captés en passe 1 (même position).
     for m in _SPEAK_RE.finditer(text):
+        if any(s0 <= m.start() < s1 for s0, s1 in speak_spans):
+            continue
         decisions.append(MetaDecision(
             action="SPEAK", channel_id=m.group(1), message=_strip_quotes(m.group(2))
         ))
