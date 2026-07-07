@@ -14,6 +14,7 @@ import discord
 from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.discord.message_split import split_for_discord
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block, load_prompt
 from bot.intelligence.self_fix import UpgradeRequest
 
@@ -1176,11 +1177,19 @@ async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | Non
     if current:
         groups.append("\n".join(current))
 
-    first_msg = await message.reply(groups[0], allowed_mentions=_ALLOWED_MENTIONS)
-    for group in groups[1:]:
+    # Un groupe (paragraphe/bloc de liste) peut dépasser la limite Discord de
+    # 2000 car. — on le redécoupe alors proprement en sous-parts.
+    parts: list[str] = []
+    for group in groups:
+        parts.extend(split_for_discord(group))
+    if not parts:
+        return None, 0
+
+    first_msg = await message.reply(parts[0], allowed_mentions=_ALLOWED_MENTIONS)
+    for part in parts[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
-        await message.channel.send(group, allowed_mentions=_ALLOWED_MENTIONS)
-    return first_msg.id, len(groups)
+        await message.channel.send(part, allowed_mentions=_ALLOWED_MENTIONS)
+    return first_msg.id, len(parts)
 
 
 async def _fetch_referenced_message(

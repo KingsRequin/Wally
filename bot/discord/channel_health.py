@@ -64,6 +64,8 @@ async def report_dead_channels(bot, channels_md_path=None) -> None:
     try:
         owner = await bot.fetch_user(int(owner_id))
         body = "⚠️ Canaux configurés introuvables (supprimés ou accès perdu) :\n" + "\n".join(lines)
-        await owner.send(body)
+        from bot.discord.message_split import send_chunked
+
+        await send_chunked(owner, body)
     except Exception as e:  # noqa: BLE001
         logger.warning("channel_health: DM créateur a échoué ({e})", e=e)

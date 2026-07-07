@@ -275,7 +275,11 @@ class ActionDispatcher:
             except Exception as e:
                 logger.warning("dm: utilisateur {} introuvable: {}", user_id, e)
                 return
-            sent = await user.send(message)
+            from bot.discord.message_split import send_chunked
+
+            # Rapport/long message : découpé en plusieurs messages (limite Discord
+            # 2000 car.), sur des frontières propres, envoyés dans l'ordre.
+            sent = await send_chunked(user, message)
             self._last_dm_ts = now
             if self._gate is not None:
                 self._gate.mark_sent()
