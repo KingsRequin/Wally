@@ -15,6 +15,7 @@ stockage.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import discord
 from loguru import logger
@@ -66,11 +67,42 @@ class PresenceService:
             return None
 
     @staticmethod
+    def _format_since(created_at, now: datetime | None = None) -> str | None:
+        """« depuis X min/h/j » à partir d'un datetime UTC, ou None.
+
+        ``created_at`` = l'instant où Discord a enregistré l'activité dans la
+        **session de présence courante** du membre. Attention : ce n'est pas la
+        date de saisie du statut mais le début de la session — Discord réarme ce
+        compteur quand le membre se reconnecte. C'est néanmoins la seule donnée
+        de fraîcheur que l'API expose (aucun stockage maison ici).
+        """
+        if not isinstance(created_at, datetime):
+            return None
+        now = now or discord.utils.utcnow()
+        secs = (now - created_at).total_seconds()
+        if secs < 0:
+            return None
+        minutes = int(secs // 60)
+        if minutes < 1:
+            return "à l'instant"
+        if minutes < 60:
+            return f"depuis {minutes} min"
+        hours = minutes // 60
+        if hours < 24:
+            return f"depuis {hours} h"
+        days = hours // 24
+        return f"depuis {days} j"
+
+    @staticmethod
     def _describe_activity(act) -> str | None:
         """Une activité → phrase courte FR, ou None si rien d'utile."""
         if isinstance(act, discord.CustomActivity):
             text = (act.name or "").strip()
-            return f"statut perso : « {text} »" if text else None
+            if not text:
+                return None
+            since = PresenceService._format_since(getattr(act, "created_at", None))
+            label = f"statut perso : « {text} »"
+            return f"{label} ({since})" if since else label
         if isinstance(act, discord.Spotify):
             return f"écoute {act.title} — {act.artist}"
         name = getattr(act, "name", None)

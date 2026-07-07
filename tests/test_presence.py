@@ -1,5 +1,7 @@
 # tests/test_presence.py
 """Tests pour PresenceService (perception lecture seule de la présence Discord)."""
+from datetime import datetime, timedelta, timezone
+
 import discord
 import pytest
 from unittest.mock import MagicMock
@@ -115,9 +117,56 @@ def test_custom_status_described():
     act = MagicMock()
     act.__class__ = discord.CustomActivity
     act.name = "en pause clope"
+    act.created_at = None  # Discord n'a pas fourni de timestamp → pas de suffixe
     member = _make_member(status="online", activities=[act])
     svc = PresenceService(_make_client(member), guild_id=42)
     assert svc.describe("610", "Bob") == "Bob est en ligne — statut perso : « en pause clope »."
+
+
+def test_custom_status_with_since_hours():
+    act = MagicMock()
+    act.__class__ = discord.CustomActivity
+    act.name = "en pause clope"
+    act.created_at = discord.utils.utcnow() - timedelta(hours=3, minutes=5)
+    member = _make_member(status="online", activities=[act])
+    svc = PresenceService(_make_client(member), guild_id=42)
+    assert (
+        svc.describe("610", "Bob")
+        == "Bob est en ligne — statut perso : « en pause clope » (depuis 3 h)."
+    )
+
+
+# --- _format_since : formatage de la durée « depuis … » ---
+
+@pytest.mark.parametrize(
+    "delta,expected",
+    [
+        (timedelta(seconds=10), "à l'instant"),
+        (timedelta(minutes=5), "depuis 5 min"),
+        (timedelta(minutes=59), "depuis 59 min"),
+        (timedelta(hours=1), "depuis 1 h"),
+        (timedelta(hours=23, minutes=30), "depuis 23 h"),
+        (timedelta(days=1), "depuis 1 j"),
+        (timedelta(days=92), "depuis 92 j"),
+    ],
+)
+def test_format_since_thresholds(delta, expected):
+    now = datetime(2026, 7, 7, 12, 0, tzinfo=timezone.utc)
+    assert PresenceService._format_since(now - delta, now=now) == expected
+
+
+def test_format_since_none_when_no_timestamp():
+    assert PresenceService._format_since(None) is None
+
+
+def test_format_since_none_on_non_datetime():
+    # Un MagicMock (ou toute valeur non-datetime) ne doit jamais planter.
+    assert PresenceService._format_since(MagicMock()) is None
+
+
+def test_format_since_none_on_future_timestamp():
+    now = datetime(2026, 7, 7, 12, 0, tzinfo=timezone.utc)
+    assert PresenceService._format_since(now + timedelta(hours=1), now=now) is None
 
 
 def test_spotify_activity_described():
