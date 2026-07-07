@@ -181,6 +181,35 @@ async def test_respond_injects_presence_context():
 
 
 @pytest.mark.asyncio
+async def test_respond_presence_absent_injects_explicit_negative():
+    # Pas de donnée de présence → on injecte un négatif explicite plutôt qu'un
+    # vide silencieux, pour que le LLM n'invente pas de statut.
+    bot = make_bot()
+    bot.presence.enabled = True
+    bot.presence.describe = MagicMock(return_value=None)
+    message = make_message(content="wally c'est quoi mon statut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert "ne l'invente pas" in kwargs["presence_context"]
+    assert "TestUser" in kwargs["presence_context"]
+
+
+@pytest.mark.asyncio
+async def test_respond_presence_disabled_stays_empty():
+    # Service de présence désactivé (pas de serveur principal) → aucun négatif,
+    # sinon on spammerait le prompt à chaque message.
+    bot = make_bot()
+    bot.presence.enabled = False
+    bot.presence.describe = MagicMock(return_value=None)
+    message = make_message(content="wally salut")
+    with patch("bot.discord.handlers.asyncio.create_task"):
+        await _respond(bot, message, "12345", "99999", [])
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["presence_context"] == ""
+
+
+@pytest.mark.asyncio
 async def test_respond_presence_failure_does_not_break():
     bot = make_bot()
     bot.presence.describe = MagicMock(side_effect=RuntimeError("boom"))

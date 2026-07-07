@@ -271,10 +271,18 @@ def _presence_line(bot: "WallyDiscord", user_id: str, display_name: str) -> str:
     Lecture seule, serveur principal uniquement. Ne casse jamais une réponse :
     toute erreur renvoie une chaîne vide."""
     svc = getattr(bot, "presence", None)
-    if svc is None:
+    if svc is None or not getattr(svc, "enabled", False):
         return ""
     try:
-        return svc.describe(user_id, display_name) or ""
+        line = svc.describe(user_id, display_name)
+        if line:
+            return line
+        # Pas de donnée de présence : on l'annonce explicitement au lieu de
+        # laisser un vide que le LLM comblerait en inventant un statut.
+        return (
+            f"Tu ne vois aucun statut ni activité pour {display_name} là "
+            "(hors ligne, invisible, ou hors du serveur principal) — ne l'invente pas."
+        )
     except Exception:
         return ""
 
