@@ -229,6 +229,9 @@ class WallyDiscord(commands.Bot):
                 journal_provider=_latest_journal_content,
                 rss_provider=_rss_provider,
                 rss_consume=_rss_consume,
+                # Présence des membres (statut + activité) du serveur principal,
+                # pour que la cognition sache qui est là / occupé / à ne pas déranger.
+                presence_provider=self.presence.roster,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP

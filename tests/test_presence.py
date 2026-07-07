@@ -15,12 +15,22 @@ def _make_activity(activity_type, name):
     return act
 
 
-def _make_member(status="online", activities=()):
+def _make_member(status="online", activities=(), display_name="Bob", bot=False):
     member = MagicMock()
     member.status = MagicMock()
     member.status.__str__ = lambda self: status
     member.activities = list(activities)
+    member.display_name = display_name
+    member.bot = bot
     return member
+
+
+def _make_roster_client(members):
+    client = MagicMock()
+    guild = MagicMock()
+    guild.members = list(members)
+    client.get_guild = MagicMock(return_value=guild)
+    return client
 
 
 def _make_client(member=None, guild_present=True):
@@ -127,3 +137,84 @@ def test_unknown_activity_ignored():
     )
     svc = PresenceService(_make_client(member), guild_id=42)
     assert svc.describe("610", "Bob") == "Bob est en ligne."
+
+
+# --- roster() : présence de tous les membres visibles du serveur principal ---
+
+def test_roster_empty_without_guild_id(monkeypatch):
+    monkeypatch.delenv("DISCORD_GUILD_ID", raising=False)
+    svc = PresenceService(MagicMock())
+    assert svc.roster() == []
+
+
+def test_roster_empty_when_guild_not_cached():
+    client = MagicMock()
+    client.get_guild = MagicMock(return_value=None)
+    svc = PresenceService(client, guild_id=42)
+    assert svc.roster() == []
+
+
+def test_roster_excludes_offline_and_bots():
+    members = [
+        _make_member(status="online", display_name="Alice"),
+        _make_member(status="offline", display_name="Ghost"),
+        _make_member(status="online", display_name="Robot", bot=True),
+    ]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert svc.roster() == ["Alice est en ligne."]
+
+
+def test_roster_prioritizes_dnd_then_busy_then_idle_then_online():
+    members = [
+        _make_member(status="online", display_name="OnlineGuy"),
+        _make_member(status="idle", display_name="IdleGuy"),
+        _make_member(
+            status="online", display_name="Gamer",
+            activities=[_make_activity(discord.ActivityType.playing, "Apex")],
+        ),
+        _make_member(status="dnd", display_name="Busy"),
+    ]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert svc.roster() == [
+        "Busy est ne pas déranger.",
+        "Gamer est en ligne — joue à Apex.",
+        "IdleGuy est inactif.",
+        "OnlineGuy est en ligne.",
+    ]
+
+
+def test_roster_listening_music_is_not_busy():
+    # Écouter de la musique ne classe pas « occupé » : reste après un gamer.
+    spotify = MagicMock()
+    spotify.__class__ = discord.Spotify
+    spotify.title = "Strobe"
+    spotify.artist = "deadmau5"
+    spotify.type = discord.ActivityType.listening
+    members = [
+        _make_member(status="online", display_name="Listener", activities=[spotify]),
+        _make_member(
+            status="online", display_name="Gamer",
+            activities=[_make_activity(discord.ActivityType.playing, "Apex")],
+        ),
+    ]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert svc.roster() == [
+        "Gamer est en ligne — joue à Apex.",
+        "Listener est en ligne — écoute Strobe — deadmau5.",
+    ]
+
+
+def test_roster_respects_limit():
+    members = [_make_member(status="online", display_name=f"U{i}") for i in range(12)]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert len(svc.roster(limit=5)) == 5
+
+
+def test_roster_swallows_errors():
+    client = MagicMock()
+    guild = MagicMock()
+    # .members lève → roster doit renvoyer [] sans propager.
+    type(guild).members = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+    client.get_guild = MagicMock(return_value=guild)
+    svc = PresenceService(client, guild_id=42)
+    assert svc.roster() == []

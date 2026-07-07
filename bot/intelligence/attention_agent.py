@@ -59,6 +59,10 @@ class AttentionContext:
     # interactions récentes (facts SQLite FAIT/PREF/REL par utilisateur).
     # [{"author": str, "facts": list[str]}]. Vide si personne d'identifié.
     participant_memories: list[dict] = field(default_factory=list)
+    # Présence Discord des membres du serveur principal (statut + activité) — ce
+    # que Wally voit dans la barre latérale. Phrases FR prêtes pour le prompt,
+    # triées « à ne pas déranger » d'abord. Vide hors serveur principal.
+    member_presence: list[str] = field(default_factory=list)
     # Métriques hôte : température CPU, charge, RAM. None si non disponible.
     host_metrics: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
@@ -91,7 +95,8 @@ class AttentionContext:
 class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
                  upgrade_registry=None, social_rhythm=None,
-                 journal_provider=None, rss_provider=None, rss_consume=None) -> None:
+                 journal_provider=None, rss_provider=None, rss_consume=None,
+                 presence_provider=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -112,6 +117,9 @@ class AttentionAgent:
         # None → pas d'amorce RSS.
         self._rss_provider = rss_provider
         self._rss_consume = rss_consume
+        # Callable () -> list[str] : présence Discord des membres (statut +
+        # activité) du serveur principal. None → Wally reste aveugle aux statuts.
+        self._presence_provider = presence_provider
 
     async def build_context(
         self,
@@ -245,6 +253,16 @@ class AttentionAgent:
                     else:
                         emotes_unknown.append(code)
 
+        # Présence Discord des membres du serveur principal (statut + activité) —
+        # best-effort, jamais bloquant pour le tick.
+        member_presence: list[str] = []
+        if self._presence_provider is not None:
+            try:
+                member_presence = self._presence_provider() or []
+            except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: présence indisponible: {}", e)
+
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
         host_metrics, weather_fr = await _asyncio.gather(
@@ -288,6 +306,7 @@ class AttentionAgent:
             self_narrative=self_narrative,
             relationships=relationships,
             participant_memories=participant_memories,
+            member_presence=member_presence,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             recent_speaks=recent_speaks or [],

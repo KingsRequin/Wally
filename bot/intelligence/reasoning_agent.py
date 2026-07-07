@@ -227,6 +227,15 @@ class ReasoningAgent:
             for pm in ctx.participant_memories:
                 facts = " ; ".join(pm.get("facts", []))
                 lines.append(f"  · {pm.get('author', '?')} : {facts}")
+        if getattr(ctx, "member_presence", None):
+            lines.append(
+                "**Qui est là en ce moment (barre latérale Discord) :** tiens-en "
+                "compte avant de solliciter quelqu'un — ne dérange pas une personne "
+                "en « ne pas déranger » ou en pleine game, laisse tranquille qui est "
+                "inactif ou hors ligne."
+            )
+            for line in ctx.member_presence:
+                lines.append(f"  · {line}")
         if getattr(ctx, "emotes_known", None) or getattr(ctx, "emotes_unknown", None):
             lines.append(
                 "**Emotes custom des serveurs.** Pour AFFICHER une emote dans ton "
