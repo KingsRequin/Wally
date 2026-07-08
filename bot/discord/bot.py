@@ -218,6 +218,11 @@ class WallyDiscord(commands.Bot):
                 async def _rss_consume(article: dict) -> None:  # noqa: F811
                     await self.db.rss_mark_injected(article["id"])
 
+            from bot.intelligence.watcher import ServerWatcher
+            _server_watch = ServerWatcher(
+                self.db, self.llm_secondary, _prompts_dir,
+                channel_names=_chan_dir.name_map(),
+            )
             _attention = AttentionAgent(
                 _fact_store, self.emotion,
                 # (nom, code) : str(emoji) == "<:nom:id>" / "<a:nom:id>", le SEUL
@@ -232,6 +237,7 @@ class WallyDiscord(commands.Bot):
                 # Présence des membres (statut + activité) du serveur principal,
                 # pour que la cognition sache qui est là / occupé / à ne pas déranger.
                 presence_provider=self.presence.roster,
+                server_watch=_server_watch,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
@@ -257,7 +263,9 @@ class WallyDiscord(commands.Bot):
             self.cognitive_feed = CognitiveFeed(
                 conv_log=_conv_log, event_store=self.cognitive_event_store,
             )
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate)
+            from bot.intelligence.speak_guard import SpeakGuard
+            _speak_guard = SpeakGuard(self.llm_secondary, _prompts_dir)
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate, speak_guard=_speak_guard)
 
             from bot.intelligence.thought_progress import ThoughtProgressJudge
             _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)

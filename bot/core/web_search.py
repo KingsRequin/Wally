@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot.core.untrusted import wrap_untrusted
+
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.db.database import Database
@@ -170,10 +172,15 @@ class WebSearchService:
     _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 
     def _format_results(self, response: dict, platform: str = "discord") -> str:
-        parts = []
+        # `guidance` = nos consignes de confiance (citation), gardées HORS de
+        # l'enveloppe non fiable. `payload` = contenu web brut (résumé + extraits),
+        # scellé dans wrap_untrusted() car un tiers peut y glisser des consignes
+        # hostiles — cf. bot/core/untrusted.py.
+        guidance = ""
+        payload = []
         answer = response.get("answer")
         if answer:
-            parts.append(f"Summary: {answer}")
+            payload.append(f"Summary: {answer}")
 
         results = response.get("results", [])
         if results:
@@ -181,12 +188,12 @@ class WebSearchService:
                 # Citation façon Perplexity : on fournit au modèle un marqueur
                 # cliquable PRÊT À COLLER par source ([¹](<url>)), URL entre <>
                 # pour neutraliser l'aperçu de lien Discord qui gâche le message.
-                parts.append(
-                    "\nSources — quand une info de ta réponse vient d'une de ces "
+                guidance = (
+                    "Sources — quand une info de ta réponse vient d'une de ces "
                     "sources, COLLE son marqueur cliquable juste après la phrase "
                     "concernée (ex. « la PS5 Pro coûte 800€ [¹](<url>) »). Garde "
                     "les chevrons <> autour de l'URL (sinon Discord affiche un "
-                    "aperçu moche). N'invente jamais de source ni de numéro :"
+                    "aperçu moche). N'invente jamais de source ni de numéro."
                 )
                 for i, r in enumerate(results[:5], start=1):
                     sup = self._SUPERSCRIPTS[i]
@@ -195,20 +202,24 @@ class WebSearchService:
                     content = r.get("content", "")
                     if len(content) > 300:
                         content = content[:300] + "..."
-                    parts.append(f"[{sup}](<{url}>) {title} : {content}")
+                    payload.append(f"[{sup}](<{url}>) {title} : {content}")
             else:
                 # Chat brut (Twitch) : pas de markdown cliquable ni d'aperçu à
                 # neutraliser — on garde les sources lisibles en texte simple.
-                parts.append("\nSources:")
+                guidance = "Sources :"
                 for r in results[:5]:
                     title = r.get("title", "")
                     url = r.get("url", "")
                     content = r.get("content", "")
                     if len(content) > 300:
                         content = content[:300] + "..."
-                    parts.append(f"- {title} ({url})\n  {content}")
+                    payload.append(f"- {title} ({url})\n  {content}")
 
-        return "\n".join(parts) if parts else "No results found."
+        body = "\n".join(payload).strip()
+        if not body:
+            return "No results found."
+        wrapped = wrap_untrusted(body, source="recherche web")
+        return f"{guidance}\n{wrapped}" if guidance else wrapped
 
     def get_tool_definitions(self) -> list[dict]:
         return [WEB_SEARCH_TOOL, IMAGE_SEARCH_TOOL]

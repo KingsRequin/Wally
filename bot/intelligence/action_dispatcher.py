@@ -55,6 +55,7 @@ class ActionDispatcher:
         feed=None,
         twitch_bot=None,
         gate=None,
+        speak_guard=None,
     ) -> None:
         self._bot = bot
         self._twitch_bot = twitch_bot
@@ -63,6 +64,8 @@ class ActionDispatcher:
         self._feed = feed
         # Gate de sollicitation owner (un seul fil à la fois). None → pas de gate.
         self._gate = gate
+        # Filet anti-message-inutile avant envoi spontané. None → pas de filtre.
+        self._speak_guard = speak_guard
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
 
@@ -109,6 +112,10 @@ class ActionDispatcher:
         if not channel_id or not message:
             return
 
+        # Auto-audit avant envoi : tuer les SPEAK clairement inutiles/redondants.
+        if not await self._passes_guard(message, self._recent_self_speak(channel_id)):
+            return
+
         # Si le stream est live, préférer Twitch au lieu de Discord.
         twitch_bot = self._twitch_bot
         if twitch_bot is not None and twitch_bot._stream_info.get("live"):
@@ -145,6 +152,41 @@ class ActionDispatcher:
                 logger.warning("SPEAK: canal {} introuvable", channel_id)
         except Exception as e:
             logger.error("SPEAK failed: {}", e)
+
+    async def _passes_guard(self, message: str, context: str = "", kind: str = "SPEAK") -> bool:
+        """Filtre anti-message-inutile. True si on peut envoyer (ou pas de guard).
+
+        Fail-open à tous les étages : pas de guard, ou erreur → on envoie.
+        """
+        if self._speak_guard is None:
+            return True
+        try:
+            ok, reason = await self._speak_guard.worth_sending(message, context=context)
+        except Exception as e:  # noqa: BLE001 — jamais bloquer la boucle
+            logger.warning("SpeakGuard: erreur inattendue → envoi ({})", e)
+            return True
+        if ok:
+            return True
+        logger.info("{} auto-supprimé (guard) : {} — {}", kind, message[:80], reason)
+        if self._feed:
+            self._feed.publish({
+                "type": f"{kind}_SUPPRESSED",
+                "reason": f"auto-audit : {reason}",
+                "message": message[:300],
+            })
+        return False
+
+    def _recent_self_speak(self, channel_id: str | None) -> str:
+        """Dernier message spontané de Wally dans ce canal — sert de contexte au
+        guard pour repérer la redondance. Chaîne vide si rien/indisponible."""
+        speaks = getattr(self._bot, "_wally_recent_speaks", None)
+        if not speaks or channel_id is None:
+            return ""
+        try:
+            last = speaks.get(int(channel_id))
+        except (TypeError, ValueError):
+            return ""
+        return f"Dernier message de Wally ici : {last}" if last else ""
 
     def _log_speak(self, platform: str, conv_channel: str, message: str) -> None:
         """Trace un SPEAK cognitif comme message_out dans le conv_log du canal.
@@ -268,6 +310,11 @@ class ActionDispatcher:
                     "reason": f"cooldown {int(mins)}min/{DM_CREATOR_COOLDOWN // 60}min",
                     "message": message[:300],
                 })
+            return
+        # Auto-audit : dernier filet contre le DM créateur inutile (le « rapport
+        # que personne n'a demandé »). Placé après les gardes gratuites pour ne
+        # dépenser l'appel LLM que sur un message réellement sur le point de partir.
+        if not await self._passes_guard(message, kind="DM"):
             return
         try:
             try:

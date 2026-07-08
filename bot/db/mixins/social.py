@@ -190,6 +190,25 @@ class SocialMixin:
             for row in rows
         ]
 
+    async def get_messages_since(self, since_ts: float) -> list[dict]:
+        """daily_log depuis `since_ts` (fenêtre roulante, index idx_daily_log_ts).
+        Sert le veilleur : digest de l'activité récente multi-canaux."""
+        rows = await self.fetch_all(
+            "SELECT timestamp, channel_id, author, content, platform FROM daily_log "
+            "WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since_ts,),
+        )
+        return [
+            {
+                "timestamp": float(row["timestamp"]),
+                "channel_id": row["channel_id"],
+                "author": row["author"],
+                "content": row["content"],
+                "platform": row["platform"] if "platform" in row.keys() else "discord",
+            }
+            for row in rows
+        ]
+
     async def get_messages_for_date(self, target_date: date) -> list[dict]:
         """Return daily_log messages for a specific date (Europe/Paris)."""
         midnight = datetime.combine(target_date, datetime.min.time(), tzinfo=_TZ_DB).timestamp()

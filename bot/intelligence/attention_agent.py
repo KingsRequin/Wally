@@ -96,7 +96,7 @@ class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
                  upgrade_registry=None, social_rhythm=None,
                  journal_provider=None, rss_provider=None, rss_consume=None,
-                 presence_provider=None) -> None:
+                 presence_provider=None, server_watch=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -120,6 +120,9 @@ class AttentionAgent:
         # Callable () -> list[str] : présence Discord des membres (statut +
         # activité) du serveur principal. None → Wally reste aveugle aux statuts.
         self._presence_provider = presence_provider
+        # Veilleur read-only (ServerWatcher) : digest périphérique de l'activité
+        # récente, offert comme UNE amorce de vagabondage. None → pas de veille.
+        self._server_watch = server_watch
 
     async def build_context(
         self,
@@ -439,6 +442,20 @@ class AttentionAgent:
                 rich_seeds.append(rss_seed)
             else:
                 rss_article = None  # recoupe le focus / vide → ni retenu ni consommé
+
+        # Veilleur : digest périphérique de l'activité récente du serveur, comme
+        # une conscience de fond. Read-only, rafraîchi au plus 1×/h. Simple source
+        # de plus dans le tirage (émergent), exclue si elle recoupe le focus.
+        if self._server_watch is not None:
+            try:
+                await self._server_watch.maybe_refresh()
+                digest = self._server_watch.current()
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: veilleur indisponible: {}", e)
+                digest = ""
+            if digest and not _seed_overlaps_focus(digest, preoccupation):
+                rich_seeds.append(f"Ce qui bruisse sur le serveur en ce moment : {digest}")
 
         # Émotion dominante — seulement si ce n'est pas l'ennui qui domine fort
         # (évite la boucle : ennui élevé → pense à l'ennui → reste ennuyé)
