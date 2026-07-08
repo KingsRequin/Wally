@@ -3,7 +3,7 @@ import pytest
 from bot.intelligence.action_dispatcher import ActionDispatcher
 from bot.intelligence.speak_guard import SpeakGuard
 
-PROMPTS_DIR = "bot/persona/prompts"
+PROMPTS_DIR = "bot/intelligence/persona/prompts"
 
 
 class _FakeLLM:

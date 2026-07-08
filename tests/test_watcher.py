@@ -2,7 +2,7 @@ import pytest
 
 from bot.intelligence.watcher import ServerWatcher
 
-PROMPTS_DIR = "bot/persona/prompts"
+PROMPTS_DIR = "bot/intelligence/persona/prompts"
 
 
 class _FakeDB:
