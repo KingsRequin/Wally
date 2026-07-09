@@ -3,11 +3,13 @@
 
 Prix de référence : https://api-docs.deepseek.com/quick_start/pricing/
 """
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from bot.core.llm.deepseek import _deepseek_cost
+import bot.core.llm.deepseek as ds
+from bot.core.llm.deepseek import _deepseek_cost, _is_deepseek_peak
 
 
 def _usage(prompt_tokens, completion_tokens, hit=None, miss=None):
@@ -48,6 +50,38 @@ def test_modele_inconnu_utilise_fallback_flash():
     assert _deepseek_cost("modele-inconnu", _usage(1_000, 500)) == pytest.approx(
         (1_000 * 0.14 + 500 * 0.28) / 1_000_000
     )
+
+
+def test_peak_inactif_par_defaut():
+    # _DEEPSEEK_PEAK_START vaut None → jamais de pointe, même en pleine plage UTC.
+    assert ds._DEEPSEEK_PEAK_START is None
+    in_peak = datetime(2026, 8, 1, 2, 0, tzinfo=timezone.utc)  # 02:00 UTC
+    assert _is_deepseek_peak(in_peak) is False
+
+
+def test_peak_plages_utc_une_fois_active(monkeypatch):
+    monkeypatch.setattr(ds, "_DEEPSEEK_PEAK_START", date(2026, 7, 15))
+    peak = lambda h: _is_deepseek_peak(datetime(2026, 8, 1, h, 0, tzinfo=timezone.utc))
+    # Pointe : 01:00–04:00 et 06:00–10:00
+    assert peak(1) and peak(3) and peak(6) and peak(9)
+    # Creux : 00:00, 04:00–06:00, 10:00+
+    assert not peak(0) and not peak(4) and not peak(5) and not peak(10) and not peak(23)
+
+
+def test_peak_avant_date_activation(monkeypatch):
+    monkeypatch.setattr(ds, "_DEEPSEEK_PEAK_START", date(2026, 7, 15))
+    # 02:00 UTC mais la veille de l'activation → tarif normal.
+    assert _is_deepseek_peak(datetime(2026, 7, 14, 2, 0, tzinfo=timezone.utc)) is False
+
+
+def test_cout_double_en_heure_de_pointe(monkeypatch):
+    monkeypatch.setattr(ds, "_DEEPSEEK_PEAK_START", date(2026, 7, 15))
+    usage = _usage(10_000, 2_000, hit=1_000, miss=9_000)
+    normal = (1_000 * 0.003625 + 9_000 * 0.435 + 2_000 * 0.87) / 1_000_000
+    peak_ts = datetime(2026, 8, 1, 7, 0, tzinfo=timezone.utc)   # 07:00 UTC = pointe
+    valley_ts = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)  # 12:00 UTC = creux
+    assert _deepseek_cost("deepseek-v4-pro", usage, now=peak_ts) == pytest.approx(normal * 2)
+    assert _deepseek_cost("deepseek-v4-pro", usage, now=valley_ts) == pytest.approx(normal)
 
 
 class _FakeStream:

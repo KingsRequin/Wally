@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import date, datetime, timezone
 from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 
 from loguru import logger
@@ -23,14 +24,42 @@ _DEEPSEEK_COSTS: dict[str, tuple[float, float, float]] = {
 }
 _DEEPSEEK_FALLBACK_COST = (0.0028, 0.14, 0.28)
 
+# Peak-valley DeepSeek : avec la sortie officielle de V4 (mi-juillet 2026), le
+# tarif passe ×2 pendant les heures de pointe UTC (surtaxe uniforme sur hit/miss/
+# output). Source : email DeepSeek 2026-06-29.
+# `_DEEPSEEK_PEAK_START` = date UTC d'activation ; laissée à None tant que la
+# bascule n'est pas confirmée (DeepSeek envoie un préavis 24h avant). Tant qu'elle
+# vaut None, le calcul reste au tarif normal — zéro changement de comportement.
+_DEEPSEEK_PEAK_START: date | None = None
+_DEEPSEEK_PEAK_MULTIPLIER = 2.0
 
-def _deepseek_cost(model: str, usage: Any) -> float:
+
+def _is_deepseek_peak(now: datetime | None = None) -> bool:
+    """True si `now` (UTC) tombe dans une plage de pointe DeepSeek (tarif ×2).
+
+    Plages UTC : 01:00–04:00 et 06:00–10:00 (04:00–06:00 = creux). Inactif tant
+    que `_DEEPSEEK_PEAK_START` est None ou que la date d'activation n'est pas
+    atteinte. `now` est injectable pour les tests.
+    """
+    if _DEEPSEEK_PEAK_START is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    if now.date() < _DEEPSEEK_PEAK_START:
+        return False
+    h = now.hour
+    return (1 <= h < 4) or (6 <= h < 10)
+
+
+def _deepseek_cost(model: str, usage: Any, now: datetime | None = None) -> float:
     """Coût USD d'un appel depuis l'`usage` retourné par l'API DeepSeek.
 
     DeepSeek expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
     (leur somme = `prompt_tokens`). Si absents (vieux modèle, mock), tout est
     facturé au tarif cache miss. Le matching modèle privilégie le préfixe le
     plus long (ex. `deepseek-v4-pro-2026...` → `deepseek-v4-pro`).
+
+    Le tarif de pointe (×2) s'applique si `_is_deepseek_peak(now)` — inactif par
+    défaut (voir `_DEEPSEEK_PEAK_START`).
     """
     rates = _DEEPSEEK_COSTS.get(model) or next(
         (v for k, v in sorted(_DEEPSEEK_COSTS.items(), key=lambda x: len(x[0]), reverse=True)
@@ -43,7 +72,10 @@ def _deepseek_cost(model: str, usage: Any) -> float:
     if hit is None or miss is None:
         hit, miss = 0, prompt_tokens
     completion = getattr(usage, "completion_tokens", 0) or 0
-    return (hit * rates[0] + miss * rates[1] + completion * rates[2]) / 1_000_000
+    cost = (hit * rates[0] + miss * rates[1] + completion * rates[2]) / 1_000_000
+    if _is_deepseek_peak(now):
+        cost *= _DEEPSEEK_PEAK_MULTIPLIER
+    return cost
 
 
 class DeepSeekLLMClient(BaseLLMClient):
