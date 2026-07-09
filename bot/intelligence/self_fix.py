@@ -276,8 +276,8 @@ class SelfFix:
             )
             return
         if not status.get("changed") and not status.get("head_changed"):
-            result = (status.get("result") or "").strip()[:500]
-            await dm.send(f"🤔 Finalement aucun changement de code.\n{result}")
+            result = (status.get("result") or "").strip()
+            await send_chunked(dm, f"🤔 Finalement aucun changement de code.\n{result}")
             # Aucun changement nécessaire = la capacité existe déjà → DELIVERED
             # (clôturé, ne pas redemander).
             await self._set_status(upgrade_id, DELIVERED)

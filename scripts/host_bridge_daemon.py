@@ -82,10 +82,14 @@ def _extract_claude_result(raw: str) -> str:
         obj = json.loads(raw)
         if isinstance(obj, dict):
             val = obj.get("result") or obj.get("text") or ""
-            return str(val)[:1500]
+            # Borne large : le compte rendu est ensuite découpé proprement en
+            # messages Discord ≤ 2000 par send_chunked côté bot. On garde une
+            # limite anti-explosion, mais assez haute pour ne plus tronquer un
+            # compte rendu réaliste (l'ancienne borne 1500 coupait tout).
+            return str(val)[:12000]
     except (json.JSONDecodeError, ValueError):
         pass
-    return raw[-1500:]
+    return raw[-12000:]
 
 
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
