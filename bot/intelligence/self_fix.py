@@ -6,6 +6,7 @@ from datetime import datetime
 
 from loguru import logger
 
+from bot.discord.message_split import send_chunked
 from bot.intelligence.identity import render_identity, creator_name, bot_name
 from bot.intelligence.upgrade_registry import (
     UpgradeRegistry, DELIVERED, DECLINED, ABANDONED,
@@ -298,10 +299,10 @@ class SelfFix:
             "version (~2 min).\n\n"
         )
         result = (status.get("result") or "").strip()
-        budget = 1900 - len(prefix)  # Discord plafonne à 2000 caractères
-        if len(result) > budget:
-            result = result[:budget].rstrip() + " …(résumé tronqué)"
-        await dm.send(prefix + result)
+        # Compte rendu de redéploiement : Claude Code produit un texte de longueur
+        # arbitraire. On ne tronque plus (perte d'info) — on découpe proprement en
+        # plusieurs messages ≤ 2000 caractères via send_chunked.
+        await send_chunked(dm, prefix + result)
         await self._set_status(upgrade_id, DELIVERED)
         self._remember_in_dm(dm, f"[self-fix déployé] {goal}")
         await self._record_outcome(
@@ -372,7 +373,7 @@ class SelfFix:
                 return
             owner = await self._bot.fetch_user(int(oid))
             dm = await owner.create_dm()
-            await dm.send(text)
+            await send_chunked(dm, text)
         except Exception:  # noqa: BLE001
             logger.exception("self-upgrade: impossible de notifier le créateur en DM")
 
