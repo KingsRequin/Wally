@@ -80,6 +80,7 @@ class CognitiveLoop:
         social_rhythm=None,
         web_search=None,
         web_search_cooldown_s: float = 2700.0,
+        bedroom_channel_id: int | str | None = None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -102,6 +103,10 @@ class CognitiveLoop:
         self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
         self._speakable_channels = speakable_channels or set()
+        # Salon « chambre » : cible UNIQUE de toute prise de parole spontanée.
+        # None → routage historique (dernier canal actif). Stocké en str pour
+        # coller au format des channel_id manipulés ici.
+        self._bedroom_channel_id = str(bedroom_channel_id) if bedroom_channel_id else None
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
         # Activité qui VISE Wally (mention, réponse, DM, vocal) — distincte de la
@@ -496,16 +501,28 @@ class CognitiveLoop:
             # dernier canal réellement actif ; sans aucun canal connu, on n'envoie
             # rien (pas de vide).
             known_channels = self._speakable_channels | {i["channel"] for i in self._recent_interactions}
+            if self._bedroom_channel_id:
+                known_channels = known_channels | {self._bedroom_channel_id}
             last_channel = self._recent_interactions[-1]["channel"] if self._recent_interactions else None
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
                 if decision.action == "SPEAK":
+                    # Redirection « chambre » : toute prise de parole spontanée
+                    # part dans le salon dédié de Wally, jamais dans le canal
+                    # courant (les réponses aux mentions passent par les handlers,
+                    # pas par ici). C'est son espace d'expression → les gardes
+                    # « ne crie pas dans le vide » (silence idle, messages sans
+                    # réponse) n'ont pas de sens ici et sont sautées ; l'anti-
+                    # redite et l'amortisseur de rythme social restent actifs.
+                    to_bedroom = self._bedroom_channel_id is not None
+                    if to_bedroom:
+                        decision.channel_id = self._bedroom_channel_id
                     # 0. Canal silencieux depuis >2h en mode idle → ne pas crier dans le vide.
                     #    Il peut continuer à THINK, mais pas à broadcaster vers personne.
                     elapsed_since_activity = now - self._last_activity_ts
-                    if is_idle and self._last_activity_ts > 0 and elapsed_since_activity > 7200:
+                    if not to_bedroom and is_idle and self._last_activity_ts > 0 and elapsed_since_activity > 7200:
                         logger.info(
                             "CognitiveLoop: SPEAK supprimé (idle + silence {:.0f}min)",
                             elapsed_since_activity / 60,
@@ -530,35 +547,38 @@ class CognitiveLoop:
                         continue
                     # 2. Cooldown progressif : 0 sans réponse → ok
                     #    1 sans réponse → 5 min, 2 → 15 min, 3+ → bloqué
+                    #    Sauté pour la chambre : c'est son journal, pas un canal
+                    #    public à ne pas spammer.
                     ch_key = str(decision.channel_id)
-                    ch_st = self._spontaneous.get(ch_key, {})
-                    unanswered = ch_st.get("unanswered", 0)
-                    since_last = now - ch_st.get("last_ts", 0.0)
-                    if unanswered >= 3:
-                        # Canal qui ignore Wally → issue d'engagement négative.
-                        if self._social_rhythm is not None:
-                            try:
-                                self._social_rhythm.record_spontaneous_outcome(False, _now_paris())
-                            except Exception:  # noqa: BLE001
-                                pass
-                        # Feedback émotionnel (#A6) : l'agacement monte, une fois.
-                        self._penalize_if_ignored(ch_st)
-                        logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
-                        self._log_cog(
-                            "speak_suppressed", channel=ch_key,
-                            reason=f"{unanswered} messages sans réponse",
-                            message=(decision.message or "")[:200],
-                        )
-                        continue
-                    cooldown = 300 if unanswered == 1 else 900 if unanswered == 2 else 0
-                    if cooldown and since_last < cooldown:
-                        logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
-                        self._log_cog(
-                            "speak_suppressed", channel=ch_key,
-                            reason=f"cooldown {int(since_last)}s/{cooldown}s ({unanswered} sans réponse)",
-                            message=(decision.message or "")[:200],
-                        )
-                        continue
+                    if not to_bedroom:
+                        ch_st = self._spontaneous.get(ch_key, {})
+                        unanswered = ch_st.get("unanswered", 0)
+                        since_last = now - ch_st.get("last_ts", 0.0)
+                        if unanswered >= 3:
+                            # Canal qui ignore Wally → issue d'engagement négative.
+                            if self._social_rhythm is not None:
+                                try:
+                                    self._social_rhythm.record_spontaneous_outcome(False, _now_paris())
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            # Feedback émotionnel (#A6) : l'agacement monte, une fois.
+                            self._penalize_if_ignored(ch_st)
+                            logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
+                            self._log_cog(
+                                "speak_suppressed", channel=ch_key,
+                                reason=f"{unanswered} messages sans réponse",
+                                message=(decision.message or "")[:200],
+                            )
+                            continue
+                        cooldown = 300 if unanswered == 1 else 900 if unanswered == 2 else 0
+                        if cooldown and since_last < cooldown:
+                            logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
+                            self._log_cog(
+                                "speak_suppressed", channel=ch_key,
+                                reason=f"cooldown {int(since_last)}s/{cooldown}s ({unanswered} sans réponse)",
+                                message=(decision.message or "")[:200],
+                            )
+                            continue
                     # 3. Anti-redondance : Wally vient de répondre directement dans
                     #    ce canal → un SPEAK proactif ne ferait que récapituler une
                     #    conversation close. On le supprime.
