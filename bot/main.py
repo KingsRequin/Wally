@@ -261,8 +261,40 @@ async def main() -> None:
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot
         register_events(twitch_bot)
+
+        # StreamWatcher : unique poller du statut live du streamer (Azrael = home
+        # broadcaster). Alimente twitch_bot._stream_info (on_poll) ET la cognition
+        # de Wally — awareness always-on (prompt) + notification sur transition.
+        from bot.core.stream_watcher import StreamWatcher
+
+        def _on_stream_transition(old: dict, new: dict) -> None:
+            loop = getattr(discord_bot, "cognitive_loop", None)
+            bedroom = config.bot.bedroom_channel_id
+            if loop is None or not bedroom:
+                return
+            name = os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael"
+            if new.get("live"):
+                cat = new.get("category") or "un jeu inconnu"
+                desc = f"{name} vient de lancer son live Twitch (jeu : {cat}"
+                if title := new.get("title"):
+                    desc += f", titre : « {title} »"
+                desc += ")."
+            else:
+                desc = f"{name} vient de terminer son live Twitch."
+            loop.notify_event(bedroom, desc, relevant=True)
+
+        stream_watcher = StreamWatcher(
+            twitch_api,
+            streamer_name=os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael_TTV",
+            on_transition=_on_stream_transition,
+            on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
+        )
+        stream_watcher.activate()
+        twitch_bot.stream_watcher = stream_watcher
+
         tasks.append(twitch_bot.start())
-        logger.info("Twitch adapter configured and included in gather")
+        tasks.append(stream_watcher.run())
+        logger.info("Twitch adapter + StreamWatcher configured and included in gather")
     else:
         logger.warning(
             "Twitch bot skipped — set BOT_ACCESS_TOKEN (or BOT_REFRESH_TOKEN + "

@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_weather, read_host_metrics
 from bot.intelligence.identity import render_identity
 
@@ -218,6 +219,13 @@ class PromptBuilder:
             )
         if weather := cached_weather():
             body_lines.append(f"Météo en France en ce moment : {weather}.")
+        # Awareness always-on du live du streamer : Wally SAIT si Azrael est en
+        # direct (comme un abonné à ses notifs) → il peut répondre si on l'interroge.
+        # Sauté sur le chemin Twitch de la chaîne home, où le bloc situationnel
+        # ci-dessus l'annonce déjà (évite le doublon).
+        if not (situation and situation.get("stream_live")):
+            if stream_line := current_stream_awareness():
+                body_lines.append(stream_line)
         if body_lines:
             dynamic_parts.append("\n--- Ton corps ---\n" + "\n".join(body_lines))
 
