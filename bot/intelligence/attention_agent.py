@@ -224,8 +224,18 @@ class AttentionAgent:
                 logger.warning("AttentionAgent: facts participant indisponibles ({}): {}", key, e)
                 continue
             if user_facts:
+                # Lien nom → <@id> directement accolé à la personne : quand Wally
+                # s'adresse à elle (question spontanée), l'id de ping voyage avec
+                # son identité, il n'a pas à le deviner. Discord uniquement (Twitch
+                # n'a pas cette syntaxe). user_key = "platform:raw_id".
+                mention = ""
+                if key.startswith("discord:"):
+                    raw_id = key.split(":", 1)[1]
+                    if raw_id.isdigit():
+                        mention = f"<@{raw_id}>"
                 participant_memories.append({
                     "author": itx.get("author", "?"),
+                    "mention": mention,
                     "facts": [f.content for f in user_facts[:3]],
                 })
 

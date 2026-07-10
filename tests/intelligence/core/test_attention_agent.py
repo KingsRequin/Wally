@@ -512,7 +512,8 @@ async def test_build_context_injects_participant_memories():
     ]
     ctx = await agent.build_context({"joy": 0.5}, interactions)
     assert ctx.participant_memories == [
-        {"author": "Pierre", "facts": ["aime le jazz", "vit à Lyon"]}
+        {"author": "Pierre", "mention": "<@111>",
+         "facts": ["aime le jazz", "vit à Lyon"]}
     ]
 
 

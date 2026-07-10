@@ -223,10 +223,19 @@ class ReasoningAgent:
             for rel in ctx.relationships:
                 lines.append(f"  · {rel.content}")
         if getattr(ctx, "participant_memories", None):
-            lines.append("**Ce que tu sais des personnes présentes :**")
+            lines.append(
+                "**Ce que tu sais des personnes présentes"
+                " (le `<@id>` entre parenthèses est leur identifiant de ping) :** "
+                "quand tu t'adresses à l'une d'elles — surtout pour lui poser une "
+                "question — écris ce `<@id>` à la place de son pseudo, sinon elle "
+                "n'est PAS notifiée et peut ne jamais voir ton message."
+            )
             for pm in ctx.participant_memories:
                 facts = " ; ".join(pm.get("facts", []))
-                lines.append(f"  · {pm.get('author', '?')} : {facts}")
+                mention = pm.get("mention", "")
+                name = pm.get("author", "?")
+                who = f"{name} ({mention})" if mention else name
+                lines.append(f"  · {who} : {facts}")
         if getattr(ctx, "member_presence", None):
             lines.append(
                 "**Qui est là en ce moment (barre latérale Discord) :** tiens-en "
