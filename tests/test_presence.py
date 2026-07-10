@@ -267,3 +267,44 @@ def test_roster_swallows_errors():
     client.get_guild = MagicMock(return_value=guild)
     svc = PresenceService(client, guild_id=42)
     assert svc.roster() == []
+
+
+# --- mention_directory() : annuaire pseudo → <@id> pour le SPEAK cognitif ---
+
+def _make_member_id(member_id, display_name="Bob", bot=False):
+    m = _make_member(display_name=display_name, bot=bot)
+    m.id = member_id
+    return m
+
+
+def test_mention_directory_maps_names_to_ids():
+    members = [
+        _make_member_id(111, "Alice"),
+        _make_member_id(222, "Bob"),
+    ]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert svc.mention_directory() == ["Alice → <@111>", "Bob → <@222>"]
+
+
+def test_mention_directory_includes_offline_but_excludes_bots():
+    # Contrairement au roster, un membre hors-ligne DOIT figurer (on veut pouvoir
+    # le ping même absent) ; les bots restent exclus.
+    members = [
+        _make_member_id(1, "Ghost", bot=False),
+        _make_member_id(2, "Robot", bot=True),
+    ]
+    members[0].status.__str__ = lambda self: "offline"
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert svc.mention_directory() == ["Ghost → <@1>"]
+
+
+def test_mention_directory_respects_limit():
+    members = [_make_member_id(i, f"U{i}") for i in range(20)]
+    svc = PresenceService(_make_roster_client(members), guild_id=42)
+    assert len(svc.mention_directory(limit=5)) == 5
+
+
+def test_mention_directory_empty_without_guild_id(monkeypatch):
+    monkeypatch.delenv("DISCORD_GUILD_ID", raising=False)
+    svc = PresenceService(MagicMock())
+    assert svc.mention_directory() == []

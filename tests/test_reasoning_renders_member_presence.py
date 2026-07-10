@@ -36,3 +36,19 @@ def test_format_context_renders_member_presence():
 def test_format_context_no_presence_block_when_empty():
     text = _agent()._format_context(_ctx(member_presence=[]))
     assert "qui est là en ce moment" not in text.lower()
+
+
+def test_format_context_renders_mention_directory():
+    text = _agent()._format_context(_ctx(
+        mention_directory=["Alice → <@111>", "Bob → <@222>"],
+    ))
+    # L'annuaire et sa consigne de ping sont présents.
+    assert "Alice → <@111>" in text
+    assert "Bob → <@222>" in text
+    assert "<@id>" in text
+    assert "notifi" in text.lower()  # « NOTIFIER » / « ne notifie personne »
+
+
+def test_format_context_no_mention_block_when_empty():
+    text = _agent()._format_context(_ctx(mention_directory=[]))
+    assert "<@id>" not in text

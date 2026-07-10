@@ -63,6 +63,10 @@ class AttentionContext:
     # que Wally voit dans la barre latérale. Phrases FR prêtes pour le prompt,
     # triées « à ne pas déranger » d'abord. Vide hors serveur principal.
     member_presence: list[str] = field(default_factory=list)
+    # Annuaire « pseudo → <@id> » des membres du serveur principal, pour que le
+    # SPEAK cognitif puisse VRAIMENT ping (notifier) une personne qu'il sollicite
+    # spontanément, au lieu d'écrire un « @pseudo » muet. Vide hors serveur principal.
+    mention_directory: list[str] = field(default_factory=list)
     # Métriques hôte : température CPU, charge, RAM. None si non disponible.
     host_metrics: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
@@ -96,7 +100,8 @@ class AttentionAgent:
     def __init__(self, fact_store, emotion_engine=None, emote_provider=None,
                  upgrade_registry=None, social_rhythm=None,
                  journal_provider=None, rss_provider=None, rss_consume=None,
-                 presence_provider=None, server_watch=None) -> None:
+                 presence_provider=None, mention_provider=None,
+                 server_watch=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
         # Callable () -> list[str] renvoyant les noms d'emotes custom dispo
@@ -120,6 +125,10 @@ class AttentionAgent:
         # Callable () -> list[str] : présence Discord des membres (statut +
         # activité) du serveur principal. None → Wally reste aveugle aux statuts.
         self._presence_provider = presence_provider
+        # Callable () -> list[str] : annuaire « pseudo → <@id> » des membres, pour
+        # que le SPEAK cognitif ping réellement qui il sollicite. None → pas de
+        # ping possible depuis la cognition (le texte « @pseudo » ne notifie personne).
+        self._mention_provider = mention_provider
         # Veilleur read-only (ServerWatcher) : digest périphérique de l'activité
         # récente, offert comme UNE amorce de vagabondage. None → pas de veille.
         self._server_watch = server_watch
@@ -266,6 +275,15 @@ class AttentionAgent:
                 from loguru import logger
                 logger.warning("AttentionAgent: présence indisponible: {}", e)
 
+        # Annuaire des mentions (pseudo → <@id>) pour que le SPEAK spontané ping.
+        mention_directory: list[str] = []
+        if self._mention_provider is not None:
+            try:
+                mention_directory = self._mention_provider() or []
+            except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: annuaire mentions indisponible: {}", e)
+
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
         host_metrics, weather_fr = await _asyncio.gather(
@@ -310,6 +328,7 @@ class AttentionAgent:
             relationships=relationships,
             participant_memories=participant_memories,
             member_presence=member_presence,
+            mention_directory=mention_directory,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             recent_speaks=recent_speaks or [],

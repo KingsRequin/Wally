@@ -236,6 +236,17 @@ class ReasoningAgent:
             )
             for line in ctx.member_presence:
                 lines.append(f"  · {line}")
+        if getattr(ctx, "mention_directory", None):
+            lines.append(
+                "**Pour t'adresser à quelqu'un (le NOTIFIER) :** insère son "
+                "identifiant au format `<@id>` dans ton message (ex : « <@123> tu "
+                "penses quoi ? »). Le simple texte « @pseudo » ou son prénom nu ne "
+                "notifie personne — la personne peut ne jamais voir ta question. "
+                "Quand tu poses une question à un membre précis, ping-le. N'écris "
+                "JAMAIS @everyone ni @here."
+            )
+            for line in ctx.mention_directory:
+                lines.append(f"  · {line}")
         if getattr(ctx, "emotes_known", None) or getattr(ctx, "emotes_unknown", None):
             lines.append(
                 "**Emotes custom des serveurs.** Pour AFFICHER une emote dans ton "

@@ -200,3 +200,32 @@ class PresenceService:
         except Exception as e:  # noqa: BLE001 — perception jamais bloquante
             logger.warning("PresenceService.roster: {}", e)
             return []
+
+    def mention_directory(self, limit: int = 60) -> list[str]:
+        """Annuaire « pseudo → <@id> » des membres du serveur principal.
+
+        Pendant du ``_build_mention_directory`` réactif (handlers), pour le chemin
+        COGNITIF : sans lui, un SPEAK spontané qui s'adresse à quelqu'un n'écrit
+        qu'un « @pseudo » en texte brut, qui ne notifie personne — la question
+        passe à la trappe. Contrairement au roster, on liste TOUS les membres
+        (même hors-ligne) : pinger un absent est justement l'intérêt, il verra la
+        question plus tard. Ignore les bots. Lecture seule, best-effort : toute
+        erreur renvoie une liste vide.
+        """
+        if self._guild_id is None:
+            return []
+        guild = self._client.get_guild(self._guild_id)
+        if guild is None:
+            return []
+        try:
+            lines: list[str] = []
+            for member in guild.members:
+                if getattr(member, "bot", False):
+                    continue
+                lines.append(f"{member.display_name} → <@{member.id}>")
+                if len(lines) >= limit:
+                    break
+            return lines
+        except Exception as e:  # noqa: BLE001 — perception jamais bloquante
+            logger.warning("PresenceService.mention_directory: {}", e)
+            return []
