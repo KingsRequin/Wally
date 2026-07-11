@@ -245,6 +245,15 @@ class ReasoningAgent:
             )
             for line in ctx.member_presence:
                 lines.append(f"  · {line}")
+        if getattr(ctx, "voice_presence", None):
+            lines.append(
+                "**Qui est en vocal en ce moment :** voici les salons vocaux "
+                "occupés et qui s'y trouve (avec leur `<@id>`). Utile pour savoir "
+                "qui tu rejoindrais si tu venais en vocal, ou qui t'entoure. Pour "
+                "t'adresser à l'un d'eux par écrit, ping-le avec son `<@id>`."
+            )
+            for line in ctx.voice_presence:
+                lines.append(f"  · {line}")
         if getattr(ctx, "mention_directory", None):
             lines.append(
                 "**Pour t'adresser à quelqu'un (le NOTIFIER) :** insère son "

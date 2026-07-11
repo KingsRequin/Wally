@@ -67,6 +67,10 @@ class AttentionContext:
     # SPEAK cognitif puisse VRAIMENT ping (notifier) une personne qu'il sollicite
     # spontanément, au lieu d'écrire un « @pseudo » muet. Vide hors serveur principal.
     mention_directory: list[str] = field(default_factory=list)
+    # Salons vocaux occupés du serveur principal (qui est en vocal, avec <@id>),
+    # pour que Wally sache qui l'entoure ou qui il pourrait rejoindre AVANT d'y
+    # entrer — au lieu de « discuter les yeux bandés ». Vide si aucun salon occupé.
+    voice_presence: list[str] = field(default_factory=list)
     # Métriques hôte : température CPU, charge, RAM. None si non disponible.
     host_metrics: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
@@ -101,6 +105,7 @@ class AttentionAgent:
                  upgrade_registry=None, social_rhythm=None,
                  journal_provider=None, rss_provider=None, rss_consume=None,
                  presence_provider=None, mention_provider=None,
+                 voice_presence_provider=None,
                  server_watch=None) -> None:
         self._facts = fact_store
         self._emotion = emotion_engine  # réservé pour usage futur
@@ -129,6 +134,10 @@ class AttentionAgent:
         # que le SPEAK cognitif ping réellement qui il sollicite. None → pas de
         # ping possible depuis la cognition (le texte « @pseudo » ne notifie personne).
         self._mention_provider = mention_provider
+        # Callable () -> list[str] : salons vocaux occupés du serveur principal
+        # (qui est en vocal, avec <@id>). None → Wally reste aveugle au vocal
+        # tant qu'il n'y est pas connecté (« les yeux bandés » avant d'entrer).
+        self._voice_presence_provider = voice_presence_provider
         # Veilleur read-only (ServerWatcher) : digest périphérique de l'activité
         # récente, offert comme UNE amorce de vagabondage. None → pas de veille.
         self._server_watch = server_watch
@@ -294,6 +303,16 @@ class AttentionAgent:
                 from loguru import logger
                 logger.warning("AttentionAgent: annuaire mentions indisponible: {}", e)
 
+        # Salons vocaux occupés (qui est en vocal, avec <@id>) : Wally sait qui
+        # l'entoure ou qui il pourrait rejoindre avant même d'entrer en vocal.
+        voice_presence: list[str] = []
+        if self._voice_presence_provider is not None:
+            try:
+                voice_presence = self._voice_presence_provider() or []
+            except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+                from loguru import logger
+                logger.warning("AttentionAgent: présence vocale indisponible: {}", e)
+
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
         host_metrics, weather_fr = await _asyncio.gather(
@@ -339,6 +358,7 @@ class AttentionAgent:
             participant_memories=participant_memories,
             member_presence=member_presence,
             mention_directory=mention_directory,
+            voice_presence=voice_presence,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             recent_speaks=recent_speaks or [],

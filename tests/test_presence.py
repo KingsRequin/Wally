@@ -308,3 +308,80 @@ def test_mention_directory_empty_without_guild_id(monkeypatch):
     monkeypatch.delenv("DISCORD_GUILD_ID", raising=False)
     svc = PresenceService(MagicMock())
     assert svc.mention_directory() == []
+
+
+# --- voice_channels() : qui est en vocal, salon par salon, avec <@id> ---
+
+def _make_voice_channel(name, members):
+    chan = MagicMock()
+    chan.name = name
+    chan.members = list(members)
+    return chan
+
+
+def _make_voice_client(channels):
+    client = MagicMock()
+    guild = MagicMock()
+    guild.voice_channels = list(channels)
+    client.get_guild = MagicMock(return_value=guild)
+    return client
+
+
+def test_voice_channels_lists_occupied_with_mentions():
+    channels = [
+        _make_voice_channel("Général", [
+            _make_member_id(111, "Cluth"),
+            _make_member_id(222, "Raiky"),
+        ]),
+    ]
+    svc = PresenceService(_make_voice_client(channels), guild_id=42)
+    assert svc.voice_channels() == [
+        "« Général » : Cluth (<@111>), Raiky (<@222>)",
+    ]
+
+
+def test_voice_channels_skips_empty_channels():
+    channels = [
+        _make_voice_channel("Vide", []),
+        _make_voice_channel("Chill", [_make_member_id(1, "Alice")]),
+    ]
+    svc = PresenceService(_make_voice_client(channels), guild_id=42)
+    assert svc.voice_channels() == ["« Chill » : Alice (<@1>)"]
+
+
+def test_voice_channels_excludes_bots():
+    # Un salon où il n'y a que des bots (dont Wally) ne doit pas apparaître ;
+    # un bot mélangé à un humain est retiré de la liste.
+    channels = [
+        _make_voice_channel("BotsOnly", [_make_member_id(9, "Wally", bot=True)]),
+        _make_voice_channel("Mixte", [
+            _make_member_id(9, "Wally", bot=True),
+            _make_member_id(3, "Bob"),
+        ]),
+    ]
+    svc = PresenceService(_make_voice_client(channels), guild_id=42)
+    assert svc.voice_channels() == ["« Mixte » : Bob (<@3>)"]
+
+
+def test_voice_channels_empty_without_guild_id(monkeypatch):
+    monkeypatch.delenv("DISCORD_GUILD_ID", raising=False)
+    svc = PresenceService(MagicMock())
+    assert svc.voice_channels() == []
+
+
+def test_voice_channels_empty_when_guild_not_cached():
+    client = MagicMock()
+    client.get_guild = MagicMock(return_value=None)
+    svc = PresenceService(client, guild_id=42)
+    assert svc.voice_channels() == []
+
+
+def test_voice_channels_swallows_errors():
+    client = MagicMock()
+    guild = MagicMock()
+    type(guild).voice_channels = property(
+        lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    client.get_guild = MagicMock(return_value=guild)
+    svc = PresenceService(client, guild_id=42)
+    assert svc.voice_channels() == []

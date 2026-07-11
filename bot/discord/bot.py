@@ -240,6 +240,9 @@ class WallyDiscord(commands.Bot):
                 # Annuaire pseudo → <@id> : permet au SPEAK spontané de ping
                 # réellement la personne sollicitée (sinon « @pseudo » muet).
                 mention_provider=self.presence.mention_directory,
+                # Salons vocaux occupés : Wally sait qui est en vocal (et pourrait
+                # le rejoindre) avant même d'y entrer, avec les <@id> pour ping.
+                voice_presence_provider=self.presence.voice_channels,
                 server_watch=_server_watch,
             )
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,

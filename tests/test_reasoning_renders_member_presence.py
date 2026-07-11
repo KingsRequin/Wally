@@ -52,3 +52,18 @@ def test_format_context_renders_mention_directory():
 def test_format_context_no_mention_block_when_empty():
     text = _agent()._format_context(_ctx(mention_directory=[]))
     assert "<@id>" not in text
+
+
+def test_format_context_renders_voice_presence():
+    text = _agent()._format_context(_ctx(
+        voice_presence=["« Général » : Cluth (<@111>), Raiky (<@222>)"],
+    ))
+    assert "Qui est en vocal en ce moment" in text
+    assert "« Général » : Cluth (<@111>), Raiky (<@222>)" in text
+    # La consigne oriente vers le ping écrit et la décision de rejoindre.
+    assert "<@id>" in text
+
+
+def test_format_context_no_voice_block_when_empty():
+    text = _agent()._format_context(_ctx(voice_presence=[]))
+    assert "qui est en vocal en ce moment" not in text.lower()

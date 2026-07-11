@@ -57,3 +57,34 @@ async def test_build_context_presence_provider_error_is_swallowed(monkeypatch):
     agent = AttentionAgent(_FakeFacts(), presence_provider=_boom)
     ctx = await agent.build_context({"boredom": 0.1}, [], idle=True)
     assert ctx.member_presence == []
+
+
+@pytest.mark.asyncio
+async def test_build_context_fills_voice_presence(monkeypatch):
+    _neutralize_io(monkeypatch)
+    agent = AttentionAgent(
+        _FakeFacts(),
+        voice_presence_provider=lambda: ["« Général » : Cluth (<@111>), Raiky (<@222>)"],
+    )
+    ctx = await agent.build_context({"boredom": 0.1}, [], idle=True)
+    assert ctx.voice_presence == ["« Général » : Cluth (<@111>), Raiky (<@222>)"]
+
+
+@pytest.mark.asyncio
+async def test_build_context_no_voice_presence_provider(monkeypatch):
+    _neutralize_io(monkeypatch)
+    agent = AttentionAgent(_FakeFacts())
+    ctx = await agent.build_context({"boredom": 0.1}, [], idle=True)
+    assert ctx.voice_presence == []
+
+
+@pytest.mark.asyncio
+async def test_build_context_voice_presence_error_is_swallowed(monkeypatch):
+    _neutralize_io(monkeypatch)
+
+    def _boom():
+        raise RuntimeError("cache miss")
+
+    agent = AttentionAgent(_FakeFacts(), voice_presence_provider=_boom)
+    ctx = await agent.build_context({"boredom": 0.1}, [], idle=True)
+    assert ctx.voice_presence == []

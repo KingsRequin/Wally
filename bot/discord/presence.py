@@ -2,10 +2,10 @@
 """Perception de la présence Discord — lecture seule.
 
 Wally voit ce qu'un membre normal voit dans la barre latérale du serveur :
-le statut (en ligne / inactif / ne pas déranger / hors ligne) et l'activité en
-cours (jeu, écoute, stream, statut perso). Rien de plus : aucune donnée vocale,
-aucune donnée personnelle, et uniquement sur le **serveur principal**
-(``DISCORD_GUILD_ID``).
+le statut (en ligne / inactif / ne pas déranger / hors ligne), l'activité en
+cours (jeu, écoute, stream, statut perso) et qui est connecté dans quel salon
+vocal (``voice_channels``). Rien de plus : aucune donnée personnelle, et
+uniquement sur le **serveur principal** (``DISCORD_GUILD_ID``).
 
 discord.py maintient déjà ``Member.status`` et ``Member.activities`` à jour dans
 son cache dès que les intents ``members`` + ``presences`` sont actifs. On se
@@ -228,4 +228,36 @@ class PresenceService:
             return lines
         except Exception as e:  # noqa: BLE001 — perception jamais bloquante
             logger.warning("PresenceService.mention_directory: {}", e)
+            return []
+
+    def voice_channels(self) -> list[str]:
+        """Qui est en vocal, salon par salon, sur le serveur principal.
+
+        Ce qu'un membre normal voit dans la barre latérale : les salons vocaux
+        occupés et qui est dedans. Sans ça, Wally « discute les yeux bandés » —
+        il peut parler en vocal mais ignore qui l'entoure ou qui il pourrait
+        rejoindre. Chaque membre est donné avec son ``<@id>`` pour que Wally
+        puisse le mentionner (le ping) s'il décide d'écrire un message.
+
+        Retour : une ligne FR prête pour le prompt par salon vocal **non vide** :
+        ``« Général » : Cluth (<@111>), Raiky (<@222>)``. Les salons vides et les
+        bots (Wally compris) sont ignorés. Lecture seule, best-effort : toute
+        erreur renvoie une liste vide.
+        """
+        if self._guild_id is None:
+            return []
+        guild = self._client.get_guild(self._guild_id)
+        if guild is None:
+            return []
+        try:
+            lines: list[str] = []
+            for channel in guild.voice_channels:
+                humans = [m for m in channel.members if not getattr(m, "bot", False)]
+                if not humans:
+                    continue
+                who = ", ".join(f"{m.display_name} (<@{m.id}>)" for m in humans)
+                lines.append(f"« {channel.name} » : {who}")
+            return lines
+        except Exception as e:  # noqa: BLE001 — perception jamais bloquante
+            logger.warning("PresenceService.voice_channels: {}", e)
             return []
