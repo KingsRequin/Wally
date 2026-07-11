@@ -90,3 +90,16 @@ class HostBridgeClient:
             if r.status_code != 200:
                 raise HostBridgeError(r.json().get("error", "unknown error"))
             return r.json()
+
+    async def git_push(self) -> dict:
+        """Pousse HEAD vers le remote public (publication d'un selfix). La cible est
+        fixée côté daemon (PUBLISH_REMOTE/PUBLISH_BRANCH)."""
+        async with httpx.AsyncClient(transport=self._transport(), timeout=130.0) as c:
+            r = await c.post(
+                "http://bridge/git-push",
+                json={},
+                headers=self._headers(),
+            )
+            if r.status_code != 200:
+                raise HostBridgeError(r.json().get("error", "unknown error"))
+            return r.json()

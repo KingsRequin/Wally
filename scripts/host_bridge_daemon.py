@@ -34,6 +34,11 @@ WALLY_AUTHOR = os.environ.get(
     "WALLY_GIT_AUTHOR",
     "Wally (self-upgrade) <61652807+KingsRequin@users.noreply.github.com>",
 )
+# Publication publique automatique des selfix : après le commit, le daemon pousse
+# HEAD vers {PUBLISH_REMOTE}:{PUBLISH_BRANCH}. Toute auto-modification de Wally doit
+# être publiée (commit + push + build), jamais laissée locale.
+PUBLISH_REMOTE = os.environ.get("PUBLISH_REMOTE", "public")
+PUBLISH_BRANCH = os.environ.get("PUBLISH_BRANCH", "main")
 _JOBS: dict[str, dict] = {}
 
 
@@ -276,6 +281,19 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 return
             self._send(200, {"committed": True, "hash": _git_head(),
                              "files": new_paths})
+
+        elif self.path == "/git-push":
+            # Pousse HEAD vers le remote public (publication du selfix). Cible fixée
+            # par env (PUBLISH_REMOTE/PUBLISH_BRANCH), jamais fournie par l'appelant.
+            r = subprocess.run(
+                ["git", "push", PUBLISH_REMOTE, f"HEAD:{PUBLISH_BRANCH}"],
+                cwd=REPO_ROOT, capture_output=True, timeout=120,
+            )
+            if r.returncode != 0:
+                self._send(500, {"pushed": False, "error": r.stderr.decode()[-500:]})
+                return
+            self._send(200, {"pushed": True, "remote": PUBLISH_REMOTE,
+                             "branch": PUBLISH_BRANCH, "hash": _git_head()})
 
         else:
             self._send(404, {"error": "not found"})

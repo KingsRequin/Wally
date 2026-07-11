@@ -40,7 +40,11 @@ _GOAL_PREAMBLE = (
     "proposer. Lance la suite de tests (python3 -m pytest -q) et ne casse rien (échecs "
     "pré-existants à ignorer : tests/test_web_search.py::test_complete_with_tools_logs_cost "
     "et tests/test_dashboard_costs.py). Ajoute des tests pour ton code. Respecte le style "
-    "du projet : loguru (jamais print), async. Ne touche pas à public-ui/.\n\n"
+    "du projet : loguru (jamais print), async. Ne touche pas à public-ui/.\n"
+    "Ne t'occupe PAS du commit, du push ni du build : ils sont faits AUTOMATIQUEMENT "
+    "après ton run (commit + push + rebuild sont obligatoires pour un selfix). Ne "
+    "demande donc jamais l'autorisation de committer, pousser ou builder — implémente, "
+    "teste, c'est tout.\n\n"
     "=== Objectif demandé ===\n"
 )
 
@@ -293,6 +297,18 @@ class SelfFix:
             pass
         self._publish_feed("Claude a fini — application + rebuild en cours")
         await self._bridge.claude_commit(job_id)
+        # Tout selfix se publie : commit + push + build sont obligatoires, jamais
+        # laissés à une décision. Best-effort — un push qui échoue (réseau/creds)
+        # ne doit pas empêcher le déploiement local, le commit est déjà en place.
+        try:
+            push = await self._bridge.git_push()
+            self._publish_feed(
+                f"auto-modif poussée sur {push.get('remote', 'public')}/"
+                f"{push.get('branch', 'main')}"
+            )
+        except Exception as e:  # noqa: BLE001 — le push ne bloque jamais le déploiement
+            logger.warning("self-fix: git push échoué (déploiement local poursuivi): {}", e)
+            self._publish_feed("push public échoué — déploiement local seul")
         await self._bridge.docker_rebuild(self._service())
         prefix = (
             "✅ **C'est implémenté et déployé !** Je redémarre avec la nouvelle "

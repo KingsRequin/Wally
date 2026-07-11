@@ -54,6 +54,8 @@ async def test_deploy_report_is_chunked_not_truncated():
     bridge = SimpleNamespace(
         claude_run=AsyncMock(return_value="job-1"),
         claude_commit=AsyncMock(),
+        git_push=AsyncMock(return_value={"pushed": True, "remote": "public",
+                                         "branch": "main"}),
         docker_rebuild=AsyncMock(),
     )
     sf = SelfFix(bridge=bridge, bot=_make_bot(dm))
@@ -86,6 +88,8 @@ async def test_short_deploy_report_stays_single_message():
     bridge = SimpleNamespace(
         claude_run=AsyncMock(return_value="job-1"),
         claude_commit=AsyncMock(),
+        git_push=AsyncMock(return_value={"pushed": True, "remote": "public",
+                                         "branch": "main"}),
         docker_rebuild=AsyncMock(),
     )
     sf = SelfFix(bridge=bridge, bot=_make_bot(dm))
