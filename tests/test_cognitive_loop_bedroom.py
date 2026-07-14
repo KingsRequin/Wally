@@ -46,6 +46,9 @@ def _make_loop(decisions, bedroom_channel_id=None, speakable=None):
         _RecordingDispatcher(),
         bedroom_channel_id=bedroom_channel_id,
         speakable_channels=speakable or set(),
+        # Ces cas valident le routage/gardes QUAND la parole spontanée est
+        # autorisée ; la coupure par défaut est couverte ailleurs.
+        spontaneous_channel_speak_enabled=True,
     )
     # Rester "actif" : aucune garde idle+silence ne doit interférer.
     loop._last_relevant_activity_ts = time.monotonic()

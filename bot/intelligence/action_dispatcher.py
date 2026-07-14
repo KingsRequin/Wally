@@ -116,21 +116,9 @@ class ActionDispatcher:
         if not await self._passes_guard(message, self._recent_self_speak(channel_id)):
             return
 
-        # Si le stream est live, préférer Twitch au lieu de Discord.
-        twitch_bot = self._twitch_bot
-        if twitch_bot is not None and twitch_bot._stream_info.get("live"):
-            try:
-                await twitch_bot.twitch_api.send_message(text=message)
-                logger.info("Cognitive SPEAK → Twitch (stream live) : {}", message[:80])
-                _ch = (twitch_bot._stream_info.get("user_login")
-                       or twitch_bot._stream_info.get("user_name") or "stream")
-                self._log_speak("twitch", _ch, message)
-                if self._feed:
-                    self._feed.publish({"type": "SPEAK", "channel": "twitch", "detail": message})
-                return
-            except Exception as e:
-                logger.warning("SPEAK Twitch failed, fallback Discord: {}", e)
-
+        # La cognition ne s'exprime jamais sur Twitch de sa propre initiative :
+        # un SPEAK spontané reste sur Discord. Sur Twitch, Wally ne parle que sur
+        # mention (chemin réactif twitch/handlers).
         if self._bot is None:
             logger.debug("SPEAK supprimé: bot non disponible (channel={})", channel_id)
             return

@@ -39,6 +39,10 @@ def _make_loop(verdict="PROGRESSE"):
     loop = CognitiveLoop(
         attention, reasoning, dispatcher, feed=feed,
         fact_store=facts, progress_judge=judge,
+        # Le routage/gardes SPEAK ne se testent que si la parole spontanée est
+        # autorisée ; sa coupure par défaut est couverte par
+        # test_cognitive_loop_speak_gate.py.
+        spontaneous_channel_speak_enabled=True,
     )
     return loop, attention, reasoning, dispatcher, facts, judge, feed
 
@@ -660,6 +664,7 @@ async def test_speak_directory_channel_not_redirected():
     loop = CognitiveLoop(
         attention, reasoning, dispatcher,
         speakable_channels={"875450811151450143", "875421532351000627"},
+        spontaneous_channel_speak_enabled=True,
     )
     # aucune notify_activity → _recent_interactions vide, mais le canal est
     # dans l'annuaire.

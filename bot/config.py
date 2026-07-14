@@ -24,6 +24,11 @@ class BotConfig:
     emotion_inertia_factor: float = 0.5
     spontaneous_discord_enabled: bool = True
     spontaneous_twitch_enabled: bool = True
+    # Prise de parole spontanée de la cognition dans les canaux (les monologues
+    # « Question qui me trotte… »). False → Wally pense mais n'exprime plus ses
+    # pensées de sa propre initiative ; les rappels dûs et les DM owner passent
+    # quand même. Il continue de répondre quand on le sollicite.
+    spontaneous_channel_speak_enabled: bool = False
     spontaneous_probability: float = 0.05
     spontaneous_passion_probability: float = 0.15
     spontaneous_cooldown_seconds: int = 300

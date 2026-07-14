@@ -81,6 +81,7 @@ class CognitiveLoop:
         web_search=None,
         web_search_cooldown_s: float = 2700.0,
         bedroom_channel_id: int | str | None = None,
+        spontaneous_channel_speak_enabled: bool = False,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -107,6 +108,10 @@ class CognitiveLoop:
         # None → routage historique (dernier canal actif). Stocké en str pour
         # coller au format des channel_id manipulés ici.
         self._bedroom_channel_id = str(bedroom_channel_id) if bedroom_channel_id else None
+        # Prise de parole spontanée dans les canaux. False → Wally pense (THINK,
+        # feed) mais ne broadcaste plus ses pensées de sa propre initiative ;
+        # seuls un rappel dû (forced_seed) ou un ACT (DM owner…) franchissent.
+        self._spontaneous_channel_speak_enabled = spontaneous_channel_speak_enabled
         self._last_activity_ts: float = 0.0
         self._last_tick_activity_ts: float = 0.0
         # Activité qui VISE Wally (mention, réponse, DM, vocal) — distincte de la
@@ -509,6 +514,18 @@ class CognitiveLoop:
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
                     continue
                 if decision.action == "SPEAK":
+                    # Coupure de la parole spontanée : Wally garde sa vie mentale
+                    # (THINK/feed) mais n'exprime plus ses pensées de sa propre
+                    # initiative dans un canal. Exception : un rappel programmé
+                    # arrivé à échéance (forced_seed) — service demandé, pas un
+                    # monologue. Les DM owner passent par un ACT, pas un SPEAK.
+                    if not self._spontaneous_channel_speak_enabled and forced_seed is None:
+                        self._log_cog(
+                            "speak_suppressed", channel=str(decision.channel_id),
+                            reason="parole spontanée désactivée (config)",
+                            message=(decision.message or "")[:200],
+                        )
+                        continue
                     # Redirection « chambre » : toute prise de parole spontanée
                     # part dans le salon dédié de Wally, jamais dans le canal
                     # courant (les réponses aux mentions passent par les handlers,

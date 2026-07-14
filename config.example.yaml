@@ -25,12 +25,13 @@ bot:
   bedroom_channel_id: null            # ID du salon "chambre" — cible des rappels créés en vocal
   notification_guild_id: null
   prelude_window_size: 15
+  spontaneous_channel_speak_enabled: false
   spontaneous_cooldown_seconds: 300
   spontaneous_discord_enabled: true
   spontaneous_memory_probability: 0.2
   spontaneous_passion_probability: 0.15
   spontaneous_probability: 0.05
-  spontaneous_twitch_enabled: true
+  spontaneous_twitch_enabled: false
   trigger_names:
   - wally
   update_image: ''                   # ex: ghcr.io/ton-user/wally-ai:latest (vide = polling désactivé)

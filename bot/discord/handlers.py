@@ -1941,21 +1941,6 @@ async def _post_process(
         logger.error("Post-process error: {e}", e=e)
 
 
-def _bedroom_channel(bot: "WallyDiscord"):
-    """Salon « chambre » : cible UNIQUE des prises de parole spontanées de Wally.
-
-    Retourne le canal Discord, ou None si non configuré / introuvable (auquel cas
-    l'appelant retombe sur le comportement historique — répondre sur place —
-    plutôt que d'avaler le message)."""
-    cid = getattr(bot.config.bot, "bedroom_channel_id", None)
-    if not cid:
-        return None
-    try:
-        return bot.get_channel(int(cid))
-    except (TypeError, ValueError):
-        return None
-
-
 async def _spontaneous_respond(
     bot: "WallyDiscord", message: discord.Message,
     recall_memory: str | None = None,
@@ -1963,9 +1948,9 @@ async def _spontaneous_respond(
 ) -> None:
     """Generate and send a spontaneous (unsolicited) response.
 
-    L'envoi part dans la chambre de Wally (canal dédié à son expression), pas
-    dans le salon déclencheur : une intervention spontanée n'est pas une réponse
-    à une sollicitation. Si la chambre est introuvable, on répond sur place."""
+    L'envoi part dans le canal où a lieu la discussion (en reply au message
+    déclencheur) : Wally rejoint la conversation en cours plutôt que de la
+    commenter tout seul ailleurs."""
     try:
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(str(message.channel.id))
         # Charger la mémoire de l'auteur si pas déjà fournie (#Q5).
@@ -2016,8 +2001,7 @@ async def _spontaneous_respond(
             + f"\n[{_author_label(message.author)}]: {_resolve_mentions(message, message.content or '')}"
         )
 
-        bedroom = _bedroom_channel(bot)
-        target_channel = bedroom or message.channel
+        target_channel = message.channel
         async with target_channel.typing():
             reply = await bot.llm.complete(
                 system_prompt,
@@ -2053,13 +2037,11 @@ async def _spontaneous_respond(
                 before=_mirror_before[:400], after=reply[:400],
             )
 
-        # Message spontané → chambre de Wally ; à défaut, réponse sur place.
-        if bedroom is not None:
-            await bedroom.send(reply, allowed_mentions=_ALLOWED_MENTIONS)
-        else:
-            await message.reply(
-                reply, mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
-            )
+        # Intervention spontanée → dans le canal de la discussion, en reply au
+        # message qui l'a déclenchée.
+        await message.reply(
+            reply, mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
+        )
         sent_channel_id = str(target_channel.id)
         self_name = bot.config.bot.name
         _clog(

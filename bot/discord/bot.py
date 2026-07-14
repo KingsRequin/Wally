@@ -286,6 +286,7 @@ class WallyDiscord(commands.Bot):
                 web_search=getattr(self, "web_search", None),
                 web_search_cooldown_s=self.config.tavily.cognitive_cooldown_minutes * 60,
                 bedroom_channel_id=self.config.bot.bedroom_channel_id,
+                spontaneous_channel_speak_enabled=self.config.bot.spontaneous_channel_speak_enabled,
             )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
