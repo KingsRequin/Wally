@@ -31,6 +31,7 @@ async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
             channel_id=str(channel_id),
             platform="discord",
             user_id=speaker_user_id,
+            beloved=bot.persona.is_beloved("discord", speaker_user_id),
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("voice emotion.process_message a échoué: {e}", e=e)
@@ -150,8 +151,10 @@ _VOICE_TARGET_NOTICE = (
 )
 
 def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
-                  present_label: str = "", channel_name: str = "", activity_label: str = "") -> str:
+                  present_label: str = "", channel_name: str = "", activity_label: str = "",
+                  speaker_user_id: str = "") -> str:
     """Construit le system prompt vocal (persona + émotions + contexte du salon)."""
+    user_directive = bot.persona.user_directive("discord", speaker_user_id) if speaker_user_id else None
     system_prompt = bot.prompts.build_voice_system(
         emotion_state=bot.emotion.get_state(),
         memory_context=memory_context,
@@ -162,6 +165,7 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
         composite_directives=bot.persona.composite_directives,
         secondary_directives=bot.persona.secondary_directives,
         active_secondaries=bot.emotion.get_secondary_emotions(),
+        user_directive=user_directive,
     )
     system_prompt = f"{system_prompt}\n\n{_VOICE_TARGET_NOTICE}"
     if channel_name:
@@ -291,6 +295,7 @@ async def generate_voice_reply(
     system_prompt = _voice_system(
         bot, speaker_label=speaker_label, memory_context=memory_context or "",
         present_label=present_label, channel_name=channel_name, activity_label=activity_label,
+        speaker_user_id=speaker_user_id,
     )
 
     # L'historique contient déjà la parole courante (consignée par handle_transcript),
