@@ -18,6 +18,7 @@ class PersonaService:
         self._blocks: dict[str, str] = {}
         self._caps_static: str = ""
         self._emotion_directives: dict[str, str] = {}
+        self._user_directives: dict[str, str] = {}
         self.reload()
 
     def reload(self) -> None:
@@ -53,6 +54,7 @@ class PersonaService:
         self._weekday_directives = self._parse_weekdays()
         self._composite_directives = self._parse_composites()
         self._secondary_directives = self._parse_secondaries()
+        self._user_directives = self._parse_users()
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
@@ -155,6 +157,62 @@ class PersonaService:
         logger.info("SECONDARIES.md loaded: {n} directives", n=len(directives))
         return directives
 
+    def _parse_sections(self, filename: str) -> dict[str, str]:
+        """Parse un fichier Markdown en {clé de section: directive}.
+
+        Sections délimitées par « ## clé » ; le préambule éventuel est ignoré.
+        """
+        path = os.path.join(self._dir, filename)
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: {f}", f=filename)
+            return {}
+        except Exception as exc:
+            logger.warning("{f} read error: {e}", f=filename, e=exc)
+            return {}
+
+        directives: dict[str, str] = {}
+        sections = ("\n" + content).split("\n## ")
+        for section in sections[1:]:
+            lines = section.strip().split("\n", 1)
+            if len(lines) >= 2:
+                key = lines[0].strip()
+                text = " ".join(lines[1].strip().split("\n")).strip()
+                if key and text:
+                    directives[key] = text
+        logger.info("{f} loaded: {n} directives", f=filename, n=len(directives))
+        return directives
+
+    def _parse_users(self) -> dict[str, str]:
+        """Parse USERS.md en un dict {clé utilisateur: directive}."""
+        return self._parse_sections("USERS.md")
+
+    @staticmethod
+    def user_key(platform: str, user_id: str, username: str = "") -> str:
+        """Clé de directive d'un utilisateur.
+
+        Discord → `discord:<id>`. Twitch → `twitch:<pseudo en minuscules>`.
+
+        ⚠️ Sur Twitch la clé est le PSEUDO, alors que le reste du repo (mémoire,
+        trust_scores, user_profiles) indexe sur l'ID numérique de
+        `payload.chatter.id`. Les deux formes coexistent volontairement : le
+        pseudo est l'identifiant lisible dans USERS.md. Conséquence assumée : un
+        changement de pseudo Twitch désactive la directive.
+        """
+        if platform == "twitch":
+            return f"twitch:{username.lower()}"
+        return f"{platform}:{user_id}"
+
+    def user_directive(self, platform: str, user_id: str, username: str = "") -> str | None:
+        """Directive comportementale propre à cet utilisateur, ou None."""
+        return self._user_directives.get(self.user_key(platform, user_id, username))
+
+    def is_beloved(self, platform: str, user_id: str, username: str = "") -> bool:
+        """True si cet utilisateur a une directive dédiée → il bénéficie des immunités."""
+        return self.user_directive(platform, user_id, username) is not None
+
     @property
     def secondary_directives(self) -> dict[str, str]:
         """Directives comportementales pour les émotions secondaires."""
@@ -174,6 +232,11 @@ class PersonaService:
     def weekday_directives(self) -> dict[str, str]:
         """Directives comportementales par jour de la semaine."""
         return self._weekday_directives
+
+    @property
+    def user_directives(self) -> dict[str, str]:
+        """Directives comportementales propres à un utilisateur donné."""
+        return self._user_directives
 
     def build_prompt_block(self) -> str:
         """Retourne SOUL → IDENTITY → VOICE → EXEMPLES + le self-model dérivé."""
