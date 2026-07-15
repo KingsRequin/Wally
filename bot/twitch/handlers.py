@@ -305,6 +305,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             persistent_notes=persistent_notes or None,
+            user_directive=bot.persona.user_directive("twitch", user_id, author),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -471,11 +472,13 @@ async def _post_process(
     conv_channel: str = "",
 ) -> None:
     try:
+        _beloved = bot.persona.is_beloved(platform, user_id, username)
         _emo_before = bot.emotion.get_state()
         llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             trigger_user=user_id, channel_id=channel_id, platform="twitch",
             user_id=user_id,
+            beloved=_beloved,
         )
         _emo_after = bot.emotion.get_state()
         if trace_id:
@@ -492,7 +495,8 @@ async def _post_process(
                 )
 
         if llm_deltas:
-            await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
+            if not (_beloved and llm_deltas["trust_delta"] < 0):
+                await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
             if llm_deltas["love_delta"] > 0:
                 await bot.db.update_love_score(
                     platform, user_id, llm_deltas["love_delta"],
@@ -502,7 +506,8 @@ async def _post_process(
             # Fallback: simple heuristic when LLM unavailable
             insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
             if any(w in text.lower() for w in insult_words):
-                await bot.db.update_trust_score(platform, user_id, -0.05)
+                if not _beloved:
+                    await bot.db.update_trust_score(platform, user_id, -0.05)
             else:
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
@@ -615,6 +620,7 @@ async def _spontaneous_respond_twitch(
             composite_directives=bot.persona.composite_directives,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
+            user_directive=bot.persona.user_directive("twitch", "", author),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""

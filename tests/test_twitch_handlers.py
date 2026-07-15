@@ -64,6 +64,7 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
+    bot.persona.is_beloved = MagicMock(return_value=False)
 
     bot.web_search = None  # désactivé par défaut dans les tests
     bot.apex_api = None
@@ -222,6 +223,7 @@ async def test_post_process_calls_emotion_and_trust():
         "merci wally", trust_score=0.5, context_messages=None,
         trigger_user="111", channel_id="", platform="twitch",
         user_id="111",
+        beloved=False,
     )
     bot.db.update_trust_score.assert_awaited_once()
 
