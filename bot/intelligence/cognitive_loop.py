@@ -99,7 +99,11 @@ class CognitiveLoop:
         # capacité absente. Cooldown anti-boucle + horodatage du dernier appel.
         self._web_search = web_search
         self._web_search_cooldown_s = web_search_cooldown_s
-        self._web_search_cooldown_ts = 0.0
+        # -inf et pas 0.0 : time.monotonic() compte depuis le BOOT DE LA MACHINE,
+        # pas depuis le démarrage du process. 0.0 signifierait « recherché au
+        # boot » (donc sous cooldown pendant 45 min après chaque reboot hôte) au
+        # lieu de « jamais » — -inf rend l'écart infini, donc jamais sous cooldown.
+        self._web_search_cooldown_ts = float("-inf")
         # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
         self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
@@ -118,7 +122,11 @@ class CognitiveLoop:
         # perception passive plein-canal. La cadence vive (TICK_ACTIVE) ne se
         # déclenche que sur celle-ci : sinon ~90 pensées/h sur du vagabondage
         # déclenché par du bruit de canal qui ne le concerne pas (Phase 2c).
-        self._last_relevant_activity_ts: float = 0.0
+        # -inf et pas 0.0 : time.monotonic() compte depuis le BOOT DE LA MACHINE,
+        # pas depuis le démarrage du process. 0.0 signifierait « activité
+        # pertinente au boot » (donc cadence vive pendant 1h après chaque reboot
+        # hôte) au lieu de « jamais » — -inf rend l'écart infini, donc idle direct.
+        self._last_relevant_activity_ts: float = float("-inf")
         # Fenêtre glissante des dernières pensées émises → anti-rumination
         # robuste : une reformulation du même thème étalée sur plusieurs ticks
         # (qui échappe à la comparaison au seul tick précédent) est rattrapée en

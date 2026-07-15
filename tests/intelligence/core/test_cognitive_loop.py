@@ -152,7 +152,7 @@ def test_notify_event_updates_activity_ts():
 def test_notify_event_relevant_sets_relevant_ts():
     """Un événement qui vise Wally (réaction sur SON message) → cadence vive."""
     loop, *_ = _make_loop()
-    assert loop._last_relevant_activity_ts == 0.0
+    assert loop._last_relevant_activity_ts == float("-inf")
     loop.notify_event(channel_id=5, description="Kaelis a réagi ❤️ à ton message", relevant=True)
     assert loop._last_relevant_activity_ts > 0
 
@@ -161,7 +161,7 @@ def test_notify_event_passive_keeps_relevant_ts_idle():
     """Un événement passif (arrivée serveur) ne force pas la cadence vive."""
     loop, *_ = _make_loop()
     loop.notify_event(channel_id=5, description="Azrael vient de rejoindre le serveur")
-    assert loop._last_relevant_activity_ts == 0.0
+    assert loop._last_relevant_activity_ts == float("-inf")
 
 
 def test_notify_event_has_no_user_key():
@@ -202,6 +202,21 @@ def test_tick_interval_active():
     assert loop._tick_interval() == TICK_ACTIVE
 
 
+def test_tick_interval_idle_at_boot_regardless_of_uptime():
+    """Non-régression bug#1 (reboot hôte) : à l'instantiation, sans monkeypatch de
+    time.monotonic, la cadence doit être idle quel que soit l'uptime réel de la
+    machine. `time.monotonic()` compte depuis le boot machine, pas depuis le
+    démarrage du process : un sentinel `0.0` sur `_last_relevant_activity_ts`
+    ferait lire `elapsed = uptime` et déclencherait à tort TICK_ACTIVE/MODERATE
+    pendant la première heure suivant chaque reboot de l'hôte."""
+    from bot.intelligence.cognitive_loop import TICK_IDLE_MAX
+    loop, *_ = _make_loop()
+    v = loop._tick_interval()
+    assert TICK_IDLE <= v <= TICK_IDLE_MAX
+    assert v != TICK_ACTIVE
+    assert v != TICK_MODERATE
+
+
 def test_passive_activity_does_not_trigger_active_cadence(monkeypatch):
     """Un message de canal qui ne vise pas Wally (relevant=False) est perçu mais
     ne déclenche pas la cadence vive : le tick reste en cadence idle."""
@@ -214,7 +229,7 @@ def test_passive_activity_does_not_trigger_active_cadence(monkeypatch):
     loop.notify_activity(channel_id=1, author="x", content="bla bla", relevant=False)
     # perçu (recent_interactions) mais pas de cadence active
     assert loop._recent_interactions
-    assert loop._last_relevant_activity_ts == 0.0
+    assert loop._last_relevant_activity_ts == float("-inf")
     assert loop._tick_interval() >= TICK_IDLE
 
 
