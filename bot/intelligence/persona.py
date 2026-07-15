@@ -58,104 +58,19 @@ class PersonaService:
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
-        path = os.path.join(self._dir, "EMOTIONS.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                content = f.read()
-        except FileNotFoundError:
-            logger.warning("Persona file missing: EMOTIONS.md")
-            return {}
-        except Exception as exc:
-            logger.warning("EMOTIONS.md read error: {e}", e=exc)
-            return {}
-
-        directives: dict[str, str] = {}
-        # Sections délimitées par "## emotion_name"
-        sections = content.split("\n## ")
-        for section in sections[1:]:  # sections[0] = préambule
-            lines = section.strip().split("\n", 1)
-            if len(lines) >= 2:
-                emotion = lines[0].strip()
-                text = " ".join(lines[1].strip().split("\n")).strip()
-                if emotion and text:
-                    directives[emotion] = text
-        logger.info("EMOTIONS.md loaded: {n} directives", n=len(directives))
-        return directives
+        return self._parse_sections("EMOTIONS.md")
 
     def _parse_weekdays(self) -> dict[str, str]:
         """Parse WEEKDAYS.md en un dict {jour: directive}."""
-        path = os.path.join(self._dir, "WEEKDAYS.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                content = f.read()
-        except FileNotFoundError:
-            logger.warning("Persona file missing: WEEKDAYS.md")
-            return {}
-        except Exception as exc:
-            logger.warning("WEEKDAYS.md read error: {e}", e=exc)
-            return {}
-
-        directives: dict[str, str] = {}
-        sections = ("\n" + content).split("\n## ")
-        for section in sections[1:]:
-            lines = section.strip().split("\n", 1)
-            if len(lines) >= 2:
-                day = lines[0].strip()
-                text = " ".join(lines[1].strip().split("\n")).strip()
-                if day and text:
-                    directives[day] = text
-        logger.info("WEEKDAYS.md loaded: {n} directives", n=len(directives))
-        return directives
+        return self._parse_sections("WEEKDAYS.md")
 
     def _parse_composites(self) -> dict[str, str]:
         """Parse COMPOSITES.md en un dict {paire: directive}."""
-        path = os.path.join(self._dir, "COMPOSITES.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                content = f.read()
-        except FileNotFoundError:
-            logger.warning("Persona file missing: COMPOSITES.md")
-            return {}
-        except Exception as exc:
-            logger.warning("COMPOSITES.md read error: {e}", e=exc)
-            return {}
-
-        directives: dict[str, str] = {}
-        sections = ("\n" + content).split("\n## ")
-        for section in sections[1:]:
-            lines = section.strip().split("\n", 1)
-            if len(lines) >= 2:
-                key = lines[0].strip()
-                text = " ".join(lines[1].strip().split("\n")).strip()
-                if key and text:
-                    directives[key] = text
-        logger.info("COMPOSITES.md loaded: {n} directives", n=len(directives))
-        return directives
+        return self._parse_sections("COMPOSITES.md")
 
     def _parse_secondaries(self) -> dict[str, str]:
         """Parse SECONDARIES.md en un dict {key: directive}."""
-        path = os.path.join(self._dir, "SECONDARIES.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                content = f.read()
-        except FileNotFoundError:
-            logger.warning("Persona file missing: SECONDARIES.md")
-            return {}
-        except Exception as exc:
-            logger.warning("SECONDARIES.md read error: {e}", e=exc)
-            return {}
-
-        directives: dict[str, str] = {}
-        sections = ("\n" + content).split("\n## ")
-        for section in sections[1:]:
-            lines = section.strip().split("\n", 1)
-            if len(lines) >= 2:
-                key = lines[0].strip()
-                text = " ".join(lines[1].strip().split("\n")).strip()
-                if key and text:
-                    directives[key] = text
-        logger.info("SECONDARIES.md loaded: {n} directives", n=len(directives))
-        return directives
+        return self._parse_sections("SECONDARIES.md")
 
     def _parse_sections(self, filename: str) -> dict[str, str]:
         """Parse un fichier Markdown en {clé de section: directive}.
