@@ -636,6 +636,8 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
         return False
 
     user_id = str(message.author.id)
+    if bot.persona.is_beloved("discord", user_id):
+        return False
     key = (user_id, str(channel_id))
     now = time.time()
     cutoff = now - cfg.window_seconds
@@ -1074,7 +1076,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     guild_id = str(message.guild.id) if message.guild else "dm"
 
-    if await bot.db.is_muted(user_id, guild_id):
+    if await bot.db.is_muted(user_id, guild_id) and not bot.persona.is_beloved("discord", user_id):
         emoji = random.choice(TIMEOUT_REACTIONS)
         await message.add_reaction(emoji)
         if bot.config.discord.spam_detection.enabled:
@@ -1418,6 +1420,7 @@ async def _respond(
             persistent_notes=persistent_notes or None,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
+            user_directive=bot.persona.user_directive("discord", user_id),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
@@ -1841,12 +1844,14 @@ async def _post_process(
     origin: str = "",
 ) -> None:
     try:
+        _beloved = bot.persona.is_beloved(platform, user_id, display_name)
         _emo_before = bot.emotion.get_state()
         llm_deltas = await bot.emotion.process_message(
             text, trust_score=trust, context_messages=context_messages,
             image_urls=image_urls,
             trigger_user=user_id, channel_id=channel_id, platform="discord",
             user_id=user_id,
+            beloved=_beloved,
         )
         _emo_after = bot.emotion.get_state()
         if trace_id:
@@ -1863,7 +1868,8 @@ async def _post_process(
                 )
 
         if llm_deltas:
-            await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
+            if not (_beloved and llm_deltas["trust_delta"] < 0):
+                await bot.db.update_trust_score(platform, user_id, llm_deltas["trust_delta"])
             if llm_deltas["love_delta"] > 0:
                 await bot.db.update_love_score(
                     platform, user_id, llm_deltas["love_delta"],
@@ -1873,7 +1879,8 @@ async def _post_process(
             # Fallback: simple heuristic when LLM unavailable
             insult_words = ["idiot", "stupide", "nul", "merde", "shut up", "stfu"]
             if any(w in text.lower() for w in insult_words):
-                await bot.db.update_trust_score(platform, user_id, -0.05)
+                if not _beloved:
+                    await bot.db.update_trust_score(platform, user_id, -0.05)
             else:
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
@@ -1905,7 +1912,7 @@ async def _post_process(
                 logger.warning("Image analysis (memory) failed: {e}", e=e)
 
         anger = bot.emotion.get_state().get("anger", 0.0)
-        if anger >= 0.8:
+        if anger >= 0.8 and not _beloved:
             # Always record the anger trigger (duration=0 → tracking only, not a real mute)
             await bot.db.add_timeout(user_id, guild_id, 0, anger)
             count = await bot.db.count_recent_triggers(user_id, guild_id)

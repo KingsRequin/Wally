@@ -50,6 +50,9 @@ def _make_spam_bot(enabled=True, max_messages=3, window_seconds=10, mute_minutes
     bot.memory.get_prelude = MagicMock(return_value=[])
     bot.memory.append_prelude = MagicMock()
 
+    bot.persona = MagicMock()
+    bot.persona.is_beloved = MagicMock(return_value=False)
+
     return bot
 
 

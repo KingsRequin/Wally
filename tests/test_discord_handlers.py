@@ -74,6 +74,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
 
     bot.persona = MagicMock()
     bot.persona.build_prompt_block = MagicMock(return_value="persona block")
+    bot.persona.is_beloved = MagicMock(return_value=False)
 
     bot.llm_secondary = MagicMock()
     bot.llm_secondary.complete = AsyncMock(return_value="Un paysage de montagne avec un lac.")
@@ -330,6 +331,7 @@ async def test_post_process_calls_emotion_and_trust():
         "thank you", trust_score=0.5, context_messages=None, image_urls=None,
         trigger_user="12345", channel_id="", platform="discord",
         user_id="12345",
+        beloved=False,
     )
     bot.db.update_trust_score.assert_awaited_once()
 
