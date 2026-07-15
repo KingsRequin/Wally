@@ -156,6 +156,7 @@ class PromptBuilder:
         mood_state: dict[str, float] | None = None,
         persistent_notes: list[dict] | None = None,
         presence_context: str = "",
+        user_directive: str | None = None,
     ) -> str:
         # Deux groupes pour maximiser le cache de préfixe DeepSeek :
         #   static_parts  = stable à la journée (persona, jour, directive mémoire)
@@ -240,8 +241,17 @@ class PromptBuilder:
 
         directive_injected = False
 
+        # 0) Directive propre à l'interlocuteur — priorité absolue : elle REMPLACE
+        # la directive émotionnelle au lieu de s'y ajouter. Sans ce court-circuit,
+        # une insulte ferait monter l'anger et le prompt dirait à la fois « tes
+        # réponses sont courtes et impatientes » et « couvre-le d'amour ».
+        if user_directive:
+            dynamic_parts.append("\n--- Directive comportementale ---")
+            dynamic_parts.append(user_directive)
+            directive_injected = True
+
         # 1) Secondary emotions (highest priority)
-        if active_secondaries and secondary_directives:
+        if not directive_injected and active_secondaries and secondary_directives:
             for sec_name, sec_intensity in active_secondaries:
                 if sec_intensity >= 0.4:
                     sec_tier = _get_tier(sec_intensity)
