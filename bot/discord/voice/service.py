@@ -263,7 +263,7 @@ class VoiceService:
             activity = " ; ".join(self.members_activity())
             text = await generate_voice_greeting(
                 self._bot, present_label=present, newcomer=name, channel_name=self.channel_name,
-                activity_label=activity,
+                activity_label=activity, newcomer_user_id=str(member.id),
             )
             if text:
                 await self.speak(text)

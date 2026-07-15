@@ -15,7 +15,7 @@ pas explicitement. Chaque test de garde ci-dessous fixe explicitement
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from bot.discord.voice.brain import _voice_system, _voice_post_emotion
+from bot.discord.voice.brain import _voice_system, _voice_post_emotion, generate_voice_greeting
 from bot.intelligence.persona import PersonaService
 from bot.intelligence.prompts import PromptBuilder
 
@@ -92,3 +92,50 @@ async def test_voice_post_emotion_passes_beloved_false():
     await _voice_post_emotion(bot, _NORMAL_ID, "Bob", "salut wally", 123, "Général", [])
     call_kwargs = bot.emotion.process_message.call_args.kwargs
     assert call_kwargs.get("beloved") is False
+
+
+# ── (e) accueil vocal d'un nouveau venu : identité transmise à generate_voice_greeting ──
+#
+# Wally est déjà installé dans le salon vocal quand quelqu'un le rejoint. Ce chemin doit
+# désormais transmettre newcomer_user_id → _voice_system(speaker_user_id=...) pour que la
+# directive comportementale (amour Malef) s'applique dès l'accueil, pas seulement au 1er
+# message. Sans ce câblage, l'accueil est froid puis Wally devient amoureux au message
+# suivant : incohérence visible.
+
+@pytest.mark.asyncio
+async def test_greeting_newcomer_beloved_gets_love_directive_not_anger(tmp_path):
+    bot = _voice_bot(tmp_path)
+    bot.llm.complete = AsyncMock(return_value="Coucou Malef !")
+    await generate_voice_greeting(
+        bot, present_label="Malef", newcomer="Malef", newcomer_user_id=_MALEF_ID,
+    )
+    system_prompt = bot.llm.complete.call_args.args[0]
+    assert "amoureux" in system_prompt.lower()
+    assert "furax" not in system_prompt.lower()
+    assert "cinglant" not in system_prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_greeting_newcomer_normal_user_no_love_directive(tmp_path):
+    # non-régression : un nouveau venu normal ne doit PAS hériter de la directive d'amour.
+    bot = _voice_bot(tmp_path)
+    bot.llm.complete = AsyncMock(return_value="Coucou Bob !")
+    await generate_voice_greeting(
+        bot, present_label="Bob", newcomer="Bob", newcomer_user_id=_NORMAL_ID,
+    )
+    system_prompt = bot.llm.complete.call_args.args[0]
+    assert "amoureux" not in system_prompt.lower()
+    assert "furax" in system_prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_greeting_wally_arrival_group_unaffected(tmp_path):
+    # arrivée de Wally (branche else, salut de groupe) : aucun locuteur unique, donc pas de
+    # user_directive même si un utilisateur aimé fait partie des présents/inviter.
+    bot = _voice_bot(tmp_path)
+    bot.llm.complete = AsyncMock(return_value="Salut tout le monde !")
+    await generate_voice_greeting(bot, present_label="Malef, Bob", inviter="Malef")
+    system_prompt = bot.llm.complete.call_args.args[0]
+    assert "amoureux" not in system_prompt.lower()
+    assert "furax" in system_prompt.lower()
+

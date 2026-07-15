@@ -186,7 +186,7 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
 
 async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | None = None,
                                   channel_name: str = "", activity_label: str = "",
-                                  inviter: str | None = None) -> str:
+                                  inviter: str | None = None, newcomer_user_id: str = "") -> str:
     """Salutation parlée : à l'arrivée de Wally, ou à l'arrivée d'un nouveau venu (`newcomer`).
 
     `inviter` : nom de la personne qui a demandé à Wally de venir (cas arrivée de Wally)."""
@@ -194,7 +194,7 @@ async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | 
         if newcomer:
             # Wally est déjà installé → on garde le contexte « présents depuis un moment » du system.
             system_prompt = _voice_system(bot, present_label=present_label, channel_name=channel_name,
-                                          activity_label=activity_label)
+                                          activity_label=activity_label, speaker_user_id=newcomer_user_id)
             instruction = (
                 f"{newcomer} vient à l'instant de rejoindre le salon vocal où tu es déjà installé. "
                 f"Accueille {newcomer} par son nom, brièvement et naturellement, en une seule phrase."
