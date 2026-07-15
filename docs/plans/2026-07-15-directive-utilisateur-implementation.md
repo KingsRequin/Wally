@@ -17,7 +17,9 @@
 - **Convention des directives persona : décrire le COMPORTEMENT, jamais l'état.** Pas « tu es amoureux » mais « tu glisses des cœurs, tu lui dis que tu l'aimes ».
 - **Clé Twitch = pseudo en minuscules**, pas l'ID numérique. Voir l'avertissement en Task 1.
 - **Tout contenu par-utilisateur va dans `dynamic_parts`**, jamais `static_parts` (cache de préfixe DeepSeek).
-- **Baseline des tests (relevée le 2026-07-15) : `1 failed, 1876 passed`.** L'échec est **pré-existant et hors périmètre** : `tests/intelligence/test_cognitive_web_search.py::test_tag_triggers_search_and_second_pass` (`web.search` jamais awaité dans la 2ᵉ passe cognitive). Déterministe, pas flaky. **Ne pas le corriger dans ce plan, ne pas s'en alarmer.** Tout AUTRE échec est de notre fait.
+- **Baseline des tests (corrigée le 2026-07-15) : `0 failed, 1877 passed`.** La suite doit rester **à zéro échec** — tout échec est de notre fait.
+
+  ⚠️ **Piège connu : un test flaky lié à l'uptime.** `tests/intelligence/test_cognitive_web_search.py::test_tag_triggers_search_and_second_pass` échoue quand l'uptime de la machine est **inférieur à 45 minutes**. Cause : `cognitive_loop.py:102` initialise `_web_search_cooldown_ts = 0.0` et `cognitive_loop.py:340` compare `time.monotonic() - 0.0 < 2700` — or `time.monotonic()` est l'uptime. Tant qu'il est sous 2700 s, le cooldown paraît actif et `web.search` n'est jamais appelé. **Sans rapport avec ce plan** ; même bug que celui corrigé en `3a75ab9` (fix = `monkeypatch` monotonic), auquel ce test a échappé. Ne pas le corriger ici — à proposer séparément à l'owner.
 - Ce hard-code est **délibéré** et contraire à la north star « émergent > hard-code ». Ne pas « corriger » en le rendant émergent.
 
 ---
@@ -46,11 +48,11 @@
 - [ ] **Step 1: Confirmer la baseline**
 
 Run: `python3 -m pytest -q 2>&1 | tail -3`
-Expected: `1 failed, 1876 passed` — l'unique échec étant `tests/intelligence/test_cognitive_web_search.py::test_tag_triggers_search_and_second_pass`.
+Expected: `1877 passed`, **zéro échec**.
 
-Cet échec est **pré-existant, déterministe, et sans rapport avec ce plan** (constaté le 2026-07-15 sur `5bca296`, avant toute modification). Il est le seul toléré.
+Si `test_cognitive_web_search.py::test_tag_triggers_search_and_second_pass` échoue, vérifier l'uptime (`cat /proc/uptime`) : sous 2700 s, c'est le flaky documenté dans les Global Constraints, pas une régression. Attendre ou l'exclure (`--deselect`).
 
-Si le résultat diffère — un autre test échoue, ou celui-ci passe — s'arrêter et le signaler : la baseline a bougé et la référence de ce plan n'est plus valable.
+Tout autre échec = s'arrêter et le signaler.
 
 ---
 
@@ -832,7 +834,7 @@ Expected: PASS (3 tests)
 - [ ] **Step 5: Suite complète**
 
 Run: `python3 -m pytest -q 2>&1 | tail -3`
-Expected: `1 failed, 1904 passed` — soit la baseline (1876) + les 28 tests ajoutés par ce plan. Le seul échec toléré reste `test_tag_triggers_search_and_second_pass`. Tout autre échec est de notre fait.
+Expected: `1905 passed`, **zéro échec** — soit la baseline (1877) + les 28 tests ajoutés par ce plan. (Si le flaky uptime se déclenche, cf. Global Constraints.)
 
 - [ ] **Step 6: Commit**
 
@@ -857,7 +859,7 @@ Expected: les 2 clés, puis `True True`
 - [ ] **Step 2: Suite complète une dernière fois**
 
 Run: `python3 -m pytest -q 2>&1 | tail -3`
-Expected: aucun échec **autre que** `test_tag_triggers_search_and_second_pass` (pré-existant, cf. Task 0).
+Expected: `1905 passed`, zéro échec (cf. Task 0 pour le flaky uptime).
 
 - [ ] **Step 3: Déclarer honnêtement l'état de vérification**
 
