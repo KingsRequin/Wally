@@ -520,12 +520,15 @@ async def get_my_memory(request: Request) -> dict:
 
 async def _post_process(state: AppState, text: str, sender_id: str, trust: float = 0.0) -> None:
     try:
+        discord_raw_id = sender_id.split(":")[1]
+        beloved = state.persona.is_beloved("discord", discord_raw_id)
         deltas = await state.emotion.process_message(
             text, trust_score=trust, channel_id="web:chat", platform="web",
-            trigger_user=sender_id,
+            trigger_user=sender_id, beloved=beloved,
         )
         if deltas and isinstance(deltas, dict):
             trust_delta = deltas.get("trust_delta", 0.01)
-            await state.db.update_trust_score("discord", sender_id.split(":")[1], trust_delta)
+            if not (beloved and trust_delta < 0):
+                await state.db.update_trust_score("discord", discord_raw_id, trust_delta)
     except Exception as exc:
         logger.warning("WebChat post-process failed: {e}", e=exc)
