@@ -467,8 +467,14 @@ class EmotionEngine:
     def prepare_deltas(
         self, raw_deltas: dict[str, float],
         user_id: str = "", platform: str = "",
+        beloved: bool = False,
     ) -> dict[str, float]:
-        """Full pipeline: circadian -> priming -> mood -> amplification -> habituation -> fatigue."""
+        """Full pipeline: circadian -> priming -> mood -> amplification -> habituation -> fatigue.
+
+        beloved=True annule les HAUSSES d'anger et de sadness : cet utilisateur ne
+        peut pas dégrader l'humeur, qui est globale et partagée par tout le monde.
+        Les baisses passent, et joy/curiosity ne sont pas touchées.
+        """
         result = {}
         priming = self._get_priming_deltas(user_id, platform) if user_id else {e: 0.0 for e in EMOTIONS}
         for e in EMOTIONS:
@@ -482,6 +488,10 @@ class EmotionEngine:
                     delta = self._apply_habituation(user_id, e, delta)
                 delta = self._apply_fatigue(e, delta)
             result[e] = delta
+        if beloved:
+            for e in ("anger", "sadness"):
+                if result.get(e, 0.0) > 0:
+                    result[e] = 0.0
         return result
 
     def apply_delta(self, emotion: str, delta: float) -> None:
@@ -898,6 +908,7 @@ class EmotionEngine:
         image_urls: list[str] | None = None,
         trigger_user: str = "", channel_id: str = "", platform: str = "",
         user_id: str = "",
+        beloved: bool = False,
     ) -> dict | None:
         self.record_interaction()
         state_before = self.get_state()
@@ -906,7 +917,7 @@ class EmotionEngine:
                 deltas, new_words, trust_delta, love_delta, user_facts = await self._analyze_llm(
                     text, trust_score, context_messages, image_urls=image_urls
                 )
-                prepared = self.prepare_deltas(deltas, user_id, platform)
+                prepared = self.prepare_deltas(deltas, user_id, platform, beloved=beloved)
                 for emotion, delta in prepared.items():
                     self.apply_delta(emotion, delta)
                 if new_words:
@@ -927,7 +938,7 @@ class EmotionEngine:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
         # Fallback : NRCLex + FR_EMOTION_WORDS
         deltas = await self.analyze_message(text, trust_score)
-        prepared = self.prepare_deltas(deltas, user_id, platform)
+        prepared = self.prepare_deltas(deltas, user_id, platform, beloved=beloved)
         for emotion, delta in prepared.items():
             self.apply_delta(emotion, delta)
         if user_id and platform:
