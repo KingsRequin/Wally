@@ -441,8 +441,8 @@ git commit -m "feat(prompts): la directive utilisateur court-circuite la chaîne
 **Interfaces:**
 - Consumes: rien (le flag est un `bool` brut).
 - Produces:
-  - `EmotionState.prepare_deltas(raw_deltas, user_id="", platform="", beloved=False) -> dict[str, float]`
-  - `EmotionState.process_message(..., beloved: bool = False) -> dict | None`
+  - `EmotionEngine.prepare_deltas(raw_deltas, user_id="", platform="", beloved=False) -> dict[str, float]`
+  - `EmotionEngine.process_message(..., beloved: bool = False) -> dict | None`
 
 **Pourquoi ici et pas dans les handlers :** `process_message()` applique les deltas en interne, sur deux chemins (analyse LLM ligne 909 et fallback NRCLex ligne 930). `prepare_deltas()` est le point de passage commun aux deux — une seule garde y couvre tout.
 
@@ -455,12 +455,12 @@ Créer `tests/test_emotion_beloved.py` :
 import pytest
 
 from bot.config import Config
-from bot.core.emotion import EmotionState
+from bot.core.emotion import EmotionEngine
 
 
 @pytest.fixture
 def emo():
-    return EmotionState(config=Config.load("config.example.yaml"))
+    return EmotionEngine(config=Config.load("config.example.yaml"))
 
 
 def test_beloved_cancels_anger(emo):
@@ -508,7 +508,7 @@ def test_beloved_defaults_to_false(emo):
 Run: `python3 -m pytest tests/test_emotion_beloved.py -q`
 Expected: FAIL — `TypeError: prepare_deltas() got an unexpected keyword argument 'beloved'`
 
-> Si la fixture échoue plutôt (construction d'`EmotionState`), s'aligner sur la façon dont `tests/test_emotion.py` construit l'objet et adapter — ne pas inventer une signature.
+> Si la fixture échoue plutôt (construction d'`EmotionEngine`), s'aligner sur la façon dont `tests/test_emotion.py` construit l'objet et adapter — ne pas inventer une signature.
 
 - [ ] **Step 3: Implémenter dans `prepare_deltas`**
 

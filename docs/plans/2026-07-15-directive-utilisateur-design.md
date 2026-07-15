@@ -32,7 +32,7 @@ Cette note existe pour qu'un futur lecteur sache que c'était un choix, pas un o
 |---|---|
 | Pousser les curseurs existants (`love`/`trust` à 1.0, affinité émotionnelle) | `love` n'a **aucun** effet mécanique aujourd'hui : il n'est injecté au prompt que comme un nombre brut (`"Niveau d'affection : 1.00/1.0"`) sans consigne l'interprétant. Ne produirait ni les « je t'aime » ni les cœurs. |
 | `special_users: {id: "directive"}` dans `config.yaml` | Met de la prose de persona dans un fichier de config, alors que `bot/persona/` existe exactement pour ça. |
-| État émotionnel par utilisateur | Refonte lourde : `EmotionState._state` est un dict global unique lu sur tous les chemins. Hors sujet ici. |
+| État émotionnel par utilisateur | Refonte lourde : `EmotionEngine._state` est un dict global unique lu sur tous les chemins. Hors sujet ici. |
 
 ---
 
@@ -107,7 +107,7 @@ Tous gardés par `persona.is_beloved(...)`.
 | 4 | Mute — `bot/discord/handlers.py:1077` (gate) et `1907-1929` (mute par colère) | Jamais mute/timeout. |
 
 > **Pourquoi annuler l'anger (#1)** — sans ça, Malef insulte Wally, l'anger **global** monte
-> (`EmotionState._state` est unique et partagé), et Wally devient sec avec **tout le monde** pendant
+> (`EmotionEngine._state` est unique et partagé), et Wally devient sec avec **tout le monde** pendant
 > une heure. L'easter egg polluerait le serveur entier.
 
 ### 5. Câblage
