@@ -1987,6 +1987,7 @@ async def _spontaneous_respond(
             composite_directives=bot.persona.composite_directives,
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
+            user_directive=bot.persona.user_directive("discord", str(message.author.id)),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""

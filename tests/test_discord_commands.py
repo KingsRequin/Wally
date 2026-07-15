@@ -188,6 +188,38 @@ async def test_ask_error_sends_fallback():
     interaction.followup.send.assert_awaited_once_with("Une erreur s'est produite.")
 
 
+MALEF_DISCORD_ID = "706837895063011338"
+
+
+@pytest.mark.asyncio
+async def test_ask_injects_user_directive_for_target_user():
+    bot = make_bot()
+    bot.persona.user_directive = MagicMock(
+        side_effect=lambda platform, uid: "Tu es amoureux." if uid == MALEF_DISCORD_ID else None
+    )
+    cog = AskCog(bot)
+    interaction = make_interaction(user_id=int(MALEF_DISCORD_ID))
+    with patch("bot.discord.commands.ask._fire"):
+        await cog.ask.callback(cog, interaction, question="Test")
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["user_directive"] == "Tu es amoureux."
+    bot.persona.user_directive.assert_called_once_with("discord", MALEF_DISCORD_ID)
+
+
+@pytest.mark.asyncio
+async def test_ask_no_user_directive_for_other_user():
+    bot = make_bot()
+    bot.persona.user_directive = MagicMock(
+        side_effect=lambda platform, uid: "Tu es amoureux." if uid == MALEF_DISCORD_ID else None
+    )
+    cog = AskCog(bot)
+    interaction = make_interaction(user_id=42)
+    with patch("bot.discord.commands.ask._fire"):
+        await cog.ask.callback(cog, interaction, question="Test")
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["user_directive"] is None
+
+
 # ── /wally memory ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

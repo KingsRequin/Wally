@@ -40,6 +40,7 @@ class AskCog(commands.Cog):
                 emotion_directives=self.bot.persona.emotion_directives,
                 weekday_directives=self.bot.persona.weekday_directives,
                 composite_directives=self.bot.persona.composite_directives,
+                user_directive=self.bot.persona.user_directive("discord", user_id),
             )
             context_block = self.bot.prompts.build_context_block(context_msgs)
 

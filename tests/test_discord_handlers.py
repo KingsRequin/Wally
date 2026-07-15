@@ -12,6 +12,7 @@ from bot.discord.handlers import (
     handle_message,
     _respond,
     _post_process,
+    _spontaneous_respond,
     _build_mention_directory,
     _resolve_mentions,
     _ALLOWED_MENTIONS,
@@ -1054,3 +1055,35 @@ async def test_bot_label_filter_matches_storage():
     )
 
 
+
+
+# ── _spontaneous_respond: user_directive (Malef) ────────────────────────────
+
+MALEF_DISCORD_ID = "706837895063011338"
+
+
+@pytest.mark.asyncio
+async def test_spontaneous_respond_injects_user_directive_for_target_user():
+    bot = make_bot()
+    bot.persona.user_directive = MagicMock(
+        side_effect=lambda platform, uid: "Tu es amoureux." if uid == MALEF_DISCORD_ID else None
+    )
+    message = make_message(content="wally c'est cool")
+    message.author.id = int(MALEF_DISCORD_ID)
+    await _spontaneous_respond(bot, message)
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["user_directive"] == "Tu es amoureux."
+    bot.persona.user_directive.assert_called_once_with("discord", MALEF_DISCORD_ID)
+
+
+@pytest.mark.asyncio
+async def test_spontaneous_respond_no_user_directive_for_other_user():
+    bot = make_bot()
+    bot.persona.user_directive = MagicMock(
+        side_effect=lambda platform, uid: "Tu es amoureux." if uid == MALEF_DISCORD_ID else None
+    )
+    message = make_message(content="wally c'est cool")
+    message.author.id = 12345  # utilisateur quelconque, pas Malef
+    await _spontaneous_respond(bot, message)
+    kwargs = bot.prompts.build_system_prompt.call_args.kwargs
+    assert kwargs["user_directive"] is None

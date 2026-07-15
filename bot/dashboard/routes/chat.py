@@ -248,6 +248,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
                 emotion_directives=state.persona.emotion_directives,
                 weekday_directives=state.persona.weekday_directives,
                 composite_directives=state.persona.composite_directives,
+                user_directive=state.persona.user_directive("discord", discord_raw_id),
             )
 
             context_block = state.prompts.build_context_block(context_messages)
