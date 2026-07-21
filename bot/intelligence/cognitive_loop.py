@@ -36,6 +36,11 @@ def _now_paris() -> datetime:
 # ressasser une conversation close (bug du "repost" cognitif).
 REPLY_SPEAK_COOLDOWN = 600  # 10 min
 
+# Étranglement des indicateurs de frappe : Discord réémet TYPING_START ~toutes
+# les 10 s tant qu'une personne tape. On ne perçoit qu'un « épisode » par
+# (canal, auteur) sur cette fenêtre pour ne pas noyer _recent_interactions.
+TYPING_THROTTLE = 30.0  # s
+
 # Nombre de ressassements consécutifs d'un focus avant de le laisser mourir.
 RUMINATION_LIMIT = 2
 
@@ -144,6 +149,9 @@ class CognitiveLoop:
         # Dernière réponse directe de Wally par canal (monotonic) — un SPEAK
         # proactif est supprimé s'il suit de trop près une vraie réponse.
         self._last_reply: dict[str, float] = {}
+        # Dernier indicateur de frappe perçu par (canal, auteur) → monotonic.
+        # Sert d'étranglement : cf. notify_typing / TYPING_THROTTLE.
+        self._typing_seen: dict[tuple[str, str], float] = {}
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -229,6 +237,35 @@ class CognitiveLoop:
         })
         if len(self._recent_interactions) > 20:
             self._recent_interactions = self._recent_interactions[-20:]
+
+    def notify_typing(self, channel_id, author: str) -> None:
+        """Perception d'un indicateur de frappe Discord : quelqu'un commence à
+        écrire dans un canal. C'est un signal de VIVACITÉ — la conversation
+        s'anime *avant* que le message n'arrive, donc Wally la sait vivante et
+        n'« arrive plus après coup ».
+
+        Purement passif (relevant=False, via notify_event) : ça rafraîchit
+        l'activité (le prochain tick n'est donc plus idle et raisonne sur le
+        contexte vivant) mais ça NE réveille PAS la cadence vive, réservée à ce
+        qui vise Wally directement (mention, réponse, DM — cf. Phase 2c).
+
+        Discord réémet l'événement ~toutes les 10 s tant que la personne tape :
+        on étrangle par (canal, auteur) sur TYPING_THROTTLE pour ne percevoir
+        qu'un épisode et ne pas noyer `_recent_interactions`.
+        """
+        now = time.monotonic()
+        key = (str(channel_id), author)
+        last = self._typing_seen.get(key)
+        if last is not None and now - last < TYPING_THROTTLE:
+            return
+        self._typing_seen[key] = now
+        # Purge des entrées froides pour borner le dict (une par personne active).
+        if len(self._typing_seen) > 64:
+            self._typing_seen = {
+                k: t for k, t in self._typing_seen.items()
+                if now - t < TYPING_THROTTLE
+            }
+        self.notify_event(channel_id, f"{author} est en train d'écrire…", relevant=False)
 
     def _penalize_if_ignored(self, st: dict) -> None:
         """Feedback émotionnel négatif (#A6) : un canal qui ignore les relances de

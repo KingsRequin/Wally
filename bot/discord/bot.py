@@ -46,6 +46,7 @@ class WallyDiscord(commands.Bot):
         intents.members = True
         intents.presences = True  # privileged — alimente le cache présence lu par PresenceService
         intents.voice_states = True  # rejoindre/quitter salons vocaux + détecter membres en VC
+        intents.typing = True  # GUILD_MESSAGE_TYPING → on_typing : percevoir une conversation qui s'anime
         super().__init__(command_prefix="!", intents=intents)
 
         self.config = config

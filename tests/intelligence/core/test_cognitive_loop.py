@@ -171,6 +171,65 @@ def test_notify_event_has_no_user_key():
     assert loop._recent_interactions[-1].get("user_key") is None
 
 
+# ── notify_typing : indicateurs de frappe (conversation vivante) ────────────
+
+def test_notify_typing_records_passive_perception():
+    """Une frappe entre dans le flux perçu comme événement passif."""
+    loop, *_ = _make_loop()
+    loop.notify_typing(channel_id=5, author="Alice (@alice)")
+    last = loop._recent_interactions[-1]
+    assert last["channel"] == "5"
+    assert "Alice (@alice)" in last["content"]
+    assert "écrire" in last["content"]
+    assert last["is_event"] is True
+
+
+def test_notify_typing_updates_activity_ts():
+    """Une frappe réveille l'activité → le canal est perçu vivant (tick non idle)."""
+    loop, *_ = _make_loop()
+    assert loop._last_activity_ts == 0.0
+    loop.notify_typing(channel_id=5, author="Alice")
+    assert loop._last_activity_ts > 0
+
+
+def test_notify_typing_is_passive_never_wakes_active_cadence():
+    """La frappe ne VISE pas Wally → ne réveille jamais la cadence vive (Phase 2c)."""
+    loop, *_ = _make_loop()
+    loop.notify_typing(channel_id=5, author="Alice")
+    assert loop._last_relevant_activity_ts == float("-inf")
+
+
+def test_notify_typing_throttled_per_channel_author():
+    """Discord réémet la frappe ~toutes les 10 s : on n'en perçoit qu'un épisode."""
+    loop, *_ = _make_loop()
+    loop.notify_typing(channel_id=5, author="Alice")
+    loop.notify_typing(channel_id=5, author="Alice")
+    loop.notify_typing(channel_id=5, author="Alice")
+    typing_lines = [i for i in loop._recent_interactions if i.get("is_event")]
+    assert len(typing_lines) == 1
+
+
+def test_notify_typing_distinct_authors_not_throttled_together():
+    """L'étranglement est par (canal, auteur) : deux personnes = deux perceptions."""
+    loop, *_ = _make_loop()
+    loop.notify_typing(channel_id=5, author="Alice")
+    loop.notify_typing(channel_id=5, author="Bob")
+    typing_lines = [i for i in loop._recent_interactions if i.get("is_event")]
+    assert len(typing_lines) == 2
+
+
+def test_notify_typing_throttle_expires():
+    """Passé TYPING_THROTTLE, une nouvelle frappe est de nouveau perçue."""
+    from bot.intelligence.cognitive_loop import TYPING_THROTTLE
+    loop, *_ = _make_loop()
+    loop.notify_typing(channel_id=5, author="Alice")
+    # On recule le dernier marquage au-delà de la fenêtre d'étranglement.
+    loop._typing_seen[("5", "Alice")] -= TYPING_THROTTLE + 1
+    loop.notify_typing(channel_id=5, author="Alice")
+    typing_lines = [i for i in loop._recent_interactions if i.get("is_event")]
+    assert len(typing_lines) == 2
+
+
 def test_notify_reply_records_wally_response_in_interactions():
     """La réponse réactive de Wally entre dans _recent_interactions → le flux
     cognitif voit la conversation complète et ne re-répond pas (anti-doublon)."""
