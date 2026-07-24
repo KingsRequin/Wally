@@ -32,6 +32,7 @@ Wally ne se contente pas de répondre quand on lui parle. Il tourne une **boucle
 - **Drive émotionnel & déclencheurs spontanés** : ses émotions et ses « passions » le poussent à initier des conversations.
 - **Droit au silence** : un *gate* décide s'il vaut mieux ne rien dire — il n'est pas obligé de répondre.
 - **Anti-rumination** : il ne re-réfléchit pas en boucle au même contexte tant qu'il n'y a pas de nouvelle activité.
+- **Flux RSS** : des sources d'actualité (tech, gaming) amorcent ses pensées quand il est inactif, et alimentent un socle de connaissances consulté avant toute recherche web.
 
 ### 🔧 Auto-modification de code (self-upgrade via Claude Code)
 
@@ -93,14 +94,14 @@ Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git :
 ### 🖥️ Dashboard & site public
 
 - **Site public arcade** : status temps réel, chat web, galerie, journal, et un **flux cognitif live** (SSE) qui montre le « cerveau » de Wally penser en direct.
-- **Dashboard admin** : configuration LLM/émotions/images, logs temps réel, gestion mémoire, coûts API, actions planifiées, prompts, système.
+- **Dashboard admin** : 6 onglets — **Paramètres** (LLM/émotions/images), **Mémoire**, **Actions** planifiées, **Prompts**, **Système** (logs temps réel, Twitch, overlay) et **Vocal**.
 - **Auth** : Bearer token (admin) + Discord OAuth2 (JWT pour le chat web).
 
 ### ⚙️ Technique
 
 - **Multi-provider LLM** (DeepSeek en principal, couche d'abstraction `bot/core/llm/`), *prompt caching* côté Claude.
 - **Hot-reload** de la configuration sans redémarrage.
-- **Suivi des coûts** API par modèle/période.
+- **Suivi des coûts** API (loggés en base, consultables via `/wally status`).
 - **Auto-update** via GHCR (un bouton apparaît dans l'admin quand une nouvelle image est dispo).
 
 ---
@@ -115,7 +116,6 @@ Concrètement, **Wally commite lui-même** ses changements dans ce dépôt git :
 | Application Discord | — | Token bot + intents |
 | Application Twitch | _(optionnel)_ | Token OAuth bot + client ID |
 | Clé API Tavily | _(optionnel)_ | Recherche web |
-| Qdrant | _(optionnel)_ | Moteur vectoriel (la mémoire de base fonctionne sans, en SQLite) |
 
 ### Créer l'application Discord
 
@@ -293,7 +293,7 @@ Renseigne `bot.update_image` dans `config.yaml` avec la référence GHCR de l'im
 2. Vérifier les chaînes (en minuscules) dans la config Twitch
 
 ### Coûts élevés
-Utiliser `/wally status` ou l'onglet **Coûts** du dashboard. Réduire `max_tokens` ou changer de modèle via `/wally setup`.
+Utiliser `/wally status` pour voir la consommation. Réduire `max_tokens` ou changer de modèle via `/wally setup`.
 
 ---
 
