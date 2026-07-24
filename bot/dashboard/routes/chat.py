@@ -87,6 +87,10 @@ async def ws_chat(ws: WebSocket):
         await ws.close(code=4001, reason="Invalid token")
         return
 
+    if await state.db.is_chat_user_banned(payload["discord_id"]):
+        await ws.close(code=4003, reason="Banned")
+        return
+
     await ws.accept()
 
     discord_id = payload["discord_id"]

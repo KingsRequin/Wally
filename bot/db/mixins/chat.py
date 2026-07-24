@@ -108,3 +108,28 @@ class ChatMixin:
     async def cleanup_expired_refresh_tokens(self):
         await self._conn.execute("DELETE FROM chat_refresh_tokens WHERE expires_at < ?", (time.time(),))
         await self._conn.commit()
+
+    # ── Chat bans ─────────────────────────────────────────────────────────────
+
+    async def ban_chat_user(self, discord_id: str, username: str | None = None, reason: str | None = None) -> None:
+        did = str(discord_id)
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO chat_bans (discord_id, username, reason, banned_at) VALUES (?, ?, ?, ?)",
+            (did, username, reason, time.time()))
+        # Révoque les refresh tokens du banni → accès web coupé immédiatement
+        await self._conn.execute("DELETE FROM chat_refresh_tokens WHERE discord_id = ?", (did,))
+        await self._conn.commit()
+
+    async def unban_chat_user(self, discord_id: str) -> None:
+        await self._conn.execute("DELETE FROM chat_bans WHERE discord_id = ?", (str(discord_id),))
+        await self._conn.commit()
+
+    async def is_chat_user_banned(self, discord_id: str) -> bool:
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM chat_bans WHERE discord_id = ?", (str(discord_id),))
+        return await cursor.fetchone() is not None
+
+    async def list_chat_bans(self) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM chat_bans ORDER BY banned_at DESC")
+        return [dict(row) for row in await cursor.fetchall()]

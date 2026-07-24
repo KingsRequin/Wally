@@ -34,6 +34,8 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot.db.update_love_score = AsyncMock()
     bot.db.get_love_score = AsyncMock(return_value=0.0)
     bot.db.upsert_memory_user = AsyncMock()
+    bot.db.is_chat_user_banned = AsyncMock(return_value=False)
+    bot.memory._user_id = MagicMock(side_effect=lambda platform, uid: f"{platform}:{uid}")
     bot.config.bot.love_decay_lambda = 0.02
 
     bot.emotion.get_state = MagicMock(

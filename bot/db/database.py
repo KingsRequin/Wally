@@ -214,6 +214,13 @@ CREATE TABLE IF NOT EXISTS chat_refresh_tokens (
     expires_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS chat_bans (
+    discord_id TEXT PRIMARY KEY,
+    username   TEXT,
+    reason     TEXT,
+    banned_at  REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_aliases (
     nickname     TEXT PRIMARY KEY,
     canonical_uid TEXT NOT NULL,

@@ -501,11 +501,45 @@ async def list_notification_channels(request: Request) -> dict:
 
 @router.get("/chat-connections")
 async def list_chat_connections(request: Request, limit: int = 50) -> dict:
-    """Liste les connexions récentes au chat web."""
+    """Liste les connexions récentes au chat web (avec flag `banned`)."""
     state = request.app.state.wally
     limit = max(1, min(limit, 200))
     connections = await state.db.list_chat_connections(limit)
+    banned_ids = {b["discord_id"] for b in await state.db.list_chat_bans()}
+    for c in connections:
+        c["banned"] = str(c["discord_id"]) in banned_ids
     return {"connections": connections}
+
+
+@router.get("/chat-bans")
+async def list_chat_bans(request: Request) -> dict:
+    """Liste les utilisateurs bannis du chat/bot."""
+    state = request.app.state.wally
+    return {"bans": await state.db.list_chat_bans()}
+
+
+@router.post("/chat-bans")
+async def ban_chat_user(request: Request) -> dict:
+    """Bannit un utilisateur (par discord_id). Wally l'ignore partout."""
+    body = await request.json()
+    discord_id = str(body.get("discord_id", "")).strip()
+    if not discord_id:
+        raise HTTPException(400, detail="discord_id requis")
+    state = request.app.state.wally
+    username = body.get("username")
+    reason = body.get("reason")
+    await state.db.ban_chat_user(discord_id, username, reason)
+    logger.info("Chat user banned: {u} ({id})", u=username, id=discord_id)
+    return {"status": "banned", "discord_id": discord_id}
+
+
+@router.delete("/chat-bans/{discord_id}")
+async def unban_chat_user(request: Request, discord_id: str) -> dict:
+    """Lève le bannissement d'un utilisateur."""
+    state = request.app.state.wally
+    await state.db.unban_chat_user(discord_id)
+    logger.info("Chat user unbanned: {id}", id=discord_id)
+    return {"status": "unbanned", "discord_id": discord_id}
 
 
 @router.post("/overlay-image/test")

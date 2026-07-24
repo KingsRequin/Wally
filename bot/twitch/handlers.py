@@ -116,6 +116,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if "bot" in badge_ids:
         return
 
+    # Utilisateur banni : le ban est keyé sur le discord_id. On l'applique sur
+    # Twitch UNIQUEMENT si ce compte Twitch est lié à un discord banni (alias
+    # accepté). Sans liaison, on ne peut pas savoir → non filtré.
+    canonical = bot.memory._user_id("twitch", user_id)
+    if canonical.startswith("discord:") and await bot.db.is_chat_user_banned(canonical.split(":", 1)[1]):
+        logger.debug("Ignoring banned user (twitch→{})", canonical)
+        return
+
     # Persiste le login Twitch pour que le dashboard affiche un nom lisible
     await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
 

@@ -42,6 +42,7 @@ def _make_spam_bot(enabled=True, max_messages=3, window_seconds=10, mute_minutes
 
     bot.db = MagicMock()
     bot.db.add_timeout = AsyncMock()
+    bot.db.is_chat_user_banned = AsyncMock(return_value=False)
     bot.db.is_muted = AsyncMock(return_value=False)
     bot.db.is_welcomed = AsyncMock(return_value=True)
 

@@ -907,6 +907,11 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if message.author.bot:
         return
 
+    # Utilisateur banni depuis l'admin → Wally l'ignore totalement (aucune réponse, aucune mémoire)
+    if await bot.db.is_chat_user_banned(str(message.author.id)):
+        logger.debug("Ignoring banned user {}", message.author.id)
+        return
+
     # Ignore entièrement les guilds blacklistés (ex: serveurs de test/notification)
     if message.guild and message.guild.id in bot.config.discord.ignored_guilds:
         return

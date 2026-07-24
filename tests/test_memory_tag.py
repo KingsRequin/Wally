@@ -68,6 +68,7 @@ async def test_discord_handler_updates_context_window(tmp_path):
     bot.db.update_love_score = AsyncMock()
     bot.db.get_love_score = AsyncMock(return_value=0.0)
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
+    bot.db.is_chat_user_banned = AsyncMock(return_value=False)
     bot.config.bot.love_decay_lambda = 0.02
     bot.llm.complete = AsyncMock(return_value="Réponse de Wally")
     bot.llm.complete_with_tools = AsyncMock(return_value=("Réponse de Wally", []))

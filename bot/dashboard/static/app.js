@@ -1359,46 +1359,109 @@ async function loadVisitorsInPanel() {
   const el = document.getElementById('logs-sub-visitors');
   if (!el) return;
 
-  const r = await apiFetch('/api/admin/chat-connections?limit=100');
-  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
-  const data = await r.json();
-  const conns = data.connections || [];
+  const [rc, rb] = await Promise.all([
+    apiFetch('/api/admin/chat-connections?limit=100'),
+    apiFetch('/api/admin/chat-bans'),
+  ]);
+  if (!rc || !rc.ok || !rb || !rb.ok) { el.textContent = 'Erreur de chargement'; return; }
+  const conns = (await rc.json()).connections || [];
+  const bans = (await rb.json()).bans || [];
 
-  if (conns.length === 0) {
-    el.innerHTML = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
-    return;
-  }
+  const _btnStyle = 'padding:4px 12px;font-size:12px;';
 
-  let rows = '';
-  for (const c of conns) {
-    const connTime = new Date(c.connected_at * 1000);
-    const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-    const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const duration = c.disconnected_at
-      ? formatDuration(c.disconnected_at - c.connected_at)
-      : '<span style="color:#00E5A0">en ligne</span>';
-    const avatarHtml = c.avatar_url
-      ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
-      : '<div class="visitor-avatar-placeholder"></div>';
-    rows += `
-      <div class="visitor-row">
-        ${avatarHtml}
-        <div class="visitor-info">
-          <strong>${escHtml(c.username)}</strong>
-          <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
-        </div>
-        <div class="visitor-meta">
-          <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
-          <span class="visitor-duration">${duration}</span>
-        </div>
+  // ── Section Bannis ──
+  let bansCard = '';
+  if (bans.length) {
+    let brows = '';
+    for (const b of bans) {
+      const when = b.banned_at
+        ? new Date(b.banned_at * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+        : '';
+      brows += `
+        <div class="visitor-row">
+          <div class="visitor-avatar-placeholder"></div>
+          <div class="visitor-info">
+            <strong>${escHtml(b.username || b.discord_id)}</strong>
+            <span class="visitor-date">banni le ${escHtml(when)}${b.reason ? ' · ' + escHtml(b.reason) : ''}</span>
+          </div>
+          <div class="visitor-meta">
+            <button class="btn btn-outline" style="${_btnStyle}" data-action="unban" data-id="${escAttr(b.discord_id)}">Débannir</button>
+          </div>
+        </div>`;
+    }
+    bansCard = `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">BANNIS (${bans.length})</div>
+        <div class="visitor-list">${brows}</div>
       </div>`;
   }
 
-  el.innerHTML = `
-    <div class="card">
-      <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
-      <div class="visitor-list">${rows}</div>
-    </div>`;
+  // ── Connexions récentes ──
+  let connCard;
+  if (conns.length === 0) {
+    connCard = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
+  } else {
+    let rows = '';
+    for (const c of conns) {
+      const connTime = new Date(c.connected_at * 1000);
+      const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+      const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      const duration = c.disconnected_at
+        ? formatDuration(c.disconnected_at - c.connected_at)
+        : '<span style="color:#00E5A0">en ligne</span>';
+      const avatarHtml = c.avatar_url
+        ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
+        : '<div class="visitor-avatar-placeholder"></div>';
+      const actionBtn = c.banned
+        ? `<button class="btn btn-outline" style="${_btnStyle}" data-action="unban" data-id="${escAttr(c.discord_id)}">Débannir</button>`
+        : `<button class="btn btn-danger" style="${_btnStyle}" data-action="ban" data-id="${escAttr(c.discord_id)}" data-username="${escAttr(c.username || '')}">Bannir</button>`;
+      rows += `
+        <div class="visitor-row">
+          ${avatarHtml}
+          <div class="visitor-info">
+            <strong>${escHtml(c.username)}</strong>
+            <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
+          </div>
+          <div class="visitor-meta">
+            <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
+            <span class="visitor-duration">${duration}</span>
+            ${actionBtn}
+          </div>
+        </div>`;
+    }
+    connCard = `
+      <div class="card">
+        <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
+        <div class="visitor-list">${rows}</div>
+      </div>`;
+  }
+
+  el.innerHTML = bansCard + connCard;
+
+  // Délégation : les pseudos peuvent contenir des quotes → pas d'inline onclick
+  el.querySelectorAll('button[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      if (btn.getAttribute('data-action') === 'ban') banUser(id, btn.getAttribute('data-username'));
+      else unbanUser(id);
+    });
+  });
+}
+
+async function banUser(discordId, username) {
+  if (!confirm(`Bannir ${username || discordId} ? Wally l'ignorera partout (chat web, Discord, Twitch si lié).`)) return;
+  const r = await apiFetch('/api/admin/chat-bans', {
+    method: 'POST',
+    body: JSON.stringify({ discord_id: discordId, username }),
+  });
+  if (r && r.ok) { toast('Utilisateur banni', 'success'); loadVisitorsInPanel(); }
+  else if (r) toast('Échec du bannissement', 'error');
+}
+
+async function unbanUser(discordId) {
+  const r = await apiFetch('/api/admin/chat-bans/' + encodeURIComponent(discordId), { method: 'DELETE' });
+  if (r && r.ok) { toast('Bannissement levé', 'success'); loadVisitorsInPanel(); }
+  else if (r) toast('Échec', 'error');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

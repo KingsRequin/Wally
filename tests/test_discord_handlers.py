@@ -43,6 +43,7 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.db.get_love_score = AsyncMock(return_value=0.0)
     bot.db.count_recent_triggers = AsyncMock(return_value=0)
     bot.db.add_timeout = AsyncMock()
+    bot.db.is_chat_user_banned = AsyncMock(return_value=False)
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
     bot.config.bot.love_decay_lambda = 0.02
@@ -148,6 +149,17 @@ async def test_trigger_by_name_calls_respond():
     with patch("bot.discord.handlers.asyncio.create_task"):
         await handle_message(bot, message)
     message.reply.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_banned_user_is_ignored():
+    """Un utilisateur banni est totalement ignoré, même s'il déclenche Wally."""
+    bot = make_bot(trigger_names=["wally"])
+    bot.db.is_chat_user_banned = AsyncMock(return_value=True)
+    message = make_message(content="wally bonjour")
+    await handle_message(bot, message)
+    message.reply.assert_not_awaited()
+    bot.db.is_muted.assert_not_called()  # coupé avant tout traitement
 
 
 @pytest.mark.asyncio

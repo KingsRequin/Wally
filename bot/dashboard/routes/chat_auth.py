@@ -125,11 +125,15 @@ async def callback(code: str, request: Request):
     avatar_hash = user.get("avatar")
     avatar_url = f"https://cdn.discordapp.com/avatars/{discord_id}/{avatar_hash}.png" if avatar_hash else None
 
+    state = request.app.state.wally
+    if await state.db.is_chat_user_banned(discord_id):
+        logger.info("Discord OAuth2 login refused (banned): {u} ({id})", u=username, id=discord_id)
+        raise HTTPException(403, detail="Banned")
+
     secret = _jwt_secret(request)
     jwt_token = create_jwt(discord_id, username, avatar_url, secret)
 
     refresh_token = uuid.uuid4().hex
-    state = request.app.state.wally
     await state.db.store_refresh_token(
         hash_token(refresh_token), discord_id, username, avatar_url,
         time.time() + REFRESH_TTL,
@@ -175,6 +179,10 @@ async def refresh(request: Request):
     stored = await state.db.get_refresh_token(hash_token(old_token))
     if not stored:
         raise HTTPException(401, detail="Invalid or expired refresh token")
+
+    if await state.db.is_chat_user_banned(stored["discord_id"]):
+        await state.db.delete_refresh_token(hash_token(old_token))
+        raise HTTPException(403, detail="Banned")
 
     await state.db.delete_refresh_token(hash_token(old_token))
 
