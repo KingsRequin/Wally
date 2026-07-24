@@ -511,6 +511,15 @@ async def list_chat_connections(request: Request, limit: int = 50) -> dict:
     return {"connections": connections}
 
 
+@router.get("/chat-connections/{discord_id}/messages")
+async def user_chat_messages(request: Request, discord_id: str, limit: int = 100) -> dict:
+    """Messages web envoyés par un utilisateur donné (plus récents d'abord)."""
+    state = request.app.state.wally
+    limit = max(1, min(limit, 500))
+    messages = await state.db.load_chat_messages_for_user(discord_id, limit)
+    return {"messages": messages}
+
+
 @router.get("/chat-bans")
 async def list_chat_bans(request: Request) -> dict:
     """Liste les utilisateurs bannis du chat/bot."""

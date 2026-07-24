@@ -1468,7 +1468,14 @@ async function loadVisitorsInPanel() {
             ${actionBtn}
           </div>
         </div>
-        <div class="visitor-detail" style="display:none;">${detail}</div>`;
+        <div class="visitor-detail" style="display:none;">
+          <div style="padding:8px 52px 2px;font-size:10px;letter-spacing:.5px;color:var(--text-secondary);text-transform:uppercase;">Connexions</div>
+          ${detail}
+          <div style="padding:12px 52px 2px;font-size:10px;letter-spacing:.5px;color:var(--text-secondary);text-transform:uppercase;">Messages envoyés</div>
+          <div class="visitor-messages" data-id="${escAttr(g.discord_id)}" data-loaded="0" style="padding:2px 52px 10px;">
+            <span style="color:var(--text-secondary);font-size:12px;">…</span>
+          </div>
+        </div>`;
     }
     connCard = `
       <div class="card">
@@ -1489,7 +1496,7 @@ async function loadVisitorsInPanel() {
     });
   });
 
-  // Clic sur un utilisateur → déplie/replie son historique de connexions.
+  // Clic sur un utilisateur → déplie/replie ses connexions + ses messages (lazy).
   el.querySelectorAll('.visitor-group').forEach((row) => {
     row.addEventListener('click', () => {
       const detail = row.nextElementSibling;
@@ -1498,8 +1505,40 @@ async function loadVisitorsInPanel() {
       detail.style.display = open ? 'none' : '';
       const chev = row.querySelector('.visitor-chevron');
       if (chev) chev.textContent = open ? '▸' : '▾';
+      if (!open) {
+        const box = detail.querySelector('.visitor-messages');
+        if (box && box.dataset.loaded === '0') loadUserMessages(box, box.dataset.id);
+      }
     });
   });
+}
+
+async function loadUserMessages(box, discordId) {
+  box.dataset.loaded = '1';
+  box.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;">Chargement…</span>';
+  const r = await apiFetch('/api/admin/chat-connections/' + encodeURIComponent(discordId) + '/messages?limit=100');
+  if (!r || !r.ok) {
+    box.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;">Erreur de chargement</span>';
+    box.dataset.loaded = '0';
+    return;
+  }
+  const msgs = (await r.json()).messages || [];
+  if (!msgs.length) {
+    box.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;">Aucun message</span>';
+    return;
+  }
+  let html = '';
+  for (const m of msgs) {
+    const t = new Date(m.created_at * 1000);
+    const ts = t.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+      + ' ' + t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    html += `
+      <div style="padding:6px 0;border-top:1px solid rgba(255,255,255,.06);">
+        <div style="font-size:11px;color:var(--text-secondary);">${escHtml(ts)}</div>
+        <div style="white-space:pre-wrap;word-break:break-word;">${escHtml(m.content)}</div>
+      </div>`;
+  }
+  box.innerHTML = html;
 }
 
 async function banUser(discordId, username) {

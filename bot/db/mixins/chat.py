@@ -81,6 +81,14 @@ class ChatMixin:
         rows = await cursor.fetchall()
         return [row["day"] for row in rows]
 
+    async def load_chat_messages_for_user(self, discord_id: str, limit: int = 100) -> list[dict]:
+        """Messages web envoyés par un utilisateur (is_wally=0), plus récents d'abord."""
+        cursor = await self._conn.execute(
+            "SELECT * FROM chat_messages WHERE sender_id = ? AND is_wally = 0 "
+            "ORDER BY created_at DESC LIMIT ?",
+            (f"discord:{discord_id}", limit))
+        return [dict(row) for row in await cursor.fetchall()]
+
     async def cleanup_old_chat_messages(self, days=30):
         cutoff = time.time() - days * 86400
         await self._conn.execute("DELETE FROM chat_messages WHERE created_at < ?", (cutoff,))
