@@ -1396,38 +1396,79 @@ async function loadVisitorsInPanel() {
       </div>`;
   }
 
-  // ── Connexions récentes ──
+  // ── Connexions récentes (groupées par utilisateur) ──
   let connCard;
   if (conns.length === 0) {
     connCard = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
   } else {
-    let rows = '';
+    // Regroupe par discord_id ; on garde les infos les plus récentes (pseudo/avatar).
+    const groups = new Map();
     for (const c of conns) {
-      const connTime = new Date(c.connected_at * 1000);
-      const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-      const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-      const duration = c.disconnected_at
-        ? formatDuration(c.disconnected_at - c.connected_at)
-        : '<span style="color:#00E5A0">en ligne</span>';
-      const avatarHtml = c.avatar_url
-        ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
+      let g = groups.get(c.discord_id);
+      if (!g) {
+        g = { discord_id: c.discord_id, username: c.username, avatar_url: c.avatar_url,
+              banned: false, conns: [], totalMsgs: 0, online: false, lastConnected: 0 };
+        groups.set(c.discord_id, g);
+      }
+      g.conns.push(c);
+      g.totalMsgs += parseInt(c.message_count, 10) || 0;
+      if (!c.disconnected_at) g.online = true;
+      if (c.banned) g.banned = true;
+      if (c.connected_at > g.lastConnected) {
+        g.lastConnected = c.connected_at;
+        g.username = c.username;
+        if (c.avatar_url) g.avatar_url = c.avatar_url;
+      }
+    }
+    const sorted = [...groups.values()].sort((a, b) => b.lastConnected - a.lastConnected);
+
+    let rows = '';
+    for (const g of sorted) {
+      const lastD = new Date(g.lastConnected * 1000);
+      const lastStr = lastD.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+        + ' ' + lastD.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      const avatarHtml = g.avatar_url
+        ? `<img src="${escAttr(g.avatar_url)}" class="visitor-avatar" alt="">`
         : '<div class="visitor-avatar-placeholder"></div>';
-      const actionBtn = c.banned
-        ? `<button class="btn btn-outline" style="${_btnStyle}" data-action="unban" data-id="${escAttr(c.discord_id)}">Débannir</button>`
-        : `<button class="btn btn-danger" style="${_btnStyle}" data-action="ban" data-id="${escAttr(c.discord_id)}" data-username="${escAttr(c.username || '')}">Bannir</button>`;
+      const actionBtn = g.banned
+        ? `<button class="btn btn-outline" style="${_btnStyle}" data-action="unban" data-id="${escAttr(g.discord_id)}">Débannir</button>`
+        : `<button class="btn btn-danger" style="${_btnStyle}" data-action="ban" data-id="${escAttr(g.discord_id)}" data-username="${escAttr(g.username || '')}">Bannir</button>`;
+      const onlineBadge = g.online ? '<span style="color:#00E5A0;font-size:12px;">● en ligne</span>' : '';
+      const plural = g.conns.length > 1 ? 's' : '';
+
+      // Détail replié : historique des connexions de cet utilisateur (chrono décroissant)
+      let detail = '';
+      for (const c of g.conns) {
+        const t = new Date(c.connected_at * 1000);
+        const ds = t.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+        const ts = t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const dur = c.disconnected_at
+          ? formatDuration(c.disconnected_at - c.connected_at)
+          : '<span style="color:#00E5A0">en ligne</span>';
+        detail += `
+          <div class="visitor-row" style="padding-left:52px;opacity:.85;">
+            <div class="visitor-info"><span class="visitor-date">${escHtml(ds)} ${escHtml(ts)}</span></div>
+            <div class="visitor-meta">
+              <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
+              <span class="visitor-duration">${dur}</span>
+            </div>
+          </div>`;
+      }
+
       rows += `
-        <div class="visitor-row">
+        <div class="visitor-row visitor-group" style="cursor:pointer;">
           ${avatarHtml}
           <div class="visitor-info">
-            <strong>${escHtml(c.username)}</strong>
-            <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
+            <strong><span class="visitor-chevron" style="color:var(--text-secondary);font-size:11px;">▸</span> ${escHtml(g.username)}</strong>
+            <span class="visitor-date">${g.conns.length} connexion${plural} · dernière ${escHtml(lastStr)}</span>
           </div>
           <div class="visitor-meta">
-            <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
-            <span class="visitor-duration">${duration}</span>
+            ${onlineBadge}
+            <span class="visitor-msgs">${g.totalMsgs} msg</span>
             ${actionBtn}
           </div>
-        </div>`;
+        </div>
+        <div class="visitor-detail" style="display:none;">${detail}</div>`;
     }
     connCard = `
       <div class="card">
@@ -1438,12 +1479,25 @@ async function loadVisitorsInPanel() {
 
   el.innerHTML = bansCard + connCard;
 
-  // Délégation : les pseudos peuvent contenir des quotes → pas d'inline onclick
+  // Ban / unban (délégation — pseudos à quotes). stopPropagation : ne pas déplier le groupe.
   el.querySelectorAll('button[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute('data-id');
       if (btn.getAttribute('data-action') === 'ban') banUser(id, btn.getAttribute('data-username'));
       else unbanUser(id);
+    });
+  });
+
+  // Clic sur un utilisateur → déplie/replie son historique de connexions.
+  el.querySelectorAll('.visitor-group').forEach((row) => {
+    row.addEventListener('click', () => {
+      const detail = row.nextElementSibling;
+      if (!detail || !detail.classList.contains('visitor-detail')) return;
+      const open = detail.style.display !== 'none';
+      detail.style.display = open ? 'none' : '';
+      const chev = row.querySelector('.visitor-chevron');
+      if (chev) chev.textContent = open ? '▸' : '▾';
     });
   });
 }
