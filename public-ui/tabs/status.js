@@ -275,17 +275,6 @@ async function openGoalModal() {
   document.body.appendChild(overlay);
 }
 
-function svcPill(label, on, warn) {
-  const s = document.createElement('span');
-  s.className = 'arc-pill' + (on ? '' : (warn ? ' warn' : ' off'));
-  const dot = document.createElement('span');
-  dot.textContent = '●';
-  dot.style.color = on ? 'var(--green)' : (warn ? 'var(--yellow)' : 'var(--pink)');
-  s.appendChild(dot);
-  s.appendChild(document.createTextNode(' ' + label));
-  return s;
-}
-
 function renderStatus(el, status, stream) {
   el.textContent = '';
 
@@ -345,13 +334,10 @@ function renderStatus(el, status, stream) {
   el.appendChild(feedCard);
   renderFeed(feedList);
 
-  // PERSONNALITÉ + SERVICES — même ligne
-  const cols = document.createElement('div');
-  cols.className = 'arc-grid';
-  cols.style.cssText = 'grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:18px;align-items:start;';
-
+  // PERSONNALITÉ — pleine largeur
   const emoCard = document.createElement('div');
   emoCard.className = 'arc-card';
+  emoCard.style.marginTop = '18px';
   const emoTitle = document.createElement('div');
   emoTitle.className = 'arc-stat-label';
   emoTitle.style.cssText = 'font-size:11px;color:var(--yellow);margin-bottom:16px;';
@@ -361,25 +347,7 @@ function renderStatus(el, status, stream) {
   bars.id = 'status-emo-bars';
   renderEmoBars(bars);
   emoCard.appendChild(bars);
-  cols.appendChild(emoCard);
-
-  const svcCard = document.createElement('div');
-  svcCard.className = 'arc-card';
-  const svcTitle = document.createElement('div');
-  svcTitle.className = 'arc-stat-label';
-  svcTitle.style.cssText = 'font-size:11px;color:var(--yellow);margin-bottom:14px;';
-  svcTitle.textContent = 'SERVICES';
-  svcCard.appendChild(svcTitle);
-  const svcWrap = document.createElement('div');
-  svcWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;';
-  svcWrap.appendChild(svcPill('DeepSeek', true));
-  svcWrap.appendChild(svcPill('Discord', !!status.discord_online, true));
-  svcWrap.appendChild(svcPill('Twitch', !!status.twitch_online, true));
-  svcWrap.appendChild(svcPill('Mémoire FTS5', true));
-  svcCard.appendChild(svcWrap);
-  cols.appendChild(svcCard);
-
-  el.appendChild(cols);
+  el.appendChild(emoCard);
 
   const histCard = document.createElement('div');
   histCard.className = 'arc-card';

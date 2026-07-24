@@ -171,6 +171,40 @@ function decodeJwt(t) {
   } catch (_) { return null; }
 }
 
+// Le JWT expire après 1h mais le refresh token vit 30 jours. Au chargement,
+// si le JWT est absent/expiré, on le rafraîchit silencieusement pour rester
+// connecté après un reload. La promesse est mémoïsée : app.js et chat.js
+// partagent le même appel (le refresh token est à usage unique côté serveur).
+let _refreshPromise = null;
+export function ensureFreshToken() {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    const jwt = localStorage.getItem('discord_jwt');
+    const p = jwt ? decodeJwt(jwt) : null;
+    if (p && (!p.exp || p.exp * 1000 > Date.now())) return true;  // encore valide
+
+    const refresh = localStorage.getItem('discord_refresh');
+    if (!refresh) return false;
+
+    try {
+      const r = await fetch('/api/chat/auth/refresh', { headers: { Authorization: 'Bearer ' + refresh } });
+      if (!r.ok) throw new Error('refresh failed');
+      const d = await r.json();
+      if (!d || !d.jwt) throw new Error('no jwt');
+      localStorage.setItem('discord_jwt', d.jwt);
+      if (d.refresh_token) localStorage.setItem('discord_refresh', d.refresh_token);
+      return true;
+    } catch (_) {
+      // Refresh token invalide/expiré → vraie déconnexion, on nettoie
+      localStorage.removeItem('discord_jwt');
+      localStorage.removeItem('discord_refresh');
+      return false;
+    }
+  })();
+  _refreshPromise.finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
+}
+
 function renderAuth() {
   const host = document.getElementById('arc-auth');
   if (!host) return;
@@ -232,7 +266,7 @@ function renderAuth() {
   host.appendChild(out);
 }
 
-loadOwnerId();
+ensureFreshToken().then(loadOwnerId);
 
 // Retour OAuth : chat.js échange le code de façon asynchrone puis émet
 // `wally-auth-changed` quand le JWT est posé — on re-render le widget aussitôt,

@@ -89,7 +89,7 @@ export function mount(el) {
   h2.textContent = 'À PROPOS';
   const sub = document.createElement('div');
   sub.className = 'arc-sub';
-  sub.textContent = 'un bot qui se souvient, qui ressent, et qui répond "feur".';
+  sub.textContent = 'un bot qui se souvient et qui ressent.';
   head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
   wrap.appendChild(head);
 
@@ -102,20 +102,6 @@ export function mount(el) {
   descText.textContent = 'Wally est un assistant IA pour Discord et Twitch doté d\'une personnalité persistante, d\'une mémoire à long terme et d\'un système émotionnel en temps réel. Il ne se contente pas de répondre — il se souvient, il ressent, il évolue au fil des interactions. Il discute aussi bien à l\'écrit qu\'en vocal sur Discord. Construit sur un monolithe Python asyncio, propulsé par DeepSeek, avec une mémoire plein-texte FTS5 (SQLite).';
   descCard.appendChild(descText);
   wrap.appendChild(descCard);
-
-  // ── Le gag officiel ──
-  const gagCard = document.createElement('div');
-  gagCard.className = 'arc-card';
-  gagCard.style.cssText = 'margin-bottom:18px;border-left:6px solid var(--pink);';
-  gagCard.appendChild(sectionTitle('LE GAG OFFICIEL'));
-  const gagBody = document.createElement('div');
-  gagBody.style.cssText = 'font-size:22px;color:var(--text);';
-  const q = document.createElement('span'); q.style.color = 'var(--muted2)'; q.textContent = 'quoi ';
-  const arrow = document.createElement('span'); arrow.style.color = 'var(--muted)'; arrow.textContent = '→ ';
-  const feur = document.createElement('span'); feur.style.color = 'var(--yellow)'; feur.textContent = 'feur.';
-  gagBody.appendChild(q); gagBody.appendChild(arrow); gagBody.appendChild(feur);
-  gagCard.appendChild(gagBody);
-  wrap.appendChild(gagCard);
 
   // ── Pipeline « comment il fonctionne » ──
   const pipeCard = document.createElement('div');

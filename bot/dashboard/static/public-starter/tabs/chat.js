@@ -1,5 +1,5 @@
 // public-ui/tabs/chat.js — arcade
-import { emotions } from '../app.js';
+import { emotions, ensureFreshToken } from '../app.js';
 import { renderMarkdown } from '../markdown.js';
 
 let _ws          = null;
@@ -73,6 +73,13 @@ function getAvatarUrl(emo) {
 
 function getToken() {
   return localStorage.getItem('discord_jwt') || null;
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64));
+  } catch (_) { return null; }
 }
 
 // ── Indicateur de connexion WS ──
@@ -617,19 +624,33 @@ export function mount(el) {
   }
 
   const token = getToken();
-  if (!token) {
+  const payload = token ? decodeJwtPayload(token) : null;
+  const tokenValid = payload && (!payload.exp || payload.exp * 1000 > Date.now());
+
+  // JWT absent/expiré : on tente un refresh silencieux avant de montrer le
+  // login, sinon un simple reload déconnectait l'utilisateur au bout d'1h.
+  if (!tokenValid) {
+    if (localStorage.getItem('discord_refresh')) {
+      const loading = document.createElement('div');
+      loading.className = 'empty-state';
+      loading.textContent = 'Reconnexion…';
+      el.appendChild(loading);
+      ensureFreshToken().then((ok) => {
+        if (!_mounted || _container !== el) return;
+        if (ok) window.dispatchEvent(new CustomEvent('wally-auth-changed'));
+        el.textContent = '';
+        mount(el);  // re-render : token frais → chat, sinon → login gate
+      });
+      return;
+    }
     el.appendChild(buildLoginGate());
     return;
   }
 
-  // Décode JWT (sans vérification — le serveur valide)
-  let user = { username: 'Utilisateur', avatar_url: '' };
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(b64));
-    user.username  = payload.username || payload.sub || 'Utilisateur';
-    user.avatar_url = payload.avatar_url || '';
-  } catch (_) {}
+  const user = {
+    username: payload.username || payload.sub || 'Utilisateur',
+    avatar_url: payload.avatar_url || '',
+  };
 
   el.appendChild(buildChatLayout(user));
 }
