@@ -49,7 +49,6 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
     try:
         from twitchio.ext import eventsub
         from twitchio.ext.eventsub.models import SubscriptionTypes
-        from twitchio.ext.eventsub.websocket import _Subscription
 
         # Patch twitchio v2 to support channel.chat.message
         # (absent from SubscriptionTypes — would cause KeyError in pump() if not patched)

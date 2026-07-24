@@ -6,7 +6,6 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from loguru import logger
 
 TZ = ZoneInfo("Europe/Paris")
 

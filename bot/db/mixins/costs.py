@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import aiosqlite
-from loguru import logger
 
 _TZ_COSTS = ZoneInfo("Europe/Paris")
 

@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Awaitable, Optional
+from typing import TYPE_CHECKING, Callable, Awaitable
 
 from loguru import logger
 import os

@@ -5,7 +5,6 @@ import re
 from typing import TYPE_CHECKING
 
 import discord
-from loguru import logger
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord

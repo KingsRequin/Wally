@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -333,10 +332,6 @@ async def my_memories(request: Request):
     payload = decode_jwt(auth[7:], _jwt_secret_raw())
     if not payload:
         raise HTTPException(401, detail="Invalid or expired token")
-
-    state: AppState = request.app.state.wally
-    discord_id = payload["discord_id"]
-    user_id = f"discord:{discord_id}"
 
     # V2 refonte — store supprimé
     return {"memories": []}

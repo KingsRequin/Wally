@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-import difflib
 import json
 import os
 import random
-import re
 import time
 from typing import TYPE_CHECKING
 
@@ -14,7 +12,7 @@ from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
 from bot.core.conversation_log import new_trace_id
-from bot.discord.handlers import _check_spontaneous_trigger, _parse_react_tag, _NOTE_TOOLS, _third_party_mention_context
+from bot.discord.handlers import _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch

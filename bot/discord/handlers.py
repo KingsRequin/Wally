@@ -8,7 +8,7 @@ import random
 import re
 import time
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import discord
 from loguru import logger

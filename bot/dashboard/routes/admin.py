@@ -486,7 +486,6 @@ async def list_notification_channels(request: Request) -> dict:
     if state.discord_bot is None:
         return {"guilds": []}
 
-    import discord
     guilds = []
     for guild in state.discord_bot.guilds:
         channels = []

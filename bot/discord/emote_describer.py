@@ -27,7 +27,7 @@ from loguru import logger
 from bot.intelligence.memory.facts import AtomicFact, FactCategory
 
 if TYPE_CHECKING:  # pragma: no cover
-    import discord
+    pass
 
 # Source des faits générés automatiquement — distincte de "emote_note" (manuel)
 # pour tracer l'origine et refléter une confiance moindre qu'une explication humaine.

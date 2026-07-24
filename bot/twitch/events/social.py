@@ -1,7 +1,6 @@
 # bot/twitch/events/social.py
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 from loguru import logger
