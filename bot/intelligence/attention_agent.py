@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -17,6 +18,17 @@ _INTROSPECTION_SEEDS = (
     "Est-ce qu'il y a une habitude de pensée dont tu voudrais te défaire ?",
 )
 _INTROSPECTION_PROB = 1.0 / 3.0
+
+# Anti-spirale introspective (bug du 25/07/2026) : le 1/3 ci-dessus est le taux
+# de REPOS neutre. Sans interaction, il s'auto-entretenait en journées entières
+# de méta-rumination — aucun garde-fou ne mesurait la saturation d'auto-analyse
+# à l'échelle de l'heure (le juge de progression opère pensée-par-pensée, aveugle
+# à la dérive thématique intégrité→flow→signaux→lâcher-prise). On tient donc une
+# fenêtre glissante des dernières amorces idle ; plus la part introspective y est
+# haute, plus la proba EFFECTIVE chute (courbe quadratique → effondrement franc
+# quand la saturation grimpe). Émergent : aucun seuil horaire, la fenêtre se rince
+# d'elle-même dès que le vagabondage repart vers le monde (RSS, gens, veilleur).
+_SATURATION_WINDOW = 12
 
 
 def _seed_overlaps_focus(text: str, focus: str | None) -> bool:
@@ -141,6 +153,11 @@ class AttentionAgent:
         # Veilleur read-only (ServerWatcher) : digest périphérique de l'activité
         # récente, offert comme UNE amorce de vagabondage. None → pas de veille.
         self._server_watch = server_watch
+        # Fenêtre glissante des dernières amorces idle (True = introspective).
+        # Sert à faire ÉMERGER la proba d'introspection au lieu du 1/3 fixe :
+        # cf. _effective_introspection_prob. Reconstruite à chaud après reboot
+        # (signal court-terme, aucune persistance nécessaire).
+        self._seed_introspective_window: deque[bool] = deque(maxlen=_SATURATION_WINDOW)
 
     async def build_context(
         self,
@@ -369,6 +386,16 @@ class AttentionAgent:
             receptivity_score=receptivity_score,
         )
 
+    def _effective_introspection_prob(self) -> float:
+        """Proba d'introspection modulée par la saturation récente. Fenêtre vide
+        → base (1/3). Fenêtre pleine d'introspection → 0. Décroissance
+        quadratique : `base * (1 - saturation)²` (auto-correction franche)."""
+        window = self._seed_introspective_window
+        if not window:
+            return _INTROSPECTION_PROB
+        saturation = sum(window) / len(window)
+        return _INTROSPECTION_PROB * (1.0 - saturation) ** 2
+
     async def _build_idle_seed(
         self,
         emotion_state: dict[str, float],
@@ -391,9 +418,14 @@ class AttentionAgent:
         si une amorce issue d'un flux RSS a réellement été retenue — auquel cas
         l'article a été marqué consommé et sert d'event d'observabilité.
         """
-        # Veine introspection : une part du repos consacrée à se penser soi-même.
-        if random.random() < _INTROSPECTION_PROB:
+        # Veine introspection : une part du repos consacrée à se penser soi-même,
+        # mais dont la proba ÉMERGE de la saturation récente (anti-spirale). On
+        # enregistre le type d'amorce dans la fenêtre glissante sur les DEUX
+        # chemins pour que la mesure reste juste quelle que soit la source retenue.
+        if random.random() < self._effective_introspection_prob():
+            self._seed_introspective_window.append(True)
             return random.choice(_INTROSPECTION_SEEDS), None
+        self._seed_introspective_window.append(False)
 
         # Amorce sémantique (#A5) : quand une préoccupation traverse les ticks, le
         # vagabondage rebondit sur un souvenir LIÉ (recherche FTS globale) plutôt
