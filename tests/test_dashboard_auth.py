@@ -73,3 +73,39 @@ def test_sse_logs_exempt_from_auth():
     client = TestClient(_make_app("secret123"))
     r = client.get("/api/admin/sse/logs")
     assert r.status_code == 200
+
+
+def test_middleware_is_pure_asgi_not_basehttp():
+    """Régression bug 500 SSE : le middleware NE DOIT PAS hériter de
+    BaseHTTPMiddleware (dont le pipe memory-stream lève « No response returned. »
+    quand un client SSE se déconnecte). Un pur ASGI middleware est immunisé."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+    assert not issubclass(BearerAuthMiddleware, BaseHTTPMiddleware)
+
+
+def test_streaming_response_flows_through_middleware():
+    """Une réponse SSE (StreamingResponse) traverse le middleware sans être
+    bufferisée : le corps streamé arrive intégralement au client."""
+    from fastapi.responses import StreamingResponse
+
+    cfg = MagicMock()
+    cfg.bot.dashboard_token = "secret123"
+    state = MagicMock()
+    state.config = cfg
+
+    app = FastAPI()
+    app.add_middleware(BearerAuthMiddleware, state=state)
+
+    async def _gen():
+        for i in range(3):
+            yield f"data: {i}\n\n"
+
+    @app.get("/api/admin/sse/logs")
+    async def sse_logs():
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    client = TestClient(app)
+    with client.stream("GET", "/api/admin/sse/logs") as r:
+        assert r.status_code == 200
+        body = "".join(chunk for chunk in r.iter_text())
+    assert "data: 0" in body and "data: 2" in body
