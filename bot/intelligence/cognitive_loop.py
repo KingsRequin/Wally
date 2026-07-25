@@ -44,6 +44,11 @@ TYPING_THROTTLE = 30.0  # s
 # Nombre de ressassements consécutifs d'un focus avant de le laisser mourir.
 RUMINATION_LIMIT = 2
 
+# Fraction du quota Tavily au-delà de laquelle la cognition idle cesse de chercher
+# sur le web, pour RÉSERVER la marge restante aux vraies demandes utilisateur (qui
+# gardent le seuil 1.0). Le vagabondage ne doit jamais épuiser le quota du service.
+IDLE_WEB_SEARCH_QUOTA_RESERVE = 0.8
+
 # Boucle de feedback émotion→action→résultat (#A6) : les émotions de Wally
 # réagissent à l'issue sociale de ses prises de parole spontanées, comme un
 # humain. Magnitudes volontairement faibles (le moteur décroît + sature) ; ce
@@ -388,8 +393,13 @@ class CognitiveLoop:
         if not self._web_search.available:
             return result
         try:
-            if await self._web_search.is_quota_exceeded():
-                logger.info("web_search cognitif ignoré (quota Tavily dépassé)")
+            if await self._web_search.is_quota_exceeded(
+                threshold_fraction=IDLE_WEB_SEARCH_QUOTA_RESERVE
+            ):
+                logger.info(
+                    "web_search cognitif ignoré (réserve quota Tavily {}% atteinte)",
+                    int(IDLE_WEB_SEARCH_QUOTA_RESERVE * 100),
+                )
                 return result
         except Exception as e:  # noqa: BLE001
             logger.warning("is_quota_exceeded: {}", e)

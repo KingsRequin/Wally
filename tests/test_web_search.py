@@ -107,6 +107,25 @@ async def test_is_quota_exceeded_false():
     assert await service.is_quota_exceeded() is False
 
 
+@pytest.mark.asyncio
+async def test_quota_reserve_blocks_idle_but_not_users():
+    """Réserve de quota : la cognition idle (seuil 0.8) est bloquée à 85 % pour
+    garder une marge, mais une vraie demande utilisateur (seuil 1.0) passe encore.
+    C'est le garde-fou anti « la rumination brûle tout le quota Tavily »."""
+    config = make_config(monthly_limit=100)
+    service = WebSearchService(config, make_db(search_count=85))
+    assert await service.is_quota_exceeded(threshold_fraction=0.8) is True   # idle bloqué
+    assert await service.is_quota_exceeded() is False                        # user OK
+
+
+@pytest.mark.asyncio
+async def test_quota_reserve_default_unchanged():
+    """Le défaut (seuil 1.0) reste strictement l'ancien comportement 100 %."""
+    config = make_config(monthly_limit=100)
+    assert await WebSearchService(config, make_db(search_count=99)).is_quota_exceeded() is False
+    assert await WebSearchService(config, make_db(search_count=100)).is_quota_exceeded() is True
+
+
 def test_available_without_client():
     config = make_config()
     db = make_db()

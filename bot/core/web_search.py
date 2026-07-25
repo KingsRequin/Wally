@@ -95,7 +95,11 @@ class WebSearchService:
     def available(self) -> bool:
         return self._client is not None
 
-    async def is_quota_exceeded(self) -> bool:
+    async def is_quota_exceeded(self, threshold_fraction: float = 1.0) -> bool:
+        """True si le quota mensuel Tavily est atteint. `threshold_fraction` < 1.0
+        RÉSERVE une part du quota : la cognition idle appelle avec 0.8 pour se
+        brider plus tôt et garder une marge aux vraies demandes utilisateur
+        (qui gardent le seuil 1.0). Anti « la rumination brûle tout le quota »."""
         count = await self._db.count_web_searches_this_month()
         limit = self._config.tavily.monthly_limit
         if count >= int(limit * 0.8) and count < limit:
@@ -105,7 +109,7 @@ class WebSearchService:
                 count=count,
                 limit=limit,
             )
-        return count >= limit
+        return count >= int(limit * threshold_fraction)
 
     async def search(self, query: str, platform: str = "discord") -> str:
         """Execute a web search via Tavily and return formatted results as a string."""
