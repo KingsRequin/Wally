@@ -6,7 +6,82 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.twitch.events import (
     _bits_joy,
     register_events,
+    _subscribe_with_retry,
 )
+
+
+# ── _subscribe_with_retry : backoff sur 429 (bug boot : subscription_end/cheer
+#    abandonnées définitivement au 1er 429) ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_subscribe_success_first_try():
+    """Souscription OK au 1er essai → factory appelée une fois, pas de sleep."""
+    factory = MagicMock(return_value=_awaitable_ok())
+    sleeps = []
+    ok = await _subscribe_with_retry("follow", factory, sleep=_record(sleeps))
+    assert ok is True
+    assert factory.call_count == 1
+    assert sleeps == []  # aucun backoff
+
+
+@pytest.mark.asyncio
+async def test_subscribe_retries_on_429_then_succeeds():
+    """429 puis succès : la factory est RECRÉÉE à chaque essai (coroutine non
+    réutilisable) et un backoff est appliqué avant le retry."""
+    calls = {"n": 0}
+
+    def factory():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _awaitable_raise(Exception("Subscription failed. Status: 429"))
+        return _awaitable_ok()
+
+    sleeps = []
+    ok = await _subscribe_with_retry("cheer", factory, sleep=_record(sleeps))
+    assert ok is True
+    assert calls["n"] == 2
+    assert len(sleeps) == 1 and sleeps[0] > 0  # un backoff appliqué
+
+
+@pytest.mark.asyncio
+async def test_subscribe_gives_up_after_persistent_429():
+    """429 permanent : épuise les tentatives, ne lève jamais, retourne False."""
+    factory = MagicMock(side_effect=lambda: _awaitable_raise(Exception("Status: 429")))
+    sleeps = []
+    ok = await _subscribe_with_retry("cheer", factory, max_attempts=3, sleep=_record(sleeps))
+    assert ok is False
+    assert factory.call_count == 3        # 3 tentatives
+    assert len(sleeps) == 2               # backoff entre chaque, pas après la dernière
+
+
+@pytest.mark.asyncio
+async def test_subscribe_no_retry_on_non_429():
+    """Erreur non-429 (ex 4003, scope manquant) : échec définitif immédiat, pas
+    de retry — inutile de marteler une erreur non transitoire."""
+    factory = MagicMock(side_effect=lambda: _awaitable_raise(Exception("403 Forbidden")))
+    sleeps = []
+    ok = await _subscribe_with_retry("sub", factory, sleep=_record(sleeps))
+    assert ok is False
+    assert factory.call_count == 1
+    assert sleeps == []
+
+
+def _awaitable_ok():
+    async def _c():
+        return None
+    return _c()
+
+
+def _awaitable_raise(exc):
+    async def _c():
+        raise exc
+    return _c()
+
+
+def _record(store):
+    async def _sleep(d):
+        store.append(d)
+    return _sleep
 
 
 def make_bot(event_cfg=None):
