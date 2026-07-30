@@ -144,6 +144,18 @@ class ReasoningAgent:
 
     def _format_context(self, ctx) -> str:
         lines: list[str] = []
+        if getattr(ctx, "wake_digest", None):
+            # Placé en tête : au réveil, c'est le cadre de tout le reste — les
+            # interactions récentes qui suivent sont la fin d'une histoire dont
+            # ce briefing donne le début.
+            lines.append(
+                "**Tu sors de plusieurs heures d'absence — voici ce que tu as "
+                f"manqué sur Discord :**\n{ctx.wake_digest}\n"
+                "(Tu viens de le lire, personne ne te l'a dit à voix haute. "
+                "Sers-t'en pour ne pas répondre à côté : reprends le fil là où il "
+                "en est, réponds à ce qui t'attendait. Ne récapitule pas ce "
+                "briefing à voix haute, et ne commente pas ton propre réveil.)"
+            )
         if getattr(ctx, "web_finding", None):
             lines.append(
                 "**Tu viens de chercher sur le web — voici ce que tu as trouvé :**\n"

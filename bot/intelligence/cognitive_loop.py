@@ -92,6 +92,7 @@ class CognitiveLoop:
         web_search_cooldown_s: float = 2700.0,
         bedroom_channel_id: int | str | None = None,
         spontaneous_channel_speak_enabled: bool = False,
+        wake_digest=None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
@@ -114,6 +115,12 @@ class CognitiveLoop:
         # boot » (donc sous cooldown pendant 45 min après chaque reboot hôte) au
         # lieu de « jamais » — -inf rend l'écart infini, donc jamais sous cooldown.
         self._web_search_cooldown_ts = float("-inf")
+        # Digest de réveil : quand Wally est resté longtemps sans être sollicité
+        # (ou que son process était arrêté), la reprise est un « réveil » et il
+        # reçoit un résumé de ce qui s'est dit pendant son sommeil. None → pas de
+        # digest. Le réveil est armé par les notify_* (synchrone) puis consommé au
+        # tick suivant, qui seul peut se permettre l'appel LLM.
+        self._wake_digest = wake_digest
         # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
         self._focus_rumination_count = 0
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
@@ -178,6 +185,14 @@ class CognitiveLoop:
         # tick suit la cadence idle.
         if relevant or is_dm:
             self._last_relevant_activity_ts = self._last_activity_ts
+            # Réveil : si ça faisait des heures que plus personne ne le
+            # sollicitait, cette sollicitation le tire du sommeil → le digest de
+            # ce qui s'est dit entre-temps est armé (généré au tick suivant).
+            if self._wake_digest is not None:
+                try:
+                    self._wake_digest.note_engagement()
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("WakeDigest.note_engagement: {}", e)
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
         # une suite : c'est une RÉPONSE → issue d'engagement positive, puis on
         # remet le compteur « sans réponse » à zéro.
@@ -425,6 +440,20 @@ class CognitiveLoop:
             logger.warning("web_search 2e passe échouée, pensée initiale conservée: {}", e)
             return result
 
+    async def _consume_wake_digest(self) -> str | None:
+        """Récupère le digest du sommeil si un réveil est armé. Ne lève jamais :
+        un digest raté ne doit pas priver Wally de son tick."""
+        if self._wake_digest is None:
+            return None
+        try:
+            digest = await self._wake_digest.consume()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("WakeDigest.consume: {}", e)
+            return None
+        if digest:
+            self._log_cog("wake_digest", digest=digest[:1000])
+        return digest
+
     async def _tick(self) -> None:
         # Pas de nouvelle activité depuis le dernier tick → cognition « idle » :
         # Wally pense quand même, mais à partir d'une amorce de nouveauté (souvenir,
@@ -460,10 +489,15 @@ class CognitiveLoop:
                             await self._facts.clear_schedule(fid)
                         except Exception as e:  # noqa: BLE001
                             logger.warning("clear_schedule: {}", e)
+            # Réveil : un digest de ce qui s'est dit pendant le sommeil, s'il y a
+            # eu sommeil. Généré ici (et pas dans notify_activity) parce que c'est
+            # un appel LLM : le tick est le seul endroit qui peut se le permettre.
+            wake_digest = await self._consume_wake_digest()
             context = await self._attention.build_context(
                 emotion_state, self._recent_interactions, spontaneous=spontaneous, idle=is_idle,
                 recent_speaks=list(self._recent_speaks),
                 forced_seed=forced_seed,
+                wake_digest=wake_digest,
             )
             if self._feed:
                 rss_art = getattr(context, "rss_stimulus", None)
@@ -726,6 +760,13 @@ class CognitiveLoop:
 
     async def _run(self) -> None:
         logger.info("CognitiveLoop démarrée")
+        # Un démarrage qui suit une longue absence est lui aussi un réveil : on
+        # déduit des logs depuis quand Wally n'a plus donné signe de vie.
+        if self._wake_digest is not None:
+            try:
+                await self._wake_digest.bootstrap()
+            except Exception as e:  # noqa: BLE001 — jamais bloquant pour le boot
+                logger.warning("WakeDigest.bootstrap: {}", e)
         while self._running:
             interval = self._tick_interval()
             await asyncio.sleep(interval)

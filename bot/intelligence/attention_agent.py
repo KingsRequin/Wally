@@ -106,6 +106,10 @@ class AttentionContext:
     # (2e passe de raisonnement). None hors de ce cas. Muté par CognitiveLoop, pas
     # calculé par build_context.
     web_finding: str | None = None
+    # Digest de réveil : résumé de ce qui s'est dit sur Discord pendant que Wally
+    # dormait (personne ne l'a sollicité pendant des heures, ou process arrêté).
+    # Non-None uniquement au premier tick qui suit le réveil. Cf. wake_digest.py.
+    wake_digest: str | None = None
     # Article RSS retenu comme amorce de vagabondage au tick courant (stimulus
     # externe). None hors de ce cas. Sert à publier un event d'observabilité côté
     # CognitiveLoop ; l'article est déjà marqué consommé quand ce champ est posé.
@@ -167,6 +171,7 @@ class AttentionAgent:
         idle: bool = False,
         recent_speaks: list[dict] | None = None,
         forced_seed: str | None = None,
+        wake_digest: str | None = None,
     ) -> AttentionContext:
         from bot.intelligence.memory.facts import FactCategory, FactStatus
 
@@ -367,6 +372,7 @@ class AttentionAgent:
             time_of_day=tod,
             spontaneous_outreach=spontaneous or [],
             idle_seed=idle_seed,
+            wake_digest=wake_digest,
             rss_stimulus=rss_stimulus,
             emotional_drive=drive,
             preoccupation=preoccupation,

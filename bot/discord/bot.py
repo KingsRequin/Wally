@@ -276,6 +276,17 @@ class WallyDiscord(commands.Bot):
             from bot.intelligence.thought_progress import ThoughtProgressJudge
             _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)
 
+            # Digest de réveil : après des heures sans sollicitation (ou un
+            # process arrêté), Wally reçoit un résumé de ce qui s'est dit sur
+            # Discord pendant son sommeil. Source = logs de conversation JSONL
+            # (seuls à porter toute la perception passive).
+            from bot.intelligence.wake_digest import WakeDigest
+            _logs_root = getattr(_conv_log, "root", "logs/conversations")
+            _wake_digest = WakeDigest(
+                self.llm_secondary, _prompts_dir,
+                logs_root=_logs_root, db=self.db, fact_store=_fact_store,
+            )
+
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,
                 speakable_channels=_chan_dir.speakable_ids(),
@@ -287,6 +298,7 @@ class WallyDiscord(commands.Bot):
                 web_search_cooldown_s=self.config.tavily.cognitive_cooldown_minutes * 60,
                 bedroom_channel_id=self.config.bot.bedroom_channel_id,
                 spontaneous_channel_speak_enabled=self.config.bot.spontaneous_channel_speak_enabled,
+                wake_digest=_wake_digest,
             )
             # setup_hook runs after AppState is built+attached in main.py, so the
             # feed must be pushed onto dashboard_state here (constructor-time getattr saw None).
