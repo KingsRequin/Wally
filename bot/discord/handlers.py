@@ -316,6 +316,59 @@ def _format_reactions(
     return f"{head} « {snippet} »" if snippet else head
 
 
+# Plafonds du relevé de réactions : chaque emoji d'un message coûte un appel API
+# (``reaction.users()``), on borne donc ce qu'on résout et ce qu'on injecte.
+MAX_REACTION_EMOJIS = 6
+MAX_REACTORS_PER_EMOJI = 8
+
+
+async def _reaction_roster(bot: "WallyDiscord", message: "discord.Message") -> str:
+    """Décrit QUI a réagi et avec quel emoji sur un message, pas seulement combien.
+
+    Rend « 😂 Alice, Bob · 👍 Carol » : savoir qui approuve qui est une donnée
+    sociale que Wally devait deviner tant qu'il ne voyait que des compteurs.
+    Renvoie "" quand le message ne porte aucune réaction — cas très majoritaire,
+    et alors aucun appel réseau n'est fait. Ne lève jamais.
+    """
+    try:
+        reactions = list(getattr(message, "reactions", None) or [])
+    except TypeError:  # objet non itérable (message factice / partiel)
+        return ""
+    if not reactions:
+        return ""
+
+    self_id = bot.user.id if getattr(bot, "user", None) else None
+    self_name = bot.config.bot.name
+    parts: list[str] = []
+    for reaction in reactions[:MAX_REACTION_EMOJIS]:
+        emoji = str(reaction.emoji)
+        names: list[str] = []
+        try:
+            async for user in reaction.users(limit=MAX_REACTORS_PER_EMOJI):
+                names.append(self_name if user.id == self_id else _author_label(user))
+        except Exception as e:  # noqa: BLE001 — une réaction illisible n'annule pas les autres
+            logger.debug("Réacteurs illisibles pour {emoji} : {e}", emoji=emoji, e=e)
+        count = getattr(reaction, "count", 0) or 0
+        if names:
+            hidden = count - len(names)
+            parts.append(f"{emoji} {', '.join(names)}" + (f" +{hidden}" if hidden > 0 else ""))
+        elif count:
+            # Identités inaccessibles : mieux vaut le compte nu que rien.
+            parts.append(f"{emoji} ×{count}")
+    extra_emojis = len(reactions) - MAX_REACTION_EMOJIS
+    if extra_emojis > 0:
+        parts.append(f"+{extra_emojis} autre(s) emoji(s)")
+    return " · ".join(parts)
+
+
+def _with_reactions(content: str, roster: str) -> str:
+    """Suffixe un contenu de message par son relevé de réactions, s'il y en a."""
+    if not roster:
+        return content
+    tag = f"[réactions : {roster}]"
+    return f"{content} {tag}" if content else tag
+
+
 async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionActionEvent) -> None:
     """Injecte une réaction emoji dans le contexte du canal pour que Wally la perçoive.
 
@@ -579,21 +632,33 @@ async def _mirror_pass(
         return draft
 
 
-async def _fetch_discord_history(channel, limit: int, exclude_id: int | None = None) -> list[dict]:
+async def _fetch_discord_history(
+    channel, limit: int, exclude_id: int | None = None, bot: "WallyDiscord | None" = None,
+) -> list[dict]:
     """Fallback cold start : récupère l'historique Discord via API.
     Retourne les messages en ordre chronologique (plus ancien en premier).
     Retourne [] en cas d'erreur (permissions, etc.).
     Note : dicts sans 'timestamp' — utilisés uniquement pour le prompt,
-    non stockés dans _prelude_windows."""
+    non stockés dans _prelude_windows.
+    Quand ``bot`` est fourni, chaque message retenu est annoté de ses réactions
+    (qui a mis quoi) : c'est le seul endroit où Wally revoit des messages posés
+    avant son arrivée, donc le seul où ces réactions lui sont encore visibles."""
     try:
         msgs = []
         async for m in channel.history(limit=limit + (1 if exclude_id is not None else 0)):
             if m.id == exclude_id:
                 continue
             # Include Wally's own messages for context awareness
-            msgs.append({"author": _author_label(m.author), "content": _resolve_mentions(m, m.content)})
+            msgs.append(m)
         msgs.reverse()  # Discord renvoie du plus récent au plus ancien
-        return msgs[-limit:] if len(msgs) > limit else msgs
+        kept = msgs[-limit:] if len(msgs) > limit else msgs
+        out = []
+        for m in kept:
+            content = _resolve_mentions(m, m.content)
+            if bot is not None:
+                content = _with_reactions(content, await _reaction_roster(bot, m))
+            out.append({"author": _author_label(m.author), "content": content})
+        return out
     except Exception as e:
         logger.warning("channel.history() fallback failed: {e}", e=e)
         return []
@@ -955,12 +1020,18 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         n = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
         _enriched_content += f" [+ {'une image' if n == 1 else f'{n} images'}]"
 
+    # Un message qui arrive en direct n'a jamais de réaction ; un message rejoué
+    # au rattrapage, si. Dans ce cas le contexte dit qui a réagi et avec quoi.
+    # Le contenu brut reste celui donné à la mémoire, aux faits et aux logs.
+    _reaction_note = await _reaction_roster(bot, message) if channel_allowed else ""
+    _context_content = _with_reactions(_enriched_content, _reaction_note)
+
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
     if channel_allowed:
         prelude = bot.memory.get_prelude(str(message.channel.id))
         author_label = _author_label(message.author)
         bot.memory.append_prelude(
-            str(message.channel.id), author_label, _enriched_content
+            str(message.channel.id), author_label, _context_content
         )
         # Enregistrement dans la session active du canal (tous les messages)
         if getattr(bot, "fact_extractor", None) is not None:
@@ -1010,7 +1081,9 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             bot.cognitive_loop.notify_activity(
                 channel_id=message.channel.id,
                 author=str(message.author.display_name),
-                content=_resolve_mentions(message, message.content or ""),
+                content=_with_reactions(
+                    _resolve_mentions(message, message.content or ""), _reaction_note
+                ),
                 message_id=str(message.id),
                 is_dm=message.guild is None,
                 relevant=_relevant,
@@ -1394,7 +1467,8 @@ async def _respond(
         # Fallback cold start si prelude vide
         if not prelude:
             prelude = await _fetch_discord_history(
-                message.channel, bot.config.bot.prelude_window_size, exclude_id=message.id
+                message.channel, bot.config.bot.prelude_window_size,
+                exclude_id=message.id, bot=bot,
             )
 
         # Persistent notes

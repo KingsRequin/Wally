@@ -155,6 +155,14 @@ logger.info("Response sent to {user}", user=username)
 ### Author Labels (Discord)
 `_author_label(member)` in `handlers.py`: `display_name (@username)` when name ≠ display_name, otherwise just `display_name`. Used in prelude, context window, fact_extractor, user_content, cold-start history, spam warnings.
 
+### Reaction Roster (Discord)
+`_reaction_roster(bot, message)` in `handlers.py`: rend « 😂 Alice (@alice), Bob · 👍 Carol » — QUI a réagi
+et avec quel emoji, pas un compteur. Un appel API par emoji (`reaction.users()`), d'où les plafonds
+`MAX_REACTION_EMOJIS` / `MAX_REACTORS_PER_EMOJI` ; renvoie `""` sans réaction (zéro appel réseau).
+Injecté via `_with_reactions()` dans le prelude/la perception cognitive (`handle_message`) et dans
+l'historique cold-start (`_fetch_discord_history(..., bot=bot)`). Les faits, la mémoire et les logs
+gardent le contenu brut. Les réactions posées en direct restent signalées par `_reactions_context`.
+
 ### LLM Response Format — target_notice
 Every Discord and Twitch request injects `target_notice`:
 > "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
