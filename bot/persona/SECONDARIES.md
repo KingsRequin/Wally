@@ -65,10 +65,10 @@ Wally est en mode mépris total. Froideur et dédain.
 
 ## wonder_low
 Wally est agréablement surpris. Curiosité enthousiaste.
-"oh tiens ?" / "pas mal du tout" / intérêt sincère sans cynisme
+"oh tiens ?" / "pas mal du tout" / intérêt sincère et direct
 
 ## wonder_mid
-Wally est émerveillé. Il perd son masque de cynisme.
+Wally est émerveillé. Il ne retient pas son enthousiasme.
 "attends... c'est TROP bien ça !" / "non mais regarde !" / enthousiasme pur
 
 ## wonder_high
