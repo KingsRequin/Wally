@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.discord.message_split import split_for_discord
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block, load_prompt
@@ -1650,6 +1651,9 @@ async def _respond(
         action_service = getattr(bot, "action_service", None)
         if action_service:
             tools.extend(action_service.get_tool_definitions())
+        history_search = getattr(bot, "history_search", None)
+        if history_search and history_search.available:
+            tools.extend(history_search.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
         if getattr(bot, "voice_service", None) is not None:
             tools += VOICE_TOOLS
@@ -1705,6 +1709,24 @@ async def _respond(
                     except Exception:
                         pass
                 return await scrape.scrape(args["url"])
+            if name == "search_history":
+                # L'outil n'est pas offert sans logs : le modèle l'invente parfois.
+                if history_search is None or not history_search.available:
+                    return "L'historique des conversations n'est pas consultable."
+                if "🔎" not in _reaction_emojis:
+                    try:
+                        await message.add_reaction("🔎")
+                        _reaction_emojis.add("🔎")
+                    except Exception:
+                        pass
+                return await history_search.search(
+                    args.get("query", ""),
+                    author=args.get("author"),
+                    channel=args.get("channel"),
+                    after=args.get("after"),
+                    before=args.get("before"),
+                    limit=args.get("limit", HISTORY_SEARCH_DEFAULT_LIMIT),
+                )
             if name == "apex_legends":
                 if "🔫" not in _reaction_emojis:
                     try:

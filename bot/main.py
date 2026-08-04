@@ -154,6 +154,12 @@ async def main() -> None:
     discord_bot.conv_log = conv_log
     fact_extractor.conv_log = conv_log
 
+    # Recherche dans l'historique : même racine que le logger, pour ne jamais
+    # fouiller un autre répertoire que celui où les conversations sont écrites.
+    from bot.core.history_search import HistorySearchService
+    discord_bot.history_search = HistorySearchService(conv_log.root)
+    logger.info("HistorySearchService initialized → {root}", root=str(conv_log.root))
+
     # ── UpdateChecker ─────────────────────────────────────────────────────────
     update_checker = None
     if config.bot.update_image:
