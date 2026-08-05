@@ -57,6 +57,10 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             SubscriptionTypes._name_map["channel.chat.message"] = "channel_chat_message"
             SubscriptionTypes._type_map["channel.chat.message"] = ChatMessageData
 
+        # Empêche twitchio d'ouvrir une WebSocket par souscription streamer
+        # (limite Twitch : 3 par utilisateur) — cf. _patch_socket_tracking.
+        _patch_socket_tracking()
+
         # Avant toute création : rendre les places occupées par les souscriptions
         # de la session précédente, sinon elles plafonnent le quota et les
         # dernières créations tombent en 429.
@@ -163,6 +167,86 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
 
 
 _ES_SUBSCRIPTIONS_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
+
+
+def _patch_socket_tracking() -> None:
+    """Corrige une fuite de connexions WebSocket dans twitchio 2.10.0.
+
+    Dans `EventSubWSClient._assign_subscription`, quand aucun socket connu n'a de
+    place, twitchio en ouvre un nouveau… mais **ne l'ajoute jamais** à
+    `self._sockets` (`ext/eventsub/websocket.py`, branche `for/else`).
+
+    Une WebSocket EventSub n'accepte qu'un seul utilisateur authentifié. Les
+    souscriptions du streamer sont donc refusées sur le socket du bot (400), et
+    comme le socket de remplacement n'est pas mémorisé, CHAQUE souscription
+    streamer en rouvrait un neuf : `sub`→2e, `resub`→3e, `gift_sub`→4e. Twitch
+    plafonnant à **3 connexions par utilisateur**, la suivante était refusée avec
+    un 429 trompeur (« number of websocket transports limit exceeded », renvoyé à
+    la place d'un 400 — bug Twitch connu). D'où `cheer`/`subscription_end` perdus
+    à chaque démarrage, et des sockets orphelins impossibles à fermer.
+
+    twitchio v2 n'est plus maintenu (le projet est en v3, API incompatible), donc
+    le correctif vit ici. Idempotent.
+    """
+    from twitchio.ext.eventsub import EventSubWSClient
+    from twitchio.ext.eventsub.websocket import Websocket
+
+    if getattr(EventSubWSClient, "_wally_socket_tracking_patched", False):
+        return
+
+    async def _assign_subscription(self, sub) -> None:  # noqa: ANN001
+        # Reprise fidèle de twitchio 2.10.0, à UNE ligne près : le socket créé
+        # faute de place est désormais mémorisé dans `self._sockets`.
+        if not self._sockets:
+            w = Websocket(self.client, self._http)
+            await w.connect()
+            self._sockets.append(w)
+
+        success = False
+        bad_sockets: set | None = None
+
+        while not success:
+            if bad_sockets is not None:
+                socks = filter(lambda sock: sock not in bad_sockets, self._sockets)
+            else:
+                socks = self._sockets
+
+            s = None
+            for s in socks:
+                if s.remaining_slots > 0:
+                    s.add_subscription(sub)
+                    break
+            else:
+                s = Websocket(self.client, self._http)
+                await s.connect()
+                self._sockets.append(s)  # ← LA correction
+                s.add_subscription(sub)
+                return
+
+            assert sub.created is not None
+            success, status = await sub.created
+
+            if not success and status == 400:
+                # Socket occupé par un autre utilisateur : on en essaie un autre.
+                if bad_sockets is None:
+                    bad_sockets = set()
+                bad_sockets.add(s)
+                sub.created = asyncio.Future()
+                continue
+            elif not success and status in (401, 403):
+                from twitchio import Unauthorized
+
+                raise Unauthorized(
+                    "You are not authorized to make this subscription", status=status
+                )
+            elif not success:
+                raise RuntimeError(f"Subscription failed, reason unknown. Status: {status}")
+            else:
+                sub.created = None
+                break
+
+    EventSubWSClient._assign_subscription = _assign_subscription
+    EventSubWSClient._wally_socket_tracking_patched = True
 
 
 async def close_eventsub_client(bot: "WallyTwitch") -> int:

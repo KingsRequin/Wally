@@ -5,6 +5,21 @@ You are operating within a constrained context window and strict system prompts.
 
 ## Pre-Work
 
+0. **CHERCHER AVANT DE CREUSER — règle prioritaire.** Devant un bug non trivial (message d'erreur
+   d'une API/lib, code HTTP inattendu, comportement bizarre d'une dépendance), **chercher d'abord
+   en ligne** si quelqu'un l'a déjà rencontré : forums officiels, issues GitHub du projet
+   concerné, doc de l'éditeur. Ne PAS enchaîner les expériences maison avant ça.
+   Vaut aussi pour l'implémentation : avant d'écrire une brique, vérifier qu'elle n'existe pas
+   déjà (dans le repo, dans une lib déjà installée, ou en solution documentée). **Ne pas
+   réinventer la roue.**
+
+   Vécu le 2026-08-05 : quatre hypothèses testées en prod sur le 429 EventSub Twitch (coût,
+   scopes, fenêtre de recharge, souscriptions fantômes), chacune avec rebuild + observation,
+   toutes fausses. Une recherche web a donné la réponse immédiatement — un 429 renvoyé à tort à
+   la place d'un 400 (bug Twitch connu, `twitchdev/issues#958`) masquant
+   « number of websocket transports limit exceeded ». Le coût de la recherche est négligeable
+   face à celui d'une expérience ratée.
+
 1. THE "STEP 0" RULE: Dead code accelerates context compaction. Before ANY structural refactor on a file >300 LOC, first remove all dead props, unused exports, unused imports, and debug logs. Commit this cleanup separately before starting the real work.
 
 2. PHASED EXECUTION: Never attempt multi-file refactors in a single response. Break work into explicit phases. Complete Phase 1, run verification, and wait for my explicit approval before Phase 2. Each phase must touch no more than 5 files.

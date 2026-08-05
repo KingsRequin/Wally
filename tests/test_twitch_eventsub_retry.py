@@ -238,3 +238,51 @@ async def test_une_fermeture_qui_echoue_ne_bloque_pas_les_autres():
     closed = await ev.close_eventsub_client(_FakeBot([_FakeWS(_Boom()), _FakeWS(ok)]))
     assert closed == 1
     assert ok.close_called
+
+
+# ── Correctif du suivi des sockets (twitchio 2.10.0) ──
+
+@pytest.mark.asyncio
+async def test_le_socket_cree_faute_de_place_est_memorise(monkeypatch):
+    """Sans ça, twitchio rouvrait une WebSocket par souscription → limite de 3
+    connexions par utilisateur atteinte, puis 429."""
+    import bot.twitch.events as ev
+    from twitchio.ext.eventsub import EventSubWSClient
+    import twitchio.ext.eventsub.websocket as tio_ws
+
+    created: list[object] = []
+
+    class _FakeWebsocket:
+        def __init__(self, client, http):
+            self.remaining_slots = 0  # force la branche « aucune place »
+            created.append(self)
+
+        async def connect(self):
+            return None
+
+        def add_subscription(self, sub):
+            self.sub = sub
+
+    monkeypatch.setattr(tio_ws, "Websocket", _FakeWebsocket)
+    monkeypatch.setattr(EventSubWSClient, "_wally_socket_tracking_patched", False, raising=False)
+    ev._patch_socket_tracking()
+
+    client = EventSubWSClient.__new__(EventSubWSClient)
+    client.client = object()
+    client._http = object()
+    client._sockets = []
+
+    await client._assign_subscription(object())
+    # 1er socket (liste vide) + celui créé faute de place, TOUS deux suivis
+    assert len(client._sockets) == len(created)
+    assert len(client._sockets) == 2
+
+
+def test_le_patch_est_idempotent():
+    import bot.twitch.events as ev
+    from twitchio.ext.eventsub import EventSubWSClient
+
+    ev._patch_socket_tracking()
+    first = EventSubWSClient._assign_subscription
+    ev._patch_socket_tracking()
+    assert EventSubWSClient._assign_subscription is first
