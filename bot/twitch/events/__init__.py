@@ -5,6 +5,7 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
+import httpx
 from loguru import logger
 
 from bot.twitch.events.models import ChatMessageData
@@ -56,6 +57,16 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             SubscriptionTypes._name_map["channel.chat.message"] = "channel_chat_message"
             SubscriptionTypes._type_map["channel.chat.message"] = ChatMessageData
 
+        # Avant toute création : rendre les places occupées par les souscriptions
+        # de la session précédente, sinon elles plafonnent le quota et les
+        # dernières créations tombent en 429.
+        client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
+        seen_tokens: set[str] = set()
+        for tok in (streamer_token, bot_token):
+            if tok and tok not in seen_tokens:
+                seen_tokens.add(tok)
+                await purge_stale_subscriptions(client_id, tok)
+
         client = eventsub.EventSubWSClient(bot)
 
         # Subscriptions are awaited sequentially — see existing code comment re: 4003 errors.
@@ -72,21 +83,12 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         ]
 
         if streamer_token:
-            # ⚠️ ORDRE EXPÉRIMENTAL (2026-08-05) — `cheer` et `subscription_end`
-            # échouaient systématiquement en 429, toujours en 4e/5e position des
-            # souscriptions streamer. On les place en tête pour trancher :
-            #   • si elles passent et que deux AUTRES échouent → compteur pur,
-            #     indépendant du type : la limite porte sur le nombre de créations
-            #     (~3 par token) et il faut en réduire le nombre, pas les réordonner ;
-            #   • si elles échouent malgré la 1re place → le problème est propre à
-            #     ces deux types et l'ordre n'y est pour rien.
+            # Ordre = importance décroissante. L'expérience du 2026-08-05 a montré
+            # que le 429 frappe purement par POSITION (les 2 dernières sautent,
+            # quel que soit leur type) : réordonner ne fait que déplacer la perte,
+            # d'où le nettoyage des souscriptions mortes en amont. Cet ordre reste
+            # le bon filet de sécurité si le quota venait quand même à manquer.
             subscriptions += [
-                ("cheer", lambda: client.subscribe_channel_cheers(
-                    broadcaster=broadcaster_id, token=streamer_token
-                )),
-                ("subscription_end", lambda: client.subscribe_channel_subscription_end(
-                    broadcaster=broadcaster_id, token=streamer_token
-                )),
                 ("sub", lambda: client.subscribe_channel_subscriptions(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
@@ -94,6 +96,12 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
                 ("gift_sub", lambda: client.subscribe_channel_subscription_gifts(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
+                ("cheer", lambda: client.subscribe_channel_cheers(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
+                ("subscription_end", lambda: client.subscribe_channel_subscription_end(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
             ]
@@ -154,9 +162,55 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         logger.error("EventSub client setup failed: {e}", e=exc)
 
 
+_ES_SUBSCRIPTIONS_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
+
+
+async def purge_stale_subscriptions(client_id: str, token: str) -> int:
+    """Supprime les souscriptions EventSub qui ne sont plus `enabled`.
+
+    À chaque redémarrage, la WebSocket précédente meurt et ses souscriptions
+    passent en `websocket_disconnected`. Twitch les conserve un moment, et elles
+    **occupent encore des places** : au boot suivant on repartait donc avec 3
+    fantômes, seules 3 créations passaient et les suivantes tombaient en 429.
+    C'est ce qui faisait perdre `resub`/`gift_sub` (ou `cheer` selon l'ordre)
+    jusqu'au prochain démarrage « propre ».
+
+    Retourne le nombre de souscriptions supprimées. Silencieux en cas d'échec :
+    le nettoyage est un confort, il ne doit jamais empêcher le boot.
+    """
+    if not client_id or not token:
+        return 0
+    headers = {"Authorization": f"Bearer {token}", "Client-Id": client_id}
+    removed = 0
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.get(_ES_SUBSCRIPTIONS_URL, headers=headers)
+            if resp.status_code != 200:
+                logger.info(
+                    "EventSub: nettoyage ignoré (HTTP {code})", code=resp.status_code
+                )
+                return 0
+            stale = [
+                s for s in resp.json().get("data", []) if s.get("status") != "enabled"
+            ]
+            for sub in stale:
+                r = await http.delete(
+                    _ES_SUBSCRIPTIONS_URL, headers=headers, params={"id": sub["id"]}
+                )
+                if r.status_code in (200, 204):
+                    removed += 1
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant
+        logger.info("EventSub: nettoyage des souscriptions mortes échoué: {e}", e=exc)
+    if removed:
+        logger.info(
+            "EventSub: {n} souscription(s) morte(s) supprimée(s) — places libérées",
+            n=removed,
+        )
+    return removed
+
+
 # Délais de reprise des souscriptions tombées en 429, en SECONDES. Espacés en
-# minutes : le budget de création EventSub se recharge sur cette échelle, et
-# c'est précisément ce qu'un backoff de quelques secondes ne pouvait pas attraper.
+# minutes, car un backoff de quelques secondes avait été réfuté en live.
 _RETRY_DELAYS = (120, 480, 1200)
 
 

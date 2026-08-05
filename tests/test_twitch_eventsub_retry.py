@@ -104,3 +104,73 @@ async def test_une_fabrique_est_reutilisable():
 
     await _retry_failed_subscriptions([("sub", _fail_once)])
     assert len(seen) == 2  # la seconde tentative n'a pas levé "cannot reuse coroutine"
+
+
+# ── Nettoyage des souscriptions mortes ──
+
+class _FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHTTP:
+    """Client httpx minimal : mémorise les DELETE émis."""
+
+    def __init__(self, payload, get_status=200):
+        self._payload = payload
+        self._get_status = get_status
+        self.deleted: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def get(self, url, headers=None):
+        return _FakeResponse(self._get_status, self._payload)
+
+    async def delete(self, url, headers=None, params=None):
+        self.deleted.append(params["id"])
+        return _FakeResponse(204)
+
+
+@pytest.mark.asyncio
+async def test_seules_les_souscriptions_mortes_sont_supprimees(monkeypatch):
+    """Une souscription vivante ne doit surtout pas sauter."""
+    import bot.twitch.events as ev
+
+    http = _FakeHTTP({"data": [
+        {"id": "a", "status": "websocket_disconnected", "type": "channel.cheer"},
+        {"id": "b", "status": "enabled", "type": "channel.subscribe"},
+        {"id": "c", "status": "websocket_failed_ping_pong", "type": "channel.raid"},
+    ]})
+    monkeypatch.setattr(ev.httpx, "AsyncClient", lambda **kw: http)
+
+    removed = await ev.purge_stale_subscriptions("cid", "tok")
+    assert removed == 2
+    assert http.deleted == ["a", "c"]
+
+
+@pytest.mark.asyncio
+async def test_le_nettoyage_ne_bloque_jamais_le_boot(monkeypatch):
+    """Twitch injoignable : on continue sans souscriptions nettoyées."""
+    import bot.twitch.events as ev
+
+    class _Boom:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        async def get(self, *a, **kw): raise RuntimeError("réseau HS")
+
+    monkeypatch.setattr(ev.httpx, "AsyncClient", lambda **kw: _Boom())
+    assert await ev.purge_stale_subscriptions("cid", "tok") == 0
+
+
+@pytest.mark.asyncio
+async def test_pas_de_token_pas_d_appel(monkeypatch):
+    import bot.twitch.events as ev
+    assert await ev.purge_stale_subscriptions("cid", "") == 0
