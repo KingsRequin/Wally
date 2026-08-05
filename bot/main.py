@@ -533,9 +533,22 @@ async def main() -> None:
                 await close_eventsub_client(twitch_bot)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
                 logger.warning("Fermeture EventSub échouée: {e}", e=exc)
+        # Fermer les clients eux-mêmes, sinon leurs threads survivent à la boucle :
+        # le heartbeat de discord.py appelait `loop.call_soon_threadsafe` après
+        # fermeture (« RuntimeError: Event loop is closed » + coroutine jamais
+        # attendue à chaque arrêt).
+        for label, client in (("Discord", discord_bot), ("Twitch", twitch_bot)):
+            if client is None:
+                continue
+            try:
+                await client.close()
+            except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
+                logger.warning("Fermeture {c} échouée: {e}", c=label, e=exc)
+
         if update_checker:
             await update_checker.stop()
         await conv_log.stop()
+        logger.info("Arrêt terminé proprement")
 
 
 if __name__ == "__main__":
