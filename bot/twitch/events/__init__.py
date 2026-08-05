@@ -72,7 +72,21 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         ]
 
         if streamer_token:
+            # ⚠️ ORDRE EXPÉRIMENTAL (2026-08-05) — `cheer` et `subscription_end`
+            # échouaient systématiquement en 429, toujours en 4e/5e position des
+            # souscriptions streamer. On les place en tête pour trancher :
+            #   • si elles passent et que deux AUTRES échouent → compteur pur,
+            #     indépendant du type : la limite porte sur le nombre de créations
+            #     (~3 par token) et il faut en réduire le nombre, pas les réordonner ;
+            #   • si elles échouent malgré la 1re place → le problème est propre à
+            #     ces deux types et l'ordre n'y est pour rien.
             subscriptions += [
+                ("cheer", lambda: client.subscribe_channel_cheers(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
+                ("subscription_end", lambda: client.subscribe_channel_subscription_end(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
                 ("sub", lambda: client.subscribe_channel_subscriptions(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
@@ -80,12 +94,6 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
                 ("gift_sub", lambda: client.subscribe_channel_subscription_gifts(
-                    broadcaster=broadcaster_id, token=streamer_token
-                )),
-                ("subscription_end", lambda: client.subscribe_channel_subscription_end(
-                    broadcaster=broadcaster_id, token=streamer_token
-                )),
-                ("cheer", lambda: client.subscribe_channel_cheers(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
             ]
