@@ -73,6 +73,10 @@ class WallyTwitch(commands.Bot):
         }
         # StreamWatcher injecté par main.py (None si Twitch actif sans watcher).
         self.stream_watcher = None
+        # StreamFeed injecté par main.py : flux PASSIF du live (jeu, audience,
+        # raids/subs, chat) restitué au prompt comme contexte d'ambiance. None →
+        # rien n'est enregistré, les appelants sont tous best-effort.
+        self.stream_feed = None
 
     def is_on_cooldown(self, user_id: str) -> bool:
         last = self._cooldowns.get(user_id, 0.0)

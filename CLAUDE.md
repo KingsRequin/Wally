@@ -230,6 +230,8 @@ Key format: `"nickname:{nickname_lower}"` → `canonical_uid`. After each admin 
 
 **Stream awareness**: `_poll_stream_info()` polls home stream every 60s, cached in `_stream_info`. Injected into system prompt when `stream_live` is True.
 
+**Stream feed (passif)**: `bot/core/stream_feed.py` — tampon roulant des événements du live (lancement/fin, changement de jeu ou de titre, vague d'audience via `StreamWatcher.on_event` ; raid/sub/resub/gift/bits via `events/social.py` ; lignes de chat de la chaîne home pendant le live). Rendu en bloc « Flux du stream (perception passive) » dans `build_system_prompt` (`current_stream_feed_block()`) et dans le contexte cognitif (`AttentionContext.stream_feed`). **Voie sans retour vers l'action** : aucun `notify_activity`/`notify_event`, donc pas de réveil de cadence ni de prise de parole. Le chat est retiré du bloc sur le chemin Twitch home (le prélude le porte déjà).
+
 **`!mood`**: sends all 5 emotion values. Via IRC for guest channels, via EventSub API for home channel.
 
 **Visit tracking**: `_active_visits: dict[str, dict]`. `_finalize_visit()` generates LLM summary via `twitch_visit_summary.md`, stores in `twitch_visits` table. Injected into daily journal.

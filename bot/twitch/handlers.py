@@ -127,6 +127,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Persiste le login Twitch pour que le dashboard affiche un nom lisible
     await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
 
+    # Flux passif du stream : pendant le live, les lignes du chat de la chaîne
+    # home nourrissent le contexte d'ambiance de Wally — y compris quand il
+    # raisonne ailleurs (Discord, cognition), où ce chat lui est invisible.
+    # Chaîne invitée ou hors live : ce n'est pas « le stream », on n'enregistre pas.
+    _stream_feed = getattr(bot, "stream_feed", None)
+    if (
+        _stream_feed is not None
+        and channel_name not in bot._channel_ids
+        and (getattr(bot, "_stream_info", None) or {}).get("live")
+    ):
+        try:
+            _stream_feed.record_chat(author, content)
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.warning("StreamFeed: chat non enregistré : {e}", e=exc)
+
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author, content)

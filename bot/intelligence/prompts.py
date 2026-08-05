@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from bot.core.stream_feed import current_stream_feed_block
 from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_weather, read_host_metrics
 from bot.intelligence.identity import render_identity
@@ -229,6 +230,14 @@ class PromptBuilder:
                 body_lines.append(stream_line)
         if body_lines:
             dynamic_parts.append("\n--- Ton corps ---\n" + "\n".join(body_lines))
+
+        # Flux passif du stream : ce que Wally perçoit du live en arrière-plan
+        # (jeu, titre, audience, raids/subs, chat). Contexte SEULEMENT — le bloc
+        # porte lui-même sa consigne de non-réaction. Sur le chemin Twitch de la
+        # chaîne home, le chat est retiré : le prélude le porte déjà.
+        _on_stream_channel = bool(situation and situation.get("stream_live"))
+        if feed_block := current_stream_feed_block(include_chat=not _on_stream_channel):
+            dynamic_parts.append(feed_block)
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         # Priority: secondary emotions > composite pairs > atomic with fluid transitions

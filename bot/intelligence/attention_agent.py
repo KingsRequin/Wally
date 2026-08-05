@@ -85,6 +85,10 @@ class AttentionContext:
     voice_presence: list[str] = field(default_factory=list)
     # Métriques hôte : température CPU, charge, RAM. None si non disponible.
     host_metrics: str | None = None
+    # Flux passif du stream (jeu, titre, audience, raids/subs, chat) — bloc déjà
+    # rédigé par StreamFeed. None hors live ou sans flux actif. Purement
+    # contextuel : il ne crée ni interaction, ni cadence, ni sollicitation.
+    stream_feed: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
     weather_fr: str | None = None
     # Historique des SPEAKs cognitifs récents → anti-répétition dans le prompt.
@@ -342,6 +346,17 @@ class AttentionAgent:
             fetch_weather_france(),
         )
 
+        # Flux passif du stream — état ambiant lu sans DI (même patron que les
+        # métriques hôte). Le chat y est inclus : la cognition ne le voit nulle
+        # part ailleurs quand Wally n'est pas dans le chat Twitch.
+        stream_feed = None
+        try:
+            from bot.core.stream_feed import current_stream_feed_block
+            stream_feed = current_stream_feed_block()
+        except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+            from loguru import logger
+            logger.warning("AttentionAgent: flux du stream indisponible: {}", e)
+
         # Demandes d'amélioration déjà émises (Phase 6) — best-effort.
         upgrade_requests: list = []
         if self._upgrade_registry is not None:
@@ -384,6 +399,7 @@ class AttentionAgent:
             voice_presence=voice_presence,
             host_metrics=host_metrics,
             weather_fr=weather_fr,
+            stream_feed=stream_feed,
             recent_speaks=recent_speaks or [],
             emotes_known=emotes_known,
             emotes_unknown=emotes_unknown,

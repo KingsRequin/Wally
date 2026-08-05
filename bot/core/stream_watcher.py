@@ -10,6 +10,9 @@ usages :
   Azrael est en live, quel jeu, quel titre — comme un ami abonné à ses notifs.
 - **Notification** : sur transition live↔offline, `on_transition(old, new)` est
   appelé pour réveiller la cognition (cf. `CognitiveLoop.notify_event`).
+- **Flux passif** : `on_event(description)` reçoit CHAQUE changement observé au
+  fil du live (lancement, fin, changement de jeu ou de titre, vague d'audience)
+  pour alimenter le `StreamFeed` — contexte d'ambiance, sans réveil cognitif.
 
 Le premier poll établit une baseline SANS déclencher de transition : sinon un
 redémarrage du bot pendant qu'Azrael streame ferait croire à tort qu'il « vient
@@ -29,6 +32,13 @@ _OFFLINE: dict = {
 # Watcher actif enregistré comme source globale pour l'awareness prompt — même
 # patron que `read_host_metrics()` (état ambiant lu par prompts.py sans DI).
 _active: "StreamWatcher | None" = None
+
+# Sensibilité de la perception d'audience : une vague est notable si elle change
+# l'ordre de grandeur (±50 %) ET dépasse un plancher absolu (sinon 2→4 viewers
+# sur un stream qui démarre remplirait le flux de bruit). Constantes de
+# perception, pas de comportement.
+VIEWER_SWING_RATIO = 0.5
+VIEWER_SWING_MIN = 10
 
 
 def current_stream_status() -> Optional[dict]:
@@ -65,14 +75,19 @@ class StreamWatcher:
         interval: float = 60.0,
         on_transition: Optional[Callable[[dict, dict], None]] = None,
         on_poll: Optional[Callable[[dict], None]] = None,
+        on_event: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._api = twitch_api
         self.streamer_name = streamer_name
         self._interval = interval
         self._on_transition = on_transition
         self._on_poll = on_poll
+        self._on_event = on_event
         self._status: dict = dict(_OFFLINE)
         self._initialized = False
+        # Repère d'audience : dernière valeur ayant donné lieu à un événement de
+        # vague. Remis au compteur à chaque démarrage de live.
+        self._viewers_mark: int = 0
 
     @property
     def status(self) -> dict:
@@ -110,6 +125,7 @@ class StreamWatcher:
         # Premier poll = baseline silencieuse (pas de fausse notif au boot).
         if not self._initialized:
             self._initialized = True
+            self._viewers_mark = int(new.get("viewers") or 0)
             return
         if bool(new.get("live")) != bool(old.get("live")):
             logger.info(
@@ -123,3 +139,65 @@ class StreamWatcher:
                     self._on_transition(old, new)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("StreamWatcher on_transition a échoué : {e}", e=exc)
+        self._emit_feed_events(old, new)
+
+    def _emit(self, description: str) -> None:
+        """Pousse une ligne dans le flux passif — jamais bloquant."""
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(description)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("StreamWatcher on_event a échoué : {e}", e=exc)
+
+    def _emit_feed_events(self, old: dict, new: dict) -> None:
+        """Traduit l'écart entre deux polls en événements de flux passif.
+
+        Le watcher ne voyait jusqu'ici que la bascule live↔offline : un
+        changement de jeu ou de titre EN COURS de live était écrasé dans le cache
+        sans laisser de trace. C'est pourtant le « gameplay » que Wally doit
+        percevoir en fond.
+        """
+        if self._on_event is None:
+            return
+        name = self.streamer_name or "le streamer"
+        was_live, is_live = bool(old.get("live")), bool(new.get("live"))
+
+        if is_live and not was_live:
+            desc = f"{name} a lancé son live"
+            cat = new.get("category")
+            title = new.get("title")
+            if cat:
+                desc += f" (jeu : {cat}"
+                desc += f", titre : « {title} »)" if title else ")"
+            elif title:
+                desc += f" (titre : « {title} »)"
+            self._viewers_mark = int(new.get("viewers") or 0)
+            self._emit(desc)
+            return
+        if was_live and not is_live:
+            self._viewers_mark = 0
+            self._emit(f"{name} a terminé son live.")
+            return
+        if not is_live:
+            return
+
+        # En cours de live : ce qui bouge dans le stream lui-même.
+        old_cat, new_cat = old.get("category"), new.get("category")
+        if new_cat and new_cat != old_cat:
+            self._emit(
+                f"{name} change de jeu : {old_cat} → {new_cat}" if old_cat
+                else f"{name} lance {new_cat}"
+            )
+        old_title, new_title = old.get("title"), new.get("title")
+        if new_title and new_title != old_title:
+            self._emit(f"{name} a changé le titre du stream : « {new_title} »")
+
+        viewers = int(new.get("viewers") or 0)
+        delta = viewers - self._viewers_mark
+        if abs(delta) >= VIEWER_SWING_MIN and abs(delta) >= self._viewers_mark * VIEWER_SWING_RATIO:
+            verb = "monte" if delta > 0 else "retombe"
+            self._emit(
+                f"l'audience {verb} : {self._viewers_mark} → {viewers} spectateurs"
+            )
+            self._viewers_mark = viewers

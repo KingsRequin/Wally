@@ -43,6 +43,22 @@ def _check_follow_burst() -> bool:
     return len(_recent_follows) >= _FOLLOW_BURST_THRESHOLD
 
 
+def _feed(bot: "WallyTwitch", description: str) -> None:
+    """Inscrit un moment marquant du stream dans le flux passif (best-effort).
+
+    Purement perceptif : l'événement déclenche déjà sa propre réponse chat plus
+    bas — ici on ne fait que laisser une trace de ce qui s'est passé, pour que le
+    contexte de Wally garde le fil du live même hors de Twitch.
+    """
+    feed = getattr(bot, "stream_feed", None)
+    if feed is None:
+        return
+    try:
+        feed.record(description)
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant
+        logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
+
+
 def _bits_joy(amount: int) -> float:
     """Map bits amount to joy delta per the design spec."""
     if amount >= 1000:
@@ -103,6 +119,8 @@ def register_events(bot: "WallyTwitch") -> None:
             old_curiosity = bot.emotion.get_state().get("curiosity", 0.0)
             bot.emotion.apply_delta("curiosity", 0.2)
             _check_peak(bot, "curiosity", old_curiosity, 0.2, username=payload.data.user.name, event_name="follow_burst")
+            # Un follow isolé est du bruit ; une vague, c'est un moment du stream.
+            _feed(bot, "vague de nouveaux follows sur la chaîne")
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -115,6 +133,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
+        _feed(bot, f"{payload.data.user.name} vient de s'abonner à la chaîne")
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.4)
         _check_peak(bot, "joy", old_joy, 0.4, username=payload.data.user.name, event_name="subscribe")
@@ -128,6 +147,11 @@ def register_events(bot: "WallyTwitch") -> None:
         cfg = bot.config.twitch_events.get("resub")
         if not cfg or not cfg.active:
             return
+        _feed(
+            bot,
+            f"{payload.data.user.name} se réabonne "
+            f"({payload.data.cumulative_months} mois au total)",
+        )
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.3)
         _check_peak(bot, "joy", old_joy, 0.3, username=payload.data.user.name, event_name="resub")
@@ -143,6 +167,7 @@ def register_events(bot: "WallyTwitch") -> None:
         if not cfg or not cfg.active:
             return
         gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
+        _feed(bot, f"{gifter} offre {payload.data.total} abonnement(s) au chat")
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.5)
         _check_peak(bot, "joy", old_joy, 0.5, username=gifter, event_name="gift_sub")
@@ -167,6 +192,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         delta = _bits_joy(payload.data.bits)
         username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
+        _feed(bot, f"{username} balance {payload.data.bits} bits")
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", delta)
         _check_peak(bot, "joy", old_joy, delta, username=username, event_name="bits")
@@ -181,6 +207,7 @@ def register_events(bot: "WallyTwitch") -> None:
         if not cfg or not cfg.active:
             return
         viewers = payload.data.viewer_count
+        _feed(bot, f"raid de {payload.data.raider.name} avec {viewers} spectateurs")
         joy_spike = min(viewers / 50, 0.9)
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", joy_spike)

@@ -320,6 +320,11 @@ class ReasoningAgent:
                 lines.append(f"**Ton serveur :** {ctx.host_metrics}")
         if getattr(ctx, "weather_fr", None):
             lines.append(f"**Météo en France en ce moment :** {ctx.weather_fr}")
+        if getattr(ctx, "stream_feed", None):
+            # Bloc déjà rédigé par StreamFeed, consigne de non-réaction incluse :
+            # il nourrit ta compréhension de la situation, il n'appelle AUCUNE
+            # décision — surtout pas un [SPEAK] pour commenter le live.
+            lines.append(ctx.stream_feed.strip())
         if ctx.active_desires:
             lines.append("**Désirs actifs :**")
             for d in ctx.active_desires[:3]:

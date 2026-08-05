@@ -289,18 +289,32 @@ async def main() -> None:
                 desc = f"{name} vient de terminer son live Twitch."
             loop.notify_event(bedroom, desc, relevant=True)
 
+        # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
+        # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
+        # Twitch, restitué au prompt comme contexte d'ambiance. Aucun réveil
+        # cognitif, aucune prise de parole — Wally voit, il ne commente pas.
+        from bot.core.stream_feed import StreamFeed
+
+        _streamer_name = os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael_TTV"
+        stream_feed = StreamFeed(streamer_name=_streamer_name)
+        stream_feed.activate()
+        twitch_bot.stream_feed = stream_feed
+
         stream_watcher = StreamWatcher(
             twitch_api,
-            streamer_name=os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael_TTV",
+            streamer_name=_streamer_name,
             on_transition=_on_stream_transition,
             on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
+            on_event=stream_feed.record,
         )
         stream_watcher.activate()
         twitch_bot.stream_watcher = stream_watcher
 
         tasks.append(twitch_bot.start())
         tasks.append(stream_watcher.run())
-        logger.info("Twitch adapter + StreamWatcher configured and included in gather")
+        logger.info(
+            "Twitch adapter + StreamWatcher + StreamFeed configured and included in gather"
+        )
     else:
         logger.warning(
             "Twitch bot skipped — set BOT_ACCESS_TOKEN (or BOT_REFRESH_TOKEN + "
