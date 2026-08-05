@@ -6,7 +6,11 @@ import subprocess
 import time
 import urllib.request
 
-BOT_URL = os.environ.get("WATCHDOG_BOT_URL", "http://127.0.0.1:8080/api/admin/bot/status")
+# Défaut sur un endpoint PUBLIC : `/api/admin/*` exige un Bearer et répond 401,
+# ce que urlopen remonte en HTTPError — le bot serait jugé mort en permanence et
+# redémarré toutes les 3 minutes. Le service systemd surcharge déjà cette valeur,
+# mais un lancement sans variable d'environnement partirait en boucle.
+BOT_URL = os.environ.get("WATCHDOG_BOT_URL", "http://127.0.0.1:8080/api/public/status")
 COMPOSE_FILE = os.environ.get("WATCHDOG_COMPOSE_FILE", "/opt/stacks/wally-ai/docker-compose.yml")
 FAIL_THRESHOLD = int(os.environ.get("WATCHDOG_FAIL_THRESHOLD", "3"))
 CHECK_INTERVAL = int(os.environ.get("WATCHDOG_INTERVAL", "60"))

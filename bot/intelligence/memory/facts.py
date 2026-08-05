@@ -5,7 +5,7 @@ import re
 
 import aiosqlite
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 from loguru import logger
@@ -251,6 +251,27 @@ class SQLiteFactStore:
                      AND expires_at IS NOT NULL
                      AND expires_at <= ?""",
                 (datetime.utcnow().isoformat(),),
+            )
+            await db.commit()
+            return result.rowcount
+
+    async def archive_stale_doubts(self, older_than_days: int = 14) -> int:
+        """Archive les faits douteux que personne n'a tranchés.
+
+        `doubt_memory` met un fait en `needs_review`, mais rien ne l'en sort :
+        `confirm()` ne touche pas au statut, et la recherche filtre sur
+        `status = 'active'` — un fait douteux est donc invisible, jamais
+        reconfirmable, et restait en suspens indéfiniment (le plus ancien
+        attendait depuis six semaines). Un doute non levé finit donc écarté.
+        """
+        cutoff = (datetime.utcnow() - timedelta(days=older_than_days)).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            result = await db.execute(
+                """UPDATE atomic_facts
+                   SET status = 'archived'
+                   WHERE status = 'needs_review'
+                     AND last_seen_at <= ?""",
+                (cutoff,),
             )
             await db.commit()
             return result.rowcount

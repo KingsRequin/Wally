@@ -76,3 +76,39 @@ async def test_un_but_qui_stagne_finit_par_etre_clos(store):
 
     # Une fois clos, on ne peut plus l'avancer : la boucle est cassée
     assert await store.append_progress(gid, "et encore", max_step_lines=3) is False
+
+
+# ── Doutes non tranchés ──
+
+@pytest.mark.asyncio
+async def test_un_doute_jamais_leve_finit_archive(store):
+    """`needs_review` était une impasse : le fait devient invisible au rappel,
+    donc jamais reconfirmable, et restait en suspens indéfiniment."""
+    from datetime import datetime, timedelta
+
+    import aiosqlite as _sql
+
+    gid = await _goal(store)
+    await store.doubt(gid)
+    assert await _status(store, gid) == "needs_review"
+
+    # Un doute frais est laissé tranquille
+    assert await store.archive_stale_doubts(older_than_days=14) == 0
+    assert await _status(store, gid) == "needs_review"
+
+    # Vieilli au-delà du délai, il est écarté
+    async with _sql.connect(store._db_path) as db:
+        await db.execute(
+            "UPDATE atomic_facts SET last_seen_at = ? WHERE id = ?",
+            ((datetime.utcnow() - timedelta(days=30)).isoformat(), gid),
+        )
+        await db.commit()
+    assert await store.archive_stale_doubts(older_than_days=14) == 1
+    assert await _status(store, gid) == "archived"
+
+
+@pytest.mark.asyncio
+async def test_les_faits_actifs_ne_sont_jamais_touches(store):
+    gid = await _goal(store)
+    assert await store.archive_stale_doubts(older_than_days=0) == 0
+    assert await _status(store, gid) == "active"

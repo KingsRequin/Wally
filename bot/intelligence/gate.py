@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -11,6 +12,10 @@ from bot.intelligence.identity import bot_name, render_identity
 from bot.intelligence.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
 _DEFAULT_PROMPTS_DIR = Path(__file__).parent / "persona" / "prompts"
+
+# Durée de vie d'une trace « j'ai ignoré ce message ». Elle sert à ne pas répondre
+# en décalé à un message déjà écarté ; passé ce délai elle n'apprend plus rien.
+_IGNORE_TRACE_TTL_HOURS = 24
 
 
 _GATE_SCHEMA = {
@@ -150,14 +155,18 @@ class ResponseGate:
                 defer_seconds=result.get("defer_seconds"),
                 reason=result.get("reason"),
             )
-            if decision.decision == "IGNORE":
-                reason_str = decision.reason or "aucune raison spécifiée"
+            if decision.decision == "IGNORE" and decision.reason:
+                # Sans motif, la trace n'apprend rien sur personne et encombre la
+                # mémoire long terme — on ne l'écrit pas. Avec motif, elle sert à
+                # ne pas répondre en décalé à un message déjà écarté : utile sur
+                # quelques heures, pas au-delà, d'où la péremption.
                 await self._fact_store.add(AtomicFact(
                     user_id=author_user_id,
-                    content=f"{bot_name()} a choisi d'ignorer ce message — {reason_str}",
+                    content=f"{bot_name()} a choisi d'ignorer ce message — {decision.reason}",
                     category=FactCategory.EMOTION,
                     confidence=0.9,
                     source="gate",
+                    expires_at=datetime.utcnow() + timedelta(hours=_IGNORE_TRACE_TTL_HOURS),
                 ))
             return decision
 

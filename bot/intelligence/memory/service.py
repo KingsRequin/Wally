@@ -238,7 +238,13 @@ class MemoryService:
         n = await self._facts.archive_expired()
         if n:
             logger.info("Memory cleanup: {n} faits éphémères périmés archivés", n=n)
-        return n
+        # Doutes jamais tranchés : sans ça, `needs_review` est une impasse — le
+        # fait devient invisible au rappel donc jamais reconfirmable, et reste en
+        # suspens indéfiniment.
+        stale = await self._facts.archive_stale_doubts()
+        if stale:
+            logger.info("Memory cleanup: {n} doutes non levés archivés", n=stale)
+        return n + stale
 
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
         if self._facts is None:
