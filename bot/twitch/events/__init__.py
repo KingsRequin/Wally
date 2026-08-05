@@ -59,31 +59,33 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         client = eventsub.EventSubWSClient(bot)
 
         # Subscriptions are awaited sequentially — see existing code comment re: 4003 errors.
+        # Des FABRIQUES, pas des coroutines : une coroutine ne s'await qu'une fois,
+        # or les échecs 429 sont retentés plus tard (cf. _retry_failed_subscriptions).
         subscriptions: list[tuple[str, object]] = [
-            ("follow", client.subscribe_channel_follows_v2(
+            ("follow", lambda: client.subscribe_channel_follows_v2(
                 broadcaster=broadcaster_id, moderator=bot_id, token=bot_token
             )),
-            ("raid", client.subscribe_channel_raid(
+            ("raid", lambda: client.subscribe_channel_raid(
                 token=bot_token, to_broadcaster=broadcaster_id
             )),
-            ("chat", _subscribe_chat(client, broadcaster_id, bot_id, bot_token)),
+            ("chat", lambda: _subscribe_chat(client, broadcaster_id, bot_id, bot_token)),
         ]
 
         if streamer_token:
             subscriptions += [
-                ("sub", client.subscribe_channel_subscriptions(
+                ("sub", lambda: client.subscribe_channel_subscriptions(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
-                ("resub", client.subscribe_channel_subscription_messages(
+                ("resub", lambda: client.subscribe_channel_subscription_messages(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
-                ("gift_sub", client.subscribe_channel_subscription_gifts(
+                ("gift_sub", lambda: client.subscribe_channel_subscription_gifts(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
-                ("subscription_end", client.subscribe_channel_subscription_end(
+                ("subscription_end", lambda: client.subscribe_channel_subscription_end(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
-                ("cheer", client.subscribe_channel_cheers(
+                ("cheer", lambda: client.subscribe_channel_cheers(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
             ]
@@ -93,14 +95,20 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 "(channel:read:subscriptions, bits:read)"
             )
 
-        for name, coro in subscriptions:
+        failed: list[tuple[str, object]] = []
+        for name, make_sub in subscriptions:
             try:
-                await coro
+                await make_sub()
                 logger.info("EventSub subscribed: {sub}", sub=name)
             except Exception as exc:
-                logger.warning(
-                    "EventSub subscription failed [{sub}]: {e}", sub=name, e=exc
+                # Un 429 au boot est attendu quand les reboots sont rapprochés :
+                # le budget de CRÉATION se recharge en minutes, pas en secondes.
+                # Ce n'est pas une anomalie tant que le retry différé n'a pas
+                # abandonné — d'où le niveau INFO ici, WARNING seulement à la fin.
+                logger.info(
+                    "EventSub subscription deferred [{sub}]: {e}", sub=name, e=exc
                 )
+                failed.append((name, make_sub))
             await asyncio.sleep(1.5)  # avoid 429 rate-limit on rapid subscription bursts
 
         # Chaînes invitées : chat seulement
@@ -126,8 +134,55 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             "EventSub WebSocket client active (broadcaster_id={bid})", bid=broadcaster_id
         )
 
+        if failed:
+            # En arrière-plan : le boot ne doit pas attendre. Un fix qui retentait
+            # dans la foulée (3/6/12 s) avait été réfuté en live puis reverté — il
+            # ralentissait le démarrage de 40 s sans rien récupérer, parce que la
+            # fenêtre de recharge se compte en minutes.
+            task = asyncio.create_task(_retry_failed_subscriptions(failed))
+            bot._eventsub_retry_task = task  # référence forte : sinon le GC l'annule
+
     except Exception as exc:
         logger.error("EventSub client setup failed: {e}", e=exc)
+
+
+# Délais de reprise des souscriptions tombées en 429, en SECONDES. Espacés en
+# minutes : le budget de création EventSub se recharge sur cette échelle, et
+# c'est précisément ce qu'un backoff de quelques secondes ne pouvait pas attraper.
+_RETRY_DELAYS = (120, 480, 1200)
+
+
+async def _retry_failed_subscriptions(failed: list[tuple[str, object]]) -> None:
+    """Reprend en arrière-plan les souscriptions refusées au démarrage.
+
+    Sans ça, une souscription perdue au boot le restait jusqu'au redémarrage
+    suivant : `channel.cheer` et `channel.subscription.end` manquaient
+    durablement, donc les bits et les fins d'abonnement passaient inaperçus.
+    """
+    pending = list(failed)
+    for delay in _RETRY_DELAYS:
+        await asyncio.sleep(delay)
+        still_failing: list[tuple[str, object]] = []
+        for name, make_sub in pending:
+            try:
+                await make_sub()
+                logger.info("EventSub subscribed on retry: {sub}", sub=name)
+            except Exception as exc:
+                logger.debug(
+                    "EventSub retry failed [{sub}]: {e}", sub=name, e=exc
+                )
+                still_failing.append((name, make_sub))
+            await asyncio.sleep(1.5)
+        pending = still_failing
+        if not pending:
+            logger.info("EventSub: toutes les souscriptions différées ont abouti")
+            return
+
+    # Là seulement c'est une vraie anomalie : le budget aurait dû se recharger.
+    logger.warning(
+        "EventSub: abandon après reprises — souscriptions manquantes: {subs}",
+        subs=", ".join(name for name, _ in pending),
+    )
 
 
 async def _subscribe_chat(client, broadcaster_id: str, bot_id: str, token: str):
