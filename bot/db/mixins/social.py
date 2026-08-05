@@ -274,10 +274,14 @@ class SocialMixin:
             name = str(row["username"])
             if _base_name(name) in seen:
                 continue  # passé récemment, le souvenir n'a juste pas bougé
+            try:
+                days = int((now - float(row["last_updated"])) // 86400)
+            except (TypeError, ValueError):
+                continue  # date illisible : on ignore la personne, pas le bloc entier
             missing.append(
                 {
                     "username": _base_name(name).title() if name.islower() else name.split(" (@")[0],
-                    "days": int((now - float(row["last_updated"])) // 86400),
+                    "days": days,
                 }
             )
         # Déjà trié par nombre de souvenirs : on remonte les gens qui comptent

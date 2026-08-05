@@ -59,7 +59,16 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
 
         # Empêche twitchio d'ouvrir une WebSocket par souscription streamer
         # (limite Twitch : 3 par utilisateur) — cf. _patch_socket_tracking.
-        _patch_socket_tracking()
+        # Le patch touche à l'interne d'une lib : s'il devient inapplicable (mise à
+        # jour, signature changée), on repart sur le comportement d'origine plutôt
+        # que de faire tomber TOUT EventSub.
+        try:
+            _patch_socket_tracking()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "EventSub: correctif de suivi des sockets inapplicable ({e}) — "
+                "les dernières souscriptions risquent d'échouer en 429", e=exc,
+            )
 
         # Avant toute création : rendre les places occupées par les souscriptions
         # de la session précédente, sinon elles plafonnent le quota et les

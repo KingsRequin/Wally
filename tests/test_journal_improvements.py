@@ -489,3 +489,25 @@ async def test_missing_regulars_ranks_by_closeness(db):
         )
     # Trié par nombre de souvenirs, pas par fraîcheur de l'absence
     assert [m["username"] for m in await db.get_missing_regulars(now=now)] == ["Proche", "Lointain"]
+
+
+@pytest.mark.asyncio
+async def test_missing_regulars_survit_a_une_date_illisible(db):
+    """Une ligne corrompue ne doit pas faire disparaître tout le bloc des absents.
+
+    SQLite a une affinité faible : un texte passe dans une colonne REAL NOT NULL,
+    et float() lève alors ValueError.
+    """
+    now = time.time()
+    await db.execute(
+        "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+        "VALUES (?,?,?,?,?)",
+        ("discord:90", "discord", "pas-une-date", "Cassé", 20),
+    )
+    await db.execute(
+        "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+        "VALUES (?,?,?,?,?)",
+        ("discord:91", "discord", now - 30 * 86400, "Valide", 15),
+    )
+    missing = await db.get_missing_regulars(now=now)
+    assert [m["username"] for m in missing] == ["Valide"]

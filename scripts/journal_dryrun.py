@@ -54,6 +54,14 @@ async def main() -> None:
         else {"anger": 0.1, "joy": 0.2, "sadness": 0.1, "curiosity": 0.3, "boredom": 0.6}
     )
 
+    # FORCE_SUMMARY=1 → passe par la chaîne de résumés (chemin des grosses
+    # journées) même sur une journée courte, en abaissant le seuil de bascule.
+    if os.getenv("FORCE_SUMMARY"):
+        import bot.intelligence.journal as journal_mod
+
+        journal_mod._JOURNAL_TOKEN_THRESHOLD = 0
+        print("[dry-run] chaîne de résumés forcée")
+
     primary = create_llm_client(cfg.llm.primary, db)
     secondary = create_llm_client(cfg.llm.secondary, db)
 

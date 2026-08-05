@@ -286,3 +286,24 @@ def test_le_patch_est_idempotent():
     first = EventSubWSClient._assign_subscription
     ev._patch_socket_tracking()
     assert EventSubWSClient._assign_subscription is first
+
+
+@pytest.mark.asyncio
+async def test_un_patch_inapplicable_ne_tue_pas_eventsub(monkeypatch):
+    """Le correctif touche l'interne de twitchio : s'il casse un jour, EventSub
+    doit repartir sur le comportement d'origine, pas tomber entièrement."""
+    import bot.twitch.events as ev
+
+    def _boom():
+        raise AttributeError("twitchio a changé")
+
+    monkeypatch.setattr(ev, "_patch_socket_tracking", _boom)
+    monkeypatch.setenv("TWITCH_BROADCASTER_ID", "")  # coupe court après le patch
+
+    class _TM:
+        bot_token = ""
+        streamer_token = ""
+
+    bot = type("B", (), {"token_manager": _TM()})()
+    # Ne doit pas lever
+    await ev.start_eventsub_client(bot)
