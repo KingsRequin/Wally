@@ -102,6 +102,16 @@ def test_bloc_dedoublonne_les_ouvertures_identiques():
     assert '"Pfff."' in block
 
 
+def test_bloc_preserve_la_posture_d_adresse():
+    """La consigne vise la formule, pas le fait de parler à son journal.
+
+    Sans cette nuance, « cher journal » serait relevé comme un tic et Wally
+    cesserait de s'adresser à lui.
+    """
+    block = _build_style_avoidance_block(_entries("Cher journal.\nUn.", "Cher journal.\nDeux."))
+    assert "Continue de parler à ton journal" in block
+
+
 def test_bloc_liste_ouvertures_et_expressions():
     # Contexte variable autour du tic, comme dans les vraies entrées : seul
     # « enfin bref » traverse toutes les entrées.

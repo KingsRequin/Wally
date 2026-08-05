@@ -529,3 +529,25 @@ async def test_emotion_hint_absent_when_no_dominant():
     assert "Ce soir ta tristesse domine" not in user_content
     assert "Ce soir ta curiosité domine" not in user_content
     assert "Ce soir c'est l'ennui qui domine" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_voice_pass_receives_length_ceiling():
+    """Sans le plafond, le pass de dé-polissage n'a aucun moyen de savoir qu'il doit couper."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    captured = []
+
+    async def capture(system, messages, purpose="", **kwargs):
+        captured.append((purpose, messages[0]["content"]))
+        return "Texte repassé."
+
+    llm_secondary.complete = capture
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    voice_inputs = [content for purpose, content in captured if purpose == "journal_voice_pass"]
+    assert len(voice_inputs) == 1
+    assert "mots maximum" in voice_inputs[0]
+    assert "Brouillon :" in voice_inputs[0]

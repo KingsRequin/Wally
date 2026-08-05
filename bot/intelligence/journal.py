@@ -349,7 +349,12 @@ def _detect_overused_phrases(journals: list[dict]) -> list[str]:
 
 
 def _build_style_avoidance_block(journals: list[dict]) -> str:
-    """Relevé de ce que les entrées récentes ont déjà usé — ouvertures et expressions."""
+    """Relevé de ce que les entrées récentes ont déjà usé — ouvertures et expressions.
+
+    La consigne vise la formule, jamais la posture : sans cette nuance, s'adresser
+    au journal (« cher journal », « tu sais ») serait relevé comme un tic au bout
+    de quelques soirs, et Wally cesserait de lui parler.
+    """
     if not journals:
         return ""
     incipits = list(
@@ -359,10 +364,13 @@ def _build_style_avoidance_block(journals: list[dict]) -> str:
     if not incipits and not phrases:
         return ""
 
-    lines = ["Ce que tes entrées récentes ont déjà usé — n'y retourne pas :"]
+    lines = [
+        "Ce que tes entrées récentes ont déjà usé. Continue de parler à ton journal — "
+        "c'est la formule qu'il faut changer, pas la façon de t'adresser à lui :"
+    ]
     if incipits:
         lines.append("- Ouvertures déjà utilisées : " + " / ".join(f'"{i}"' for i in incipits))
-        lines.append("  Entre dans ta journée autrement ce soir.")
+        lines.append("  Aborde-le autrement ce soir.")
     if phrases:
         lines.append("- Expressions trop revenues : " + ", ".join(f'"{p}"' for p in phrases))
         lines.append("  Dis la même chose avec une autre construction, sans les remplacer par un tic neuf.")
@@ -675,14 +683,16 @@ class DailyJournal:
             purpose="daily_journal",
         )
 
-        # ── Voice pass — insuffle la vraie voix intérieure ──
+        # ── Voice pass — dé-polit le brouillon et le ramène sous le plafond ──
         if journal_text:
             try:
-                voice_input = (
-                    f"{style_block}\n\n---\n\nBrouillon :\n{journal_text}"
-                    if style_block
-                    else journal_text
-                )
+                # La consigne de longueur voyage avec le brouillon : sans elle, le
+                # pass n'a aucun moyen de savoir qu'il doit couper.
+                voice_sections = [length_guidance]
+                if style_block:
+                    voice_sections.append(style_block)
+                voice_sections.append(f"Brouillon :\n{journal_text}")
+                voice_input = "\n\n---\n\n".join(voice_sections)
                 voice_result = await self._llm_secondary.complete(
                     render_identity(_JOURNAL_VOICE_PASS_SYSTEM),
                     [{"role": "user", "content": voice_input}],
