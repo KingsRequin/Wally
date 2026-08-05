@@ -64,6 +64,11 @@ class FactStatus(str, Enum):
     SUPERSEDED   = "superseded"
     NEEDS_REVIEW = "needs_review"
     ARCHIVED     = "archived"
+    # Un but atteint n'est pas un but abandonné. Les deux finissaient en ARCHIVED,
+    # donc rien ne distinguait une réussite d'un renoncement — sur 111 buts créés,
+    # aucun n'était identifiable comme accompli. Sort du contexte comme ARCHIVED
+    # (tout filtre sur `status = 'active'`), mais reste traçable.
+    FULFILLED    = "fulfilled"
 
 
 DECAY_RATES: dict[FactCategory, float] = {
@@ -578,8 +583,11 @@ class SQLiteFactStore:
                 steps = []
 
             steps.append(f"· {step}")
-            # Cap : ne garde que les `max_step_lines` étapes les plus récentes.
-            if max_step_lines > 0 and len(steps) > max_step_lines:
+            # Dépasser le quota d'étapes sans jamais aboutir = le but tourne sur
+            # lui-même. Observé : un but avancé 21 fois en deux jours, jamais
+            # accompli, qui ré-amorçait la boucle à chaque tick. On le clôt ici.
+            stalled = max_step_lines > 0 and len(steps) > max_step_lines
+            if stalled:
                 steps = steps[-max_step_lines:]
 
             new_content = head + "\n" + self._PROGRESS_HEADER + "\n" + "\n".join(steps)
@@ -587,8 +595,19 @@ class SQLiteFactStore:
                 "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
                 (new_content, datetime.utcnow().isoformat(), fact_id),
             )
+            if stalled:
+                await db.execute(
+                    "UPDATE atomic_facts SET status = ? WHERE id = ?",
+                    (FactStatus.ARCHIVED.value, fact_id),
+                )
             await db.commit()
-        logger.debug("append_progress: but #{} +1 étape ({} au total)", fact_id, len(steps))
+        if stalled:
+            logger.info(
+                "append_progress: but #{} clos — {} étapes sans aboutir",
+                fact_id, max_step_lines,
+            )
+        else:
+            logger.debug("append_progress: but #{} +1 étape ({} au total)", fact_id, len(steps))
         return True
 
     async def confirm(self, fact_id: int) -> None:

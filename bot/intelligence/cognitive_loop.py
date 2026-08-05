@@ -5,6 +5,7 @@ import difflib
 import random
 import re
 import time
+from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,17 @@ TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond
 TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
 TICK_IDLE = 300        # > 1h : plancher du vagabondage idle (5 min)
 TICK_IDLE_MAX = 3600   # plafond du vagabondage idle (1h)
+
+# Fenêtre glissante des dernières pensées (True = jetée pour ressassement).
+# Sert à faire ÉMERGER la cadence : sans elle, l'ennui accélère le rythme alors
+# qu'une journée creuse est justement celle où il y a le moins à penser — le
+# ressassement était donc mécaniquement garanti (mesuré : ~57 % des pensées
+# jetées, chacune après DEUX appels LLM, le raisonnement puis le juge).
+# Signal court-terme, reconstruit à chaud après reboot : aucune persistance.
+_RUMINATION_WINDOW = 12
+# Allongement maximal de l'intervalle quand tout ressasse (croissance quadratique,
+# symétrique de la saturation introspective de l'AttentionAgent).
+_RUMINATION_SLOWDOWN = 3.0
 
 
 def _speak_pass_probability(receptivity: float) -> float:
@@ -123,6 +135,9 @@ class CognitiveLoop:
         self._wake_digest = wake_digest
         # Anti-rumination sémantique : nombre de ressassements consécutifs du focus.
         self._focus_rumination_count = 0
+        # Fenêtre glissante « cette pensée a-t-elle été jetée ? » → cadence émergente
+        # (cf. _rumination_rate / _tick_interval).
+        self._rumination_window: deque[bool] = deque(maxlen=_RUMINATION_WINDOW)
         # Canaux textuels de l'annuaire où Wally peut parler proactivement.
         self._speakable_channels = speakable_channels or set()
         # Salon « chambre » : cible UNIQUE de toute prise de parole spontanée.
@@ -335,15 +350,32 @@ class CognitiveLoop:
         if self._conv_log is not None:
             self._conv_log.log("cognitive", "brain", event_type, **fields)
 
+    def _rumination_rate(self) -> float:
+        """Part des dernières pensées qui ont été jetées. Fenêtre vide → 0."""
+        if not self._rumination_window:
+            return 0.0
+        return sum(self._rumination_window) / len(self._rumination_window)
+
+    def _rumination_slowdown(self) -> float:
+        """Facteur d'allongement du tick : 1.0 quand ça avance, jusqu'à
+        1 + _RUMINATION_SLOWDOWN quand tout ressasse.
+
+        Croissance quadratique pour ne freiner qu'à partir d'un ressassement
+        franc — quelques pensées jetées sont normales et ne doivent pas
+        endormir la boucle."""
+        return 1.0 + _RUMINATION_SLOWDOWN * self._rumination_rate() ** 2
+
     def _tick_interval(self) -> int:
         # Cadence basée sur l'activité qui VISE Wally, pas la perception passive :
         # un canal qui bouge sans le concerner ne le fait plus penser toutes les
         # 30 s (Phase 2c).
         elapsed = time.monotonic() - self._last_relevant_activity_ts
         if elapsed < 600:
+            # Quelqu'un s'adresse à lui : on reste vif quoi qu'il arrive. Le frein
+            # au ressassement ne doit jamais coûter en réactivité.
             return TICK_ACTIVE
         if elapsed < 3600:
-            return TICK_MODERATE
+            return int(TICK_MODERATE * self._rumination_slowdown())
         # Seul/idle : l'esprit vagabonde par à-coups irréguliers (effet naturel),
         # pas sur une horloge fixe. Intervalle aléatoire 5 min – 1 h, mais l'ennui
         # raccourcit le plafond (Phase 1b) : plus Wally s'ennuie, plus vite il
@@ -364,7 +396,13 @@ class CognitiveLoop:
                 hi = int(hi * (1.0 + 2.0 * (1.0 - max(0.0, min(1.0, r)))))
             except Exception:  # noqa: BLE001
                 pass
-        return random.randint(TICK_IDLE, max(TICK_IDLE, hi))
+        # Le ressassement écarte les DEUX bornes : quand rien de neuf ne sort,
+        # même le plancher de 5 min est trop court. C'est le contrepoids de
+        # l'ennui, qui pousse en sens inverse.
+        slowdown = self._rumination_slowdown()
+        lo = int(TICK_IDLE * slowdown)
+        hi = int(hi * slowdown)
+        return random.randint(lo, max(lo, hi))
 
     async def _expire_focus(self) -> None:
         """Archive le focus actif ressassé → `preoccupation` redevient None au
@@ -547,6 +585,7 @@ class CognitiveLoop:
                     except Exception as e:
                         logger.warning("Archivage pensée ressassée échoué : {}", e)
                 self._focus_rumination_count += 1
+                self._rumination_window.append(True)
                 self._log_cog(
                     "think_skipped",
                     reason="ressassement (juge de progression)",
@@ -562,6 +601,7 @@ class CognitiveLoop:
                 _too_similar(result.thought_text, t) for t in self._recent_thoughts
             ):
                 logger.debug("CognitiveLoop: pensée quasi identique (fenêtre récente), repos")
+                self._rumination_window.append(True)
                 self._log_cog(
                     "think_skipped",
                     reason="pensée quasi identique à une pensée récente",
@@ -580,6 +620,7 @@ class CognitiveLoop:
             #    vie du fil : R,P,R le tue au 2e ressassement.
             if verdict != "PROGRESSE":
                 self._focus_rumination_count = 0
+            self._rumination_window.append(False)
             self._recent_thoughts.append(result.thought_text)
             if len(self._recent_thoughts) > 6:
                 self._recent_thoughts = self._recent_thoughts[-6:]

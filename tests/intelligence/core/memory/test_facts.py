@@ -206,14 +206,20 @@ async def test_append_progress_caps_oldest_dropped(tmp_db_path):
     gid = await store.add(make_fact(content="Le but initial", category=FactCategory.GOAL))
     for i in range(5):
         await store.append_progress(gid, f"etape{i}", max_step_lines=3)
-    facts = await store.get_by_user("discord:123", categories=[FactCategory.GOAL])
+    # Dépasser le quota d'étapes clôt le but (anti-rumination) : on le relit donc
+    # parmi les archivés.
+    facts = await store.get_by_user(
+        "discord:123", categories=[FactCategory.GOAL], status=FactStatus.ARCHIVED
+    )
     content = facts[0].content
     assert "Le but initial" in content       # intitulé conservé
-    assert "etape0" not in content           # plus vieilles jetées
-    assert "etape1" not in content
+    assert "etape0" not in content           # plus vieille jetée par le cap
+    assert "etape1" in content
     assert "etape2" in content
     assert "etape3" in content
-    assert "etape4" in content
+    # etape3 a fait déborder le quota → but clos, les avancées suivantes sont
+    # refusées : c'est ce qui casse la boucle d'un but avancé indéfiniment.
+    assert "etape4" not in content
 
 
 @pytest.mark.asyncio

@@ -261,6 +261,7 @@ class WallyDiscord(commands.Bot):
                 _reasoning_llm, _fact_store, _prompts_dir,
                 channels_text=_chan_dir.render(), capabilities_text=_caps_text,
                 channel_names=_chan_dir.name_map(),
+                spontaneous_speak_enabled=self.config.bot.spontaneous_channel_speak_enabled,
             )
             _conv_log = getattr(self, "conv_log", None)
             # Historique persistant du flux cognitif (#observability) — rotation 1000.

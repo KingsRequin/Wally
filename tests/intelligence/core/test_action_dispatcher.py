@@ -239,7 +239,7 @@ async def test_act_advance_goal_missing_args_no_crash(tmp_fact_store):
 
 
 @pytest.mark.asyncio
-async def test_act_fulfill_goal_archives(tmp_fact_store):
+async def test_act_fulfill_goal_marks_fulfilled(tmp_fact_store):
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.memory.facts import AtomicFact, FactCategory, FactStatus
     from bot.intelligence.meta_agent import MetaDecision
@@ -254,10 +254,14 @@ async def test_act_fulfill_goal_archives(tmp_fact_store):
     ))
     active = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.GOAL])
     assert active == []
-    archived = await tmp_fact_store.get_by_user(
+    # Un but atteint n'est pas un but abandonné : le statut doit les distinguer
+    assert await tmp_fact_store.get_by_user(
         "wally:self", categories=[FactCategory.GOAL], status=FactStatus.ARCHIVED
+    ) == []
+    fulfilled = await tmp_fact_store.get_by_user(
+        "wally:self", categories=[FactCategory.GOAL], status=FactStatus.FULFILLED
     )
-    assert len(archived) == 1
+    assert len(fulfilled) == 1
     types = [c.args[0]["type"] for c in feed.publish.call_args_list]
     assert "ACT" in types
 

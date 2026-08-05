@@ -72,10 +72,21 @@ class ReasoningAgent:
       `parse_decisions`.
     """
 
-    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "", channel_names: dict[str, str] | None = None) -> None:
+    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "", channel_names: dict[str, str] | None = None, spontaneous_speak_enabled: bool = True) -> None:
         self._llm = llm
         self._facts = fact_store
         self._system = render_identity((Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8"))
+        # Parole spontanée coupée : inutile de laisser le LLM choisir SPEAK et
+        # rédiger un message qui sera jeté au dispatch. Il décidait en boucle une
+        # action structurellement impossible (mesuré : 18 messages écrits pour
+        # rien en 5 jours).
+        if not spontaneous_speak_enabled:
+            self._system += (
+                "\n\n## Parole spontanée indisponible\n"
+                "L'action `[SPEAK]` est actuellement désactivée : tout `[SPEAK]` que tu émettrais "
+                "serait jeté sans être envoyé. N'en émets aucun, et ne rédige pas de message "
+                "destiné à un canal. Ta vie mentale passe par `[THINK]` et par les `[ACT]`.\n"
+            )
         self._channels_text = channels_text
         self._capabilities_text = capabilities_text
         self._channel_names = channel_names or {}

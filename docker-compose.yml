@@ -25,6 +25,9 @@ services:
         GIT_HASH: ${GIT_HASH:-unknown}
         BUILD_DATE: ${BUILD_DATE:-unknown}
     container_name: wally-bot
+    # Laisse le temps de terminer les écritures en cours avant le SIGKILL
+    # (le défaut de 10 s coupait le process en pleine écriture de log).
+    stop_grace_period: 30s
     user: "1000:1000"
     group_add:
       - "996"

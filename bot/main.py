@@ -1,6 +1,7 @@
 # bot/main.py
 import asyncio
 import os
+import signal
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -506,8 +507,21 @@ async def main() -> None:
     tasks.append(dashboard_server.serve())
     logger.info("Dashboard server added to gather on port 8080")
 
+    # `docker stop` envoie SIGTERM, dont le comportement par défaut tue le process
+    # sur-le-champ : le `finally` ci-dessous ne s'exécutait jamais et l'écriture en
+    # cours restait à moitié faite (lignes de log JSONL terminées en NUL bytes).
+    # On le convertit en annulation asyncio pour fermer proprement.
+    gathered = asyncio.gather(*tasks)
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            asyncio.get_running_loop().add_signal_handler(_sig, gathered.cancel)
+        except (NotImplementedError, RuntimeError):  # plateforme sans support
+            logger.warning("Arrêt propre indisponible pour le signal {s}", s=_sig)
+
     try:
-        await asyncio.gather(*tasks)
+        await gathered
+    except asyncio.CancelledError:
+        logger.info("Signal d'arrêt reçu — fermeture propre en cours")
     finally:
         if update_checker:
             await update_checker.stop()

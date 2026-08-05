@@ -419,7 +419,7 @@ class ActionDispatcher:
             goal_id = self._coerce_goal_id(act_name, args.get("goal_id"))
             if goal_id is None:
                 return
-            await self._facts.set_status(goal_id, FactStatus.ARCHIVED)
+            await self._facts.set_status(goal_id, FactStatus.FULFILLED)
             logger.info("ACT fulfill_goal: #{} accompli", goal_id)
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"fulfill_goal #{goal_id}"})
