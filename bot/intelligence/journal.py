@@ -37,8 +37,8 @@ _JOURNAL_SYSTEM = load_prompt(
     "journal_system",
     fallback=(
         "Tu es {{BOT_NAME}}, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
-        "Rédige une entrée de journal en 3 à 5 paragraphes, à la première personne, "
-        "ton sincère et introspectif. Respecte la fourchette de mots indiquée dans le contexte."
+        "Rédige une entrée de journal à la première personne, ton sincère, écriture relâchée. "
+        "Respecte la consigne de longueur indiquée dans le contexte — n'étire jamais pour remplir."
     ),
     render=False,
 )
@@ -163,13 +163,26 @@ def _generate_emotion_chart(snapshots: list[dict]) -> BytesIO | None:
     return buf
 
 
-def _get_word_range(message_count: int) -> str:
-    """Return a word-count range string based on the number of messages."""
+def _get_length_guidance(message_count: int) -> str:
+    """Consigne de longueur : un plafond, jamais un plancher.
+
+    Un quota minimum force le remplissage, et le remplissage produit de la
+    littérature — c'est les journées sans rien qui donnaient les entrées les plus
+    brodées. Ici la longueur suit ce qu'il y a à dire.
+    """
+    if message_count < 10:
+        return (
+            "Il ne s'est presque rien passé aujourd'hui. Deux ou trois lignes suffisent, "
+            "et c'est très bien — n'étire pas, n'invente pas de matière. 80 mots maximum."
+        )
     if message_count < 50:
-        return "150 à 250"
+        return (
+            "Journée peu chargée. Écris ce que tu as à dire, pas un mot de plus : "
+            "si ça tient en quatre lignes, ça tient en quatre lignes. 200 mots maximum."
+        )
     if message_count <= 150:
-        return "250 à 400"
-    return "400 à 600"
+        return "Il y a eu de la matière aujourd'hui. 400 mots maximum, moins si tu as fait le tour."
+    return "Grosse journée. 600 mots maximum, moins si tu as fait le tour."
 
 
 def _build_active_hours(messages: list[dict]) -> str:
@@ -197,30 +210,31 @@ def _build_active_hours(messages: list[dict]) -> str:
 
 
 def _build_stats_block(messages: list[dict]) -> str:
-    """Build a stats summary block from a list of messages."""
+    """Repères de la journée : qui, quand, où — sans aucun compteur.
+
+    Les comptes de messages et de participants finissaient récités tels quels
+    (« 10 messages, 4 participants »). Le volume est déjà porté par la consigne
+    de longueur ; ici on ne garde que ce qui aide à raconter.
+    """
     if not messages:
         return ""
-    count = len(messages)
     authors = Counter(m["author"] for m in messages)
-    unique = len(authors)
-    top5 = ", ".join(f"{name} ({n} msgs)" for name, n in authors.most_common(5))
     active = _build_active_hours(messages)
 
-    lines = [
-        "Statistiques de la journée :",
-        f"- Messages : {count}",
-        f"- Participants : {unique}",
-    ]
+    lines = ["Repères de la journée :"]
     if active:
-        lines.append(f"- Activité : {active}")
+        lines.append(f"- Moments d'activité : {active}")
 
-    # Platform breakdown
     platforms = Counter(m.get("platform", "discord") for m in messages)
     if len(platforms) > 1:
-        breakdown = ", ".join(f"{p.capitalize()} ({n})" for p, n in platforms.most_common())
-        lines.append(f"- Plateformes : {breakdown}")
+        lines.append(
+            "- Plateformes : " + ", ".join(p.capitalize() for p, _ in platforms.most_common())
+        )
 
-    lines.append(f"- Top participants : {top5}")
+    lines.append(
+        "- Qui était là, du plus bavard au moins bavard : "
+        + ", ".join(name for name, _ in authors.most_common(5))
+    )
     return "\n".join(lines)
 
 
@@ -264,18 +278,20 @@ def _build_emotion_arc(snapshots: list[dict]) -> str:
 
 
 def _emotion_tone_hint(emotions: dict) -> str:
-    """Génère une directive de ton selon l'émotion dominante (≥ 0.30)."""
+    """Génère une directive de ton selon l'émotion dominante (≥ 0.30).
+
+    Sans pourcentage : même dans une consigne d'écriture, un chiffre finit recopié
+    dans l'entrée publiée (« une ligne droite à 100% »).
+    """
     dominant = max(emotions, key=emotions.get)
-    value = emotions[dominant]
-    if value < 0.30:
+    if emotions[dominant] < 0.30:
         return ""
-    pct = int(value * 100)
     hints = {
-        "anger": f"Ce soir ta colère domine ({pct}%) — entrée courte, cassante, quelques lignes suffisent.",
-        "joy": f"Ce soir tu es plutôt joyeux ({pct}%) — tu peux te laisser aller, plus léger et spontané.",
-        "sadness": f"Ce soir ta tristesse domine ({pct}%) — écriture plus lente, introspective, quelques silences.",
-        "curiosity": f"Ce soir ta curiosité domine ({pct}%) — laisse-toi partir dans les digressions si l'envie t'en prend.",
-        "boredom": f"Ce soir c'est l'ennui qui domine ({pct}%) — t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
+        "anger": "Ce soir ta colère domine — entrée courte, cassante, quelques lignes suffisent.",
+        "joy": "Ce soir tu es plutôt joyeux — tu peux te laisser aller, plus léger et spontané.",
+        "sadness": "Ce soir ta tristesse domine — écriture plus lente, introspective, quelques silences.",
+        "curiosity": "Ce soir ta curiosité domine — laisse-toi partir dans les digressions si l'envie t'en prend.",
+        "boredom": "Ce soir c'est l'ennui qui domine — t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
     }
     return hints.get(dominant, "")
 
@@ -483,8 +499,8 @@ class DailyJournal:
         # ── Stats block (F4, F8) ──
         stats_block = _build_stats_block(all_messages) if all_messages else ""
 
-        # ── Dynamic word range (F1) ──
-        word_range = _get_word_range(len(all_messages)) if all_messages else "150 à 250"
+        # ── Longueur guidée par la matière du jour (F1) ──
+        length_guidance = _get_length_guidance(len(all_messages) if all_messages else 0)
 
         # ── Midnight timestamp for date-based queries ──
         midnight = datetime.combine(
@@ -620,7 +636,7 @@ class DailyJournal:
 
         # ── Build user prompt ──
         sections = [
-            f"Fourchette de mots pour cette entrée : {word_range} mots.",
+            length_guidance,
         ]
         if stats_block:
             sections.append(stats_block)

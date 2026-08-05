@@ -207,7 +207,7 @@ async def test_peak_antispam_prevents_duplicate(tmp_path):
 
 # ── stats block + word range (Task 5) ──
 
-from bot.intelligence.journal import _build_stats_block, _get_word_range
+from bot.intelligence.journal import _build_stats_block, _get_length_guidance
 
 
 def test_build_stats_block_basic():
@@ -217,9 +217,13 @@ def test_build_stats_block_basic():
         {"author": "Alice", "content": "Sup", "timestamp": 1710807200.0, "platform": "twitch"},
     ]
     block = _build_stats_block(messages)
-    assert "Messages : 3" in block
-    assert "Participants : 2" in block
-    assert "Alice (2 msgs)" in block
+    # Aucun compteur : un chiffre injecté finit récité tel quel dans l'entrée publiée
+    assert "Messages :" not in block
+    assert "Participants :" not in block
+    assert "msgs" not in block
+    # Mais on garde qui était là, dans l'ordre de bavardage, et quand
+    assert block.index("Alice") < block.index("Bob")
+    assert "Moments d'activité" in block
     assert "Discord" in block or "discord" in block
 
 
@@ -228,18 +232,27 @@ def test_build_stats_block_empty():
     assert block == ""
 
 
-def test_get_word_range():
-    assert _get_word_range(10) == "150 à 250"
-    assert _get_word_range(49) == "150 à 250"
-    assert _get_word_range(50) == "250 à 400"
-    assert _get_word_range(150) == "250 à 400"
-    assert _get_word_range(151) == "400 à 600"
+def test_length_guidance_is_a_ceiling_never_a_floor():
+    """Un plancher de mots force le remplissage, et le remplissage produit de la broderie."""
+    for count in (0, 9, 10, 49, 50, 150, 151, 5000):
+        guidance = _get_length_guidance(count)
+        assert "maximum" in guidance
+        assert "minimum" not in guidance
+
+    # Journée quasi muette → on autorise explicitement l'entrée expédiée
+    creuse = _get_length_guidance(1)
+    assert "80 mots maximum" in creuse
+    assert "n'invente pas" in creuse
+
+    assert "200 mots maximum" in _get_length_guidance(49)
+    assert "400 mots maximum" in _get_length_guidance(150)
+    assert "600 mots maximum" in _get_length_guidance(151)
 
 
 # ── Task 6: Wire everything into generate_and_send ──
 
 @pytest.mark.asyncio
-async def test_journal_injects_stats_and_word_range(tmp_path):
+async def test_journal_injects_stats_and_length_guidance(tmp_path):
     """Stats block, word range, and peaks are injected in the journal prompt."""
     from unittest.mock import MagicMock, AsyncMock
     from bot.intelligence.journal import DailyJournal
@@ -286,8 +299,8 @@ async def test_journal_injects_stats_and_word_range(tmp_path):
     assert len(captured_journal_prompt) >= 1
     # First call is always the main journal prompt (voice pass is a subsequent call)
     prompt = captured_journal_prompt[0]
-    assert "Messages : 60" in prompt
-    assert "250 à 400" in prompt
+    assert "Qui était là" in prompt
+    assert "400 mots maximum" in prompt
     await db_inst.close()
 
 

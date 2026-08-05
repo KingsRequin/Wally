@@ -6,6 +6,7 @@ n'envoie rien sur Discord, n'archive rien, n'écrit aucun topic.
 Usage : PYTHONPATH=. python3 scripts/journal_dryrun.py 2026-08-04
 """
 import asyncio
+import os
 import sys
 from datetime import date
 
@@ -55,6 +56,19 @@ async def main() -> None:
 
     primary = create_llm_client(cfg.llm.primary, db)
     secondary = create_llm_client(cfg.llm.secondary, db)
+
+    # NO_VOICE_PASS=1 → compare la sortie brute du modèle principal au texte repassé
+    if os.getenv("NO_VOICE_PASS"):
+        from bot.core.llm import FALLBACK_RESPONSE
+
+        _orig_complete = secondary.complete
+
+        async def _skip_voice_pass(system, messages, purpose="", **kwargs):
+            if purpose == "journal_voice_pass":
+                return FALLBACK_RESPONSE  # le journal garde alors le brouillon primaire
+            return await _orig_complete(system, messages, purpose=purpose, **kwargs)
+
+        secondary.complete = _skip_voice_pass
 
     journal = DailyJournal(cfg, primary, secondary, _StubEmotion(emotions), _StubMemory(), db)
 
