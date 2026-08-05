@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -87,6 +88,27 @@ _CHARS_PER_TOKEN = 4
 _JOURNAL_TOKEN_THRESHOLD = 6000
 _CHUNK_SIZE = 30
 _DISCORD_LIMIT = 1900  # marge de sécurité sous la limite Discord de 2000
+
+# ── Garde anti-répétition stylistique ──
+# On ne code aucune tournure en dur : les ouvertures et expressions à éviter sont
+# relevées dans les entrées précédentes, donc la garde suit la dérive réelle du style.
+_STYLE_LOOKBACK_DAYS = 7
+_NARRATIVE_DAYS = 4
+_INCIPIT_SHORT_LINE = 40  # une 1re ligne plus courte que ça est une ouverture à elle seule
+_INCIPIT_WORDS = 8
+# Une expression revenue dans cette fraction des entrées est un tic, pas une voix
+_PHRASE_MIN_RATIO = 0.7
+_PHRASE_MIN_DOCS_FLOOR = 3  # plancher, pour ne rien signaler sur un historique trop mince
+_PHRASE_MAX = 6
+# Un n-gramme fait uniquement de mots-outils est de la grammaire, pas une signature.
+# Les auxiliaires en font partie : « je suis » est inévitable dans un journal à la 1re personne.
+_FUNCTION_WORDS = frozenset(
+    """a ai as au aux avec c ce ces cet cette d dans de des du elle en es est et eu il ils
+    j je l la le les leur lui ma mais me mes moi mon n ne nos notre nous on ont ou par pas
+    pour qu que qui s sa se ses son sommes sont suis sur t ta te tes toi ton tu un une vos
+    votre vous y à ça était étais été avait avais eu plus moins très bien tout tous toute
+    toutes fait faire""".split()
+)
 
 _TZ_JOURNAL = ZoneInfo("Europe/Paris")
 
@@ -202,6 +224,23 @@ def _build_stats_block(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _emotion_phrase(emotion: str, value: float) -> str | None:
+    """Intensité d'une émotion en mots. None sous le seuil de saillance (30%).
+
+    Volontairement sans pourcentage : les relevés de capteur finissent recopiés
+    tels quels dans le journal, ce qui ne veut rien dire pour qui le lit.
+    """
+    pct = int(value * 100)
+    if pct < 30:
+        return None
+    name_fr = _EMOTION_FR.get(emotion, emotion)
+    if pct >= 70:
+        return f"pic de {name_fr}"
+    if pct >= 50:
+        return f"{name_fr} montante"
+    return f"{name_fr} légère"
+
+
 def _build_emotion_arc(snapshots: list[dict]) -> str:
     """Construit l'arc émotionnel de la journée depuis les snapshots horaires.
 
@@ -212,19 +251,11 @@ def _build_emotion_arc(snapshots: list[dict]) -> str:
     lines = []
     for snap in snapshots:
         ts = datetime.fromtimestamp(snap["snapshot_at"], tz=_TZ_JOURNAL)
-        parts = []
-        for emotion in ["anger", "joy", "sadness", "curiosity", "boredom"]:
-            pct = int(snap[emotion] * 100)
-            if pct < 30:
-                continue
-            name_fr = _EMOTION_FR.get(emotion, emotion)
-            if pct >= 70:
-                label = f"pic de {name_fr} ({pct}%)"
-            elif pct >= 50:
-                label = f"{name_fr} montante ({pct}%)"
-            else:
-                label = f"{name_fr} légère ({pct}%)"
-            parts.append(label)
+        parts = [
+            phrase
+            for emotion in ["anger", "joy", "sadness", "curiosity", "boredom"]
+            if (phrase := _emotion_phrase(emotion, snap[emotion])) is not None
+        ]
         if parts:
             lines.append(f"{ts.strftime('%Hh%M')} — {', '.join(parts)}")
         else:
@@ -247,6 +278,79 @@ def _emotion_tone_hint(emotions: dict) -> str:
         "boredom": f"Ce soir c'est l'ennui qui domine ({pct}%) — t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
     }
     return hints.get(dominant, "")
+
+
+def _journal_body(content: str) -> str:
+    """Retire les titres markdown : la structure imposée ne doit pas compter comme un tic."""
+    return "\n".join(
+        line for line in content.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def _extract_incipit(content: str) -> str:
+    """Ouverture d'une entrée : la 1re ligne si elle tient seule, sinon ses premiers mots."""
+    for line in _journal_body(content).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if len(line) <= _INCIPIT_SHORT_LINE:
+            return line
+        words = line.split()
+        return " ".join(words[:_INCIPIT_WORDS]) + "…"
+    return ""
+
+
+def _detect_overused_phrases(journals: list[dict]) -> list[str]:
+    """Expressions de 2-3 mots revenues dans la majorité des entrées récentes.
+
+    Les tics ne sont jamais listés en dur : ils émergent du corpus des entrées passées,
+    donc la garde suit la dérive réelle du style au lieu d'une liste noire figée.
+    """
+    threshold = max(_PHRASE_MIN_DOCS_FLOOR, round(_PHRASE_MIN_RATIO * len(journals)))
+    if len(journals) < threshold:
+        return []
+
+    doc_freq: Counter[str] = Counter()
+    for entry in journals:
+        words = re.findall(r"[a-zà-öø-ÿ]+", _journal_body(entry.get("content") or "").lower())
+        seen: set[str] = set()
+        for size in (2, 3):
+            for i in range(len(words) - size + 1):
+                gram = words[i : i + size]
+                # Que des mots-outils → tournure grammaticale banale, pas une signature
+                if all(w in _FUNCTION_WORDS for w in gram):
+                    continue
+                seen.add(" ".join(gram))
+        doc_freq.update(seen)
+
+    hits = [g for g, n in doc_freq.most_common() if n >= threshold]
+    # Un 2-mots contenu dans un 3-mots retenu fait doublon — on garde le plus long
+    longest = [g for g in hits if len(g.split()) == 3]
+    kept = longest + [
+        g for g in hits if len(g.split()) == 2 and not any(g in l for l in longest)
+    ]
+    return kept[:_PHRASE_MAX]
+
+
+def _build_style_avoidance_block(journals: list[dict]) -> str:
+    """Relevé de ce que les entrées récentes ont déjà usé — ouvertures et expressions."""
+    if not journals:
+        return ""
+    incipits = list(
+        dict.fromkeys(i for i in (_extract_incipit(j.get("content") or "") for j in journals) if i)
+    )
+    phrases = _detect_overused_phrases(journals)
+    if not incipits and not phrases:
+        return ""
+
+    lines = ["Ce que tes entrées récentes ont déjà usé — n'y retourne pas :"]
+    if incipits:
+        lines.append("- Ouvertures déjà utilisées : " + " / ".join(f'"{i}"' for i in incipits))
+        lines.append("  Entre dans ta journée autrement ce soir.")
+    if phrases:
+        lines.append("- Expressions trop revenues : " + ", ".join(f'"{p}"' for p in phrases))
+        lines.append("  Dis la même chose avec une autre construction, sans les remplacer par un tic neuf.")
+    return "\n".join(lines)
 
 
 def _split_for_discord(text: str, limit: int = _DISCORD_LIMIT) -> list[str]:
@@ -399,12 +503,11 @@ class DailyJournal:
                     for p in peaks:
                         ts = datetime.fromtimestamp(p["timestamp"], tz=_TZ_JOURNAL)
                         name_fr = _EMOTION_FR.get(p["emotion"], p["emotion"])
-                        pct = int(p["value"] * 100)
                         user = p.get("trigger_user") or "inconnu"
                         msg = p.get("trigger_message") or ""
                         msg_short = msg[:80] + "…" if len(msg) > 80 else msg
                         peak_lines.append(
-                            f"- {ts.strftime('%Hh%M')} — pic de {name_fr} ({pct}%) "
+                            f"- {ts.strftime('%Hh%M')} — pic de {name_fr} "
                             f"déclenché par {user} : \"{msg_short}\""
                         )
                     peaks_block = "Moments forts émotionnels :\n" + "\n".join(peak_lines)
@@ -433,10 +536,9 @@ class DailyJournal:
                         delta = day_avgs[emotion] - week_avgs[emotion]
                         if abs(delta) >= 0.10:
                             name_fr = _EMOTION_FR.get(emotion, emotion)
-                            sign = "+" if delta > 0 else ""
-                            pct = int(delta * 100)
+                            ampleur = "nettement" if abs(delta) >= 0.25 else "un peu"
                             direction = "plus haute que d'habitude" if delta > 0 else "en baisse"
-                            diffs.append(f"{name_fr} {direction} ({sign}{pct}%)")
+                            diffs.append(f"{name_fr} {ampleur} {direction}")
                     if diffs:
                         weather_block = "Comparé à la semaine : " + ", ".join(diffs)
             except Exception as exc:
@@ -452,24 +554,32 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to get yesterday's journal: {e}", e=exc)
 
-        # ── Narrative synthesis of last 4 days ──
-        narrative_block = ""
+        # ── Entrées précédentes : synthèse narrative + garde anti-répétition stylistique ──
+        past_journals: list[dict] = []
         if self._db is not None:
             try:
                 past_journals = await self._db.get_journals_last_n_days(
-                    n=4, before_date=effective_date.isoformat()
+                    n=_STYLE_LOOKBACK_DAYS, before_date=effective_date.isoformat()
                 )
-                if len(past_journals) >= 2:
-                    combined = "\n\n---\n\n".join(
-                        f"[{j['date']}]\n{j['content']}" for j in past_journals
-                    )
-                    result = await self._llm_secondary.complete(
-                        render_identity(_NARRATIVE_SYNTHESIS_SYSTEM),
-                        [{"role": "user", "content": combined}],
-                        purpose="journal_narrative_synthesis",
-                    )
-                    if result and result != FALLBACK_RESPONSE:
-                        narrative_block = result
+            except Exception as exc:
+                logger.warning("Failed to load past journals: {e}", e=exc)
+
+        style_block = _build_style_avoidance_block(past_journals)
+
+        narrative_block = ""
+        recent_journals = past_journals[-_NARRATIVE_DAYS:]
+        if len(recent_journals) >= 2:
+            try:
+                combined = "\n\n---\n\n".join(
+                    f"[{j['date']}]\n{j['content']}" for j in recent_journals
+                )
+                result = await self._llm_secondary.complete(
+                    render_identity(_NARRATIVE_SYNTHESIS_SYSTEM),
+                    [{"role": "user", "content": combined}],
+                    purpose="journal_narrative_synthesis",
+                )
+                if result and result != FALLBACK_RESPONSE:
+                    narrative_block = result
             except Exception as exc:
                 logger.warning("Failed to build journal narrative synthesis: {e}", e=exc)
 
@@ -505,9 +615,8 @@ class DailyJournal:
 
         # ── Current emotion state ──
         emotions = self._emotion.get_state()
-        emotions_text = ", ".join(
-            f"{_EMOTION_FR.get(k, k)}: {int(v * 100)}%" for k, v in emotions.items()
-        )
+        salient = [p for k, v in emotions.items() if (p := _emotion_phrase(k, v)) is not None]
+        emotions_text = ", ".join(salient) if salient else "rien de très marqué"
 
         # ── Build user prompt ──
         sections = [
@@ -534,6 +643,8 @@ class DailyJournal:
         hint = _emotion_tone_hint(emotions)
         if hint:
             sections.append(hint)
+        if style_block:
+            sections.append(style_block)
         if is_backfill:
             sections.append(f"Écris ton journal intime pour le {display_date}.")
         else:
@@ -551,9 +662,14 @@ class DailyJournal:
         # ── Voice pass — insuffle la vraie voix intérieure ──
         if journal_text:
             try:
+                voice_input = (
+                    f"{style_block}\n\n---\n\nBrouillon :\n{journal_text}"
+                    if style_block
+                    else journal_text
+                )
                 voice_result = await self._llm_secondary.complete(
                     render_identity(_JOURNAL_VOICE_PASS_SYSTEM),
-                    [{"role": "user", "content": journal_text}],
+                    [{"role": "user", "content": voice_input}],
                     purpose="journal_voice_pass",
                 )
                 if voice_result and voice_result != FALLBACK_RESPONSE:

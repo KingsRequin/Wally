@@ -206,10 +206,10 @@ async def test_journal_backward_compat_no_db():
 
 
 @pytest.mark.asyncio
-async def test_journal_emotions_text_uses_percentage():
-    """Le prompt du journal contient les émotions en pourcentage."""
+async def test_journal_emotions_text_uses_words_not_percentages():
+    """L'état émotionnel est décrit en mots : un relevé chiffré finit recopié tel quel."""
     config, llm, llm_secondary, emotion, memory = make_deps()
-    # joy=0.5 → 50%
+    # joy=0.5 → palier "montante"
     emotion.get_state = MagicMock(
         return_value={"anger": 0.0, "joy": 0.5, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
     )
@@ -228,7 +228,8 @@ async def test_journal_emotions_text_uses_percentage():
     assert len(captured_prompt) >= 1
     # Le dernier appel est le journal final
     final_prompt = captured_prompt[-1]
-    assert "50%" in final_prompt
+    assert "Ton état émotionnel actuel : joie montante" in final_prompt
+    assert "joie: 50%" not in final_prompt  # plus de relevé chiffré à recopier
     assert "0.5" not in final_prompt  # pas de float brut
 
 
