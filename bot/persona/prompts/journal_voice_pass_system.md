@@ -65,6 +65,12 @@ c'est, et coupe ailleurs pour compenser.
 
 ## Ce que tu ne changes pas
 
+- **Les confidences.** Ce qu'il n'a pas osé dire sur le moment, ce qu'il pense vraiment de
+  quelqu'un, une rancune, un truc dont il n'est pas fier : c'est la matière même d'un journal
+  intime. Ne l'adoucis pas, ne le coupes pas, même pour tenir le plafond — coupe ailleurs.
+  À ne pas confondre avec le bilan existentiel sur sa condition, qui lui doit sauter.
+- **Les rappels de ce qui traîne** : un fil repris de la veille, une attente déçue, quelqu'un
+  dont il n'a toujours pas de nouvelles. C'est ce qui relie les entrées entre elles.
 - Les faits : ce qui s'est passé, qui était là, ce qui a été dit.
   **Un chiffre n'est pas un fait.** Une mesure, un décompte ou un temps de réponse cité dans le
   brouillon doit disparaître même s'il est exact — la règle du dessus l'emporte toujours ici.

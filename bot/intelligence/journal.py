@@ -249,10 +249,14 @@ def _emotion_phrase(emotion: str, value: float) -> str | None:
         return None
     name_fr = _EMOTION_FR.get(emotion, emotion)
     if pct >= 70:
-        return f"pic de {name_fr}"
+        # « pic d'ennui », pas « pic de ennui »
+        liaison = "d'" if name_fr[0] in "aeiouyéèêà" else "de "
+        return f"pic {liaison}{name_fr}"
+    # Tournures sans adjectif : « ennui » est masculin et les quatre autres
+    # émotions sont féminines — un accord unique donnait « ennui montante ».
     if pct >= 50:
-        return f"{name_fr} montante"
-    return f"{name_fr} légère"
+        return f"{name_fr} qui monte"
+    return f"{name_fr} en fond"
 
 
 def _build_emotion_arc(snapshots: list[dict]) -> str:
@@ -578,6 +582,18 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Failed to get yesterday's journal: {e}", e=exc)
 
+        # ── Habitués sans nouvelles : matière à continuité d'un soir à l'autre ──
+        missing_block = ""
+        if self._db is not None:
+            try:
+                missing = await self._db.get_missing_regulars()
+                if missing:
+                    missing_block = "Sans nouvelles depuis un moment : " + ", ".join(
+                        f"{m['username']} ({m['days']} jours)" for m in missing
+                    )
+            except Exception as exc:
+                logger.warning("Failed to get missing regulars: {e}", e=exc)
+
         # ── Entrées précédentes : synthèse narrative + garde anti-répétition stylistique ──
         past_journals: list[dict] = []
         if self._db is not None:
@@ -660,6 +676,8 @@ class DailyJournal:
             sections.append(yesterday_block)
         if narrative_block:
             sections.append(f"Ce que tu as vécu cette semaine :\n\n{narrative_block}")
+        if missing_block:
+            sections.append(missing_block)
         if gallery_block:
             sections.append(gallery_block)
         if twitch_visits_block:

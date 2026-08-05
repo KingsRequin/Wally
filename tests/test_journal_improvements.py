@@ -434,3 +434,58 @@ async def test_get_journals_last_n_days_respects_n(db):
 async def test_get_journals_last_n_days_empty(db):
     result = await db.get_journals_last_n_days(n=4, before_date="2026-04-13")
     assert result == []
+
+
+# ── Continuité : habitués sans nouvelles ──
+
+@pytest.mark.asyncio
+async def test_missing_regulars_detects_absent_habitue(db):
+    now = time.time()
+    await db.execute(
+        "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+        "VALUES (?,?,?,?,?)",
+        ("discord:1", "discord", now - 40 * 86400, "Keychka", 25),
+    )
+    missing = await db.get_missing_regulars(now=now)
+    assert [m["username"] for m in missing] == ["Keychka"]
+    assert missing[0]["days"] == 40
+
+
+@pytest.mark.asyncio
+async def test_missing_regulars_ignores_someone_who_just_spoke(db):
+    """Un souvenir ne se forme pas à chaque message : last_updated peut vieillir à tort."""
+    now = time.time()
+    await db.execute(
+        "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+        "VALUES (?,?,?,?,?)",
+        ("discord:2", "discord", now - 40 * 86400, "Iron d'aile", 16),
+    )
+    await db.log_daily_message("ch1", "Iron d'aile (@iron_daile)", "je suis là", platform="discord")
+    assert await db.get_missing_regulars(now=now) == []
+
+
+@pytest.mark.asyncio
+async def test_missing_regulars_ignores_occasional_visitors(db):
+    now = time.time()
+    await db.execute(
+        "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+        "VALUES (?,?,?,?,?)",
+        ("twitch:3", "twitch", now - 60 * 86400, "passant", 2),
+    )
+    assert await db.get_missing_regulars(now=now) == []
+
+
+@pytest.mark.asyncio
+async def test_missing_regulars_ranks_by_closeness(db):
+    now = time.time()
+    for uid, name, count, days in (
+        ("discord:4", "Proche", 25, 20),
+        ("discord:5", "Lointain", 9, 90),
+    ):
+        await db.execute(
+            "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
+            "VALUES (?,?,?,?,?)",
+            (uid, "discord", now - days * 86400, name, count),
+        )
+    # Trié par nombre de souvenirs, pas par fraîcheur de l'absence
+    assert [m["username"] for m in await db.get_missing_regulars(now=now)] == ["Proche", "Lointain"]

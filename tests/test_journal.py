@@ -154,8 +154,8 @@ def test_build_emotion_arc_formats_dominant_emotions():
     arc = _build_emotion_arc(snapshots)
     assert "Arc émotionnel" in arc
     assert "pic de joie" in arc       # 0.75 → 75% ≥ 70% → "pic de"
-    assert "joie montante" in arc     # 0.55 → 55% ≥ 50% → "montante"
-    assert "curiosité légère" in arc  # 0.35 → 35% ≥ 30% et < 50% → "légère"
+    assert "joie qui monte" in arc    # 0.55 → 55% ≥ 50%
+    assert "curiosité en fond" in arc # 0.35 → 35% ≥ 30% et < 50%
     assert arc.count("\n") >= 1
 
 
@@ -189,8 +189,8 @@ def test_build_emotion_arc_labels():
          "curiosity": 0.0, "boredom": 0.0},  # 80% → pic de
     ]
     arc = _build_emotion_arc(snapshots)
-    assert "légère" in arc
-    assert "montante" in arc
+    assert "en fond" in arc
+    assert "qui monte" in arc
     assert "pic de" in arc
 
 
@@ -228,7 +228,7 @@ async def test_journal_emotions_text_uses_words_not_percentages():
     assert len(captured_prompt) >= 1
     # Le dernier appel est le journal final
     final_prompt = captured_prompt[-1]
-    assert "Ton état émotionnel actuel : joie montante" in final_prompt
+    assert "Ton état émotionnel actuel : joie qui monte" in final_prompt
     assert "joie: 50%" not in final_prompt  # plus de relevé chiffré à recopier
     assert "0.5" not in final_prompt  # pas de float brut
 

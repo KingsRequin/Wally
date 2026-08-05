@@ -11,6 +11,15 @@ from loguru import logger
 _TZ_DB = ZoneInfo("Europe/Paris")
 
 
+def _base_name(label: str) -> str:
+    """« Azraël (@._.azrael._.) » → « azraël ».
+
+    `daily_log` stocke le label complet, `memory_users` tantôt l'un tantôt l'autre :
+    il faut cette normalisation pour rapprocher les deux tables.
+    """
+    return str(label).split(" (@")[0].strip().lower()
+
+
 class SocialMixin:
     _conn: aiosqlite.Connection
 
@@ -231,6 +240,49 @@ class SocialMixin:
     async def cleanup_old_daily_log(self, days: int = 7) -> None:
         cutoff = time.time() - days * 86400
         await self.execute("DELETE FROM daily_log WHERE timestamp < ?", (cutoff,))
+
+    async def get_missing_regulars(
+        self,
+        *,
+        now: float | None = None,
+        min_memories: int = 8,
+        min_days_absent: int = 14,
+        limit: int = 4,
+    ) -> list[dict]:
+        """Habitués dont on n'a plus de nouvelles depuis un moment.
+
+        Sert la continuité du journal : sans ça, le contexte ne contient que la
+        journée en cours et une absence qui dure est invisible.
+
+        Le repère est `memory_users.last_updated` (dernier souvenir formé pour la
+        personne) — `daily_log` ne peut pas servir, il est purgé à 7 jours. Mais un
+        souvenir ne se forme pas à chaque message : quelqu'un peut avoir parlé hier
+        sans que la date bouge. On écarte donc ceux vus récemment dans `daily_log`.
+        """
+        now = time.time() if now is None else now
+        rows = await self.fetch_all(
+            "SELECT username, memory_count, last_updated FROM memory_users "
+            "WHERE username IS NOT NULL AND memory_count >= ? AND last_updated < ? "
+            "ORDER BY memory_count DESC",
+            (min_memories, now - min_days_absent * 86400),
+        )
+        seen_rows = await self.fetch_all("SELECT DISTINCT author FROM daily_log")
+        seen = {_base_name(r["author"]) for r in seen_rows}
+
+        missing: list[dict] = []
+        for row in rows:
+            name = str(row["username"])
+            if _base_name(name) in seen:
+                continue  # passé récemment, le souvenir n'a juste pas bougé
+            missing.append(
+                {
+                    "username": _base_name(name).title() if name.islower() else name.split(" (@")[0],
+                    "days": int((now - float(row["last_updated"])) // 86400),
+                }
+            )
+        # Déjà trié par nombre de souvenirs : on remonte les gens qui comptent
+        # pour lui, pas les absences les plus fraîches.
+        return missing[:limit]
 
     # ── Session persistence ───────────────────────────────────────────────────
 
