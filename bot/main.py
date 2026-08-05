@@ -533,6 +533,10 @@ async def main() -> None:
                 await close_eventsub_client(twitch_bot)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
                 logger.warning("Fermeture EventSub échouée: {e}", e=exc)
+        # Arrêter le serveur web avant d'annuler le reste, sinon uvicorn émet un
+        # CancelledError non traité depuis sa tâche `lifespan`.
+        dashboard_server.should_exit = True
+
         # Fermer les clients eux-mêmes, sinon leurs threads survivent à la boucle :
         # le heartbeat de discord.py appelait `loop.call_soon_threadsafe` après
         # fermeture (« RuntimeError: Event loop is closed » + coroutine jamais
@@ -542,6 +546,11 @@ async def main() -> None:
                 continue
             try:
                 await client.close()
+            except AttributeError as exc:
+                # twitchio fait `self._keeper.cancel()` sans garde : `_keeper` est
+                # None tant que la connexion IRC n'a pas été pleinement établie.
+                # Bénin — EventSub est déjà fermé juste au-dessus.
+                logger.debug("Fermeture {c} partielle: {e}", c=label, e=exc)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
                 logger.warning("Fermeture {c} échouée: {e}", c=label, e=exc)
 
