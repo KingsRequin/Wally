@@ -514,8 +514,11 @@ async def main() -> None:
     gathered = asyncio.gather(*tasks)
 
     def _request_stop() -> None:
-        # Prévenir uvicorn AVANT d'annuler : annulée sans préavis, sa tâche
-        # `lifespan` remonte un CancelledError non traité à chaque arrêt.
+        # Prévenir uvicorn avant d'annuler. Note : `cancel()` étant synchrone, il
+        # n'a de toute façon pas le temps de lire le drapeau — starlette logue
+        # donc un CancelledError depuis sa tâche `lifespan` à chaque arrêt. C'est
+        # bénin (rien n'est perdu, aucun warning) ; le supprimer imposerait un
+        # arrêt gracieux orchestré avec attente et timeout. Ne pas y revenir.
         dashboard_server.should_exit = True
         gathered.cancel()
 
