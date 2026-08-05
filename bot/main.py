@@ -512,9 +512,16 @@ async def main() -> None:
     # cours restait à moitié faite (lignes de log JSONL terminées en NUL bytes).
     # On le convertit en annulation asyncio pour fermer proprement.
     gathered = asyncio.gather(*tasks)
+
+    def _request_stop() -> None:
+        # Prévenir uvicorn AVANT d'annuler : annulée sans préavis, sa tâche
+        # `lifespan` remonte un CancelledError non traité à chaque arrêt.
+        dashboard_server.should_exit = True
+        gathered.cancel()
+
     for _sig in (signal.SIGTERM, signal.SIGINT):
         try:
-            asyncio.get_running_loop().add_signal_handler(_sig, gathered.cancel)
+            asyncio.get_running_loop().add_signal_handler(_sig, _request_stop)
         except (NotImplementedError, RuntimeError):  # plateforme sans support
             logger.warning("Arrêt propre indisponible pour le signal {s}", s=_sig)
 
@@ -533,9 +540,7 @@ async def main() -> None:
                 await close_eventsub_client(twitch_bot)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
                 logger.warning("Fermeture EventSub échouée: {e}", e=exc)
-        # Arrêter le serveur web avant d'annuler le reste, sinon uvicorn émet un
-        # CancelledError non traité depuis sa tâche `lifespan`.
-        dashboard_server.should_exit = True
+        dashboard_server.should_exit = True  # idempotent : couvre l'arrêt hors signal
 
         # Fermer les clients eux-mêmes, sinon leurs threads survivent à la boucle :
         # le heartbeat de discord.py appelait `loop.call_soon_threadsafe` après
