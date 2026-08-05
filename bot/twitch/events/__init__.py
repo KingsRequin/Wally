@@ -160,16 +160,25 @@ async def _retry_failed_subscriptions(failed: list[tuple[str, object]]) -> None:
     durablement, donc les bits et les fins d'abonnement passaient inaperçus.
     """
     pending = list(failed)
-    for delay in _RETRY_DELAYS:
+    for attempt, delay in enumerate(_RETRY_DELAYS, start=1):
         await asyncio.sleep(delay)
+        logger.info(
+            "EventSub: reprise {n}/{total} de {subs}",
+            n=attempt, total=len(_RETRY_DELAYS),
+            subs=", ".join(name for name, _ in pending),
+        )
         still_failing: list[tuple[str, object]] = []
         for name, make_sub in pending:
             try:
                 await make_sub()
                 logger.info("EventSub subscribed on retry: {sub}", sub=name)
             except Exception as exc:
-                logger.debug(
-                    "EventSub retry failed [{sub}]: {e}", sub=name, e=exc
+                # INFO et pas DEBUG : en DEBUG, une reprise ratée était totalement
+                # invisible en prod, impossible de distinguer « la tâche n'a pas
+                # démarré » de « la reprise a échoué ».
+                logger.info(
+                    "EventSub retry {n}/{total} failed [{sub}]: {e}",
+                    n=attempt, total=len(_RETRY_DELAYS), sub=name, e=exc,
                 )
                 still_failing.append((name, make_sub))
             await asyncio.sleep(1.5)
