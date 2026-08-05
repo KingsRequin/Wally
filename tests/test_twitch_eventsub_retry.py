@@ -174,3 +174,67 @@ async def test_le_nettoyage_ne_bloque_jamais_le_boot(monkeypatch):
 async def test_pas_de_token_pas_d_appel(monkeypatch):
     import bot.twitch.events as ev
     assert await ev.purge_stale_subscriptions("cid", "") == 0
+
+
+# ── Fermeture des transports WebSocket ──
+
+class _FakeSock:
+    def __init__(self, closed=False):
+        self.closed = closed
+        self.close_called = False
+
+    async def close(self):
+        self.close_called = True
+        self.closed = True
+
+
+class _FakeWS:
+    def __init__(self, sock):
+        self._sock = sock
+
+
+class _FakeBot:
+    def __init__(self, sockets):
+        self._eventsub_client = type("C", (), {"_sockets": sockets})()
+
+
+@pytest.mark.asyncio
+async def test_les_transports_ouverts_sont_rendus_a_twitch():
+    """La limite est de 3 par utilisateur : un socket non fermé reste occupé."""
+    import bot.twitch.events as ev
+
+    a, b = _FakeSock(), _FakeSock()
+    closed = await ev.close_eventsub_client(_FakeBot([_FakeWS(a), _FakeWS(b)]))
+    assert closed == 2
+    assert a.close_called and b.close_called
+
+
+@pytest.mark.asyncio
+async def test_un_socket_deja_ferme_est_ignore():
+    import bot.twitch.events as ev
+
+    deja = _FakeSock(closed=True)
+    assert await ev.close_eventsub_client(_FakeBot([_FakeWS(deja)])) == 0
+    assert not deja.close_called
+
+
+@pytest.mark.asyncio
+async def test_sans_client_eventsub_rien_ne_casse():
+    import bot.twitch.events as ev
+
+    assert await ev.close_eventsub_client(object()) == 0
+
+
+@pytest.mark.asyncio
+async def test_une_fermeture_qui_echoue_ne_bloque_pas_les_autres():
+    """À l'arrêt, une erreur sur un socket ne doit pas laisser les autres ouverts."""
+    import bot.twitch.events as ev
+
+    class _Boom(_FakeSock):
+        async def close(self):
+            raise RuntimeError("socket cassé")
+
+    ok = _FakeSock()
+    closed = await ev.close_eventsub_client(_FakeBot([_FakeWS(_Boom()), _FakeWS(ok)]))
+    assert closed == 1
+    assert ok.close_called

@@ -523,6 +523,16 @@ async def main() -> None:
     except asyncio.CancelledError:
         logger.info("Signal d'arrêt reçu — fermeture propre en cours")
     finally:
+        # Rendre les transports WebSocket à Twitch : la limite est de 3 par
+        # utilisateur, et un process tué sans fermeture les laisse occupés — deux
+        # redémarrages rapprochés suffisaient alors à faire échouer les dernières
+        # souscriptions (429 « websocket transports limit exceeded »).
+        if twitch_bot is not None:
+            try:
+                from bot.twitch.events import close_eventsub_client
+                await close_eventsub_client(twitch_bot)
+            except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
+                logger.warning("Fermeture EventSub échouée: {e}", e=exc)
         if update_checker:
             await update_checker.stop()
         await conv_log.stop()

@@ -165,6 +165,39 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
 _ES_SUBSCRIPTIONS_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
 
 
+async def close_eventsub_client(bot: "WallyTwitch") -> int:
+    """Ferme les WebSockets EventSub pour rendre les transports à Twitch.
+
+    Twitch plafonne à **3 connexions WebSocket concurrentes** par couple
+    (user, client_id) — et renvoie un 429 trompeur quand la limite est atteinte
+    (« number of websocket transports limit exceeded »), là où un 400 est attendu.
+    twitchio ne sait rebasculer que sur un 400 : le 429 remonte donc en
+    « Subscription failed, reason unknown » et la souscription est perdue.
+
+    twitchio ouvre une connexion par token (le socket du bot refuse les
+    souscriptions du streamer), soit 2 par démarrage. Un process tué sans
+    fermeture laisse ces transports ouverts côté Twitch : deux redémarrages
+    rapprochés suffisent alors à saturer les 3 places.
+
+    Retourne le nombre de sockets fermés. Jamais bloquant.
+    """
+    client = getattr(bot, "_eventsub_client", None)
+    if client is None:
+        return 0
+    closed = 0
+    for ws in list(getattr(client, "_sockets", []) or []):
+        sock = getattr(ws, "_sock", None)
+        try:
+            if sock is not None and not sock.closed:
+                await sock.close()
+                closed += 1
+        except Exception as exc:  # noqa: BLE001 — arrêt, on ne bloque jamais
+            logger.debug("EventSub: fermeture d'un socket échouée: {e}", e=exc)
+    if closed:
+        logger.info("EventSub: {n} connexion(s) WebSocket fermée(s)", n=closed)
+    return closed
+
+
 async def purge_stale_subscriptions(client_id: str, token: str) -> int:
     """Supprime les souscriptions EventSub qui ne sont plus `enabled`.
 
