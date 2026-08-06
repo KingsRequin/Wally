@@ -201,36 +201,38 @@
     // que de le faire réapparaître, pour ne pas rejouer l'animation d'entrée.
     poll(p) {
       const options = Array.isArray(p.options) ? p.options : [];
-      const tally = Array.isArray(p.tally) ? p.tally : [];
-      const total = tally.reduce((a, b) => a + b, 0) || 0;
-
       const box = el("div", "poll");
+
       const q = el("div", "q");
       const qText = el("span", "");
       qText.textContent = String(p.question || "");
       const left = el("span", "left");
-      left.textContent = p.seconds > 0 ? `${p.seconds}s` : "terminé";
-      const winner = Number.isInteger(p.winner) ? p.winner : -1;
       q.append(qText, left);
       box.appendChild(q);
 
+      // Sablier : une seule animation linéaire posée à la création, donc fluide
+      // en continu — le décompte en secondes, lui, saute d'un cran à la fois.
+      const timer = el("div", "timer");
+      const bar = document.createElement("span");
+      if (p.seconds > 0) timer.style.setProperty("--dur", `${p.seconds}s`);
+      timer.appendChild(bar);
+      box.appendChild(timer);
+
       options.forEach((label, i) => {
-        const votes = tally[i] || 0;
-        const pct = total ? Math.round((votes / total) * 100) : 0;
-        const opt = el("div", i === winner ? "opt win" : "opt");
+        const opt = el("div", "opt");
+        // Entrée en cascade : les options se posent l'une après l'autre.
+        opt.style.setProperty("--i", String(i));
         const row = el("div", "row");
         const name = el("span", "");
         name.textContent = `${i + 1}. ${label}`;
-        const count = el("span", "");
-        count.textContent = total ? `${pct}% (${votes})` : (p.final ? "0" : "—");
+        const count = el("span", "count");
         row.append(name, count);
-        const bar = el("div", "bar");
-        const fill = document.createElement("span");
-        bar.appendChild(fill);
-        opt.append(row, bar);
+        const track = el("div", "bar");
+        track.appendChild(document.createElement("span"));
+        opt.append(row, track);
         box.appendChild(opt);
-        requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
       });
+      updatePoll(box, p);
       return box;
     },
 
@@ -257,6 +259,35 @@
     return n;
   }
 
+  function updatePoll(box, p) {
+    const tally = Array.isArray(p.tally) ? p.tally : [];
+    const total = tally.reduce((a, b) => a + b, 0) || 0;
+    const winner = Number.isInteger(p.winner) ? p.winner : -1;
+    const left = box.querySelector(".q .left");
+    if (left) left.textContent = p.seconds > 0 ? `${p.seconds}s` : "terminé";
+    if (p.final) box.classList.add("final");
+
+    box.querySelectorAll(".opt").forEach((opt, i) => {
+      const votes = tally[i] || 0;
+      const pct = total ? Math.round((votes / total) * 100) : 0;
+      const count = opt.querySelector(".count");
+      const next = total ? `${pct}% (${votes})` : (p.final ? "0" : "—");
+      if (count && count.textContent !== next) {
+        count.textContent = next;
+        // Petit à-coup sur le chiffre qui change : on voit QUI vient de prendre
+        // un vote, sans relire tout le tableau.
+        count.classList.remove("bump");
+        void count.offsetWidth;
+        count.classList.add("bump");
+      }
+      // La largeur est animée par CSS : la barre glisse au lieu de sauter.
+      const fill = opt.querySelector(".bar span");
+      if (fill) requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
+      opt.classList.toggle("win", i === winner);
+      opt.classList.toggle("lose", winner >= 0 && i !== winner);
+    });
+  }
+
   function clearWidgets() {
     // Un compte à rebours remplacé doit voir son timer coupé, sinon il continue
     // de tourner dans le vide pendant tout le live.
@@ -275,8 +306,12 @@
     // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
     // chaque vote rejouerait l'animation d'entrée et clignoterait.
     const current = widgets.firstElementChild;
-    if (kind === "poll" && current && current.dataset.kind === "poll") {
-      current.replaceChildren(build(params));
+    const poll = current && current.dataset.kind === "poll"
+      ? current.querySelector(".poll") : null;
+    if (kind === "poll" && poll) {
+      // Mutation en place : reconstruire relancerait la cascade d'entrée et
+      // ferait repartir chaque barre de zéro à chaque vote.
+      updatePoll(poll, params);
     } else {
       clearWidgets();
       const box = el("div", "widget");

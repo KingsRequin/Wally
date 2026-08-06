@@ -108,8 +108,10 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
       box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
       opacity: 0;
-      transform: translateY(8px) scale(.96);
-      transition: opacity .22s ease, transform .22s ease;
+      transform: translateY(10px) scale(.94);
+      /* Dépassement léger à l'arrivée (le ressort d'une bulle qui « pop »),
+         retrait plus sec au départ : l'œil suit l'apparition, pas la sortie. */
+      transition: opacity .2s ease, transform .34s cubic-bezier(.22, 1.4, .4, 1);
       pointer-events: none;
     }
     #bubble.visible { opacity: 1; transform: translateY(0) scale(1); }
@@ -175,14 +177,18 @@
       perspective: 600px;
     }
     /* L'avatar cède la place, sans disparaître brutalement. */
-    #avatar-slot > * { transition: transform .25s ease, opacity .25s ease; }
-    body.widget-on #avatar-slot > * { opacity: 0; }
+    #avatar-slot > * { transition: transform .35s cubic-bezier(.3, .9, .3, 1), opacity .3s ease; }
     .widget {
       opacity: 0;
-      transform: translateY(10px);
-      transition: opacity .25s ease, transform .25s ease;
+      /* Le widget monte depuis la place de l'avatar, qui s'efface en même temps
+         — un passage de relais plutôt qu'une superposition. */
+      transform: translateY(16px) scale(.9);
+      transition: opacity .28s ease, transform .42s cubic-bezier(.22, 1.3, .36, 1);
     }
-    .widget.visible { opacity: 1; transform: translateY(0); }
+    .widget.visible { opacity: 1; transform: translateY(0) scale(1); }
+
+    /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
+    body.widget-on #avatar-slot > * { opacity: 0; transform: translateY(10px) scale(.94); }
 
     /* Pièce — deux faces, rotation sur Y. Le classique CSS 3D : plus léger
        qu'un moteur, et composé par le GPU. */
@@ -342,12 +348,66 @@
       display: flex; justify-content: space-between; gap: 8px;
     }
     .poll .q .left { font-size: 13px; color: #b79cff; font-variant-numeric: tabular-nums; }
+    /* Options : arrivée en cascade, ~60 ms d'écart — le regard descend la liste
+       au lieu de la découvrir d'un bloc. */
+    .poll .opt {
+      margin-bottom: 6px;
+      font-size: 13px;
+      /* `backwards` (et NON `forwards`) : l'état initial s'applique pendant le
+         délai, mais l'animation ne fige rien après coup — sinon elle écraserait
+         l'estompage des perdants, qui est une simple propriété. */
+      animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
+      animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+    }
+    @keyframes opt-in {
+      from { opacity: 0; transform: translateX(10px); }
+    }
+
+    /* Le chiffre qui vient de bouger tressaille : on voit QUI prend le vote. */
+    .poll .count { display: inline-block; }
+    .poll .count.bump { animation: count-bump .32s ease-out; }
+    @keyframes count-bump {
+      0%   { transform: scale(1);   color: #fff; }
+      35%  { transform: scale(1.22); color: #7dffb0; }
+      100% { transform: scale(1);   color: #fff; }
+    }
+
+    /* Sablier : une seule animation linéaire, donc fluide en continu, là où le
+       décompte en secondes saute d'un cran à la fois. */
+    .poll .timer {
+      height: 3px;
+      margin: 2px 0 8px;
+      background: rgba(255, 255, 255, .08);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .poll .timer span {
+      display: block;
+      height: 100%;
+      width: 100%;
+      transform-origin: left center;
+      background: linear-gradient(90deg, #b79cff, #46c6ff);
+      animation: timer-drain linear forwards;
+      animation-duration: var(--dur, 0s);
+    }
+    @keyframes timer-drain { to { transform: scaleX(0); } }
+    /* Sondage clos : le sablier s'arrête net plutôt que de continuer à courir. */
+    .poll.final .timer span { animation: none; transform: scaleX(0); }
+
     .poll .opt { margin-bottom: 6px; font-size: 13px; }
     .poll .opt .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
     /* Gagnant, une fois le décompte terminé. Teinte + graisse plutôt qu'un cadre
        supplémentaire : plus lisible dans un widget de 250 px. */
     .poll .opt.win .row { color: #7dffb0; font-weight: 700; }
     .poll .opt.win .bar span { background: linear-gradient(90deg, #34d17f, #7dffb0); }
+    /* À la clôture : le gagnant pulse une fois, les perdants reculent. */
+    .poll.final .opt.win { animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1); }
+    .poll.final .opt.lose { opacity: .45; transition: opacity .4s ease; }
+    @keyframes win-pop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
     .poll .bar {
       height: 9px;
       background: rgba(255, 255, 255, .1);
@@ -358,7 +418,7 @@
       display: block; height: 100%; width: 0;
       background: linear-gradient(90deg, #46c6ff, #9d7bff);
       border-radius: 5px;
-      transition: width .35s ease;
+      transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
     }
 
     /* Compteur (uptime) — texte simple, lisible sur tout fond. */
