@@ -169,6 +169,118 @@ Il vit en continu, même sans parler.
 
 ---
 
+## Rendu : où ça tourne, et ce que ça coûte
+
+⚠️ **Tout le rendu se fait sur la machine d'Azraël**, pas sur le serveur. L'overlay est une page
+chargée par OBS ; CT100 n'envoie que du HTML, du JS et le flux SSE. Le coût se paie donc là où
+tournent déjà Apex et l'encodage — c'est le pire endroit où être gourmand.
+
+### Rive ou CSS ?
+
+| Élément | Techno | Pourquoi |
+|---|---|---|
+| Avatar | **Rive** | machine à états, transitions d'émotions, `speaking`/`thinking` pilotés en direct |
+| Pièce, dé, roue | **CSS 3D** ou Rive | cas d'école bien documenté, GPU, très léger |
+| Jauges, compteurs | CSS | trivial |
+
+Rive rend **sur le GPU via WebGL**, avec un runtime WASM qui contourne le moteur de rendu du
+navigateur. Son gros atout : **une machine à états au repos coûte ~0% CPU** — elle ne travaille
+que sur transition.
+
+⚠️ **Mais Wally est une flamme : sa boucle d'animation tourne en continu**, donc l'avantage « ~0%
+au repos » ne s'applique PAS à l'avatar. C'est le seul élément permanent de l'overlay, et donc le
+seul où l'optimisation compte vraiment. Par ordre de coût décroissant :
+
+1. **Le flou** — piège n°1 pour du feu, très cher en GPU. Préférer des dégradés statiques
+   superposés à un vrai blur calculé.
+2. **La superposition de transparences** — chaque couche redessine la même zone. Deux ou trois
+   suffisent.
+3. **Le nombre de chemins vectoriels** — une flamme stylisée en 5-8 formes suffit ; à 200 px, le
+   détail d'une flamme réaliste ne se voit pas.
+4. **Les particules** (étincelles) — chacune est un objet animé.
+
+Deux leviers gratuits : **baisser la boucle à 24-30 fps** (indiscernable sur du feu) et **garder
+la boucle courte** (1-2 s qui rebouclent proprement).
+
+L'échelle joue en notre faveur : l'avatar fait ~200×200 px, soit ~2% de la surface d'un 1080p.
+
+**Un seul fichier Rive** pour l'avatar et les widgets qui en relèvent : le runtime est partagé et
+son surcoût reste plat, alors que multiplier les runtimes coûte.
+
+### Mesurer le coût réel
+
+Il est **impossible de lire l'usage GPU depuis une page web** : la
+[Compute Pressure API](https://developer.chrome.com/docs/web-platform/compute-pressure) existe mais
+ne couvre que le **CPU**, et n'est disponible qu'en Canary derrière un flag — inutilisable dans le
+CEF d'OBS.
+
+Ce qu'on peut instrumenter dans l'overlay, **dès la phase 1** :
+
+- son propre **framerate** (`requestAnimationFrame`) et son **temps par image** (3 ms confortable,
+  12 ms préoccupant) ;
+- le **modèle de GPU** via `WEBGL_debug_renderer_info` ;
+- remontée de ces mesures au serveur → visibles depuis le dashboard, **sans rien demander à
+  Azraël pendant qu'il stream**.
+
+Mais la mesure qui tranche est ailleurs : **les statistiques d'OBS** (images perdues, temps de
+rendu moyen) et un **test A/B** — relever les FPS en jeu avec la source overlay activée puis
+désactivée. Un overlay peut afficher 60 fps parfaits tout en volant 10% du GPU au jeu.
+
+👉 Instrumenter **avant** d'ajouter la flamme, pour disposer d'une base de comparaison.
+
+### Ressource retenue
+
+[3D Coin Flipper with Sound](https://rive.app/marketplace/27493-52114-3d-coin-flipper-with-sound/)
+par Victor_K — gratuit, remixable, à personnaliser aux couleurs de Wally.
+⚠️ Licence **CC BY** : attribution obligatoire (à placer dans les crédits du site, pas à l'écran).
+⚠️ **Couper le son** (l'overlay ne doit rien émettre dans le mix).
+⚠️ L'asset tire au sort tout seul : il faut une **entrée pour forcer la face**, afin que ce soit
+Wally qui décide — et donc qu'il puisse commenter, voire tricher.
+
+## Widgets candidats
+
+Aucun n'est décidé ; liste à arbitrer. Le mécanisme d'affichage **existe déjà** :
+`overlay_image` (commande `!image`) affiche une image temporaire animée sur l'overlay
+(`bounceInLeft`, 5 s). Il suffirait d'ajouter des types de widgets au même endroit.
+
+**Le hasard, commenté**
+1. **Pile ou face** — la pièce tourne, Wally commente le résultat.
+2. **Dé** (D6 / D20).
+3. **Roue / roulette** — trancher entre plusieurs options.
+
+**Wally tranche**
+4. **Note d'une partie sur 10.**
+5. **Classement** — « qui a le plus tryhard ce soir ? ». Il l'a déjà fait spontanément dans un
+   journal, et il a la mémoire pour justifier.
+
+**Participation des viewers**
+6. **Sondage express** — « tapez 1 ou 2 », deux barres qui montent en direct.
+7. **Tirage au sort** parmi les viewers actifs du chat.
+8. **Hype-meter** — jauge qui monte quand le chat s'emballe (réutilise la détection de vague).
+9. **Shoutout d'habitué** — un viewer connu arrive, son nom s'affiche (mémoire + `account_linker`).
+
+**Données réelles** (`apex_api` disponible)
+10. **Stats du joueur** — rang, kills.
+11. **Comparaison** entre deux membres du squad.
+
+**Utilitaires**
+12. **Message libre** — « affiche BRB 5 min ».
+13. **Compte à rebours.**
+14. **Jauge d'objectif** subs / follows.
+
+**Gags récurrents**
+15. **Compteur de morts** d'Azraël, avec commentaire qui s'aigrit.
+16. **Prédiction** — il parie sur l'issue avant le drop, on voit après s'il avait raison.
+17. **Jauge d'humeur** de Wally, affichée en permanence.
+
+### Le principe qui rend tout ça vivant
+
+Passer par le **tool calling**, comme `ActionService` le fait déjà : Wally **décide** d'afficher,
+il n'exécute pas une commande. C'est ce qui permet qu'il **refuse**, qu'il **commente**, qu'il
+**triche**, ou qu'il **le propose de lui-même** — lancer le compteur de morts après la cinquième
+défaite, sans qu'on demande rien. Un widget télécommandé est un gadget ; un widget qu'il choisit
+d'afficher fait partie du personnage.
+
 ## Pistes d'amélioration
 
 Classées par rapport valeur / effort. Aucune n'est nécessaire à une v1.
