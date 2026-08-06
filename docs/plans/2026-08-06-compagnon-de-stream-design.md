@@ -49,6 +49,23 @@ Fin du stream          → il quitte
 
 ## Décisions de conception
 
+### 0. ⚠️ L'overlay s'adresse aux VIEWERS, jamais à Azraël
+
+**Azraël ne voit pas son propre overlay pendant qu'il joue.** Toute bulle qui lui parle
+directement tombe dans le vide.
+
+Conséquences, valables partout dans ce document :
+
+- Wally **commente** pour le public, il ne **conseille** pas le streamer.
+- Azraël se dit à la **3e personne** (« il a encore blâmé le ping »), les viewers au **tu/vous**.
+- Une remarque utile au streamer (micro coupé, pause à prendre) n'a rien à faire ici : elle
+  passerait par le **chat Twitch** ou Discord, pas par l'overlay. C'est pourquoi les idées de
+  ce type ont été écartées.
+- Le canal d'entrée des viewers est le **chat Twitch** ; leur canal de retour est **l'overlay**.
+  Ils écrivent, Wally leur répond visuellement.
+
+Wally est donc un **commentateur pour le public**, pas un assistant du streamer.
+
 ### 1. Le vocal Discord, pas la capture Twitch
 
 Testé le 2026-08-06 sur une VOD réelle (extrait de 3 min) : le mix jeu + voix compressée donne
@@ -239,10 +256,12 @@ Wally qui décide — et donc qu'il puisse commenter, voire tricher.
 
 ## Widgets
 
-**Retenus par l'owner (2026-08-06)** : 1, 2, 3, 6, 9, 10, 11, 12, 13, 14, 15, 16.
+**Retenus par l'owner (2026-08-06)** : 1, 2, 3, 6, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 23,
+24, 25.
 
-**Écartés** : 4 (note /10), 5 (classement), 7 (tirage au sort), 8 (hype-meter), et 17 (jauge
-d'humeur) — l'humeur passe déjà par l'avatar, un widget dédié ferait doublon.
+**Écartés** : 4 (note /10), 5 (classement), 7 (tirage au sort), 8 (hype-meter), 17 (jauge
+d'humeur — l'avatar la porte déjà), 18, 21, 22, 26, 27, 28.
+Les 21 et 22 s'adressaient au streamer : sans objet sur un overlay qu'il ne voit pas (cf. §0).
 
 Le mécanisme d'affichage **existe déjà** :
 `overlay_image` (commande `!image`) affiche une image temporaire animée sur l'overlay
@@ -276,7 +295,22 @@ Le mécanisme d'affichage **existe déjà** :
 **Gags récurrents**
 15. **Compteur de morts** d'Azraël, avec commentaire qui s'aigrit.
 16. **Prédiction** — il parie sur l'issue avant le drop, on voit après s'il avait raison.
-17. **Jauge d'humeur** de Wally, affichée en permanence.
+17. ~~Jauge d'humeur~~ — écarté, l'avatar la porte déjà.
+
+**Ce que Wally seul peut faire**
+19. **« Il y a un mois, tu disais que… »** — ressortir au public une promesse ou une prédiction
+    ratée d'Azraël, puisée dans la mémoire longue et les journaux. Le plus singulier de la liste :
+    personne d'autre ne peut le copier.
+20. **Le bingo du stream** — une grille de cases (« il blâme le ping », « il rage », « il dit
+    qu'il arrête ») que **Wally coche automatiquement** quand ça arrive. Les viewers regardent
+    la grille se remplir.
+23. **Uptime à la demande** — un viewer demande dans le chat depuis combien de temps ça stream,
+    le compteur s'affiche **en direct pendant ~5 s** puis disparaît. Déclenché par le chat, pas
+    permanent à l'écran.
+24. **La flamme réagit** — sur un raid ou une série de subs, l'avatar s'emballe une seconde.
+    Ce n'est pas un widget de plus : c'est une réaction du personnage, donc quasi gratuite.
+25. **Message du chat épinglé** — Wally choisit un message drôle ou pertinent et le met en avant
+    deux ou trois secondes.
 
 ### Le principe qui rend tout ça vivant
 
