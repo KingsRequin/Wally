@@ -1,0 +1,69 @@
+"""L'outil conversationnel `show_overlay`.
+
+Le geste existait déjà côté cognition (`[ACT show_overlay]`), mais ce chemin est
+inaccessible en conversation : demander « affiche un pile ou face » à Wally lui
+faisait répondre, honnêtement, qu'il n'avait pas la main sur l'overlay.
+
+Le compte rendu rendu au LLM doit rester HONNÊTE : un refus explicite, sinon
+Wally annonce « c'est affiché » alors que l'écran est vide.
+"""
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from bot.discord.handlers import _overlay_narrator, run_overlay_tool
+
+
+def _bot(shown=True, active=True):
+    narrator = MagicMock()
+    narrator.show_widget.return_value = shown
+    narrator.is_active.return_value = active
+    return SimpleNamespace(overlay_narrator=narrator), narrator
+
+
+def test_le_widget_est_affiche():
+    bot, narrator = _bot()
+    out = json.loads(run_overlay_tool(bot, {"widget": "coinflip", "comment": "allez"}))
+    assert out["status"] == "ok"
+    narrator.show_widget.assert_called_once_with("coinflip", "allez", result=None)
+
+
+def test_hors_live_le_refus_est_explicite():
+    """Sans ça, Wally annonce un affichage qui n'a pas eu lieu."""
+    bot, _ = _bot(shown=False, active=False)
+    out = json.loads(run_overlay_tool(bot, {"widget": "dice"}))
+    assert out["status"] == "offline"
+    assert "pas de live" in out["message"]
+
+
+def test_un_widget_incomplet_est_signale_comme_tel():
+    bot, _ = _bot(shown=False, active=True)
+    out = json.loads(run_overlay_tool(bot, {"widget": "wheel", "options": ["seule"]}))
+    assert out["status"] == "rejected"
+
+
+def test_les_parametres_du_sondage_sont_transmis():
+    bot, narrator = _bot()
+    run_overlay_tool(bot, {"widget": "poll", "question": "chocolat ?",
+                           "options": ["Oui", "Non"], "seconds": 30})
+    _, kwargs = narrator.show_widget.call_args
+    assert kwargs["question"] == "chocolat ?"
+    assert kwargs["seconds"] == 30
+
+
+def test_un_widget_qui_leve_ne_casse_pas_la_reponse():
+    bot, narrator = _bot()
+    narrator.show_widget.side_effect = RuntimeError("boum")
+    assert json.loads(run_overlay_tool(bot, {"widget": "dice"}))["status"] == "error"
+
+
+def test_sans_narrateur_l_outil_le_dit():
+    out = json.loads(run_overlay_tool(SimpleNamespace(), {"widget": "dice"}))
+    assert out["status"] == "unavailable"
+
+
+def test_le_narrateur_est_trouve_depuis_le_chemin_twitch():
+    """Le bot Twitch n'a pas le narrateur : il y accède par référence croisée."""
+    bot, narrator = _bot()
+    twitch_bot = SimpleNamespace(discord_bot=bot)
+    assert _overlay_narrator(twitch_bot) is narrator

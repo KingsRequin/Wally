@@ -12,7 +12,10 @@ from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
 from bot.core.conversation_log import new_trace_id
-from bot.discord.handlers import _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context
+from bot.discord.handlers import (
+    _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
+    _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
+)
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
@@ -386,10 +389,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         if action_service:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
+        if _overlay_narrator(bot) is not None:
+            tools.append(_OVERLAY_TOOL)
 
         async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
             args = json.loads(arguments)
+            if name == "show_overlay":
+                return run_overlay_tool(bot, args)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
