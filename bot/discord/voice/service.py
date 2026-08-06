@@ -463,7 +463,9 @@ class VoiceService:
         label = _member_label(user)
         self._current_speaker_id = str(user.id)
         if self.listen_only:
-            self._observe_transcript(label, text)
+            # La latence STT est la donnée qui décide s'il y a de la marge pour
+            # un modèle plus gros : sans elle, on arbitre à l'aveugle.
+            self._observe_transcript(label, text, stt_ms=stt_ms)
             return
         await handle_transcript(
             bot=self._bot,
@@ -474,7 +476,7 @@ class VoiceService:
             stt_ms=stt_ms,
         )
 
-    def _observe_transcript(self, label: str, text: str) -> None:
+    def _observe_transcript(self, label: str, text: str, stt_ms: float = 0.0) -> None:
         """Mode écoute : la parole devient perception, jamais réponse orale.
 
         Deux destinations, volontairement distinctes :
@@ -486,7 +488,7 @@ class VoiceService:
         line = f"{label} (vocal) : {text}"
         # En INFO : sans ça, impossible de vérifier qu'il entend quoi que ce soit
         # pendant un live — tout le reste du chemin est en DEBUG.
-        logger.info("voice (écoute) : {l}", l=line[:160])
+        logger.info("voice (écoute, {ms:.0f} ms) : {l}", ms=stt_ms, l=line[:160])
         try:
             from bot.core.stream_feed import active_stream_feed
             feed = active_stream_feed()
