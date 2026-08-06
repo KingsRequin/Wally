@@ -118,10 +118,10 @@ public). Rien à inventer : il faut un rendu court de ces pensées, pas un nouve
 
 Trois petits points animés dans la bulle **pendant la génération**.
 
-Effet de bord précieux : ça **désamorce le problème de latence**. Neuf secondes d'écran vide
-sont insupportables ; neuf secondes avec « il réfléchit » se lisent naturellement, et
-l'arrivée du texte devient une petite récompense. L'abandon au-delà d'un délai reste
-nécessaire, mais le seuil peut être plus généreux que les ~3 s envisagées.
+La génération mesurée tourne autour de **1,3 s** (cf. point dur n°3), donc l'attente est courte.
+L'animation reste utile : elle occupe l'intervalle, signale que quelque chose arrive, et couvre
+les cas où le contexte gonfle ou l'API rame. Prévoir malgré tout un abandon au-delà de quelques
+secondes — mieux vaut se taire que commenter le passé.
 
 ### 7. L'avatar (Rive.app)
 
@@ -149,9 +149,22 @@ Il vit en continu, même sans parler.
 2. **`_auto_leave_watch()` quitte après 2 min sans parole** (`auto_leave_minutes: 2`). Pendant une
    partie concentrée, les silences de 2 min sont constants : Wally ferait des allers-retours toute
    la soirée. En mode stream, la sortie doit être liée à la **fin du live**, pas au silence.
-3. **Latence** : `deepseek-v4-pro` mesure **médiane 3,9 s / p90 9,2 s**. Une réplique qui arrive
-   9 s après le moment tombe à côté. Chemin dédié avec modèle rapide, et **abandon** si la réponse
-   n'est pas prête en ~3 s — mieux vaut se taire que commenter le passé.
+3. **Latence — le modèle n'est pas le levier, le contexte l'est.**
+   Mesuré le 2026-08-06 sur des répliques courtes, prompt compact :
+
+   | modèle | médiane | plage |
+   |---|---|---|
+   | `deepseek-v4-flash` | **1,25 s** | 1,06 – 1,37 s |
+   | `deepseek-v4-pro` | 1,33 s | 1,30 – 1,44 s |
+
+   Les deux sont équivalents. Les 9,2 s de p90 relevées ailleurs viennent du `reasoning`, qui
+   envoie **10 128 tokens de contexte** : c'est le traitement du prompt qui coûte, pas la
+   génération de cinq mots. **Garder le contexte de l'overlay compact** est donc la vraie
+   contrainte — pas le choix du modèle.
+
+   **`deepseek-v4-flash` retenu** : qualité suffisante à ce format, ~10× moins cher. `pro` est
+   légèrement plus caractérisé (« La lose légendaire d'Azraël » contre « Oh non Azraël pas ça »),
+   sans justifier l'écart de prix pour des bulles de quelques mots.
 4. **`whisper_cpu_threads: 0`** = tous les cœurs. À borner (CT100 est déjà à ~65 % de charge).
 
 ---
