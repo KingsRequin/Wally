@@ -360,6 +360,28 @@
     }
   });
 
+  // ── Mise à jour automatique ──────────────────────────────────────────────
+  // OBS garde sa page en mémoire des heures : sans ça, il faut penser à
+  // rafraîchir la source à chaque changement. On compare une empreinte du
+  // contenu servi et on recharge quand elle bouge. Basée sur le CONTENU, donc
+  // un simple redémarrage du bot ne provoque aucun rechargement.
+  const VERSION_POLL_MS = 30000;
+  let knownVersion = null;
+
+  async function checkVersion() {
+    try {
+      const r = await fetch("/api/public/overlay-version", { cache: "no-store" });
+      if (!r.ok) return;
+      const { version } = await r.json();
+      if (!version) return;
+      if (knownVersion && version !== knownVersion) location.reload();
+      knownVersion = version;
+    } catch { /* hors ligne : on retentera au prochain tour */ }
+  }
+
+  checkVersion();
+  setInterval(checkVersion, VERSION_POLL_MS);
+
   // ── Instrumentation ──────────────────────────────────────────────────────
   // Impossible de lire l'usage GPU depuis une page (la Compute Pressure API ne
   // couvre que le CPU, et n'est pas disponible dans le CEF d'OBS). On mesure

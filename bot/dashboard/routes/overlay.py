@@ -7,7 +7,9 @@ navigateur, et la vraie validation reste les stats OBS chez le streamer.
 """
 from __future__ import annotations
 
+import hashlib
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -18,6 +20,45 @@ admin_router = APIRouter()
 # on ne stocke que des valeurs plausibles et une seule entrée (pas de liste qui
 # grossit sous des POST hostiles).
 _MAX_GPU_LEN = 120
+
+
+# Empreinte des fichiers réellement servis. `static/` est bind-monté : une
+# modification est visible sans rebuild, mais OBS garde sa page en mémoire des
+# heures. L'overlay interroge donc cette version et se recharge tout seul.
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+_OVERLAY_FILES = ("overlay.html", "overlay.js")
+_version_cache: dict = {"stamp": None, "value": "0"}
+
+
+def overlay_version() -> str:
+    """Empreinte courte du contenu de l'overlay.
+
+    Basée sur le CONTENU et non sur la date : un `touch`, un redéploiement à
+    l'identique ou un simple redémarrage ne doivent pas provoquer de
+    rechargement en plein live.
+    """
+    try:
+        stamp = tuple(
+            (_STATIC_DIR / name).stat().st_mtime_ns for name in _OVERLAY_FILES
+        )
+    except OSError:
+        return _version_cache["value"]
+    if stamp == _version_cache["stamp"]:
+        return _version_cache["value"]
+    digest = hashlib.sha1()
+    for name in _OVERLAY_FILES:
+        try:
+            digest.update((_STATIC_DIR / name).read_bytes())
+        except OSError:
+            pass
+    _version_cache.update(stamp=stamp, value=digest.hexdigest()[:10])
+    return _version_cache["value"]
+
+
+@public_router.get("/overlay-version")
+async def get_overlay_version() -> dict:
+    """Version courante — l'overlay la compare à la sienne toutes les 30 s."""
+    return {"version": overlay_version()}
 
 
 @public_router.post("/overlay-health")

@@ -174,6 +174,12 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     @app.get("/overlay")
     async def overlay():
         html = (STATIC_DIR / "overlay.html").read_text()
+        # Le HTML n'est jamais mis en cache, mais le script si : sans cette
+        # empreinte dans l'URL, un rechargement resservirait l'ancien overlay.js.
+        from bot.dashboard.routes.overlay import overlay_version
+        html = html.replace(
+            "/static/overlay.js", f"/static/overlay.js?v={overlay_version()}"
+        )
         return HTMLResponse(
             html,
             headers={
