@@ -333,6 +333,39 @@ async def main() -> None:
                 _stream_voice_tasks.add(t)
                 t.add_done_callback(_stream_voice_tasks.discard)
 
+        async def _stream_voice_watch() -> None:
+            """Ramène Wally en vocal tant qu'un live tourne sans lui.
+
+            La transition live↔offline ne se produit qu'UNE fois : après un
+            redémarrage — ou un crash — en plein stream, plus rien ne déclenche
+            son arrivée. Ce veilleur compare l'état réel du live à l'état réel de
+            la connexion, il ne suppose aucun événement. Il couvre donc aussi la
+            déconnexion réseau et le kick.
+            """
+            channel_id = config.bot.stream_voice_channel_id
+            if not channel_id:
+                return
+            while True:
+                await asyncio.sleep(30)
+                try:
+                    vs = getattr(discord_bot, "voice_service", None)
+                    if vs is None:
+                        continue
+                    live = bool((stream_watcher.status or {}).get("live"))
+                    if not live:
+                        # Fin du live : il retrouve le droit de revenir au suivant.
+                        vs.listen_optout = False
+                        continue
+                    if vs.is_connected or vs.listen_optout:
+                        continue
+                    channel = discord_bot.get_channel(channel_id)
+                    if channel is None:
+                        continue        # cache Discord pas encore prêt : au tour suivant
+                    logger.info("voice: live en cours sans Wally → retour en écoute")
+                    await vs.join(channel, listen_only=True)
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("voice: veilleur de stream en erreur: {e}", e=e)
+
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
         # Twitch, restitué au prompt comme contexte d'ambiance. Aucun réveil
@@ -354,6 +387,10 @@ async def main() -> None:
             on_event=stream_feed.record,
         )
         stream_watcher.activate()
+        # Rattrapage permanent : redémarrage en plein live, crash, kick.
+        _watch_task = asyncio.create_task(_stream_voice_watch())
+        _stream_voice_tasks.add(_watch_task)
+        _watch_task.add_done_callback(_stream_voice_tasks.discard)
         twitch_bot.stream_watcher = stream_watcher
 
         # Overlay de stream : les événements du live (raid, sub, changement de

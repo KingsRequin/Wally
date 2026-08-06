@@ -117,6 +117,9 @@ class VoiceService:
         # dans le micro duquel il serait réinjecté. Sa réaction passe par
         # l'overlay, que les viewers voient et que le streamer ne voit pas.
         self.listen_only: bool = False
+        # Congé posé quand on le fait sortir d'un vocal d'écoute à la main :
+        # le veilleur ne doit pas le ramener trente secondes plus tard.
+        self.listen_optout: bool = False
         self._listen_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
@@ -208,6 +211,9 @@ class VoiceService:
         if self._vc is not None:
             await self.leave()
         self.listen_only = listen_only
+        if listen_only:
+            # Retour volontaire : il redevient rattrapable par le veilleur.
+            self.listen_optout = False
         self._pending_inviter = inviter
         self._channel = channel
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
@@ -295,6 +301,10 @@ class VoiceService:
 
     async def leave(self) -> None:
         """Quitte le salon vocal, stoppe l'écoute et le watchdog."""
+        # Sortie d'un vocal d'écoute : on considère que c'est voulu. Le congé
+        # est levé à la fin du live (cf. le veilleur dans main.py).
+        if self.listen_only:
+            self.listen_optout = True
         if self._auto_leave_task is not None:
             self._auto_leave_task.cancel()
             self._auto_leave_task = None

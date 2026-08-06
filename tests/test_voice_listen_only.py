@@ -134,3 +134,40 @@ async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
     narrator.on_voice_request.assert_not_awaited()
     _, kwargs = narrator.on_stream_event.call_args
     assert kwargs["show_thinking"] is False
+
+
+# ── retour automatique après un redémarrage ──
+
+@pytest.mark.asyncio
+async def test_sortir_d_une_ecoute_pose_un_conge():
+    """Sinon le veilleur le ramènerait trente secondes après qu'on l'a fait sortir."""
+    svc = _service()
+    svc.listen_only = True
+    svc._vc = MagicMock()
+    svc._vc.disconnect = AsyncMock()
+    await svc.leave()
+    assert svc.listen_optout is True
+
+
+@pytest.mark.asyncio
+async def test_sortir_d_un_vocal_normal_ne_pose_pas_de_conge():
+    svc = _service()
+    svc.listen_only = False
+    svc._vc = MagicMock()
+    svc._vc.disconnect = AsyncMock()
+    await svc.leave()
+    assert svc.listen_optout is False
+
+
+@pytest.mark.asyncio
+async def test_un_retour_volontaire_leve_le_conge():
+    """/ecoute après un /leave doit le rendre à nouveau rattrapable."""
+    svc = _service()
+    svc.listen_optout = True
+    channel = MagicMock()
+    channel.connect = AsyncMock(return_value=MagicMock())
+    svc._streaming = None
+    svc._stt = MagicMock(spec=[])
+    with patch("bot.discord.voice.service.WallyAudioSink", MagicMock()):
+        await svc.join(channel, listen_only=True)
+    assert svc.listen_optout is False
