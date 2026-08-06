@@ -15,6 +15,12 @@
 
   const RECONNECT_MS = 5000;
 
+  // Côté d'ancrage, choisi dans l'URL de la source OBS : `?side=right` quand
+  // l'overlay est posé sur le bord droit de l'écran. Lu avant tout affichage,
+  // la mise en page est purement CSS derrière `data-side`.
+  const side = new URLSearchParams(location.search).get("side");
+  if (side === "right") document.body.dataset.side = "right";
+
   // ── Avatar ───────────────────────────────────────────────────────────────
   // Les GIF par émotion ont été retirés : #avatar-slot attend son avatar Rive.
   // Tout ce qui y sera placé hérite de la taille du slot et de l'animation de

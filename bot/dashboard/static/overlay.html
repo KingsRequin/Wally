@@ -60,6 +60,30 @@
       100% { transform: scale(1); }
     }
 
+    /* ── Mode miroir (?side=right) ──────────────────────────────────────
+       Quand la source est posée sur le bord DROIT de l'écran, tout doit partir
+       de la droite : sinon les bulles s'étalent vers l'extérieur et sortent du
+       cadre. L'avatar est retourné pour continuer de faire face au contenu. */
+    body[data-side="right"] #stage {
+      left: auto;
+      right: 0;
+      flex-direction: row-reverse;
+    }
+    /* Le miroir porte sur le SLOT, pas sur l'avatar : l'animation de réaction
+       (.reacting) écrit sur `transform` et effacerait un scaleX posé là. */
+    body[data-side="right"] #avatar-slot { transform: scaleX(-1); }
+    body[data-side="right"] #widgets { left: auto; right: 12px; }
+
+    /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
+    body[data-side="right"] #bubble.speech::after {
+      left: auto;
+      right: -8px;
+      border-width: 7px 0 7px 9px;
+      border-color: transparent transparent transparent rgba(18, 18, 22, .88);
+    }
+    body[data-side="right"] #bubble.thought::after  { left: auto; right: -10px; }
+    body[data-side="right"] #bubble.thought::before { left: auto; right: -20px; }
+
     /* ── Bulle ──────────────────────────────────────────────────────────── */
     #bubble {
       position: relative;

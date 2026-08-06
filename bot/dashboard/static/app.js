@@ -3530,6 +3530,13 @@ async function _renderSystemeOverlay(panel) {
           </div>
           <span id="overlay-status-label-forcelive" class="overlay-card-status">Inactif</span>
         </div>
+        <div class="overlay-card-toggle-row">
+          <span class="overlay-card-toggle-label" title="Quand la source est posée sur le bord droit de l'écran, Wally passe à droite et ses bulles s'ouvrent vers la gauche — sinon elles sortent du cadre.">Ancré à droite</span>
+          <div class="overlay-switch" id="overlay-switch-side" style="cursor:pointer" onclick="toggleOverlaySide()">
+            <div class="overlay-switch-knob"></div>
+          </div>
+          <span id="overlay-status-label-side" class="overlay-card-status">Gauche</span>
+        </div>
         <div class="overlay-url-row">
           <span class="overlay-url-label">URL OBS</span>
           <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
@@ -3616,6 +3623,23 @@ async function toggleOverlayForceLive() {
   toast(data.active
     ? `Mode test actif ${Math.round(data.remaining_minutes)} min`
     : 'Mode test coupé');
+}
+
+// Côté d'ancrage : purement client (paramètre d'URL lu par l'overlay), donc
+// rien à sauvegarder côté serveur — il suffit de recopier la bonne URL dans OBS.
+function toggleOverlaySide() {
+  const sw = document.getElementById('overlay-switch-side');
+  const lbl = document.getElementById('overlay-status-label-side');
+  const code = document.getElementById('url-emotion');
+  if (!sw || !lbl || !code) return;
+  const droite = !sw.classList.contains('on');
+  sw.classList.toggle('on', droite);
+  lbl.textContent = droite ? 'Droite' : 'Gauche';
+  const base = code.textContent.split('?')[0];
+  code.textContent = droite ? `${base}?side=right` : base;
+  toast(droite
+    ? "URL mise à jour — recopie-la dans OBS pour passer à droite"
+    : "URL remise à gauche — recopie-la dans OBS");
 }
 
 async function toggleOverlayFromSysteme() {
