@@ -112,6 +112,12 @@ class VoiceService:
         self.quota = VoiceQuota()  # suivi du quota Azure (STT/TTS) du mois
         self._last_speech_ts: float = 0.0
         self._auto_leave_task: asyncio.Task | None = None
+        # Mode écoute (compagnon de stream) : Wally entend et perçoit, mais ne
+        # prend JAMAIS la parole à l'oral — il répondrait par-dessus le streamer,
+        # dans le micro duquel il serait réinjecté. Sa réaction passe par
+        # l'overlay, que les viewers voient et que le streamer ne voit pas.
+        self.listen_only: bool = False
+        self._listen_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Propriétés publiques
@@ -191,12 +197,17 @@ class VoiceService:
     # Join / Leave
     # ------------------------------------------------------------------
 
-    async def join(self, channel, inviter: str | None = None) -> None:
+    async def join(self, channel, inviter: str | None = None,
+                   listen_only: bool = False) -> None:
         """Rejoint un salon vocal, attache le sink d'écoute, démarre le watchdog auto-leave.
 
-        `inviter` : nom de la personne qui a demandé à Wally de venir (injecté dans la salutation)."""
+        `inviter` : nom de la personne qui a demandé à Wally de venir (injecté dans la salutation).
+        `listen_only` : mode compagnon de stream — il écoute sans jamais parler,
+        ne salue pas, et ne repart pas tout seul (un live a des silences, et
+        partir en plein stream serait absurde)."""
         if self._vc is not None:
             await self.leave()
+        self.listen_only = listen_only
         self._pending_inviter = inviter
         self._channel = channel
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
@@ -232,10 +243,13 @@ class VoiceService:
         # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
         self._silence_task = loop.create_task(self._silence_watch(sink))
         self._vc.listen(sink)
-        self._auto_leave_task = loop.create_task(self._auto_leave_watch())
-        logger.info("voice: rejoint le salon {c}", c=channel.id)
-        # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
-        loop.create_task(self._greet())
+        if not listen_only:
+            self._auto_leave_task = loop.create_task(self._auto_leave_watch())
+        logger.info("voice: rejoint le salon {c}{m}", c=channel.id,
+                    m=" (écoute seule)" if listen_only else "")
+        if not listen_only:
+            # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
+            loop.create_task(self._greet())
 
     async def _greet(self) -> None:
         """Wally salue brièvement en arrivant dans le salon vocal."""
@@ -269,6 +283,15 @@ class VoiceService:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice greet_newcomer a échoué: {e}", e=e)
+
+    def follow_move(self, channel) -> None:
+        """Prend acte d'un déplacement décidé depuis Discord.
+
+        La connexion vocale suit toute seule ; ce qu'il faut recaler, c'est le
+        salon de référence — sans quoi `members_in_channel()` et le watchdog
+        regarderaient l'ancien salon.
+        """
+        self._channel = channel
 
     async def leave(self) -> None:
         """Quitte le salon vocal, stoppe l'écoute et le watchdog."""
@@ -308,6 +331,11 @@ class VoiceService:
     async def speak(self, text: str) -> None:
         """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus)."""
         if not text or self._vc is None:
+            return
+        if self.listen_only:
+            # Garde en profondeur : en mode écoute, parler couvrirait le streamer
+            # et serait réinjecté dans son micro.
+            logger.debug("voice: parole refusée (mode écoute)")
             return
         # Style de voix : tag explicite de Wally ([murmure]…) sinon son humeur du moment.
         try:
@@ -424,6 +452,9 @@ class VoiceService:
             return
         label = _member_label(user)
         self._current_speaker_id = str(user.id)
+        if self.listen_only:
+            self._observe_transcript(label, text)
+            return
         await handle_transcript(
             bot=self._bot,
             service=self,
@@ -432,6 +463,36 @@ class VoiceService:
             transcript=text,
             stt_ms=stt_ms,
         )
+
+    def _observe_transcript(self, label: str, text: str) -> None:
+        """Mode écoute : la parole devient perception, jamais réponse orale.
+
+        Deux destinations, volontairement distinctes :
+        - le flux du stream, qui alimente le contexte de Wally partout (prompt
+          Discord, Twitch, cognition) sans le faire réagir ;
+        - le narrateur d'overlay, qui décide seul s'il en fait une bulle — son
+          budget de parole reste le seul juge.
+        """
+        line = f"{label} (vocal) : {text}"
+        try:
+            from bot.core.stream_feed import active_stream_feed
+            feed = active_stream_feed()
+            if feed is not None:
+                feed.record(line, notify=False)
+        except Exception as e:  # noqa: BLE001 — l'écoute ne casse jamais
+            logger.debug("voice: parole non consignée dans le flux: {e}", e=e)
+
+        narrator = getattr(self._bot, "overlay_narrator", None)
+        if narrator is None:
+            return
+        try:
+            task = asyncio.get_running_loop().create_task(
+                narrator.on_stream_event(line)
+            )
+            self._listen_tasks.add(task)
+            task.add_done_callback(self._listen_tasks.discard)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("voice: overlay non notifié: {e}", e=e)
 
     # ------------------------------------------------------------------
     # Callbacks internes — STT streaming distant

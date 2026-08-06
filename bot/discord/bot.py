@@ -466,7 +466,18 @@ class WallyDiscord(commands.Bot):
         if vs is None or not vs.is_connected:
             return
         try:
-            if member.bot or (self.user and member.id == self.user.id):
+            # Wally déplacé à la main (modérateur) : il suit, sans revenir de
+            # lui-même. Sinon son salon de référence resterait l'ancien et il
+            # écouterait dans le vide.
+            if self.user and member.id == self.user.id:
+                if after.channel is not None and after.channel.id != vs.channel_id:
+                    logger.info("voice: déplacé vers {c}", c=after.channel.id)
+                    vs.follow_move(after.channel)
+                elif after.channel is None:
+                    logger.info("voice: déconnecté du vocal par un tiers")
+                    await vs.leave()
+                return
+            if member.bot:
                 return
             joined = after.channel is not None and after.channel.id == vs.channel_id
             was_here = before.channel is not None and before.channel.id == vs.channel_id

@@ -294,6 +294,45 @@ async def main() -> None:
                 desc = f"{name} vient de terminer son live Twitch."
             loop.notify_event(bedroom, desc, relevant=True)
 
+        _stream_voice_tasks: set[asyncio.Task] = set()
+
+        def _on_stream_voice(old: dict, new: dict) -> None:
+            """Auto-join du salon vocal du stream, en écoute seule.
+
+            Séparé de `_on_stream_transition` : celui-ci ne fait rien sans salon
+            « chambre » configuré, et l'écoute n'a pas à en dépendre.
+            """
+            vs = getattr(discord_bot, "voice_service", None)
+            channel_id = config.bot.stream_voice_channel_id
+            if vs is None or not channel_id:
+                return
+            went_live = bool(new.get("live")) and not bool(old.get("live"))
+            ended = bool(old.get("live")) and not bool(new.get("live"))
+
+            async def _go() -> None:
+                try:
+                    if went_live:
+                        if vs.is_connected:
+                            return          # déjà en vocal : on ne le déplace pas
+                        channel = discord_bot.get_channel(channel_id)
+                        if channel is None:
+                            logger.warning("voice: salon de stream {c} introuvable", c=channel_id)
+                            return
+                        await vs.join(channel, listen_only=True)
+                    elif ended and vs.is_connected and vs.listen_only:
+                        # Seulement s'il est là POUR le stream : une conversation
+                        # vocale en cours ne doit pas être coupée.
+                        await vs.leave()
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("voice: auto-join/leave du stream a échoué: {e}", e=e)
+
+            if went_live or ended:
+                # Référence forte : une tâche détachée peut être ramassée par le
+                # GC avant la fin du join.
+                t = asyncio.create_task(_go())
+                _stream_voice_tasks.add(t)
+                t.add_done_callback(_stream_voice_tasks.discard)
+
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
         # Twitch, restitué au prompt comme contexte d'ambiance. Aucun réveil
@@ -308,7 +347,9 @@ async def main() -> None:
         stream_watcher = StreamWatcher(
             twitch_api,
             streamer_name=_streamer_name,
-            on_transition=_on_stream_transition,
+            on_transition=lambda old, new: (
+                _on_stream_transition(old, new), _on_stream_voice(old, new)
+            ),
             on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
             on_event=stream_feed.record,
         )
