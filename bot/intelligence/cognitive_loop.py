@@ -105,12 +105,17 @@ class CognitiveLoop:
         bedroom_channel_id: int | str | None = None,
         spontaneous_channel_speak_enabled: bool = False,
         wake_digest=None,
+        overlay_narrator=None,
     ) -> None:
         self._attention = attention_agent
         self._reasoning = reasoning_agent
         self._dispatcher = action_dispatcher
         self._emotion = emotion_engine
         self._feed = feed
+        # Overlay de stream : republie une pensée condensée en bulle, s'il y a un
+        # live en cours et que le budget de parole le permet. None → rien.
+        self._overlay_narrator = overlay_narrator
+        self._overlay_tasks: set[asyncio.Task] = set()
         # Journalise les décisions cognitives non publiées sur le feed —
         # surtout les SPEAK *supprimés* (avec la raison), invisibles autrement.
         self._conv_log = conv_log
@@ -626,6 +631,15 @@ class CognitiveLoop:
                 self._recent_thoughts = self._recent_thoughts[-6:]
             if self._feed:
                 self._feed.publish({"type": "THINK", "text": result.thought_text})
+            if self._overlay_narrator is not None:
+                # Détaché : la condensation passe par un appel LLM, la boucle
+                # cognitive ne doit pas l'attendre. Référence forte conservée,
+                # sinon le GC peut annuler la tâche avant sa fin.
+                task = asyncio.create_task(
+                    self._overlay_narrator.on_thought(result.thought_text)
+                )
+                self._overlay_tasks.add(task)
+                task.add_done_callback(self._overlay_tasks.discard)
             decisions = result.decisions
             if self._feed:
                 self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})

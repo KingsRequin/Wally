@@ -288,8 +288,27 @@ class WallyDiscord(commands.Bot):
                 logs_root=_logs_root, db=self.db, fact_store=_fact_store,
             )
 
+            # Narrateur d'overlay : republie les pensées en bulle pendant un live.
+            # Le dashboard porte le feed ; sans lui (tests, dashboard absent) le
+            # narrateur reste None et la boucle cognitive ignore le volet overlay.
+            _overlay_narrator = None
+            _dash_state = getattr(self, "dashboard_state", None)
+            if _dash_state is not None and getattr(_dash_state, "overlay_feed", None):
+                from bot.intelligence.overlay_narrator import OverlayNarrator
+
+                def _stream_is_live() -> bool:
+                    tb = getattr(self, "_twitch_bot", None)
+                    return bool((getattr(tb, "_stream_info", None) or {}).get("live"))
+
+                _overlay_narrator = OverlayNarrator(
+                    _dash_state.overlay_feed,
+                    self.llm_secondary,
+                    _stream_is_live,
+                )
+
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,
+                overlay_narrator=_overlay_narrator,
                 speakable_channels=_chan_dir.speakable_ids(),
                 conv_log=_conv_log,
                 fact_store=_fact_store,
