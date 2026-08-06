@@ -3522,6 +3522,13 @@ async function _renderSystemeOverlay(panel) {
           </div>
           <span id="overlay-status-label-emotion" class="overlay-card-status">Masqué</span>
         </div>
+        <div class="overlay-card-toggle-row">
+          <span class="overlay-card-toggle-label" title="Fait croire à Wally qu'un live est en cours, pour régler l'overlay sans attendre un vrai stream. S'arrête tout seul.">Mode test (hors live)</span>
+          <div class="overlay-switch" id="overlay-switch-forcelive" style="cursor:pointer" onclick="toggleOverlayForceLive()">
+            <div class="overlay-switch-knob"></div>
+          </div>
+          <span id="overlay-status-label-forcelive" class="overlay-card-status">Inactif</span>
+        </div>
         <div class="overlay-url-row">
           <span class="overlay-url-label">URL OBS</span>
           <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
@@ -3564,7 +3571,50 @@ async function _renderSystemeOverlay(panel) {
   `;
 
   pollOverlayStatusForSysteme();
+  refreshOverlayForceLive();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+}
+
+// Mode test hors live : durée par défaut. Le serveur plafonne à 120 min.
+const OVERLAY_FORCE_LIVE_MINUTES = 30;
+let _forceLiveTimer = null;
+
+function _renderForceLive(data) {
+  const sw = document.getElementById('overlay-switch-forcelive');
+  const lbl = document.getElementById('overlay-status-label-forcelive');
+  if (!sw || !lbl) return;
+  const active = !!(data && data.active);
+  sw.classList.toggle('on', active);
+  lbl.textContent = active
+    ? `Actif · ${Math.ceil(data.remaining_minutes)} min`
+    : 'Inactif';
+  // L'échéance tombe toute seule : sans rafraîchissement, le bouton mentirait.
+  clearInterval(_forceLiveTimer);
+  if (active) _forceLiveTimer = setInterval(refreshOverlayForceLive, 30000);
+}
+
+async function refreshOverlayForceLive() {
+  try {
+    const r = await apiFetch('/api/admin/overlay/force-live');
+    if (r && r.ok) _renderForceLive(await r.json());
+  } catch {}
+}
+
+async function toggleOverlayForceLive() {
+  const sw = document.getElementById('overlay-switch-forcelive');
+  const active = sw && sw.classList.contains('on');
+  const r = await apiFetch('/api/admin/overlay/force-live', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(active ? { active: false }
+                                : { minutes: OVERLAY_FORCE_LIVE_MINUTES }),
+  });
+  if (!r || !r.ok) { toast('Narrateur indisponible (bot Discord non connecté ?)'); return; }
+  const data = await r.json();
+  _renderForceLive(data);
+  toast(data.active
+    ? `Mode test actif ${Math.round(data.remaining_minutes)} min`
+    : 'Mode test coupé');
 }
 
 async function toggleOverlayFromSysteme() {

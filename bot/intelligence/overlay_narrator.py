@@ -51,6 +51,10 @@ _RETURN_AFTER_DAYS = 7
 # Durée par défaut d'un sondage. Peut être demandée plus longue.
 _POLL_DEFAULT_S = 10
 
+# Plafond du mode test hors live : au-delà, ce n'est plus un réglage,
+# c'est un live fantôme qu'on a oublié de couper.
+_MAX_FORCE_LIVE_MIN = 120
+
 _EVENT_SYSTEM = load_prompt(
     "overlay_event",
     fallback=(
@@ -93,13 +97,45 @@ class OverlayNarrator:
         self._stream_status = stream_status
         self._greeted: set[str] = set()
         self._was_live: bool = False
+        self._force_until: float = 0.0
         self._poll: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
     # ── budget ────────────────────────────────────────────────────────────
 
+    def force_live(self, minutes: float) -> float:
+        """Mode test : fait comme si un live était en cours, pour régler l'overlay
+        sans attendre un vrai stream.
+
+        L'échéance est obligatoire — un mode test oublié ferait parler Wally dans
+        le vide, à un appel LLM la bulle. `minutes <= 0` coupe immédiatement.
+        """
+        if minutes <= 0:
+            self._force_until = 0.0
+            logger.info("Overlay: mode test coupé")
+            return 0.0
+        minutes = min(minutes, _MAX_FORCE_LIVE_MIN)
+        self._force_until = time.monotonic() + minutes * 60
+        logger.info("Overlay: mode test actif {m:.0f} min", m=minutes)
+        return minutes
+
+    def force_live_remaining(self) -> float:
+        """Minutes restantes de mode test (0 s'il est inactif)."""
+        return max(0.0, (self._force_until - time.monotonic()) / 60)
+
+    def is_active(self) -> bool:
+        """Vrai si l'overlay doit réagir : vrai live, ou mode test en cours."""
+        return self._live()
+
     def _live(self) -> bool:
+        if time.monotonic() < self._force_until:
+            # Le mode test suit le même chemin qu'un vrai live, remise à zéro
+            # des saluts comprise : c'est ce qu'on veut tester.
+            if not self._was_live:
+                self.reset_live()
+            self._was_live = True
+            return True
         try:
             live = bool(self._is_live())
         except Exception:  # noqa: BLE001 — une sonde cassée ne doit pas parler

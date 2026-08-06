@@ -131,7 +131,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # l'overlay ne saluerait plus jamais personne.
     _seen_days = None
     _narrator = getattr(getattr(bot, "discord_bot", None), "overlay_narrator", None)
-    if _narrator is not None:
+    # C'est le narrateur qui tranche, pas `_stream_info` : lui seul connaît le
+    # mode test hors live.
+    _overlay_on = _narrator is not None and _narrator.is_active()
+    if _overlay_on:
         try:
             _seen_days = await bot.db.days_since_viewer_seen(author)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
@@ -155,14 +158,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.warning("StreamFeed: chat non enregistré : {e}", e=exc)
 
-        # Overlay : compte les votes d'un sondage en cours et salue les nouveaux
-        # venus / les revenants. Détaché — le salut demande un appel LLM.
-        if _narrator is not None:
-            _t = asyncio.create_task(
-                _narrator.on_chat_message(author, content, days_since=_seen_days)
-            )
-            _overlay_chat_tasks.add(_t)
-            _t.add_done_callback(_overlay_chat_tasks.discard)
+    # Overlay : compte les votes d'un sondage en cours et salue les nouveaux
+    # venus / les revenants. Détaché — le salut demande un appel LLM. Chemin
+    # distinct du flux passif ci-dessus : en mode test hors live, `_stream_info`
+    # dit « pas de live » alors que l'overlay, lui, doit réagir.
+    if _overlay_on and channel_name not in bot._channel_ids:
+        _t = asyncio.create_task(
+            _narrator.on_chat_message(author, content, days_since=_seen_days)
+        )
+        _overlay_chat_tasks.add(_t)
+        _t.add_done_callback(_overlay_chat_tasks.discard)
 
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)

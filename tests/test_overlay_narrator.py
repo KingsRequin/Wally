@@ -4,6 +4,7 @@ Le risque du projet est produit : un compagnon qui commente sans arrêt devient
 insupportable, et un overlay ne se scrolle pas. Le budget doit donc REFUSER,
 pas seulement être suggéré dans un prompt.
 """
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -477,3 +478,44 @@ def test_le_widget_poll_est_route_vers_le_sondage():
 def test_le_widget_poll_refuse_une_question_vide():
     n, _, _ = _narrator()
     assert n.show_widget("poll", "", options=["Oui", "Non"]) is False
+
+
+# ── mode test hors live (widget de réglage) ──
+
+@pytest.mark.asyncio
+async def test_le_mode_test_fait_parler_hors_live():
+    n, feed, llm = _narrator(live=False, reply="je teste")
+    n.force_live(30)
+    assert await n.on_thought("une pensée") == "je teste"
+
+
+@pytest.mark.asyncio
+async def test_le_mode_test_expire_tout_seul():
+    """Oublié actif, il ferait parler Wally dans le vide à un appel LLM la bulle."""
+    n, feed, llm = _narrator(live=False)
+    n.force_live(30)
+    n._force_until = time.monotonic() - 1     # échéance dépassée
+    assert n.is_active() is False
+    assert await n.on_thought("une pensée") is None
+    llm.complete.assert_not_awaited()
+
+
+def test_le_mode_test_se_coupe():
+    n, _, _ = _narrator(live=False)
+    n.force_live(30)
+    assert n.force_live(0) == 0.0
+    assert n.is_active() is False
+
+
+def test_la_duree_du_mode_test_est_plafonnee():
+    n, _, _ = _narrator(live=False)
+    assert n.force_live(9999) == 120
+    assert n.force_live_remaining() <= 120
+
+
+def test_un_vrai_live_reste_prioritaire_apres_expiration():
+    """Couper le mode test ne doit pas faire taire Wally pendant un vrai live."""
+    n, _, _ = _narrator(live=True)
+    n.force_live(30)
+    n.force_live(0)
+    assert n.is_active() is True

@@ -53,6 +53,47 @@ async def get_overlay_health(request: Request) -> dict:
     return {"connected": time.time() - health["at"] < 30, **health}
 
 
+def _narrator(request: Request):
+    """Le narrateur est construit avec le bot Discord : absent avant sa connexion."""
+    narrator = getattr(
+        getattr(request.app.state.wally, "discord_bot", None), "overlay_narrator", None
+    )
+    if narrator is None:
+        raise HTTPException(503, "Narrateur d'overlay indisponible")
+    return narrator
+
+
+@admin_router.get("/overlay/force-live")
+async def get_force_live(request: Request) -> dict:
+    """Minutes restantes de mode test — le bouton du panneau reflète l'état réel,
+    y compris quand l'échéance est tombée toute seule."""
+    narrator = _narrator(request)
+    remaining = narrator.force_live_remaining()
+    return {"active": remaining > 0, "remaining_minutes": round(remaining, 1)}
+
+
+@admin_router.post("/overlay/force-live")
+async def set_force_live(request: Request) -> dict:
+    """Active (ou coupe) le mode test hors live.
+
+    Toujours borné dans le temps : oublié actif, il ferait parler Wally dans le
+    vide à un appel LLM la bulle.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if data.get("active") is False:
+        minutes = 0.0
+    else:
+        try:
+            minutes = float(data.get("minutes", 30))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "minutes invalide")
+    granted = _narrator(request).force_live(minutes)
+    return {"active": granted > 0, "remaining_minutes": round(granted, 1)}
+
+
 @admin_router.post("/overlay/test")
 async def overlay_test(request: Request) -> dict:
     """Publie un événement de test sur l'overlay (réglage visuel sans attendre
