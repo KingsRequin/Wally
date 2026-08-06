@@ -38,7 +38,9 @@
       height: 200px;
       flex: 0 0 auto;
     }
-    #avatar {
+    /* Vise l'enfant du slot, quel qu'il soit (img, canvas Rive…) : l'avatar à
+       venir hérite de la mise en page sans qu'on retouche ce fichier. */
+    #avatar-slot > * {
       width: 100%;
       height: 100%;
       object-fit: contain;
@@ -47,7 +49,7 @@
       transform-origin: bottom center;
     }
     /* Réaction ponctuelle (raid, série de subs) — le personnage s'emballe. */
-    #avatar-slot.reacting #avatar { animation: flare .9s ease-out; }
+    #avatar-slot.reacting > * { animation: flare .9s ease-out; }
     @keyframes flare {
       0%   { transform: scale(1); }
       30%  { transform: scale(1.18) rotate(-3deg); }
@@ -324,9 +326,9 @@
 </head>
 <body>
   <div id="stage">
-    <div id="avatar-slot">
-      <img id="avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="">
-    </div>
+    <!-- Emplacement de l'avatar : vide en attendant le Rive. La bulle se
+         positionne par rapport à ce slot, d'où sa taille conservée. -->
+    <div id="avatar-slot"></div>
     <div id="bubble" class="speech"></div>
   </div>
 

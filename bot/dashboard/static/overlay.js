@@ -11,32 +11,18 @@
 
   const stage  = document.getElementById("stage");
   const slot   = document.getElementById("avatar-slot");
-  const avatar = document.getElementById("avatar");
   const bubble = document.getElementById("bubble");
 
   const RECONNECT_MS = 5000;
 
-  // ── Avatar émotionnel ────────────────────────────────────────────────────
-  // Conservé tel quel de la version précédente : Rive le remplacera en phase 3.
-  function updateAvatar(emotions) {
-    let dominant = "neutral", maxVal = 0.2;
-    for (const [emotion, value] of Object.entries(emotions || {})) {
-      if (value > maxVal) { dominant = emotion; maxVal = value; }
-    }
-    let tier = "idle";
-    if (dominant !== "neutral") {
-      tier = maxVal >= 0.7 ? "high" : maxVal >= 0.4 ? "mid" : "low";
-    }
-    const base = dominant === "neutral"
-      ? "/static/avatar/emotions/neutral/idle"
-      : `/static/avatar/emotions/${dominant}/${tier}`;
-
-    // Certaines émotions n'ont qu'un PNG : on teste le GIF avant de l'appliquer.
-    const probe = new Image();
-    probe.onload  = () => { avatar.src = base + ".gif"; };
-    probe.onerror = () => { avatar.src = base + ".png"; };
-    probe.src = base + ".gif";
-  }
+  // ── Avatar ───────────────────────────────────────────────────────────────
+  // Les GIF par émotion ont été retirés : #avatar-slot attend son avatar Rive.
+  // Tout ce qui y sera placé hérite de la taille du slot et de l'animation de
+  // réaction (classe .reacting), sans rien changer ici.
+  //
+  // Le flux SSE des émotions n'est plus consommé : avec Rive, une émotion pilote
+  // des ENTRÉES de machine à états, pas un choix de fichier — le rebranchement
+  // se fera sur ce modèle, pas en restaurant celui-ci.
 
   // ── Bulle ────────────────────────────────────────────────────────────────
   let hideTimer = null;
@@ -305,8 +291,6 @@
     open();
   }
 
-  connect("/api/public/sse/emotions", updateAvatar);
-
   connect("/api/public/sse/overlay", (d) => {
     stage.classList.toggle("hidden", d.visible === false);
   });
@@ -324,7 +308,7 @@
   // Impossible de lire l'usage GPU depuis une page (la Compute Pressure API ne
   // couvre que le CPU, et n'est pas disponible dans le CEF d'OBS). On mesure
   // donc ce qu'on peut : le coût de rendu de l'overlay lui-même. Sert de base de
-  // comparaison AVANT l'ajout de l'avatar animé.
+  // comparaison AVANT l'ajout de l'avatar Rive.
   const perf = { frames: 0, worstFrame: 0, last: performance.now() };
 
   function tick(now) {
