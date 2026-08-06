@@ -237,9 +237,14 @@ par Victor_K — gratuit, remixable, à personnaliser aux couleurs de Wally.
 ⚠️ L'asset tire au sort tout seul : il faut une **entrée pour forcer la face**, afin que ce soit
 Wally qui décide — et donc qu'il puisse commenter, voire tricher.
 
-## Widgets candidats
+## Widgets
 
-Aucun n'est décidé ; liste à arbitrer. Le mécanisme d'affichage **existe déjà** :
+**Retenus par l'owner (2026-08-06)** : 1, 2, 3, 6, 9, 10, 11, 12, 13, 14, 15, 16.
+
+**Écartés** : 4 (note /10), 5 (classement), 7 (tirage au sort), 8 (hype-meter), et 17 (jauge
+d'humeur) — l'humeur passe déjà par l'avatar, un widget dédié ferait doublon.
+
+Le mécanisme d'affichage **existe déjà** :
 `overlay_image` (commande `!image`) affiche une image temporaire animée sur l'overlay
 (`bounceInLeft`, 5 s). Il suffirait d'ajouter des types de widgets au même endroit.
 
