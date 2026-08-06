@@ -9,6 +9,12 @@ from typing import Literal
 import httpx
 from loguru import logger
 
+# Un token utilisateur Twitch vit ~4 h et `_token_refresh_loop` (bot.py) passe
+# toutes les 3 h. On renouvelle donc dès qu'il reste moins que cet intervalle plus
+# une marge, sinon le token meurt ENTRE deux passages : à T+3h il restait 1 h de
+# validité, rien n'était fait, et EventSub cassait de T+4h à T+6h.
+_PROACTIVE_REFRESH_S = 3 * 3600 + 1800
+
 
 class TwitchTokenManager:
     VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
@@ -78,12 +84,24 @@ class TwitchTokenManager:
                 else:
                     resp.raise_for_status()
                     data = resp.json()
+                    expires_in = data.get("expires_in")
                     logger.info(
                         "Twitch {t} token valid — scopes={scopes} expires_in={exp}s",
                         t=token_type,
                         scopes=data.get("scopes", []),
-                        exp=data.get("expires_in", "?"),
+                        exp=expires_in if expires_in is not None else "?",
                     )
+                    # Encore valide, mais plus pour longtemps : on renouvelle
+                    # maintenant plutôt que d'attendre le 401 du prochain passage.
+                    if (
+                        isinstance(expires_in, (int, float))
+                        and expires_in < _PROACTIVE_REFRESH_S
+                    ):
+                        logger.info(
+                            "Twitch {t} token expire dans {exp}s — renouvellement anticipé",
+                            t=token_type, exp=int(expires_in),
+                        )
+                        await self.refresh(token_type)
             except Exception as exc:
                 logger.error(
                     "Twitch {t} token validation error: {e}", t=token_type, e=exc
