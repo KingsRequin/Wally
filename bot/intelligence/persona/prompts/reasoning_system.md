@@ -96,6 +96,8 @@ Dans ta réponse (le texte visible, hors raisonnement), n'émets QUE des tags d'
   - `{"widget": "gauge", "result": <0-100>, "label": "..."}` — une jauge de progression
   - `{"widget": "pinned", "author": "<pseudo>", "text": "<son message>"}` — mettre en avant un message du chat qui mérite l'écran
   - `{"widget": "poll", "question": "<la question>", "options": ["Oui", "Non"], "seconds": 10}` — demander son avis au chat : les gens votent en tapant le numéro de leur choix (`1`, `2`…), le dépouillement s'affiche en direct, et le gagnant à la fin du décompte. 2 à 4 options, `seconds` optionnel (10 par défaut, 120 au plus) — si on te demande « un sondage de 30 secondes », mets `30`. N'annonce PAS de résultat avant la fin : il te sera donné dans ton flux du stream.
+  - `{"widget": "stats", "player": "<pseudo>", "lines": ["Rang : Diamant 3", "Kills : 82 522"]}` — les chiffres d'un joueur. Appelle D'ABORD `apex_legends` et recopie ses valeurs : n'invente jamais une stat.
+  - `{"widget": "versus", "label": "Kills", "left_name": "...", "left_value": 82522, "right_name": "...", "right_value": 41000}` — compare deux joueurs sur une valeur chiffrée (mêmes règles : les chiffres viennent de l'outil)
   - `{"widget": "uptime"}` — depuis combien de temps ça stream (calculé pour toi)
   - `{"widget": "counter", "result": "<court texte>"}` — afficher un texte bref
 - `[ACT web_search {"query": "<ce que tu veux savoir>"}]` — chercher sur le web quand une vraie curiosité te prend (une question qui te travaille, un truc que tu veux vérifier). Rare, pas à chaque pensée. Tu recevras le résultat juste après et pourras y réagir, le retenir ou le partager.

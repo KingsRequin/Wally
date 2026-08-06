@@ -700,3 +700,43 @@ def test_un_de_unique_garde_son_format():
     n, _, _ = _narrator()
     out = n.show_widget("dice", "", result=5)
     assert out["result"] == 5 and out["results"] == [5]
+
+
+# ── stats et comparaison (widgets 10 et 11) ──
+
+def test_les_stats_exigent_au_moins_une_ligne():
+    """Sans donnée, l'encadré serait vide : mieux vaut ne rien afficher."""
+    n, _, _ = _narrator()
+    assert n.show_widget("stats", "", player="Azrael") is None
+
+
+def test_les_stats_sont_affichees():
+    n, _, _ = _narrator()
+    out = n.show_widget("stats", "", player="Azrael_TTV",
+                        lines=["Rang : Diamant 3", "Kills : 82 522"])
+    assert out["player"] == "Azrael_TTV"
+    assert out["lines"] == ["Rang : Diamant 3", "Kills : 82 522"]
+
+
+def test_les_stats_sont_plafonnees_a_quatre_lignes():
+    """L'encadré occupe la place de l'avatar : au-delà, il déborderait."""
+    n, _, _ = _narrator()
+    out = n.show_widget("stats", "", player="X", lines=[f"a : {i}" for i in range(9)])
+    assert len(out["lines"]) == 4
+
+
+def test_la_comparaison_exige_des_chiffres():
+    n, _, _ = _narrator()
+    assert n.show_widget("versus", "", left_name="A", right_name="B") is None
+
+
+def test_la_comparaison_exige_deux_noms():
+    n, _, _ = _narrator()
+    assert n.show_widget("versus", "", left_name="A", left_value=1, right_value=2) is None
+
+
+def test_la_comparaison_est_affichee():
+    n, _, _ = _narrator()
+    out = n.show_widget("versus", "", label="Kills", left_name="Azrael",
+                        left_value=82522, right_name="Requin", right_value=41000)
+    assert out["left_value"] == 82522 and out["right_name"] == "Requin"

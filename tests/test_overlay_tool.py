@@ -104,3 +104,17 @@ def test_plusieurs_des_sont_annonces_avec_leur_total():
     bot, _ = _bot(widget_result={"widget": "dice", "results": [3, 5], "result": 3})
     msg = json.loads(run_overlay_tool(bot, {"widget": "dice", "count": 2}))["message"]
     assert "3 et 5" in msg and "8" in msg
+
+
+def test_la_comparaison_annonce_le_gagnant():
+    bot, _ = _bot(widget_result={"widget": "versus", "left_name": "Azrael",
+                                 "left_value": 82522, "right_name": "Requin",
+                                 "right_value": 41000})
+    assert "Azrael" in json.loads(run_overlay_tool(bot, {"widget": "versus"}))["message"]
+
+
+def test_les_stats_invitent_a_commenter_pas_a_reciter():
+    bot, _ = _bot(widget_result={"widget": "stats", "player": "Azrael_TTV",
+                                 "lines": ["Kills : 82 522"]})
+    msg = json.loads(run_overlay_tool(bot, {"widget": "stats"}))["message"]
+    assert "Commente" in msg

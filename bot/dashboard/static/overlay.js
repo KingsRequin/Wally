@@ -236,6 +236,63 @@
       return box;
     },
 
+    stats(p) {
+      const box = el("div", "stats");
+      if (p.player) {
+        const who = el("div", "who");
+        who.textContent = String(p.player);
+        box.appendChild(who);
+      }
+      (Array.isArray(p.lines) ? p.lines : []).forEach((line, i) => {
+        const row = el("div", "line");
+        row.style.setProperty("--i", String(i));
+        // « Label : valeur » est séparé pour aligner les valeurs à droite ;
+        // sans deux-points, la ligne reste affichée telle quelle.
+        const cut = String(line).indexOf(":");
+        if (cut > 0) {
+          const k = el("span", "k"), v = el("span", "v");
+          k.textContent = String(line).slice(0, cut).trim();
+          v.textContent = String(line).slice(cut + 1).trim();
+          row.append(k, v);
+        } else {
+          row.textContent = String(line);
+        }
+        box.appendChild(row);
+      });
+      return box;
+    },
+
+    versus(p) {
+      const box = el("div", "versus");
+      if (p.label) {
+        const lbl = el("div", "vs-label");
+        lbl.textContent = String(p.label);
+        box.appendChild(lbl);
+      }
+      const left = Number(p.left_value) || 0;
+      const right = Number(p.right_value) || 0;
+      // Barres relatives au meilleur des deux : l'écart se lit d'un coup d'œil.
+      const top = Math.max(left, right, 1);
+      [[p.left_name, left], [p.right_name, right]].forEach(([name, value], i) => {
+        const row = el("div", value >= Math.max(left, right) ? "vs-row lead" : "vs-row");
+        row.style.setProperty("--i", String(i));
+        const head = el("div", "row");
+        const n = el("span", ""), v = el("span", "");
+        n.textContent = String(name || "?");
+        v.textContent = value.toLocaleString("fr-FR");
+        head.append(n, v);
+        const bar = el("div", "bar");
+        const fill = document.createElement("span");
+        bar.appendChild(fill);
+        row.append(head, bar);
+        box.appendChild(row);
+        requestAnimationFrame(() => {
+          fill.style.width = `${Math.round((value / top) * 100)}%`;
+        });
+      });
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");

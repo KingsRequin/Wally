@@ -73,7 +73,8 @@
     /* Le miroir porte sur le SLOT, pas sur l'avatar : l'animation de réaction
        (.reacting) écrit sur `transform` et effacerait un scaleX posé là. */
     body[data-side="right"] #avatar-slot { transform: scaleX(-1); }
-    body[data-side="right"] #widgets { left: auto; right: 12px; justify-content: flex-end; }
+    body[data-side="right"] #widgets { left: auto; right: 12px; }
+    body[data-side="right"] .widget { justify-content: flex-end; }
 
     /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
     body[data-side="right"] #bubble.speech::after {
@@ -179,6 +180,13 @@
     /* L'avatar cède la place, sans disparaître brutalement. */
     #avatar-slot > * { transition: transform .35s cubic-bezier(.3, .9, .3, 1), opacity .3s ease; }
     .widget {
+      /* Largeur imposée : les cartes (sondage, stats, comparaison) demandent
+         `width: 100%`, ce qui serait circulaire sur un parent auto-dimensionné.
+         Les petits widgets (pièce, dé) gardent leur taille et s'alignent du
+         côté d'ancrage. */
+      width: 100%;
+      display: flex;
+      justify-content: flex-start;
       opacity: 0;
       /* Le widget monte depuis la place de l'avatar, qui s'efface en même temps
          — un passage de relais plutôt qu'une superposition. */
@@ -419,6 +427,58 @@
       background: linear-gradient(90deg, #46c6ff, #9d7bff);
       border-radius: 5px;
       transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
+    }
+
+    /* Stats d'un joueur — les chiffres viennent de l'API, pas du modèle. */
+    .stats, .versus {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+    }
+    .stats .who {
+      font-size: 14px; font-weight: 700; margin-bottom: 7px;
+      color: #ffb066;
+    }
+    .stats .line {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-size: 13px; margin-bottom: 4px;
+      /* Même cascade que le sondage : les lignes se posent l'une après l'autre. */
+      animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
+      animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+    }
+    .stats .line .k { color: rgba(255, 255, 255, .62); }
+    .stats .line .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* Comparaison — barres relatives au meilleur des deux. */
+    .versus .vs-label {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+    }
+    .versus .vs-row {
+      margin-bottom: 8px; font-size: 13px;
+      animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
+      animation-delay: calc(var(--i, 0) * 90ms + 140ms);
+    }
+    .versus .vs-row .row {
+      display: flex; justify-content: space-between; margin-bottom: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+    .versus .vs-row.lead .row { color: #7dffb0; font-weight: 700; }
+    .versus .bar {
+      height: 9px; border-radius: 5px; overflow: hidden;
+      background: rgba(255, 255, 255, .1);
+    }
+    .versus .bar span {
+      display: block; height: 100%; width: 0; border-radius: 5px;
+      background: linear-gradient(90deg, #46c6ff, #9d7bff);
+      transition: width .6s cubic-bezier(.3, .9, .3, 1);
+    }
+    .versus .vs-row.lead .bar span {
+      background: linear-gradient(90deg, #34d17f, #7dffb0);
     }
 
     /* Compteur (uptime) — texte simple, lisible sur tout fond. */

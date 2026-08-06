@@ -256,8 +256,12 @@ Wally qui décide — et donc qu'il puisse commenter, voire tricher.
 
 ## Widgets
 
-**Retenus par l'owner (2026-08-06)** : 1, 2, 3, 6, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 23,
+**Retenus par l'owner (2026-08-06)** : 1, 2, 3, 6, 9, 10, 11, 12, 13, 14, 15, 16, 20, 23,
 24, 25.
+
+**19 finalement écarté** (2026-08-06, après coup) : « il y a un mois, **tu** disais que… »
+s'adresse au streamer. Or l'overlay ne parle qu'aux viewers (§0) — la règle a été posée après
+l'arbitrage initial, et prime sur lui.
 
 **Écartés** : 4 (note /10), 5 (classement), 7 (tirage au sort), 8 (hype-meter), 17 (jauge
 d'humeur — l'avatar la porte déjà), 18, 21, 22, 26, 27, 28.
@@ -298,9 +302,7 @@ Le mécanisme d'affichage **existe déjà** :
 17. ~~Jauge d'humeur~~ — écarté, l'avatar la porte déjà.
 
 **Ce que Wally seul peut faire**
-19. **« Il y a un mois, tu disais que… »** — ressortir au public une promesse ou une prédiction
-    ratée d'Azraël, puisée dans la mémoire longue et les journaux. Le plus singulier de la liste :
-    personne d'autre ne peut le copier.
+19. ~~« Il y a un mois, tu disais que… »~~ — **écarté** : s'adresse au streamer (§0).
 20. **Le bingo du stream** — une grille de cases (« il blâme le ping », « il rage », « il dit
     qu'il arrête ») que **Wally coche automatiquement** quand ça arrive. Les viewers regardent
     la grille se remplir.

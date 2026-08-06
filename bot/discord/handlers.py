@@ -138,6 +138,13 @@ def _overlay_outcome(shown: dict) -> str:
         return f"Compte à rebours lancé sur {shown.get('seconds')} secondes."
     if widget == "gauge":
         return f"Jauge affichée à {shown.get('percent')}%."
+    if widget == "stats":
+        return (f"Les stats de {shown.get('player') or 'ce joueur'} sont à l'écran. "
+                "Commente-les — ne les répète pas telles quelles.")
+    if widget == "versus":
+        left, right = shown.get("left_value", 0), shown.get("right_value", 0)
+        gagnant = shown.get("left_name") if left >= right else shown.get("right_name")
+        return f"La comparaison est à l'écran, {gagnant} devant. Annonce-le."
     return f"'{widget}' est à l'écran."
 
 

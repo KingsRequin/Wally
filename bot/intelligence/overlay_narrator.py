@@ -113,14 +113,15 @@ OVERLAY_TOOL_SPEC = {
                 "widget": {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
-                             "pinned", "uptime", "counter", "poll"],
+                             "pinned", "uptime", "counter", "poll", "stats", "versus"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
                         "· gauge = jauge 0-100 · pinned = met en avant un message "
                         "du chat · uptime = durée du live (calculée pour toi) · "
                         "counter = un texte bref · poll = sondage, le chat vote en "
-                        "tapant le numéro"
+                        "tapant le numéro · stats = les chiffres d'un joueur · "
+                        "versus = compare deux joueurs sur une valeur"
                     ),
                 },
                 "comment": {
@@ -142,9 +143,18 @@ OVERLAY_TOOL_SPEC = {
                 "question": {"type": "string", "description": "La question, pour poll."},
                 "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
+                "player": {"type": "string", "description": "Le pseudo, pour stats."},
+                "lines": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Pour stats : 1 à 4 lignes déjà rédigées, ex. « Rang : Diamant 3 », « Kills : 82 522 ».",
+                },
+                "label": {"type": "string", "description": "L'intitulé, pour gauge et versus (ex. « Kills »)."},
+                "left_name": {"type": "string", "description": "Premier joueur comparé, pour versus."},
+                "left_value": {"type": "number", "description": "Sa valeur chiffrée, pour versus."},
+                "right_name": {"type": "string", "description": "Second joueur comparé, pour versus."},
+                "right_value": {"type": "number", "description": "Sa valeur chiffrée, pour versus."},
                 "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
                 "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
-                "label": {"type": "string", "description": "L'intitulé, pour gauge."},
             },
             "required": ["widget"],
         },
@@ -381,7 +391,7 @@ class OverlayNarrator:
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
-                "pinned", "uptime", "poll")
+                "pinned", "uptime", "poll", "stats", "versus")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -473,6 +483,31 @@ class OverlayNarrator:
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
+
+        elif widget == "stats":
+            # Les chiffres viennent de l'outil Apex, pas d'ici : Wally les a lus
+            # avant d'appeler, on se contente de les mettre en forme.
+            lines = [str(l).strip()[:34] for l in (extra.get("lines") or []) if str(l).strip()]
+            if not lines:
+                return None
+            params = {"player": str(extra.get("player") or "")[:24],
+                      "lines": lines[:4]}
+
+        elif widget == "versus":
+            try:
+                left_value = float(extra.get("left_value"))
+                right_value = float(extra.get("right_value"))
+            except (TypeError, ValueError):
+                return None      # sans chiffres, il n'y a rien à comparer
+            left_name = str(extra.get("left_name") or "").strip()[:14]
+            right_name = str(extra.get("right_name") or "").strip()[:14]
+            if not left_name or not right_name:
+                return None
+            params = {
+                "label": str(extra.get("label") or comment)[:24],
+                "left_name": left_name, "left_value": left_value,
+                "right_name": right_name, "right_value": right_value,
+            }
 
         elif widget == "uptime":
             label = self._uptime_label()
