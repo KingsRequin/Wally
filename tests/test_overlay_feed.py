@@ -9,20 +9,23 @@ from bot.core.overlay_feed import OverlayFeed, bubble_duration
 # ── durée d'affichage ──
 
 def test_une_bulle_courte_reste_lisible():
-    """Trois mots ne doivent pas disparaître avant qu'on les ait lus."""
-    assert bubble_duration("bien joué Azraël") >= 2.0
+    """Un viewer ne fixe pas l'overlay : entre deux coups d'œil au gameplay, une
+    bulle de 2 s passait inaperçue."""
+    assert bubble_duration("bien joué Azraël") >= 5.0
 
 
 def test_une_bulle_longue_ne_traine_pas():
-    assert bubble_duration(" ".join(["mot"] * 100)) <= 8.0
+    assert bubble_duration(" ".join(["mot"] * 100)) <= 10.0
 
 
 def test_la_duree_suit_la_longueur():
-    assert bubble_duration("un deux trois quatre cinq six") > bubble_duration("ok")
+    """La proportionnalité ne joue qu'au-delà du plancher : en deçà de dix mots,
+    tout dure le minimum."""
+    assert bubble_duration(" ".join(["mot"] * 18)) > bubble_duration("ok")
 
 
 def test_texte_vide_borne_au_minimum():
-    assert bubble_duration("") == 2.0
+    assert bubble_duration("") == 5.0
 
 
 # ── fan-out ──

@@ -3531,11 +3531,11 @@ async function _renderSystemeOverlay(panel) {
           <span id="overlay-status-label-forcelive" class="overlay-card-status">Inactif</span>
         </div>
         <div class="overlay-card-toggle-row">
-          <span class="overlay-card-toggle-label" title="Quand la source est posée sur le bord droit de l'écran, Wally passe à droite et ses bulles s'ouvrent vers la gauche — sinon elles sortent du cadre.">Ancré à droite</span>
-          <div class="overlay-switch" id="overlay-switch-side" style="cursor:pointer" onclick="toggleOverlaySide()">
+          <span class="overlay-card-toggle-label" title="Par défaut l'overlay est ancré à droite (source posée sur le bord droit de l'écran). Bascule ici pour l'ancrer à gauche — l'URL change en conséquence.">Ancré à droite</span>
+          <div class="overlay-switch on" id="overlay-switch-side" style="cursor:pointer" onclick="toggleOverlaySide()">
             <div class="overlay-switch-knob"></div>
           </div>
-          <span id="overlay-status-label-side" class="overlay-card-status">Gauche</span>
+          <span id="overlay-status-label-side" class="overlay-card-status">Droite</span>
         </div>
         <div class="overlay-url-row">
           <span class="overlay-url-label">URL OBS</span>
@@ -3632,14 +3632,15 @@ function toggleOverlaySide() {
   const lbl = document.getElementById('overlay-status-label-side');
   const code = document.getElementById('url-emotion');
   if (!sw || !lbl || !code) return;
+  // Droite = défaut, donc URL nue ; seule la gauche demande un paramètre.
   const droite = !sw.classList.contains('on');
   sw.classList.toggle('on', droite);
   lbl.textContent = droite ? 'Droite' : 'Gauche';
   const base = code.textContent.split('?')[0];
-  code.textContent = droite ? `${base}?side=right` : base;
+  code.textContent = droite ? base : `${base}?side=left`;
   toast(droite
-    ? "URL mise à jour — recopie-la dans OBS pour passer à droite"
-    : "URL remise à gauche — recopie-la dans OBS");
+    ? "URL remise au défaut (droite) — recopie-la dans OBS"
+    : "URL mise à jour — recopie-la dans OBS pour passer à gauche");
 }
 
 async function toggleOverlayFromSysteme() {

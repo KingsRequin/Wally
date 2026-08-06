@@ -15,11 +15,12 @@
 
   const RECONNECT_MS = 5000;
 
-  // Côté d'ancrage, choisi dans l'URL de la source OBS : `?side=right` quand
-  // l'overlay est posé sur le bord droit de l'écran. Lu avant tout affichage,
-  // la mise en page est purement CSS derrière `data-side`.
-  const side = new URLSearchParams(location.search).get("side");
-  if (side === "right") document.body.dataset.side = "right";
+  // Ancrage à DROITE par défaut (posé dans le HTML, donc sans flash au chargement).
+  // `?side=left` rétablit l'ancrage à gauche ; la mise en page est purement CSS
+  // derrière `data-side`.
+  if (new URLSearchParams(location.search).get("side") === "left") {
+    document.body.dataset.side = "left";
+  }
 
   // ── Avatar ───────────────────────────────────────────────────────────────
   // Les GIF par émotion ont été retirés : #avatar-slot attend son avatar Rive.
@@ -263,6 +264,7 @@
       clearInterval(Number(n.dataset.interval));
     });
     widgets.replaceChildren();
+    document.body.classList.remove("widget-on");
   }
 
   function showWidget(kind, params) {
@@ -285,6 +287,9 @@
       box.classList.add("visible");
     }
     const box = widgets.firstElementChild;
+    // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
+    // sa place.
+    document.body.classList.add("widget-on");
 
     // Le serveur décide (animation + lecture) ; ce plafond n'est qu'un garde-fou.
     const seconds = Math.min(30, Math.max(2, Number(params.duration) || 12));

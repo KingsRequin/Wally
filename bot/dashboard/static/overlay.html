@@ -60,10 +60,11 @@
       100% { transform: scale(1); }
     }
 
-    /* ── Mode miroir (?side=right) ──────────────────────────────────────
-       Quand la source est posée sur le bord DROIT de l'écran, tout doit partir
-       de la droite : sinon les bulles s'étalent vers l'extérieur et sortent du
-       cadre. L'avatar est retourné pour continuer de faire face au contenu. */
+    /* ── Ancrage à droite (défaut) ──────────────────────────────────────
+       La source est posée sur le bord DROIT de l'écran : tout part donc de la
+       droite, sinon les bulles s'étalent vers l'extérieur et sortent du cadre.
+       L'avatar est retourné pour continuer de faire face au contenu.
+       `?side=left` rétablit l'ancrage à gauche. */
     body[data-side="right"] #stage {
       left: auto;
       right: 0;
@@ -72,7 +73,7 @@
     /* Le miroir porte sur le SLOT, pas sur l'avatar : l'animation de réaction
        (.reacting) écrit sur `transform` et effacerait un scaleX posé là. */
     body[data-side="right"] #avatar-slot { transform: scaleX(-1); }
-    body[data-side="right"] #widgets { left: auto; right: 12px; }
+    body[data-side="right"] #widgets { left: auto; right: 12px; justify-content: flex-end; }
 
     /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
     body[data-side="right"] #bubble.speech::after {
@@ -158,16 +159,24 @@
     }
 
     /* ── Widgets (pile ou face, dé, uptime…) ────────────────────────────── */
+    /* Les widgets occupent LA PLACE de l'avatar plutôt que de flotter au-dessus :
+       superposés à son emplacement, ancrés sur le même bord bas, et l'avatar
+       s'efface le temps de l'affichage. Largeur bornée à celle du slot pour ne
+       jamais empiéter sur la bulle, qui commente le widget. */
     #widgets {
       position: absolute;
       left: 12px;
-      /* Jamais au-dessus du bord haut, même sur une source courte. */
-      bottom: min(230px, calc(100vh - 220px));
-      max-width: calc(100vw - 24px);
+      bottom: 12px;
+      width: 200px;
+      display: flex;
+      align-items: flex-end;
       pointer-events: none;
       /* Perspective partagée : les enfants tournent en 3D réelle. */
       perspective: 600px;
     }
+    /* L'avatar cède la place, sans disparaître brutalement. */
+    #avatar-slot > * { transition: transform .25s ease, opacity .25s ease; }
+    body.widget-on #avatar-slot > * { opacity: 0; }
     .widget {
       opacity: 0;
       transform: translateY(10px);
@@ -319,7 +328,7 @@
 
     /* Sondage — les viewers votent en tapant le numéro dans le chat. */
     .poll {
-      width: 250px;
+      width: 100%;
       padding: 10px 12px;
       background: rgba(18, 18, 22, .88);
       border: 1px solid rgba(255, 255, 255, .14);
@@ -364,7 +373,7 @@
     }
   </style>
 </head>
-<body>
+<body data-side="right">
   <div id="stage">
     <!-- Avatar : animation WebM en boucle, volontairement PAS liée aux émotions
          (Rive écarté, son export étant payant). `muted` est requis pour que la
