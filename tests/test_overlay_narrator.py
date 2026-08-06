@@ -332,3 +332,148 @@ def test_uptime_sans_date_de_debut_ne_s_affiche_pas():
 def test_uptime_avec_date_illisible():
     n, _ = _with_status("pas-une-date")
     assert n.show_widget("uptime") is False
+
+
+# ── saluts (widget 9) ──
+
+@pytest.mark.asyncio
+async def test_un_inconnu_est_salue():
+    n, feed, _ = _narrator(reply="tiens un nouveau")
+    q = feed.subscribe()
+    await n.on_chat_message("Nouveau", "salut", days_since=None)
+    bubbles = [q.get_nowait() for _ in range(q.qsize())]
+    assert any(e["type"] == "bubble" for e in bubbles)
+
+
+@pytest.mark.asyncio
+async def test_un_habitue_vu_hier_n_est_pas_salue():
+    """Sinon il saluerait les mêmes personnes à chaque live."""
+    n, feed, llm = _narrator()
+    await n.on_chat_message("Regulier", "salut", days_since=1.0)
+    llm.complete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_un_revenant_apres_une_semaine_est_salue():
+    n, feed, llm = _narrator(reply="revoilà Jubeii")
+    await n.on_chat_message("Jubeii", "salut", days_since=26.0)
+    llm.complete.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_ne_salue_qu_une_fois_par_live():
+    n, feed, llm = _narrator(interval=0.0)
+    n._event_interval = 0.0   # on teste le salut, pas le budget
+    await n.on_chat_message("Nouveau", "salut", days_since=None)
+    await n.on_chat_message("Nouveau", "encore moi", days_since=None)
+    assert llm.complete.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_live_permet_de_resaluer_au_stream_suivant():
+    n, feed, llm = _narrator(interval=0.0)
+    n._event_interval = 0.0   # on teste le salut, pas le budget
+    await n.on_chat_message("Nouveau", "salut", days_since=None)
+    n.reset_live()
+    await n.on_chat_message("Nouveau", "salut", days_since=None)
+    assert llm.complete.await_count == 2
+
+
+# ── sondage (widget 6) ──
+
+def test_un_sondage_exige_une_question_et_deux_options():
+    n, _, _ = _narrator()
+    assert n.start_poll("", ["oui", "non"]) is False
+    assert n.start_poll("chocolat ?", ["oui"]) is False
+    assert n.start_poll("chocolat ?", ["oui", "non"]) is True
+
+
+def test_pas_de_sondage_hors_live():
+    n, _, _ = _narrator(live=False)
+    assert n.start_poll("chocolat ?", ["oui", "non"]) is False
+
+
+@pytest.mark.asyncio
+async def test_les_votes_du_chat_sont_comptes():
+    n, feed, _ = _narrator()
+    n.start_poll("vous aimez le chocolat ?", ["oui", "non"], seconds=30)
+    q = feed.subscribe()
+    await n.on_chat_message("alice", "1")
+    await n.on_chat_message("bob", "1")
+    await n.on_chat_message("carol", "2")
+    last = None
+    while not q.empty():
+        e = q.get_nowait()
+        if e["type"] == "widget":
+            last = e
+    assert last["kind"] == "poll"
+    assert last["params"]["tally"] == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_un_seul_vote_par_personne_mais_changement_d_avis_permis():
+    n, feed, _ = _narrator()
+    n.start_poll("chocolat ?", ["oui", "non"], seconds=30)
+    q = feed.subscribe()
+    await n.on_chat_message("alice", "1")
+    await n.on_chat_message("alice", "2")   # elle change d'avis
+    last = None
+    while not q.empty():
+        e = q.get_nowait()
+        if e["type"] == "widget":
+            last = e
+    assert last["params"]["tally"] == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_un_message_qui_contient_un_chiffre_n_est_pas_un_vote():
+    """« j'ai 2 chats » ne doit pas compter."""
+    n, feed, _ = _narrator()
+    n.start_poll("chocolat ?", ["oui", "non"], seconds=30)
+    await n.on_chat_message("alice", "j'ai 2 chats")
+    await n.on_chat_message("bob", "42")        # hors options
+    assert sum(n._poll["votes"].values()) == 0
+    assert len(n._poll["votes"]) == 0
+
+
+def test_la_duree_du_sondage_est_bornee():
+    n, _, _ = _narrator()
+    n.start_poll("q ?", ["a", "b"], seconds=9999)
+    import time as _t
+    assert n._poll["ends_at"] - _t.monotonic() <= 121
+
+
+def test_un_nouveau_live_efface_les_saluts_du_precedent():
+    """Le process tourne des semaines : sans ça, plus personne n'est jamais
+    salué après le tout premier live."""
+    live = {"on": True}
+    feed, llm = OverlayFeed(), AsyncMock()
+    n = OverlayNarrator(feed, llm, lambda: live["on"])
+    n._live()                      # premier live
+    n._greeted.add("alice")
+    live["on"] = False
+    n._live()                      # fin du live
+    live["on"] = True
+    n._live()                      # live suivant
+    assert n._greeted == set()
+
+
+def test_le_widget_poll_est_route_vers_le_sondage():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    assert n.show_widget(
+        "poll", "", question="vous aimez le chocolat ?",
+        options=["Oui", "Non"], seconds=30,
+    ) is True
+    events = [q.get_nowait() for _ in range(q.qsize())]
+    widget = next(e for e in events if e["type"] == "widget")
+    assert widget["kind"] == "poll"
+    assert widget["params"]["options"] == ["Oui", "Non"]
+    assert widget["params"]["seconds"] == 30
+    # le commentaire ferait doublon avec la question affichée
+    assert not [e for e in events if e["type"] == "bubble"]
+
+
+def test_le_widget_poll_refuse_une_question_vide():
+    n, _, _ = _narrator()
+    assert n.show_widget("poll", "", options=["Oui", "Non"]) is False

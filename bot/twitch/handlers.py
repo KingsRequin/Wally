@@ -36,6 +36,8 @@ def _resolve_twitch_roles(badges: list) -> list[str]:
 
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
+# Tâches détachées de l'overlay (salut + comptage de votes).
+_overlay_chat_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}
 
 
@@ -124,6 +126,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         logger.debug("Ignoring banned user (twitch→{})", canonical)
         return
 
+    # Ancienneté du spectateur AVANT l'upsert ci-dessous, qui rafraîchit la date :
+    # sans cette précaution, tout le monde paraîtrait « vu à l'instant » et
+    # l'overlay ne saluerait plus jamais personne.
+    _seen_days = None
+    _narrator = getattr(getattr(bot, "discord_bot", None), "overlay_narrator", None)
+    if _narrator is not None:
+        try:
+            _seen_days = await bot.db.days_since_viewer_seen(author)
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("overlay: ancienneté spectateur indisponible: {e}", e=exc)
+
     # Persiste le login Twitch pour que le dashboard affiche un nom lisible
     await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
 
@@ -141,6 +154,15 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             _stream_feed.record_chat(author, content)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.warning("StreamFeed: chat non enregistré : {e}", e=exc)
+
+        # Overlay : compte les votes d'un sondage en cours et salue les nouveaux
+        # venus / les revenants. Détaché — le salut demande un appel LLM.
+        if _narrator is not None:
+            _t = asyncio.create_task(
+                _narrator.on_chat_message(author, content, days_since=_seen_days)
+            )
+            _overlay_chat_tasks.add(_t)
+            _t.add_done_callback(_overlay_chat_tasks.discard)
 
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)

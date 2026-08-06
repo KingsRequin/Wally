@@ -195,6 +195,42 @@
       return box;
     },
 
+    // Le sondage se met à jour à chaque vote : on le reconstruit en place plutôt
+    // que de le faire réapparaître, pour ne pas rejouer l'animation d'entrée.
+    poll(p) {
+      const options = Array.isArray(p.options) ? p.options : [];
+      const tally = Array.isArray(p.tally) ? p.tally : [];
+      const total = tally.reduce((a, b) => a + b, 0) || 0;
+
+      const box = el("div", "poll");
+      const q = el("div", "q");
+      const qText = el("span", "");
+      qText.textContent = String(p.question || "");
+      const left = el("span", "left");
+      left.textContent = p.seconds > 0 ? `${p.seconds}s` : "terminé";
+      q.append(qText, left);
+      box.appendChild(q);
+
+      options.forEach((label, i) => {
+        const votes = tally[i] || 0;
+        const pct = total ? Math.round((votes / total) * 100) : 0;
+        const opt = el("div", "opt");
+        const row = el("div", "row");
+        const name = el("span", "");
+        name.textContent = `${i + 1}. ${label}`;
+        const count = el("span", "");
+        count.textContent = total ? `${pct}% (${votes})` : "—";
+        row.append(name, count);
+        const bar = el("div", "bar");
+        const fill = document.createElement("span");
+        bar.appendChild(fill);
+        opt.append(row, bar);
+        box.appendChild(opt);
+        requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
+      });
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");
@@ -231,13 +267,22 @@
     const build = BUILDERS[kind];
     if (!build) return;
     clearTimeout(widgetTimer);
-    clearWidgets();
 
-    const box = el("div", "widget");
-    box.appendChild(build(params));
-    widgets.replaceChildren(box);
-    void box.offsetWidth;
-    box.classList.add("visible");
+    // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
+    // chaque vote rejouerait l'animation d'entrée et clignoterait.
+    const current = widgets.firstElementChild;
+    if (kind === "poll" && current && current.dataset.kind === "poll") {
+      current.replaceChildren(build(params));
+    } else {
+      clearWidgets();
+      const box = el("div", "widget");
+      box.dataset.kind = kind;
+      box.appendChild(build(params));
+      widgets.replaceChildren(box);
+      void box.offsetWidth;
+      box.classList.add("visible");
+    }
+    const box = widgets.firstElementChild;
 
     const seconds = Math.min(20, Math.max(2, Number(params.duration) || 5));
     widgetTimer = setTimeout(() => {

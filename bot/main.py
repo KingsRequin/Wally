@@ -267,6 +267,10 @@ async def main() -> None:
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot
+        # Référence inverse : le chemin Twitch a besoin du narrateur d'overlay,
+        # construit plus tard dans le setup_hook de Discord — d'où l'accès
+        # paresseux via cette référence plutôt qu'une injection directe.
+        twitch_bot.discord_bot = discord_bot
         register_events(twitch_bot)
 
         # StreamWatcher : unique poller du statut live du streamer (Azrael = home

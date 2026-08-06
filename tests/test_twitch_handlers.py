@@ -14,6 +14,9 @@ from bot.twitch.events import _bits_joy
 
 def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
     bot = MagicMock()
+    # Sans ça, MagicMock fabrique un narrateur d'overlay fantôme dont
+    # on_chat_message() renvoie un MagicMock, pas une coroutine.
+    bot.discord_bot = None
     bot.config.bot.trigger_names = trigger_names or ["wally"]
     bot.config.bot.name = "Wally"
     bot.config.bot.language_default = "fr"

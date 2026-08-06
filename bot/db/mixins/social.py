@@ -241,6 +241,34 @@ class SocialMixin:
         cutoff = time.time() - days * 86400
         await self.execute("DELETE FROM daily_log WHERE timestamp < ?", (cutoff,))
 
+    async def days_since_viewer_seen(
+        self, username: str, platform: str = "twitch", *, now: float | None = None
+    ) -> float | None:
+        """Jours écoulés depuis la dernière venue d'un spectateur, None s'il est
+        inconnu.
+
+        Sert au salut de l'overlay : distinguer un nouveau venu d'un habitué qui
+        revient. ⚠️ `upsert_memory_user` étant appelé à CHAQUE message de chat,
+        la date est rafraîchie avant que le salut ne soit décidé — l'appelant
+        doit donc interroger cette méthode sur la première ligne du live, pas
+        après coup, ou il verra toujours 0 jour.
+        """
+        username = (username or "").strip().lower()
+        if not username:
+            return None
+        row = await self.fetch_one(
+            "SELECT last_updated FROM memory_users "
+            "WHERE platform = ? AND LOWER(username) = ? "
+            "ORDER BY last_updated DESC LIMIT 1",
+            (platform, username),
+        )
+        if row is None:
+            return None
+        try:
+            return max(0.0, ((now or time.time()) - float(row["last_updated"])) / 86400)
+        except (TypeError, ValueError):
+            return None
+
     async def get_missing_regulars(
         self,
         *,

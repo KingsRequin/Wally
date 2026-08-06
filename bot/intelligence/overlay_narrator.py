@@ -45,6 +45,12 @@ _STRONG_EVENT_HINTS = ("raid", "sub", "abonn", "bits", "cheer", "don")
 # que d'afficher un pavé illisible en petit.
 _MAX_BUBBLE_CHARS = 90
 
+# Au-delà de ce délai sans être vu, un habitué qui revient mérite un mot.
+_RETURN_AFTER_DAYS = 7
+
+# Durée par défaut d'un sondage. Peut être demandée plus longue.
+_POLL_DEFAULT_S = 10
+
 _EVENT_SYSTEM = load_prompt(
     "overlay_event",
     fallback=(
@@ -85,6 +91,9 @@ class OverlayNarrator:
         # Statut du live ({live, title, category, viewers, started_at}) pour les
         # widgets qui ont besoin de données réelles (uptime).
         self._stream_status = stream_status
+        self._greeted: set[str] = set()
+        self._was_live: bool = False
+        self._poll: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -92,9 +101,17 @@ class OverlayNarrator:
 
     def _live(self) -> bool:
         try:
-            return bool(self._is_live())
+            live = bool(self._is_live())
         except Exception:  # noqa: BLE001 — une sonde cassée ne doit pas parler
             return False
+        # Le process tourne des semaines d'affilée : sans cette remise à zéro,
+        # les saluts du premier live vaudraient pour tous les suivants. La
+        # transition est détectée ici plutôt que câblée sur un événement, pour
+        # rester juste même si l'événement de démarrage est manqué.
+        if live and not self._was_live:
+            self.reset_live()
+        self._was_live = live
+        return live
 
     def _may_speak(self) -> bool:
         """Vrai si un live est en cours et que le délai minimal est écoulé."""
@@ -176,7 +193,7 @@ class OverlayNarrator:
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
-                "pinned", "uptime")
+                "pinned", "uptime", "poll")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -239,6 +256,21 @@ class OverlayNarrator:
                 return False
             params = {"author": str(extra.get("author") or "")[:24], "text": text[:160]}
 
+        elif widget == "poll":
+            # Le sondage n'est pas un affichage ponctuel : il ouvre un dépouillement
+            # vivant, alimenté par le chat. D'où la délégation à start_poll.
+            question = str(extra.get("question") or comment).strip()
+            options = [str(o) for o in (extra.get("options") or [])]
+            try:
+                seconds = int(extra.get("seconds") or result or _POLL_DEFAULT_S)
+            except (TypeError, ValueError):
+                seconds = _POLL_DEFAULT_S
+            if not self.start_poll(question, options, seconds=seconds):
+                return False
+            # start_poll a déjà publié le widget ; le commentaire ferait doublon
+            # avec la question affichée.
+            return True
+
         elif widget == "uptime":
             label = self._uptime_label()
             if not label:
@@ -253,6 +285,116 @@ class OverlayNarrator:
             self._mark_spoken()
             self._feed.say(comment, mode="speech")
         return True
+
+    # ── saluts (widget 9) ─────────────────────────────────────────────────
+
+    async def on_chat_message(
+        self, author: str, text: str, days_since: Optional[float] = None
+    ) -> None:
+        """Une ligne de chat arrive : compte un éventuel vote, puis salue.
+
+        Le salut se déclenche à la PREMIÈRE prise de parole d'une personne
+        pendant le live — on ne détecte pas les arrivées silencieuses, et un
+        viewer qui ne parle jamais n'a rien à faire à l'écran.
+
+        ⚠️ `days_since` doit être mesuré par l'appelant AVANT que le message ne
+        rafraîchisse `memory_users`, sinon tout le monde paraît « vu à l'instant »
+        et plus personne n'est jamais salué.
+        """
+        author = (author or "").strip()
+        if not author:
+            return
+        self._count_vote(author, text)
+        await self._maybe_greet(author, days_since)
+
+    async def _maybe_greet(self, author: str, days: Optional[float]) -> None:
+        key = author.lower()
+        # Une seule fois par personne et par live, sinon il resaluerait à chaque
+        # message.
+        if key in self._greeted or not self._may_react():
+            return
+        self._greeted.add(key)
+
+        if days is None:
+            kind = f"{author} débarque pour la première fois"
+        elif days >= _RETURN_AFTER_DAYS:
+            kind = f"{author} revient après {int(days)} jours d'absence"
+        else:
+            return  # habitué vu récemment : rien à signaler
+
+        self._last_event_at = time.monotonic()
+        self._feed.thinking(True)
+        try:
+            short = await self._condense(kind, system=_EVENT_SYSTEM)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("OverlayNarrator: salut échoué: {e}", e=exc)
+            short = None
+        if not short:
+            self._feed.thinking(False)
+            return
+        self._mark_spoken()
+        self._feed.say(short, mode="speech")
+
+    def reset_live(self) -> None:
+        """Remet à zéro l'état lié à un live (saluts déjà faits, sondage)."""
+        self._greeted.clear()
+        self._poll = None
+
+    # ── sondage (widget 6) ────────────────────────────────────────────────
+
+    def start_poll(
+        self, question: str, options: list[str], seconds: int = _POLL_DEFAULT_S
+    ) -> bool:
+        """Ouvre un sondage : les viewers votent en tapant le numéro dans le chat."""
+        question = (question or "").strip()
+        options = [str(o).strip()[:24] for o in (options or []) if str(o).strip()][:4]
+        if not question or len(options) < 2 or not self._live():
+            return False
+        seconds = max(5, min(120, int(seconds or _POLL_DEFAULT_S)))
+        self._poll = {
+            "question": question[:80],
+            "options": options,
+            "votes": {},                      # votant → index (un vote par personne)
+            "ends_at": time.monotonic() + seconds,
+        }
+        self._publish_poll(seconds)
+        return True
+
+    def _count_vote(self, author: str, text: str) -> None:
+        poll = self._poll
+        if not poll:
+            return
+        if time.monotonic() > poll["ends_at"]:
+            self._poll = None
+            return
+        # Un vote = le seul chiffre du message. « 1 » compte, « j'ai 2 chats » non.
+        token = (text or "").strip()
+        if not token.isdigit():
+            return
+        index = int(token) - 1
+        if not 0 <= index < len(poll["options"]):
+            return
+        voter = author.lower()
+        if poll["votes"].get(voter) == index:
+            return  # déjà ce vote : rien de neuf à publier
+        poll["votes"][voter] = index          # un changement d'avis remplace
+        self._publish_poll(max(1, int(poll["ends_at"] - time.monotonic())))
+
+    def _publish_poll(self, seconds_left: int) -> None:
+        poll = self._poll
+        if not poll:
+            return
+        tally = [0] * len(poll["options"])
+        for index in poll["votes"].values():
+            tally[index] += 1
+        self._feed.widget(
+            "poll",
+            question=poll["question"],
+            options=poll["options"],
+            tally=tally,
+            seconds=seconds_left,
+            duration=seconds_left + 4,        # laisse le résultat à l'écran
+        )
 
     def _uptime_label(self) -> Optional[str]:
         """« en live depuis 3h12 », calculé depuis le statut du stream.

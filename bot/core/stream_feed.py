@@ -72,10 +72,17 @@ class StreamFeed:
         # Sert à l'overlay de stream, qui réagit en direct. Reste passif : le
         # flux garde sa vocation de contexte, il ne déclenche rien de lui-même.
         self._observer: Optional[Callable[[str], None]] = None
+        # Observateur des lignes de chat (auteur, texte). Sert aux sondages et
+        # aux saluts de l'overlay. Même contrat : best-effort, jamais bloquant.
+        self._chat_observer: Optional[Callable[[str, str], None]] = None
 
     def set_observer(self, callback: Optional[Callable[[str], None]]) -> None:
         """Branche un observateur sur les événements retenus (None pour couper)."""
         self._observer = callback
+
+    def set_chat_observer(self, callback: Optional[Callable[[str, str], None]]) -> None:
+        """Branche un observateur sur les lignes de chat (None pour couper)."""
+        self._chat_observer = callback
 
     def activate(self) -> None:
         """Enregistre ce flux comme source globale du bloc de contexte passif."""
@@ -108,6 +115,11 @@ class StreamFeed:
         if not text:
             return
         self._chat.append((time.monotonic(), author, text[:160]))
+        if self._chat_observer is not None:
+            try:
+                self._chat_observer(author, text)
+            except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux
+                logger.warning("StreamFeed: observateur de chat en erreur: {e}", e=exc)
 
     def _fresh_events(self, now: float) -> list[tuple[float, str]]:
         return [(ts, d) for ts, d in self._events if now - ts <= self._event_ttl]
