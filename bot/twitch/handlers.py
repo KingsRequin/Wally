@@ -15,6 +15,7 @@ from bot.core.conversation_log import new_trace_id
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
+    _consume_open_question, _note_open_question,
 )
 
 if TYPE_CHECKING:
@@ -246,7 +247,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if not triggered:
         return
 
-    if bot.is_on_cooldown(user_id):
+    # Le cooldown ne s'applique pas à la réponse d'une question que Wally vient
+    # de poser : c'est LUI qui a ouvert le dialogue, et on répond forcément dans
+    # les secondes qui suivent. Sans cette exemption, il demande « tu veux quoi
+    # au juste ? » puis avale la réponse en silence.
+    if not _consume_open_question(channel_name, user_id) and bot.is_on_cooldown(user_id):
         return
 
     _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True, decision="respond")
@@ -493,6 +498,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 reply_parent_message_id=msg_id,
             )
         bot.set_cooldown(user_id)
+        _note_open_question(channel_name, user_id, reply)
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,

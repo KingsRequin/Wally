@@ -271,7 +271,8 @@
     }
     const box = widgets.firstElementChild;
 
-    const seconds = Math.min(20, Math.max(2, Number(params.duration) || 5));
+    // Le serveur décide (animation + lecture) ; ce plafond n'est qu'un garde-fou.
+    const seconds = Math.min(30, Math.max(2, Number(params.duration) || 12));
     widgetTimer = setTimeout(() => {
       box.classList.remove("visible");
       setTimeout(clearWidgets, 300);

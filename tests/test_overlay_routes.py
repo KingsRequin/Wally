@@ -119,4 +119,5 @@ async def test_widget_sans_parametres():
     st = _state()
     q = st.overlay_feed.subscribe()
     await overlay_test(_Req(st, {"type": "widget", "widget": "dice", "params": "pas un dict"}))
-    assert q.get_nowait()["params"] == {}
+    # Seule la durée par défaut est ajoutée (animation + temps de lecture).
+    assert q.get_nowait()["params"] == {"duration": 11.5}

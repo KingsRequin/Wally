@@ -693,6 +693,38 @@ def _check_spontaneous_trigger(
 
 # Strong references to fire-and-forget tasks to prevent GC cancellation.
 _bg_tasks: set[asyncio.Task] = set()
+# Questions que Wally vient de poser : (channel_id, user_id) → instant.
+# Sans ça, il pose « entre quoi et quoi ? » puis ignore la réponse, qui ne
+# contient ni son nom ni de mention — un dialogue qui s'interrompt tout seul.
+_open_questions: dict[tuple, float] = {}
+
+# Au-delà, ce n'est plus une réponse à sa question mais une nouvelle conversation.
+_OPEN_QUESTION_WINDOW_S = 180.0
+
+
+def _note_open_question(channel_id, user_id, text: str) -> None:
+    """Retient qu'une question attend une réponse de cette personne."""
+    if "?" not in (text or ""):
+        return
+    now = time.monotonic()
+    # Purge des questions jamais honorées : sans elle, le dict grandit tant que
+    # le process tourne (des semaines).
+    for key, asked_at in list(_open_questions.items()):
+        if now - asked_at > _OPEN_QUESTION_WINDOW_S:
+            del _open_questions[key]
+    _open_questions[(channel_id, user_id)] = now
+
+
+def _consume_open_question(channel_id, user_id) -> bool:
+    """Vrai si ce message répond à une question en attente — et la referme.
+
+    Consommée à la première réponse : Wally ne doit pas s'accrocher au fil
+    indéfiniment, seulement ne pas laisser sa propre question sans suite.
+    """
+    asked_at = _open_questions.pop((channel_id, user_id), None)
+    return asked_at is not None and (time.monotonic() - asked_at) <= _OPEN_QUESTION_WINDOW_S
+
+
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
@@ -1226,7 +1258,12 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
     always_trigger = _is_always_trigger
-    triggered = always_trigger or mentioned or any(
+    # Une question de Wally restée en suspens vaut invitation à répondre : sa
+    # propre relance ne doit pas exiger qu'on le renomme.
+    answers_question = channel_allowed and _consume_open_question(
+        message.channel.id, message.author.id
+    )
+    triggered = always_trigger or mentioned or answers_question or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
     logger.debug("triggered={} mentioned={} always={} channel={}", triggered, mentioned, always_trigger, message.channel.id)
@@ -1408,6 +1445,7 @@ async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | Non
     for part in parts[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
         await message.channel.send(part, allowed_mentions=_ALLOWED_MENTIONS)
+    _note_open_question(message.channel.id, message.author.id, " ".join(parts))
     return first_msg.id, len(parts)
 
 

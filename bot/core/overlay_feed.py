@@ -102,6 +102,21 @@ class OverlayFeed:
         """L'avatar s'emballe une seconde (raid, série de subs…)."""
         self.publish({"type": "react", "kind": kind})
 
+    # Temps d'animation avant que le résultat ne soit lisible (voir overlay.html).
+    # Un tirage doit rester à l'écran APRÈS son animation, pas pendant.
+    _ANIMATION_S = {"coinflip": 1.6, "dice": 1.5, "wheel": 2.7}
+
+    # Durée de lecture d'un résultat, une fois l'animation finie.
+    _RESULT_READ_S = 10.0
+
     def widget(self, kind: str, **params) -> None:
-        """Affiche un widget ponctuel (pile ou face, dé, uptime…)."""
+        """Affiche un widget ponctuel (pile ou face, dé, uptime…).
+
+        La durée par défaut tient compte du temps d'animation : sinon un tirage
+        s'efface presque aussitôt affiché — la roue tourne 2,7 s, il ne restait
+        que 2,3 s pour lire le résultat.
+        """
+        params.setdefault(
+            "duration", self._ANIMATION_S.get(kind, 0.0) + self._RESULT_READ_S
+        )
         self.publish({"type": "widget", "kind": kind, "params": params})
