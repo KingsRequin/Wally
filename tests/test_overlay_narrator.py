@@ -199,13 +199,13 @@ async def test_le_budget_evenement_limite_les_rafales():
 def test_un_widget_ne_s_affiche_pas_hors_live():
     n, feed, _ = _narrator(live=False)
     q = feed.subscribe()
-    assert n.show_widget("coinflip", "on verra bien") is False
+    assert n.show_widget("coinflip", "on verra bien") is None
     assert q.empty()
 
 
 def test_un_widget_inconnu_est_refuse():
     n, feed, _ = _narrator()
-    assert n.show_widget("roulette_russe", "hé hé") is False
+    assert n.show_widget("roulette_russe", "hé hé") is None
 
 
 def test_le_resultat_est_decide_cote_serveur():
@@ -213,7 +213,7 @@ def test_le_resultat_est_decide_cote_serveur():
     propre tirage — et de tricher."""
     n, feed, _ = _narrator()
     q = feed.subscribe()
-    assert n.show_widget("coinflip", "évidemment") is True
+    assert n.show_widget("coinflip", "évidemment") is not None
     widget = q.get_nowait()
     assert widget["type"] == "widget"
     assert widget["params"]["result"] in ("heads", "tails")
@@ -268,7 +268,7 @@ def _with_status(started_at, live=True):
 
 def test_la_roue_refuse_moins_de_deux_options():
     n, feed, _ = _narrator()
-    assert n.show_widget("wheel", "on tranche", options=["seule"]) is False
+    assert n.show_widget("wheel", "on tranche", options=["seule"]) is None
 
 
 def test_la_roue_borne_l_index_gagnant():
@@ -287,8 +287,8 @@ def test_la_roue_est_plafonnee_a_huit_parts():
 
 def test_le_compte_a_rebours_exige_une_duree():
     n, feed, _ = _narrator()
-    assert n.show_widget("countdown", "attention") is False
-    assert n.show_widget("countdown", "attention", result=30) is True
+    assert n.show_widget("countdown", "attention") is None
+    assert n.show_widget("countdown", "attention", result=30) is not None
 
 
 def test_la_jauge_borne_le_pourcentage():
@@ -300,8 +300,8 @@ def test_la_jauge_borne_le_pourcentage():
 
 def test_le_message_epingle_exige_un_texte():
     n, feed, _ = _narrator()
-    assert n.show_widget("pinned", "", author="Jubeii") is False
-    assert n.show_widget("pinned", "", author="Jubeii", text="gg les gars") is True
+    assert n.show_widget("pinned", "", author="Jubeii") is None
+    assert n.show_widget("pinned", "", author="Jubeii", text="gg les gars") is not None
 
 
 def test_uptime_calcule_depuis_le_debut_du_live():
@@ -309,7 +309,7 @@ def test_uptime_calcule_depuis_le_debut_du_live():
     started = (datetime.now(timezone.utc) - timedelta(hours=3, minutes=12)).isoformat()
     n, feed = _with_status(started)
     q = feed.subscribe()
-    assert n.show_widget("uptime") is True
+    assert n.show_widget("uptime") is not None
     e = q.get_nowait()
     assert e["kind"] == "counter"          # même rendu que le compteur
     assert e["params"]["text"] == "en live depuis 3h12"
@@ -327,12 +327,12 @@ def test_uptime_en_minutes_pour_un_live_recent():
 def test_uptime_sans_date_de_debut_ne_s_affiche_pas():
     """Rien à afficher plutôt qu'un compteur faux."""
     n, _ = _with_status(None)
-    assert n.show_widget("uptime") is False
+    assert n.show_widget("uptime") is None
 
 
 def test_uptime_avec_date_illisible():
     n, _ = _with_status("pas-une-date")
-    assert n.show_widget("uptime") is False
+    assert n.show_widget("uptime") is None
 
 
 # ── saluts (widget 9) ──
@@ -465,7 +465,7 @@ def test_le_widget_poll_est_route_vers_le_sondage():
     assert n.show_widget(
         "poll", "", question="vous aimez le chocolat ?",
         options=["Oui", "Non"], seconds=30,
-    ) is True
+    ) is not None
     events = [q.get_nowait() for _ in range(q.qsize())]
     widget = next(e for e in events if e["type"] == "widget")
     assert widget["kind"] == "poll"
@@ -477,7 +477,7 @@ def test_le_widget_poll_est_route_vers_le_sondage():
 
 def test_le_widget_poll_refuse_une_question_vide():
     n, _, _ = _narrator()
-    assert n.show_widget("poll", "", options=["Oui", "Non"]) is False
+    assert n.show_widget("poll", "", options=["Oui", "Non"]) is None
 
 
 # ── mode test hors live (widget de réglage) ──
@@ -519,3 +519,98 @@ def test_un_vrai_live_reste_prioritaire_apres_expiration():
     n.force_live(30)
     n.force_live(0)
     assert n.is_active() is True
+
+
+# ── clôture du sondage ──
+
+def test_la_cloture_designe_le_gagnant():
+    n, feed, _ = _narrator()
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=30)
+    n._count_vote("alice", "1"); n._count_vote("bob", "1"); n._count_vote("carol", "2")
+    r = n.close_poll()
+    assert r["winner"] == "Oui"
+    assert r["tally"] == [2, 1]
+    assert r["tied"] is False
+
+
+def test_la_cloture_affiche_le_resultat_a_l_ecran():
+    """Sans ça le dépouillement s'efface sans jamais annoncer de gagnant."""
+    n, feed, _ = _narrator()
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=30)
+    n._count_vote("alice", "1")
+    q = feed.subscribe()
+    n.close_poll()
+    last = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][-1]
+    assert last["params"]["final"] is True
+    assert last["params"]["winner"] == 0
+    assert last["params"]["seconds"] == 0
+
+
+def test_une_egalite_ne_designe_personne():
+    n, _, _ = _narrator()
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=30)
+    n._count_vote("alice", "1"); n._count_vote("bob", "2")
+    r = n.close_poll()
+    assert r["tied"] is True and r["winner"] is None
+
+
+def test_un_sondage_sans_vote_se_clot_quand_meme():
+    n, _, _ = _narrator()
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=30)
+    r = n.close_poll()
+    assert r["total"] == 0 and r["winner"] is None
+    assert "personne n'a voté" in n.poll_result_line()
+
+
+def test_wally_peut_enoncer_le_resultat():
+    """« Alors, ça a donné quoi ? » doit avoir une réponse."""
+    n, _, _ = _narrator()
+    assert n.poll_result_line() == ""          # aucun sondage encore
+    n.start_poll("vous aimez le chocolat ?", ["Oui", "Non"], seconds=30)
+    n._count_vote("alice", "1")
+    n.close_poll()
+    line = n.poll_result_line()
+    assert "Oui l'emporte" in line and "vous aimez le chocolat ?" in line
+
+
+def test_le_resultat_est_consigne_dans_le_flux_du_stream():
+    """C'est ce qui le rend visible dans le prompt — donc répondable. Et sans
+    réveiller le narrateur : Wally n'a pas à réagir à son propre résultat."""
+    from unittest.mock import MagicMock
+    feed_stream = MagicMock()
+    n, _, _ = _narrator()
+    n._stream_feed = feed_stream
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=30)
+    n._count_vote("alice", "1")
+    n.close_poll()
+    args, kwargs = feed_stream.record.call_args
+    assert kwargs["notify"] is False
+    assert "Oui" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_le_sondage_se_clot_tout_seul_a_l_echeance():
+    import asyncio
+    n, feed, _ = _narrator()
+    n.start_poll("chocolat ?", ["Oui", "Non"], seconds=5)
+    n._poll["ends_at"] = time.monotonic()      # échéance immédiate
+    n._poll_task.cancel()
+    n._schedule_poll_close(0)
+    await asyncio.sleep(0.05)
+    assert n._poll is None                      # clos sans intervention
+    assert n._last_poll is not None
+
+
+# ── le tirage remonte à l'appelant ──
+
+def test_le_tirage_du_de_est_rendu_a_l_appelant():
+    """« lance un dé » doit pouvoir répondre le résultat, pas « c'est à l'écran »."""
+    n, _, _ = _narrator()
+    out = n.show_widget("dice", "allez")
+    assert out["widget"] == "dice" and 1 <= out["result"] <= 6
+
+
+def test_le_tirage_de_la_roue_est_rendu_a_l_appelant():
+    n, _, _ = _narrator()
+    out = n.show_widget("wheel", "", options=["A", "B", "C"])
+    assert out["options"][out["index"]] in ("A", "B", "C")

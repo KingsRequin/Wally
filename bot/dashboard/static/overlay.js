@@ -208,18 +208,19 @@
       qText.textContent = String(p.question || "");
       const left = el("span", "left");
       left.textContent = p.seconds > 0 ? `${p.seconds}s` : "terminé";
+      const winner = Number.isInteger(p.winner) ? p.winner : -1;
       q.append(qText, left);
       box.appendChild(q);
 
       options.forEach((label, i) => {
         const votes = tally[i] || 0;
         const pct = total ? Math.round((votes / total) * 100) : 0;
-        const opt = el("div", "opt");
+        const opt = el("div", i === winner ? "opt win" : "opt");
         const row = el("div", "row");
         const name = el("span", "");
         name.textContent = `${i + 1}. ${label}`;
         const count = el("span", "");
-        count.textContent = total ? `${pct}% (${votes})` : "—";
+        count.textContent = total ? `${pct}% (${votes})` : (p.final ? "0" : "—");
         row.append(name, count);
         const bar = el("div", "bar");
         const fill = document.createElement("span");

@@ -17,6 +17,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 """
 from __future__ import annotations
 
+import asyncio
 import random
 import time
 from collections.abc import Callable
@@ -86,6 +87,7 @@ class OverlayNarrator:
         min_interval_s: float = _MIN_THOUGHT_INTERVAL_S,
         event_interval_s: float = _MIN_EVENT_INTERVAL_S,
         stream_status: Optional[Callable[[], dict]] = None,
+        stream_feed=None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
@@ -95,10 +97,15 @@ class OverlayNarrator:
         # Statut du live ({live, title, category, viewers, started_at}) pour les
         # widgets qui ont besoin de données réelles (uptime).
         self._stream_status = stream_status
+        # Le résultat d'un sondage y est consigné : c'est ce qui le rend
+        # visible dans le prompt, donc répondable.
+        self._stream_feed = stream_feed
         self._greeted: set[str] = set()
         self._was_live: bool = False
         self._force_until: float = 0.0
         self._poll: Optional[dict] = None
+        self._poll_task: Optional[asyncio.Task] = None
+        self._last_poll: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -233,15 +240,17 @@ class OverlayNarrator:
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
-    ) -> bool:
+    ) -> Optional[dict]:
         """Affiche un widget décidé par Wally, avec son commentaire.
 
-        Retourne False si le widget est inconnu, hors live, ou si les données
-        manquent — auquel cas rien n'est publié.
+        Retourne les paramètres publiés — dont le tirage — pour que l'appelant
+        SACHE ce qui s'affiche : « lance un dé » doit pouvoir répondre le
+        résultat, pas « c'est à l'écran ». None si le widget est inconnu, hors
+        live, ou si les données manquent : rien n'est alors publié.
         """
         widget = (widget or "").strip()
         if widget not in self._WIDGETS or not self._live():
-            return False
+            return None
 
         params: dict = {}
         if widget == "coinflip":
@@ -260,7 +269,7 @@ class OverlayNarrator:
         elif widget == "wheel":
             options = [str(o).strip()[:24] for o in (extra.get("options") or []) if str(o).strip()]
             if len(options) < 2:
-                return False  # une roue à une case n'a aucun intérêt
+                return None  # une roue à une case n'a aucun intérêt
             options = options[:8]
             # L'index gagnant est décidé ici : Wally peut donc le forcer.
             try:
@@ -273,7 +282,7 @@ class OverlayNarrator:
             try:
                 seconds = int(result)
             except (TypeError, ValueError):
-                return False
+                return None
             params = {"seconds": max(1, min(600, seconds))}
             if extra.get("done"):
                 params["done"] = str(extra["done"])[:20]
@@ -282,14 +291,14 @@ class OverlayNarrator:
             try:
                 percent = float(result)
             except (TypeError, ValueError):
-                return False
+                return None
             params = {"percent": max(0.0, min(100.0, percent)),
                       "label": str(extra.get("label") or comment)[:40]}
 
         elif widget == "pinned":
             text = str(extra.get("text") or "").strip()
             if not text:
-                return False
+                return None
             params = {"author": str(extra.get("author") or "")[:24], "text": text[:160]}
 
         elif widget == "poll":
@@ -302,15 +311,16 @@ class OverlayNarrator:
             except (TypeError, ValueError):
                 seconds = _POLL_DEFAULT_S
             if not self.start_poll(question, options, seconds=seconds):
-                return False
+                return None
             # start_poll a déjà publié le widget ; le commentaire ferait doublon
             # avec la question affichée.
-            return True
+            return {"widget": "poll", "question": question, "options": options,
+                    "seconds": seconds}
 
         elif widget == "uptime":
             label = self._uptime_label()
             if not label:
-                return False  # pas de live daté : rien à afficher
+                return None  # pas de live daté : rien à afficher
             params = {"text": label}
             widget = "counter"  # même rendu, données calculées ici
 
@@ -320,7 +330,7 @@ class OverlayNarrator:
         if comment:
             self._mark_spoken()
             self._feed.say(comment, mode="speech")
-        return True
+        return {"widget": widget, **params}
 
     # ── saluts (widget 9) ─────────────────────────────────────────────────
 
@@ -394,14 +404,101 @@ class OverlayNarrator:
             "ends_at": time.monotonic() + seconds,
         }
         self._publish_poll(seconds)
+        # Clôture planifiée : sans elle, le dépouillement s'effacerait sans
+        # jamais annoncer de gagnant, et Wally ne saurait pas quoi répondre si on
+        # lui demande le résultat.
+        self._schedule_poll_close(seconds)
         return True
+
+    def _schedule_poll_close(self, seconds: int) -> None:
+        if self._poll_task is not None:
+            self._poll_task.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._poll_task = None      # hors boucle (tests synchrones)
+            return
+        self._poll_task = loop.create_task(self._close_poll_after(seconds))
+
+    async def _close_poll_after(self, seconds: int) -> None:
+        try:
+            await asyncio.sleep(seconds)
+            self.close_poll()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.warning("Overlay: clôture du sondage en erreur: {e}", e=exc)
+
+    def close_poll(self) -> Optional[dict]:
+        """Termine le sondage : gagnant à l'écran, résultat retenu.
+
+        Le résultat est aussi consigné dans le flux du stream, sans réveiller le
+        narrateur : c'est ce qui le rend visible dans le prompt, donc répondable
+        quand quelqu'un demande « alors, ça a donné quoi ? ».
+        """
+        poll = self._poll
+        if not poll:
+            return None
+        tally = [0] * len(poll["options"])
+        for index in poll["votes"].values():
+            tally[index] += 1
+        total = sum(tally)
+        best = max(range(len(tally)), key=lambda i: tally[i]) if total else None
+        # Égalité en tête : il n'y a pas de gagnant à désigner.
+        tied = total > 0 and tally.count(tally[best]) > 1
+        result = {
+            "question": poll["question"],
+            "options": list(poll["options"]),
+            "tally": tally,
+            "total": total,
+            "winner": None if (best is None or tied) else poll["options"][best],
+            "tied": tied,
+        }
+        self._last_poll = result
+        self._poll = None
+        self._feed.widget(
+            "poll",
+            question=poll["question"],
+            options=poll["options"],
+            tally=tally,
+            seconds=0,
+            final=True,
+            winner=-1 if (best is None or tied) else best,
+            duration=8,          # le résultat reste lisible avant de s'effacer
+        )
+        feed = self._stream_feed
+        if feed is None:
+            from bot.core.stream_feed import active_stream_feed
+            feed = active_stream_feed()
+        if feed is not None:
+            try:
+                feed.record(self.poll_result_line(), notify=False)
+            except Exception as exc:  # noqa: BLE001 — jamais bloquant
+                logger.debug("Overlay: résultat du sondage non consigné: {e}", e=exc)
+        logger.info("Overlay: sondage clos — {r}", r=self.poll_result_line())
+        return result
+
+    def poll_result_line(self) -> str:
+        """Le dernier résultat, en une phrase — vide s'il n'y en a jamais eu."""
+        r = self._last_poll
+        if not r:
+            return ""
+        if not r["total"]:
+            return f"Sondage « {r['question']} » : personne n'a voté."
+        detail = ", ".join(
+            f"{o} {n}" for o, n in zip(r["options"], r["tally"])
+        )
+        if r["tied"]:
+            return f"Sondage « {r['question']} » : égalité ({detail})."
+        return (f"Sondage « {r['question']} » : {r['winner']} l'emporte "
+                f"({detail}, {r['total']} votes).")
 
     def _count_vote(self, author: str, text: str) -> None:
         poll = self._poll
         if not poll:
             return
         if time.monotonic() > poll["ends_at"]:
-            self._poll = None
+            self.close_poll()      # la tâche a pu être manquée : on clôt ici
             return
         # Un vote = le seul chiffre du message. « 1 » compte, « j'ai 2 chats » non.
         token = (text or "").strip()

@@ -293,6 +293,10 @@
     .poll .q .left { font-size: 13px; color: #b79cff; font-variant-numeric: tabular-nums; }
     .poll .opt { margin-bottom: 6px; font-size: 13px; }
     .poll .opt .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    /* Gagnant, une fois le décompte terminé. Teinte + graisse plutôt qu'un cadre
+       supplémentaire : plus lisible dans un widget de 250 px. */
+    .poll .opt.win .row { color: #7dffb0; font-weight: 700; }
+    .poll .opt.win .bar span { background: linear-gradient(90deg, #34d17f, #7dffb0); }
     .poll .bar {
       height: 9px;
       background: rgba(255, 255, 255, .1);

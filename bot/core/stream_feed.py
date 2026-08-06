@@ -34,6 +34,12 @@ CHAT_TTL = 900.0     # 15 min — le chat vieillit beaucoup plus vite
 _active: "StreamFeed | None" = None
 
 
+def active_stream_feed() -> "StreamFeed | None":
+    """Le flux actif, ou None. Accès paresseux : le narrateur d'overlay est
+    construit avant que le flux n'existe."""
+    return _active
+
+
 def current_stream_feed_block(include_chat: bool = True) -> Optional[str]:
     """Bloc de flux prêt à injecter au prompt, ou None si rien à dire."""
     if _active is None:
@@ -89,8 +95,12 @@ class StreamFeed:
         global _active
         _active = self
 
-    def record(self, description: str) -> None:
+    def record(self, description: str, *, notify: bool = True) -> None:
         """Empile un événement du stream (déjà rédigé en français).
+
+        `notify=False` consigne sans réveiller l'observateur : pour un fait que
+        Wally vient lui-même de produire, sur lequel il n'a pas à réagir une
+        seconde fois.
 
         Le doublon consécutif est ignoré : un poll qui « flappe » (catégorie qui
         revient à sa valeur précédente puis repart) ne doit pas remplir le tampon
@@ -103,7 +113,7 @@ class StreamFeed:
             return
         self._events.append((time.monotonic(), description))
         logger.debug("StreamFeed: {d}", d=description)
-        if self._observer is not None:
+        if notify and self._observer is not None:
             try:
                 self._observer(description)
             except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux

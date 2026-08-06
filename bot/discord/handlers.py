@@ -166,6 +166,33 @@ def _overlay_narrator(bot):
     )
 
 
+def _overlay_outcome(shown: dict) -> str:
+    """Traduit le tirage en fait énonçable.
+
+    Sans ça, l'outil répondait « c'est à l'écran » : Wally lançait le dé sans
+    jamais savoir ce qu'il donnait, et ne pouvait donc pas l'annoncer.
+    """
+    widget = shown.get("widget")
+    if widget == "coinflip":
+        # heads/tails suit le rendu de l'overlay : P d'un côté, F de l'autre.
+        return f"C'est tombé sur {'PILE' if shown.get('result') != 'tails' else 'FACE'}. Annonce-le."
+    if widget == "dice":
+        return f"Le dé donne {shown.get('result')}. Annonce-le."
+    if widget == "wheel":
+        options = shown.get("options") or []
+        index = shown.get("index", 0)
+        if 0 <= index < len(options):
+            return f"La roue s'arrête sur « {options[index]} ». Annonce-le."
+    if widget == "poll":
+        return ("Le sondage est ouvert, le chat vote en tapant le numéro. Tu "
+                "auras le résultat à la fin du décompte — ne l'invente pas d'ici là.")
+    if widget == "countdown":
+        return f"Compte à rebours lancé sur {shown.get('seconds')} secondes."
+    if widget == "gauge":
+        return f"Jauge affichée à {shown.get('percent')}%."
+    return f"'{widget}' est à l'écran."
+
+
 def run_overlay_tool(bot, args: dict) -> str:
     """Exécute `show_overlay` et rend un compte rendu HONNÊTE.
 
@@ -187,7 +214,7 @@ def run_overlay_tool(bot, args: dict) -> str:
         logger.warning("show_overlay a échoué : {e}", e=exc)
         return json.dumps({"status": "error", "message": "L'affichage a échoué."})
     if shown:
-        return json.dumps({"status": "ok", "message": f"'{widget}' est à l'écran."})
+        return json.dumps({"status": "ok", "message": _overlay_outcome(shown)})
     if not narrator.is_active():
         return json.dumps({"status": "offline", "message": (
             "Rien affiché : il n'y a pas de live en cours, l'overlay ne s'affiche "

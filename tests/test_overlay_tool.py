@@ -14,9 +14,13 @@ from unittest.mock import MagicMock
 from bot.discord.handlers import _overlay_narrator, run_overlay_tool
 
 
-def _bot(shown=True, active=True):
+def _bot(shown=True, active=True, widget_result=None):
     narrator = MagicMock()
-    narrator.show_widget.return_value = shown
+    # show_widget rend les paramètres publiés — c'est ce qui permet à Wally
+    # d'annoncer le tirage plutôt que « c'est à l'écran ».
+    narrator.show_widget.return_value = (
+        (widget_result or {"widget": "coinflip", "result": "heads"}) if shown else None
+    )
     narrator.is_active.return_value = active
     return SimpleNamespace(overlay_narrator=narrator), narrator
 
@@ -67,3 +71,30 @@ def test_le_narrateur_est_trouve_depuis_le_chemin_twitch():
     bot, narrator = _bot()
     twitch_bot = SimpleNamespace(discord_bot=bot)
     assert _overlay_narrator(twitch_bot) is narrator
+
+
+# ── la réponse de Wally doit PORTER le résultat ──
+
+def test_le_de_annonce_son_resultat():
+    bot, _ = _bot(widget_result={"widget": "dice", "result": 4})
+    out = json.loads(run_overlay_tool(bot, {"widget": "dice"}))
+    assert "4" in out["message"]
+
+
+def test_pile_ou_face_annonce_son_cote():
+    bot, _ = _bot(widget_result={"widget": "coinflip", "result": "tails"})
+    assert "FACE" in json.loads(run_overlay_tool(bot, {"widget": "coinflip"}))["message"]
+    bot, _ = _bot(widget_result={"widget": "coinflip", "result": "heads"})
+    assert "PILE" in json.loads(run_overlay_tool(bot, {"widget": "coinflip"}))["message"]
+
+
+def test_la_roue_annonce_l_option_gagnante():
+    bot, _ = _bot(widget_result={"widget": "wheel", "options": ["A", "B"], "index": 1})
+    assert "B" in json.loads(run_overlay_tool(bot, {"widget": "wheel"}))["message"]
+
+
+def test_le_sondage_interdit_d_inventer_le_resultat():
+    """Le résultat n'existe qu'à la fin du décompte."""
+    bot, _ = _bot(widget_result={"widget": "poll", "question": "?", "options": ["a", "b"]})
+    msg = json.loads(run_overlay_tool(bot, {"widget": "poll"}))["message"]
+    assert "invente" in msg
