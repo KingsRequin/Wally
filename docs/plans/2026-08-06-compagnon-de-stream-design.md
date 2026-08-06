@@ -93,7 +93,37 @@ chemin Twitch home. Il faudra les exposer ici.
 - Affichage proportionnel à la longueur : ~2,5 s pour cinq mots, jamais moins de 2 s.
 - Fond semi-opaque et contour : doit rester lisible sur n'importe quel gameplay.
 
-### 5. L'avatar (Rive.app)
+### 5. Deux bulles : il parle, ou il pense
+
+L'overlay a **deux états d'expression**, visuellement distincts :
+
+| | Bulle de **dialogue** | Bulle de **pensée** |
+|---|---|---|
+| Forme | bulle classique, pointe vers l'avatar | nuage, petits ronds (convention BD) |
+| Quand | il y a du monde en vocal, ou un moment le justifie | personne en vocal, ou rien à commenter |
+| Contenu | réaction à ce qui se passe | pensées libres |
+| Rythme | rare, sur déclencheur | régulier, il occupe l'écran |
+
+**La bulle de pensée résout le cas « live sans vocal »** : plutôt que de rester muet, Wally
+vit à l'écran. Il pense aux gens présents dans le chat, à ce qu'il voit passer, ou à des
+choses sans rapport.
+
+**Source : la boucle cognitive existante.** Wally produit déjà des `THINK` en continu, et
+`CognitiveFeed` les diffuse **déjà en SSE** (`/api/public/sse/cognitive`, utilisé par le site
+public). Rien à inventer : il faut un rendu court de ces pensées, pas un nouveau mécanisme.
+⚠️ Les pensées internes sont longues et introspectives — il faudra une version condensée
+(quelques mots), pas l'extrait brut.
+
+### 6. L'attente est affichée
+
+Trois petits points animés dans la bulle **pendant la génération**.
+
+Effet de bord précieux : ça **désamorce le problème de latence**. Neuf secondes d'écran vide
+sont insupportables ; neuf secondes avec « il réfléchit » se lisent naturellement, et
+l'arrivée du texte devient une petite récompense. L'abandon au-delà d'un délai reste
+nécessaire, mais le seuil peut être plus généreux que les ~3 s envisagées.
+
+### 7. L'avatar (Rive.app)
 
 Meilleur que les GIF actuels : transitions fluides, plus léger, machine à états pilotable.
 Entrées à exposer :
@@ -102,7 +132,8 @@ Entrées à exposer :
 |---|---|---|
 | `emotion` | énum (5 émotions) | état émotionnel réel de Wally |
 | `intensity` | 0 → 1 | paliers existants (idle / low / mid / high) |
-| `speaking` | déclencheur | au moment où la bulle apparaît |
+| `speaking` | déclencheur | au moment où la bulle de dialogue apparaît |
+| `thinking` | booléen | pendant la génération, et sur bulle de pensée |
 
 Effet secondaire intéressant : l'avatar rend **visible l'humeur réelle** de Wally aux viewers.
 Il vit en continu, même sans parler.
@@ -184,12 +215,15 @@ savoir que Wally transcrit.
 Par phases, chacune utilisable seule.
 
 **Phase 1 — sans vocal, testable immédiatement.**
-Bulle sur l'overlay + réactions aux événements de stream et aux vagues de chat. Ne dépend d'aucun
-accord. Permet de régler le rythme et le format en conditions réelles.
+Les deux bulles sur l'overlay (dialogue + pensée), réactions aux événements de stream et aux vagues
+de chat, pensées branchées sur `CognitiveFeed`. Ne dépend d'aucun accord. C'est la phase qui permet
+de régler le rythme, le format et la fréquence des pensées en conditions réelles — et de savoir si
+le concept tient **avant** d'investir dans le vocal et dans Rive.
 
 **Phase 2 — l'écoute.**
 Auto-join du salon `1267757914953875487` sur passage en live, mode écoute (sans TTS, sans départ
-automatique), transcription branchée sur `StreamFeed`.
+automatique), transcription branchée sur `StreamFeed`, et prise en compte d'un déplacement manuel
+depuis Discord.
 
 **Phase 3 — l'avatar Rive.**
 Remplacement des GIF, machine à états, `speaking` synchronisé avec la bulle.
@@ -199,9 +233,18 @@ Interpellation par les viewers, reconnaissance des habitués, alimentation du jo
 
 ---
 
-## Questions ouvertes
+## Points tranchés (2026-08-06)
 
-- Si Azraël change de salon vocal en cours de stream, Wally doit-il le suivre ?
-- Que fait-il quand le live est lancé mais qu'il n'y a personne en vocal ?
-- La bulle doit-elle afficher un état « il réfléchit », ou apparaître seulement quand le texte est
-  prêt ?
+- **Salon fixe.** Azraël ne change pas de salon en cours de live. Si ça arrive, on **déplace Wally
+  manuellement depuis Discord** — le bot doit donc accepter d'être déplacé et continuer d'écouter
+  dans le nouveau salon, plutôt que de revenir de force sur `1267757914953875487`.
+  (`on_voice_state_update` signale déjà le déplacement du bot lui-même.)
+- **Live sans vocal** → bulle de pensée, alimentée par la boucle cognitive.
+- **Génération** → trois points animés, l'attente est visible.
+
+## Questions encore ouvertes
+
+- À quelle fréquence les bulles de pensée ? Assez pour que l'overlay vive, assez peu pour ne pas
+  lasser. À régler en conditions réelles — c'est exactement ce que la phase 1 permet de tester.
+- Faut-il tarir les pensées quand une conversation est en cours (pour ne pas mélanger les deux
+  registres), ou les laisser coexister ?
