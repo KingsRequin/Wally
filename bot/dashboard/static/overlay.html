@@ -41,8 +41,8 @@
       height: 200px;
       flex: 0 0 auto;
     }
-    /* Vise l'enfant du slot, quel qu'il soit (img, canvas Rive…) : l'avatar à
-       venir hérite de la mise en page sans qu'on retouche ce fichier. */
+    /* Vise l'enfant du slot, quel qu'il soit (video, img…) : remplacer l'avatar
+       ne demande pas de retoucher ce fichier. */
     #avatar-slot > * {
       width: 100%;
       height: 100%;
@@ -205,6 +205,10 @@
       100% { transform: var(--final-rotation) translateY(0); }
     }
 
+    /* Plusieurs dés : alignés, avec leur propre perspective pour que chaque
+       cube tourne sur lui-même. */
+    .dice-row { display: flex; gap: 14px; perspective: 600px; }
+
     /* Roue — secteurs colorés, rotation amortie, curseur fixe en haut. */
     .wheel-box { position: relative; width: 150px; height: 150px; }
     .wheel {
@@ -338,9 +342,13 @@
 </head>
 <body>
   <div id="stage">
-    <!-- Emplacement de l'avatar : vide en attendant le Rive. La bulle se
-         positionne par rapport à ce slot, d'où sa taille conservée. -->
-    <div id="avatar-slot"></div>
+    <!-- Avatar : animation WebM en boucle, volontairement PAS liée aux émotions
+         (Rive écarté, son export étant payant). `muted` est requis pour que la
+         lecture automatique démarre sans interaction, ce qu'OBS ne fait jamais. -->
+    <div id="avatar-slot">
+      <video id="avatar" src="/static/avatar/wally.webm"
+             autoplay loop muted playsinline disablepictureinpicture></video>
+    </div>
     <div id="bubble" class="speech"></div>
   </div>
 

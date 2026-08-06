@@ -121,7 +121,11 @@ def _overlay_outcome(shown: dict) -> str:
         # heads/tails suit le rendu de l'overlay : P d'un côté, F de l'autre.
         return f"C'est tombé sur {'PILE' if shown.get('result') != 'tails' else 'FACE'}. Annonce-le."
     if widget == "dice":
-        return f"Le dé donne {shown.get('result')}. Annonce-le."
+        values = shown.get("results") or [shown.get("result")]
+        if len(values) > 1:
+            joined = " et ".join(str(v) for v in values)
+            return f"Les dés donnent {joined} (total {sum(values)}). Annonce-le."
+        return f"Le dé donne {values[0]}. Annonce-le."
     if widget == "wheel":
         options = shown.get("options") or []
         index = shown.get("index", 0)
@@ -1905,7 +1909,10 @@ async def _respond(
                     await bot.voice_service.leave()
                     return json.dumps({"status": "ok", "message": "Quitté le vocal."})
                 return json.dumps({"status": "ok", "message": "Pas en vocal."})
-            return f"Unknown tool: {name}"
+            return json.dumps({"status": "no_such_tool", "message": (
+                f"L'outil '{name}' n'existe pas. N'invente pas d'outil : "
+                "utilise ceux qu'on te donne, ou réponds simplement — ton texte est déjà envoyé dans la conversation."
+            )})
 
         async def _tool_executor(name: str, arguments: str) -> str:
             result = await _tool_executor_impl(name, arguments)

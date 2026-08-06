@@ -677,3 +677,26 @@ async def test_un_llm_en_erreur_eteint_les_trois_points():
     thinking = [e for e in (q.get_nowait() for _ in range(q.qsize()))
                 if e["type"] == "thinking"]
     assert thinking[-1]["active"] is False
+
+
+# ── plusieurs dés ──
+
+def test_deux_des_sont_reellement_tires():
+    """« lance deux dés » affichait un seul dé, et Wally annonçait deux valeurs
+    inventées."""
+    n, _, _ = _narrator()
+    out = n.show_widget("dice", "", count=2)
+    assert len(out["results"]) == 2
+    assert all(1 <= v <= 6 for v in out["results"])
+
+
+def test_le_nombre_de_des_est_borne():
+    n, _, _ = _narrator()
+    assert len(n.show_widget("dice", "", count=99)["results"]) == 4
+    assert len(n.show_widget("dice", "", count=0)["results"]) == 1
+
+
+def test_un_de_unique_garde_son_format():
+    n, _, _ = _narrator()
+    out = n.show_widget("dice", "", result=5)
+    assert out["result"] == 5 and out["results"] == [5]

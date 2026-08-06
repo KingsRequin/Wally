@@ -141,6 +141,7 @@ OVERLAY_TOOL_SPEC = {
                 },
                 "question": {"type": "string", "description": "La question, pour poll."},
                 "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
+                "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
                 "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
                 "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
                 "label": {"type": "string", "description": "L'intitulé, pour gauge."},
@@ -402,11 +403,23 @@ class OverlayNarrator:
                 ("heads", "tails")
             )
         elif widget == "dice":
+            # Plusieurs dés d'un coup : « lance deux dés » donnait un seul dé à
+            # l'écran, et Wally annonçait deux valeurs inventées.
             try:
-                value = int(result)
+                count = int(extra.get("count") or 1)
             except (TypeError, ValueError):
-                value = random.randint(1, 6)
-            params["result"] = max(1, min(6, value))
+                count = 1
+            count = max(1, min(4, count))
+            values: list[int] = []
+            if result is not None and count == 1:
+                try:
+                    values = [max(1, min(6, int(result)))]
+                except (TypeError, ValueError):
+                    values = []
+            if not values:
+                values = [random.randint(1, 6) for _ in range(count)]
+            params["results"] = values
+            params["result"] = values[0]   # compat : un seul dé reste un entier
         elif widget == "counter":
             params["text"] = str(result or comment)[:40]
 

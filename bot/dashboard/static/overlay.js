@@ -92,7 +92,16 @@
     },
 
     dice(p) {
-      const value = Math.min(6, Math.max(1, parseInt(p.result, 10) || 1));
+      // Un ou plusieurs dés : le serveur envoie `results`, `result` reste pour
+      // la compatibilité d'un tirage unique.
+      const values = Array.isArray(p.results) && p.results.length
+        ? p.results : [p.result];
+      if (values.length > 1) {
+        const row = el("div", "dice-row");
+        values.forEach((v) => row.appendChild(BUILDERS.dice({ result: v })));
+        return row;
+      }
+      const value = Math.min(6, Math.max(1, parseInt(values[0], 10) || 1));
       const die = el("div", "die");
       // Rotation finale qui amène la face voulue vers la caméra.
       const FINAL = {

@@ -437,7 +437,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     channel_id=channel_name,
                 )
                 return json.dumps(result)
-            return f"Unknown tool: {name}"
+            return json.dumps({"status": "no_such_tool", "message": (
+                f"L'outil '{name}' n'existe pas. N'invente pas d'outil : "
+                "utilise ceux qu'on te donne, ou réponds simplement — ton texte est déjà envoyé dans la conversation."
+            )})
 
         async def _tool_executor(name: str, arguments: str) -> str:
             result = await _tool_executor_impl(name, arguments)

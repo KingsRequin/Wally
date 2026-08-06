@@ -98,3 +98,9 @@ def test_le_sondage_interdit_d_inventer_le_resultat():
     bot, _ = _bot(widget_result={"widget": "poll", "question": "?", "options": ["a", "b"]})
     msg = json.loads(run_overlay_tool(bot, {"widget": "poll"}))["message"]
     assert "invente" in msg
+
+
+def test_plusieurs_des_sont_annonces_avec_leur_total():
+    bot, _ = _bot(widget_result={"widget": "dice", "results": [3, 5], "result": 3})
+    msg = json.loads(run_overlay_tool(bot, {"widget": "dice", "count": 2}))["message"]
+    assert "3 et 5" in msg and "8" in msg
