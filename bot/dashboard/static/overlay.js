@@ -85,6 +85,84 @@
     setTimeout(() => slot.classList.remove("reacting"), 1000);
   }
 
+  // ── Widgets ──────────────────────────────────────────────────────────────
+  // Rendus en CSS 3D plutôt qu'avec un moteur : plus léger, et composé par le
+  // GPU du streamer — qui fait déjà tourner le jeu et l'encodage.
+  const widgets = document.getElementById("widgets");
+  let widgetTimer = null;
+
+  const BUILDERS = {
+    // Le résultat vient de Wally, pas du hasard du navigateur : c'est ce qui lui
+    // permet de commenter — et de tricher.
+    coinflip(p) {
+      const heads = p.result !== "tails";
+      const coin = el("div", "coin");
+      // Demi-tours pairs → pile reste face à nous ; impairs → on voit l'autre.
+      const halfTurns = (heads ? 6 : 7) * 180;
+      coin.style.setProperty("--half-turns", `${halfTurns}deg`);
+      coin.style.setProperty("--half-turns-mid", `${halfTurns / 2}deg`);
+      coin.append(faceEl("face", "P"), faceEl("face tails", "F"));
+      return coin;
+    },
+
+    dice(p) {
+      const value = Math.min(6, Math.max(1, parseInt(p.result, 10) || 1));
+      const die = el("div", "die");
+      // Rotation finale qui amène la face voulue vers la caméra.
+      const FINAL = {
+        1: "rotateX(0deg) rotateY(0deg)",
+        2: "rotateY(-90deg)",
+        3: "rotateY(180deg)",
+        4: "rotateY(90deg)",
+        5: "rotateX(-90deg)",
+        6: "rotateX(90deg)",
+      };
+      die.style.setProperty("--final-rotation", FINAL[value]);
+      for (let i = 1; i <= 6; i++) {
+        const side = el("div", `side s${i}`);
+        side.textContent = String(i);
+        die.appendChild(side);
+      }
+      return die;
+    },
+
+    counter(p) {
+      const node = el("div", "counter");
+      node.textContent = String(p.text || "");
+      return node;
+    },
+  };
+
+  function el(tag, className) {
+    const n = document.createElement(tag);
+    n.className = className;
+    return n;
+  }
+
+  function faceEl(className, label) {
+    const n = el("div", className);
+    n.textContent = label;
+    return n;
+  }
+
+  function showWidget(kind, params) {
+    const build = BUILDERS[kind];
+    if (!build) return;
+    clearTimeout(widgetTimer);
+
+    const box = el("div", "widget");
+    box.appendChild(build(params));
+    widgets.replaceChildren(box);
+    void box.offsetWidth;
+    box.classList.add("visible");
+
+    const seconds = Math.min(20, Math.max(2, Number(params.duration) || 5));
+    widgetTimer = setTimeout(() => {
+      box.classList.remove("visible");
+      setTimeout(() => widgets.replaceChildren(), 300);
+    }, seconds * 1000);
+  }
+
   // ── Flux SSE ─────────────────────────────────────────────────────────────
   function connect(url, onMessage) {
     let source;
@@ -109,7 +187,7 @@
       case "bubble":   say(event.text, event.mode, event.duration); break;
       case "thinking": showThinking(event.active); break;
       case "react":    react(); break;
-      case "widget":   /* phase 1b */ break;
+      case "widget":   showWidget(event.kind, event.params || {}); break;
     }
   });
 

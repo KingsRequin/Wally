@@ -121,12 +121,85 @@
       40%           { opacity: 1;   transform: translateY(-3px); }
     }
 
-    /* ── Widgets (pile ou face, dé, uptime…) — phase 1b ─────────────────── */
+    /* ── Widgets (pile ou face, dé, uptime…) ────────────────────────────── */
     #widgets {
       position: absolute;
       left: 12px;
       bottom: 230px;
       pointer-events: none;
+      /* Perspective partagée : les enfants tournent en 3D réelle. */
+      perspective: 600px;
+    }
+    .widget {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity .25s ease, transform .25s ease;
+    }
+    .widget.visible { opacity: 1; transform: translateY(0); }
+
+    /* Pièce — deux faces, rotation sur Y. Le classique CSS 3D : plus léger
+       qu'un moteur, et composé par le GPU. */
+    .coin {
+      position: relative;
+      width: 90px; height: 90px;
+      transform-style: preserve-3d;
+      animation: coin-flip 1.6s cubic-bezier(.3, .1, .2, 1) forwards;
+    }
+    .coin .face {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      backface-visibility: hidden;
+      font-size: 30px; font-weight: 700; color: #3a2c00;
+      background: radial-gradient(circle at 34% 30%, #ffe9a8, #e8b93d 55%, #b8860b);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .5), inset 0 0 0 4px rgba(255,255,255,.25);
+    }
+    .coin .tails { transform: rotateY(180deg); }
+    /* Le nombre de demi-tours décide de la face visible à l'arrêt :
+       pair → pile, impair → face. Piloté par une variable, donc par Wally. */
+    @keyframes coin-flip {
+      0%   { transform: rotateY(0) translateY(0); }
+      50%  { transform: rotateY(var(--half-turns-mid)) translateY(-55px); }
+      100% { transform: rotateY(var(--half-turns)) translateY(0); }
+    }
+
+    /* Dé — cube à six faces. */
+    .die {
+      position: relative;
+      width: 78px; height: 78px;
+      transform-style: preserve-3d;
+      animation: die-roll 1.5s cubic-bezier(.3, .1, .2, 1) forwards;
+    }
+    .die .side {
+      position: absolute;
+      width: 78px; height: 78px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px; font-weight: 700; color: #1a1a1a;
+      background: linear-gradient(150deg, #fdfdfd, #d8d8dc);
+      border-radius: 12px;
+      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .12);
+    }
+    .die .s1 { transform: rotateY(0deg)   translateZ(39px); }
+    .die .s2 { transform: rotateY(90deg)  translateZ(39px); }
+    .die .s3 { transform: rotateY(180deg) translateZ(39px); }
+    .die .s4 { transform: rotateY(-90deg) translateZ(39px); }
+    .die .s5 { transform: rotateX(90deg)  translateZ(39px); }
+    .die .s6 { transform: rotateX(-90deg) translateZ(39px); }
+    @keyframes die-roll {
+      0%   { transform: rotateX(0) rotateY(0) translateY(0); }
+      55%  { transform: rotateX(430deg) rotateY(380deg) translateY(-50px); }
+      100% { transform: var(--final-rotation) translateY(0); }
+    }
+
+    /* Compteur (uptime) — texte simple, lisible sur tout fond. */
+    .counter {
+      padding: 9px 16px;
+      font-size: 26px; font-weight: 600; color: #fff;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </head>

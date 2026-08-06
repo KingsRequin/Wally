@@ -72,6 +72,12 @@ async def overlay_test(request: Request) -> dict:
         state.overlay_feed.thinking(bool(data.get("active", True)))
     elif kind == "react":
         state.overlay_feed.react(str(data.get("kind", "test")))
+    elif kind == "widget":
+        widget = str(data.get("widget") or "").strip()
+        if not widget:
+            raise HTTPException(400, "widget requis")
+        params = data.get("params")
+        state.overlay_feed.widget(widget, **(params if isinstance(params, dict) else {}))
     else:
         raise HTTPException(400, f"type inconnu: {kind}")
     return {"ok": True, "subscribers": state.overlay_feed.subscriber_count}

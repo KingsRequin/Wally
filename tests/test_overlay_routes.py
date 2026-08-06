@@ -92,3 +92,31 @@ async def test_declencheur_invalide():
         await overlay_test(_Req(st, {"type": "bubble", "text": "  "}))
     with pytest.raises(HTTPException):
         await overlay_test(_Req(st, {"type": "inconnu"}))
+
+
+@pytest.mark.asyncio
+async def test_le_declencheur_publie_un_widget():
+    st = _state()
+    q = st.overlay_feed.subscribe()
+    await overlay_test(_Req(st, {
+        "type": "widget", "widget": "coinflip", "params": {"result": "tails"},
+    }))
+    e = q.get_nowait()
+    assert e["type"] == "widget" and e["kind"] == "coinflip"
+    assert e["params"]["result"] == "tails"
+
+
+@pytest.mark.asyncio
+async def test_widget_sans_nom_rejete():
+    st = _state()
+    with pytest.raises(HTTPException):
+        await overlay_test(_Req(st, {"type": "widget", "widget": "  "}))
+
+
+@pytest.mark.asyncio
+async def test_widget_sans_parametres():
+    """params absent ou mal typé ne doit pas casser l'appel."""
+    st = _state()
+    q = st.overlay_feed.subscribe()
+    await overlay_test(_Req(st, {"type": "widget", "widget": "dice", "params": "pas un dict"}))
+    assert q.get_nowait()["params"] == {}
