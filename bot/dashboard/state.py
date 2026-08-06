@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from bot.core.overlay_feed import OverlayFeed
     from bot.config import Config
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
@@ -25,6 +26,11 @@ if TYPE_CHECKING:
     from bot.intelligence.actions import ActionService
     from bot.core.update_checker import UpdateChecker
     from bot.intelligence.cognitive_feed import CognitiveFeed
+
+
+def _make_overlay_feed():
+    from bot.core.overlay_feed import OverlayFeed
+    return OverlayFeed()
 
 
 @dataclass
@@ -61,6 +67,12 @@ class AppState:
     message_count_web: int = 0
     overlay_visible: bool = True
     overlay_image_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    # Diffuseur des bulles et widgets de l'overlay de stream. Fan-out (une file
+    # par abonné) et non file unique : OBS et un navigateur de prévisualisation
+    # doivent voir la même chose.
+    overlay_feed: "OverlayFeed" = field(default_factory=lambda: _make_overlay_feed())
+    # Dernière télémétrie de rendu envoyée par l'overlay (fps, pire frame, GPU).
+    overlay_health: Optional[dict] = None
     _response_times: deque = field(default_factory=lambda: deque(maxlen=50))
 
     def _init_latency(self) -> None:

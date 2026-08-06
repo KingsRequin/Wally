@@ -152,6 +152,40 @@ async def sse_overlay(request: Request):
     )
 
 
+@public_router.get("/sse/overlay-feed")
+async def sse_overlay_feed(request: Request):
+    """Flux des bulles et widgets destinés à l'overlay de stream.
+
+    Fan-out : chaque overlay connecté (OBS, prévisualisation navigateur) obtient
+    sa propre file et voit donc les mêmes événements. Un client qui arrive reçoit
+    d'abord les derniers événements en tampon, pour ne pas démarrer sur un écran
+    vide au milieu d'un live.
+    """
+    feed = request.app.state.wally.overlay_feed
+    queue = feed.subscribe()
+
+    async def generate():
+        try:
+            for event in feed.recent():
+                yield f"data: {json.dumps(event)}\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            feed.unsubscribe(queue)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @admin_router.get("/logs/history")
 async def log_history(request: Request, lines: int = 200):
     """Retourne les dernières lignes du fichier log courant.

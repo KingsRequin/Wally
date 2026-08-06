@@ -5,98 +5,141 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wally Overlay</title>
   <style>
+    /* Overlay OBS — destiné aux VIEWERS, jamais au streamer (il ne le voit pas
+       pendant qu'il joue). Fond transparent, tout est en position fixe. */
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
       background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
       overflow: hidden;
+      height: 100vh;
+      font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+      /* Empêche OBS de sélectionner/afficher un curseur sur la source. */
+      user-select: none;
+      cursor: none;
     }
-    .overlay-container {
+
+    #stage {
+      position: absolute;
+      left: 0;
+      bottom: 0;
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      transition: opacity 0.5s ease;
+      align-items: flex-end;
+      gap: 10px;
+      padding: 12px;
+      transition: opacity .4s ease;
     }
-    .overlay-container.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-    .overlay-avatar {
+    #stage.hidden { opacity: 0; }
+
+    /* ── Avatar ─────────────────────────────────────────────────────────── */
+    #avatar-slot {
+      position: relative;
       width: 200px;
       height: 200px;
+      flex: 0 0 auto;
+    }
+    #avatar {
+      width: 100%;
+      height: 100%;
       object-fit: contain;
-      image-rendering: auto;
+      /* transform/opacity uniquement : composé par le GPU, sans repaint. */
+      transition: transform .25s ease;
+      transform-origin: bottom center;
+    }
+    /* Réaction ponctuelle (raid, série de subs) — le personnage s'emballe. */
+    #avatar-slot.reacting #avatar { animation: flare .9s ease-out; }
+    @keyframes flare {
+      0%   { transform: scale(1); }
+      30%  { transform: scale(1.18) rotate(-3deg); }
+      60%  { transform: scale(1.08) rotate(2deg); }
+      100% { transform: scale(1); }
+    }
+
+    /* ── Bulle ──────────────────────────────────────────────────────────── */
+    #bubble {
+      position: relative;
+      max-width: 300px;
+      margin-bottom: 40px;
+      padding: 11px 15px;
+      font-size: 17px;
+      line-height: 1.35;
+      color: #fff;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 16px;
+      /* Lisible sur n'importe quel gameplay, clair ou sombre. */
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+      opacity: 0;
+      transform: translateY(8px) scale(.96);
+      transition: opacity .22s ease, transform .22s ease;
+      pointer-events: none;
+    }
+    #bubble.visible { opacity: 1; transform: translateY(0) scale(1); }
+
+    /* Bulle de dialogue : pointe triangulaire vers l'avatar. */
+    #bubble.speech::after {
+      content: "";
+      position: absolute;
+      left: -8px;
+      bottom: 14px;
+      border-width: 7px 9px 7px 0;
+      border-style: solid;
+      border-color: transparent rgba(18, 18, 22, .88) transparent transparent;
+    }
+
+    /* Bulle de pensée : nuage + petits ronds (convention BD). */
+    #bubble.thought {
+      border-radius: 22px;
+      font-style: italic;
+      background: rgba(24, 24, 32, .8);
+      border-style: dashed;
+    }
+    #bubble.thought::after,
+    #bubble.thought::before {
+      content: "";
+      position: absolute;
+      background: rgba(24, 24, 32, .8);
+      border: 1px dashed rgba(255, 255, 255, .14);
+      border-radius: 50%;
+    }
+    #bubble.thought::after  { left: -10px; bottom: 10px; width: 12px; height: 12px; }
+    #bubble.thought::before { left: -20px; bottom: 0;    width: 7px;  height: 7px;  }
+
+    /* ── Trois points, pendant la génération ────────────────────────────── */
+    .dots { display: inline-flex; gap: 5px; align-items: center; height: 10px; }
+    .dots span {
+      width: 7px; height: 7px;
+      background: rgba(255, 255, 255, .85);
+      border-radius: 50%;
+      animation: blink 1.25s infinite ease-in-out;
+    }
+    .dots span:nth-child(2) { animation-delay: .18s; }
+    .dots span:nth-child(3) { animation-delay: .36s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: .25; transform: translateY(0); }
+      40%           { opacity: 1;   transform: translateY(-3px); }
+    }
+
+    /* ── Widgets (pile ou face, dé, uptime…) — phase 1b ─────────────────── */
+    #widgets {
+      position: absolute;
+      left: 12px;
+      bottom: 230px;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
-  <div class="overlay-container" id="overlay">
-    <img class="overlay-avatar" id="overlay-avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="Wally">
+  <div id="stage">
+    <div id="avatar-slot">
+      <img id="avatar" src="/static/avatar/emotions/neutral/idle.gif" alt="">
+    </div>
+    <div id="bubble" class="speech"></div>
   </div>
 
-  <script>
-    function updateAvatar(emotions) {
-      let dominant = 'neutral';
-      let maxVal = 0.2;
-      for (const [emotion, value] of Object.entries(emotions)) {
-        if (value > maxVal) { dominant = emotion; maxVal = value; }
-      }
+  <div id="widgets"></div>
 
-      let tier = 'idle';
-      if (dominant !== 'neutral') {
-        if (maxVal >= 0.7) tier = 'high';
-        else if (maxVal >= 0.4) tier = 'mid';
-        else tier = 'low';
-      }
-
-      const basePath = dominant === 'neutral'
-        ? '/static/avatar/emotions/neutral/idle'
-        : `/static/avatar/emotions/${dominant}/${tier}`;
-
-      const img = document.getElementById('overlay-avatar');
-      const gifUrl = basePath + '.gif';
-      const pngUrl = basePath + '.png';
-      const testImg = new Image();
-      testImg.onload = () => { img.src = gifUrl; };
-      testImg.onerror = () => { img.src = pngUrl; };
-      testImg.src = gifUrl;
-
-    }
-
-    // SSE emotions
-    function connectSSE() {
-      const sse = new EventSource('/api/public/sse/emotions');
-      sse.onmessage = (e) => {
-        try { updateAvatar(JSON.parse(e.data)); } catch {}
-      };
-      sse.onerror = () => {
-        sse.close();
-        setTimeout(connectSSE, 5000);
-      };
-    }
-    connectSSE();
-
-    // SSE overlay visibility toggle (admin can show/hide live)
-    function connectOverlaySSE() {
-      const sse = new EventSource('/api/public/sse/overlay');
-      sse.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          const el = document.getElementById('overlay');
-          if (data.visible === false) el.classList.add('hidden');
-          else el.classList.remove('hidden');
-        } catch {}
-      };
-      sse.onerror = () => {
-        sse.close();
-        setTimeout(connectOverlaySSE, 5000);
-      };
-    }
-    connectOverlaySSE();
-  </script>
+  <script src="/static/overlay.js"></script>
 </body>
 </html>
