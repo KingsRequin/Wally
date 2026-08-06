@@ -3507,13 +3507,14 @@ async function _renderSystemeOverlay(panel) {
         <div class="overlay-card-header">
           <div class="overlay-card-icon" style="background:rgba(234,179,8,0.1);border-color:rgba(234,179,8,0.2)">🎭</div>
           <div>
-            <div class="card-title" style="margin:0">OVERLAY ÉMOTIONS</div>
-            <div class="overlay-card-sub">Humeur en temps réel</div>
+            <div class="card-title" style="margin:0">OVERLAY COMPAGNON</div>
+            <div class="overlay-card-sub">Bulles, réactions et widgets du live</div>
           </div>
         </div>
         <p class="overlay-card-desc">
-          Affiche l'avatar, les jauges d'émotion et l'état de Wally en direct.
-          Idéal en coin d'écran — fond transparent, compatible Browser Source OBS.
+          Wally commente le live en bulles courtes et affiche ses widgets
+          (pile ou face, dé, roue, sondage…). Ancré en bas à gauche, fond
+          transparent, compatible Browser Source OBS.
         </p>
         <div class="overlay-card-toggle-row">
           <span class="overlay-card-toggle-label">Afficher</span>
@@ -3534,7 +3535,7 @@ async function _renderSystemeOverlay(panel) {
           <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
           <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-emotion')">Copier</button>
         </div>
-        <div class="overlay-url-hint">Browser Source · Largeur 400px · Hauteur 300px · Fond transparent</div>
+        <div class="overlay-url-hint">Browser Source · Largeur 560px · Hauteur 460px · Fond transparent</div>
       </div>
 
       <!-- Overlay Images -->
