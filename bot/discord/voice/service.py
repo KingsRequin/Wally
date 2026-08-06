@@ -485,9 +485,21 @@ class VoiceService:
         narrator = getattr(self._bot, "overlay_narrator", None)
         if narrator is None:
             return
+        # Une phrase qui le nomme est une DEMANDE : elle part vers le chemin
+        # outillé, seul capable d'afficher quelque chose. Le reste n'est qu'une
+        # réaction possible — et le silence y est le cas normal, d'où l'absence
+        # de trois-points qui, sinon, clignoteraient à chaque phrase du live.
         try:
-            task = asyncio.get_running_loop().create_task(
-                narrator.on_stream_event(line)
+            names = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
+        except Exception:  # noqa: BLE001
+            names = []
+        lowered = text.lower()
+        addressed = any(n and n.lower() in lowered for n in names)
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
+                narrator.on_voice_request(label, text) if addressed
+                else narrator.on_stream_event(line, show_thinking=False)
             )
             self._listen_tasks.add(task)
             task.add_done_callback(self._listen_tasks.discard)

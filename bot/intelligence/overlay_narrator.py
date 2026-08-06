@@ -18,6 +18,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
 from collections.abc import Callable
@@ -65,6 +66,22 @@ _EVENT_SYSTEM = load_prompt(
     render=False,
 )
 
+_VOICE_SYSTEM = load_prompt(
+    "overlay_voice",
+    fallback=(
+        "Tu es le compagnon d'overlay d'un stream Twitch. Le streamer vient de "
+        "te parler À VOIX HAUTE pendant son live.\n"
+        "S'il te demande d'afficher quelque chose (pile ou face, dé, roue, "
+        "sondage, texte…), APPELLE l'outil show_overlay — c'est le seul moyen "
+        "que ça apparaisse à l'écran. N'annonce jamais un affichage sans l'avoir "
+        "appelé.\n"
+        "Ta réponse écrite est une bulle lue par les SPECTATEURS, jamais par le "
+        "streamer qui ne voit pas son overlay : 3 à 8 MOTS, une seule idée. "
+        "Si tu n'as rien à ajouter, réponds RIEN."
+    ),
+    render=False,
+)
+
 _CONDENSE_SYSTEM = load_prompt(
     "overlay_thought",
     fallback=(
@@ -74,6 +91,64 @@ _CONDENSE_SYSTEM = load_prompt(
     ),
     render=False,
 )
+
+
+OVERLAY_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "show_overlay",
+        "description": (
+            "Affiche un widget sur l'overlay du stream, quand on te le demande ou "
+            "que l'envie te prend. Ne fonctionne QUE pendant un live — hors live "
+            "l'outil te le dira, et tu pourras le dire simplement. C'est toi qui "
+            "décides : tu peux refuser si on t'en demande trop, commenter le "
+            "résultat, et même forcer le tirage pour tricher. ⚠️ L'overlay est vu "
+            "par les SPECTATEURS, pas par le streamer : ton `comment` s'adresse à "
+            "eux. Ne prétends jamais avoir affiché quelque chose sans appeler cet "
+            "outil."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "widget": {
+                    "type": "string",
+                    "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
+                             "pinned", "uptime", "counter", "poll"],
+                    "description": (
+                        "coinflip = pile ou face · dice = un dé · wheel = la roue "
+                        "tranche entre 2-8 options · countdown = compte à rebours "
+                        "· gauge = jauge 0-100 · pinned = met en avant un message "
+                        "du chat · uptime = durée du live (calculée pour toi) · "
+                        "counter = un texte bref · poll = sondage, le chat vote en "
+                        "tapant le numéro"
+                    ),
+                },
+                "comment": {
+                    "type": "string",
+                    "description": "Ta réplique, quelques mots — c'est elle qu'on lit, pas l'animation.",
+                },
+                "result": {
+                    "type": "string",
+                    "description": (
+                        "Résultat imposé, optionnel : 'heads'/'tails', un chiffre "
+                        "de dé, l'index gagnant de la roue, les secondes du compte "
+                        "à rebours, le pourcentage de la jauge. Omets-le pour un tirage au sort."
+                    ),
+                },
+                "options": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Les choix, pour wheel (2-8) ou poll (2-4).",
+                },
+                "question": {"type": "string", "description": "La question, pour poll."},
+                "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
+                "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
+                "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
+                "label": {"type": "string", "description": "L'intitulé, pour gauge."},
+            },
+            "required": ["widget"],
+        },
+    },
+}
 
 
 class OverlayNarrator:
@@ -200,10 +275,17 @@ class OverlayNarrator:
 
     # ── événements du stream ──────────────────────────────────────────────
 
-    async def on_stream_event(self, description: str) -> Optional[str]:
+    async def on_stream_event(
+        self, description: str, *, show_thinking: bool = True
+    ) -> Optional[str]:
         """Réagit à un événement du live (raid, sub, changement de jeu…).
 
         `description` arrive déjà rédigée en français par `StreamFeed`.
+
+        `show_thinking=False` pour les sources où le silence est le cas normal
+        — le vocal capte tout, y compris le jeu et les conversations qui ne le
+        concernent pas. Y annoncer une réflexion à chaque phrase produirait des
+        trois-points sans bulle à longueur de live.
         """
         description = (description or "").strip()
         if not description or not self._may_react():
@@ -215,7 +297,8 @@ class OverlayNarrator:
         if any(hint in description.lower() for hint in _STRONG_EVENT_HINTS):
             self._feed.react("stream_event")
 
-        self._feed.thinking(True)
+        if show_thinking:
+            self._feed.thinking(True)
         try:
             short = await self._condense(description, system=_EVENT_SYSTEM)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
@@ -223,10 +306,71 @@ class OverlayNarrator:
             short = None
 
         if not short:
-            self._feed.thinking(False)
+            if show_thinking:
+                self._feed.thinking(False)
             return None
         # Une réaction consomme aussi le budget des pensées : sinon une bulle de
         # pensée pourrait s'empiler juste derrière.
+        self._mark_spoken()
+        self._feed.say(short, mode="speech")
+        return short
+
+    # ── voix ──────────────────────────────────────────────────────────────
+
+    async def on_voice_request(self, speaker: str, text: str) -> Optional[str]:
+        """Le streamer s'adresse à Wally en vocal et lui demande un affichage.
+
+        Le chemin des réactions (`on_stream_event`) ne sait que condenser du
+        texte : sans outil, une demande d'affichage produisait des trois-points
+        puis rien. Ici le modèle peut réellement appeler `show_overlay`.
+        """
+        text = (text or "").strip()
+        if not text or not self._may_react():
+            return None
+        self._last_event_at = time.monotonic()
+        self._feed.thinking(True)
+
+        shown: list[dict] = []
+
+        async def _execute(name: str, arguments: str) -> str:
+            if name != "show_overlay":
+                return json.dumps({"status": "unknown_tool"})
+            try:
+                args = json.loads(arguments or "{}")
+            except json.JSONDecodeError:
+                return json.dumps({"status": "error", "message": "arguments illisibles"})
+            extra = {k: v for k, v in args.items()
+                     if k not in ("widget", "comment", "result") and v is not None}
+            out = self.show_widget(
+                str(args.get("widget") or ""), str(args.get("comment") or ""),
+                result=args.get("result"), **extra,
+            )
+            if out is None:
+                return json.dumps({"status": "rejected",
+                                   "message": "widget inconnu ou données manquantes"})
+            shown.append(out)
+            return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()}})
+
+        try:
+            reply, _ = await self._llm.complete_with_tools(
+                system_prompt=_VOICE_SYSTEM,
+                messages=[{"role": "user", "content": f"{speaker} (à voix haute) : {text}"}],
+                tools=[OVERLAY_TOOL_SPEC],
+                tool_executor=_execute,
+                purpose="overlay_voice",
+            )
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.warning("Overlay: demande vocale échouée: {e}", e=exc)
+            self._feed.thinking(False)
+            return None
+
+        short = " ".join((reply or "").split()).strip('"').strip()
+        if not short or short.upper().rstrip(".") == "RIEN":
+            # Un widget a pu s'afficher sans qu'il ait à commenter.
+            self._feed.thinking(False)
+            return None
+        if len(short) > _MAX_BUBBLE_CHARS:
+            short = short[:_MAX_BUBBLE_CHARS].rsplit(" ", 1)[0]
         self._mark_spoken()
         self._feed.say(short, mode="speech")
         return short

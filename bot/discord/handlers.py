@@ -96,66 +96,10 @@ _NOTE_TOOLS = [
     },
 ]
 
-# Overlay du stream — pendant, dans une conversation. Le même geste existe déjà
-# côté cognition sous la forme `[ACT show_overlay]`, mais ce chemin-là est
-# inaccessible en conversation : sans cet outil, Wally répond honnêtement qu'il
-# n'a pas la main sur l'overlay quand on lui demande d'afficher quelque chose.
-_OVERLAY_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "show_overlay",
-        "description": (
-            "Affiche un widget sur l'overlay du stream, quand on te le demande ou "
-            "que l'envie te prend. Ne fonctionne QUE pendant un live — hors live "
-            "l'outil te le dira, et tu pourras le dire simplement. C'est toi qui "
-            "décides : tu peux refuser si on t'en demande trop, commenter le "
-            "résultat, et même forcer le tirage pour tricher. ⚠️ L'overlay est vu "
-            "par les SPECTATEURS, pas par le streamer : ton `comment` s'adresse à "
-            "eux. Ne prétends jamais avoir affiché quelque chose sans appeler cet "
-            "outil."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "widget": {
-                    "type": "string",
-                    "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
-                             "pinned", "uptime", "counter", "poll"],
-                    "description": (
-                        "coinflip = pile ou face · dice = un dé · wheel = la roue "
-                        "tranche entre 2-8 options · countdown = compte à rebours "
-                        "· gauge = jauge 0-100 · pinned = met en avant un message "
-                        "du chat · uptime = durée du live (calculée pour toi) · "
-                        "counter = un texte bref · poll = sondage, le chat vote en "
-                        "tapant le numéro"
-                    ),
-                },
-                "comment": {
-                    "type": "string",
-                    "description": "Ta réplique, quelques mots — c'est elle qu'on lit, pas l'animation.",
-                },
-                "result": {
-                    "type": "string",
-                    "description": (
-                        "Résultat imposé, optionnel : 'heads'/'tails', un chiffre "
-                        "de dé, l'index gagnant de la roue, les secondes du compte "
-                        "à rebours, le pourcentage de la jauge. Omets-le pour un tirage au sort."
-                    ),
-                },
-                "options": {
-                    "type": "array", "items": {"type": "string"},
-                    "description": "Les choix, pour wheel (2-8) ou poll (2-4).",
-                },
-                "question": {"type": "string", "description": "La question, pour poll."},
-                "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
-                "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
-                "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
-                "label": {"type": "string", "description": "L'intitulé, pour gauge."},
-            },
-            "required": ["widget"],
-        },
-    },
-}
+# Overlay du stream, dans une conversation. La définition vit avec le narrateur :
+# le chemin vocal l'utilise aussi, et deux copies divergeraient.
+from bot.intelligence.overlay_narrator import OVERLAY_TOOL_SPEC as _OVERLAY_TOOL
+
 
 
 def _overlay_narrator(bot):

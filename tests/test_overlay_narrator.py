@@ -633,3 +633,47 @@ def test_un_commentaire_court_reste_affiche():
     n.show_widget("dice", "allez, on tente")
     events = [q.get_nowait() for _ in range(q.qsize())]
     assert [e for e in events if e["type"] == "bubble"]
+
+
+# ── demande vocale (chemin outillé) ──
+
+@pytest.mark.asyncio
+async def test_une_demande_vocale_affiche_vraiment_le_widget():
+    """Sans outil, le vocal produisait des trois-points puis rien."""
+    feed = OverlayFeed()
+    llm = AsyncMock()
+
+    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
+        out = await tool_executor("show_overlay", '{"widget": "coinflip"}')
+        assert '"status": "ok"' in out
+        return "pile, comme prévu", []
+
+    llm.complete_with_tools = _fake
+    n = OverlayNarrator(feed, llm, lambda: True)
+    q = feed.subscribe()
+    assert await n.on_voice_request("Azrael", "wally fais un pile ou face") == "pile, comme prévu"
+    kinds = [e.get("kind") for e in (q.get_nowait() for _ in range(q.qsize()))
+             if e["type"] == "widget"]
+    assert "coinflip" in kinds
+
+
+@pytest.mark.asyncio
+async def test_une_demande_vocale_hors_live_ne_fait_rien():
+    feed, llm = OverlayFeed(), AsyncMock()
+    n = OverlayNarrator(feed, llm, lambda: False)
+    assert await n.on_voice_request("Azrael", "affiche un truc") is None
+    llm.complete_with_tools.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_un_llm_en_erreur_eteint_les_trois_points():
+    """Sinon l'animation tourne indéfiniment sur l'overlay."""
+    feed = OverlayFeed()
+    llm = AsyncMock()
+    llm.complete_with_tools = AsyncMock(side_effect=RuntimeError("API HS"))
+    n = OverlayNarrator(feed, llm, lambda: True)
+    q = feed.subscribe()
+    assert await n.on_voice_request("Azrael", "wally affiche un truc") is None
+    thinking = [e for e in (q.get_nowait() for _ in range(q.qsize()))
+                if e["type"] == "thinking"]
+    assert thinking[-1]["active"] is False

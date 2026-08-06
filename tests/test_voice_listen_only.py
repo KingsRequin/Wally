@@ -97,3 +97,40 @@ def test_l_absence_d_overlay_ne_casse_pas_l_ecoute():
     svc._bot = SimpleNamespace()          # pas d'overlay_narrator
     with patch("bot.core.stream_feed.active_stream_feed", return_value=None):
         svc._observe_transcript("Azrael", "coucou")   # ne doit pas lever
+
+
+@pytest.mark.asyncio
+async def test_une_demande_en_vocal_part_vers_le_chemin_outille():
+    """« Wally, affiche un pile ou face » doit pouvoir AFFICHER — le chemin des
+    réactions ne sait que condenser du texte, d'où les trois-points sans suite."""
+    svc = _service()
+    svc.listen_only = True
+    svc._vc = MagicMock()
+    narrator = MagicMock()
+    narrator.on_voice_request = AsyncMock(return_value="pile")
+    narrator.on_stream_event = AsyncMock(return_value=None)
+    svc._bot.overlay_narrator = narrator
+    with patch("bot.core.stream_feed.active_stream_feed", return_value=None):
+        svc._observe_transcript("Azrael", "wally affiche un pile ou face")
+        await asyncio.sleep(0)
+    narrator.on_voice_request.assert_awaited()
+    narrator.on_stream_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
+    """Le vocal capte tout : le jeu, les autres. Annoncer une réflexion à chaque
+    phrase produirait des trois-points sans bulle à longueur de live."""
+    svc = _service()
+    svc.listen_only = True
+    svc._vc = MagicMock()
+    narrator = MagicMock()
+    narrator.on_stream_event = AsyncMock(return_value=None)
+    narrator.on_voice_request = AsyncMock()
+    svc._bot.overlay_narrator = narrator
+    with patch("bot.core.stream_feed.active_stream_feed", return_value=None):
+        svc._observe_transcript("Azrael", "j'ai encore raté mon saut")
+        await asyncio.sleep(0)
+    narrator.on_voice_request.assert_not_awaited()
+    _, kwargs = narrator.on_stream_event.call_args
+    assert kwargs["show_thinking"] is False
