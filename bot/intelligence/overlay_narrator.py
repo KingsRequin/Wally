@@ -20,6 +20,7 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Optional
 
 from loguru import logger
@@ -74,12 +75,16 @@ class OverlayNarrator:
         is_live: Callable[[], bool],
         min_interval_s: float = _MIN_THOUGHT_INTERVAL_S,
         event_interval_s: float = _MIN_EVENT_INTERVAL_S,
+        stream_status: Optional[Callable[[], dict]] = None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
         self._is_live = is_live
         self._min_interval = min_interval_s
         self._event_interval = event_interval_s
+        # Statut du live ({live, title, category, viewers, started_at}) pour les
+        # widgets qui ont besoin de données réelles (uptime).
+        self._stream_status = stream_status
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -170,15 +175,16 @@ class OverlayNarrator:
 
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
-    _WIDGETS = ("coinflip", "dice", "counter")
+    _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
+                "pinned", "uptime")
 
     def show_widget(
-        self, widget: str, comment: str = "", result=None
+        self, widget: str, comment: str = "", result=None, **extra
     ) -> bool:
         """Affiche un widget décidé par Wally, avec son commentaire.
 
-        Retourne False si le widget est inconnu ou hors live — auquel cas rien
-        n'est publié.
+        Retourne False si le widget est inconnu, hors live, ou si les données
+        manquent — auquel cas rien n'est publié.
         """
         widget = (widget or "").strip()
         if widget not in self._WIDGETS or not self._live():
@@ -198,6 +204,48 @@ class OverlayNarrator:
         elif widget == "counter":
             params["text"] = str(result or comment)[:40]
 
+        elif widget == "wheel":
+            options = [str(o).strip()[:24] for o in (extra.get("options") or []) if str(o).strip()]
+            if len(options) < 2:
+                return False  # une roue à une case n'a aucun intérêt
+            options = options[:8]
+            # L'index gagnant est décidé ici : Wally peut donc le forcer.
+            try:
+                index = int(result)
+            except (TypeError, ValueError):
+                index = random.randrange(len(options))
+            params = {"options": options, "index": max(0, min(len(options) - 1, index))}
+
+        elif widget == "countdown":
+            try:
+                seconds = int(result)
+            except (TypeError, ValueError):
+                return False
+            params = {"seconds": max(1, min(600, seconds))}
+            if extra.get("done"):
+                params["done"] = str(extra["done"])[:20]
+
+        elif widget == "gauge":
+            try:
+                percent = float(result)
+            except (TypeError, ValueError):
+                return False
+            params = {"percent": max(0.0, min(100.0, percent)),
+                      "label": str(extra.get("label") or comment)[:40]}
+
+        elif widget == "pinned":
+            text = str(extra.get("text") or "").strip()
+            if not text:
+                return False
+            params = {"author": str(extra.get("author") or "")[:24], "text": text[:160]}
+
+        elif widget == "uptime":
+            label = self._uptime_label()
+            if not label:
+                return False  # pas de live daté : rien à afficher
+            params = {"text": label}
+            widget = "counter"  # même rendu, données calculées ici
+
         self._feed.widget(widget, **params)
         # Le commentaire accompagne le widget : c'est lui qui fait le personnage,
         # pas l'animation. Il consomme le budget des bulles.
@@ -205,6 +253,30 @@ class OverlayNarrator:
             self._mark_spoken()
             self._feed.say(comment, mode="speech")
         return True
+
+    def _uptime_label(self) -> Optional[str]:
+        """« en live depuis 3h12 », calculé depuis le statut du stream.
+
+        Un viewer demande la durée dans le chat, le compteur s'affiche quelques
+        secondes puis disparaît — il n'est pas permanent à l'écran.
+        """
+        if self._stream_status is None:
+            return None
+        try:
+            started = (self._stream_status() or {}).get("started_at")
+        except Exception:  # noqa: BLE001
+            return None
+        if not started:
+            return None
+        try:
+            begin = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+            elapsed = datetime.now(timezone.utc) - begin
+        except (TypeError, ValueError):
+            return None
+        minutes = max(0, int(elapsed.total_seconds() // 60))
+        if minutes < 60:
+            return f"en live depuis {minutes} min"
+        return f"en live depuis {minutes // 60}h{minutes % 60:02d}"
 
     async def _condense(self, text: str, system: Optional[str] = None) -> Optional[str]:
         raw = await self._llm.complete(

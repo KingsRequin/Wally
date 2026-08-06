@@ -284,10 +284,15 @@ class WallyDiscord(commands.Bot):
                     tb = getattr(self, "_twitch_bot", None)
                     return bool((getattr(tb, "_stream_info", None) or {}).get("live"))
 
+                def _stream_status() -> dict:
+                    tb = getattr(self, "_twitch_bot", None)
+                    return getattr(tb, "_stream_info", None) or {}
+
                 _overlay_narrator = OverlayNarrator(
                     _dash_state.overlay_feed,
                     self.llm_secondary,
                     _stream_is_live,
+                    stream_status=_stream_status,
                 )
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator

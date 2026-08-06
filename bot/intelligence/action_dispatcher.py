@@ -354,8 +354,10 @@ class ActionDispatcher:
         if act_name == "show_overlay" and self._overlay_narrator:
             widget = str(args.get("widget") or "").strip()
             comment = str(args.get("comment") or "").strip()
+            extra = {k: v for k, v in args.items()
+                     if k not in ("widget", "comment", "result")}
             shown = self._overlay_narrator.show_widget(
-                widget, comment, result=args.get("result")
+                widget, comment, result=args.get("result"), **extra
             )
             if shown:
                 logger.info("ACT show_overlay: {w} ({c})", w=widget, c=comment[:40])

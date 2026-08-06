@@ -131,6 +131,79 @@
       node.textContent = String(p.text || "");
       return node;
     },
+
+    // La roue s'arrête sur l'option choisie côté serveur : l'angle est calculé
+    // pour amener ce secteur sous le curseur.
+    wheel(p) {
+      const options = Array.isArray(p.options) ? p.options.slice(0, 8) : [];
+      if (!options.length) return el("div", "");
+      const winner = Math.min(options.length - 1, Math.max(0, Number(p.index) || 0));
+      const slice = 360 / options.length;
+
+      const box = el("div", "wheel-box");
+      const wheel = el("div", "wheel");
+      const COLORS = ["#46c6ff", "#9d7bff", "#ff7ba8", "#ffcf5c",
+                      "#6ee7a8", "#ff9f68", "#7fd1ff", "#c9a0ff"];
+      const stops = options
+        .map((_, i) => `${COLORS[i % COLORS.length]} ${i * slice}deg ${(i + 1) * slice}deg`)
+        .join(", ");
+      wheel.style.background = `conic-gradient(${stops})`;
+      // Plusieurs tours pour l'effet, puis on aligne le milieu du secteur en haut.
+      const angle = 360 * 4 + (360 - (winner * slice + slice / 2));
+      wheel.style.setProperty("--final-angle", `${angle}deg`);
+
+      const label = el("div", "label");
+      label.textContent = String(options[winner]);
+      box.append(wheel, el("div", "pin"), label);
+      return box;
+    },
+
+    countdown(p) {
+      const node = el("div", "countdown");
+      let left = Math.min(600, Math.max(1, parseInt(p.seconds, 10) || 10));
+      const render = () => {
+        const m = Math.floor(left / 60);
+        node.textContent = m > 0
+          ? `${m}:${String(left % 60).padStart(2, "0")}`
+          : String(left);
+        node.classList.remove("tick");
+        void node.offsetWidth;
+        node.classList.add("tick");
+      };
+      render();
+      const id = setInterval(() => {
+        left -= 1;
+        if (left <= 0) { clearInterval(id); node.textContent = String(p.done || "0"); return; }
+        render();
+      }, 1000);
+      // Le widget peut être remplacé avant la fin : on coupe le timer avec lui.
+      node.dataset.interval = String(id);
+      return node;
+    },
+
+    gauge(p) {
+      const box = el("div", "gauge");
+      const cap = el("div", "cap");
+      cap.textContent = String(p.label || "");
+      const track = el("div", "track");
+      const fill = el("div", "fill");
+      const pct = Math.min(100, Math.max(0, Number(p.percent) || 0));
+      track.appendChild(fill);
+      box.append(cap, track);
+      // Laisse le navigateur peindre à 0 avant d'animer vers la valeur.
+      requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
+      return box;
+    },
+
+    pinned(p) {
+      const box = el("div", "pinned");
+      const who = el("div", "who");
+      who.textContent = String(p.author || "");
+      const msg = el("div", "msg");
+      msg.textContent = String(p.text || "");
+      box.append(who, msg);
+      return box;
+    },
   };
 
   function el(tag, className) {
@@ -145,10 +218,20 @@
     return n;
   }
 
+  function clearWidgets() {
+    // Un compte à rebours remplacé doit voir son timer coupé, sinon il continue
+    // de tourner dans le vide pendant tout le live.
+    widgets.querySelectorAll("[data-interval]").forEach((n) => {
+      clearInterval(Number(n.dataset.interval));
+    });
+    widgets.replaceChildren();
+  }
+
   function showWidget(kind, params) {
     const build = BUILDERS[kind];
     if (!build) return;
     clearTimeout(widgetTimer);
+    clearWidgets();
 
     const box = el("div", "widget");
     box.appendChild(build(params));
@@ -159,7 +242,7 @@
     const seconds = Math.min(20, Math.max(2, Number(params.duration) || 5));
     widgetTimer = setTimeout(() => {
       box.classList.remove("visible");
-      setTimeout(() => widgets.replaceChildren(), 300);
+      setTimeout(clearWidgets, 300);
     }, seconds * 1000);
   }
 

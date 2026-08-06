@@ -253,3 +253,82 @@ def test_le_widget_consomme_le_budget_des_bulles():
     n, _, _ = _narrator()
     n.show_widget("coinflip", "et voilà")
     assert n._may_speak() is False
+
+
+# ── widgets de la phase 4 ──
+
+def _with_status(started_at, live=True):
+    feed = OverlayFeed()
+    llm = AsyncMock()
+    n = OverlayNarrator(feed, llm, lambda: live,
+                        stream_status=lambda: {"started_at": started_at})
+    return n, feed
+
+
+def test_la_roue_refuse_moins_de_deux_options():
+    n, feed, _ = _narrator()
+    assert n.show_widget("wheel", "on tranche", options=["seule"]) is False
+
+
+def test_la_roue_borne_l_index_gagnant():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("wheel", "allez", result=99, options=["a", "b", "c"])
+    assert q.get_nowait()["params"]["index"] == 2
+
+
+def test_la_roue_est_plafonnee_a_huit_parts():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("wheel", "", options=[f"opt{i}" for i in range(20)])
+    assert len(q.get_nowait()["params"]["options"]) == 8
+
+
+def test_le_compte_a_rebours_exige_une_duree():
+    n, feed, _ = _narrator()
+    assert n.show_widget("countdown", "attention") is False
+    assert n.show_widget("countdown", "attention", result=30) is True
+
+
+def test_la_jauge_borne_le_pourcentage():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("gauge", "objectif", result=250, label="subs")
+    assert q.get_nowait()["params"]["percent"] == 100.0
+
+
+def test_le_message_epingle_exige_un_texte():
+    n, feed, _ = _narrator()
+    assert n.show_widget("pinned", "", author="Jubeii") is False
+    assert n.show_widget("pinned", "", author="Jubeii", text="gg les gars") is True
+
+
+def test_uptime_calcule_depuis_le_debut_du_live():
+    from datetime import datetime, timedelta, timezone
+    started = (datetime.now(timezone.utc) - timedelta(hours=3, minutes=12)).isoformat()
+    n, feed = _with_status(started)
+    q = feed.subscribe()
+    assert n.show_widget("uptime") is True
+    e = q.get_nowait()
+    assert e["kind"] == "counter"          # même rendu que le compteur
+    assert e["params"]["text"] == "en live depuis 3h12"
+
+
+def test_uptime_en_minutes_pour_un_live_recent():
+    from datetime import datetime, timedelta, timezone
+    started = (datetime.now(timezone.utc) - timedelta(minutes=25)).isoformat()
+    n, feed = _with_status(started)
+    q = feed.subscribe()
+    n.show_widget("uptime")
+    assert q.get_nowait()["params"]["text"] == "en live depuis 25 min"
+
+
+def test_uptime_sans_date_de_debut_ne_s_affiche_pas():
+    """Rien à afficher plutôt qu'un compteur faux."""
+    n, _ = _with_status(None)
+    assert n.show_widget("uptime") is False
+
+
+def test_uptime_avec_date_illisible():
+    n, _ = _with_status("pas-une-date")
+    assert n.show_widget("uptime") is False

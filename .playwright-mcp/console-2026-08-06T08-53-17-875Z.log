@@ -1,0 +1,10 @@
+[  517698ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/sse/emotions:0
+[  517699ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/sse/overlay:0
+[  517699ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/sse/overlay-feed:0
+[  517699ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/overlay-health:0
+[  517699ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/overlay-health:0
+[  517699ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8080/api/public/overlay-health:0
+[  520182ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8080/api/public/overlay-health:0
+[  522700ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://127.0.0.1:8080/api/public/sse/emotions:0
+[  522700ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://127.0.0.1:8080/api/public/sse/overlay:0
+[  522700ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8080/api/public/sse/overlay-feed:0

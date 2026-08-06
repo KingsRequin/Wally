@@ -191,6 +191,90 @@
       100% { transform: var(--final-rotation) translateY(0); }
     }
 
+    /* Roue — secteurs colorés, rotation amortie, curseur fixe en haut. */
+    .wheel-box { position: relative; width: 150px; height: 150px; }
+    .wheel {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, .85);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+      animation: wheel-spin 2.4s cubic-bezier(.16, .84, .28, 1) forwards;
+    }
+    .wheel-box .pin {
+      position: absolute; top: -9px; left: 50%;
+      margin-left: -8px;
+      border-width: 0 8px 15px 8px;
+      border-style: solid;
+      border-color: transparent transparent #fff transparent;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+    }
+    .wheel-box .label {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      padding: 5px 11px;
+      max-width: 128px;
+      font-size: 14px; font-weight: 700; color: #fff; text-align: center;
+      background: rgba(18, 18, 22, .9);
+      border-radius: 9px;
+      opacity: 0;
+      animation: wheel-label .5s ease 2.2s forwards;
+    }
+    @keyframes wheel-spin { to { transform: rotate(var(--final-angle)); } }
+    @keyframes wheel-label { to { opacity: 1; } }
+
+    /* Compte à rebours — le chiffre pulse à chaque seconde. */
+    .countdown {
+      min-width: 96px;
+      padding: 8px 18px;
+      font-size: 40px; font-weight: 700; color: #fff; text-align: center;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 14px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, .9);
+      font-variant-numeric: tabular-nums;
+    }
+    .countdown.tick { animation: tick .45s ease-out; }
+    @keyframes tick {
+      0%   { transform: scale(1.16); }
+      100% { transform: scale(1); }
+    }
+
+    /* Jauge d'objectif. */
+    .gauge { width: 230px; }
+    .gauge .cap {
+      margin-bottom: 5px;
+      font-size: 14px; font-weight: 600; color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
+    }
+    .gauge .track {
+      height: 17px;
+      background: rgba(18, 18, 22, .85);
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .gauge .fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #46c6ff, #9d7bff);
+      border-radius: 10px;
+      transition: width 1.1s cubic-bezier(.2, .7, .3, 1);
+    }
+
+    /* Message du chat épinglé — c'est Wally qui choisit lequel mérite l'écran. */
+    .pinned {
+      max-width: 290px;
+      padding: 9px 13px;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-left: 3px solid #9d7bff;
+      border-radius: 10px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+    }
+    .pinned .who { font-size: 12px; font-weight: 700; color: #b79cff; }
+    .pinned .msg { font-size: 15px; line-height: 1.3; }
+
     /* Compteur (uptime) — texte simple, lisible sur tout fond. */
     .counter {
       padding: 9px 16px;
