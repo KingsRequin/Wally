@@ -328,8 +328,15 @@ class OverlayNarrator:
         # Le commentaire accompagne le widget : c'est lui qui fait le personnage,
         # pas l'animation. Il consomme le budget des bulles.
         if comment:
-            self._mark_spoken()
-            self._feed.say(comment, mode="speech")
+            # Même règle que les pensées : au-delà, ce n'est plus une réplique
+            # d'overlay mais un pavé qui pousse le décor hors du cadre. Le widget
+            # s'affiche quand même — l'animation se suffit.
+            if len(comment) > _MAX_BUBBLE_CHARS:
+                logger.debug("Overlay: commentaire trop long ({n} car), widget seul",
+                             n=len(comment))
+            else:
+                self._mark_spoken()
+                self._feed.say(comment, mode="speech")
         return {"widget": widget, **params}
 
     # ── saluts (widget 9) ─────────────────────────────────────────────────

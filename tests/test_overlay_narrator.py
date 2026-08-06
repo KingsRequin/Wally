@@ -614,3 +614,22 @@ def test_le_tirage_de_la_roue_est_rendu_a_l_appelant():
     n, _, _ = _narrator()
     out = n.show_widget("wheel", "", options=["A", "B", "C"])
     assert out["options"][out["index"]] in ("A", "B", "C")
+
+
+def test_un_commentaire_trop_long_n_affiche_que_le_widget():
+    """Non borné, il poussait le décor hors du cadre OBS — le LLM l'écrit
+    librement, contrairement aux pensées qui passent par la condensation."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    assert n.show_widget("dice", "x" * 200) is not None
+    events = [q.get_nowait() for _ in range(q.qsize())]
+    assert [e for e in events if e["type"] == "widget"]      # le dé s'affiche
+    assert not [e for e in events if e["type"] == "bubble"]  # la bulle, non
+
+
+def test_un_commentaire_court_reste_affiche():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("dice", "allez, on tente")
+    events = [q.get_nowait() for _ in range(q.qsize())]
+    assert [e for e in events if e["type"] == "bubble"]
