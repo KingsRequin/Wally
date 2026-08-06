@@ -305,6 +305,8 @@ class WallyDiscord(commands.Bot):
                     self.llm_secondary,
                     _stream_is_live,
                 )
+            # Exposé pour main.py, qui y branche les événements de StreamFeed.
+            self.overlay_narrator = _overlay_narrator
 
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,

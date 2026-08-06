@@ -311,6 +311,22 @@ async def main() -> None:
         stream_watcher.activate()
         twitch_bot.stream_watcher = stream_watcher
 
+        # Overlay de stream : les événements du live (raid, sub, changement de
+        # jeu…) deviennent des bulles. Le hook de StreamFeed est synchrone alors
+        # que la réaction demande un appel LLM — d'où la tâche détachée, avec
+        # référence forte pour que le GC ne l'annule pas en vol.
+        _overlay_event_tasks: set[asyncio.Task] = set()
+
+        def _narrate_stream_event(description: str) -> None:
+            narrator = getattr(discord_bot, "overlay_narrator", None)
+            if narrator is None:
+                return
+            task = asyncio.create_task(narrator.on_stream_event(description))
+            _overlay_event_tasks.add(task)
+            task.add_done_callback(_overlay_event_tasks.discard)
+
+        stream_feed.set_observer(_narrate_stream_event)
+
         tasks.append(twitch_bot.start())
         tasks.append(stream_watcher.run())
         logger.info(

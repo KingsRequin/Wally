@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import Optional
 
 from loguru import logger
@@ -67,6 +68,14 @@ class StreamFeed:
         self._chat: deque[tuple[float, str, str]] = deque(maxlen=max_chat)
         self._event_ttl = event_ttl
         self._chat_ttl = chat_ttl
+        # Observateur notifié à chaque nouvel événement retenu (doublons exclus).
+        # Sert à l'overlay de stream, qui réagit en direct. Reste passif : le
+        # flux garde sa vocation de contexte, il ne déclenche rien de lui-même.
+        self._observer: Optional[Callable[[str], None]] = None
+
+    def set_observer(self, callback: Optional[Callable[[str], None]]) -> None:
+        """Branche un observateur sur les événements retenus (None pour couper)."""
+        self._observer = callback
 
     def activate(self) -> None:
         """Enregistre ce flux comme source globale du bloc de contexte passif."""
@@ -87,6 +96,11 @@ class StreamFeed:
             return
         self._events.append((time.monotonic(), description))
         logger.debug("StreamFeed: {d}", d=description)
+        if self._observer is not None:
+            try:
+                self._observer(description)
+            except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux
+                logger.warning("StreamFeed: observateur en erreur: {e}", e=exc)
 
     def record_chat(self, author: str, text: str) -> None:
         """Empile une ligne de chat du stream (perception passive uniquement)."""

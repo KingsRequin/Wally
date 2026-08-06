@@ -133,3 +133,61 @@ async def test_pensee_vide_ignoree():
 async def test_les_guillemets_du_modele_sont_retires():
     n, _, _ = _narrator(reply='"je m\'ennuie ferme"')
     assert await n.on_thought("pensée") == "je m'ennuie ferme"
+
+
+# ── événements du stream ──
+
+@pytest.mark.asyncio
+async def test_un_evenement_fort_fait_reagir_l_avatar():
+    n, feed, _ = _narrator(reply="du monde débarque")
+    q = feed.subscribe()
+    assert await n.on_stream_event("Un raid de 42 personnes arrive") is not None
+    events = []
+    while not q.empty():
+        events.append(q.get_nowait())
+    assert [e for e in events if e["type"] == "react"], "l'avatar n'a pas réagi"
+    bubble = [e for e in events if e["type"] == "bubble"][0]
+    assert bubble["mode"] == "speech"   # réaction, pas pensée
+
+
+@pytest.mark.asyncio
+async def test_un_evenement_neutre_ne_fait_pas_reagir_l_avatar():
+    n, feed, _ = _narrator(reply="il change encore de jeu")
+    q = feed.subscribe()
+    await n.on_stream_event("Le jeu passe à Apex Legends")
+    events = []
+    while not q.empty():
+        events.append(q.get_nowait())
+    assert not [e for e in events if e["type"] == "react"]
+
+
+@pytest.mark.asyncio
+async def test_un_evenement_passe_meme_si_une_pensee_vient_de_parler():
+    """Se taire sur un raid parce qu'une pensée vient de passer serait absurde :
+    les deux budgets sont distincts."""
+    n, _, _ = _narrator()
+    assert await n.on_thought("une pensée") is not None
+    assert await n.on_stream_event("Un raid arrive") is not None
+
+
+@pytest.mark.asyncio
+async def test_une_reaction_consomme_aussi_le_budget_des_pensees():
+    """Sinon une bulle de pensée s'empilerait juste derrière la réaction."""
+    n, _, _ = _narrator()
+    assert await n.on_stream_event("Un raid arrive") is not None
+    assert await n.on_thought("une pensée dans la foulée") is None
+
+
+@pytest.mark.asyncio
+async def test_pas_de_reaction_hors_live():
+    n, _, llm = _narrator(live=False)
+    assert await n.on_stream_event("Un raid arrive") is None
+    llm.complete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_le_budget_evenement_limite_les_rafales():
+    """Une salve de subs ne doit pas produire une bulle par sub."""
+    n, _, _ = _narrator()
+    assert await n.on_stream_event("Un sub arrive") is not None
+    assert await n.on_stream_event("Un autre sub arrive") is None

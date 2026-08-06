@@ -30,9 +30,27 @@ from bot.intelligence.prompts import load_prompt
 # continues.
 _MIN_THOUGHT_INTERVAL_S = 90.0
 
+# Un événement de stream mérite son propre créneau : quand un raid tombe, se
+# taire parce qu'une pensée vient de passer serait absurde. Court, car ces
+# événements sont rares et attendus par le public.
+_MIN_EVENT_INTERVAL_S = 20.0
+
+# Événements sur lesquels l'avatar s'emballe en plus de la bulle. Repérage par
+# mot-clé sur la description déjà rédigée en français par StreamFeed.
+_STRONG_EVENT_HINTS = ("raid", "sub", "abonn", "bits", "cheer", "don")
+
 # Au-delà, la condensation a échoué à faire court : on préfère se taire plutôt
 # que d'afficher un pavé illisible en petit.
 _MAX_BUBBLE_CHARS = 90
+
+_EVENT_SYSTEM = load_prompt(
+    "overlay_event",
+    fallback=(
+        "Réagis à cet événement du stream en 3 à 8 MOTS, adressés aux SPECTATEURS. "
+        "Une seule idée, ton naturel. Réponds uniquement par la phrase, ou RIEN."
+    ),
+    render=False,
+)
 
 _CONDENSE_SYSTEM = load_prompt(
     "overlay_thought",
@@ -54,23 +72,36 @@ class OverlayNarrator:
         llm,
         is_live: Callable[[], bool],
         min_interval_s: float = _MIN_THOUGHT_INTERVAL_S,
+        event_interval_s: float = _MIN_EVENT_INTERVAL_S,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
         self._is_live = is_live
         self._min_interval = min_interval_s
+        self._event_interval = event_interval_s
         self._last_bubble_at: float = 0.0
+        self._last_event_at: float = 0.0
 
     # ── budget ────────────────────────────────────────────────────────────
 
-    def _may_speak(self) -> bool:
-        """Vrai si un live est en cours et que le délai minimal est écoulé."""
+    def _live(self) -> bool:
         try:
-            if not self._is_live():
-                return False
+            return bool(self._is_live())
         except Exception:  # noqa: BLE001 — une sonde cassée ne doit pas parler
             return False
+
+    def _may_speak(self) -> bool:
+        """Vrai si un live est en cours et que le délai minimal est écoulé."""
+        if not self._live():
+            return False
         return (time.monotonic() - self._last_bubble_at) >= self._min_interval
+
+    def _may_react(self) -> bool:
+        """Budget des événements, distinct de celui des pensées : un raid ne doit
+        pas être avalé parce qu'une pensée vient de passer."""
+        if not self._live():
+            return False
+        return (time.monotonic() - self._last_event_at) >= self._event_interval
 
     def _mark_spoken(self) -> None:
         self._last_bubble_at = time.monotonic()
@@ -101,9 +132,42 @@ class OverlayNarrator:
         self._feed.think_aloud(short)
         return short
 
-    async def _condense(self, text: str) -> Optional[str]:
+    # ── événements du stream ──────────────────────────────────────────────
+
+    async def on_stream_event(self, description: str) -> Optional[str]:
+        """Réagit à un événement du live (raid, sub, changement de jeu…).
+
+        `description` arrive déjà rédigée en français par `StreamFeed`.
+        """
+        description = (description or "").strip()
+        if not description or not self._may_react():
+            return None
+
+        self._last_event_at = time.monotonic()
+        # L'avatar s'emballe tout de suite sur les gros moments : la réaction
+        # visuelle est immédiate, la bulle arrive après la condensation.
+        if any(hint in description.lower() for hint in _STRONG_EVENT_HINTS):
+            self._feed.react("stream_event")
+
+        self._feed.thinking(True)
+        try:
+            short = await self._condense(description, system=_EVENT_SYSTEM)
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("OverlayNarrator: réaction échouée: {e}", e=exc)
+            short = None
+
+        if not short:
+            self._feed.thinking(False)
+            return None
+        # Une réaction consomme aussi le budget des pensées : sinon une bulle de
+        # pensée pourrait s'empiler juste derrière.
+        self._mark_spoken()
+        self._feed.say(short, mode="speech")
+        return short
+
+    async def _condense(self, text: str, system: Optional[str] = None) -> Optional[str]:
         raw = await self._llm.complete(
-            _CONDENSE_SYSTEM,
+            system or _CONDENSE_SYSTEM,
             [{"role": "user", "content": text}],
             purpose="overlay_thought",
         )

@@ -342,3 +342,46 @@ async def test_guest_channel_chat_not_recorded():
         await handle_message(bot, make_payload(content="gg", author_name="bob",
                                                channel="invite"))
     assert feed.render() == ""
+
+
+# ── observateur (overlay de stream) ──
+
+def test_l_observateur_est_notifie_des_evenements_retenus():
+    from bot.core.stream_feed import StreamFeed
+    vus = []
+    feed = StreamFeed(streamer_name="azrael")
+    feed.set_observer(vus.append)
+    feed.record("Un raid de 42 personnes arrive")
+    assert vus == ["Un raid de 42 personnes arrive"]
+
+
+def test_l_observateur_ne_voit_pas_les_doublons_consecutifs():
+    """Un poll qui « flappe » ne doit pas déclencher deux réactions."""
+    from bot.core.stream_feed import StreamFeed
+    vus = []
+    feed = StreamFeed()
+    feed.set_observer(vus.append)
+    feed.record("Le jeu passe à Apex")
+    feed.record("Le jeu passe à Apex")
+    assert len(vus) == 1
+
+
+def test_un_observateur_en_erreur_ne_casse_pas_le_flux():
+    """Le flux de contexte est prioritaire sur l'overlay."""
+    from bot.core.stream_feed import StreamFeed
+    def _boom(_):
+        raise RuntimeError("overlay HS")
+    feed = StreamFeed()
+    feed.set_observer(_boom)
+    feed.record("Un raid arrive")          # ne doit pas lever
+    assert "Un raid arrive" in feed.render()
+
+
+def test_observateur_detachable():
+    from bot.core.stream_feed import StreamFeed
+    vus = []
+    feed = StreamFeed()
+    feed.set_observer(vus.append)
+    feed.set_observer(None)
+    feed.record("Un raid arrive")
+    assert vus == []
