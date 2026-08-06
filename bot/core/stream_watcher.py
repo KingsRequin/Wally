@@ -141,12 +141,22 @@ class StreamWatcher:
                     logger.warning("StreamWatcher on_transition a échoué : {e}", e=exc)
         self._emit_feed_events(old, new)
 
-    def _emit(self, description: str) -> None:
-        """Pousse une ligne dans le flux passif — jamais bloquant."""
+    def _emit(self, description: str, *, notify: bool = True) -> None:
+        """Pousse une ligne dans le flux passif — jamais bloquant.
+
+        `notify=False` pour ce qui doit être SU sans être commenté."""
         if self._on_event is None:
             return
         try:
-            self._on_event(description)
+            if notify:
+                self._on_event(description)
+            else:
+                # Le consommateur peut être un simple callable (tests) : on ne
+                # perd pas l'événement s'il n'accepte pas le drapeau.
+                try:
+                    self._on_event(description, notify=False)
+                except TypeError:
+                    self._on_event(description)
         except Exception as exc:  # noqa: BLE001
             logger.warning("StreamWatcher on_event a échoué : {e}", e=exc)
 
@@ -197,7 +207,11 @@ class StreamWatcher:
         delta = viewers - self._viewers_mark
         if abs(delta) >= VIEWER_SWING_MIN and abs(delta) >= self._viewers_mark * VIEWER_SWING_RATIO:
             verb = "monte" if delta > 0 else "retombe"
+            # Perception seule : le compteur de spectateurs fluctue tout seul, il
+            # ne dit rien de neuf au public et faisait commenter Wally dans le
+            # vide. Il reste dans le contexte, il ne déclenche plus rien.
             self._emit(
-                f"l'audience {verb} : {self._viewers_mark} → {viewers} spectateurs"
+                f"l'audience {verb} : {self._viewers_mark} → {viewers} spectateurs",
+                notify=False,
             )
             self._viewers_mark = viewers

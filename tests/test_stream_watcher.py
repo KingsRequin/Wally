@@ -151,3 +151,42 @@ async def test_run_loops_until_cancelled():
     task.cancel()
     await task
     assert w.status["live"] is True
+
+
+def test_l_audience_est_percue_mais_ne_declenche_rien():
+    """Le compteur de spectateurs fluctue tout seul : il ne dit rien de neuf au
+    public et faisait commenter Wally dans le vide."""
+    from bot.core.stream_watcher import StreamWatcher
+
+    recu: list[tuple[str, bool]] = []
+
+    def _record(description, *, notify=True):
+        recu.append((description, notify))
+
+    w = StreamWatcher(None, on_event=_record)
+    w._viewers_mark = 10
+    w._emit_feed_events(
+        {"live": True, "viewers": 10, "category": "Apex", "title": "t"},
+        {"live": True, "viewers": 40, "category": "Apex", "title": "t"},
+    )
+    audience = [r for r in recu if "audience" in r[0]]
+    assert audience, "l'audience doit rester dans le flux passif"
+    assert audience[0][1] is False, "mais sans réveiller le narrateur"
+
+
+def test_un_changement_de_jeu_declenche_toujours():
+    """Contre-exemple : ça, c'est un vrai événement du stream."""
+    from bot.core.stream_watcher import StreamWatcher
+
+    recu: list[tuple[str, bool]] = []
+
+    def _record(description, *, notify=True):
+        recu.append((description, notify))
+
+    w = StreamWatcher(None, on_event=_record)
+    w._emit_feed_events(
+        {"live": True, "viewers": 10, "category": "Apex", "title": "t"},
+        {"live": True, "viewers": 10, "category": "Rocket League", "title": "t"},
+    )
+    jeu = [r for r in recu if "change de jeu" in r[0]]
+    assert jeu and jeu[0][1] is True

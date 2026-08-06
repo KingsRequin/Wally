@@ -484,6 +484,9 @@ class VoiceService:
           budget de parole reste le seul juge.
         """
         line = f"{label} (vocal) : {text}"
+        # En INFO : sans ça, impossible de vérifier qu'il entend quoi que ce soit
+        # pendant un live — tout le reste du chemin est en DEBUG.
+        logger.info("voice (écoute) : {l}", l=line[:160])
         try:
             from bot.core.stream_feed import active_stream_feed
             feed = active_stream_feed()
