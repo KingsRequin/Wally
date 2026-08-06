@@ -22,11 +22,11 @@ from loguru import logger
 # Modes d'affichage d'une bulle.
 BubbleMode = Literal["speech", "thought"]
 
-# Durée d'affichage, proportionnelle à la longueur. Le plancher de 2 s était
-# trop court en pratique : un viewer qui ne fixe pas l'overlay rate la bulle
-# entre deux coups d'œil au gameplay.
-_MIN_DURATION_S = 5.0
-_MAX_DURATION_S = 10.0
+# Durée d'affichage. Le plancher gouverne en pratique : une bulle fait au plus
+# 90 caractères, soit ~15 mots, donc toutes durent 10 s. Un viewer ne fixe pas
+# l'overlay — il faut que la bulle survive à un aller-retour vers le gameplay.
+_MIN_DURATION_S = 10.0
+_MAX_DURATION_S = 12.0
 _SECONDS_PER_WORD = 0.5
 
 
