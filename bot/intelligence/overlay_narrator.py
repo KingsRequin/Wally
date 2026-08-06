@@ -17,6 +17,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 """
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Callable
 from typing import Optional
@@ -164,6 +165,46 @@ class OverlayNarrator:
         self._mark_spoken()
         self._feed.say(short, mode="speech")
         return short
+
+    # ── widgets ───────────────────────────────────────────────────────────
+
+    # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
+    # ce qui permet à Wally de commenter son propre tirage — et de tricher.
+    _WIDGETS = ("coinflip", "dice", "counter")
+
+    def show_widget(
+        self, widget: str, comment: str = "", result=None
+    ) -> bool:
+        """Affiche un widget décidé par Wally, avec son commentaire.
+
+        Retourne False si le widget est inconnu ou hors live — auquel cas rien
+        n'est publié.
+        """
+        widget = (widget or "").strip()
+        if widget not in self._WIDGETS or not self._live():
+            return False
+
+        params: dict = {}
+        if widget == "coinflip":
+            params["result"] = result if result in ("heads", "tails") else random.choice(
+                ("heads", "tails")
+            )
+        elif widget == "dice":
+            try:
+                value = int(result)
+            except (TypeError, ValueError):
+                value = random.randint(1, 6)
+            params["result"] = max(1, min(6, value))
+        elif widget == "counter":
+            params["text"] = str(result or comment)[:40]
+
+        self._feed.widget(widget, **params)
+        # Le commentaire accompagne le widget : c'est lui qui fait le personnage,
+        # pas l'animation. Il consomme le budget des bulles.
+        if comment:
+            self._mark_spoken()
+            self._feed.say(comment, mode="speech")
+        return True
 
     async def _condense(self, text: str, system: Optional[str] = None) -> Optional[str]:
         raw = await self._llm.complete(

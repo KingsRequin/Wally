@@ -272,22 +272,6 @@ class WallyDiscord(commands.Bot):
             )
             from bot.intelligence.speak_guard import SpeakGuard
             _speak_guard = SpeakGuard(self.llm_secondary, _prompts_dir)
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate, speak_guard=_speak_guard)
-
-            from bot.intelligence.thought_progress import ThoughtProgressJudge
-            _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)
-
-            # Digest de réveil : après des heures sans sollicitation (ou un
-            # process arrêté), Wally reçoit un résumé de ce qui s'est dit sur
-            # Discord pendant son sommeil. Source = logs de conversation JSONL
-            # (seuls à porter toute la perception passive).
-            from bot.intelligence.wake_digest import WakeDigest
-            _logs_root = getattr(_conv_log, "root", "logs/conversations")
-            _wake_digest = WakeDigest(
-                self.llm_secondary, _prompts_dir,
-                logs_root=_logs_root, db=self.db, fact_store=_fact_store,
-            )
-
             # Narrateur d'overlay : republie les pensées en bulle pendant un live.
             # Le dashboard porte le feed ; sans lui (tests, dashboard absent) le
             # narrateur reste None et la boucle cognitive ignore le volet overlay.
@@ -307,6 +291,22 @@ class WallyDiscord(commands.Bot):
                 )
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator
+
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate, speak_guard=_speak_guard, overlay_narrator=_overlay_narrator)
+
+            from bot.intelligence.thought_progress import ThoughtProgressJudge
+            _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)
+
+            # Digest de réveil : après des heures sans sollicitation (ou un
+            # process arrêté), Wally reçoit un résumé de ce qui s'est dit sur
+            # Discord pendant son sommeil. Source = logs de conversation JSONL
+            # (seuls à porter toute la perception passive).
+            from bot.intelligence.wake_digest import WakeDigest
+            _logs_root = getattr(_conv_log, "root", "logs/conversations")
+            _wake_digest = WakeDigest(
+                self.llm_secondary, _prompts_dir,
+                logs_root=_logs_root, db=self.db, fact_store=_fact_store,
+            )
 
             self.cognitive_loop = CognitiveLoop(
                 _attention, _reasoning, _dispatcher, self.emotion, self.cognitive_feed,

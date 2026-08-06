@@ -191,3 +191,65 @@ async def test_le_budget_evenement_limite_les_rafales():
     n, _, _ = _narrator()
     assert await n.on_stream_event("Un sub arrive") is not None
     assert await n.on_stream_event("Un autre sub arrive") is None
+
+
+# ── widgets décidés par Wally ──
+
+def test_un_widget_ne_s_affiche_pas_hors_live():
+    n, feed, _ = _narrator(live=False)
+    q = feed.subscribe()
+    assert n.show_widget("coinflip", "on verra bien") is False
+    assert q.empty()
+
+
+def test_un_widget_inconnu_est_refuse():
+    n, feed, _ = _narrator()
+    assert n.show_widget("roulette_russe", "hé hé") is False
+
+
+def test_le_resultat_est_decide_cote_serveur():
+    """Le navigateur ne tire rien : c'est ce qui permet à Wally de commenter son
+    propre tirage — et de tricher."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    assert n.show_widget("coinflip", "évidemment") is True
+    widget = q.get_nowait()
+    assert widget["type"] == "widget"
+    assert widget["params"]["result"] in ("heads", "tails")
+
+
+def test_wally_peut_forcer_le_resultat():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("coinflip", "je le sentais", result="tails")
+    assert q.get_nowait()["params"]["result"] == "tails"
+
+
+def test_le_de_est_borne_a_six_faces():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("dice", "allez", result=99)
+    assert q.get_nowait()["params"]["result"] == 6
+
+
+def test_un_de_sans_resultat_est_tire_au_hasard():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("dice", "au pif")
+    assert 1 <= q.get_nowait()["params"]["result"] <= 6
+
+
+def test_le_commentaire_accompagne_le_widget():
+    """C'est le commentaire qui fait le personnage, pas l'animation."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("coinflip", "bon, pile alors")
+    events = [q.get_nowait() for _ in range(2)]
+    assert events[0]["type"] == "widget"
+    assert events[1]["type"] == "bubble" and events[1]["text"] == "bon, pile alors"
+
+
+def test_le_widget_consomme_le_budget_des_bulles():
+    n, _, _ = _narrator()
+    n.show_widget("coinflip", "et voilà")
+    assert n._may_speak() is False

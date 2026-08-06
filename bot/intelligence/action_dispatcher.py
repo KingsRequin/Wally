@@ -56,7 +56,12 @@ class ActionDispatcher:
         twitch_bot=None,
         gate=None,
         speak_guard=None,
+        overlay_narrator=None,
     ) -> None:
+        # Overlay de stream : Wally DÉCIDE d'afficher un widget, il n'exécute pas
+        # une commande. C'est ce qui lui permet de refuser, de commenter, ou de
+        # proposer de lui-même — un widget télécommandé serait un gadget.
+        self._overlay_narrator = overlay_narrator
         self._bot = bot
         self._twitch_bot = twitch_bot
         self._persona = persona_manager
@@ -346,7 +351,17 @@ class ActionDispatcher:
 
         now = datetime.now(timezone.utc)
 
-        if act_name == "create_memory" and self._facts:
+        if act_name == "show_overlay" and self._overlay_narrator:
+            widget = str(args.get("widget") or "").strip()
+            comment = str(args.get("comment") or "").strip()
+            shown = self._overlay_narrator.show_widget(
+                widget, comment, result=args.get("result")
+            )
+            if shown:
+                logger.info("ACT show_overlay: {w} ({c})", w=widget, c=comment[:40])
+                self._publish_act(f"show_overlay {widget}: ", comment)
+
+        elif act_name == "create_memory" and self._facts:
             content = args.get("fact_content", "")
             if content:
                 await self._facts.add(AtomicFact(

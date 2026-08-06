@@ -844,3 +844,33 @@ async def test_react_adds_when_others_reacted_but_not_bot():
         act_args={"channel_id": "1", "message_id": "2", "emoji": "🔥"},
     ))
     message.add_reaction.assert_awaited_once_with("🔥")
+
+
+@pytest.mark.asyncio
+async def test_act_show_overlay_delegue_au_narrateur():
+    """Wally DÉCIDE d'afficher : l'action passe par le narrateur, qui garde le
+    dernier mot (hors live, widget inconnu…)."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    narrator = MagicMock()
+    narrator.show_widget = MagicMock(return_value=True)
+    feed = MagicMock()
+    disp = ActionDispatcher(overlay_narrator=narrator, feed=feed)
+
+    await disp.dispatch(MetaDecision(action="ACT", act_name="show_overlay", act_args={
+        "widget": "coinflip", "comment": "évidemment", "result": "tails",
+    }))
+    narrator.show_widget.assert_called_once_with("coinflip", "évidemment", result="tails")
+
+
+@pytest.mark.asyncio
+async def test_act_show_overlay_sans_narrateur_ne_casse_rien():
+    """Dashboard absent (tests, démarrage partiel) : l'action est simplement ignorée."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    disp = ActionDispatcher()
+    await disp.dispatch(MetaDecision(action="ACT", act_name="show_overlay", act_args={
+        "widget": "dice", "comment": "allez",
+    }))
