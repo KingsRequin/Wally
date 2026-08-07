@@ -2909,15 +2909,19 @@ function switchParametresSubTab(subtab) {
   }
 }
 
+// Ce que chaque voix sait faire des émotions. Sans cette mention, on choisit
+// une voix « plus jolie » et Wally devient monocorde sans qu'on comprenne
+// pourquoi — hors MAI, seules Henri et Denise supportent des styles
+// (doc Azure, vérifiée le 2026-08-07). Les voix MAI sont facturées en tokens.
 const _VOICE_OPTIONS = [
-  'fr-FR-Marc:MAI-Voice-2',
-  'fr-FR-Soleil:MAI-Voice-2',
-  'fr-FR-DeniseNeural',
-  'fr-FR-HenriNeural',
-  'fr-FR-RemyMultilingualNeural',
-  'fr-FR-VivienneMultilingualNeural',
-  'fr-FR-JeromeNeural',
-  'fr-FR-EloiseNeural',
+  ['fr-FR-Marc:MAI-Voice-2', '18 styles · facturée en tokens'],
+  ['fr-FR-Soleil:MAI-Voice-2', '18 styles · facturée en tokens'],
+  ['fr-FR-HenriNeural', '4 styles · gratuite (F0)'],
+  ['fr-FR-DeniseNeural', '4 styles · gratuite (F0)'],
+  ['fr-FR-RemyMultilingualNeural', 'sans émotion'],
+  ['fr-FR-VivienneMultilingualNeural', 'sans émotion'],
+  ['fr-FR-JeromeNeural', 'sans émotion'],
+  ['fr-FR-EloiseNeural', 'sans émotion'],
 ];
 
 async function _renderParametresVoice(panel) {
@@ -2943,11 +2947,14 @@ async function _renderParametresVoice(panel) {
   const sel = document.createElement('select');
   sel.id = 'voice-azure-p'; sel.className = 'neo-select';
   const opts = _VOICE_OPTIONS.slice();
-  if (v.azure_voice && opts.indexOf(v.azure_voice) === -1) opts.unshift(v.azure_voice);
+  if (v.azure_voice && !opts.some(function(o) { return o[0] === v.azure_voice; })) {
+    opts.unshift([v.azure_voice, '']);
+  }
   opts.forEach(function(o) {
     const opt = document.createElement('option');
-    opt.value = o; opt.textContent = o;
-    if (o === v.azure_voice) opt.selected = true;
+    opt.value = o[0];
+    opt.textContent = o[1] ? `${o[0]} — ${o[1]}` : o[0];
+    if (o[0] === v.azure_voice) opt.selected = true;
     sel.appendChild(opt);
   });
   section.appendChild(makeFormRow('Voix', sel));

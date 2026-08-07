@@ -426,7 +426,9 @@ class VoiceService:
             emotion_state = self._bot.emotion.get_state()
         except Exception:  # noqa: BLE001
             emotion_state = None
-        style, text = resolve_style(text, emotion_state)
+        # La voix courante décide des styles disponibles : un `express-as`
+        # inconnu fait échouer la synthèse, et Azure ne le signale pas.
+        style, text = resolve_style(text, emotion_state, voice=self._cfg.azure_voice)
         if not text:
             return
         self.quota.add_tts_chars(len(text))

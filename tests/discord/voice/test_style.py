@@ -70,3 +70,73 @@ def test_resolve_drops_short_stage_direction():
     # didascalie courte type [rire] au milieu → supprimée
     style, clean = resolve_style("ça me fait bien marrer [il rigole] franchement", None)
     assert "[" not in clean and "rigole" not in clean
+
+
+# ── styles selon la voix (2026-08-07) ──
+
+from bot.discord.voice.style import supported_styles, adapt_style
+
+_HENRI = "fr-FR-HenriNeural"
+_MARC = "fr-FR-Marc:MAI-Voice-2"
+
+
+def test_les_voix_standard_nont_que_quatre_styles():
+    """Doc Azure : Henri et Denise sont les SEULES voix fr-FR hors MAI à
+    supporter des styles, et seulement ces quatre-là."""
+    assert supported_styles(_HENRI) == frozenset(
+        {"cheerful", "excited", "sad", "whispering"})
+    assert supported_styles("fr-FR-DeniseNeural") == supported_styles(_HENRI)
+
+
+def test_une_voix_sans_style_connu_nen_recoit_aucun():
+    """Un `mstts:express-as` inconnu fait ÉCHOUER la synthèse — donc un Wally
+    muet. Face à une voix qu'on ne connaît pas, on n'envoie rien."""
+    assert supported_styles("fr-FR-Remy:DragonHDLatestNeural") == frozenset()
+    assert adapt_style("sad", "fr-FR-Remy:DragonHDLatestNeural") is None
+
+
+def test_les_voix_mai_gardent_tous_leurs_styles():
+    assert "angry" in supported_styles(_MARC)
+    assert adapt_style("angry", _MARC) == "angry"
+    assert adapt_style("softvoice", "fr-FR-Soleil:MAI-Voice-2-Flash") == "softvoice"
+
+
+def test_un_style_supporte_passe_tel_quel():
+    assert adapt_style("sad", _HENRI) == "sad"
+    assert adapt_style("whispering", _HENRI) == "whispering"
+
+
+def test_un_style_absent_retombe_sur_le_plus_proche():
+    """Arbitrage owner : mieux vaut une voix expressive approchante qu'une voix
+    plate. Henri n'a ni `angry`, ni `joyful`, ni `softvoice`."""
+    assert adapt_style("angry", _HENRI) == "excited"
+    assert adapt_style("joyful", _HENRI) == "cheerful"
+    assert adapt_style("softvoice", _HENRI) == "whispering"
+    assert adapt_style("surprised", _HENRI) == "excited"
+    assert adapt_style("fearful", _HENRI) == "sad"
+    assert adapt_style("shouting", _HENRI) == "excited"
+
+
+def test_toute_emotion_reste_audible_sur_henri():
+    """Les 5 émotions du moteur doivent produire un style valide sur Henri :
+    c'était le point de la question — « on change de voix, mais plus
+    d'émotion » n'est vrai que si on ne fait pas ce repli."""
+    from bot.discord.voice.style import _MOOD_STYLE
+    ok = supported_styles(_HENRI)
+    for emotion, style in _MOOD_STYLE.items():
+        adapted = adapt_style(style, _HENRI)
+        assert adapted in ok, f"{emotion} → {style} n'a pas d'équivalent"
+
+
+def test_resolve_style_adapte_a_la_voix():
+    from bot.discord.voice.style import resolve_style
+    colere = {"anger": 0.9, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
+    assert resolve_style("salut", colere, voice=_MARC)[0] == "angry"
+    assert resolve_style("salut", colere, voice=_HENRI)[0] == "excited"
+
+
+def test_resolve_style_sans_voix_reste_compatible():
+    """L'ancien appel à deux arguments ne doit pas casser."""
+    from bot.discord.voice.style import resolve_style
+    style, clean = resolve_style("[murmure] doucement", None)
+    assert style == "whispering" and clean == "doucement"

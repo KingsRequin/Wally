@@ -1,7 +1,83 @@
-"""Styles de parole vocaux (Azure express-as) : selon l'humeur ou sur demande de Wally."""
+"""Styles de parole vocaux (Azure express-as) : selon l'humeur ou sur demande de Wally.
+
+⚠️ Tous les styles ne sont pas disponibles sur toutes les voix, et un
+`mstts:express-as` inconnu fait ÉCHOUER la synthèse — Azure ne lève pas, il rend
+un flux vide, donc Wally deviendrait muet sans un mot dans les logs (cf.
+`AzureTTS._stream_sync`). Le style demandé est donc toujours ramené à ce que la
+voix courante sait faire.
+"""
 import re
 
-# Émotion dominante de Wally → style Azure (voix Marc:MAI-Voice-2).
+# Styles réellement supportés, par voix (doc Azure « Language and voice support »,
+# vérifiée le 2026-08-07). Hors MAI, **seules** Henri et Denise en supportent —
+# Vivienne, Remy, Lucien, les Dragon HD et toutes les standards en ont ZÉRO.
+_MAI_STYLES = frozenset({
+    "angry", "confused", "determined", "disgusted", "embarrassed", "excited",
+    "fearful", "happy", "hopeful", "jealous", "joyful", "regretful", "relieved",
+    "sad", "shouting", "softvoice", "surprised", "whispering",
+})
+_STANDARD_STYLES = frozenset({"cheerful", "excited", "sad", "whispering"})
+
+_STYLED_STANDARD_VOICES = ("fr-FR-HenriNeural", "fr-FR-DeniseNeural")
+
+
+def supported_styles(voice: str | None) -> frozenset[str]:
+    """Styles que cette voix accepte. Ensemble VIDE si on ne sait pas.
+
+    Le défaut restrictif est délibéré : une voix inconnue qui recevrait un style
+    invalide ne dirait plus rien du tout.
+    """
+    name = (voice or "").strip()
+    if ":MAI-Voice-" in name:
+        return _MAI_STYLES
+    if name in _STYLED_STANDARD_VOICES:
+        return _STANDARD_STYLES
+    return frozenset()
+
+
+# Repli quand la voix ne connaît pas le style voulu. Arbitrage owner
+# (2026-08-07) : une voix expressive approchante vaut mieux qu'une voix plate.
+_STYLE_FALLBACK = {
+    "angry": "excited",       # la tension plutôt que la colère
+    "shouting": "excited",
+    "surprised": "excited",
+    "determined": "excited",
+    "happy": "cheerful",
+    "joyful": "cheerful",
+    "hopeful": "cheerful",
+    "relieved": "cheerful",
+    "fearful": "sad",
+    "regretful": "sad",
+    "embarrassed": "sad",
+    "jealous": "sad",
+    "disgusted": "sad",
+    "confused": "sad",
+    "softvoice": "whispering",
+    "cheerful": "joyful",     # sens inverse, pour une voix MAI
+    "excited": "joyful",
+}
+
+
+def adapt_style(style: str | None, voice: str | None) -> str | None:
+    """Ramène `style` à ce que `voice` sait faire, ou None s'il n'y a rien."""
+    if not style:
+        return None
+    allowed = supported_styles(voice)
+    if not allowed:
+        return None
+    seen: set[str] = set()
+    current: str | None = style
+    # Chaîne de replis bornée : `cheerful → joyful → cheerful` boucle sinon.
+    while current and current not in seen:
+        if current in allowed:
+            return current
+        seen.add(current)
+        current = _STYLE_FALLBACK.get(current)
+    return None
+
+
+# Émotion dominante de Wally → style Azure. Exprimé dans le vocabulaire riche des
+# voix MAI ; `adapt_style()` le ramène à la voix réellement configurée.
 _MOOD_STYLE = {
     "anger": "angry",
     "joy": "joyful",
@@ -80,8 +156,16 @@ def _strip_brackets(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def resolve_style(text: str, emotion_state: dict[str, float] | None) -> tuple[str | None, str]:
-    """Style final + texte à dire : le tag explicite de Wally prime sur l'humeur."""
+def resolve_style(
+    text: str, emotion_state: dict[str, float] | None, voice: str | None = None
+) -> tuple[str | None, str]:
+    """Style final + texte à dire : le tag explicite de Wally prime sur l'humeur.
+
+    `voice` ramène le style aux capacités réelles de la voix configurée. Omis,
+    le style sort tel quel — les appels historiques restent valides.
+    """
     tag_style, clean = parse_style_tag(text)
     style = tag_style if tag_style is not None else mood_to_style(emotion_state)
+    if voice is not None:
+        style = adapt_style(style, voice)
     return style, _strip_unspeakable(_strip_brackets(clean))
