@@ -115,6 +115,13 @@ Il compose une grille de pronostics (jusqu'à 9) à partir de ce qu'il sait
 vraiment d'Azraël et des habitués, puis **coche les cases quand il les
 constate** — en vocal ou dans le chat. Il ne coche que ce qu'il a vu ou entendu.
 
+> « wally coche la case du ping »
+> « wally remontre le bingo »
+
+Une case se coche par quelques mots de son intitulé : le modèle ne voit pas la
+grille, lui demander un numéro de mémoire garantissait la mauvaise case. La
+grille ne reste pas à l'écran — on peut la redemander à tout moment.
+
 ### Le pendu
 
 > « wally lance un pendu »

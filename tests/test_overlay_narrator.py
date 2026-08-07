@@ -793,3 +793,69 @@ def test_un_nouveau_live_efface_la_grille():
     n.start_bingo(["a", "b"])
     n.reset_live()
     assert n._bingo is None
+
+
+# ── une demande explicite n'est pas soumise au budget ──
+
+@pytest.mark.asyncio
+async def test_une_demande_vocale_passe_meme_budget_epuise():
+    """Vu en live : trois personnes parlant en continu saturaient le budget par
+    le vocal passif, et « Wally, lance un dé » tombait dans le vide."""
+    feed = OverlayFeed()
+    llm = AsyncMock()
+
+    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
+        await tool_executor("show_overlay", '{"widget": "dice"}')
+        return "quatre", []
+
+    llm.complete_with_tools = _fake
+    n = OverlayNarrator(feed, llm, lambda: True)
+    n._last_event_at = time.monotonic()      # budget tout juste consommé
+    assert n._may_react() is False
+    q = feed.subscribe()
+    assert await n.on_voice_request("Azraël", "wally lance un dé") == "quatre"
+    kinds = [e.get("kind") for e in (q.get_nowait() for _ in range(q.qsize()))
+             if e["type"] == "widget"]
+    assert "dice" in kinds
+
+
+# ── bingo : cocher par intitulé, réafficher ──
+
+def test_une_case_se_coche_par_son_intitule():
+    """Le modèle ne voit pas la grille : lui demander un index de mémoire est le
+    meilleur moyen qu'il coche la mauvaise case."""
+    n, _, _ = _narrator()
+    n.start_bingo(["il blâme le ping", "il rage sur un carré", "il dit qu'il arrête"])
+    assert n.check_bingo("le ping")["checked"] == "il blâme le ping"
+
+
+def test_cocher_par_intitule_tolere_les_accents():
+    n, _, _ = _narrator()
+    n.start_bingo(["il blâme le ping", "il rage"])
+    assert n.check_bingo("blame")["checked"] == "il blâme le ping"
+
+
+def test_un_intitule_sans_rapport_ne_coche_rien():
+    n, _, _ = _narrator()
+    n.start_bingo(["il blâme le ping", "il rage"])
+    assert n.check_bingo("licorne quantique") is None
+
+
+def test_le_numero_reste_accepte():
+    n, _, _ = _narrator()
+    n.start_bingo(["a b c", "d e f"])
+    assert n.check_bingo(1)["checked"] == "d e f"
+
+
+def test_la_grille_se_reaffiche_sur_demande():
+    """Elle ne reste pas à l'écran : sans ça, on ne pouvait pas la revoir."""
+    n, feed, _ = _narrator()
+    n.start_bingo(["a b c", "d e f"])
+    q = feed.subscribe()
+    assert n.show_widget("bingo", "") is not None
+    assert [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"]
+
+
+def test_reafficher_sans_grille_ne_fait_rien():
+    n, _, _ = _narrator()
+    assert n.show_widget("bingo", "") is None

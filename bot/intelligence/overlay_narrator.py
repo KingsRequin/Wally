@@ -152,7 +152,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "array", "items": {"type": "string"},
                     "description": "Pour bingo : 4 à 9 pronostics courts sur ce qui va arriver pendant le live.",
                 },
-                "check": {"type": "integer", "description": "Pour bingo : numéro de la case (0 = la première) que tu viens de voir se réaliser."},
+                "check": {"type": "string", "description": "Pour bingo : la case qui vient de se réaliser — son numéro (0 = la première) ou quelques mots de son intitulé."},
                 "target": {"type": "integer", "description": "Pour goal : le nombre à atteindre."},
                 "kind": {"type": "string", "enum": ["follow", "sub", "bits"], "description": "Pour goal : ce qu'on compte."},
                 "about": {"type": "string", "description": "Pour meme : de quoi tu veux qu'il parle. Omets-le pour un tirage au hasard."},
@@ -371,7 +371,12 @@ class OverlayNarrator:
         puis rien. Ici le modèle peut réellement appeler `show_overlay`.
         """
         text = (text or "").strip()
-        if not text or not self._may_react():
+        # PAS de budget ici : on le lui demande. Le budget existe pour brider ce
+        # que Wally dit de lui-même — l'appliquer à une sollicitation directe
+        # revient à l'ignorer. Vu en live : trois personnes parlant en continu
+        # saturaient le budget par le vocal passif, et « Wally, lance un dé »
+        # tombait dans le vide.
+        if not text or not self._live():
             return None
         self._last_event_at = time.monotonic()
         self._feed.thinking(True)
@@ -571,10 +576,14 @@ class OverlayNarrator:
                 if not self.start_bingo(cells):
                     return None
                 return {"widget": "bingo", "cells": self._bingo["cells"]}
-            checked = self.check_bingo(extra.get("check"))
-            if checked is None:
-                return None
-            return checked
+            if extra.get("check") is not None:
+                checked = self.check_bingo(extra.get("check"))
+                if checked is None:
+                    return None
+                return checked
+            # Ni cases ni coche : on redemande simplement la grille. Elle ne
+            # reste pas à l'écran, et sans ça on ne pouvait pas la revoir.
+            return self.show_bingo()
 
         elif widget == "stats":
             # Les chiffres viennent de l'outil Apex, pas d'ici : Wally les a lus
@@ -835,15 +844,50 @@ class OverlayNarrator:
         logger.info("Overlay: bingo ouvert ({n} cases)", n=len(cells))
         return True
 
+    def show_bingo(self) -> Optional[dict]:
+        """Réaffiche la grille en cours, sur demande."""
+        if not self._bingo or not self._live():
+            return None
+        self._bingo_reminded_at = time.monotonic()
+        self._feed.widget("bingo", cells=self._bingo["cells"],
+                          done=list(self._bingo["done"]), duration=10)
+        return {"widget": "bingo", "cells": self._bingo["cells"]}
+
+    def _bingo_index(self, needle) -> Optional[int]:
+        """Retrouve une case par son numéro OU par son intitulé.
+
+        Le modèle ne voit pas la grille : lui demander un index de mémoire est
+        le meilleur moyen qu'il coche la mauvaise case.
+        """
+        bingo = self._bingo
+        if not bingo:
+            return None
+        try:
+            return int(needle)
+        except (TypeError, ValueError):
+            pass
+        words = [w for w in self._fold(str(needle)).split() if len(w) > 2]
+        if not words:
+            return None
+        for i, cell in enumerate(bingo["cells"]):
+            folded = self._fold(cell)
+            if all(w in folded for w in words):
+                return i
+        # À défaut d'une correspondance complète, la case qui partage le plus
+        # de mots — « le ping » doit trouver « il blâme le ping ».
+        scores = [(sum(1 for w in words if w in self._fold(c)), i)
+                  for i, c in enumerate(bingo["cells"])]
+        best, index = max(scores)
+        return index if best else None
+
     def check_bingo(self, index) -> Optional[dict]:
         """Coche une case. Retourne None si rien n'a changé — le widget ne doit
         pas réapparaître pour une case déjà cochée."""
         bingo = self._bingo
         if not bingo:
             return None
-        try:
-            i = int(index)
-        except (TypeError, ValueError):
+        i = self._bingo_index(index)
+        if i is None:
             return None
         if not 0 <= i < len(bingo["cells"]) or bingo["done"][i]:
             return None

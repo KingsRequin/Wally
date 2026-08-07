@@ -26,6 +26,10 @@ _FLUSH = object()  # sentinelle « force la fin de l'énoncé » dans la file d'
 _PREBUF_MAX = 250  # ~5 s de frames de 20 ms bufferisées avant `ready` (borne mémoire)
 _BACKOFF_MAX_MULT = 4  # plafond du backoff injoignable = health_cache_s × 4 (ex. 30s → 120s max)
 
+# Énoncés en attente de transcription locale avant abandon. Deux, c'est déjà
+# ~4 s de retard sur ce CPU ; au-delà, la réaction arrive hors sujet.
+_MAX_PENDING_FALLBACK = 2
+
 
 class RemoteSTTSession:
     """Une connexion WebSocket vers le serveur STT distant, pour un seul locuteur."""
@@ -227,6 +231,9 @@ class RemoteStreamingSTT:
         self._sessions: dict[str, RemoteSTTSession] = {}
         self._start_tasks: dict[str, asyncio.Task] = {}
         self._fallback_speakers: set[str] = set()
+        # Énoncés en cours de transcription locale — borne la file, cf.
+        # _MAX_PENDING_FALLBACK.
+        self._pending_fallback = 0
         self._last_activity: dict[str, float] = {}
         self._unreachable_until: float = 0.0
         self._consecutive_unreachable: int = 0  # backoff exponentiel : ↑ à chaque échec, remis à 0 au succès
@@ -284,6 +291,14 @@ class RemoteStreamingSTT:
             return
         # Pas de session distante (fallback ou ouverture échouée) → transcription batch du segment.
         self._fallback_speakers.discard(speaker_id)  # réessaiera le distant au prochain énoncé
+        # File saturée : on ABANDONNE l'énoncé plutôt que de l'empiler. Mesuré en
+        # live à trois locuteurs, la file montait à 35 s de retard — à ce
+        # décalage, Wally « réagit » à une phrase que tout le monde a oubliée.
+        # Pour un compagnon, la fraîcheur prime sur l'exhaustivité.
+        if self._pending_fallback >= _MAX_PENDING_FALLBACK:
+            logger.debug("STT local saturé — énoncé abandonné (file pleine)")
+            return
+        self._pending_fallback += 1
         asyncio.create_task(self._fallback_transcribe(speaker_id, segment))
 
     # ------------------------------------------------------------------
@@ -335,13 +350,18 @@ class RemoteStreamingSTT:
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:
         t0 = self._now()
         try:
-            text = await self._fallback.transcribe(segment)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteStreamingSTT fallback batch a échoué: {e}", e=e)
-            text = ""
-        stt_ms = (self._now() - t0) * 1000
-        if text and self.on_final is not None:
-            await self.on_final(speaker_id, text, stt_ms)
+            try:
+                text = await self._fallback.transcribe(segment)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("RemoteStreamingSTT fallback batch a échoué: {e}", e=e)
+                text = ""
+            stt_ms = (self._now() - t0) * 1000
+            if text and self.on_final is not None:
+                await self.on_final(speaker_id, text, stt_ms)
+        finally:
+            # Sans ce décrément garanti, une seule exception bloquerait la file
+            # pour de bon et Wally deviendrait sourd.
+            self._pending_fallback = max(0, self._pending_fallback - 1)
 
     def _emit_partial(self, speaker_id: str, text: str) -> None:
         if self.on_partial is not None and text:

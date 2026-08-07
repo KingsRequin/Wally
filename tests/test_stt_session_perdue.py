@@ -14,6 +14,7 @@ def _manager():
     mgr = RemoteStreamingSTT.__new__(RemoteStreamingSTT)
     mgr._sessions = {}
     mgr._fallback_speakers = set()
+    mgr._pending_fallback = 0
     mgr._transcribed = []
     # On observe l'aiguillage, pas la transcription elle-même.
     mgr._fallback_transcribe = lambda sid, seg: mgr._transcribed.append((sid, seg))
@@ -57,3 +58,25 @@ def test_sans_session_l_enonce_part_en_local(monkeypatch):
     mgr = _manager()
     mgr.speech_end_sync("u1", b"audio")
     assert mgr._transcribed == [("u1", b"audio")]
+
+
+def test_la_file_locale_est_bornee(monkeypatch):
+    """Mesuré en live : à trois locuteurs, la file montait à 35 s de retard.
+    À ce décalage, Wally réagit à une phrase que tout le monde a oubliée."""
+    import bot.discord.voice.streaming as mod
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+
+    mgr = _manager()
+    mgr._pending_fallback = mod._MAX_PENDING_FALLBACK
+    mgr.speech_end_sync("u1", b"audio")
+    assert mgr._transcribed == [], "l'énoncé de trop doit être abandonné, pas empilé"
+
+
+def test_un_enonce_passe_quand_la_file_respire(monkeypatch):
+    import bot.discord.voice.streaming as mod
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+
+    mgr = _manager()
+    mgr.speech_end_sync("u1", b"audio")
+    assert mgr._transcribed == [("u1", b"audio")]
+    assert mgr._pending_fallback == 1
