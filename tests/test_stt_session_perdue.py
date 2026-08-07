@@ -1,0 +1,59 @@
+"""Serveur STT distant mort : la parole ne doit jamais se perdre.
+
+`feed_sync` enregistre la session AVANT de savoir si elle s'ouvre. Quand le
+serveur est injoignable, l'énoncé partait dans une session qui n'aboutirait
+jamais, et `_open_and_watch` la retirait sans transcrire ce qu'elle contenait :
+5 à 35 s d'attente, puis une parole perdue.
+"""
+from unittest.mock import MagicMock
+
+from bot.discord.voice.streaming import RemoteStreamingSTT
+
+
+def _manager():
+    mgr = RemoteStreamingSTT.__new__(RemoteStreamingSTT)
+    mgr._sessions = {}
+    mgr._fallback_speakers = set()
+    mgr._transcribed = []
+    # On observe l'aiguillage, pas la transcription elle-même.
+    mgr._fallback_transcribe = lambda sid, seg: mgr._transcribed.append((sid, seg))
+    return mgr
+
+
+def test_une_session_non_prete_ne_capte_pas_l_enonce(monkeypatch):
+    import bot.discord.voice.streaming as mod
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+
+    mgr = _manager()
+    sess = MagicMock()
+    sess.ready = False               # ouverture en cours, ou vouée à l'échec
+    mgr._sessions["u1"] = sess
+
+    mgr.speech_end_sync("u1", b"audio")
+
+    sess.enqueue_flush.assert_not_called()
+    assert mgr._transcribed == [("u1", b"audio")], "l'énoncé doit partir en local"
+
+
+def test_une_session_prete_recoit_bien_le_flush(monkeypatch):
+    import bot.discord.voice.streaming as mod
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+
+    mgr = _manager()
+    sess = MagicMock()
+    sess.ready = True
+    mgr._sessions["u1"] = sess
+
+    mgr.speech_end_sync("u1", b"audio")
+
+    sess.enqueue_flush.assert_called_once()
+    assert mgr._transcribed == [], "pas de double transcription"
+
+
+def test_sans_session_l_enonce_part_en_local(monkeypatch):
+    import bot.discord.voice.streaming as mod
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+
+    mgr = _manager()
+    mgr.speech_end_sync("u1", b"audio")
+    assert mgr._transcribed == [("u1", b"audio")]

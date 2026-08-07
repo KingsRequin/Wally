@@ -274,7 +274,12 @@ class RemoteStreamingSTT:
     def speech_end_sync(self, speaker_id: str, segment: bytes) -> None:
         """Fin de parole détectée par le VAD local : flush distant, ou batch local en fallback."""
         sess = self._sessions.get(speaker_id)
-        if sess is not None:
+        # `ready` et non `is not None` : `feed_sync` enregistre la session AVANT
+        # de savoir si elle s'ouvre. Quand le serveur est mort, l'énoncé partait
+        # dans une session qui n'aboutirait jamais — et `_open_and_watch` la
+        # retire sans transcrire ce qu'elle contenait. La parole était donc
+        # perdue, après 5 à 35 s d'attente.
+        if sess is not None and sess.ready:
             sess.enqueue_flush()  # réduit la latence du final (envoyé dès que prêt)
             return
         # Pas de session distante (fallback ou ouverture échouée) → transcription batch du segment.
