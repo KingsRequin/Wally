@@ -2156,6 +2156,7 @@ async def _respond(
 
         # Mirror pass — detect and fix repetitive patterns or missed memories
         _mirror_before = reply
+        reply = strip_stage_directions(reply)
         reply = await _mirror_pass(bot, str(message.channel.id), reply, mem_context)
         if reply != _mirror_before:
             _clog(
@@ -2449,6 +2450,7 @@ async def _spontaneous_respond(
 
         # Correction ton/langue (#Q6)
         _mirror_before = reply
+        reply = strip_stage_directions(reply)
         reply = await _mirror_pass(bot, str(message.channel.id), reply, recall_memory or "")
         if reply != _mirror_before:
             _clog(
