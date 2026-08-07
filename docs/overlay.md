@@ -132,6 +132,25 @@ tricher.
 
 ---
 
+## Les citations du live
+
+> « wally retiens ça »
+> « wally ressors une citation »
+
+Wally retient une réplique entendue **en vocal** et l'affiche ; plus tard — même
+un autre jour — il peut la ressortir. C'est le décalage qui fait rire : une
+phrase reprise dix minutes après fait sourire, la même trois jours plus tard
+fait rire.
+
+Les citations sont en base, avec la date. Celles qu'on vient de montrer sont
+écartées du tirage suivant, mais tout redevient candidat au fil du temps. La
+citation est plafonnée à 160 caractères : au-delà, ce n'est plus une punchline.
+
+⚠️ Il ne peut citer que ce qu'il a **entendu** — la qualité dépend donc de la
+transcription vocale.
+
+---
+
 ## Les compteurs — d'un stream à l'autre
 
 > « wally compte combien de fois je dis que j'ai pas rechargé »

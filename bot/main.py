@@ -166,6 +166,11 @@ async def main() -> None:
     predictions = PredictionService(db)
     discord_bot.predictions = predictions
 
+    # Citations du vocal : leur intérêt est de ressortir PLUS TARD, d'où la base.
+    from bot.core.quotes import QuoteBook
+    quotes = QuoteBook(db)
+    discord_bot.quotes = quotes
+
     # Recherche dans l'historique : même racine que le logger, pour ne jamais
     # fouiller un autre répertoire que celui où les conversations sont écrites.
     from bot.core.history_search import HistorySearchService
@@ -277,6 +282,7 @@ async def main() -> None:
         twitch_bot.conv_log = conv_log
         twitch_bot.tally = tally
         twitch_bot.predictions = predictions
+        twitch_bot.quotes = quotes
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot

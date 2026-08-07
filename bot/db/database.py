@@ -367,6 +367,16 @@ CREATE TABLE IF NOT EXISTS predictions (
     resolved_at REAL
 );
 
+-- Citations retenues du vocal. Persistées parce que tout l'intérêt est de les
+-- ressortir PLUS TARD — parfois un autre jour, quand plus personne n'y pense.
+CREATE TABLE IF NOT EXISTS quotes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    author      TEXT    NOT NULL,
+    text        TEXT    NOT NULL,
+    created_at  REAL    NOT NULL,
+    shown_at    REAL
+);
+
 CREATE TABLE IF NOT EXISTS twitch_visits (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     channel     TEXT    NOT NULL,

@@ -36,6 +36,7 @@ _WIDGET_WORDS = {
     "meme": "un meme de la communauté (je ne le vois pas, je connais sa description)",
     "rps": "un chifoumi où le chat vote contre moi",
     "hangman": "un pendu où le chat propose des lettres",
+    "quote": "une réplique que j'ai entendue en vocal, ressortie plus tard",
 }
 
 

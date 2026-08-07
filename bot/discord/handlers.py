@@ -226,6 +226,80 @@ async def run_predict_tool(bot, args: dict) -> str:
         return json.dumps({"status": "error", "message": "L'opération a échoué."})
 
 
+_QUOTE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "quote",
+        "description": (
+            "Retenir une réplique marquante entendue en vocal, ou en ressortir "
+            "une d'avant. Sans `recall`, tu enregistres ET affiches ce que "
+            "quelqu'un vient de dire — cite ses mots tels que tu les as ENTENDUS, "
+            "n'invente jamais une phrase qu'on n'a pas prononcée. Avec "
+            "`recall: true`, tu ressors une citation plus ancienne : c'est le "
+            "décalage qui fait rire, surtout quand plus personne n'y pense."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "author": {"type": "string", "description": "Qui l'a dit."},
+                "text": {"type": "string", "description": "Ses mots exacts, courts."},
+                "recall": {"type": "boolean", "description": "Ressortir une ancienne citation."},
+            },
+        },
+    },
+}
+
+
+async def run_quote_tool(bot, args: dict) -> str:
+    """Enregistre ou ressort une citation. Le texte vient de ce que Wally a
+    entendu — la base ne peut pas le vérifier, seul le prompt le lui rappelle."""
+    book = getattr(bot, "quotes", None)
+    if book is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "Le carnet de citations n'est pas disponible."})
+    narrator = _overlay_narrator(bot)
+    try:
+        if args.get("recall"):
+            row = await book.recall(str(args.get("author") or ""))
+            if row is None:
+                return json.dumps({"status": "empty", "message": (
+                    "Tu n'as encore retenu aucune citation."
+                )})
+            when = _quote_age(row.get("created_at"))
+            if narrator is not None:
+                narrator.show_quote(row["author"], row["text"], age=when)
+            return json.dumps({"status": "ok", "message": (
+                f"À l'écran : « {row['text']} » — {row['author']}, {when}."
+            )})
+        row = await book.add(str(args.get("author") or ""), str(args.get("text") or ""))
+        if row is None:
+            return json.dumps({"status": "rejected",
+                               "message": "Il faut un auteur et une phrase."})
+        if narrator is not None:
+            narrator.show_quote(row["author"], row["text"])
+        total = await book.count()
+        return json.dumps({"status": "ok", "message": (
+            f"Citation retenue ({total} en tout) et affichée."
+        )})
+    except Exception as exc:  # noqa: BLE001 — une citation ne casse pas la réponse
+        logger.warning("Citation a échoué : {e}", e=exc)
+        return json.dumps({"status": "error", "message": "L'opération a échoué."})
+
+
+def _quote_age(created_at) -> str:
+    """« tout à l'heure », « hier », « il y a 3 jours » — le décalage fait la blague."""
+    try:
+        delta = time.time() - float(created_at)
+    except (TypeError, ValueError):
+        return ""
+    if delta < 3600:
+        return "tout à l'heure"
+    if delta < 86400:
+        return "plus tôt aujourd'hui"
+    days = int(delta // 86400)
+    return "hier" if days == 1 else f"il y a {days} jours"
+
+
 async def run_tally_tool(bot, name: str, args: dict) -> str:
     """Exécute un outil de comptage. Compte rendu honnête : les totaux viennent
     de la base, jamais du modèle."""
@@ -1953,6 +2027,8 @@ async def _respond(
             tools.extend(_TALLY_TOOLS)
         if getattr(bot, "predictions", None) is not None:
             tools.append(_PREDICT_TOOL)
+        if getattr(bot, "quotes", None) is not None:
+            tools.append(_QUOTE_TOOL)
         # Overlay : seulement s'il est branché — un outil mort ferait promettre
         # un affichage qui n'arriverait jamais.
         if _overlay_narrator(bot) is not None:
@@ -1980,6 +2056,8 @@ async def _respond(
                     "ces articles et colle leur marqueur de source [¹](<url>)."
                 )
             args = json.loads(arguments)
+            if name == "quote":
+                return await run_quote_tool(bot, args)
             if name == "predict":
                 return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):

@@ -420,7 +420,7 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction", "meme", "rps", "hangman")
+                "prediction", "meme", "rps", "hangman", "quote")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -675,6 +675,15 @@ class OverlayNarrator:
         self._last_event_at = time.monotonic()
         self._feed.widget("prediction", bet=str(bet)[:90], outcome=outcome,
                           right=int(right), total=int(total))
+        return True
+
+    def show_quote(self, author: str, text: str, *, age: str = "") -> bool:
+        """Affiche une réplique citée. `age` situe le moment (« hier », « mardi »)."""
+        if not self._live() or not text:
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("quote", author=str(author)[:24], text=str(text)[:160],
+                          age=str(age)[:24], duration=12)
         return True
 
     def show_counter(self, text: str) -> bool:

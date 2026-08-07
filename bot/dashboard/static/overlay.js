@@ -236,6 +236,18 @@
       return box;
     },
 
+    quote(p) {
+      const box = el("div", "quote");
+      const mark = el("div", "quote-mark");
+      mark.textContent = "\u201C";      // guillemet ouvrant, purement décoratif
+      const text = el("div", "quote-text");
+      text.textContent = String(p.text || "");
+      const who = el("div", "quote-author");
+      who.textContent = p.age ? `— ${p.author}, ${p.age}` : `— ${p.author}`;
+      box.append(mark, text, who);
+      return box;
+    },
+
     hangman(p) {
       const box = el("div", `hangman${p.won ? " won" : p.lost ? " lost" : ""}`);
 

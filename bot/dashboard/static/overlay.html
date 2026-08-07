@@ -463,6 +463,38 @@
       transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
     }
 
+    /* Citation — le guillemet et l'italique disent « quelqu'un a dit ça »
+       avant même qu'on ait lu la phrase. */
+    .quote {
+      position: relative;
+      width: 300px;
+      padding: 14px 16px 12px;
+      background: rgba(18, 18, 22, .9);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-left: 3px solid #ffb066;
+      border-radius: 12px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+    }
+    .quote-mark {
+      position: absolute; top: -6px; left: 10px;
+      font-size: 42px; line-height: 1;
+      color: rgba(255, 176, 102, .35);
+      font-family: Georgia, serif;
+    }
+    .quote-text {
+      position: relative;
+      font-size: 15px; line-height: 1.35; font-style: italic;
+      /* La phrase se révèle d'un bloc, l'auteur juste après : on lit la
+         réplique avant de savoir qui l'a dite, comme une chute. */
+      animation: opt-in .4s cubic-bezier(.22, 1.3, .4, 1) backwards;
+    }
+    .quote-author {
+      margin-top: 8px; font-size: 12px; text-align: right;
+      color: rgba(255, 255, 255, .55);
+      animation: opt-in .4s cubic-bezier(.22, 1.3, .4, 1) .45s backwards;
+    }
+
     /* Pendu — le dessin porte l'information : on voit la partie se dégrader
        sans lire un compteur. */
     .hangman {

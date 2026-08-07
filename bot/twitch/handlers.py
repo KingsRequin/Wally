@@ -18,6 +18,7 @@ from bot.discord.handlers import (
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _consume_open_question, _note_open_question,
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
+    _QUOTE_TOOL, run_quote_tool,
 )
 
 if TYPE_CHECKING:
@@ -422,12 +423,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             tools.extend(_TALLY_TOOLS)
         if getattr(bot, "predictions", None) is not None:
             tools.append(_PREDICT_TOOL)
+        if getattr(bot, "quotes", None) is not None:
+            tools.append(_QUOTE_TOOL)
         if _overlay_narrator(bot) is not None:
             tools.append(_OVERLAY_TOOL)
 
         async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
             args = json.loads(arguments)
+            if name == "quote":
+                return await run_quote_tool(bot, args)
             if name == "predict":
                 return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):
