@@ -15,6 +15,10 @@ from loguru import logger
 from bot.config import VoiceConfig
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
+# Plafond dur d'une prise de parole. Généreux : une longue réplique en
+# streaming TTS peut durer. C'est un filet contre le blocage définitif, pas un
+# budget de style.
+_SPEAK_TIMEOUT_S = 120.0
 from bot.discord.voice.brain import (
     _is_stop_request,
     _voice_publish,
@@ -99,6 +103,18 @@ class VoiceService:
         self._current_speaker_id: str | None = None
         self._stream_users: dict[str, object] = {}  # speaker_id → membre (streaming multi-locuteurs)
         self._maintain_task: asyncio.Task | None = None
+        # Une seule parole à la fois : `is_speaking` est le seul filtre
+        # anti-larsen, deux `speak()` concurrents le remettaient à False
+        # pendant que l'autre parlait encore.
+        self._speak_lock = asyncio.Lock()
+        # `join()` n'est pas réentrant par nature : `self._vc` n'est affecté
+        # qu'APRÈS `await connect()`. Cinq points d'entrée peuvent l'appeler
+        # (/join, /ecoute, l'outil join_voice, `_on_stream_voice`, le veilleur
+        # 30 s) — deux connexions simultanées écrasaient les tâches de la
+        # première sans les annuler, laissant un client fantôme.
+        self._join_lock = asyncio.Lock()
+        # Tâches détachées du service (fermetures de pipeline, préchauffages).
+        self._detached: set[asyncio.Task] = set()
         self._silence_task: asyncio.Task | None = None  # watchdog fin-de-parole à l'horloge
         self.voice_tools = VOICE_TOOLS
         self.tool_executor = make_voice_tool_executor(
@@ -157,9 +173,25 @@ class VoiceService:
             phrases = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
         except Exception:  # noqa: BLE001
             phrases = []
+        # Fermer l'ancien pipeline AVANT d'en construire un nouveau : sinon un
+        # simple « Enregistrer » sur les paramètres vocaux du dashboard laissait
+        # des WebSockets et leurs `_recv_task`/`_sender_task` orphelins, des
+        # slots pris côté serveur STT, et `_maintain_task` tournant sur l'objet
+        # remplacé — le nouveau n'avait plus personne pour le maintenir.
+        old = self._streaming
+        if old is not None:
+            self._detach_service(old.close_all())
+        if self._maintain_task is not None:
+            self._maintain_task.cancel()
+            self._maintain_task = None
         try:
             self._build_stt_pipeline(cfg, phrases)
             self._tts = build_tts(cfg)
+            # Rebrancher la maintenance sur le NOUVEAU pipeline si une session
+            # vocale est en cours ; sinon `join()` s'en chargera.
+            if self._streaming is not None and self._vc is not None:
+                loop = asyncio.get_event_loop()
+                self._maintain_task = loop.create_task(self._streaming.maintain())
             logger.info("VoiceService: config rechargée (voix={v}, stt={s})",
                         v=cfg.azure_voice, s=cfg.stt_provider)
         except Exception as e:  # noqa: BLE001
@@ -201,13 +233,28 @@ class VoiceService:
     # ------------------------------------------------------------------
 
     async def join(self, channel, inviter: str | None = None,
-                   listen_only: bool = False) -> None:
+                   listen_only: bool = False, only_if_free: bool = False) -> None:
         """Rejoint un salon vocal, attache le sink d'écoute, démarre le watchdog auto-leave.
 
         `inviter` : nom de la personne qui a demandé à Wally de venir (injecté dans la salutation).
         `listen_only` : mode compagnon de stream — il écoute sans jamais parler,
         ne salue pas, et ne repart pas tout seul (un live a des silences, et
         partir en plein stream serait absurde)."""
+        # Sérialisé : `self._vc` n'est affecté qu'après `await connect()`, donc
+        # deux appels concurrents passaient tous deux la garde ci-dessous.
+        async with self._join_lock:
+            # `only_if_free` sert aux arrivées AUTOMATIQUES (début de live,
+            # veilleur 30 s) : la vérification `is_connected` de l'appelant a été
+            # faite hors du verrou, donc pendant qu'un `/join` était en vol.
+            # Sans ce re-test, l'auto-join écrasait `listen_only` et `_channel`
+            # d'une conversation en cours — et Wally la quittait à la fin du live.
+            if only_if_free and self._vc is not None:
+                logger.debug("voice: arrivée automatique annulée (déjà en vocal)")
+                return
+            await self._join_locked(channel, inviter, listen_only)
+
+    async def _join_locked(self, channel, inviter: str | None,
+                           listen_only: bool) -> None:
         if self._vc is not None:
             await self.leave()
         self.listen_only = listen_only
@@ -232,7 +279,8 @@ class VoiceService:
                 silence_timeout_s=self._cfg.vad_silence_timeout_s,
             )
             self._maintain_task = loop.create_task(self._streaming.maintain())
-            loop.create_task(self._streaming.warmup())  # pré-charge le fallback CPU local
+            # Référence gardée : la boucle ne retient qu'une référence faible.
+            self._detach_service(self._streaming.warmup())  # pré-charge le fallback CPU local
         else:
             sink = WallyAudioSink(
                 service=self,
@@ -244,7 +292,7 @@ class VoiceService:
             # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s au 1er segment.
             _warmup = getattr(self._stt, "warmup", None)
             if _warmup is not None:
-                loop.create_task(_warmup())
+                self._detach_service(_warmup())
         # Watchdog fin-de-parole : Discord coupe le silence, donc le VAD ne voit jamais la fin ;
         # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
         self._silence_task = loop.create_task(self._silence_watch(sink))
@@ -255,7 +303,17 @@ class VoiceService:
                     m=" (écoute seule)" if listen_only else "")
         if not listen_only:
             # Salutation à l'arrivée, en tâche de fond (ne bloque pas la réponse à /join).
-            loop.create_task(self._greet())
+            self._detach_service(self._greet())
+
+    def _detach_service(self, coro) -> None:
+        """Lance une coroutine en tâche de fond, référence gardée."""
+        try:
+            task = asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:      # hors boucle (tests synchrones)
+            coro.close()
+            return
+        self._detached.add(task)
+        task.add_done_callback(self._detached.discard)
 
     async def _greet(self) -> None:
         """Wally salue brièvement en arrivant dans le salon vocal."""
@@ -352,6 +410,17 @@ class VoiceService:
             # et serait réinjecté dans son micro.
             logger.debug("voice: parole refusée (mode écoute)")
             return
+        # Sérialisé : deux `speak()` concurrents (deux `greet_newcomer`, une
+        # tâche par événement) partaient tous les deux en lecture ; le perdant
+        # se prenait un `ClientException('Already playing')` et remettait
+        # `is_speaking` à False dans son `finally` PENDANT que l'autre parlait.
+        # `is_speaking` étant le seul filtre anti-larsen, la voix de Wally
+        # captée par les micros ouverts entrait dans `history`, partait au
+        # fact_extractor, et il pouvait se répondre à lui-même.
+        async with self._speak_lock:
+            await self._speak_locked(text)
+
+    async def _speak_locked(self, text: str) -> None:
         # Style de voix : tag explicite de Wally ([murmure]…) sinon son humeur du moment.
         try:
             emotion_state = self._bot.emotion.get_state()
@@ -365,11 +434,25 @@ class VoiceService:
         try:
             # Streaming si le provider TTS le supporte (joue dès le 1er chunk) ; sinon batch.
             stream_fn = getattr(self._tts, "synthesize_stream", None)
+            # Plafond dur : un TTS qui *stalle* (pas qui lève) figeait `speak()`
+            # pour toujours — `StreamingPCMSource.read()` attend sur une
+            # `threading.Condition` sans timeout, et `stop()` ne la débloque pas.
+            # `is_speaking` restait True : session vocale morte jusqu'au reboot.
             if stream_fn is not None:
-                await self._speak_streaming(text, style, stream_fn)
+                await asyncio.wait_for(
+                    self._speak_streaming(text, style, stream_fn), timeout=_SPEAK_TIMEOUT_S
+                )
             else:
-                await self._speak_batch(text, style)
+                await asyncio.wait_for(
+                    self._speak_batch(text, style), timeout=_SPEAK_TIMEOUT_S
+                )
             await asyncio.sleep(POST_SPEAK_MUTE_S)
+        except asyncio.TimeoutError:
+            logger.warning("voice: parole abandonnée après {t}s", t=_SPEAK_TIMEOUT_S)
+            try:
+                self._vc.stop()
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
             logger.warning("voice speak a échoué: {e}", e=e)
         finally:
@@ -571,10 +654,11 @@ class VoiceService:
     def _on_frame(self, user, frame: bytes) -> None:
         """Frame brute de 20 ms (16 kHz mono) → streamée au serveur STT distant. Sync, sur la boucle."""
         self._stream_users[str(user.id)] = user
-        try:
-            self._last_speech_ts = asyncio.get_running_loop().time()
-        except RuntimeError:
-            pass
+        # `_last_speech_ts` n'est PAS rafraîchi ici : une frame de 20 ms n'est
+        # pas de la parole, c'est du son. Le faire empêchait le watchdog
+        # d'inactivité de se déclencher tant qu'un micro émettait du bruit —
+        # alors qu'en mode batch il ne compte que les transcriptions réelles.
+        # C'est `_on_stream_final`/`on_transcript` qui font foi, comme en batch.
         if self._streaming is not None:
             self._streaming.feed_sync(str(user.id), frame)
 
@@ -595,6 +679,10 @@ class VoiceService:
         """Transcription finale (précise) → cerveau, comme un segment batch."""
         user = self._stream_users.get(speaker_id)
         if user is None:
+            # Arrivait en silence : un locuteur qui se reconnecte pendant sa
+            # transcription voyait sa phrase disparaître sans la moindre trace.
+            logger.debug("voice: transcription orpheline de {s} — « {t} »",
+                         s=speaker_id, t=text[:60])
             return
         await self._dispatch_transcript(user, text, stt_ms)
 

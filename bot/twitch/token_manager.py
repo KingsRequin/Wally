@@ -1,8 +1,10 @@
 # bot/twitch/token_manager.py
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -37,6 +39,17 @@ class TwitchTokenManager:
         self._streamer_refresh = streamer_refresh
         self._client_id = client_id
         self._client_secret = client_secret
+        # Un verrou par type de token. Les refresh tokens Twitch sont à USAGE
+        # UNIQUE : trois 401 dans la même seconde (les 6 méthodes Helix peuvent
+        # rafraîchir) donnaient un succès et deux `invalid_grant`, donc deux
+        # `False` — déclencheur amont direct des pannes qui suivent un 401.
+        self._refresh_locks: dict[str, asyncio.Lock] = {
+            "bot": asyncio.Lock(), "streamer": asyncio.Lock()
+        }
+        # Horodatage du dernier renouvellement réussi : un appelant qui prend le
+        # verrou juste après n'a pas à en brûler un second, son 401 portait sur
+        # l'ancien token.
+        self._refreshed_at: dict[str, float] = {"bot": 0.0, "streamer": 0.0}
 
     @property
     def bot_token(self) -> str:
@@ -107,7 +120,25 @@ class TwitchTokenManager:
                     "Twitch {t} token validation error: {e}", t=token_type, e=exc
                 )
 
+    # Fenêtre de coalescence : au-delà, un nouveau 401 est un vrai problème,
+    # pas la conséquence d'une course.
+    _REFRESH_COALESCE_S = 10.0
+
     async def refresh(self, token_type: Literal["bot", "streamer"]) -> bool:
+        """Renouvelle un token. Sérialisé par type : un refresh token Twitch ne
+        sert qu'une fois, deux appels concurrents en gâchaient un."""
+        async with self._refresh_locks[token_type]:
+            if time.monotonic() - self._refreshed_at[token_type] < self._REFRESH_COALESCE_S:
+                logger.debug(
+                    "Twitch {t}: renouvellement déjà fait à l'instant, réutilisé", t=token_type
+                )
+                return True
+            ok = await self._refresh_locked(token_type)
+            if ok:
+                self._refreshed_at[token_type] = time.monotonic()
+            return ok
+
+    async def _refresh_locked(self, token_type: Literal["bot", "streamer"]) -> bool:
         refresh_token = (
             self._bot_refresh if token_type == "bot" else self._streamer_refresh
         )
@@ -179,5 +210,5 @@ class TwitchTokenManager:
         content = _replace_or_append(content, access_key, new_token)
         content = _replace_or_append(content, refresh_key, new_refresh)
         # Write directly — os.replace() fails on Docker bind-mounted files (EBUSY).
-        # TODO: add asyncio.Lock guard here when concurrent refresh callers are introduced.
+        # Appelé sous le verrou de `refresh()` : plus de course à l'écriture.
         self._env_path.write_text(content, encoding="utf-8")

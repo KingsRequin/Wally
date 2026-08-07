@@ -390,7 +390,22 @@ class PromptBuilder:
 
     @staticmethod
     def format_event_message(template: str, **kwargs) -> str:
-        return template.format(**{k: v for k, v in kwargs.items()})
+        """Interpole un gabarit d'événement, sans jamais lever.
+
+        Ces gabarits sont ÉDITABLES depuis le dashboard : un `{viewers}` qui
+        n'existe pas donnait un KeyError, une accolade littérale un ValueError,
+        et l'événement (follow, sub, raid) passait en silence. Un placeholder
+        inconnu est laissé tel quel — visible, donc corrigeable.
+        """
+        from loguru import logger  # import local, cf. load_prompt ci-dessus
+        try:
+            return template.format(**kwargs)
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                "Gabarit d'événement invalide ({e}) — laissé tel quel : {t}",
+                e=exc, t=template[:80],
+            )
+            return template
 
 
 def build_session_recall_block(summaries: list[dict]) -> str:

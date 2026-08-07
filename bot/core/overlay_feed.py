@@ -76,7 +76,17 @@ class OverlayFeed:
             # ne doivent jamais être rejoués.
             if span <= 0 or age > span:
                 continue
-            alive.append(event)
+            # Durée RESTANTE, pas la durée initiale : une bulle publiée il y a
+            # 9 s sur 10 restait 10 s de plus chez un client qui reconnecte,
+            # décalant tout ce qui suit.
+            trimmed = dict(event)
+            left = round(span - age, 2)
+            if "duration" in trimmed:
+                trimmed["duration"] = left
+            params = trimmed.get("params")
+            if isinstance(params, dict) and "duration" in params:
+                trimmed["params"] = {**params, "duration": left}
+            alive.append(trimmed)
         return alive
 
     # ── publication ───────────────────────────────────────────────────────

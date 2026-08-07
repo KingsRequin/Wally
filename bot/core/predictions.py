@@ -10,6 +10,7 @@ sur 12 » se défend d'un live à l'autre. D'où la persistance.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 
 from loguru import logger
@@ -24,6 +25,12 @@ class PredictionService:
 
     def __init__(self, db) -> None:
         self._db = db
+        # Le service est PARTAGÉ entre Discord et Twitch (une seule instance,
+        # cf. main.py). Sans verrou, deux `open()` entrelacés — VOID puis INSERT
+        # puis re-SELECT, sur une connexion commune — faisaient renvoyer à l'un
+        # le pari de l'autre, affiché à l'écran comme étant le sien. Même chose
+        # pour `resolve()`, qui lit puis écrit.
+        self._lock = asyncio.Lock()
 
     async def open(self, bet: str) -> dict | None:
         """Ouvre un pari. Un seul à la fois : le précédent resté ouvert est
@@ -31,18 +38,23 @@ class PredictionService:
         bet = " ".join((bet or "").split())[:90]
         if not bet:
             return None
-        await self._db.execute(
-            "UPDATE predictions SET outcome = 'void', resolved_at = ? WHERE outcome IS NULL",
-            (time.time(),),
-        )
-        await self._db.execute(
-            "INSERT INTO predictions (bet, created_at) VALUES (?, ?)", (bet, time.time())
-        )
-        logger.info("Prédiction ouverte : « {b} »", b=bet)
-        return await self.current()
+        async with self._lock:
+            await self._db.execute(
+                "UPDATE predictions SET outcome = 'void', resolved_at = ? WHERE outcome IS NULL",
+                (time.time(),),
+            )
+            await self._db.execute(
+                "INSERT INTO predictions (bet, created_at) VALUES (?, ?)", (bet, time.time())
+            )
+            logger.info("Prédiction ouverte : « {b} »", b=bet)
+            return await self._current_locked()
 
     async def current(self) -> dict | None:
         """Le pari en cours, s'il n'est pas périmé."""
+        async with self._lock:
+            return await self._current_locked()
+
+    async def _current_locked(self) -> dict | None:
         row = await self._db.fetch_one(
             "SELECT * FROM predictions WHERE outcome IS NULL ORDER BY id DESC LIMIT 1"
         )
@@ -63,18 +75,19 @@ class PredictionService:
     async def resolve(self, right: bool) -> dict | None:
         """Tranche le pari en cours. None s'il n'y en a pas — Wally ne doit pas
         pouvoir s'attribuer un point sans avoir parié."""
-        row = await self.current()
-        if row is None:
-            return None
-        outcome = "right" if right else "wrong"
-        await self._db.execute(
-            "UPDATE predictions SET outcome = ?, resolved_at = ? WHERE id = ?",
-            (outcome, time.time(), row["id"]),
-        )
-        score = await self.score()
-        logger.info("Prédiction « {b} » → {o} ({r}/{t})",
-                    b=row["bet"], o=outcome, r=score["right"], t=score["total"])
-        return {**row, "outcome": outcome, **score}
+        async with self._lock:
+            row = await self._current_locked()
+            if row is None:
+                return None
+            outcome = "right" if right else "wrong"
+            await self._db.execute(
+                "UPDATE predictions SET outcome = ?, resolved_at = ? WHERE id = ?",
+                (outcome, time.time(), row["id"]),
+            )
+            score = await self.score()
+            logger.info("Prédiction « {b} » → {o} ({r}/{t})",
+                        b=row["bet"], o=outcome, r=score["right"], t=score["total"])
+            return {**row, "outcome": outcome, **score}
 
     async def score(self) -> dict:
         """Bilan cumulé. Les paris abandonnés ne comptent pas."""

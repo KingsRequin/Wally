@@ -172,10 +172,15 @@ async def sse_overlay_feed(request: Request):
     vide au milieu d'un live.
     """
     feed = request.app.state.wally.overlay_feed
-    queue = feed.subscribe()
 
     async def generate():
         yield ": ready\n\n"      # débloque les en-têtes (cf. sse_logs)
+        # Abonnement DANS le générateur : hors de lui, une requête abandonnée
+        # avant le premier `send` laissait la file dans `_queues` pour toujours
+        # (le `finally` ne s'exécute que si le générateur a démarré). Et
+        # l'amorçage se fait sous le même abonnement, sinon un événement publié
+        # entre les deux partait DEUX fois.
+        queue = feed.subscribe()
         try:
             for event in feed.recent():
                 yield f"data: {json.dumps(event)}\n\n"

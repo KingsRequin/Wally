@@ -567,13 +567,9 @@ async def test_overlay_image(request: Request):
         "animation_out": cfg.animation_out,
         "animation_duration": cfg.animation_duration,
     }
-    # Vider la queue pour que le dernier test gagne toujours
-    while not state.overlay_image_queue.empty():
-        try:
-            state.overlay_image_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
-    state.overlay_image_queue.put_nowait(payload)
+    # Plus besoin de vider quoi que ce soit : chaque overlay connecté a sa
+    # propre file, et la page remplace l'image affichée à la réception.
+    state.overlay_image_feed.publish(payload)
     return {"status": "triggered", "image_id": image["id"]}
 
 

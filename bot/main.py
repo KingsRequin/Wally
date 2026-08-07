@@ -3,6 +3,7 @@ import asyncio
 import os
 import signal
 import sys
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +82,14 @@ async def _run_discord(
             )
             await asyncio.sleep(delay)
     await bot.connect(reconnect=True)
+    # `connect(reconnect=True)` REND LA MAIN sans lever quand discord.py juge la
+    # fermeture définitive. Le `gather` ne se réveille alors pas — le process
+    # restait vivant, adaptateur Discord mort, sans code de sortie, et rien ne le
+    # détectait (pas de healthcheck sur le conteneur, et le watchdog sonde le
+    # dashboard, qui répond 200). C'est la classe de bug de `fa66572`, dont le
+    # correctif ne traitait que l'échec de *login*. On lève : le `gather` remonte
+    # et Docker relance.
+    raise RuntimeError("Discord: connexion terminée — le process doit redémarrer")
 
 
 async def main() -> None:
@@ -103,6 +112,18 @@ async def main() -> None:
         s_model=config.llm.secondary.model,
         triggers=config.bot.trigger_names,
     )
+
+    # Handler d'arrêt posé TÔT. Il n'était installé qu'après tout le démarrage
+    # (validation réseau des tokens Twitch, init DB, `reload_all()`) : un
+    # `docker stop` pendant ces quelques secondes retombait sur le SIGTERM par
+    # défaut, qui tue le process net — exactement ce que le handler existe pour
+    # éviter. Il est remplacé plus bas par celui qui prévient uvicorn.
+    _startup_task = asyncio.current_task()
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            asyncio.get_running_loop().add_signal_handler(_sig, _startup_task.cancel)
+        except (NotImplementedError, RuntimeError):
+            pass
 
     db_path = os.getenv("DB_PATH", "data/wally.db")
     db = await Database.create(db_path)
@@ -337,7 +358,7 @@ async def main() -> None:
                         if channel is None:
                             logger.warning("voice: salon de stream {c} introuvable", c=channel_id)
                             return
-                        await vs.join(channel, listen_only=True)
+                        await vs.join(channel, listen_only=True, only_if_free=True)
                     elif ended and vs.is_connected and vs.listen_only:
                         # Seulement s'il est là POUR le stream : une conversation
                         # vocale en cours ne doit pas être coupée.
@@ -362,7 +383,9 @@ async def main() -> None:
             """
             from datetime import datetime, timedelta, timezone
 
-            seen: set[str] = set()
+            # Bornée : les plus vieux IDs sortent un par un plutôt que tous
+            # d'un coup (cf. commentaire plus bas).
+            seen: deque[str] = deque(maxlen=200)
             while True:
                 await asyncio.sleep(120)
                 try:
@@ -373,16 +396,19 @@ async def main() -> None:
                     clips = await twitch_bot.twitch_api.get_recent_clips(
                         since.strftime("%Y-%m-%dT%H:%M:%SZ")
                     )
+                    fresh = []
                     for clip in clips:
                         cid = str(clip.get("id") or "")
                         if not cid or cid in seen:
                             continue
-                        seen.add(cid)
+                        fresh.append(cid)
                         narrator.show_clip(clip.get("title") or "un clip",
                                            clip.get("creator_name") or "quelqu'un")
-                    # Le live dure des heures : sans purge, l'ensemble enfle.
-                    if len(seen) > 200:
-                        seen.clear()
+                    seen.extend(fresh)
+                    # `deque(maxlen=...)` plutôt qu'un `set` vidé d'un coup : le
+                    # `clear()` oubliait TOUT alors que la fenêtre d'interrogation
+                    # est de 5 min — jusqu'à 20 clips étaient réannoncés au tour
+                    # suivant. Ici les plus vieux sortent un par un.
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
                     logger.warning("veille des clips en erreur: {e}", e=e)
 
@@ -415,7 +441,7 @@ async def main() -> None:
                     if channel is None:
                         continue        # cache Discord pas encore prêt : au tour suivant
                     logger.info("voice: live en cours sans Wally → retour en écoute")
-                    await vs.join(channel, listen_only=True)
+                    await vs.join(channel, listen_only=True, only_if_free=True)
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
                     logger.warning("voice: veilleur de stream en erreur: {e}", e=e)
 
@@ -718,7 +744,21 @@ async def main() -> None:
 
         if update_checker:
             await update_checker.stop()
+        # APScheduler continuait de déclencher ses jobs (journal, actions, RSS)
+        # pendant que Discord et Twitch se fermaient, sur une base qu'on
+        # s'apprête à fermer. `wait=False` : on n'attend pas un job en cours,
+        # l'arrêt est déjà en train de tout couper.
+        try:
+            if shared_scheduler.running:
+                shared_scheduler.shutdown(wait=False)
+        except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
+            logger.warning("Arrêt du scheduler échoué: {e}", e=exc)
         await conv_log.stop()
+        # Dernier : tout le reste écrit encore en base jusqu'ici.
+        try:
+            await db.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Fermeture de la base échouée: {e}", e=exc)
         logger.info("Arrêt terminé proprement")
 
 

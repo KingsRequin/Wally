@@ -13,9 +13,17 @@ from bot.twitch.handlers import handle_message, _fire
 
 
 def _check_peak(bot, emotion: str, old_val: float, delta: float, username: str = "", event_name: str = ""):
-    """Fire-and-forget peak check for Twitch events."""
+    """Fire-and-forget peak check for Twitch events.
+
+    La valeur d'arrivée est RELUE de l'état, pas recalculée : `apply_delta`
+    applique aussi la suppression des émotions incompatibles, donc `old + delta`
+    surestimait le pic journalisé (huit sites concernés).
+    """
     import inspect
-    new_val = min(1.0, old_val + delta)
+    try:
+        new_val = float(bot.emotion.get_state().get(emotion, old_val + delta))
+    except Exception:  # noqa: BLE001 — un log de pic ne casse jamais un événement
+        new_val = min(1.0, old_val + delta)
     if hasattr(bot.emotion, '_maybe_log_peak'):
         coro = bot.emotion._maybe_log_peak(
             emotion, old_val, new_val,

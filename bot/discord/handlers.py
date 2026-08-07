@@ -406,8 +406,45 @@ def _overlay_outcome(shown: dict) -> str:
                 "Commente-les — ne les répète pas telles quelles.")
     if widget == "versus":
         left, right = shown.get("left_value", 0), shown.get("right_value", 0)
-        gagnant = shown.get("left_name") if left >= right else shown.get("right_name")
+        if left == right:
+            return "La comparaison est à l'écran : égalité parfaite. Annonce-le."
+        gagnant = shown.get("left_name") if left > right else shown.get("right_name")
         return f"La comparaison est à l'écran, {gagnant} devant. Annonce-le."
+    # Les neuf widgets ci-dessous retombaient sur « c'est à l'écran » : Wally
+    # affichait un podium ou tranchait un chifoumi sans jamais savoir le
+    # résultat, et l'annonçait donc au hasard. Le chemin vocal, lui, recevait
+    # tout — seul le chemin conversationnel était amputé.
+    if widget == "talkers":
+        rows = shown.get("rows") or []
+        podium = ", ".join(f"{r['name']} ({r['count']})" for r in rows)
+        return f"Le podium est à l'écran : {podium}. Annonce-le." if podium else \
+               "Le podium est à l'écran."
+    if widget == "rps":
+        if shown.get("outcome"):
+            verdict = {"wally": "tu gagnes", "chat": "le chat gagne",
+                       "draw": "égalité"}.get(shown["outcome"], shown["outcome"])
+            return (f"Chifoumi tranché : le chat jouait {shown.get('chat')}, toi "
+                    f"{shown.get('mine')} — {verdict}. Annonce-le.")
+        return ("Le chifoumi est ouvert, le chat vote son coup. Tu auras le "
+                "résultat à la fin — ne l'invente pas d'ici là.")
+    if widget == "bingo":
+        cells = shown.get("cells") or []
+        done = shown.get("done") or []
+        checked = sum(1 for d in done if d)
+        return f"La grille de bingo est à l'écran : {checked}/{len(cells)} cases cochées."
+    if widget == "hangman":
+        return (f"Le pendu est lancé, {shown.get('letters', '?')} lettres à "
+                "deviner. Le chat propose une lettre par message.")
+    if widget == "goal":
+        return (f"L'objectif « {shown.get('label')} » est à l'écran : "
+                f"{shown.get('count', 0)}/{shown.get('target')}. Il se remplit tout seul.")
+    if widget == "meme":
+        return f"Le meme « {shown.get('description') or shown.get('name')} » est à l'écran."
+    if widget == "pinned":
+        auteur = shown.get("author") or "quelqu'un"
+        return f"Le message de {auteur} est épinglé à l'écran."
+    if widget == "counter":
+        return f"« {shown.get('text')} » est à l'écran."
     return f"'{widget}' est à l'écran."
 
 

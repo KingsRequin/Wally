@@ -37,7 +37,8 @@ class _FakeBot:
 async def test_retries_login_then_connects(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
     bot = _FakeBot(fail_times=3)
-    await _run_discord(bot, "tok", max_attempts=8, base_delay=0.01)
+    with pytest.raises(RuntimeError):    # cf. test_un_connect_qui_rend_la_main_leve
+        await _run_discord(bot, "tok", max_attempts=8, base_delay=0.01)
     assert bot.login_calls == 4          # 3 échecs + 1 succès
     assert bot.connect_calls == 1        # connexion une seule fois, après login OK
     assert bot.connect_kwargs == {"reconnect": True}
@@ -46,9 +47,22 @@ async def test_retries_login_then_connects(monkeypatch):
 async def test_connects_immediately_when_login_ok(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
     bot = _FakeBot(fail_times=0)
-    await _run_discord(bot, "tok")
+    with pytest.raises(RuntimeError):
+        await _run_discord(bot, "tok")
     assert bot.login_calls == 1
     assert bot.connect_calls == 1
+
+
+async def test_un_connect_qui_rend_la_main_leve(monkeypatch):
+    """`connect(reconnect=True)` REND LA MAIN sans lever quand discord.py juge
+    la fermeture définitive. Le `gather` ne se réveillait alors pas : process
+    vivant, adaptateur Discord mort, aucun code de sortie — et rien ne le
+    détecte (pas de healthcheck, et le watchdog sonde le dashboard qui répond
+    200). Il faut lever pour que Docker relance."""
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+    bot = _FakeBot(fail_times=0)
+    with pytest.raises(RuntimeError, match="doit redémarrer"):
+        await _run_discord(bot, "tok")
 
 
 async def test_gives_up_after_max_attempts(monkeypatch):

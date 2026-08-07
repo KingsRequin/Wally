@@ -347,6 +347,13 @@ class RemoteStreamingSTT:
             self._arm_unreachable_cache()
             logger.warning("RemoteStreamingSTT: serveur injoignable, prochaine tentative dans {t}s",
                            t=round(self._unreachable_until - self._now()))
+        elif sess.server_full:
+            # Sans ça, le locuteur retentait une connexion à chaque frame de
+            # 20 ms : boucle connect / `error: full` / close pendant tout
+            # l'énoncé. Le fallback local le reprend, et `speech_end_sync` le
+            # retire de ce jeu au prochain énoncé pour réessayer le distant.
+            self._fallback_speakers.add(speaker_id)
+            logger.info("RemoteStreamingSTT: serveur plein → {s} en local", s=speaker_id)
         await sess.close()
 
     def _on_session_lost(self, speaker_id: str) -> None:
@@ -412,6 +419,15 @@ class RemoteStreamingSTT:
             await sess.close()
 
     async def close_all(self) -> None:
+        # Annuler les ouvertures EN COURS aussi : une session en attente de
+        # `ready` (jusqu'à 35 s) survivait à la fermeture et se rattachait à un
+        # pipeline remplacé.
+        for task in list(self._start_tasks.values()):
+            task.cancel()
+        self._start_tasks.clear()
         for sid in list(self._sessions):
             await self._close_session(sid)
         self._fallback_speakers.clear()
+        # Ces deux-là restaient renseignés d'une session à l'autre : `maintain()`
+        # relisait des horodatages de locuteurs disparus.
+        self._last_activity.clear()

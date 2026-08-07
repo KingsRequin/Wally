@@ -1,7 +1,6 @@
 # bot/dashboard/state.py
 from __future__ import annotations
 
-import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -77,7 +76,10 @@ class AppState:
     message_count_twitch: int = 0
     message_count_web: int = 0
     overlay_visible: bool = True
-    overlay_image_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1))
+    # Fan-out et non file unique : avec un seul consommateur, ouvrir l'overlay
+    # dans OBS *et* dans un navigateur de prévisualisation en privait un des
+    # deux — c'est exactement ce que `OverlayFeed` a été écrit pour régler.
+    overlay_image_feed: "OverlayFeed" = field(default_factory=lambda: _make_overlay_feed())
     # Diffuseur des bulles et widgets de l'overlay de stream. Fan-out (une file
     # par abonné) et non file unique : OBS et un navigateur de prévisualisation
     # doivent voir la même chose.

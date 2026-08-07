@@ -83,7 +83,17 @@ class WallyTwitch(commands.Bot):
         return (time.time() - last) < self.config.twitch.cooldown_seconds
 
     def set_cooldown(self, user_id: str) -> None:
-        self._cooldowns[user_id] = time.time()
+        now = time.time()
+        # Purge paresseuse : une entrée par utilisateur Twitch croyait
+        # indéfiniment sur un process qui tourne des semaines, alors qu'un
+        # cooldown écoulé ne sert plus à rien (cf. `_open_questions` côté
+        # Discord, qui purge en citant le même motif).
+        if len(self._cooldowns) > 512:
+            window = self.config.twitch.cooldown_seconds
+            self._cooldowns = {
+                uid: at for uid, at in self._cooldowns.items() if now - at < window
+            }
+        self._cooldowns[user_id] = now
 
     def _fire(self, coro) -> asyncio.Task:
         """Fire-and-forget avec strong reference pour éviter la GC."""

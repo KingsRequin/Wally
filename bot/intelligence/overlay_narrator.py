@@ -522,7 +522,7 @@ class OverlayNarrator:
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
                 "prediction", "meme", "rps", "hangman", "quote", "goal",
-                "talkers", "clip")
+                "talkers", "clip", "wave")
 
     # Sous-ensemble que `show_widget` sait rendre. `quote`, `prediction` et
     # `clip` sont déclenchés ailleurs (`show_quote`, `show_prediction`,
@@ -530,7 +530,7 @@ class OverlayNarrator:
     # passer ici publiait une carte VIDE, et `_overlay_outcome` répondait
     # « c'est à l'écran » — Wally annonçait une citation qui n'existait pas.
     _DIRECT_WIDGETS = tuple(
-        w for w in _WIDGETS if w not in ("quote", "prediction", "clip")
+        w for w in _WIDGETS if w not in ("quote", "prediction", "clip", "wave")
     )
 
     def show_widget(
@@ -590,7 +590,11 @@ class OverlayNarrator:
                 seconds = int(result)
             except (TypeError, ValueError):
                 return None
-            params = {"seconds": max(1, min(600, seconds))}
+            seconds = max(1, min(600, seconds))
+            # `duration` explicite : sans elle, `OverlayFeed` posait son défaut de
+            # 10 s et un compte à rebours de 2 minutes disparaissait de l'écran
+            # au bout de dix secondes, son `setInterval` coupé par clearWidgets().
+            params = {"seconds": seconds, "duration": seconds + 3}
             if extra.get("done"):
                 params["done"] = str(extra["done"])[:20]
 

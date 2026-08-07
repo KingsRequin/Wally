@@ -17,6 +17,11 @@ class PersonaService:
         self._config = config
         self._blocks: dict[str, str] = {}
         self._caps_static: str = ""
+        # Renseigné par l'adaptateur Discord au boot : c'est LUI qui possède le
+        # WebSearchService. Sans ça, cette classe approximait la disponibilité
+        # par la présence de TAVILY_API_KEY et pouvait affirmer l'inverse de la
+        # cognition — deux phrases contradictoires dans le même prompt assemblé.
+        self.web_available: bool | None = None
         self._emotion_directives: dict[str, str] = {}
         self._user_directives: dict[str, str] = {}
         self.reload()
@@ -164,10 +169,12 @@ class PersonaService:
         self_model = (
             build_self_model(
                 self._caps_static, self._config,
-                # Dispo web côté persona : la clé Tavily vit dans l'env (le service
-                # WebSearchService n'est pas injecté ici). En prod la lib est
-                # installée, donc la présence de la clé suffit comme approximation.
-                web_available=bool(__import__("os").environ.get("TAVILY_API_KEY")),
+                # Le service fait foi quand il est branché ; sinon, repli sur la
+                # présence de la clé Tavily.
+                web_available=(
+                    self.web_available if self.web_available is not None
+                    else bool(os.environ.get("TAVILY_API_KEY"))
+                ),
             )
             if self._config is not None
             else self._caps_static

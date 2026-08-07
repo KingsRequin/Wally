@@ -3,11 +3,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+import asyncio
+import time
+
 import httpx
 from loguru import logger
 
 if TYPE_CHECKING:
     from bot.twitch.token_manager import TwitchTokenManager
+
+def _ratelimit_wait(resp, *, default: float = 1.0, cap: float = 5.0) -> float:
+    """Secondes à attendre après un 429, d'après `Ratelimit-Reset` (epoch)."""
+    try:
+        reset = float(resp.headers.get("Ratelimit-Reset", ""))
+    except (TypeError, ValueError):
+        return default
+    return max(default, min(cap, reset - time.time()))
+
 
 # Forme canonique du « pas de live ». `get_stream()` doit TOUJOURS rendre un
 # dict : tout le reste du code (StreamWatcher, build_system_prompt, handlers)
@@ -81,6 +93,14 @@ class TwitchAPI:
                             continue
                         logger.error("Twitch chat API 401 after refresh, giving up")
                         return
+                    if resp.status_code == 429 and attempt == 0:
+                        # Franchi pendant un raid : sans attente, le message
+                        # était simplement perdu. Twitch donne l'instant de
+                        # recharge, on le respecte plutôt que de deviner.
+                        wait = _ratelimit_wait(resp)
+                        logger.warning("Twitch chat API 429 — nouvel essai dans {w}s", w=wait)
+                        await asyncio.sleep(wait)
+                        continue
                     resp.raise_for_status()
                     return
         except httpx.HTTPStatusError as exc:
@@ -205,23 +225,34 @@ class TwitchAPI:
         """
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    "https://api.twitch.tv/helix/clips",
-                    params={
-                        "broadcaster_id": self._broadcaster_id,
-                        "started_at": since_iso,
-                        "first": 20,
-                    },
-                    headers={
-                        "Authorization": f"Bearer {self._tm.bot_token}",
-                        "Client-Id": self._client_id,
-                    },
-                    timeout=10,
-                )
-                if resp.status_code != 200:
-                    logger.debug("Twitch clips API {c}", c=resp.status_code)
-                    return []
-                return resp.json().get("data") or []
+                # Retry sur 401 comme les cinq autres méthodes Helix : sans lui,
+                # un token expiré condamnait la veille des clips pour tout le
+                # reste du live, et le seul indice était un `logger.debug`
+                # invisible en production.
+                for attempt in range(2):
+                    resp = await client.get(
+                        "https://api.twitch.tv/helix/clips",
+                        params={
+                            "broadcaster_id": self._broadcaster_id,
+                            "started_at": since_iso,
+                            "first": 20,
+                        },
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        logger.warning("Twitch clips API 401 — renouvellement du token")
+                        if not await self._tm.refresh("bot"):
+                            return []
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning("Twitch clips API {c}", c=resp.status_code)
+                        return []
+                    return resp.json().get("data") or []
+                return []
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("Twitch clips API a échoué : {e}", e=exc)
             return []

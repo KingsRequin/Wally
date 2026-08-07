@@ -14,6 +14,7 @@
   const bubble = document.getElementById("bubble");
 
   const RECONNECT_MS = 5000;
+  const RECONNECT_MAX_MS = 60000;   // plafond du backoff de reconnexion
 
   // Ancrage à DROITE par défaut (posé dans le HTML, donc sans flash au chargement).
   // `?side=left` rétablit l'ancrage à gauche ; la mise en page est purement CSS
@@ -71,11 +72,14 @@
     hideTimer = setTimeout(hideBubble, 15000);
   }
 
+  let reactTimer = null;
   function react() {
+    // Le timer du premier `react` retirait la classe du second en plein vol.
+    clearTimeout(reactTimer);
     slot.classList.remove("reacting");
     void slot.offsetWidth;
     slot.classList.add("reacting");
-    setTimeout(() => slot.classList.remove("reacting"), 1000);
+    reactTimer = setTimeout(() => slot.classList.remove("reacting"), 1000);
   }
 
   // ── Widgets ──────────────────────────────────────────────────────────────
@@ -523,8 +527,11 @@
       const right = Number(p.right_value) || 0;
       // Barres relatives au meilleur des deux : l'écart se lit d'un coup d'œil.
       const top = Math.max(left, right, 1);
+      // Égalité parfaite : personne ne mène. `value >= Math.max(...)` marquait
+      // les DEUX camps gagnants, ce qui ne veut rien dire à l'écran.
+      const lead = left === right ? null : (left > right ? 0 : 1);
       [[p.left_name, left], [p.right_name, right]].forEach(([name, value], i) => {
-        const row = el("div", value >= Math.max(left, right) ? "vs-row lead" : "vs-row");
+        const row = el("div", i === lead ? "vs-row lead" : "vs-row");
         row.style.setProperty("--i", String(i));
         const head = el("div", "row");
         const n = el("span", ""), v = el("span", "");
@@ -646,6 +653,12 @@
     const current = widgets.firstElementChild;
     const poll = current && current.dataset.kind === "poll"
       ? current.querySelector(".poll") : null;
+    // Les widgets qui se RAFRAÎCHISSENT (un vote, une lettre, une case cochée)
+    // rejouaient leur animation d'entrée à chaque mise à jour. Faute d'une
+    // mutation en place pour chacun, on se contente de ne pas les faire
+    // clignoter : on reconstruit sans relancer la cascade d'apparition.
+    const refresh = current && current.dataset.kind === kind
+      && (kind === "rps" || kind === "bingo" || kind === "hangman");
     if (kind === "poll" && poll) {
       // Mutation en place : reconstruire relancerait la cascade d'entrée et
       // ferait repartir chaque barre de zéro à chaque vote.
@@ -656,8 +669,12 @@
       box.dataset.kind = kind;
       box.appendChild(build(params));
       widgets.replaceChildren(box);
-      void box.offsetWidth;
-      box.classList.add("visible");
+      if (refresh) {
+        box.classList.add("visible");   // déjà à l'écran : pas de réapparition
+      } else {
+        void box.offsetWidth;
+        box.classList.add("visible");
+      }
     }
     const box = widgets.firstElementChild;
     // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
@@ -665,10 +682,17 @@
     document.body.classList.add("widget-on");
 
     // Le serveur décide (animation + lecture) ; ce plafond n'est qu'un garde-fou.
-    const seconds = Math.min(30, Math.max(2, Number(params.duration) || 12));
+    // 180 s et non 30 : le serveur émet jusqu'à 124 s (sondage de 120 s + 4),
+    // et un sondage de 60 s disparaissait de l'écran à mi-parcours, les viewers
+    // n'ayant plus la question sous les yeux pour voter.
+    const seconds = Math.min(180, Math.max(2, Number(params.duration) || 12));
     widgetTimer = setTimeout(() => {
       box.classList.remove("visible");
-      setTimeout(() => {
+      // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
+      // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
+      // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
+      // autre chose. Vaut pour rps, bingo, hangman et poll.
+      widgetTimer = setTimeout(() => {
         clearWidgets();
         playNext();       // la suivante prend le relais, si elle a tenu
       }, 300);
@@ -678,12 +702,20 @@
   // ── Flux SSE ─────────────────────────────────────────────────────────────
   function connect(url, onMessage) {
     let source;
+    let delay = RECONNECT_MS;
     const open = () => {
       source = new EventSource(url);
       source.onmessage = (e) => {
         try { onMessage(JSON.parse(e.data)); } catch { /* keepalive ou bruit */ }
       };
-      source.onerror = () => { source.close(); setTimeout(open, RECONNECT_MS); };
+      // Backoff : à intervalle fixe, un bot arrêté prenait 720 requêtes/heure et
+      // par flux. Remis à zéro dès qu'un message arrive (donc que ça remarche).
+      source.onopen = () => { delay = RECONNECT_MS; };
+      source.onerror = () => {
+        source.close();
+        setTimeout(open, delay);
+        delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+      };
     };
     open();
   }

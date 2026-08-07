@@ -142,20 +142,25 @@ async def random_loading_gif():
 
 @public_router.get("/sse/overlay-image")
 async def sse_overlay_image(request: Request):
-    state = request.app.state.wally
-    queue = state.overlay_image_queue
+    feed = request.app.state.wally.overlay_image_feed
 
     async def event_stream():
         # Premier octet immédiat : `GZipMiddleware` retient les en-têtes jusqu'au
         # premier corps, donc `onopen` n'arrivait qu'au keepalive de 30 s — après
         # le délai de rechargement côté page.
         yield ": ready\n\n"
-        while True:
-            try:
-                data = await asyncio.wait_for(queue.get(), timeout=30)
-                yield f"event: show_image\ndata: {json.dumps(data)}\n\n"
-            except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
+        queue = feed.subscribe()
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"event: show_image\ndata: {json.dumps(data)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            feed.unsubscribe(queue)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

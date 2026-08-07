@@ -3597,12 +3597,40 @@ async function _renderSystemeOverlay(panel) {
     </div>
 
     <!-- Image overlay config -->
+    <div id="overlay-health-systeme" class="card" style="margin-top:12px">
+      <div class="card-title">Rendu chez le streamer</div>
+      <div id="overlay-health-line" class="muted">Mesure en cours…</div>
+    </div>
     <div id="overlay-config-container-systeme"></div>
   `;
 
   pollOverlayStatusForSysteme();
   refreshOverlayForceLive();
+  refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+}
+
+// La télémétrie de rendu (fps, pire frame, GPU) était POSTÉE six fois par minute
+// par chaque overlay et n'avait aucun consommateur : la mesure existait, elle
+// n'était visible nulle part.
+let _overlayHealthTimer = null;
+
+async function refreshOverlayHealth() {
+  const line = document.getElementById('overlay-health-line');
+  if (!line) { clearInterval(_overlayHealthTimer); _overlayHealthTimer = null; return; }
+  try {
+    const r = await apiFetch('/api/admin/overlay/health');
+    const d = r && r.ok ? await r.json() : null;
+    if (!d || !d.connected) {
+      line.textContent = 'Aucun overlay connecté.';
+    } else {
+      const worst = Math.round(Number(d.worst_frame_ms) || 0);
+      line.textContent = `${d.fps} fps · pire frame ${worst} ms · ${d.gpu || 'GPU inconnu'}`;
+    }
+  } catch { /* le diagnostic ne doit jamais casser l'onglet */ }
+  if (_overlayHealthTimer === null) {
+    _overlayHealthTimer = setInterval(refreshOverlayHealth, 15000);
+  }
 }
 
 // Mode test hors live : durée par défaut. Le serveur plafonne à 120 min.

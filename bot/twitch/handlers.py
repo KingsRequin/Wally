@@ -112,18 +112,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     channel_name: str = payload.broadcaster.name.lower()
     channel_id = f"twitch:{channel_name}"
 
-    # Incrémentation du compteur de messages pour les visites actives
-    active_visits = getattr(bot, "_active_visits", {})
-    if channel_name in active_visits:
-        active_visits[channel_name]["msg_count"] += 1
-
-    # Dispatch commandes ! (overlay, !mood, !code, …)
-    if await dispatch_command(bot, payload, content, author, channel_name):
-        return
-
-    # Marquer la chaîne invitée comme "vue live" dès réception d'un message
-    if channel_name in bot._channel_ids:
-        bot._channel_was_live[channel_name] = True
+    # Filtres d'identité AVANT tout traitement. Ils étaient en aval de
+    # `dispatch_command` et du compteur de visite : une réponse de Wally
+    # commençant par `!code` atteignait son propre gestionnaire de commande, et
+    # `msg_count` — qui alimente le résumé de visite — comptait les messages de
+    # Wally et des bots comme de l'activité du salon.
 
     # Ignorer les propres messages de Wally qui reviennent via EventSub
     bot_id = str(getattr(bot.twitch_api, "_bot_id", ""))
@@ -143,6 +136,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     badge_ids = {b.id if hasattr(b, "id") else str(b) for b in badges}
     if "bot" in badge_ids:
         return
+
+    # Incrémentation du compteur de messages pour les visites actives
+    active_visits = getattr(bot, "_active_visits", {})
+    if channel_name in active_visits:
+        active_visits[channel_name]["msg_count"] += 1
+
+    # Dispatch commandes ! (overlay, !mood, !code, …)
+    if await dispatch_command(bot, payload, content, author, channel_name):
+        return
+
+    # Marquer la chaîne invitée comme "vue live" dès réception d'un message
+    if channel_name in bot._channel_ids:
+        bot._channel_was_live[channel_name] = True
 
     # Utilisateur banni : le ban est keyé sur le discord_id. On l'applique sur
     # Twitch UNIQUEMENT si ce compte Twitch est lié à un discord banni (alias
@@ -197,18 +203,22 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
     # Vagues d'emotes : quand plusieurs personnes spamment la même chose, c'est
     # le chat qui réagit ensemble — ça mérite l'écran. Détection mécanique.
-    _narrator_wave = _overlay_narrator(bot)
-    if _narrator_wave is not None and _narrator_wave.is_active():
+    # Chaîne HOME seulement, comme les deux blocs ci-dessus : `_emote_waves` est
+    # un détecteur unique sans notion de canal, donc quatre viewers répartis sur
+    # trois chaînes invitées déclenchaient une vague sur l'overlay du live.
+    if _overlay_on and channel_name not in bot._channel_ids:
         try:
             if emote := _emote_waves.feed(author, content):
-                _narrator_wave.show_emote_wave(emote)
+                _narrator.show_emote_wave(emote)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("Vague d'emote non traitée : {e}", e=exc)
 
     # Compteurs à la demande : le chat compte autant que le vocal — une punchline
     # récurrente s'y répète tout autant. Détaché : le scan touche la base.
+    # Home aussi : une punchline dite chez un invité incrémentait le compteur du
+    # live d'Azraël et pouvait déclencher une bulle à l'antenne.
     _tally = getattr(bot, "tally", None)
-    if _tally is not None:
+    if _tally is not None and channel_name not in bot._channel_ids:
         _t = asyncio.create_task(_scan_tally(bot, _tally, content))
         _overlay_chat_tasks.add(_t)
         _t.add_done_callback(_overlay_chat_tasks.discard)
@@ -276,8 +286,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     trigger_type=trigger_type, decision="spontaneous",
                 )
                 _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
-        elif not trigger_type and cooldown_ok:
-            pass
 
     # Trigger check
     bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
@@ -466,13 +474,33 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 await bot.memory.add("twitch", user_id, args["content"], username=author,
                                      origin=f"Twitch/{channel_name}")
                 return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
+            # Un outil peut être connu du modèle mais indisponible sur cette
+            # instance (clé absente). La branche `no_such_tool` ne couvrait que
+            # les noms INCONNUS : on tombait sur `None.search(...)`, et les
+            # `args["query"]`/`args["url"]` levaient un KeyError si le modèle les
+            # omettait. Les deux remontaient en « erreur technique » opaque.
             if name in ("web_search", "image_search"):
+                if web_search is None:
+                    return json.dumps({"status": "unavailable",
+                                       "message": "La recherche web n'est pas disponible."})
+                query = str(args.get("query") or "").strip()
+                if not query:
+                    return json.dumps({"status": "rejected", "message": "Il faut une requête."})
                 if name == "image_search":
-                    return await web_search.search_images(args["query"])
-                return await web_search.search(args["query"], platform="twitch")
+                    return await web_search.search_images(query)
+                return await web_search.search(query, platform="twitch")
             if name == "scrape_url":
-                return await scrape.scrape(args["url"])
+                url = str(args.get("url") or "").strip()
+                if scrape is None:
+                    return json.dumps({"status": "unavailable",
+                                       "message": "La lecture de pages n'est pas disponible."})
+                if not url:
+                    return json.dumps({"status": "rejected", "message": "Il faut une URL."})
+                return await scrape.scrape(url)
             if name == "apex_legends":
+                if apex_api is None:
+                    return json.dumps({"status": "unavailable",
+                                       "message": "Les stats Apex ne sont pas disponibles."})
                 return await apex_api.execute(
                     args.get("action", ""),
                     player_name=args.get("player_name", ""),
@@ -504,13 +532,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             reply, _tools_called = await bot.llm.complete_with_tools(
                 system_prompt, openai_messages, tools, _tool_executor,
                 purpose="twitch_response",
-                user_id=f"twitch:{author}",
+                # L'ID numérique, comme partout ailleurs dans cette fonction
+                # (l. 176, 247…) : le login change, l'ID non, et deux formes de
+                # clé rendent les coûts inagrégeables.
+                user_id=f"twitch:{user_id}",
             )
         else:
             reply = await bot.llm.complete(
                 system_prompt, openai_messages,
                 purpose="twitch_response",
-                user_id=f"twitch:{author}",
+                user_id=f"twitch:{user_id}",
             )
             _tools_called = []
 
@@ -702,10 +733,7 @@ async def _announce_overlay_image(
             reply = reply[:477] + "..."
 
         # 2. Envoyer overlay + message chat en même temps
-        try:
-            dashboard_state.overlay_image_queue.put_nowait(overlay_payload)
-        except asyncio.QueueFull:
-            pass
+        dashboard_state.overlay_image_feed.publish(overlay_payload)
 
         if channel_name in bot._channel_ids:
             irc_channel = bot.get_channel(channel_name)
