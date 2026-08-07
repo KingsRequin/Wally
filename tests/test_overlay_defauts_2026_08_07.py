@@ -214,3 +214,50 @@ def test_le_feed_accepte_un_widget_qui_a_son_propre_kind():
     q = feed.subscribe()
     feed.widget("goal", kind="follow", percent=50)
     assert _events(q, "widget")[-1]["params"]["kind"] == "follow"
+
+
+# ── 6. le compte à rebours n'acceptait que `result` ──
+#
+# Vu en live (2026-08-07, vocal) : « Wally, tu peux mettre un minuteur de 2
+# secondes ? » → deux appels, deux refus.
+#
+#   args:   {"widget": "countdown", "seconds": 10, "comment": "..."}
+#   result: {"status": "rejected", "message": "'countdown' est inconnu ou il
+#            manque des données"}
+#
+# Le code lisait `int(result)` ; le schéma expose par ailleurs un `seconds`
+# (documenté pour le sondage). Devant « minuteur de 10 secondes », le modèle
+# remplit `seconds` — c'est le nom évident. `poll`, juste en dessous, acceptait
+# déjà les deux : `int(extra.get("seconds") or result or ...)`.
+
+
+def test_le_compte_a_rebours_accepte_seconds():
+    """Le nom que le modèle emploie spontanément."""
+    n, feed = _n()
+    out = n.show_widget("countdown", "ça va vite", seconds=10)
+    assert out is not None, "refusé alors que la durée était fournie"
+    assert out["seconds"] == 10
+
+
+def test_le_compte_a_rebours_accepte_toujours_result():
+    """L'ancienne forme reste valide : elle est encore décrite dans le schéma."""
+    n, feed = _n()
+    assert n.show_widget("countdown", "", result=45)["seconds"] == 45
+
+
+def test_seconds_prime_sur_result_pour_le_rebours():
+    n, feed = _n()
+    assert n.show_widget("countdown", "", seconds=30, result=99)["seconds"] == 30
+
+
+def test_un_rebours_sans_duree_reste_refuse():
+    """Sans durée il n'y a rien à décompter — le refus est le bon comportement."""
+    n, feed = _n()
+    assert n.show_widget("countdown", "vas-y") is None
+
+
+def test_la_jauge_accepte_percent():
+    """Même classe de défaut : `result` seul, alors que « percent » est le mot
+    que le modèle a sous les yeux dans la description."""
+    n, feed = _n()
+    assert n.show_widget("gauge", "kills", percent=68)["percent"] == 68

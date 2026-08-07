@@ -151,8 +151,9 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "description": (
                         "Résultat imposé, optionnel : 'heads'/'tails', un chiffre "
-                        "de dé, l'index gagnant de la roue, les secondes du compte "
-                        "à rebours, le pourcentage de la jauge. Omets-le pour un tirage au sort."
+                        "de dé, l'index gagnant de la roue. Omets-le pour un "
+                        "tirage au sort. (Pour la durée d'un compte à rebours, "
+                        "utilise `seconds` ; pour la jauge, `percent`.)"
                     ),
                 },
                 "options": {
@@ -160,7 +161,12 @@ OVERLAY_TOOL_SPEC = {
                     "description": "Les choix, pour wheel (2-8) ou poll (2-4).",
                 },
                 "question": {"type": "string", "description": "La question, pour poll."},
-                "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
+                "seconds": {"type": "integer", "description": (
+                    "Une durée en secondes : celle d'un sondage (10 par défaut, "
+                    "120 max) ou celle d'un compte à rebours (600 max). Pour un "
+                    "minuteur, c'est ce paramètre qu'il faut remplir."
+                )},
+                "percent": {"type": "number", "description": "Pour gauge : le remplissage, de 0 à 100."},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
                 "cells": {
                     "type": "array", "items": {"type": "string"},
@@ -577,8 +583,14 @@ class OverlayNarrator:
                 result=args.get("result"), **extra,
             )
             if out is None:
-                return json.dumps({"status": "rejected",
-                                   "message": "widget inconnu ou données manquantes"})
+                # La consigne compte autant que le statut : sur un refus sec,
+                # le modèle paraphrasait le compte rendu — « l'outil me répond
+                # que… » s'est retrouvé en toutes lettres sur l'overlay public.
+                return json.dumps({"status": "rejected", "message": (
+                    "Rien affiché : widget inconnu ou données manquantes. Ne "
+                    "parle NI de l'outil NI du paramètre — réagis en quelques "
+                    "mots, ou réponds RIEN."
+                )})
             shown.append(out)
             return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()}})
 
@@ -683,8 +695,15 @@ class OverlayNarrator:
             params = {"options": options, "index": max(0, min(len(options) - 1, index))}
 
         elif widget == "countdown":
+            # `seconds` d'abord, `result` en repli. Devant « un minuteur de 10
+            # secondes », le modèle remplit `seconds` — c'est le nom évident, et
+            # le schéma l'expose par ailleurs pour le sondage. En n'acceptant
+            # que `result`, ce widget refusait toute demande formulée
+            # naturellement : vu en live le 2026-08-07, deux appels, deux refus.
+            # `poll` accepte déjà les deux, c'est le motif qu'on reprend.
             try:
-                seconds = int(result)
+                seconds = int(extra.get("seconds") if extra.get("seconds") is not None
+                              else result)
             except (TypeError, ValueError):
                 return None
             seconds = max(1, min(600, seconds))
@@ -696,8 +715,11 @@ class OverlayNarrator:
                 params["done"] = str(extra["done"])[:20]
 
         elif widget == "gauge":
+            # Même classe de défaut que le compte à rebours : « percent » est le
+            # mot que le modèle lit dans la description, il le renvoie tel quel.
             try:
-                percent = float(result)
+                percent = float(extra.get("percent") if extra.get("percent") is not None
+                                else result)
             except (TypeError, ValueError):
                 return None
             params = {"percent": max(0.0, min(100.0, percent)),
