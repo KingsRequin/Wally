@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import os
 from typing import Protocol
 
@@ -78,6 +79,7 @@ class FasterWhisperSTT:
         compute_type: str = "int8",
         phrases: list[str] | None = None,
         cpu_threads: int = 0,
+        parallel: int = 1,
     ) -> None:
         self._model_size = model_size
         self._lang = (language or "fr").split("-")[0]  # "fr-FR" → "fr"
@@ -88,9 +90,19 @@ class FasterWhisperSTT:
         # fait halluciner « Wally wally » sur le bruit (ventilateur). Le VAD filtre suffit.
         self._initial_prompt = None
         self._model = None  # chargé à la demande
-        # Sérialise les transcriptions : une seule à la fois. Sinon, plusieurs segments
-        # concurrents (multi-locuteurs) sur-souscrivent le CPU et la latence explose (pics aléatoires).
-        self._lock = asyncio.Lock()
+        # Nombre de transcriptions menées de front. Mesuré en live à trois
+        # locuteurs : le calcul ne coûte que ~2 s par énoncé, mais l'attente en
+        # file en ajoutait jusqu'à 13. Au-delà de ce parallélisme, on
+        # sur-souscrit le CPU et la latence repart dans l'autre sens — d'où le
+        # produit `parallel × cpu_threads` à garder sous le nombre de cœurs.
+        self._parallel = max(1, int(parallel or 1))
+        self._sem = asyncio.Semaphore(self._parallel)
+        # Le chargement du modèle, lui, reste strictement sérialisé : deux
+        # chargements concurrents doubleraient la mémoire.
+        self._load_lock = asyncio.Lock()
+        # Verrou de thread (et non asyncio) : le chargement a lieu dans le
+        # thread de travail, où le verrou asyncio ne protège rien.
+        self._model_guard = threading.Lock()
 
     def _ensure_model(self):
         if self._model is None:
@@ -102,22 +114,28 @@ class FasterWhisperSTT:
             self._model = WhisperModel(
                 self._model_size, device=self._device, compute_type=self._compute_type,
                 cpu_threads=self._cpu_threads,
+                # Sans workers supplémentaires, CTranslate2 sérialise en interne :
+                # le parallélisme Python ne servirait à rien.
+                num_workers=self._parallel,
             )
         return self._model
 
     async def warmup(self) -> None:
         """Pré-charge le modèle (évite les ~2,5 s du 1er segment et le double-chargement concurrent)."""
-        async with self._lock:
+        async with self._load_lock:
             await asyncio.to_thread(self._ensure_model)
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
-        async with self._lock:  # une transcription à la fois
+        async with self._sem:  # `parallel` transcriptions au plus
             return await asyncio.to_thread(self._transcribe_sync, pcm16k_mono)
 
     def _transcribe_sync(self, pcm16k_mono: bytes) -> str:
         try:
             import numpy as np
-            model = self._ensure_model()
+            # `_ensure_model` peut être atteint par deux transcriptions à la fois
+            # depuis que le sémaphore en laisse passer plusieurs.
+            with self._model_guard:
+                model = self._ensure_model()
             audio = np.frombuffer(pcm16k_mono, dtype=np.int16).astype(np.float32) / 32768.0
             # beam_size=1 (greedy) → priorité latence.
             # vad_filter (Silero) : rejette le non-parole (bruit/ventilateur) → anti-hallucination.
@@ -207,6 +225,7 @@ def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None)
             compute_type=cfg.whisper_compute_type,
             phrases=phrases,
             cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
+            parallel=getattr(cfg, "stt_parallel", 1),
         )
     key, region = _azure_creds()
     return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases)

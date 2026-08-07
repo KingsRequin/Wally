@@ -108,7 +108,10 @@ class VoiceConfig:
     whisper_model: str = "small"  # faster-whisper : tiny|base|small|medium...
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
-    whisper_cpu_threads: int = 0  # 0 = auto ; les transcriptions sont sérialisées (1 à la fois)
+    whisper_cpu_threads: int = 0  # 0 = auto (CTranslate2 prend tous les cœurs)
+    # Transcriptions menées de front. Garder `stt_parallel × whisper_cpu_threads`
+    # sous le nombre de cœurs : au-delà, la sur-souscription annule le gain.
+    stt_parallel: int = 1
     # STT streaming distant (serveur RealtimeSTT GPU, cf docs/voice/REMOTE_STT_API.md)
     remote_stt_url: str = "ws://192.168.1.49:9090"
     remote_stt_max_connections: int = 2  # limite VRAM du serveur (2 sur RTX 4070 12 Go)
