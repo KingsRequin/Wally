@@ -1,4 +1,7 @@
+import contextlib
+
 import pytest
+from loguru import logger
 from unittest.mock import MagicMock, patch
 from bot.config import VoiceConfig
 from bot.discord.voice.providers import AzureSTT, AzureTTS, build_stt, build_tts
@@ -50,3 +53,67 @@ def test_build_uses_config():
          patch.dict("os.environ", {"AZURE_SPEECH_KEY": "k", "AZURE_SPEECH_REGION": "r"}):
         assert isinstance(build_stt(cfg), AzureSTT)
         assert isinstance(build_tts(cfg), AzureTTS)
+
+
+@contextlib.contextmanager
+def _capture_logs():
+    """Capture loguru — `caplog` ne voit que le `logging` de la stdlib."""
+    lines: list[str] = []
+    sink_id = logger.add(lambda m: lines.append(m), level="WARNING")
+    try:
+        yield lines
+    finally:
+        logger.remove(sink_id)
+
+
+@pytest.mark.asyncio
+async def test_le_streaming_signale_une_synthese_annulee():
+    """Un flux annulé par Azure rendait ZÉRO octet, sans exception ni log.
+
+    Vécu le 2026-08-07 : la clé Azure Speech est devenue invalide (401 au
+    handshake WebSocket). Le SDK ne lève pas — il rend un flux vide. Wally
+    jouait donc son bip, générait sa réplique, l'inscrivait au dashboard… et
+    aucun son ne sortait, sans la moindre trace dans les logs. Le chemin batch
+    vérifie `result.reason` depuis toujours ; le chemin streaming, non.
+    """
+    with patch("bot.discord.voice.providers.speechsdk") as sdk:
+        synth = MagicMock()
+        synth.start_speaking_ssml_async.return_value.get.return_value = MagicMock()
+        sdk.SpeechSynthesizer.return_value = synth
+        stream = MagicMock()
+        stream.read_data.return_value = 0          # aucun octet produit
+        stream.status = sdk.StreamStatus.Canceled
+        stream.cancellation_details = MagicMock(
+            reason="CancellationReason.Error",
+            error_details="WebSocket upgrade failed: Authentication error (401).",
+        )
+        sdk.AudioDataStream.return_value = stream
+
+        chunks: list[bytes] = []
+        tts = AzureTTS(key="k", region="r", voice="fr-FR-Marc:MAI-Voice-2")
+        with _capture_logs() as lines:
+            await tts.synthesize_stream("salut", None, chunks.append)
+
+        assert chunks == []
+        assert any("401" in line for line in lines), \
+            "le motif d'annulation Azure doit apparaître dans les logs"
+
+
+@pytest.mark.asyncio
+async def test_le_streaming_signale_une_synthese_muette():
+    """Zéro octet sans annulation explicite doit quand même se voir."""
+    with patch("bot.discord.voice.providers.speechsdk") as sdk:
+        synth = MagicMock()
+        synth.start_speaking_ssml_async.return_value.get.return_value = MagicMock()
+        sdk.SpeechSynthesizer.return_value = synth
+        stream = MagicMock()
+        stream.read_data.return_value = 0
+        stream.status = sdk.StreamStatus.AllData
+        stream.cancellation_details = None
+        sdk.AudioDataStream.return_value = stream
+
+        tts = AzureTTS(key="k", region="r", voice="fr-FR-Marc:MAI-Voice-2")
+        with _capture_logs() as lines:
+            await tts.synthesize_stream("salut", None, lambda _b: None)
+
+        assert any("aucun audio" in line.lower() for line in lines)

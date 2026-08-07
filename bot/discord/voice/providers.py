@@ -177,11 +177,32 @@ class AzureTTS:
             result = synth.start_speaking_ssml_async(self._build_ssml(text, style)).get()
             stream = speechsdk.AudioDataStream(result)
             chunk = bytes(3840)
+            produced = 0
             while True:
                 n = stream.read_data(chunk)
                 if n == 0:
                     break
+                produced += n
                 on_chunk(chunk[:n])
+            # Azure ne LÈVE PAS quand la synthèse échoue : il rend un flux vide.
+            # Sans ce contrôle, une clé invalide donnait zéro octet en silence —
+            # Wally jouait son bip, générait sa réplique, l'inscrivait au
+            # dashboard, et rien ne sortait, sans une ligne de log. Le chemin
+            # batch vérifie `result.reason` depuis toujours ; celui-ci l'oubliait.
+            if produced:
+                return
+            details = getattr(stream, "cancellation_details", None)
+            if details is not None:
+                logger.error(
+                    "AzureTTS: synthèse annulée ({r}) — {d}",
+                    r=getattr(details, "reason", "?"),
+                    d=getattr(details, "error_details", ""),
+                )
+            else:
+                logger.warning(
+                    "AzureTTS: aucun audio produit (statut {s}) — Wally reste muet",
+                    s=getattr(stream, "status", "?"),
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning("AzureTTS.synthesize_stream a échoué: {e}", e=e)
 
