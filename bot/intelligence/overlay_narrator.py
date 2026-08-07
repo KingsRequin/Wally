@@ -20,8 +20,10 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import time
 import unicodedata
+from collections import deque
 from urllib.parse import quote
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -220,6 +222,8 @@ class OverlayNarrator:
         # Objectif du live (follows / subs / bits), rempli par les
         # événements réels plutôt que par un chiffre saisi à la main.
         self._goal: Optional[dict] = None
+        # Dernières bulles dites : sert à ne pas répéter la même chose.
+        self._recent_bubbles: deque = deque(maxlen=8)
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -286,6 +290,38 @@ class OverlayNarrator:
     def _mark_spoken(self) -> None:
         self._last_bubble_at = time.monotonic()
 
+    @staticmethod
+    def _key_words(text: str) -> set:
+        """Mots porteurs d'une réplique, pour comparer deux bulles entre elles."""
+        folded = unicodedata.normalize("NFD", (text or "").lower())
+        folded = "".join(c for c in folded if unicodedata.category(c) != "Mn")
+        return {w for w in re.findall(r"[a-z]+", folded) if len(w) > 3}
+
+    def _is_repeat(self, text: str) -> bool:
+        """Vrai si Wally vient de dire à peu près la même chose.
+
+        Plusieurs sources produisent des réactions voisines — un salut, une vague
+        de follows, un changement d'audience se ressemblent tous. Sans garde, il
+        répète « du monde arrive » toute la soirée.
+        """
+        words = self._key_words(text)
+        if len(words) < 2:
+            return False
+        for previous in self._recent_bubbles:
+            common = words & previous
+            if not common:
+                continue
+            # Deux répliques qui partagent l'essentiel de leurs mots porteurs
+            # disent la même chose, quelle qu'en soit la tournure.
+            if len(common) / min(len(words), len(previous)) >= 0.6:
+                return True
+        return False
+
+    def _remember_bubble(self, text: str) -> None:
+        words = self._key_words(text)
+        if words:
+            self._recent_bubbles.append(words)
+
     # ── pensées ───────────────────────────────────────────────────────────
 
     async def on_thought(self, text: str) -> Optional[str]:
@@ -316,6 +352,11 @@ class OverlayNarrator:
             self._feed.thinking(False)
             return None
         logger.info("Overlay: pensée affichée — « {t} »", t=short)
+        if self._is_repeat(short):
+            logger.info("Overlay: pensée écartée (déjà dite) — « {t} »", t=short)
+            self._feed.thinking(False)
+            return None
+        self._remember_bubble(short)
         self._feed.think_aloud(short)
         return short
 
@@ -357,7 +398,12 @@ class OverlayNarrator:
             return None
         # Une réaction consomme aussi le budget des pensées : sinon une bulle de
         # pensée pourrait s'empiler juste derrière.
+        if self._is_repeat(short):
+            logger.info("Overlay: réplique écartée (déjà dite) — « {t} »", t=short)
+            self._feed.thinking(False)
+            return None
         self._mark_spoken()
+        self._remember_bubble(short)
         self._feed.say(short, mode="speech")
         return short
 
@@ -422,7 +468,12 @@ class OverlayNarrator:
             return None
         if len(short) > _MAX_BUBBLE_CHARS:
             short = short[:_MAX_BUBBLE_CHARS].rsplit(" ", 1)[0]
+        if self._is_repeat(short):
+            logger.info("Overlay: réplique écartée (déjà dite) — « {t} »", t=short)
+            self._feed.thinking(False)
+            return None
         self._mark_spoken()
+        self._remember_bubble(short)
         self._feed.say(short, mode="speech")
         return short
 
@@ -686,6 +737,7 @@ class OverlayNarrator:
         self._bingo = None
         self._bingo_reminded_at = 0.0
         self._goal = None
+        self._recent_bubbles.clear()
         self._rps = None
         self._hangman = None
 
@@ -741,6 +793,7 @@ class OverlayNarrator:
         if not short:
             return None
         self._mark_spoken()
+        self._remember_bubble(short)
         self._feed.say(short, mode="speech")
         logger.info("Overlay: palier {n} sur « {l} » — {t}", n=count, l=label, t=short)
         return short

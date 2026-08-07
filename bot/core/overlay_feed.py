@@ -99,6 +99,9 @@ class OverlayFeed:
         text = " ".join((text or "").split())
         if not text:
             return
+        # Point de passage unique de TOUTES les bulles : sans cette trace, ce que
+        # l'overlay a réellement dit pendant un live est introuvable après coup.
+        logger.info("Overlay [{m}] : {t}", m=mode, t=text)
         self.publish({
             "type": "bubble",
             "mode": mode,

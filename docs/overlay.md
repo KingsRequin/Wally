@@ -223,6 +223,21 @@ affiché. Les empiler les ferait arriver après coup, sur un widget disparu.
 
 ---
 
+## Garde anti-répétition
+
+Plusieurs sources produisent des réactions voisines — un salut, une vague de
+follows, une arrivée dans le chat se ressemblent toutes. Sans garde, Wally
+répétait « du monde arrive, faut bien se tenir » toute la soirée.
+
+Une réplique qui partage l'essentiel de ses mots porteurs avec l'une des huit
+dernières est écartée, quelle qu'en soit la tournure. La mémoire se vide à
+chaque nouveau live.
+
+Toutes les bulles sont tracées en INFO (`Overlay [speech] : …`) : sans ça, ce
+que l'overlay a dit pendant un live était introuvable après coup.
+
+---
+
 ## Limites connues
 
 - **Le bingo et les compteurs** dépendent de la qualité de la transcription

@@ -74,7 +74,10 @@ async def test_le_creneau_est_reserve_avant_la_condensation():
 
 @pytest.mark.asyncio
 async def test_le_budget_se_libere_apres_l_intervalle():
-    n, _, _ = _narrator(interval=0.0)
+    n, _, llm = _narrator(interval=0.0)
+    # Deux condensations DIFFÉRENTES : la garde anti-répétition écarterait deux
+    # fois la même réplique, et ce test-ci porte sur le budget.
+    llm.complete = AsyncMock(side_effect=["premier constat", "tout autre chose"])
     assert await n.on_thought("une") is not None
     assert await n.on_thought("deux") is not None
 
@@ -166,7 +169,8 @@ async def test_un_evenement_neutre_ne_fait_pas_reagir_l_avatar():
 async def test_un_evenement_passe_meme_si_une_pensee_vient_de_parler():
     """Se taire sur un raid parce qu'une pensée vient de passer serait absurde :
     les deux budgets sont distincts."""
-    n, _, _ = _narrator()
+    n, _, llm = _narrator()
+    llm.complete = AsyncMock(side_effect=["je m'ennuie ferme", "gros raid, bienvenue"])
     assert await n.on_thought("une pensée") is not None
     assert await n.on_stream_event("Un raid arrive") is not None
 
@@ -859,3 +863,50 @@ def test_la_grille_se_reaffiche_sur_demande():
 def test_reafficher_sans_grille_ne_fait_rien():
     n, _, _ = _narrator()
     assert n.show_widget("bingo", "") is None
+
+
+# ── garde anti-répétition ──
+
+def test_deux_repliques_equivalentes_sont_reperees():
+    """Signalé en prod : « du monde arrive, faut bien se tenir » revenait sans
+    cesse — plusieurs sources produisent des réactions voisines."""
+    n, _, _ = _narrator()
+    n._remember_bubble("tiens du monde qui arrive, faut bien se tenir")
+    assert n._is_repeat("du monde arrive, faut se tenir correctement") is True
+
+
+def test_une_replique_differente_passe():
+    n, _, _ = _narrator()
+    n._remember_bubble("tiens du monde qui arrive")
+    assert n._is_repeat("Azraël vient de rater son saut") is False
+
+
+def test_les_accents_ne_trompent_pas_la_garde():
+    n, _, _ = _narrator()
+    n._remember_bubble("il a raté son atterrissage")
+    assert n._is_repeat("il a rate son atterrissage") is True
+
+
+def test_une_replique_tres_courte_passe_toujours():
+    """« pile » ou « raté » n'ont pas assez de matière pour être comparés."""
+    n, _, _ = _narrator()
+    n._remember_bubble("pile")
+    assert n._is_repeat("face") is False
+
+
+@pytest.mark.asyncio
+async def test_une_reaction_repetee_n_est_pas_publiee():
+    n, feed, _ = _narrator(reply="du monde arrive, faut bien se tenir")
+    assert await n.on_stream_event("des gens arrivent") is not None
+    n._last_event_at = 0.0          # on rouvre le budget
+    q = feed.subscribe()
+    assert await n.on_stream_event("encore des gens") is None
+    assert not [e for e in (q.get_nowait() for _ in range(q.qsize()))
+                if e["type"] == "bubble"]
+
+
+def test_un_nouveau_live_oublie_les_repliques():
+    n, _, _ = _narrator()
+    n._remember_bubble("du monde arrive ce soir")
+    n.reset_live()
+    assert n._is_repeat("du monde arrive ce soir") is False
