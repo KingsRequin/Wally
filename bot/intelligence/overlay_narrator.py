@@ -118,7 +118,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo", "meme", "rps", "hangman", "goal"],
+                             "bingo", "meme", "rps", "hangman", "goal", "talkers"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -224,6 +224,9 @@ class OverlayNarrator:
         self._goal: Optional[dict] = None
         # Dernières bulles dites : sert à ne pas répéter la même chose.
         self._recent_bubbles: deque = deque(maxlen=8)
+        # Messages du chat par personne depuis le début du live : sert au
+        # classement des bavards, à la demande.
+        self._talkers: dict = {}
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -483,7 +486,8 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction", "meme", "rps", "hangman", "quote", "goal")
+                "prediction", "meme", "rps", "hangman", "quote", "goal",
+                "talkers", "clip")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -575,6 +579,12 @@ class OverlayNarrator:
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
+
+        elif widget == "talkers":
+            shown = self.show_talkers()
+            if shown is None:
+                return None
+            return shown
 
         elif widget == "goal":
             # Distinct de `gauge` : celle-ci se remplit toute seule, l'autre
@@ -696,6 +706,9 @@ class OverlayNarrator:
         author = (author or "").strip()
         if not author:
             return
+        if author:
+            key = author.strip()
+            self._talkers[key] = self._talkers.get(key, 0) + 1
         self.maybe_remind_bingo()
         self._count_vote(author, text)
         self._count_rps(author, text)
@@ -738,6 +751,7 @@ class OverlayNarrator:
         self._bingo_reminded_at = 0.0
         self._goal = None
         self._recent_bubbles.clear()
+        self._talkers.clear()
         self._rps = None
         self._hangman = None
 
@@ -859,6 +873,34 @@ class OverlayNarrator:
             label=f"{goal['label']} · {goal['count']}/{goal['target']}",
             duration=10,
         )
+
+    def show_talkers(self, top: int = 3) -> Optional[dict]:
+        """Classement des plus bavards du chat depuis le début du live.
+
+        Purement mécanique : rien n'est interprété, donc rien ne peut être
+        inventé. Sur demande seulement — un classement permanent inciterait au
+        spam.
+        """
+        if not self._live() or not self._talkers:
+            return None
+        ranking = sorted(self._talkers.items(), key=lambda kv: (-kv[1], kv[0]))[:max(1, top)]
+        self._feed.widget("talkers",
+                          rows=[{"name": n, "count": c} for n, c in ranking],
+                          duration=10)
+        return {"widget": "talkers", "rows": ranking}
+
+    def show_clip(self, title: str, author: str) -> bool:
+        """Signale qu'un viewer vient de créer un clip.
+
+        Pas soumis au budget : clipper est un geste rare, et le signaler
+        récompense celui qui l'a fait — c'est tout l'intérêt.
+        """
+        if not self._live():
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("clip", title=str(title)[:80], author=str(author)[:24],
+                          duration=10)
+        return True
 
     def show_emote_wave(self, emote: str) -> bool:
         """Signale que le chat spamme le même emote."""
@@ -1216,6 +1258,55 @@ class OverlayNarrator:
             return f"Sondage « {r['question']} » : égalité ({detail})."
         return (f"Sondage « {r['question']} » : {r['winner']} l'emporte "
                 f"({detail}, {r['total']} votes).")
+
+    # Ce qu'on entend à l'oral pour un vote. Le chat tape « 1 » ; en vocal on dit
+    # « un », « le premier », ou simplement « oui » / « non » sur deux options.
+    _SPOKEN_NUMBERS = {
+        "un": 1, "une": 1, "premier": 1, "premiere": 1, "oui": 1,
+        "deux": 2, "second": 2, "seconde": 2, "deuxieme": 2, "non": 2,
+        "trois": 3, "troisieme": 3,
+        "quatre": 4, "quatrieme": 4,
+    }
+
+    def count_spoken_vote(self, author: str, text: str) -> bool:
+        """Compte un vote entendu en VOCAL pendant un sondage.
+
+        Plus permissif que le chat : une phrase parlée n'est jamais réduite à un
+        chiffre (« bah moi je dis deux »), et la transcription accentue mal. On
+        cherche donc un mot de vote dans la phrase, à condition qu'elle soit
+        courte — au-delà, « deux » parle sûrement d'autre chose.
+        """
+        poll = self._poll
+        if not poll or time.monotonic() > poll["ends_at"]:
+            return False
+        words = self._fold(text).split()
+        if not words or len(words) > 8:
+            return False
+        index = None
+        for word in words:
+            if word.isdigit() and 1 <= int(word) <= len(poll["options"]):
+                index = int(word) - 1
+                break
+            spoken = self._SPOKEN_NUMBERS.get(word)
+            if spoken is not None and spoken <= len(poll["options"]):
+                index = spoken - 1
+                break
+        if index is None:
+            # Dernier recours : le libellé de l'option, prononcé tel quel.
+            for i, option in enumerate(poll["options"]):
+                folded = self._fold(option)
+                if folded and folded in self._fold(text):
+                    index = i
+                    break
+        if index is None:
+            return False
+        voter = author.lower()
+        if poll["votes"].get(voter) == index:
+            return False
+        poll["votes"][voter] = index
+        self._publish_poll(max(1, int(poll["ends_at"] - time.monotonic())))
+        logger.info("Sondage : vote vocal de {a} → {n}", a=author, n=index + 1)
+        return True
 
     def _count_vote(self, author: str, text: str) -> None:
         poll = self._poll

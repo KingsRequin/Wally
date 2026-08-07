@@ -236,6 +236,38 @@
       return box;
     },
 
+    talkers(p) {
+      const box = el("div", "talkers");
+      const title = el("div", "talkers-title");
+      title.textContent = "Les plus bavards";
+      box.appendChild(title);
+      (Array.isArray(p.rows) ? p.rows : []).forEach((r, i) => {
+        const row = el("div", `talker rank${i + 1}`);
+        row.style.setProperty("--i", String(i));
+        const pos = el("span", "pos");
+        pos.textContent = ["🥇", "🥈", "🥉"][i] || `${i + 1}.`;
+        const name = el("span", "who");
+        name.textContent = String(r.name || "");
+        const n = el("span", "n");
+        n.textContent = String(r.count || 0);
+        row.append(pos, name, n);
+        box.appendChild(row);
+      });
+      return box;
+    },
+
+    clip(p) {
+      const box = el("div", "clip");
+      const head = el("div", "clip-head");
+      head.textContent = "✂ nouveau clip";
+      const title = el("div", "clip-title");
+      title.textContent = String(p.title || "");
+      const who = el("div", "clip-author");
+      who.textContent = `par ${p.author || "quelqu'un"}`;
+      box.append(head, title, who);
+      return box;
+    },
+
     wave(p) {
       // Le chat spamme : l'emote arrive en grand, une fois. Pas de compteur —
       // le nombre n'ajoute rien, c'est le déferlement qu'on montre.

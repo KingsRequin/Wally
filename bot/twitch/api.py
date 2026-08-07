@@ -185,6 +185,36 @@ class TwitchAPI:
             logger.warning("get_users_by_ids failed: {e}", e=exc)
         return result
 
+    async def get_recent_clips(self, since_iso: str) -> list[dict]:
+        """GET /helix/clips — clips créés depuis `since_iso` sur la chaîne.
+
+        Twitch n'émet AUCUN événement EventSub à la création d'un clip : la
+        seule façon de les voir est d'interroger l'API. Retourne une liste vide
+        en cas d'erreur — un clip manqué ne vaut pas un plantage.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/clips",
+                    params={
+                        "broadcaster_id": self._broadcaster_id,
+                        "started_at": since_iso,
+                        "first": 20,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self._tm.bot_token}",
+                        "Client-Id": self._client_id,
+                    },
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    logger.debug("Twitch clips API {c}", c=resp.status_code)
+                    return []
+                return resp.json().get("data") or []
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("Twitch clips API a échoué : {e}", e=exc)
+            return []
+
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
 

@@ -44,7 +44,9 @@ async def test_la_parole_entendue_devient_perception_pas_reponse():
     svc.listen_only = True
     svc._vc = MagicMock()
     narrator = MagicMock()
+    narrator.count_spoken_vote.return_value = False
     narrator.on_stream_event = AsyncMock(return_value=None)
+    narrator.count_spoken_vote.return_value = False
     svc._bot.overlay_narrator = narrator
     feed = MagicMock()
 
@@ -107,6 +109,7 @@ async def test_une_demande_en_vocal_part_vers_le_chemin_outille():
     svc.listen_only = True
     svc._vc = MagicMock()
     narrator = MagicMock()
+    narrator.count_spoken_vote.return_value = False
     narrator.on_voice_request = AsyncMock(return_value="pile")
     narrator.on_stream_event = AsyncMock(return_value=None)
     svc._bot.overlay_narrator = narrator
@@ -125,6 +128,7 @@ async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
     svc.listen_only = True
     svc._vc = MagicMock()
     narrator = MagicMock()
+    narrator.count_spoken_vote.return_value = False
     narrator.on_stream_event = AsyncMock(return_value=None)
     narrator.on_voice_request = AsyncMock()
     svc._bot.overlay_narrator = narrator

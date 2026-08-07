@@ -511,6 +511,14 @@ class VoiceService:
         narrator = getattr(self._bot, "overlay_narrator", None)
         if narrator is None:
             return
+
+        # Sondage en cours : ceux qui sont en vocal votent à voix haute plutôt
+        # que d'aller taper dans le chat.
+        try:
+            if narrator.count_spoken_vote(label, text):
+                return      # c'était un vote, pas une réaction à commenter
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("voice: vote vocal non compté: {e}", e=exc)
         # Une phrase qui le nomme est une DEMANDE : elle part vers le chemin
         # outillé, seul capable d'afficher quelque chose. Le reste n'est qu'une
         # réaction possible — et le silence y est le cas normal, d'où l'absence

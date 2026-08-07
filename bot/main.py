@@ -352,6 +352,40 @@ async def main() -> None:
                 _stream_voice_tasks.add(t)
                 t.add_done_callback(_stream_voice_tasks.discard)
 
+        async def _clip_watch() -> None:
+            """Signale les clips créés pendant le live.
+
+            Twitch n'émet AUCUN événement EventSub à la création d'un clip : la
+            seule voie est d'interroger l'API régulièrement. Deux minutes
+            suffisent — un clip signalé deux minutes après reste un moment
+            frais, et on ne martèle pas l'API pour rien.
+            """
+            from datetime import datetime, timedelta, timezone
+
+            seen: set[str] = set()
+            while True:
+                await asyncio.sleep(120)
+                try:
+                    narrator = getattr(discord_bot, "overlay_narrator", None)
+                    if narrator is None or not narrator.is_active():
+                        continue
+                    since = (datetime.now(timezone.utc) - timedelta(minutes=5))
+                    clips = await twitch_bot.twitch_api.get_recent_clips(
+                        since.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    )
+                    for clip in clips:
+                        cid = str(clip.get("id") or "")
+                        if not cid or cid in seen:
+                            continue
+                        seen.add(cid)
+                        narrator.show_clip(clip.get("title") or "un clip",
+                                           clip.get("creator_name") or "quelqu'un")
+                    # Le live dure des heures : sans purge, l'ensemble enfle.
+                    if len(seen) > 200:
+                        seen.clear()
+                except Exception as e:  # noqa: BLE001 — jamais bloquant
+                    logger.warning("veille des clips en erreur: {e}", e=e)
+
         async def _stream_voice_watch() -> None:
             """Ramène Wally en vocal tant qu'un live tourne sans lui.
 
@@ -410,6 +444,9 @@ async def main() -> None:
         _watch_task = asyncio.create_task(_stream_voice_watch())
         _stream_voice_tasks.add(_watch_task)
         _watch_task.add_done_callback(_stream_voice_tasks.discard)
+        _clip_task = asyncio.create_task(_clip_watch())
+        _stream_voice_tasks.add(_clip_task)
+        _clip_task.add_done_callback(_stream_voice_tasks.discard)
         twitch_bot.stream_watcher = stream_watcher
 
         # Overlay de stream : les événements du live (raid, sub, changement de

@@ -92,6 +92,14 @@ La jauge se remplit **toute seule** au fil des vrais follows, abonnements ou
 bits reçus — rien à mettre à jour. Elle se ferme quand l'objectif est atteint.
 À ne pas confondre avec `gauge`, qui attend un pourcentage donné à la main.
 
+### Les plus bavards
+
+> « wally qui parle le plus ? »
+
+Le top 3 du chat depuis le début du live. Purement mécanique — rien n'est
+interprété, donc rien ne peut être inventé. Sur demande seulement : un
+classement permanent inciterait au spam.
+
 ### Utilitaires
 
 > « wally affiche depuis combien de temps je stream »
@@ -223,6 +231,25 @@ affiché. Les empiler les ferait arriver après coup, sur un widget disparu.
 
 ---
 
+## Alerte clip
+
+Quand un viewer crée un clip, Wally l'affiche avec **son auteur** — c'est celui
+qui clippe qu'on récompense. Twitch n'émettant aucun événement à la création
+d'un clip, l'API est interrogée toutes les deux minutes pendant le live : un
+clip signalé deux minutes après reste un moment frais.
+
+---
+
+## Voter à la voix
+
+Pendant un sondage, ceux qui sont **en vocal** peuvent répondre à haute voix
+plutôt que d'aller taper dans le chat : « deux », « oui », ou le nom de l'option.
+Plus permissif que le chat, car une phrase parlée n'est jamais réduite à un
+chiffre — mais limité aux phrases courtes, sinon « deux » parlerait d'autre
+chose.
+
+---
+
 ## Garde anti-répétition
 
 Plusieurs sources produisent des réactions voisines — un salut, une vague de
@@ -297,5 +324,9 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
   « rappel de promesse adressé au chat » : pas de promesses, point.
 - **Jauge d'humeur** — l'avatar la porte déjà.
 - **Résumé de fin de live** (2026-08-07).
+- Refusés le 2026-08-07 (ne pas reproposer) : quiz de la communauté, compteur
+  inversé (« ça fait X min que… »), mot interdit, panneau de raid, le juste
+  prix, « le premier qui tape 🔥 », trombinoscope des habitués, bandeau
+  défilant, météo du stream, classement du bingo, sous-titres du vocal.
 - **Aperçu de l'overlay dans le panneau admin** (2026-08-07) — ouvrir l'URL de
   l'overlay suffit.

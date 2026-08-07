@@ -39,6 +39,8 @@ _WIDGET_WORDS = {
     "quote": "une réplique que j'ai entendue en vocal, ressortie plus tard",
     "goal": "un objectif de follows ou d'abonnements qui se remplit tout seul",
     "wave": "un signal quand le chat spamme le même emote",
+    "talkers": "le classement des plus bavards du chat",
+    "clip": "une alerte quand quelqu'un crée un clip",
 }
 
 
