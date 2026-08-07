@@ -107,6 +107,20 @@ Il compose une grille de pronostics (jusqu'à 9) à partir de ce qu'il sait
 vraiment d'Azraël et des habitués, puis **coche les cases quand il les
 constate** — en vocal ou dans le chat. Il ne coche que ce qu'il a vu ou entendu.
 
+### Le pendu
+
+> « wally lance un pendu »
+
+Wally choisit un mot (3 à 16 lettres), de préférence tiré de l'univers de la
+chaîne. Le chat propose des lettres — **une lettre seule par message**, sinon
+chaque phrase du chat en proposerait. Les accents sont ignorés : « fusée » se
+devine avec un `e`.
+
+Six fautes et c'est perdu : le pendu se dessine trait par trait, chaque membre
+se traçant à l'apparition. Le mot n'est révélé qu'à la fin, gagné ou perdu — il
+ne transite jamais vers l'overlay avant, sinon les viewers le liraient à
+l'écran.
+
 ### Le chifoumi
 
 > « wally lance un chifoumi »
