@@ -140,7 +140,10 @@ async def test_le_desabonnement_a_lieu_a_la_deconnexion():
     response = await sse_overlay_feed(request)
     gen = response.body_iterator
 
-    first = await gen.__anext__()          # le tampon amorce le client
+    # Premier octet : un commentaire SSE qui débloque les en-têtes côté client
+    # (GZipMiddleware les retient jusqu'au premier corps).
+    assert (await gen.__anext__()).startswith(":")
+    first = await gen.__anext__()          # puis le tampon amorce le client
     assert "avant connexion" in first
     assert feed.subscriber_count == 1
 

@@ -204,22 +204,24 @@ async def run_predict_tool(bot, args: dict) -> str:
                 return json.dumps({"status": "no_bet", "message": (
                     "Tu n'as aucun pari en cours — tu ne peux pas trancher."
                 )})
-            if narrator is not None:
-                narrator.show_prediction(row["bet"], outcome=outcome,
-                                         right=row["right"], total=row["total"])
+            # Retour vérifié : hors live rien ne s'affiche, et l'annoncer serait
+            # une hallucination (cf. `show_quote`).
+            shown = narrator is not None and narrator.show_prediction(
+                row["bet"], outcome=outcome, right=row["right"], total=row["total"])
             verdict = "vu juste" if outcome == "right" else "planté"
             return json.dumps({"status": "ok", "message": (
                 f"Pari tranché : tu t'es {verdict}. Score : {row['right']}/{row['total']}. "
-                "Annonce-le."
+                + ("Annonce-le." if shown else "Rien à l'écran (pas de live).")
             )})
         row = await predictions.open(args.get("bet", ""))
         if row is None:
             return json.dumps({"status": "rejected", "message": "Il faut un pronostic."})
         score = await predictions.score()
-        if narrator is not None:
-            narrator.show_prediction(row["bet"], right=score["right"], total=score["total"])
+        shown = narrator is not None and narrator.show_prediction(
+            row["bet"], right=score["right"], total=score["total"])
         return json.dumps({"status": "ok", "message": (
-            f"Pari ouvert : « {row['bet'] }». Tranche-le quand tu connaîtras l'issue."
+            f"Pari ouvert : « {row['bet']} ». Tranche-le quand tu connaîtras l'issue."
+            + ("" if shown else " Rien à l'écran (pas de live).")
         )})
     except Exception as exc:  # noqa: BLE001 — un pari ne casse pas la réponse
         logger.warning("Prédiction a échoué : {e}", e=exc)
@@ -259,27 +261,46 @@ async def run_quote_tool(bot, args: dict) -> str:
                            "message": "Le carnet de citations n'est pas disponible."})
     narrator = _overlay_narrator(bot)
     try:
+        asked_author = str(args.get("author") or "").strip()
         if args.get("recall"):
-            row = await book.recall(str(args.get("author") or ""))
+            row = await book.recall(asked_author)
             if row is None:
+                # Deux cas distincts, deux messages : « rien de cette personne »
+                # n'est pas « le carnet est vide », et les confondre faisait dire
+                # à Wally qu'il n'avait rien retenu alors que la base était pleine.
+                if asked_author and await book.count():
+                    return json.dumps({"status": "empty", "message": (
+                        f"Tu n'as rien retenu de {asked_author}."
+                    )})
                 return json.dumps({"status": "empty", "message": (
                     "Tu n'as encore retenu aucune citation."
                 )})
             when = _quote_age(row.get("created_at"))
-            if narrator is not None:
-                narrator.show_quote(row["author"], row["text"], age=when)
+            # L'affichage est VÉRIFIÉ avant d'être annoncé : `show_quote` renvoie
+            # False hors live. Sans ça Wally annonçait « à l'écran » pendant qu'un
+            # DM n'affichait rien — et `shown_at`, marqué en amont, brûlait la
+            # rotation des citations les moins vues.
+            shown = narrator is not None and narrator.show_quote(
+                row["author"], row["text"], age=when)
+            if not shown:
+                return json.dumps({"status": "offline", "message": (
+                    f"Rien à l'écran (pas de live). Tu te souviens de : "
+                    f"« {row['text']} » — {row['author']}, {when}."
+                )})
+            if row.get("id") is not None:
+                await book.mark_shown(row["id"])
             return json.dumps({"status": "ok", "message": (
                 f"À l'écran : « {row['text']} » — {row['author']}, {when}."
             )})
-        row = await book.add(str(args.get("author") or ""), str(args.get("text") or ""))
+        row = await book.add(asked_author, str(args.get("text") or ""))
         if row is None:
             return json.dumps({"status": "rejected",
                                "message": "Il faut un auteur et une phrase."})
-        if narrator is not None:
-            narrator.show_quote(row["author"], row["text"])
+        shown = narrator is not None and narrator.show_quote(row["author"], row["text"])
         total = await book.count()
         return json.dumps({"status": "ok", "message": (
-            f"Citation retenue ({total} en tout) et affichée."
+            f"Citation retenue ({total} en tout)"
+            + (" et affichée." if shown else ", pas affichée : pas de live.")
         )})
     except Exception as exc:  # noqa: BLE001 — une citation ne casse pas la réponse
         logger.warning("Citation a échoué : {e}", e=exc)

@@ -9,6 +9,17 @@ from loguru import logger
 if TYPE_CHECKING:
     from bot.twitch.token_manager import TwitchTokenManager
 
+# Forme canonique du « pas de live ». `get_stream()` doit TOUJOURS rendre un
+# dict : tout le reste du code (StreamWatcher, build_system_prompt, handlers)
+# l'indexe sans garde, et un `None` y remonte en AttributeError/TypeError.
+_OFFLINE_STREAM = {
+    "live": False,
+    "title": None,
+    "category": None,
+    "viewers": 0,
+    "started_at": None,
+}
+
 
 class TwitchAPI:
     MESSAGES_URL = "https://api.twitch.tv/helix/chat/messages"
@@ -236,6 +247,11 @@ class TwitchAPI:
                         timeout=10,
                     )
                     if resp.status_code == 401:
+                        # `break` sortait du `for`, du `async with`, PUIS de la
+                        # fonction : retour implicite `None` là où tout le reste
+                        # du code attend un dict. `StreamWatcher` mourait sur un
+                        # AttributeError hors de son try, et `build_system_prompt`
+                        # levait un TypeError — plus aucun prompt nulle part.
                         if attempt == 0:
                             logger.warning(
                                 "Twitch streams API 401 — refreshing bot token and retrying"
@@ -245,20 +261,14 @@ class TwitchAPI:
                                 logger.error(
                                     "Bot token refresh failed, cannot fetch stream status"
                                 )
-                                break
+                                return _OFFLINE_STREAM.copy()
                             continue
                         logger.error("Twitch streams API 401 after refresh, giving up")
-                        break
+                        return _OFFLINE_STREAM.copy()
                     resp.raise_for_status()
                     data = resp.json().get("data", [])
                     if not data:
-                        return {
-                            "live": False,
-                            "title": None,
-                            "category": None,
-                            "viewers": 0,
-                            "started_at": None,
-                        }
+                        return _OFFLINE_STREAM.copy()
                     s = data[0]
                     return {
                         "live": True,
@@ -269,10 +279,4 @@ class TwitchAPI:
                     }
         except Exception as exc:
             logger.warning("Failed to fetch Twitch stream status: {e}", e=exc)
-            return {
-                "live": False,
-                "title": None,
-                "category": None,
-                "viewers": 0,
-                "started_at": None,
-            }
+            return _OFFLINE_STREAM.copy()

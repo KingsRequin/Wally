@@ -305,15 +305,20 @@ class VoiceService:
         # est levé à la fin du live (cf. le veilleur dans main.py).
         if self.listen_only:
             self.listen_optout = True
-        if self._auto_leave_task is not None:
-            self._auto_leave_task.cancel()
-            self._auto_leave_task = None
-        if self._maintain_task is not None:
-            self._maintain_task.cancel()
-            self._maintain_task = None
-        if self._silence_task is not None:
-            self._silence_task.cancel()
-            self._silence_task = None
+        # Ne JAMAIS s'annuler soi-même : `_auto_leave_watch` appelle `leave()`,
+        # et `cancel()` sur la tâche courante arme un CancelledError qui part au
+        # premier `await` suspendant (`disconnect()`). Comme il dérive de
+        # BaseException, il traversait les `except Exception` : tout ce qui suit
+        # — `_vc = None`, `history.clear()`, le log « salon quitté » — ne
+        # s'exécutait jamais, et discord.py sautait son `cleanup()` (hors
+        # `finally`), gardant le bot « connecté » pour toujours.
+        # Constaté en prod : 5 auto-leave sur 8 sans « salon quitté ».
+        current = asyncio.current_task()
+        for name in ("_auto_leave_task", "_maintain_task", "_silence_task"):
+            task = getattr(self, name, None)
+            setattr(self, name, None)
+            if task is not None and task is not current:
+                task.cancel()
         if self._streaming is not None:
             try:
                 await self._streaming.close_all()  # ferme toutes les connexions WS distantes

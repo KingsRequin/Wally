@@ -83,12 +83,19 @@ async def test_ressortir_ecarte_les_plus_recemment_vues():
 
 
 @pytest.mark.asyncio
-async def test_ressortir_marque_la_citation_comme_vue():
-    """Sinon la même reviendrait en boucle."""
+async def test_ressortir_ne_marque_rien_tant_que_rien_nest_affiche():
+    """`recall()` choisit, `mark_shown()` constate.
+
+    Marquer dans `recall()` brûlait les douze citations les moins vues à chaque
+    rappel hors live, où rien ne s'affiche — la rotation était cassée sans que
+    rien ne soit jamais montré.
+    """
     b = _book()
     await b.add("Azraël", "une réplique")
     b._db.rows[0]["shown_at"] = 0
-    await b.recall()
+    row = await b.recall()
+    assert b._db.rows[0]["shown_at"] == 0
+    await b.mark_shown(row["id"])
     assert b._db.rows[0]["shown_at"] > 0
 
 
@@ -118,25 +125,70 @@ def test_l_age_est_dit_en_langage_de_personne():
 
 # ── l'outil ──
 
+def _bot_avec_narrateur(affiche: bool):
+    """Un narrateur dont `show_quote` REND ce qu'il fait vraiment.
+
+    Un `MagicMock()` nu renvoie un mock truthy : les tests croyaient à un
+    affichage même hors live, et masquaient l'annonce mensongère.
+    """
+    narrator = MagicMock()
+    narrator.show_quote.return_value = affiche
+    return SimpleNamespace(quotes=MagicMock(), overlay_narrator=narrator), narrator
+
+
 @pytest.mark.asyncio
 async def test_l_outil_retient_et_affiche():
-    narrator = MagicMock()
-    bot = SimpleNamespace(quotes=MagicMock(), overlay_narrator=narrator)
+    bot, narrator = _bot_avec_narrateur(True)
     bot.quotes.add = AsyncMock(return_value={"author": "Azraël", "text": "ça pique"})
     bot.quotes.count = AsyncMock(return_value=3)
     out = json.loads(await run_quote_tool(bot, {"author": "Azraël", "text": "ça pique"}))
     assert out["status"] == "ok"
+    assert "et affichée" in out["message"]
     narrator.show_quote.assert_called_once()
 
 
 @pytest.mark.asyncio
+async def test_l_outil_ne_pretend_pas_afficher_hors_live():
+    """Sans live, `show_quote` renvoie False : l'annoncer serait une hallucination."""
+    bot, _ = _bot_avec_narrateur(False)
+    bot.quotes.add = AsyncMock(return_value={"author": "Azraël", "text": "ça pique"})
+    bot.quotes.count = AsyncMock(return_value=3)
+    out = json.loads(await run_quote_tool(bot, {"author": "Azraël", "text": "ça pique"}))
+    assert "pas affichée" in out["message"]
+
+
+@pytest.mark.asyncio
 async def test_l_outil_ressort_une_ancienne():
-    narrator = MagicMock()
-    bot = SimpleNamespace(quotes=MagicMock(), overlay_narrator=narrator)
+    bot, _ = _bot_avec_narrateur(True)
     bot.quotes.recall = AsyncMock(return_value={
-        "author": "Azraël", "text": "ça pique", "created_at": time.time() - 86400 * 3})
-    msg = json.loads(await run_quote_tool(bot, {"recall": True}))["message"]
-    assert "il y a 3 jours" in msg
+        "id": 7, "author": "Azraël", "text": "ça pique",
+        "created_at": time.time() - 86400 * 3})
+    bot.quotes.mark_shown = AsyncMock()
+    out = json.loads(await run_quote_tool(bot, {"recall": True}))
+    assert "il y a 3 jours" in out["message"]
+    bot.quotes.mark_shown.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_une_citation_non_affichee_nest_pas_marquee_vue():
+    """Hors live, marquer `shown_at` brûlait la rotation sans rien montrer."""
+    bot, _ = _bot_avec_narrateur(False)
+    bot.quotes.recall = AsyncMock(return_value={
+        "id": 7, "author": "Azraël", "text": "ça pique",
+        "created_at": time.time() - 86400 * 3})
+    bot.quotes.mark_shown = AsyncMock()
+    out = json.loads(await run_quote_tool(bot, {"recall": True}))
+    assert out["status"] == "offline"
+    bot.quotes.mark_shown.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rien_de_cette_personne_nest_pas_carnet_vide():
+    bot, _ = _bot_avec_narrateur(True)
+    bot.quotes.recall = AsyncMock(return_value=None)
+    bot.quotes.count = AsyncMock(return_value=12)
+    msg = json.loads(await run_quote_tool(bot, {"recall": True, "author": "Rina"}))["message"]
+    assert "Rina" in msg
 
 
 @pytest.mark.asyncio

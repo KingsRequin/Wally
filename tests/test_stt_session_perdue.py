@@ -15,6 +15,9 @@ def _manager():
     mgr._sessions = {}
     mgr._fallback_speakers = set()
     mgr._pending_fallback = 0
+    # Références fortes des tâches détachées : sans elles la boucle asyncio ne
+    # retient qu'une référence faible, et un énoncé peut être collecté en vol.
+    mgr._detached = set()
     mgr._transcribed = []
     # On observe l'aiguillage, pas la transcription elle-même.
     mgr._fallback_transcribe = lambda sid, seg: mgr._transcribed.append((sid, seg))
@@ -23,7 +26,7 @@ def _manager():
 
 def test_une_session_non_prete_ne_capte_pas_l_enonce(monkeypatch):
     import bot.discord.voice.streaming as mod
-    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
     sess = MagicMock()
@@ -38,7 +41,7 @@ def test_une_session_non_prete_ne_capte_pas_l_enonce(monkeypatch):
 
 def test_une_session_prete_recoit_bien_le_flush(monkeypatch):
     import bot.discord.voice.streaming as mod
-    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
     sess = MagicMock()
@@ -53,7 +56,7 @@ def test_une_session_prete_recoit_bien_le_flush(monkeypatch):
 
 def test_sans_session_l_enonce_part_en_local(monkeypatch):
     import bot.discord.voice.streaming as mod
-    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
     mgr.speech_end_sync("u1", b"audio")
@@ -64,7 +67,7 @@ def test_la_file_locale_est_bornee(monkeypatch):
     """Mesuré en live : à trois locuteurs, la file montait à 35 s de retard.
     À ce décalage, Wally réagit à une phrase que tout le monde a oubliée."""
     import bot.discord.voice.streaming as mod
-    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
     mgr._pending_fallback = mod._MAX_PENDING_FALLBACK
@@ -74,7 +77,7 @@ def test_la_file_locale_est_bornee(monkeypatch):
 
 def test_un_enonce_passe_quand_la_file_respire(monkeypatch):
     import bot.discord.voice.streaming as mod
-    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: coro)
+    monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
     mgr.speech_end_sync("u1", b"audio")

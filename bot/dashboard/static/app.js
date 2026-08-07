@@ -349,6 +349,26 @@ async function apiFetch(url, opts = {}) {
   return r;
 }
 
+// ── SSE admin ─────────────────────────────────────────────────────────────────
+
+/**
+ * Ouvre un flux SSE admin.
+ *
+ * `EventSource` ne peut pas envoyer d'en-tête `Authorization` : ces routes
+ * s'authentifient avec un ticket à usage unique (30 s), échangé ici contre le
+ * Bearer. Elles étaient auparavant servies SANS aucune authentification —
+ * `/sse/logs` diffuse le contenu des DM Discord.
+ *
+ * Renvoie null si le ticket est refusé (session expirée) ; l'appelant doit le
+ * gérer plutôt que de supposer un EventSource.
+ */
+async function openAdminSSE(path) {
+  const r = await apiFetch('/api/admin/sse/ticket');
+  if (!r || !r.ok) return null;
+  const { ticket } = await r.json();
+  return new EventSource(`${path}?ticket=${encodeURIComponent(ticket)}`);
+}
+
 // ── Toasts — improved durations & close button ───────────────────────────────
 
 function toast(msg, type = 'success') {
@@ -1120,7 +1140,8 @@ async function startLogSSE() {
 
   await loadLogHistory();
 
-  logSSE = new EventSource(`/api/admin/sse/logs`);
+  logSSE = await openAdminSSE('/api/admin/sse/logs');
+  if (!logSSE) return;
   logSSE.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
@@ -1248,7 +1269,8 @@ async function startVoiceSSE() {
     (events || []).slice().reverse().forEach(_pushVoice);
   }
   renderVoiceList();
-  voiceSSE = new EventSource('/api/admin/sse/voice');
+  voiceSSE = await openAdminSSE('/api/admin/sse/voice');
+  if (!voiceSSE) { _setVoiceStatus('○ déconnecté', false); return; }
   voiceSSE.onopen = () => _setVoiceStatus('● live', true);
   voiceSSE.onerror = () => _setVoiceStatus('○ déconnecté', false);
   voiceSSE.onmessage = (ev) => {
@@ -4285,9 +4307,10 @@ async function testOverlayImage() {
 
 let _actionsSubTab = 'tasks';
 
-function startActionSSE() {
+async function startActionSSE() {
   if (actionSSE) actionSSE.close();
-  actionSSE = new EventSource('/api/admin/sse/actions');
+  actionSSE = await openAdminSSE('/api/admin/sse/actions');
+  if (!actionSSE) return;
   actionSSE.onmessage = function(e) {
     try {
       var evt = JSON.parse(e.data);

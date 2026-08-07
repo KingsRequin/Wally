@@ -92,7 +92,7 @@ class StreamWatcher:
     @property
     def status(self) -> dict:
         """Copie défensive du dernier statut : {live, title, category, viewers, started_at}."""
-        return dict(self._status)
+        return dict(self._status or {})
 
     def activate(self) -> None:
         """Enregistre ce watcher comme source globale de l'awareness prompt."""
@@ -103,7 +103,14 @@ class StreamWatcher:
         """Boucle de poll — à ajouter au gather principal."""
         try:
             while True:
-                await self._poll_once()
+                # Le try n'entourait QUE l'appel API : toute erreur de traitement
+                # (ex. un `get_stream()` renvoyant None) tuait le poller pour de
+                # bon et remontait dans le `gather` principal, sans
+                # `return_exceptions`. Un veilleur ne meurt pas d'un poll raté.
+                try:
+                    await self._poll_once()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("StreamWatcher: poll en erreur : {e}", e=exc)
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
             pass
@@ -113,6 +120,10 @@ class StreamWatcher:
             new = await self._api.get_stream()
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.warning("StreamWatcher poll a échoué : {e}", e=exc)
+            return
+        if not isinstance(new, dict):
+            logger.warning("StreamWatcher: statut inattendu {t}, poll ignoré",
+                           t=type(new).__name__)
             return
         old = self._status
         self._status = new

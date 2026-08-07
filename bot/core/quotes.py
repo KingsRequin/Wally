@@ -27,7 +27,10 @@ class QuoteBook:
         self._db = db
 
     async def add(self, author: str, text: str) -> dict | None:
-        author = " ".join((author or "").split())[:24]
+        # `.strip()` APRÈS la troncature : un pseudo de plus de 24 caractères
+        # était stocké avec un espace final et `recall(author)` ne le retrouvait
+        # plus jamais — « aucune citation » sur une base pleine.
+        author = " ".join((author or "").split())[:24].strip()
         text = " ".join((text or "").split())[:_MAX_CHARS]
         if not author or len(text) < 4:
             return None
@@ -40,10 +43,15 @@ class QuoteBook:
         return {"author": author, "text": text}
 
     async def recall(self, author: str = "") -> dict | None:
-        """Ressort une citation, en privilégiant les moins vues et les plus vieilles.
+        """Ressort la citation à montrer, sans la marquer comme montrée.
 
-        Une citation d'il y a trois jours vaut mieux qu'une d'il y a dix minutes :
+        Le tri privilégie celles qu'on a ressorties il y a le plus longtemps :
+        une citation d'il y a trois jours vaut mieux qu'une d'il y a dix minutes,
         le décalage fait tout.
+
+        C'est à l'appelant d'appeler `mark_shown()` UNE FOIS l'affichage
+        confirmé. Marquer ici brûlait les douze citations les moins vues à chaque
+        rappel hors live, où rien ne s'affiche.
         """
         query = "SELECT * FROM quotes"
         params: tuple = ()
@@ -54,11 +62,13 @@ class QuoteBook:
         rows = [dict(r) for r in await self._db.fetch_all(query, params)]
         if not rows:
             return None
-        chosen = random.choice(rows)
+        return random.choice(rows)
+
+    async def mark_shown(self, quote_id: int) -> None:
+        """Note qu'une citation vient d'être affichée, pour la faire redescendre."""
         await self._db.execute(
-            "UPDATE quotes SET shown_at = ? WHERE id = ?", (time.time(), chosen["id"])
+            "UPDATE quotes SET shown_at = ? WHERE id = ?", (time.time(), int(quote_id))
         )
-        return chosen
 
     async def count(self) -> int:
         rows = await self._db.fetch_all("SELECT COUNT(*) AS n FROM quotes")

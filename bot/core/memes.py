@@ -28,10 +28,15 @@ def _describe(path: Path) -> str:
     sidecar = path.with_suffix(".txt")
     if sidecar.is_file():
         try:
-            text = sidecar.read_text(encoding="utf-8").strip()
+            # `errors="replace"` et non un try nu : un .txt écrit au Bloc-notes
+            # Windows (cp1252) levait un UnicodeDecodeError — qui dérive de
+            # ValueError, pas d'OSError — et `_describe` est appelé HORS du try
+            # de `list()`. Un seul fichier mal encodé faisait tomber toute la
+            # bibliothèque, pas seulement le fautif.
+            text = sidecar.read_text(encoding="utf-8", errors="replace").strip()
             if text:
                 return " ".join(text.split())[:160]
-        except OSError:
+        except (OSError, ValueError):
             pass
     return " ".join(path.stem.replace("-", " ").replace("_", " ").split())[:160]
 
@@ -105,7 +110,12 @@ class MemeLibrary:
             return None
         path = self._dir / safe
         try:
-            if not path.is_file() or path.parent.resolve() != self._dir.resolve():
+            # `path.resolve().parent` et non `path.parent.resolve()` : le second
+            # ne teste rien (`_safe_name` a déjà réduit au basename, le parent
+            # EST le dossier), alors que le premier suit les liens symboliques —
+            # un lien déposé dans le dossier serait sinon servi tel quel par la
+            # route publique.
+            if not path.is_file() or path.resolve().parent != self._dir.resolve():
                 return None
         except OSError:
             return None

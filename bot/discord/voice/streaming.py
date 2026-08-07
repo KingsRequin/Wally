@@ -235,6 +235,13 @@ class RemoteStreamingSTT:
         # _MAX_PENDING_FALLBACK.
         self._pending_fallback = 0
         self._last_activity: dict[str, float] = {}
+        # Références fortes des tâches détachées. La boucle asyncio ne garde
+        # qu'une référence FAIBLE : une tâche non retenue peut être collectée en
+        # vol. Sur le chemin du fallback — emprunté par CHAQUE énoncé dans la
+        # configuration par défaut — cela perdait la parole ET laissait
+        # `_pending_fallback` incrémenté (le `finally` ne s'exécute pas), de quoi
+        # rendre Wally sourd en deux collectes.
+        self._detached: set[asyncio.Task] = set()
         self._unreachable_until: float = 0.0
         self._consecutive_unreachable: int = 0  # backoff exponentiel : ↑ à chaque échec, remis à 0 au succès
         # Câblés par le service.
@@ -299,11 +306,21 @@ class RemoteStreamingSTT:
             logger.debug("STT local saturé — énoncé abandonné (file pleine)")
             return
         self._pending_fallback += 1
-        asyncio.create_task(self._fallback_transcribe(speaker_id, segment))
+        self._detach(self._fallback_transcribe(speaker_id, segment))
 
     # ------------------------------------------------------------------
     # Cycle de vie des sessions
     # ------------------------------------------------------------------
+
+    def _detach(self, coro) -> None:
+        """Lance une coroutine en tâche de fond, référence gardée.
+
+        `asyncio.create_task` seul ne suffit pas : la boucle ne retient qu'une
+        référence faible, et une tâche non gardée peut être collectée en vol.
+        """
+        task = asyncio.create_task(coro)
+        self._detached.add(task)
+        task.add_done_callback(self._detached.discard)
 
     def _remote_allowed(self, now: float) -> bool:
         return now >= self._unreachable_until and len(self._sessions) < self._max_connections
@@ -345,7 +362,7 @@ class RemoteStreamingSTT:
         self._arm_unreachable_cache()
         logger.warning("RemoteStreamingSTT: session {s} perdue → fallback batch {t}s",
                        s=speaker_id, t=round(self._unreachable_until - self._now()))
-        asyncio.create_task(sess.close())
+        self._detach(sess.close())
 
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:
         t0 = self._now()
@@ -372,7 +389,7 @@ class RemoteStreamingSTT:
 
     def _emit_final(self, speaker_id: str, text: str, stt_ms: float) -> None:
         if self.on_final is not None and text:
-            asyncio.create_task(self.on_final(speaker_id, text, stt_ms))
+            self._detach(self.on_final(speaker_id, text, stt_ms))
 
     async def maintain(self, interval: float = 5.0) -> None:
         """Ferme les sessions inactives (libère un slot / la VRAM côté serveur)."""

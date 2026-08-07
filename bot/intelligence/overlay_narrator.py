@@ -57,6 +57,12 @@ _RETURN_AFTER_DAYS = 7
 # Durée par défaut d'un sondage. Peut être demandée plus longue.
 _POLL_DEFAULT_S = 10
 
+# Les coups du chifoumi, en français. Au niveau du MODULE parce que le schéma
+# d'outil (plus bas) doit s'en servir : deux listes divergeraient, et c'est
+# précisément ce qui est arrivé — l'enum en anglais faisait retomber la triche
+# sur un tirage au hasard.
+_RPS_MOVES = ("pierre", "feuille", "ciseaux")
+
 # Plafond du mode test hors live : au-delà, ce n'est plus un réglage,
 # c'est un live fantôme qu'on a oublié de couper.
 _MAX_FORCE_LIVE_MIN = 120
@@ -187,7 +193,10 @@ OVERLAY_TOOL_SPEC = {
                 },
                 "move": {
                     "type": "string",
-                    "enum": ["rock", "paper", "scissors"],
+                    # En FRANÇAIS : c'est ce que `_RPS_MOVES` compare. Un enum en
+                    # anglais faisait retomber la triche sur un tirage au hasard,
+                    # Wally annonçant un coup et l'overlay en affichant un autre.
+                    "enum": list(_RPS_MOVES),
                     "description": "Pour rps avec close : le coup que TU joues. Omets-le pour un tirage honnête.",
                 },
             },
@@ -1119,7 +1128,7 @@ class OverlayNarrator:
 
     # ── chifoumi : le chat contre Wally ───────────────────────────────────
 
-    _RPS_MOVES = ("pierre", "feuille", "ciseaux")
+    _RPS_MOVES = _RPS_MOVES      # alias : les appels internes restent en `self.`
     # Ce que chaque coup bat : sert à trancher sans table de vérité à rallonge.
     _RPS_BEATS = {"pierre": "ciseaux", "feuille": "pierre", "ciseaux": "feuille"}
 

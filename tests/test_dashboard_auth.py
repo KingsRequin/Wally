@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from bot.dashboard.auth import BearerAuthMiddleware
+from bot.dashboard.auth import BearerAuthMiddleware, SseTickets
 
 
 def _make_app(token: str | None) -> FastAPI:
@@ -13,9 +13,11 @@ def _make_app(token: str | None) -> FastAPI:
     cfg.bot.dashboard_token = token
     state = MagicMock()
     state.config = cfg
+    state.sse_tickets = SseTickets()
 
     app = FastAPI()
     app.add_middleware(BearerAuthMiddleware, state=state)
+    app.state.tickets = state.sse_tickets
 
     @app.get("/api/admin/test")
     async def admin_route():
@@ -68,11 +70,42 @@ def test_admin_empty_token_returns_503():
     assert r.status_code == 503
 
 
-def test_sse_logs_exempt_from_auth():
-    """EventSource ne peut pas envoyer de headers — la route SSE doit être accessible sans token."""
+def test_sse_logs_refuse_sans_ticket():
+    """Ces routes étaient servies SANS AUCUNE authentification — `/sse/logs`
+    diffuse le contenu des DM Discord, et le port est publié sur 0.0.0.0."""
     client = TestClient(_make_app("secret123"))
-    r = client.get("/api/admin/sse/logs")
-    assert r.status_code == 200
+    assert client.get("/api/admin/sse/logs").status_code == 401
+
+
+def test_sse_logs_accepte_un_ticket_valide():
+    """`EventSource` ne peut pas envoyer d'en-tête : un ticket à usage unique
+    remplace le Bearer, sans laisser le token dans les logs d'accès."""
+    app = _make_app("secret123")
+    client = TestClient(app)
+    ticket = app.state.tickets.issue()
+    assert client.get(f"/api/admin/sse/logs?ticket={ticket}").status_code == 200
+
+
+def test_un_ticket_ne_sert_qu_une_fois():
+    app = _make_app("secret123")
+    client = TestClient(app)
+    ticket = app.state.tickets.issue()
+    client.get(f"/api/admin/sse/logs?ticket={ticket}")
+    assert client.get(f"/api/admin/sse/logs?ticket={ticket}").status_code == 401
+
+
+def test_un_ticket_expire():
+    tickets = SseTickets()
+    ticket = tickets.issue()
+    tickets._issued[ticket] = 0.0        # périmé
+    assert tickets.consume(ticket) is False
+
+
+def test_le_callback_twitch_reste_sans_auth():
+    """Redirect de navigateur venu de Twitch : aucun en-tête possible, et la
+    route valide elle-même le `state` OAuth."""
+    from bot.dashboard.auth import _NO_AUTH
+    assert "/api/admin/twitch/auth/callback" in _NO_AUTH
 
 
 def test_middleware_is_pure_asgi_not_basehttp():
@@ -92,6 +125,8 @@ def test_streaming_response_flows_through_middleware():
     cfg.bot.dashboard_token = "secret123"
     state = MagicMock()
     state.config = cfg
+    tickets = SseTickets()
+    state.sse_tickets = tickets
 
     app = FastAPI()
     app.add_middleware(BearerAuthMiddleware, state=state)
@@ -105,7 +140,7 @@ def test_streaming_response_flows_through_middleware():
         return StreamingResponse(_gen(), media_type="text/event-stream")
 
     client = TestClient(app)
-    with client.stream("GET", "/api/admin/sse/logs") as r:
+    with client.stream("GET", f"/api/admin/sse/logs?ticket={tickets.issue()}") as r:
         assert r.status_code == 200
         body = "".join(chunk for chunk in r.iter_text())
     assert "data: 0" in body and "data: 2" in body

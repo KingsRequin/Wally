@@ -9,6 +9,7 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot.core.overlay_feed import OverlayFeed
+    from bot.dashboard.auth import SseTickets
     from bot.config import Config
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
@@ -36,6 +37,11 @@ def _make_meme_library():
 def _make_overlay_feed():
     from bot.core.overlay_feed import OverlayFeed
     return OverlayFeed()
+
+
+def _make_sse_tickets():
+    from bot.dashboard.auth import SseTickets
+    return SseTickets()
 
 
 @dataclass
@@ -76,6 +82,9 @@ class AppState:
     # par abonné) et non file unique : OBS et un navigateur de prévisualisation
     # doivent voir la même chose.
     overlay_feed: "OverlayFeed" = field(default_factory=lambda: _make_overlay_feed())
+    # Tickets à usage unique des flux SSE admin : `EventSource` ne peut pas
+    # porter d'en-tête Authorization (cf. bot/dashboard/auth.py).
+    sse_tickets: "SseTickets" = field(default_factory=lambda: _make_sse_tickets())
     # Bibliothèque de memes déposés à la main dans data/memes/ (bind-monté :
     # l'owner y ajoute des images sans redémarrer).
     memes: object = field(default_factory=lambda: _make_meme_library())

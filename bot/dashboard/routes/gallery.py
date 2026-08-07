@@ -146,6 +146,10 @@ async def sse_overlay_image(request: Request):
     queue = state.overlay_image_queue
 
     async def event_stream():
+        # Premier octet immédiat : `GZipMiddleware` retient les en-têtes jusqu'au
+        # premier corps, donc `onopen` n'arrivait qu'au keepalive de 30 s — après
+        # le délai de rechargement côté page.
+        yield ": ready\n\n"
         while True:
             try:
                 data = await asyncio.wait_for(queue.get(), timeout=30)

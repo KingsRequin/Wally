@@ -134,14 +134,24 @@ async def sse_overlay(request: Request):
     state = request.app.state.wally
 
     async def generate():
+        # Premier octet immédiat : sans lui `GZipMiddleware` retient les en-têtes
+        # jusqu'au premier événement — et celui-ci ne bouge qu'à un clic admin.
+        yield ": ready\n\n"
         try:
             last_state = None
+            tick = 0
             while True:
                 current = state.overlay_visible
                 if current != last_state:
                     yield f"data: {json.dumps({'visible': current})}\n\n"
                     last_state = current
                 await asyncio.sleep(1)
+                tick += 1
+                # Seul flux SSE qui n'avait pas de keepalive : la visibilité ne
+                # change qu'à un clic admin, donc zéro octet pendant des heures
+                # et un tunnel qui coupe toutes les ~100 s pendant tout le live.
+                if tick % 15 == 0:
+                    yield ": keepalive\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             pass
 
@@ -165,6 +175,7 @@ async def sse_overlay_feed(request: Request):
     queue = feed.subscribe()
 
     async def generate():
+        yield ": ready\n\n"      # débloque les en-têtes (cf. sse_logs)
         try:
             for event in feed.recent():
                 yield f"data: {json.dumps(event)}\n\n"
@@ -208,6 +219,18 @@ async def log_history(request: Request, lines: int = 200):
         return {"entries": [], "file": str(log_path)}
 
 
+@admin_router.get("/sse/ticket")
+async def sse_ticket(request: Request):
+    """Échange le Bearer contre un ticket à usage unique pour les flux SSE.
+
+    `EventSource` ne peut pas porter d'en-tête `Authorization` ; un `?token=`
+    laisserait le token du dashboard dans les logs d'accès et l'historique du
+    navigateur. Cette route-ci est protégée normalement (elle n'est pas dans
+    `_SSE_TICKETED`), donc seul un admin authentifié obtient un ticket.
+    """
+    return {"ticket": request.app.state.wally.sse_tickets.issue()}
+
+
 @admin_router.get("/sse/logs")
 async def sse_logs(request: Request):
     """SSE flux de logs loguru en temps réel (admin uniquement).
@@ -219,6 +242,11 @@ async def sse_logs(request: Request):
     _log_queues.append(queue)
 
     async def generate():
+        # Premier octet immédiat : `GZipMiddleware` retient `http.response.start`
+        # jusqu'au premier corps, même pour un content-type exclu. Sans ça le
+        # client ne reçoit aucun en-tête — donc pas d'`onopen` — avant le premier
+        # événement réel, qui peut ne jamais venir.
+        yield ": ready\n\n"
         try:
             while True:
                 try:
@@ -251,6 +279,7 @@ async def sse_actions(request: Request):
     _action_queues.append(queue)
 
     async def generate():
+        yield ": ready\n\n"      # débloque les en-têtes (cf. sse_logs)
         try:
             while True:
                 try:
