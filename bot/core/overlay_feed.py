@@ -128,7 +128,7 @@ class OverlayFeed:
     # Durée de lecture d'un résultat, une fois l'animation finie.
     _RESULT_READ_S = 10.0
 
-    def widget(self, kind: str, **params) -> None:
+    def widget(self, kind: str, /, **params) -> None:
         """Affiche un widget ponctuel (pile ou face, dé, uptime…).
 
         La durée par défaut tient compte du temps d'animation : sinon un tirage

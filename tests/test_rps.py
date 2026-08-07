@@ -55,11 +55,17 @@ def test_un_seul_vote_par_personne_mais_changement_permis():
 
 
 def test_les_votes_apres_l_echeance_sont_ignores():
+    """Le vote tardif ne compte pas — et la manche périmée est CLOSE au passage.
+
+    Avant, elle restait ouverte indéfiniment quand la tâche de clôture était
+    perdue, ce qui bloquait toutes les manches suivantes.
+    """
     n, _ = _n()
     n.start_rps(30)
     n._rps["ends_at"] = time.monotonic() - 1
     n._count_rps("alice", "pierre")
-    assert n._rps["votes"] == {}
+    assert n._rps is None
+    assert n.start_rps(30) is True
 
 
 @pytest.mark.parametrize("chat_move,mine,attendu", [

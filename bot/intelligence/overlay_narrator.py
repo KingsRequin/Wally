@@ -128,7 +128,11 @@ OVERLAY_TOOL_SPEC = {
                         "tapant le numéro · stats = les chiffres d'un joueur · "
                         "versus = compare deux joueurs sur une valeur · "
                         "meme = une image de la communauté · "
-                        "rps = chifoumi, le chat vote contre toi"
+                        "rps = chifoumi, le chat vote contre toi · "
+                        "bingo = une grille de pronostics sur le live · "
+                        "hangman = le pendu, le chat propose des lettres · "
+                        "goal = un objectif de follows/subs/bits qui se remplit "
+                        "tout seul · talkers = le podium des plus bavards"
                     ),
                 },
                 "comment": {
@@ -170,6 +174,22 @@ OVERLAY_TOOL_SPEC = {
                 "right_value": {"type": "number", "description": "Sa valeur chiffrée, pour versus."},
                 "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
                 "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
+                "word": {"type": "string", "description": "Pour hangman : le mot à deviner (3 à 20 lettres). Sans lui, rien ne se lance."},
+                "hint": {"type": "string", "description": "Pour hangman : un indice court sur le mot."},
+                "done": {"type": "string", "description": "Pour countdown : le texte affiché quand le compte à rebours arrive à zéro."},
+                "close": {
+                    "type": "boolean",
+                    "description": (
+                        "Pour rps : clôt la manche en cours au lieu d'en ouvrir "
+                        "une. Sers-t'en pour trancher toi-même, ou pour libérer "
+                        "un chifoumi resté ouvert."
+                    ),
+                },
+                "move": {
+                    "type": "string",
+                    "enum": ["rock", "paper", "scissors"],
+                    "description": "Pour rps avec close : le coup que TU joues. Omets-le pour un tirage honnête.",
+                },
             },
             "required": ["widget"],
         },
@@ -354,11 +374,12 @@ class OverlayNarrator:
         if not short:
             self._feed.thinking(False)
             return None
-        logger.info("Overlay: pensée affichée — « {t} »", t=short)
         if self._is_repeat(short):
             logger.info("Overlay: pensée écartée (déjà dite) — « {t} »", t=short)
             self._feed.thinking(False)
             return None
+        # Après le test, pas avant : sinon les logs comptent des bulles jetées.
+        logger.info("Overlay: pensée affichée — « {t} »", t=short)
         self._remember_bubble(short)
         self._feed.think_aloud(short)
         return short
@@ -403,7 +424,11 @@ class OverlayNarrator:
         # pensée pourrait s'empiler juste derrière.
         if self._is_repeat(short):
             logger.info("Overlay: réplique écartée (déjà dite) — « {t} »", t=short)
-            self._feed.thinking(False)
+            # N'éteindre que ce qu'on a allumé. Le vocal passif passe ici à chaque
+            # phrase entendue avec `show_thinking=False` ; un `thinking(False)`
+            # non apparié efface la bulle affichée deux secondes plus tôt.
+            if show_thinking:
+                self._feed.thinking(False)
             return None
         self._mark_spoken()
         self._remember_bubble(short)
@@ -484,10 +509,20 @@ class OverlayNarrator:
 
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
+    # C'est aussi la source du self-model : tout ce que Wally sait montrer.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
                 "prediction", "meme", "rps", "hangman", "quote", "goal",
                 "talkers", "clip")
+
+    # Sous-ensemble que `show_widget` sait rendre. `quote`, `prediction` et
+    # `clip` sont déclenchés ailleurs (`show_quote`, `show_prediction`,
+    # `show_clip`) avec des données qu'un appel générique n'a pas : les laisser
+    # passer ici publiait une carte VIDE, et `_overlay_outcome` répondait
+    # « c'est à l'écran » — Wally annonçait une citation qui n'existait pas.
+    _DIRECT_WIDGETS = tuple(
+        w for w in _WIDGETS if w not in ("quote", "prediction", "clip")
+    )
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -500,7 +535,7 @@ class OverlayNarrator:
         live, ou si les données manquent : rien n'est alors publié.
         """
         widget = (widget or "").strip()
-        if widget not in self._WIDGETS or not self._live():
+        if widget not in self._DIRECT_WIDGETS or not self._live():
             return None
 
         params: dict = {}
@@ -740,7 +775,16 @@ class OverlayNarrator:
         if not short:
             self._feed.thinking(False)
             return
+        # Deux arrivées rapprochées produisent deux « du monde arrive » quasi
+        # identiques : c'est le cas que `_is_repeat` a été écrit pour couvrir.
+        # Et sans `_remember_bubble`, la bulle suivante n'était pas dédupliquée
+        # contre le salut non plus.
+        if self._is_repeat(short):
+            logger.info("Overlay: salut écarté (déjà dit) — « {t} »", t=short)
+            self._feed.thinking(False)
+            return
         self._mark_spoken()
+        self._remember_bubble(short)
         self._feed.say(short, mode="speech")
 
     def reset_live(self) -> None:
@@ -792,10 +836,17 @@ class OverlayNarrator:
 
         Un chiffre qui monte tout seul finit par ne plus rien dire ; c'est la
         remarque qui fait le gag. Rare par construction — seulement aux paliers.
+
+        Rationné par le budget des BULLES, pas par celui des événements : les
+        appelants font `show_counter()` puis ce commentaire dans la foulée, or
+        le compteur vient de consommer le budget événement. Le tester ici
+        refusait le palier à tous les coups — sauf quand le compteur lui-même
+        avait été refusé, exactement à l'envers.
         """
-        if not self.is_counter_milestone(count) or not self._may_react():
+        if not self.is_counter_milestone(count) or not self._may_speak():
             return None
-        self._last_event_at = time.monotonic()
+        # Réserve le créneau avant l'appel, comme `on_thought`.
+        self._mark_spoken()
         try:
             short = await self._condense(
                 f"Le compteur « {label} » vient d'atteindre {count}.",
@@ -806,7 +857,9 @@ class OverlayNarrator:
             return None
         if not short:
             return None
-        self._mark_spoken()
+        if self._is_repeat(short):
+            logger.info("Overlay: palier écarté (déjà dit) — « {t} »", t=short)
+            return None
         self._remember_bubble(short)
         self._feed.say(short, mode="speech")
         logger.info("Overlay: palier {n} sur « {l} » — {t}", n=count, l=label, t=short)
@@ -884,10 +937,11 @@ class OverlayNarrator:
         if not self._live() or not self._talkers:
             return None
         ranking = sorted(self._talkers.items(), key=lambda kv: (-kv[1], kv[0]))[:max(1, top)]
-        self._feed.widget("talkers",
-                          rows=[{"name": n, "count": c} for n, c in ranking],
-                          duration=10)
-        return {"widget": "talkers", "rows": ranking}
+        # Même forme des deux côtés : l'exécuteur d'outil fait `str(v)` sur ce
+        # qu'on renvoie, et Wally lisait « [('alice', 12), ...] ».
+        rows = [{"name": n, "count": c} for n, c in ranking]
+        self._feed.widget("talkers", rows=rows, duration=10)
+        return {"widget": "talkers", "rows": rows}
 
     def show_clip(self, title: str, author: str) -> bool:
         """Signale qu'un viewer vient de créer un clip.
@@ -1103,7 +1157,14 @@ class OverlayNarrator:
     def _count_rps(self, author: str, text: str) -> None:
         """Un vote = le nom du coup, ou son numéro. Un seul par personne."""
         rps = self._rps
-        if not rps or time.monotonic() > rps["ends_at"]:
+        if not rps:
+            return
+        if time.monotonic() > rps["ends_at"]:
+            # Filet symétrique à celui du sondage : si la tâche de clôture a été
+            # perdue (ouverture hors boucle asyncio, annulation), `self._rps`
+            # restait renseigné pour toujours et `start_rps` refusait TOUTES les
+            # manches suivantes jusqu'au prochain live.
+            self.close_rps()
             return
         token = " ".join((text or "").lower().split())
         move = None
@@ -1162,6 +1223,12 @@ class OverlayNarrator:
         options = [str(o).strip()[:24] for o in (options or []) if str(o).strip()][:4]
         if not question or len(options) < 2 or not self._live():
             return False
+        # Clore celui d'avant avant de l'écraser : sinon ses votes partaient à la
+        # poubelle sans gagnant, et `_last_poll` gardait le résultat de l'avant-
+        # dernier — que `poll_result_line()` réinjecte dans le prompt. « Alors, ça
+        # a donné quoi ? » répondait à côté.
+        if self._poll is not None:
+            self.close_poll()
         seconds = max(5, min(120, int(seconds or _POLL_DEFAULT_S)))
         self._poll = {
             "question": question[:80],

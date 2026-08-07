@@ -55,13 +55,36 @@ class EmoteWaveDetector:
         self._seen: dict[str, deque] = defaultdict(deque)
         self._announced: dict[str, float] = {}
 
+    def _purge(self, now: float) -> None:
+        """Oublie les emotes retombés.
+
+        Sans ça, une entrée ne disparaissait que si le MÊME token réapparaissait :
+        tout mot en capitales tapé une fois dans le live restait en mémoire pour
+        toujours. Le détecteur est un singleton de module sur un process qui
+        tourne des semaines — la dérive est lente mais monotone.
+        """
+        for token in [t for t, hits in self._seen.items()
+                      if not hits or now - hits[-1][0] > self._window]:
+            del self._seen[token]
+        for token in [t for t, at in self._announced.items()
+                      if now - at > _COOLDOWN_S]:
+            del self._announced[token]
+
     def feed(self, author: str, text: str, *, now: float | None = None) -> str | None:
         """Retourne l'emote qui déferle, ou None. Un seul signalement par vague."""
         now = time.time() if now is None else now
         author = (author or "").lower()
         if not author:
             return None
-        for token in set((text or "").split()):
+        self._purge(now)
+        # Parcours dans l'ordre du message, pas dans celui du hachage : quand deux
+        # emotes atteignent le seuil sur la même ligne, celui qui est annoncé ne
+        # doit pas dépendre du sel de hachage du process.
+        seen_here: set[str] = set()
+        for token in (text or "").split():
+            if token in seen_here:
+                continue
+            seen_here.add(token)
             if not _looks_like_emote(token):
                 continue
             hits = self._seen[token]

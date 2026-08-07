@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <title>Wally Image Overlay</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+<!-- Hébergé ici, pas sur un CDN : une source de live ne doit pas dépendre du
+     réseau sortant d'OBS. Sans accès, la page perdait TOUTES ses animations. -->
+<link rel="stylesheet" href="/static/animate.min.css">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: transparent; overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 3vh; }
@@ -66,6 +68,19 @@
   const container = document.getElementById('image-container');
   const img = document.getElementById('overlay-img');
   let hideTimeout = null;
+  // Gardée en portée de module : le handler de fin de fondu doit pouvoir être
+  // retiré DE L'EXTÉRIEUR. Une image chassée pendant sa sortie déclenche
+  // `animationcancel`, pas `animationend` — le handler survivait et se
+  // déclenchait à la fin de l'animation d'ENTRÉE de la suivante, qui
+  // disparaissait alors définitivement.
+  let endHandler = null;
+
+  function clearEndHandler() {
+    if (endHandler) {
+      container.removeEventListener('animationend', endHandler);
+      endHandler = null;
+    }
+  }
 
   const sse = new EventSource('/api/public/sse/overlay-image');
 
@@ -77,6 +92,7 @@
     const animDuration = (data.animation_duration || 1) + 's';
 
     if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+    clearEndHandler();
 
     img.src = data.image_url;
     var credit = document.getElementById('overlay-credit');
@@ -97,17 +113,27 @@
 
     hideTimeout = setTimeout(function() {
       container.className = 'animate__animated animate__' + animOut;
-      container.addEventListener('animationend', function handler() {
+      endHandler = function() {
+        clearEndHandler();
         container.style.display = 'none';
         container.className = '';
         img.src = '';
-        container.removeEventListener('animationend', handler);
-      });
+      };
+      container.addEventListener('animationend', endHandler, { once: true });
     }, duration);
   });
 
+  // `EventSource` se reconnecte tout seul, et `onerror` retombe à CHAQUE
+  // tentative : sans annulation, les rechargements s'empilaient pendant une
+  // coupure. Un seul est armé, et il est désamorcé dès que le flux repart.
+  let reloadTimer = null;
   sse.onerror = function() {
-    setTimeout(function() { location.reload(); }, 5000);
+    if (reloadTimer === null) {
+      reloadTimer = setTimeout(function() { location.reload(); }, 30000);
+    }
+  };
+  sse.onopen = function() {
+    if (reloadTimer !== null) { clearTimeout(reloadTimer); reloadTimer = null; }
   };
 })();
 </script>

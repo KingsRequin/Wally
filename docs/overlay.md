@@ -44,6 +44,15 @@ Un **budget de parole** limite la fréquence : c'est un mécanisme qui refuse, p
 une consigne dans un prompt. Un compagnon qui commente sans arrêt devient
 insupportable, et un overlay ne se scrolle pas.
 
+Il y en a **deux, distincts** : celui des *bulles* (`_may_speak`) et celui des
+*widgets et événements* (`_may_react`). Un raid ne doit pas être avalé parce
+qu'une pensée vient de passer. Corollaire à retenir avant d'ajouter un
+producteur : une bulle se rationne sur le premier, un affichage sur le second —
+tester le mauvais des deux fait taire la fonctionnalité en silence. Le
+commentaire de palier d'un compteur en est l'exemple : il suit son propre
+widget, qui vient de consommer le budget des événements, et ne passait donc
+jamais.
+
 ---
 
 ## Ce qu'il fait sans qu'on demande

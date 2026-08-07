@@ -739,13 +739,21 @@
   }
   requestAnimationFrame(tick);
 
-  function gpuName() {
+  // Lu UNE fois : le nom du GPU ne change jamais, et un contexte WebGL neuf
+  // toutes les 10 s (~360 par live) finit par évincer les contextes vivants du
+  // navigateur — Chrome en garde une quinzaine. Dans le CEF d'OBS, sur une
+  // machine qui encode déjà, c'est du churn GPU gratuit.
+  const GPU_NAME = (function () {
     try {
       const gl = document.createElement("canvas").getContext("webgl");
-      const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
-      return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : "inconnu";
+      if (!gl) return "inconnu";
+      const ext = gl.getExtension("WEBGL_debug_renderer_info");
+      const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : "inconnu";
+      // Rendre le contexte tout de suite : il ne resservira pas.
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return name;
     } catch { return "inconnu"; }
-  }
+  })();
 
   setInterval(() => {
     const fps = perf.frames / 10;
@@ -755,7 +763,7 @@
       body: JSON.stringify({
         fps: Math.round(fps),
         worst_frame_ms: Math.round(perf.worstFrame),
-        gpu: gpuName(),
+        gpu: GPU_NAME,
       }),
       keepalive: true,
     }).catch(() => { /* le diagnostic ne doit jamais gêner l'affichage */ });

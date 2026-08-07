@@ -23,8 +23,18 @@ def test_le_classement_sort_les_trois_premiers():
     n._talkers.update({"alice": 5, "bob": 3, "carol": 7, "dan": 1})
     q = feed.subscribe()
     out = n.show_talkers()
-    assert [r[0] for r in out["rows"]] == ["carol", "alice", "bob"]
+    assert [r["name"] for r in out["rows"]] == ["carol", "alice", "bob"]
     assert len(_widgets(q)[-1]["params"]["rows"]) == 3
+
+
+def test_le_classement_rendu_a_la_meme_forme_que_le_publie():
+    """L'exécuteur d'outil fait `str()` sur ce qu'on renvoie : des tuples et
+    Wally lisait « [('alice', 12), ...] » à voix haute."""
+    n, feed = _n()
+    n._talkers.update({"alice": 5, "bob": 3})
+    q = feed.subscribe()
+    out = n.show_talkers()
+    assert out["rows"] == _widgets(q)[-1]["params"]["rows"]
 
 
 def test_pas_de_classement_sans_personne():
