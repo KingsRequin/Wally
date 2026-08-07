@@ -178,10 +178,21 @@ affiché. Les empiler les ferait arriver après coup, sur un widget disparu.
 
 ---
 
+## Validé, pas encore fait
+
+- **Rappel du bingo** — le remontrer de temps en temps pendant le live, pas
+  seulement quand une case tombe.
+
+---
+
 ## Écarté volontairement
 
 - **Note d'une partie sur 10**, **classement**, **tirage au sort parmi les
   viewers**, **hype-meter** — arbitrage owner du 2026-08-06.
 - **« Il y a un mois, tu disais que… »** — s'adressait au streamer, ce que la
-  règle n°1 interdit.
+  règle n°1 interdit. Refusé une seconde fois le 2026-08-07 sous sa forme
+  « rappel de promesse adressé au chat » : pas de promesses, point.
 - **Jauge d'humeur** — l'avatar la porte déjà.
+- **Résumé de fin de live** (2026-08-07).
+- **Aperçu de l'overlay dans le panneau admin** (2026-08-07) — ouvrir l'URL de
+  l'overlay suffit.
