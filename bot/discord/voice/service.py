@@ -546,6 +546,10 @@ class VoiceService:
             # Le budget d'événements décide : un compteur qui monte vite ne doit
             # pas monopoliser l'écran.
             narrator.show_counter(f"{row['label']} : {row['count']}")
+            # Aux paliers, le chiffre mérite une remarque — c'est elle qui fait
+            # le gag, pas le compteur.
+            if narrator.is_counter_milestone(row["count"]):
+                await narrator.on_counter_milestone(row["label"], row["count"])
 
     # ------------------------------------------------------------------
     # Callbacks internes — STT streaming distant

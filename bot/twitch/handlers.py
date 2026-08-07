@@ -12,6 +12,7 @@ from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
 from bot.core.conversation_log import new_trace_id
+from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
@@ -46,6 +47,8 @@ _bg_tasks: set[asyncio.Task] = set()
 # Tâches détachées de l'overlay (salut + comptage de votes).
 _overlay_chat_tasks: set[asyncio.Task] = set()
 _spontaneous_cooldowns: dict[str, float] = {}
+# Détecteur de vagues d'emotes, partagé par tous les messages du chat.
+_emote_waves = EmoteWaveDetector()
 
 
 def _fire(coro) -> asyncio.Task:
@@ -67,6 +70,8 @@ async def _scan_tally(bot, tally, text: str) -> None:
         return
     for row in touched:
         narrator.show_counter(f"{row['label']} : {row['count']}")
+        if narrator.is_counter_milestone(row["count"]):
+            await narrator.on_counter_milestone(row["label"], row["count"])
 
 
 def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
@@ -189,6 +194,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         )
         _overlay_chat_tasks.add(_t)
         _t.add_done_callback(_overlay_chat_tasks.discard)
+
+    # Vagues d'emotes : quand plusieurs personnes spamment la même chose, c'est
+    # le chat qui réagit ensemble — ça mérite l'écran. Détection mécanique.
+    _narrator_wave = _overlay_narrator(bot)
+    if _narrator_wave is not None and _narrator_wave.is_active():
+        try:
+            if emote := _emote_waves.feed(author, content):
+                _narrator_wave.show_emote_wave(emote)
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("Vague d'emote non traitée : {e}", e=exc)
 
     # Compteurs à la demande : le chat compte autant que le vocal — une punchline
     # récurrente s'y répète tout autant. Détaché : le scan touche la base.

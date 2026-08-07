@@ -59,6 +59,21 @@ def _feed(bot: "WallyTwitch", description: str) -> None:
         logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
 
 
+def _goal(bot: "WallyTwitch", kind: str, amount: int = 1) -> None:
+    """Alimente l'objectif du live, s'il en existe un de ce type.
+
+    C'est ce qui remplit la jauge toute seule : sans ça, il faudrait redonner le
+    chiffre à la main à chaque abonnement.
+    """
+    narrator = getattr(getattr(bot, "discord_bot", None), "overlay_narrator", None)
+    if narrator is None:
+        return
+    try:
+        narrator.record_goal_event(kind, amount)
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant
+        logger.warning("Objectif d'overlay non mis à jour : {e}", e=exc)
+
+
 def _bits_joy(amount: int) -> float:
     """Map bits amount to joy delta per the design spec."""
     if amount >= 1000:
@@ -114,6 +129,9 @@ def register_events(bot: "WallyTwitch") -> None:
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.1)
         _check_peak(bot, "joy", old_joy, 0.1, username=payload.data.user.name, event_name="follow")
+        # Chaque follow compte pour l'objectif, même isolé : c'est le flux passif
+        # qui ignore les follows seuls, pas le décompte.
+        _goal(bot, "follow")
         # Follow burst → curiosity ("il se passe quoi ?")
         if _check_follow_burst():
             old_curiosity = bot.emotion.get_state().get("curiosity", 0.0)
@@ -134,6 +152,7 @@ def register_events(bot: "WallyTwitch") -> None:
         if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
         _feed(bot, f"{payload.data.user.name} vient de s'abonner à la chaîne")
+        _goal(bot, "sub")
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.4)
         _check_peak(bot, "joy", old_joy, 0.4, username=payload.data.user.name, event_name="subscribe")
@@ -168,6 +187,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return
         gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         _feed(bot, f"{gifter} offre {payload.data.total} abonnement(s) au chat")
+        _goal(bot, "sub", int(payload.data.total or 1))
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.5)
         _check_peak(bot, "joy", old_joy, 0.5, username=gifter, event_name="gift_sub")
@@ -193,6 +213,7 @@ def register_events(bot: "WallyTwitch") -> None:
         delta = _bits_joy(payload.data.bits)
         username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         _feed(bot, f"{username} balance {payload.data.bits} bits")
+        _goal(bot, "bits", int(payload.data.bits or 0))
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", delta)
         _check_peak(bot, "joy", old_joy, delta, username=username, event_name="bits")

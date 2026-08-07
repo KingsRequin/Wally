@@ -37,6 +37,8 @@ _WIDGET_WORDS = {
     "rps": "un chifoumi où le chat vote contre moi",
     "hangman": "un pendu où le chat propose des lettres",
     "quote": "une réplique que j'ai entendue en vocal, ressortie plus tard",
+    "goal": "un objectif de follows ou d'abonnements qui se remplit tout seul",
+    "wave": "un signal quand le chat spamme le même emote",
 }
 
 

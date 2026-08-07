@@ -116,7 +116,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo", "meme", "rps", "hangman"],
+                             "bingo", "meme", "rps", "hangman", "goal"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -153,6 +153,8 @@ OVERLAY_TOOL_SPEC = {
                     "description": "Pour bingo : 4 à 9 pronostics courts sur ce qui va arriver pendant le live.",
                 },
                 "check": {"type": "integer", "description": "Pour bingo : numéro de la case (0 = la première) que tu viens de voir se réaliser."},
+                "target": {"type": "integer", "description": "Pour goal : le nombre à atteindre."},
+                "kind": {"type": "string", "enum": ["follow", "sub", "bits"], "description": "Pour goal : ce qu'on compte."},
                 "about": {"type": "string", "description": "Pour meme : de quoi tu veux qu'il parle. Omets-le pour un tirage au hasard."},
                 "player": {"type": "string", "description": "Le pseudo, pour stats."},
                 "lines": {
@@ -213,6 +215,11 @@ class OverlayNarrator:
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
+        # Dernier rappel du bingo : il se fait oublier entre deux cases.
+        self._bingo_reminded_at: float = 0.0
+        # Objectif du live (follows / subs / bits), rempli par les
+        # événements réels plutôt que par un chiffre saisi à la main.
+        self._goal: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -420,7 +427,7 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction", "meme", "rps", "hangman", "quote")
+                "prediction", "meme", "rps", "hangman", "quote", "goal")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -512,6 +519,14 @@ class OverlayNarrator:
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
+
+        elif widget == "goal":
+            # Distinct de `gauge` : celle-ci se remplit toute seule, l'autre
+            # attend un pourcentage donné à la main.
+            if not self.open_goal(str(extra.get("label") or comment or ""),
+                                  extra.get("target"), str(extra.get("kind") or "")):
+                return None
+            return {"widget": "goal", **self._goal}
 
         elif widget == "hangman":
             if not self.start_hangman(str(extra.get("word") or ""),
@@ -621,6 +636,7 @@ class OverlayNarrator:
         author = (author or "").strip()
         if not author:
             return
+        self.maybe_remind_bingo()
         self._count_vote(author, text)
         self._count_rps(author, text)
         self._count_hangman(author, text)
@@ -659,6 +675,8 @@ class OverlayNarrator:
         self._greeted.clear()
         self._poll = None
         self._bingo = None
+        self._bingo_reminded_at = 0.0
+        self._goal = None
         self._rps = None
         self._hangman = None
 
@@ -684,6 +702,108 @@ class OverlayNarrator:
         self._last_event_at = time.monotonic()
         self._feed.widget("quote", author=str(author)[:24], text=str(text)[:160],
                           age=str(age)[:24], duration=12)
+        return True
+
+    # Paliers auxquels un compteur mérite un mot. Au-delà de 100, tous les 100 :
+    # un gag qui atteint 300 n'a pas besoin d'être commenté à 310.
+    _COUNTER_MILESTONES = (10, 25, 50, 100)
+
+    @classmethod
+    def is_counter_milestone(cls, count: int) -> bool:
+        return count in cls._COUNTER_MILESTONES or (count > 100 and count % 100 == 0)
+
+    async def on_counter_milestone(self, label: str, count: int) -> Optional[str]:
+        """Fait commenter un compteur qui atteint un palier.
+
+        Un chiffre qui monte tout seul finit par ne plus rien dire ; c'est la
+        remarque qui fait le gag. Rare par construction — seulement aux paliers.
+        """
+        if not self.is_counter_milestone(count) or not self._may_react():
+            return None
+        self._last_event_at = time.monotonic()
+        try:
+            short = await self._condense(
+                f"Le compteur « {label} » vient d'atteindre {count}.",
+                system=_EVENT_SYSTEM,
+            )
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("Overlay: commentaire de palier échoué: {e}", e=exc)
+            return None
+        if not short:
+            return None
+        self._mark_spoken()
+        self._feed.say(short, mode="speech")
+        logger.info("Overlay: palier {n} sur « {l} » — {t}", n=count, l=label, t=short)
+        return short
+
+    def maybe_remind_bingo(self, every_s: float = 600.0) -> bool:
+        """Remontre la grille de temps en temps.
+
+        Sans rappel, elle n'apparaît qu'aux cases cochées : les viewers arrivés
+        entre-temps ne savent pas qu'une partie est en cours.
+        """
+        if not self._bingo or not self._may_react():
+            return False
+        now = time.monotonic()
+        if now - self._bingo_reminded_at < every_s:
+            return False
+        self._bingo_reminded_at = now
+        self._feed.widget("bingo", cells=self._bingo["cells"],
+                          done=list(self._bingo["done"]), duration=10)
+        return True
+
+    # Ce qu'un objectif peut compter, et le nom qu'on lui donne à l'écran.
+    _GOAL_KINDS = {"follow": "follows", "sub": "abonnements", "bits": "bits"}
+
+    def open_goal(self, label: str, target: int, kind: str) -> bool:
+        """Ouvre un objectif alimenté par les vrais événements du live."""
+        kind = (kind or "").strip().lower()
+        try:
+            target = int(target)
+        except (TypeError, ValueError):
+            return False
+        if kind not in self._GOAL_KINDS or target < 1 or not self._live():
+            return False
+        self._goal = {"label": " ".join((label or "").split())[:40] or self._GOAL_KINDS[kind],
+                      "target": min(target, 100000), "kind": kind, "count": 0}
+        self._publish_goal()
+        logger.info("Overlay: objectif « {l} » — {n} {k}",
+                    l=self._goal["label"], n=target, k=kind)
+        return True
+
+    def record_goal_event(self, kind: str, amount: int = 1) -> bool:
+        """Incrémente l'objectif si l'événement le concerne.
+
+        Appelé depuis les événements Twitch : c'est ce qui remplit la jauge
+        toute seule, au lieu d'un chiffre qu'il faudrait redonner à la main.
+        """
+        goal = self._goal
+        if not goal or goal["kind"] != (kind or "").lower():
+            return False
+        goal["count"] += max(1, int(amount or 1))
+        self._publish_goal()
+        if goal["count"] >= goal["target"]:
+            logger.info("Overlay: objectif « {l} » atteint", l=goal["label"])
+            self._goal = None
+        return True
+
+    def _publish_goal(self) -> None:
+        goal = self._goal
+        if not goal:
+            return
+        percent = min(100.0, goal["count"] * 100.0 / goal["target"])
+        self._feed.widget(
+            "gauge", percent=percent,
+            label=f"{goal['label']} · {goal['count']}/{goal['target']}",
+            duration=10,
+        )
+
+    def show_emote_wave(self, emote: str) -> bool:
+        """Signale que le chat spamme le même emote."""
+        if not self._may_react():
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("wave", emote=str(emote)[:30], duration=6)
         return True
 
     def show_counter(self, text: str) -> bool:

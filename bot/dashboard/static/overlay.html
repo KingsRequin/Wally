@@ -463,6 +463,31 @@
       transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
     }
 
+    /* Vague d'emote — elle surgit et repart : c'est un éclat, pas un panneau. */
+    .wave {
+      padding: 10px 18px;
+      background: rgba(18, 18, 22, .85);
+      border: 1px solid rgba(255, 176, 102, .35);
+      border-radius: 14px;
+      text-align: center;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+      animation: wave-in .5s cubic-bezier(.22, 1.5, .4, 1);
+    }
+    .wave-emote {
+      font-size: 26px; font-weight: 800; color: #ffb066;
+      letter-spacing: .02em;
+    }
+    .wave-label {
+      margin-top: 2px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .08em; color: rgba(255, 255, 255, .5);
+    }
+    @keyframes wave-in {
+      0%   { transform: scale(.6) rotate(-4deg); opacity: 0; }
+      60%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0); opacity: 1; }
+    }
+
     /* Citation — le guillemet et l'italique disent « quelqu'un a dit ça »
        avant même qu'on ait lu la phrase. */
     .quote {

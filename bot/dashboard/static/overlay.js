@@ -236,6 +236,18 @@
       return box;
     },
 
+    wave(p) {
+      // Le chat spamme : l'emote arrive en grand, une fois. Pas de compteur —
+      // le nombre n'ajoute rien, c'est le déferlement qu'on montre.
+      const box = el("div", "wave");
+      const big = el("div", "wave-emote");
+      big.textContent = String(p.emote || "");
+      const label = el("div", "wave-label");
+      label.textContent = "le chat s'emballe";
+      box.append(big, label);
+      return box;
+    },
+
     quote(p) {
       const box = el("div", "quote");
       const mark = el("div", "quote-mark");

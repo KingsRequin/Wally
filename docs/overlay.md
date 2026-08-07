@@ -84,6 +84,14 @@ personne, changement d'avis permis ; « j'ai 2 chats » ne compte pas.
 
 > « wally épingle le message de Kassandre »
 
+### L'objectif du live
+
+> « wally lance un objectif de 10 subs »
+
+La jauge se remplit **toute seule** au fil des vrais follows, abonnements ou
+bits reçus — rien à mettre à jour. Elle se ferme quand l'objectif est atteint.
+À ne pas confondre avec `gauge`, qui attend un pourcentage donné à la main.
+
 ### Utilitaires
 
 > « wally affiche depuis combien de temps je stream »
@@ -239,15 +247,22 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 
 ---
 
+## Réactions automatiques
+
+- **Vagues d'emotes** — quand quatre personnes différentes spamment le même
+  emote en douze secondes, il le relève à l'écran. Le signal est le nombre de
+  PERSONNES, pas de messages : dix « KEKW » d'un seul viewer, c'est un habitué
+  qui s'amuse. Signalé une fois, puis silence 90 s sur cet emote.
+- **Paliers de compteur** — aux 10ᵉ, 25ᵉ, 50ᵉ, 100ᵉ (puis tous les 100), Wally
+  commente au lieu d'afficher un chiffre muet.
+- **Rappel du bingo** — la grille repasse toutes les dix minutes tant qu'une
+  partie court : sinon les viewers arrivés entre deux cases l'ignorent.
+
+---
+
 ## Validé, pas encore fait
 
-- **Rappel du bingo** — le remontrer de temps en temps pendant le live, pas
-  seulement quand une case tombe.
-- **Jauge d'objectif automatique** — alimentée par les follows/subs reçus en
-  EventSub, au lieu d'un chiffre donné à la main.
-- **Le compteur qui commente** — une réplique aux paliers ronds (10ᵉ, 25ᵉ, 50ᵉ)
-  plutôt qu'un chiffre muet.
-- **Vagues d'emotes** — relever à l'écran quand le chat spamme le même emote.
+*(rien pour l'instant — tout ce qui a été validé est livré)*
 
 ---
 
