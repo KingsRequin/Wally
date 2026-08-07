@@ -34,6 +34,7 @@ _WIDGET_WORDS = {
     "bingo": "un bingo du stream que je coche au fur et à mesure",
     "prediction": "un pari sur l'issue d'une partie, avec mon score cumulé",
     "meme": "un meme de la communauté (je ne le vois pas, je connais sa description)",
+    "rps": "un chifoumi où le chat vote contre moi",
 }
 
 

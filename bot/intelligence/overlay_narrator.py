@@ -115,7 +115,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo", "meme"],
+                             "bingo", "meme", "rps"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -124,7 +124,8 @@ OVERLAY_TOOL_SPEC = {
                         "counter = un texte bref · poll = sondage, le chat vote en "
                         "tapant le numéro · stats = les chiffres d'un joueur · "
                         "versus = compare deux joueurs sur une valeur · "
-                        "meme = une image de la communauté"
+                        "meme = une image de la communauté · "
+                        "rps = chifoumi, le chat vote contre toi"
                     ),
                 },
                 "comment": {
@@ -205,6 +206,9 @@ class OverlayNarrator:
         self._last_poll: Optional[dict] = None
         # Grille du bingo (widget 20) : vit le temps d'un live.
         self._bingo: Optional[dict] = None
+        # Chifoumi en cours (widget « le chat contre Wally »).
+        self._rps: Optional[dict] = None
+        self._rps_task: Optional[asyncio.Task] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -412,7 +416,7 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction", "meme")
+                "prediction", "meme", "rps")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -505,6 +509,19 @@ class OverlayNarrator:
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
 
+        elif widget == "rps":
+            # Deux gestes : ouvrir la manche, ou la trancher (rare — la clôture
+            # est planifiée, mais Wally peut vouloir couper court).
+            if extra.get("close"):
+                return self.close_rps(str(extra.get("move") or ""))
+            try:
+                seconds = int(extra.get("seconds") or result or 15)
+            except (TypeError, ValueError):
+                seconds = 15
+            if not self.start_rps(seconds):
+                return None
+            return {"widget": "rps", "seconds": seconds}
+
         elif widget == "meme":
             # L'image est choisie ICI : Wally ne la voit pas, il ne connaît que
             # sa description — c'est elle qui lui permet de commenter juste.
@@ -594,6 +611,7 @@ class OverlayNarrator:
         if not author:
             return
         self._count_vote(author, text)
+        self._count_rps(author, text)
         await self._maybe_greet(author, days_since)
 
     async def _maybe_greet(self, author: str, days: Optional[float]) -> None:
@@ -629,6 +647,7 @@ class OverlayNarrator:
         self._greeted.clear()
         self._poll = None
         self._bingo = None
+        self._rps = None
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:
@@ -693,6 +712,95 @@ class OverlayNarrator:
         logger.info("Overlay: bingo — « {c} » cochée{f}",
                     c=bingo["cells"][i], f=" (grille complète)" if full else "")
         return {"widget": "bingo", "checked": bingo["cells"][i], "full": full}
+
+    # ── chifoumi : le chat contre Wally ───────────────────────────────────
+
+    _RPS_MOVES = ("pierre", "feuille", "ciseaux")
+    # Ce que chaque coup bat : sert à trancher sans table de vérité à rallonge.
+    _RPS_BEATS = {"pierre": "ciseaux", "feuille": "pierre", "ciseaux": "feuille"}
+
+    def start_rps(self, seconds: int = 15) -> bool:
+        """Ouvre un chifoumi : le chat vote, Wally jouera contre la majorité."""
+        if not self._live() or self._rps is not None:
+            return False
+        seconds = max(5, min(60, int(seconds or 15)))
+        self._rps = {"votes": {}, "ends_at": time.monotonic() + seconds}
+        self._feed.widget("rps", phase="voting", seconds=seconds,
+                          tally=[0, 0, 0], duration=seconds + 2)
+        self._schedule_rps_close(seconds)
+        logger.info("Overlay: chifoumi ouvert ({s}s)", s=seconds)
+        return True
+
+    def _schedule_rps_close(self, seconds: int) -> None:
+        if self._rps_task is not None:
+            self._rps_task.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._rps_task = None      # hors boucle (tests synchrones)
+            return
+        self._rps_task = loop.create_task(self._close_rps_after(seconds))
+
+    async def _close_rps_after(self, seconds: int) -> None:
+        try:
+            await asyncio.sleep(seconds)
+            self.close_rps()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.warning("Overlay: clôture du chifoumi en erreur: {e}", e=exc)
+
+    def _count_rps(self, author: str, text: str) -> None:
+        """Un vote = le nom du coup, ou son numéro. Un seul par personne."""
+        rps = self._rps
+        if not rps or time.monotonic() > rps["ends_at"]:
+            return
+        token = " ".join((text or "").lower().split())
+        move = None
+        if token.isdigit() and 1 <= int(token) <= 3:
+            move = self._RPS_MOVES[int(token) - 1]
+        else:
+            # Le mot doit être SEUL : « pierre » compte, « la pierre du temple » non.
+            for name in self._RPS_MOVES:
+                if token == name:
+                    move = name
+                    break
+        if move is None:
+            return
+        voter = author.lower()
+        if rps["votes"].get(voter) == move:
+            return
+        rps["votes"][voter] = move
+        tally = [sum(1 for m in rps["votes"].values() if m == n) for n in self._RPS_MOVES]
+        self._feed.widget("rps", phase="voting", tally=tally,
+                          seconds=max(1, int(rps["ends_at"] - time.monotonic())),
+                          duration=8)
+
+    def close_rps(self, wally_move: str = "") -> Optional[dict]:
+        """Tranche la manche : le coup majoritaire du chat contre celui de Wally."""
+        rps = self._rps
+        if not rps:
+            return None
+        self._rps = None
+        tally = [sum(1 for m in rps["votes"].values() if m == n) for n in self._RPS_MOVES]
+        if not any(tally):
+            self._feed.widget("rps", phase="void", tally=tally, duration=6)
+            logger.info("Overlay: chifoumi clos sans vote")
+            return {"widget": "rps", "outcome": "void"}
+        chat = self._RPS_MOVES[tally.index(max(tally))]
+        # Wally peut imposer son coup — c'est ce qui lui permet de tricher.
+        mine = wally_move if wally_move in self._RPS_MOVES else random.choice(self._RPS_MOVES)
+        if mine == chat:
+            outcome = "draw"
+        elif self._RPS_BEATS[mine] == chat:
+            outcome = "wally"
+        else:
+            outcome = "chat"
+        self._feed.widget("rps", phase="result", tally=tally, chat=chat,
+                          mine=mine, outcome=outcome, duration=10)
+        logger.info("Overlay: chifoumi — chat {c} / Wally {m} → {o}",
+                    c=chat, m=mine, o=outcome)
+        return {"widget": "rps", "chat": chat, "mine": mine, "outcome": outcome}
 
     # ── sondage (widget 6) ────────────────────────────────────────────────
 

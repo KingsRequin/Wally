@@ -107,6 +107,15 @@ Il compose une grille de pronostics (jusqu'à 9) à partir de ce qu'il sait
 vraiment d'Azraël et des habitués, puis **coche les cases quand il les
 constate** — en vocal ou dans le chat. Il ne coche que ce qu'il a vu ou entendu.
 
+### Le chifoumi
+
+> « wally lance un chifoumi »
+
+Le chat vote en tapant `1`, `2` ou `3` pendant 15 s ; Wally joue contre le coup
+majoritaire. Les deux mains secouent trois fois avant de se figer — sans ce
+battement, le résultat tombe sans suspense. Il peut forcer son coup s'il veut
+tricher.
+
 ---
 
 ## Les compteurs — d'un stream à l'autre

@@ -236,6 +236,67 @@
       return box;
     },
 
+    rps(p) {
+      const MOVES = ["pierre", "feuille", "ciseaux"];
+      const HANDS = { pierre: "✊", feuille: "✋", ciseaux: "✌️" };
+      const box = el("div", "rps");
+
+      if (p.phase === "result" || p.phase === "void") {
+        const duel = el("div", "rps-duel");
+        // Les deux mains « secouent » puis se figent sur le coup joué : c'est
+        // le geste du vrai jeu, sans lui le résultat tombe sans suspense.
+        const side = (who, move, label) => {
+          const c = el("div", `rps-side ${who}`);
+          const hand = el("div", "rps-hand");
+          hand.textContent = HANDS[move] || "✊";
+          const name = el("div", "rps-name");
+          name.textContent = label;
+          c.append(hand, name);
+          return c;
+        };
+        duel.append(side("chat", p.chat, "Le chat"),
+                    el("div", "rps-vs"),
+                    side("wally", p.mine, "Wally"));
+        duel.querySelector(".rps-vs").textContent = "VS";
+        box.appendChild(duel);
+
+        const verdict = el("div", "rps-verdict");
+        verdict.textContent =
+          p.phase === "void" ? "personne n'a joué"
+          : p.outcome === "draw" ? "égalité"
+          : p.outcome === "chat" ? "le chat gagne"
+          : "Wally gagne";
+        box.classList.add(p.outcome || "void");
+        box.appendChild(verdict);
+        return box;
+      }
+
+      // Phase de vote : on montre les trois coups et leurs scores.
+      const title = el("div", "rps-title");
+      title.textContent = "Chifoumi — tapez 1, 2 ou 3";
+      box.appendChild(title);
+      const row = el("div", "rps-choices");
+      MOVES.forEach((move, i) => {
+        const c = el("div", "rps-choice");
+        c.style.setProperty("--i", String(i));
+        const hand = el("div", "rps-hand small");
+        hand.textContent = HANDS[move];
+        const label = el("div", "rps-label");
+        label.textContent = `${i + 1}. ${move}`;
+        const score = el("div", "rps-score");
+        score.textContent = String((p.tally || [])[i] || 0);
+        c.append(hand, label, score);
+        row.appendChild(c);
+      });
+      box.appendChild(row);
+      if (p.seconds > 0) {
+        const left = el("div", "rps-left");
+        left.textContent = `${p.seconds}s`;
+        box.appendChild(left);
+      }
+      return box;
+    },
+
     meme(p) {
       const box = el("div", "meme");
       const img = document.createElement("img");
