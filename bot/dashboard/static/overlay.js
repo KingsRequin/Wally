@@ -404,9 +404,40 @@
     document.body.classList.remove("widget-on");
   }
 
+  // File d'attente : deux demandes rapprochées se remplaçaient, la seconde
+  // n'était jamais vue. Elles se jouent maintenant l'une après l'autre.
+  const pending = [];
+  const QUEUE_MAX = 5;          // au-delà, on abandonne les plus anciennes
+  const QUEUE_STALE_MS = 60000; // un dé lancé il y a une minute n'intéresse plus
+
   function showWidget(kind, params) {
     const build = BUILDERS[kind];
     if (!build) return;
+
+    const current = widgets.firstElementChild;
+    // Même nature que le widget affiché : c'est une MISE À JOUR (un vote de
+    // sondage, une case de bingo, le verdict d'un pari), pas une nouvelle
+    // demande — l'empiler la ferait arriver après coup, sur un widget disparu.
+    const isUpdate = current && current.dataset.kind === kind;
+    if (current && !isUpdate) {
+      if (pending.length >= QUEUE_MAX) pending.shift();
+      pending.push({ kind, params, at: Date.now() });
+      return;
+    }
+    renderWidget(kind, params, build);
+  }
+
+  function playNext() {
+    const now = Date.now();
+    while (pending.length) {
+      const next = pending.shift();
+      if (now - next.at > QUEUE_STALE_MS) continue;   // périmée : on passe
+      renderWidget(next.kind, next.params, BUILDERS[next.kind]);
+      return;
+    }
+  }
+
+  function renderWidget(kind, params, build) {
     clearTimeout(widgetTimer);
 
     // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
@@ -436,7 +467,10 @@
     const seconds = Math.min(30, Math.max(2, Number(params.duration) || 12));
     widgetTimer = setTimeout(() => {
       box.classList.remove("visible");
-      setTimeout(clearWidgets, 300);
+      setTimeout(() => {
+        clearWidgets();
+        playNext();       // la suivante prend le relais, si elle a tenu
+      }, 300);
     }, seconds * 1000);
   }
 

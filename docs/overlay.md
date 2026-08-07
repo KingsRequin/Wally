@@ -154,6 +154,18 @@ au lieu d'être tranché au hasard.
 
 ---
 
+## File d'attente
+
+Deux demandes rapprochées ne s'écrasent plus : la seconde attend que la première
+ait fini. Cinq en attente au plus, et une demande de plus d'une minute est
+abandonnée — un dé lancé il y a une minute n'intéresse plus personne.
+
+Les **mises à jour** ne passent pas par la file : un vote de sondage, une case
+de bingo ou le verdict d'un pari s'appliquent tout de suite sur le widget
+affiché. Les empiler les ferait arriver après coup, sur un widget disparu.
+
+---
+
 ## Limites connues
 
 - **Le bingo et les compteurs** dépendent de la qualité de la transcription
