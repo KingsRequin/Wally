@@ -402,8 +402,19 @@ async def main() -> None:
                         if not cid or cid in seen:
                             continue
                         fresh.append(cid)
-                        narrator.show_clip(clip.get("title") or "un clip",
-                                           clip.get("creator_name") or "quelqu'un")
+                        # Le clip est REJOUÉ, pas seulement annoncé : muet, il
+                        # occupe l'écran le temps de la vidéo. C'est l'URL du
+                        # FICHIER qui le rend lisible tout seul ; sans elle,
+                        # `show_clip` retombe sur le player puis sur la carte.
+                        playable = await twitch_bot.twitch_api.get_clip_video_url(cid)
+                        narrator.show_clip(
+                            clip.get("title") or "un clip",
+                            clip.get("creator_name") or "quelqu'un",
+                            embed_url=clip.get("embed_url") or "",
+                            video_url=(playable or {}).get("url", ""),
+                            duration=(playable or {}).get("duration")
+                            or clip.get("duration") or 0.0,
+                        )
                     seen.extend(fresh)
                     # `deque(maxlen=...)` plutôt qu'un `set` vidé d'un coup : le
                     # `clear()` oubliait TOUT alors que la fenêtre d'interrogation

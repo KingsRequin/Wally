@@ -37,3 +37,6 @@ public-ui/
 
 .serena/
 *.swp
+
+# Artefacts de captures/logs Playwright — jetables, jamais versionnés.
+.playwright-mcp/

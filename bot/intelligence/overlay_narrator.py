@@ -292,6 +292,31 @@ CANCEL_TOOL_SPEC = {
 }
 
 
+LAST_CLIP_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "show_last_clip",
+        "description": (
+            "Rejoue le DERNIER clip de la chaîne sur l'overlay du stream, quand "
+            "on te le demande. La vidéo est MUETTE et reste à l'écran le temps "
+            "du clip. Ne fonctionne que pendant un live. Tu n'as pas vu ce clip "
+            "— l'outil te rend son titre et qui l'a créé, commente à partir de "
+            "ça et n'invente pas ce qu'il contient. N'affirme jamais l'avoir "
+            "lancé sans appeler cet outil."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string",
+                    "description": "Ta réplique, quelques mots. Facultatif.",
+                },
+            },
+        },
+    },
+}
+
+
 class OverlayNarrator:
     """Filtre et condense ce que Wally montre au public pendant un live."""
 
@@ -305,6 +330,7 @@ class OverlayNarrator:
         stream_status: Optional[Callable[[], dict]] = None,
         stream_feed=None,
         memes=None,
+        last_clip: Optional[Callable] = None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
@@ -318,6 +344,9 @@ class OverlayNarrator:
         # visible dans le prompt, donc répondable.
         self._stream_feed = stream_feed
         self._memes = memes
+        # Fournisseur ASYNC du dernier clip (Helix). Injecté : le narrateur ne
+        # connaît pas l'API Twitch, et `show_widget` est synchrone.
+        self._last_clip = last_clip
         self._greeted: set[str] = set()
         self._was_live: bool = False
         self._force_until: float = 0.0
@@ -558,12 +587,21 @@ class OverlayNarrator:
         shown: list[dict] = []
 
         async def _execute(name: str, arguments: str) -> str:
-            if name not in ("show_overlay", "cancel_overlay"):
+            if name not in ("show_overlay", "cancel_overlay", "show_last_clip"):
                 return json.dumps({"status": "unknown_tool"})
             try:
                 args = json.loads(arguments or "{}")
             except json.JSONDecodeError:
                 return json.dumps({"status": "error", "message": "arguments illisibles"})
+            if name == "show_last_clip":
+                out = await self.play_last_clip()
+                if out is None:
+                    return json.dumps({"status": "nothing", "message": (
+                        "Aucun clip récent. Dis-le, n'en invente pas un."
+                    )})
+                return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()},
+                                   "message": "Tu ne l'as pas vu : ne raconte pas "
+                                              "ce qu'il contient."})
             if name == "cancel_overlay":
                 # « Wally, annule le bingo » arrive par le vocal bien plus
                 # souvent que par le chat : sans cet outil ici, la demande
@@ -598,7 +636,7 @@ class OverlayNarrator:
             reply, _ = await self._llm.complete_with_tools(
                 system_prompt=_VOICE_SYSTEM,
                 messages=[{"role": "user", "content": f"{speaker} (à voix haute) : {text}"}],
-                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC],
+                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC, LAST_CLIP_TOOL_SPEC],
                 tool_executor=_execute,
                 purpose="overlay_voice",
             )
@@ -1173,18 +1211,101 @@ class OverlayNarrator:
         self._feed.widget("talkers", rows=rows, duration=10)
         return {"widget": "talkers", "rows": rows}
 
-    def show_clip(self, title: str, author: str) -> bool:
-        """Signale qu'un viewer vient de créer un clip.
+    # Un embed n'est accepté que s'il vient bien de Twitch : cette URL part
+    # dans le `src` d'une iframe côté navigateur.
+    _CLIP_EMBED_PREFIX = "https://clips.twitch.tv/embed?"
+
+    # Marge de chargement : sans elle, le widget s'efface au moment précis où la
+    # vidéo finit — voire avant qu'elle n'ait démarré.
+    _CLIP_LOAD_MARGIN_S = 3.0
+
+    # Le fichier vidéo part dans un `<video src>` : on n'accepte que du https
+    # servi par Twitch ou son CDN. Le nom de distribution CloudFront change
+    # d'un clip à l'autre, d'où le suffixe plutôt qu'une liste figée.
+    _CLIP_VIDEO_HOSTS = (".cloudfront.net", ".twitch.tv", ".twitchcdn.net")
+
+    @classmethod
+    def _is_clip_video(cls, url: str) -> bool:
+        if not url.startswith("https://"):
+            return False
+        host = url[len("https://"):].split("/", 1)[0].split("?", 1)[0].lower()
+        return any(host.endswith(suffix) for suffix in cls._CLIP_VIDEO_HOSTS)
+
+    @classmethod
+    def _clip_duration(cls, duration) -> float:
+        """Temps d'affichage : la durée du clip, plus la marge de chargement."""
+        try:
+            seconds = float(duration)
+        except (TypeError, ValueError):
+            seconds = 0.0
+        # Un clip Twitch fait 60 s au plus ; la borne protège d'une valeur
+        # aberrante qui figerait l'overlay.
+        return max(1.0, min(60.0, seconds or 30.0)) + cls._CLIP_LOAD_MARGIN_S
+
+    def show_clip(self, title: str, author: str, *, embed_url: str = "",
+                  video_url: str = "", duration: float = 0.0) -> bool:
+        """Montre un clip. Trois niveaux, du meilleur au moins bon :
+
+        1. `video_url` — le fichier vidéo, joué par une balise `<video muted>`.
+           C'est le seul mode qui démarre TOUT SEUL : le player Twitch en
+           iframe refuse l'autoplay dans un overlay (« style visibility »,
+           faux positif non corrigé côté Twitch).
+        2. `embed_url` — le player officiel. S'affiche, mais attend un clic.
+           Sert de filet si l'API GraphQL non officielle change.
+        3. la carte texte, quand on n'a ni l'un ni l'autre.
 
         Pas soumis au budget : clipper est un geste rare, et le signaler
         récompense celui qui l'a fait — c'est tout l'intérêt.
         """
         if not self._live():
             return False
+        params: dict = {"title": str(title)[:80], "author": str(author)[:24]}
+        embed_url = str(embed_url or "")
+        video_url = str(video_url or "")
+        if self._is_clip_video(video_url):
+            params["video"] = video_url
+            params["duration"] = self._clip_duration(duration)
+        elif embed_url.startswith(self._CLIP_EMBED_PREFIX):
+            params["embed"] = embed_url
+            params["duration"] = self._clip_duration(duration)
+        else:
+            params["duration"] = 10
         self._last_event_at = time.monotonic()
-        self._feed.widget("clip", title=str(title)[:80], author=str(author)[:24],
-                          duration=10)
+        self._feed.widget("clip", **params)
         return True
+
+    async def play_last_clip(self) -> Optional[dict]:
+        """Rejoue le dernier clip de la chaîne. None s'il n'y en a pas.
+
+        Le fournisseur est injecté plutôt qu'appelé d'ici : `show_widget` est
+        synchrone et n'a aucun moyen d'interroger une API externe, alors que
+        « affiche le dernier clip » en dépend entièrement.
+        """
+        if self._last_clip is None or not self._live():
+            return None
+        try:
+            clip = await self._last_clip()
+        except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
+            logger.warning("Overlay: dernier clip introuvable : {e}", e=exc)
+            return None
+        if not clip:
+            return None
+        title = str(clip.get("title") or "un clip")
+        author = str(clip.get("creator_name") or "quelqu'un")
+        embed = str(clip.get("embed_url") or "")
+        video = str(clip.get("video_url") or "")
+        if not self.show_clip(title, author, embed_url=embed, video_url=video,
+                              duration=clip.get("duration") or 0.0):
+            return None
+        # « joué » veut dire : ça démarre tout seul. L'iframe s'affiche mais
+        # attend un clic — Wally ne doit pas annoncer une lecture dans ce cas.
+        played = self._is_clip_video(video)
+        logger.info(
+            "Overlay: clip « {t} » de {a} — {m}", t=title, a=author,
+            m="joué" if played else ("player en attente de clic" if embed else "carte seule"),
+        )
+        return {"widget": "clip", "title": title, "author": author,
+                "played": played}
 
     def show_emote_wave(self, emote: str) -> bool:
         """Signale que le chat spamme le même emote."""

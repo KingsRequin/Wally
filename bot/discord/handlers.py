@@ -102,6 +102,7 @@ _NOTE_TOOLS = [
 from bot.intelligence.overlay_narrator import (
     CANCEL_TARGETS,
     CANCEL_TOOL_SPEC as _OVERLAY_CANCEL_TOOL,
+    LAST_CLIP_TOOL_SPEC as _LAST_CLIP_TOOL,
     OVERLAY_TOOL_SPEC as _OVERLAY_TOOL,
 )
 
@@ -482,6 +483,34 @@ def run_overlay_tool(bot, args: dict) -> str:
     return json.dumps({"status": "rejected", "message": (
         f"Rien affiché : '{widget}' est inconnu ou il manque des données "
         "(la roue veut au moins 2 options, un sondage une question)."
+    )})
+
+
+async def run_last_clip_tool(bot, args: dict) -> str:
+    """Exécute `show_last_clip` et rend un compte rendu HONNÊTE."""
+    narrator = _overlay_narrator(bot)
+    if narrator is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "L'overlay n'est pas branché en ce moment."})
+    try:
+        shown = await narrator.play_last_clip()
+    except Exception as exc:  # noqa: BLE001 — un clip raté ne casse pas la réponse
+        logger.warning("show_last_clip a échoué : {e}", e=exc)
+        return json.dumps({"status": "error", "message": "La lecture a échoué."})
+    if shown:
+        # « joué » ou « affiché » : Wally ne doit pas annoncer une vidéo quand
+        # seule la carte est passée (embed refusé, cf. le `parent` de Twitch).
+        quoi = "Le clip est lancé" if shown["played"] else "La carte du clip est affichée"
+        return json.dumps({"status": "ok", "message": (
+            f"{quoi} : « {shown['title']} », clippé par {shown['author']}. "
+            "Tu ne l'as pas vu — ne raconte pas ce qu'il contient."
+        )})
+    if not narrator.is_active():
+        return json.dumps({"status": "offline", "message": (
+            "Rien lancé : il n'y a pas de live en cours. Dis-le simplement."
+        )})
+    return json.dumps({"status": "nothing", "message": (
+        "Aucun clip récent sur la chaîne. Dis-le, n'en invente pas un."
     )})
 
 
@@ -2142,6 +2171,7 @@ async def _respond(
         if _overlay_narrator(bot) is not None:
             tools.append(_OVERLAY_TOOL)
             tools.append(_OVERLAY_CANCEL_TOOL)
+            tools.append(_LAST_CLIP_TOOL)
         if getattr(bot, "voice_service", None) is not None:
             tools += VOICE_TOOLS
         # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
@@ -2175,6 +2205,8 @@ async def _respond(
                 return run_overlay_tool(bot, args)
             if name == "cancel_overlay":
                 return run_overlay_cancel_tool(bot, args)
+            if name == "show_last_clip":
+                return await run_last_clip_tool(bot, args)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})

@@ -320,6 +320,34 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 
 ---
 
+## Les clips
+
+> « wally mets le dernier clip »
+
+Le clip est **rejoué sur l'overlay**, en **muet**, et reste affiché le temps de
+la vidéo. Il part aussi tout seul dès qu'un viewer crée un clip pendant le live
+(veille toutes les 2 min).
+
+Trois niveaux, du meilleur au moins bon :
+
+| Mode | Ce qui se passe |
+|---|---|
+| **Fichier vidéo** | `<video muted autoplay>` — démarre tout seul. Le mode normal. |
+| **Player Twitch** | S'affiche mais **attend un clic**. Filet de secours. |
+| **Carte texte** | « ✂ nouveau clip » + titre + auteur, quand rien d'autre n'est possible. |
+
+⚠️ Le player officiel en iframe **refuse de démarrer seul** dans un overlay :
+« Autoplay disabled … style visibility ». C'est un faux positif de Twitch, connu
+et non corrigé ([twitchdev/issues#1127](https://github.com/twitchdev/issues/issues/1127)).
+D'où l'URL du fichier vidéo, obtenue via l'API **GraphQL non officielle** de
+Twitch — celle qu'emploient yt-dlp et streamlink. Twitch peut la changer sans
+préavis : c'est exactement ce que les deux replis couvrent.
+
+Wally ne VOIT pas le clip. Il n'a que son titre et son auteur, et a pour
+consigne de ne pas raconter ce qu'il contient.
+
+---
+
 ## Annuler ce qui est à l'écran
 
 > « wally annule le bingo » · « wally enlève le meme » · « wally vire tout ça »

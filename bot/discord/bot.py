@@ -292,12 +292,35 @@ class WallyDiscord(commands.Bot):
                     tb = getattr(self, "_twitch_bot", None)
                     return getattr(tb, "_stream_info", None) or {}
 
+                async def _fetch_last_clip():
+                    """Dernier clip de la chaîne, pour « affiche le dernier clip ».
+
+                    Résolu à l'appel et non capturé : le bot Twitch peut être
+                    absent au moment où le narrateur est construit.
+                    """
+                    api = getattr(getattr(self, "_twitch_bot", None), "twitch_api", None)
+                    if api is None:
+                        return None
+                    clip = await api.get_last_clip()
+                    if not clip:
+                        return None
+                    # L'URL du fichier vidéo est ce qui permet de JOUER le clip :
+                    # le player Twitch en iframe, lui, refuse de démarrer seul.
+                    # Son absence n'est pas bloquante — `show_clip` retombe sur
+                    # l'embed, puis sur la carte.
+                    playable = await api.get_clip_video_url(clip.get("id") or "")
+                    if playable:
+                        clip = {**clip, "video_url": playable["url"],
+                                "duration": playable["duration"] or clip.get("duration")}
+                    return clip
+
                 _overlay_narrator = OverlayNarrator(
                     _dash_state.overlay_feed,
                     self.llm_secondary,
                     _stream_is_live,
                     stream_status=_stream_status,
                     memes=getattr(_dash_state, "memes", None),
+                    last_clip=_fetch_last_clip,
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,
                 # Wally ne saurait pas qu'un bingo tourne et n'aurait aucune

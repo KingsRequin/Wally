@@ -18,6 +18,7 @@ from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _OVERLAY_CANCEL_TOOL, run_overlay_cancel_tool,
+    _LAST_CLIP_TOOL, run_last_clip_tool,
     _consume_open_question, _note_open_question,
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
@@ -452,6 +453,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         if _overlay_narrator(bot) is not None:
             tools.append(_OVERLAY_TOOL)
             tools.append(_OVERLAY_CANCEL_TOOL)
+            tools.append(_LAST_CLIP_TOOL)
 
         async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
@@ -466,6 +468,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 return run_overlay_tool(bot, args)
             if name == "cancel_overlay":
                 return run_overlay_cancel_tool(bot, args)
+            if name == "show_last_clip":
+                return await run_last_clip_tool(bot, args)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})

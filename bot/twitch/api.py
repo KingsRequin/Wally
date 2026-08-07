@@ -5,12 +5,20 @@ from typing import TYPE_CHECKING, Optional
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import httpx
 from loguru import logger
 
 if TYPE_CHECKING:
     from bot.twitch.token_manager import TwitchTokenManager
+
+# Client-ID public du site web Twitch. Il n'appartient pas à l'application :
+# c'est celui que le lecteur du site présente, et le seul que l'API GraphQL
+# accepte. Identique dans yt-dlp et streamlink. Rien de secret ici.
+_GQL_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+
 
 def _ratelimit_wait(resp, *, default: float = 1.0, cap: float = 5.0) -> float:
     """Secondes à attendre après un 429, d'après `Ratelimit-Reset` (epoch)."""
@@ -216,7 +224,87 @@ class TwitchAPI:
             logger.warning("get_users_by_ids failed: {e}", e=exc)
         return result
 
-    async def get_recent_clips(self, since_iso: str) -> list[dict]:
+    # Qualité visée pour l'overlay : la vidéo y fait 540 px de large, le 1080p
+    # ne serait que du poids en plus (17 Mo pour 25 s) et un démarrage plus lent.
+    _CLIP_QUALITY = "720"
+
+    async def get_clip_video_url(self, slug: str) -> Optional[dict]:
+        """URL du FICHIER vidéo d'un clip, et sa durée. None si indisponible.
+
+        ⚠️ Passe par l'API GraphQL **non officielle** de Twitch (celle qu'emploient
+        yt-dlp et streamlink). L'API Helix publique n'expose aucune URL de
+        lecture, et le player officiel en iframe REFUSE de démarrer tout seul
+        dans un overlay — « Autoplay disabled … style visibility », faux positif
+        connu et non corrigé (twitchdev/issues#1127). Une balise `<video muted>`
+        alimentée par cette URL, elle, démarre toujours.
+
+        Twitch peut changer cette API sans préavis : l'appelant DOIT savoir
+        retomber sur l'iframe puis sur la carte.
+        """
+        slug = str(slug or "").strip()
+        if not slug:
+            return None
+        query = (
+            "query($slug: ID!){clip(slug:$slug){durationSeconds "
+            "playbackAccessToken(params:{platform:\"web\",playerBackend:\"mediaplayer\","
+            "playerType:\"site\"}){signature value} videoQualities{quality sourceURL}}}"
+        )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://gql.twitch.tv/gql",
+                    headers={"Client-ID": _GQL_CLIENT_ID,
+                             "Content-Type": "application/json"},
+                    json={"query": query, "variables": {"slug": slug}},
+                    timeout=10,
+                )
+            if resp.status_code != 200:
+                logger.warning("Twitch GQL clip {c}", c=resp.status_code)
+                return None
+            clip = ((resp.json().get("data") or {}).get("clip")) or {}
+            qualities = clip.get("videoQualities") or []
+            token = clip.get("playbackAccessToken") or {}
+            if not qualities or not token.get("signature"):
+                return None
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("Twitch GQL clip a échoué : {e}", e=exc)
+            return None
+
+        # La qualité voulue si elle existe, sinon la plus haute en dessous —
+        # les qualités arrivent triées du plus grand au plus petit.
+        chosen = next(
+            (q for q in qualities if str(q.get("quality")) == self._CLIP_QUALITY),
+            None,
+        ) or next(
+            (q for q in qualities
+             if str(q.get("quality")).isdigit()
+             and int(q["quality"]) <= int(self._CLIP_QUALITY)),
+            qualities[-1],
+        )
+        source = str(chosen.get("sourceURL") or "")
+        if not source.startswith("https://"):
+            return None
+        sig = quote(str(token["signature"]))
+        val = quote(str(token.get("value") or ""))
+        return {"url": f"{source}?sig={sig}&token={val}",
+                "duration": clip.get("durationSeconds") or 0}
+
+    async def get_last_clip(self, hours: int = 24) -> dict | None:
+        """Le clip le plus RÉCENT de la chaîne, ou None.
+
+        ⚠️ Helix trie les clips par nombre de vues, pas par date : sur une
+        fenêtre longue, le dernier créé peut tomber hors du lot renvoyé. D'où
+        `first=100` sur 24 h — au-delà, il faudrait paginer pour un gain nul.
+        """
+        since = datetime.now(timezone.utc) - timedelta(hours=max(1, hours))
+        clips = await self.get_recent_clips(
+            since.strftime("%Y-%m-%dT%H:%M:%SZ"), first=100
+        )
+        if not clips:
+            return None
+        return max(clips, key=lambda c: str(c.get("created_at") or ""))
+
+    async def get_recent_clips(self, since_iso: str, first: int = 20) -> list[dict]:
         """GET /helix/clips — clips créés depuis `since_iso` sur la chaîne.
 
         Twitch n'émet AUCUN événement EventSub à la création d'un clip : la
@@ -235,7 +323,7 @@ class TwitchAPI:
                         params={
                             "broadcaster_id": self._broadcaster_id,
                             "started_at": since_iso,
-                            "first": 20,
+                            "first": max(1, min(100, int(first))),
                         },
                         headers={
                             "Authorization": f"Bearer {self._tm.bot_token}",

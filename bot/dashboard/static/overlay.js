@@ -314,6 +314,87 @@
 
     clip(p) {
       const box = el("div", "clip");
+
+      // Avec une URL d'embed, on JOUE le clip ; sinon on retombe sur la carte.
+      // Le repli n'est pas décoratif : Twitch exige que `parent` corresponde au
+      // domaine hôte, donc l'iframe est refusée si l'overlay est ouvert par une
+      // IP locale. Mieux vaut la carte que la vidéo noire.
+      //
+      // `parent` vient de `location.hostname` et non d'une constante : c'est le
+      // navigateur qui sait sur quel domaine il tourne, et heywally.fr comme
+      // localhost marchent alors sans rien configurer.
+      // 1. Le fichier vidéo : le SEUL mode qui démarre tout seul. Une balise
+      //    <video muted autoplay> n'est jamais bloquée, alors que le player
+      //    Twitch en iframe refuse l'autoplay dans un overlay.
+      const video = String(p.video || "");
+      if (/^https:\/\/[^/]+\.(cloudfront\.net|twitch\.tv|twitchcdn\.net)\//.test(video)) {
+        box.classList.add("playing");
+        const v = document.createElement("video");
+        v.src = video;
+        v.className = "clip-video";
+        v.muted = true;          // propriété ET attribut : Safari/CEF exigent
+        v.setAttribute("muted", "");
+        v.autoplay = true;
+        v.playsInline = true;
+        // Une lecture refusée ne doit pas laisser un cadre noir muet.
+        v.addEventListener("error", () => box.classList.add("clip-failed"));
+        const who = el("div", "clip-credit");
+        who.textContent = `✂ ${p.title || "un clip"} — ${p.author || "quelqu'un"}`;
+        box.append(v, who);
+        // `play()` explicite en plus de l'attribut : dans le CEF d'OBS, la
+        // lecture automatique par attribut seul est parfois ignorée.
+        v.play?.().catch(() => { /* muet : ne devrait pas arriver */ });
+        return box;
+      }
+
+      // 2. Le player officiel. Il s'affiche mais attend un clic — filet si
+      //    l'URL du fichier n'a pas pu être obtenue.
+      //
+      // Twitch REFUSE un `parent` qui n'est pas un nom de domaine (une IP est
+      // rejetée, `localhost` est accepté). On le vérifie AVANT de monter
+      // l'iframe : sinon le viewer voit la page d'erreur de Twitch en plein
+      // live, là où la carte aurait fait le travail.
+      const host = location.hostname;
+      const hostOk = host === "localhost"
+        || (host.includes(".") && !/^[\d.]+$/.test(host));
+
+      const embed = String(p.embed || "");
+      if (hostOk && embed.startsWith("https://clips.twitch.tv/embed?")) {
+        box.classList.add("playing");
+        const slot = el("div", "clip-frame");     // réserve la place, 16:9
+        const who = el("div", "clip-credit");
+        who.textContent = `✂ ${p.title || "un clip"} — ${p.author || "quelqu'un"}`;
+        box.append(slot, who);
+
+        // L'iframe n'est montée QU'APRÈS l'apparition du widget. Les widgets
+        // entrent en fondu (`.widget { opacity: 0 }`), et Twitch refuse
+        // l'autoplay quand le lecteur n'est pas visible au chargement :
+        //   « Autoplay disabled. The following minimum requirements for
+        //     autoplay were not met: style visibility. »
+        // Créée trop tôt, la vidéo restait donc figée sur sa première image.
+        setTimeout(() => {
+          if (!slot.isConnected) return;          // widget déjà retiré
+          // Le `transform` du widget parent (translateY + scale, posé pour
+          // l'animation d'entrée) fait échouer la détection de visibilité de
+          // Twitch, qui refuse alors l'autoplay — un faux positif connu, cf.
+          // twitchdev/issues#1127. On le retire une fois l'entrée jouée : le
+          // clip reste animé à l'apparition, et il démarre.
+          const holder = slot.closest(".widget");
+          if (holder) holder.style.transform = "none";
+          const frame = document.createElement("iframe");
+          // muted=true : c'est le choix produit (pas de doublon audio sur le
+          // stream), et accessoirement la seule façon dont l'autoplay est
+          // accepté sans interaction de l'utilisateur.
+          frame.src = `${embed}&parent=${encodeURIComponent(location.hostname)}`
+            + "&autoplay=true&muted=true";
+          frame.allow = "autoplay";
+          frame.setAttribute("scrolling", "no");
+          frame.setAttribute("frameborder", "0");
+          slot.replaceChildren(frame);
+        }, 400);                                   // > la transition de .28 s
+        return box;
+      }
+
       const head = el("div", "clip-head");
       head.textContent = "✂ nouveau clip";
       const title = el("div", "clip-title");
