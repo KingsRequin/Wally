@@ -278,9 +278,16 @@ async def test_end_twitch_visit_fills_fields(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_twitch_visits_for_date(tmp_path):
-    from datetime import date
+    # Le fuseau vient du module testé, pas de la machine. `get_twitch_visits_
+    # for_date` découpe les journées en Europe/Paris ; `date.today()` suit
+    # l'horloge locale — sur un serveur en UTC, les deux divergent d'un jour
+    # entre 22 h UTC et minuit, et le test échouait chaque nuit à cette heure.
+    from datetime import datetime
+
+    from bot.db.mixins.social import _TZ_DB
+
     db = await Database.create(str(tmp_path / "test.db"))
-    today = date.today().isoformat()
+    today = datetime.now(_TZ_DB).date().isoformat()
 
     # Visite aujourd'hui
     vid = await db.start_twitch_visit("streamer1")
