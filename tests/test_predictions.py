@@ -148,3 +148,15 @@ async def test_l_outil_refuse_de_trancher_sans_pari():
 async def test_sans_service_l_outil_le_dit():
     out = json.loads(await run_predict_tool(SimpleNamespace(), {"bet": "x"}))
     assert out["status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_un_pari_expire_est_classe_en_base():
+    """L'ignorer ne suffit pas : laissé ouvert, il reste « en cours » et fausse
+    tout ce qui interroge l'état."""
+    s = _svc()
+    await s.open("on gagne")
+    s._db.rows[0]["created_at"] = time.time() - _STALE_AFTER_S - 1
+    assert await s.current() is None
+    assert s._db.rows[0]["outcome"] == "void"
+    assert (await s.score())["total"] == 0     # un pari classé ne compte pas

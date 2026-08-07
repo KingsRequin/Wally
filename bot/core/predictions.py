@@ -50,6 +50,13 @@ class PredictionService:
             return None
         row = dict(row)
         if time.time() - row["created_at"] > _STALE_AFTER_S:
+            # Le CLASSER, pas seulement l'ignorer : laissé ouvert, il reste
+            # « en cours » en base et fausse tout ce qui interroge l'état.
+            await self._db.execute(
+                "UPDATE predictions SET outcome = 'void', resolved_at = ? WHERE id = ?",
+                (time.time(), row["id"]),
+            )
+            logger.info("Prédiction « {b} » expirée sans verdict", b=row["bet"])
             return None
         return row
 
