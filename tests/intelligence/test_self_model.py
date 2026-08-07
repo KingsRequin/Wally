@@ -49,3 +49,35 @@ def test_web_available_phrase_active():
 def test_web_unavailable_phrase_inactive():
     out = build_self_model("", object(), web_available=False)
     assert "indisponible" in out.lower()
+
+
+# ── capacités overlay ──
+
+def test_wally_sait_dire_ce_qu_il_peut_afficher():
+    """« Tu peux faire quoi sur l'overlay ? » doit avoir une réponse juste."""
+    out = build_self_model("", _cfg(False), web_available=False)
+    assert "overlay" in out
+    assert "pile ou face" in out and "bingo" in out
+
+
+def test_la_liste_suit_le_code_et_non_une_copie():
+    """Une liste recopiée finirait par promettre un widget retiré, ou ignorer
+    un widget ajouté."""
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+    from bot.intelligence.self_model import _WIDGET_WORDS
+
+    manquants = set(OverlayNarrator._WIDGETS) - set(_WIDGET_WORDS)
+    assert not manquants, f"widget sans formulation : {manquants}"
+
+
+def test_il_precise_que_le_streamer_ne_voit_pas_l_overlay():
+    """C'est la règle qui l'empêche de s'adresser à Azraël dessus."""
+    assert "streamer non" in build_self_model("", _cfg(False))
+
+
+def test_un_overlay_indisponible_ne_casse_pas_le_prompt(monkeypatch):
+    import bot.intelligence.self_model as mod
+
+    monkeypatch.setattr(mod, "_overlay_line", lambda: "")
+    out = build_self_model("", _cfg(False))
+    assert "Mes capacités techniques" in out
