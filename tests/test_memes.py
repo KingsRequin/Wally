@@ -33,6 +33,52 @@ def test_un_fichier_texte_prime_sur_le_nom(tmp_path):
     assert MemeLibrary(tmp_path).list()[0]["description"].startswith("le jour où")
 
 
+def test_deux_images_de_meme_nom_ont_chacune_leur_description(tmp_path):
+    """`chat.gif` et `chat.jpg` sont deux images DIFFÉRENTES.
+
+    Avec le seul `with_suffix(".txt")`, elles se partageaient `chat.txt` et
+    héritaient de la même description : Wally en commentait une en décrivant
+    l'autre. Dix paires du dossier de prod étaient dans ce cas.
+    """
+    (tmp_path / "chat.gif").write_bytes(b"x")
+    (tmp_path / "chat.jpg").write_bytes(b"x")
+    (tmp_path / "chat.gif.txt").write_text("un chat qui tombe du canapé")
+    (tmp_path / "chat.jpg.txt").write_text("un chat qui hurle sur son maître")
+    par_nom = {m["name"]: m["description"] for m in MemeLibrary(tmp_path).list()}
+    assert par_nom["chat.gif"] == "un chat qui tombe du canapé"
+    assert par_nom["chat.jpg"] == "un chat qui hurle sur son maître"
+
+
+def test_l_extension_complete_prime_sur_l_ancienne_forme(tmp_path):
+    """L'ancienne forme reste acceptée : les .txt déjà déposés valent toujours."""
+    (tmp_path / "truc.jpg").write_bytes(b"x")
+    (tmp_path / "truc.txt").write_text("ancienne forme")
+    assert MemeLibrary(tmp_path).list()[0]["description"] == "ancienne forme"
+    (tmp_path / "truc.jpg.txt").write_text("nouvelle forme")
+    assert MemeLibrary(tmp_path).list()[0]["description"] == "nouvelle forme"
+
+
+def test_un_mot_vide_ne_suffit_pas_a_retenir_un_meme(tmp_path):
+    """« qui », « pas », « une » passent le filtre de longueur et figurent dans
+    presque toutes les descriptions. En retenant tout meme ayant UN mot en
+    commun, « chat qui hurle » retenait quasi tout le dossier et retombait sur
+    un tirage au hasard. On garde les meilleurs, pas les vaguement concernés."""
+    (tmp_path / "a.jpg").write_bytes(b"x")
+    (tmp_path / "a.txt").write_text("un chien qui dort tranquillement")
+    (tmp_path / "b.jpg").write_bytes(b"x")
+    (tmp_path / "b.txt").write_text("un chat qui hurle sur son maître")
+    lib = MemeLibrary(tmp_path)
+    assert {lib.pick("chat qui hurle")["name"] for _ in range(12)} == {"b.jpg"}
+
+
+def test_sans_aucune_correspondance_le_tirage_reste_ouvert(tmp_path):
+    """Un sujet hors-sujet ne doit pas rendre None : mieux vaut un meme au
+    hasard que pas de meme du tout."""
+    (tmp_path / "a.jpg").write_bytes(b"x")
+    (tmp_path / "a.txt").write_text("un chien qui dort")
+    assert MemeLibrary(tmp_path).pick("astrophysique quantique")["name"] == "a.jpg"
+
+
 def test_un_dossier_absent_ne_leve_pas(tmp_path):
     assert MemeLibrary(tmp_path / "nexiste-pas").list() == []
     assert MemeLibrary(tmp_path / "nexiste-pas").pick() is None

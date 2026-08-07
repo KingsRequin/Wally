@@ -138,6 +138,18 @@ class OverlayFeed:
     # Durée de lecture d'un résultat, une fois l'animation finie.
     _RESULT_READ_S = 10.0
 
+    def clear(self) -> None:
+        """Retire immédiatement ce qui est à l'écran.
+
+        Le tampon est vidé en même temps, et pas seulement l'écran : `recent()`
+        rejoue les événements encore vivants à tout client qui se connecte. Sans
+        ça, un overlay rouvert dans la seconde qui suit une annulation remontait
+        le widget qu'on venait de retirer — et la reconnexion SSE automatique
+        d'OBS suffisait à le faire réapparaître tout seul.
+        """
+        self._buffer.clear()
+        self.publish({"type": "clear"})
+
     def widget(self, kind: str, /, **params) -> None:
         """Affiche un widget ponctuel (pile ou face, dé, uptime…).
 

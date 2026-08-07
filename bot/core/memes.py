@@ -24,9 +24,17 @@ _MAX_BYTES = 8 * 1024 * 1024
 
 
 def _describe(path: Path) -> str:
-    """Description d'un meme : le .txt voisin s'il existe, sinon le nom du fichier."""
-    sidecar = path.with_suffix(".txt")
-    if sidecar.is_file():
+    """Description d'un meme : le .txt voisin s'il existe, sinon le nom du fichier.
+
+    Deux formes de voisin, la première l'emporte :
+    `chat.gif.txt` (extension complète) puis `chat.txt`. Sans la première,
+    `chat.gif` et `chat.jpg` — deux images DIFFÉRENTES — se partageaient le seul
+    `chat.txt` et héritaient de la même description : Wally en commentait une en
+    décrivant l'autre. Dix paires du dossier étaient dans ce cas.
+    """
+    for sidecar in (path.with_name(path.name + ".txt"), path.with_suffix(".txt")):
+        if not sidecar.is_file():
+            continue
         try:
             # `errors="replace"` et non un try nu : un .txt écrit au Bloc-notes
             # Windows (cp1252) levait un UnicodeDecodeError — qui dérive de
@@ -91,13 +99,21 @@ class MemeLibrary:
             return None
         hint = (hint or "").strip().lower()
         if hint:
-            words = [w for w in hint.split() if len(w) > 2]
-            matches = [
-                m for m in memes
-                if any(w in m["description"].lower() for w in words)
+            # On garde les MEILLEURS, pas tous ceux qui ont un mot en commun.
+            # `any()` suffisait à retenir un meme, or « qui », « pas », « une »
+            # passent le filtre de longueur et figurent dans presque toutes les
+            # descriptions : « chat qui hurle » retenait donc quasi tout le
+            # dossier et retombait sur un tirage au hasard. Compter les mots
+            # trouvés fait remonter celui qui parle vraiment du sujet, sans
+            # avoir à maintenir une liste de mots vides.
+            words = {w for w in hint.split() if len(w) > 2}
+            scored = [
+                (sum(1 for w in words if w in m["description"].lower()), m)
+                for m in memes
             ]
-            if matches:
-                memes = matches
+            best = max((score for score, _ in scored), default=0)
+            if best:
+                memes = [m for score, m in scored if score == best]
         pool = [m for m in memes if m["name"] != self._last] or memes
         chosen = random.choice(pool)
         self._last = chosen["name"]

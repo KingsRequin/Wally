@@ -239,6 +239,18 @@ class PromptBuilder:
         if feed_block := current_stream_feed_block(include_chat=not _on_stream_channel):
             dynamic_parts.append(feed_block)
 
+        # Ce qui tourne sur l'overlay (bingo, pendu, objectif…). Passif comme le
+        # flux ci-dessus : aucun `notify_*` derrière, donc un bingo ouvert ne
+        # réveille pas la cadence et ne fait pas parler Wally tout seul. Absent
+        # hors live et quand rien ne tourne — zéro token dans le cas courant.
+        #
+        # Import PARESSEUX : `overlay_narrator` importe `load_prompt` d'ici, un
+        # import en tête de module se mordait la queue (même parade que dans
+        # `attention_agent`).
+        from bot.intelligence.overlay_narrator import current_overlay_state_block
+        if overlay_block := current_overlay_state_block():
+            dynamic_parts.append(overlay_block)
+
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         # Priority: secondary emotions > composite pairs > atomic with fluid transitions
         directives = emotion_directives if emotion_directives is not None else {}

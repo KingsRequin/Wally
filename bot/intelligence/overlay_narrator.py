@@ -206,6 +206,72 @@ OVERLAY_TOOL_SPEC = {
 }
 
 
+# Narrateur actif, pour que `prompts.py` puisse lire l'état de l'overlay sans
+# qu'on ait à faire descendre le narrateur jusque-là. Même patron que
+# `stream_feed.activate()` — l'injection de dépendance s'arrête au bot Discord.
+_active_narrator: "OverlayNarrator | None" = None
+
+
+def current_overlay_state_block() -> Optional[str]:
+    """Ce qui tourne sur l'overlay, prêt à injecter au prompt. None si rien."""
+    if _active_narrator is None:
+        return None
+    try:
+        return _active_narrator.current_state_block() or None
+    except Exception as exc:  # noqa: BLE001 — un bloc de contexte ne casse pas un prompt
+        logger.debug("Overlay: bloc d'état illisible: {e}", e=exc)
+        return None
+
+
+# Ce qu'on peut annuler. Constante de module : le spec de l'outil en a besoin
+# avant que la classe ne soit définie, et les deux doivent rester d'accord —
+# une cible acceptée par l'enum mais inconnue de `cancel()` répondrait
+# « rien en cours » sur une demande pourtant valide.
+CANCEL_TARGETS = ("ecran", "bingo", "pendu", "sondage", "chifoumi",
+                  "objectif", "tout")
+
+
+CANCEL_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "cancel_overlay",
+        "description": (
+            "Retire quelque chose de l'overlay du stream : ce qui est affiché à "
+            "l'instant, ou une partie en cours qu'on abandonne. Sers-t'en quand "
+            "on te demande d'annuler ou d'enlever un truc — et de toi-même quand "
+            "une partie traîne sans que personne y joue. Tu peux refuser, comme "
+            "pour le reste. ⚠️ Un abandon ne donne PAS de résultat : un sondage "
+            "annulé n'est pas dépouillé, un chifoumi annulé n'a pas de gagnant — "
+            "ne les annonce pas. N'affirme jamais avoir annulé sans appeler cet "
+            "outil : il te dira s'il y avait vraiment quelque chose."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "enum": list(CANCEL_TARGETS),
+                    "description": (
+                        "ecran = ce qui est affiché maintenant (un meme, un "
+                        "message épinglé, un compteur) sans toucher aux parties "
+                        "en cours · bingo · pendu · sondage · chifoumi · "
+                        "objectif = la partie correspondante est abandonnée · "
+                        "tout = l'écran ET toutes les parties. Dans le doute "
+                        "entre « enlève ce qui est affiché » et « annule le "
+                        "bingo », choisis la cible précise."
+                    ),
+                },
+                "comment": {
+                    "type": "string",
+                    "description": "Ta réplique, quelques mots. Facultatif.",
+                },
+            },
+            "required": ["target"],
+        },
+    },
+}
+
+
 class OverlayNarrator:
     """Filtre et condense ce que Wally montre au public pendant un live."""
 
@@ -258,6 +324,11 @@ class OverlayNarrator:
         self._talkers: dict = {}
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
+
+    def activate(self) -> None:
+        """S'enregistre comme narrateur lu par `current_overlay_state_block()`."""
+        global _active_narrator
+        _active_narrator = self
 
     # ── budget ────────────────────────────────────────────────────────────
 
@@ -467,12 +538,24 @@ class OverlayNarrator:
         shown: list[dict] = []
 
         async def _execute(name: str, arguments: str) -> str:
-            if name != "show_overlay":
+            if name not in ("show_overlay", "cancel_overlay"):
                 return json.dumps({"status": "unknown_tool"})
             try:
                 args = json.loads(arguments or "{}")
             except json.JSONDecodeError:
                 return json.dumps({"status": "error", "message": "arguments illisibles"})
+            if name == "cancel_overlay":
+                # « Wally, annule le bingo » arrive par le vocal bien plus
+                # souvent que par le chat : sans cet outil ici, la demande
+                # tombait dans le vide alors même qu'on la lui adressait.
+                result = self.cancel(str(args.get("target") or ""))
+                done = result.get("cancelled") or []
+                if not done:
+                    return json.dumps({"status": "nothing", "message": (
+                        "Rien à annuler, ce n'était pas en cours. Dis-le, "
+                        "ne prétends pas l'avoir retiré."
+                    )})
+                return json.dumps({"status": "ok", "cancelled": ", ".join(done)})
             extra = {k: v for k, v in args.items()
                      if k not in ("widget", "comment", "result") and v is not None}
             out = self.show_widget(
@@ -489,7 +572,7 @@ class OverlayNarrator:
             reply, _ = await self._llm.complete_with_tools(
                 system_prompt=_VOICE_SYSTEM,
                 messages=[{"role": "user", "content": f"{speaker} (à voix haute) : {text}"}],
-                tools=[OVERLAY_TOOL_SPEC],
+                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC],
                 tool_executor=_execute,
                 purpose="overlay_voice",
             )
@@ -811,6 +894,96 @@ class OverlayNarrator:
         self._talkers.clear()
         self._rps = None
         self._hangman = None
+
+    # ── annulation ────────────────────────────────────────────────────────
+
+    def cancel(self, target: str) -> dict:
+        """Retire ce qui est à l'écran, ou abandonne une partie en cours.
+
+        Un ABANDON, pas une clôture : un sondage annulé ne dépouille pas et un
+        chifoumi annulé ne rend pas de verdict. Passer par `close_poll()` ferait
+        annoncer un gagnant à une manche qu'on vient justement d'interrompre.
+
+        Volontairement insensible au live : on annule aussi — et surtout — quand
+        le stream vient de se couper avec un bingo resté ouvert.
+
+        Retourne ce qui a RÉELLEMENT été annulé. La liste vide est la réponse
+        utile : elle permet de dire « il n'y avait pas de bingo » au lieu de
+        laisser croire que quelque chose a été retiré.
+        """
+        target = (target or "").strip().lower()
+        if target not in CANCEL_TARGETS:
+            return {"target": target, "cancelled": [], "unknown": True}
+
+        everything = target == "tout"
+        done: list[str] = []
+
+        if (everything or target == "bingo") and self._bingo:
+            self._bingo = None
+            self._bingo_reminded_at = 0.0
+            done.append("bingo")
+        if (everything or target == "pendu") and self._hangman:
+            self._hangman = None
+            done.append("pendu")
+        if (everything or target == "objectif") and self._goal:
+            self._goal = None
+            done.append("objectif")
+        if (everything or target == "sondage") and self._poll:
+            self._poll = None
+            self._cancel_task("_poll_task")
+            done.append("sondage")
+        if (everything or target == "chifoumi") and self._rps:
+            self._rps = None
+            self._cancel_task("_rps_task")
+            done.append("chifoumi")
+
+        # L'écran est nettoyé dès qu'on annule quoi que ce soit : abandonner le
+        # bingo en laissant sa grille affichée n'aurait aucun sens.
+        if target in ("ecran", "tout") or done:
+            self._feed.clear()
+            if target in ("ecran", "tout"):
+                done.append("ecran")
+
+        logger.info("Overlay: annulation « {t} » — {d}",
+                    t=target, d=", ".join(done) or "rien en cours")
+        return {"target": target, "cancelled": done}
+
+    def _cancel_task(self, attr: str) -> None:
+        """Coupe une clôture planifiée. Sans ça, le `sleep` en cours rouvrirait
+        le dépouillement d'un sondage qu'on vient d'abandonner."""
+        task = getattr(self, attr, None)
+        if task is not None:
+            task.cancel()
+            setattr(self, attr, None)
+
+    def current_state_block(self) -> str:
+        """Ce qui tourne sur l'overlay, pour le prompt. Vide s'il n'y a rien.
+
+        ⚠️ Perception PASSIVE, comme `StreamFeed` : aucun `notify_*` derrière,
+        donc ce bloc ne réveille jamais la cadence vive ni une prise de parole.
+        Un bingo ouvert ferait sinon parler Wally en boucle pendant tout le live.
+        """
+        if not self._live():
+            return ""
+        lines: list[str] = []
+        if self._bingo:
+            done = sum(1 for d in self._bingo["done"] if d)
+            lines.append(f"Bingo : {done}/{len(self._bingo['cells'])} cases cochées.")
+        if self._hangman:
+            game = self._hangman
+            remaining = len({c for c in game["word"] if c.isalpha()} - game["found"])
+            lines.append(f"Pendu : « {game['display']} », {remaining} lettres à trouver.")
+        if self._goal:
+            goal = self._goal
+            lines.append(f"Objectif « {goal['label']} » : {goal['count']}/{goal['target']}.")
+        if self._poll:
+            lines.append(f"Sondage en cours : « {self._poll['question']} ».")
+        if self._rps:
+            lines.append("Chifoumi ouvert, le chat vote son coup.")
+        if not lines:
+            return ""
+        return ("\n--- Sur ton overlay ---\n" + "\n".join(lines)
+                + "\nTu peux annuler ce qui traîne avec `cancel_overlay`.")
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:

@@ -295,13 +295,51 @@ Les images vivent dans **`data/memes/`** — dépose-les, aucun redémarrage n'e
 nécessaire, le dossier est relu à chaque tirage. Formats : png, jpg, gif, webp.
 
 **La description** vient du nom du fichier (`azrael-blame-le-ping.jpg` →
-« azrael blame le ping »), ou d'un fichier `.txt` du même nom si le nom ne suffit
-pas. Elle sert à deux choses : Wally ne voit pas les images, donc c'est sa seule
-prise pour commenter juste — et pour choisir un meme **à propos** plutôt qu'au
-hasard.
+« azrael blame le ping »), ou d'un fichier texte voisin si le nom ne suffit pas.
+Elle sert à deux choses : Wally ne voit pas les images, donc c'est sa seule prise
+pour commenter juste — et pour choisir un meme **à propos** plutôt qu'au hasard.
+
+Le fichier texte se nomme **`azrael-blame-le-ping.jpg.txt`** — extension de
+l'image comprise. `azrael-blame-le-ping.txt` marche toujours, mais ne distingue
+pas `truc.gif` de `truc.jpg`, qui se partageaient alors la même description.
+Une description est **tronquée à 160 caractères** : viser une phrase dense.
+
+Le choix « à propos » retient les memes dont la description contient le **plus**
+de mots du sujet demandé. Un seul mot en commun ne suffit pas : « qui », « pas »
+et « une » figurent dans presque toutes les descriptions, et suffisaient
+autrefois à faire retomber la sélection sur un tirage au hasard.
 
 Le même meme n'est jamais tiré deux fois de suite. Les fichiers de plus de 8 Mo
 sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
+
+---
+
+## Annuler ce qui est à l'écran
+
+> « wally annule le bingo » · « wally enlève le meme » · « wally vire tout ça »
+
+Wally appelle `cancel_overlay`. Cibles :
+
+| Cible | Effet |
+|---|---|
+| `ecran` | Retire ce qui est affiché à l'instant — meme, message épinglé, compteur, bulle. Les parties en cours continuent. |
+| `bingo` `pendu` `sondage` `chifoumi` `objectif` | La partie est **abandonnée**, et l'écran nettoyé. |
+| `tout` | L'écran et toutes les parties. |
+
+Un abandon **ne dépouille pas** : un sondage annulé n'a pas de gagnant, un
+chifoumi annulé pas de verdict. Wally a pour consigne de ne pas en annoncer.
+
+Quand il n'y avait rien à annuler, l'outil le dit et Wally le répète au lieu de
+prétendre avoir retiré quelque chose — même exigence d'honnêteté que
+`show_overlay`. Et il garde le droit de refuser.
+
+Marche partout où Wally répond : chat Twitch, Discord, et **vocal**.
+
+**Ce qui tourne lui est visible.** Pendant un live, un bloc « Sur ton overlay »
+lui indique le bingo en cours, l'objectif, le pendu. Il peut donc annuler
+nommément, et voir qu'une partie traîne. C'est une perception **passive** : elle
+ne le fait jamais parler de lui-même. Hors live, ou sans rien en cours, le bloc
+est absent.
 
 ---
 

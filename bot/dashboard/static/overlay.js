@@ -645,6 +645,26 @@
     }
   }
 
+  // Tout retirer de l'écran, sur ordre du serveur (`cancel_overlay`).
+  //
+  // Déclarée APRÈS `pending` à dessein : la lire avant sa déclaration lèverait
+  // une TDZ, que `node --check` ne détecte pas (cf. l'incident buildSections).
+  //
+  // La file d'attente est vidée AUSSI : sans ça, la demande qui patientait
+  // derrière surgissait 300 ms après l'annulation — on annulait un meme et le
+  // dé qui attendait son tour prenait sa place. La bulle part avec le reste :
+  // « enlève ce qui est affiché » vise ce qu'on lit, pas seulement le widget.
+  function clearAll() {
+    pending.length = 0;
+    clearTimeout(widgetTimer);
+    hideBubble();
+    showThinking(false);
+    const box = widgets.firstElementChild;
+    if (!box) { clearWidgets(); return; }
+    box.classList.remove("visible");
+    widgetTimer = setTimeout(clearWidgets, 300);   // le temps de la sortie animée
+  }
+
   function renderWidget(kind, params, build) {
     clearTimeout(widgetTimer);
 
@@ -730,6 +750,7 @@
       case "thinking": showThinking(event.active); break;
       case "react":    react(); break;
       case "widget":   showWidget(event.kind, event.params || {}); break;
+      case "clear":    clearAll(); break;
     }
   });
 

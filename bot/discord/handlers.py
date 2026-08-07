@@ -99,7 +99,11 @@ _NOTE_TOOLS = [
 
 # Overlay du stream, dans une conversation. La définition vit avec le narrateur :
 # le chemin vocal l'utilise aussi, et deux copies divergeraient.
-from bot.intelligence.overlay_narrator import OVERLAY_TOOL_SPEC as _OVERLAY_TOOL
+from bot.intelligence.overlay_narrator import (
+    CANCEL_TARGETS,
+    CANCEL_TOOL_SPEC as _OVERLAY_CANCEL_TOOL,
+    OVERLAY_TOOL_SPEC as _OVERLAY_TOOL,
+)
 
 
 
@@ -478,6 +482,52 @@ def run_overlay_tool(bot, args: dict) -> str:
     return json.dumps({"status": "rejected", "message": (
         f"Rien affiché : '{widget}' est inconnu ou il manque des données "
         "(la roue veut au moins 2 options, un sondage une question)."
+    )})
+
+
+# Ce qu'on annonce pour chaque cible annulée. Le mot exact compte : « abandonné »
+# et non « clos », parce qu'aucun résultat n'est dépouillé.
+_CANCEL_LABELS = {
+    "ecran": "l'écran est nettoyé",
+    "bingo": "le bingo est abandonné",
+    "pendu": "le pendu est abandonné",
+    "sondage": "le sondage est abandonné, sans dépouillement",
+    "chifoumi": "le chifoumi est abandonné, sans gagnant",
+    "objectif": "l'objectif est retiré",
+}
+
+
+def run_overlay_cancel_tool(bot, args: dict) -> str:
+    """Exécute `cancel_overlay` et rend un compte rendu HONNÊTE.
+
+    Même exigence que `run_overlay_tool` : quand il n'y avait rien à annuler, il
+    faut le DIRE. Sans ça Wally répond « c'est annulé » à qui lui demande de
+    couper un bingo qui n'a jamais existé.
+    """
+    narrator = _overlay_narrator(bot)
+    if narrator is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "L'overlay n'est pas branché en ce moment."})
+    target = str(args.get("target") or "").strip().lower()
+    try:
+        result = narrator.cancel(target)
+    except Exception as exc:  # noqa: BLE001 — une annulation ratée ne casse pas la réponse
+        logger.warning("cancel_overlay a échoué : {e}", e=exc)
+        return json.dumps({"status": "error", "message": "L'annulation a échoué."})
+
+    if result.get("unknown"):
+        return json.dumps({"status": "rejected", "message": (
+            f"'{target}' ne veut rien dire ici. Cibles possibles : "
+            + ", ".join(CANCEL_TARGETS) + "."
+        )})
+    done = result.get("cancelled") or []
+    if not done:
+        return json.dumps({"status": "nothing", "message": (
+            f"Rien à annuler : aucun {target} n'était en cours. Dis-le "
+            "simplement, ne prétends pas l'avoir retiré."
+        )})
+    return json.dumps({"status": "ok", "message": (
+        "C'est fait — " + ", ".join(_CANCEL_LABELS.get(d, d) for d in done) + "."
     )})
 
 
@@ -2091,6 +2141,7 @@ async def _respond(
         # un affichage qui n'arriverait jamais.
         if _overlay_narrator(bot) is not None:
             tools.append(_OVERLAY_TOOL)
+            tools.append(_OVERLAY_CANCEL_TOOL)
         if getattr(bot, "voice_service", None) is not None:
             tools += VOICE_TOOLS
         # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
@@ -2122,6 +2173,8 @@ async def _respond(
                 return await run_tally_tool(bot, name, args)
             if name == "show_overlay":
                 return run_overlay_tool(bot, args)
+            if name == "cancel_overlay":
+                return run_overlay_cancel_tool(bot, args)
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
