@@ -33,6 +33,7 @@ _WIDGET_WORDS = {
     "versus": "la comparaison de deux joueurs",
     "bingo": "un bingo du stream que je coche au fur et à mesure",
     "prediction": "un pari sur l'issue d'une partie, avec mon score cumulé",
+    "meme": "un meme de la communauté (je ne le vois pas, je connais sa description)",
 }
 
 

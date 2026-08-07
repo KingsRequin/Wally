@@ -178,10 +178,34 @@ affiché. Les empiler les ferait arriver après coup, sur un widget disparu.
 
 ---
 
+## Les memes de la communauté
+
+> « wally affiche un meme »
+> « wally sors le meme du ping »
+
+Les images vivent dans **`data/memes/`** — dépose-les, aucun redémarrage n'est
+nécessaire, le dossier est relu à chaque tirage. Formats : png, jpg, gif, webp.
+
+**La description** vient du nom du fichier (`azrael-blame-le-ping.jpg` →
+« azrael blame le ping »), ou d'un fichier `.txt` du même nom si le nom ne suffit
+pas. Elle sert à deux choses : Wally ne voit pas les images, donc c'est sa seule
+prise pour commenter juste — et pour choisir un meme **à propos** plutôt qu'au
+hasard.
+
+Le même meme n'est jamais tiré deux fois de suite. Les fichiers de plus de 8 Mo
+sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
+
+---
+
 ## Validé, pas encore fait
 
 - **Rappel du bingo** — le remontrer de temps en temps pendant le live, pas
   seulement quand une case tombe.
+- **Jauge d'objectif automatique** — alimentée par les follows/subs reçus en
+  EventSub, au lieu d'un chiffre donné à la main.
+- **Le compteur qui commente** — une réplique aux paliers ronds (10ᵉ, 25ᵉ, 50ᵉ)
+  plutôt qu'un chiffre muet.
+- **Vagues d'emotes** — relever à l'écran quand le chat spamme le même emote.
 
 ---
 

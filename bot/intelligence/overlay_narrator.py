@@ -21,6 +21,7 @@ import asyncio
 import json
 import random
 import time
+from urllib.parse import quote
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Optional
@@ -114,7 +115,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo"],
+                             "bingo", "meme"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -122,7 +123,8 @@ OVERLAY_TOOL_SPEC = {
                         "du chat · uptime = durée du live (calculée pour toi) · "
                         "counter = un texte bref · poll = sondage, le chat vote en "
                         "tapant le numéro · stats = les chiffres d'un joueur · "
-                        "versus = compare deux joueurs sur une valeur"
+                        "versus = compare deux joueurs sur une valeur · "
+                        "meme = une image de la communauté"
                     ),
                 },
                 "comment": {
@@ -149,6 +151,7 @@ OVERLAY_TOOL_SPEC = {
                     "description": "Pour bingo : 4 à 9 pronostics courts sur ce qui va arriver pendant le live.",
                 },
                 "check": {"type": "integer", "description": "Pour bingo : numéro de la case (0 = la première) que tu viens de voir se réaliser."},
+                "about": {"type": "string", "description": "Pour meme : de quoi tu veux qu'il parle. Omets-le pour un tirage au hasard."},
                 "player": {"type": "string", "description": "Le pseudo, pour stats."},
                 "lines": {
                     "type": "array", "items": {"type": "string"},
@@ -180,6 +183,7 @@ class OverlayNarrator:
         event_interval_s: float = _MIN_EVENT_INTERVAL_S,
         stream_status: Optional[Callable[[], dict]] = None,
         stream_feed=None,
+        memes=None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
@@ -192,6 +196,7 @@ class OverlayNarrator:
         # Le résultat d'un sondage y est consigné : c'est ce qui le rend
         # visible dans le prompt, donc répondable.
         self._stream_feed = stream_feed
+        self._memes = memes
         self._greeted: set[str] = set()
         self._was_live: bool = False
         self._force_until: float = 0.0
@@ -407,7 +412,7 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction")
+                "prediction", "meme")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -499,6 +504,20 @@ class OverlayNarrator:
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
+
+        elif widget == "meme":
+            # L'image est choisie ICI : Wally ne la voit pas, il ne connaît que
+            # sa description — c'est elle qui lui permet de commenter juste.
+            library = self._memes
+            if library is None:
+                return None
+            chosen = library.pick(str(extra.get("about") or comment or ""))
+            if chosen is None:
+                return None
+            params = {"src": f"/api/public/meme/{quote(chosen['name'])}",
+                      "caption": chosen["description"][:70]}
+            self._feed.widget("meme", **params)
+            return {"widget": "meme", **chosen}
 
         elif widget == "bingo":
             # Deux gestes sur le même widget : ouvrir la grille, ou cocher une

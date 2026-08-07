@@ -236,6 +236,20 @@
       return box;
     },
 
+    meme(p) {
+      const box = el("div", "meme");
+      const img = document.createElement("img");
+      img.src = String(p.src || "");
+      img.alt = "";
+      box.appendChild(img);
+      if (p.caption) {
+        const cap = el("div", "meme-cap");
+        cap.textContent = String(p.caption);
+        box.appendChild(cap);
+      }
+      return box;
+    },
+
     prediction(p) {
       const done = p.outcome === "right" || p.outcome === "wrong";
       const box = el("div", done ? `prediction ${p.outcome}` : "prediction");

@@ -28,6 +28,11 @@ if TYPE_CHECKING:
     from bot.intelligence.cognitive_feed import CognitiveFeed
 
 
+def _make_meme_library():
+    from bot.core.memes import MemeLibrary
+    return MemeLibrary("data/memes")
+
+
 def _make_overlay_feed():
     from bot.core.overlay_feed import OverlayFeed
     return OverlayFeed()
@@ -71,6 +76,9 @@ class AppState:
     # par abonné) et non file unique : OBS et un navigateur de prévisualisation
     # doivent voir la même chose.
     overlay_feed: "OverlayFeed" = field(default_factory=lambda: _make_overlay_feed())
+    # Bibliothèque de memes déposés à la main dans data/memes/ (bind-monté :
+    # l'owner y ajoute des images sans redémarrer).
+    memes: object = field(default_factory=lambda: _make_meme_library())
     # Dernière télémétrie de rendu envoyée par l'overlay (fps, pire frame, GPU).
     overlay_health: Optional[dict] = None
     _response_times: deque = field(default_factory=lambda: deque(maxlen=50))

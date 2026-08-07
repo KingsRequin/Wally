@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 
 public_router = APIRouter()
 admin_router = APIRouter()
@@ -53,6 +54,23 @@ def overlay_version() -> str:
             pass
     _version_cache.update(stamp=stamp, value=digest.hexdigest()[:10])
     return _version_cache["value"]
+
+
+@public_router.get("/meme/{name}")
+async def get_meme(name: str, request: Request):
+    """Sert une image du dossier des memes.
+
+    Publique parce que l'overlay tourne dans OBS sans session. `resolve` refuse
+    tout nom qui sortirait du dossier — c'est la seule barrière, elle est donc
+    stricte.
+    """
+    library = getattr(request.app.state.wally, "memes", None)
+    if library is None:
+        raise HTTPException(404, "Aucune bibliothèque de memes")
+    path = library.resolve(name)
+    if path is None:
+        raise HTTPException(404, "Meme introuvable")
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @public_router.get("/overlay-version")

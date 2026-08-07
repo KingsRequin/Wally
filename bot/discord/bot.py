@@ -293,6 +293,7 @@ class WallyDiscord(commands.Bot):
                     self.llm_secondary,
                     _stream_is_live,
                     stream_status=_stream_status,
+                    memes=getattr(_dash_state, "memes", None),
                 )
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator
