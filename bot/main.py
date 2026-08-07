@@ -161,6 +161,11 @@ async def main() -> None:
     tally = TallyService(db)
     discord_bot.tally = tally
 
+    # Paris sur l'issue d'une partie : le score cumulé vit d'un live à l'autre.
+    from bot.core.predictions import PredictionService
+    predictions = PredictionService(db)
+    discord_bot.predictions = predictions
+
     # Recherche dans l'historique : même racine que le logger, pour ne jamais
     # fouiller un autre répertoire que celui où les conversations sont écrites.
     from bot.core.history_search import HistorySearchService
@@ -271,6 +276,7 @@ async def main() -> None:
         twitch_bot.reaction_tracker = reaction_tracker
         twitch_bot.conv_log = conv_log
         twitch_bot.tally = tally
+        twitch_bot.predictions = predictions
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot

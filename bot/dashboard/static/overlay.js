@@ -236,6 +236,25 @@
       return box;
     },
 
+    prediction(p) {
+      const done = p.outcome === "right" || p.outcome === "wrong";
+      const box = el("div", done ? `prediction ${p.outcome}` : "prediction");
+      const head = el("div", "pred-head");
+      head.textContent = done
+        ? (p.outcome === "right" ? "Wally avait raison" : "Wally s'est planté")
+        : "Wally parie";
+      const bet = el("div", "pred-bet");
+      bet.textContent = String(p.bet || "");
+      box.append(head, bet);
+      // Le score cumulé fait tout l'intérêt : un pari isolé n'amuse personne.
+      if (Number(p.total) > 0) {
+        const score = el("div", "pred-score");
+        score.textContent = `${p.right} / ${p.total}`;
+        box.appendChild(score);
+      }
+      return box;
+    },
+
     bingo(p) {
       const cells = Array.isArray(p.cells) ? p.cells : [];
       const done = Array.isArray(p.done) ? p.done : [];

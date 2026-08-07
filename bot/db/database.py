@@ -357,6 +357,16 @@ CREATE TABLE IF NOT EXISTS tally_counters (
     last_hit_at REAL
 );
 
+-- Paris de Wally sur l'issue d'une partie. Le score cumulé est tout l'intérêt :
+-- un pari isolé n'amuse personne, « 7 bons sur 12 » se défend au fil des lives.
+CREATE TABLE IF NOT EXISTS predictions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    bet         TEXT    NOT NULL,
+    created_at  REAL    NOT NULL,
+    outcome     TEXT,               -- 'right' | 'wrong' | NULL tant que non tranché
+    resolved_at REAL
+);
+
 CREATE TABLE IF NOT EXISTS twitch_visits (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     channel     TEXT    NOT NULL,

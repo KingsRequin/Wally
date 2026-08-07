@@ -399,7 +399,8 @@ class OverlayNarrator:
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
-                "pinned", "uptime", "poll", "stats", "versus", "bingo")
+                "pinned", "uptime", "poll", "stats", "versus", "bingo",
+                "prediction")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -602,6 +603,21 @@ class OverlayNarrator:
         self._greeted.clear()
         self._poll = None
         self._bingo = None
+
+    def show_prediction(self, bet: str, *, outcome: str = "",
+                        right: int = 0, total: int = 0) -> bool:
+        """Montre un pari : à son ouverture, puis à son verdict.
+
+        Contrairement aux compteurs, ce widget n'est PAS rationné : un pari est
+        rare et c'est son verdict qui fait le sel. Le rater serait pire que de
+        déranger.
+        """
+        if not self._live():
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("prediction", bet=str(bet)[:90], outcome=outcome,
+                          right=int(right), total=int(total))
+        return True
 
     def show_counter(self, text: str) -> bool:
         """Montre un compteur qui vient de monter, si le budget le permet.

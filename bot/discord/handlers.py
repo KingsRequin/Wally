@@ -161,6 +161,70 @@ _TALLY_TOOLS = [
 ]
 
 
+_PREDICT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "predict",
+        "description": (
+            "Parier sur l'issue d'une partie, puis trancher quand tu la connais. "
+            "Sans `outcome`, tu ouvres un pari (`bet`). Avec `outcome`, tu tranches "
+            "celui en cours : « right » si tu avais vu juste, « wrong » sinon. "
+            "AUCUNE source ne te dit si une partie est gagnée — c'est toi qui "
+            "constates, en écoutant le vocal et en lisant le chat. Tranche quand tu "
+            "es sûr, et assume : ton score cumulé se voit à l'écran. Ne t'attribue "
+            "jamais un point sans avoir parié avant."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "bet": {"type": "string", "description": "Ton pronostic, court, ex. « on finit top 3 »."},
+                "outcome": {
+                    "type": "string", "enum": ["right", "wrong"],
+                    "description": "Pour trancher le pari en cours.",
+                },
+            },
+        },
+    },
+}
+
+
+async def run_predict_tool(bot, args: dict) -> str:
+    """Ouvre ou tranche un pari. Le score vient de la base, jamais du modèle."""
+    predictions = getattr(bot, "predictions", None)
+    narrator = _overlay_narrator(bot)
+    if predictions is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "Les paris ne sont pas disponibles."})
+    try:
+        outcome = (args.get("outcome") or "").strip()
+        if outcome in ("right", "wrong"):
+            row = await predictions.resolve(outcome == "right")
+            if row is None:
+                return json.dumps({"status": "no_bet", "message": (
+                    "Tu n'as aucun pari en cours — tu ne peux pas trancher."
+                )})
+            if narrator is not None:
+                narrator.show_prediction(row["bet"], outcome=outcome,
+                                         right=row["right"], total=row["total"])
+            verdict = "vu juste" if outcome == "right" else "planté"
+            return json.dumps({"status": "ok", "message": (
+                f"Pari tranché : tu t'es {verdict}. Score : {row['right']}/{row['total']}. "
+                "Annonce-le."
+            )})
+        row = await predictions.open(args.get("bet", ""))
+        if row is None:
+            return json.dumps({"status": "rejected", "message": "Il faut un pronostic."})
+        score = await predictions.score()
+        if narrator is not None:
+            narrator.show_prediction(row["bet"], right=score["right"], total=score["total"])
+        return json.dumps({"status": "ok", "message": (
+            f"Pari ouvert : « {row['bet'] }». Tranche-le quand tu connaîtras l'issue."
+        )})
+    except Exception as exc:  # noqa: BLE001 — un pari ne casse pas la réponse
+        logger.warning("Prédiction a échoué : {e}", e=exc)
+        return json.dumps({"status": "error", "message": "L'opération a échoué."})
+
+
 async def run_tally_tool(bot, name: str, args: dict) -> str:
     """Exécute un outil de comptage. Compte rendu honnête : les totaux viennent
     de la base, jamais du modèle."""
@@ -1883,6 +1947,8 @@ async def _respond(
         tools.extend(_NOTE_TOOLS)
         if getattr(bot, "tally", None) is not None:
             tools.extend(_TALLY_TOOLS)
+        if getattr(bot, "predictions", None) is not None:
+            tools.append(_PREDICT_TOOL)
         # Overlay : seulement s'il est branché — un outil mort ferait promettre
         # un affichage qui n'arriverait jamais.
         if _overlay_narrator(bot) is not None:
@@ -1910,6 +1976,8 @@ async def _respond(
                     "ces articles et colle leur marqueur de source [¹](<url>)."
                 )
             args = json.loads(arguments)
+            if name == "predict":
+                return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
             if name == "show_overlay":
