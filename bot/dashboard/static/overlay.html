@@ -9,6 +9,9 @@
        pendant qu'il joue). Fond transparent, tout est en position fixe. */
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    /* Couleur du nuage de pensée, partagée par la forme et ses satellites. */
+    :root { --cloud: rgba(26, 26, 38, .93); }
+
     body {
       background: transparent;
       overflow: hidden;
@@ -128,23 +131,46 @@
       border-color: transparent rgba(18, 18, 22, .88) transparent transparent;
     }
 
-    /* Bulle de pensée : nuage + petits ronds (convention BD). */
+    /* Bulle de pensée : un vrai nuage de BD, pour qu'on ne la confonde JAMAIS
+       avec une réplique. La forme est faite de cercles en radial-gradient plutôt
+       que d'éléments fixes : exprimés en pourcentages, ils suivent la taille du
+       texte au lieu de casser dès qu'il tient sur deux lignes. */
     #bubble.thought {
-      border-radius: 22px;
       font-style: italic;
-      background: rgba(24, 24, 32, .8);
-      border-style: dashed;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      padding: 24px 34px;
+      color: #f2f0ff;
+      /* Les bosses du pourtour, puis le corps plein au centre. */
+      /* Silhouette vectorielle plutôt que des gradients : en pourcentages,
+         les cercles s'aplatissaient avec la boîte et le nuage redevenait un
+         rectangle. Le SVG s'étire (preserveAspectRatio=none) en gardant ses
+         bosses, quelle que soit la longueur du texte. */
+      background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20200%20100%22%20preserveAspectRatio%3D%22none%22%3E%3Cg%20fill%3D%22%231a1a26%22%20fill-opacity%3D%220.94%22%3E%3Cellipse%20cx%3D%2242%22%20cy%3D%2238%22%20rx%3D%2234%22%20ry%3D%2230%22%2F%3E%3Cellipse%20cx%3D%2290%22%20cy%3D%2226%22%20rx%3D%2240%22%20ry%3D%2226%22%2F%3E%3Cellipse%20cx%3D%22150%22%20cy%3D%2236%22%20rx%3D%2238%22%20ry%3D%2229%22%2F%3E%3Cellipse%20cx%3D%2252%22%20cy%3D%2272%22%20rx%3D%2238%22%20ry%3D%2227%22%2F%3E%3Cellipse%20cx%3D%22110%22%20cy%3D%2278%22%20rx%3D%2246%22%20ry%3D%2224%22%2F%3E%3Cellipse%20cx%3D%22162%22%20cy%3D%2270%22%20rx%3D%2236%22%20ry%3D%2227%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2226%22%20width%3D%22172%22%20height%3D%2252%22%20rx%3D%2224%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      /* Les satellites débordent volontairement sous le nuage : le garde-fou
+         anti-débordement de la bulle de dialogue les rognerait. Le texte d'une
+         pensée est borné à 90 caractères, il n'a pas besoin de ce garde-fou. */
+      overflow: visible;
+      filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .5));
     }
+    /* Les deux bulles satellites qui descendent vers l'avatar : la signature
+       visuelle de la pensée en BD. */
     #bubble.thought::after,
     #bubble.thought::before {
       content: "";
       position: absolute;
-      background: rgba(24, 24, 32, .8);
-      border: 1px dashed rgba(255, 255, 255, .14);
+      background: var(--cloud);
       border-radius: 50%;
     }
-    #bubble.thought::after  { left: -10px; bottom: 10px; width: 12px; height: 12px; }
-    #bubble.thought::before { left: -20px; bottom: 0;    width: 7px;  height: 7px;  }
+    #bubble.thought::after  { left: 26px; bottom: -3px;  width: 13px; height: 13px; }
+    #bubble.thought::before { left: 8px;  bottom: -14px; width: 8px;  height: 8px;  }
+    /* Ancrage à droite : les satellites descendent vers l'avatar, donc à droite. */
+    body[data-side="right"] #bubble.thought::after  { left: auto; right: 26px; }
+    body[data-side="right"] #bubble.thought::before { left: auto; right: 8px; }
 
     /* ── Trois points, pendant la génération ────────────────────────────── */
     .dots { display: inline-flex; gap: 5px; align-items: center; height: 10px; }

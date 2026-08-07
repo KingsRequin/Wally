@@ -273,7 +273,13 @@ class OverlayNarrator:
 
         Retourne le texte affiché, ou None si rien n'a été publié.
         """
-        if not (text or "").strip() or not self._may_speak():
+        if not (text or "").strip():
+            return None
+        if not self._may_speak():
+            # Distinguer les deux refus : « pas de live » et « trop tôt » n'ont
+            # pas la même correction.
+            logger.info("Overlay: pensée retenue ({r})",
+                        r="hors live" if not self._live() else "intervalle non écoulé")
             return None
 
         # Réserve le créneau avant l'appel : deux pensées quasi simultanées ne
@@ -289,6 +295,7 @@ class OverlayNarrator:
         if not short:
             self._feed.thinking(False)
             return None
+        logger.info("Overlay: pensée affichée — « {t} »", t=short)
         self._feed.think_aloud(short)
         return short
 
@@ -844,9 +851,14 @@ class OverlayNarrator:
         short = " ".join((raw or "").split()).strip('"').strip()
         # Le prompt répond RIEN quand la pensée n'a aucun intérêt pour un
         # spectateur — se taire est une réponse valide.
+        # En INFO : une pensée qui n'arrive jamais à l'écran est invisible dans
+        # les logs, et on ne sait pas si c'est le budget, le « RIEN » ou la
+        # longueur qui l'a retenue.
         if not short or short.upper().rstrip(".") == "RIEN":
+            logger.info("Overlay: pensée jugée sans intérêt pour le public (RIEN)")
             return None
         if len(short) > _MAX_BUBBLE_CHARS:
-            logger.debug("OverlayNarrator: condensation trop longue ({n} car)", n=len(short))
+            logger.info("Overlay: condensation trop longue ({n} car) : {t}",
+                        n=len(short), t=short[:80])
             return None
         return short
