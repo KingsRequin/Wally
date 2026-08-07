@@ -12,6 +12,7 @@ from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
 from bot.core.conversation_log import new_trace_id
+from bot.core.text_clean import strip_stage_directions
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
@@ -514,6 +515,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             import re as _re
             reply = _re.sub(r"^\[react:.+?\]\s*", "", reply)
 
+        # Avant la troncature : une didascalie retirée après coup laisserait un
+        # message coupé au mauvais endroit.
+        reply = strip_stage_directions(reply)
+
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
@@ -672,6 +677,7 @@ async def _announce_overlay_image(
         if reply.startswith("[react:"):
             import re as _re
             reply = _re.sub(r"^\[react:.+?\]\s*", "", reply)
+        reply = strip_stage_directions(reply)
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
