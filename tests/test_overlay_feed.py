@@ -146,3 +146,40 @@ async def test_le_desabonnement_a_lieu_a_la_deconnexion():
 
     await gen.aclose()                      # déconnexion
     assert feed.subscriber_count == 0
+
+
+# ── amorçage d'un client qui se (re)connecte ──
+
+def test_un_widget_perime_n_est_pas_rejoue():
+    """Vu en prod : la connexion SSE saute, l'overlay se réamorce, et un dé lancé
+    dix minutes plus tôt repasse — avec la file d'attente, tous s'enchaînent et
+    l'overlay a l'air de tourner en boucle."""
+    import time
+
+    f = OverlayFeed()
+    f.widget("dice", results=[4])
+    for e in f._buffer:
+        e["ts"] = time.time() - 600
+    assert f.recent() == []
+
+
+def test_un_widget_encore_a_l_ecran_est_rejoue():
+    """C'est la raison d'être de l'amorçage : ne pas démarrer sur du vide."""
+    f = OverlayFeed()
+    f.widget("poll", question="?", options=["a", "b"], duration=30)
+    assert len(f.recent()) == 1
+
+
+def test_les_evenements_sans_duree_ne_sont_jamais_rejoues():
+    """`thinking` et `react` sont instantanés : les rejouer allumerait une
+    animation sans suite."""
+    f = OverlayFeed()
+    f.thinking(True)
+    f.react("stream_event")
+    assert f.recent() == []
+
+
+def test_une_bulle_recente_est_rejouee():
+    f = OverlayFeed()
+    f.say("salut le chat")
+    assert len(f.recent()) == 1

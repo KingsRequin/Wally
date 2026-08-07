@@ -35,6 +35,7 @@ _WIDGET_WORDS = {
     "prediction": "un pari sur l'issue d'une partie, avec mon score cumulé",
     "meme": "un meme de la communauté (je ne le vois pas, je connais sa description)",
     "rps": "un chifoumi où le chat vote contre moi",
+    "hangman": "un pendu où le chat propose des lettres",
 }
 
 

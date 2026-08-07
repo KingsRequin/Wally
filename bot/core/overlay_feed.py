@@ -60,8 +60,24 @@ class OverlayFeed:
         return len(self._queues)
 
     def recent(self) -> list[dict]:
-        """Derniers événements, pour amorcer un client qui vient de se connecter."""
-        return list(self._buffer)
+        """Événements encore VIVANTS, pour amorcer un client qui se connecte.
+
+        L'amorçage sert à ne pas démarrer sur un écran vide au milieu d'un live.
+        Mais un widget est éphémère : rejouer un dé lancé il y a dix minutes
+        parce que la connexion SSE a sauté donne l'impression que l'overlay
+        tourne en boucle. On ne renvoie donc que ce qui serait encore à l'écran.
+        """
+        now = time.time()
+        alive: list[dict] = []
+        for event in self._buffer:
+            age = now - float(event.get("ts") or now)
+            span = float(event.get("duration") or (event.get("params") or {}).get("duration") or 0)
+            # `thinking` et `react` n'ont pas de durée : ils sont instantanés et
+            # ne doivent jamais être rejoués.
+            if span <= 0 or age > span:
+                continue
+            alive.append(event)
+        return alive
 
     # ── publication ───────────────────────────────────────────────────────
 

@@ -236,6 +236,76 @@
       return box;
     },
 
+    hangman(p) {
+      const box = el("div", `hangman${p.won ? " won" : p.lost ? " lost" : ""}`);
+
+      // Potence + pendu : les six membres apparaissent un par un, dessinés en
+      // SVG. Chaque trait ajouté se trace (stroke-dashoffset) au lieu de
+      // surgir — c'est ce qui rend la faute lisible sans texte.
+      const misses = Math.max(0, Math.min(6, Number(p.misses) || 0));
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 120 130");
+      svg.setAttribute("class", "gallows");
+      const line = (x1, y1, x2, y2, cls) => {
+        const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+        l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+        if (cls) l.setAttribute("class", cls);
+        return l;
+      };
+      // La potence est toujours là : c'est le décor, pas une faute.
+      [[10,125,70,125],[30,125,30,10],[30,10,85,10],[85,10,85,26]]
+        .forEach(([a,b,c,d]) => svg.appendChild(line(a,b,c,d,"post")));
+      const parts = [];
+      const head = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      head.setAttribute("cx", 85); head.setAttribute("cy", 38);
+      head.setAttribute("r", 12); head.setAttribute("class", "part");
+      parts.push(head);
+      parts.push(line(85, 50, 85, 85, "part"));    // corps
+      parts.push(line(85, 58, 68, 74, "part"));    // bras gauche
+      parts.push(line(85, 58, 102, 74, "part"));   // bras droit
+      parts.push(line(85, 85, 70, 108, "part"));   // jambe gauche
+      parts.push(line(85, 85, 100, 108, "part"));  // jambe droite
+      parts.slice(0, misses).forEach((n, i) => {
+        n.style.setProperty("--i", String(i));
+        svg.appendChild(n);
+      });
+      box.appendChild(svg);
+
+      const right = el("div", "hangman-side");
+      if (p.hint) {
+        const hint = el("div", "hangman-hint");
+        hint.textContent = String(p.hint);
+        right.appendChild(hint);
+      }
+      const word = el("div", "hangman-word");
+      (Array.isArray(p.mask) ? p.mask : []).forEach((c, i) => {
+        const slot = el("span", c ? "slot filled" : "slot");
+        slot.textContent = c || "";
+        slot.style.setProperty("--i", String(i));
+        word.appendChild(slot);
+      });
+      right.appendChild(word);
+
+      const missed = Array.isArray(p.missed) ? p.missed : [];
+      if (missed.length) {
+        const bad = el("div", "hangman-missed");
+        bad.textContent = missed.join(" ").toUpperCase();
+        right.appendChild(bad);
+      }
+      if (p.won || p.lost) {
+        const verdict = el("div", "hangman-verdict");
+        verdict.textContent = p.won ? "trouvé !" : `raté — c'était « ${p.word} »`;
+        right.appendChild(verdict);
+      } else {
+        const help = el("div", "hangman-help");
+        help.textContent = "proposez une lettre dans le chat";
+        right.appendChild(help);
+      }
+      box.appendChild(right);
+      return box;
+    },
+
     rps(p) {
       const MOVES = ["pierre", "feuille", "ciseaux"];
       const HANDS = { pierre: "✊", feuille: "✋", ciseaux: "✌️" };

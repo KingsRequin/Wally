@@ -771,6 +771,11 @@
 
   <div id="widgets"></div>
 
-  <script src="/static/overlay.js"></script>
+  <script>
+class EventSource { constructor(){ this.onmessage=null;this.onerror=null;
+  window.__push=(o)=>this.onmessage&&this.onmessage({data:JSON.stringify(o)}); } close(){} }
+window.EventSource=EventSource; window.fetch=()=>Promise.resolve({ok:true});
+</script>
+<script src="/static/overlay.js?v=1786091852"></script>
 </body>
 </html>

@@ -21,6 +21,7 @@ import asyncio
 import json
 import random
 import time
+import unicodedata
 from urllib.parse import quote
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -115,7 +116,7 @@ OVERLAY_TOOL_SPEC = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo", "meme", "rps"],
+                             "bingo", "meme", "rps", "hangman"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -209,6 +210,9 @@ class OverlayNarrator:
         # Chifoumi en cours (widget « le chat contre Wally »).
         self._rps: Optional[dict] = None
         self._rps_task: Optional[asyncio.Task] = None
+        # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
+        # lettres trouvées, sinon les viewers le liraient à l'écran.
+        self._hangman: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -416,7 +420,7 @@ class OverlayNarrator:
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
-                "prediction", "meme", "rps")
+                "prediction", "meme", "rps", "hangman")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -508,6 +512,13 @@ class OverlayNarrator:
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
+
+        elif widget == "hangman":
+            if not self.start_hangman(str(extra.get("word") or ""),
+                                      str(extra.get("hint") or comment or "")):
+                return None
+            return {"widget": "hangman", "letters": len(set(
+                c for c in self._fold(str(extra.get("word"))) if c.isalpha()))}
 
         elif widget == "rps":
             # Deux gestes : ouvrir la manche, ou la trancher (rare — la clôture
@@ -612,6 +623,7 @@ class OverlayNarrator:
             return
         self._count_vote(author, text)
         self._count_rps(author, text)
+        self._count_hangman(author, text)
         await self._maybe_greet(author, days_since)
 
     async def _maybe_greet(self, author: str, days: Optional[float]) -> None:
@@ -648,6 +660,7 @@ class OverlayNarrator:
         self._poll = None
         self._bingo = None
         self._rps = None
+        self._hangman = None
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:
@@ -712,6 +725,75 @@ class OverlayNarrator:
         logger.info("Overlay: bingo — « {c} » cochée{f}",
                     c=bingo["cells"][i], f=" (grille complète)" if full else "")
         return {"widget": "bingo", "checked": bingo["cells"][i], "full": full}
+
+    # ── pendu ─────────────────────────────────────────────────────────────
+
+    _HANGMAN_MAX_MISSES = 6   # tête, corps, deux bras, deux jambes
+
+    @staticmethod
+    def _fold(text: str) -> str:
+        """Minuscules sans accents : « FLÈCHE » et « fleche » sont le même mot."""
+        text = unicodedata.normalize("NFD", (text or "").lower())
+        return "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+    def start_hangman(self, word: str, hint: str = "") -> bool:
+        """Ouvre une partie. Le mot n'est jamais publié — seules ses lettres le sont."""
+        folded = self._fold(word)
+        letters = [c for c in folded if c.isalpha()]
+        if len(letters) < 3 or len(letters) > 16 or not self._live():
+            return False
+        self._hangman = {
+            "word": folded,
+            "display": " ".join(word.split())[:40],
+            "hint": " ".join((hint or "").split())[:60],
+            "found": set(),
+            "missed": [],
+        }
+        self._publish_hangman()
+        logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(set(letters)))
+        return True
+
+    def _count_hangman(self, author: str, text: str) -> None:
+        """Une proposition = UNE lettre seule. Sinon tout message en contiendrait."""
+        game = self._hangman
+        if not game:
+            return
+        token = self._fold(text).strip()
+        if len(token) != 1 or not token.isalpha():
+            return
+        if token in game["found"] or token in game["missed"]:
+            return
+        if token in game["word"]:
+            game["found"].add(token)
+            won = all(c in game["found"] for c in game["word"] if c.isalpha())
+            self._publish_hangman(last=token, won=won)
+            if won:
+                logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
+                self._hangman = None
+            return
+        game["missed"].append(token)
+        lost = len(game["missed"]) >= self._HANGMAN_MAX_MISSES
+        self._publish_hangman(last=token, lost=lost)
+        if lost:
+            logger.info("Overlay: pendu perdu ({w})", w=game["display"])
+            self._hangman = None
+
+    def _publish_hangman(self, last: str = "", won: bool = False, lost: bool = False) -> None:
+        game = self._hangman
+        if not game:
+            return
+        # Le mot part lettre par lettre, masquée tant qu'elle n'est pas trouvée.
+        mask = [
+            (c if (not c.isalpha() or c in game["found"] or won or lost) else "")
+            for c in game["word"]
+        ]
+        self._feed.widget(
+            "hangman", mask=mask, missed=list(game["missed"]),
+            misses=len(game["missed"]), max_misses=self._HANGMAN_MAX_MISSES,
+            hint=game["hint"], last=last, won=won, lost=lost,
+            word=game["display"] if (won or lost) else "",
+            duration=12 if (won or lost) else 10,
+        )
 
     # ── chifoumi : le chat contre Wally ───────────────────────────────────
 
