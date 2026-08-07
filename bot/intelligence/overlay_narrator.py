@@ -113,7 +113,8 @@ OVERLAY_TOOL_SPEC = {
                 "widget": {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
-                             "pinned", "uptime", "counter", "poll", "stats", "versus"],
+                             "pinned", "uptime", "counter", "poll", "stats", "versus",
+                             "bingo"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -143,6 +144,11 @@ OVERLAY_TOOL_SPEC = {
                 "question": {"type": "string", "description": "La question, pour poll."},
                 "seconds": {"type": "integer", "description": "Durée d'un sondage (10 par défaut, 120 max)."},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
+                "cells": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Pour bingo : 4 à 9 pronostics courts sur ce qui va arriver pendant le live.",
+                },
+                "check": {"type": "integer", "description": "Pour bingo : numéro de la case (0 = la première) que tu viens de voir se réaliser."},
                 "player": {"type": "string", "description": "Le pseudo, pour stats."},
                 "lines": {
                     "type": "array", "items": {"type": "string"},
@@ -192,6 +198,8 @@ class OverlayNarrator:
         self._poll: Optional[dict] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._last_poll: Optional[dict] = None
+        # Grille du bingo (widget 20) : vit le temps d'un live.
+        self._bingo: Optional[dict] = None
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
 
@@ -391,7 +399,7 @@ class OverlayNarrator:
     # Widgets connus. Le résultat est tiré ICI et non dans le navigateur : c'est
     # ce qui permet à Wally de commenter son propre tirage — et de tricher.
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
-                "pinned", "uptime", "poll", "stats", "versus")
+                "pinned", "uptime", "poll", "stats", "versus", "bingo")
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
@@ -484,6 +492,20 @@ class OverlayNarrator:
             return {"widget": "poll", "question": question, "options": options,
                     "seconds": seconds}
 
+        elif widget == "bingo":
+            # Deux gestes sur le même widget : ouvrir la grille, ou cocher une
+            # case. Le distinguer par la présence de `cells` évite d'exposer deux
+            # outils au modèle pour une seule idée.
+            cells = [str(c).strip()[:34] for c in (extra.get("cells") or []) if str(c).strip()]
+            if cells:
+                if not self.start_bingo(cells):
+                    return None
+                return {"widget": "bingo", "cells": self._bingo["cells"]}
+            checked = self.check_bingo(extra.get("check"))
+            if checked is None:
+                return None
+            return checked
+
         elif widget == "stats":
             # Les chiffres viennent de l'outil Apex, pas d'ici : Wally les a lus
             # avant d'appeler, on se contente de les mettre en forme.
@@ -520,15 +542,10 @@ class OverlayNarrator:
         # Le commentaire accompagne le widget : c'est lui qui fait le personnage,
         # pas l'animation. Il consomme le budget des bulles.
         if comment:
-            # Même règle que les pensées : au-delà, ce n'est plus une réplique
-            # d'overlay mais un pavé qui pousse le décor hors du cadre. Le widget
-            # s'affiche quand même — l'animation se suffit.
-            if len(comment) > _MAX_BUBBLE_CHARS:
-                logger.debug("Overlay: commentaire trop long ({n} car), widget seul",
-                             n=len(comment))
-            else:
-                self._mark_spoken()
-                self._feed.say(comment, mode="speech")
+            # La bulle s'efface pendant un widget : la publier la ferait surgir à
+            # contretemps, une fois le widget parti. Le créneau reste consommé —
+            # une pensée ne doit pas s'empiler juste derrière.
+            self._mark_spoken()
         return {"widget": widget, **params}
 
     # ── saluts (widget 9) ─────────────────────────────────────────────────
@@ -581,9 +598,46 @@ class OverlayNarrator:
         self._feed.say(short, mode="speech")
 
     def reset_live(self) -> None:
-        """Remet à zéro l'état lié à un live (saluts déjà faits, sondage)."""
+        """Remet à zéro l'état lié à un live (saluts, sondage, bingo)."""
         self._greeted.clear()
         self._poll = None
+        self._bingo = None
+
+    # ── bingo du stream (widget 20) ───────────────────────────────────────
+
+    def start_bingo(self, cells: list[str]) -> bool:
+        """Ouvre une grille de bingo pour le live.
+
+        Jusqu'à 9 cases, en grille de trois colonnes : un widget occupe toute la
+        zone et fait s'effacer l'avatar comme la bulle, il n'a personne à ménager.
+        """
+        cells = [str(c).strip()[:34] for c in (cells or []) if str(c).strip()][:9]
+        if len(cells) < 2 or not self._live():
+            return False
+        self._bingo = {"cells": cells, "done": [False] * len(cells)}
+        self._feed.widget("bingo", cells=cells, done=list(self._bingo["done"]))
+        logger.info("Overlay: bingo ouvert ({n} cases)", n=len(cells))
+        return True
+
+    def check_bingo(self, index) -> Optional[dict]:
+        """Coche une case. Retourne None si rien n'a changé — le widget ne doit
+        pas réapparaître pour une case déjà cochée."""
+        bingo = self._bingo
+        if not bingo:
+            return None
+        try:
+            i = int(index)
+        except (TypeError, ValueError):
+            return None
+        if not 0 <= i < len(bingo["cells"]) or bingo["done"][i]:
+            return None
+        bingo["done"][i] = True
+        full = all(bingo["done"])
+        self._feed.widget("bingo", cells=bingo["cells"], done=list(bingo["done"]),
+                          just=i, full=full, duration=12)
+        logger.info("Overlay: bingo — « {c} » cochée{f}",
+                    c=bingo["cells"][i], f=" (grille complète)" if full else "")
+        return {"widget": "bingo", "checked": bingo["cells"][i], "full": full}
 
     # ── sondage (widget 6) ────────────────────────────────────────────────
 

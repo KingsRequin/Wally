@@ -236,6 +236,36 @@
       return box;
     },
 
+    bingo(p) {
+      const cells = Array.isArray(p.cells) ? p.cells : [];
+      const done = Array.isArray(p.done) ? p.done : [];
+      const classesBox = ["bingo"];
+      if (p.full) classesBox.push("full");
+      if (cells.length <= 4) classesBox.push("few");   // 2 colonnes suffisent
+      const box = el("div", classesBox.join(" "));
+      const title = el("div", "bingo-title");
+      title.textContent = p.full ? "BINGO !" : "Bingo du stream";
+      box.appendChild(title);
+      const grid = el("div", "grid");
+      box.appendChild(grid);
+      cells.forEach((label, i) => {
+        // `just` met en avant la case qu'on vient de cocher : sans ça, on ne
+        // sait pas ce qui a changé dans une grille déjà à moitié pleine.
+        const classes = ["cell"];
+        if (done[i]) classes.push("done");
+        if (i === p.just) classes.push("just");
+        const row = el("div", classes.join(" "));
+        row.style.setProperty("--i", String(i));
+        const mark = el("span", "mark");
+        mark.textContent = done[i] ? "✓" : "";
+        const text = el("span", "txt");
+        text.textContent = String(label);
+        row.append(mark, text);
+        grid.appendChild(row);
+      });
+      return box;
+    },
+
     stats(p) {
       const box = el("div", "stats");
       if (p.player) {

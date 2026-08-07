@@ -169,24 +169,30 @@
     #widgets {
       position: absolute;
       left: 12px;
+      right: 12px;
       bottom: 12px;
-      width: 200px;
+      top: 12px;
       display: flex;
       align-items: flex-end;
+      justify-content: flex-start;
       pointer-events: none;
       /* Perspective partagée : les enfants tournent en 3D réelle. */
       perspective: 600px;
     }
+    /* La bulle s'efface pendant un widget : l'écran est petit, mieux vaut une
+       chose lisible que deux qui se disputent la place. */
+    body.widget-on #bubble { opacity: 0; transform: translateY(6px) scale(.97); }
+
     /* L'avatar cède la place, sans disparaître brutalement. */
     #avatar-slot > * { transition: transform .35s cubic-bezier(.3, .9, .3, 1), opacity .3s ease; }
     .widget {
-      /* Largeur imposée : les cartes (sondage, stats, comparaison) demandent
-         `width: 100%`, ce qui serait circulaire sur un parent auto-dimensionné.
-         Les petits widgets (pièce, dé) gardent leur taille et s'alignent du
-         côté d'ancrage. */
+      /* Un widget peut occuper toute la zone : l'avatar ET la bulle s'effacent
+         pendant son affichage, il n'a personne à ménager. Chaque widget fixe
+         ensuite sa propre largeur. */
       width: 100%;
       display: flex;
       justify-content: flex-start;
+      align-items: flex-end;
       opacity: 0;
       /* Le widget monte depuis la place de l'avatar, qui s'efface en même temps
          — un passage de relais plutôt qu'une superposition. */
@@ -342,7 +348,7 @@
 
     /* Sondage — les viewers votent en tapant le numéro dans le chat. */
     .poll {
-      width: 100%;
+      width: 260px;
       padding: 10px 12px;
       background: rgba(18, 18, 22, .88);
       border: 1px solid rgba(255, 255, 255, .14);
@@ -429,9 +435,62 @@
       transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
     }
 
+    /* Bingo du stream — liste plutôt que grille : à 200 px, une grille 3×3
+       serait illisible. Les viewers regardent les cases se cocher. */
+    .bingo {
+      /* Vraie grille : la place le permet, l'avatar et la bulle s'effacent. */
+      width: 420px;
+      max-width: 100%;
+      padding: 10px 12px;
+      background: rgba(18, 18, 22, .88);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+    }
+    .bingo-title {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+    }
+    .bingo.full .bingo-title {
+      color: #7dffb0; font-weight: 800; letter-spacing: .12em;
+      animation: win-pop .6s cubic-bezier(.22, 1.5, .4, 1);
+    }
+    /* 3 colonnes tant qu'il y a assez de cases, sinon autant que nécessaire. */
+    .bingo .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .bingo.few .grid { grid-template-columns: repeat(2, 1fr); }
+    .bingo .cell {
+      display: flex; gap: 6px; align-items: flex-start;
+      min-height: 46px; padding: 6px 7px;
+      font-size: 12px; line-height: 1.2;
+      background: rgba(255, 255, 255, .05);
+      border: 1px solid rgba(255, 255, 255, .09);
+      border-radius: 8px;
+      animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
+      animation-delay: calc(var(--i, 0) * 55ms + 100ms);
+    }
+    .bingo .mark {
+      width: 11px; flex: 0 0 11px; color: #7dffb0; font-weight: 700;
+    }
+    .bingo .cell.done {
+      background: rgba(52, 209, 127, .12);
+      border-color: rgba(125, 255, 176, .3);
+    }
+    .bingo .cell.done .txt {
+      color: rgba(255, 255, 255, .55);
+      text-decoration: line-through;
+    }
+    /* La case qu'on vient de cocher : sinon on ne voit pas ce qui a changé. */
+    .bingo .cell.just .txt { color: #7dffb0; text-decoration: none; font-weight: 700; }
+    .bingo .cell.just { animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1); }
+
     /* Stats d'un joueur — les chiffres viennent de l'API, pas du modèle. */
     .stats, .versus {
-      width: 100%;
+      width: 260px;
       padding: 10px 12px;
       background: rgba(18, 18, 22, .88);
       border: 1px solid rgba(255, 255, 255, .14);

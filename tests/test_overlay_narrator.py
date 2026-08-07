@@ -240,14 +240,15 @@ def test_un_de_sans_resultat_est_tire_au_hasard():
     assert 1 <= q.get_nowait()["params"]["result"] <= 6
 
 
-def test_le_commentaire_accompagne_le_widget():
-    """C'est le commentaire qui fait le personnage, pas l'animation."""
+def test_un_widget_n_ouvre_pas_de_bulle():
+    """La bulle s'efface pendant un widget : la publier la ferait surgir à
+    contretemps, une fois le widget parti."""
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("coinflip", "bon, pile alors")
-    events = [q.get_nowait() for _ in range(2)]
-    assert events[0]["type"] == "widget"
-    assert events[1]["type"] == "bubble" and events[1]["text"] == "bon, pile alors"
+    events = [q.get_nowait() for _ in range(q.qsize())]
+    assert [e for e in events if e["type"] == "widget"]
+    assert not [e for e in events if e["type"] == "bubble"]
 
 
 def test_le_widget_consomme_le_budget_des_bulles():
@@ -616,23 +617,14 @@ def test_le_tirage_de_la_roue_est_rendu_a_l_appelant():
     assert out["options"][out["index"]] in ("A", "B", "C")
 
 
-def test_un_commentaire_trop_long_n_affiche_que_le_widget():
-    """Non borné, il poussait le décor hors du cadre OBS — le LLM l'écrit
-    librement, contrairement aux pensées qui passent par la condensation."""
+def test_un_commentaire_meme_long_ne_casse_rien():
+    """Il n'est plus affiché du tout, sa longueur n'a donc plus d'effet."""
     n, feed, _ = _narrator()
     q = feed.subscribe()
     assert n.show_widget("dice", "x" * 200) is not None
     events = [q.get_nowait() for _ in range(q.qsize())]
-    assert [e for e in events if e["type"] == "widget"]      # le dé s'affiche
-    assert not [e for e in events if e["type"] == "bubble"]  # la bulle, non
-
-
-def test_un_commentaire_court_reste_affiche():
-    n, feed, _ = _narrator()
-    q = feed.subscribe()
-    n.show_widget("dice", "allez, on tente")
-    events = [q.get_nowait() for _ in range(q.qsize())]
-    assert [e for e in events if e["type"] == "bubble"]
+    assert [e for e in events if e["type"] == "widget"]
+    assert not [e for e in events if e["type"] == "bubble"]
 
 
 # ── demande vocale (chemin outillé) ──
@@ -740,3 +732,64 @@ def test_la_comparaison_est_affichee():
     out = n.show_widget("versus", "", label="Kills", left_name="Azrael",
                         left_value=82522, right_name="Requin", right_value=41000)
     assert out["left_value"] == 82522 and out["right_name"] == "Requin"
+
+
+# ── bingo du stream (widget 20) ──
+
+def test_le_bingo_s_ouvre_avec_ses_cases():
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    assert n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"]) is not None
+    ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
+    assert ev["params"]["done"] == [False, False]
+
+
+def test_le_bingo_refuse_une_grille_d_une_case():
+    n, _, _ = _narrator()
+    assert n.show_widget("bingo", "", cells=["seule"]) is None
+
+
+def test_le_bingo_est_plafonne_a_neuf_cases():
+    """Trois colonnes : au-delà, la grille déborde du cadre."""
+    n, _, _ = _narrator()
+    out = n.show_widget("bingo", "", cells=[f"case {i}" for i in range(20)])
+    assert len(out["cells"]) == 9
+
+
+def test_cocher_une_case_signale_laquelle():
+    n, feed, _ = _narrator()
+    n.start_bingo(["il blâme le ping", "il rage", "il dit qu'il arrête"])
+    q = feed.subscribe()
+    out = n.show_widget("bingo", "", check=1)
+    assert out["checked"] == "il rage" and out["full"] is False
+    ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
+    assert ev["params"]["just"] == 1
+    assert ev["params"]["done"] == [False, True, False]
+
+
+def test_une_case_deja_cochee_ne_reaffiche_rien():
+    """Sinon la grille resurgit à chaque fois qu'il reparle du même sujet."""
+    n, _, _ = _narrator()
+    n.start_bingo(["a", "b"])
+    assert n.show_widget("bingo", "", check=0) is not None
+    assert n.show_widget("bingo", "", check=0) is None
+
+
+def test_la_grille_complete_est_signalee():
+    n, feed, _ = _narrator()
+    n.start_bingo(["a", "b"])
+    n.check_bingo(0)
+    out = n.check_bingo(1)
+    assert out["full"] is True
+
+
+def test_cocher_sans_grille_ne_fait_rien():
+    n, _, _ = _narrator()
+    assert n.show_widget("bingo", "", check=0) is None
+
+
+def test_un_nouveau_live_efface_la_grille():
+    n, _, _ = _narrator()
+    n.start_bingo(["a", "b"])
+    n.reset_live()
+    assert n._bingo is None
