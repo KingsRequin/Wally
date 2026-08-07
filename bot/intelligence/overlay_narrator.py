@@ -136,7 +136,9 @@ OVERLAY_TOOL_SPEC = {
                         "meme = une image de la communauté · "
                         "rps = chifoumi, le chat vote contre toi · "
                         "bingo = une grille de pronostics sur le live · "
-                        "hangman = le pendu, le chat propose des lettres · "
+                        "hangman = le pendu — TU choisis le mot et tu lances "
+                        "dans la foulée, le chat propose ensuite des lettres, "
+                        "une par message · "
                         "goal = un objectif de follows/subs/bits qui se remplit "
                         "tout seul · talkers = le podium des plus bavards"
                     ),
@@ -180,8 +182,20 @@ OVERLAY_TOOL_SPEC = {
                 "right_value": {"type": "number", "description": "Sa valeur chiffrée, pour versus."},
                 "text": {"type": "string", "description": "Le message mis en avant, pour pinned."},
                 "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
-                "word": {"type": "string", "description": "Pour hangman : le mot à deviner (3 à 20 lettres). Sans lui, rien ne se lance."},
-                "hint": {"type": "string", "description": "Pour hangman : un indice court sur le mot."},
+                "word": {"type": "string", "description": (
+                    "Pour hangman : le mot à deviner, 3 à 16 lettres. C'est TOI "
+                    "qui le choisis, tout seul, dans le même appel — ne demande "
+                    "jamais qu'on t'en propose un, c'est le principe du jeu que "
+                    "les autres le devinent. Prends-le dans l'univers de la "
+                    "chaîne (un jeu, une légende Apex, une expression maison). "
+                    "Sans lui rien ne se lance, et ne le répète JAMAIS dans le "
+                    "chat : tu ruinerais la partie."
+                )},
+                "hint": {"type": "string", "description": (
+                    "Pour hangman : un indice court. Donne-le ici sans crainte — "
+                    "il reste caché et n'apparaît à l'écran qu'à deux essais "
+                    "restants. Ne l'écris donc pas dans le chat au lancement."
+                )},
                 "done": {"type": "string", "description": "Pour countdown : le texte affiché quand le compte à rebours arrive à zéro."},
                 "close": {
                     "type": "boolean",
@@ -972,7 +986,15 @@ class OverlayNarrator:
         if self._hangman:
             game = self._hangman
             remaining = len({c for c in game["word"] if c.isalpha()} - game["found"])
-            lines.append(f"Pendu : « {game['display']} », {remaining} lettres à trouver.")
+            # SANS le mot ni l'indice : ce bloc part dans le prompt, et tout le
+            # reste du widget s'applique à ne jamais laisser fuir le mot. Le
+            # compte des lettres suffit à animer la partie.
+            lines.append(
+                f"Pendu en cours : {remaining} lettres restent à trouver, "
+                f"{self._HANGMAN_MAX_MISSES - len(game['missed'])} essais avant "
+                "la fin. Les messages d'une seule lettre sont des propositions, "
+                "comptées automatiquement — n'y réponds pas une par une."
+            )
         if self._goal:
             goal = self._goal
             lines.append(f"Objectif « {goal['label']} » : {goal['count']}/{goal['target']}.")
@@ -1295,10 +1317,16 @@ class OverlayNarrator:
             (c if (not c.isalpha() or c in game["found"] or won or lost) else "")
             for c in game["word"]
         ]
+        # L'indice est un SECOURS, pas une ouverture : le donner au lancement
+        # (ce que faisait ce widget) revient à résoudre le pendu à la place du
+        # chat. Il n'apparaît qu'à deux essais restants — ou à la fin, où il
+        # n'aide plus personne mais dit ce qu'on cherchait.
+        en_difficulte = len(game["missed"]) >= self._HANGMAN_MAX_MISSES - 2
+        hint = game["hint"] if (en_difficulte or won or lost) else ""
         self._feed.widget(
             "hangman", mask=mask, missed=list(game["missed"]),
             misses=len(game["missed"]), max_misses=self._HANGMAN_MAX_MISSES,
-            hint=game["hint"], last=last, won=won, lost=lost,
+            hint=hint, last=last, won=won, lost=lost,
             word=game["display"] if (won or lost) else "",
             duration=12 if (won or lost) else 10,
         )

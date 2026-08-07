@@ -164,24 +164,76 @@
       return box;
     },
 
+    // Compte à rebours en anneau segmenté : les tirets s'éteignent un à un
+    // dans le sens horaire, le temps reste lisible au centre. Un simple chiffre
+    // ne disait pas d'un coup d'œil s'il restait beaucoup ou presque rien.
     countdown(p) {
+      const SEGMENTS = 60;
+      const total = Math.min(600, Math.max(1, parseInt(p.seconds, 10) || 10));
       const node = el("div", "countdown");
-      let left = Math.min(600, Math.max(1, parseInt(p.seconds, 10) || 10));
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 140 140");
+      svg.setAttribute("class", "cd-ring");
+
+      // Couleur figée à la construction : elle ne dépend que de la POSITION du
+      // tiret, pas du temps. Les recalculer à chaque tick ferait 60 écritures
+      // de style dix fois par seconde, sur la machine qui encode le live.
+      const segs = [];
+      for (let i = 0; i < SEGMENTS; i++) {
+        const angle = (i / SEGMENTS) * 2 * Math.PI - Math.PI / 2;  // départ en haut
+        const seg = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        seg.setAttribute("x1", (70 + Math.cos(angle) * 50).toFixed(2));
+        seg.setAttribute("y1", (70 + Math.sin(angle) * 50).toFixed(2));
+        seg.setAttribute("x2", (70 + Math.cos(angle) * 62).toFixed(2));
+        seg.setAttribute("y2", (70 + Math.sin(angle) * 62).toFixed(2));
+        seg.setAttribute("class", "cd-seg");
+        // Ambre → rouge le long de l'anneau : la fin de course se voit venir.
+        const t = i / (SEGMENTS - 1);
+        seg.style.setProperty(
+          "--on",
+          `rgb(${Math.round(245 + (239 - 245) * t)}, ${Math.round(158 + (68 - 158) * t)}, ${Math.round(11 + (68 - 11) * t)})`,
+        );
+        svg.appendChild(seg);
+        segs.push(seg);
+      }
+      node.appendChild(svg);
+
+      const time = el("div", "cd-time");
+      node.appendChild(time);
+
+      // Temps calculé depuis l'origine plutôt que décrémenté : un onglet
+      // ralenti ou une frame sautée ferait dériver un compteur qui se
+      // soustrait, et le zéro n'arriverait jamais au bon moment.
+      const startedAt = performance.now();
+      let shownSecond = -1;
+
       const render = () => {
-        const m = Math.floor(left / 60);
-        node.textContent = m > 0
-          ? `${m}:${String(left % 60).padStart(2, "0")}`
-          : String(left);
-        node.classList.remove("tick");
-        void node.offsetWidth;
-        node.classList.add("tick");
+        const left = Math.max(0, total - (performance.now() - startedAt) / 1000);
+        const lit = Math.ceil((left / total) * SEGMENTS);
+        segs.forEach((seg, i) => seg.classList.toggle("on", i < lit));
+        const whole = Math.ceil(left);
+        if (whole !== shownSecond) {
+          shownSecond = whole;
+          const m = Math.floor(whole / 60);
+          time.textContent = `${String(m).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
+          time.classList.remove("tick");
+          void time.offsetWidth;
+          time.classList.add("tick");
+        }
+        return left;
       };
       render();
+
+      // 10 Hz : l'anneau s'éteint tiret par tiret au lieu de sauter de six
+      // d'un coup à chaque seconde. Seules des classes changent.
       const id = setInterval(() => {
-        left -= 1;
-        if (left <= 0) { clearInterval(id); node.textContent = String(p.done || "0"); return; }
-        render();
-      }, 1000);
+        if (render() > 0) return;
+        clearInterval(id);
+        segs.forEach((seg) => seg.classList.remove("on"));
+        time.textContent = String(p.done || "0");
+        node.classList.add("done");
+      }, 100);
       // Le widget peut être remplacé avant la fin : on coupe le timer avec lui.
       node.dataset.interval = String(id);
       return node;

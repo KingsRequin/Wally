@@ -321,18 +321,34 @@
     @keyframes wheel-spin { to { transform: rotate(var(--final-angle)); } }
     @keyframes wheel-label { to { opacity: 1; } }
 
-    /* Compte à rebours — le chiffre pulse à chaque seconde. */
+    /* Compte à rebours — anneau de tirets qui s'éteignent, temps au centre.
+       Un simple chiffre ne disait pas d'un coup d'œil s'il restait beaucoup. */
     .countdown {
-      min-width: 96px;
-      padding: 8px 18px;
-      font-size: 40px; font-weight: 700; color: #fff; text-align: center;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 14px;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, .9);
-      font-variant-numeric: tabular-nums;
+      position: relative;
+      width: 220px; height: 220px;
+      display: grid; place-items: center;
     }
-    .countdown.tick { animation: tick .45s ease-out; }
+    .cd-ring { width: 100%; height: 100%; display: block; }
+    .cd-seg {
+      stroke: #34343c;               /* éteint : le tiret reste visible */
+      stroke-width: 4;
+      stroke-linecap: round;
+      transition: stroke .25s linear;
+    }
+    .cd-seg.on {
+      stroke: var(--on, #f59e0b);
+      filter: drop-shadow(0 0 3px var(--on, #f59e0b));
+    }
+    .cd-time {
+      position: absolute;
+      font-size: 38px; font-weight: 700; color: #fff;
+      font-family: ui-monospace, "SFMono-Regular", "Consolas", monospace;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, .95);
+    }
+    .cd-time.tick { animation: tick .45s ease-out; }
+    .countdown.done .cd-time { color: #ef4444; font-size: 30px; }
     @keyframes tick {
       0%   { transform: scale(1.16); }
       100% { transform: scale(1); }

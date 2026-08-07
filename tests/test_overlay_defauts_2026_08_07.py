@@ -72,10 +72,18 @@ def test_chaque_widget_de_lenum_est_decrit():
 
 
 def test_le_pendu_se_lance_par_show_widget():
+    """L'indice n'est plus publié au lancement (2026-08-07 : il résolvait le
+    pendu d'entrée), mais il doit toujours ARRIVER jusqu'au narrateur — c'est ce
+    que ce test couvrait à l'origine. On le vérifie donc là où il apparaît : à
+    deux essais restants. Voir `tests/test_hangman.py` pour le détail."""
     n, feed = _n()
     q = feed.subscribe()
     out = n.show_widget("hangman", "à vous", word="chaussette", hint="ça se perd")
     assert out is not None and out["widget"] == "hangman"
+    assert _events(q, "widget")[-1]["params"]["hint"] == ""
+
+    for lettre in ("z", "k", "w", "x"):     # 4 fautes sur 6
+        n._count_hangman("alice", lettre)
     assert _events(q, "widget")[-1]["params"]["hint"] == "ça se perd"
 
 

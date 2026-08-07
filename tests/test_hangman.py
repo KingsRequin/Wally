@@ -121,3 +121,112 @@ def test_l_espace_d_un_mot_compose_reste_visible():
     n.start_hangman("rocket league")
     ev = _events(q)[0]
     assert " " in ev["params"]["mask"]
+
+
+# ── l'indice ne se donne qu'à la fin ──────────────────────────────────────
+#
+# Vu en live (2026-08-07) : Wally ouvrait la partie en annonçant l'indice dans
+# la foulée — « mot de 7 lettres, indice : tu m'appelles souvent comme ça ».
+# Un pendu dont on donne l'indice d'entrée n'est plus un pendu. L'indice devient
+# un secours, pas une ouverture : il n'apparaît qu'à 2 essais restants.
+
+
+def test_l_indice_est_cache_au_lancement():
+    n, feed = _n()
+    q = feed.subscribe()
+    n.start_hangman("mirage", hint="un leurre")
+    assert _events(q)[0]["params"]["hint"] == ""
+
+
+def test_l_indice_reste_cache_tant_qu_il_reste_plus_de_deux_essais():
+    n, feed = _n()
+    n.start_hangman("mirage", hint="un leurre")
+    q = feed.subscribe()
+    for lettre in ("z", "k", "w"):          # 3 fautes sur 6 → 3 essais restants
+        n._count_hangman("alice", lettre)
+    assert _events(q)[-1]["params"]["hint"] == ""
+
+
+def test_l_indice_apparait_a_deux_essais_restants():
+    n, feed = _n()
+    n.start_hangman("mirage", hint="un leurre")
+    q = feed.subscribe()
+    for lettre in ("z", "k", "w", "x"):     # 4 fautes sur 6 → 2 essais restants
+        n._count_hangman("alice", lettre)
+    assert _events(q)[-1]["params"]["hint"] == "un leurre"
+
+
+def test_l_indice_est_montre_a_la_fin_de_partie():
+    """Perdu, autant savoir ce qu'on cherchait."""
+    n, feed = _n()
+    n.start_hangman("mirage", hint="un leurre")
+    q = feed.subscribe()
+    for lettre in ("z", "k", "w", "x", "y", "b"):   # 6 fautes → perdu
+        n._count_hangman("alice", lettre)
+    dernier = _events(q)[-1]["params"]
+    assert dernier["lost"] is True
+    assert dernier["hint"] == "un leurre"
+
+
+def test_sans_indice_fourni_rien_n_est_promis():
+    n, feed = _n()
+    n.start_hangman("mirage")
+    q = feed.subscribe()
+    for lettre in ("z", "k", "w", "x"):
+        n._count_hangman("alice", lettre)
+    assert _events(q)[-1]["params"]["hint"] == ""
+
+
+# ── ce que le modèle LIT du pendu ─────────────────────────────────────────
+#
+# Vu en live (2026-08-07) : « Tu veux que je choisisse un mot ou t'as une idée
+# en tête ? », `tools_called: []`. Le pendu n'a jamais été lancé, donc les
+# lettres tapées ensuite n'étaient comptées par personne — `_count_hangman`
+# sort sur `if not game`. Les trois symptômes venaient de là.
+#
+# `reasoning_system.md` porte bien la consigne « choisis un mot », mais c'est le
+# prompt du chemin cognitif `[ACT]`. En CONVERSATION, le modèle ne voit que le
+# schéma d'outil, qui ne disait pas qui fournit le mot.
+
+
+def _hangman_params():
+    from bot.intelligence.overlay_narrator import OVERLAY_TOOL_SPEC
+    return OVERLAY_TOOL_SPEC["function"]["parameters"]["properties"]
+
+
+def test_le_schema_dit_que_wally_choisit_le_mot():
+    desc = _hangman_params()["word"]["description"].lower()
+    assert "toi" in desc and "ne demande jamais" in desc
+
+
+def test_le_schema_annonce_les_bornes_reellement_appliquees():
+    """Il annonçait « 3 à 20 lettres » quand `start_hangman` refuse au-delà de
+    16 : un mot de 18 lettres était rejeté sans que le modèle sache pourquoi."""
+    assert "3 à 16" in _hangman_params()["word"]["description"]
+    n, _ = _n()
+    assert n.start_hangman("a" * 17) is False
+    assert n.start_hangman("mirage") is True
+
+
+def test_le_schema_dit_que_l_indice_reste_cache():
+    """Sans ça le modèle l'annonce dans le chat, ce qui revient au même."""
+    assert "caché" in _hangman_params()["hint"]["description"]
+
+
+def test_le_bloc_d_etat_ne_contient_pas_le_mot():
+    """Le bloc « Sur ton overlay » part dans le prompt de Wally. Y écrire le mot
+    l'expose à le lâcher dans le chat, alors que tout le reste du widget
+    s'applique à ne jamais le publier. Le nombre de lettres suffit à animer."""
+    n, _ = _n()
+    n.start_hangman("mirage", hint="un leurre")
+    block = n.current_state_block()
+    assert "mirage" not in block.lower()
+    assert "un leurre" not in block.lower()
+    assert "Pendu" in block
+
+
+def test_le_bloc_d_etat_previent_que_les_lettres_sont_comptees():
+    """Sinon Wally répond « hein ? » à chaque lettre tapée dans le chat."""
+    n, _ = _n()
+    n.start_hangman("mirage")
+    assert "lettre" in n.current_state_block().lower()

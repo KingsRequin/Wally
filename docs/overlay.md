@@ -141,6 +141,12 @@ grille ne reste pas à l'écran — on peut la redemander à tout moment.
 
 ### Le pendu
 
+**C'est Wally qui choisit le mot**, seul, dans le même appel — il ne demande
+jamais qu'on lui en propose un, ce serait l'inverse du jeu. **L'indice reste
+caché** jusqu'à ce qu'il ne reste que 2 essais : c'est un secours, pas une
+ouverture. Le mot fait 3 à 16 lettres et n'apparaît jamais avant la fin.
+
+
 > « wally lance un pendu »
 
 Wally choisit un mot (3 à 16 lettres), de préférence tiré de l'univers de la
