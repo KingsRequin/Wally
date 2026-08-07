@@ -771,6 +771,31 @@
     }, seconds * 1000);
   }
 
+  // ── Mise à jour automatique ──────────────────────────────────────────────
+  // OBS garde sa page en mémoire des heures : sans ça, il faut penser à
+  // rafraîchir la source à chaque changement. On compare une empreinte du
+  // contenu servi et on recharge quand elle bouge. Basée sur le CONTENU, donc
+  // un simple redémarrage du bot ne provoque aucun rechargement.
+  //
+  // Déclaré AVANT `connect()`, qui appelle `checkVersion()` : `knownVersion`
+  // est un `let`, le lire plus haut lèverait une TDZ (cf. buildSections).
+  const VERSION_POLL_MS = 30000;
+  let knownVersion = null;
+
+  async function checkVersion() {
+    try {
+      const r = await fetch("/api/public/overlay-version", { cache: "no-store" });
+      if (!r.ok) return;
+      const { version } = await r.json();
+      if (!version) return;
+      if (knownVersion && version !== knownVersion) location.reload();
+      knownVersion = version;
+    } catch { /* hors ligne : on retentera au prochain tour */ }
+  }
+
+  checkVersion();
+  setInterval(checkVersion, VERSION_POLL_MS);
+
   // ── Flux SSE ─────────────────────────────────────────────────────────────
   function connect(url, onMessage) {
     let source;
@@ -782,7 +807,13 @@
       };
       // Backoff : à intervalle fixe, un bot arrêté prenait 720 requêtes/heure et
       // par flux. Remis à zéro dès qu'un message arrive (donc que ça remarche).
-      source.onopen = () => { delay = RECONNECT_MS; };
+      //
+      // Et on vérifie la version TOUT DE SUITE : une reconnexion veut dire que
+      // le serveur vient de revenir, donc le plus souvent qu'il a été
+      // redéployé. Le sondage seul faisait attendre jusqu'à 30 s de plus après
+      // une coupure d'une minute — on testait entre-temps, l'overlay tournait
+      // encore sur l'ancien code, et il fallait le rafraîchir à la main.
+      source.onopen = () => { delay = RECONNECT_MS; checkVersion(); };
       source.onerror = () => {
         source.close();
         setTimeout(open, delay);
@@ -806,27 +837,6 @@
     }
   });
 
-  // ── Mise à jour automatique ──────────────────────────────────────────────
-  // OBS garde sa page en mémoire des heures : sans ça, il faut penser à
-  // rafraîchir la source à chaque changement. On compare une empreinte du
-  // contenu servi et on recharge quand elle bouge. Basée sur le CONTENU, donc
-  // un simple redémarrage du bot ne provoque aucun rechargement.
-  const VERSION_POLL_MS = 30000;
-  let knownVersion = null;
-
-  async function checkVersion() {
-    try {
-      const r = await fetch("/api/public/overlay-version", { cache: "no-store" });
-      if (!r.ok) return;
-      const { version } = await r.json();
-      if (!version) return;
-      if (knownVersion && version !== knownVersion) location.reload();
-      knownVersion = version;
-    } catch { /* hors ligne : on retentera au prochain tour */ }
-  }
-
-  checkVersion();
-  setInterval(checkVersion, VERSION_POLL_MS);
 
   // ── Instrumentation ──────────────────────────────────────────────────────
   // Impossible de lire l'usage GPU depuis une page (la Compute Pressure API ne
