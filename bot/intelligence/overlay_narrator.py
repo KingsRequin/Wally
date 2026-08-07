@@ -603,6 +603,19 @@ class OverlayNarrator:
         self._poll = None
         self._bingo = None
 
+    def show_counter(self, text: str) -> bool:
+        """Montre un compteur qui vient de monter, si le budget le permet.
+
+        Silencieux en cas de refus : le compteur a déjà été incrémenté en base,
+        c'est l'AFFICHAGE qu'on rationne — un gag qui tombe dix fois en deux
+        minutes ne doit pas monopoliser l'écran.
+        """
+        if not self._may_react():
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("counter", text=str(text)[:40])
+        return True
+
     # ── bingo du stream (widget 20) ───────────────────────────────────────
 
     def start_bingo(self, cells: list[str]) -> bool:

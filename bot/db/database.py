@@ -342,6 +342,21 @@ CREATE TABLE IF NOT EXISTS persistent_notes (
     updated_at  REAL NOT NULL
 );
 
+-- Compteurs à la demande : « compte combien de fois Azra dit qu'il a pas
+-- rechargé ». Survit aux redémarrages ET d'un live à l'autre, d'où la table.
+-- `keywords` est un JSON de formulations : la détection est un simple test de
+-- sous-chaîne, sinon il faudrait un appel LLM par phrase entendue.
+CREATE TABLE IF NOT EXISTS tally_counters (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    label       TEXT    NOT NULL UNIQUE,
+    keywords    TEXT    NOT NULL,
+    target      TEXT,
+    count       INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  REAL    NOT NULL,
+    last_hit_at REAL
+);
+
 CREATE TABLE IF NOT EXISTS twitch_visits (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     channel     TEXT    NOT NULL,

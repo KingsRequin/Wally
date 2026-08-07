@@ -102,6 +102,109 @@ from bot.intelligence.overlay_narrator import OVERLAY_TOOL_SPEC as _OVERLAY_TOOL
 
 
 
+_TALLY_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "start_counting",
+            "description": (
+                "Ouvrir un compteur quand on te demande de compter quelque chose "
+                "(« compte combien de fois Azra dit qu'il a pas rechargé »). Tu "
+                "traduis la demande en FORMULATIONS : les tournures exactes qu'on "
+                "entendra vraiment. C'est le seul moment où tu réfléchis — ensuite "
+                "le comptage est automatique, y compris d'un live à l'autre. "
+                "Relancer un compteur existant reprend son total, il ne repart pas "
+                "de zéro."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "description": "Nom court et parlant, ex. « pas rechargé »."},
+                    "keywords": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": (
+                            "2 à 8 tournures réellement prononcées, sans ponctuation : "
+                            "« pas recharge », « plus de balles », « chargeur vide ». "
+                            "Évite les mots trop courts ou trop communs, ils compteraient à tort."
+                        ),
+                    },
+                    "target": {"type": "string", "description": "Qui est visé, si c'est quelqu'un en particulier."},
+                },
+                "required": ["label", "keywords"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stop_counting",
+            "description": "Arrêter un compteur. Son total reste consultable, il n'est pas effacé.",
+            "parameters": {
+                "type": "object",
+                "properties": {"label": {"type": "string", "description": "Le nom du compteur."}},
+                "required": ["label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_counters",
+            "description": (
+                "Lister ce que tu comptes et où en sont les totaux. À utiliser dès "
+                "qu'on te demande « tu comptes quoi ? » ou « ça en est où ? » — "
+                "n'invente jamais un total de mémoire."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
+
+
+async def run_tally_tool(bot, name: str, args: dict) -> str:
+    """Exécute un outil de comptage. Compte rendu honnête : les totaux viennent
+    de la base, jamais du modèle."""
+    tally = getattr(bot, "tally", None)
+    if tally is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "Les compteurs ne sont pas disponibles."})
+    try:
+        if name == "start_counting":
+            row = await tally.start(
+                args.get("label", ""), args.get("keywords") or [], args.get("target", "")
+            )
+            if row is None:
+                return json.dumps({"status": "rejected", "message": (
+                    "Compteur non créé : il faut un nom et au moins une tournure "
+                    "d'au moins trois lettres."
+                )})
+            return json.dumps({"status": "ok", "message": (
+                f"Je compte « {row['label']} » à partir de maintenant "
+                f"(total actuel : {row['count']})."
+            )})
+        if name == "stop_counting":
+            row = await tally.stop(args.get("label", ""))
+            if row is None:
+                return json.dumps({"status": "not_found",
+                                   "message": "Aucun compteur de ce nom."})
+            return json.dumps({"status": "ok", "message": (
+                f"Compteur « {row['label']} » arrêté à {row['count']}."
+            )})
+        if name == "list_counters":
+            rows = await tally.list()
+            if not rows:
+                return json.dumps({"status": "empty", "message": "Tu ne comptes rien pour l'instant."})
+            listing = " · ".join(
+                f"{r['label']} : {r['count']}" + ("" if r["active"] else " (arrêté)")
+                for r in rows
+            )
+            return json.dumps({"status": "ok", "message": listing})
+    except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas la réponse
+        logger.warning("Compteur '{n}' a échoué : {e}", n=name, e=exc)
+        return json.dumps({"status": "error", "message": "L'opération a échoué."})
+    return json.dumps({"status": "unknown_tool"})
+
+
 def _overlay_narrator(bot):
     """Le narrateur vit sur le bot Discord ; le chemin Twitch y accède par
     référence croisée."""
@@ -1778,6 +1881,8 @@ async def _respond(
         if history_search and history_search.available:
             tools.extend(history_search.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
+        if getattr(bot, "tally", None) is not None:
+            tools.extend(_TALLY_TOOLS)
         # Overlay : seulement s'il est branché — un outil mort ferait promettre
         # un affichage qui n'arriverait jamais.
         if _overlay_narrator(bot) is not None:
@@ -1805,6 +1910,8 @@ async def _respond(
                     "ces articles et colle leur marqueur de source [¹](<url>)."
                 )
             args = json.loads(arguments)
+            if name in ("start_counting", "stop_counting", "list_counters"):
+                return await run_tally_tool(bot, name, args)
             if name == "show_overlay":
                 return run_overlay_tool(bot, args)
             if name == "save_persistent_note":

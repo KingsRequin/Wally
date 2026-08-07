@@ -497,6 +497,17 @@ class VoiceService:
         except Exception as e:  # noqa: BLE001 — l'écoute ne casse jamais
             logger.debug("voice: parole non consignée dans le flux: {e}", e=e)
 
+        # Compteurs à la demande : la détection est mécanique (sous-chaînes), donc
+        # elle passe sur CHAQUE phrase sans coûter d'appel LLM.
+        tally = getattr(self._bot, "tally", None)
+        if tally is not None:
+            try:
+                task = asyncio.get_running_loop().create_task(self._count_tally(tally, text))
+                self._listen_tasks.add(task)
+                task.add_done_callback(self._listen_tasks.discard)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("voice: comptage non lancé: {e}", e=exc)
+
         narrator = getattr(self._bot, "overlay_narrator", None)
         if narrator is None:
             return
@@ -520,6 +531,21 @@ class VoiceService:
             task.add_done_callback(self._listen_tasks.discard)
         except Exception as e:  # noqa: BLE001
             logger.debug("voice: overlay non notifié: {e}", e=e)
+
+    async def _count_tally(self, tally, text: str) -> None:
+        """Incrémente les compteurs touchés et le montre, si le budget le permet."""
+        try:
+            touched = await tally.scan(text)
+        except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas l'écoute
+            logger.warning("voice: comptage en erreur: {e}", e=exc)
+            return
+        narrator = getattr(self._bot, "overlay_narrator", None)
+        for row in touched:
+            if narrator is None:
+                continue
+            # Le budget d'événements décide : un compteur qui monte vite ne doit
+            # pas monopoliser l'écran.
+            narrator.show_counter(f"{row['label']} : {row['count']}")
 
     # ------------------------------------------------------------------
     # Callbacks internes — STT streaming distant

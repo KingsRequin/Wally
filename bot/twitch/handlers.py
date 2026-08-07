@@ -16,6 +16,7 @@ from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _consume_open_question, _note_open_question,
+    _TALLY_TOOLS, run_tally_tool,
 )
 
 if TYPE_CHECKING:
@@ -50,6 +51,20 @@ def _fire(coro) -> asyncio.Task:
     _bg_tasks.add(t)
     t.add_done_callback(_bg_tasks.discard)
     return t
+
+
+async def _scan_tally(bot, tally, text: str) -> None:
+    """Incrémente les compteurs touchés par une ligne de chat, et le montre."""
+    try:
+        touched = await tally.scan(text)
+    except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas le chat
+        logger.warning("Tally (chat) en erreur : {e}", e=exc)
+        return
+    narrator = _overlay_narrator(bot)
+    if narrator is None:
+        return
+    for row in touched:
+        narrator.show_counter(f"{row['label']} : {row['count']}")
 
 
 def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
@@ -170,6 +185,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         _t = asyncio.create_task(
             _narrator.on_chat_message(author, content, days_since=_seen_days)
         )
+        _overlay_chat_tasks.add(_t)
+        _t.add_done_callback(_overlay_chat_tasks.discard)
+
+    # Compteurs à la demande : le chat compte autant que le vocal — une punchline
+    # récurrente s'y répète tout autant. Détaché : le scan touche la base.
+    _tally = getattr(bot, "tally", None)
+    if _tally is not None:
+        _t = asyncio.create_task(_scan_tally(bot, _tally, content))
         _overlay_chat_tasks.add(_t)
         _t.add_done_callback(_overlay_chat_tasks.discard)
 
@@ -394,12 +417,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         if action_service:
             tools.extend(action_service.get_tool_definitions())
         tools.extend(_NOTE_TOOLS)
+        if getattr(bot, "tally", None) is not None:
+            tools.extend(_TALLY_TOOLS)
         if _overlay_narrator(bot) is not None:
             tools.append(_OVERLAY_TOOL)
 
         async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
             args = json.loads(arguments)
+            if name in ("start_counting", "stop_counting", "list_counters"):
+                return await run_tally_tool(bot, name, args)
             if name == "show_overlay":
                 return run_overlay_tool(bot, args)
             if name == "save_persistent_note":

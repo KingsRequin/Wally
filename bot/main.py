@@ -155,6 +155,12 @@ async def main() -> None:
     discord_bot.conv_log = conv_log
     fact_extractor.conv_log = conv_log
 
+    # Compteurs à la demande : partagés par les deux plateformes, et alimentés
+    # par ce que Wally entend en vocal comme par le chat.
+    from bot.core.tally import TallyService
+    tally = TallyService(db)
+    discord_bot.tally = tally
+
     # Recherche dans l'historique : même racine que le logger, pour ne jamais
     # fouiller un autre répertoire que celui où les conversations sont écrites.
     from bot.core.history_search import HistorySearchService
@@ -264,6 +270,7 @@ async def main() -> None:
         twitch_bot.apex_api = apex_api
         twitch_bot.reaction_tracker = reaction_tracker
         twitch_bot.conv_log = conv_log
+        twitch_bot.tally = tally
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot
