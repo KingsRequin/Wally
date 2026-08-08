@@ -8,6 +8,7 @@ from bot.db.mixins.gallery import GalleryMixin
 from bot.db.mixins.actions import ActionMixin
 from bot.db.mixins.rss import RSSMixin
 from bot.db.mixins.apex import ApexMixin
+from bot.db.mixins.state import StateMixin
 
 __all__ = [
     "CostMixin",
@@ -20,4 +21,5 @@ __all__ = [
     "ActionMixin",
     "RSSMixin",
     "ApexMixin",
+    "StateMixin",
 ]

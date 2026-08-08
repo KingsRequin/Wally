@@ -264,6 +264,13 @@ class VoiceService:
         self._pending_inviter = inviter
         self._channel = channel
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
+        # Retenu pour le prochain démarrage : on le déplace en cours de soirée,
+        # et un rebuild le ramenait sinon au salon écrit en config.
+        db = getattr(self._bot, "db", None)
+        if db is not None:
+            from bot.discord.voice.channel_memory import remember_voice_channel
+
+            await remember_voice_channel(db, channel.id)
         loop = asyncio.get_running_loop()
         self._last_speech_ts = loop.time()
         self._stream_users.clear()

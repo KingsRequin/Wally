@@ -343,8 +343,7 @@ async def main() -> None:
             « chambre » configuré, et l'écoute n'a pas à en dépendre.
             """
             vs = getattr(discord_bot, "voice_service", None)
-            channel_id = config.bot.stream_voice_channel_id
-            if vs is None or not channel_id:
+            if vs is None:
                 return
             went_live = bool(new.get("live")) and not bool(old.get("live"))
             ended = bool(old.get("live")) and not bool(new.get("live"))
@@ -354,6 +353,13 @@ async def main() -> None:
                     if went_live:
                         if vs.is_connected:
                             return          # déjà en vocal : on ne le déplace pas
+                        from bot.discord.voice.channel_memory import resolve_voice_channel_id
+
+                        channel_id = await resolve_voice_channel_id(
+                            db, config.bot.stream_voice_channel_id
+                        )
+                        if not channel_id:
+                            return
                         channel = discord_bot.get_channel(channel_id)
                         if channel is None:
                             logger.warning("voice: salon de stream {c} introuvable", c=channel_id)
@@ -432,9 +438,6 @@ async def main() -> None:
             la connexion, il ne suppose aucun événement. Il couvre donc aussi la
             déconnexion réseau et le kick.
             """
-            channel_id = config.bot.stream_voice_channel_id
-            if not channel_id:
-                return
             while True:
                 await asyncio.sleep(30)
                 try:
@@ -447,6 +450,13 @@ async def main() -> None:
                         vs.listen_optout = False
                         continue
                     if vs.is_connected or vs.listen_optout:
+                        continue
+                    from bot.discord.voice.channel_memory import resolve_voice_channel_id
+
+                    channel_id = await resolve_voice_channel_id(
+                        db, config.bot.stream_voice_channel_id
+                    )
+                    if not channel_id:
                         continue
                     channel = discord_bot.get_channel(channel_id)
                     if channel is None:
