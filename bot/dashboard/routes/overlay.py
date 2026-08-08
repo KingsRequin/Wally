@@ -8,6 +8,7 @@ navigateur, et la vraie validation reste les stats OBS chez le streamer.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from pathlib import Path
 
@@ -27,8 +28,33 @@ _MAX_GPU_LEN = 120
 # modification est visible sans rebuild, mais OBS garde sa page en mémoire des
 # heures. L'overlay interroge donc cette version et se recharge tout seul.
 _STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
-_OVERLAY_FILES = ("overlay.html", "overlay.js")
+# TOUS les fichiers que la page charge, pas seulement les deux principaux.
+# `overlay_apex.js` et les bibliothèques de `vendor/` en étaient absents : ils
+# n'avaient pas d'empreinte dans leur URL et ne comptaient pas dans la version,
+# donc OBS gardait indéfiniment la copie du premier chargement. Un panneau Apex
+# corrigé ne serait jamais arrivé à l'écran.
+_OVERLAY_FILES = (
+    "overlay.html",
+    "overlay.js",
+    "overlay_apex.js",
+    "vendor/canvas-confetti.js",
+    "vendor/spin-wheel.js",
+)
 _version_cache: dict = {"stamp": None, "value": "0"}
+
+# Les `<script src="/static/….js">` de la page. Volontairement limité au JS :
+# la vidéo de l'avatar pèse lourd et n'a aucune raison d'être retéléchargée
+# parce qu'un script a bougé.
+_STATIC_SCRIPT_RE = re.compile(r'src="(/static/[^"?]+\.js)"')
+
+
+def version_static_scripts(html: str, version: str) -> str:
+    """Ajoute l'empreinte à chaque script statique de la page.
+
+    Le HTML n'est jamais mis en cache, les scripts si : sans cette empreinte
+    dans l'URL, un rechargement resservirait les anciens fichiers.
+    """
+    return _STATIC_SCRIPT_RE.sub(rf'src="\1?v={version}"', html)
 
 
 def overlay_version() -> str:
@@ -38,12 +64,18 @@ def overlay_version() -> str:
     l'identique ou un simple redémarrage ne doivent pas provoquer de
     rechargement en plein live.
     """
-    try:
-        stamp = tuple(
-            (_STATIC_DIR / name).stat().st_mtime_ns for name in _OVERLAY_FILES
-        )
-    except OSError:
-        return _version_cache["value"]
+    # Un fichier manquant compte comme absent, il n'interrompt PAS le calcul.
+    # Avec un seul `try` autour de la liste entière, il suffisait qu'une des
+    # bibliothèques de `vendor/` n'ait pas été déployée pour que la version
+    # reste figée sur sa valeur en cache — donc plus aucune détection de mise à
+    # jour, silencieusement, pour tous les autres fichiers.
+    def _stamp(name: str):
+        try:
+            return (_STATIC_DIR / name).stat().st_mtime_ns
+        except OSError:
+            return None
+
+    stamp = tuple(_stamp(name) for name in _OVERLAY_FILES)
     if stamp == _version_cache["stamp"]:
         return _version_cache["value"]
     digest = hashlib.sha1()
