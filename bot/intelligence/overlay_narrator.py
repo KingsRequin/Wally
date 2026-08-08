@@ -68,6 +68,21 @@ _RPS_MOVES = ("pierre", "feuille", "ciseaux")
 # c'est un live fantôme qu'on a oublié de couper.
 _MAX_FORCE_LIVE_MIN = 120
 
+# Les mentions en tête d'un message adressé au bot. Uniquement en TÊTE : un
+# « @toto » en fin de phrase appartient à la phrase, pas à l'interpellation.
+_ADDRESS_RE = re.compile(r"^(?:\s*@[\w_]+[\s,:!]*)+", re.UNICODE)
+
+
+def _strip_address(text: str) -> str:
+    """Le message sans l'interpellation qui le précède.
+
+    « @WallyTeBully d » → « d ». C'est ce qui permet de jouer une lettre, un
+    vote ou un coup en s'adressant à Wally, ce que tout le monde fait
+    naturellement sur Twitch.
+    """
+    return _ADDRESS_RE.sub("", text or "").strip()
+
+
 _EVENT_SYSTEM = load_prompt(
     "overlay_event",
     fallback=(
@@ -968,9 +983,15 @@ class OverlayNarrator:
             key = author.strip()
             self._talkers[key] = self._talkers.get(key, 0) + 1
         self.maybe_remind_bingo()
-        self._count_vote(author, text)
-        self._count_rps(author, text)
-        self._count_hangman(author, text)
+        # Les trois compteurs attendent un message NU : une lettre seule, un
+        # chiffre seul, un nom de coup. Or on répond à un bot en le mentionnant —
+        # « @WallyTeBully d ». Le 2026-08-07, deux parties de pendu n'ont ainsi
+        # enregistré aucune lettre. On retire l'interpellation ici, une fois pour
+        # les trois, plutôt que dans chacun.
+        played = _strip_address(text)
+        self._count_vote(author, played)
+        self._count_rps(author, played)
+        self._count_hangman(author, played)
         await self._maybe_greet(author, days_since)
 
     async def _maybe_greet(self, author: str, days: Optional[float]) -> None:

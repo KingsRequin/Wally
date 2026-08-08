@@ -173,6 +173,12 @@ chaîne. Le chat propose des lettres — **une lettre seule par message**, sinon
 chaque phrase du chat en proposerait. Les accents sont ignorés : « fusée » se
 devine avec un `e`.
 
+**On peut l'interpeller** : « @Wally d » propose la lettre `d` aussi bien que
+« d » tout seul. L'interpellation est retirée avant lecture — sans quoi le
+compteur voyait quinze caractères là où il attend une lettre, et deux parties
+entières n'ont enregistré aucune proposition (2026-08-07). Même chose pour les
+votes de sondage et les coups du chifoumi.
+
 Six fautes et c'est perdu : le pendu se dessine trait par trait, chaque membre
 se traçant à l'apparition. Le mot n'est révélé qu'à la fin, gagné ou perdu — il
 ne transite jamais vers l'overlay avant, sinon les viewers le liraient à
