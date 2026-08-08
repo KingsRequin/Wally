@@ -25,3 +25,16 @@ def test_les_plateformes_acceptees():
 def test_le_service_expose_le_meme_outil():
     from bot.core.apex import ApexLegendsService
     assert ApexLegendsService().get_tool_definition() is APEX_LEGENDS_TOOL
+
+
+def test_le_parametre_de_memorisation_est_reserve_a_son_propre_compte():
+    props = APEX_LEGENDS_TOOL["function"]["parameters"]["properties"]
+    assert props["remember"]["type"] == "boolean"
+    desc = props["remember"]["description"].lower()
+    assert "son propre" in desc
+    assert "quelqu'un d'autre" in desc
+
+
+def test_un_pseudo_vide_signifie_mes_stats():
+    desc = APEX_LEGENDS_TOOL["function"]["description"]
+    assert "VIDE" in desc

@@ -15,6 +15,7 @@ from bot.db.mixins import (
     GalleryMixin,
     ActionMixin,
     RSSMixin,
+    ApexMixin,
 )
 
 SCHEMA = """
@@ -387,6 +388,15 @@ CREATE TABLE IF NOT EXISTS twitch_visits (
     summary     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS apex_accounts (
+    identity TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    apex_name TEXT NOT NULL,
+    apex_platform TEXT NOT NULL,
+    uid TEXT,
+    linked_at REAL NOT NULL
+);
+
 """
 
 
@@ -400,6 +410,7 @@ class Database(
     GalleryMixin,
     ActionMixin,
     RSSMixin,
+    ApexMixin,
 ):
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn

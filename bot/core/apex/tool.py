@@ -15,7 +15,9 @@ APEX_LEGENDS_TOOL = {
             "le jeu ou sur un joueur.\n"
             "ACTIONS : player_stats → profil d'un joueur (rang, niveau, état en "
             "jeu, kills et rang mondial). Demande 'player_name' et 'platform' "
-            "(PC par défaut). · map_rotation → cartes en cours et suivantes. · "
+            "(PC par défaut) ; laisse 'player_name' VIDE pour « mes stats », le "
+            "compte déjà mémorisé de la personne sera utilisé. · "
+            "map_rotation → cartes en cours et suivantes. · "
             "crafting → lots du replicator. · predator → seuil pour Predator. · "
             "server_status → état des serveurs.\n"
             "CE QUE CETTE API NE DONNE PAS : le classement mondial (top 500, "
@@ -51,6 +53,16 @@ APEX_LEGENDS_TOOL = {
                     "type": "string",
                     "enum": ["PC", "PS4", "X1"],
                     "description": "La plateforme, PC par défaut",
+                },
+                "remember": {
+                    "type": "boolean",
+                    "description": (
+                        "true UNIQUEMENT quand la personne déclare SON PROPRE "
+                        "pseudo Apex (« mon pseudo c'est X », « je joue sur "
+                        "PS4 sous Y »). Son compte est alors retenu et tu ne "
+                        "lui redemanderas plus jamais. Jamais true pour le "
+                        "pseudo de quelqu'un d'autre."
+                    ),
                 },
             },
             "required": ["action"],

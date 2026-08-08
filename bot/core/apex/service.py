@@ -8,6 +8,9 @@ l'outil, pour que le modèle n'aille pas le chercher ailleurs.
 from __future__ import annotations
 
 import os
+from typing import Any
+
+from loguru import logger
 
 from bot.core.apex.client import ApexClient
 from bot.core.apex.reader import PlayerProfile, read_profile
@@ -28,8 +31,9 @@ class ApexLegendsService:
         ("wildcard", "Wildcard"),
     )
 
-    def __init__(self, client: ApexClient | None = None) -> None:
+    def __init__(self, client: ApexClient | None = None, db: Any = None) -> None:
         self._client = client or ApexClient(os.environ.get("APEX_API_KEY", ""))
+        self._db = db
 
     @property
     def available(self) -> bool:
@@ -39,9 +43,23 @@ class ApexLegendsService:
         from bot.core.apex.tool import APEX_LEGENDS_TOOL
         return APEX_LEGENDS_TOOL
 
-    async def execute(self, action: str, player_name: str = "", platform: str = "PC") -> str:
+    async def execute(
+        self,
+        action: str,
+        player_name: str = "",
+        platform: str = "PC",
+        *,
+        remember: bool = False,
+        requester: str | None = None,
+        requester_name: str = "",
+    ) -> str:
+        """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
+        c'est ce qui empêche quiconque de déclarer le compte d'un autre."""
         if action == "player_stats":
-            return await self._player_stats(player_name, platform)
+            return await self._player_stats(
+                player_name, platform,
+                remember=remember, requester=requester, requester_name=requester_name,
+            )
         if action == "map_rotation":
             return await self._map_rotation()
         if action == "crafting":
@@ -54,19 +72,74 @@ class ApexLegendsService:
 
     # ── Le profil d'un joueur ─────────────────────────────────────────────────
 
-    async def _player_stats(self, player_name: str, platform: str) -> str:
-        if not player_name:
+    async def _player_stats(
+        self,
+        player_name: str,
+        platform: str,
+        *,
+        remember: bool = False,
+        requester: str | None = None,
+        requester_name: str = "",
+    ) -> str:
+        cherche, platform = await self._resolve(player_name, platform, requester)
+        if not cherche:
             return "Il me faut un pseudo Apex pour chercher."
         data = await self._client.get(
-            "bridge", {"player": player_name, "platform": platform or "PC"}
+            "bridge", {"player": cherche, "platform": platform or "PC"}
         )
         if isinstance(data, str):
             return data
         profil = read_profile(data)
         if profil is None:
             erreur = data.get("Error") if isinstance(data, dict) else ""
-            return f"{player_name} : pas trouvé sur l'API Apex ({erreur or 'compte inconnu'})."
+            return f"{cherche} : pas trouvé sur l'API Apex ({erreur or 'compte inconnu'})."
+        if remember and requester:
+            await self._remember(profil, cherche, platform, requester, requester_name)
         return self._render_profile(profil)
+
+    async def _resolve(
+        self, player_name: str, platform: str, requester: str | None
+    ) -> tuple[str, str]:
+        """Le pseudo Apex à interroger, et sur quelle plateforme.
+
+        Un pseudo de plateforme (« xeforce_ ») est traduit en compte Apex si la
+        personne l'a déclaré ; sans pseudo du tout, on prend celui du demandeur.
+        Faute de liaison, on interroge tel quel — l'API tranchera.
+        """
+        if self._db is None:
+            return player_name, platform
+        try:
+            lien = (
+                await self._db.apex_find_by_display_name(player_name)
+                if player_name
+                else (await self._db.apex_get_account(requester) if requester else None)
+            )
+        except Exception as e:                       # une base grippée ne casse pas la recherche
+            logger.warning("Apex: lecture des comptes liés impossible: {e}", e=e)
+            return player_name, platform
+        if lien is None:
+            return player_name, platform
+        return lien["apex_name"], lien["apex_platform"] or platform
+
+    async def _remember(
+        self, profil, cherche: str, platform: str, requester: str, requester_name: str
+    ) -> None:
+        """Écrit la liaison — pour le DEMANDEUR, et seulement si le compte existe."""
+        if self._db is None:
+            return
+        try:
+            await self._db.apex_link_account(
+                identity=requester,
+                display_name=requester_name or requester,
+                apex_name=cherche,
+                apex_platform=platform or "PC",
+                uid=profil.uid or None,
+            )
+            logger.info(
+                "Apex: compte {name} lié à {who}", name=cherche, who=requester_name or requester
+            )
+        except Exception as e:
+            logger.warning("Apex: impossible de mémoriser le compte: {e}", e=e)
 
     def _render_profile(self, p: PlayerProfile) -> str:
         lignes = [f"{p.name} — niveau {_fr(p.level)} ({p.platform})"]
