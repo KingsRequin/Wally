@@ -68,6 +68,12 @@ _RPS_MOVES = ("pierre", "feuille", "ciseaux")
 # c'est un live fantôme qu'on a oublié de couper.
 _MAX_FORCE_LIVE_MIN = 120
 
+# Échéance du mode test, rangée en base. En EPOCH et non en `monotonic` :
+# l'horloge monotone repart de zéro à chaque process, donc le mode test était
+# perdu à chaque redémarrage — au moment précis où l'on s'en sert, puisqu'on
+# règle l'overlay entre deux déploiements.
+FORCE_LIVE_KEY = "overlay:force_until"
+
 # Les mentions en tête d'un message adressé au bot. Uniquement en TÊTE : un
 # « @toto » en fin de phrase appartient à la phrase, pas à l'interpellation.
 _ADDRESS_RE = re.compile(r"^(?:\s*@[\w_]+[\s,:!]*)+", re.UNICODE)
@@ -380,6 +386,7 @@ class OverlayNarrator:
         last_clip: Optional[Callable] = None,
         top_clips: Optional[Callable] = None,
         apex=None,
+        db=None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
@@ -387,6 +394,8 @@ class OverlayNarrator:
         self._apex = apex
         # Fournisseur du podium des clips les plus vus.
         self._top_clips = top_clips
+        # Base, pour que le mode test survive à un redémarrage.
+        self._db = db
         self._is_live = is_live
         self._min_interval = min_interval_s
         self._event_interval = event_interval_s
@@ -403,6 +412,7 @@ class OverlayNarrator:
         self._greeted: set[str] = set()
         self._was_live: bool = False
         self._force_until: float = 0.0
+        self._force_epoch: float = 0.0
         self._poll: Optional[dict] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._last_poll: Optional[dict] = None
@@ -443,12 +453,40 @@ class OverlayNarrator:
         """
         if minutes <= 0:
             self._force_until = 0.0
+            self._force_epoch = 0.0
             logger.info("Overlay: mode test coupé")
             return 0.0
         minutes = min(minutes, _MAX_FORCE_LIVE_MIN)
         self._force_until = time.monotonic() + minutes * 60
+        self._force_epoch = time.time() + minutes * 60
         logger.info("Overlay: mode test actif {m:.0f} min", m=minutes)
         return minutes
+
+    async def flush_force_live(self) -> None:
+        """Range l'échéance du mode test, pour le prochain démarrage."""
+        if self._db is None:
+            return
+        try:
+            await self._db.set_state(FORCE_LIVE_KEY, str(getattr(self, "_force_epoch", 0.0)))
+        except Exception as exc:  # noqa: BLE001 — un réglage non rangé n'est pas fatal
+            logger.debug("Overlay: mode test non rangé: {e}", e=exc)
+
+    async def restore_force_live(self) -> None:
+        """Reprend le mode test laissé en cours par le process précédent."""
+        if self._db is None:
+            return
+        try:
+            raw = await self._db.get_state(FORCE_LIVE_KEY)
+            echeance = float(raw or 0)
+        except Exception as exc:  # noqa: BLE001 — une valeur illisible ne bloque rien
+            logger.debug("Overlay: mode test illisible: {e}", e=exc)
+            return
+        reste = echeance - time.time()
+        if reste <= 0:
+            return          # expiré pendant l'arrêt : il reste expiré
+        self._force_until = time.monotonic() + reste
+        self._force_epoch = echeance
+        logger.info("Overlay: mode test repris ({m:.0f} min restantes)", m=reste / 60)
 
     def force_live_remaining(self) -> float:
         """Minutes restantes de mode test (0 s'il est inactif)."""

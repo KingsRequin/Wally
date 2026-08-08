@@ -264,6 +264,11 @@ class VoiceService:
         self._pending_inviter = inviter
         self._channel = channel
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
+        # En sourdine tant que le modèle STT charge : sans ce signal, on lui
+        # parle dans le vide pendant plusieurs secondes sans le savoir.
+        from bot.discord.voice.readiness import set_muted, signal_ready_when_warm
+
+        await set_muted(self._vc, True)
         # Retenu pour le prochain démarrage : on le déplace en cours de soirée,
         # et un rebuild le ramenait sinon au salon écrit en config.
         db = getattr(self._bot, "db", None)
@@ -287,7 +292,9 @@ class VoiceService:
             )
             self._maintain_task = loop.create_task(self._streaming.maintain())
             # Référence gardée : la boucle ne retient qu'une référence faible.
-            self._detach_service(self._streaming.warmup())  # pré-charge le fallback CPU local
+            self._detach_service(
+                signal_ready_when_warm(self._vc, self._streaming.warmup())
+            )
         else:
             sink = WallyAudioSink(
                 service=self,
@@ -298,8 +305,9 @@ class VoiceService:
             )
             # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s au 1er segment.
             _warmup = getattr(self._stt, "warmup", None)
-            if _warmup is not None:
-                self._detach_service(_warmup())
+            self._detach_service(
+                signal_ready_when_warm(self._vc, _warmup() if _warmup else None)
+            )
         # Watchdog fin-de-parole : Discord coupe le silence, donc le VAD ne voit jamais la fin ;
         # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
         self._silence_task = loop.create_task(self._silence_watch(sink))

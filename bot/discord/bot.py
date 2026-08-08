@@ -340,10 +340,15 @@ class WallyDiscord(commands.Bot):
                     last_clip=_fetch_last_clip,
                     top_clips=_fetch_top_clips,
                     apex=getattr(self, "apex_api", None),
+                    db=self.db,
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,
                 # Wally ne saurait pas qu'un bingo tourne et n'aurait aucune
                 # raison de proposer de l'annuler.
+                # Le mode test laissé en cours par le process précédent : on
+                # règle l'overlay ENTRE deux déploiements, c'est exactement là
+                # qu'il était perdu.
+                await _overlay_narrator.restore_force_live()
                 _overlay_narrator.activate()
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator

@@ -269,7 +269,10 @@ au lieu d'être tranché au hasard.
 - **Afficher / masquer** l'overlay.
 - **Mode test (hors live)** — fait croire à Wally qu'un live tourne, pour régler
   l'affichage sans attendre un stream. Borné dans le temps (30 min par défaut,
-  120 max) : oublié actif, il ferait parler Wally dans le vide.
+  120 max) : oublié actif, il ferait parler Wally dans le vide. Il **survit à un
+  redémarrage** depuis le 2026-08-08 : il vivait sur une horloge qui repart de
+  zéro à chaque process, et disparaissait donc à chaque déploiement — au moment
+  précis où l'on s'en sert, puisqu'on règle l'overlay entre deux builds.
 - **Ancré à droite / à gauche** — met à jour l'URL à recopier dans OBS.
 
 ---

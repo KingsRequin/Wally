@@ -149,7 +149,11 @@ async def set_force_live(request: Request) -> dict:
             minutes = float(data.get("minutes", 30))
         except (TypeError, ValueError):
             raise HTTPException(400, "minutes invalide")
-    granted = _narrator(request).force_live(minutes)
+    narrator = _narrator(request)
+    granted = narrator.force_live(minutes)
+    # Rangé tout de suite : un rebuild peut arriver dans la minute, et c'est
+    # précisément entre deux déploiements qu'on se sert du mode test.
+    await narrator.flush_force_live()
     return {"active": granted > 0, "remaining_minutes": round(granted, 1)}
 
 
