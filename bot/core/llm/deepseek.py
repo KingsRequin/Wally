@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 
 from loguru import logger
@@ -76,6 +78,71 @@ def _deepseek_cost(model: str, usage: Any, now: datetime | None = None) -> float
     if _is_deepseek_peak(now):
         cost *= _DEEPSEEK_PEAK_MULTIPLIER
     return cost
+
+
+# DeepSeek V4 émet parfois ses appels d'outils en texte brut, au format interne
+# DSML, au lieu du champ `tool_calls` — surtout quand la requête ne porte plus de
+# `tools`. Le markup part alors en clair dans le chat et pollue l'historique.
+# Amont : deepseek-ai/DeepSeek-V3#1244, vllm-project/vllm#40801.
+# Les `｜` sont des barres pleine largeur (U+FF5C) ; l'ASCII est accepté par prudence.
+_DSML_MARK = r"[|｜]+DSML[|｜]+"
+_DSML_BLOCK = re.compile(rf"<{_DSML_MARK}tool_calls>.*?</{_DSML_MARK}tool_calls>", re.DOTALL)
+_DSML_INVOKE = re.compile(rf'<{_DSML_MARK}invoke\s+name="([^"]+)">(.*?)</{_DSML_MARK}invoke>', re.DOTALL)
+_DSML_PARAM = re.compile(
+    rf'<{_DSML_MARK}parameter\s+name="([^"]+)"([^>]*)>(.*?)</{_DSML_MARK}parameter>', re.DOTALL
+)
+# Fragments orphelins : marqueur coupé entre deux chunks en streaming.
+_DSML_STRAY = re.compile(rf"</?{_DSML_MARK}[^>\n]*>?", re.DOTALL)
+
+
+def _dsml_value(raw: str, attrs: str) -> Any:
+    """Valeur d'un paramètre DSML : littérale si `string="true"`, sinon JSON."""
+    raw = raw.strip()
+    if 'string="true"' in attrs:
+        return raw
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _parse_dsml_tool_calls(text: str) -> list[tuple[str, dict]]:
+    """Reconstruit les `(nom, arguments)` des appels d'outils fuités en texte."""
+    if not text or "DSML" not in text:
+        return []
+    return [
+        (name, {p: _dsml_value(raw, attrs) for p, attrs, raw in _DSML_PARAM.findall(body)})
+        for name, body in _DSML_INVOKE.findall(text)
+    ]
+
+
+def _strip_dsml(text: str) -> str:
+    """Retire tout markup DSML — blocs entiers compris, pas seulement les balises.
+
+    Garde-fou de dernier recours : ce qui sort d'ici part en clair dans le chat
+    ou dans l'historique du tour suivant.
+    """
+    if not text or "DSML" not in text:
+        return text
+    for pattern in (_DSML_BLOCK, _DSML_INVOKE, _DSML_STRAY):
+        text = pattern.sub("", text)
+    return text.strip()
+
+
+class _SyntheticToolCall:
+    """Appel d'outil reconstruit depuis du markup DSML, au format d'un vrai tool call."""
+
+    def __init__(self, id_: str, name: str, arguments: str) -> None:
+        self.id = id_
+        self.type = "function"
+        self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    def model_dump(self) -> dict:
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {"name": self.function.name, "arguments": self.function.arguments},
+        }
 
 
 class DeepSeekLLMClient(BaseLLMClient):
@@ -182,7 +249,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 **self._api_params(max_tokens=max_tokens),
             )
-            text = response.choices[0].message.content or ""
+            text = _strip_dsml(response.choices[0].message.content or "")
             await self._log_cost(response, purpose, user_id)
             return text
         except Exception as e:
@@ -246,17 +313,30 @@ class DeepSeekLLMClient(BaseLLMClient):
 
             msg = response.choices[0].message
 
-            if not msg.tool_calls:
-                # Pas de tool call → NE PAS inclure reasoning_content (règle DeepSeek)
+            tool_calls = list(msg.tool_calls or [])
+            if not tool_calls:
                 text = msg.content or ""
-                await self._log_cost(response, purpose, user_id)
-                return (text, tools_called)
+                # L'appel a pu fuiter en texte au lieu du champ `tool_calls` : on le
+                # rejoue plutôt que de rendre le markup à l'utilisateur.
+                recovered = _parse_dsml_tool_calls(text)
+                if not recovered:
+                    # Pas de tool call → NE PAS inclure reasoning_content (règle DeepSeek)
+                    await self._log_cost(response, purpose, user_id)
+                    return (_strip_dsml(text), tools_called)
+                logger.warning(
+                    "DeepSeek: appel d'outil émis en texte DSML, récupéré: {names}",
+                    names=[name for name, _ in recovered],
+                )
+                tool_calls = [
+                    _SyntheticToolCall(f"dsml_{iteration}_{k}", name, json.dumps(args))
+                    for k, (name, args) in enumerate(recovered)
+                ]
 
             # Tool call → reasoning_content DOIT être préservé
             assistant_entry: dict = {
                 "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
+                "content": _strip_dsml(msg.content or ""),
+                "tool_calls": [tc.model_dump() for tc in tool_calls],
             }
             reasoning = getattr(msg, "reasoning_content", None)
             if reasoning:
@@ -273,24 +353,28 @@ class DeepSeekLLMClient(BaseLLMClient):
                     logger.warning("Tool executor error for {name}: {e}", name=tc.function.name, e=e)
                     return f"Tool error: {e}"
 
-            for tc in msg.tool_calls:
+            for tc in tool_calls:
                 tools_called.append(tc.function.name)
-            results = await asyncio.gather(*(_run_tool(tc) for tc in msg.tool_calls))
-            for tc, result in zip(msg.tool_calls, results):
+            results = await asyncio.gather(*(_run_tool(tc) for tc in tool_calls))
+            for tc, result in zip(tool_calls, results):
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
                     "content": str(result),
                 })
 
-        # Cap atteint → génère une réponse finale sans tools
-        logger.warning("DeepSeek: max_tool_iters={n} atteint, génération finale sans tools", n=self._max_tool_iters)
+        # Cap atteint → réponse finale. Les `tools` restent dans la requête, avec
+        # `tool_choice="none"` : les retirer alors que l'historique est saturé
+        # d'appels pousse le modèle à écrire l'appel suivant en texte (markup DSML).
+        logger.warning("DeepSeek: max_tool_iters={n} atteint, génération finale sans appel d'outil", n=self._max_tool_iters)
         try:
             response = await self._client.chat.completions.create(
                 messages=[{"role": "system", "content": system_prompt}] + history,
+                tools=tools,
+                tool_choice="none",
                 **params,
             )
-            text = response.choices[0].message.content or FALLBACK_RESPONSE
+            text = _strip_dsml(response.choices[0].message.content or "") or FALLBACK_RESPONSE
             await self._log_cost(response, purpose, user_id)
             return (text, tools_called)
         except Exception as e:
