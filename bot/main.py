@@ -270,6 +270,7 @@ async def main() -> None:
     from bot.twitch.bot import WallyTwitch
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
+    from bot.twitch.clip_announce import announce_clip
     from bot.twitch.events import register_events
 
     env_path = Path(__file__).parent.parent / ".env"
@@ -335,6 +336,9 @@ async def main() -> None:
             loop.notify_event(bedroom, desc, relevant=True)
 
         _stream_voice_tasks: set[asyncio.Task] = set()
+        # Référence forte : l'annonce d'un clip attend que Twitch l'ait préparé,
+        # une tâche détachée serait ramassée par le GC entre-temps.
+        _clip_tasks: set[asyncio.Task] = set()
 
         def _on_stream_voice(old: dict, new: dict) -> None:
             """Auto-join du salon vocal du stream, en écoute seule.
@@ -412,15 +416,14 @@ async def main() -> None:
                         # occupe l'écran le temps de la vidéo. C'est l'URL du
                         # FICHIER qui le rend lisible tout seul ; sans elle,
                         # `show_clip` retombe sur le player puis sur la carte.
-                        playable = await twitch_bot.twitch_api.get_clip_video_url(cid)
-                        narrator.show_clip(
-                            clip.get("title") or "un clip",
-                            clip.get("creator_name") or "quelqu'un",
-                            embed_url=clip.get("embed_url") or "",
-                            video_url=(playable or {}).get("url", ""),
-                            duration=(playable or {}).get("duration")
-                            or clip.get("duration") or 0.0,
+                        # L'annonce attend que Twitch ait fini de préparer le
+                        # clip, donc en tâche de fond : sinon la veille resterait
+                        # bloquée et les clips suivants passeraient à la trappe.
+                        t = asyncio.create_task(
+                            announce_clip(narrator, twitch_bot.twitch_api, clip)
                         )
+                        _clip_tasks.add(t)
+                        t.add_done_callback(_clip_tasks.discard)
                     seen.extend(fresh)
                     # `deque(maxlen=...)` plutôt qu'un `set` vidé d'un coup : le
                     # `clear()` oubliait TOUT alors que la fenêtre d'interrogation
