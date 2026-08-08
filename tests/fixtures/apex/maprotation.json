@@ -1,0 +1,114 @@
+{
+ "battle_royale": {
+  "current": {
+   "start": 1786170600,
+   "end": 1786176000,
+   "readableDate_start": "2026-08-08 06:30:00",
+   "readableDate_end": "2026-08-08 08:00:00",
+   "map": "Kings Canyon",
+   "code": "kings_canyon_rotation",
+   "DurationInSecs": 5400,
+   "DurationInMinutes": 90,
+   "asset": "https://apexlegendsstatus.com/assets/maps/Kings_Canyon.png",
+   "remainingSecs": 439,
+   "remainingMins": 7,
+   "remainingTimer": "00:07:19"
+  },
+  "next": {
+   "start": 1786176000,
+   "end": 1786181400,
+   "readableDate_start": "2026-08-08 08:00:00",
+   "readableDate_end": "2026-08-08 09:30:00",
+   "map": "World's Edge",
+   "code": "worlds_edge_rotation",
+   "DurationInSecs": 5400,
+   "DurationInMinutes": 90,
+   "asset": "https://apexlegendsstatus.com/assets/maps/Worlds_Edge.png"
+  }
+ },
+ "ranked": {
+  "current": {
+   "start": 1786159800,
+   "end": 1786176000,
+   "readableDate_start": "2026-08-08 03:30:00",
+   "readableDate_end": "2026-08-08 08:00:00",
+   "map": "Storm Point",
+   "code": "storm_point_rotation",
+   "DurationInSecs": 16200,
+   "DurationInMinutes": 270,
+   "asset": "https://apexlegendsstatus.com/assets/maps/Storm_Point.png",
+   "remainingSecs": 439,
+   "remainingMins": 7,
+   "remainingTimer": "00:07:19"
+  },
+  "next": {
+   "start": 1786176000,
+   "end": 1786192200,
+   "readableDate_start": "2026-08-08 08:00:00",
+   "readableDate_end": "2026-08-08 12:30:00",
+   "map": "E-District",
+   "code": "edistrict_rotation",
+   "DurationInSecs": 16200,
+   "DurationInMinutes": 270,
+   "asset": "https://apexlegendsstatus.com/assets/maps/E-District.png"
+  }
+ },
+ "ltm": {
+  "current": {
+   "start": 1786175100,
+   "end": 1786176000,
+   "readableDate_start": "2026-08-08 07:45:00",
+   "readableDate_end": "2026-08-08 08:00:00",
+   "map": "Skulltown",
+   "code": "freedm_gungame_skulltown",
+   "DurationInSecs": 900,
+   "DurationInMinutes": 15,
+   "isActive": true,
+   "eventName": "Gun Run",
+   "asset": "https://apexlegendsstatus.com/assets/maps/Arena_Skulltown.png",
+   "remainingSecs": 439,
+   "remainingMins": 7,
+   "remainingTimer": "00:07:19"
+  },
+  "next": {
+   "start": 1786176000,
+   "end": 1786176900,
+   "readableDate_start": "2026-08-08 08:00:00",
+   "readableDate_end": "2026-08-08 08:15:00",
+   "map": "Fragment",
+   "code": "freedm_tdm_fragment",
+   "DurationInSecs": 900,
+   "DurationInMinutes": 15,
+   "isActive": true,
+   "eventName": "TDM",
+   "asset": "https://apexlegendsstatus.com/assets/maps/Worlds_Edge.png"
+  }
+ },
+ "wildcard": {
+  "current": {
+   "start": 1786170600,
+   "end": 1786176000,
+   "readableDate_start": "2026-08-08 06:30:00",
+   "readableDate_end": "2026-08-08 08:00:00",
+   "map": "Kings Canyon",
+   "code": "kings_canyon_rotation",
+   "DurationInSecs": 5400,
+   "DurationInMinutes": 90,
+   "asset": "https://apexlegendsstatus.com/assets/maps/Kings_Canyon.png",
+   "remainingSecs": 439,
+   "remainingMins": 7,
+   "remainingTimer": "00:07:19"
+  },
+  "next": {
+   "start": 1786176000,
+   "end": 1786181400,
+   "readableDate_start": "2026-08-08 08:00:00",
+   "readableDate_end": "2026-08-08 09:30:00",
+   "map": "E-District",
+   "code": "edistrict_rotation",
+   "DurationInSecs": 5400,
+   "DurationInMinutes": 90,
+   "asset": "https://apexlegendsstatus.com/assets/maps/E-District.png"
+  }
+ }
+}

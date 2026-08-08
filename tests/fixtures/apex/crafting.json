@@ -1,0 +1,178 @@
+[
+ {
+  "bundle": "equipment_bundle_2",
+  "start": 1785693600,
+  "end": 1786298400,
+  "startDate": "2026-08-02 18:00:00",
+  "endDate": "2026-08-09 18:00:00",
+  "bundleType": "weekly",
+  "bundleContent": [
+   {
+    "item": "backpack_pickup_lv3",
+    "cost": 75,
+    "itemType": {
+     "name": "backpack",
+     "rarity": "Epic",
+     "asset": "https://legion.apexlegendsstatus.com/cache/5a47e172428bc5ed5f50895e85f0a031.png",
+     "rarityHex": "#B200FF"
+    }
+   },
+   {
+    "item": "helmet_pickup_lv3",
+    "cost": 30,
+    "itemType": {
+     "name": "helmet",
+     "rarity": "Epic",
+     "asset": "https://legion.apexlegendsstatus.com/cache/08122ea022170da97f0eb6181a36f61f.png",
+     "rarityHex": "#B200FF"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "weapon_one",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "mp_weapon_hemlock",
+    "cost": 30,
+    "itemType": {
+     "name": "Hemlok",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/hemlok.png",
+     "rarityHex": "#808080"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "weapon_two",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "mp_weapon_alternator",
+    "cost": 30,
+    "itemType": {
+     "name": "Alternator",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/alternator.png",
+     "rarityHex": "#808080"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "health_pickup",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "health_pickup_health_large",
+    "cost": 20,
+    "itemType": {
+     "name": "med_kit",
+     "rarity": "Rare",
+     "asset": "https://legion.apexlegendsstatus.com/cache/6fc0b73490114ec75a8e564179f3ab68.png",
+     "rarityHex": "#0094FF"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "shield_pickup",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "health_pickup_combo_large",
+    "cost": 20,
+    "itemType": {
+     "name": "large_shield_cell",
+     "rarity": "Rare",
+     "asset": "https://legion.apexlegendsstatus.com/cache/30e855bb61c983f0407f4ad32a3dff58.png",
+     "rarityHex": "#0094FF"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "ammo",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "bullet",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   },
+   {
+    "item": "special",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   },
+   {
+    "item": "shotgun",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   },
+   {
+    "item": "highcal",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   },
+   {
+    "item": "sniper",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   },
+   {
+    "item": "arrows",
+    "cost": 10,
+    "itemType": {
+     "name": "ammo",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/0f8ac57cbf0db1163f77fcef09f9fb2c.png",
+     "rarityHex": "#808080"
+    }
+   }
+  ]
+ },
+ {
+  "bundle": "evo",
+  "bundleType": "permanent",
+  "bundleContent": [
+   {
+    "item": "evo_points",
+    "cost": 50,
+    "itemType": {
+     "name": "evo_armor",
+     "rarity": "Common",
+     "asset": "https://legion.apexlegendsstatus.com/cache/4445aea4337022d3694f5d3b07940a6b.png",
+     "rarityHex": "#808080"
+    }
+   }
+  ]
+ }
+]

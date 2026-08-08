@@ -1,0 +1,232 @@
+{
+ "Origin_login": {
+  "EU-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 40,
+   "QueryTimestamp": 1786175403
+  },
+  "EU-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 6,
+   "QueryTimestamp": 1786175401
+  },
+  "US-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 4,
+   "QueryTimestamp": 1786175401
+  },
+  "US-Central": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 3,
+   "QueryTimestamp": 1786175402
+  },
+  "US-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 3,
+   "QueryTimestamp": 1786175402
+  },
+  "SouthAmerica": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 4,
+   "QueryTimestamp": 1786175402
+  },
+  "Asia": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 3,
+   "QueryTimestamp": 1786175402
+  }
+ },
+ "EA_novafusion": {
+  "EU-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 63,
+   "QueryTimestamp": 1786175403
+  },
+  "EU-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 21,
+   "QueryTimestamp": 1786175401
+  },
+  "US-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 14,
+   "QueryTimestamp": 1786175402
+  },
+  "US-Central": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 15,
+   "QueryTimestamp": 1786175402
+  },
+  "US-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 14,
+   "QueryTimestamp": 1786175402
+  },
+  "SouthAmerica": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 14,
+   "QueryTimestamp": 1786175402
+  },
+  "Asia": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 14,
+   "QueryTimestamp": 1786175402
+  }
+ },
+ "EA_accounts": {
+  "EU-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 40,
+   "QueryTimestamp": 1786175403
+  },
+  "EU-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175401
+  },
+  "US-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 3,
+   "QueryTimestamp": 1786175402
+  },
+  "US-Central": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  },
+  "US-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 1,
+   "QueryTimestamp": 1786175402
+  },
+  "SouthAmerica": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 1,
+   "QueryTimestamp": 1786175402
+  },
+  "Asia": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  }
+ },
+ "ApexOauth_Crossplay": {
+  "EU-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 86,
+   "QueryTimestamp": 1786175404
+  },
+  "EU-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 1,
+   "QueryTimestamp": 1786175401
+  },
+  "US-West": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  },
+  "US-Central": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  },
+  "US-East": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  },
+  "SouthAmerica": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 1,
+   "QueryTimestamp": 1786175402
+  },
+  "Asia": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 0,
+   "QueryTimestamp": 1786175402
+  }
+ },
+ "selfCoreTest": {
+  "Status-website": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 69,
+   "QueryTimestamp": 1786175404
+  },
+  "Stats-API": {
+   "Status": "SLOW",
+   "HTTPCode": 200,
+   "ResponseTime": 1026,
+   "QueryTimestamp": 1786175405
+  },
+  "Overflow-#1": {
+   "Status": "DOWN",
+   "HTTPCode": 503,
+   "ResponseTime": -1,
+   "QueryTimestamp": 1786175406
+  },
+  "Overflow-#2": {
+   "Status": "UP",
+   "HTTPCode": 200,
+   "ResponseTime": 5,
+   "QueryTimestamp": 1786175406
+  },
+  "Origin-API": {
+   "Status": "SLOW",
+   "HTTPCode": 200,
+   "ResponseTime": 963,
+   "QueryTimestamp": 1786175407
+  },
+  "Playstation-API": {
+   "Status": "DOWN",
+   "HTTPCode": 404,
+   "ResponseTime": -1,
+   "QueryTimestamp": 1786175410
+  },
+  "Xbox-API": {
+   "Status": "SLOW",
+   "HTTPCode": 200,
+   "ResponseTime": 982,
+   "QueryTimestamp": 1786175411
+  }
+ },
+ "otherPlatforms": {
+  "Playstation-Network": {
+   "Status": "UP",
+   "QueryTimestamp": 1786175412
+  },
+  "Xbox-Live": {
+   "Status": "UP",
+   "QueryTimestamp": 1786175415
+  }
+ }
+}
