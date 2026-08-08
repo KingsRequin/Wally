@@ -13,6 +13,7 @@ from discord.ext import voice_recv
 from loguru import logger
 
 from bot.config import VoiceConfig
+from bot.core.secret_guard import redact
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
 # Plafond dur d'une prise de parole. Généreux : une longue réplique en
@@ -447,6 +448,8 @@ class VoiceService:
         """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus)."""
         if not text or self._vc is None:
             return
+        # Dire le mot d'un pendu en cours le gâcherait autant que l'écrire.
+        text = redact(text)
         if self.listen_only:
             # Garde en profondeur : en mode écoute, parler couvrirait le streamer
             # et serait réinjecté dans son micro.

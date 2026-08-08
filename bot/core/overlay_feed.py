@@ -19,6 +19,8 @@ from typing import Literal
 
 from loguru import logger
 
+from bot.core.secret_guard import redact
+
 # Modes d'affichage d'une bulle.
 BubbleMode = Literal["speech", "thought"]
 
@@ -113,7 +115,7 @@ class OverlayFeed:
 
     def say(self, text: str, mode: BubbleMode = "speech") -> None:
         """Affiche une bulle. `speech` = il réagit, `thought` = il pense tout seul."""
-        text = " ".join((text or "").split())
+        text = redact(" ".join((text or "").split()))
         if not text:
             return
         # Point de passage unique de TOUTES les bulles : sans cette trace, ce que

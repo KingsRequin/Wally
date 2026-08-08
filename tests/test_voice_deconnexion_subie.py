@@ -97,3 +97,31 @@ async def test_le_bot_deconnecte_par_discord_reste_rattrapable(monkeypatch):
 
     svc.leave.assert_awaited_once()
     assert svc.leave.await_args.kwargs.get("voluntary") is False
+
+
+@pytest.mark.asyncio
+async def test_en_ecoute_seule_aucun_auto_leave_nest_arme():
+    """Un live a des silences, et des moments où le salon se vide : partir tout
+    seul y serait absurde. C'est aussi ce qui garantit qu'aucun congé ne peut
+    être posé dans le dos du veilleur — `leave()` n'en pose que depuis un vocal
+    d'écoute, et rien ne l'appelle automatiquement dans ce mode."""
+    svc = _service()
+    svc._vc = None
+    channel = SimpleNamespace(id=42, name="stream", connect=AsyncMock())
+
+    await svc._join_locked(channel, None, listen_only=True)
+
+    assert svc._auto_leave_task is None
+
+
+@pytest.mark.asyncio
+async def test_en_conversation_lauto_leave_veille():
+    """La régression à éviter : sans lui, Wally squatte un salon vide."""
+    svc = _service()
+    svc._vc = None
+    channel = SimpleNamespace(id=42, name="salon", connect=AsyncMock())
+
+    await svc._join_locked(channel, None, listen_only=False)
+
+    assert svc._auto_leave_task is not None
+    svc._auto_leave_task.cancel()

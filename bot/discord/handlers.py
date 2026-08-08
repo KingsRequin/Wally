@@ -15,6 +15,7 @@ from loguru import logger
 
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block, load_prompt
@@ -1819,6 +1820,7 @@ async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | Non
     Retourne ``(id du premier message envoyé, nombre de parts)`` — le compte de
     parts alimente l'event ``message_out`` (un reply découpé en N messages).
     """
+    text = redact(text)   # un mot en jeu (pendu) ne sort pas, même par ce chemin
     # Dernier filet avant l'envoi : le modèle glisse parfois une didascalie de
     # roleplay (« (je hausse les épaules) ») malgré la consigne de VOICE.md.
     text = strip_stage_directions(text)

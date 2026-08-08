@@ -30,6 +30,7 @@ from typing import Optional
 
 from loguru import logger
 
+from bot.core.secret_guard import guard_secret, release_secret
 from bot.intelligence.prompts import load_prompt
 
 # Intervalle minimal entre deux bulles de pensée. Elles occupent l'écran quand
@@ -1092,6 +1093,7 @@ class OverlayNarrator:
             self._bingo_reminded_at = 0.0
             done.append("bingo")
         if (everything or target == "pendu") and self._hangman:
+            release_secret(self._hangman["display"])
             self._hangman = None
             done.append("pendu")
         if (everything or target == "objectif") and self._goal:
@@ -1620,6 +1622,9 @@ class OverlayNarrator:
             "found": set(),
             "missed": [],
         }
+        # Ceinture : le mot est dans son contexte pour qu'il puisse animer la
+        # partie, un filtre l'empêche de le publier (bot/core/secret_guard.py).
+        guard_secret(word)
         self._publish_hangman()
         logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(set(letters)))
         return True
@@ -1640,6 +1645,7 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=won)
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
+                release_secret(game["display"])
                 self._hangman = None
             return
         game["missed"].append(token)
@@ -1647,6 +1653,7 @@ class OverlayNarrator:
         self._publish_hangman(last=token, lost=lost)
         if lost:
             logger.info("Overlay: pendu perdu ({w})", w=game["display"])
+            release_secret(game["display"])
             self._hangman = None
 
     def _publish_hangman(self, last: str = "", won: bool = False, lost: bool = False) -> None:

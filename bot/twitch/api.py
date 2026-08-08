@@ -14,6 +14,7 @@ import httpx
 from loguru import logger
 
 from bot.core.account_linker import matches_name
+from bot.core.secret_guard import redact
 
 if TYPE_CHECKING:
     from bot.twitch.token_manager import TwitchTokenManager
@@ -89,6 +90,9 @@ class TwitchAPI:
         reply_parent_message_id: ID du message parent pour créer un thread de réponse.
         """
         target = broadcaster_id or self._broadcaster_id
+        # Dernier filet avant publication : un mot en jeu (pendu) ne sort pas,
+        # même si le modèle l'a écrit malgré la consigne.
+        text = redact(text)
         try:
             async with httpx.AsyncClient() as client:
                 for attempt in range(2):
