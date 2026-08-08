@@ -736,25 +736,36 @@ class FactExtractor:
     async def _reconcile_orphan_facts(
         self, nickname: str, canonical_uid: str
     ) -> None:
-        """Migrate memories from unknown:<nickname> to the canonical user."""
+        """Rattache les faits appris sous `unknown:<pseudo>` au compte reconnu.
+
+        Passe DÉLIBÉRÉMENT par le fact store et non par `MemoryService` : les
+        méthodes du service résolvent les alias (`_user_id` finit par
+        `_alias_cache.get(raw, raw)`), et l'alias `unknown:<pseudo>` vient
+        d'être posé quelques lignes plus haut par l'appelant. Lire ou effacer
+        « les orphelins » via le service désignait donc, en réalité, le compte
+        CANONIQUE.
+
+        Ce qu'en faisait l'ancienne version, dans cet ordre : elle relisait
+        tous les faits actifs du compte canonique, les recollait en un seul
+        blob réinséré sous ce même compte, puis appelait `delete_user_memories`
+        — un `DELETE` sec, pas un archivage — sur ce compte. Tout ce que Wally
+        savait de la personne était effacé, blob compris, à chaque extraction
+        résolvant un alias avec une confiance ≥ 0,8. Et les vrais orphelins, eux,
+        n'étaient jamais migrés.
+
+        Ici, un simple déplacement de clé : rien n'est reformulé, rien n'est
+        supprimé.
+        """
         try:
-            orphan_text = await self._memory.get_all("unknown", nickname)
-            if not orphan_text:
+            store = getattr(self._memory, "fact_store", None)
+            if store is None:
                 return
-
-            if ":" in canonical_uid:
-                plat, raw_id = canonical_uid.split(":", 1)
-            else:
-                plat, raw_id = "discord", canonical_uid
-
-            await self._memory.add(plat, raw_id, orphan_text, username=nickname)
-
-            # Delete orphan memories if supported
-            if hasattr(self._memory, "delete_user_memories"):
-                await self._memory.delete_user_memories("unknown", nickname)
-
+            moved = await store.reassign_user(f"unknown:{nickname}", canonical_uid)
+            if not moved:
+                return
             logger.info(
-                "Reconciled orphan facts for nickname={nick} → {uid}",
+                "Faits orphelins rattachés : {n} de unknown:{nick} → {uid}",
+                n=moved,
                 nick=nickname,
                 uid=canonical_uid,
             )

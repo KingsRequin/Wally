@@ -233,3 +233,80 @@ def test_le_bloc_d_etat_previent_que_les_lettres_sont_comptees():
     n, _ = _n()
     n.start_hangman("mirage")
     assert "lettre" in n.current_state_block().lower()
+
+
+# ── le filet doit être levé, sinon le mot est censuré à vie ───────────────────
+#
+# `guard_secret` inscrit le mot dans un dict de module lu par les QUATRE points
+# de sortie (chat Twitch, Discord, TTS vocal, bulles d'overlay). Un chemin qui
+# oublie une partie sans lever son filet rend donc ce mot — et toute suite de
+# ses lettres — invisible dans TOUT ce que Wally dit, jusqu'au redémarrage du
+# process. Avec un mot de l'univers de la chaîne (« apex », « ping »), la casse
+# est permanente et silencieuse.
+
+import pytest
+
+from bot.core.secret_guard import clear_secrets, redact
+
+
+@pytest.fixture(autouse=True)
+def _filet_propre():
+    clear_secrets()
+    yield
+    clear_secrets()
+
+
+def test_un_nouveau_live_leve_le_filet_de_la_partie_abandonnee():
+    """Une partie non terminée quand le live se coupe : `reset_live` l'oubliait
+    sans lever le filet, et le mot restait interdit en sortie pour toujours."""
+    n, _ = _n()
+    n.start_hangman("fusee")
+    assert "fusee" not in redact("le mot est fusee")     # protégé pendant la partie
+
+    n.reset_live()
+
+    assert redact("le mot est fusee") == "le mot est fusee"
+
+
+def test_relancer_une_partie_leve_le_filet_de_la_precedente():
+    n, _ = _n()
+    n.start_hangman("fusee")
+    n.start_hangman("planete")
+
+    assert redact("une fusee dans le ciel") == "une fusee dans le ciel"
+    assert "planete" not in redact("le mot est planete")
+
+
+def test_la_victoire_ne_laisse_aucun_residu_dans_le_filet():
+    """`guard_secret` recevait `word` brut et les levées passaient `display`,
+    qui normalise les espaces : deux clés différentes, donc un `pop()` qui
+    échoue sans un bruit et un secret qui traîne indéfiniment dans le dict de
+    module. On vérifie le dict, pas seulement une phrase de sortie — un résidu
+    ne se voit que sur le texte qui le déclenche."""
+    from bot.core import secret_guard
+
+    n, _ = _n()
+    n.start_hangman("rocket  league")            # double espace, comme un LLM en produit
+    for lettre in "rocketlagu":
+        n._count_hangman("alice", lettre)
+
+    assert n._hangman is None                    # partie gagnée
+    assert secret_guard._SECRETS == {}           # et le filet est vraiment vide
+    assert redact("on lance rocket league") == "on lance rocket league"
+
+
+def test_l_abandon_leve_le_filet():
+    n, _ = _n()
+    n.start_hangman("fusee")
+    n.cancel("pendu")
+    assert redact("le mot est fusee") == "le mot est fusee"
+
+
+def test_la_defaite_leve_le_filet():
+    n, _ = _n()
+    n.start_hangman("fusee")
+    for lettre in "bcdghj":                      # 6 ratés = perdu
+        n._count_hangman("alice", lettre)
+
+    assert n._hangman is None
+    assert redact("le mot est fusee") == "le mot est fusee"

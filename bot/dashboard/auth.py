@@ -14,7 +14,25 @@ if TYPE_CHECKING:
 
     from bot.dashboard.state import AppState
 
-_ADMIN_PREFIX = "/api/admin/"
+# Tout ce qui est servi sous `/api/` demande le Bearer, SAUF les préfixes
+# ci-dessous. Le sens de la garde est délibéré : elle refuse par défaut.
+#
+# Elle ne protégeait auparavant que `/api/admin/`, ce qui laissait `/api/actions/`
+# — monté dans le bloc « Admin routes » de `app.py`, sans aucune `Depends()` —
+# ouvert à qui atteignait le port : lecture des tâches planifiées, DÉCLENCHEMENT
+# de leur exécution (Wally poste alors dans Discord/Twitch), réécriture des
+# permissions, et les IDs de serveurs et de rôles Discord en prime. Le port est
+# publié sur `0.0.0.0` (`docker-compose.yml`).
+#
+# La faille venait de la forme de la garde, pas de l'oubli : une protection par
+# préfixe laisse passer tout routeur monté ailleurs, en silence. Un nouveau
+# routeur est désormais fermé tant qu'on ne l'ouvre pas ICI, explicitement.
+_API_PREFIX = "/api/"
+_PUBLIC_PREFIXES = (
+    "/api/public/",   # site public
+    "/api/chat/",     # chat web : JWT Discord validé dans chaque route
+    "/api/setup/",    # assistant de première installation, jeton dans l'URL
+)
 
 # Un redirect de navigateur venu de Twitch : aucun en-tête possible, et la route
 # valide elle-même le `state` OAuth. Seule exemption inconditionnelle légitime.
@@ -33,6 +51,19 @@ _SSE_TICKETED = {
 
 # Court : le ticket ne sert qu'à ouvrir la connexion, dans la foulée de l'échange.
 _TICKET_TTL_S = 30.0
+
+
+def _needs_auth(path: str) -> bool:
+    """Ce chemin exige-t-il le Bearer admin ?
+
+    Hors de `/api/`, non : pages HTML, `/static`, `/overlay`, WebSocket. Sous
+    `/api/`, OUI par défaut — seuls `_PUBLIC_PREFIXES` et `_NO_AUTH` en sortent.
+    """
+    if not path.startswith(_API_PREFIX):
+        return False
+    if path in _NO_AUTH:
+        return False
+    return not path.startswith(_PUBLIC_PREFIXES)
 
 
 class SseTickets:
@@ -85,7 +116,7 @@ class BearerAuthMiddleware:
             return
 
         path = scope.get("path", "")
-        if not path.startswith(_ADMIN_PREFIX) or path in _NO_AUTH:
+        if not _needs_auth(path):
             await self.app(scope, receive, send)
             return
 

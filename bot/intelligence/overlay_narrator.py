@@ -1063,6 +1063,11 @@ class OverlayNarrator:
         self._goal = None
         self._recent_bubbles.clear()
         self._talkers.clear()
+        # Une partie laissée en plan quand le live s'est coupé : l'oublier sans
+        # lever son filet laissait le mot interdit en sortie jusqu'au prochain
+        # redémarrage — sur les quatre plateformes, y compris pour un mot aussi
+        # courant qu'« apex ».
+        self._release_hangman_secret()
         self._hangman = None
 
     # ── annulation ────────────────────────────────────────────────────────
@@ -1093,7 +1098,7 @@ class OverlayNarrator:
             self._bingo_reminded_at = 0.0
             done.append("bingo")
         if (everything or target == "pendu") and self._hangman:
-            release_secret(self._hangman["display"])
+            self._release_hangman_secret()
             self._hangman = None
             done.append("pendu")
         if (everything or target == "objectif") and self._goal:
@@ -1609,12 +1614,27 @@ class OverlayNarrator:
         text = unicodedata.normalize("NFD", (text or "").lower())
         return "".join(c for c in text if unicodedata.category(c) != "Mn")
 
+    def _release_hangman_secret(self) -> None:
+        """Lève le filet du pendu en cours, s'il y en a un.
+
+        Point de levée UNIQUE, en regard du `guard_secret` unique de
+        `start_hangman`. Les cinq chemins qui oublient une partie (victoire,
+        défaite, abandon, remplacement, nouveau live) passent par ici : un
+        sixième qui écrirait `self._hangman = None` tout seul rendrait le mot
+        muet pour de bon, et la panne serait invisible.
+        """
+        if self._hangman:
+            release_secret(self._hangman["display"])
+
     def start_hangman(self, word: str, hint: str = "") -> bool:
         """Ouvre une partie. Le mot n'est jamais publié — seules ses lettres le sont."""
         folded = self._fold(word)
         letters = [c for c in folded if c.isalpha()]
         if len(letters) < 3 or len(letters) > 16 or not self._live():
             return False
+        # Une partie déjà ouverte est remplacée : lever son filet AVANT de
+        # l'oublier, sinon son mot reste interdit en sortie pour toujours.
+        self._release_hangman_secret()
         self._hangman = {
             "word": folded,
             "display": " ".join(word.split())[:40],
@@ -1624,7 +1644,12 @@ class OverlayNarrator:
         }
         # Ceinture : le mot est dans son contexte pour qu'il puisse animer la
         # partie, un filtre l'empêche de le publier (bot/core/secret_guard.py).
-        guard_secret(word)
+        #
+        # Posé sur `display`, jamais sur `word` : c'est `display` que TOUTES les
+        # levées passent à `release_secret`. `_fold` normalise la casse et les
+        # accents, pas les espaces — « rocket  league » posé et « rocket league »
+        # levé sont deux clés différentes, et le `pop()` échouait sans un bruit.
+        guard_secret(self._hangman["display"])
         self._publish_hangman()
         logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(set(letters)))
         return True
@@ -1645,7 +1670,7 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=won)
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
-                release_secret(game["display"])
+                self._release_hangman_secret()
                 self._hangman = None
             return
         game["missed"].append(token)
@@ -1653,7 +1678,7 @@ class OverlayNarrator:
         self._publish_hangman(last=token, lost=lost)
         if lost:
             logger.info("Overlay: pendu perdu ({w})", w=game["display"])
-            release_secret(game["display"])
+            self._release_hangman_secret()
             self._hangman = None
 
     def _publish_hangman(self, last: str = "", won: bool = False, lost: bool = False) -> None:

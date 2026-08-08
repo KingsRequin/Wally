@@ -122,3 +122,32 @@ def test_callback_success():
     assert call_args["type"] == "twitch_auth"
     assert call_args["account"] == "bot"
     assert call_args["username"] == "WallyTeBully"
+
+
+def test_le_callback_nechappe_plus_le_parametre_error():
+    """XSS réfléchie : `error` vient de l'URL et repartait tel quel dans le HTML.
+
+    Cette route est la SEULE exemptée d'authentification (`_NO_AUTH`), donc
+    joignable par n'importe quel lien. Le jeton admin vit en `localStorage` sur
+    la même origine : un `<img onerror=...>` suffisait à l'exfiltrer.
+    """
+    client = TestClient(_make_app())
+    payload = "<img src=x onerror=alert(1)>"
+    r = client.get("/api/admin/twitch/auth/callback", params={"error": payload})
+
+    assert r.status_code == 200
+    assert payload not in r.text          # aucune balise injectée
+    assert "<img" not in r.text
+    assert "&lt;img" in r.text            # rendu comme du texte, pas comme du HTML
+
+
+def test_le_callback_echappe_aussi_les_apostrophes_et_guillemets():
+    """L'échappement est fait DANS `_err`, donc valable pour tous ses appels —
+    y compris ceux qu'on écrira plus tard."""
+    client = TestClient(_make_app())
+    r = client.get(
+        "/api/admin/twitch/auth/callback",
+        params={"error": "\" onmouseover='steal()"},
+    )
+    assert "onmouseover='steal()" not in r.text
+    assert "&#x27;" in r.text or "&quot;" in r.text

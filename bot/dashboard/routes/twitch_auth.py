@@ -1,6 +1,6 @@
 # bot/dashboard/routes/twitch_auth.py
 from __future__ import annotations
-import asyncio, hashlib, os, re, time, urllib.parse, uuid
+import asyncio, hashlib, html, os, re, time, urllib.parse, uuid
 from pathlib import Path
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -125,9 +125,15 @@ async def twitch_auth_callback(request: Request):
     error     = request.query_params.get("error","")
 
     def _err(msg):
+        # Échappement DANS le rendu, pas chez l'appelant : cette route est la
+        # seule exemptée d'authentification (`_NO_AUTH`), et `error` vient tel
+        # quel de l'URL. Non échappé, un lien piégé exécutait du JS sur
+        # l'origine du dashboard — où le jeton admin vit en `localStorage`.
+        # À la source : impossible d'oublier l'échappement sur un futur appel.
         return HTMLResponse(
             f"<html><body style='font-family:sans-serif;text-align:center;padding:40px'>"
-            f"<h2>Erreur</h2><p>{msg}</p><p>Ferme cet onglet et ressaie.</p></body></html>"
+            f"<h2>Erreur</h2><p>{html.escape(str(msg))}</p>"
+            f"<p>Ferme cet onglet et ressaie.</p></body></html>"
         )
 
     if error:

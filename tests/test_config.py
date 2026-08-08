@@ -147,3 +147,52 @@ def test_save_config_includes_theme(tmp_path):
     config.save()
     saved = yaml.safe_load(cfg_file.read_text())
     assert saved["theme"]["accent_color"] == "#abc123"
+
+
+def test_save_nefface_pas_la_section_apex(tmp_path):
+    """`save()` réécrit le fichier ENTIER : une section oubliée du dump
+    disparaît du disque au premier bouton du dashboard.
+
+    C'est arrivé à `apex` : `config.yaml` n'a plus de section `apex:`, donc
+    `streamer_account` est vide et `main.py` ne démarre jamais l'`ApexWatcher`.
+    La perception passive Apex était morte sans un seul message d'erreur.
+    """
+    cfg_file = tmp_path / "config.yaml"
+    raw = {**MINIMAL_CONFIG, "apex": {"streamer_account": "Azrael", "streamer_platform": "PC"}}
+    cfg_file.write_text(yaml.dump(raw))
+
+    config = Config.load(str(cfg_file))
+    assert config.apex.streamer_account == "Azrael"
+    config.save()
+
+    on_disk = yaml.safe_load(cfg_file.read_text())
+    assert on_disk["apex"]["streamer_account"] == "Azrael"
+    assert Config.load(str(cfg_file)).apex.streamer_account == "Azrael"
+
+
+def test_toute_section_de_config_est_ecrite_par_save(tmp_path):
+    """Le garde-fou contre la répétition du bug ci-dessus.
+
+    Ajouter un champ au dataclass `Config` sans l'ajouter au dict de `save()`
+    ne lève rien : la section est juste effacée du fichier à la première
+    sauvegarde. Ce test rend l'oubli bruyant.
+    """
+    from dataclasses import fields
+
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+    config = Config.load(str(cfg_file))
+    config.save()
+
+    on_disk = yaml.safe_load(cfg_file.read_text())
+    # Sous-sections rangées DANS `emotions:` plutôt qu'à la racine.
+    dans_emotions = {
+        "mood", "fatigue", "habituation", "emotional_memory",
+        "circadian", "spontaneous", "secondaries",
+    }
+    attendus = {
+        f.name for f in fields(config)
+        if not f.name.startswith("_") and f.name not in dans_emotions
+    }
+    manquants = attendus - set(on_disk)
+    assert not manquants, f"sections perdues par save() : {sorted(manquants)}"

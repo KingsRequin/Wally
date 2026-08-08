@@ -31,6 +31,18 @@ def _make_app(token: str | None) -> FastAPI:
     async def sse_logs_route():
         return {"ok": True}
 
+    @app.get("/api/actions/tasks")
+    async def actions_route():
+        return {"ok": True}
+
+    @app.get("/api/chat/sessions")
+    async def chat_route():
+        return {"ok": True}
+
+    @app.get("/overlay")
+    async def overlay_page():
+        return {"ok": True}
+
     return app
 
 
@@ -106,6 +118,48 @@ def test_le_callback_twitch_reste_sans_auth():
     route valide elle-même le `state` OAuth."""
     from bot.dashboard.auth import _NO_AUTH
     assert "/api/admin/twitch/auth/callback" in _NO_AUTH
+
+
+def test_api_actions_exige_le_bearer():
+    """`/api/actions/*` était servi SANS AUCUNE authentification.
+
+    La garde ne couvrait que le préfixe `/api/admin/`, or ce routeur est monté
+    sous `/api/actions` — et le port est publié sur 0.0.0.0. N'importe qui
+    pouvait lire les tâches planifiées, DÉCLENCHER leur exécution (Wally poste
+    alors dans Discord/Twitch) et réécrire les permissions d'actions.
+    """
+    client = TestClient(_make_app("secret123"))
+    assert client.get("/api/actions/tasks").status_code == 401
+    assert client.get(
+        "/api/actions/tasks", headers={"Authorization": "Bearer secret123"}
+    ).status_code == 200
+
+
+def test_tout_nouveau_routeur_api_est_ferme_par_defaut():
+    """Le fond du bug : une garde par préfixe laisse passer ce qu'on monte
+    ailleurs, en silence. Elle refuse désormais par défaut — un routeur `/api/`
+    inconnu de la liste publique est fermé sans qu'on ait à y penser."""
+    from bot.dashboard.auth import _needs_auth
+
+    assert _needs_auth("/api/actions/tasks")
+    assert _needs_auth("/api/admin/config")
+    assert _needs_auth("/api/un-routeur-invente-demain/x")
+    # Les seules ouvertures, explicites.
+    assert not _needs_auth("/api/public/status")
+    assert not _needs_auth("/api/chat/sessions")
+    assert not _needs_auth("/api/setup/abc/save")
+    assert not _needs_auth("/api/admin/twitch/auth/callback")
+    # Hors `/api/` : pages HTML, statiques, overlay.
+    assert not _needs_auth("/overlay")
+    assert not _needs_auth("/static/app.js")
+
+
+def test_les_chemins_non_api_restent_ouverts():
+    """Le durcissement ne doit pas fermer l'overlay ni le site public."""
+    client = TestClient(_make_app("secret123"))
+    assert client.get("/overlay").status_code == 200
+    assert client.get("/api/public/test").status_code == 200
+    assert client.get("/api/chat/sessions").status_code == 200
 
 
 def test_middleware_is_pure_asgi_not_basehttp():

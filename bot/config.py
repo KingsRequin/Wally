@@ -572,6 +572,12 @@ class Config:
             "overlay_image": asdict(self.overlay_image),
             "theme": asdict(self.theme),
             "voice": asdict(self.voice),
+            # `save()` réécrit le fichier ENTIER : toute section absente d'ici est
+            # effacée du disque au premier bouton du dashboard. `apex` manquait —
+            # `config.yaml` n'a donc plus de section `apex:`, `streamer_account`
+            # est vide, et `main.py` ne démarre jamais l'`ApexWatcher`. La
+            # fonctionnalité était morte sans un seul message d'erreur.
+            "apex": asdict(self.apex),
             "response_gate": self.response_gate,
             "cognitive_loop": self.cognitive_loop,
         }

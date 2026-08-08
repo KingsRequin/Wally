@@ -212,6 +212,28 @@ class SQLiteFactStore:
             await db.commit()
             return cursor.rowcount
 
+    async def reassign_user(self, from_user_id: str, to_user_id: str) -> int:
+        """Rattache les faits d'un uid à un autre. Retourne le nombre déplacé.
+
+        Sert à recoller les faits appris sous un pseudo (`unknown:azrael`) au
+        compte reconnu derrière (`discord:610…`). Un DÉPLACEMENT, jamais une
+        recopie suivie d'un effacement : le contenu, le triplet S-P-O, la
+        confiance et les dates survivent intacts.
+
+        Les deux uid sont pris au pied de la lettre — aucune résolution d'alias
+        n'est appliquée ici, et c'est le point : la table d'alias vient
+        justement d'apprendre que ces deux clés désignent la même personne.
+        """
+        if not from_user_id or from_user_id == to_user_id:
+            return 0
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "UPDATE atomic_facts SET user_id = ? WHERE user_id = ?",
+                (to_user_id, from_user_id),
+            )
+            await db.commit()
+            return cursor.rowcount
+
     async def count_by_user(self, user_id: str) -> int:
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
