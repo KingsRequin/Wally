@@ -213,15 +213,18 @@ def test_le_schema_dit_que_l_indice_reste_cache():
     assert "caché" in _hangman_params()["hint"]["description"]
 
 
-def test_le_bloc_d_etat_ne_contient_pas_le_mot():
-    """Le bloc « Sur ton overlay » part dans le prompt de Wally. Y écrire le mot
-    l'expose à le lâcher dans le chat, alors que tout le reste du widget
-    s'applique à ne jamais le publier. Le nombre de lettres suffit à animer."""
+def test_le_bloc_d_etat_porte_le_mot_et_sa_consigne():
+    """Le mot était tenu hors du prompt pour qu'il ne puisse pas le lâcher. Le
+    prix était trop élevé : Wally ne pouvait ni donner un second indice, ni dire
+    où en était la partie — il n'avait qu'un décompte de lettres. Décision de
+    l'owner le 2026-08-08 : le mot entre au contexte, et la consigne de ne jamais
+    l'écrire voyage avec lui, dans la même phrase."""
     n, _ = _n()
     n.start_hangman("mirage", hint="un leurre")
     block = n.current_state_block()
-    assert "mirage" not in block.lower()
-    assert "un leurre" not in block.lower()
+    assert "mirage" in block.lower()
+    assert "un leurre" in block.lower()
+    assert "JAMAIS" in block          # la consigne ne part jamais sans le mot
     assert "Pendu" in block
 
 
