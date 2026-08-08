@@ -51,18 +51,21 @@ def _check_follow_burst() -> bool:
     return len(_recent_follows) >= _FOLLOW_BURST_THRESHOLD
 
 
-def _feed(bot: "WallyTwitch", description: str) -> None:
+def _feed(bot: "WallyTwitch", description: str, *, kind: str = "") -> None:
     """Inscrit un moment marquant du stream dans le flux passif (best-effort).
 
     Purement perceptif : l'événement déclenche déjà sa propre réponse chat plus
     bas — ici on ne fait que laisser une trace de ce qui s'est passé, pour que le
     contexte de Wally garde le fil du live même hors de Twitch.
+
+    `kind` accompagne la phrase jusqu'à l'overlay, qui sinon devait déduire le
+    type de l'événement de sa formulation.
     """
     feed = getattr(bot, "stream_feed", None)
     if feed is None:
         return
     try:
-        feed.record(description)
+        feed.record(description, kind=kind)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
         logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
 
@@ -159,7 +162,7 @@ def register_events(bot: "WallyTwitch") -> None:
             bot.emotion.apply_delta("curiosity", 0.2)
             _check_peak(bot, "curiosity", old_curiosity, 0.2, username=payload.data.user.name, event_name="follow_burst")
             # Un follow isolé est du bruit ; une vague, c'est un moment du stream.
-            _feed(bot, "vague de nouveaux follows sur la chaîne")
+            _feed(bot, "vague de nouveaux follows sur la chaîne", kind="follow_wave")
         if not cfg or not cfg.active:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
@@ -175,7 +178,7 @@ def register_events(bot: "WallyTwitch") -> None:
         # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
-        _feed(bot, f"{payload.data.user.name} vient de s'abonner à la chaîne")
+        _feed(bot, f"{payload.data.user.name} vient de s'abonner à la chaîne", kind="sub")
         _goal(bot, "sub")
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.4)
@@ -216,7 +219,7 @@ def register_events(bot: "WallyTwitch") -> None:
         # d'overlay) et l'émotion valent même quand le message automatique est
         # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
-        _feed(bot, f"{gifter} offre {payload.data.total} abonnement(s) au chat")
+        _feed(bot, f"{gifter} offre {payload.data.total} abonnement(s) au chat", kind="gift_sub")
         _goal(bot, "sub", int(payload.data.total or 1))
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.5)
@@ -245,7 +248,7 @@ def register_events(bot: "WallyTwitch") -> None:
         # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         delta = _bits_joy(payload.data.bits)
         username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
-        _feed(bot, f"{username} balance {payload.data.bits} bits")
+        _feed(bot, f"{username} balance {payload.data.bits} bits", kind="bits")
         _goal(bot, "bits", int(payload.data.bits or 0))
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", delta)
@@ -264,7 +267,7 @@ def register_events(bot: "WallyTwitch") -> None:
         # d'overlay) et l'émotion valent même quand le message automatique est
         # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         viewers = payload.data.viewer_count
-        _feed(bot, f"raid de {payload.data.raider.name} avec {viewers} spectateurs")
+        _feed(bot, f"raid de {payload.data.raider.name} avec {viewers} spectateurs", kind="raid")
         joy_spike = min(viewers / 50, 0.9)
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", joy_spike)

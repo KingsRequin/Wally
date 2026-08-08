@@ -152,22 +152,23 @@ class StreamWatcher:
                     logger.warning("StreamWatcher on_transition a échoué : {e}", e=exc)
         self._emit_feed_events(old, new)
 
-    def _emit(self, description: str, *, notify: bool = True) -> None:
+    def _emit(self, description: str, *, kind: str = "", notify: bool = True) -> None:
         """Pousse une ligne dans le flux passif — jamais bloquant.
 
-        `notify=False` pour ce qui doit être SU sans être commenté."""
+        `kind` dit ce qu'est l'événement (`live_start`, `game_change`…) ; sans
+        lui, l'overlay devait le déduire de la phrase.
+
+        `notify=False` pour ce qui doit être SU sans être commenté.
+
+        Le consommateur attendu est `StreamFeed.record`, dont c'est la signature.
+        Un repli qui rattrapait `TypeError` pour ré-appeler `on_event(description)`
+        a été retiré : il ne distinguait pas une signature incompatible d'un
+        `TypeError` levé PAR le callback, et republiait alors le même événement.
+        """
         if self._on_event is None:
             return
         try:
-            if notify:
-                self._on_event(description)
-            else:
-                # Le consommateur peut être un simple callable (tests) : on ne
-                # perd pas l'événement s'il n'accepte pas le drapeau.
-                try:
-                    self._on_event(description, notify=False)
-                except TypeError:
-                    self._on_event(description)
+            self._on_event(description, kind=kind, notify=notify)
         except Exception as exc:  # noqa: BLE001
             logger.warning("StreamWatcher on_event a échoué : {e}", e=exc)
 
@@ -194,11 +195,11 @@ class StreamWatcher:
             elif title:
                 desc += f" (titre : « {title} »)"
             self._viewers_mark = int(new.get("viewers") or 0)
-            self._emit(desc)
+            self._emit(desc, kind="live_start")
             return
         if was_live and not is_live:
             self._viewers_mark = 0
-            self._emit(f"{name} a terminé son live.")
+            self._emit(f"{name} a terminé son live.", kind="live_end")
             return
         if not is_live:
             return
@@ -208,11 +209,12 @@ class StreamWatcher:
         if new_cat and new_cat != old_cat:
             self._emit(
                 f"{name} change de jeu : {old_cat} → {new_cat}" if old_cat
-                else f"{name} lance {new_cat}"
+                else f"{name} lance {new_cat}",
+                kind="game_change",
             )
         old_title, new_title = old.get("title"), new.get("title")
         if new_title and new_title != old_title:
-            self._emit(f"{name} a changé le titre du stream : « {new_title} »")
+            self._emit(f"{name} a changé le titre du stream : « {new_title} »", kind="title_change")
 
         viewers = int(new.get("viewers") or 0)
         delta = viewers - self._viewers_mark
@@ -223,6 +225,7 @@ class StreamWatcher:
             # vide. Il reste dans le contexte, il ne déclenche plus rien.
             self._emit(
                 f"l'audience {verb} : {self._viewers_mark} → {viewers} spectateurs",
+                kind="audience",
                 notify=False,
             )
             self._viewers_mark = viewers

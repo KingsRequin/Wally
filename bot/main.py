@@ -532,11 +532,11 @@ async def main() -> None:
         # référence forte pour que le GC ne l'annule pas en vol.
         _overlay_event_tasks: set[asyncio.Task] = set()
 
-        def _narrate_stream_event(description: str) -> None:
+        def _narrate_stream_event(description: str, kind: str = "") -> None:
             narrator = getattr(discord_bot, "overlay_narrator", None)
             if narrator is None:
                 return
-            task = asyncio.create_task(narrator.on_stream_event(description))
+            task = asyncio.create_task(narrator.on_stream_event(description, kind=kind))
             _overlay_event_tasks.add(task)
             task.add_done_callback(_overlay_event_tasks.discard)
 

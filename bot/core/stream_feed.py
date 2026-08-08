@@ -77,13 +77,19 @@ class StreamFeed:
         # Observateur notifié à chaque nouvel événement retenu (doublons exclus).
         # Sert à l'overlay de stream, qui réagit en direct. Reste passif : le
         # flux garde sa vocation de contexte, il ne déclenche rien de lui-même.
-        self._observer: Optional[Callable[[str], None]] = None
+        # Reçoit `(description, kind)` : sans le type, l'overlay devait le
+        # DEVINER depuis la phrase, et se trompait.
+        self._observer: Optional[Callable[[str, str], None]] = None
         # Observateur des lignes de chat (auteur, texte). Sert aux sondages et
         # aux saluts de l'overlay. Même contrat : best-effort, jamais bloquant.
         self._chat_observer: Optional[Callable[[str, str], None]] = None
 
-    def set_observer(self, callback: Optional[Callable[[str], None]]) -> None:
-        """Branche un observateur sur les événements retenus (None pour couper)."""
+    def set_observer(self, callback: Optional[Callable[[str, str], None]]) -> None:
+        """Branche un observateur sur les événements retenus (None pour couper).
+
+        Appelé avec `(description, kind)` — `kind` vaut `""` quand le producteur
+        n'a pas typé son événement.
+        """
         self._observer = callback
 
     def set_chat_observer(self, callback: Optional[Callable[[str, str], None]]) -> None:
@@ -95,8 +101,13 @@ class StreamFeed:
         global _active
         _active = self
 
-    def record(self, description: str, *, notify: bool = True) -> None:
+    def record(self, description: str, *, kind: str = "", notify: bool = True) -> None:
         """Empile un événement du stream (déjà rédigé en français).
+
+        `kind` dit CE QUE c'est (`raid`, `sub`, `live_end`…). Le tampon n'en fait
+        rien — il reste une suite de phrases — mais l'observateur le reçoit :
+        sans lui, l'overlay devait déduire le type de la phrase, et finissait par
+        annoncer des raids qui n'avaient pas eu lieu.
 
         `notify=False` consigne sans réveiller l'observateur : pour un fait que
         Wally vient lui-même de produire, sur lequel il n'a pas à réagir une
@@ -115,7 +126,7 @@ class StreamFeed:
         logger.debug("StreamFeed: {d}", d=description)
         if notify and self._observer is not None:
             try:
-                self._observer(description)
+                self._observer(description, kind or "")
             except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux
                 logger.warning("StreamFeed: observateur en erreur: {e}", e=exc)
 

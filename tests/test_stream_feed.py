@@ -34,10 +34,17 @@ def _api(*results):
 
 
 def _watcher_with_feed(*results, **kwargs):
+    """Le consommateur réel est `StreamFeed.record(description, *, kind, notify)` :
+    l'observateur de test en respecte la signature, sinon il teste un contrat qui
+    n'existe pas."""
     events: list[str] = []
+
+    def _record(description, *, kind="", notify=True):
+        events.append(description)
+
     w = StreamWatcher(
         _api(*results), streamer_name="Azrael_TTV",
-        on_event=events.append, **kwargs,
+        on_event=_record, **kwargs,
     )
     return w, events
 
@@ -350,8 +357,8 @@ def test_l_observateur_est_notifie_des_evenements_retenus():
     from bot.core.stream_feed import StreamFeed
     vus = []
     feed = StreamFeed(streamer_name="azrael")
-    feed.set_observer(vus.append)
-    feed.record("Un raid de 42 personnes arrive")
+    feed.set_observer(lambda description, kind: vus.append(description))
+    feed.record("Un raid de 42 personnes arrive", kind="raid")
     assert vus == ["Un raid de 42 personnes arrive"]
 
 
@@ -360,9 +367,9 @@ def test_l_observateur_ne_voit_pas_les_doublons_consecutifs():
     from bot.core.stream_feed import StreamFeed
     vus = []
     feed = StreamFeed()
-    feed.set_observer(vus.append)
-    feed.record("Le jeu passe à Apex")
-    feed.record("Le jeu passe à Apex")
+    feed.set_observer(lambda description, kind: vus.append(description))
+    feed.record("Le jeu passe à Apex", kind="game_change")
+    feed.record("Le jeu passe à Apex", kind="game_change")
     assert len(vus) == 1
 
 

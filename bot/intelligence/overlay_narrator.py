@@ -596,15 +596,16 @@ class OverlayNarrator:
     # ── événements du stream ──────────────────────────────────────────────
 
     async def on_stream_event(
-        self, description: str, *, show_thinking: bool = True
+        self, description: str, *, kind: str = "", show_thinking: bool = True
     ) -> Optional[str]:
         """Réagit à un VRAI événement du live (raid, sub, changement de jeu…).
 
-        `description` arrive déjà rédigée en français par `StreamFeed`.
+        `description` arrive déjà rédigée en français par `StreamFeed`, et `kind`
+        dit ce que c'est (`raid`, `sub`, `live_end`…).
 
-        Réservé à ce qui s'est effectivement produit : le prompt énumère les
-        types d'événements, donc tout ce qui passe ici en devient un aux yeux du
-        modèle. Pour la parole entendue en vocal, voir `on_overheard`.
+        Réservé à ce qui s'est effectivement produit : tout ce qui passe ici
+        devient un événement aux yeux du modèle. Pour la parole entendue en
+        vocal, voir `on_overheard`.
         """
         return await self._react_to(
             description, system=_EVENT_SYSTEM, show_thinking=show_thinking,

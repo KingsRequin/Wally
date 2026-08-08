@@ -160,7 +160,7 @@ def test_l_audience_est_percue_mais_ne_declenche_rien():
 
     recu: list[tuple[str, bool]] = []
 
-    def _record(description, *, notify=True):
+    def _record(description, *, kind="", notify=True):
         recu.append((description, notify))
 
     w = StreamWatcher(None, on_event=_record)
@@ -180,7 +180,7 @@ def test_un_changement_de_jeu_declenche_toujours():
 
     recu: list[tuple[str, bool]] = []
 
-    def _record(description, *, notify=True):
+    def _record(description, *, kind="", notify=True):
         recu.append((description, notify))
 
     w = StreamWatcher(None, on_event=_record)
