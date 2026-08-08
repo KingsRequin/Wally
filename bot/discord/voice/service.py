@@ -136,6 +136,8 @@ class VoiceService:
         # Congé posé quand on le fait sortir d'un vocal d'écoute à la main :
         # le veilleur ne doit pas le ramener trente secondes plus tard.
         self.listen_optout: bool = False
+        # Mode test pris pour l'écoute : rendu quand il quitte le salon.
+        self._test_mode_taken: bool = False
         self._listen_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
@@ -266,7 +268,9 @@ class VoiceService:
         self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
         # En sourdine tant que le modèle STT charge : sans ce signal, on lui
         # parle dans le vide pendant plusieurs secondes sans le savoir.
-        from bot.discord.voice.readiness import set_muted, signal_ready_when_warm
+        from bot.discord.voice.readiness import (
+            set_muted, signal_ready_when_warm, take_test_mode_if_needed,
+        )
 
         await set_muted(self._vc, True)
         # Retenu pour le prochain démarrage : on le déplace en cours de soirée,
@@ -311,6 +315,12 @@ class VoiceService:
         # Watchdog fin-de-parole : Discord coupe le silence, donc le VAD ne voit jamais la fin ;
         # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
         self._silence_task = loop.create_task(self._silence_watch(sink))
+        if listen_only:
+            # En écoute sans live, c'est qu'on règle quelque chose : le mode
+            # test s'active tout seul, et sera rendu à la sortie du salon.
+            self._test_mode_taken = await take_test_mode_if_needed(
+                getattr(self._bot, "overlay_narrator", None)
+            )
         self._vc.listen(sink)
         if not listen_only:
             self._auto_leave_task = loop.create_task(self._auto_leave_watch())
@@ -407,6 +417,11 @@ class VoiceService:
                 await self._vc.disconnect()
             except Exception as e:  # noqa: BLE001
                 logger.warning("voice: disconnect a échoué: {e}", e=e)
+        if getattr(self, "_test_mode_taken", False):
+            from bot.discord.voice.readiness import release_test_mode
+
+            await release_test_mode(getattr(self._bot, "overlay_narrator", None), taken=True)
+            self._test_mode_taken = False
         self._vc = None
         self._channel = None
         self.history.clear()
