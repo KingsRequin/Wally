@@ -823,16 +823,30 @@ class EmotionEngine:
     async def _decay_loop(self) -> None:
         while True:
             await asyncio.sleep(60)
-            self._apply_decay()
-            self._dirty = True
-            self._schedule_save()
-            logger.debug("Emotion decay applied: {state}", state=self._state)
-            self._ticks += 1
-            if self._ticks % 60 == 0 and self._db:
-                try:
+            # Le tour entier est gardé, pas seulement le snapshot. Sans ça, une
+            # seule exception tuait la tâche DÉFINITIVEMENT et rien ne la
+            # relançait : plus de decay (la colère restait figée à sa valeur,
+            # donc permanente), plus de montée d'ennui, plus de compétition,
+            # plus de sauvegarde. Et pas une ligne de log — l'exception d'une
+            # Task morte n'est rapportée qu'au ramassage. Le symptôme observable
+            # aurait été « ses émotions ne bougent plus », sans cause visible.
+            #
+            # La porte d'entrée n'est pas théorique : `_maybe_spontaneous_event`
+            # finit par un `random.choices(items, weights=…)`, qui lève sur une
+            # somme de poids nulle — et ces poids viennent de `config.yaml`,
+            # que le dashboard réécrit.
+            try:
+                self._apply_decay()
+                self._dirty = True
+                self._schedule_save()
+                logger.debug("Emotion decay applied: {state}", state=self._state)
+                self._ticks += 1
+                if self._ticks % 60 == 0 and self._db:
                     await self._db.insert_emotion_snapshot(self._state)
-                except Exception as exc:
-                    logger.warning("Failed to insert emotion snapshot: {e}", e=exc)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — un tour raté ne tue pas la boucle
+                logger.error("Emotion decay tick failed: {e}", e=exc)
 
     def start_decay_task(self) -> None:
         self._decay_task = asyncio.create_task(self._decay_loop())

@@ -1,5 +1,6 @@
 """Outils LLM pour le contexte vocal (join_voice / leave_voice)."""
 import asyncio
+import contextvars
 import json
 
 from loguru import logger
@@ -63,14 +64,59 @@ async def _search_aloud(bot, service, query: str) -> str:
     return await search_task
 
 
+# Qui parle DANS CE TOUR-CI. Une `ContextVar` et non un champ du service : chaque
+# `asyncio.Task` reçoit sa propre copie du contexte, donc une transcription qui
+# arrive pendant qu'on répond ne peut plus écraser l'identité du tour en cours.
+#
+# Le service exposait `_current_speaker_id`, un champ unique écrit à chaque
+# transcription entendue. Deux façons de le rendre faux :
+#   1. course — pendant l'attente du LLM pour A, la parole de B arrive dans une
+#      autre tâche et écrase le champ ; l'outil appelé pour A voit B ;
+#   2. déterministe — `_maybe_respond` défile la file des paroles en attente et
+#      appelle `_respond_once(sid, …)` sans jamais réécrire le champ. Toute
+#      parole défilée était donc traitée sous l'identité du dernier locuteur
+#      ENTENDU, pas de celui qu'on traite.
+# `leave_voice` vérifiait donc son autorisation contre la mauvaise personne, et
+# `create_action_task` / `cancel_action_task` s'exécutaient avec les rôles
+# Discord d'un autre membre — une escalade de privilèges silencieuse si ce
+# membre est admin.
+_CURRENT_SPEAKER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "voice_current_speaker", default=None,
+)
+
+
+def set_current_speaker(user_id: str | None):
+    """Déclare le locuteur du tour de parole en cours. Rend le jeton de reset."""
+    return _CURRENT_SPEAKER.set(str(user_id) if user_id else None)
+
+
+def reset_current_speaker(token) -> None:
+    _CURRENT_SPEAKER.reset(token)
+
+
 def make_voice_tool_executor(bot, service, current_speaker_id):
     """Construit l'exécuteur d'outils pour le contexte vocal.
 
     Args:
         bot: instance discord.Bot
         service: VoiceService
-        current_speaker_id: callable() -> str | None — id Discord du locuteur courant
+        current_speaker_id: callable() -> str | None — repli si le tour de parole
+            n'a pas déclaré son locuteur (ne devrait plus arriver).
     """
+
+    def _speaker() -> str | None:
+        sid = _CURRENT_SPEAKER.get()
+        if sid is not None:
+            return sid
+        # Repli BRUYANT : c'est exactement la lecture qui attribuait les outils
+        # au mauvais membre. Si elle resurgit, elle doit se voir dans les logs.
+        sid = current_speaker_id()
+        logger.warning(
+            "voice tool: locuteur du tour non déclaré, repli sur le dernier "
+            "entendu ({sid}) — l'autorisation peut viser la mauvaise personne",
+            sid=sid,
+        )
+        return sid
 
     async def executor(name: str, arguments: str) -> str:
         try:
@@ -79,7 +125,7 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             pass
 
         if name == "leave_voice":
-            speaker = current_speaker_id()
+            speaker = _speaker()
             if speaker is None or int(speaker) not in service.members_in_channel():
                 logger.info("voice tool: leave_voice refusé — locuteur absent du salon")
                 return json.dumps(
@@ -120,7 +166,7 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
         if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
             from bot.discord.handlers import _resolve_discord_roles
             a = json.loads(arguments or "{}")
-            speaker_id = current_speaker_id()
+            speaker_id = _speaker()
             channel = getattr(service, "_channel", None)
             member = None
             if channel is not None and speaker_id is not None:

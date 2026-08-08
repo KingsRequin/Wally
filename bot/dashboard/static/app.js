@@ -3109,7 +3109,14 @@ function switchParametresSubTab(subtab) {
   } else if (subtab === 'images') {
     _renderPanelOnce(panel, _renderParametresImages);
   } else if (subtab === 'vocal') {
-    _renderParametresVoice(panel);
+    // Passe par la garde comme ses trois voisins : `_renderParametresVoice`
+    // vide le panneau, PUIS attend `/api/admin/config`, PUIS écrit. Deux appels
+    // rapprochés (double-clic sur la pilule, `showTab` rejoué) franchissaient
+    // tous deux le vidage avant qu'aucun n'ait écrit → formulaire vocal en
+    // double. `saveVoiceConfigParams` lisant par `getElementById`, qui ne rend
+    // que le PREMIER, un réglage saisi dans la seconde copie était sauvegardé
+    // depuis la première. Exactement le bug corrigé pour « Paramètres ».
+    _renderPanelOnce(panel, _renderParametresVoice);
   }
 }
 

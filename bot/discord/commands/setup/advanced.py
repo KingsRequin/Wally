@@ -394,7 +394,12 @@ async def _send_twitch_config_tab(bot: "WallyDiscord", interaction: discord.Inte
     cfg = bot.config.twitch
     lines = [
         "**Twitch Config**",
-        f"Channels : {', '.join(cfg.channels)}",
+        # `cfg.channels` n'existe plus : `Config.load()` fait `twitch_raw.pop("channels")`
+        # et le dataclass ne porte que `guest_channels`. Cette ligne levait donc une
+        # AttributeError AVANT toute réponse — « Cette interaction a échoué », et
+        # l'onglet Twitch de `/wally setup` était injoignable. Le reste du fichier
+        # utilisait déjà le bon nom (lecture l. 243, écriture l. 256).
+        f"Channels : {', '.join(cfg.guest_channels)}",
         f"Cooldown : {cfg.cooldown_seconds}s",
     ]
     view = TwitchConfigView(bot)

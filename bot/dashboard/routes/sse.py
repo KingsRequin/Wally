@@ -243,15 +243,19 @@ async def sse_logs(request: Request):
     Architecture fan-out : chaque connexion crée une Queue(maxsize=100).
     Keepalive toutes les 15s pour éviter les timeouts proxy.
     """
-    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-    _log_queues.append(queue)
-
     async def generate():
         # Premier octet immédiat : `GZipMiddleware` retient `http.response.start`
         # jusqu'au premier corps, même pour un content-type exclu. Sans ça le
         # client ne reçoit aucun en-tête — donc pas d'`onopen` — avant le premier
         # événement réel, qui peut ne jamais venir.
         yield ": ready\n\n"
+        # Abonnement DANS le générateur, comme `sse_overlay_feed`. Hors de lui,
+        # une requête abandonnée avant le premier `send` laissait la file dans
+        # `_log_queues` POUR TOUJOURS : le `finally` ne s'exécute que si le
+        # générateur a démarré. Or `_log_sink` itère sur `list(_log_queues)` à
+        # CHAQUE ligne de log, et chaque file morte retient 100 entrées.
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        _log_queues.append(queue)
         try:
             while True:
                 try:
@@ -280,11 +284,11 @@ async def sse_actions(request: Request):
 
     Événements: created, cancelled, paused, resumed, executed, failed, completed.
     """
-    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-    _action_queues.append(queue)
-
     async def generate():
         yield ": ready\n\n"      # débloque les en-têtes (cf. sse_logs)
+        # Abonnement DANS le générateur : même fuite que `sse_logs`.
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        _action_queues.append(queue)
         try:
             while True:
                 try:

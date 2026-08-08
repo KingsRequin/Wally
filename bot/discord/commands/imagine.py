@@ -23,7 +23,27 @@ def _load_phrases() -> list[str]:
 
 
 class GalleryView(discord.ui.View):
-    """View with flame vote and edit title buttons for gallery images."""
+    """Boutons 🔥 et ✏️ d'une image de galerie.
+
+    Les boutons N'ONT PAS de `callback` : tout passe par le listener
+    `ImagineCog.on_interaction`. Ce n'est pas un oubli.
+
+    La view est persistante (`timeout=None` + `custom_id`), donc enregistrée dans
+    le `ViewStore` dès le premier `message.edit(view=…)`. Or discord.py traite un
+    clic en DEUX temps : `parse_interaction_create` appelle `dispatch_view(…)`
+    — qui exécute le callback du bouton — PUIS `dispatch('interaction')`, qui
+    réveille le listener. Les deux chemins faisaient le même travail.
+
+    Chaque clic sur 🔥 appelait donc `toggle_gallery_vote` deux fois : le vote
+    s'ajoutait puis se retirait, net zéro. La fonctionnalité n'a jamais marché
+    tant que le bot tournait — seulement après un redémarrage, quand la view
+    n'est plus en mémoire. Et le second `interaction.response.edit_message`
+    levait un `InteractionResponded` non attrapé.
+
+    Le listener est gardé comme chemin unique parce qu'il fonctionne dans les
+    DEUX cas, et qu'il relit le créateur depuis la base au lieu de se fier au
+    `creator_id` capturé à la construction (qui vaut 0 après un redémarrage).
+    """
     def __init__(self, image_id: str, creator_id: int, db):
         super().__init__(timeout=None)
         self.add_item(FlameButton(image_id, db))
@@ -41,14 +61,8 @@ class FlameButton(discord.ui.Button):
         self.image_id = image_id
         self.db = db
 
-    async def callback(self, interaction: discord.Interaction):
-        user_id = f"discord:{interaction.user.id}"
-        voted = await self.db.toggle_gallery_vote(self.image_id, user_id)
-        image = await self.db.get_gallery_image(self.image_id)
-        votes = image["votes"] if image else 0
-        self.label = str(votes)
-        self.style = discord.ButtonStyle.danger if voted else discord.ButtonStyle.secondary
-        await interaction.response.edit_message(view=self.view)
+    # Pas de `callback` : voir GalleryView. Le clic est traité une seule fois,
+    # par `ImagineCog.on_interaction`.
 
 
 class EditTitleButton(discord.ui.Button):
@@ -62,12 +76,8 @@ class EditTitleButton(discord.ui.Button):
         self.creator_id = creator_id
         self.db = db
 
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.creator_id:
-            await interaction.response.send_message("Seul le créateur peut modifier le titre.", ephemeral=True)
-            return
-        modal = EditTitleModal(self.image_id, self.db)
-        await interaction.response.send_modal(modal)
+    # Pas de `callback` : voir GalleryView. Le listener relit le créateur depuis
+    # la base, ce qui vaut aussi après un redémarrage — là où `creator_id` vaut 0.
 
 
 class EditTitleModal(discord.ui.Modal):

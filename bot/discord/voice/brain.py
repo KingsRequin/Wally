@@ -441,6 +441,23 @@ async def _respond_once(
     bot, service, speaker_user_id: str, speaker_label: str, transcript: str
 ) -> None:
     """Produit (au plus) une réponse parlée à une parole donnée. Le verrou est géré par l'appelant."""
+    # Qui parle DANS CE TOUR : l'exécuteur d'outils lisait un champ du service,
+    # écrit à chaque transcription entendue. Une parole défilée de la file était
+    # donc traitée sous l'identité du dernier locuteur ENTENDU — et `leave_voice`
+    # comme `create_action_task` s'autorisaient contre cette mauvaise personne.
+    # L'identité voyage maintenant avec le tour de parole, isolée par tâche.
+    from bot.discord.voice.tools import reset_current_speaker, set_current_speaker
+
+    _speaker_token = set_current_speaker(speaker_user_id)
+    try:
+        await _respond_once_inner(bot, service, speaker_user_id, speaker_label, transcript)
+    finally:
+        reset_current_speaker(_speaker_token)
+
+
+async def _respond_once_inner(
+    bot, service, speaker_user_id: str, speaker_label: str, transcript: str
+) -> None:
     t0 = asyncio.get_running_loop().time()
 
     def _gen_ms() -> int:
