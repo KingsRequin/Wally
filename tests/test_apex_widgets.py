@@ -167,3 +167,22 @@ async def test_une_erreur_reseau_ne_donne_pas_de_carte_vide():
 
     svc = ApexLegendsService(client=_FakeClient("Apex API error (HTTP 500)"))
     assert await svc.build_panel("map") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_profile_est_la_brique_commune():
+    """Le watcher, les panneaux et le texte passent tous par là."""
+    from bot.core.apex.service import ApexLegendsService
+
+    svc = ApexLegendsService(client=_FakeClient(_raw("bridge_azrael")))
+    profil = await svc.fetch_profile("Azrael_ttv")
+    assert profil.name == "Azrael_TTV"
+    assert await svc.fetch_profile("") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_profile_rend_none_sur_erreur_reseau():
+    from bot.core.apex.service import ApexLegendsService
+
+    svc = ApexLegendsService(client=_FakeClient("Apex API error (HTTP 500)"))
+    assert await svc.fetch_profile("X") is None

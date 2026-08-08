@@ -477,6 +477,25 @@ async def main() -> None:
             on_event=stream_feed.record,
         )
         stream_watcher.activate()
+
+        # Suivi passif du compte Apex du streamer. Voie SANS retour vers
+        # l'action, comme StreamFeed : Wally SAIT qu'Azraël est en partie, il
+        # n'en parle que si on l'y amène. Rien hors live.
+        _apex_conf = getattr(config, "apex", None)
+        if apex_api is not None and _apex_conf and _apex_conf.streamer_account:
+            from bot.core.apex.watcher import ApexWatcher
+
+            apex_watcher = ApexWatcher(
+                apex_api,
+                account=(_apex_conf.streamer_account, _apex_conf.streamer_platform),
+                is_live=lambda: bool(twitch_bot._stream_info.get("live")),
+            )
+            apex_watcher.activate()
+            _apex_task = asyncio.create_task(apex_watcher.run())
+            _stream_voice_tasks.add(_apex_task)
+            _apex_task.add_done_callback(_stream_voice_tasks.discard)
+            twitch_bot.apex_watcher = apex_watcher
+            logger.info("ApexWatcher démarré pour {a}", a=_apex_conf.streamer_account)
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())
         _stream_voice_tasks.add(_watch_task)

@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from bot.core.apex.watcher import current_apex_block
 from bot.core.stream_feed import current_stream_feed_block
 from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_weather, read_host_metrics
@@ -238,6 +239,12 @@ class PromptBuilder:
         _on_stream_channel = bool(situation and situation.get("stream_live"))
         if feed_block := current_stream_feed_block(include_chat=not _on_stream_channel):
             dynamic_parts.append(feed_block)
+
+        # Ce qu'Azraël fait dans Apex à l'instant, et ce qu'il a gagné depuis le
+        # début du live. Passif comme le flux ci-dessus : aucun `notify_*`
+        # derrière, donc voir une partie en cours ne fait pas parler Wally.
+        if apex_block := current_apex_block():
+            dynamic_parts.append(apex_block)
 
         # Ce qui tourne sur l'overlay (bingo, pendu, objectif…). Passif comme le
         # flux ci-dessus : aucun `notify_*` derrière, donc un bingo ouvert ne

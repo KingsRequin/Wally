@@ -68,6 +68,11 @@ jamais.
 Le compteur de spectateurs, lui, est perçu mais ne déclenche rien : il fluctue
 tout seul et ne dit rien de neuf au public.
 
+- **Il suit la partie d'Azraël** — pendant le live, son compte Apex est consulté
+  toutes les 90 s : Wally sait qu'il est en partie, sur quelle légende, à quel
+  rang, et ce qu'il a gagné depuis le début du stream. Perception **passive**,
+  comme le flux du stream : elle ne le fait jamais parler de lui-même.
+
 ---
 
 ## Ce qu'on peut lui demander
@@ -118,11 +123,25 @@ classement permanent inciterait au spam.
 
 ### Données réelles (Apex)
 
-> « wally affiche mes stats Apex »
-> « wally compare mes kills avec ceux de KingsRequin »
+> « wally affiche mon rang » · « wally montre la rotation des cartes »
+> « wally affiche les stats d'Azra » · « wally le craft du jour »
 
-Les chiffres viennent de l'API : Wally les lit puis les recopie. Il n'invente
-pas une statistique.
+Sept panneaux : **rang** (avec l'écusson officiel), **état en jeu** (en partie ou
+non, légende et skin), **stats** de carrière, **rotation** des cartes avec un
+décompte qui tourne vraiment, **replicator**, **seuil Predator**, **serveurs**.
+
+Wally **ne recopie plus aucun chiffre** : il nomme un panneau, le serveur va
+chercher la donnée et la rend. C'est la différence avec `stats` et `versus`, où
+il transcrivait à la main des valeurs qu'il venait de lire — et pouvait se
+tromper.
+
+Il retient aussi le **compte Apex** de ceux qui le déclarent (« mon pseudo Apex
+c'est X ») : ensuite « wally mes stats » suffit. Personne ne peut déclarer le
+compte d'un autre — l'identité vient du chat, pas du modèle.
+
+⚠️ Le **classement mondial** (top 500, par légende, par pays) et l'**historique
+des matchs** ne nous sont pas accessibles : l'API les réserve à des clés
+autorisées. Wally a pour consigne de le dire au lieu d'aller scraper un site.
 
 ### Le bingo du stream
 

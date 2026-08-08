@@ -236,6 +236,18 @@ class TwitchEventConfig:
 
 
 @dataclass
+class ApexConfig:
+    """Le compte Apex du streamer, suivi passivement pendant ses lives.
+
+    Déclaré ici et non découvert : la perception doit fonctionner dès le
+    démarrage, sans attendre que quelqu'un parle du pseudo dans le chat.
+    Laisser `streamer_account` vide suffit à désactiver le suivi.
+    """
+    streamer_account: str = ""
+    streamer_platform: str = "PC"
+
+
+@dataclass
 class TavilyConfig:
     monthly_limit: int = 200
     # Délai minimal entre deux recherches web déclenchées par la cognition
@@ -334,6 +346,7 @@ class Config:
     emotions: dict[str, EmotionDecayConfig]
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
+    apex: ApexConfig = field(default_factory=ApexConfig)
     firecrawl: FirecrawlConfig = field(default_factory=FirecrawlConfig)
     rss: RSSFeedsConfig = field(default_factory=RSSFeedsConfig)
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
@@ -420,6 +433,7 @@ class Config:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
+            apex_raw = raw.get("apex", {})
             firecrawl_raw = raw.get("firecrawl", {})
             # RSS : liste imbriquée de flux (comme circadian/spontaneous).
             rss_raw = dict(raw.get("rss", {}))
@@ -500,6 +514,7 @@ class Config:
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
+                apex=ApexConfig(**apex_raw),
                 firecrawl=FirecrawlConfig(**firecrawl_raw),
                 rss=rss_cfg,
                 web_chat=WebChatConfig(**web_chat_raw),

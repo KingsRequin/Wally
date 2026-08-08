@@ -107,6 +107,16 @@ class ApexLegendsService:
             await self._remember(profil, cherche, platform, requester, requester_name)
         return self._render_profile(profil)
 
+    async def fetch_profile(self, player: str, platform: str = "PC") -> PlayerProfile | None:
+        """Le profil d'un joueur, ou None. Brique commune au texte, aux panneaux
+        et au suivi passif — un seul endroit qui sait interroger `/bridge`."""
+        if not player:
+            return None
+        data = await self._client.get("bridge", {"player": player, "platform": platform or "PC"})
+        if isinstance(data, str):
+            return None
+        return read_profile(data)
+
     async def _resolve(
         self, player_name: str, platform: str, requester: str | None
     ) -> tuple[str, str]:
