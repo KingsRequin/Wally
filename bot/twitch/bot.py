@@ -62,6 +62,7 @@ class WallyTwitch(commands.Bot):
         self._active_visits: dict[str, dict] = {}
         # Strong refs pour fire-and-forget tasks
         self._bg_tasks: set[asyncio.Task] = set()
+        self._init_eventsub_restart_state()
         self.fact_extractor = None  # set by main.py after construction
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
@@ -111,8 +112,10 @@ class WallyTwitch(commands.Bot):
           ait besoin d'autoriser le bot. Scope requis : chat:edit.
         """
         logger.info("Twitch bot starting (EventSub + IRC)")
-        from bot.twitch.events import start_eventsub_client
-        await start_eventsub_client(self)
+        # Par le même chemin sérialisé que les redémarrages : le dashboard peut
+        # retirer une chaîne invitée pendant que le boot souscrit encore, et deux
+        # créations concurrentes laissent deux clients vivants (double réception).
+        await self._restart_eventsub()
         await asyncio.gather(
             self._irc_run(),
             self._token_refresh_loop(),
@@ -390,8 +393,38 @@ class WallyTwitch(commands.Bot):
             except Exception as exc:
                 logger.warning("_finalize_visit: DB write failed: {e}", e=exc)
 
+    def _init_eventsub_restart_state(self) -> None:
+        """Sérialisation des redémarrages EventSub (cf. `_restart_eventsub`)."""
+        self._eventsub_restart_lock = asyncio.Lock()
+        self._eventsub_restart_pending = False
+
     async def _restart_eventsub(self) -> None:
-        """Tear down existing EventSub sockets and reconnect with fresh tokens."""
+        """Tear down existing EventSub sockets and reconnect with fresh tokens.
+
+        Sérialisé : la reconstruction dure une quinzaine de secondes
+        (souscriptions séquentielles espacées de 1.5 s) et remet
+        `_eventsub_client` à None le temps de s'exécuter. Deux appels rapprochés
+        — retirer une chaîne invitée pendant qu'un token tourne, par exemple —
+        se croisaient donc dans cette fenêtre : le second lisait None, ne fermait
+        rien, et repartait pour une seconde série. Le client de la première
+        restait vivant, orphelin mais WebSocket ouverte, et Twitch livrait chaque
+        message du chat DEUX fois — Wally répondait deux fois (vécu le
+        2026-08-08 sur la chaîne d'Azraël, deux souscriptions
+        `channel.chat.message` actives confirmées côté Twitch).
+
+        Au plus un redémarrage en attente : les demandes suivantes sont
+        absorbées par celui qui attend, qui repartira de l'état final. Empiler
+        une reconstruction par demande épuiserait le quota de CRÉATION de
+        souscriptions, qui se recharge en minutes (429).
+        """
+        if self._eventsub_restart_pending:
+            return
+        self._eventsub_restart_pending = True
+        async with self._eventsub_restart_lock:
+            self._eventsub_restart_pending = False
+            await self._do_restart_eventsub()
+
+    async def _do_restart_eventsub(self) -> None:
         from bot.twitch.events import start_eventsub_client
 
         client = getattr(self, "_eventsub_client", None)
