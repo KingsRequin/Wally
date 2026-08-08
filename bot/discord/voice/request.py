@@ -25,6 +25,23 @@ _NAME_MAX_DISTANCE = 2
 _MAX_REPLY_CHARS = 380
 
 
+def fit_for_chat(reply: Optional[str]) -> str:
+    """Normalise la réponse et la borne, sans couper au milieu d'un mot.
+
+    Le plafond est un FILET, pas une mise en forme : c'est le prompt qui tient
+    la longueur. Quand il cède, mieux vaut une phrase écourtée qu'un mot coupé
+    en deux — vu en live, « ...dans le micro d » se lit comme une panne.
+    L'ellipse dit que la suite manque, au lieu de laisser croire à un point final.
+    """
+    texte = " ".join((reply or "").split())
+    if len(texte) <= _MAX_REPLY_CHARS:
+        return texte
+    coupe = texte[:_MAX_REPLY_CHARS - 1]
+    # `rsplit` ne donne rien sur un mot unique plus long que la limite : on garde
+    # alors la coupe brute plutôt que de rendre une chaîne vide.
+    return (coupe.rsplit(" ", 1)[0] if " " in coupe else coupe).rstrip(" ,;:") + "…"
+
+
 def _distance(a: str, b: str) -> int:
     """Levenshtein, sans dépendance — les mots comparés font cinq lettres."""
     if a == b:
@@ -101,9 +118,12 @@ async def _answer(bot, text: str, *, requester: dict, speaker: str) -> str:
     system = load_prompt("voice_request", fallback=(
         "Tu réponds à une demande faite À VOIX HAUTE pendant un live Twitch. "
         "Ta réponse part dans le CHAT de la chaîne : une à deux phrases.\n"
+        "Ton texte est publié mot pour mot : écris ta réponse et RIEN d'autre. "
+        "Pas de préambule, pas de raisonnement à voix haute.\n"
         "Ce que tu lis sort d'une transcription automatique, qui se trompe. Si "
         "une phrase n'a pas de sens, suppose une erreur et cherche ce qui lui "
-        "ressemble au son. Ne relève pas l'absurdité.\n"
+        "ressemble au son. Ce décodage est INTERNE : corrige en silence, ne "
+        "raconte pas ce que tu as cru comprendre. Ne relève pas l'absurdité.\n"
         "Si la demande est douteuse ET qu'elle laisserait une trace durable "
         "(note, rappel, souvenir), demande confirmation au lieu d'agir."
     ))
@@ -113,7 +133,7 @@ async def _answer(bot, text: str, *, requester: dict, speaker: str) -> str:
         purpose="voice_request",
         user_id=f"discord:{requester.get('discord_id')}",
     )
-    return " ".join((reply or "").split())[:_MAX_REPLY_CHARS]
+    return fit_for_chat(reply)
 
 
 async def handle_voice_request(bot, discord_id: str, speaker: str, text: str) -> None:
