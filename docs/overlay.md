@@ -139,7 +139,9 @@ il transcrivait à la main des valeurs qu'il venait de lire — et pouvait se
 tromper.
 
 Il retient aussi le **compte Apex** de ceux qui le déclarent (« mon pseudo Apex
-c'est X ») : ensuite « wally mes stats » suffit. Personne ne peut déclarer le
+c'est X ») : il va chercher l'**uid** au passage, et ensuite « wally j'ai combien
+de kills ? » suffit. L'uid est ce qui est interrogé ensuite — un pseudo se
+change, un uid non. Personne ne peut déclarer le
 compte d'un autre — l'identité vient du chat, pas du modèle.
 
 ⚠️ Le **classement mondial** (top 500, par légende, par pays) et l'**historique

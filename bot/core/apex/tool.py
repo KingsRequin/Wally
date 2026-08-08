@@ -27,7 +27,11 @@ APEX_LEGENDS_TOOL = {
             "via player_stats — ne cherche pas ailleurs, aucun site ne te le "
             "donnera dans un format exploitable.\n"
             "UTILISE : « c'est quoi le rank de Daltoosh ? » → player_stats · "
-            "« quelle map en ce moment ? » → map_rotation\n"
+            "« quelle map en ce moment ? » → map_rotation · "
+            "« mon pseudo Apex c'est Xyz » → player_stats avec player_name=Xyz "
+            "ET remember=true, pour ne plus jamais le redemander · "
+            "« j'ai combien de kills ? » → player_stats avec player_name VIDE, "
+            "son compte est déjà connu\n"
             "N'UTILISE PAS : « Apex c'est nul » → une opinion, pas une demande de "
             "données."
         ),

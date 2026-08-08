@@ -38,3 +38,11 @@ def test_le_parametre_de_memorisation_est_reserve_a_son_propre_compte():
 def test_un_pseudo_vide_signifie_mes_stats():
     desc = APEX_LEGENDS_TOOL["function"]["description"]
     assert "VIDE" in desc
+
+
+def test_la_description_montre_comment_retenir_un_compte():
+    """La consigne ne suffit pas : c'est l'exemple qui déclenche l'appel."""
+    desc = APEX_LEGENDS_TOOL["function"]["description"]
+    assert "remember=true" in desc
+    assert "mon pseudo Apex" in desc
+    assert "player_name VIDE" in desc
