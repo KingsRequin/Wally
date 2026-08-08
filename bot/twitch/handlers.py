@@ -31,6 +31,37 @@ if TYPE_CHECKING:
 from bot.twitch.commands import dispatch_command
 
 
+# Une relance en attente par (canal, personne) → instant de la réponse de Wally.
+#
+# Le cooldown existe pour qu'un inconnu ne mitraille pas une chaîne publique. Il
+# ne devrait pas manger la SUITE d'un échange : vu en live, « @WallyTeBully
+# encore une partie » six secondes après une réponse tombait dans le vide, sans
+# même une ligne de log. La mention était pourtant là.
+#
+# Une seule relance par réponse, consommée à l'usage : un spammeur double sa
+# cadence au pire, il ne supprime pas le cooldown. Chaque réponse de Wally en
+# rouvre une, donc une vraie conversation reste fluide aussi longtemps qu'elle
+# dure.
+_relances: dict[tuple[str, str], float] = {}
+_RELANCE_WINDOW_S = 60.0
+
+
+def _note_reply_sent(channel: str, user_id: str) -> None:
+    """Wally vient de répondre : la prochaine relance de cette personne passe."""
+    now = time.monotonic()
+    # Purge paresseuse — le process tourne des semaines.
+    for key, at in list(_relances.items()):
+        if now - at > _RELANCE_WINDOW_S:
+            del _relances[key]
+    _relances[(str(channel), str(user_id))] = now
+
+
+def _consume_relance(channel: str, user_id: str) -> bool:
+    """Vrai si ce message prolonge un échange — et referme la fenêtre."""
+    at = _relances.pop((str(channel), str(user_id)), None)
+    return at is not None and (time.monotonic() - at) <= _RELANCE_WINDOW_S
+
+
 def _resolve_twitch_roles(badges: list) -> list[str]:
     """Map Twitch badges to the action permission hierarchy."""
     roles = ["everyone"]
@@ -445,11 +476,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if not triggered:
         return
 
-    # Le cooldown ne s'applique pas à la réponse d'une question que Wally vient
-    # de poser : c'est LUI qui a ouvert le dialogue, et on répond forcément dans
-    # les secondes qui suivent. Sans cette exemption, il demande « tu veux quoi
-    # au juste ? » puis avale la réponse en silence.
-    if not _consume_open_question(channel_name, user_id) and bot.is_on_cooldown(user_id):
+    # Le cooldown ne s'applique ni à la réponse d'une question que Wally vient
+    # de poser, ni à la relance qui suit sa propre réponse : dans les deux cas
+    # c'est LUI qui a ouvert le dialogue, et on enchaîne forcément dans les
+    # secondes qui suivent. Sans ces exemptions, il demande « tu veux quoi au
+    # juste ? » puis avale la réponse, ou lance un chifoumi et ignore le
+    # « encore une partie » qui arrive six secondes plus tard.
+    exempte = (_consume_open_question(channel_name, user_id)
+               or _consume_relance(channel_name, user_id))
+    if not exempte and bot.is_on_cooldown(user_id):
+        # Journalisé : ce refus était muet, et un message avalé sans trace est
+        # indiagnosticable — c'est ce qui a masqué le défaut du 2026-08-08.
+        _clog(bot, channel_name, "gate_decision", trace_id=_trace,
+              triggered=True, decision="cooldown")
         return
 
     _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True, decision="respond")
@@ -651,6 +690,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             )
         bot.set_cooldown(user_id)
         _note_open_question(channel_name, user_id, reply)
+        # Wally vient de parler à cette personne : sa prochaine relance ne sera
+        # pas du spam, elle prolongera l'échange.
+        _note_reply_sent(channel_name, user_id)
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,
