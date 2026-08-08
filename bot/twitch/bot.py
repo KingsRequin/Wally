@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import TYPE_CHECKING, Optional
 
 from twitchio.ext import commands
 from loguru import logger
+
+# Cadence de surveillance d'EventSub. Assez court pour qu'une panne se compte en
+# secondes de silence et non en dizaines de minutes, assez long pour rester
+# anodin côté quota Helix (une requête GET, non facturée en création).
+EVENTSUB_HEALTHCHECK_SECONDS = 60
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -121,6 +127,7 @@ class WallyTwitch(commands.Bot):
             self._token_refresh_loop(),
             self._poll_guest_streams(),
             self._resolve_missing_usernames(),
+            self._eventsub_watchdog(),
         )
 
     async def _irc_run(self) -> None:
@@ -392,6 +399,42 @@ class WallyTwitch(commands.Bot):
                 )
             except Exception as exc:
                 logger.warning("_finalize_visit: DB write failed: {e}", e=exc)
+
+    async def _check_eventsub_alive(self) -> None:
+        """Relance EventSub si Twitch ne lui reconnaît plus aucune souscription.
+
+        Une WebSocket EventSub peut mourir sans un mot dans les logs — une
+        coupure réseau de quelques secondes suffit. Twitch révoque alors les
+        souscriptions de la session, twitchio v2 (non maintenu) ne se réabonne
+        pas, et Wally devient SOURD sur Twitch jusqu'au prochain redémarrage
+        manuel. Vécu le 2026-08-08 : plus de vingt minutes de silence en plein
+        live, sans la moindre erreur journalisée.
+        """
+        from bot.twitch.events import count_active_subscriptions
+
+        if self._eventsub_restart_pending or self._eventsub_restart_lock.locked():
+            return  # une reconstruction est en cours : elle passe par 0 souscription
+
+        client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
+        active = await count_active_subscriptions(client_id, self.token_manager.bot_token)
+        if active is None or active > 0:
+            return
+
+        logger.warning(
+            "EventSub: plus aucune souscription vivante côté Twitch — relance"
+        )
+        await self._restart_eventsub()
+
+    async def _eventsub_watchdog(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(EVENTSUB_HEALTHCHECK_SECONDS)
+                try:
+                    await self._check_eventsub_alive()
+                except Exception as exc:  # noqa: BLE001 — la surveillance ne tombe jamais
+                    logger.warning("EventSub: surveillance en échec: {e}", e=exc)
+        except asyncio.CancelledError:
+            pass
 
     def _init_eventsub_restart_state(self) -> None:
         """Sérialisation des redémarrages EventSub (cf. `_restart_eventsub`)."""

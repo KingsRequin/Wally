@@ -335,6 +335,37 @@ async def purge_stale_subscriptions(client_id: str, token: str) -> int:
     return removed
 
 
+async def count_active_subscriptions(client_id: str, token: str) -> int | None:
+    """Nombre de souscriptions EventSub WebSocket réellement vivantes.
+
+    Seul Twitch sait si la session livre encore : l'état interne de twitchio dit
+    « connecté » alors que la WebSocket est morte et que les souscriptions ont
+    été révoquées. Un statut `websocket_disconnected` occupe encore une place
+    mais ne livre plus rien — le compter masquerait précisément la panne.
+
+    Retourne `None` si la question n'a pas pu être posée (réseau, HTTP non-200) :
+    « je n'ai pas pu demander » n'est pas « il n'y a plus rien », et c'est une
+    coupure réseau qui déclenche ce genre d'incident.
+    """
+    if not client_id or not token:
+        return None
+    headers = {"Authorization": f"Bearer {token}", "Client-Id": client_id}
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.get(_ES_SUBSCRIPTIONS_URL, headers=headers)
+            if resp.status_code != 200:
+                return None
+            return sum(
+                1
+                for s in resp.json().get("data", [])
+                if s.get("status") == "enabled"
+                and (s.get("transport") or {}).get("method") == "websocket"
+            )
+    except Exception as exc:  # noqa: BLE001 — une panne de sonde n'est pas un diagnostic
+        logger.debug("EventSub: état des souscriptions indisponible: {e}", e=exc)
+        return None
+
+
 # Délais de reprise des souscriptions tombées en 429, en SECONDES. Espacés en
 # minutes, car un backoff de quelques secondes avait été réfuté en live.
 _RETRY_DELAYS = (120, 480, 1200)
