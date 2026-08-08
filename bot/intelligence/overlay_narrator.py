@@ -299,14 +299,23 @@ LAST_CLIP_TOOL_SPEC = {
         "description": (
             "Rejoue le DERNIER clip de la chaîne sur l'overlay du stream, quand "
             "on te le demande. La vidéo est MUETTE et reste à l'écran le temps "
-            "du clip. Ne fonctionne que pendant un live. Tu n'as pas vu ce clip "
-            "— l'outil te rend son titre et qui l'a créé, commente à partir de "
-            "ça et n'invente pas ce qu'il contient. N'affirme jamais l'avoir "
-            "lancé sans appeler cet outil."
+            "du clip. Tu n'as pas vu ce clip — l'outil te rend son titre et qui "
+            "l'a créé, commente à partir de ça et n'invente pas ce qu'il "
+            "contient. N'affirme jamais l'avoir lancé sans appeler cet outil, "
+            "et ne décrète pas non plus que c'est impossible sans l'avoir "
+            "appelé : c'est lui qui sait si l'overlay répond."
         ),
         "parameters": {
             "type": "object",
             "properties": {
+                "author": {
+                    "type": "string",
+                    "description": (
+                        "Qui a fait le clip, si on te le précise (« le dernier "
+                        "clip d'azra »). Un surnom suffit. Laisse vide pour le "
+                        "dernier clip de la chaîne, qui que ce soit."
+                    ),
+                },
                 "comment": {
                     "type": "string",
                     "description": "Ta réplique, quelques mots. Facultatif.",
@@ -594,10 +603,12 @@ class OverlayNarrator:
             except json.JSONDecodeError:
                 return json.dumps({"status": "error", "message": "arguments illisibles"})
             if name == "show_last_clip":
-                out = await self.play_last_clip()
+                auteur = str(args.get("author") or "").strip()[:40] or None
+                out = await self.play_last_clip(auteur)
                 if out is None:
+                    de_qui = f" clippé par {auteur}" if auteur else ""
                     return json.dumps({"status": "nothing", "message": (
-                        "Aucun clip récent. Dis-le, n'en invente pas un."
+                        f"Aucun clip récent{de_qui}. Dis-le, n'en invente pas un."
                     )})
                 return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()},
                                    "message": "Tu ne l'as pas vu : ne raconte pas "
@@ -1062,10 +1073,22 @@ class OverlayNarrator:
             lines.append(f"Sondage en cours : « {self._poll['question']} ».")
         if self._rps:
             lines.append("Chifoumi ouvert, le chat vote son coup.")
+        if lines:
+            lines.append("Tu peux annuler ce qui traîne avec `cancel_overlay`.")
+        if self.force_live_remaining() > 0:
+            # Le seul cas où `stream_live` ment par omission : il dira « pas de
+            # live », ce qui est vrai, et Wally en concluait que ses outils
+            # d'overlay ne marchaient pas — il refusait d'afficher un clip sans
+            # même appeler l'outil. En vrai live, cette ligne serait redondante.
+            lines.insert(0, (
+                "Mode test : aucun live ne tourne, mais ton overlay répond "
+                "quand même et tes outils d'overlay marchent. Personne d'autre "
+                "que ton créateur ne le voit — ne dis pas au chat qu'on est en "
+                "stream."
+            ))
         if not lines:
             return ""
-        return ("\n--- Sur ton overlay ---\n" + "\n".join(lines)
-                + "\nTu peux annuler ce qui traîne avec `cancel_overlay`.")
+        return "\n--- Sur ton overlay ---\n" + "\n".join(lines)
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:
@@ -1274,8 +1297,11 @@ class OverlayNarrator:
         self._feed.widget("clip", **params)
         return True
 
-    async def play_last_clip(self) -> Optional[dict]:
+    async def play_last_clip(self, creator: Optional[str] = None) -> Optional[dict]:
         """Rejoue le dernier clip de la chaîne. None s'il n'y en a pas.
+
+        `creator` restreint au clippeur demandé — le filtrage appartient au
+        fournisseur, seul à parler à Helix.
 
         Le fournisseur est injecté plutôt qu'appelé d'ici : `show_widget` est
         synchrone et n'a aucun moyen d'interroger une API externe, alors que
@@ -1284,7 +1310,7 @@ class OverlayNarrator:
         if self._last_clip is None or not self._live():
             return None
         try:
-            clip = await self._last_clip()
+            clip = await self._last_clip(creator)
         except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
             logger.warning("Overlay: dernier clip introuvable : {e}", e=exc)
             return None

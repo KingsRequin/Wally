@@ -11,6 +11,8 @@ from urllib.parse import quote
 import httpx
 from loguru import logger
 
+from bot.core.account_linker import matches_name
+
 if TYPE_CHECKING:
     from bot.twitch.token_manager import TwitchTokenManager
 
@@ -289,17 +291,27 @@ class TwitchAPI:
         return {"url": f"{source}?sig={sig}&token={val}",
                 "duration": clip.get("durationSeconds") or 0}
 
-    async def get_last_clip(self, hours: int = 24) -> dict | None:
+    async def get_last_clip(self, hours: int = 24,
+                            creator: str | None = None) -> dict | None:
         """Le clip le plus RÉCENT de la chaîne, ou None.
 
         ⚠️ Helix trie les clips par nombre de vues, pas par date : sur une
         fenêtre longue, le dernier créé peut tomber hors du lot renvoyé. D'où
         `first=100` sur 24 h — au-delà, il faudrait paginer pour un gain nul.
+
+        `creator` restreint au clippeur demandé — un surnom suffit (« azra »
+        pour « Azrael »). Helix ne sait pas filtrer là-dessus : le tri se fait
+        ici, sur le `creator_name` que renvoie l'API. À noter que la fenêtre
+        reste celle de CETTE chaîne : « le dernier clip d'Azra » veut dire ce
+        qu'Azra a clippé ici, pas ce qui a été clippé sur sa chaîne à lui.
         """
         since = datetime.now(timezone.utc) - timedelta(hours=max(1, hours))
         clips = await self.get_recent_clips(
             since.strftime("%Y-%m-%dT%H:%M:%SZ"), first=100
         )
+        if creator:
+            clips = [c for c in clips
+                     if matches_name(str(c.get("creator_name") or ""), creator)]
         if not clips:
             return None
         return max(clips, key=lambda c: str(c.get("created_at") or ""))

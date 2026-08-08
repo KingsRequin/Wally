@@ -121,3 +121,45 @@ async def test_send_message_without_reply_parent_omits_field():
         await api.send_message("hello")
     body = mock_http.post.call_args.kwargs["json"]
     assert "reply_parent_message_id" not in body
+
+
+# --- get_last_clip : le plus récent, éventuellement d'une personne précise ---
+#
+# Helix trie les clips par nombre de vues et ne sait PAS filtrer par créateur :
+# les deux tris se font ici.
+
+CLIPS = [
+    {"id": "a", "creator_name": "KingsRequin", "created_at": "2026-08-08T10:00:00Z"},
+    {"id": "b", "creator_name": "Azrael", "created_at": "2026-08-08T09:00:00Z"},
+    {"id": "c", "creator_name": "azrael_ttv", "created_at": "2026-08-07T20:00:00Z"},
+]
+
+
+@pytest.mark.asyncio
+async def test_get_last_clip_prend_le_plus_recent():
+    api = make_api()
+    api.get_recent_clips = AsyncMock(return_value=CLIPS)
+    assert (await api.get_last_clip())["id"] == "a"
+
+
+@pytest.mark.asyncio
+async def test_get_last_clip_filtre_sur_le_clippeur():
+    """« le dernier clip fait par azra » : le plus récent d'Azrael, pas celui
+    de la chaîne."""
+    api = make_api()
+    api.get_recent_clips = AsyncMock(return_value=CLIPS)
+    assert (await api.get_last_clip(creator="azra"))["id"] == "b"
+
+
+@pytest.mark.asyncio
+async def test_get_last_clip_sans_clip_de_cette_personne():
+    api = make_api()
+    api.get_recent_clips = AsyncMock(return_value=CLIPS)
+    assert await api.get_last_clip(creator="taki") is None
+
+
+@pytest.mark.asyncio
+async def test_get_last_clip_sans_aucun_clip():
+    api = make_api()
+    api.get_recent_clips = AsyncMock(return_value=[])
+    assert await api.get_last_clip() is None

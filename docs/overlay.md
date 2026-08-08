@@ -322,11 +322,20 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 
 ## Les clips
 
-> « wally mets le dernier clip »
+> « wally mets le dernier clip » · « wally mets le dernier clip d'azra »
 
 Le clip est **rejoué sur l'overlay**, en **muet**, et reste affiché le temps de
 la vidéo. Il part aussi tout seul dès qu'un viewer crée un clip pendant le live
 (veille toutes les 2 min).
+
+En nommant quelqu'un, on obtient **son** dernier clip. Un surnom suffit
+(« azra » → « Azrael ») : la reconnaissance passe par `matches_name()`, la même
+mécanique que l'appariement de comptes. Helix ne sait pas filtrer sur le
+clippeur, le tri se fait chez nous — dans la fenêtre des **24 dernières heures**,
+comme pour le dernier clip tout court. ⚠️ La fenêtre reste **cette chaîne** : « le
+dernier clip d'Azra » veut dire ce qu'Azra a clippé ici, pas ce qui a été clippé
+sur sa chaîne à lui. Sans clip de cette personne, Wally le dit en la nommant —
+il ne rabat pas sur le clip d'un autre.
 
 Trois niveaux, du meilleur au moins bon :
 
@@ -374,6 +383,14 @@ lui indique le bingo en cours, l'objectif, le pendu. Il peut donc annuler
 nommément, et voir qu'une partie traîne. C'est une perception **passive** : elle
 ne le fait jamais parler de lui-même. Hors live, ou sans rien en cours, le bloc
 est absent.
+
+**Le mode test s'y annonce aussi.** C'est le seul cas où le reste du prompt
+l'induit en erreur : `stream_live` dit « pas de live », ce qui est vrai, et Wally
+en concluait que ses outils d'overlay ne marchaient pas — le 2026-08-08 il a
+refusé d'afficher un clip **sans appeler l'outil**, mode test pourtant actif. Le
+bloc précise donc que l'overlay répond alors qu'aucun stream ne tourne, et que
+seul son créateur le voit. Les descriptions d'outils, elles, ne préjugent plus du
+live : c'est l'outil qui rend le verdict, pas le modèle.
 
 ---
 

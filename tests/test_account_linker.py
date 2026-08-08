@@ -3,7 +3,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from bot.core.account_linker import _normalize, score, analyze_all, analyze_new_user
+from bot.core.account_linker import (
+    _normalize, analyze_all, analyze_new_user, matches_name, score,
+)
 
 
 # --- Tests de normalisation ---
@@ -137,3 +139,26 @@ async def test_analyze_new_twitch_user():
 
     await analyze_new_user(db, twitch_users[0]["full_id"], threshold=0.75)
     db.upsert_link_proposal.assert_called()
+
+
+# --- Reconnaître quelqu'un depuis un surnom lâché en chat ---
+
+@pytest.mark.parametrize("surnom,pseudo", [
+    ("azra", "Azrael"),          # diminutif : préfixe commun
+    ("azra", "azrael_ttv"),      # le suffixe de plateforme ne gêne pas
+    ("Azraël", "azrael"),        # accents
+    ("requin", "KingsRequin"),   # sous-chaîne SANS préfixe commun
+    ("kings requin", "KingsRequin"),
+])
+def test_matches_name_reconnait_un_surnom(surnom, pseudo):
+    assert matches_name(pseudo, surnom)
+
+
+@pytest.mark.parametrize("surnom,pseudo", [
+    ("azra", "KingsRequin"),
+    ("taki", "yunikon"),
+    ("", "Azrael"),
+    ("az", "Azrael"),            # trop court pour une sous-chaîne fiable
+])
+def test_matches_name_refuse_les_inconnus(surnom, pseudo):
+    assert not matches_name(pseudo, surnom)

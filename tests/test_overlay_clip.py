@@ -277,3 +277,79 @@ async def test_la_duree_vient_du_clip_en_mode_video():
     q = feed.subscribe()
     await n.play_last_clip()
     assert _widgets(q)[-1]["params"]["duration"] == pytest.approx(25 + 3)
+
+
+# ── filtrer par clippeur ──────────────────────────────────────────────────
+#
+# « affiche le dernier clip fait par azra » : le 2026-08-08, Wally a répondu
+# « on n'est pas en live » SANS appeler l'outil (les logs de conversation le
+# montrent : ni `tool_called` ni `tool_result`). Deux trous à la fois — l'outil
+# ne savait pas filtrer, et sa description l'autorisait à conclure tout seul.
+
+
+@pytest.mark.asyncio
+async def test_le_clippeur_demande_est_transmis_au_fournisseur():
+    """Seul le fournisseur peut filtrer : c'est lui qui parle à Helix."""
+    feed = OverlayFeed()
+    provider = AsyncMock(return_value=CLIP)
+    n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
+    await n.play_last_clip("azra")
+    provider.assert_awaited_once_with("azra")
+
+
+@pytest.mark.asyncio
+async def test_sans_clippeur_le_fournisseur_ne_filtre_rien():
+    feed = OverlayFeed()
+    provider = AsyncMock(return_value=CLIP)
+    n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
+    await n.play_last_clip()
+    provider.assert_awaited_once_with(None)
+
+
+@pytest.mark.asyncio
+async def test_l_outil_passe_l_auteur_au_narrateur():
+    bot = _bot({"title": "le 1v3", "author": "Azrael", "played": True})
+    await run_last_clip_tool(bot, {"author": "azra"})
+    bot.overlay_narrator.play_last_clip.assert_awaited_once_with("azra")
+
+
+@pytest.mark.asyncio
+async def test_l_outil_nomme_la_personne_quand_elle_n_a_rien_clippe():
+    """« aucun clip récent » laisserait croire que la chaîne est vide, alors
+    que seule cette personne n'a rien clippé."""
+    out = json.loads(await run_last_clip_tool(_bot(None), {"author": "azra"}))
+    assert out["status"] == "nothing"
+    assert "azra" in out["message"].lower()
+
+
+def test_l_outil_accepte_un_auteur_sans_l_exiger():
+    props = LAST_CLIP_TOOL_SPEC["function"]["parameters"]["properties"]
+    assert "author" in props
+    assert LAST_CLIP_TOOL_SPEC["function"]["parameters"].get("required", []) == []
+
+
+def test_la_description_n_autorise_pas_a_prejuger_du_live():
+    """La mention « ne fonctionne que pendant un live » suffisait à faire
+    refuser Wally de tête — sans jamais appeler l'outil, donc sans jamais
+    apprendre que l'overlay répondait (mode test actif)."""
+    desc = LAST_CLIP_TOOL_SPEC["function"]["description"].lower()
+    assert "que pendant un live" not in desc
+    assert "sans appeler" in desc
+
+
+@pytest.mark.asyncio
+async def test_le_chemin_vocal_transmet_aussi_le_clippeur():
+    """Le chemin vocal a son propre exécuteur d'outils : il ignorait l'argument
+    que le chemin texte transmet, et « mets le dernier clip d'azra » à voix
+    haute serait retombé sur le clip de n'importe qui."""
+    feed = OverlayFeed()
+    provider = AsyncMock(return_value=CLIP)
+    n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
+
+    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
+        await tool_executor("show_last_clip", json.dumps({"author": "azra"}))
+        return "voilà", []
+
+    n._llm.complete_with_tools = _fake
+    await n.on_voice_request("KingsRequin", "wally mets le dernier clip d'azra")
+    provider.assert_awaited_once_with("azra")

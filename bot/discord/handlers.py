@@ -492,8 +492,9 @@ async def run_last_clip_tool(bot, args: dict) -> str:
     if narrator is None:
         return json.dumps({"status": "unavailable",
                            "message": "L'overlay n'est pas branché en ce moment."})
+    auteur = str(args.get("author") or "").strip()[:40] or None
     try:
-        shown = await narrator.play_last_clip()
+        shown = await narrator.play_last_clip(auteur)
     except Exception as exc:  # noqa: BLE001 — un clip raté ne casse pas la réponse
         logger.warning("show_last_clip a échoué : {e}", e=exc)
         return json.dumps({"status": "error", "message": "La lecture a échoué."})
@@ -508,6 +509,13 @@ async def run_last_clip_tool(bot, args: dict) -> str:
     if not narrator.is_active():
         return json.dumps({"status": "offline", "message": (
             "Rien lancé : il n'y a pas de live en cours. Dis-le simplement."
+        )})
+    if auteur:
+        # Distinguer les deux vides : « la chaîne n'a aucun clip » ferait dire
+        # n'importe quoi alors que seule cette personne n'a rien clippé.
+        return json.dumps({"status": "nothing", "message": (
+            f"Aucun clip récent clippé par {auteur} sur la chaîne. Dis-le, "
+            "n'en invente pas un et ne le mets pas sur le dos d'un autre."
         )})
     return json.dumps({"status": "nothing", "message": (
         "Aucun clip récent sur la chaîne. Dis-le, n'en invente pas un."

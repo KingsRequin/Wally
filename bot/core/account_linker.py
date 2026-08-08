@@ -50,6 +50,25 @@ def score(a: str, b: str) -> float:
     return jellyfish.jaro_winkler_similarity(na, nb)
 
 
+def matches_name(candidate: str, wanted: str) -> bool:
+    """Vrai si `wanted` désigne bien `candidate` — pour retrouver quelqu'un
+    depuis le surnom lâché en passant dans un message (« azra » → « Azrael »).
+
+    La sous-chaîne rattrape ce que Jaro-Winkler rate : « requin » n'a aucun
+    préfixe commun avec « KingsRequin » et tombe sous n'importe quel seuil. Elle
+    est bornée à 3 caractères — en deçà, elle rapproche n'importe qui.
+
+    Le seuil est plus haut que celui de l'appariement de comptes (0.75) : ici
+    personne ne valide derrière, une confusion passe directement à l'écran.
+    """
+    a, b = _normalize(candidate), _normalize(wanted)
+    if not a or not b:
+        return False
+    if len(b) >= 3 and (b in a or a in b):
+        return True
+    return score(candidate, wanted) >= 0.85
+
+
 def _get_comparable_name(user: dict, platform: str) -> str | None:
     """Retourne le nom utilisable pour la comparaison Jaro-Winkler.
 

@@ -292,8 +292,10 @@ class WallyDiscord(commands.Bot):
                     tb = getattr(self, "_twitch_bot", None)
                     return getattr(tb, "_stream_info", None) or {}
 
-                async def _fetch_last_clip():
+                async def _fetch_last_clip(creator: str | None = None):
                     """Dernier clip de la chaîne, pour « affiche le dernier clip ».
+
+                    `creator` restreint au clippeur demandé (« celui d'azra »).
 
                     Résolu à l'appel et non capturé : le bot Twitch peut être
                     absent au moment où le narrateur est construit.
@@ -301,7 +303,7 @@ class WallyDiscord(commands.Bot):
                     api = getattr(getattr(self, "_twitch_bot", None), "twitch_api", None)
                     if api is None:
                         return None
-                    clip = await api.get_last_clip()
+                    clip = await api.get_last_clip(creator=creator)
                     if not clip:
                         return None
                     # L'URL du fichier vidéo est ce qui permet de JOUER le clip :

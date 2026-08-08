@@ -270,3 +270,30 @@ def test_chaque_cible_est_traitee_sans_erreur():
     branche dans `cancel()` doit faire tomber ce test."""
     for target in CANCEL_TARGETS:
         assert _narrator().cancel(target).get("unknown") is not True
+
+
+# ── le mode test, dit au prompt ───────────────────────────────────────────
+#
+# Le 2026-08-08, mode test actif, Wally a refusé d'afficher un clip en
+# expliquant « on n'est pas en live » — sans appeler l'outil. Il avait raison
+# sur le live et tort sur la conclusion : rien ne lui disait que son overlay
+# répondait quand même.
+
+
+def test_le_bloc_signale_le_mode_test():
+    n = _narrator(live=False)
+    n.force_live(5)
+    block = n.current_state_block()
+    assert "mode test" in block.lower()
+
+
+def test_le_mode_test_ne_se_fait_pas_passer_pour_un_live():
+    """Sinon Wally annonce un stream au chat alors qu'il n'y en a pas."""
+    n = _narrator(live=False)
+    n.force_live(5)
+    assert "aucun live" in n.current_state_block().lower()
+
+
+def test_un_vrai_live_n_ajoute_aucune_ligne():
+    """Le cas courant doit rester à zéro token : `stream_live` le dit déjà."""
+    assert _narrator(live=True).current_state_block() == ""
