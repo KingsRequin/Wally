@@ -293,7 +293,7 @@ class VoiceService:
             self._maintain_task = loop.create_task(self._streaming.maintain())
             # Référence gardée : la boucle ne retient qu'une référence faible.
             self._detach_service(
-                signal_ready_when_warm(self._vc, self._streaming.warmup())
+                signal_ready_when_warm(self._vc, self._streaming.warmup(), self._streaming)
             )
         else:
             sink = WallyAudioSink(
@@ -306,7 +306,7 @@ class VoiceService:
             # Pré-charge le modèle STT (faster-whisper) dès l'arrivée → évite ~2,5 s au 1er segment.
             _warmup = getattr(self._stt, "warmup", None)
             self._detach_service(
-                signal_ready_when_warm(self._vc, _warmup() if _warmup else None)
+                signal_ready_when_warm(self._vc, _warmup() if _warmup else None, self._stt)
             )
         # Watchdog fin-de-parole : Discord coupe le silence, donc le VAD ne voit jamais la fin ;
         # ce tick clôt l'énoncé à l'horloge (envoie le flush distant / émet le segment batch).
