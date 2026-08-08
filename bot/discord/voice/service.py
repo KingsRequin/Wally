@@ -663,7 +663,7 @@ class VoiceService:
             loop = asyncio.get_running_loop()
             task = loop.create_task(
                 handle_voice_request(self._bot, speaker_id, label, text) if addressed
-                else narrator.on_stream_event(line, show_thinking=False)
+                else narrator.on_overheard(line)
             )
             self._listen_tasks.add(task)
             task.add_done_callback(self._listen_tasks.discard)

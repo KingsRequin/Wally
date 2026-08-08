@@ -96,6 +96,22 @@ _EVENT_SYSTEM = load_prompt(
     render=False,
 )
 
+# La parole entendue en vocal a son propre cadrage. Passée par `_EVENT_SYSTEM`,
+# qui annonce « un raid, un abonnement, des bits… », elle sommait le modèle de
+# ranger une phrase de conversation dans des catégories d'événements : il
+# recopiait alors l'exemple du raid et l'overlay annonçait « du monde débarque »
+# sans que personne ne soit arrivé.
+_OVERHEARD_SYSTEM = load_prompt(
+    "overlay_overheard",
+    fallback=(
+        "Réagis en 3 à 8 MOTS à cette phrase ENTENDUE en vocal, adressés aux "
+        "SPECTATEURS. Ce n'est pas un événement du stream : n'annonce ni raid, "
+        "ni abonnement, ni bits. Le silence est normal — réponds RIEN si tu n'as "
+        "rien à dire."
+    ),
+    render=False,
+)
+
 _CONDENSE_SYSTEM = load_prompt(
     "overlay_thought",
     fallback=(
@@ -582,29 +598,60 @@ class OverlayNarrator:
     async def on_stream_event(
         self, description: str, *, show_thinking: bool = True
     ) -> Optional[str]:
-        """Réagit à un événement du live (raid, sub, changement de jeu…).
+        """Réagit à un VRAI événement du live (raid, sub, changement de jeu…).
 
         `description` arrive déjà rédigée en français par `StreamFeed`.
 
-        `show_thinking=False` pour les sources où le silence est le cas normal
-        — le vocal capte tout, y compris le jeu et les conversations qui ne le
-        concernent pas. Y annoncer une réflexion à chaque phrase produirait des
-        trois-points sans bulle à longueur de live.
+        Réservé à ce qui s'est effectivement produit : le prompt énumère les
+        types d'événements, donc tout ce qui passe ici en devient un aux yeux du
+        modèle. Pour la parole entendue en vocal, voir `on_overheard`.
         """
+        return await self._react_to(
+            description, system=_EVENT_SYSTEM, show_thinking=show_thinking,
+        )
+
+    async def on_overheard(self, line: str) -> Optional[str]:
+        """Réagit à une phrase ENTENDUE en vocal pendant le live.
+
+        Entrée distincte de `on_stream_event` : ce qui arrive ici est de la
+        conversation, pas un événement du stream. Les confondre faisait annoncer
+        des raids qui n'existaient pas — le prompt des événements énumère
+        « raid, abonnement, bits… » et le modèle y rangeait forcément la phrase
+        qu'on lui donnait.
+
+        Jamais de trois-points ni d'avatar qui s'emballe : le vocal passe ici à
+        chaque phrase du live, et le silence y est le cas normal.
+        """
+        return await self._react_to(
+            line, system=_OVERHEARD_SYSTEM, show_thinking=False, strong_hints=False,
+        )
+
+    async def _react_to(
+        self,
+        description: str,
+        *,
+        system: str,
+        show_thinking: bool,
+        strong_hints: bool = True,
+    ) -> Optional[str]:
         description = (description or "").strip()
         if not description or not self._may_react():
             return None
 
         self._last_event_at = time.monotonic()
         # L'avatar s'emballe tout de suite sur les gros moments : la réaction
-        # visuelle est immédiate, la bulle arrive après la condensation.
-        if any(hint in description.lower() for hint in _STRONG_EVENT_HINTS):
+        # visuelle est immédiate, la bulle arrive après la condensation. Réservé
+        # aux vrais événements : sur du vocal, « il a raid ce mec » suffirait à
+        # le déclencher pour rien.
+        if strong_hints and any(
+            hint in description.lower() for hint in _STRONG_EVENT_HINTS
+        ):
             self._feed.react("stream_event")
 
         if show_thinking:
             self._feed.thinking(True)
         try:
-            short = await self._condense(description, system=_EVENT_SYSTEM)
+            short = await self._condense(description, system=system)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("OverlayNarrator: réaction échouée: {e}", e=exc)
             short = None

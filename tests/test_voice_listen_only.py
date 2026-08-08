@@ -45,7 +45,7 @@ async def test_la_parole_entendue_devient_perception_pas_reponse():
     svc._vc = MagicMock()
     narrator = MagicMock()
     narrator.count_spoken_vote.return_value = False
-    narrator.on_stream_event = AsyncMock(return_value=None)
+    narrator.on_overheard = AsyncMock(return_value=None)
     narrator.count_spoken_vote.return_value = False
     svc._bot.overlay_narrator = narrator
     feed = MagicMock()
@@ -60,7 +60,7 @@ async def test_la_parole_entendue_devient_perception_pas_reponse():
     args, kwargs = feed.record.call_args
     assert "j'ai encore raté mon saut" in args[0]
     assert kwargs["notify"] is False              # perception, pas réveil
-    narrator.on_stream_event.assert_awaited()     # l'overlay décide seul
+    narrator.on_overheard.assert_awaited()        # l'overlay décide seul
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ async def test_un_tiers_en_vocal_est_entendu_mais_pas_obei():
     svc._vc = MagicMock()
     narrator = MagicMock()
     narrator.count_spoken_vote.return_value = False
-    narrator.on_stream_event = AsyncMock(return_value=None)
+    narrator.on_overheard = AsyncMock(return_value=None)
     svc._bot.overlay_narrator = narrator
     svc._current_speaker_id = "999"
     svc._bot.config.voice.requesters = [
@@ -153,18 +153,21 @@ async def test_un_tiers_en_vocal_est_entendu_mais_pas_obei():
         svc._observe_transcript("Inconnu", "wally affiche un pile ou face")
         await asyncio.sleep(0)
     demande.assert_not_awaited()
-    narrator.on_stream_event.assert_awaited()
+    narrator.on_overheard.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
-    """Le vocal capte tout : le jeu, les autres. Annoncer une réflexion à chaque
-    phrase produirait des trois-points sans bulle à longueur de live."""
+async def test_une_phrase_ordinaire_passe_par_la_perception_vocale():
+    """Le vocal capte tout : le jeu, les autres. Il ne passe donc PAS par le
+    chemin des événements, qui ferait annoncer des raids inexistants — et il
+    n'allume pas les trois-points (garanti par `on_overheard`, cf.
+    tests/test_overlay_overheard.py)."""
     svc = _service()
     svc.listen_only = True
     svc._vc = MagicMock()
     narrator = MagicMock()
     narrator.count_spoken_vote.return_value = False
+    narrator.on_overheard = AsyncMock(return_value=None)
     narrator.on_stream_event = AsyncMock(return_value=None)
     svc._bot.overlay_narrator = narrator
     with patch("bot.core.stream_feed.active_stream_feed", return_value=None), \
@@ -173,8 +176,8 @@ async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
         svc._observe_transcript("Azrael", "j'ai encore raté mon saut")
         await asyncio.sleep(0)
     demande.assert_not_awaited()
-    _, kwargs = narrator.on_stream_event.call_args
-    assert kwargs["show_thinking"] is False
+    narrator.on_overheard.assert_awaited()
+    narrator.on_stream_event.assert_not_awaited()
 
 
 # ── retour automatique après un redémarrage ──
