@@ -60,6 +60,7 @@ class PlayerProfile:
     state: str
     in_game: bool
     legend: str | None
+    skin: str | None
     stats: dict[str, StatValue] = field(default_factory=dict)
 
 
@@ -133,6 +134,13 @@ def _read_stats(payload: dict) -> dict[str, StatValue]:
     return stats
 
 
+def _read_skin(payload: dict) -> str | None:
+    """Le skin de la légende jouée — de la couleur pour l'overlay, rien de plus."""
+    info = (payload.get("legends", {}).get("selected") or {}).get("gameInfo") or {}
+    skin = info.get("skin")
+    return str(skin) if skin else None
+
+
 def _read_rank(payload: dict) -> RankInfo | None:
     rank = (payload.get("global") or {}).get("rank") or {}
     if not rank.get("rankName"):
@@ -170,5 +178,6 @@ def read_profile(payload: Any) -> PlayerProfile | None:
         state=str(realtime.get("currentStateAsText") or ""),
         in_game=bool(_num(realtime.get("isInGame"))),
         legend=str(realtime.get("selectedLegend")) if realtime.get("selectedLegend") else None,
+        skin=_read_skin(payload),
         stats=_read_stats(payload),
     )

@@ -14,6 +14,16 @@ from loguru import logger
 
 from bot.core.apex.client import ApexClient
 from bot.core.apex.reader import PlayerProfile, read_profile
+from bot.core.apex.widgets import (
+    APEX_PANELS,
+    craft_panel,
+    map_panel,
+    predator_panel,
+    rank_panel,
+    servers_panel,
+    stats_panel,
+    status_panel,
+)
 
 
 def _fr(n: int) -> str:
@@ -166,6 +176,47 @@ class ApexLegendsService:
                 ligne += ")"
             lignes.append(ligne)
         return "\n".join(lignes)
+
+    # ── Les panneaux de l'overlay ─────────────────────────────────────────────
+
+    async def build_panel(
+        self,
+        panel: str,
+        player: str = "",
+        platform: str = "PC",
+        *,
+        requester: str | None = None,
+    ) -> dict | None:
+        """Le contenu d'un panneau d'overlay, prêt à publier — ou None.
+
+        Le modèle ne fournit aucun chiffre : il nomme un panneau, on va chercher
+        la donnée. None quand elle manque, pour ne jamais afficher de carte vide.
+        """
+        if panel not in APEX_PANELS:
+            return None
+        if panel in ("rank", "status", "stats"):
+            cherche, platform = await self._resolve(player, platform, requester)
+            if not cherche:
+                return None
+            data = await self._client.get(
+                "bridge", {"player": cherche, "platform": platform or "PC"}
+            )
+            if isinstance(data, str):
+                return None
+            profil = read_profile(data)
+            built = {"rank": rank_panel, "status": status_panel, "stats": stats_panel}[panel](profil)
+        else:
+            endpoint, params, builder = {
+                "map": ("maprotation", {"version": "2"}, map_panel),
+                "craft": ("crafting", None, craft_panel),
+                "predator": ("predator", None, predator_panel),
+                "servers": ("servers", None, servers_panel),
+            }[panel]
+            data = await self._client.get(endpoint, params)
+            if isinstance(data, str):
+                return None
+            built = builder(data)
+        return {"kind": f"apex_{panel}", **built} if built else None
 
     # ── L'état du jeu ─────────────────────────────────────────────────────────
 
