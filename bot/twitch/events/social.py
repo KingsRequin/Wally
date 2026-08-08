@@ -132,8 +132,9 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_followV2(payload) -> None:
         cfg = bot.config.twitch_events.get("follow")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.1)
         _check_peak(bot, "joy", old_joy, 0.1, username=payload.data.user.name, event_name="follow")
@@ -147,6 +148,8 @@ def register_events(bot: "WallyTwitch") -> None:
             _check_peak(bot, "curiosity", old_curiosity, 0.2, username=payload.data.user.name, event_name="follow_burst")
             # Un follow isolé est du bruit ; une vague, c'est un moment du stream.
             _feed(bot, "vague de nouveaux follows sur la chaîne")
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -155,8 +158,9 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_subscription(payload) -> None:
         cfg = bot.config.twitch_events.get("sub")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         if payload.data.is_gift:
             return  # gift subs handled by subscription_gift handler
         _feed(bot, f"{payload.data.user.name} vient de s'abonner à la chaîne")
@@ -164,6 +168,8 @@ def register_events(bot: "WallyTwitch") -> None:
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.4)
         _check_peak(bot, "joy", old_joy, 0.4, username=payload.data.user.name, event_name="subscribe")
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
@@ -172,8 +178,9 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_subscription_message(payload) -> None:
         cfg = bot.config.twitch_events.get("resub")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         _feed(
             bot,
             f"{payload.data.user.name} se réabonne "
@@ -182,6 +189,8 @@ def register_events(bot: "WallyTwitch") -> None:
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.3)
         _check_peak(bot, "joy", old_joy, 0.3, username=payload.data.user.name, event_name="resub")
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=payload.data.user.name, amount=0,
@@ -191,14 +200,17 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_subscription_gift(payload) -> None:
         cfg = bot.config.twitch_events.get("gift_sub")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         gifter = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         _feed(bot, f"{gifter} offre {payload.data.total} abonnement(s) au chat")
         _goal(bot, "sub", int(payload.data.total or 1))
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.5)
         _check_peak(bot, "joy", old_joy, 0.5, username=gifter, event_name="gift_sub")
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=gifter,
@@ -216,8 +228,9 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_cheer(payload) -> None:
         cfg = bot.config.twitch_events.get("bits")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         delta = _bits_joy(payload.data.bits)
         username = "Anonyme" if payload.data.is_anonymous else payload.data.user.name
         _feed(bot, f"{username} balance {payload.data.bits} bits")
@@ -225,6 +238,8 @@ def register_events(bot: "WallyTwitch") -> None:
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", delta)
         _check_peak(bot, "joy", old_joy, delta, username=username, event_name="bits")
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
             username=username, amount=payload.data.bits, months=0, raiders_count=0,
@@ -233,8 +248,9 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_raid(payload) -> None:
         cfg = bot.config.twitch_events.get("raid")
-        if not cfg or not cfg.active:
-            return
+        # Percevoir n'est pas répondre : le flux du stream (donc la bulle
+        # d'overlay) et l'émotion valent même quand le message automatique est
+        # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         viewers = payload.data.viewer_count
         _feed(bot, f"raid de {payload.data.raider.name} avec {viewers} spectateurs")
         joy_spike = min(viewers / 50, 0.9)
@@ -249,6 +265,8 @@ def register_events(bot: "WallyTwitch") -> None:
             _check_peak(bot, "curiosity", old_curiosity, curiosity_spike, username=payload.data.raider.name, event_name="raid_massive")
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
+        if not cfg or not cfg.active:
+            return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, channel_name, cfg.message,
             username=payload.data.raider.name, amount=0,

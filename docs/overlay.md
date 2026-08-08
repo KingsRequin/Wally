@@ -59,7 +59,10 @@ jamais.
 
 - **Il pense à voix haute** — nuage de BD, quand il ne se passe rien.
 - **Il réagit aux événements du live** : raid, sub, changement de jeu ou de
-  titre. L'avatar s'emballe une seconde sur les gros moments.
+  titre. L'avatar s'emballe une seconde sur les gros moments. Ces réactions ne
+  dépendent PAS de `twitch_events.*.active` : ce réglage ne gouverne que les
+  messages de remerciement automatiques dans le chat. Les avoir liés rendait
+  Wally aveugle aux raids tant que ces messages étaient coupés (2026-08-07).
 - **Il dit bonjour** aux inconnus et à ceux qui reviennent après ≥ 7 jours, à
   leur première prise de parole dans le chat. Une fois par personne et par live.
 - **Il écoute le vocal** : présent dans le salon d'Azraël, il entend sans jamais
