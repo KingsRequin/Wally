@@ -226,29 +226,6 @@ def test_l_outil_ne_demande_aucun_parametre_obligatoire():
     assert LAST_CLIP_TOOL_SPEC["function"]["name"] == "show_clip"
 
 
-# ── le chemin vocal, de bout en bout ──────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_une_demande_vocale_joue_le_clip():
-    """C'est par là que « Wally, mets le dernier clip » arrivera."""
-    n, feed = _n()
-    vus: dict = {}
-
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        vus["outils"] = [t["function"]["name"] for t in tools]
-        vus["retour"] = await tool_executor("show_clip", "{}")
-        return "regardez-moi ça", []
-
-    n._llm.complete_with_tools = _fake
-    q = feed.subscribe()
-    assert await n.on_voice_request("Azrael", "wally mets le dernier clip") \
-        == "regardez-moi ça"
-    assert "show_clip" in vus["outils"]
-    assert json.loads(vus["retour"])["status"] == "ok"
-    assert _widgets(q)[-1]["params"]["embed"] == EMBED
-
-
 # ── la garde sur l'URL du fichier vidéo ───────────────────────────────────
 
 
@@ -340,18 +317,22 @@ def test_la_description_n_autorise_pas_a_prejuger_du_live():
 
 
 @pytest.mark.asyncio
-async def test_le_chemin_vocal_transmet_aussi_le_clippeur():
-    """Le chemin vocal a son propre exécuteur d'outils : il ignorait l'argument
-    que le chemin texte transmet, et « mets le dernier clip d'azra » à voix
-    haute serait retombé sur le clip de n'importe qui."""
-    feed = OverlayFeed()
-    provider = AsyncMock(return_value=CLIP)
-    n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
+async def test_le_clippeur_demande_est_transmis():
+    """« mets le dernier clip d'azra » doit chercher le clip D'AZRA. Sans cet
+    argument, la demande retombe sur le clip de n'importe qui.
 
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        await tool_executor("show_clip", json.dumps({"author": "azra"}))
-        return "voilà", []
+    Testé sur `run_last_clip_tool`, l'exécuteur réel : le chemin vocal passe par
+    lui depuis la parité vocal/écrit, et les autres tests de l'outil appellent
+    tous avec `{}` — l'argument n'était donc couvert nulle part ailleurs.
+    """
+    narrator = MagicMock()
+    narrator.play_last_clip = AsyncMock(return_value={"title": "le 1v3",
+                                                      "author": "azra",
+                                                      "played": True})
+    bot = SimpleNamespace(overlay_narrator=narrator)
 
-    n._llm.complete_with_tools = _fake
-    await n.on_voice_request("KingsRequin", "wally mets le dernier clip d'azra")
-    provider.assert_awaited_once_with("azra", query=None, most_viewed=False)
+    out = json.loads(await run_last_clip_tool(bot, {"author": "azra"}))
+
+    assert out["status"] == "ok"
+    narrator.play_last_clip.assert_awaited_once_with(
+        "azra", query=None, most_viewed=False)

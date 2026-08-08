@@ -354,10 +354,10 @@ class ActionDispatcher:
         if act_name == "show_overlay" and self._overlay_narrator:
             widget = str(args.get("widget") or "").strip()
             comment = str(args.get("comment") or "").strip()
-            # Le filtre des `None` est le même que sur les deux autres chemins de
-            # cet outil (`run_overlay_tool`, `on_voice_request`) : un
-            # `"left_value": null` produisait ici `float(None)`, capté comme
-            # « données manquantes » — un diagnostic trompeur.
+            # Le filtre des `None` est le même que sur l'autre chemin de cet
+            # outil (`run_overlay_tool`) : un `"left_value": null` produisait
+            # ici `float(None)`, capté comme « données manquantes » — un
+            # diagnostic trompeur.
             extra = {k: v for k, v in args.items()
                      if k not in ("widget", "comment", "result") and v is not None}
             # Personne ne l'a sollicité ici : c'est une initiative. L'adversaire

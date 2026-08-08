@@ -18,7 +18,6 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 from __future__ import annotations
 
 import asyncio
-import json
 import random
 import re
 import time
@@ -31,7 +30,6 @@ from typing import Optional
 
 from loguru import logger
 
-from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.intelligence.prompts import load_prompt
 
 # Intervalle minimal entre deux bulles de pensée. Elles occupent l'écran quand
@@ -94,22 +92,6 @@ _EVENT_SYSTEM = load_prompt(
     fallback=(
         "Réagis à cet événement du stream en 3 à 8 MOTS, adressés aux SPECTATEURS. "
         "Une seule idée, ton naturel. Réponds uniquement par la phrase, ou RIEN."
-    ),
-    render=False,
-)
-
-_VOICE_SYSTEM = load_prompt(
-    "overlay_voice",
-    fallback=(
-        "Tu es le compagnon d'overlay d'un stream Twitch. Le streamer vient de "
-        "te parler À VOIX HAUTE pendant son live.\n"
-        "S'il te demande d'afficher quelque chose (pile ou face, dé, roue, "
-        "sondage, texte…), APPELLE l'outil show_overlay — c'est le seul moyen "
-        "que ça apparaisse à l'écran. N'annonce jamais un affichage sans l'avoir "
-        "appelé.\n"
-        "Ta réponse écrite est une bulle lue par les SPECTATEURS, jamais par le "
-        "streamer qui ne voit pas son overlay : 3 à 8 MOTS, une seule idée. "
-        "Si tu n'as rien à ajouter, réponds RIEN."
     ),
     render=False,
 )
@@ -640,132 +622,6 @@ class OverlayNarrator:
             # non apparié efface la bulle affichée deux secondes plus tôt.
             if show_thinking:
                 self._feed.thinking(False)
-            return None
-        self._mark_spoken()
-        self._remember_bubble(short)
-        self._feed.say(short, mode="speech")
-        return short
-
-    # ── voix ──────────────────────────────────────────────────────────────
-
-    async def on_voice_request(self, speaker: str, text: str) -> Optional[str]:
-        """Le streamer s'adresse à Wally en vocal et lui demande un affichage.
-
-        Le chemin des réactions (`on_stream_event`) ne sait que condenser du
-        texte : sans outil, une demande d'affichage produisait des trois-points
-        puis rien. Ici le modèle peut réellement appeler `show_overlay`.
-        """
-        text = (text or "").strip()
-        # PAS de budget ici : on le lui demande. Le budget existe pour brider ce
-        # que Wally dit de lui-même — l'appliquer à une sollicitation directe
-        # revient à l'ignorer. Vu en live : trois personnes parlant en continu
-        # saturaient le budget par le vocal passif, et « Wally, lance un dé »
-        # tombait dans le vide.
-        if not text or not self._live():
-            return None
-        self._last_event_at = time.monotonic()
-        self._feed.thinking(True)
-
-        shown: list[dict] = []
-
-        async def _execute(name: str, arguments: str) -> str:
-            if name not in ("show_overlay", "cancel_overlay", "show_clip", "show_apex"):
-                return json.dumps({"status": "unknown_tool"})
-            try:
-                args = json.loads(arguments or "{}")
-            except json.JSONDecodeError:
-                return json.dumps({"status": "error", "message": "arguments illisibles"})
-            if name == "show_apex":
-                out = await self.show_apex(
-                    str(args.get("panel") or ""), str(args.get("player") or "")[:32],
-                    str(args.get("comment") or ""),
-                )
-                if out is None:
-                    return json.dumps({"status": "nothing", "message": (
-                        "Rien affiché : donnée Apex indisponible ou pas de live. "
-                        "Dis-le simplement, ne prétends pas l'avoir montré."
-                    )})
-                return json.dumps({"status": "ok", **out})
-            if name == "show_clip":
-                auteur = str(args.get("author") or "").strip()[:40] or None
-                mode = str(args.get("mode") or "dernier").strip().lower()
-                if mode == "top":
-                    podium = await self.show_top_clips(int(args.get("count") or 5))
-                    if podium is None:
-                        return json.dumps({"status": "nothing", "message": (
-                            "Aucun clip à classer. Dis-le, n'invente pas de podium."
-                        )})
-                    return json.dumps({"status": "ok", **podium})
-                out = await self.play_last_clip(
-                    auteur,
-                    query=str(args.get("query") or "").strip()[:80] or None,
-                    most_viewed=(mode == "plus_vu"),
-                )
-                if out is None:
-                    de_qui = f" clippé par {auteur}" if auteur else ""
-                    return json.dumps({"status": "nothing", "message": (
-                        f"Aucun clip récent{de_qui}. Dis-le, n'en invente pas un."
-                    )})
-                return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()},
-                                   "message": "Tu ne l'as pas vu : ne raconte pas "
-                                              "ce qu'il contient."})
-            if name == "cancel_overlay":
-                # « Wally, annule le bingo » arrive par le vocal bien plus
-                # souvent que par le chat : sans cet outil ici, la demande
-                # tombait dans le vide alors même qu'on la lui adressait.
-                result = self.cancel(str(args.get("target") or ""))
-                done = result.get("cancelled") or []
-                if not done:
-                    return json.dumps({"status": "nothing", "message": (
-                        "Rien à annuler, ce n'était pas en cours. Dis-le, "
-                        "ne prétends pas l'avoir retiré."
-                    )})
-                return json.dumps({"status": "ok", "cancelled": ", ".join(done)})
-            extra = {k: v for k, v in args.items()
-                     if k not in ("widget", "comment", "result") and v is not None}
-            widget = str(args.get("widget") or "")
-            if widget == "rps":
-                # Celui qui a demandé le duel à voix haute en est l'adversaire.
-                extra["opponent"] = speaker
-            out = self.show_widget(
-                widget, str(args.get("comment") or ""),
-                result=args.get("result"), **extra,
-            )
-            if out is None:
-                # La consigne compte autant que le statut : sur un refus sec,
-                # le modèle paraphrasait le compte rendu — « l'outil me répond
-                # que… » s'est retrouvé en toutes lettres sur l'overlay public.
-                return json.dumps({"status": "rejected", "message": (
-                    "Rien affiché : widget inconnu ou données manquantes. Ne "
-                    "parle NI de l'outil NI du paramètre — réagis en quelques "
-                    "mots, ou réponds RIEN."
-                )})
-            shown.append(out)
-            return json.dumps({"status": "ok", **{k: str(v) for k, v in out.items()}})
-
-        try:
-            reply, _ = await self._llm.complete_with_tools(
-                system_prompt=_VOICE_SYSTEM,
-                messages=[{"role": "user", "content": f"{speaker} (à voix haute) : {text}"}],
-                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC, LAST_CLIP_TOOL_SPEC, APEX_OVERLAY_TOOL],
-                tool_executor=_execute,
-                purpose="overlay_voice",
-            )
-        except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("Overlay: demande vocale échouée: {e}", e=exc)
-            self._feed.thinking(False)
-            return None
-
-        short = " ".join((reply or "").split()).strip('"').strip()
-        if not short or short.upper().rstrip(".") == "RIEN":
-            # Un widget a pu s'afficher sans qu'il ait à commenter.
-            self._feed.thinking(False)
-            return None
-        if len(short) > _MAX_BUBBLE_CHARS:
-            short = short[:_MAX_BUBBLE_CHARS].rsplit(" ", 1)[0]
-        if self._is_repeat(short):
-            logger.info("Overlay: réplique écartée (déjà dite) — « {t} »", t=short)
-            self._feed.thinking(False)
             return None
         self._mark_spoken()
         self._remember_bubble(short)

@@ -166,12 +166,13 @@ async def test_une_phrase_ordinaire_ne_montre_pas_les_trois_points():
     narrator = MagicMock()
     narrator.count_spoken_vote.return_value = False
     narrator.on_stream_event = AsyncMock(return_value=None)
-    narrator.on_voice_request = AsyncMock()
     svc._bot.overlay_narrator = narrator
-    with patch("bot.core.stream_feed.active_stream_feed", return_value=None):
+    with patch("bot.core.stream_feed.active_stream_feed", return_value=None), \
+         patch("bot.discord.voice.request.handle_voice_request",
+               new=AsyncMock(return_value=None)) as demande:
         svc._observe_transcript("Azrael", "j'ai encore raté mon saut")
         await asyncio.sleep(0)
-    narrator.on_voice_request.assert_not_awaited()
+    demande.assert_not_awaited()
     _, kwargs = narrator.on_stream_event.call_args
     assert kwargs["show_thinking"] is False
 

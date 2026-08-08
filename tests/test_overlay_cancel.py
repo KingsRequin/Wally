@@ -134,57 +134,6 @@ async def test_la_cloture_planifiee_est_coupee():
     assert task.cancelled() or task.cancelling() or n._poll_task is None
 
 
-# ── le chemin vocal, de bout en bout ──────────────────────────────────────
-#
-# C'est PAR LÀ que « Wally, annule le bingo » arrive le plus souvent. Le tester
-# via `cancel()` seul ne prouve rien : il faut rejouer la séquence complète —
-# l'outil doit être proposé au modèle, et son exécuteur doit savoir le router.
-
-
-@pytest.mark.asyncio
-async def test_une_demande_vocale_annule_vraiment():
-    feed = OverlayFeed()
-    llm = MagicMock()
-    vus: dict = {}
-
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        vus["outils"] = [t["function"]["name"] for t in tools]
-        vus["retour"] = await tool_executor("cancel_overlay", '{"target": "bingo"}')
-        return "le bingo saute", []
-
-    llm.complete_with_tools = _fake
-    n = OverlayNarrator(feed, llm, lambda: True)
-    n.start_bingo(["une carte", "un kill"])
-    q = feed.subscribe()
-
-    assert await n.on_voice_request("Azrael", "wally annule le bingo") == "le bingo saute"
-    assert "cancel_overlay" in vus["outils"], "l'outil doit être proposé au modèle"
-    assert '"status": "ok"' in vus["retour"]
-    assert n._bingo is None
-    types = [e["type"] for e in (q.get_nowait() for _ in range(q.qsize()))]
-    assert "clear" in types
-
-
-@pytest.mark.asyncio
-async def test_le_vocal_avoue_qu_il_n_y_avait_rien_a_annuler():
-    feed = OverlayFeed()
-    llm = MagicMock()
-    retour: dict = {}
-
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        retour["out"] = await tool_executor("cancel_overlay", '{"target": "pendu"}')
-        return "y avait rien", []
-
-    llm.complete_with_tools = _fake
-    n = OverlayNarrator(feed, llm, lambda: True)
-    await n.on_voice_request("Azrael", "wally annule le pendu")
-    # `json.dumps` échappe les accents : on relit le JSON plutôt que d'y chercher
-    # une sous-chaîne, « prétends » y figurant sous la forme « prétends ».
-    out = json.loads(retour["out"])
-    assert out["status"] == "nothing"
-    assert "ne prétends pas" in out["message"]
-
-
 # ── le bloc d'état injecté au prompt ──────────────────────────────────────
 
 

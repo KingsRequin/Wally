@@ -631,50 +631,6 @@ def test_un_commentaire_meme_long_ne_casse_rien():
     assert not [e for e in events if e["type"] == "bubble"]
 
 
-# ── demande vocale (chemin outillé) ──
-
-@pytest.mark.asyncio
-async def test_une_demande_vocale_affiche_vraiment_le_widget():
-    """Sans outil, le vocal produisait des trois-points puis rien."""
-    feed = OverlayFeed()
-    llm = AsyncMock()
-
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        out = await tool_executor("show_overlay", '{"widget": "coinflip"}')
-        assert '"status": "ok"' in out
-        return "pile, comme prévu", []
-
-    llm.complete_with_tools = _fake
-    n = OverlayNarrator(feed, llm, lambda: True)
-    q = feed.subscribe()
-    assert await n.on_voice_request("Azrael", "wally fais un pile ou face") == "pile, comme prévu"
-    kinds = [e.get("kind") for e in (q.get_nowait() for _ in range(q.qsize()))
-             if e["type"] == "widget"]
-    assert "coinflip" in kinds
-
-
-@pytest.mark.asyncio
-async def test_une_demande_vocale_hors_live_ne_fait_rien():
-    feed, llm = OverlayFeed(), AsyncMock()
-    n = OverlayNarrator(feed, llm, lambda: False)
-    assert await n.on_voice_request("Azrael", "affiche un truc") is None
-    llm.complete_with_tools.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_un_llm_en_erreur_eteint_les_trois_points():
-    """Sinon l'animation tourne indéfiniment sur l'overlay."""
-    feed = OverlayFeed()
-    llm = AsyncMock()
-    llm.complete_with_tools = AsyncMock(side_effect=RuntimeError("API HS"))
-    n = OverlayNarrator(feed, llm, lambda: True)
-    q = feed.subscribe()
-    assert await n.on_voice_request("Azrael", "wally affiche un truc") is None
-    thinking = [e for e in (q.get_nowait() for _ in range(q.qsize()))
-                if e["type"] == "thinking"]
-    assert thinking[-1]["active"] is False
-
-
 # ── plusieurs dés ──
 
 def test_deux_des_sont_reellement_tires():
@@ -797,30 +753,6 @@ def test_un_nouveau_live_efface_la_grille():
     n.start_bingo(["a", "b"])
     n.reset_live()
     assert n._bingo is None
-
-
-# ── une demande explicite n'est pas soumise au budget ──
-
-@pytest.mark.asyncio
-async def test_une_demande_vocale_passe_meme_budget_epuise():
-    """Vu en live : trois personnes parlant en continu saturaient le budget par
-    le vocal passif, et « Wally, lance un dé » tombait dans le vide."""
-    feed = OverlayFeed()
-    llm = AsyncMock()
-
-    async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        await tool_executor("show_overlay", '{"widget": "dice"}')
-        return "quatre", []
-
-    llm.complete_with_tools = _fake
-    n = OverlayNarrator(feed, llm, lambda: True)
-    n._last_event_at = time.monotonic()      # budget tout juste consommé
-    assert n._may_react() is False
-    q = feed.subscribe()
-    assert await n.on_voice_request("Azraël", "wally lance un dé") == "quatre"
-    kinds = [e.get("kind") for e in (q.get_nowait() for _ in range(q.qsize()))
-             if e["type"] == "widget"]
-    assert "dice" in kinds
 
 
 # ── bingo : cocher par intitulé, réafficher ──
