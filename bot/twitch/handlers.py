@@ -144,6 +144,12 @@ def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
         "streamer": channel_name,
         "channel": f"#{channel_name}",
     }
+    # Il s'appelle « Wally », mais le chat l'interpelle par son login Twitch.
+    # Sans cette ligne, il voyait passer des « @WallyTeBully » sans faire le
+    # lien avec lui-même. Absente si non configuré : mieux vaut rien qu'une
+    # ligne vide, qui inviterait le modèle à inventer un pseudo.
+    if nick := os.getenv("TWITCH_BOT_NICK", "").strip():
+        situation["self_handle"] = nick
     stream = bot._stream_info
     if stream.get("live"):
         situation["stream_live"] = True

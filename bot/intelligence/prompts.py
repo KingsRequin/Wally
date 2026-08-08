@@ -192,6 +192,13 @@ class PromptBuilder:
             lines = ["\n--- Contexte situationnel ---"]
             if platform := situation.get("platform"):
                 lines.append(f"Plateforme : {platform}")
+            # Rattaché explicitement à LUI : écrit seul, le modèle peut lire ce
+            # pseudo comme celui d'un tiers présent dans le salon.
+            if handle := situation.get("self_handle"):
+                lines.append(
+                    f"Ton pseudo ici : {handle} — c'est TOI. Quand quelqu'un "
+                    f"écrit @{handle}, il s'adresse à toi."
+                )
             if server := situation.get("server"):
                 lines.append(f"Serveur : {server}")
             if channel := situation.get("channel"):
