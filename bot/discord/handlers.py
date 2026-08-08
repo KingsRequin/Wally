@@ -452,6 +452,23 @@ def _overlay_outcome(shown: dict) -> str:
     return f"'{widget}' est à l'écran."
 
 
+# « KingsRequin (@kingsrequin) » — l'étiquette que le vocal et Discord donnent
+# d'un locuteur. Les DEUX pseudos sont utiles au prompt, où Wally doit pouvoir
+# relier les deux ; à l'écran c'est du bruit, et le bornage à 24 caractères la
+# coupait en plein milieu (« KingsRequin (@kingsrequi », vu en live).
+_AUTHOR_LABEL_RE = re.compile(r"^(.+?)\s*\(@[^)\s]+\)$")
+
+
+def _display_only(label: str) -> str:
+    """Le pseudo affichable d'une étiquette de locuteur.
+
+    Seule la forme `(@username)` est retirée : « Bob (le vrai) » n'est pas une
+    étiquette technique et reste intact.
+    """
+    m = _AUTHOR_LABEL_RE.match((label or "").strip())
+    return m.group(1).strip() if m else (label or "").strip()
+
+
 def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
     """Exécute `show_overlay` et rend un compte rendu HONNÊTE.
 
@@ -470,7 +487,7 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
     extra = {k: v for k, v in args.items()
              if k not in ("widget", "comment", "result") and v is not None}
     if widget == "rps":
-        extra["opponent"] = requester
+        extra["opponent"] = _display_only(requester)
     try:
         shown = narrator.show_widget(
             widget, str(args.get("comment") or ""), result=args.get("result"), **extra

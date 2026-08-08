@@ -154,3 +154,29 @@ def test_le_compte_rendu_nomme_le_gagnant():
     assert "KingsRequin a joué ciseaux" in message
     assert "toi pierre" in message
     assert "tu gagnes" in message
+
+
+# ── le nom affiché est un nom, pas une étiquette technique ──────────────────
+
+
+def test_l_etiquette_vocale_est_reduite_au_pseudo():
+    """Le vocal identifie le locuteur par `pseudo (@username)` — utile au prompt,
+    illisible à l'écran. Vu en live : « KingsRequin (@kingsrequi », coupé net par
+    le bornage à 24 caractères."""
+    bot, narrator = _bot_narrateur()
+    run_overlay_tool(bot, {"widget": "rps"},
+                     requester="KingsRequin (@kingsrequin)")
+    assert narrator.show_widget.call_args.kwargs["opponent"] == "KingsRequin"
+
+
+def test_un_pseudo_simple_n_est_pas_touche():
+    bot, narrator = _bot_narrateur()
+    run_overlay_tool(bot, {"widget": "rps"}, requester="kingsrequin")
+    assert narrator.show_widget.call_args.kwargs["opponent"] == "kingsrequin"
+
+
+def test_une_parenthese_qui_n_est_pas_un_username_reste():
+    """« Bob (le vrai) » n'est pas une étiquette technique : on n'y touche pas."""
+    bot, narrator = _bot_narrateur()
+    run_overlay_tool(bot, {"widget": "rps"}, requester="Bob (le vrai)")
+    assert narrator.show_widget.call_args.kwargs["opponent"] == "Bob (le vrai)"
