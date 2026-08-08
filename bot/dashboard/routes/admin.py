@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
+from bot.core.llm import SUPPORTED_TEXT_PROVIDERS
 
 router = APIRouter()
 
@@ -38,6 +39,12 @@ async def get_config(request: Request) -> dict:
         "image_generation": asdict(cfg.image_generation),
         "overlay_image": asdict(cfg.overlay_image),
         "voice": asdict(cfg.voice),
+        # Ce que la factory sait réellement construire. Le `<select>` du
+        # dashboard listait « OpenAI » et « Claude » en dur, aucun des deux
+        # constructible : le provider en cours (`deepseek`) n'y figurant pas, le
+        # navigateur affichait « OpenAI » comme sélectionné et la première
+        # sauvegarde cassait la config. La liste vient maintenant du serveur.
+        "llm_providers": list(SUPPORTED_TEXT_PROVIDERS),
     }
 
 
@@ -106,6 +113,21 @@ async def update_config(request: Request, body: dict) -> dict:
     if "llm" in body:
         llm_data = body["llm"]
         needs_restart = False
+        # Refuser AVANT de toucher à quoi que ce soit. La mutation venait en
+        # premier et la construction du client ensuite : un provider inconnu
+        # levait une `ValueError` non attrapée (HTTP 500) en laissant
+        # `cfg.llm.*` corrompu en mémoire. Le `config.save()` suivant — un autre
+        # onglet, `/wally setup` — gravait alors ce provider dans `config.yaml`,
+        # et le bot mourait au démarrage suivant, en boucle de restart Docker.
+        for role in ("primary", "secondary"):
+            demande = (llm_data.get(role) or {}).get("provider")
+            if demande is not None and demande not in SUPPORTED_TEXT_PROVIDERS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(f"provider {demande!r} inconnu — "
+                            f"supportés : {', '.join(SUPPORTED_TEXT_PROVIDERS)}"),
+                )
+
         if "primary" in llm_data:
             p = llm_data["primary"]
             if "provider" in p and p["provider"] != cfg.llm.primary.provider:

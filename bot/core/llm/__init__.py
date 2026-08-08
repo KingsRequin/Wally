@@ -7,6 +7,7 @@ __all__ = [
     "FALLBACK_IMAGE_RESPONSE",
     "OpenAILLMClient",
     "create_llm_client",
+    "SUPPORTED_TEXT_PROVIDERS",
 ]
 
 
@@ -18,4 +19,7 @@ def __getattr__(name: str):
     if name == "create_llm_client":
         from bot.core.llm.factory import create_llm_client
         return create_llm_client
+    if name == "SUPPORTED_TEXT_PROVIDERS":
+        from bot.core.llm.factory import SUPPORTED_TEXT_PROVIDERS
+        return SUPPORTED_TEXT_PROVIDERS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

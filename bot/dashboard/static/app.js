@@ -618,6 +618,57 @@ function escHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Options du `<select>` de provider LLM, bâties sur ce que le SERVEUR déclare
+// savoir construire (`cfg.llm_providers`, issu de `SUPPORTED_TEXT_PROVIDERS`).
+//
+// Les deux options étaient écrites en dur — « OpenAI » et « Claude » — alors que
+// la factory n'accepte que `deepseek`. Le provider en cours n'apparaissant pas
+// dans la liste, le navigateur affichait « OpenAI » comme sélectionné : la
+// première sauvegarde du panneau envoyait donc un provider inconstructible.
+//
+// Le dictionnaire de libellés est LOCAL à la fonction, pas une `const` de haut
+// niveau : un `const` au sommet du fichier se lit avant son initialisation si
+// quoi que ce soit l'atteint trop tôt, et cette zone morte a déjà cassé le site.
+function providerOptions(cfg, role) {
+  const libelles = { deepseek: 'DeepSeek', openai: 'OpenAI', claude: 'Claude (Anthropic)' };
+  const actuel = (cfg.llm && cfg.llm[role] && cfg.llm[role].provider) || '';
+  const dispos = cfg.llm_providers || [];
+  // Un provider configuré mais non supporté reste AFFICHÉ, marqué comme tel :
+  // le masquer laisserait croire que le réglage en cours est valide.
+  const liste = (!actuel || dispos.indexOf(actuel) !== -1) ? dispos : dispos.concat([actuel]);
+  return liste.map(function (p) {
+    const suffixe = dispos.indexOf(p) !== -1 ? '' : ' — non supporté';
+    return '<option value="' + escAttr(p) + '"' + (p === actuel ? ' selected' : '') + '>'
+      + escHtml((libelles[p] || p) + suffixe) + '</option>';
+  }).join('');
+}
+
+// Options du `<select>` de modèle. Le modèle RÉELLEMENT configuré est toujours
+// présent et sélectionné, quitte à être ajouté en tête du catalogue.
+//
+// Sans ça, ouvrir puis sauvegarder le panneau LLM sans rien toucher suffisait à
+// casser le bot : le catalogue vient de l'API OpenAI, le modèle en cours est un
+// `deepseek-…` qui n'y figure pas, le navigateur sélectionnait donc le premier
+// `gpt-…` de la liste, et « Enregistrer » écrivait cet identifiant OpenAI dans
+// `llm.primary.model` — sur un client DeepSeek, et persisté sur disque.
+function modelOptions(models, current) {
+  const liste = (current && models.indexOf(current) === -1)
+    ? [current].concat(models)
+    : models;
+  return liste.map(function (m) {
+    return '<option value="' + escAttr(m) + '"' + (m === current ? ' selected' : '')
+      + '>' + escHtml(m) + '</option>';
+  }).join('');
+}
+
+// Le modèle qui fait foi pour un rôle : la section `llm:` d'abord, la section
+// `openai:` héritée seulement en repli — c'est `llm:` que lit `bootstrap`.
+function currentModel(cfg, role) {
+  return (cfg.llm && cfg.llm[role] && cfg.llm[role].model)
+    || (cfg.openai && cfg.openai[role + '_model'])
+    || '';
+}
+
 // ── Admin config ──────────────────────────────────────────────────────────────
 
 async function loadConfig() {
@@ -666,14 +717,13 @@ async function renderConfigForm(cfg) {
       <div class="field-group">
         <label class="field-label" for="cfg-primary-provider">Provider principal</label>
         <select id="cfg-primary-provider" onchange="onProviderChange()">
-          <option value="openai" ${(cfg.llm?.primary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
-          <option value="claude" ${(cfg.llm?.primary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+        ${providerOptions(cfg, 'primary')}
         </select>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-primary-model">Modèle principal</label>
         <select id="cfg-primary-model">
-          ${models.map(m => `<option value="${m}" ${m === cfg.openai.primary_model ? 'selected' : ''}>${m}</option>`).join('')}
+          ${modelOptions(models, currentModel(cfg, 'primary'))}
         </select>
         <select id="cfg-primary-model-claude" style="display:none">
           ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.primary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
@@ -682,14 +732,13 @@ async function renderConfigForm(cfg) {
       <div class="field-group">
         <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
         <select id="cfg-secondary-provider" onchange="onProviderChange()">
-          <option value="openai" ${(cfg.llm?.secondary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
-          <option value="claude" ${(cfg.llm?.secondary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+        ${providerOptions(cfg, 'secondary')}
         </select>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
         <select id="cfg-secondary-model">
-          ${models.map(m => `<option value="${m}" ${m === cfg.openai.secondary_model ? 'selected' : ''}>${m}</option>`).join('')}
+          ${modelOptions(models, currentModel(cfg, 'secondary'))}
         </select>
         <select id="cfg-secondary-model-claude" style="display:none">
           ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.secondary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
@@ -1723,8 +1772,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── Memory tab ────────────────────────────────────────────────────────────────
 
+// Valeur posée dans un attribut HTML : `data-id="…"`, `title="…"`, `value="…"`.
+// `&` en PREMIER, sinon on ré-échapperait les entités qu'on vient d'écrire.
 function escAttr(str) {
-  return String(str).replace(/\\/g, '\\\\').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Valeur posée dans une chaîne JS **à l'intérieur** d'un attribut HTML :
+// `onclick="foo('…')"`. Deux couches, dans cet ordre — c'est tout le sujet.
+//
+// Le parseur HTML décode les entités de la valeur d'attribut AVANT que le
+// contenu ne soit compilé comme du JavaScript. `escAttr` seul écrivait `&#39;`
+// pour une apostrophe : redevenue `'` au décodage, elle fermait la chaîne JS.
+// Un pseudo Discord valant `x');alert(1)//` exécutait donc du code dès
+// l'ouverture de l'onglet Mémoire — et le jeton admin vit en `localStorage`.
+//
+// On échappe donc d'abord POUR JavaScript (le `\` devant survivra au décodage),
+// puis pour l'attribut HTML.
+function escJs(str) {
+  return escAttr(
+    String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\r?\n/g, '\\n')
+  );
 }
 
 // ── Memory Tab State ────────────────────────────────────────────
@@ -1924,12 +2001,14 @@ async function loadMemoryUsers() {
       }
     }
 
+    // `escJs` et non `escAttr` : ces chaînes finissent dans un `onclick=`, donc
+    // décodées en entités HTML avant d'être compilées comme du JS.
     var clickHandler = _memLinkMode
-      ? "handleMemLinkClick('" + escAttr(u.user_id) + "','" + escAttr(displayName) + "','" + escAttr(platform) + "')"
-      : "openUserModal('" + escAttr(u.user_id) + "')";
+      ? "handleMemLinkClick('" + escJs(u.user_id) + "','" + escJs(displayName) + "','" + escJs(platform) + "')"
+      : "openUserModal('" + escJs(u.user_id) + "')";
 
     return '<div class="' + cardClasses + '" data-uid="' + escAttr(u.user_id) + '" onclick="' + clickHandler + '">'
-      + '<button class="mem-card-delete" onclick="event.stopPropagation();deleteUser(\'' + escAttr(u.user_id) + '\',\'' + escAttr(displayName) + '\')" title="Supprimer l\'utilisateur">🗑</button>'
+      + '<button class="mem-card-delete" onclick="event.stopPropagation();deleteUser(\'' + escJs(u.user_id) + '\',\'' + escJs(displayName) + '\')" title="Supprimer l\'utilisateur">🗑</button>'
       + (hasLinks ? '<span class="mem-card-link-badge">🔗 lié</span>' : '')
       + '<div class="mem-card-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
       + '<div class="mem-card-name" title="' + escAttr(displayName) + '">' + escHtml(displayName) + '</div>'
@@ -2038,8 +2117,8 @@ async function openUserModal(userId, userData) {
             + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajouté manuellement') + '">' + sourceIcon + '</span>'
             + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
             + '<div class="mem-entry-actions">'
-            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Modifier">✏️</button>'
-            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Supprimer">🗑</button>'
+            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Modifier">✏️</button>'
+            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Supprimer">🗑</button>'
             + '</div></div>';
         }).join('')
       + '</div></div>';
@@ -2060,7 +2139,7 @@ async function openUserModal(userId, userData) {
           var aName = a.alias_username || a.alias_id.split(':').slice(1).join(':');
           return '<div class="mem-linked-pill ' + escAttr(aPlatform) + '">'
             + (PLATFORM_ICONS[aPlatform] || '') + ' ' + escHtml(aName)
-            + '<button class="mem-linked-pill-unlink" onclick="unlinkFromModal(' + (a.link_id || 0) + ',\'' + escAttr(userId) + '\')" title="Délier">✕</button>'
+            + '<button class="mem-linked-pill-unlink" onclick="unlinkFromModal(' + (a.link_id || 0) + ',\'' + escJs(userId) + '\')" title="Délier">✕</button>'
             + '</div>';
         }).join('')
       + '</div></div>';
@@ -2077,13 +2156,13 @@ async function openUserModal(userId, userData) {
         return '<div class="mem-linked-pill">'
           + escHtml(a.nickname)
           + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
-          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escAttr(a.nickname) + '\',\'' + escAttr(userId) + '\')" title="Supprimer">\u2715</button>'
+          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escJs(a.nickname) + '\',\'' + escJs(userId) + '\')" title="Supprimer">\u2715</button>'
           + '</div>';
       }).join('')
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:8px">'
     + '<input type="text" id="alias-input-' + escAttr(userId) + '" placeholder="Ajouter un alias..." class="mem-modal-search" style="flex:1;min-width:0">'
-    + '<button class="mem-modal-action add" style="white-space:nowrap" onclick="addModalAlias(\'' + escAttr(userId) + '\')">Ajouter</button>'
+    + '<button class="mem-modal-action add" style="white-space:nowrap" onclick="addModalAlias(\'' + escJs(userId) + '\')">Ajouter</button>'
     + '</div>'
     + '</div>';
 
@@ -2103,10 +2182,10 @@ async function openUserModal(userId, userData) {
     + '<button class="mem-modal-close" onclick="this.closest(\'.mem-modal-backdrop\').remove()">✕</button>'
     + '</div>'
     + '<div class="mem-modal-actions">'
-    + '<button class="mem-modal-action add" onclick="showModalAddForm(\'' + escAttr(userId) + '\')">+ Ajouter mémoire</button>'
-    + '<button class="mem-modal-action link" onclick="startLinkMode(\'' + escAttr(userId) + '\',\'' + escAttr(displayName) + '\')">🔗 Lier un compte</button>'
-    + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escAttr(userId) + '\')">🗑 Supprimer tout</button>' : '')
-    + '<button class="mem-modal-action danger" onclick="deleteUser(\'' + escAttr(userId) + '\',\'' + escAttr(displayName) + '\')" title="Supprime l\'utilisateur et toutes ses mémoires">🗑 Supprimer l\'utilisateur</button>'
+    + '<button class="mem-modal-action add" onclick="showModalAddForm(\'' + escJs(userId) + '\')">+ Ajouter mémoire</button>'
+    + '<button class="mem-modal-action link" onclick="startLinkMode(\'' + escJs(userId) + '\',\'' + escJs(displayName) + '\')">🔗 Lier un compte</button>'
+    + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escJs(userId) + '\')">🗑 Supprimer tout</button>' : '')
+    + '<button class="mem-modal-action danger" onclick="deleteUser(\'' + escJs(userId) + '\',\'' + escJs(displayName) + '\')" title="Supprime l\'utilisateur et toutes ses mémoires">🗑 Supprimer l\'utilisateur</button>'
     + '</div>'
     + '<div id="modal-add-form"></div>'
     + '<div class="mem-modal-toolbar">'
@@ -2188,8 +2267,8 @@ function sortModalMemories(sortBy) {
             + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajout\u00e9 manuellement') + '">' + sourceIcon + '</span>'
             + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
             + '<div class="mem-entry-actions">'
-            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Modifier">\u270f\ufe0f</button>'
-            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escAttr(userId) + '\',\'' + escAttr(m.id) + '\')" title="Supprimer">\ud83d\uddd1</button>'
+            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Modifier">\u270f\ufe0f</button>'
+            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Supprimer">\ud83d\uddd1</button>'
             + '</div></div>';
         }).join('')
       + '</div></div>';
@@ -2230,7 +2309,7 @@ function showModalAddForm(userId) {
   el.innerHTML = '<div class="mem-add-form">'
     + '<input type="text" id="modal-add-input" placeholder="Nouveau souvenir...">'
     + '<select id="modal-add-category">' + catOptions + '</select>'
-    + '<button onclick="submitModalAddMemory(\'' + escAttr(userId) + '\')">Ajouter</button>'
+    + '<button onclick="submitModalAddMemory(\'' + escJs(userId) + '\')">Ajouter</button>'
     + '</div>';
   var inp = document.getElementById('modal-add-input');
   if (inp) inp.focus();
@@ -2271,9 +2350,9 @@ function startModalEditMemory(userId, memoryId) {
   textEl.outerHTML = '<div style="display:flex;gap:6px;align-items:center;flex:1">'
     + '<input type="text" id="edit-mem-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
     + ' style="flex:1;font-size:11px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:#e2e8f0"'
-    + ' onkeydown="if(event.key===\'Enter\') submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\'); if(event.key===\'Escape\') reopenModal(\'' + escAttr(userId) + '\');">'
-    + '<button class="mem-entry-action" onclick="submitModalEditMemory(\'' + escAttr(userId) + '\',\'' + escAttr(memoryId) + '\')" style="opacity:1;font-size:11px">OK</button>'
-    + '<button class="mem-entry-action" onclick="reopenModal(\'' + escAttr(userId) + '\')" style="opacity:1;font-size:11px">✕</button>'
+    + ' onkeydown="if(event.key===\'Enter\') submitModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(memoryId) + '\'); if(event.key===\'Escape\') reopenModal(\'' + escJs(userId) + '\');">'
+    + '<button class="mem-entry-action" onclick="submitModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(memoryId) + '\')" style="opacity:1;font-size:11px">OK</button>'
+    + '<button class="mem-entry-action" onclick="reopenModal(\'' + escJs(userId) + '\')" style="opacity:1;font-size:11px">✕</button>'
     + '</div>';
   var inp = document.getElementById('edit-mem-input-' + memoryId);
   if (inp) inp.focus();
@@ -2402,7 +2481,7 @@ async function _refreshAliasPills(userId) {
         return '<div class="mem-linked-pill">'
           + escHtml(a.nickname)
           + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
-          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escAttr(a.nickname) + '\',\'' + escAttr(userId) + '\')" title="Supprimer">\u2715</button>'
+          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escJs(a.nickname) + '\',\'' + escJs(userId) + '\')" title="Supprimer">\u2715</button>'
           + '</div>';
       }).join('');
 }
@@ -2528,8 +2607,8 @@ async function loadGlobalMemories() {
           <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
         </div>
         <div class="mem-entry-actions">
-          <button class="mem-entry-edit" onclick="startEditGlobalMemory('${escAttr(m.id)}')">&#9998;</button>
-          <button class="mem-entry-delete" onclick="deleteGlobalMemory('${escAttr(m.id)}')">&#10005;</button>
+          <button class="mem-entry-edit" onclick="startEditGlobalMemory('${escJs(m.id)}')">&#9998;</button>
+          <button class="mem-entry-delete" onclick="deleteGlobalMemory('${escJs(m.id)}')">&#10005;</button>
         </div>
       </div>`;
   }).join('');
@@ -2566,8 +2645,8 @@ function startEditGlobalMemory(memoryId) {
   contentDiv.innerHTML = metaHtml
     + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
     + '<input type="text" id="edit-global-memory-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
-    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitEditGlobalMemory(\'' + escAttr(memoryId) + '\'); if(event.key===\'Escape\') loadGlobalMemories();">'
-    + '<button onclick="submitEditGlobalMemory(\'' + escAttr(memoryId) + '\')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>'
+    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitEditGlobalMemory(\'' + escJs(memoryId) + '\'); if(event.key===\'Escape\') loadGlobalMemories();">'
+    + '<button onclick="submitEditGlobalMemory(\'' + escJs(memoryId) + '\')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>'
     + '<button onclick="loadGlobalMemories()" class="btn" style="font-size:0.68rem;padding:2px 8px">\u2717</button>'
     + '</div>';
   document.getElementById('edit-global-memory-input-' + memoryId)?.focus();
@@ -3284,14 +3363,13 @@ async function _renderParametresLLM(panel) {
     <div class="field-group">
       <label class="field-label" for="cfg-primary-provider">Provider principal</label>
       <select id="cfg-primary-provider" onchange="onProviderChange()">
-        <option value="openai" ${(cfg.llm?.primary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
-        <option value="claude" ${(cfg.llm?.primary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+        ${providerOptions(cfg, 'primary')}
       </select>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-primary-model">Modèle principal</label>
       <select id="cfg-primary-model">
-        ${models.map(function(m) { return '<option value="' + m + '"' + (m === cfg.openai.primary_model ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+        ${modelOptions(models, currentModel(cfg, 'primary'))}
       </select>
       <select id="cfg-primary-model-claude" style="display:none">
         ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.primary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
@@ -3300,14 +3378,13 @@ async function _renderParametresLLM(panel) {
     <div class="field-group">
       <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
       <select id="cfg-secondary-provider" onchange="onProviderChange()">
-        <option value="openai" ${(cfg.llm?.secondary?.provider || 'openai') === 'openai' ? 'selected' : ''}>OpenAI</option>
-        <option value="claude" ${(cfg.llm?.secondary?.provider || 'openai') === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
+        ${providerOptions(cfg, 'secondary')}
       </select>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
       <select id="cfg-secondary-model">
-        ${models.map(function(m) { return '<option value="' + m + '"' + (m === cfg.openai.secondary_model ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
+        ${modelOptions(models, currentModel(cfg, 'secondary'))}
       </select>
       <select id="cfg-secondary-model-claude" style="display:none">
         ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.secondary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}

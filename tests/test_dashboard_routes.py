@@ -331,3 +331,36 @@ async def test_memory_users_route_is_implemented():
     ) as c:
         r = await c.get("/api/admin/memory/users", headers=ADMIN_HEADERS)
     assert r.status_code != 501
+
+
+# ── Provider LLM : refuser avant de muter ────────────────────────────────────
+
+async def test_un_provider_inconnu_est_refuse_en_400(client, app):
+    """La factory ne construit que `deepseek`. Le `<select>` du dashboard
+    proposait « OpenAI » et « Claude » : la sauvegarde levait une `ValueError`
+    non attrapée (HTTP 500) APRÈS avoir muté `cfg.llm.*` en mémoire. Le
+    `config.save()` suivant — n'importe quel autre bouton — gravait le provider
+    inconnu dans `config.yaml`, et le bot ne redémarrait plus."""
+    cfg = app.state.wally.config
+    avant = cfg.llm.primary.provider
+
+    r = await client.post(
+        "/api/admin/config",
+        json={"llm": {"primary": {"provider": "claude", "model": "claude-opus-5"}}},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert r.status_code == 400
+    assert "claude" in r.json()["detail"]
+    assert cfg.llm.primary.provider == avant      # rien n'a bougé en mémoire
+    assert cfg.llm.primary.model != "claude-opus-5"
+
+
+async def test_get_config_annonce_les_providers_supportes(client, app):
+    """Le front construit son `<select>` à partir de cette liste, au lieu de
+    coder en dur deux providers que le serveur ne sait pas instancier."""
+    app.state.wally.config.bot.dashboard_token = "testtoken"
+    r = await client.get("/api/admin/config", headers=ADMIN_HEADERS)
+
+    assert r.status_code == 200
+    assert r.json()["llm_providers"] == ["deepseek"]

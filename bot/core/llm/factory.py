@@ -12,6 +12,19 @@ if TYPE_CHECKING:
     from bot.db.database import Database
 
 
+# Les providers de TEXTE que cette factory sait construire — source de vérité
+# unique. Elle vivait auparavant dans `config.py` sous le nom
+# `VALID_LLM_PROVIDERS`, avec la valeur `("openai", "claude")` : ni l'une ni
+# l'autre n'existe ici, la constante n'était lue nulle part, et le dashboard
+# proposait ces deux-là. Sauvegarder le panneau LLM levait donc une `ValueError`
+# APRÈS avoir déjà muté la config en mémoire — le `config.save()` suivant, venu
+# de n'importe quel autre bouton, gravait un provider inconnu dans `config.yaml`
+# et le bot ne redémarrait plus.
+#
+# Une liste tenue à côté du `if` qu'elle décrit ne peut plus diverger de lui.
+SUPPORTED_TEXT_PROVIDERS = ("deepseek",)
+
+
 def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMClient:
     """Instantiate the text LLM client. DeepSeek is the only supported text provider.
 
@@ -38,6 +51,7 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
         return client
 
     raise ValueError(
-        f"Unknown text LLM provider: {provider!r}. Only 'deepseek' is supported "
+        f"Unknown text LLM provider: {provider!r}. Supported: "
+        f"{', '.join(SUPPORTED_TEXT_PROVIDERS)} "
         "(OpenAI is image-only, constructed directly in bootstrap)."
     )

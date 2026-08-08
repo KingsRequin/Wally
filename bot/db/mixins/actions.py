@@ -75,7 +75,17 @@ class ActionMixin:
             query += " AND action_type = ?"
             params.append(action_type)
         query += " ORDER BY created_at DESC"
-        return await self.fetch_all(query, tuple(params))
+        # Des `dict`, comme l'annonce l'annotation de retour. `fetch_all` rend des
+        # `sqlite3.Row` (la connexion pose `row_factory = aiosqlite.Row`), qui
+        # s'indexent mais n'ont PAS de `.get()`. `ActionService.list()` en
+        # appelait trois — l'outil `list_action_tasks` levait donc une
+        # `AttributeError` dès qu'une seule tâche existait, sur les trois
+        # plateformes. L'exception étant avalée par la boucle de tool-calling et
+        # rendue au modèle en « Tool error », Wally répondait n'importe quoi à
+        # « c'est quoi mes rappels ? » sans qu'aucune alerte ne remonte.
+        # La route du dashboard, elle, faisait déjà `dict(r)` de son côté : c'est
+        # ce rattrapage local qui masquait le contrat non tenu.
+        return [dict(r) for r in await self.fetch_all(query, tuple(params))]
 
     async def update_action_task(self, task_id: int, **fields) -> None:
         if not fields:

@@ -49,7 +49,12 @@ class BotConfig:
 
 VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 VALID_TEXT_VERBOSITIES = ("low", "medium", "high")
-VALID_LLM_PROVIDERS = ("openai", "claude")
+# `VALID_LLM_PROVIDERS` valait ici `("openai", "claude")` — deux providers que la
+# factory ne sait pas construire, et la constante n'était lue nulle part. La
+# liste qui fait foi est désormais `SUPPORTED_TEXT_PROVIDERS`, tenue dans
+# `bot/core/llm/factory.py`, juste à côté du `if` qu'elle décrit. Elle n'est pas
+# importée ici : `config` est chargé très tôt, on ne lui ajoute pas une
+# dépendance vers la couche LLM pour une simple liste.
 VALID_THINKING_TYPES = ("disabled", "enabled", "adaptive")
 VALID_THINKING_EFFORTS = ("low", "medium", "high", "max")
 
