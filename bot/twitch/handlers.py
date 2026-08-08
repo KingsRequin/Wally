@@ -62,6 +62,35 @@ def _consume_relance(channel: str, user_id: str) -> bool:
     return at is not None and (time.monotonic() - at) <= _RELANCE_WINDOW_S
 
 
+# Bots Twitch présents sur à peu près toutes les chaînes. Socle non
+# configurable : il ne dépend d'aucun réglage et vaut partout. Au niveau MODULE
+# — il était reconstruit à chaque ligne de chat.
+_KNOWN_BOTS: frozenset[str] = frozenset({
+    "nightbot", "streamlabs", "streamelements", "moobot", "fossabot",
+    "wizebot", "supibot", "botrixoficial", "sery_bot", "electricallongboard",
+    "streamlabsbot", "commanderroot", "soundalerts", "elbierro", "tangiabot",
+    "kofistreambot", "own3d", "streamelementsbot",
+})
+
+
+def is_ignored_chatter(author: str, ignored: list[str] | None) -> bool:
+    """Vrai si ce compte ne doit pas être écouté.
+
+    `ignored` vient de `config.twitch.ignored_users` : les bots croisés sur une
+    chaîne invitée changent d'une chaîne à l'autre, les câbler demanderait un
+    rebuild par pseudo.
+
+    Comparaison en minuscules et sans espaces : Twitch affiche « WZBot » quand
+    le login est « wzbot », et une liste saisie à la main traîne des espaces.
+    """
+    nom = (author or "").strip().lower()
+    if not nom:
+        return False
+    if nom in _KNOWN_BOTS:
+        return True
+    return any(nom == (i or "").strip().lower() for i in (ignored or []))
+
+
 def _resolve_twitch_roles(badges: list) -> list[str]:
     """Map Twitch badges to the action permission hierarchy."""
     roles = ["everyone"]
@@ -304,14 +333,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if bot_id and user_id == bot_id:
         return
 
-    # Ignorer les bots Twitch connus (username ou badge "bot")
-    _KNOWN_BOTS: frozenset[str] = frozenset({
-        "nightbot", "streamlabs", "streamelements", "moobot", "fossabot",
-        "wizebot", "supibot", "botrixoficial", "sery_bot", "electricallongboard",
-        "streamlabsbot", "commanderroot", "soundalerts", "elbierro", "tangiabot",
-        "kofistreambot", "own3d", "streamelementsbot",
-    })
-    if author.lower() in _KNOWN_BOTS:
+    # Ignorer les bots — socle connu, liste de config, ou badge "bot"
+    if is_ignored_chatter(author, getattr(bot.config.twitch, "ignored_users", None)):
         return
     badges = getattr(payload, "badges", []) or []
     badge_ids = {b.id if hasattr(b, "id") else str(b) for b in badges}

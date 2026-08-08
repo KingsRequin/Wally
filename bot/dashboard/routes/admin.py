@@ -20,6 +20,8 @@ router = APIRouter()
 
 _OPENAI_INCLUDE = ["gpt", "chatgpt", "o1", "o3", "o4"]
 _OPENAI_EXCLUDE = ["realtime", "preview", "audio", "vision"]
+# Un login Twitch : minuscules, chiffres, tirets bas, 25 max.
+_TWITCH_LOGIN_RE = re.compile(r'^[a-z0-9_]{1,25}$')
 
 
 @router.get("/config")
@@ -252,6 +254,26 @@ async def update_config(request: Request, body: dict) -> dict:
             cfg.twitch.guest_channels = list(d["guest_channels"])  # liste : remplacement intégral
         if "cooldown_seconds" in d:
             cfg.twitch.cooldown_seconds = int(d["cooldown_seconds"])
+        if "ignored_users" in d:
+            # Normalisé À L'ENREGISTREMENT : le filtre compare en minuscules, et
+            # une saisie « WZBot » stockée telle quelle donnerait une liste que
+            # l'utilisateur relit sans comprendre pourquoi elle diffère. Les
+            # doublons et les lignes vides partent au passage.
+            #
+            # VALIDÉ comme un login Twitch : cette liste est réaffichée dans le
+            # dashboard, une saisie libre y ferait entrer du balisage.
+            vus: list[str] = []
+            for nom in d["ignored_users"]:
+                nom = str(nom).strip().lstrip("@").lower()
+                if not nom:
+                    continue
+                if not _TWITCH_LOGIN_RE.match(nom):
+                    raise HTTPException(
+                        400, f"pseudo Twitch invalide : {nom[:32]!r}"
+                    )
+                if nom not in vus:
+                    vus.append(nom)
+            cfg.twitch.ignored_users = vus
 
     if "emotions" in body:
         for name, d in body["emotions"].items():
@@ -409,8 +431,6 @@ async def get_claude_models(request: Request) -> dict:
             state.config.llm.secondary.model,
         ]}
 
-
-_TWITCH_LOGIN_RE = re.compile(r'^[a-z0-9_]{1,25}$')
 
 
 @router.post("/twitch/channels")

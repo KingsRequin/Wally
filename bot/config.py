@@ -147,6 +147,11 @@ class DiscordConfig:
 class TwitchConfig:
     guest_channels: list[str]
     cooldown_seconds: int
+    # Comptes que Wally n'écoute pas, en plus des bots connus câblés dans
+    # `handlers._KNOWN_BOTS`. Modifiable à chaud : on croise des bots
+    # différents sur chaque chaîne invitée, et rebuild pour un pseudo serait
+    # absurde. Le défaut permet à un config.yaml antérieur de rester valide.
+    ignored_users: list[str] = field(default_factory=list)
 
 
 @dataclass

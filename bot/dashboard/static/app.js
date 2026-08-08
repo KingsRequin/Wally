@@ -1102,9 +1102,113 @@ async function loadTwitchChannelsTab() {
     + '</div>'
     + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
     + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">'
-    + 'Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler.'
+    + 'Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler,'
+    + ' et Wally doit suivre la chaîne si le chat est en mode « abonnés/followers ».'
     + '</p>'
+    + '<div id="ignored-users-section" style="margin-top:22px"></div>'
     + '</div>';
+
+  loadIgnoredUsers();
+}
+
+// ── Comptes ignorés ────────────────────────────────────────────────
+// Les bots varient d'une chaîne invitée à l'autre. Les câbler dans le code
+// demandait un rebuild par pseudo ; ils vivent donc dans la config.
+
+let _ignoredUsers = [];
+
+async function loadIgnoredUsers() {
+  const host = document.getElementById('ignored-users-section');
+  if (!host) return;
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) return;
+  const cfg = await r.json();
+  _ignoredUsers = ((cfg.twitch || {}).ignored_users) || [];
+  renderIgnoredUsers();
+}
+
+function renderIgnoredUsers() {
+  const host = document.getElementById('ignored-users-section');
+  if (!host) return;
+  host.replaceChildren();
+
+  const titre = document.createElement('h3');
+  titre.textContent = 'Comptes ignorés';
+  titre.style.cssText = 'font-size:0.95em;margin:0 0 4px';
+  const aide = document.createElement('p');
+  aide.textContent = "Wally ne lit rien de ces comptes. Les bots courants "
+    + "(Nightbot, StreamElements, Fossabot…) le sont déjà d'office.";
+  aide.style.cssText = 'color:var(--text-muted);font-size:0.8em;margin:0 0 10px';
+  host.append(titre, aide);
+
+  const liste = document.createElement('div');
+  liste.id = 'ignored-users-list';
+  if (_ignoredUsers.length === 0) {
+    const vide = document.createElement('p');
+    vide.textContent = 'Aucun compte ignoré pour le moment.';
+    vide.style.cssText = 'color:var(--text-muted);margin-bottom:12px';
+    liste.appendChild(vide);
+  } else {
+    // `textContent` et non `innerHTML` : un pseudo est une saisie libre. Il est
+    // validé côté serveur, mais la config peut aussi être éditée à la main.
+    for (const nom of _ignoredUsers) {
+      const carte = document.createElement('div');
+      carte.className = 'twitch-channel-card';
+      const label = document.createElement('span');
+      label.className = 'tc-name';
+      label.textContent = nom;
+      const btn = document.createElement('button');
+      btn.className = 'tc-kick';
+      btn.textContent = 'Retirer';
+      btn.onclick = () => saveIgnoredUsers(_ignoredUsers.filter(u => u !== nom));
+      carte.append(label, btn);
+      liste.appendChild(carte);
+    }
+  }
+  host.appendChild(liste);
+
+  const ajout = document.createElement('div');
+  ajout.id = 'twitch-channels-add';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = 'ignored-user-input';
+  input.placeholder = 'pseudo twitch à ignorer…';
+  input.style.flex = '1';
+  input.onkeydown = (e) => { if (e.key === 'Enter') addIgnoredUser(); };
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-success';
+  btn.textContent = '+ Ajouter';
+  btn.onclick = addIgnoredUser;
+  ajout.append(input, btn);
+  host.appendChild(ajout);
+}
+
+function addIgnoredUser() {
+  const input = document.getElementById('ignored-user-input');
+  if (!input) return;
+  const nom = input.value.trim().replace(/^@/, '').toLowerCase();
+  if (!nom) return;
+  if (!/^[a-z0-9_]{1,25}$/.test(nom)) {
+    toast('Pseudo Twitch invalide', 'error');
+    return;
+  }
+  if (_ignoredUsers.includes(nom)) {
+    toast('Déjà dans la liste', 'error');
+    return;
+  }
+  input.value = '';
+  saveIgnoredUsers([..._ignoredUsers, nom]);
+}
+
+async function saveIgnoredUsers(liste) {
+  const r = await apiFetch('/api/admin/config', {
+    method: 'POST',
+    body: JSON.stringify({ twitch: { ignored_users: liste } }),
+  });
+  if (!r || !r.ok) { toast('Erreur d\'enregistrement', 'error'); return; }
+  _ignoredUsers = liste;
+  renderIgnoredUsers();
+  toast('Comptes ignorés mis à jour', 'success');
 }
 
 // ── Admin emotions ────────────────────────────────────────────────────────────
