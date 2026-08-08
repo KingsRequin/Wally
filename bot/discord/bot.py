@@ -530,8 +530,13 @@ class WallyDiscord(commands.Bot):
                     logger.info("voice: déplacé vers {c}", c=after.channel.id)
                     vs.follow_move(after.channel)
                 elif after.channel is None:
-                    logger.info("voice: déconnecté du vocal par un tiers")
-                    await vs.leave()
+                    # « Par un tiers » était un diagnostic hâtif : une coupure
+                    # réseau produit exactement le même signal (constaté le
+                    # 2026-08-08, à la seconde où EventSub et le STT tombaient
+                    # aussi). Dans les deux cas la sortie est SUBIE — elle ne
+                    # doit pas valoir congé, sinon il ne revient plus du live.
+                    logger.info("voice: sorti du salon sans l'avoir demandé (kick ou réseau)")
+                    await vs.leave(voluntary=False)
                 return
             if member.bot:
                 return

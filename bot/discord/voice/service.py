@@ -258,7 +258,9 @@ class VoiceService:
     async def _join_locked(self, channel, inviter: str | None,
                            listen_only: bool) -> None:
         if self._vc is not None:
-            await self.leave()
+            # Déplacement, pas départ : poser un congé ici l'aurait empêché de
+            # revenir en écoute après une conversation.
+            await self.leave(voluntary=False)
         self.listen_only = listen_only
         if listen_only:
             # Retour volontaire : il redevient rattrapable par le veilleur.
@@ -382,11 +384,21 @@ class VoiceService:
         """
         self._channel = channel
 
-    async def leave(self) -> None:
-        """Quitte le salon vocal, stoppe l'écoute et le watchdog."""
-        # Sortie d'un vocal d'écoute : on considère que c'est voulu. Le congé
-        # est levé à la fin du live (cf. le veilleur dans main.py).
-        if self.listen_only:
+    async def leave(self, *, voluntary: bool = True) -> None:
+        """Quitte le salon vocal, stoppe l'écoute et le watchdog.
+
+        `voluntary=False` pour une sortie SUBIE — kick, coupure réseau, ou
+        simple changement de salon. Elle ne pose pas de congé : Wally reste
+        rattrapable par le veilleur.
+
+        La distinction n'existait pas et coûtait cher. Toute sortie d'un vocal
+        d'écoute était tenue pour voulue, donc une coupure réseau lui interdisait
+        de revenir jusqu'à la FIN du live — 21 minutes d'absence en plein stream
+        le 2026-08-08, sans une ligne de log pour l'expliquer.
+        """
+        # Congé : il ne sera pas ramené par le veilleur (cf. main.py), jusqu'à
+        # la fin du live. Réservé à un départ décidé, depuis un vocal d'écoute.
+        if voluntary and self.listen_only:
             self.listen_optout = True
         # Ne JAMAIS s'annuler soi-même : `_auto_leave_watch` appelle `leave()`,
         # et `cancel()` sur la tâche courante arme un CancelledError qui part au
