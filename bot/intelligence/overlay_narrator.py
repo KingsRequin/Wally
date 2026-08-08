@@ -46,6 +46,15 @@ _MIN_EVENT_INTERVAL_S = 20.0
 # mot-clé sur la description déjà rédigée en français par StreamFeed.
 _STRONG_EVENT_HINTS = ("raid", "sub", "abonn", "bits", "cheer", "don")
 
+# Les types d'événements du live, et ceux qui méritent que l'avatar s'emballe.
+# Un type connu remplace la recherche de mots dans le texte : « raid » dans un
+# titre de stream ne doit pas valoir un raid.
+_EVENT_KINDS = (
+    "raid", "follow_wave", "sub", "gift_sub", "bits",
+    "live_start", "live_end", "game_change", "title_change", "audience",
+)
+_STRONG_EVENT_KINDS = frozenset({"raid", "sub", "gift_sub", "bits", "follow_wave"})
+
 # Au-delà, la condensation a échoué à faire court : on préfère se taire plutôt
 # que d'afficher un pavé illisible en petit.
 _MAX_BUBBLE_CHARS = 90
@@ -379,8 +388,12 @@ class OverlayNarrator:
         top_clips: Optional[Callable] = None,
         apex=None,
         db=None,
+        persona=None,
     ) -> None:
         self._feed = overlay_feed
+        # Registres de ton par type d'événement (EVENTS.md), rechargés par
+        # `/reload-persona` comme le reste de la persona.
+        self._persona = persona
         self._llm = llm
         # Service Apex, pour les panneaux dont la donnée se récupère en ligne.
         self._apex = apex
@@ -601,15 +614,40 @@ class OverlayNarrator:
         """Réagit à un VRAI événement du live (raid, sub, changement de jeu…).
 
         `description` arrive déjà rédigée en français par `StreamFeed`, et `kind`
-        dit ce que c'est (`raid`, `sub`, `live_end`…).
+        dit ce que c'est (`raid`, `sub`, `live_end`…) — ce qui permet de donner
+        au modèle le registre PROPRE à cet événement, au lieu de lui faire
+        deviner lequel s'applique parmi une liste.
 
         Réservé à ce qui s'est effectivement produit : tout ce qui passe ici
         devient un événement aux yeux du modèle. Pour la parole entendue en
         vocal, voir `on_overheard`.
         """
         return await self._react_to(
-            description, system=_EVENT_SYSTEM, show_thinking=show_thinking,
+            description,
+            system=self._event_system(kind),
+            show_thinking=show_thinking,
+            strong_hints=kind not in _EVENT_KINDS,
+            strong=kind in _STRONG_EVENT_KINDS,
         )
+
+    def _event_system(self, kind: str) -> str:
+        """Le socle commun, augmenté du registre propre à ce type d'événement.
+
+        Sans registre connu — type absent d'`EVENTS.md`, persona indisponible —
+        le socle seul suffit : jamais pire que le comportement d'avant.
+        """
+        persona = getattr(self, "_persona", None)
+        if persona is None or not kind:
+            return _EVENT_SYSTEM
+        try:
+            directive = (persona.event_directives or {}).get(kind, "")
+        except Exception as exc:  # noqa: BLE001 — un registre absent ne bloque rien
+            logger.debug("Overlay: registre d'événement illisible ({k}) : {e}",
+                         k=kind, e=exc)
+            return _EVENT_SYSTEM
+        if not directive:
+            return _EVENT_SYSTEM
+        return f"{_EVENT_SYSTEM}\n\n## Ce qui vient de se passer\n{directive}"
 
     async def on_overheard(self, line: str) -> Optional[str]:
         """Réagit à une phrase ENTENDUE en vocal pendant le live.
@@ -634,6 +672,7 @@ class OverlayNarrator:
         system: str,
         show_thinking: bool,
         strong_hints: bool = True,
+        strong: bool = False,
     ) -> Optional[str]:
         description = (description or "").strip()
         if not description or not self._may_react():
@@ -641,12 +680,15 @@ class OverlayNarrator:
 
         self._last_event_at = time.monotonic()
         # L'avatar s'emballe tout de suite sur les gros moments : la réaction
-        # visuelle est immédiate, la bulle arrive après la condensation. Réservé
-        # aux vrais événements : sur du vocal, « il a raid ce mec » suffirait à
-        # le déclencher pour rien.
-        if strong_hints and any(
+        # visuelle est immédiate, la bulle arrive après la condensation.
+        #
+        # Le TYPE tranche quand on le connaît. `strong_hints` cherche « raid » ou
+        # « sub » dans le texte, ce qui déclenchait l'avatar sur un titre de
+        # stream contenant le mot ; ce repli ne sert plus qu'aux événements non
+        # typés, et jamais au vocal.
+        if strong or (strong_hints and any(
             hint in description.lower() for hint in _STRONG_EVENT_HINTS
-        ):
+        )):
             self._feed.react("stream_event")
 
         if show_thinking:

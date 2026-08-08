@@ -341,6 +341,7 @@ class WallyDiscord(commands.Bot):
                     top_clips=_fetch_top_clips,
                     apex=getattr(self, "apex_api", None),
                     db=self.db,
+                    persona=self.persona,
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,
                 # Wally ne saurait pas qu'un bingo tourne et n'aurait aucune

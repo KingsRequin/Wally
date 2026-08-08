@@ -24,6 +24,7 @@ class PersonaService:
         self.web_available: bool | None = None
         self._emotion_directives: dict[str, str] = {}
         self._user_directives: dict[str, str] = {}
+        self._event_directives: dict[str, str] = {}
         self.reload()
 
     def reload(self) -> None:
@@ -60,6 +61,16 @@ class PersonaService:
         self._composite_directives = self._parse_composites()
         self._secondary_directives = self._parse_secondaries()
         self._user_directives = self._parse_users()
+        self._event_directives = self._parse_events()
+
+    def _parse_events(self) -> dict[str, str]:
+        """Parse EVENTS.md en un dict {type d'événement: registre}.
+
+        Un cadrage par type d'événement du live (raid, sub, live_end…). Le prompt
+        d'overlay énumérait auparavant les types possibles, ce qui sommait le
+        modèle d'en choisir un même quand aucun ne s'appliquait.
+        """
+        return self._parse_sections("EVENTS.md")
 
     def _parse_emotions(self) -> dict[str, str]:
         """Parse EMOTIONS.md en un dict {emotion: directive}."""
@@ -157,6 +168,11 @@ class PersonaService:
     def user_directives(self) -> dict[str, str]:
         """Directives comportementales propres à un utilisateur donné."""
         return self._user_directives
+
+    @property
+    def event_directives(self) -> dict[str, str]:
+        """Registre de ton par type d'événement du live (overlay)."""
+        return self._event_directives
 
     def build_prompt_block(self) -> str:
         """Retourne SOUL → IDENTITY → VOICE → EXEMPLES + le self-model dérivé."""
