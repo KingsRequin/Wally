@@ -49,6 +49,11 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./bot/persona:/app/bot/persona
       - ./bot/intelligence/persona/CHANNELS.md:/app/bot/intelligence/persona/CHANNELS.md
+      # Les prompts de COGNITION (gate, reasoning, speak_guard, monologue…). Du
+      # contenu éditorial, comme ceux de bot/persona/prompts déjà montés au-dessus :
+      # les éditer ne devrait pas demander un rebuild. Un restart reste nécessaire,
+      # ils sont lus au boot à la construction des services.
+      - ./bot/intelligence/persona/prompts:/app/bot/intelligence/persona/prompts:ro
       - ./public-ui:/app/public-ui:ro
       - ./.env:/app/.env
       - ./bot/dashboard/static:/app/bot/dashboard/static:ro
