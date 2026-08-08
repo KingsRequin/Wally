@@ -311,19 +311,41 @@ CANCEL_TOOL_SPEC = {
 LAST_CLIP_TOOL_SPEC = {
     "type": "function",
     "function": {
-        "name": "show_last_clip",
+        "name": "show_clip",
         "description": (
-            "Rejoue le DERNIER clip de la chaîne sur l'overlay du stream, quand "
-            "on te le demande. La vidéo est MUETTE et reste à l'écran le temps "
-            "du clip. Tu n'as pas vu ce clip — l'outil te rend son titre et qui "
-            "l'a créé, commente à partir de ça et n'invente pas ce qu'il "
-            "contient. N'affirme jamais l'avoir lancé sans appeler cet outil, "
-            "et ne décrète pas non plus que c'est impossible sans l'avoir "
+            "Affiche un clip de la chaîne sur l'overlay : le dernier, le plus "
+            "vu, ou celui qui correspond à un titre. Peut aussi montrer le "
+            "PODIUM des clips les plus vus (`top`). La vidéo est MUETTE et reste "
+            "à l'écran le temps du clip. Tu n'as pas vu ce clip — l'outil te rend "
+            "son titre et qui l'a créé, commente à partir de ça et n'invente pas "
+            "ce qu'il contient. N'affirme jamais l'avoir lancé sans appeler cet "
+            "outil, et ne décrète pas non plus que c'est impossible sans l'avoir "
             "appelé : c'est lui qui sait si l'overlay répond."
         ),
         "parameters": {
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["dernier", "plus_vu", "titre", "top"],
+                    "description": (
+                        "dernier = le clip le plus récent (par défaut) · "
+                        "plus_vu = le clip le plus regardé du mois · "
+                        "titre = celui qui correspond à `query` · "
+                        "top = le PODIUM des plus vus, sans jouer de vidéo"
+                    ),
+                },
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Ce qu'on cherche dans le titre, pour mode=titre "
+                        "(« le clip du 1v3 »). Quelques mots suffisent."
+                    ),
+                },
+                "count": {
+                    "type": "integer",
+                    "description": "Taille du podium, pour mode=top (5 par défaut, 5 max).",
+                },
                 "author": {
                     "type": "string",
                     "description": (
@@ -356,12 +378,15 @@ class OverlayNarrator:
         stream_feed=None,
         memes=None,
         last_clip: Optional[Callable] = None,
+        top_clips: Optional[Callable] = None,
         apex=None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
         # Service Apex, pour les panneaux dont la donnée se récupère en ligne.
         self._apex = apex
+        # Fournisseur du podium des clips les plus vus.
+        self._top_clips = top_clips
         self._is_live = is_live
         self._min_interval = min_interval_s
         self._event_interval = event_interval_s
@@ -615,7 +640,7 @@ class OverlayNarrator:
         shown: list[dict] = []
 
         async def _execute(name: str, arguments: str) -> str:
-            if name not in ("show_overlay", "cancel_overlay", "show_last_clip", "show_apex"):
+            if name not in ("show_overlay", "cancel_overlay", "show_clip", "show_apex"):
                 return json.dumps({"status": "unknown_tool"})
             try:
                 args = json.loads(arguments or "{}")
@@ -632,9 +657,21 @@ class OverlayNarrator:
                         "Dis-le simplement, ne prétends pas l'avoir montré."
                     )})
                 return json.dumps({"status": "ok", **out})
-            if name == "show_last_clip":
+            if name == "show_clip":
                 auteur = str(args.get("author") or "").strip()[:40] or None
-                out = await self.play_last_clip(auteur)
+                mode = str(args.get("mode") or "dernier").strip().lower()
+                if mode == "top":
+                    podium = await self.show_top_clips(int(args.get("count") or 5))
+                    if podium is None:
+                        return json.dumps({"status": "nothing", "message": (
+                            "Aucun clip à classer. Dis-le, n'invente pas de podium."
+                        )})
+                    return json.dumps({"status": "ok", **podium})
+                out = await self.play_last_clip(
+                    auteur,
+                    query=str(args.get("query") or "").strip()[:80] or None,
+                    most_viewed=(mode == "plus_vu"),
+                )
                 if out is None:
                     de_qui = f" clippé par {auteur}" if auteur else ""
                     return json.dumps({"status": "nothing", "message": (
@@ -1369,8 +1406,17 @@ class OverlayNarrator:
         self._feed.widget("clip", **params)
         return True
 
-    async def play_last_clip(self, creator: Optional[str] = None) -> Optional[dict]:
-        """Rejoue le dernier clip de la chaîne. None s'il n'y en a pas.
+    async def play_last_clip(
+        self,
+        creator: Optional[str] = None,
+        *,
+        query: Optional[str] = None,
+        most_viewed: bool = False,
+    ) -> Optional[dict]:
+        """Rejoue un clip de la chaîne. None s'il n'y en a pas.
+
+        Trois façons de le choisir : le plus récent (défaut), le plus vu
+        (`most_viewed`), ou celui dont le titre colle à `query`.
 
         `creator` restreint au clippeur demandé — le filtrage appartient au
         fournisseur, seul à parler à Helix.
@@ -1382,7 +1428,7 @@ class OverlayNarrator:
         if self._last_clip is None or not self._live():
             return None
         try:
-            clip = await self._last_clip(creator)
+            clip = await self._last_clip(creator, query=query, most_viewed=most_viewed)
         except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
             logger.warning("Overlay: dernier clip introuvable : {e}", e=exc)
             return None
@@ -1404,6 +1450,34 @@ class OverlayNarrator:
         )
         return {"widget": "clip", "title": title, "author": author,
                 "played": played}
+
+    async def show_top_clips(self, count: int = 5) -> Optional[dict]:
+        """Le podium des clips les plus vus. None s'il n'y a rien à classer.
+
+        Pas de vidéo ici : c'est un tableau qu'on lit, et enchaîner cinq clips
+        monopoliserait l'écran plusieurs minutes.
+        """
+        if self._top_clips is None or not self._live():
+            return None
+        count = max(1, min(5, int(count or 5)))
+        try:
+            clips = await self._top_clips(count)
+        except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
+            logger.warning("Overlay: podium des clips indisponible : {e}", e=exc)
+            return None
+        rows = [
+            {
+                "title": str(c.get("title") or "sans titre")[:48],
+                "author": str(c.get("creator_name") or "?")[:20],
+                "views": int(c.get("view_count") or 0),
+            }
+            for c in (clips or [])
+        ]
+        if not rows:
+            return None
+        self._feed.widget("clip_top", rows=rows, duration=float(6 + 2 * len(rows)))
+        logger.info("Overlay: podium des clips ({n})", n=len(rows))
+        return {"widget": "clip_top", "count": len(rows), "best": rows[0]["title"]}
 
     def show_emote_wave(self, emote: str) -> bool:
         """Signale que le chat spamme le même emote."""

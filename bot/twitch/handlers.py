@@ -171,7 +171,7 @@ def make_tool_executor(
             return run_overlay_tool(bot, args)
         if name == "cancel_overlay":
             return run_overlay_cancel_tool(bot, args)
-        if name == "show_last_clip":
+        if name == "show_clip":
             return await run_last_clip_tool(bot, args)
         if name == "show_apex":
             return await run_apex_overlay_tool(bot, args, requester=identity)

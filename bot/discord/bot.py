@@ -292,7 +292,16 @@ class WallyDiscord(commands.Bot):
                     tb = getattr(self, "_twitch_bot", None)
                     return getattr(tb, "_stream_info", None) or {}
 
-                async def _fetch_last_clip(creator: str | None = None):
+                async def _fetch_top_clips(count: int = 5, days: int = 7):
+                    """Les clips les plus vus, pour le podium."""
+                    api = getattr(getattr(self, "_twitch_bot", None), "twitch_api", None)
+                    if api is None:
+                        return []
+                    return await api.get_top_clips(days=days, first=count)
+
+                async def _fetch_last_clip(creator: str | None = None,
+                                           query: str | None = None,
+                                           most_viewed: bool = False):
                     """Dernier clip de la chaîne, pour « affiche le dernier clip ».
 
                     `creator` restreint au clippeur demandé (« celui d'azra »).
@@ -303,7 +312,13 @@ class WallyDiscord(commands.Bot):
                     api = getattr(getattr(self, "_twitch_bot", None), "twitch_api", None)
                     if api is None:
                         return None
-                    clip = await api.get_last_clip(creator=creator)
+                    if query:
+                        clip = await api.find_clip(query)
+                    elif most_viewed:
+                        top = await api.get_top_clips(days=30, first=1)
+                        clip = top[0] if top else None
+                    else:
+                        clip = await api.get_last_clip(creator=creator)
                     if not clip:
                         return None
                     # L'URL du fichier vidéo est ce qui permet de JOUER le clip :
@@ -323,6 +338,7 @@ class WallyDiscord(commands.Bot):
                     stream_status=_stream_status,
                     memes=getattr(_dash_state, "memes", None),
                     last_clip=_fetch_last_clip,
+                    top_clips=_fetch_top_clips,
                     apex=getattr(self, "apex_api", None),
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,

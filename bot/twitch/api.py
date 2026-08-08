@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+import unicodedata
+
 import httpx
 from loguru import logger
 
@@ -41,6 +43,13 @@ _OFFLINE_STREAM = {
     "viewers": 0,
     "started_at": None,
 }
+
+
+
+def _fold(text: str) -> str:
+    """Minuscules sans accents : « fusée » et « fusee » se cherchent pareil."""
+    text = unicodedata.normalize("NFD", (text or "").lower())
+    return "".join(c for c in text if unicodedata.category(c) != "Mn")
 
 
 class TwitchAPI:
@@ -315,6 +324,49 @@ class TwitchAPI:
         if not clips:
             return None
         return max(clips, key=lambda c: str(c.get("created_at") or ""))
+
+    async def get_top_clips(self, days: int = 7, first: int = 5) -> list[dict]:
+        """Les clips les plus VUS de la chaîne sur les `days` derniers jours.
+
+        Helix trie déjà par nombre de vues, mais ce n'est écrit nulle part dans
+        son contrat : on retrie ici. Un jour où l'ordre changerait, le podium
+        resterait juste.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+        clips = await self.get_recent_clips(
+            since.strftime("%Y-%m-%dT%H:%M:%SZ"), first=100
+        )
+        clips.sort(key=lambda c: int(c.get("view_count") or 0), reverse=True)
+        return clips[:max(1, first)]
+
+    async def find_clip(self, query: str, days: int = 30) -> dict | None:
+        """Le clip dont le TITRE colle le mieux à `query`, ou None.
+
+        Helix ne sait pas chercher dans les titres : le tri se fait ici, sur les
+        mots du titre. À pertinence égale on prend le plus vu — c'est celui que
+        les gens ont en tête. Rien de convaincant : None plutôt qu'un clip au
+        hasard, qu'il faudrait ensuite justifier à l'écran.
+        """
+        query = (query or "").strip()
+        if not query:
+            return None
+        since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+        clips = await self.get_recent_clips(
+            since.strftime("%Y-%m-%dT%H:%M:%SZ"), first=100
+        )
+        mots = [m for m in _fold(query).split() if len(m) > 2]
+        if not mots:
+            mots = [_fold(query)]
+        meilleurs: list[tuple[int, int, dict]] = []
+        for clip in clips:
+            titre = _fold(str(clip.get("title") or ""))
+            score = sum(1 for m in mots if m in titre)
+            if score:
+                meilleurs.append((score, int(clip.get("view_count") or 0), clip))
+        if not meilleurs:
+            return None
+        meilleurs.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        return meilleurs[0][2]
 
     async def get_recent_clips(self, since_iso: str, first: int = 20) -> list[dict]:
         """GET /helix/clips — clips créés depuis `since_iso` sur la chaîne.

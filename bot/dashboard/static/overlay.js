@@ -683,6 +683,30 @@
       return box;
     },
 
+    // Podium des clips les plus vus. Pas de vidéo : c'est un tableau qu'on lit,
+    // et enchaîner cinq clips monopoliserait l'écran plusieurs minutes.
+    clip_top(p) {
+      const box = el("div", "stats cliptop");
+      const who = el("div", "who");
+      who.textContent = "Clips les plus vus";
+      box.appendChild(who);
+      (p.rows || []).forEach((row, i) => {
+        const line = el("div", "line");
+        line.style.setProperty("--i", String(i));
+        const k = el("span", "k");
+        k.textContent = `${i + 1}. ${row.title}`;
+        const v = el("span", "v");
+        v.textContent = `${Number(row.views || 0).toLocaleString("fr-FR")} vues`;
+        line.append(k, v);
+        const by = el("div", "cliptop-by");
+        by.textContent = `par ${row.author}`;
+        const wrap = el("div", "cliptop-row");
+        wrap.append(line, by);
+        box.appendChild(wrap);
+      });
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");

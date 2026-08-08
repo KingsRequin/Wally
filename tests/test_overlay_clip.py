@@ -223,7 +223,7 @@ def test_l_outil_ne_demande_aucun_parametre_obligatoire():
     ferait hésiter le modèle, comme il hésitait sur le mot du pendu."""
     params = LAST_CLIP_TOOL_SPEC["function"]["parameters"]
     assert params.get("required", []) == []
-    assert LAST_CLIP_TOOL_SPEC["function"]["name"] == "show_last_clip"
+    assert LAST_CLIP_TOOL_SPEC["function"]["name"] == "show_clip"
 
 
 # ── le chemin vocal, de bout en bout ──────────────────────────────────────
@@ -237,14 +237,14 @@ async def test_une_demande_vocale_joue_le_clip():
 
     async def _fake(system_prompt, messages, tools, tool_executor, **kw):
         vus["outils"] = [t["function"]["name"] for t in tools]
-        vus["retour"] = await tool_executor("show_last_clip", "{}")
+        vus["retour"] = await tool_executor("show_clip", "{}")
         return "regardez-moi ça", []
 
     n._llm.complete_with_tools = _fake
     q = feed.subscribe()
     assert await n.on_voice_request("Azrael", "wally mets le dernier clip") \
         == "regardez-moi ça"
-    assert "show_last_clip" in vus["outils"]
+    assert "show_clip" in vus["outils"]
     assert json.loads(vus["retour"])["status"] == "ok"
     assert _widgets(q)[-1]["params"]["embed"] == EMBED
 
@@ -294,7 +294,7 @@ async def test_le_clippeur_demande_est_transmis_au_fournisseur():
     provider = AsyncMock(return_value=CLIP)
     n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
     await n.play_last_clip("azra")
-    provider.assert_awaited_once_with("azra")
+    provider.assert_awaited_once_with("azra", query=None, most_viewed=False)
 
 
 @pytest.mark.asyncio
@@ -303,14 +303,16 @@ async def test_sans_clippeur_le_fournisseur_ne_filtre_rien():
     provider = AsyncMock(return_value=CLIP)
     n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
     await n.play_last_clip()
-    provider.assert_awaited_once_with(None)
+    provider.assert_awaited_once_with(None, query=None, most_viewed=False)
 
 
 @pytest.mark.asyncio
 async def test_l_outil_passe_l_auteur_au_narrateur():
     bot = _bot({"title": "le 1v3", "author": "Azrael", "played": True})
     await run_last_clip_tool(bot, {"author": "azra"})
-    bot.overlay_narrator.play_last_clip.assert_awaited_once_with("azra")
+    bot.overlay_narrator.play_last_clip.assert_awaited_once_with(
+        "azra", query=None, most_viewed=False
+    )
 
 
 @pytest.mark.asyncio
@@ -347,9 +349,9 @@ async def test_le_chemin_vocal_transmet_aussi_le_clippeur():
     n = OverlayNarrator(feed, MagicMock(), lambda: True, last_clip=provider)
 
     async def _fake(system_prompt, messages, tools, tool_executor, **kw):
-        await tool_executor("show_last_clip", json.dumps({"author": "azra"}))
+        await tool_executor("show_clip", json.dumps({"author": "azra"}))
         return "voilà", []
 
     n._llm.complete_with_tools = _fake
     await n.on_voice_request("KingsRequin", "wally mets le dernier clip d'azra")
-    provider.assert_awaited_once_with("azra")
+    provider.assert_awaited_once_with("azra", query=None, most_viewed=False)

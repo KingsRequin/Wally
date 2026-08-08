@@ -361,6 +361,18 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 ## Les clips
 
 > « wally mets le dernier clip » · « wally mets le dernier clip d'azra »
+> « wally mets le clip le plus vu » · « wally mets le clip du 1v3 »
+> « wally montre le top 5 des clips »
+
+Quatre façons de choisir : le **dernier**, le **plus vu** du mois, celui dont le
+**titre** correspond à ce qu'on décrit, ou le **podium** des cinq plus vus. Le
+podium n'affiche aucune vidéo — c'est un tableau qu'on lit, et enchaîner cinq
+clips monopoliserait l'écran plusieurs minutes.
+
+La recherche par titre se fait chez nous : Helix ne sait filtrer ni sur le titre
+ni sur le clippeur. À pertinence égale, le plus vu gagne — c'est celui que les
+gens ont en tête. Rien de convaincant : Wally le dit plutôt que de montrer un
+clip au hasard.
 
 Le clip est **rejoué sur l'overlay**, en **muet**, et reste affiché le temps de
 la vidéo. Il part aussi tout seul dès qu'un viewer crée un clip pendant le live

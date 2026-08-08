@@ -488,16 +488,30 @@ def run_overlay_tool(bot, args: dict) -> str:
 
 
 async def run_last_clip_tool(bot, args: dict) -> str:
-    """Exécute `show_last_clip` et rend un compte rendu HONNÊTE."""
+    """Exécute `show_clip` et rend un compte rendu HONNÊTE."""
     narrator = _overlay_narrator(bot)
     if narrator is None:
         return json.dumps({"status": "unavailable",
                            "message": "L'overlay n'est pas branché en ce moment."})
     auteur = str(args.get("author") or "").strip()[:40] or None
+    mode = str(args.get("mode") or "dernier").strip().lower()
     try:
-        shown = await narrator.play_last_clip(auteur)
+        if mode == "top":
+            podium = await narrator.show_top_clips(int(args.get("count") or 5))
+            if podium is None:
+                return json.dumps({"status": "nothing", "message": (
+                    "Aucun clip à classer. Dis-le, n'invente pas de podium."
+                )})
+            return json.dumps({"status": "ok", "message": (
+                f"Podium affiché — {podium['count']} clips, en tête « {podium['best']} »."
+            )})
+        shown = await narrator.play_last_clip(
+            auteur,
+            query=str(args.get("query") or "").strip()[:80] or None,
+            most_viewed=(mode == "plus_vu"),
+        )
     except Exception as exc:  # noqa: BLE001 — un clip raté ne casse pas la réponse
-        logger.warning("show_last_clip a échoué : {e}", e=exc)
+        logger.warning("show_clip a échoué : {e}", e=exc)
         return json.dumps({"status": "error", "message": "La lecture a échoué."})
     if shown:
         # « joué » ou « affiché » : Wally ne doit pas annoncer une vidéo quand
@@ -2249,7 +2263,7 @@ async def _respond(
                 return run_overlay_tool(bot, args)
             if name == "cancel_overlay":
                 return run_overlay_cancel_tool(bot, args)
-            if name == "show_last_clip":
+            if name == "show_clip":
                 return await run_last_clip_tool(bot, args)
             if name == "show_apex":
                 return await run_apex_overlay_tool(
