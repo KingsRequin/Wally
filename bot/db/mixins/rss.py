@@ -92,13 +92,18 @@ class RSSMixin:
     async def rss_search_knowledge(
         self, query: str, *, limit: int = 3, max_age_seconds: float
     ) -> list[dict]:
-        """Articles `knowledge` frais qui matchent le sujet de la requête,
-        classés du plus RÉCENT au plus ancien (n'affecte pas injected_at).
+        """Articles `knowledge` frais qui matchent le sujet, les plus PERTINENTS
+        d'abord (n'affecte pas injected_at).
 
-        Le FTS MATCH filtre sur le sujet (ex. « apex ») ; on remonte ensuite les
-        plus récents. Sur un flux mono-sujet, les mots spécifiques (French) ne
-        matchent pas toujours l'article (English) → la récence est le signal
-        fiable, et on laisse le LLM choisir l'article pertinent dans le lot."""
+        Le classement était la récence seule, ce qui se défendait pour un flux
+        d'actualités : un article y est un sujet, et le plus frais est le bon.
+        Ça ne tient plus depuis qu'un patch note entre découpé en sections —
+        elles partagent toutes une seule date, la récence ne départage donc plus
+        rien, et une annonce promotionnelle publiée le même jour passait devant
+        la section technique cherchée.
+
+        `bm25` classe donc en premier (plus petit = plus pertinent), la récence
+        ne servant qu'à départager deux passages également pertinents."""
         match = _fts_or_query(query)
         if not match:
             return []
@@ -108,7 +113,8 @@ class RSSMixin:
             "JOIN rss_articles_fts f ON f.rowid = a.id "
             "WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
             "AND rss_articles_fts MATCH ? "
-            "ORDER BY COALESCE(a.published_ts, a.fetched_at) DESC LIMIT ?",
+            "ORDER BY bm25(rss_articles_fts), "
+            "COALESCE(a.published_ts, a.fetched_at) DESC LIMIT ?",
             (cutoff, match, limit),
         )
         return [dict(r) for r in rows]

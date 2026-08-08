@@ -278,6 +278,10 @@ class RSSFeedDef:
     role: str = "stimulus"
     lang: str = "fr"
     enabled: bool = True
+    # "rss" (défaut) ou "steam" : les annonces d'un jeu Steam, en JSON. Respawn
+    # y publie les patch notes Apex — la source, pas sa paraphrase.
+    kind: str = "rss"
+    appid: str = ""
 
 
 @dataclass
@@ -293,7 +297,8 @@ class RSSFeedsConfig:
     feeds: list[RSSFeedDef] = field(default_factory=lambda: [
         RSSFeedDef(name="JeuxVideo.com", url="https://www.jeuxvideo.com/rss/rss.xml", role="stimulus", lang="fr"),
         RSSFeedDef(name="Korben", url="https://korben.info/feedfull", role="stimulus", lang="fr"),
-        RSSFeedDef(name="Dexerto Apex", url="https://www.dexerto.com/apex-legends/feed/", role="knowledge", lang="en"),
+        RSSFeedDef(name="Apex Patch Notes", url="", role="knowledge", lang="en",
+                   kind="steam", appid="1172470"),
     ])
 
 

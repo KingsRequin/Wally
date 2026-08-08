@@ -102,6 +102,8 @@ class RSSFeedService:
         return total_new
 
     async def _poll_feed(self, client: httpx.AsyncClient, feed: "RSSFeedDef") -> int:
+        if (feed.kind or "rss").lower() == "steam":
+            return await self._poll_steam(client, feed)
         resp = await client.get(feed.url)
         resp.raise_for_status()
         # feedparser est synchrone (parsing + normalisation) → hors event loop.
@@ -134,6 +136,40 @@ class RSSFeedService:
             )
             if inserted:
                 new += 1
+        return new
+
+    async def _poll_steam(self, client: httpx.AsyncClient, feed: "RSSFeedDef") -> int:
+        """Les annonces d'un jeu Steam, découpées en sections indexables.
+
+        Un patch note de saison fait 39 000 caractères : indexé d'un bloc, il
+        remonterait en entier pour une question sur une seule légende.
+        """
+        from bot.core.steam_news import NEWS_URL, sections_from_item
+
+        resp = await client.get(NEWS_URL, params={
+            "appid": feed.appid, "count": _MAX_ENTRIES_PER_FEED, "format": "json",
+        })
+        resp.raise_for_status()
+        items = (resp.json().get("appnews") or {}).get("newsitems") or []
+        new = 0
+        for item in items:
+            for section in sections_from_item(item):
+                inserted = await self._db.rss_upsert_article(
+                    feed_name=feed.name,
+                    role=feed.role,
+                    guid=section["guid"],
+                    title=section["title"],
+                    # Pas de `_clean_summary` ici : les sections sont déjà
+                    # bornées, et les tronquer à 300 caractères reviendrait à
+                    # jeter le contenu qu'on vient d'aller chercher.
+                    summary=section["text"],
+                    link=section["link"],
+                    lang=feed.lang,
+                    published_at=None,
+                    published_ts=section["published_ts"],
+                )
+                if inserted:
+                    new += 1
         return new
 
     async def purge_old(self) -> int:

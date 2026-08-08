@@ -76,19 +76,23 @@ async def test_search_knowledge_fts(tmp_path):
 
 @pytest.mark.asyncio
 async def test_search_knowledge_orders_by_recency(tmp_path):
+    """À pertinence ÉGALE, le plus récent passe devant.
+
+    Le classement principal est devenu la pertinence (bm25) le 2026-08-08 : un
+    patch note découpé en sections partage une seule date, la récence n'y
+    départage plus rien. Les deux articles ci-dessous matchent donc autant l'un
+    que l'autre, pour que la récence reste seule à trancher."""
     db = await _make_db(tmp_path)
-    # Deux patch notes Apex : l'ancien matche mieux en mots-clés, mais on veut
-    # le PLUS RÉCENT en premier (published_ts).
     await db.rss_upsert_article(
         feed_name="Dexerto Apex", role="knowledge", guid="old",
-        title="Apex Legends Season 24 patch notes patch patch",
-        summary="vieux patch", link="u1", lang="en", published_at="2026-01-01",
+        title="Apex Legends Season 24 patch notes",
+        summary="patch", link="u1", lang="en", published_at="2026-01-01",
         published_ts=1735689600.0,  # jan 2026
     )
     await db.rss_upsert_article(
         feed_name="Dexerto Apex", role="knowledge", guid="new",
         title="Apex Legends Season 29 patch notes",
-        summary="nouveau patch", link="u2", lang="en", published_at="2026-06-01",
+        summary="patch", link="u2", lang="en", published_at="2026-06-01",
         published_ts=1748736000.0,  # juin 2026
     )
     hits = await db.rss_search_knowledge("dernier patch note apex", limit=2, max_age_seconds=10**12)
@@ -128,11 +132,11 @@ async def test_purge_old(tmp_path):
 def test_rss_config_defaults():
     from bot.config import RSSFeedsConfig
 
-    # Défauts : 3 flux (JVC + Korben en stimulus, Dexerto en knowledge)
+    # Défauts : 3 flux (JVC + Korben en stimulus, patch notes Steam en knowledge)
     roles = {f.name: f.role for f in RSSFeedsConfig().feeds}
     assert roles["JeuxVideo.com"] == "stimulus"
     assert roles["Korben"] == "stimulus"
-    assert roles["Dexerto Apex"] == "knowledge"
+    assert roles["Apex Patch Notes"] == "knowledge"
 
 
 def test_config_rss_missing_section_uses_defaults(tmp_path):
@@ -149,7 +153,7 @@ def test_config_rss_missing_section_uses_defaults(tmp_path):
 
     loaded = Config.load(str(base))
     assert len(loaded.rss.feeds) == 3
-    assert {f.name for f in loaded.rss.feeds} == {"JeuxVideo.com", "Korben", "Dexerto Apex"}
+    assert {f.name for f in loaded.rss.feeds} == {"JeuxVideo.com", "Korben", "Apex Patch Notes"}
 
 
 def test_config_rss_roundtrip(tmp_path):
@@ -162,7 +166,7 @@ def test_config_rss_roundtrip(tmp_path):
     shutil.copy("config.example.yaml", base)
 
     loaded = Config.load(str(base))
-    # config.example.yaml définit 3 flux (JVC + Korben stimulus, Dexerto knowledge)
+    # config.example.yaml définit 3 flux (JVC + Korben stimulus, patch notes knowledge)
     assert len(loaded.rss.feeds) == 3
     assert {f.role for f in loaded.rss.feeds} == {"stimulus", "knowledge"}
 

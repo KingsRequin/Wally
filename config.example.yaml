@@ -247,8 +247,13 @@ rss:
       role: stimulus
       lang: fr
       enabled: true
-    - name: Dexerto Apex
-      url: https://www.dexerto.com/apex-legends/feed/
+    # Les patch notes écrits par Respawn, pas leur paraphrase par la presse.
+    # `kind: steam` lit les annonces d'un jeu ; seul `appid` change pour en
+    # suivre un autre.
+    - name: Apex Patch Notes
+      url: ''
+      kind: steam
+      appid: '1172470'
       role: knowledge
       lang: en
       enabled: true
