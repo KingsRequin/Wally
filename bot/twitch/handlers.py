@@ -100,6 +100,153 @@ def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
         clog.log("twitch", channel, event_type, **fields)
 
 
+async def build_chat_tools(bot: "WallyTwitch") -> list[dict]:
+    """Les outils offerts au LLM sur le chemin Twitch.
+
+    Extrait de `handle_message` pour que le chemin VOCAL offre exactement les
+    mêmes. Deux listes séparées divergeraient au premier ajout — c'est
+    précisément ce qui était arrivé à l'énumération du chifoumi.
+    """
+    tools: list[dict] = []
+    web_search = getattr(bot, "web_search", None)
+    if web_search and web_search.available and not await web_search.is_quota_exceeded():
+        tools.extend(web_search.get_tool_definitions())
+    scrape = getattr(bot, "scrape", None)
+    if scrape and scrape.available and not await scrape.daily_limit_reached():
+        tools.extend(scrape.get_tool_definitions())
+    apex_api = getattr(bot, "apex_api", None)
+    if apex_api and apex_api.available:
+        tools.append(apex_api.get_tool_definition())
+    action_service = getattr(bot, "action_service", None)
+    if action_service:
+        tools.extend(action_service.get_tool_definitions())
+    tools.extend(_NOTE_TOOLS)
+    if getattr(bot, "tally", None) is not None:
+        tools.extend(_TALLY_TOOLS)
+    if getattr(bot, "predictions", None) is not None:
+        tools.append(_PREDICT_TOOL)
+    if getattr(bot, "quotes", None) is not None:
+        tools.append(_QUOTE_TOOL)
+    if _overlay_narrator(bot) is not None:
+        tools.append(_OVERLAY_TOOL)
+        tools.append(_OVERLAY_CANCEL_TOOL)
+        tools.append(_LAST_CLIP_TOOL)
+        if getattr(bot, "apex_api", None) is not None:
+            tools.append(_APEX_OVERLAY_TOOL)
+    return tools
+
+
+def make_tool_executor(
+    bot: "WallyTwitch",
+    *,
+    platform: str,
+    user_id: str,
+    author: str,
+    channel: str,
+    trace: str = "",
+    user_roles: list[str] | None = None,
+):
+    """L'exécuteur d'appels d'outils, partagé par le chat et le vocal.
+
+    `platform`/`user_id` forment l'identité du demandeur (« twitch:123 »,
+    « discord:456 ») : elle vient de l'appelant, jamais du modèle. C'est ce qui
+    empêche de déclarer le compte Apex d'un autre ou d'écrire dans sa mémoire.
+    """
+    identity = f"{platform}:{user_id}"
+    web_search = getattr(bot, "web_search", None)
+    scrape = getattr(bot, "scrape", None)
+    apex_api = getattr(bot, "apex_api", None)
+    action_service = getattr(bot, "action_service", None)
+
+    async def _impl(name: str, arguments: str) -> str:
+        _clog(bot, channel, "tool_called", trace_id=trace, tool=name, args=arguments)
+        args = json.loads(arguments)
+        if name == "quote":
+            return await run_quote_tool(bot, args)
+        if name == "predict":
+            return await run_predict_tool(bot, args)
+        if name in ("start_counting", "stop_counting", "list_counters"):
+            return await run_tally_tool(bot, name, args)
+        if name == "show_overlay":
+            return run_overlay_tool(bot, args)
+        if name == "cancel_overlay":
+            return run_overlay_cancel_tool(bot, args)
+        if name == "show_last_clip":
+            return await run_last_clip_tool(bot, args)
+        if name == "show_apex":
+            return await run_apex_overlay_tool(bot, args, requester=identity)
+        if name == "save_persistent_note":
+            await bot.db.upsert_persistent_note(args["title"], args["content"])
+            return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
+        if name == "delete_persistent_note":
+            deleted = await bot.db.delete_persistent_note(args["title"])
+            if deleted:
+                return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
+            return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
+        if name == "save_user_memory":
+            await bot.memory.add(platform, user_id, args["content"], username=author,
+                                 origin=f"Twitch/{channel}")
+            return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
+        # Un outil peut être connu du modèle mais indisponible sur cette
+        # instance (clé absente). La branche `no_such_tool` ne couvrait que
+        # les noms INCONNUS : on tombait sur `None.search(...)`, et les
+        # `args["query"]`/`args["url"]` levaient un KeyError si le modèle les
+        # omettait. Les deux remontaient en « erreur technique » opaque.
+        if name in ("web_search", "image_search"):
+            if web_search is None:
+                return json.dumps({"status": "unavailable",
+                                   "message": "La recherche web n'est pas disponible."})
+            query = str(args.get("query") or "").strip()
+            if not query:
+                return json.dumps({"status": "rejected", "message": "Il faut une requête."})
+            if name == "image_search":
+                return await web_search.search_images(query)
+            return await web_search.search(query, platform="twitch")
+        if name == "scrape_url":
+            url = str(args.get("url") or "").strip()
+            if scrape is None:
+                return json.dumps({"status": "unavailable",
+                                   "message": "La lecture de pages n'est pas disponible."})
+            if not url:
+                return json.dumps({"status": "rejected", "message": "Il faut une URL."})
+            return await scrape.scrape(url)
+        if name == "apex_legends":
+            if apex_api is None:
+                return json.dumps({"status": "unavailable",
+                                   "message": "Les stats Apex ne sont pas disponibles."})
+            return await apex_api.execute(
+                args.get("action", ""),
+                player_name=args.get("player_name", ""),
+                platform=args.get("platform", "PC"),
+                remember=bool(args.get("remember")),
+                requester=identity,
+                requester_name=author,
+            )
+        if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
+            if action_service is None:
+                return json.dumps({"status": "unavailable",
+                                   "message": "Les tâches planifiées ne sont pas disponibles."})
+            result = await action_service.execute_tool(
+                name, args,
+                user_id=user_id,
+                platform=platform,
+                user_roles=user_roles or ["everyone"],
+                channel_id=channel,
+            )
+            return json.dumps(result)
+        return json.dumps({"status": "no_such_tool", "message": (
+            f"L'outil '{name}' n'existe pas. N'invente pas d'outil : "
+            "utilise ceux qu'on te donne, ou réponds simplement — ton texte est déjà envoyé dans la conversation."
+        )})
+
+    async def _executor(name: str, arguments: str) -> str:
+        result = await _impl(name, arguments)
+        _clog(bot, channel, "tool_result", trace_id=trace, tool=name, result=str(result)[:500])
+        return result
+
+    return _executor
+
+
 async def handle_message(bot: "WallyTwitch", payload) -> None:
     """Handle an incoming channel.chat.message EventSub payload."""
     # Dashboard message counter (tous les messages, pas seulement les triggers)
@@ -430,120 +577,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         openai_messages = [{"role": "user", "content": user_content}]
 
-        # ── Collect available tools ──────────────────────────────────────
-        tools: list[dict] = []
-        web_search = getattr(bot, "web_search", None)
-        if web_search and web_search.available and not await web_search.is_quota_exceeded():
-            tools.extend(web_search.get_tool_definitions())
-        scrape = getattr(bot, "scrape", None)
-        if scrape and scrape.available and not await scrape.daily_limit_reached():
-            tools.extend(scrape.get_tool_definitions())
-        apex_api = getattr(bot, "apex_api", None)
-        if apex_api and apex_api.available:
-            tools.append(apex_api.get_tool_definition())
-        action_service = getattr(bot, "action_service", None)
-        if action_service:
-            tools.extend(action_service.get_tool_definitions())
-        tools.extend(_NOTE_TOOLS)
-        if getattr(bot, "tally", None) is not None:
-            tools.extend(_TALLY_TOOLS)
-        if getattr(bot, "predictions", None) is not None:
-            tools.append(_PREDICT_TOOL)
-        if getattr(bot, "quotes", None) is not None:
-            tools.append(_QUOTE_TOOL)
-        if _overlay_narrator(bot) is not None:
-            tools.append(_OVERLAY_TOOL)
-            tools.append(_OVERLAY_CANCEL_TOOL)
-            tools.append(_LAST_CLIP_TOOL)
-            if getattr(bot, "apex_api", None) is not None:
-                tools.append(_APEX_OVERLAY_TOOL)
-
-        async def _tool_executor_impl(name: str, arguments: str) -> str:
-            _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
-            args = json.loads(arguments)
-            if name == "quote":
-                return await run_quote_tool(bot, args)
-            if name == "predict":
-                return await run_predict_tool(bot, args)
-            if name in ("start_counting", "stop_counting", "list_counters"):
-                return await run_tally_tool(bot, name, args)
-            if name == "show_overlay":
-                return run_overlay_tool(bot, args)
-            if name == "cancel_overlay":
-                return run_overlay_cancel_tool(bot, args)
-            if name == "show_last_clip":
-                return await run_last_clip_tool(bot, args)
-            if name == "show_apex":
-                return await run_apex_overlay_tool(bot, args, requester=f"twitch:{user_id}")
-            if name == "save_persistent_note":
-                await bot.db.upsert_persistent_note(args["title"], args["content"])
-                return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
-            if name == "delete_persistent_note":
-                deleted = await bot.db.delete_persistent_note(args["title"])
-                if deleted:
-                    return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
-                return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
-            if name == "save_user_memory":
-                await bot.memory.add("twitch", user_id, args["content"], username=author,
-                                     origin=f"Twitch/{channel_name}")
-                return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
-            # Un outil peut être connu du modèle mais indisponible sur cette
-            # instance (clé absente). La branche `no_such_tool` ne couvrait que
-            # les noms INCONNUS : on tombait sur `None.search(...)`, et les
-            # `args["query"]`/`args["url"]` levaient un KeyError si le modèle les
-            # omettait. Les deux remontaient en « erreur technique » opaque.
-            if name in ("web_search", "image_search"):
-                if web_search is None:
-                    return json.dumps({"status": "unavailable",
-                                       "message": "La recherche web n'est pas disponible."})
-                query = str(args.get("query") or "").strip()
-                if not query:
-                    return json.dumps({"status": "rejected", "message": "Il faut une requête."})
-                if name == "image_search":
-                    return await web_search.search_images(query)
-                return await web_search.search(query, platform="twitch")
-            if name == "scrape_url":
-                url = str(args.get("url") or "").strip()
-                if scrape is None:
-                    return json.dumps({"status": "unavailable",
-                                       "message": "La lecture de pages n'est pas disponible."})
-                if not url:
-                    return json.dumps({"status": "rejected", "message": "Il faut une URL."})
-                return await scrape.scrape(url)
-            if name == "apex_legends":
-                if apex_api is None:
-                    return json.dumps({"status": "unavailable",
-                                       "message": "Les stats Apex ne sont pas disponibles."})
-                return await apex_api.execute(
-                    args.get("action", ""),
-                    player_name=args.get("player_name", ""),
-                    platform=args.get("platform", "PC"),
-                    remember=bool(args.get("remember")),
-                    # L'identité vient d'ICI, jamais du modèle : c'est ce qui
-                    # empêche de déclarer le compte Apex de quelqu'un d'autre.
-                    requester=f"twitch:{user_id}",
-                    requester_name=author,
-                )
-            if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
-                badges = getattr(payload, "badges", []) or []
-                user_roles = _resolve_twitch_roles(badges)
-                result = await action_service.execute_tool(
-                    name, args,
-                    user_id=str(payload.chatter.id),
-                    platform="twitch",
-                    user_roles=user_roles,
-                    channel_id=channel_name,
-                )
-                return json.dumps(result)
-            return json.dumps({"status": "no_such_tool", "message": (
-                f"L'outil '{name}' n'existe pas. N'invente pas d'outil : "
-                "utilise ceux qu'on te donne, ou réponds simplement — ton texte est déjà envoyé dans la conversation."
-            )})
-
-        async def _tool_executor(name: str, arguments: str) -> str:
-            result = await _tool_executor_impl(name, arguments)
-            _clog(bot, channel_name, "tool_result", trace_id=_trace, tool=name, result=str(result)[:500])
-            return result
+        # ── Outils et exécuteur : les mêmes que sur le chemin vocal ───────
+        tools = await build_chat_tools(bot)
+        _tool_executor = make_tool_executor(
+            bot,
+            platform="twitch",
+            user_id=user_id,
+            author=author,
+            channel=channel_name,
+            trace=_trace,
+            user_roles=_resolve_twitch_roles(getattr(payload, "badges", []) or []),
+        )
 
         _llm_t0 = time.monotonic()
         if tools:
