@@ -72,6 +72,27 @@ let currentSecondaries = [];
 let _parametresSubTab = 'emotions';
 let _systemeSubTab    = 'logs';
 
+// Panneaux dont le rendu est en cours. `panel.children.length > 0` ne suffit
+// pas : ces fonctions attendent `/api/admin/config` AVANT d'écrire, donc deux
+// appels rapprochés franchissent la garde tous les deux et le panneau se
+// retrouve monté en double — mêmes `id` présents deux fois, et
+// `getElementById` ne rend que le premier, si bien qu'un réglage saisi dans la
+// seconde copie était sauvegardé depuis la première.
+const _panelsRendering = new WeakSet();
+
+// Rend un panneau UNE fois, même si on le demande deux fois pendant le chargement.
+// La libération est en `finally` : un rendu qui échoue doit pouvoir être retenté,
+// sinon le panneau reste vide pour toute la session.
+async function _renderPanelOnce(panel, render) {
+  if (!panel || panel.children.length > 0 || _panelsRendering.has(panel)) return;
+  _panelsRendering.add(panel);
+  try {
+    await render(panel);
+  } finally {
+    _panelsRendering.delete(panel);
+  }
+}
+
 const MOOD_ADJ_FR = {
   anger: 'irritable', joy: 'joyeux', sadness: 'mélancolique',
   curiosity: 'curieux', boredom: 'apathique',
@@ -253,14 +274,17 @@ async function restartTwitchContainer() {
 
 // ── Mode & tabs ───────────────────────────────────────────────────────────────
 
-function enterAdmin() {
+function enterAdmin(tabId) {
   if (!getToken()) { showAuthModal(); return; }
   document.getElementById('nav-admin').style.display = 'flex';
   showControlBar(true);
   startControlBarPolling();
+  // AVANT le SSE : il construit `#log-stream`, la cible dans laquelle
+  // `appendLog()` écrit l'historique. Sans lui, les lignes déjà émises sont
+  // perdues au démarrage.
   renderSystemeTab();
   startLogSSE();
-  showTab('admin-parametres');
+  showTab(tabId || 'admin-parametres');
 }
 
 function showTab(tabId) {
@@ -1686,18 +1710,15 @@ async function unbanUser(discordId) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Check if already authenticated
-  if (getToken()) {
-    enterAdmin();
-  } else {
+  if (!getToken()) {
     showAuthModal();
+    return;
   }
-
-  // Restore tab from hash
+  // L'onglet demandé est lu AVANT d'entrer : `enterAdmin()` ouvre les Paramètres
+  // et écrit le hash au passage. On relisait donc le hash qu'on venait de poser,
+  // et on réaffichait le même onglet — chaque panneau était monté deux fois.
   const hash = location.hash.replace('#', '');
-  if (hash && getToken()) {
-    showTab(hash);
-  }
+  enterAdmin(hash || undefined);
 });
 
 // ── Memory tab ────────────────────────────────────────────────────────────────
@@ -3003,11 +3024,11 @@ function switchParametresSubTab(subtab) {
   if (panel) panel.classList.add('active');
 
   if (subtab === 'emotions') {
-    _renderParametresEmotions(panel);
+    _renderPanelOnce(panel, _renderParametresEmotions);
   } else if (subtab === 'llm') {
-    _renderParametresLLM(panel);
+    _renderPanelOnce(panel, _renderParametresLLM);
   } else if (subtab === 'images') {
-    _renderParametresImages(panel);
+    _renderPanelOnce(panel, _renderParametresImages);
   } else if (subtab === 'vocal') {
     _renderParametresVoice(panel);
   }
@@ -3106,7 +3127,7 @@ async function saveVoiceConfigParams() {
 }
 
 async function _renderParametresEmotions(panel) {
-  if (!panel || panel.children.length > 0) return;
+  if (!panel) return;
 
   // Move config-form-container (emotions + lambdas + bot-general + spam sections) here
   // We load config then render only the emotion-related cards
@@ -3244,7 +3265,7 @@ async function _renderParametresEmotions(panel) {
 }
 
 async function _renderParametresLLM(panel) {
-  if (!panel || panel.children.length > 0) return;
+  if (!panel) return;
 
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
@@ -3339,7 +3360,7 @@ async function _renderParametresLLM(panel) {
 }
 
 async function _renderParametresImages(panel) {
-  if (!panel || panel.children.length > 0) return;
+  if (!panel) return;
 
   // Delegate to loadOverlayConfig but only inject image_generation section
   const r = await apiFetch('/api/admin/config');
@@ -3476,7 +3497,7 @@ function switchSystemeSubTab(subtab) {
   } else if (subtab === 'twitch') {
     _renderSystemeTwitch(panel);
   } else if (subtab === 'overlay') {
-    _renderSystemeOverlay(panel);
+    _renderPanelOnce(panel, _renderSystemeOverlay);
   }
 }
 
@@ -3619,7 +3640,7 @@ async function _renderSystemeTwitch(panel) {
 }
 
 async function _renderSystemeOverlay(panel) {
-  if (!panel || panel.children.length > 0) return;
+  if (!panel) return;
 
   const base = window.location.origin;
   const urlEmotion = base + '/overlay';
