@@ -323,6 +323,7 @@ class WallyDiscord(commands.Bot):
                     stream_status=_stream_status,
                     memes=getattr(_dash_state, "memes", None),
                     last_clip=_fetch_last_clip,
+                    apex=getattr(self, "apex_api", None),
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,
                 # Wally ne saurait pas qu'un bingo tourne et n'aurait aucune

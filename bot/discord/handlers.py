@@ -99,6 +99,7 @@ _NOTE_TOOLS = [
 
 # Overlay du stream, dans une conversation. La définition vit avec le narrateur :
 # le chemin vocal l'utilise aussi, et deux copies divergeraient.
+from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.intelligence.overlay_narrator import (
     CANCEL_TARGETS,
     CANCEL_TOOL_SPEC as _OVERLAY_CANCEL_TOOL,
@@ -519,6 +520,39 @@ async def run_last_clip_tool(bot, args: dict) -> str:
         )})
     return json.dumps({"status": "nothing", "message": (
         "Aucun clip récent sur la chaîne. Dis-le, n'en invente pas un."
+    )})
+
+async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -> str:
+    """Exécute `show_apex` et rend un compte rendu HONNÊTE.
+
+    Même exigence que `show_last_clip` : quand rien ne s'est affiché, Wally doit
+    le dire au lieu de raconter un panneau qui n'existe pas.
+    """
+    narrator = _overlay_narrator(bot)
+    if narrator is None:
+        return json.dumps({"status": "unavailable",
+                           "message": "L'overlay n'est pas branché en ce moment."})
+    try:
+        shown = await narrator.show_apex(
+            str(args.get("panel") or "").strip(),
+            str(args.get("player") or "").strip()[:32],
+            str(args.get("comment") or ""),
+            requester=requester,
+        )
+    except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse pas la réponse
+        logger.warning("show_apex a échoué : {e}", e=exc)
+        return json.dumps({"status": "error", "message": "L'affichage a échoué."})
+    if shown:
+        return json.dumps({"status": "ok", "message": (
+            f"Panneau « {shown['widget']} » affiché à l'écran."
+        )})
+    if not narrator.is_active():
+        return json.dumps({"status": "offline", "message": (
+            "Rien affiché : il n'y a pas de live en cours. Dis-le simplement."
+        )})
+    return json.dumps({"status": "nothing", "message": (
+        "Rien affiché : la donnée Apex n'est pas disponible. Dis-le, "
+        "ne prétends pas l'avoir montré."
     )})
 
 
@@ -2180,6 +2214,8 @@ async def _respond(
             tools.append(_OVERLAY_TOOL)
             tools.append(_OVERLAY_CANCEL_TOOL)
             tools.append(_LAST_CLIP_TOOL)
+            if getattr(bot, "apex_api", None) is not None:
+                tools.append(_APEX_OVERLAY_TOOL)
         if getattr(bot, "voice_service", None) is not None:
             tools += VOICE_TOOLS
         # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
@@ -2215,6 +2251,10 @@ async def _respond(
                 return run_overlay_cancel_tool(bot, args)
             if name == "show_last_clip":
                 return await run_last_clip_tool(bot, args)
+            if name == "show_apex":
+                return await run_apex_overlay_tool(
+                    bot, args, requester=f"discord:{message.author.id}"
+                )
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})

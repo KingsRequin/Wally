@@ -694,6 +694,11 @@
     },
   };
 
+  // Les panneaux Apex vivent dans `overlay_apex.js`, chargé AVANT ce fichier.
+  // Dans l'autre ordre la fusion lirait `undefined` en silence, et « wally
+  // affiche mon rang » ne montrerait rien sans la moindre erreur en console.
+  Object.assign(BUILDERS, window.APEX_BUILDERS || {});
+
   function el(tag, className) {
     const n = document.createElement(tag);
     n.className = className;

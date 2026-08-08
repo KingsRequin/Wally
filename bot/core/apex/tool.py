@@ -70,3 +70,53 @@ APEX_LEGENDS_TOOL = {
         },
     },
 }
+
+
+# L'affichage à l'écran est un outil À PART, comme `show_last_clip` : la donnée
+# se récupère sur le réseau, ce que le `show_overlay` générique — synchrone — ne
+# sait pas faire. Wally nomme un panneau, le serveur va chercher les chiffres :
+# c'est ce qui garantit qu'aucune valeur ne transite par le modèle.
+APEX_OVERLAY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "show_apex",
+        "description": (
+            "Affiche des données Apex RÉELLES sur l'overlay du stream. Ne "
+            "fonctionne que pendant un live — l'outil te le dira sinon. Tu n'as "
+            "aucun chiffre à fournir : nomme le panneau, le reste est allé le "
+            "chercher. ⚠️ L'overlay est vu par les SPECTATEURS : ton `comment` "
+            "s'adresse à eux. Ne prétends jamais avoir affiché sans appeler cet "
+            "outil."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "panel": {
+                    "type": "string",
+                    "enum": ["rank", "status", "stats", "map", "craft", "predator", "servers"],
+                    "description": (
+                        "rank = le rang d'un joueur, avec son écusson · "
+                        "status = est-il en partie, sur quelle légende · "
+                        "stats = ses chiffres de carrière · "
+                        "map = la rotation des cartes, avec le décompte · "
+                        "craft = les lots du replicator · "
+                        "predator = le seuil Predator · "
+                        "servers = l'état des serveurs"
+                    ),
+                },
+                "player": {
+                    "type": "string",
+                    "description": (
+                        "Le pseudo, pour rank/status/stats. Laisse vide pour la "
+                        "personne à qui tu réponds si elle a déjà déclaré son compte."
+                    ),
+                },
+                "comment": {
+                    "type": "string",
+                    "description": "Ta réplique, quelques mots — c'est elle qu'on lit.",
+                },
+            },
+            "required": ["panel"],
+        },
+    },
+}

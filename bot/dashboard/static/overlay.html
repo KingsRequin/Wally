@@ -867,6 +867,27 @@
       animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
       animation-delay: calc(var(--i, 0) * 70ms + 120ms);
     }
+    /* Panneaux Apex — ils empruntent la carte de `.stats`, avec ce qu'il faut
+       en plus : l'image du rang, l'état en jeu, un décompte qui tourne. */
+    .apex .apex-rank-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .apex .apex-rank-img { width: 34px; height: 34px; object-fit: contain; }
+    .apex .apex-rank-name { font-size: 15px; font-weight: 700; }
+    .apex .apex-avatar {
+      width: 30px; height: 30px; border-radius: 50%; object-fit: cover;
+      float: right; margin: -26px 0 0 0;
+    }
+    .apex .apex-state {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+    }
+    .apex .apex-state.live { color: #7ee787; }
+    .apex .apex-world { font-size: 11px; color: #ffb066; margin-left: 6px; }
+    .apex .apex-timer {
+      font-size: 11px; color: rgba(255, 255, 255, .55);
+      margin-left: 6px; font-variant-numeric: tabular-nums;
+    }
+    .apex .apex-up .v { color: #7ee787; }
+    .apex .apex-down .v { color: #ff7b72; }
     .stats .line .k { color: rgba(255, 255, 255, .62); }
     .stats .line .v { font-weight: 700; font-variant-numeric: tabular-nums; }
 
@@ -924,6 +945,7 @@
 
   <div id="widgets"></div>
 
+  <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay.js"></script>
 </body>
 </html>

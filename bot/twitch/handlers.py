@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block
+from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.text_clean import strip_stage_directions
@@ -18,7 +19,7 @@ from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _OVERLAY_CANCEL_TOOL, run_overlay_cancel_tool,
-    _LAST_CLIP_TOOL, run_last_clip_tool,
+    _LAST_CLIP_TOOL, run_apex_overlay_tool, run_last_clip_tool,
     _consume_open_question, _note_open_question,
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
@@ -454,6 +455,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             tools.append(_OVERLAY_TOOL)
             tools.append(_OVERLAY_CANCEL_TOOL)
             tools.append(_LAST_CLIP_TOOL)
+            if getattr(bot, "apex_api", None) is not None:
+                tools.append(_APEX_OVERLAY_TOOL)
 
         async def _tool_executor_impl(name: str, arguments: str) -> str:
             _clog(bot, channel_name, "tool_called", trace_id=_trace, tool=name, args=arguments)
@@ -470,6 +473,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 return run_overlay_cancel_tool(bot, args)
             if name == "show_last_clip":
                 return await run_last_clip_tool(bot, args)
+            if name == "show_apex":
+                return await run_apex_overlay_tool(bot, args, requester=f"twitch:{user_id}")
             if name == "save_persistent_note":
                 await bot.db.upsert_persistent_note(args["title"], args["content"])
                 return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})

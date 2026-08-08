@@ -31,6 +31,7 @@ from typing import Optional
 
 from loguru import logger
 
+from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.intelligence.prompts import load_prompt
 
 # Intervalle minimal entre deux bulles de pensée. Elles occupent l'écran quand
@@ -340,9 +341,12 @@ class OverlayNarrator:
         stream_feed=None,
         memes=None,
         last_clip: Optional[Callable] = None,
+        apex=None,
     ) -> None:
         self._feed = overlay_feed
         self._llm = llm
+        # Service Apex, pour les panneaux dont la donnée se récupère en ligne.
+        self._apex = apex
         self._is_live = is_live
         self._min_interval = min_interval_s
         self._event_interval = event_interval_s
@@ -596,12 +600,23 @@ class OverlayNarrator:
         shown: list[dict] = []
 
         async def _execute(name: str, arguments: str) -> str:
-            if name not in ("show_overlay", "cancel_overlay", "show_last_clip"):
+            if name not in ("show_overlay", "cancel_overlay", "show_last_clip", "show_apex"):
                 return json.dumps({"status": "unknown_tool"})
             try:
                 args = json.loads(arguments or "{}")
             except json.JSONDecodeError:
                 return json.dumps({"status": "error", "message": "arguments illisibles"})
+            if name == "show_apex":
+                out = await self.show_apex(
+                    str(args.get("panel") or ""), str(args.get("player") or "")[:32],
+                    str(args.get("comment") or ""),
+                )
+                if out is None:
+                    return json.dumps({"status": "nothing", "message": (
+                        "Rien affiché : donnée Apex indisponible ou pas de live. "
+                        "Dis-le simplement, ne prétends pas l'avoir montré."
+                    )})
+                return json.dumps({"status": "ok", **out})
             if name == "show_last_clip":
                 auteur = str(args.get("author") or "").strip()[:40] or None
                 out = await self.play_last_clip(auteur)
@@ -647,7 +662,7 @@ class OverlayNarrator:
             reply, _ = await self._llm.complete_with_tools(
                 system_prompt=_VOICE_SYSTEM,
                 messages=[{"role": "user", "content": f"{speaker} (à voix haute) : {text}"}],
-                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC, LAST_CLIP_TOOL_SPEC],
+                tools=[OVERLAY_TOOL_SPEC, CANCEL_TOOL_SPEC, LAST_CLIP_TOOL_SPEC, APEX_OVERLAY_TOOL],
                 tool_executor=_execute,
                 purpose="overlay_voice",
             )
@@ -903,6 +918,33 @@ class OverlayNarrator:
             # une pensée ne doit pas s'empiler juste derrière.
             self._mark_spoken()
         return {"widget": widget, **params}
+
+    async def show_apex(
+        self, panel: str, player: str = "", comment: str = "",
+        requester: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Affiche un panneau de données Apex réelles. None si rien à montrer.
+
+        Méthode à part — et asynchrone — pour la même raison que `play_last_clip` :
+        la donnée vient du réseau, ce que `show_widget` (synchrone) ne peut pas
+        faire. Le modèle ne fournit aucun chiffre, il nomme un panneau.
+        """
+        if self._apex is None or not self._live():
+            return None
+        try:
+            data = await self._apex.build_panel(panel, player, requester=requester)
+        except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse rien
+            logger.warning("Overlay: panneau Apex {p} échoué: {e}", p=panel, e=exc)
+            return None
+        if not data:
+            return None
+        params = {k: v for k, v in data.items() if k != "kind"}
+        self._feed.widget(data["kind"], **params)
+        if comment:
+            # Même règle que `show_widget` : la bulle s'efface derrière un widget,
+            # mais le créneau reste consommé pour qu'une pensée ne s'empile pas.
+            self._mark_spoken()
+        return {"widget": data["kind"], "player": str(params.get("player") or "")}
 
     # ── saluts (widget 9) ─────────────────────────────────────────────────
 
