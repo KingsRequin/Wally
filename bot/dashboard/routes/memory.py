@@ -300,17 +300,46 @@ class AddMemoryRequest(BaseModel):
     category: str = ""
 
 
+def _require_store(request: Request):
+    """Le fact store, ou un 503. Son absence n'est pas une erreur de l'appelant."""
+    store = getattr(request.app.state.wally, "fact_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Mémoire indisponible")
+    return store
+
+
 @router.post("/memory/users/{user_id}/memories")
 async def add_memory(user_id: str, body: AddMemoryRequest, request: Request):
     """Ajoute manuellement un souvenir à un utilisateur."""
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    from bot.intelligence.memory.facts import AtomicFact, FactCategory
+
+    store = _require_store(request)
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Contenu requis")
+    try:
+        category = FactCategory(body.category)
+    except ValueError:
+        # L'UI envoie parfois une catégorie vide : un fait sans étiquette reste
+        # un fait, ça ne vaut pas un refus.
+        category = FactCategory.FAIT
+    fact_id = await store.add(AtomicFact(
+        user_id=user_id, content=content, category=category,
+        source="dashboard", origin="Dashboard admin",
+    ))
+    logger.info("Souvenir ajouté à la main pour {u}", u=user_id)
+    return {"status": "ok", "id": fact_id}
 
 
 # ── DELETE /memory/users/{user_id} ────────────────────────────────────────────
 
 @router.delete("/memory/users/{user_id}")
 async def delete_user(user_id: str, request: Request):
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    """Efface tout ce que Wally sait d'un utilisateur."""
+    store = _require_store(request)
+    deleted = await store.delete_by_user(user_id)
+    logger.info("Mémoire de {u} effacée : {n} fait(s)", u=user_id, n=deleted)
+    return {"status": "ok", "deleted": deleted}
 
 
 # ── PUT /memory/users/{user_id}/memories/{memory_id} ─────────────────────────
@@ -323,14 +352,30 @@ class UpdateMemoryRequest(BaseModel):
 @router.put("/memory/users/{user_id}/memories/{memory_id}")
 async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest, request: Request):
     """Modifie le contenu d'un souvenir existant."""
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    store = _require_store(request)
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Contenu requis")
+    if not await store.update_content(int(memory_id), content):
+        raise HTTPException(status_code=404, detail="Souvenir introuvable")
+    return {"status": "ok"}
 
 
 # ── DELETE /memory/users/{user_id}/memories/{memory_id} ──────────────────────
 
 @router.delete("/memory/users/{user_id}/memories/{memory_id}")
 async def delete_memory(user_id: str, memory_id: str, request: Request):
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    """Retire un souvenir de la vue de Wally.
+
+    ARCHIVÉ, pas effacé : `get_by_user` ne rend que les faits actifs, donc il
+    disparaît de l'écran comme du prompt — mais une suppression par erreur reste
+    rattrapable, et l'historique du fait n'est pas perdu.
+    """
+    from bot.intelligence.memory.facts import FactStatus
+
+    store = _require_store(request)
+    await store.set_status(int(memory_id), FactStatus.ARCHIVED)
+    return {"status": "ok"}
 
 
 # ── Global memory CRUD ────────────────────────────────────────────────────────

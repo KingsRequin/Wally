@@ -44,6 +44,14 @@ _OFFLINE_STREAM = {
     "started_at": None,
 }
 
+# Même forme, marquée « je n'ai pas pu demander ». Une API muette rendait un
+# « pas de live » indiscernable d'une vraie fin de stream : le 2026-08-08, une
+# coupure réseau a produit une transition live → offline en plein live, et Wally
+# a quitté le vocal dans la seconde. Les appelants qui se contentent d'un statut
+# (prompt, dashboard) n'y voient que du feu ; `StreamWatcher` s'en sert pour
+# garder son état plutôt que d'inventer une transition.
+_UNKNOWN_STREAM = {**_OFFLINE_STREAM, "unknown": True}
+
 
 
 def _fold(text: str) -> str:
@@ -444,10 +452,10 @@ class TwitchAPI:
                                 logger.error(
                                     "Bot token refresh failed, cannot fetch stream status"
                                 )
-                                return _OFFLINE_STREAM.copy()
+                                return _UNKNOWN_STREAM.copy()
                             continue
                         logger.error("Twitch streams API 401 after refresh, giving up")
-                        return _OFFLINE_STREAM.copy()
+                        return _UNKNOWN_STREAM.copy()
                     resp.raise_for_status()
                     data = resp.json().get("data", [])
                     if not data:
@@ -462,4 +470,4 @@ class TwitchAPI:
                     }
         except Exception as exc:
             logger.warning("Failed to fetch Twitch stream status: {e}", e=exc)
-            return _OFFLINE_STREAM.copy()
+            return _UNKNOWN_STREAM.copy()

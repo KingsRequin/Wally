@@ -548,6 +548,22 @@ class SQLiteFactStore:
             row = await cursor.fetchone()
             return self._row_to_fact(row) if row else None
 
+    async def update_content(self, fact_id: int, content: str) -> bool:
+        """Corrige le texte d'un fait. False si l'id n'existe pas.
+
+        Le triplet S-P-O n'est PAS retouché : il a été extrait de l'ancienne
+        formulation et une correction à la main ne dit pas comment le redécouper.
+        Mieux vaut un triplet d'origine qu'un triplet inventé — c'est `content`
+        qui est lu au prompt.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
+                (content, datetime.utcnow().isoformat(), fact_id),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
     async def set_status(self, fact_id: int, status: FactStatus) -> None:
         """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED)."""
         async with aiosqlite.connect(self._db_path) as db:

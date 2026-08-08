@@ -125,6 +125,13 @@ class StreamWatcher:
             logger.warning("StreamWatcher: statut inattendu {t}, poll ignoré",
                            t=type(new).__name__)
             return
+        if new.get("unknown"):
+            # L'API n'a pas répondu : on ne SAIT pas, ce qui n'est pas la même
+            # chose que « le live est fini ». Conclure à l'arrêt faisait quitter
+            # le vocal à Wally sur une simple coupure réseau. On garde l'état
+            # précédent et on retentera au prochain tour.
+            logger.debug("StreamWatcher: statut indisponible, poll ignoré")
+            return
         old = self._status
         self._status = new
         # Alimente les consommateurs Twitch (bot._stream_info) : un seul poll.

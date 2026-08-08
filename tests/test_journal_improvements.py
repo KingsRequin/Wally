@@ -327,8 +327,11 @@ async def test_journal_archives_after_send(tmp_path):
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send()
 
-    from datetime import date
-    today = date.today().isoformat()
+    # La date de PARIS, pas celle de l'horloge machine : le serveur tourne en
+    # UTC, et entre 22 h UTC et minuit `date.today()` rend encore la veille
+    # alors que la journée parisienne — celle que le journal archive — a déjà
+    # changé. Ces tests échouaient donc deux heures par nuit.
+    today = DailyJournal._today_date().isoformat()
     row = await db_inst.fetch_one("SELECT * FROM journal_archive WHERE date = ?", (today,))
     assert row is not None
     assert "Mon journal du jour." in row["content"]
@@ -358,8 +361,11 @@ async def test_journal_archive_false_does_not_archive(tmp_path):
     journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
     await journal.generate_and_send(archive=False)
 
-    from datetime import date
-    today = date.today().isoformat()
+    # La date de PARIS, pas celle de l'horloge machine : le serveur tourne en
+    # UTC, et entre 22 h UTC et minuit `date.today()` rend encore la veille
+    # alors que la journée parisienne — celle que le journal archive — a déjà
+    # changé. Ces tests échouaient donc deux heures par nuit.
+    today = DailyJournal._today_date().isoformat()
     row = await db_inst.fetch_one("SELECT * FROM journal_archive WHERE date = ?", (today,))
     assert row is None
     await db_inst.close()
