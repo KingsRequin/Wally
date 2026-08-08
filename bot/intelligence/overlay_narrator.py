@@ -1499,6 +1499,37 @@ class OverlayNarrator:
         logger.info("Overlay: podium des clips ({n})", n=len(rows))
         return {"widget": "clip_top", "count": len(rows), "best": rows[0]["title"]}
 
+    # Ce qu'un raid remercie : le nom passe en grand, il doit tenir sur la carte.
+    _MAX_RAIDER_CHARS = 24
+
+    def celebrate_raid(self, raider: str, viewers: int = 0) -> bool:
+        """Accueille un raid à l'écran : le nom, le nombre, et des confettis.
+
+        Volontairement HORS du budget `_may_react()`. Ce budget espace les
+        événements pour ne pas saturer l'overlay, et il a raison de le faire
+        pour un emote qui déferle — mais un raid arrive quand il arrive. Le
+        rater parce qu'une vague d'emotes vient de passer coûte infiniment plus
+        cher qu'un widget de trop : c'est le seul moment où des inconnus
+        débarquent, et où quelqu'un mérite d'être remercié par son nom.
+
+        Reste soumis au live : hors stream, personne ne regarde l'overlay.
+        """
+        if not self._live():
+            return False
+        self._last_event_at = time.monotonic()
+        try:
+            compte = max(0, int(viewers or 0))
+        except (TypeError, ValueError):
+            compte = 0        # Twitch a renvoyé n'importe quoi : on montre quand même
+        self._feed.widget(
+            "raid",
+            raider=str(raider or "").strip()[:self._MAX_RAIDER_CHARS],
+            viewers=compte,
+            duration=10,
+        )
+        logger.info("Overlay: raid de {r} ({n} spectateurs)", r=raider or "?", n=compte)
+        return True
+
     def show_emote_wave(self, emote: str) -> bool:
         """Signale que le chat spamme le même emote."""
         if not self._may_react():

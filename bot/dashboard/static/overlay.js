@@ -405,6 +405,29 @@
       return box;
     },
 
+    raid(p) {
+      // Le moment le plus fort d'un live : des inconnus débarquent d'un coup.
+      // Le NOM domine la carte — c'est quelqu'un qu'on remercie, pas un compteur.
+      const box = el("div", "raid");
+      const tag = el("div", "raid-tag");
+      tag.textContent = "RAID";
+      const nom = el("div", "raid-name");
+      const raider = String(p.raider || "").trim();
+      nom.textContent = raider ? `Merci ${raider} !` : "On se fait raid !";
+      box.append(tag, nom);
+
+      // Twitch peut annoncer un raid sans compte fiable : plutôt rien qu'un
+      // « 0 spectateur » qui sonne comme un échec.
+      const n = Number(p.viewers) || 0;
+      if (n > 0) {
+        const compte = el("div", "raid-count");
+        compte.textContent = n > 1
+          ? `${n} personnes débarquent` : "une personne débarque";
+        box.appendChild(compte);
+      }
+      return box;
+    },
+
     wave(p) {
       // Le chat spamme : l'emote arrive en grand, une fois. Pas de compteur —
       // le nombre n'ajoute rien, c'est le déferlement qu'on montre.
@@ -805,6 +828,37 @@
     widgetTimer = setTimeout(clearWidgets, 300);   // le temps de la sortie animée
   }
 
+  // Les couleurs de l'overlay, pas celles de la fête foraine : le violet des
+  // accents et le cyan, plus un or qui accroche l'œil sur une image de jeu.
+  const CONFETTI_COLORS = ["#b79cff", "#06b6d4", "#ffd166", "#ffffff"];
+
+  function burstConfetti(viewers) {
+    // Absente si le fichier n'a pas été servi : un overlay sans confettis reste
+    // un overlay, alors qu'une exception ici tuerait tout le rendu du widget.
+    if (typeof window.confetti !== "function") return;
+
+    // Un raid de 5 et un raid de 300, ce n'est pas le même moment — mais le
+    // plafond compte autant : l'overlay tourne à côté du jeu et de l'encodage.
+    const n = Math.max(0, Number(viewers) || 0);
+    const count = Math.round(60 + Math.min(n, 200) * 0.7);   // 60 → 200
+
+    // Deux canons depuis les bas-côtés : les particules montent en croisant
+    // l'écran. Tirer du centre les ferait retomber sur la carte et la masquer.
+    for (const x of [0.1, 0.9]) {
+      window.confetti({
+        particleCount: Math.round(count / 2),
+        angle: x < 0.5 ? 60 : 120,
+        spread: 62,
+        startVelocity: 48,
+        origin: { x, y: 0.95 },
+        colors: CONFETTI_COLORS,
+        disableForReducedMotion: false,
+        scalar: 0.9,
+        ticks: 220,          // ~3,5 s de vol : la carte en reste 10
+      });
+    }
+  }
+
   function renderWidget(kind, params, build) {
     clearTimeout(widgetTimer);
 
@@ -842,6 +896,11 @@
     // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
     // sa place.
     document.body.classList.add("widget-on");
+
+    // Les confettis vivent HORS du builder : ils ne sont pas un élément du
+    // widget mais un effet plein écran, et ils doivent partir au moment exact
+    // où la carte apparaît — pas à sa construction.
+    if (kind === "raid" && !refresh) burstConfetti(params.viewers);
 
     // Une partie en cours ne s'efface pas toute seule : le pendu doit rester
     // sous les yeux du chat tant qu'on y joue. Un booléen plutôt qu'une durée

@@ -560,6 +560,41 @@
     }
 
     /* Vague d'emote — elle surgit et repart : c'est un éclat, pas un panneau. */
+    /* Raid — le nom de celui qui débarque, en grand. La carte doit tenir tête
+       aux confettis qui traversent l'écran derrière elle, d'où le fond plus
+       opaque et la bordure dorée. */
+    .raid {
+      padding: 14px 26px;
+      background: rgba(18, 18, 22, .92);
+      border: 1px solid rgba(255, 209, 102, .45);
+      border-radius: 16px;
+      text-align: center;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+      box-shadow: 0 4px 24px rgba(255, 209, 102, .16);
+      animation: raid-in .55s cubic-bezier(.22, 1.5, .4, 1);
+    }
+    .raid-tag {
+      font-size: 10.5px; font-weight: 800; letter-spacing: .22em;
+      color: #ffd166; margin-bottom: 4px;
+    }
+    .raid-name {
+      font-size: 25px; font-weight: 800; line-height: 1.15;
+      /* Un pseudo long est déjà borné côté serveur, mais un mot sans espace
+         peut encore déborder : il se coupe plutôt que d'élargir la carte. */
+      max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .raid-count {
+      margin-top: 5px; font-size: 12.5px;
+      color: rgba(255, 255, 255, .62);
+      font-variant-numeric: tabular-nums;
+    }
+    @keyframes raid-in {
+      0%   { transform: scale(.72) translateY(14px); opacity: 0; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
     .wave {
       padding: 10px 18px;
       background: rgba(18, 18, 22, .85);
@@ -941,6 +976,10 @@
 
   <div id="widgets"></div>
 
+  <!-- canvas-confetti (ISC) — servi en local, jamais depuis un CDN : l'overlay
+       tourne dans OBS et ne doit dépendre d'aucun réseau tiers.
+       Voir bot/dashboard/static/vendor/README.md -->
+  <script src="/static/vendor/canvas-confetti.js"></script>
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay.js"></script>
 </body>

@@ -82,6 +82,18 @@ def _goal(bot: "WallyTwitch", kind: str, amount: int = 1) -> None:
         logger.warning("Objectif d'overlay non mis à jour : {e}", e=exc)
 
 
+def _celebrate_raid(bot: "WallyTwitch", raider: str, viewers: int) -> None:
+    """Accueille le raid à l'écran. Comme `_goal`, jamais bloquant : rater les
+    confettis ne doit pas empêcher le remerciement dans le chat."""
+    narrator = getattr(getattr(bot, "discord_bot", None), "overlay_narrator", None)
+    if narrator is None:
+        return
+    try:
+        narrator.celebrate_raid(raider, viewers)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Raid non célébré à l'écran : {e}", e=exc)
+
+
 def _bits_joy(amount: int) -> float:
     """Map bits amount to joy delta per the design spec."""
     if amount >= 1000:
@@ -265,6 +277,11 @@ def register_events(bot: "WallyTwitch") -> None:
             _check_peak(bot, "curiosity", old_curiosity, curiosity_spike, username=payload.data.raider.name, event_name="raid_massive")
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
+        # AVANT la sortie ci-dessous, comme le flux et l'émotion : accueillir les
+        # arrivants à l'écran n'a rien à voir avec le message automatique du chat.
+        # Les lier reproduirait le défaut du 2026-08-07 — message coupé, raid
+        # invisible.
+        _celebrate_raid(bot, payload.data.raider.name, viewers)
         if not cfg or not cfg.active:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
