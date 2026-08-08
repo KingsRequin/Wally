@@ -426,13 +426,11 @@ def _overlay_outcome(shown: dict) -> str:
         return f"Le podium est à l'écran : {podium}. Annonce-le." if podium else \
                "Le podium est à l'écran."
     if widget == "rps":
-        if shown.get("outcome"):
-            verdict = {"wally": "tu gagnes", "chat": "le chat gagne",
-                       "draw": "égalité"}.get(shown["outcome"], shown["outcome"])
-            return (f"Chifoumi tranché : le chat jouait {shown.get('chat')}, toi "
-                    f"{shown.get('mine')} — {verdict}. Annonce-le.")
-        return ("Le chifoumi est ouvert, le chat vote son coup. Tu auras le "
-                "résultat à la fin — ne l'invente pas d'ici là.")
+        adversaire = shown.get("opponent") or "le chat"
+        verdict = {"wally": "tu gagnes", "opponent": f"{adversaire} gagne",
+                   "draw": "égalité"}.get(shown.get("outcome"), "")
+        return (f"Chifoumi tranché : {adversaire} a joué {shown.get('theirs')}, "
+                f"toi {shown.get('mine')} — {verdict}. Annonce-le.")
     if widget == "bingo":
         cells = shown.get("cells") or []
         done = shown.get("done") or []
@@ -454,11 +452,15 @@ def _overlay_outcome(shown: dict) -> str:
     return f"'{widget}' est à l'écran."
 
 
-def run_overlay_tool(bot, args: dict) -> str:
+def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
     """Exécute `show_overlay` et rend un compte rendu HONNÊTE.
 
     Un refus doit être explicite : sinon Wally annonce « c'est affiché » alors
     que rien n'est monté à l'écran.
+
+    `requester` est le nom de qui parle, tel que le chat le connaît. Il vient de
+    l'appelant, JAMAIS du modèle : c'est le nom affiché sous la main adverse du
+    chifoumi, et Wally ne doit pas pouvoir faire jouer quelqu'un d'autre.
     """
     narrator = _overlay_narrator(bot)
     if narrator is None:
@@ -467,6 +469,8 @@ def run_overlay_tool(bot, args: dict) -> str:
     widget = str(args.get("widget") or "").strip()
     extra = {k: v for k, v in args.items()
              if k not in ("widget", "comment", "result") and v is not None}
+    if widget == "rps":
+        extra["opponent"] = requester
     try:
         shown = narrator.show_widget(
             widget, str(args.get("comment") or ""), result=args.get("result"), **extra
@@ -2260,7 +2264,9 @@ async def _respond(
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
             if name == "show_overlay":
-                return run_overlay_tool(bot, args)
+                return run_overlay_tool(
+                    bot, args, requester=message.author.display_name
+                )
             if name == "cancel_overlay":
                 return run_overlay_cancel_tool(bot, args)
             if name == "show_clip":

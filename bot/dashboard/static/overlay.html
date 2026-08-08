@@ -693,25 +693,17 @@
       font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
       color: rgba(255, 255, 255, .6); margin-bottom: 10px;
     }
-    .rps-choices { display: flex; justify-content: space-around; }
-    .rps-choice {
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
-      animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
-      animation-delay: calc(var(--i, 0) * 80ms + 100ms);
-    }
     .rps-hand { font-size: 38px; line-height: 1; }
-    .rps-hand.small { font-size: 30px; }
-    .rps-label { font-size: 11.5px; color: rgba(255, 255, 255, .6); }
-    .rps-score { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .rps-left {
-      margin-top: 8px; font-size: 12px; color: #b79cff;
-      font-variant-numeric: tabular-nums;
-    }
 
     /* Duel */
     .rps-duel { display: flex; align-items: center; justify-content: center; gap: 18px; }
     .rps-side { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    .rps-name { font-size: 11.5px; color: rgba(255, 255, 255, .6); }
+    /* Le pseudo peut être long : il se coupe plutôt que d'écarter les mains. */
+    .rps-name {
+      font-size: 11.5px; color: rgba(255, 255, 255, .6);
+      max-width: 120px; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
     .rps-vs {
       font-size: 13px; font-weight: 800; letter-spacing: .08em;
       color: rgba(255, 255, 255, .35);
@@ -739,10 +731,9 @@
       /* Le verdict n'apparaît qu'une fois les mains posées. */
       animation: opt-in .4s cubic-bezier(.22, 1.3, .4, 1) 1.15s backwards;
     }
-    .rps.chat  .rps-verdict { color: #7dffb0; }
-    .rps.wally .rps-verdict { color: #ffb066; }
-    .rps.draw  .rps-verdict,
-    .rps.void  .rps-verdict { color: rgba(255, 255, 255, .6); }
+    .rps.opponent .rps-verdict { color: #7dffb0; }
+    .rps.wally    .rps-verdict { color: #ffb066; }
+    .rps.draw     .rps-verdict { color: rgba(255, 255, 255, .6); }
 
     /* Meme de la communauté — l'image commande, la légende reste discrète.
        Bornée en hauteur : une image verticale sortirait du cadre. */

@@ -168,7 +168,7 @@ def make_tool_executor(
         if name in ("start_counting", "stop_counting", "list_counters"):
             return await run_tally_tool(bot, name, args)
         if name == "show_overlay":
-            return run_overlay_tool(bot, args)
+            return run_overlay_tool(bot, args, requester=author)
         if name == "cancel_overlay":
             return run_overlay_cancel_tool(bot, args)
         if name == "show_clip":

@@ -75,20 +75,5 @@ async def test_j_ai_2_chats_ne_vote_toujours_pas():
     assert not n._poll["votes"]
 
 
-# ── le chifoumi ─────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_un_coup_precede_d_une_mention_compte():
-    n = _narrateur()
-    n.start_rps(seconds=60)
-    await n.on_chat_message("kingsrequin", "@WallyTeBully 2")
-    assert n._rps["votes"].get("kingsrequin") is not None
-
-
-@pytest.mark.asyncio
-async def test_le_nom_du_coup_avec_mention_compte():
-    n = _narrateur()
-    n.start_rps(seconds=60)
-    await n.on_chat_message("kingsrequin", "@WallyTeBully pierre")
-    assert n._rps["votes"].get("kingsrequin") is not None
+# Le chifoumi ne lit plus le chat : il se tranche à l'instant où on le demande,
+# sans vote. Ses deux cas de mention sont partis avec le comptage.

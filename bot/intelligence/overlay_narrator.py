@@ -156,7 +156,8 @@ OVERLAY_TOOL_SPEC = {
                         "tapant le numéro · stats = les chiffres d'un joueur · "
                         "versus = compare deux joueurs sur une valeur · "
                         "meme = une image de la communauté · "
-                        "rps = chifoumi, le chat vote contre toi · "
+                        "rps = chifoumi contre celui qui te le demande, "
+                        "tranché sur-le-champ · "
                         "bingo = une grille de pronostics sur le live · "
                         "hangman = le pendu — TU choisis le mot et tu lances "
                         "dans la foulée, le chat propose ensuite des lettres, "
@@ -225,21 +226,13 @@ OVERLAY_TOOL_SPEC = {
                     "restants. Ne l'écris donc pas dans le chat au lancement."
                 )},
                 "done": {"type": "string", "description": "Pour countdown : le texte affiché quand le compte à rebours arrive à zéro."},
-                "close": {
-                    "type": "boolean",
-                    "description": (
-                        "Pour rps : clôt la manche en cours au lieu d'en ouvrir "
-                        "une. Sers-t'en pour trancher toi-même, ou pour libérer "
-                        "un chifoumi resté ouvert."
-                    ),
-                },
                 "move": {
                     "type": "string",
                     # En FRANÇAIS : c'est ce que `_RPS_MOVES` compare. Un enum en
                     # anglais faisait retomber la triche sur un tirage au hasard,
                     # Wally annonçant un coup et l'overlay en affichant un autre.
                     "enum": list(_RPS_MOVES),
-                    "description": "Pour rps avec close : le coup que TU joues. Omets-le pour un tirage honnête.",
+                    "description": "Pour rps : le coup que TU joues. Omets-le pour un tirage honnête.",
                 },
             },
             "required": ["widget"],
@@ -269,8 +262,9 @@ def current_overlay_state_block() -> Optional[str]:
 # avant que la classe ne soit définie, et les deux doivent rester d'accord —
 # une cible acceptée par l'enum mais inconnue de `cancel()` répondrait
 # « rien en cours » sur une demande pourtant valide.
-CANCEL_TARGETS = ("ecran", "bingo", "pendu", "sondage", "chifoumi",
-                  "objectif", "tout")
+# Le chifoumi n'y est plus : il se tranche à l'instant où on le demande, il ne
+# laisse donc rien d'ouvert à abandonner.
+CANCEL_TARGETS = ("ecran", "bingo", "pendu", "sondage", "objectif", "tout")
 
 
 CANCEL_TOOL_SPEC = {
@@ -283,7 +277,7 @@ CANCEL_TOOL_SPEC = {
             "on te demande d'annuler ou d'enlever un truc — et de toi-même quand "
             "une partie traîne sans que personne y joue. Tu peux refuser, comme "
             "pour le reste. ⚠️ Un abandon ne donne PAS de résultat : un sondage "
-            "annulé n'est pas dépouillé, un chifoumi annulé n'a pas de gagnant — "
+            "annulé n'est pas dépouillé, un pendu annulé n'a pas de gagnant — "
             "ne les annonce pas. N'affirme jamais avoir annulé sans appeler cet "
             "outil : il te dira s'il y avait vraiment quelque chose."
         ),
@@ -296,7 +290,7 @@ CANCEL_TOOL_SPEC = {
                     "description": (
                         "ecran = ce qui est affiché maintenant (un meme, un "
                         "message épinglé, un compteur) sans toucher aux parties "
-                        "en cours · bingo · pendu · sondage · chifoumi · "
+                        "en cours · bingo · pendu · sondage · "
                         "objectif = la partie correspondante est abandonnée · "
                         "tout = l'écran ET toutes les parties. Dans le doute "
                         "entre « enlève ce qui est affiché » et « annule le "
@@ -418,9 +412,6 @@ class OverlayNarrator:
         self._last_poll: Optional[dict] = None
         # Grille du bingo (widget 20) : vit le temps d'un live.
         self._bingo: Optional[dict] = None
-        # Chifoumi en cours (widget « le chat contre Wally »).
-        self._rps: Optional[dict] = None
-        self._rps_task: Optional[asyncio.Task] = None
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
@@ -732,8 +723,12 @@ class OverlayNarrator:
                 return json.dumps({"status": "ok", "cancelled": ", ".join(done)})
             extra = {k: v for k, v in args.items()
                      if k not in ("widget", "comment", "result") and v is not None}
+            widget = str(args.get("widget") or "")
+            if widget == "rps":
+                # Celui qui a demandé le duel à voix haute en est l'adversaire.
+                extra["opponent"] = speaker
             out = self.show_widget(
-                str(args.get("widget") or ""), str(args.get("comment") or ""),
+                widget, str(args.get("comment") or ""),
                 result=args.get("result"), **extra,
             )
             if out is None:
@@ -932,18 +927,13 @@ class OverlayNarrator:
                 c for c in self._fold(mot) if c.isalpha()))}
 
         elif widget == "rps":
-            # Deux gestes : ouvrir la manche, ou la trancher (rare — la clôture
-            # est planifiée, mais Wally peut vouloir couper court).
-            if extra.get("close"):
-                return self.close_rps(str(extra.get("move") or ""))
-            try:
-                seconds = int(extra.get("seconds") or result or 15)
-            except (TypeError, ValueError):
-                seconds = 15
-            if not self.start_rps(seconds):
-                return None
-            return {"widget": "rps", "seconds": seconds}
-
+            # Un duel tranché sur-le-champ. Le chat votait quinze secondes et
+            # Wally jouait contre la majorité : trop long pour ce que c'est, on
+            # demande un chifoumi comme on demande un pile ou face.
+            return self.play_rps(
+                str(extra.get("opponent") or "").strip()[:24],
+                str(extra.get("move") or ""),
+            )
         elif widget == "meme":
             # L'image est choisie ICI : Wally ne la voit pas, il ne connaît que
             # sa description — c'est elle qui lui permet de commenter juste.
@@ -1074,7 +1064,6 @@ class OverlayNarrator:
         # les trois, plutôt que dans chacun.
         played = _strip_address(text)
         self._count_vote(author, played)
-        self._count_rps(author, played)
         self._count_hangman(author, played)
         await self._maybe_greet(author, days_since)
 
@@ -1124,7 +1113,6 @@ class OverlayNarrator:
         self._goal = None
         self._recent_bubbles.clear()
         self._talkers.clear()
-        self._rps = None
         self._hangman = None
 
     # ── annulation ────────────────────────────────────────────────────────
@@ -1133,7 +1121,7 @@ class OverlayNarrator:
         """Retire ce qui est à l'écran, ou abandonne une partie en cours.
 
         Un ABANDON, pas une clôture : un sondage annulé ne dépouille pas et un
-        chifoumi annulé ne rend pas de verdict. Passer par `close_poll()` ferait
+        pendu annulé ne rend pas de verdict. Passer par `close_poll()` ferait
         annoncer un gagnant à une manche qu'on vient justement d'interrompre.
 
         Volontairement insensible au live : on annule aussi — et surtout — quand
@@ -1164,10 +1152,6 @@ class OverlayNarrator:
             self._poll = None
             self._cancel_task("_poll_task")
             done.append("sondage")
-        if (everything or target == "chifoumi") and self._rps:
-            self._rps = None
-            self._cancel_task("_rps_task")
-            done.append("chifoumi")
 
         # L'écran est nettoyé dès qu'on annule quoi que ce soit : abandonner le
         # bingo en laissant sa grille affichée n'aurait aucun sens.
@@ -1218,8 +1202,6 @@ class OverlayNarrator:
             lines.append(f"Objectif « {goal['label']} » : {goal['count']}/{goal['target']}.")
         if self._poll:
             lines.append(f"Sondage en cours : « {self._poll['question']} ».")
-        if self._rps:
-            lines.append("Chifoumi ouvert, le chat vote son coup.")
         if lines:
             lines.append("Tu peux annuler ce qui traîne avec `cancel_overlay`.")
         if self.force_live_remaining() > 0:
@@ -1688,101 +1670,36 @@ class OverlayNarrator:
             duration=12 if (won or lost) else 10,
         )
 
-    # ── chifoumi : le chat contre Wally ───────────────────────────────────
+    # ── chifoumi : un duel, Wally contre celui qui demande ────────────────
 
     _RPS_MOVES = _RPS_MOVES      # alias : les appels internes restent en `self.`
     # Ce que chaque coup bat : sert à trancher sans table de vérité à rallonge.
     _RPS_BEATS = {"pierre": "ciseaux", "feuille": "pierre", "ciseaux": "feuille"}
 
-    def start_rps(self, seconds: int = 15) -> bool:
-        """Ouvre un chifoumi : le chat vote, Wally jouera contre la majorité."""
-        if not self._live() or self._rps is not None:
-            return False
-        seconds = max(5, min(60, int(seconds or 15)))
-        self._rps = {"votes": {}, "ends_at": time.monotonic() + seconds}
-        self._feed.widget("rps", phase="voting", seconds=seconds,
-                          tally=[0, 0, 0], duration=seconds + 2)
-        self._schedule_rps_close(seconds)
-        logger.info("Overlay: chifoumi ouvert ({s}s)", s=seconds)
-        return True
+    def play_rps(self, opponent: str = "", move: str = "") -> Optional[dict]:
+        """Un duel : les deux coups sont tirés, le vainqueur s'affiche.
 
-    def _schedule_rps_close(self, seconds: int) -> None:
-        if self._rps_task is not None:
-            self._rps_task.cancel()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self._rps_task = None      # hors boucle (tests synchrones)
-            return
-        self._rps_task = loop.create_task(self._close_rps_after(seconds))
-
-    async def _close_rps_after(self, seconds: int) -> None:
-        try:
-            await asyncio.sleep(seconds)
-            self.close_rps()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("Overlay: clôture du chifoumi en erreur: {e}", e=exc)
-
-    def _count_rps(self, author: str, text: str) -> None:
-        """Un vote = le nom du coup, ou son numéro. Un seul par personne."""
-        rps = self._rps
-        if not rps:
-            return
-        if time.monotonic() > rps["ends_at"]:
-            # Filet symétrique à celui du sondage : si la tâche de clôture a été
-            # perdue (ouverture hors boucle asyncio, annulation), `self._rps`
-            # restait renseigné pour toujours et `start_rps` refusait TOUTES les
-            # manches suivantes jusqu'au prochain live.
-            self.close_rps()
-            return
-        token = " ".join((text or "").lower().split())
-        move = None
-        if token.isdigit() and 1 <= int(token) <= 3:
-            move = self._RPS_MOVES[int(token) - 1]
-        else:
-            # Le mot doit être SEUL : « pierre » compte, « la pierre du temple » non.
-            for name in self._RPS_MOVES:
-                if token == name:
-                    move = name
-                    break
-        if move is None:
-            return
-        voter = author.lower()
-        if rps["votes"].get(voter) == move:
-            return
-        rps["votes"][voter] = move
-        tally = [sum(1 for m in rps["votes"].values() if m == n) for n in self._RPS_MOVES]
-        self._feed.widget("rps", phase="voting", tally=tally,
-                          seconds=max(1, int(rps["ends_at"] - time.monotonic())),
-                          duration=8)
-
-    def close_rps(self, wally_move: str = "") -> Optional[dict]:
-        """Tranche la manche : le coup majoritaire du chat contre celui de Wally."""
-        rps = self._rps
-        if not rps:
+        `move` impose celui de Wally — le tirage se fait ici et non dans le
+        navigateur, c'est ce qui lui permet de tricher. `opponent` est la
+        personne qui a demandé à jouer ; il vient de l'appelant, pas du modèle.
+        """
+        if not self._live():
             return None
-        self._rps = None
-        tally = [sum(1 for m in rps["votes"].values() if m == n) for n in self._RPS_MOVES]
-        if not any(tally):
-            self._feed.widget("rps", phase="void", tally=tally, duration=6)
-            logger.info("Overlay: chifoumi clos sans vote")
-            return {"widget": "rps", "outcome": "void"}
-        chat = self._RPS_MOVES[tally.index(max(tally))]
-        # Wally peut imposer son coup — c'est ce qui lui permet de tricher.
-        mine = wally_move if wally_move in self._RPS_MOVES else random.choice(self._RPS_MOVES)
-        if mine == chat:
+        mine = move if move in self._RPS_MOVES else random.choice(self._RPS_MOVES)
+        theirs = random.choice(self._RPS_MOVES)
+        if mine == theirs:
             outcome = "draw"
-        elif self._RPS_BEATS[mine] == chat:
+        elif self._RPS_BEATS[mine] == theirs:
             outcome = "wally"
         else:
-            outcome = "chat"
-        self._feed.widget("rps", phase="result", tally=tally, chat=chat,
-                          mine=mine, outcome=outcome, duration=10)
-        logger.info("Overlay: chifoumi — chat {c} / Wally {m} → {o}",
-                    c=chat, m=mine, o=outcome)
-        return {"widget": "rps", "chat": chat, "mine": mine, "outcome": outcome}
+            outcome = "opponent"
+        opponent = opponent or "le chat"
+        self._feed.widget("rps", mine=mine, theirs=theirs, opponent=opponent,
+                          outcome=outcome, duration=10)
+        logger.info("Overlay: chifoumi — {o} {t} / Wally {m} → {r}",
+                    o=opponent, t=theirs, m=mine, r=outcome)
+        return {"widget": "rps", "mine": mine, "theirs": theirs,
+                "opponent": opponent, "outcome": outcome}
 
     # ── sondage (widget 6) ────────────────────────────────────────────────
 

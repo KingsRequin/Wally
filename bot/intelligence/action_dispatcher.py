@@ -360,6 +360,10 @@ class ActionDispatcher:
             # « données manquantes » — un diagnostic trompeur.
             extra = {k: v for k, v in args.items()
                      if k not in ("widget", "comment", "result") and v is not None}
+            # Personne ne l'a sollicité ici : c'est une initiative. L'adversaire
+            # du chifoumi vient toujours de l'appelant — sur ce chemin il n'y en
+            # a pas, et le modèle ne doit pas pouvoir en désigner un.
+            extra.pop("opponent", None)
             shown = self._overlay_narrator.show_widget(
                 widget, comment, result=args.get("result"), **extra
             )

@@ -500,63 +500,41 @@
     },
 
     rps(p) {
-      const MOVES = ["pierre", "feuille", "ciseaux"];
+      // Un duel, tranché d'un coup : plus de phase de vote. Le serveur envoie
+      // les deux coups déjà tirés — le navigateur ne fait que les jouer.
       const HANDS = { pierre: "✊", feuille: "✋", ciseaux: "✌️" };
       const box = el("div", "rps");
 
-      if (p.phase === "result" || p.phase === "void") {
-        const duel = el("div", "rps-duel");
-        // Les deux mains « secouent » puis se figent sur le coup joué : c'est
-        // le geste du vrai jeu, sans lui le résultat tombe sans suspense.
-        const side = (who, move, label) => {
-          const c = el("div", `rps-side ${who}`);
-          const hand = el("div", "rps-hand");
-          hand.textContent = HANDS[move] || "✊";
-          const name = el("div", "rps-name");
-          name.textContent = label;
-          c.append(hand, name);
-          return c;
-        };
-        duel.append(side("chat", p.chat, "Le chat"),
-                    el("div", "rps-vs"),
-                    side("wally", p.mine, "Wally"));
-        duel.querySelector(".rps-vs").textContent = "VS";
-        box.appendChild(duel);
-
-        const verdict = el("div", "rps-verdict");
-        verdict.textContent =
-          p.phase === "void" ? "personne n'a joué"
-          : p.outcome === "draw" ? "égalité"
-          : p.outcome === "chat" ? "le chat gagne"
-          : "Wally gagne";
-        box.classList.add(p.outcome || "void");
-        box.appendChild(verdict);
-        return box;
-      }
-
-      // Phase de vote : on montre les trois coups et leurs scores.
       const title = el("div", "rps-title");
-      title.textContent = "Chifoumi — tapez 1, 2 ou 3";
+      title.textContent = "Chifoumi";
       box.appendChild(title);
-      const row = el("div", "rps-choices");
-      MOVES.forEach((move, i) => {
-        const c = el("div", "rps-choice");
-        c.style.setProperty("--i", String(i));
-        const hand = el("div", "rps-hand small");
-        hand.textContent = HANDS[move];
-        const label = el("div", "rps-label");
-        label.textContent = `${i + 1}. ${move}`;
-        const score = el("div", "rps-score");
-        score.textContent = String((p.tally || [])[i] || 0);
-        c.append(hand, label, score);
-        row.appendChild(c);
-      });
-      box.appendChild(row);
-      if (p.seconds > 0) {
-        const left = el("div", "rps-left");
-        left.textContent = `${p.seconds}s`;
-        box.appendChild(left);
-      }
+
+      const duel = el("div", "rps-duel");
+      // Les deux mains « secouent » puis se figent sur le coup joué : c'est le
+      // geste du vrai jeu, sans lui le résultat tombe sans suspense.
+      const side = (who, move, label) => {
+        const c = el("div", `rps-side ${who}`);
+        const hand = el("div", "rps-hand");
+        hand.textContent = HANDS[move] || "✊";
+        const name = el("div", "rps-name");
+        name.textContent = label;
+        c.append(hand, name);
+        return c;
+      };
+      const adversaire = String(p.opponent || "le chat");
+      duel.append(side("opponent", p.theirs, adversaire),
+                  el("div", "rps-vs"),
+                  side("wally", p.mine, "Wally"));
+      duel.querySelector(".rps-vs").textContent = "VS";
+      box.appendChild(duel);
+
+      const verdict = el("div", "rps-verdict");
+      verdict.textContent =
+        p.outcome === "draw" ? "égalité"
+        : p.outcome === "opponent" ? `${adversaire} gagne`
+        : "Wally gagne";
+      box.classList.add(p.outcome || "draw");
+      box.appendChild(verdict);
       return box;
     },
 
@@ -839,8 +817,10 @@
     // rejouaient leur animation d'entrée à chaque mise à jour. Faute d'une
     // mutation en place pour chacun, on se contente de ne pas les faire
     // clignoter : on reconstruit sans relancer la cascade d'apparition.
+    // Pas `rps` : un chifoumi est un affichage unique, deux duels de suite sont
+    // deux animations. Le retenir ici privait le second de sa cascade d'entrée.
     const refresh = current && current.dataset.kind === kind
-      && (kind === "rps" || kind === "bingo" || kind === "hangman");
+      && (kind === "bingo" || kind === "hangman");
     if (kind === "poll" && poll) {
       // Mutation en place : reconstruire relancerait la cascade d'entrée et
       // ferait repartir chaque barre de zéro à chaque vote.
@@ -878,7 +858,7 @@
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
-      // autre chose. Vaut pour rps, bingo, hangman et poll.
+      // autre chose. Vaut pour bingo, hangman et poll.
       widgetTimer = setTimeout(() => {
         clearWidgets();
         playNext();       // la suivante prend le relais, si elle a tenu

@@ -5,7 +5,6 @@ qu'ils partagent une racine : des fonctionnalités livrées mais inatteignables 
 live, que les tests existants ne voyaient pas — ils appelaient chaque méthode
 isolément, alors que la production les enchaîne.
 """
-import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -58,10 +57,16 @@ async def test_le_palier_reste_soumis_au_budget_des_bulles():
 
 def test_le_schema_declare_tout_ce_que_show_widget_lit():
     """`hangman` était dans l'enum sans `word` ni `hint` : le modèle ne pouvait
-    pas les transmettre, donc le pendu ne se lançait jamais par la voix."""
+    pas les transmettre, donc le pendu ne se lançait jamais par la voix.
+
+    Une seule exception, volontaire : `opponent`. Il est lu par `show_widget`
+    mais l'appelant l'impose — le déclarer laisserait Wally faire jouer
+    quelqu'un qui n'a rien demandé. Voir `test_l_adversaire_ne_vient_pas_du_modele`.
+    """
     props = OVERLAY_TOOL_SPEC["function"]["parameters"]["properties"]
-    for name in ("word", "hint", "close", "move", "done"):
+    for name in ("word", "hint", "move", "done"):
         assert name in props, f"{name} lu par show_widget mais absent du schéma"
+    assert "opponent" not in props
 
 
 def test_chaque_widget_de_lenum_est_decrit():
@@ -168,16 +173,8 @@ def test_un_nouveau_sondage_clot_le_precedent():
 
 
 # ── 7. chifoumi resté ouvert ──
-
-def test_un_chifoumi_perime_se_clot_au_vote_suivant():
-    """La tâche de clôture peut être perdue (ouverture hors boucle asyncio) :
-    `self._rps` restait renseigné et bloquait toutes les manches suivantes."""
-    n, _ = _n()
-    assert n.start_rps(seconds=5)
-    n._rps["ends_at"] = time.monotonic() - 1
-    n._count_rps("alice", "pierre")
-    assert n._rps is None
-    assert n.start_rps(seconds=5) is True
+# Défaut disparu avec sa cause : le chifoumi ne reste plus ouvert du tout, il
+# est tranché dans l'appel qui le demande. Voir tests/test_overlay_rps_duel.py.
 
 
 # ── 8. purge du détecteur de vagues d'emotes ──
