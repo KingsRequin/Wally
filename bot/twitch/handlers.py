@@ -513,6 +513,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     args.get("action", ""),
                     player_name=args.get("player_name", ""),
                     platform=args.get("platform", "PC"),
+                    remember=bool(args.get("remember")),
+                    # L'identité vient d'ICI, jamais du modèle : c'est ce qui
+                    # empêche de déclarer le compte Apex de quelqu'un d'autre.
+                    requester=f"twitch:{user_id}",
+                    requester_name=author,
                 )
             if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
                 badges = getattr(payload, "badges", []) or []

@@ -2275,6 +2275,11 @@ async def _respond(
                     args.get("action", ""),
                     player_name=args.get("player_name", ""),
                     platform=args.get("platform", "PC"),
+                    remember=bool(args.get("remember")),
+                    # L'identité vient d'ICI, jamais du modèle : c'est ce qui
+                    # empêche de déclarer le compte Apex de quelqu'un d'autre.
+                    requester=f"discord:{message.author.id}",
+                    requester_name=message.author.display_name,
                 )
             if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
                 if "⏱️" not in _reaction_emojis:

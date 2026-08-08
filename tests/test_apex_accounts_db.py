@@ -8,9 +8,8 @@ La base passe par une fixture : sans `close()`, le thread d'aiosqlite survit au
 test et fait pendre pytest — ce qui arrive dès qu'une assertion échoue avant la
 fermeture écrite à la main.
 """
-import pytest_asyncio
-
 import pytest
+import pytest_asyncio
 
 from bot.db.database import Database
 

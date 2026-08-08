@@ -159,7 +159,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     else:
         logger.warning("ScrapeService disabled — FIRECRAWL_API_URL missing or disabled in config")
 
-    apex_api = ApexLegendsService()
+    apex_api = ApexLegendsService(db=db)
     if apex_api.available:
         logger.info("ApexLegendsService initialized")
     else:
