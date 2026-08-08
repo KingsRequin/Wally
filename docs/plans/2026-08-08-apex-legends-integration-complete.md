@@ -65,7 +65,7 @@ Un seul appel rend : `global` (nom, uid, avatar, plateforme, niveau +
 | | KingsRequin | Azrael_ttv |
 |---|---|---|
 | Kills | `career_kills` | **absent** — `specialEvent_kills`, libellé « BR Kills » |
-| Rang mondial par stat | `rank.rankPos` + `topPercent` | absent |
+| Rang mondial du total | `Global` → 432 897ᵉ, top 21,41 % | **aucun** (bloc `Global` vide) |
 | Top % du ladder | `No game this split` | `ALStopPercent` = 49.46 |
 
 Les trackers dépendent de ce que le joueur a épinglé en jeu, et changent au fil
@@ -79,6 +79,13 @@ des saisons.
 
 Idem pour le classement : `ALStopPercent` et `rank.rankPos` valent parfois une
 chaîne (`"No game this split"`) là où on attend un nombre.
+
+**Second piège, du même genre.** Les mêmes libellés de tracker existent sous
+chaque légende, mais n'y comptent pas la même chose : « BR Kills » sous Revenant
+classe les kills faits *avec Revenant*. Seul le bloc `legends.all.Global` classe
+le total carrière. Les confondre annonçait « Azraël, 92 182 kills, 3ᵉ mondial »
+au lieu de « pas de rang mondial » — faux d'un facteur mille. Le rang mondial se
+lit dans `Global` ou nulle part.
 
 ---
 
