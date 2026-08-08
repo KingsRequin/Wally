@@ -522,8 +522,9 @@
       box.appendChild(title);
 
       const duel = el("div", "rps-duel");
-      // Les deux mains « secouent » puis se figent sur le coup joué : c'est le
-      // geste du vrai jeu, sans lui le résultat tombe sans suspense.
+      // Les deux mains battent de haut en bas trois fois, ensemble, puis se
+      // posent sur le coup joué : c'est le geste du vrai jeu, sans lui le
+      // résultat tombe sans suspense. Le détail est dans `@keyframes rps-throw`.
       const side = (who, move, label) => {
         const c = el("div", `rps-side ${who}`);
         const hand = el("div", "rps-hand");
