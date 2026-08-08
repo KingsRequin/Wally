@@ -491,6 +491,13 @@ async def main() -> None:
         # Suivi passif du compte Apex du streamer. Voie SANS retour vers
         # l'action, comme StreamFeed : Wally SAIT qu'Azraël est en partie, il
         # n'en parle que si on l'y amène. Rien hors live.
+        # Les comptes qu'on connaît déjà : Azraël et son créateur n'ont pas à se
+        # présenter. Ce qui a été déclaré en direct n'est jamais écrasé.
+        if apex_api is not None:
+            from bot.core.apex.seed import seed_known_accounts
+
+            await seed_known_accounts(db, getattr(config.voice, "requesters", []))
+
         _apex_conf = getattr(config, "apex", None)
         if apex_api is not None and _apex_conf and _apex_conf.streamer_account:
             from bot.core.apex.watcher import ApexWatcher
@@ -499,6 +506,7 @@ async def main() -> None:
                 apex_api,
                 account=(_apex_conf.streamer_account, _apex_conf.streamer_platform),
                 is_live=lambda: bool(twitch_bot._stream_info.get("live")),
+                db=db,
             )
             apex_watcher.activate()
             _apex_task = asyncio.create_task(apex_watcher.run())

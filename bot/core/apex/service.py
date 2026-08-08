@@ -92,10 +92,12 @@ class ApexLegendsService:
         requester_name: str = "",
     ) -> str:
         cherche, platform = await self._resolve(player_name, platform, requester)
-        if not cherche:
+        uid = await self._resolve_uid(requester, player_name)
+        if not cherche and not uid:
             return "Il me faut un pseudo Apex pour chercher."
         data = await self._client.get(
-            "bridge", {"player": cherche, "platform": platform or "PC"}
+            "bridge", {**({"uid": uid} if uid else {"player": cherche}),
+                       "platform": platform or "PC"}
         )
         if isinstance(data, str):
             return data
@@ -107,12 +109,19 @@ class ApexLegendsService:
             await self._remember(profil, cherche, platform, requester, requester_name)
         return self._render_profile(profil)
 
-    async def fetch_profile(self, player: str, platform: str = "PC") -> PlayerProfile | None:
+    async def fetch_profile(
+        self, player: str, platform: str = "PC", uid: str | None = None
+    ) -> PlayerProfile | None:
         """Le profil d'un joueur, ou None. Brique commune au texte, aux panneaux
-        et au suivi passif — un seul endroit qui sait interroger `/bridge`."""
-        if not player:
+        et au suivi passif — un seul endroit qui sait interroger `/bridge`.
+
+        `uid` l'emporte sur le pseudo quand on l'a : un pseudo se change, un uid
+        non — et l'API accepte les deux.
+        """
+        if not player and not uid:
             return None
-        data = await self._client.get("bridge", {"player": player, "platform": platform or "PC"})
+        params = {"uid": uid} if uid else {"player": player}
+        data = await self._client.get("bridge", {**params, "platform": platform or "PC"})
         if isinstance(data, str):
             return None
         return read_profile(data)
@@ -140,6 +149,20 @@ class ApexLegendsService:
         if lien is None:
             return player_name, platform
         return lien["apex_name"], lien["apex_platform"] or platform
+
+    async def _resolve_uid(self, requester: str | None, player_name: str) -> str | None:
+        """L'uid mémorisé du joueur visé, s'il y en a un."""
+        if self._db is None:
+            return None
+        try:
+            lien = (
+                await self._db.apex_find_by_display_name(player_name)
+                if player_name
+                else (await self._db.apex_get_account(requester) if requester else None)
+            )
+        except Exception:  # noqa: BLE001 — l'uid est un confort, pas une condition
+            return None
+        return (lien["uid"] or None) if lien else None
 
     async def _remember(
         self, profil, cherche: str, platform: str, requester: str, requester_name: str
@@ -206,10 +229,12 @@ class ApexLegendsService:
             return None
         if panel in ("rank", "status", "stats"):
             cherche, platform = await self._resolve(player, platform, requester)
-            if not cherche:
+            uid = await self._resolve_uid(requester, player)
+            if not cherche and not uid:
                 return None
             data = await self._client.get(
-                "bridge", {"player": cherche, "platform": platform or "PC"}
+                "bridge", {**({"uid": uid} if uid else {"player": cherche}),
+                           "platform": platform or "PC"}
             )
             if isinstance(data, str):
                 return None

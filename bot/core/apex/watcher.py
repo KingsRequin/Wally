@@ -13,20 +13,26 @@ stream » n'a de sens que pour le stream en cours.
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Optional
+import json
+from collections.abc import Callable
+from typing import Optional
 
 from loguru import logger
 
 from bot.core.apex.reader import PlayerProfile
 
+# Le point de départ du live, rangé en base : un rebuild d'image en pleine
+# soirée remettait sinon la progression à zéro — et les rebuilds sont fréquents.
+BASELINE_KEY = "apex:live_baseline"
+
 # Le compte du streamer ne bouge pas plus vite que ça, et chaque passage coûte
 # un appel : 90 s tient le rythme d'une partie sans marteler l'API.
 POLL_INTERVAL_S = 90.0
 
-_active: "ApexWatcher | None" = None
+_active: ApexWatcher | None = None
 
 
-def current_apex_block() -> Optional[str]:
+def current_apex_block() -> str | None:
     """Le bloc Apex prêt à injecter au prompt, ou None si rien à dire."""
     if _active is None:
         return None
@@ -44,13 +50,16 @@ class ApexWatcher:
         account: tuple[str, str] | None,
         is_live: Callable[[], bool],
         interval_s: float = POLL_INTERVAL_S,
+        db=None,
     ) -> None:
         self._service = service
         self._account = account
         self._is_live = is_live
         self._interval = interval_s
+        self._db = db
         self._profile: PlayerProfile | None = None
         self._baseline: dict[str, int] = {}
+        self._baseline_loaded = False
 
     def activate(self) -> None:
         """S'enregistre comme source globale, lisible par `prompts.py`."""
@@ -70,6 +79,8 @@ class ApexWatcher:
             # Le live est fini : la progression ne veut plus rien dire.
             self._profile = None
             self._baseline = {}
+            self._baseline_loaded = False
+            await self._store_baseline({})
             return
         try:
             profile = await self._service.fetch_profile(self._account[0], self._account[1])
@@ -79,15 +90,39 @@ class ApexWatcher:
         if profile is None:
             return
         self._profile = profile
+        if not self._baseline and not self._baseline_loaded:
+            # Un live peut avoir commencé avant ce process : on reprend le point
+            # de départ rangé en base plutôt que d'en inventer un nouveau.
+            self._baseline = await self._load_baseline()
+            self._baseline_loaded = True
         if not self._baseline:
             # Premier passage du live : c'est le point de départ, pas un progrès.
             self._baseline = {k: s.value for k, s in profile.stats.items()}
+            await self._store_baseline(self._baseline)
 
     async def run(self) -> None:
         """Boucle de fond. Ne s'arrête jamais d'elle-même."""
         while True:
             await self.tick()
             await asyncio.sleep(self._interval)
+
+    async def _load_baseline(self) -> dict[str, int]:
+        if self._db is None:
+            return {}
+        try:
+            raw = await self._db.get_state(BASELINE_KEY)
+            return {k: int(v) for k, v in json.loads(raw or "{}").items()}
+        except Exception as exc:  # noqa: BLE001 — un départ illisible n'empêche pas de suivre
+            logger.debug("Apex watcher: point de départ illisible: {e}", e=exc)
+            return {}
+
+    async def _store_baseline(self, baseline: dict[str, int]) -> None:
+        if self._db is None:
+            return
+        try:
+            await self._db.set_state(BASELINE_KEY, json.dumps(baseline))
+        except Exception as exc:  # noqa: BLE001 — ne pas retenir n'est pas fatal
+            logger.debug("Apex watcher: point de départ non rangé: {e}", e=exc)
 
     def progress(self) -> dict[str, int]:
         """Ce qui a bougé depuis le début du live. Vide tant qu'on n'a qu'un point."""
@@ -100,7 +135,7 @@ class ApexWatcher:
                 gains[notion] = stat.value - depart
         return gains
 
-    def block(self) -> Optional[str]:
+    def block(self) -> str | None:
         """Ce que Wally perçoit du jeu, en une ligne ou deux. None si rien."""
         p = self._profile
         if p is None:

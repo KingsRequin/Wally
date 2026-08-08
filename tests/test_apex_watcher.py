@@ -131,3 +131,61 @@ async def test_le_bloc_global_suit_le_watcher_actif():
     w.activate()
     await w.tick()
     assert current_apex_block() is not None
+
+
+# ── la progression survit à un redémarrage ──────────────────────────────────
+
+
+class _MemoryState:
+    """Une base réduite à ce que le watcher lui demande."""
+
+    def __init__(self):
+        self.rows = {}
+
+    async def get_state(self, key):
+        return self.rows.get(key)
+
+    async def set_state(self, key, value):
+        self.rows[key] = value
+
+
+@pytest.mark.asyncio
+async def test_le_point_de_depart_survit_a_un_redemarrage():
+    """Un rebuild en plein live ne doit pas remettre la progression à zéro."""
+    depart = _bridge("azrael")
+    plus_tard = json.loads(json.dumps(depart))
+    plus_tard["total"]["specialEvent_kills"]["value"] += 9
+
+    state = _MemoryState()
+    premier = ApexWatcher(_FakeService(depart), account=("Azrael_ttv", "PC"),
+                          is_live=lambda: True, db=state)
+    await premier.tick()
+
+    # Nouveau process : même base, même live.
+    second = ApexWatcher(_FakeService(plus_tard), account=("Azrael_ttv", "PC"),
+                         is_live=lambda: True, db=state)
+    await second.tick()
+
+    assert second.progress()["kills"] == 9
+
+
+@pytest.mark.asyncio
+async def test_la_fin_du_live_efface_le_point_de_depart():
+    state = _MemoryState()
+    live = [True]
+    w = ApexWatcher(_FakeService(_bridge("azrael")), account=("Azrael_ttv", "PC"),
+                    is_live=lambda: live[0], db=state)
+    await w.tick()
+    assert state.rows, "le départ n'a pas été rangé"
+    live[0] = False
+    await w.tick()
+    reste = json.loads(state.rows.get("apex:live_baseline") or "{}")
+    assert reste == {}, "le départ du live précédent traîne encore"
+
+
+@pytest.mark.asyncio
+async def test_sans_base_le_watcher_fonctionne_comme_avant():
+    w = ApexWatcher(_FakeService(_bridge("azrael")), account=("Azrael_ttv", "PC"),
+                    is_live=lambda: True)
+    await w.tick()
+    assert w.block() is not None

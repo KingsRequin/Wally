@@ -142,3 +142,18 @@ async def test_sans_base_le_service_marche_comme_avant(db):
     svc = ApexLegendsService(client=client)
     texte = await svc.execute("player_stats", "KingsRequin", remember=True, requester="twitch:1")
     assert "KingsRequin" in texte
+
+
+@pytest.mark.asyncio
+async def test_un_compte_lie_est_interroge_par_son_uid(db):
+    """L'uid mémorisé prime : Azraël peut changer de pseudo Apex sans rien casser."""
+    await db.apex_link_account(
+        identity="discord:419", display_name="azrael_ttv",
+        apex_name="Azrael_ttv", apex_platform="PC", uid="2274044345",
+    )
+    client = _FakeClient(_bridge("azrael"))
+    svc = ApexLegendsService(client=client, db=db)
+
+    await svc.execute("player_stats", "", requester="discord:419")
+
+    assert client.calls[0][1].get("uid") == "2274044345"
