@@ -118,3 +118,51 @@ async def test_une_transcription_a_blanc_ratee_demute_quand_meme():
     await signal_ready_when_warm(vc, None, stt)
 
     vc.guild.change_voice_state.assert_awaited_once()
+
+
+# ── le serveur distant annonce lui-même qu'il est prêt ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_le_prechauffage_ouvre_une_session_distante_et_attend_ready():
+    """Le protocole prévoit déjà un message `ready` « après chargement des
+    modèles ». Encore faut-il ouvrir une session pour le recevoir : sinon le
+    coût est payé à la première phrase, après qu'on ait cru Wally prêt."""
+    from bot.discord.voice.streaming import RemoteStreamingSTT
+
+    session = MagicMock()
+    session.start = AsyncMock(return_value=True)
+    session.close = AsyncMock()
+    stt = RemoteStreamingSTT("ws://x", fallback=None,
+                             session_factory=lambda sid: session)
+
+    assert await stt.warm_remote() is True
+    session.start.assert_awaited_once()
+    session.close.assert_awaited_once()      # la session à blanc ne reste pas ouverte
+
+
+@pytest.mark.asyncio
+async def test_un_serveur_injoignable_laisse_la_place_au_repli():
+    from bot.discord.voice.streaming import RemoteStreamingSTT
+
+    session = MagicMock()
+    session.start = AsyncMock(return_value=False)
+    session.close = AsyncMock()
+    stt = RemoteStreamingSTT("ws://x", fallback=None,
+                             session_factory=lambda sid: session)
+
+    assert await stt.warm_remote() is False
+
+
+@pytest.mark.asyncio
+async def test_une_session_qui_explose_ne_fait_pas_tomber_le_prechauffage():
+    from bot.discord.voice.streaming import RemoteStreamingSTT
+
+    session = MagicMock()
+    session.start = AsyncMock(side_effect=RuntimeError("réseau coupé"))
+    session.close = AsyncMock()
+    stt = RemoteStreamingSTT("ws://x", fallback=None,
+                             session_factory=lambda sid: session)
+
+    assert await stt.warm_remote() is False
+    session.close.assert_awaited_once()

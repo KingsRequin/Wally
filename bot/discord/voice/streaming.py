@@ -261,9 +261,40 @@ class RemoteStreamingSTT:
         )
 
     async def warmup(self) -> None:
+        """Prépare les DEUX chemins, puis rend la main.
+
+        Le repli local charge son modèle (plusieurs secondes de CPU), et une
+        session distante est ouverte à blanc pour que le serveur charge les
+        siens — c'est son message `ready` qui l'annonce. Sans cette ouverture,
+        le coût était payé à la première phrase, après qu'on ait cru Wally prêt.
+        """
         warm = getattr(self._fallback, "warmup", None)
         if warm is not None:
             await warm()
+        await self.warm_remote()
+
+    async def warm_remote(self) -> bool:
+        """Ouvre une session à blanc et attend le `ready` du serveur.
+
+        Retourne True si le serveur distant est prêt. False s'il est injoignable
+        ou plein : le repli local prendra le relais, et il est déjà chaud.
+        """
+        session = self._session_factory("__warmup__")
+        try:
+            pret = await session.start()
+        except Exception as exc:  # noqa: BLE001 — un préchauffage raté n'est pas fatal
+            logger.debug("RemoteStreamingSTT: préchauffage distant en échec: {e}", e=exc)
+            return False
+        finally:
+            try:
+                await session.close()
+            except Exception:  # noqa: BLE001
+                pass
+        logger.info(
+            "RemoteStreamingSTT: serveur distant {e}",
+            e="prêt" if pret else "indisponible — repli local",
+        )
+        return bool(pret)
 
     # ------------------------------------------------------------------
     # Entrées synchrones (depuis le sink / la boucle)
