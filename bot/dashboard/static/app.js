@@ -2013,7 +2013,7 @@ async function openUserModal(userId, userData) {
           var dateStr = m.updated_at || m.created_at;
           var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
           return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '" style="border-left:2px solid ' + cat.color + '4d">'
-            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.memory) + '</span>'
+            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.content) + '</span>'
             + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajouté manuellement') + '">' + sourceIcon + '</span>'
             + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
             + '<div class="mem-entry-actions">'
@@ -2163,7 +2163,7 @@ function sortModalMemories(sortBy) {
           var dateStr = m.updated_at || m.created_at;
           var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
           return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '" style="border-left:2px solid ' + cat.color + '4d">'
-            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.memory) + '</span>'
+            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.content) + '</span>'
             + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajout\u00e9 manuellement') + '">' + sourceIcon + '</span>'
             + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
             + '<div class="mem-entry-actions">'

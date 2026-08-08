@@ -220,6 +220,20 @@ class SQLiteFactStore:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
+    async def count_all_by_user(self, min_confidence: float = 0.3) -> dict[str, int]:
+        """Nombre de faits par utilisateur, en une requête (liste du dashboard).
+
+        Mêmes filtres que `get_by_user` : un compteur affiché sur une carte doit
+        annoncer exactement ce que la fiche de l'utilisateur contient.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT user_id, COUNT(*) FROM atomic_facts "
+                "WHERE status = ? AND confidence >= ? GROUP BY user_id",
+                (FactStatus.ACTIVE.value, min_confidence),
+            )
+            return {row[0]: row[1] for row in await cursor.fetchall()}
+
     async def apply_decay(self) -> int:
         """Réduit confidence de decay_rate pour tous les faits actifs.
         Archive ceux dont confidence tombe sous 0.1. Retourne le nombre de lignes modifiées.

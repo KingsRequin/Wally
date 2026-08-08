@@ -173,10 +173,16 @@ async def list_users(
     trust_map = await state.db.get_trust_scores_batch(user_pairs)
     love_map = await state.db.get_love_scores_batch(user_pairs)
 
+    # `memory_users.memory_count` n'est plus écrit depuis la migration V2 : la
+    # colonne est figée à sa valeur V1 et affichait le même total sur chaque
+    # carte. Le compte vient du fact store, seule source de vérité.
+    store = getattr(state, "fact_store", None)
+    fact_counts = await store.count_all_by_user() if store is not None else {}
+
     # Enrichir chaque utilisateur avec trust_score, love_score, defaults
     for user, (platform, raw_id) in zip(merged_users, user_pairs):
         user.setdefault("avatar_url", None)
-        user.setdefault("memory_count", 0)
+        user["memory_count"] = fact_counts.get(user["user_id"], 0)
         user["trust_score"] = trust_map.get((platform, raw_id), 0.0)
         user["love_score"] = love_map.get((platform, raw_id), 0.0)
 
