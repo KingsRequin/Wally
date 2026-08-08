@@ -71,7 +71,14 @@ class OverlayFeed:
         alive: list[dict] = []
         for event in self._buffer:
             age = now - float(event.get("ts") or now)
-            span = float(event.get("duration") or (event.get("params") or {}).get("duration") or 0)
+            params = event.get("params") or {}
+            span = float(event.get("duration") or params.get("duration") or 0)
+            # Une partie en cours ne périme pas : le pendu doit revenir tel quel
+            # chez un OBS qui se reconnecte, sans quoi la grille disparaissait
+            # pour de bon à la première coupure SSE.
+            if params.get("sticky") is True:
+                alive.append(dict(event))
+                continue
             # `thinking` et `react` n'ont pas de durée : ils sont instantanés et
             # ne doivent jamais être rejoués.
             if span <= 0 or age > span:

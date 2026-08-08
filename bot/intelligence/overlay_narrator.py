@@ -841,11 +841,20 @@ class OverlayNarrator:
             return {"widget": "goal", **self._goal}
 
         elif widget == "hangman":
-            if not self.start_hangman(str(extra.get("word") or ""),
-                                      str(extra.get("hint") or comment or "")):
+            mot = str(extra.get("word") or "")
+            if not mot:
+                # Sans mot, c'est « remontre le pendu » — surtout pas une
+                # nouvelle partie : relancer effaçait les lettres déjà trouvées.
+                # Même geste que le bingo, qu'on peut redemander à volonté.
+                if not self._hangman:
+                    return None
+                self._publish_hangman()
+                return {"widget": "hangman", "letters": len(set(
+                    c for c in self._hangman["word"] if c.isalpha()))}
+            if not self.start_hangman(mot, str(extra.get("hint") or comment or "")):
                 return None
             return {"widget": "hangman", "letters": len(set(
-                c for c in self._fold(str(extra.get("word"))) if c.isalpha()))}
+                c for c in self._fold(mot) if c.isalpha()))}
 
         elif widget == "rps":
             # Deux gestes : ouvrir la manche, ou la trancher (rare — la clôture
@@ -1556,7 +1565,11 @@ class OverlayNarrator:
         en_difficulte = len(game["missed"]) >= self._HANGMAN_MAX_MISSES - 2
         hint = game["hint"] if (en_difficulte or won or lost) else ""
         self._feed.widget(
-            "hangman", mask=mask, missed=list(game["missed"]),
+            # Une partie en cours ne s'efface pas toute seule : dix secondes,
+            # c'est la durée d'un résultat qu'on lit, pas d'un jeu qu'on joue.
+            # Gagné ou perdu, elle redevient un résultat.
+            "hangman", sticky=not (won or lost),
+            mask=mask, missed=list(game["missed"]),
             misses=len(game["missed"]), max_misses=self._HANGMAN_MAX_MISSES,
             hint=hint, last=last, won=won, lost=lost,
             word=game["display"] if (won or lost) else "",

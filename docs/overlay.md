@@ -187,6 +187,16 @@ se traçant à l'apparition. Le mot n'est révélé qu'à la fin, gagné ou perd
 ne transite jamais vers l'overlay avant, sinon les viewers le liraient à
 l'écran.
 
+**La grille reste à l'écran tant qu'on joue** — dix secondes, c'est la durée
+d'un résultat qu'on lit, pas d'une partie. Elle survit aussi à une reconnexion
+d'OBS. Gagné ou perdu, elle redevient un résultat et s'efface.
+
+> « wally remontre le pendu »
+
+Redemander la grille la **remontre**, sans jamais relancer de partie : le faire
+effaçait les lettres déjà trouvées. Un mot fourni, en revanche, ouvre bien une
+nouvelle partie. Pour arrêter : « wally annule le pendu ».
+
 ### Le chifoumi
 
 > « wally lance un chifoumi »

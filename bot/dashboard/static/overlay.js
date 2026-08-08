@@ -839,6 +839,11 @@
     // sa place.
     document.body.classList.add("widget-on");
 
+    // Une partie en cours ne s'efface pas toute seule : le pendu doit rester
+    // sous les yeux du chat tant qu'on y joue. Un booléen plutôt qu'une durée
+    // nulle — `Number(0) || 12` vaut 12, le piège serait invisible.
+    if (params.sticky === true) return;
+
     // Le serveur décide (animation + lecture) ; ce plafond n'est qu'un garde-fou.
     // 180 s et non 30 : le serveur émet jusqu'à 124 s (sondage de 120 s + 4),
     // et un sondage de 60 s disparaissait de l'écran à mi-parcours, les viewers
