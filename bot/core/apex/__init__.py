@@ -7,4 +7,4 @@ from bot.core.apex.client import ApexClient
 from bot.core.apex.service import ApexLegendsService
 from bot.core.apex.tool import APEX_LEGENDS_TOOL
 
-__all__ = ["ApexClient", "ApexLegendsService", "APEX_LEGENDS_TOOL"]
+__all__ = ["APEX_LEGENDS_TOOL", "ApexClient", "ApexLegendsService"]

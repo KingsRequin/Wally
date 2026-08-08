@@ -2,7 +2,7 @@
 """Le client Apex : cache par endpoint, débit borné, erreurs non mémorisées."""
 import pytest
 
-from bot.core.apex.client import ApexClient, DEFAULT_TTL
+from bot.core.apex.client import DEFAULT_TTL, ApexClient
 
 
 def _client(responses, clock):

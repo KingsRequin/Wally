@@ -85,7 +85,7 @@ bot/
 │   ├── notifications.py
 │   ├── web_search.py
 │   ├── account_linker.py
-│   └── apex_api.py
+│   └── apex/            # API Apex Legends (client+cache, reader, service, tool)
 ├── intelligence/        # Tout ce qui raisonne via LLM
 │   ├── memory/          # Mémoire sémantique (FTS5/SQLite)
 │   │   ├── service.py   # MemoryService: sliding context window, search, consolidation

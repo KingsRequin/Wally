@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
     from bot.core.scrape import ScrapeService
-    from bot.core.apex_api import ApexLegendsService
+    from bot.core.apex import ApexLegendsService
     from bot.core.vision import VisionService
     from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
     from bot.intelligence.fact_extractor import FactExtractor
@@ -87,7 +87,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     from bot.intelligence.persona import PersonaService
     from bot.core.web_search import WebSearchService
     from bot.core.scrape import ScrapeService
-    from bot.core.apex_api import ApexLegendsService
+    from bot.core.apex import ApexLegendsService
     from bot.intelligence.actions import ActionRegistry, ActionScheduler, ActionExecutor, ActionService
     from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
