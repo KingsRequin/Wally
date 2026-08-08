@@ -461,7 +461,7 @@ class DailyJournal:
             return
 
         # target_date=None → aujourd'hui (comportement normal du cron)
-        effective_date = target_date or date.today()
+        effective_date = target_date or self._today_date()
         is_backfill = target_date is not None
         display_date = effective_date.strftime("%d/%m/%Y")
 
@@ -884,13 +884,26 @@ class DailyJournal:
         return "Souvenirs des utilisateurs (mémoire long-terme) :\n" + "\n".join(parts)
 
     @staticmethod
-    def _today() -> str:
-        return date.today().strftime("%d/%m/%Y")
+    def _today_date() -> date:
+        """La date du jour EN HEURE DE PARIS, pas à l'horloge de la machine.
+
+        Le serveur tourne en UTC : entre 22 h UTC et minuit, `date.today()`
+        rend encore la veille alors que la journée parisienne a changé. Le
+        journal demandait alors à `get_twitch_visits_for_date` — qui découpe,
+        lui, en Europe/Paris — les visites d'un jour déjà clos.
+        """
+        return datetime.now(_TZ_JOURNAL).date()
+
+    @classmethod
+    def _today(cls) -> str:
+        return cls._today_date().strftime("%d/%m/%Y")
 
     def start(self, scheduler=None) -> None:
         owns_scheduler = scheduler is None
         if owns_scheduler:
-            self._scheduler = AsyncIOScheduler()
+            # Fuseau EXPLICITE : sans lui, APScheduler prend celui du process
+            # — UTC sur ce serveur — et « 21:00 » partait à 23 h française.
+            self._scheduler = AsyncIOScheduler(timezone=_TZ_JOURNAL)
         else:
             self._scheduler = scheduler
 
@@ -909,6 +922,7 @@ class DailyJournal:
             minute=minute,
             id="daily_journal",
             replace_existing=True,
+            timezone=_TZ_JOURNAL,
         )
         # Memory cleanup 30 min before journal
         cleanup_dt = datetime(2000, 1, 1, hour, minute) - timedelta(minutes=30)
@@ -919,6 +933,7 @@ class DailyJournal:
             minute=cleanup_dt.minute,
             id="memory_cleanup",
             replace_existing=True,
+            timezone=_TZ_JOURNAL,
         )
         logger.info(
             "Memory cleanup scheduler started, fires at {h:02d}:{m:02d}",
@@ -932,6 +947,7 @@ class DailyJournal:
                 minute=minute,
                 id="memory_consolidation",
                 replace_existing=True,
+                timezone=_TZ_JOURNAL,
             )
             logger.info("Consolidation nocturne planifiée à {t}", t=time_str)
         if self._user_modeler is not None:
@@ -942,6 +958,7 @@ class DailyJournal:
                 minute=minute,
                 id="user_model_refresh",
                 replace_existing=True,
+                timezone=_TZ_JOURNAL,
             )
             logger.info("Modélisation des personnes planifiée à {t}", t=time_str)
         # Only start if we own the scheduler (no shared scheduler provided)

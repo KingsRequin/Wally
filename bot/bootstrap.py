@@ -30,6 +30,23 @@ if TYPE_CHECKING:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
+def make_scheduler() -> "AsyncIOScheduler":
+    """Le scheduler applicatif, réglé sur l'heure de Paris.
+
+    Fuseau EXPLICITE : sans lui, APScheduler prend celui du process. Ce serveur
+    tourne en UTC, si bien que `journal_time: '21:00'` déclenchait le journal du
+    soir à 23 h française — et à 22 h en hiver.
+
+    C'est ce scheduler-là qui porte les travaux du soir en production : le
+    journal reçoit celui-ci, pas celui qu'il sait créer pour lui-même.
+    """
+    from zoneinfo import ZoneInfo
+
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    return AsyncIOScheduler(timezone=ZoneInfo("Europe/Paris"))
+
+
 @dataclass
 class CoreServices:
     config: "Config"
@@ -166,7 +183,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     logger.info("DailyJournal initialized")
 
     # ── Shared scheduler + Action services ────────────────────────────────────
-    shared_scheduler = AsyncIOScheduler()
+    shared_scheduler = make_scheduler()
 
     action_registry = ActionRegistry(db)
     await action_registry.load_permissions()
