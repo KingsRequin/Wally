@@ -617,12 +617,22 @@ class VoiceService:
             names = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
         except Exception:  # noqa: BLE001
             names = []
-        lowered = text.lower()
-        addressed = any(n and n.lower() in lowered for n in names)
+        # Une demande vaut une mention écrite : mêmes outils, réponse dans le
+        # chat Twitch. Réservée aux demandeurs déclarés (`voice.requesters`) —
+        # les autres sont entendus, jamais obéis, et retombent en perception.
+        from bot.discord.voice.request import (
+            handle_voice_request, is_addressed, resolve_requester,
+        )
+
+        speaker_id = self._current_speaker_id or ""
+        requester = resolve_requester(
+            speaker_id, getattr(self._bot.config.voice, "requesters", [])
+        )
+        addressed = requester is not None and is_addressed(text, names)
         try:
             loop = asyncio.get_running_loop()
             task = loop.create_task(
-                narrator.on_voice_request(label, text) if addressed
+                handle_voice_request(self._bot, speaker_id, label, text) if addressed
                 else narrator.on_stream_event(line, show_thinking=False)
             )
             self._listen_tasks.add(task)

@@ -101,23 +101,59 @@ def test_l_absence_d_overlay_ne_casse_pas_l_ecoute():
         svc._observe_transcript("Azrael", "coucou")   # ne doit pas lever
 
 
+def _demandeur(svc, discord_id="419172225451556874"):
+    """Fait du locuteur courant un demandeur déclaré."""
+    svc._current_speaker_id = discord_id
+    svc._bot.config.voice.requesters = [
+        {"discord_id": discord_id, "twitch_login": "azrael_ttv"}
+    ]
+
+
 @pytest.mark.asyncio
 async def test_une_demande_en_vocal_part_vers_le_chemin_outille():
     """« Wally, affiche un pile ou face » doit pouvoir AFFICHER — le chemin des
-    réactions ne sait que condenser du texte, d'où les trois-points sans suite."""
+    réactions ne sait que condenser du texte, d'où les trois-points sans suite.
+
+    Depuis 2026-08-08 ce chemin est celui du chat : mêmes outils qu'à l'écrit,
+    réponse envoyée dans le chat Twitch."""
     svc = _service()
     svc.listen_only = True
     svc._vc = MagicMock()
     narrator = MagicMock()
     narrator.count_spoken_vote.return_value = False
-    narrator.on_voice_request = AsyncMock(return_value="pile")
     narrator.on_stream_event = AsyncMock(return_value=None)
     svc._bot.overlay_narrator = narrator
-    with patch("bot.core.stream_feed.active_stream_feed", return_value=None):
+    _demandeur(svc)
+    with patch("bot.core.stream_feed.active_stream_feed", return_value=None), \
+         patch("bot.discord.voice.request.handle_voice_request",
+               new=AsyncMock(return_value=None)) as demande:
         svc._observe_transcript("Azrael", "wally affiche un pile ou face")
         await asyncio.sleep(0)
-    narrator.on_voice_request.assert_awaited()
+    demande.assert_awaited()
     narrator.on_stream_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_un_tiers_en_vocal_est_entendu_mais_pas_obei():
+    """Seuls les demandeurs déclarés commandent : les autres restent perçus."""
+    svc = _service()
+    svc.listen_only = True
+    svc._vc = MagicMock()
+    narrator = MagicMock()
+    narrator.count_spoken_vote.return_value = False
+    narrator.on_stream_event = AsyncMock(return_value=None)
+    svc._bot.overlay_narrator = narrator
+    svc._current_speaker_id = "999"
+    svc._bot.config.voice.requesters = [
+        {"discord_id": "419172225451556874", "twitch_login": "azrael_ttv"}
+    ]
+    with patch("bot.core.stream_feed.active_stream_feed", return_value=None), \
+         patch("bot.discord.voice.request.handle_voice_request",
+               new=AsyncMock(return_value=None)) as demande:
+        svc._observe_transcript("Inconnu", "wally affiche un pile ou face")
+        await asyncio.sleep(0)
+    demande.assert_not_awaited()
+    narrator.on_stream_event.assert_awaited()
 
 
 @pytest.mark.asyncio

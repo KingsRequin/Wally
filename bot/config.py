@@ -118,6 +118,11 @@ class VoiceConfig:
     remote_stt_idle_timeout: float = 30.0  # ferme une session inactive (libère un slot serveur)
     remote_stt_health_cache_s: float = 30.0  # durée du cache « serveur injoignable » avant retry
     remote_stt_fallback: str = "faster_whisper"  # provider batch CPU si le distant est indispo
+    # Qui peut lui DEMANDER quelque chose à voix haute. Chaque entrée porte les
+    # deux identités : le `discord_id` reconnaît celui qui parle (le vocal est un
+    # salon Discord), le `twitch_login` sert à le mentionner dans la réponse.
+    # Liste vide = personne, donc aucune demande vocale outillée.
+    requesters: list[dict] = field(default_factory=list)
 
 
 @dataclass
