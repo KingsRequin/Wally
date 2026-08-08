@@ -141,26 +141,15 @@
     // La roue s'arrête sur l'option choisie côté serveur : l'angle est calculé
     // pour amener ce secteur sous le curseur.
     wheel(p) {
+      // La coquille seulement : la roue est peinte dans un canvas par
+      // spin-wheel, qui a besoin d'un conteneur DÉJÀ dans le DOM pour se
+      // dimensionner. Le montage se fait donc dans `renderWidget`, une fois la
+      // carte attachée — cf. `mountWheel`.
       const options = Array.isArray(p.options) ? p.options.slice(0, 8) : [];
       if (!options.length) return el("div", "");
-      const winner = Math.min(options.length - 1, Math.max(0, Number(p.index) || 0));
-      const slice = 360 / options.length;
-
       const box = el("div", "wheel-box");
-      const wheel = el("div", "wheel");
-      const COLORS = ["#46c6ff", "#9d7bff", "#ff7ba8", "#ffcf5c",
-                      "#6ee7a8", "#ff9f68", "#7fd1ff", "#c9a0ff"];
-      const stops = options
-        .map((_, i) => `${COLORS[i % COLORS.length]} ${i * slice}deg ${(i + 1) * slice}deg`)
-        .join(", ");
-      wheel.style.background = `conic-gradient(${stops})`;
-      // Plusieurs tours pour l'effet, puis on aligne le milieu du secteur en haut.
-      const angle = 360 * 4 + (360 - (winner * slice + slice / 2));
-      wheel.style.setProperty("--final-angle", `${angle}deg`);
-
-      const label = el("div", "label");
-      label.textContent = String(options[winner]);
-      box.append(wheel, el("div", "pin"), label);
+      box.append(el("div", "wheel-canvas"), el("div", "pin"),
+                 el("div", "label"));
       return box;
     },
 
@@ -765,12 +754,28 @@
     });
   }
 
+  // La roue en cours. spin-wheel garde une boucle d'animation vivante tant
+  // qu'on ne l'a pas retirée : sortir son canvas du DOM ne suffit PAS, la
+  // boucle continuerait de tourner dans le vide pour tout le reste du live.
+  let activeWheel = null;
+
+  function disposeWheel() {
+    if (!activeWheel) return;
+    try {
+      activeWheel.remove();
+    } catch (e) {
+      /* déjà retirée : rien à faire */
+    }
+    activeWheel = null;
+  }
+
   function clearWidgets() {
     // Un compte à rebours remplacé doit voir son timer coupé, sinon il continue
     // de tourner dans le vide pendant tout le live.
     widgets.querySelectorAll("[data-interval]").forEach((n) => {
       clearInterval(Number(n.dataset.interval));
     });
+    disposeWheel();
     widgets.replaceChildren();
     document.body.classList.remove("widget-on");
   }
@@ -859,6 +864,67 @@
     }
   }
 
+  // Les couleurs des secteurs. Deux voisins ne doivent jamais se ressembler :
+  // la roue tourne vite, c'est le contraste qui donne la sensation de vitesse.
+  const WHEEL_COLORS = ["#46c6ff", "#9d7bff", "#ff7ba8", "#ffcf5c",
+                        "#6ee7a8", "#ff9f68", "#7fd1ff", "#c9a0ff"];
+  const WHEEL_SPIN_MS = 4000;      // le widget reste 10 s : 6 s pour lire
+
+  function mountWheel(host, params) {
+    const options = Array.isArray(params.options) ? params.options.slice(0, 8) : [];
+    if (!host || !options.length) return;
+
+    const label = host.parentElement.querySelector(".label");
+    const winner = Math.min(options.length - 1,
+                            Math.max(0, Number(params.index) || 0));
+
+    // Absente si le fichier n'a pas été servi. Le repli n'est pas décoratif :
+    // sans lui, une roue muette laisserait le viewer sans réponse.
+    if (!window.spinWheel || typeof window.spinWheel.Wheel !== "function") {
+      if (label) {
+        label.textContent = String(options[winner]);
+        label.classList.add("visible");
+      }
+      return;
+    }
+
+    disposeWheel();
+    activeWheel = new window.spinWheel.Wheel(host, {
+      items: options.map((o) => ({ label: String(o) })),
+      itemBackgroundColors: WHEEL_COLORS,
+      itemLabelColors: ["#141419"],
+      // Les labels DANS les secteurs : c'est tout l'intérêt du changement. La
+      // roue d'avant ne montrait que des couleurs, et le viewer découvrait les
+      // options en même temps que le résultat — aucun suspense possible.
+      itemLabelFontSizeMax: 22,
+      itemLabelAlign: "right",
+      itemLabelRadius: 0.92,
+      itemLabelRadiusMax: 0.2,
+      borderColor: "rgba(255,255,255,.85)",
+      borderWidth: 3,
+      lineColor: "rgba(20,20,25,.35)",
+      lineWidth: 1,
+      radius: 0.96,
+      // OBS n'a pas de souris, et un drag accidentel fausserait le tirage —
+      // qui est décidé côté serveur, pas ici.
+      isInteractive: false,
+      // Le pointeur est notre triangle CSS, en haut. spin-wheel n'en dessine
+      // pas : il aligne juste l'item gagnant sur cet angle.
+      pointerAngle: 0,
+    });
+
+    // Le résultat n'apparaît qu'à l'arrêt : l'afficher d'emblée vendrait la
+    // mèche avant que la roue ait fini de tourner.
+    activeWheel.onRest = () => {
+      if (!label) return;
+      label.textContent = String(options[winner]);
+      label.classList.add("visible");
+    };
+    // `spinToItem(index, durée, centrer, tours, sens, easing)` — le gagnant
+    // vient du serveur, la roue ne fait que l'atteindre.
+    activeWheel.spinToItem(winner, WHEEL_SPIN_MS, true, 4, 1);
+  }
+
   function renderWidget(kind, params, build) {
     clearTimeout(widgetTimer);
 
@@ -901,6 +967,9 @@
     // widget mais un effet plein écran, et ils doivent partir au moment exact
     // où la carte apparaît — pas à sa construction.
     if (kind === "raid" && !refresh) burstConfetti(params.viewers);
+    if (kind === "wheel" && !refresh) {
+      mountWheel(box.querySelector(".wheel-canvas"), params);
+    }
 
     // Une partie en cours ne s'efface pas toute seule : le pendu doit rester
     // sous les yeux du chat tant qu'on y joue. Un booléen plutôt qu'une durée

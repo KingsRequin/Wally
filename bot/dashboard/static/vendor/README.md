@@ -19,3 +19,18 @@ repris à l'identique de leur distribution officielle.
 
 Non modifié. Pour mettre à jour : retélécharger la même URL avec la nouvelle
 version, vérifier `node --check`, et reporter la version ici.
+
+## spin-wheel 5.0.2
+
+- Source : <https://cdn.jsdelivr.net/npm/spin-wheel@5.0.2/dist/spin-wheel-iife.js>
+- Dépôt : <https://github.com/CrazyTim/spin-wheel>
+- Licence : MIT — voir `LICENSE-spin-wheel.md`
+- sha256 : `f02a1704248a9b069f2624b2770d0d67dcf81a073d43bfb270bd72e3b528706c`
+- Expose le global `spinWheel.Wheel`
+
+Build **IIFE** et non ESM : l'overlay est chargé par de simples balises `<script>`,
+sans module ni bundler.
+
+⚠️ `Wheel.remove()` est obligatoire quand le widget disparaît — la boucle
+d'animation survit au retrait du canvas du DOM. Voir `disposeWheel()` dans
+`overlay.js`.

@@ -841,7 +841,10 @@ class OverlayNarrator:
                 index = int(result)
             except (TypeError, ValueError):
                 index = random.randrange(len(options))
-            params = {"options": options, "index": max(0, min(len(options) - 1, index))}
+            # 10 s : ~4 s de rotation, le reste pour lire le résultat. Sans
+            # `duration` explicite, la roue tombait sur le défaut du feed.
+            params = {"options": options, "duration": 10,
+                      "index": max(0, min(len(options) - 1, index))}
 
         elif widget == "countdown":
             # `seconds` d'abord, `result` en repli. Devant « un minuteur de 10

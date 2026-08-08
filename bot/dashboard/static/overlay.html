@@ -291,13 +291,14 @@
     .dice-row { display: flex; gap: 14px; perspective: 600px; }
 
     /* Roue — secteurs colorés, rotation amortie, curseur fixe en haut. */
-    .wheel-box { position: relative; width: 150px; height: 150px; }
-    .wheel {
+    /* 220px et non 150 : les intitulés sont maintenant écrits DANS les secteurs,
+       et il faut pouvoir les lire par-dessus une image de jeu. */
+    .wheel-box { position: relative; width: 220px; height: 220px; }
+    /* Le conteneur que spin-wheel remplit de son canvas. Il se dimensionne sur
+       lui, d'où la taille explicite plutôt qu'un `height: auto`. */
+    .wheel-canvas {
       width: 100%; height: 100%;
-      border-radius: 50%;
-      border: 3px solid rgba(255, 255, 255, .85);
-      box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
-      animation: wheel-spin 2.4s cubic-bezier(.16, .84, .28, 1) forwards;
+      filter: drop-shadow(0 4px 14px rgba(0, 0, 0, .55));
     }
     .wheel-box .pin {
       position: absolute; top: -9px; left: 50%;
@@ -306,20 +307,28 @@
       border-style: solid;
       border-color: transparent transparent #fff transparent;
       filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+      z-index: 2;
     }
+    /* Le résultat ne s'affiche qu'à l'arrêt de la roue (classe posée par
+       `onRest`) : le montrer plus tôt vendrait la mèche. */
     .wheel-box .label {
       position: absolute; left: 50%; top: 50%;
-      transform: translate(-50%, -50%);
-      padding: 5px 11px;
-      max-width: 128px;
-      font-size: 14px; font-weight: 700; color: #fff; text-align: center;
-      background: rgba(18, 18, 22, .9);
-      border-radius: 9px;
+      transform: translate(-50%, -50%) scale(.86);
+      padding: 6px 13px;
+      max-width: 150px;
+      font-size: 15px; font-weight: 700; color: #fff; text-align: center;
+      background: rgba(18, 18, 22, .92);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 10px;
       opacity: 0;
-      animation: wheel-label .5s ease 2.2s forwards;
+      pointer-events: none;
+      z-index: 2;
+      transition: opacity .35s ease, transform .35s cubic-bezier(.22, 1.5, .4, 1);
     }
-    @keyframes wheel-spin { to { transform: rotate(var(--final-angle)); } }
-    @keyframes wheel-label { to { opacity: 1; } }
+    .wheel-box .label.visible {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
 
     /* Compte à rebours — anneau de tirets qui s'éteignent, temps au centre.
        Un simple chiffre ne disait pas d'un coup d'œil s'il restait beaucoup. */
@@ -980,6 +989,8 @@
        tourne dans OBS et ne doit dépendre d'aucun réseau tiers.
        Voir bot/dashboard/static/vendor/README.md -->
   <script src="/static/vendor/canvas-confetti.js"></script>
+  <!-- spin-wheel (MIT) — la roue, labels dessinés dans les secteurs. -->
+  <script src="/static/vendor/spin-wheel.js"></script>
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay.js"></script>
 </body>
