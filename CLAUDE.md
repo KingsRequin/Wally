@@ -3,6 +3,27 @@
 
 You are operating within a constrained context window and strict system prompts. To produce production-grade code, you MUST adhere to these overrides:
 
+## Ce bot tourne en PRODUCTION
+
+**Un problème repéré est un problème corrigé. TOUJOURS. On ne le laisse JAMAIS de côté.**
+
+Wally tourne en continu, sur de vrais serveurs Discord et Twitch, avec de vraies personnes et
+une mémoire qui leur appartient. Il n'y a pas d'environnement de test où un défaut pourrait
+attendre.
+
+Concrètement, quand un défaut est constaté au détour d'une autre tâche :
+
+- Il ne finit PAS en « à noter pour plus tard », en « hors scope », ni en fin de rapport sous
+  « ce qui reste ouvert ». Ces formulations sont interdites comme point d'arrivée.
+- On le corrige dans la foulée, ou — s'il est vraiment gros — on le nomme, on le chiffre, et on
+  demande l'arbitrage AVANT de clore la tâche en cours.
+- Un défaut jugé « marginal » (11 faits, 1 ligne) se corrige quand même : c'est justement le
+  moins cher à traiter, et personne n'y reviendra jamais.
+- Mesurer l'ampleur ne remplace pas la correction. Un chiffre n'est pas un correctif.
+
+Corollaire : ne jamais annoncer « c'est fait » sans avoir vérifié en prod (logs, base, ou le
+comportement réel), et publier — commit + push + rebuild — dans la même foulée.
+
 ## Pre-Work
 
 0. **CHERCHER AVANT DE CREUSER — règle prioritaire.** Devant un bug non trivial (message d'erreur

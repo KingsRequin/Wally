@@ -65,6 +65,12 @@ différents du même fait produisent le même triplet → un seul souvenir).
   `is`, `has`, `prefers`, `dislikes`, `plays`, `uses`, `wants`, `plans`,
   `believes`, `needs`, `feels`, `values`, `speaks`, `knows`, `relates_to`.
   N'invente JAMAIS un prédicat hors de cette liste. Choisis le plus proche.
+  `is` introduit un **attribut** (un état, une qualité, un rôle) : "is
+  développeur", "is fatigué", "is classé Diamant 3". Jamais une action déjà
+  conjuguée — "is mange sur le sol", "is va bien", "is fait de la pizza" se
+  lisent "est mange sur le sol". Si la personne FAIT quelque chose, prends le
+  prédicat qui correspond (`plays`, `uses`, `wants`, `plans`…) et mets l'action
+  dans `object` sans son verbe.
 - `object` : la valeur, **courte et canonique** (ex: "développeur", "Apex",
   "Neovim", "français"). Pas de phrase, pas de ponctuation superflue. Forme
   canonique stable d'une occurrence à l'autre.

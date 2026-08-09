@@ -64,15 +64,46 @@ _PREDICATE_FR: dict[str, str] = {
 }
 
 
+# Seul `is` peut être escamoté quand l'objet porte déjà son propre verbe. Les
+# autres prédicats portent le sens du fait (`joue à`, `utilise`, `connaît`…) et
+# ne s'effacent jamais. `has` non plus : son « a » forme un passé composé
+# parfaitement correct — « polylrose a fait un métier stressant » ; l'escamoter
+# donnerait un présent, donc un autre sens.
+_VERBES_DE_LIAISON = frozenset({"is"})
+
+# Verbes conjugués à la 3e personne qu'on retrouve en tête d'objet quand le
+# modèle a choisi `is` faute de mieux : « is va bien », « is mange sur le sol ».
+# Liste volontairement courte et fréquentielle — mieux vaut laisser passer un cas
+# rare que d'escamoter le verbe d'un attribut légitime.
+_OBJET_DEJA_CONJUGUE = frozenset(
+    """arrive attend cherche commence connaît continue demande dit donne essaie
+    fait joue laisse met mange parle part passe pense prend prépare regarde
+    reste revient sait suit teste travaille trouve va veut vient vit""".split()
+)
+
+
 def render_triplet(subject: str, predicate: str, object_: str) -> str:
     """Phrase lisible d'un triplet S-P-O, prédicat traduit.
 
     Un prédicat hors vocabulaire est laissé tel quel : une phrase imparfaite
     vaut mieux qu'un fait vide.
+
+    Le verbe de liaison saute quand l'objet est déjà une action conjuguée. Le
+    modèle choisit parfois `is` faute de prédicat qui colle — « kingsrequin is
+    va bien », « polylrose is mange sur le sol » — et traduire mécaniquement
+    donnerait « kingsrequin est va bien ».
     """
-    verbe = _PREDICATE_FR.get((predicate or "").strip(), (predicate or "").strip())
-    parts = [(subject or "").strip(), verbe, (object_ or "").strip()]
-    return " ".join(p for p in parts if p).strip()
+    pred = (predicate or "").strip()
+    sujet = (subject or "").strip()
+    objet = (object_ or "").strip()
+
+    verbe = _PREDICATE_FR.get(pred, pred)
+    if pred in _VERBES_DE_LIAISON and objet:
+        premier = objet.split(maxsplit=1)[0].casefold().strip(".,;:!?")
+        if premier in _OBJET_DEJA_CONJUGUE:
+            verbe = ""
+
+    return " ".join(p for p in (sujet, verbe, objet) if p).strip()
 
 
 def is_valid_predicate(predicate: str) -> bool:

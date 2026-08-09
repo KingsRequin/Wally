@@ -616,6 +616,39 @@ class FactExtractor:
             "est ci-dessus crée un doublon."
         )
 
+    @staticmethod
+    def _subject_owner(
+        subject: str, known_users: list[dict], alias_map: dict[str, str]
+    ) -> "str | None":
+        """À qui appartient un fait dont le sujet nomme quelqu'un ?
+
+        Le LLM renvoie `target_user_id` et le code le prenait au mot. En prod,
+        onze faits « Cluth joue à Valorant », « Cluth utilise un tracker »… se
+        sont retrouvés dans la mémoire de KingsRequin — c'est lui qui parlait,
+        et le modèle lui a attribué ce qu'il disait des autres. Le triplet, lui,
+        disait bien `subject = "Cluth"`.
+
+        Le résultat est ramené au compte CANONIQUE (`user_links`). Sans ça, un
+        fait dont le sujet est le pseudo Twitch de quelqu'un — « jubeii1979 joue
+        à Darktide », dit par Jubeii lui-même — partirait sur sa fiche Twitch
+        alors que toute sa mémoire vit sur sa fiche Discord : on couperait sa
+        mémoire en deux au lieu de la rassembler.
+
+        Correspondance exacte sur le pseudo (casse et espaces ignorés) : sans
+        certitude on ne touche à rien, une réattribution à tort déplacerait un
+        souvenir chez un inconnu. Retourne None si le sujet ne désigne personne
+        de connu.
+        """
+        cible = (subject or "").strip().casefold()
+        if not cible:
+            return None
+        for u in known_users:
+            nom = (u.get("username") or "").strip().casefold()
+            if nom and nom == cible:
+                trouve = u.get("user_id")
+                return alias_map.get(trouve, trouve) if trouve else None
+        return None
+
     async def _extract_facts(
         self,
         messages: list[dict],
@@ -659,14 +692,25 @@ class FactExtractor:
         # Fetch known memory users so the LLM can resolve mentions of
         # third parties (users talked about but not in the conversation)
         known_users_hint = ""
+        # Liste COMPLÈTE (participants inclus) : elle sert aussi à vérifier, plus
+        # bas, que le sujet d'un fait désigne bien la personne à qui on l'attribue.
+        all_known_users: list[dict] = []
+        # {compte secondaire → compte canonique} : deux comptes liés sont la même
+        # personne, sa mémoire ne doit pas se scinder entre les deux fiches.
+        alias_map: dict[str, str] = {}
         if self._db is not None:
             try:
-                known_users = await self._db.list_memory_users()
-                # Exclude unknown:* entries and current participants
-                known_users = [
-                    u for u in known_users
+                alias_map = await self._db.get_alias_map()
+            except Exception:
+                alias_map = {}
+            try:
+                all_known_users = [
+                    u for u in await self._db.list_memory_users()
                     if not u["user_id"].startswith("unknown:")
-                    and u["user_id"].split(":", 1)[1] not in participants
+                ]
+                known_users = [
+                    u for u in all_known_users
+                    if u["user_id"].split(":", 1)[1] not in participants
                 ]
                 if known_users:
                     user_lines = [
@@ -730,17 +774,32 @@ class FactExtractor:
                     )
                 if not fact_text:
                     continue
-                if uid:
+                # Le sujet du triplet prime sur `target_user_id` quand il nomme
+                # quelqu'un de connu : le modèle attribue volontiers à celui qui
+                # PARLE ce qu'il dit des autres.
+                effective_uid = uid
+                owner = self._subject_owner(
+                    fi.get("subject") or "", all_known_users, alias_map
+                )
+                # Comparaison entre canoniques : deux comptes liés sont la même
+                # personne, il n'y a rien à déplacer.
+                if owner and owner != alias_map.get(uid, uid):
+                    logger.info(
+                        "FactExtractor: « {t} » réattribué de {a} à {b} (sujet du fait)",
+                        t=fact_text[:60], a=uid or "?", b=owner,
+                    )
+                    effective_uid = owner
+                if effective_uid:
                     # Known user: parse platform:user_id
-                    if ":" in uid:
-                        plat, raw_id = uid.split(":", 1)
+                    if ":" in effective_uid:
+                        plat, raw_id = effective_uid.split(":", 1)
                     else:
-                        plat, raw_id = platform, uid
+                        plat, raw_id = platform, effective_uid
                 else:
                     # Unknown user: store under unknown:<nickname>
                     plat = "unknown"
                     raw_id = entry.get("target", "unknown")
-                display = participants.get(raw_id, "") if uid else ""
+                display = participants.get(raw_id, "") if effective_uid else ""
                 expires_at = _compute_expiry(
                     fi.get("ttl"), fact_text, datetime.utcnow()
                 )

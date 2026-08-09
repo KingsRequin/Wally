@@ -30,13 +30,21 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bot.intelligence.memory.vocab import render_triplet  # noqa: E402
+from bot.intelligence.memory.vocab import _PREDICATE_FR, render_triplet  # noqa: E402
 
 
-def _rendu_brut(subject: str, predicate: str, object_: str) -> str:
-    """L'ancienne forme : les trois morceaux collés, prédicat anglais compris."""
-    parts = [(p or "").strip() for p in (subject, predicate, object_)]
-    return " ".join(p for p in parts if p).strip()
+def _formes_generees(subject: str, predicate: str, object_: str) -> set[str]:
+    """Les textes que le code a pu produire lui-même pour ce triplet.
+
+    Deux formes ont existé : les trois morceaux collés avec le prédicat anglais
+    (« mks_zedd plays Apex Legends »), puis le prédicat traduit sans garde sur
+    les objets déjà conjugués (« kingsrequin est va bien »). Un texte qui ne
+    correspond à aucune des deux a été rédigé ou reformulé — on n'y touche pas.
+    """
+    s, p, o = ((x or "").strip() for x in (subject, predicate, object_))
+    brut = " ".join(x for x in (s, p, o) if x).strip()
+    traduit = " ".join(x for x in (s, _PREDICATE_FR.get(p, p), o) if x).strip()
+    return {brut, traduit}
 
 
 def main() -> int:
@@ -55,13 +63,13 @@ def main() -> int:
     a_changer: list[tuple[int, str, str]] = []
     intacts = 0
     for r in rows:
-        ancien = _rendu_brut(r["subject"], r["predicate"], r["object"])
-        if (r["content"] or "").strip() != ancien:
+        actuel = (r["content"] or "").strip()
+        if actuel not in _formes_generees(r["subject"], r["predicate"], r["object"]):
             intacts += 1  # texte rédigé ou reformulé — on n'y touche pas
             continue
         nouveau = render_triplet(r["subject"], r["predicate"], r["object"])
-        if nouveau and nouveau != ancien:
-            a_changer.append((r["id"], ancien, nouveau))
+        if nouveau and nouveau != actuel:
+            a_changer.append((r["id"], actuel, nouveau))
 
     print(f"{len(rows)} faits porteurs d'un triplet")
     print(f"  {intacts} au texte personnalisé — laissés tels quels")

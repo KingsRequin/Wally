@@ -54,6 +54,41 @@ def test_les_espaces_parasites_sont_nettoyes():
     assert render_triplet("  Cluth  ", "plays", "  Apex  ") == "Cluth joue à Apex"
 
 
+# ── Quand le modèle choisit mal son prédicat ─────────────────────────────────
+#
+# Le LLM met parfois `is` devant un objet qui est déjà une action conjuguée :
+# « kingsrequin is va bien », « polylrose is mange sur le sol », « azrael_ttv is
+# mange vite ». Traduire mécaniquement donne « kingsrequin est va bien ». Le
+# verbe de liaison est alors de trop — la phrase se tient sans lui.
+
+def test_un_objet_deja_conjugue_ne_prend_pas_de_verbe_de_liaison():
+    assert render_triplet("kingsrequin", "is", "va bien") == "kingsrequin va bien"
+    assert render_triplet("polylrose", "is", "mange sur le sol") == "polylrose mange sur le sol"
+    assert render_triplet("mks_zedd", "is", "fait de la pizza") == "mks_zedd fait de la pizza"
+    assert render_triplet("lilith", "is", "veut que les gens parlent") == "lilith veut que les gens parlent"
+
+
+def test_un_vrai_attribut_garde_son_verbe():
+    """La garde ne doit pas manger le verbe d'un attribut légitime."""
+    assert render_triplet("Azraël", "is", "développeur") == "Azraël est développeur"
+    assert render_triplet("Cluth", "is", "classé Diamant 3") == "Cluth est classé Diamant 3"
+    assert render_triplet("X", "is", "fatigué") == "X est fatigué"
+
+
+def test_la_garde_ne_touche_que_les_verbes_de_liaison():
+    """`joue à`, `utilise`… portent le sens : jamais escamotés."""
+    assert render_triplet("X", "plays", "va bien") == "X joue à va bien"
+
+
+def test_has_garde_son_auxiliaire_qui_forme_un_passe_compose():
+    """« polylrose a fait un métier stressant » se tient : c'est un passé
+    composé. L'escamoter donnerait un présent — un autre sens."""
+    assert render_triplet("polylrose", "has", "fait un métier stressant") == (
+        "polylrose a fait un métier stressant"
+    )
+    assert render_triplet("mks_zedd", "has", "mange peu") == "mks_zedd a mange peu"
+
+
 # ── Les deux chemins d'écriture doivent passer par là ────────────────────────
 
 def test_ingest_rend_le_fait_en_francais():
