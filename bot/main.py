@@ -516,6 +516,10 @@ async def main() -> None:
                 apex_api,
                 account=(_apex_conf.streamer_account, _apex_conf.streamer_platform),
                 is_live=lambda: bool(twitch_bot._stream_info.get("live")),
+                # Identité du live : le point de départ rangé en base n'en portait
+                # aucune, donc un redémarrage entre deux lives faisait cumuler les
+                # deux sessions dans les « +N kills depuis le début du live ».
+                live_id=lambda: str(twitch_bot._stream_info.get("started_at") or ""),
                 db=db,
             )
             apex_watcher.activate()

@@ -179,8 +179,12 @@ async def test_la_fin_du_live_efface_le_point_de_depart():
     assert state.rows, "le départ n'a pas été rangé"
     live[0] = False
     await w.tick()
+    # Le point de départ porte désormais l'identité de son live —
+    # `{"live": …, "stats": {…}}` — pour qu'un redémarrage entre deux lives ne
+    # fasse pas cumuler les deux sessions. Ce sont les stats qui doivent être
+    # vides ; l'enveloppe, elle, reste.
     reste = json.loads(state.rows.get("apex:live_baseline") or "{}")
-    assert reste == {}, "le départ du live précédent traîne encore"
+    assert reste.get("stats", reste) == {}, "le départ du live précédent traîne encore"
 
 
 @pytest.mark.asyncio

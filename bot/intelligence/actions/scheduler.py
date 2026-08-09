@@ -82,25 +82,58 @@ class ActionScheduler:
         now = datetime.now(TZ)
         missed_count = 0
         scheduled_count = 0
+        ignored_count = 0
         for task in tasks:
-            next_run_str = task["next_run_at"]
-            is_past = False
-            if next_run_str:
-                try:
-                    next_run_dt = datetime.fromisoformat(next_run_str)
-                    if next_run_dt.tzinfo is None:
-                        next_run_dt = next_run_dt.replace(tzinfo=TZ)
-                    is_past = next_run_dt < now
-                except (ValueError, TypeError):
-                    is_past = False
-            if task["schedule_type"] == "once" and is_past:
-                await self._db.update_action_task(task["id"], status="missed", updated_at=now.isoformat())
-                missed_count += 1
-            else:
-                spec = json.loads(task["schedule_spec"])
-                self._add_apscheduler_job(task["id"], task["schedule_type"], spec)
-                scheduled_count += 1
-        logger.info("Reloaded action tasks: {} scheduled, {} missed", scheduled_count, missed_count)
+            # Garde PAR TÂCHE : la boucle n'en avait aucune, et elle tourne au
+            # démarrage, avant `shared_scheduler.start()`, depuis un `main.py`
+            # non protégé. `json.loads(task["schedule_spec"])` sur une valeur
+            # vide, ou `datetime.fromisoformat(spec.get("run_at", ""))` dans
+            # `_add_apscheduler_job`, suffisait donc à faire avorter le
+            # DÉMARRAGE du bot — et la colonne a un `DEFAULT '{}'`, donc une
+            # ligne insérée hors de `ActionService.create` produit ce cas.
+            try:
+                next_run_str = task["next_run_at"]
+                is_past = False
+                if next_run_str:
+                    try:
+                        next_run_dt = datetime.fromisoformat(next_run_str)
+                        if next_run_dt.tzinfo is None:
+                            next_run_dt = next_run_dt.replace(tzinfo=TZ)
+                        is_past = next_run_dt < now
+                    except (ValueError, TypeError):
+                        is_past = False
+                if task["schedule_type"] == "once" and is_past:
+                    await self._db.update_action_task(task["id"], status="missed", updated_at=now.isoformat())
+                    missed_count += 1
+                else:
+                    # `or "{}"` comme dans `_on_job_executed`, qui était déjà
+                    # défensif ici alors que ce chemin ne l'était pas.
+                    spec = json.loads(task["schedule_spec"] or "{}")
+                    self._add_apscheduler_job(task["id"], task["schedule_type"], spec)
+                    # Une tâche `interval` repart de `now + minutes` au moment du
+                    # `add_job`, mais `next_run_at` gardait la valeur d'avant
+                    # l'arrêt : la phase glissait à chaque rebuild, et le
+                    # dashboard comme l'outil LLM affichaient une échéance
+                    # périmée, souvent dans le passé, pour une tâche pourtant
+                    # bien planifiée.
+                    if task["schedule_type"] in ("interval", "cron"):
+                        recalcule = self._compute_next_run(task["schedule_type"], spec)
+                        if recalcule:
+                            await self._db.update_action_task(
+                                task["id"], next_run_at=recalcule,
+                                updated_at=now.isoformat(),
+                            )
+                    scheduled_count += 1
+            except Exception as exc:  # noqa: BLE001 — une ligne bancale n'empêche pas le boot
+                ignored_count += 1
+                logger.warning(
+                    "Tâche {id} non replanifiée ({t}) : {e}",
+                    id=task.get("id"), t=task.get("schedule_type"), e=exc,
+                )
+        logger.info(
+            "Reloaded action tasks: {} scheduled, {} missed, {} ignorées",
+            scheduled_count, missed_count, ignored_count,
+        )
 
     async def _on_job_executed(self, task_id: int, result: str) -> None:
         task = await self._db.get_action_task(task_id)
@@ -111,7 +144,12 @@ class ActionScheduler:
         updates: dict = {"execution_count": new_count, "consecutive_failures": 0,
                          "last_run_at": now, "updated_at": now}
         max_exec = task["max_executions"]
-        if max_exec is not None and new_count >= max_exec:
+        # Une tâche `once` est terminée par définition, quel que soit le
+        # compteur : son job apscheduler de type `date` est consommé et retiré,
+        # donc la laisser `active` produit un zombie qui ne repartira jamais tout
+        # en occupant une place du quota. Ceinture, en plus de la normalisation
+        # à la création — une ligne insérée autrement passerait ici aussi.
+        if task["schedule_type"] == "once" or (max_exec is not None and new_count >= max_exec):
             updates["status"] = "completed"
             self._remove_job(task_id)
             logger.info("Action task {} completed ({}/{} executions)", task_id, new_count, max_exec)
@@ -194,4 +232,20 @@ class ActionScheduler:
             return spec.get("run_at")
         elif schedule_type == "interval":
             return (now + timedelta(minutes=spec.get("minutes", 30))).isoformat()
+        elif schedule_type == "cron":
+            # Aucune branche ne couvrait `cron` : la fonction retombait sur None,
+            # écrit tel quel en base à la création, au `resume` et après chaque
+            # exécution. `next_run_at` restait donc perpétuellement NULL pour
+            # toute tâche récurrente : ni le dashboard ni l'outil LLM ne savaient
+            # dire quand un rappel quotidien repasserait. Et `ORDER BY
+            # next_run_at` faisait remonter ces tâches en tête, toujours.
+            try:
+                from apscheduler.triggers.cron import CronTrigger
+
+                cron_kwargs = {k: spec[k] for k in ("hour", "minute", "day_of_week") if k in spec}
+                prochaine = CronTrigger(timezone=TZ, **cron_kwargs).get_next_fire_time(None, now)
+                return prochaine.isoformat() if prochaine else None
+            except Exception as exc:  # noqa: BLE001 — un spec cron bancal n'est pas fatal
+                logger.warning("next_run_at cron incalculable ({s}): {e}", s=spec, e=exc)
+                return None
         return None

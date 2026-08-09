@@ -724,7 +724,16 @@ class DailyJournal:
                 logger.warning("Journal voice pass failed: {e}", e=exc)
 
         # ── Emotion chart image (F10) ──
-        chart_buf = _generate_emotion_chart(snapshots) if snapshots else None
+        # En thread : l'import de matplotlib puis le rendu du PNG sont du
+        # CPU-bound synchrone, et bloquaient toute la boucle — Discord, Twitch,
+        # dashboard, ticks cognitifs — pendant plusieurs centaines de ms à
+        # quelques secondes. Aggravant : c'est la minute où trois autres jobs
+        # lourds sont planifiés (journal, consolidation, modélisation), et le
+        # `misfire_grace_time` d'APScheduler vaut 1 s par défaut.
+        chart_buf = (
+            await asyncio.to_thread(_generate_emotion_chart, snapshots)
+            if snapshots else None
+        )
 
         formatted = f"# Journal de {self._config.bot.name} — {display_date}\n\n{journal_text}"
         if self._send_cb:

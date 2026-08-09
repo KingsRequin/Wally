@@ -224,7 +224,14 @@ class ActionService:
 
         payload = task_data.get("payload", {})
         max_executions = schedule.get("max_executions")
-        if schedule_type == "once" and max_executions is None:
+        if schedule_type == "once":
+            # TOUJOURS 1, pas seulement quand le LLM l'a laissé vide. Le schéma
+            # de l'outil expose `max_executions` librement : avec `once` +
+            # `max_executions: 3`, `_on_job_executed` voyait `1 >= 3` faux, donc
+            # recalculait `next_run_at` = la date DÉJÀ PASSÉE et laissait le
+            # statut `active`. Or le job apscheduler de type `date` a été
+            # consommé et retiré : la tâche restait active à vie, jamais
+            # déclenchée, en occupant une des 10 places du quota utilisateur.
             max_executions = 1
 
         task_id = await self._scheduler.schedule(

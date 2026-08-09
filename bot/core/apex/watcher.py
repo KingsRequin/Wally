@@ -51,10 +51,18 @@ class ApexWatcher:
         is_live: Callable[[], bool],
         interval_s: float = POLL_INTERVAL_S,
         db=None,
+        live_id: Callable[[], str] | None = None,
     ) -> None:
         self._service = service
         self._account = account
         self._is_live = is_live
+        # De QUEL live il s'agit — en pratique le `started_at` du stream. Le
+        # point de départ rangé en base n'en portait aucune trace : un process
+        # arrêté avant la fin du live A et redémarré pendant le live B rechargeait
+        # le départ de A et le gardait. Wally annonçait alors aux spectateurs des
+        # « +N kills depuis le début du live » cumulant deux sessions — de la
+        # donnée fausse diffusée à l'écran, ce que ce paquet cherche à éviter.
+        self._live_id = live_id
         self._interval = interval_s
         self._db = db
         self._profile: PlayerProfile | None = None
@@ -78,9 +86,13 @@ class ApexWatcher:
         if not live:
             # Le live est fini : la progression ne veut plus rien dire.
             self._profile = None
-            self._baseline = {}
             self._baseline_loaded = False
-            await self._store_baseline({})
+            # Écrire seulement s'il y avait quelque chose à effacer : la branche
+            # écrivait en base à CHAQUE tour hors live, soit ~960 commits par
+            # jour sur le fichier SQLite partagé, pour rien.
+            if self._baseline:
+                self._baseline = {}
+                await self._store_baseline({})
             return
         try:
             profile = await self._service.fetch_profile(self._account[0], self._account[1])
@@ -106,12 +118,35 @@ class ApexWatcher:
             await self.tick()
             await asyncio.sleep(self._interval)
 
+    def _live_courant(self) -> str:
+        """Identité du live en cours (son `started_at`), ou "" si inconnue."""
+        if self._live_id is None:
+            return ""
+        try:
+            return str(self._live_id() or "")
+        except Exception as exc:  # noqa: BLE001 — une sonde cassée n'est pas fatale
+            logger.debug("Apex watcher: identité du live indisponible: {e}", e=exc)
+            return ""
+
     async def _load_baseline(self) -> dict[str, int]:
+        """Le point de départ rangé, S'IL appartient bien au live en cours.
+
+        Il était relu sans aucune vérification. Le format porte maintenant son
+        live ; un enregistrement d'un autre live — ou de l'ancien format, plat et
+        sans identité — est ignoré, et le premier passage repart de zéro.
+        """
         if self._db is None:
             return {}
         try:
             raw = await self._db.get_state(BASELINE_KEY)
-            return {k: int(v) for k, v in json.loads(raw or "{}").items()}
+            data = json.loads(raw or "{}")
+            if not isinstance(data, dict) or "stats" not in data:
+                return {}      # ancien format plat : provenance inconnue, on jette
+            attendu = self._live_courant()
+            if str(data.get("live") or "") != attendu:
+                logger.info("Apex watcher: point de départ d'un autre live, ignoré")
+                return {}
+            return {k: int(v) for k, v in (data.get("stats") or {}).items()}
         except Exception as exc:  # noqa: BLE001 — un départ illisible n'empêche pas de suivre
             logger.debug("Apex watcher: point de départ illisible: {e}", e=exc)
             return {}
@@ -120,7 +155,9 @@ class ApexWatcher:
         if self._db is None:
             return
         try:
-            await self._db.set_state(BASELINE_KEY, json.dumps(baseline))
+            await self._db.set_state(BASELINE_KEY, json.dumps(
+                {"live": self._live_courant(), "stats": baseline}
+            ))
         except Exception as exc:  # noqa: BLE001 — ne pas retenir n'est pas fatal
             logger.debug("Apex watcher: point de départ non rangé: {e}", e=exc)
 

@@ -89,8 +89,13 @@ class ApexClient:
             return resp.json()
 
     async def _rate_limit(self) -> None:
+        # `self._now()` et non `time.monotonic()` : le constructeur accepte une
+        # horloge injectée, utilisée pour le TTL du cache, mais cette méthode
+        # lisait l'horloge réelle. Les deux divergeaient dès qu'un test en
+        # fournissait une factice — couture d'injection incomplète, donc
+        # trompeuse pour qui s'y fie.
         async with self._lock:
-            elapsed = time.monotonic() - self._last_request
+            elapsed = self._now() - self._last_request
             if elapsed < _MIN_INTERVAL:
                 await asyncio.sleep(_MIN_INTERVAL - elapsed)
-            self._last_request = time.monotonic()
+            self._last_request = self._now()
