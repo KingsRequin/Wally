@@ -137,6 +137,61 @@ async def _scan_tally(bot, tally, text: str) -> None:
             await narrator.on_counter_milestone(row["label"], row["count"])
 
 
+async def _envoyer_reponse_twitch(
+    bot: "WallyTwitch",
+    channel_name: str,
+    texte: str,
+    *,
+    author: str,
+    parent_msg_id: str | None,
+) -> str:
+    """Envoie la réponse et retourne le mode réellement employé.
+
+    `helix` (chaîne home) · `irc_reply` (chaîne invitée, réponse chaînée) ·
+    `irc_mention` (repli : « @pseudo texte ») · `perdu` (IRC déconnecté).
+
+    Le chemin invité préfixait le pseudo pour SIMULER une réponse. Twitch sait
+    pourtant chaîner en IRC, via le tag `@reply-parent-msg-id` sur le PRIVMSG — c'est
+    twitchio 2 qui ne l'expose pas, la demande étant ouverte depuis 2020
+    (PythonistaGuild/TwitchIO#119). On écrit donc le PRIVMSG taggé nous-mêmes.
+
+    Les garde-fous de `Channel.send` sont refaits à l'identique : `check_content`
+    valide le texte, `check_bucket` sollicite le rate-limiter IRC. Les sauter
+    exposerait à un ban de la connexion, ce que le gain d'un fil de réponse ne vaut
+    pas. Tout imprévu retombe sur la mention plutôt que d'avaler la réponse.
+    """
+    if channel_name not in getattr(bot, "_channel_ids", {}):
+        await bot.twitch_api.send_message(
+            text=texte, reply_parent_message_id=parent_msg_id
+        )
+        return "helix"
+
+    canal = bot.get_channel(channel_name)
+    if canal is None:
+        logger.warning("IRC non connecté pour {ch}, réponse ignorée", ch=channel_name)
+        return "perdu"
+
+    if parent_msg_id:
+        try:
+            ws = canal._fetch_websocket()
+            if ws is not None:
+                canal.check_content(texte)
+                canal.check_bucket(channel=channel_name)
+                await ws.send(
+                    f"@reply-parent-msg-id={parent_msg_id} "
+                    f"PRIVMSG #{channel_name} :{texte}\r\n"
+                )
+                return "irc_reply"
+        except Exception as exc:  # noqa: BLE001 — la réponse doit partir malgré tout
+            logger.warning(
+                "Twitch: réponse chaînée impossible sur {ch} ({e}) — repli sur la mention",
+                ch=channel_name, e=exc,
+            )
+
+    await canal.send(f"@{author} {texte}")
+    return "irc_mention"
+
+
 def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
     """Build situation dict with stream info if available."""
     situation: dict = {
@@ -732,20 +787,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
-        if channel_name in bot._channel_ids:
-            # Chaîne invitée : envoi via IRC — mention @author pour simuler une réponse
-            irc_channel = bot.get_channel(channel_name)
-            if irc_channel:
-                await irc_channel.send(f"@{author} {reply}")
-            else:
-                logger.warning("IRC non connecté pour {ch}, réponse ignorée", ch=channel_name)
-        else:
-            # Chaîne home : envoi via Helix API avec reply thread
-            msg_id = getattr(payload, "message_id", None) or None
-            await bot.twitch_api.send_message(
-                text=reply,
-                reply_parent_message_id=msg_id,
-            )
+        # Réponse CHAÎNÉE sur les deux types de chaînes : Helix sur la home, PRIVMSG
+        # taggé sur les invitées (cf. `_envoyer_reponse_twitch`).
+        _send_mode = await _envoyer_reponse_twitch(
+            bot, channel_name, reply,
+            author=author,
+            parent_msg_id=getattr(payload, "message_id", None) or None,
+        )
         bot.set_cooldown(user_id)
         _note_open_question(channel_name, user_id, reply)
         # Wally vient de parler à cette personne : sa prochaine relance ne sera
@@ -754,7 +802,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,
-            send_mode="irc" if channel_name in bot._channel_ids else "helix",
+            # Mode RÉEL et non déduit du type de chaîne : c'est ce qui permet de voir
+            # dans les logs qu'une réponse est retombée sur la mention faute d'id.
+            send_mode=_send_mode,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(channel_id, content=reply)
