@@ -20,6 +20,21 @@ if TYPE_CHECKING:
 router = APIRouter()
 public_router = APIRouter()
 
+# Références fortes des tâches détachées : la boucle asyncio n'en garde qu'une
+# référence FAIBLE, donc le GC peut annuler une tâche en cours de route — et son
+# exception ne remonte alors nulle part. Le motif est appliqué dans `admin.py` et
+# `twitch_auth.py` ; ici transitaient pourtant la réponse de Wally au chat web et
+# son post-traitement émotionnel.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
 
 def _extract_user_id_from_jwt(request: Request) -> str | None:
     """Returns 'discord:{discord_id}' from the Bearer JWT, or None if invalid/missing."""
@@ -168,10 +183,10 @@ async def ws_chat(ws: WebSocket):
                 command, _, args = content.partition(" ")
                 args = args.strip()
                 if command == "/imagine":
-                    asyncio.create_task(_handle_imagine(state, ws, user, args))
+                    _fire(_handle_imagine(state, ws, user, args))
                     continue
                 elif command == "/scan":
-                    asyncio.create_task(_handle_scan(state, ws, user, args or None))
+                    _fire(_handle_scan(state, ws, user, args or None))
                     continue
                 else:
                     await _send_to(ws, {"type": "system", "content": f"Commande inconnue : {command}"})
@@ -195,7 +210,7 @@ async def ws_chat(ws: WebSocket):
             await _broadcast(user_msg)
 
             # Wally response (serialized)
-            asyncio.create_task(_wally_respond(state, sender_id, username, content))
+            _fire(_wally_respond(state, sender_id, username, content))
 
     except WebSocketDisconnect:
         pass
@@ -284,7 +299,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
             state.memory.append_prelude("web:chat", bot_display, reply)
             state.memory.append_message("web:chat", bot_display, reply, platform="discord")
 
-            asyncio.create_task(_post_process(state, content, sender_id, trust))
+            _fire(_post_process(state, content, sender_id, trust))
 
         except Exception as exc:
             logger.error("WebChat Wally response failed: {e}", e=exc)
@@ -448,11 +463,13 @@ async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser, quer
     await _send_to(ws, {"type": "system", "content": "🔍 Scan des messages web en cours…"})
 
     try:
-        cursor = await state.db._conn.execute(
+        # `async with` : le curseur restait ouvert jusqu'au passage du GC.
+        # `admin.py` faisait déjà correctement de cette façon.
+        async with state.db._conn.execute(
             "SELECT sender_id, username, content, created_at "
             "FROM chat_messages WHERE is_wally = 0 ORDER BY created_at ASC"
-        )
-        rows = await cursor.fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
 
         if len(rows) < 2:
             await _send_to(ws, {"type": "system", "content": "⚠️ Pas assez de messages à analyser."})

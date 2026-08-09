@@ -571,6 +571,21 @@ class Database(
 
     # ── Persistent notes ─────────────────────────────────────────────────────
 
+    async def update_persistent_note(self, note_id: int, title: str, content: str) -> bool:
+        """Modifie la note d'id `note_id`. False si l'id n'existe pas.
+
+        Distinct de l'upsert par titre : celui-ci renomme, là où l'upsert
+        aurait créé un doublon en laissant l'originale au prompt.
+        """
+        now = time.time()
+        async with self._conn.execute(
+            "UPDATE persistent_notes SET title = ?, content = ?, updated_at = ? WHERE id = ?",
+            (title.strip(), content.strip(), now, note_id),
+        ) as cursor:
+            modifiees = cursor.rowcount
+        await self._conn.commit()
+        return modifiees > 0
+
     async def upsert_persistent_note(self, title: str, content: str) -> None:
         now = time.time()
         await self._conn.execute(

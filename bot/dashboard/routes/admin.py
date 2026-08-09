@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
@@ -803,13 +802,23 @@ async def get_notes(request: Request) -> dict:
 
 @router.put("/notes/{note_id}")
 async def update_note(note_id: int, request: Request) -> dict:
+    """Modifie la note d'id `note_id`, titre compris.
+
+    Elle appelait `upsert_persistent_note(title, content)`, dont la clé de
+    conflit est `ON CONFLICT(title)` : `note_id` n'était JAMAIS utilisé, et la
+    route était rigoureusement identique au POST. Renommer une note créait donc
+    un DOUBLON, et l'originale restait injectée dans chaque conversation via
+    `_NOTE_TOOLS`. Un `PUT /{id}` qui n'utilise pas son `{id}` est un contrat
+    mensonger ; le front ne s'en sortait qu'en relisant le titre depuis le DOM.
+    """
     body = await request.json()
     title = (body.get("title") or "").strip()
     content = (body.get("content") or "").strip()
     if not title or not content:
         raise HTTPException(status_code=400, detail="title et content requis")
     db = request.app.state.wally.db
-    await db.upsert_persistent_note(title, content)
+    if not await db.update_persistent_note(note_id, title, content):
+        raise HTTPException(status_code=404, detail="Note introuvable")
     return {"ok": True}
 
 
@@ -887,11 +896,22 @@ async def self_update(request: Request) -> dict:
         f"/usr/bin/docker compose -f {compose_file} pull && "
         f"/usr/bin/docker compose -f {compose_file} up -d --force-recreate"
     )
-    subprocess.Popen(
-        ["sh", "-c", cmd],
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    async def _lancer() -> None:
+        # `create_subprocess_shell` et non `subprocess.Popen` : le `fork()` d'un
+        # process Python à gros tas duplique l'espace d'adressage et GÈLE toute
+        # la boucle le temps de l'opération — Discord, Twitch, dashboard, ticks
+        # cognitifs compris. La bonne forme existait déjà cent lignes plus haut,
+        # dans `restart_container`.
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        await proc.wait()
+
+    task = asyncio.create_task(_lancer())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
     logger.info("Self-update triggered (pull + recreate) for COMPOSE_FILE={}", compose_file)
     return {"ok": True}

@@ -11,6 +11,22 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+# Références fortes des tâches détachées : la boucle asyncio n'en garde qu'une
+# référence FAIBLE, donc le GC peut annuler une tâche en cours de route — et son
+# exception ne remonte alors nulle part. Le motif est appliqué dans `admin.py` et
+# `twitch_auth.py` ; ces deux fichiers s'en passaient, alors qu'y transitent la
+# réconciliation d'alias et la réponse de Wally au chat web.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+
 
 
 async def _resolve_missing_usernames(
@@ -21,9 +37,14 @@ async def _resolve_missing_usernames(
     """Resolve missing usernames via Discord/Twitch bot caches and persist them.
 
     Mutates users_without_name in-place (sets ``username``).
-    Uses ``get_user`` (cache-only, no API call) for Discord, and batch
-    ``fetch_users`` for Twitch.  Resolved names are persisted via
-    ``upsert_memory_user`` so future requests don't need resolution.
+    Discord : cache d'abord (``get_user``), puis ``fetch_user`` en repli —
+    un aller-retour réseau, séquentiel, PAR utilisateur. Le docstring
+    annonçait « cache-only, no API call » alors que le code appelait l'API :
+    l'onglet Mémoire pouvait mettre plusieurs secondes à s'ouvrir et
+    consommait le quota Discord. Les comptes introuvables (supprimés) sont
+    désormais mémorisés pour ne pas être retentés à chaque affichage.
+    Twitch : ``fetch_users`` par lots. Les noms résolus sont persistés via
+    ``upsert_memory_user``.
     """
     discord_bot = getattr(state, "discord_bot", None)
     twitch_bot = getattr(state, "twitch_bot", None)
@@ -62,7 +83,17 @@ async def _resolve_missing_usernames(
                     avatar_url=avatar or "",
                 )
         except Exception as e:
+            # Trace NÉGATIVE persistée : sans elle, un compte supprimé ou
+            # inaccessible était retenté à CHAQUE ouverture de l'onglet, donc le
+            # coût ne décroissait jamais. Le pseudo brut vaut mieux qu'un
+            # aller-retour perdu ; il sera écrasé si le compte réapparaît.
             logger.debug("Discord name resolve failed for {uid}: {e}", uid=u["user_id"], e=e)
+            try:
+                await state.db.upsert_memory_user(
+                    u["user_id"], "discord", username=f"@{raw_id}",
+                )
+            except Exception:  # noqa: BLE001 — au pire on retentera
+                pass
 
     # Twitch — batch fetch (max 100 per call)
     if twitch_pending:
@@ -350,13 +381,13 @@ class UpdateMemoryRequest(BaseModel):
 
 
 @router.put("/memory/users/{user_id}/memories/{memory_id}")
-async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest, request: Request):
+async def update_memory(user_id: str, memory_id: int, body: UpdateMemoryRequest, request: Request):
     """Modifie le contenu d'un souvenir existant."""
     store = _require_store(request)
     content = (body.content or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="Contenu requis")
-    if not await store.update_content(int(memory_id), content):
+    if not await store.update_content(memory_id, content):
         raise HTTPException(status_code=404, detail="Souvenir introuvable")
     return {"status": "ok"}
 
@@ -364,7 +395,7 @@ async def update_memory(user_id: str, memory_id: str, body: UpdateMemoryRequest,
 # ── DELETE /memory/users/{user_id}/memories/{memory_id} ──────────────────────
 
 @router.delete("/memory/users/{user_id}/memories/{memory_id}")
-async def delete_memory(user_id: str, memory_id: str, request: Request):
+async def delete_memory(user_id: str, memory_id: int, request: Request):
     """Retire un souvenir de la vue de Wally.
 
     ARCHIVÉ, pas effacé : `get_by_user` ne rend que les faits actifs, donc il
@@ -374,7 +405,7 @@ async def delete_memory(user_id: str, memory_id: str, request: Request):
     from bot.intelligence.memory.facts import FactStatus
 
     store = _require_store(request)
-    await store.set_status(int(memory_id), FactStatus.ARCHIVED)
+    await store.set_status(memory_id, FactStatus.ARCHIVED)
     return {"status": "ok"}
 
 
@@ -442,7 +473,7 @@ async def add_alias(body: AddAliasRequest, request: Request):
     # Reconcile orphan facts if applicable
     fe = getattr(state, "fact_extractor", None)
     if fe:
-        asyncio.create_task(fe._reconcile_orphan_facts(nickname, body.canonical_uid.strip()))
+        _fire(fe._reconcile_orphan_facts(nickname, body.canonical_uid.strip()))
 
     return {"status": "ok"}
 
@@ -480,7 +511,7 @@ async def resolve_alias(nickname: str, body: ResolveAliasRequest, request: Reque
 
     fe = getattr(state, "fact_extractor", None)
     if fe:
-        asyncio.create_task(fe._reconcile_orphan_facts(nickname, canonical_uid))
+        _fire(fe._reconcile_orphan_facts(nickname, canonical_uid))
 
     return {"status": "ok", "resolved": f"{nickname} → {canonical_uid}"}
 
@@ -673,11 +704,12 @@ async def scan_web_chat(request: Request):
         raise HTTPException(503, detail="FactExtractor non disponible")
 
     # Load all non-Wally messages from chat_messages
-    cursor = await state.db._conn.execute(
+    # `async with` : le curseur restait ouvert jusqu'au passage du GC.
+    async with state.db._conn.execute(
         "SELECT sender_id, username, content, created_at "
         "FROM chat_messages WHERE is_wally = 0 ORDER BY created_at ASC"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
 
     if len(rows) < 2:
         return {"status": "skip", "reason": "Moins de 2 messages humains", "facts_stored": 0}
@@ -717,23 +749,23 @@ async def memory_dashboard(request: Request):
     db = state.db
 
     # 1. Toutes les questions en attente (non résolues)
-    cursor = await db._conn.execute(
+    async with db._conn.execute(
         "SELECT mq.*, mu.username FROM memory_questions mq "
         "LEFT JOIN memory_users mu ON mu.user_id = mq.user_id "
         "WHERE mq.resolved = 0 ORDER BY "
         "CASE mq.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, "
         "mq.created_at ASC"
-    )
-    pending_questions = [dict(row) for row in await cursor.fetchall()]
+    ) as cursor:
+        pending_questions = [dict(row) for row in await cursor.fetchall()]
 
     # 2. Stats questions (total, résolues, en attente)
-    cursor = await db._conn.execute(
+    async with db._conn.execute(
         "SELECT COUNT(*) as total, "
         "SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved, "
         "SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) as pending "
         "FROM memory_questions"
-    )
-    q_stats = dict(await cursor.fetchone())
+    ) as cursor:
+        q_stats = dict(await cursor.fetchone())
 
     # user_memory_counts non disponible (store V1 supprimé — refonte V2 en cours)
     return {

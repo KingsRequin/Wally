@@ -75,10 +75,20 @@ async def login(request: Request):
         raise HTTPException(500, detail="Discord OAuth2 not configured")
 
     redirect_uri = f"{base_url}/api/chat/auth/callback"
+    # `state` anti-CSRF de connexion. Sans lui, un attaquant pouvait faire
+    # consommer SON code par le navigateur d'une victime (lien piégé) : la
+    # victime se retrouvait authentifiée sur le chat web sous l'identité de
+    # l'attaquant, et ses messages, sa mémoire et ses votes de galerie étaient
+    # attribués à ce compte. `twitch_auth.py` gérait déjà correctement un
+    # `state` avec TTL ; ce flux-ci ne le faisait pas.
+    _purge_states()
+    state_key = uuid.uuid4().hex
+    _pending_states[state_key] = time.time() + _STATE_TTL_S
     url = (
         f"{DISCORD_AUTH_URL}?client_id={client_id}"
         f"&redirect_uri={redirect_uri}"
         f"&response_type=code&scope=identify"
+        f"&state={state_key}"
     )
     return RedirectResponse(url)
 
@@ -86,8 +96,14 @@ async def login(request: Request):
 # ── GET /chat/auth/callback ───────────────────────────────────────────────────
 
 @router.get("/auth/callback")
-async def callback(code: str, request: Request):
+async def callback(code: str, request: Request, state: str = ""):
     import httpx
+
+    # Le `state` doit avoir été émis par NOTRE `/auth/login`, et pas expiré.
+    _purge_states()
+    if not state or _pending_states.pop(state, None) is None:
+        logger.warning("Discord OAuth2: state absent ou inconnu — connexion refusée")
+        raise HTTPException(400, detail="Lien de connexion invalide ou expiré")
 
     client_id = os.getenv("DISCORD_CLIENT_ID")
     client_secret = os.getenv("DISCORD_CLIENT_SECRET")
@@ -144,6 +160,7 @@ async def callback(code: str, request: Request):
 
     # Ephemeral one-time code — avoids tokens in URL/history/logs
     auth_code = uuid.uuid4().hex
+    _purge_codes()
     _pending_codes[auth_code] = {
         "jwt": jwt_token, "refresh_token": refresh_token,
         "expires": time.time() + 60,
@@ -153,6 +170,29 @@ async def callback(code: str, request: Request):
 
 # Ephemeral auth codes (one-time, 60s TTL)
 _pending_codes: dict[str, dict] = {}
+
+# `state` OAuth2 en attente : {clé: instant d'expiration}.
+_pending_states: dict[str, float] = {}
+_STATE_TTL_S = 600.0
+
+
+def _purge_states() -> None:
+    maintenant = time.time()
+    for cle in [k for k, exp in _pending_states.items() if exp < maintenant]:
+        _pending_states.pop(cle, None)
+
+
+def _purge_codes() -> None:
+    """Retire les codes périmés.
+
+    Le TTL de 60 s n'était vérifié qu'à la LECTURE : un code jamais échangé —
+    l'utilisateur ferme l'onglet après le redirect — restait indéfiniment en
+    mémoire, avec son JWT et son refresh token valide 30 jours. `SseTickets`
+    montrait déjà le motif attendu.
+    """
+    maintenant = time.time()
+    for cle in [k for k, v in _pending_codes.items() if v.get("expires", 0) < maintenant]:
+        _pending_codes.pop(cle, None)
 
 
 # ── GET /chat/auth/exchange ───────────────────────────────────────────────────
