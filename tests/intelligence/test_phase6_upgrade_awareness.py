@@ -32,15 +32,17 @@ def test_format_context_renders_upgrade_block():
                    status=DELIVERED, created_at="2026-06-25T10:00", decided_at=None),
     ])
     out = agent._format_context(ctx)
-    assert "déjà demandées" in out
+    # Rendu GROUPÉ PAR STATUT depuis le 2026-08-09 (cf.
+    # tests/test_selfupgrade_historique_groupe.py) : une liste plate faisait
+    # confondre une demande refusée avec une demande livrée du même sujet.
+    assert "OBTENU" in out
     assert "réactions emoji" in out
-    assert "DÉJÀ LIVRÉE" in out
 
 
 def test_format_context_omits_block_when_empty():
     agent = ReasoningAgent(llm=None, fact_store=None, prompts_dir=_PROMPTS)
     out = agent._format_context(_ctx(upgrade_requests=[]))
-    assert "déjà demandées" not in out
+    assert "OBTENU" not in out
 
 
 class _FakeRegistry:

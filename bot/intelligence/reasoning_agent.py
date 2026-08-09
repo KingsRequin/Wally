@@ -228,19 +228,25 @@ class ReasoningAgent:
                 f"**Là où tu en es de qui tu deviens :** {ctx.self_narrative}"
             )
         if getattr(ctx, "upgrade_requests", None):
-            _labels = {
-                "requested": "en attente d'autorisation",
-                "delivered": "DÉJÀ LIVRÉE — tu l'as",
-                "declined": "refusée par ton créateur",
-                "abandoned": "abandonnée",
-            }
-            lines.append(
-                "**Améliorations que tu as déjà demandées (ne les redemande pas) :**"
+            # GROUPÉ PAR STATUT, jamais en liste plate : le 2026-08-09, deux
+            # formulations quasi identiques du même sujet — l'une refusée (#18),
+            # l'autre livrée (#19) — se suivaient tronquées dans une seule liste.
+            # Wally a lu le refus, en a conclu qu'il ne possédait rien, et a
+            # redemandé une capacité qu'il avait depuis quatre jours.
+            _groupes = (
+                ("delivered", "**Ce que tu as OBTENU — tu l'as déjà, ne le redemande pas :**"),
+                ("declined", "**Ce que ton créateur a REFUSÉ — ne le repropose pas :**"),
+                ("requested", "**Demandé, en attente de sa réponse — laisse-lui le temps :**"),
+                ("abandoned", "**Tentatives abandonnées — tu peux les reproposer :**"),
             )
-            for u in ctx.upgrade_requests:
-                status = _labels.get(getattr(u, "status", ""), getattr(u, "status", ""))
-                day = (getattr(u, "created_at", "") or "")[:10]
-                lines.append(f"  · {_one_line(u.proposal, 120)} — {status} ({day})")
+            for statut, titre in _groupes:
+                lot = [u for u in ctx.upgrade_requests if getattr(u, "status", "") == statut]
+                if not lot:
+                    continue
+                lines.append(titre)
+                for u in lot:
+                    day = (getattr(u, "decided_at", None) or getattr(u, "created_at", "") or "")[:10]
+                    lines.append(f"  · {_one_line(u.proposal, 120)} ({day})")
         if getattr(ctx, "relationships", None):
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:

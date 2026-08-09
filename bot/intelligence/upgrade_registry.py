@@ -123,14 +123,22 @@ class UpgradeRegistry:
                 )
             return cur.rowcount
 
-    async def recent(self, limit: int = 6) -> list[UpgradeRow]:
+    async def recent(self, limit: int | None = None) -> list[UpgradeRow]:
+        """Historique des demandes, la plus récente d'abord. `limit=None` = tout.
+
+        Sans fenêtre par défaut : la fenêtre de 6 laissait 8 des 14 capacités déjà
+        livrées hors de son prompt, et ce sont exactement celles qu'il redemandait
+        (statuts Discord, recherche d'historique, digest de réveil…). Le volume
+        reste modeste — une vingtaine de lignes tronquées au rendu.
+        """
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute(
-                """SELECT id, proposal, status, created_at, decided_at
-                   FROM pending_upgrades ORDER BY created_at DESC LIMIT ?""",
-                (limit,),
-            )
+            requete = """SELECT id, proposal, status, created_at, decided_at
+                         FROM pending_upgrades ORDER BY created_at DESC"""
+            if limit is None:
+                cur = await db.execute(requete)
+            else:
+                cur = await db.execute(requete + " LIMIT ?", (limit,))
             rows = await cur.fetchall()
         return [
             UpgradeRow(id=r["id"], proposal=r["proposal"], status=r["status"],

@@ -358,10 +358,12 @@ class AttentionAgent:
             logger.warning("AttentionAgent: flux du stream indisponible: {}", e)
 
         # Demandes d'amélioration déjà émises (Phase 6) — best-effort.
+        # TOUT l'historique, sans fenêtre : les 6 dernières laissaient 8 capacités
+        # déjà livrées hors du prompt, et ce sont celles-là qu'il redemandait.
         upgrade_requests: list = []
         if self._upgrade_registry is not None:
             try:
-                upgrade_requests = await self._upgrade_registry.recent(limit=6)
+                upgrade_requests = await self._upgrade_registry.recent()
             except Exception:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
                 upgrade_requests = []
 
