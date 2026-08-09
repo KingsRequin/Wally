@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
@@ -16,6 +17,7 @@ from loguru import logger
 from bot.core.emotion import EMOTIONS
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.identity import render_identity
+from bot.intelligence.memory.facts import FactStatus
 from bot.intelligence.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -111,6 +113,39 @@ _FUNCTION_WORDS = frozenset(
 )
 
 _TZ_JOURNAL = ZoneInfo("Europe/Paris")
+
+# ── Passe de ménage mémoire (une personne par nuit) ───────────────────────────
+#
+# La réconciliation live de `MemoryIngest` n'attrape que les faits porteurs d'un
+# triplet S-P-O valide ; le reste tombe en `memory.add()` verbatim, qui ne dédupe
+# que le texte exact normalisé. Comme le fact_extractor repasse sur la fenêtre de
+# conversation à chaque flush, il réémet le même fait reformulé toutes les ~40 s
+# et les paraphrases s'empilent. Cette passe est le rattrapage : elle relit tous
+# les souvenirs d'UNE personne d'un coup — seule position d'où deux formulations
+# éloignées dans le temps sont visibles ensemble — et fait trancher le LLM.
+_CLEANUP_MIN_FACTS = 5
+# Taille d'un lot soumis au modèle. Mesuré sur les 298 souvenirs d'un utilisateur
+# réel : envoyés d'un bloc, `deepseek-v4-flash` tronque sa réponse ET part en
+# énumération mécanique (232 index sur 298 marqués à supprimer). En lots courts
+# il analyse au lieu d'énumérer. Le tri chronologique fait tomber les paraphrases
+# d'une même session dans le même lot, là où elles sont comparables.
+_CLEANUP_BATCH_SIZE = 60
+# Le rôle secondaire est câblé à 1000 tokens en sortie (config.yaml) : un verdict
+# portant des dizaines d'index plus des reformulations est coupé en plein JSON.
+_CLEANUP_MAX_OUTPUT_TOKENS = 4000
+# Borne le coût d'une nuit sur un très gros stock (668 souvenirs = 12 appels).
+# Les plus anciens d'abord : c'est là que les doublons ont eu le temps de dormir.
+_CLEANUP_MAX_FACTS_PER_NIGHT = 300
+# Un verdict qui rase presque tout n'est pas un ménage, c'est un dérapage : on le
+# refuse en bloc plutôt que d'amputer quelqu'un. Le seuil est haut parce que le
+# backlog l'est aussi — mesuré sur un lot réel, quinze lignes sur soixante
+# disaient « joue à Valorant ». À 50 %, le garde-fou bloquait précisément les
+# lots qui avaient le plus besoin d'être nettoyés.
+_CLEANUP_MAX_DELETE_RATIO = 0.75
+_CLEANUP_STATE_KEY = "memory_cleanup_last_pass"
+# `wally:self` (auto-narratif, plusieurs Mo) déborde toute fenêtre de contexte et
+# relève d'une autre dynamique ; `wally:emotes` n'est pas une personne.
+_CLEANUP_EXCLUDED_USERS = frozenset({"wally:self", "wally:emotes"})
 
 _EMOTION_COLORS = {
     "anger": "#ff3333",
@@ -300,6 +335,40 @@ def _emotion_tone_hint(emotions: dict) -> str:
     return hints.get(dominant, "")
 
 
+def _naive_utc(dt: datetime | None) -> datetime:
+    """Ramène une date en UTC naïf, qu'elle porte un fuseau ou non.
+
+    `atomic_facts.created_at` mélange les deux formes : l'ingest écrit de l'ISO
+    avec offset (`…+00:00`), les autres chemins de l'UTC naïf. Les trier tels
+    quels lève « can't compare offset-naive and offset-aware datetimes ».
+    """
+    if dt is None:
+        return datetime.min
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_cleanup_verdict(raw: str) -> dict | None:
+    """Lit le JSON du verdict de ménage. None si illisible — on ne touche à rien.
+
+    Le modèle secondaire enrobe volontiers sa réponse d'un ```json ou d'une
+    phrase de politesse ; on récupère le premier objet accolades comprises.
+    """
+    if not isinstance(raw, str):
+        return None
+    fence = re.search(r"```(?:json)?\s*(.*?)\s*```", raw, re.DOTALL)
+    text = fence.group(1) if fence else raw
+    obj = re.search(r"\{.*\}", text, re.DOTALL)
+    if not obj:
+        return None
+    try:
+        data = json.loads(obj.group())
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _journal_body(content: str) -> str:
     """Retire les titres markdown : la structure imposée ne doit pas compter comme un tic."""
     return "\n".join(
@@ -448,11 +517,197 @@ class DailyJournal:
         self._fetch_history_cb = cb
 
     async def run_memory_cleanup(self) -> None:
-        """Maintenance mémoire quotidienne : archive les faits éphémères périmés."""
+        """Maintenance mémoire quotidienne : péremption des éphémères, puis tri
+        des doublons chez UNE personne (rotation, la moins récemment triée)."""
         try:
             await self._memory.cleanup_expired_facts()
         except Exception as exc:
             logger.warning("Memory cleanup failed: {e}", e=exc)
+
+        try:
+            await self._sort_one_user_memory()
+        except Exception as exc:
+            logger.warning("Memory cleanup: tri LLM échoué : {e}", e=exc)
+
+    async def _sort_one_user_memory(self) -> None:
+        """Relit tous les souvenirs d'une personne et applique le verdict du LLM.
+
+        Une seule personne par nuit : le tri demande de voir TOUS ses souvenirs
+        d'un coup (deux paraphrases peuvent être séparées de six semaines), donc
+        un appel par personne, et un coût qui reste plat quel que soit le nombre
+        d'utilisateurs connus.
+        """
+        store = getattr(self._memory, "fact_store", None)
+        if store is None or self._db is None:
+            return
+
+        counts = await store.count_all_by_user()
+        user_id = await self._pick_user_to_sort(counts)
+        if user_id is None:
+            logger.debug("Memory cleanup: aucun utilisateur à trier ce soir")
+            return
+
+        # Le passage est noté quoi qu'il arrive. Si on ne le notait qu'en cas de
+        # succès, une personne dont le tri plante systématiquement (LLM en panne,
+        # verdict jamais lisible, stock retombé sous le seuil) resterait la moins
+        # récemment triée pour toujours et monopoliserait le cron : plus personne
+        # d'autre ne serait jamais nettoyé. Un tour perdu se rattrape, pas un
+        # blocage définitif.
+        try:
+            await self.sort_user_memory(user_id)
+        finally:
+            await self._remember_sorted_user(user_id, counts)
+
+    async def sort_user_memory(self, user_id: str) -> bool:
+        """Trie les souvenirs d'UNE personne nommée. Retourne True si le LLM a
+        tranché (donc si le passage compte pour la rotation).
+
+        Public : le script de rattrapage `scripts/menage_doublons_memoire.py`
+        boucle dessus pour rejouer la passe sur tout le monde d'un coup, sans
+        rejouer une deuxième implémentation du même tri.
+        """
+        store = getattr(self._memory, "fact_store", None)
+        if store is None or self._db is None:
+            return False
+
+        facts = await store.get_by_user(user_id)
+        if len(facts) < _CLEANUP_MIN_FACTS:
+            return False
+
+        # Ordre chronologique. Deux raisons : le prompt arbitre les doublons à la
+        # date, et les paraphrases naissent en rafale dans une même session — les
+        # trier par date les fait tomber dans le même lot, là où elles sont
+        # comparables.
+        facts.sort(key=lambda f: _naive_utc(f.created_at))
+        if len(facts) > _CLEANUP_MAX_FACTS_PER_NIGHT:
+            logger.info(
+                "Memory cleanup {u}: {t} souvenirs, seuls les {n} plus anciens "
+                "sont triés ce soir", u=user_id, t=len(facts), n=_CLEANUP_MAX_FACTS_PER_NIGHT,
+            )
+            facts = facts[:_CLEANUP_MAX_FACTS_PER_NIGHT]
+
+        pending = await self._db.get_all_pending_questions(user_id)
+        pending_block = ""
+        if pending:
+            pending_block = "\n\nQuestions déjà en attente (ne pas recréer) :\n" + "\n".join(
+                f"- {q['question']}" for q in pending
+            )
+        system = _CLEANUP_SYSTEM.replace(
+            "{date}", datetime.now(_TZ_JOURNAL).strftime("%d/%m/%Y")
+        )
+
+        tranche = False
+        for start in range(0, len(facts), _CLEANUP_BATCH_SIZE):
+            batch = facts[start : start + _CLEANUP_BATCH_SIZE]
+            if await self._sort_batch(store, user_id, batch, system, pending_block):
+                tranche = True
+        return tranche
+
+    async def _sort_batch(
+        self, store, user_id: str, batch: list, system: str, pending_block: str
+    ) -> bool:
+        """Soumet un lot au LLM. Les index du verdict sont LOCAUX au lot."""
+        lines = []
+        for i, fact in enumerate(batch):
+            day = fact.created_at.strftime("%Y-%m-%d") if fact.created_at else "?"
+            lines.append(f"{i}. [{day}] {fact.content}")
+
+        raw = await self._llm_secondary.complete(
+            system,
+            [{"role": "user", "content": "\n".join(lines) + pending_block}],
+            purpose="memory_cleanup",
+            max_tokens=_CLEANUP_MAX_OUTPUT_TOKENS,
+        )
+        verdict = _parse_cleanup_verdict(raw)
+        if verdict is None:
+            logger.warning(
+                "Memory cleanup {u}: verdict illisible sur un lot de {n}, rien appliqué",
+                u=user_id, n=len(batch),
+            )
+            return False
+
+        await self._apply_cleanup_verdict(store, user_id, batch, verdict)
+        return True
+
+    async def _pick_user_to_sort(self, counts: dict[str, int]) -> str | None:
+        """La personne triée il y a le plus longtemps ; jamais triée passe devant.
+
+        À volume égal et ancienneté égale, le plus gros stock d'abord — c'est là
+        que les doublons coûtent le plus au budget de contexte.
+        """
+        candidates = {
+            uid: n
+            for uid, n in counts.items()
+            if n >= _CLEANUP_MIN_FACTS and uid not in _CLEANUP_EXCLUDED_USERS
+        }
+        if not candidates:
+            return None
+        try:
+            last = json.loads(await self._db.get_state(_CLEANUP_STATE_KEY) or "{}")
+        except (json.JSONDecodeError, TypeError):
+            last = {}
+        if not isinstance(last, dict):
+            last = {}
+        # "" trie avant toute date ISO : jamais trié = priorité maximale.
+        return min(candidates, key=lambda u: (last.get(u, ""), -candidates[u]))
+
+    async def _remember_sorted_user(self, user_id: str, counts: dict[str, int]) -> None:
+        """Note le passage pour que la rotation avance. Les utilisateurs disparus
+        sont oubliés au passage — sinon l'état grossit sans fin."""
+        try:
+            last = json.loads(await self._db.get_state(_CLEANUP_STATE_KEY) or "{}")
+        except (json.JSONDecodeError, TypeError):
+            last = {}
+        if not isinstance(last, dict):
+            last = {}
+        last = {u: ts for u, ts in last.items() if u in counts}
+        last[user_id] = datetime.now(_TZ_JOURNAL).isoformat()
+        await self._db.set_state(_CLEANUP_STATE_KEY, json.dumps(last))
+
+    async def _apply_cleanup_verdict(
+        self, store, user_id: str, facts: list, verdict: dict
+    ) -> None:
+        """Applique reformulations puis archivages. Les index hors bornes sont
+        ignorés, un effacement massif est refusé en bloc."""
+        updated = 0
+        for item in verdict.get("update") or []:
+            if not isinstance(item, dict):
+                continue
+            idx, new_text = item.get("index"), (item.get("new_text") or "").strip()
+            if not isinstance(idx, int) or not 0 <= idx < len(facts) or not new_text:
+                continue
+            if await store.update_content(facts[idx].id, new_text):
+                updated += 1
+
+        raw_delete = verdict.get("delete") or []
+        targets = {
+            i for i in raw_delete if isinstance(i, int) and 0 <= i < len(facts)
+        }
+        if len(targets) > _CLEANUP_MAX_DELETE_RATIO * len(facts):
+            logger.warning(
+                "Memory cleanup {u}: verdict aberrant ({d}/{t} souvenirs à effacer), "
+                "archivage refusé", u=user_id, d=len(targets), t=len(facts),
+            )
+            targets = set()
+
+        for idx in targets:
+            await store.set_status(facts[idx].id, FactStatus.ARCHIVED)
+
+        questions = 0
+        for q in verdict.get("questions") or []:
+            if not isinstance(q, dict):
+                continue
+            text = (q.get("question") or "").strip()
+            if not text:
+                continue
+            priority = q.get("priority") if q.get("priority") in ("high", "medium", "low") else "medium"
+            await self._db.insert_memory_question(user_id, "", text, priority)
+            questions += 1
+
+        logger.info(
+            "Memory cleanup {u}: {t} souvenirs relus → {d} archivés, {up} reformulés, "
+            "{q} question(s)", u=user_id, t=len(facts), d=len(targets), up=updated, q=questions,
+        )
 
     async def generate_and_send(self, archive: bool = True, target_date: date | None = None) -> None:
         channel_id = self._config.bot.journal_channel_id

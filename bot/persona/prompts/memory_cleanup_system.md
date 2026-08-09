@@ -14,6 +14,19 @@ Analyse chaque souvenir et identifie :
    - Garde le plus complet/récent, supprime les autres
    - "a posté un gif de grenouille" et "a partagé un GIF Tenor mister-v grenouille" → garder le plus détaillé
    - Si deux souvenirs se contredisent, garde le plus récent (date la plus haute)
+   - **Un souvenir par thème conservé, pas zéro** : si tu supprimes cinq
+     formulations de "joue à Valorant", il doit en rester UNE dans la liste.
+
+**RÈGLE ABSOLUE — ne jette jamais un souvenir unique.** Un souvenir qui n'a
+aucun équivalent ailleurs dans la liste se garde, même s'il te paraît mineur,
+anecdotique ou mal écrit. Tu élagues des répétitions, tu ne juges pas de
+l'intérêt de ce que la personne a dit. Avant de mettre un index dans `delete`,
+demande-toi : « quel AUTRE souvenir de la liste porte déjà cette information ? »
+Si tu ne peux pas le nommer, ne le supprime pas — reformule-le si besoin.
+
+Concrètement : `delete` ne doit jamais dépasser la moitié de la liste, sauf si
+elle est vraiment saturée de répétitions. Un verdict qui supprime presque tout
+sera rejeté en bloc et ton travail sera perdu.
 
 3. **À reformuler** — faits dont la formulation peut être améliorée :
    - Trop vagues → reformuler plus précisément
