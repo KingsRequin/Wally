@@ -432,6 +432,12 @@ async def _maybe_respond(
         current = (speaker_user_id, speaker_label, transcript)
         while current is not None:
             await _respond_once(bot, service, *current)
+            # Un départ survenu pendant ce tour (« dégage », outil `leave_voice`)
+            # a vidé la file dans `leave()` : `_next_pending` rend None et la
+            # boucle s'arrête d'elle-même. Sans ça, chaque parole restante
+            # coûtait un appel LLM complet pour un `speak()` devenu no-op, et
+            # `_voice_post_emotion` recevait un `channel_id` None qu'il
+            # transformait en la chaîne « None ».
             current = _next_pending(service)
     finally:
         service.is_responding = False

@@ -1138,6 +1138,15 @@ def _consume_open_question(channel_id, user_id) -> bool:
 
 
 _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous timestamp
+# Au-delà de ce nombre de couples suivis, on balaie les inactifs (cf. plus bas).
+# Outils de recherche externe, coupés quand le rappel RSS couvre déjà l'actualité.
+# UNE constante pour les deux usages : le filtre de l'offre omettait
+# `image_search`, que le refus d'exécution listait pourtant. Le modèle pouvait
+# donc appeler un outil qu'on lui proposait, et ne recevoir qu'un refus parlant
+# d'articles — un tour de tool-calling gaspillé.
+_LOOKUP_TOOLS = ("web_search", "image_search", "scrape_url", "apex_legends")
+
+_SPAM_TRACKER_PURGE_AT = 500
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
 _scrape_cooldowns: dict[str, float] = {}  # channel_id → last auto-scrape timestamp
@@ -1290,13 +1299,17 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
     # Purge old timestamps
     while dq and dq[0] < cutoff:
         dq.popleft()
-    # Clean up empty entries before adding new one
-    if not dq:
-        _spam_tracker.pop(key, None)
     dq.append(now)
-    # Re-register in case we popped above
-    if key not in _spam_tracker:
-        _spam_tracker[key] = dq
+    _spam_tracker[key] = dq
+
+    # Purge RÉELLE : le retrait de la clé vide était immédiatement annulé trois
+    # lignes plus bas par sa réinscription — un no-op, alors que le commentaire
+    # annonçait un nettoyage. On balaie donc les couples (utilisateur, salon)
+    # devenus inactifs, sinon le dict grossit d'une entrée par couple jamais vu
+    # et ne se vide jamais de tout le process (des semaines).
+    if len(_spam_tracker) > _SPAM_TRACKER_PURGE_AT:
+        for cle in [k for k, d in _spam_tracker.items() if not d or d[-1] < cutoff]:
+            _spam_tracker.pop(cle, None)
 
     if len(dq) < cfg.max_messages:
         return False
@@ -1736,7 +1749,16 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
 
     if await bot.db.is_muted(user_id, guild_id) and not bot.persona.is_beloved("discord", user_id):
         emoji = random.choice(TIMEOUT_REACTIONS)
-        await message.add_reaction(emoji)
+        # Le SEUL `add_reaction` du fichier qui n'était pas protégé. Un
+        # `discord.Forbidden` — permission « Ajouter des réactions » absente —
+        # remontait hors de `handle_message`, et la ligne suivante était sautée :
+        # la colère cessait de monter pendant le mute, comportement pourtant
+        # documenté, dans tout salon où Wally n'a pas cette permission.
+        try:
+            await message.add_reaction(emoji)
+        except Exception as exc:  # noqa: BLE001 — réagir est un bonus, pas le sujet
+            logger.debug("Réaction de mute impossible: {e}", e=exc)
+        # Appliqué INDÉPENDAMMENT du succès de la réaction.
         if bot.config.discord.spam_detection.enabled:
             bot.emotion.apply_delta("anger", bot.config.discord.spam_detection.spam_anger_delta)
         return
@@ -2268,7 +2290,7 @@ async def _respond(
             )
             # Actu déjà couverte par le RSS : on refuse tout lookup externe, même
             # si le modèle l'a appelé par réflexe (hallucination de tool non offert).
-            if _suppress_lookup and name in ("web_search", "image_search", "scrape_url", "apex_legends"):
+            if _suppress_lookup and name in _LOOKUP_TOOLS:
                 logger.info("RSS: appel '{}' bloqué (actu déjà dans le contexte)", name)
                 return (
                     "Inutile de chercher : tu as DÉJÀ les dernières actus dans ton "
@@ -2428,7 +2450,7 @@ async def _respond(
             _before = len(tools)
             tools = [
                 t for t in tools
-                if t.get("function", {}).get("name") not in ("web_search", "scrape_url", "apex_legends")
+                if t.get("function", {}).get("name") not in _LOOKUP_TOOLS
             ]
             if len(tools) != _before:
                 logger.info("RSS: {} outil(s) de lookup retiré(s) de l'offre (actu couverte)",

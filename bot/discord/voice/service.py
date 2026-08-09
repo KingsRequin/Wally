@@ -170,7 +170,17 @@ class VoiceService:
             self._stt = build_stt(cfg, phrases=phrases)
 
     def reload_config(self, cfg: VoiceConfig) -> None:
-        """Recharge la config à chaud (voix, langue, seuils, provider STT) sans redémarrer."""
+        """Recharge la config à chaud sans redémarrer.
+
+        Prennent effet IMMÉDIATEMENT : voix, langue, `auto_leave_minutes` (relu à
+        chaque tour du watchdog).
+
+        Prennent effet AU PROCHAIN JOIN : les seuils VAD (`vad_aggressiveness`,
+        `vad_silence_timeout_s`), figés dans le `WallyAudioSink` construit au
+        join, et le provider STT. Le docstring annonçait « seuils » sans réserve,
+        alors qu'ils sont exposés dans le panneau admin : on croyait régler à
+        chaud ce qui ne bougeait pas.
+        """
         self._cfg = cfg
         try:
             phrases = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
@@ -276,13 +286,15 @@ class VoiceService:
         )
 
         await set_muted(self._vc, True)
-        # Retenu pour le prochain démarrage : on le déplace en cours de soirée,
-        # et un rebuild le ramenait sinon au salon écrit en config.
-        db = getattr(self._bot, "db", None)
-        if db is not None:
-            from bot.discord.voice.channel_memory import remember_voice_channel
-
-            await remember_voice_channel(db, channel.id)
+        # Retenu pour le prochain démarrage — mais SEULEMENT pour un salon de
+        # stream (`listen_only`). C'était fait pour TOUT join, `/join` et l'outil
+        # `join_voice` compris : un simple « viens en vocal » dans un salon privé
+        # écrasait durablement le salon de stream, et `resolve_voice_channel_id`
+        # préférant la base à la config, tous les lives suivants y amenaient
+        # Wally. Le déplacement à la main, lui, n'était pas retenu — le cas que
+        # la fonctionnalité visait (cf. `follow_move`).
+        if listen_only:
+            await self._remember_channel(channel)
         loop = asyncio.get_running_loop()
         self._last_speech_ts = loop.time()
         self._stream_users.clear()
@@ -382,8 +394,36 @@ class VoiceService:
         La connexion vocale suit toute seule ; ce qu'il faut recaler, c'est le
         salon de référence — sans quoi `members_in_channel()` et le watchdog
         regarderaient l'ancien salon.
+
+        Le déplacement est aussi RETENU : c'est exactement le cas décrit par
+        `channel_memory` (« on le déplace en cours de soirée »), et il était le
+        seul à ne pas l'être.
         """
         self._channel = channel
+        if self.listen_only:
+            self._fire_detached(self._remember_channel(channel))
+
+    async def _remember_channel(self, channel) -> None:
+        """Retient ce salon comme salon de stream, pour le prochain démarrage."""
+        db = getattr(self._bot, "db", None)
+        if db is None:
+            return
+        try:
+            from bot.discord.voice.channel_memory import remember_voice_channel
+
+            await remember_voice_channel(db, channel.id)
+        except Exception as exc:  # noqa: BLE001 — ne pas retenir n'est pas fatal
+            logger.debug("voice: salon non retenu: {e}", e=exc)
+
+    def _fire_detached(self, coro) -> None:
+        """Détache une coroutine depuis un contexte synchrone, sans la perdre."""
+        try:
+            task = asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:      # pas de boucle (tests synchrones)
+            coro.close()
+            return
+        self._detached.add(task)
+        task.add_done_callback(self._detached.discard)
 
     async def leave(self, *, voluntary: bool = True) -> None:
         """Quitte le salon vocal, stoppe l'écoute et le watchdog.
@@ -399,8 +439,24 @@ class VoiceService:
         """
         # Congé : il ne sera pas ramené par le veilleur (cf. main.py), jusqu'à
         # la fin du live. Réservé à un départ décidé, depuis un vocal d'écoute.
+        #
+        # Volontairement limité à `listen_only`. On a envisagé de l'étendre à
+        # toute sortie voulue, au motif qu'un « Wally, casse-toi » lancé en
+        # conversation pendant un live le voyait revenir 30 s plus tard. Mais le
+        # veilleur le ramène dans le salon de STREAM, pas dans celui qu'on vient
+        # de lui faire quitter — dès lors que `remember_voice_channel` ne retient
+        # plus que les salons de stream (corrigé juste au-dessus). Un congé
+        # général l'aurait rendu absent du live entier pour une phrase qui ne
+        # visait qu'une conversation.
         if voluntary and self.listen_only:
             self.listen_optout = True
+        # La file des paroles en attente meurt avec le salon : quand `leave()`
+        # part de l'INTÉRIEUR de la boucle (« dégage » en vocal, outil
+        # `leave_voice`), `_maybe_respond` continuait à défiler ce qui restait —
+        # un appel LLM complet payé après le départ, puis un `notify_reply` et un
+        # `_voice_post_emotion` recevant `channel_id=None`, que ce dernier
+        # transformait en la chaîne « None » comme identifiant de salon.
+        self._pending_queue.clear()
         # Ne JAMAIS s'annuler soi-même : `_auto_leave_watch` appelle `leave()`,
         # et `cancel()` sur la tâche courante arme un CancelledError qui part au
         # premier `await` suspendant (`disconnect()`). Comme il dérive de
@@ -761,10 +817,15 @@ class VoiceService:
 
     async def _auto_leave_watch(self) -> None:
         """Quitte automatiquement si le salon est vide ou s'il n'y a plus de parole."""
-        timeout = self._cfg.auto_leave_minutes * 60
         try:
             while self._vc is not None:
                 await asyncio.sleep(10)
+                # Relu à CHAQUE tour : `auto_leave_minutes` est exposé dans le
+                # panneau admin, qui appelle `reload_config()` — mais le délai
+                # n'était lu qu'une fois, avant la boucle. « Enregistrer » ne
+                # produisait donc aucun effet jusqu'au prochain join, sans le
+                # moindre message : on réglait à l'aveugle.
+                timeout = self._cfg.auto_leave_minutes * 60
                 if not self.members_in_channel():
                     logger.info("voice: salon vide → auto-leave")
                     await self.leave()
