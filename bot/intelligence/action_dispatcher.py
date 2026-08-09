@@ -36,6 +36,27 @@ def _desire_tokens(text: str) -> set[str]:
     return {t for t in cleaned.split() if len(t) >= 3 and t not in _DESIRE_STOPWORDS}
 
 
+def _peremption_desir(texte: str) -> datetime | None:
+    """Échéance d'un désir daté, ou None s'il est durable.
+
+    Réutilise `_compute_expiry` du fact_extractor : son garde-fou force déjà un TTL
+    dès qu'un marqueur temporel apparaît dans le texte (« ce soir », « aujourd'hui »,
+    « demain », « ce week-end »). C'est exactement ce qu'il fallait ici, et il ne
+    manquait que l'appel : les 156 désirs actifs du 2026-08-09 avaient tous
+    `expires_at = NULL`, dont six « lire le blog Hytale aujourd'hui à 16h » encore
+    vivants un mois après l'heure dite.
+
+    Best-effort : une erreur ici ne doit jamais empêcher d'enregistrer le désir.
+    """
+    try:
+        from bot.intelligence.fact_extractor import _compute_expiry
+
+        return _compute_expiry(None, texte, datetime.utcnow())
+    except Exception as e:  # noqa: BLE001 — jamais bloquant
+        logger.warning("péremption de désir non calculée: {}", e)
+        return None
+
+
 def _same_desire(a: str, b: str, threshold: float = 0.5) -> bool:
     """True si deux désirs expriment la même intention (Jaccard de tokens ≥ seuil).
     Robuste aux paraphrases qui partagent les mots porteurs (entités, verbes), là
@@ -446,6 +467,7 @@ class ActionDispatcher:
                         confidence=0.8,
                         created_at=now,
                         last_seen_at=now,
+                        expires_at=_peremption_desir(content),
                     ))
                     logger.info("ACT create_desire: {}", content[:60])
                     self._publish_act("create_desire: ", content)

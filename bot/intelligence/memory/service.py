@@ -274,6 +274,20 @@ class MemoryService:
         stale = await self._facts.archive_stale_doubts()
         if stale:
             logger.info("Memory cleanup: {n} doutes non levés archivés", n=stale)
+        # Decay : une passe par nuit, la cadence pour laquelle `DECAY_RATES` est
+        # calibré (0.05/nuit pour une pensée = 18 jours de durée de vie ;
+        # 0.001 pour un fait sur quelqu'un = 900 jours, autant dire jamais).
+        #
+        # Cet appel manquait DEPUIS L'ORIGINE : la méthode existait, la colonne
+        # `decay_rate` était écrite à chaque insertion, deux tests unitaires la
+        # couvraient — et personne ne l'appelait. Le seul `_apply_decay` vivant est
+        # celui des ÉMOTIONS (`core/emotion.py`), homonyme et sans rapport, ce qui a
+        # entretenu l'illusion pendant des mois. Résultat mesuré le 2026-08-09 :
+        # 7961 faits actifs sur 9122 avaient encore leur confiance d'origine, dont
+        # des désirs de 47 jours à 1.0.
+        decayed = await self._facts.apply_decay()
+        if decayed:
+            logger.info("Memory cleanup: decay appliqué à {n} faits actifs", n=decayed)
         return n + stale
 
     async def delete_user_memories(self, platform: str, user_id: str) -> None:
