@@ -31,6 +31,13 @@ Indique ta confiance (0.0–1.0) dans chaque résolution.
 
 
 ## Ce que tu ignores
+
+- **Ce qui est déjà en mémoire.** Quand un bloc « Déjà en mémoire sur ces
+  personnes » accompagne la conversation, ces faits sont DÉJÀ stockés : ne les
+  ressors pas. Tu es appelé toutes les poignées de messages, et redire
+  autrement quelque chose de déjà connu ("Joue à Valorant" → "Cluth joue à
+  Valorant en ranked") crée un doublon de plus à chaque passage. N'extrais que
+  du nouveau, ou une **mise à jour** qui contredit/précise un fait connu.
 - Les messages de {{BOT_NAME}} (le bot)
 - Les humeurs passagères et réactions ponctuelles
 - Les blagues sans contenu informatif

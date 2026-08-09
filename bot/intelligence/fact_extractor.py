@@ -279,6 +279,21 @@ _PARTIAL_KEEP = 5
 _MAX_AGE_SECONDS = 600
 _REPLY_PAUSE_SECONDS = 180
 
+# ── Rappel de ce qu'on sait déjà ──────────────────────────────────────────────
+#
+# Le tampon est vidé à chaque flush : les mêmes messages ne sont jamais relus.
+# Mais l'extraction repart de zéro tous les 5 messages, sans jamais voir les
+# faits déjà en base — d'où le même fait ré-extrait, reformulé, à chaque
+# passage. On remonte donc les souvenirs de chaque participant qui recoupent la
+# conversation en cours, et on demande de ne pas les répéter.
+#
+# Par pertinence (FTS5/BM25 sur le texte de la conversation), pas en vrac :
+# injecter les 194 souvenirs de quelqu'un toutes les 5 messages coûterait des
+# milliers de tokens pour rien. Seuls ceux que la conversation risque de faire
+# ré-extraire sont utiles.
+_KNOWN_FACTS_PER_USER = 8
+_KNOWN_FACTS_TOTAL = 40
+
 
 # ── FactExtractor ─────────────────────────────────────────────────────────────
 
@@ -559,6 +574,48 @@ class FactExtractor:
             )
             return False
 
+    async def _known_facts_hint(
+        self, platform: str, participants: dict, conversation_text: str
+    ) -> str:
+        """Souvenirs déjà en base que la conversation risque de faire ré-extraire.
+
+        Un appel FTS5 par participant, la conversation servant de requête : on ne
+        remonte que ce qui recoupe ce qui vient d'être dit. Chaîne vide si on ne
+        sait encore rien de personne — un bloc vide n'apprendrait rien au modèle
+        et lui coûterait des tokens.
+        """
+        store = getattr(self._memory, "fact_store", None)
+        if store is None or not participants:
+            return ""
+
+        lines: list[str] = []
+        for uid, name in participants.items():
+            if len(lines) >= _KNOWN_FACTS_TOTAL:
+                break
+            try:
+                prefixed = self._memory._user_id(platform, uid)
+                hits = await store.search_fts(
+                    prefixed, conversation_text, limit=_KNOWN_FACTS_PER_USER
+                )
+            except Exception as exc:  # noqa: BLE001 — le rappel est un bonus
+                logger.warning(
+                    "FactExtractor: rappel des faits connus échoué pour {u}: {e}",
+                    u=uid, e=exc,
+                )
+                continue
+            for fact, _score in hits[: _KNOWN_FACTS_TOTAL - len(lines)]:
+                lines.append(f"  - {name} : {fact.content}")
+
+        if not lines:
+            return ""
+        return (
+            "\n\nDéjà en mémoire sur ces personnes (ne les ré-extrais PAS) :\n"
+            + "\n".join(lines)
+            + "\nCes faits sont DÉJÀ stockés. N'extrais que ce qui est nouveau, "
+            "ou ce qui les contredit / les met à jour. Redire autrement ce qui "
+            "est ci-dessus crée un doublon."
+        )
+
     async def _extract_facts(
         self,
         messages: list[dict],
@@ -623,9 +680,13 @@ class FactExtractor:
             except Exception:
                 known_users_hint = ""
 
+        known_facts_hint = await self._known_facts_hint(
+            platform, participants, conversation_text
+        )
+
         user_prompt = (
             f"Participants: {', '.join(f'{n} ({platform}:{uid})' for uid, n in participants.items())}\n"
-            f"{alias_hint}{known_users_hint}\n\n"
+            f"{alias_hint}{known_users_hint}{known_facts_hint}\n\n"
             f"Conversation:\n{conversation_text}"
         )
 
