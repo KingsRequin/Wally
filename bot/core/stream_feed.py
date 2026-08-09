@@ -165,10 +165,28 @@ class StreamFeed:
             lines.append("Dernières lignes du chat du stream :")
             for _ts, author, text in chat:
                 lines.append(f"· [{author}] {text}")
+        # Cette conclusion affirme la perception au lieu de la nier. L'ancienne
+        # version — « Tu n'as RIEN à en faire : tu ne commentes pas, tu ne réagis
+        # pas, tu n'en parles pas de toi-même » — était pour moitié REDONDANTE et
+        # pour moitié TROMPEUSE.
+        #
+        # Redondante : l'initiative est déjà bloquée mécaniquement en amont.
+        # `spontaneous_channel_speak_enabled: false` fait jeter tout SPEAK spontané
+        # dans `cognitive_loop`, ce flux n'appelle aucun `notify_*` donc ne réveille
+        # pas la cadence, et la parole spontanée est de toute façon redirigée vers
+        # son salon dédié. Aucune de ces barrières ne dépend d'une phrase de prompt.
+        #
+        # Trompeuse : Wally l'a lue comme « je ne perçois pas », et a redemandé le
+        # 2026-08-09 une capacité livrée le 05 — celle-ci même.
+        #
+        # Ce qui reste utile, et qu'on garde : le garde-fou anti-DIGRESSION. Une
+        # réponse à une mention ne passe pas par `cognitive_loop` mais par les
+        # handlers, avec ce bloc dans le prompt système — rien n'empêche alors un
+        # « au fait, le chat d'Azraël dit que… » greffé sur une question sans rapport.
         lines.append(
-            "Tu n'as RIEN à en faire : tu ne commentes pas, tu ne réagis pas, tu n'en "
-            "parles pas de toi-même. C'est du bruit de fond qui enrichit ce que tu "
-            "comprends de la situation — tu ne t'en sers que si on t'interroge "
-            "directement là-dessus."
+            "Tu perçois vraiment tout ça, en fond, sans avoir à être sur Twitch. "
+            "Mais tu n'ouvres pas ce sujet de toi-même : ce n'est pas à toi de "
+            "raconter le live ou de commenter le chat à des gens qui ne l'ont pas "
+            "sous les yeux. Si on t'en parle, en revanche, tu sais de quoi il retourne."
         )
         return "\n".join(lines)

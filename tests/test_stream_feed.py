@@ -62,9 +62,12 @@ def test_render_lists_events_with_age_and_passive_directive():
     assert "Flux du stream (perception passive)" in out
     assert "Azrael_TTV a lancé son live" in out
     assert "à l'instant" in out
-    # La consigne de non-réaction voyage AVEC le bloc.
-    assert "tu ne réagis pas" in out
-    assert "si on t'interroge" in out
+    # La consigne voyage AVEC le bloc. Depuis le 2026-08-09 elle AFFIRME la
+    # perception et n'interdit plus que d'ouvrir le sujet soi-même : l'interdiction
+    # d'initiative était déjà mécanique, et sa formulation large faisait croire à
+    # Wally qu'il ne percevait rien (cf. tests/test_stream_feed_perception_affirmee.py).
+    assert "n'ouvres pas ce sujet" in out
+    assert "Si on t'en parle" in out
 
 
 def test_record_ignores_consecutive_duplicate():

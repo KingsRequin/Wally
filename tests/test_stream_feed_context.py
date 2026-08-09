@@ -74,7 +74,9 @@ def test_reasoning_renders_stream_feed():
     feed = _activate_feed()
     text = agent._format_context(_ctx(stream_feed=feed.render()))
     assert "Warhammer: Darktide" in text
-    assert "tu ne réagis pas" in text
+    # Consigne reformulée le 2026-08-09 : elle affirme la perception et n'interdit
+    # plus que d'ouvrir le sujet (cf. tests/test_stream_feed_perception_affirmee.py).
+    assert "n'ouvres pas ce sujet" in text
 
 
 def test_reasoning_without_stream_feed():
