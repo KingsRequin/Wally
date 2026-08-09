@@ -76,6 +76,14 @@ class ReasoningAgent:
         self._llm = llm
         self._facts = fact_store
         self._system = render_identity((Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8"))
+        # Catalogue des widgets d'overlay, injecté dans le CONTEXTE (pas dans le
+        # système) et seulement quand l'overlay écoute — cf. `_format_context`. Dans le
+        # système il aurait été figé à la construction, comme le reste ; ici il suit
+        # l'état réel du live. Absent du dossier → chaîne vide, rien ne casse.
+        _widgets = Path(prompts_dir) / "overlay_widgets.md"
+        self._widgets_overlay = (
+            render_identity(_widgets.read_text(encoding="utf-8")) if _widgets.exists() else ""
+        )
         # Parole spontanée coupée : inutile de laisser le LLM choisir SPEAK et
         # rédiger un message qui sera jeté au dispatch. Il décidait en boucle une
         # action structurellement impossible (mesuré : 18 messages écrits pour
@@ -424,4 +432,20 @@ class ReasoningAgent:
                     f"  canal {sp.get('channel', '?')} (il y a ~{mins} min) : "
                     f"{_one_line(sp.get('content', ''))}"
                 )
+        # Catalogue des widgets d'overlay : SEULEMENT quand l'overlay écoute. Ces 950
+        # mots décrivaient dix-sept actions impossibles hors live et partaient pourtant
+        # à chaque tick — même motif que `[SPEAK]` désactivé, où le projet avait mesuré
+        # 18 messages écrits pour rien en 5 jours avant de couper la consigne à la
+        # source. Best-effort : perdre le catalogue est un moindre mal, perdre le tick non.
+        # `getattr` et non l'attribut direct : plusieurs tests construisent l'agent
+        # sans passer par `__init__`, et un bloc de contexte optionnel ne doit pas
+        # imposer sa présence à tous les chemins de construction.
+        if getattr(self, "_widgets_overlay", ""):
+            try:
+                from bot.intelligence.overlay_narrator import overlay_actif
+
+                if overlay_actif():
+                    lines.append(self._widgets_overlay)
+            except Exception as e:  # noqa: BLE001 — jamais bloquant
+                logger.debug("catalogue overlay non injecté: {}", e)
         return "\n".join(lines)

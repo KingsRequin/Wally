@@ -255,6 +255,19 @@ OVERLAY_TOOL_SPEC = {
 _active_narrator: "OverlayNarrator | None" = None
 
 
+def overlay_actif() -> bool:
+    """Vrai si l'overlay écoute — vrai live ou mode test. Faux s'il n'y en a pas.
+
+    Sert à ne proposer le catalogue des widgets qu'au moment où il peut servir : il
+    pesait 23 % du prompt de raisonnement et partait 24 h/24 (cf.
+    `prompts/overlay_widgets.md`). C'est le NARRATEUR qui tranche, pas `_stream_info` :
+    lui seul connaît le mode test hors live.
+    """
+    if _active_narrator is None:
+        return False
+    return bool(_active_narrator.is_active())
+
+
 def current_overlay_state_block() -> Optional[str]:
     """Ce qui tourne sur l'overlay, prêt à injecter au prompt. None si rien."""
     if _active_narrator is None:
