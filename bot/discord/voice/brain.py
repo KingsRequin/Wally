@@ -292,6 +292,17 @@ async def generate_voice_reply(
         logger.warning("voice memory.search a échoué: {e}", e=e)
         memory_context = ""
 
+    # Recall RSS knowledge (patch notes Apex) : le vocal en était privé alors que
+    # c'est le chemin où l'on commente le jeu EN JOUANT. Sans lui, une question sur
+    # le dernier patch ne recevait qu'un « je sais pas » — exact, faute de données.
+    try:
+        from bot.discord.handlers import _rss_knowledge_context
+
+        if rss_block := await _rss_knowledge_context(bot, transcript or ""):
+            memory_context = f"{memory_context}\n\n{rss_block}" if memory_context else rss_block
+    except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
+        logger.warning("rss_knowledge (vocal): injection ignorée: {e}", e=e)
+
     system_prompt = _voice_system(
         bot, speaker_label=speaker_label, memory_context=memory_context or "",
         present_label=present_label, channel_name=channel_name, activity_label=activity_label,

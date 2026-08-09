@@ -612,6 +612,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
+        # Recall RSS knowledge (patch notes Apex) — HORS budget mémoire pour que les
+        # marqueurs de citation [¹](<url>) survivent à la troncature, comme côté
+        # Discord. Ce chemin en était privé : le mécanisme n'avait qu'un seul appelant
+        # alors que c'est ICI qu'on parle d'Apex, pendant les lives. Wally répondait
+        # « je sais pas », et il avait raison — il n'avait rien sous les yeux.
+        try:
+            from bot.discord.handlers import _rss_knowledge_context
+
+            if rss_block := await _rss_knowledge_context(bot, content or ""):
+                mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
+        except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
+            logger.warning("rss_knowledge (twitch): injection ignorée: {}", e)
+
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
