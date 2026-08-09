@@ -408,6 +408,17 @@ class WallyDiscord(commands.Bot):
                 _reg_db = self._v2_db_path or _os_auto.getenv("DB_PATH", "data/wally.db")
                 self.upgrade_registry = UpgradeRegistry(_reg_db)
             self.self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry, gate=self.owner_gate)
+            # Réconciliation au démarrage : une demande laissée en REQUESTED par
+            # un redémarrage pendant l'attente d'autorisation bloquait ce but —
+            # et tout but lexicalement proche — définitivement (cf.
+            # `UpgradeRegistry.reconcile_stale`). Un self-fix se terminant par un
+            # `docker_rebuild`, le cas est structurel, pas accidentel.
+            try:
+                await self.upgrade_registry.reconcile_stale(
+                    older_than_hours=getattr(self.self_fix, "_approval_timeout", 72 * 3600) / 3600
+                )
+            except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
+                logger.warning("Réconciliation des demandes d'auto-modif échouée: {e}", e=exc)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)

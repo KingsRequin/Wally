@@ -199,6 +199,13 @@ class SelfFix:
         oid = self._owner_id()
         if not oid:
             logger.warning("self-upgrade: owner_discord_id non configuré — abandon")
+            # ABANDONED, pas un retour nu : la demande venait d'être inscrite en
+            # REQUESTED, statut qui fait partie de `_BLOCKING`. Sortir sans rien
+            # poser la laissait bloquante POUR TOUJOURS, et `find_similar`
+            # écartant tout ce qui dépasse un Jaccard de 0.3, ce but — et tout
+            # but lexicalement proche — était ignoré en silence. Le motif
+            # « needs_review = impasse » déjà rencontré sur la mémoire.
+            await self._set_status(upgrade_id, ABANDONED)
             return
         owner = await self._bot.fetch_user(int(oid))
         dm = await owner.create_dm()

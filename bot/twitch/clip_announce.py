@@ -7,6 +7,8 @@ from collections.abc import Awaitable, Callable
 
 from loguru import logger
 
+from bot.intelligence.overlay_narrator import OverlayNarrator
+
 # Attentes avant de renoncer à la vidéo, en SECONDES. Twitch documente un délai
 # entre la création d'un clip pendant un live et la disponibilité de son asset :
 # « indéterminé, typiquement de plusieurs minutes ». La veille interroge l'API
@@ -57,7 +59,7 @@ async def announce_clip(
             break
 
     video = (playable or {}).get("url", "")
-    narrator.show_clip(
+    affiche = narrator.show_clip(
         title,
         author,
         embed_url=clip.get("embed_url") or "",
@@ -66,9 +68,21 @@ async def announce_clip(
     )
     # Le chemin automatique était muet, là où l'appel explicite journalise : on
     # ne pouvait pas savoir si un clip était parti en vidéo ou en carte nue.
+    #
+    # Mais le journal doit dire ce qui est RÉELLEMENT parti à l'écran :
+    #   — `show_clip` rend False si le live s'est coupé pendant la préparation
+    #     (jusqu'à 3 min de reprises) : rien n'a été publié ;
+    #   — une URL de vidéo ne suffit pas à la jouer, elle doit passer la liste
+    #     blanche d'hôtes de `_is_clip_video`. Le chemin explicite fait déjà ce
+    #     test (`played = self._is_clip_video(video)`) ; celui-ci se contentait
+    #     de `if video`, et annonçait « joué » un clip tombé en carte nue.
+    if not affiche:
+        logger.info("Overlay: clip « {t} » non affiché (live terminé)", t=title)
+        return
+    joue = OverlayNarrator._is_clip_video(video) if video else False
     logger.info(
         "Overlay: clip « {t} » de {a} — {m}",
         t=title, a=author,
-        m="joué" if video else ("player en attente de clic"
-                                if clip.get("embed_url") else "carte seule"),
+        m="joué" if joue else ("player en attente de clic"
+                               if clip.get("embed_url") else "carte seule"),
     )

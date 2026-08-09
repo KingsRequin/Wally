@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import aiosqlite
 from loguru import logger
@@ -74,6 +74,36 @@ class UpgradeRegistry:
                 (status, datetime.utcnow().isoformat(), upgrade_id),
             )
             await db.commit()
+
+    async def reconcile_stale(self, older_than_hours: float) -> int:
+        """Passe en ABANDONED les demandes restées REQUESTED trop longtemps.
+
+        À appeler au démarrage. `request_upgrade` attend la réaction de l'owner
+        jusqu'à `approval_timeout` (72 h) via un `wait_for` : tout redémarrage
+        pendant cette fenêtre — et un self-fix se TERMINE justement par un
+        `docker_rebuild` — perd l'attente sans repasser par le
+        `except asyncio.TimeoutError` qui aurait posé ABANDONED. La ligne restait
+        donc REQUESTED pour toujours, or ce statut est `_BLOCKING` : `find_similar`
+        écartant tout ce qui dépasse un Jaccard de 0.3, le but — et tout but
+        lexicalement proche — devenait irrattrapable, en silence.
+
+        ABANDONED et non REFUSED : la demande redevient re-proposable, elle n'a
+        jamais été refusée par personne.
+        """
+        limite = (datetime.utcnow() - timedelta(hours=older_than_hours)).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            cur = await db.execute(
+                "UPDATE pending_upgrades SET status = ?, decided_at = ? "
+                "WHERE status = ? AND created_at < ?",
+                (ABANDONED, datetime.utcnow().isoformat(), REQUESTED, limite),
+            )
+            await db.commit()
+            if cur.rowcount:
+                logger.info(
+                    "UpgradeRegistry: {n} demande(s) restée(s) en suspens rouverte(s)",
+                    n=cur.rowcount,
+                )
+            return cur.rowcount
 
     async def recent(self, limit: int = 6) -> list[UpgradeRow]:
         async with aiosqlite.connect(self._db_path) as db:

@@ -64,7 +64,13 @@ def matches_name(candidate: str, wanted: str) -> bool:
     a, b = _normalize(candidate), _normalize(wanted)
     if not a or not b:
         return False
-    if len(b) >= 3 and (b in a or a in b):
+    # Les DEUX côtés sont bornés à 3 caractères. Seul `b` (le surnom cherché)
+    # l'était : dans la branche `a in b`, c'est `a` — le nom du candidat — qui
+    # sert de sous-chaîne, sans plancher. `matches_name("Al", "Alexandre")` et
+    # `matches_name("Bo", "Bob")` rendaient donc True, si bien qu'un pseudo de
+    # une ou deux lettres matchait une large famille de surnoms. Or, comme le
+    # dit le docstring, personne ne valide derrière : la confusion part à l'écran.
+    if len(b) >= 3 and (b in a or (len(a) >= 3 and a in b)):
         return True
     return score(candidate, wanted) >= 0.85
 
@@ -130,7 +136,7 @@ async def analyze_new_user(
         parts = new_user_id.split(":", 1)
         if len(parts) != 2:
             return
-        platform, user_id = parts
+        platform, _ = parts        # l'id est relu via `full_id` juste en dessous
 
         if platform == "discord":
             # Pour Discord, on a besoin du username — le chercher dans memory_users

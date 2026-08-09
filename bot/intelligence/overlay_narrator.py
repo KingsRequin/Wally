@@ -1003,9 +1003,10 @@ class OverlayNarrator:
         author = (author or "").strip()
         if not author:
             return
-        if author:
-            key = author.strip()
-            self._talkers[key] = self._talkers.get(key, 0) + 1
+        # `author` est déjà nettoyé et non vide ici : le `if author:` et le
+        # second `strip()` d'avant laissaient croire qu'un auteur vide restait
+        # possible à cet endroit.
+        self._talkers[author] = self._talkers.get(author, 0) + 1
         self.maybe_remind_bingo()
         # Les trois compteurs attendent un message NU : une lettre seule, un
         # chiffre seul, un nom de coup. Or on répond à un bot en le mentionnant —

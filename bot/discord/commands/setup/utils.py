@@ -23,8 +23,19 @@ EDITABLE_ENV_KEYS: list[str] = [
     "STREAMER_REFRESH_TOKEN",
 ]
 
-EXCLUDED_MODEL_KEYWORDS = ["realtime", "preview", "audio", "vision"]
-INCLUDED_MODEL_KEYWORDS = ["gpt", "chatgpt", "o1", "o3", "o4"]
+# Modèles non conversationnels ou incompatibles Chat Completions. La liste
+# n'avait que les quatre premiers : `gpt-image-1.5` (le modèle IMAGE du projet),
+# `gpt-4o-transcribe`, `gpt-4o-mini-tts` et `gpt-3.5-turbo-instruct` passaient
+# donc le filtre et apparaissaient dans le menu « Modèle principal ». En choisir
+# un cassait le LLM en silence, et le choix était persisté par `config.save()`.
+EXCLUDED_MODEL_KEYWORDS = [
+    "realtime", "preview", "audio", "vision",
+    "image", "tts", "transcribe", "instruct", "embedding", "moderation", "search",
+]
+# Familles conversationnelles. `o1`/`o3`/`o4` sont testées en PRÉFIXE : en
+# sous-chaîne non ancrée, elles matchaient au hasard des identifiants futurs.
+INCLUDED_MODEL_KEYWORDS = ["gpt", "chatgpt"]
+INCLUDED_MODEL_PREFIXES = ("o1", "o3", "o4")
 
 
 # ── Utilitaires .env ──────────────────────────────────────────────────────────
@@ -85,6 +96,8 @@ def is_valid_model(model_id: str) -> bool:
     mid = model_id.lower()
     if any(ex in mid for ex in EXCLUDED_MODEL_KEYWORDS):
         return False
+    if mid.startswith(INCLUDED_MODEL_PREFIXES):
+        return True
     return any(inc in mid for inc in INCLUDED_MODEL_KEYWORDS)
 
 

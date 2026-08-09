@@ -10,7 +10,7 @@ usages :
   Azrael est en live, quel jeu, quel titre — comme un ami abonné à ses notifs.
 - **Notification** : sur transition live↔offline, `on_transition(old, new)` est
   appelé pour réveiller la cognition (cf. `CognitiveLoop.notify_event`).
-- **Flux passif** : `on_event(description)` reçoit CHAQUE changement observé au
+- **Flux passif** : `on_event(description, kind=…, notify=…)` reçoit CHAQUE changement observé au
   fil du live (lancement, fin, changement de jeu ou de titre, vague d'audience)
   pour alimenter le `StreamFeed` — contexte d'ambiance, sans réveil cognitif.
 
@@ -75,7 +75,13 @@ class StreamWatcher:
         interval: float = 60.0,
         on_transition: Optional[Callable[[dict, dict], None]] = None,
         on_poll: Optional[Callable[[dict], None]] = None,
-        on_event: Optional[Callable[[str], None]] = None,
+        # Signature réelle : `(description, *, kind: str, notify: bool)`. Elle
+        # était annotée à UN argument alors que l'appel en passe trois depuis
+        # le typage des événements, et le repli qui rattrapait le TypeError a
+        # été retiré : une réimplémentation écrite d'après cette annotation
+        # aurait levé, absorbée en `logger.warning` — flux passif muet, sans
+        # cause visible.
+        on_event: Optional[Callable[..., None]] = None,
     ) -> None:
         self._api = twitch_api
         self.streamer_name = streamer_name

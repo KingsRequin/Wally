@@ -80,9 +80,6 @@ class StreamFeed:
         # Reçoit `(description, kind)` : sans le type, l'overlay devait le
         # DEVINER depuis la phrase, et se trompait.
         self._observer: Optional[Callable[[str, str], None]] = None
-        # Observateur des lignes de chat (auteur, texte). Sert aux sondages et
-        # aux saluts de l'overlay. Même contrat : best-effort, jamais bloquant.
-        self._chat_observer: Optional[Callable[[str, str], None]] = None
 
     def set_observer(self, callback: Optional[Callable[[str, str], None]]) -> None:
         """Branche un observateur sur les événements retenus (None pour couper).
@@ -91,10 +88,6 @@ class StreamFeed:
         n'a pas typé son événement.
         """
         self._observer = callback
-
-    def set_chat_observer(self, callback: Optional[Callable[[str, str], None]]) -> None:
-        """Branche un observateur sur les lignes de chat (None pour couper)."""
-        self._chat_observer = callback
 
     def activate(self) -> None:
         """Enregistre ce flux comme source globale du bloc de contexte passif."""
@@ -135,12 +128,12 @@ class StreamFeed:
         text = " ".join((text or "").split())
         if not text:
             return
+        # Perception PASSIVE seulement : aucun observateur n'est branché ici.
+        # `set_chat_observer` existait, annonçait servir « aux sondages et aux
+        # saluts de l'overlay », et n'était appelé de nulle part — ces deux
+        # fonctions sont câblées en direct depuis `twitch/handlers.py`. Retiré
+        # pour ne pas laisser croire que les votes transitent par ce chemin.
         self._chat.append((time.monotonic(), author, text[:160]))
-        if self._chat_observer is not None:
-            try:
-                self._chat_observer(author, text)
-            except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux
-                logger.warning("StreamFeed: observateur de chat en erreur: {e}", e=exc)
 
     def _fresh_events(self, now: float) -> list[tuple[float, str]]:
         return [(ts, d) for ts, d in self._events if now - ts <= self._event_ttl]

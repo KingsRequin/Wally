@@ -433,10 +433,17 @@ def _overlay_outcome(shown: dict) -> str:
         return (f"Chifoumi tranché : {adversaire} a joué {shown.get('theirs')}, "
                 f"toi {shown.get('mine')} — {verdict}. Annonce-le.")
     if widget == "bingo":
+        # `done` n'est renvoyé par AUCUN des trois retours possibles, et le
+        # troisième — la coche d'une case — ne renvoie même pas `cells` : il
+        # rend `checked` (le libellé coché) et `full`, que personne ne lisait.
+        # Après un `check`, l'outil annonçait donc « 0/0 cases cochées » alors
+        # qu'une case venait d'être validée, et ne disait jamais que la grille
+        # était complète. Chaque forme est maintenant traitée pour ce qu'elle est.
+        if "checked" in shown:
+            fin = " La grille est complète, annonce-le." if shown.get("full") else ""
+            return f"Case « {shown['checked']} » cochée sur le bingo.{fin}"
         cells = shown.get("cells") or []
-        done = shown.get("done") or []
-        checked = sum(1 for d in done if d)
-        return f"La grille de bingo est à l'écran : {checked}/{len(cells)} cases cochées."
+        return f"La grille de bingo est à l'écran : {len(cells)} cases, aucune cochée."
     if widget == "hangman":
         return (f"Le pendu est lancé, {shown.get('letters', '?')} lettres à "
                 "deviner. Le chat propose une lettre par message.")

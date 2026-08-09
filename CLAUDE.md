@@ -124,7 +124,7 @@ bot/
 ├── persona/             # Fichiers persona Markdown + prompts/
 │   ├── SOUL.md / IDENTITY.md / VOICE.md / EXEMPLES.md  # blocs persona (ordre canonique)
 │   ├── EMOTIONS.md      # directives par émotion (sections ## emotion_name)
-│   ├── WEEKDAYS.md      # directives par jour (sections ## monday … sunday)
+│   ├── WEEKDAYS.md      # directives par jour (sections ## lundi … dimanche)
 │   ├── SECONDARIES.md   # émotions secondaires (contempt, pride, shame…)
 │   ├── COMPOSITES.md    # combinaisons de 2 émotions dominantes ≥ 0.4
 │   └── prompts/         # templates système chargés via load_prompt("name")

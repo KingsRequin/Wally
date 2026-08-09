@@ -48,6 +48,8 @@ class ReactionTracker:
         self._db = db
         self._discord_messages: dict[int, _DiscordReactionState] = {}
         self._twitch_windows: dict[str, _TwitchWindow] = {}
+        # Références fortes des enregistrements de blagues détachés.
+        self._tasks: set = set()
 
     def _apply_tier_delta(self, count: int, last_tier: int) -> tuple[int, float]:
         current_tier = 0
@@ -75,9 +77,24 @@ class ReactionTracker:
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self._db.insert_joke(reply_text, channel_id, platform, count))
             except RuntimeError:
-                pass  # No running loop (test context)
+                return new_tier  # pas de boucle (contexte de test)
+            # Référence forte + log de l'échec : la boucle ne garde qu'une
+            # référence FAIBLE, donc la tâche pouvait être collectée avant la fin
+            # — blague perdue de façon non déterministe. Et personne ne consommant
+            # son résultat, une erreur de `insert_joke` ne se manifestait qu'en
+            # « Task exception was never retrieved » au ramassage, hors de loguru.
+            task = loop.create_task(
+                self._db.insert_joke(reply_text, channel_id, platform, count)
+            )
+            self._tasks.add(task)
+
+            def _fini(t: "asyncio.Task") -> None:
+                self._tasks.discard(t)
+                if not t.cancelled() and t.exception() is not None:
+                    logger.warning("Enregistrement de la blague échoué: {e}", e=t.exception())
+
+            task.add_done_callback(_fini)
         return new_tier
 
     def _cleanup(self) -> None:

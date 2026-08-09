@@ -102,6 +102,7 @@ class OverlayFeed:
 
     def publish(self, event: dict) -> None:
         event.setdefault("ts", time.time())
+        self._purge_sticky_obsoletes(event)
         self._buffer.append(event)
         for q in list(self._queues):
             try:
@@ -110,6 +111,31 @@ class OverlayFeed:
                 # Un overlay qui ne consomme plus (onglet gelé, OBS en pause) ne
                 # doit pas bloquer les autres ni faire grossir la mémoire.
                 logger.debug("OverlayFeed: file d'un abonné pleine, événement ignoré")
+
+    def _purge_sticky_obsoletes(self, event: dict) -> None:
+        """Retire du tampon les états collants d'un widget qui vient de se clore.
+
+        Un widget `sticky` est réémis par `recent()` SANS jamais périmer — c'est
+        ce qui permet à une partie en cours de revenir chez un OBS qui se
+        reconnecte. Mais rien ne les retirait à la fin de la partie : le dernier
+        événement (`won`/`lost`) est publié en `sticky=False` avec 12 s de durée,
+        donc filtré par l'âge au bout de 12 s, tandis que TOUS les coups
+        précédents restaient éligibles. Une reconnexion tardive rejouait alors un
+        état INTERMÉDIAIRE d'une partie terminée, sans minuteur — à l'écran
+        jusqu'à ce qu'un autre widget le remplace. Exactement le symptôme que le
+        `sticky` devait éviter, à l'envers.
+        """
+        if event.get("type") != "widget" or (event.get("params") or {}).get("sticky") is True:
+            return
+        kind = event.get("kind")
+        restants = [
+            e for e in self._buffer
+            if not (e.get("type") == "widget" and e.get("kind") == kind
+                    and (e.get("params") or {}).get("sticky") is True)
+        ]
+        if len(restants) != len(self._buffer):
+            self._buffer.clear()
+            self._buffer.extend(restants)
 
     # ── API de haut niveau ────────────────────────────────────────────────
 
