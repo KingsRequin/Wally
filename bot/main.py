@@ -287,7 +287,14 @@ async def main() -> None:
         twitch_api = TwitchAPI(
             token_manager=token_manager,
             client_id=os.getenv("TWITCH_CLIENT_ID", ""),
-            bot_id=os.getenv("TWITCH_BOT_ID", ""),
+            # Même repli que `events/__init__.py`, qui fait déjà
+            # `TWITCH_BOT_ID or broadcaster_id`. Sans lui, `bot_id` valait "" ici
+            # et la garde de `handlers.py` (`if bot_id and user_id == bot_id`)
+            # était désactivée : les propres messages de Wally, revenus par
+            # EventSub, traversaient `dispatch_command`, le compteur de visite,
+            # le prélude et le `fact_extractor` — il se mémorisait lui-même.
+            bot_id=os.getenv("TWITCH_BOT_ID", "").strip()
+            or os.getenv("TWITCH_BROADCASTER_ID", ""),
             broadcaster_id=os.getenv("TWITCH_BROADCASTER_ID", ""),
         )
         twitch_bot = WallyTwitch(

@@ -22,6 +22,12 @@ Quelqu'un paie pour suivre la chaîne. Registre de la compassion feinte pour cel
 de dépenser son argent, ou de l'étonnement sincère que ça arrive encore. Ne jamais
 remercier à la place du streamer, ne jamais nommer un prix.
 
+## resub
+Quelqu'un se réabonne, après des mois déjà passés là. Registre de la reconnaissance de
+l'habitude — une fidélité qui n'a plus l'excuse de la découverte —, ou du constat qu'on
+revient toujours au même endroit. Le nombre de mois est une donnée, pas un exploit :
+l'évoquer sans le célébrer. Ne jamais remercier à la place du streamer.
+
 ## gift_sub
 Quelqu'un offre des abonnements à d'autres. Un geste gratuit, donc suspect. Registre du
 soupçon amusé sur les motivations, ou de la pitié pour ceux qui reçoivent un cadeau qu'ils

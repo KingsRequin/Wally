@@ -51,10 +51,10 @@ _STRONG_EVENT_HINTS = ("raid", "sub", "abonn", "bits", "cheer", "don")
 # Un type connu remplace la recherche de mots dans le texte : « raid » dans un
 # titre de stream ne doit pas valoir un raid.
 _EVENT_KINDS = (
-    "raid", "follow_wave", "sub", "gift_sub", "bits",
+    "raid", "follow_wave", "sub", "resub", "gift_sub", "bits",
     "live_start", "live_end", "game_change", "title_change", "audience",
 )
-_STRONG_EVENT_KINDS = frozenset({"raid", "sub", "gift_sub", "bits", "follow_wave"})
+_STRONG_EVENT_KINDS = frozenset({"raid", "sub", "resub", "gift_sub", "bits", "follow_wave"})
 
 # Au-delà, la condensation a échoué à faire court : on préfère se taire plutôt
 # que d'afficher un pavé illisible en petit.

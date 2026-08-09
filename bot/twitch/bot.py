@@ -13,6 +13,10 @@ from loguru import logger
 # secondes de silence et non en dizaines de minutes, assez long pour rester
 # anodin côté quota Helix (une requête GET, non facturée en création).
 EVENTSUB_HEALTHCHECK_SECONDS = 60
+# Plafond du recul entre deux relances EventSub infructueuses. 60 s × 2^n, borné
+# à une demi-heure : assez pour laisser le budget de CRÉATION se recharger, assez
+# court pour qu'une panne passagère se répare toute seule dans le live.
+EVENTSUB_RESTART_BACKOFF_MAX_S = 1800
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -417,13 +421,60 @@ class WallyTwitch(commands.Bot):
 
         client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
         active = await count_active_subscriptions(client_id, self.token_manager.bot_token)
-        if active is None or active > 0:
+        if active is None:
+            return
+        if active > 0:
+            # Le service est rendu : on oublie l'historique d'échecs.
+            self._eventsub_zero_readings = 0
+            self._eventsub_failed_restarts = 0
+            return
+
+        # Deux lectures à zéro AVANT d'agir : une reconstruction dure une
+        # quinzaine de secondes et passe elle-même par zéro souscription.
+        self._eventsub_zero_readings += 1
+        if self._eventsub_zero_readings < 2:
+            logger.debug("EventSub: 0 souscription (1re lecture) — on confirme au tour suivant")
+            return
+
+        # Backoff : la relance rejoue `purge_stale_subscriptions` + 9 créations.
+        # Quand la cause est structurelle (scope manquant, `TWITCH_BROADCASTER_ID`
+        # vide, quota de CRÉATION épuisé), elle échoue à l'identique et repartait
+        # 60 s plus tard, indéfiniment — en martelant justement la ressource dont
+        # le budget se recharge en MINUTES, donc en empêchant la recharge qui
+        # l'aurait débloquée. Et chaque tour laissait une reprise différée de plus.
+        maintenant = time.monotonic()
+        attente = min(
+            EVENTSUB_RESTART_BACKOFF_MAX_S,
+            EVENTSUB_HEALTHCHECK_SECONDS * (2 ** self._eventsub_failed_restarts),
+        )
+        if maintenant - self._eventsub_last_restart_at < attente:
+            logger.debug(
+                "EventSub: relance différée ({r} échec(s), encore {s:.0f}s)",
+                r=self._eventsub_failed_restarts,
+                s=attente - (maintenant - self._eventsub_last_restart_at),
+            )
             return
 
         logger.warning(
-            "EventSub: plus aucune souscription vivante côté Twitch — relance"
+            "EventSub: plus aucune souscription vivante côté Twitch — relance "
+            "(tentative {n})", n=self._eventsub_failed_restarts + 1,
         )
+        self._eventsub_last_restart_at = maintenant
         await self._restart_eventsub()
+
+        # Une relance ne compte que si Twitch reconnaît à nouveau des
+        # souscriptions. Sinon on recule davantage au tour suivant.
+        apres = await count_active_subscriptions(client_id, self.token_manager.bot_token)
+        if apres:
+            self._eventsub_failed_restarts = 0
+            self._eventsub_zero_readings = 0
+            logger.info("EventSub: relance réussie ({n} souscription(s))", n=apres)
+        else:
+            self._eventsub_failed_restarts += 1
+            logger.warning(
+                "EventSub: relance sans effet ({n} échec(s) consécutif(s))",
+                n=self._eventsub_failed_restarts,
+            )
 
     async def _eventsub_watchdog(self) -> None:
         try:
@@ -440,6 +491,10 @@ class WallyTwitch(commands.Bot):
         """Sérialisation des redémarrages EventSub (cf. `_restart_eventsub`)."""
         self._eventsub_restart_lock = asyncio.Lock()
         self._eventsub_restart_pending = False
+        # Backoff du watchdog (cf. `_check_eventsub_alive`).
+        self._eventsub_zero_readings = 0        # sondages consécutifs à 0
+        self._eventsub_failed_restarts = 0      # relances sans effet d'affilée
+        self._eventsub_last_restart_at = 0.0    # time.monotonic()
 
     async def _restart_eventsub(self) -> None:
         """Tear down existing EventSub sockets and reconnect with fresh tokens.
@@ -468,7 +523,15 @@ class WallyTwitch(commands.Bot):
             await self._do_restart_eventsub()
 
     async def _do_restart_eventsub(self) -> None:
-        from bot.twitch.events import start_eventsub_client
+        from bot.twitch.events import cancel_retry_task, start_eventsub_client
+
+        # AVANT de fermer quoi que ce soit : la reprise différée capture le
+        # client et le token de l'appel qui l'a créée, et se réveille jusqu'à
+        # 20 min plus tard. Laissée vivante, elle travaillait sur un client mort
+        # — soit bloquée à vie sur un `await sub.created` jamais résolu, soit en
+        # ouvrant une WebSocket hors de `_eventsub_client`, donc infermable et
+        # source de double réception du chat.
+        cancel_retry_task(self)
 
         client = getattr(self, "_eventsub_client", None)
         if client:
@@ -480,6 +543,12 @@ class WallyTwitch(commands.Bot):
                         await sock._sock.close()
                 except Exception as e:
                     logger.warning("Error closing EventSub socket during restart: {e}", e=e)
+            # Vidé : un appelant retardataire ne doit pas pouvoir réutiliser un
+            # socket mort en croyant y trouver une place libre.
+            try:
+                client._sockets.clear()
+            except Exception as e:  # noqa: BLE001
+                logger.debug("EventSub: _sockets non vidable: {e}", e=e)
             self._eventsub_client = None
 
         await start_eventsub_client(self)

@@ -258,6 +258,38 @@ def _patch_socket_tracking() -> None:
     EventSubWSClient._wally_socket_tracking_patched = True
 
 
+def cancel_retry_task(bot: "WallyTwitch") -> bool:
+    """Annule la reprise différée des souscriptions. Vrai si une tâche vivait.
+
+    À appeler AVANT de fermer les sockets, partout où le client EventSub est
+    démonté. `_retry_failed_subscriptions` capture le client et le token de
+    l'appel qui l'a créée : après une reconstruction, elle se réveille jusqu'à
+    20 minutes plus tard et travaille sur un client mort. Deux issues, toutes
+    deux vérifiées dans twitchio 2.10 :
+
+    — l'ancien socket est encore dans `client._sockets` avec des places libres,
+      donc `add_subscription` y atterrit ; `_wakeup_and_connect` teste
+      `if self.is_connected`, le socket est fermé, la coroutine ne fait RIEN, et
+      `await sub.created` n'est jamais résolu : la tâche se bloque à vie, avec
+      elle toutes les souscriptions différées restantes ;
+    — plus aucune place libre, et twitchio ouvre une NOUVELLE WebSocket vivante
+      hors de `_eventsub_client`, donc infermable. Pour `channel.chat.message`,
+      c'est la double réception corrigée par `2c035a9` qui revient.
+    """
+    # Lecture d'abord, écriture seulement s'il y avait quelque chose : cette
+    # fonction est appelée depuis `close_eventsub_client`, qui promet de ne
+    # jamais lever. Écrire d'office plantait sur un objet sans attributs.
+    task = getattr(bot, "_eventsub_retry_task", None)
+    if task is None:
+        return False
+    bot._eventsub_retry_task = None
+    if task.done():
+        return False
+    task.cancel()
+    logger.info("EventSub: reprise différée annulée (client démonté)")
+    return True
+
+
 async def close_eventsub_client(bot: "WallyTwitch") -> int:
     """Ferme les WebSockets EventSub pour rendre les transports à Twitch.
 
@@ -274,6 +306,7 @@ async def close_eventsub_client(bot: "WallyTwitch") -> int:
 
     Retourne le nombre de sockets fermés. Jamais bloquant.
     """
+    cancel_retry_task(bot)
     client = getattr(bot, "_eventsub_client", None)
     if client is None:
         return 0

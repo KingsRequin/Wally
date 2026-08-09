@@ -200,6 +200,13 @@ def register_events(bot: "WallyTwitch") -> None:
             bot,
             f"{payload.data.user.name} se réabonne "
             f"({payload.data.cumulative_months} mois au total)",
+            # Le seul des sept handlers à ne pas transmettre son type. Sans lui,
+            # `on_stream_event` retombait sur le socle générique — donc pas de
+            # registre `EVENTS.md` — et surtout réactivait `strong_hints`, la
+            # détection par mots-clés dans le texte que `44108b5` avait
+            # justement remplacée par le typage. Elle tombait juste par
+            # accident ici, « réabonne » contenant « abonn ».
+            kind="resub",
         )
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", 0.3)

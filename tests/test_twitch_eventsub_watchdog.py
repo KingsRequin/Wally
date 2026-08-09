@@ -37,7 +37,17 @@ def _bot(monkeypatch, active):
 
 @pytest.mark.asyncio
 async def test_zero_souscription_declenche_un_redemarrage(monkeypatch):
+    """Deux lectures à zéro, pas une.
+
+    La confirmation a été ajoutée après coup : une reconstruction dure une
+    quinzaine de secondes et passe elle-même par zéro souscription, donc un
+    sondage unique pouvait relancer par-dessus une relance en cours. La
+    propriété qui compte — « Twitch ne reconnaît plus rien → on relance » —
+    est inchangée, elle demande juste d'être confirmée au tour suivant.
+    """
     bot, restarts = _bot(monkeypatch, 0)
+    await bot._check_eventsub_alive()
+    assert restarts == []          # première lecture : on confirme d'abord
     await bot._check_eventsub_alive()
     assert restarts == [1]
 

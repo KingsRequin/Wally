@@ -150,12 +150,23 @@ def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
     # ligne vide, qui inviterait le modèle à inventer un pseudo.
     if nick := os.getenv("TWITCH_BOT_NICK", "").strip():
         situation["self_handle"] = nick
-    stream = bot._stream_info
-    if stream.get("live"):
-        situation["stream_live"] = True
-        situation["stream_category"] = stream.get("category")
-        situation["stream_title"] = stream.get("title")
-        situation["stream_viewers"] = stream.get("viewers", 0)
+    # `_stream_info` ne décrit QUE la chaîne maison : c'est le `StreamWatcher` du
+    # broadcaster home qui l'alimente. Renseigné sans distinction, il faisait dire
+    # à Wally, dans le chat d'une chaîne INVITÉE, le jeu, le titre et le nombre de
+    # viewers du live d'Azraël — des faits sur un autre stream, affirmés au chat
+    # de quelqu'un d'autre.
+    #
+    # Deuxième effet, plus discret : `prompts.py` se sert de `stream_live` comme
+    # approximation de « on est sur la chaîne maison » (les commentaires le
+    # disent). Chez un invité pendant un live maison, la conscience du stream
+    # était donc supprimée à tort et le chat retiré du flux passif à tort.
+    if channel_name not in getattr(bot, "_channel_ids", {}):
+        stream = bot._stream_info
+        if stream.get("live"):
+            situation["stream_live"] = True
+            situation["stream_category"] = stream.get("category")
+            situation["stream_title"] = stream.get("title")
+            situation["stream_viewers"] = stream.get("viewers", 0)
     return situation
 
 
@@ -347,6 +358,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if "bot" in badge_ids:
         return
 
+    # Utilisateur banni : le ban est keyé sur le discord_id. On l'applique sur
+    # Twitch UNIQUEMENT si ce compte Twitch est lié à un discord banni (alias
+    # accepté). Sans liaison, on ne peut pas savoir → non filtré.
+    #
+    # AVANT `dispatch_command`, avec les autres filtres d'identité. En aval, un
+    # banni gardait `!image` — donc l'affichage d'une image sur l'overlay du live,
+    # annoncée dans le chat par le LLM — et `!mood`. Le bannissement ne couvrait
+    # en pratique que les réponses conversationnelles.
+    canonical = bot.memory._user_id("twitch", user_id)
+    if canonical.startswith("discord:") and await bot.db.is_chat_user_banned(canonical.split(":", 1)[1]):
+        logger.debug("Ignoring banned user (twitch→{})", canonical)
+        return
+
     # Incrémentation du compteur de messages pour les visites actives
     active_visits = getattr(bot, "_active_visits", {})
     if channel_name in active_visits:
@@ -359,14 +383,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
         bot._channel_was_live[channel_name] = True
-
-    # Utilisateur banni : le ban est keyé sur le discord_id. On l'applique sur
-    # Twitch UNIQUEMENT si ce compte Twitch est lié à un discord banni (alias
-    # accepté). Sans liaison, on ne peut pas savoir → non filtré.
-    canonical = bot.memory._user_id("twitch", user_id)
-    if canonical.startswith("discord:") and await bot.db.is_chat_user_banned(canonical.split(":", 1)[1]):
-        logger.debug("Ignoring banned user (twitch→{})", canonical)
-        return
 
     # Ancienneté du spectateur AVANT l'upsert ci-dessous, qui rafraîchit la date :
     # sans cette précaution, tout le monde paraîtrait « vu à l'instant » et
