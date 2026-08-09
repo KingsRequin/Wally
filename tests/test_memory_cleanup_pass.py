@@ -87,7 +87,14 @@ async def test_les_doublons_designes_sont_archives(contexte):
         "Est classé Diamant 3 sur Valorant",
         "Joue à Apex Legends",
     ])
-    _reponse_llm(llm, {"delete": [0, 1, 3], "update": [], "questions": []})
+    _reponse_llm(llm, {
+        "delete": [
+            {"index": 0, "duplicate_of": 2},
+            {"index": 1, "duplicate_of": 2},
+            {"index": 3, "duplicate_of": 2},
+        ],
+        "update": [], "questions": [],
+    })
 
     await journal.run_memory_cleanup()
 
@@ -121,7 +128,7 @@ async def test_wally_self_est_exclu_du_tri(contexte):
     """3,1 Mo d'auto-narratif : hors fenêtre de contexte, et une dynamique à part."""
     journal, store, llm, _ = contexte
     await _peupler(store, "wally:self", [f"pensée {i}" for i in range(40)])
-    _reponse_llm(llm, {"delete": [0, 1, 2], "update": [], "questions": []})
+    _reponse_llm(llm, {"delete": [{"index": 0, "duplicate_of": 1}], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
 
@@ -134,7 +141,7 @@ async def test_un_utilisateur_trop_maigre_est_ignore(contexte):
     """Sous le seuil, il n'y a rien à trier — on ne paie pas un appel LLM."""
     journal, store, llm, _ = contexte
     await _peupler(store, "discord:610", ["Joue à Apex", "Aime le café"])
-    _reponse_llm(llm, {"delete": [0], "update": [], "questions": []})
+    _reponse_llm(llm, {"delete": [{"index": 0, "duplicate_of": 1}], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
 
@@ -144,7 +151,7 @@ async def test_un_utilisateur_trop_maigre_est_ignore(contexte):
 async def test_une_seule_personne_par_nuit(contexte):
     journal, store, llm, _ = contexte
     for uid in ("discord:610", "discord:973", "discord:182"):
-        await _peupler(store, uid, [f"fait {i}" for i in range(6)])
+        await _peupler(store, uid, [f"Joue à Apex Legends, partie {i}" for i in range(6)])
     _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
@@ -158,7 +165,7 @@ async def test_la_rotation_change_de_personne_chaque_nuit(contexte):
     # Contenus distincts : c'est le seul moyen de reconnaître, dans le prompt
     # envoyé, de quelle personne il s'agit.
     for uid in ("discord:610", "discord:973", "discord:182"):
-        await _peupler(store, uid, [f"{uid} fait {i}" for i in range(6)])
+        await _peupler(store, uid, [f"{uid} joue à Apex Legends, partie {i}" for i in range(6)])
     _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
 
     vus = []
@@ -170,12 +177,137 @@ async def test_la_rotation_change_de_personne_chaque_nuit(contexte):
     assert len(set(vus)) == 3, f"trois nuits doivent trier trois personnes distinctes, vu {vus}"
 
 
+# ── Toute suppression doit nommer son remplaçant ─────────────────────────────
+#
+# Mesuré en prod sur une liste DÉJÀ triée : `deepseek-v4-flash` proposait encore
+# de supprimer 25 souvenirs sur 60, dont « héberge Wally sur son serveur
+# personnel », « Code des bots, serveurs et stacks *arr », « a un ami appelé
+# Azra » — tous uniques, aucun équivalent dans la liste. La consigne écrite dans
+# le prompt (« ne jette jamais un souvenir unique ») ne tient pas. Le code exige
+# donc un `duplicate_of` vérifiable : sans remplaçant nommé, pas de suppression.
+
+async def test_une_suppression_sans_remplacant_est_refusee(contexte):
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {"delete": [{"index": 1}], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    restants = await store.get_by_user("discord:610", status=FactStatus.ACTIVE)
+    assert len(restants) == 6
+
+
+async def test_un_index_nu_ne_suffit_plus_a_supprimer(contexte):
+    """L'ancien format `delete: [0, 3]` ne dit pas de quoi c'est le doublon."""
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {"delete": [0, 3], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    restants = await store.get_by_user("discord:610", status=FactStatus.ACTIVE)
+    assert len(restants) == 6
+
+
+async def test_une_suppression_justifiee_est_appliquee(contexte):
+    journal, store, llm, _ = contexte
+    ids = await _peupler(store, "discord:610", [
+        "Joue à Valorant", "Cluth joue à Valorant",
+        "Aime le café", "Est dev", "Habite à Lyon", "A un chien",
+    ])
+    _reponse_llm(llm, {
+        "delete": [{"index": 0, "duplicate_of": 1}],
+        "update": [], "questions": [],
+    })
+
+    await journal.run_memory_cleanup()
+
+    restants = {f.id for f in await store.get_by_user("discord:610", status=FactStatus.ACTIVE)}
+    assert ids[0] not in restants and ids[1] in restants
+
+
+async def test_un_remplacant_lui_meme_supprime_ne_vaut_pas(contexte):
+    """Deux souvenirs qui se désignent l'un l'autre : les supprimer tous les deux
+    efface l'information au lieu de la dédupliquer."""
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {
+        "delete": [{"index": 0, "duplicate_of": 1}, {"index": 1, "duplicate_of": 0}],
+        "update": [], "questions": [],
+    })
+
+    await journal.run_memory_cleanup()
+
+    restants = await store.get_by_user("discord:610", status=FactStatus.ACTIVE)
+    assert len(restants) == 5, "un des deux doit survivre"
+
+
+async def test_un_remplacant_sans_rapport_est_refuse(contexte):
+    """Mesuré en prod : le modèle a désigné « est le créateur de Wally » comme
+    remplaçant de « joue à League of Legends, classé Grand Clash ». `duplicate_of`
+    borne le volume, pas la véracité du lien — deux souvenirs qui ne partagent
+    que le pseudo n'ont rien à voir."""
+    journal, store, llm, _ = contexte
+    ids = await _peupler(store, "discord:610", [
+        "KingsRequin est le créateur de Wally",
+        "KingsRequin joue à League of Legends et est classé Grand Clash",
+        "KingsRequin héberge Wally sur son serveur personnel",
+        "KingsRequin regarde des animes sur Jellyfin",
+        "KingsRequin code des bots et des stacks *arr",
+        "KingsRequin a un ami appelé Azra",
+    ])
+    _reponse_llm(llm, {
+        "delete": [{"index": 1, "duplicate_of": 0}], "update": [], "questions": [],
+    })
+
+    await journal.run_memory_cleanup()
+
+    restants = {f.id for f in await store.get_by_user("discord:610", status=FactStatus.ACTIVE)}
+    assert ids[1] in restants
+
+
+async def test_un_vrai_doublon_reste_supprimable(contexte):
+    """La garde lexicale ne doit pas bloquer le ménage légitime : deux
+    formulations du même fait partagent forcément des mots porteurs."""
+    journal, store, llm, _ = contexte
+    ids = await _peupler(store, "discord:610", [
+        "Est classé Diamond 3 sur Valorant avec un MMR Ascendant 1-2",
+        "Est rang Ascendant à Valorant",
+        "KingsRequin héberge Wally sur son serveur personnel",
+        "KingsRequin regarde des animes sur Jellyfin",
+        "KingsRequin code des bots et des stacks *arr",
+        "KingsRequin a un ami appelé Azra",
+    ])
+    _reponse_llm(llm, {
+        "delete": [{"index": 1, "duplicate_of": 0}], "update": [], "questions": [],
+    })
+
+    await journal.run_memory_cleanup()
+
+    restants = {f.id for f in await store.get_by_user("discord:610", status=FactStatus.ACTIVE)}
+    assert ids[1] not in restants and ids[0] in restants
+
+
+async def test_un_remplacant_hors_bornes_est_refuse(contexte):
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {
+        "delete": [{"index": 1, "duplicate_of": 99}, {"index": 2, "duplicate_of": 2}],
+        "update": [], "questions": [],
+    })
+
+    await journal.run_memory_cleanup()
+
+    restants = await store.get_by_user("discord:610", status=FactStatus.ACTIVE)
+    assert len(restants) == 6
+
+
 # ── Garde-fous ───────────────────────────────────────────────────────────────
 
 async def test_un_effacement_massif_est_refuse(contexte):
     """Un LLM qui déraille ne doit pas pouvoir vider la mémoire d'une personne."""
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(10)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(10)])
     _reponse_llm(llm, {"delete": list(range(10)), "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
@@ -189,8 +321,11 @@ async def test_un_gros_menage_legitime_passe_quand_meme(contexte):
     souvenirs, quinze lignes disaient « joue à Valorant ». Un garde-fou trop bas
     bloque exactement les lots qui ont le plus besoin d'être nettoyés."""
     journal, store, llm, _ = contexte
-    ids = await _peupler(store, "discord:610", [f"fait {i}" for i in range(10)])
-    _reponse_llm(llm, {"delete": list(range(7)), "update": [], "questions": []})
+    ids = await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(10)])
+    _reponse_llm(llm, {
+        "delete": [{"index": i, "duplicate_of": 9} for i in range(7)],
+        "update": [], "questions": [],
+    })
 
     await journal.run_memory_cleanup()
 
@@ -200,8 +335,15 @@ async def test_un_gros_menage_legitime_passe_quand_meme(contexte):
 
 async def test_un_index_hors_bornes_ne_casse_pas_la_passe(contexte):
     journal, store, llm, _ = contexte
-    ids = await _peupler(store, "discord:610", [f"fait {i}" for i in range(6)])
-    _reponse_llm(llm, {"delete": [1, 99, -3], "update": [], "questions": []})
+    ids = await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {
+        "delete": [
+            {"index": 1, "duplicate_of": 0},
+            {"index": 99, "duplicate_of": 0},
+            {"index": -3, "duplicate_of": 0},
+        ],
+        "update": [], "questions": [],
+    })
 
     await journal.run_memory_cleanup()
 
@@ -211,7 +353,7 @@ async def test_un_index_hors_bornes_ne_casse_pas_la_passe(contexte):
 
 async def test_un_llm_en_panne_ne_fait_pas_tomber_le_cron(contexte):
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(6)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
     llm.complete = AsyncMock(side_effect=RuntimeError("DeepSeek indisponible"))
 
     await journal.run_memory_cleanup()  # ne doit pas lever
@@ -225,7 +367,7 @@ async def test_un_echec_ne_bloque_pas_la_rotation_a_jamais(contexte):
     et plus personne d'autre n'est jamais nettoyé."""
     journal, store, llm, _ = contexte
     for uid in ("discord:610", "discord:973"):
-        await _peupler(store, uid, [f"{uid} fait {i}" for i in range(6)])
+        await _peupler(store, uid, [f"{uid} joue à Apex Legends, partie {i}" for i in range(6)])
     llm.complete = AsyncMock(side_effect=RuntimeError("DeepSeek indisponible"))
 
     await journal.run_memory_cleanup()
@@ -238,7 +380,7 @@ async def test_un_echec_ne_bloque_pas_la_rotation_a_jamais(contexte):
 
 async def test_une_reponse_illisible_ne_touche_a_rien(contexte):
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(6)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
     llm.complete = AsyncMock(return_value="désolé, je n'ai pas compris")
 
     await journal.run_memory_cleanup()
@@ -286,7 +428,7 @@ async def test_des_dates_avec_et_sans_fuseau_cohabitent(contexte):
 
 async def test_les_souvenirs_sont_tries_par_lots(contexte):
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(130)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(130)])
     _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
@@ -295,11 +437,13 @@ async def test_les_souvenirs_sont_tries_par_lots(contexte):
 
 
 async def test_les_index_sont_locaux_au_lot(contexte):
-    """Chaque lot est renuméroté à partir de 0 : `delete: [0]` sur le 2e lot doit
-    viser le 61e souvenir, pas le premier."""
+    """Chaque lot est renuméroté à partir de 0 : supprimer l'index 0 du 2e lot
+    doit viser le 61e souvenir, pas le premier."""
     journal, store, llm, _ = contexte
-    ids = await _peupler(store, "discord:610", [f"fait {i}" for i in range(70)])
-    _reponse_llm(llm, {"delete": [0], "update": [], "questions": []})
+    ids = await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(70)])
+    _reponse_llm(llm, {
+        "delete": [{"index": 0, "duplicate_of": 1}], "update": [], "questions": [],
+    })
 
     await journal.run_memory_cleanup()
 
@@ -311,7 +455,7 @@ async def test_le_plafond_de_sortie_est_releve_pour_le_verdict(contexte):
     """Le rôle secondaire est câblé à 1000 tokens : un verdict portant des
     dizaines d'index et des reformulations est coupé en plein JSON."""
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(6)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
     _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
@@ -325,11 +469,11 @@ async def test_le_prompt_porte_les_dates_pour_arbitrer_les_doublons(contexte):
     """Le prompt demande de « comparer les dates entre crochets [YYYY-MM-DD] »
     pour garder le plus récent : sans elles, l'arbitrage est aveugle."""
     journal, store, llm, _ = contexte
-    await _peupler(store, "discord:610", [f"fait {i}" for i in range(6)])
+    await _peupler(store, "discord:610", [f"Joue à Apex Legends, partie {i}" for i in range(6)])
     _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
 
     await journal.run_memory_cleanup()
 
     envoye = llm.complete.await_args.args[1][0]["content"]
-    assert "0. [" in envoye and "fait 0" in envoye
+    assert "0. [" in envoye and "Apex Legends, partie 0" in envoye
     assert "5. [" in envoye

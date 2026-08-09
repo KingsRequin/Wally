@@ -349,6 +349,87 @@ def _naive_utc(dt: datetime | None) -> datetime:
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _significant_words(text: str) -> set[str]:
+    """Mots porteurs de sens d'un souvenir (mots-outils écartés)."""
+    mots = re.findall(r"\w+", (text or "").lower())
+    return {m for m in mots if len(m) > 1 and m not in _FUNCTION_WORDS}
+
+
+def _plausible_duplicate(a: str, b: str) -> bool:
+    """Deux souvenirs peuvent-ils dire la même chose ?
+
+    Un seul mot commun ne prouve rien : chaque souvenir s'ouvre sur le pseudo de
+    la personne, donc tous en partagent au moins un. Mesuré en prod, c'est
+    exactement l'erreur commise — « joue à League of Legends, classé Grand
+    Clash » désigné comme doublon de « est le créateur de Wally », leur seul
+    point commun étant « KingsRequin ». Deux formulations d'un même fait
+    partagent forcément plus que ça.
+    """
+    return len(_significant_words(a) & _significant_words(b)) >= 2
+
+
+def _justified_deletions(
+    raw_delete, total: int, user_id: str, contents: list[str] | None = None
+) -> set[int]:
+    """Ne retient que les suppressions qui nomment un remplaçant valide.
+
+    Chaque entrée doit être `{"index": n, "duplicate_of": m}` où m désigne le
+    souvenir qui porte déjà l'information. Sans remplaçant nommé, pas de
+    suppression : mesuré sur une liste DÉJÀ triée, `deepseek-v4-flash` proposait
+    encore d'effacer 25 souvenirs sur 60, dont « héberge Wally sur son serveur
+    personnel » — unique, sans aucun équivalent. La consigne écrite dans le
+    prompt ne tient pas ; celle-ci est vérifiable.
+
+    On remonte la chaîne des remplaçants jusqu'à un souvenir qui survit. Si elle
+    boucle — deux souvenirs qui se désignent l'un l'autre — le plus petit index
+    du cycle sert de survivant : sans ça les deux s'effaceraient et
+    l'information serait perdue au lieu d'être dédupliquée.
+    """
+    def _entier(v) -> bool:
+        return isinstance(v, int) and not isinstance(v, bool)
+
+    proposed: dict[int, int] = {}
+    refused = 0
+    for item in raw_delete:
+        if not isinstance(item, dict):
+            refused += 1
+            continue
+        idx, src = item.get("index"), item.get("duplicate_of")
+        if (
+            not _entier(idx) or not _entier(src)
+            or not 0 <= idx < total or not 0 <= src < total or idx == src
+        ):
+            refused += 1
+            continue
+        if contents is not None and not _plausible_duplicate(contents[idx], contents[src]):
+            logger.info(
+                "Memory cleanup {u}: « {a} » n'est pas un doublon de « {b} », gardé",
+                u=user_id, a=contents[idx][:60], b=contents[src][:60],
+            )
+            refused += 1
+            continue
+        proposed[idx] = src
+
+    kept: set[int] = set()
+    for idx in sorted(proposed):
+        chain = {idx}
+        src = proposed[idx]
+        while src in proposed and src not in chain:
+            chain.add(src)
+            src = proposed[src]
+        if src in chain and idx == min(chain):
+            continue  # survivant désigné du cycle
+        kept.add(idx)
+
+    refused += len(proposed) - len(kept)
+    if refused:
+        logger.info(
+            "Memory cleanup {u}: {n} suppression(s) sans remplaçant valide, ignorées",
+            u=user_id, n=refused,
+        )
+    return kept
+
+
 def _parse_cleanup_verdict(raw: str) -> dict | None:
     """Lit le JSON du verdict de ménage. None si illisible — on ne touche à rien.
 
@@ -679,10 +760,10 @@ class DailyJournal:
             if await store.update_content(facts[idx].id, new_text):
                 updated += 1
 
-        raw_delete = verdict.get("delete") or []
-        targets = {
-            i for i in raw_delete if isinstance(i, int) and 0 <= i < len(facts)
-        }
+        targets = _justified_deletions(
+            verdict.get("delete") or [], len(facts), user_id,
+            contents=[f.content or "" for f in facts],
+        )
         if len(targets) > _CLEANUP_MAX_DELETE_RATIO * len(facts):
             logger.warning(
                 "Memory cleanup {u}: verdict aberrant ({d}/{t} souvenirs à effacer), "
