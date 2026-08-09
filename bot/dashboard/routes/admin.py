@@ -714,8 +714,15 @@ async def list_prompts(request: Request) -> dict:
     persona_dir = app_dir / "bot" / "persona"
     prompts_dir = persona_dir / "prompts"
 
+    # Liste EN DUR, et c'est voulu : elle définit ce qui est éditable, là où un glob
+    # exposerait aussi les fichiers de travail du dossier. Mais elle avait cessé de
+    # suivre — CAPABILITIES.md (le self-model, lu à chaque réponse), EVENTS.md (le ton
+    # par type d'événement d'overlay) et USERS.md (les clés utilisateurs) sont tous
+    # actifs en production et n'apparaissaient pas dans l'onglet Prompts. Le POST les
+    # acceptait déjà (`^[A-Z_]+\.md$`) : seule la lecture les ignorait.
     persona_files = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md",
-                     "EMOTIONS.md", "WEEKDAYS.md", "SECONDARIES.md", "COMPOSITES.md"]
+                     "EMOTIONS.md", "WEEKDAYS.md", "SECONDARIES.md", "COMPOSITES.md",
+                     "CAPABILITIES.md", "EVENTS.md", "USERS.md"]
     persona = {}
     for fname in persona_files:
         p = persona_dir / fname
