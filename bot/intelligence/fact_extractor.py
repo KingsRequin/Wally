@@ -11,7 +11,7 @@ from loguru import logger
 
 from bot.intelligence.prompts import load_prompt
 from bot.intelligence.identity import render_identity
-from bot.intelligence.memory.vocab import PREDICATES
+from bot.intelligence.memory.vocab import PREDICATES, render_triplet
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -721,13 +721,13 @@ class FactExtractor:
                 # Texte lisible : `text` fourni, sinon dérivé du triplet S-P-O.
                 fact_text = (fi.get("text") or "").strip()
                 if not fact_text:
-                    fact_text = " ".join(
-                        p for p in (
-                            (fi.get("subject") or "").strip(),
-                            (fi.get("predicate") or "").strip(),
-                            (fi.get("object") or "").strip(),
-                        ) if p
-                    ).strip()
+                    # Même rendu que l'ingest : le prédicat anglais du
+                    # vocabulaire fermé ne doit pas fuir dans le texte lu.
+                    fact_text = render_triplet(
+                        fi.get("subject") or "",
+                        fi.get("predicate") or "",
+                        fi.get("object") or "",
+                    )
                 if not fact_text:
                     continue
                 if uid:

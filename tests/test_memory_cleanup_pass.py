@@ -17,7 +17,7 @@ que le texte exact. Sans passe de rattrapage, les paraphrases s'empilent.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -175,6 +175,86 @@ async def test_la_rotation_change_de_personne_chaque_nuit(contexte):
         vus.append(next(u for u in ("discord:610", "discord:973", "discord:182") if u in envoye))
 
     assert len(set(vus)) == 3, f"trois nuits doivent trier trois personnes distinctes, vu {vus}"
+
+
+# ── Qui passe en premier ─────────────────────────────────────────────────────
+#
+# L'ordre est : jamais trié d'abord, sinon le plus anciennement trié, et à
+# égalité le plus gros stock. Ces tests fixent ce comportement — envisagé un
+# moment de prioriser plutôt « qui a le plus accumulé depuis son dernier tri »,
+# abandonné : aucun cas réaliste ne départage les deux règles autrement, et
+# prioriser le volume ouvre une famine (un bavard permanent monopoliserait le
+# cron) qu'il faudrait ensuite corriger par un garde-fou d'ancienneté — soit la
+# règle actuelle, en plus compliqué.
+
+async def _marquer_trie(journal, uid: str, quand: datetime) -> None:
+    etat = json.loads(await journal._db.get_state("memory_cleanup_last_pass") or "{}")
+    etat[uid] = quand.isoformat()
+    await journal._db.set_state("memory_cleanup_last_pass", json.dumps(etat))
+
+
+async def test_a_anciennete_egale_le_plus_gros_stock_passe_devant(contexte):
+    """C'est là que les doublons coûtent le plus au budget de contexte."""
+    journal, store, llm, _ = contexte
+    hier = datetime.utcnow() - timedelta(days=1)
+    for uid in ("discord:610", "discord:973"):
+        await _peupler(store, uid, [f"{uid} joue à Apex Legends, partie {i}" for i in range(6)])
+        await _marquer_trie(journal, uid, hier)
+    await _peupler(store, "discord:973", [
+        f"discord:973 joue à Valorant en ranked, session {i}" for i in range(10)
+    ])
+    _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    envoye = llm.complete.await_args.args[1][0]["content"]
+    assert "discord:973" in envoye
+
+
+async def test_une_personne_jamais_triee_reste_prioritaire(contexte):
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"discord:610 joue à Apex, partie {i}" for i in range(30)])
+    await _marquer_trie(journal, "discord:610", datetime.utcnow() - timedelta(hours=1))
+    await _peupler(store, "discord:973", [f"discord:973 joue à Apex, partie {i}" for i in range(6)])
+    _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    envoye = llm.complete.await_args.args[1][0]["content"]
+    assert "discord:973" in envoye
+
+
+async def test_sans_rien_de_neuf_lanciennete_tranche(contexte):
+    journal, store, llm, _ = contexte
+    for uid, jours in (("discord:610", 2), ("discord:973", 20)):
+        await _peupler(store, uid, [f"{uid} joue à Apex, partie {i}" for i in range(6)])
+        await _marquer_trie(journal, uid, datetime.utcnow() - timedelta(days=jours))
+    _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    envoye = llm.complete.await_args.args[1][0]["content"]
+    assert "discord:973" in envoye, "le plus anciennement trié doit passer"
+
+
+async def test_personne_ne_meurt_de_faim(contexte):
+    """Un bavard permanent ne monopolise pas le cron : l'ancienneté prime sur le
+    volume, donc quelqu'un oublié depuis deux mois repasse devant."""
+    journal, store, llm, _ = contexte
+    await _peupler(store, "discord:610", [f"discord:610 joue à Apex, partie {i}" for i in range(6)])
+    await _marquer_trie(journal, "discord:610", datetime.utcnow() - timedelta(days=60))
+    await _peupler(store, "discord:973", [f"discord:973 joue à Apex, partie {i}" for i in range(6)])
+    await _marquer_trie(journal, "discord:973", datetime.utcnow() - timedelta(hours=2))
+    # 973 vient d'accumuler beaucoup
+    await _peupler(store, "discord:973", [
+        f"discord:973 joue à Valorant, session {i}" for i in range(20)
+    ])
+    _reponse_llm(llm, {"delete": [], "update": [], "questions": []})
+
+    await journal.run_memory_cleanup()
+
+    envoye = llm.complete.await_args.args[1][0]["content"]
+    assert "discord:610" in envoye
 
 
 # ── Toute suppression doit nommer son remplaçant ─────────────────────────────

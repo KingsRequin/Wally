@@ -39,6 +39,42 @@ PREDICATES: frozenset[str] = frozenset(
 CATEGORIES: frozenset[str] = frozenset(c.value for c in FactCategory)
 
 
+# Tournure française de chaque prédicat, pour le texte LISIBLE d'un fait.
+#
+# Le prédicat reste anglais en base : la colonne `predicate` est la clé sur
+# laquelle la réconciliation compare les faits, et un ensemble fermé stable vaut
+# mieux qu'une conjugaison. Mais `content` part au prompt que Wally lit sur les
+# gens, et il y lisait « polylrose has piscine », « mks_zedd plays Apex Legends ».
+_PREDICATE_FR: dict[str, str] = {
+    "is":         "est",
+    "has":        "a",
+    "prefers":    "préfère",
+    "dislikes":   "n'aime pas",
+    "plays":      "joue à",
+    "uses":       "utilise",
+    "wants":      "veut",
+    "plans":      "prévoit de",
+    "believes":   "pense que",
+    "needs":      "a besoin de",
+    "feels":      "ressent",
+    "values":     "tient à",
+    "speaks":     "parle",
+    "knows":      "connaît",
+    "relates_to": "est lié à",
+}
+
+
+def render_triplet(subject: str, predicate: str, object_: str) -> str:
+    """Phrase lisible d'un triplet S-P-O, prédicat traduit.
+
+    Un prédicat hors vocabulaire est laissé tel quel : une phrase imparfaite
+    vaut mieux qu'un fait vide.
+    """
+    verbe = _PREDICATE_FR.get((predicate or "").strip(), (predicate or "").strip())
+    parts = [(subject or "").strip(), verbe, (object_ or "").strip()]
+    return " ".join(p for p in parts if p).strip()
+
+
 def is_valid_predicate(predicate: str) -> bool:
     return predicate in PREDICATES
 

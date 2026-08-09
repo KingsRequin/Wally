@@ -36,7 +36,7 @@ from bot.intelligence.memory.facts import (
     SQLiteFactStore,
     _normalize,
 )
-from bot.intelligence.memory.vocab import CATEGORIES, PREDICATES
+from bot.intelligence.memory.vocab import CATEGORIES, PREDICATES, render_triplet
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -352,9 +352,12 @@ class MemoryIngest:
 
 
 def _render_content(cand: _Candidate) -> str:
-    """Rend une phrase lisible du triplet (sert au FTS et à l'affichage)."""
-    parts = [p for p in (cand.subject, cand.predicate, cand.object) if p]
-    return " ".join(parts).strip()
+    """Rend une phrase lisible du triplet (sert au FTS et à l'affichage).
+
+    Le prédicat est traduit ici seulement : la colonne `predicate` garde sa
+    forme anglaise, c'est elle que la réconciliation compare.
+    """
+    return render_triplet(cand.subject, cand.predicate, cand.object)
 
 
 def _parse_extract_response(raw: str) -> list[_Candidate]:
