@@ -812,6 +812,14 @@ async def main() -> None:
         except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
             logger.warning("Arrêt du scheduler échoué: {e}", e=exc)
         await conv_log.stop()
+        # L'état émotionnel attend dans un debounce de 5 s, sans cesse repoussé
+        # tant que des messages arrivent. Rien ne le forçait à l'arrêt : la tâche
+        # était simplement annulée avec la boucle, et tout ce qui n'avait pas eu
+        # sa fenêtre de calme était perdu.
+        try:
+            await emotion.flush()
+        except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
+            logger.warning("Flush émotionnel échoué: {e}", e=exc)
         # Dernier : tout le reste écrit encore en base jusqu'ici.
         try:
             await db.close()

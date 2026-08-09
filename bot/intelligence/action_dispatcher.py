@@ -73,6 +73,29 @@ class ActionDispatcher:
         self._speak_guard = speak_guard
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
+        # Références fortes des tâches détachées : la boucle asyncio n'en garde
+        # qu'une référence FAIBLE, donc le GC peut annuler une tâche en cours.
+        # Le motif est appliqué partout ailleurs (`cognitive_loop`, `emotion`,
+        # `fact_extractor`) ; ce fichier était le seul à s'en passer.
+        self._bg_tasks: set[asyncio.Task] = set()
+
+    def _fire(self, coro) -> asyncio.Task:
+        """Détache une coroutine en gardant sa référence et en loguant son échec."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+
+        def _fini(t: asyncio.Task) -> None:
+            self._bg_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                # Sans ça, l'exception n'apparaît qu'au ramassage, sous la forme
+                # « Task exception was never retrieved » — hors de loguru.
+                logger.warning("Tâche détachée du dispatcher en échec: {e}", e=exc)
+
+        task.add_done_callback(_fini)
+        return task
 
     def _publish_act(self, label: str, body: str) -> None:
         """Event ACT avec snippet (≤300) + texte complet (full, ≤2000) →
@@ -679,7 +702,10 @@ class ActionDispatcher:
                 logger.warning("ACT code_fix ignoré: goal vide")
                 return
             from bot.intelligence.self_fix import UpgradeRequest
-            asyncio.create_task(self_fix.request_upgrade(UpgradeRequest(goal=goal)))
+            # `_fire` et non `create_task` nu : une demande d'auto-modification
+            # est censée être publiée systématiquement, or le GC pouvait annuler
+            # la tâche avant sa fin, sans le moindre log.
+            self._fire(self_fix.request_upgrade(UpgradeRequest(goal=goal)))
             logger.info("ACT code_fix: demande d'auto-modif — {}", goal[:60])
             if self._feed:
                 self._feed.publish({"type": "ACT", "detail": f"auto-modif : {goal[:60]}"})

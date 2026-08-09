@@ -41,7 +41,14 @@ def test_competition_reduces_anger_when_joy_high():
 
 
 def test_competition_symmetric():
-    """Competition reduces both emotions; anger drops more due to extra anger→joy rule."""
+    """La compétition est SYMÉTRIQUE : les deux côtés perdent le même `extra`.
+
+    Le commentaire d'origine disait « anger baisse plus, car il apparaît dans 2
+    paires » : joy/anger figurant deux fois dans `SUPPRESSION_RULES`, la paire
+    subissait effectivement deux passes par tick — soit le double de l'`extra`
+    annoncé par `COMPETITION_K`, et sur les DEUX émotions, pas seulement anger.
+    La compétition porte maintenant sur les paires distinctes.
+    """
     engine = EmotionEngine(make_config())
     engine._state["anger"] = 0.5
     engine._state["joy"] = 0.5
@@ -49,12 +56,8 @@ def test_competition_symmetric():
     engine._last_decay = time.time() - 60
     engine._apply_decay()
 
-    # Both joy↔anger and anger→joy pairs apply competition.
-    # anger should drop more than joy (affected by 2 rules).
     assert engine._state["anger"] < 0.5
     assert engine._state["joy"] < 0.5
-    # anger drops more because it appears in 2 competition pairs (joy→anger + anger→joy)
-    assert engine._state["anger"] <= engine._state["joy"]
 
 
 def test_competition_converges_in_10_minutes():

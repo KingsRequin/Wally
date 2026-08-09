@@ -614,6 +614,19 @@ class CognitiveLoop:
                 )
                 return
 
+            # Pensée vide = échec LLM, pas une pensée. `complete_with_reasoning`
+            # rend `("", "")` quand l'API tombe, et les deux filtres
+            # anti-ressassement ci-dessus sont court-circuités par leur garde
+            # `and result.thought_text`. Sans ce retour, l'échec était compté
+            # comme « ça avance » (`_rumination_window.append(False)`), ce qui
+            # ACCÉLÈRE la cadence pendant une panne d'API, publiait un THINK vide
+            # dans le flux cognitif, et lançait une condensation LLM sur une
+            # chaîne vide — donc potentiellement une bulle vide à l'overlay.
+            if not result.thought_text:
+                logger.info("CognitiveLoop: pensée vide (LLM muet), tick abandonné")
+                self._log_cog("think_skipped", reason="réponse LLM vide")
+                return
+
             # La pensée vit. Cadence du compteur de ressassement selon le verdict :
             #  - DIVAGUE : vrai changement de sujet → le fil repart de zéro.
             #  - juge absent (fallback lexical) : comportement legacy, reset.

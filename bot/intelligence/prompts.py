@@ -313,7 +313,13 @@ class PromptBuilder:
 
         # 3) Atomic directives with fluid transitions
         if not directive_injected and dominant and directives:
-            dynamic_parts.append("\n--- Directive comportementale ---")
+            # Les lignes sont collectées d'abord : l'en-tête était ajouté AVANT la
+            # boucle, alors qu'un tour peut n'en produire aucune (`_get_tier_fluid`
+            # rend None, ou la clé `{emotion}_{tier}` manque dans EMOTIONS.md — cas
+            # réel : `boredom` à 0.25, sans section `boredom_low`). Le prompt
+            # portait alors une section « Directive comportementale » vide : du
+            # bruit pour le modèle, et un faux positif au débogage.
+            lignes: list[str] = []
             for emotion, value in dominant:
                 fluid = _get_tier_fluid(value)
                 if fluid is None:
@@ -325,18 +331,24 @@ class PromptBuilder:
                     low_key = f"{emotion}_{low_tier}"
                     high_key = f"{emotion}_{high_tier}"
                     if low_key in directives and high_key in directives:
-                        dynamic_parts.append(directives[low_key])
-                        dynamic_parts.append(f"(tendance : {directives[high_key]})")
+                        lignes.append(directives[low_key])
+                        lignes.append(f"(tendance : {directives[high_key]})")
                     elif low_key in directives:
-                        dynamic_parts.append(directives[low_key])
+                        lignes.append(directives[low_key])
                     elif high_key in directives:
-                        dynamic_parts.append(directives[high_key])
+                        lignes.append(directives[high_key])
                 else:
-                    # Pure tier (or blend == 1.0 which means fully transitioned)
+                    # Palier pur. `blend == 1.0` n'arrive jamais en zone de
+                    # transition (`(value - 0.35) / 0.1` y est < 1.0 par
+                    # construction) : les valeurs pures sont couvertes par les
+                    # branches finales de `_get_tier_fluid`.
                     pure_tier = tier.split("_")[-1] if "_" in tier else tier
                     key = f"{emotion}_{pure_tier}"
                     if key in directives:
-                        dynamic_parts.append(directives[key])
+                        lignes.append(directives[key])
+            if lignes:
+                dynamic_parts.append("\n--- Directive comportementale ---")
+                dynamic_parts.extend(lignes)
 
         # Long-term memory context
         if memory_context:

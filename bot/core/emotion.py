@@ -9,6 +9,7 @@ import os
 import random
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -66,6 +67,66 @@ SUPPRESSION_RULES: list[tuple[str, str, float]] = [
     ("joy",     "sadness", 0.8),
     ("anger",   "joy",     0.4),   # anger érode joy (mais moins que l'inverse)
 ]
+
+
+def _build_suppression_map(
+    rules: list[tuple[str, str, float]],
+) -> dict[str, dict[str, float]]:
+    """{émotion qui monte: {émotion érodée: coefficient}}.
+
+    Une paire n'apparaît QU'UNE FOIS par sens. `_apply_suppression` parcourait la
+    liste brute avec `if emotion == src` / `elif emotion == tgt` : joy/anger y
+    figurant deux fois, une hausse de joy érodait anger de 0.8 (règle 1) PUIS de
+    0.4 (règle 3), soit 1.2 — et symétriquement. L'asymétrie annoncée juste
+    au-dessus (« anger érode joy, mais moins que l'inverse ») était donc annulée :
+    les deux sens valaient 1.2.
+
+    Le sens déclaré explicitement l'emporte ; les autres sont complétés par le
+    sens inverse, ce qui préserve la bidirectionnalité voulue.
+    """
+    directed: dict[str, dict[str, float]] = {}
+    for src, tgt, coeff in rules:
+        directed.setdefault(src, {})[tgt] = coeff
+    for src, tgt, coeff in rules:
+        directed.setdefault(tgt, {}).setdefault(src, coeff)
+    return directed
+
+
+SUPPRESSION_MAP: dict[str, dict[str, float]] = _build_suppression_map(SUPPRESSION_RULES)
+
+
+@lru_cache(maxsize=2048)
+def _motif_mot(mot: str) -> "re.Pattern[str]":
+    """Motif d'un mot du lexique : frontières de mot, allongement final toléré.
+
+    Le lexique était testé en SOUS-CHAÎNE (`if w in text_lower`). En français,
+    « con » est un préfixe extrêmement fréquent : « concert », « conseil »,
+    « configuration », « content » déclenchaient tous +0.10 de colère. Idem
+    « nul » dans « annulé », « top » dans « topo ». Ce chemin est le repli
+    (utilisé quand le LLM est absent ou en échec) — c'est-à-dire précisément le
+    moment où plus rien ne vient contredire une colère qui monte à chaque phrase.
+
+    La dernière lettre accepte d'être répétée : sur du chat, « mdrrr » et
+    « ptdrrr » sont la règle, pas l'exception, et perdre ces formes en corrigeant
+    les faux positifs serait un échange perdant. Les entrées à plusieurs mots
+    (apprises, ex. « à côté de la plaque ») gardent de simples frontières.
+    """
+    corps = re.escape(mot)
+    if mot[-1:].isalpha() and " " not in mot:
+        corps = re.escape(mot[:-1]) + re.escape(mot[-1]) + "+"
+    return re.compile(rf"(?<!\w){corps}(?!\w)", re.IGNORECASE)
+
+
+def _mot_present(mot: str, texte: str) -> bool:
+    if not mot:
+        return False
+    return _motif_mot(mot).search(texte) is not None
+
+# Paires distinctes, pour la compétition : elle est symétrique, donc une paire
+# traitée deux fois soustrait deux fois `extra`.
+COMPETITION_PAIRS: list[tuple[str, str]] = list(
+    dict.fromkeys(tuple(sorted((s, t))) for s, t, _ in SUPPRESSION_RULES)
+)
 
 # Coefficient de compétition continue pendant le decay (par tick de 60s).
 # extra = state[src] * state[tgt] * COMPETITION_K est soustrait des deux émotions.
@@ -250,6 +311,9 @@ class EmotionEngine:
         self._db = db
         self._dirty: bool = False
         self._save_task: asyncio.Task | None = None
+        # Quand la sauvegarde en attente a été demandée pour la 1re fois, pour
+        # borner le debounce (cf. `_schedule_save`).
+        self._save_first_requested_at: float = 0.0
         self._ticks: int = 0
         # Peak detection anti-spam cache: emotion → timestamp of last peak
         self._last_peak_ts: dict[str, float] = {}
@@ -356,7 +420,10 @@ class EmotionEngine:
             extra = state[src] * state[tgt] * COMPETITION_K
         Les deux valeurs baissent de `extra`, clampées à 0.0.
         """
-        for src, tgt, _ in SUPPRESSION_RULES:
+        # Sur les PAIRES distinctes : joy/anger figurant deux fois dans
+        # SUPPRESSION_RULES, elle subissait deux passes par tick, soit le double
+        # de l'`extra` annoncé dans le commentaire de COMPETITION_K.
+        for src, tgt in COMPETITION_PAIRS:
             extra = self._state[src] * self._state[tgt] * COMPETITION_K
             if extra <= 0:
                 continue
@@ -364,14 +431,15 @@ class EmotionEngine:
             self._state[tgt] = max(0.0, self._state[tgt] - extra)
 
     def _apply_suppression(self, emotion: str, delta: float) -> None:
-        """Supprime partiellement les émotions incompatibles si delta > 0."""
+        """Supprime partiellement les émotions incompatibles si delta > 0.
+
+        Un seul coefficient par sens (cf. `_build_suppression_map`) : le parcours
+        de la liste brute cumulait deux règles pour joy/anger.
+        """
         if delta <= 0:
             return
-        for src, tgt, coeff in SUPPRESSION_RULES:
-            if emotion == src:
-                self._state[tgt] = max(0.0, self._state[tgt] - delta * coeff)
-            elif emotion == tgt:
-                self._state[src] = max(0.0, self._state[src] - delta * coeff)
+        for cible, coeff in SUPPRESSION_MAP.get(emotion, {}).items():
+            self._state[cible] = max(0.0, self._state[cible] - delta * coeff)
 
     def _apply_circadian(self, emotion: str, delta: float) -> float:
         """Apply circadian rhythm multiplier to delta based on time of day."""
@@ -645,13 +713,57 @@ class EmotionEngine:
                 if aff != 0.0 or count > 0:
                     await self._db.upsert_emotional_memory(user_id, platform, e, aff, count)
 
+    # Au-delà, le debounce cède : on écrit même si les demandes continuent.
+    SAVE_MAX_DEFERRAL_S = 30.0
+
     def _schedule_save(self) -> None:
-        """Debounce : annule la tâche en cours et en planifie une nouvelle dans 5s."""
+        """Debounce BORNÉ : au plus tard `SAVE_MAX_DEFERRAL_S` après la 1re demande.
+
+        Le debounce annulait la tâche en attente et en replanifiait une à +5 s.
+        Or `process_message` appelle `apply_delta` une fois par émotion — cinq
+        par message — plus `record_interaction`, et chacun replanifiait. Il
+        suffisait donc qu'un message arrive moins de 5 s après le précédent pour
+        que la sauvegarde ne parte JAMAIS.
+
+        Autrement dit : pendant un live ou une discussion animée — le moment où
+        l'état émotionnel bouge le plus — `emotion_state`, `mood`, `fatigue` et
+        les affinités n'étaient plus écrits du tout, et un rebuild ramenait
+        l'état à la dernière fenêtre calme.
+        """
         if self._db is None:
             return
+        maintenant = time.monotonic()
+        if self._save_task and not self._save_task.done():
+            # Une écriture attend déjà depuis trop longtemps : on la laisse
+            # aboutir au lieu de repousser encore l'échéance.
+            if maintenant - self._save_first_requested_at >= self.SAVE_MAX_DEFERRAL_S:
+                return
+            self._save_task.cancel()
+        else:
+            self._save_first_requested_at = maintenant
+        self._save_task = asyncio.create_task(self._delayed_save())
+
+    async def flush(self) -> None:
+        """Écrit l'état en attente MAINTENANT. À appeler à l'arrêt du process.
+
+        La séquence d'arrêt ne touchait ni le moteur ni `_save_task`, simplement
+        annulée avec la boucle : tout ce qui attendait dans le debounce était
+        perdu.
+        """
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
-        self._save_task = asyncio.create_task(self._delayed_save())
+            self._save_task = None
+        if not (self._db and self._dirty):
+            return
+        try:
+            await self._db.save_emotion_state(self._state)
+            await self._db.save_mood_state(self._mood)
+            await self._db.save_fatigue_state(self._fatigue)
+            await self._save_user_affinities()
+            self._dirty = False
+            logger.info("État émotionnel écrit avant l'arrêt")
+        except Exception as exc:  # noqa: BLE001 — un arrêt ne doit pas bloquer
+            logger.warning("Flush de l'état émotionnel échoué: {e}", e=exc)
 
     async def _delayed_save(self) -> None:
         await asyncio.sleep(5)
@@ -815,10 +927,44 @@ class EmotionEngine:
         if boredom_target > self._state["boredom"]:
             self._state["boredom"] = boredom_target
         self._last_decay = now
+        self._decay_user_affinity(delta_t / 86400.0)
         self._apply_competition()
         self._recover_fatigue(delta_t / 3600.0)
         self._update_mood(delta_t / 3600.0)
         self._maybe_spontaneous_event()
+
+    def _decay_user_affinity(self, delta_jours: float) -> None:
+        """Fait s'estomper l'affinité par personne. `A(t) = A₀ × e^(−λ × Δjours)`.
+
+        `EmotionalMemoryConfig.decay_lambda_per_day` existait dans la config et
+        dans `config.yaml`, mais n'était lu NULLE PART : l'affinité était un
+        cliquet. `update_user_affinity` n'est alimentée que par des deltas ≥ 0
+        (`_analyze_llm` clampe à [0, MAX_DELTA_PER_MESSAGE], `_analyze_sync` ne
+        produit que du positif), donc elle ne pouvait que croître jusqu'au clamp
+        à 1.0 — et elle est persistée, donc le cliquet survivait aux
+        redémarrages.
+
+        Ce qui en découlait : `_get_priming_deltas` ajoute `affinity × 0.05` à
+        CHACUNE des cinq émotions avant même l'analyse, colère comprise. Après
+        quelques centaines d'échanges, le moindre message d'un habitué poussait
+        mécaniquement les cinq émotions vers le haut. L'intention portée par la
+        config — « la mémoire émotionnelle s'estompe » — était exactement
+        inversée.
+        """
+        if delta_jours <= 0 or not self._user_affinity:
+            return
+        mem_cfg = getattr(self._config, "emotional_memory", None)
+        lam = getattr(mem_cfg, "decay_lambda_per_day", 0.0) if mem_cfg else 0.0
+        if not lam or lam <= 0:
+            return
+        facteur = math.exp(-lam * delta_jours)
+        for affinites in self._user_affinity.values():
+            for emotion in EMOTIONS:
+                valeur = affinites.get(emotion, 0.0)
+                if not valeur:
+                    continue
+                estompee = valeur * facteur
+                affinites[emotion] = 0.0 if abs(estompee) < DECAY_FLOOR else estompee
 
     async def _decay_loop(self) -> None:
         while True:
@@ -892,7 +1038,7 @@ class EmotionEngine:
                 all_fr_words[emotion] = list(FR_EMOTION_WORDS.get(emotion, [])) + list(self._learned_words.get(emotion, []))
 
             for emotion, word_deltas in all_fr_words.items():
-                fr_raw = sum(d for w, d in word_deltas if w in text_lower)
+                fr_raw = sum(d for w, d in word_deltas if _mot_present(w, text_lower))
                 if fr_raw > 0:
                     combined = deltas.get(emotion, 0.0) + fr_raw
                     # Note: anger amplification already applied above on the
