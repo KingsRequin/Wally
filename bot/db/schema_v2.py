@@ -57,7 +57,10 @@ CREATE TABLE IF NOT EXISTS pending_upgrades (
     dm_channel_id TEXT,
     status        TEXT    NOT NULL DEFAULT 'pending',
     created_at    TEXT    NOT NULL,
-    decided_at    TEXT
+    decided_at    TEXT,
+    -- Ce que la capacité livrée DONNE à Wally, rédigé à la première personne et au
+    -- présent (cf. `_migrate_pending_upgrades`). Rempli à la livraison, NULL avant.
+    capability    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS session_analyses (
@@ -211,6 +214,19 @@ async def _migrate_session_analyses(db: aiosqlite.Connection) -> None:
             await db.execute(f"ALTER TABLE session_analyses ADD COLUMN {name} {decl}")
 
 
+async def _migrate_pending_upgrades(db: aiosqlite.Connection) -> None:
+    """Ajoute `capability` : ce que la capacité livrée DONNE à Wally, au présent.
+
+    Sans elle, son prompt ne peut lui parler qu'en termes de demandes passées
+    (« tu as demandé X, c'est livré ») — une formulation qu'il requalifie dès
+    qu'un désir la contredit, comme le 2026-08-09.
+    """
+    cursor = await db.execute("PRAGMA table_info(pending_upgrades)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    if "capability" not in existing:
+        await db.execute("ALTER TABLE pending_upgrades ADD COLUMN capability TEXT")
+
+
 async def _migrate_rss_articles(db: aiosqlite.Connection) -> None:
     """Ajoute published_ts (date de publication epoch, triable) si absent."""
     cursor = await db.execute("PRAGMA table_info(rss_articles)")
@@ -239,6 +255,11 @@ async def create_v2_tables(db_path: str) -> None:
         )
         if await cursor.fetchone() is not None:
             await _migrate_rss_articles(db)
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_upgrades'"
+        )
+        if await cursor.fetchone() is not None:
+            await _migrate_pending_upgrades(db)
         # Table morte (jamais écrite — les pensées vivent comme FactCategory.THOUGHT)
         await db.execute("DROP TABLE IF EXISTS thoughts")
         await db.executescript(_SCHEMA_SQL)

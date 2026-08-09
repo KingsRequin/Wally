@@ -9,7 +9,6 @@ sous le seuil de 0.30 : la garde s'est tue. Plus il plaide, moins on le reconna�
 Les textes ci-dessous sont les VRAIES demandes de `pending_upgrades` (normalisées
 sur une ligne). Les tronquer ferait disparaître la propriété qu'on teste.
 """
-import aiosqlite
 import pytest
 
 from bot.intelligence.upgrade_registry import DELIVERED, UpgradeRegistry
@@ -53,16 +52,11 @@ DEMANDE_3_SANS_RAPPORT = (
 
 
 async def _registre(tmp_path) -> UpgradeRegistry:
+    """Base au VRAI schéma — un DDL recopié ici dériverait au prochain ALTER."""
+    from bot.db.schema_v2 import create_v2_tables
+
     chemin = str(tmp_path / "upgrades.db")
-    async with aiosqlite.connect(chemin) as c:
-        await c.execute(
-            """CREATE TABLE pending_upgrades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                proposal TEXT NOT NULL, message_id TEXT, dm_channel_id TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL, decided_at TEXT)"""
-        )
-        await c.commit()
+    await create_v2_tables(chemin)
     return UpgradeRegistry(chemin)
 
 

@@ -364,7 +364,12 @@ class AttentionAgent:
         if self._upgrade_registry is not None:
             try:
                 upgrade_requests = await self._upgrade_registry.recent()
-            except Exception:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+            except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+                # Journalisé : avalé en silence, cet échec retirait TOUT son
+                # historique de demandes du prompt sans laisser de trace — et c'est
+                # ce bloc qui l'empêche de redemander ce qu'il possède déjà.
+                from loguru import logger
+                logger.warning("AttentionAgent: historique des demandes illisible: {}", e)
                 upgrade_requests = []
 
         # Conscience du rythme social appris (SocialRhythm) — best-effort.

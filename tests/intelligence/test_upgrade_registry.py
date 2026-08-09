@@ -1,23 +1,22 @@
 """Tests Phase 6 — registre des demandes d'amélioration (pending_upgrades)."""
-import aiosqlite
 import pytest
 
 from bot.intelligence.upgrade_registry import (
-    UpgradeRegistry, REQUESTED, DELIVERED, DECLINED, ABANDONED,
+    ABANDONED,
+    DECLINED,
+    DELIVERED,
+    REQUESTED,
+    UpgradeRegistry,
 )
 
 
 async def _make_db(tmp_path):
+    """Base au VRAI schéma. Un DDL recopié à la main ici avait dérivé du schéma
+    réel (colonne `capability` ajoutée le 2026-08-09) et cassait `recent()`."""
+    from bot.db.schema_v2 import create_v2_tables
+
     db = str(tmp_path / "u.db")
-    async with aiosqlite.connect(db) as c:
-        await c.execute(
-            """CREATE TABLE pending_upgrades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                proposal TEXT NOT NULL, message_id TEXT, dm_channel_id TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL, decided_at TEXT)"""
-        )
-        await c.commit()
+    await create_v2_tables(db)
     return db
 
 

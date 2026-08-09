@@ -246,7 +246,12 @@ class ReasoningAgent:
                 lines.append(titre)
                 for u in lot:
                     day = (getattr(u, "decided_at", None) or getattr(u, "created_at", "") or "")[:10]
-                    lines.append(f"  · {_one_line(u.proposal, 120)} ({day})")
+                    # La capacité au présent l'emporte sur la formulation de la
+                    # demande : « je vois le chat du live » ne se requalifie pas,
+                    # « tu as demandé à voir le chat » si. Repli sur la demande pour
+                    # les livraisons antérieures à la colonne `capability`.
+                    quoi = getattr(u, "capability", None) or u.proposal
+                    lines.append(f"  · {_one_line(quoi, 120)} ({day})")
         if getattr(ctx, "relationships", None):
             lines.append("**Ce que tu penses des gens (tes affinités) :**")
             for rel in ctx.relationships:

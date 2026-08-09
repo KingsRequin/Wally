@@ -139,6 +139,56 @@ class SelfFix:
             await self._registry.set_status(upgrade_id, status)
         except Exception:  # noqa: BLE001 — le suivi ne doit jamais casser le flux
             logger.exception("self-fix: maj statut registre #{} échouée", upgrade_id)
+        if status == DELIVERED:
+            await self._ecrire_capacite(upgrade_id)
+
+    async def _ecrire_capacite(self, upgrade_id: int) -> None:
+        """Reformule la demande livrée en une capacité au présent, et l'enregistre.
+
+        C'est le retour qui manquait à la boucle : `delivered` s'écrivait en base et
+        rien ne redescendait dans ce que Wally croit savoir de lui. Il l'apprenait
+        seulement sous la forme « tu as demandé X, c'est livré » — une phrase qu'il
+        requalifie dès qu'un désir la contredit (« la mienne est différente », le
+        2026-08-09). « Je vois le chat du live », lui, ne se discute pas.
+
+        Best-effort de bout en bout : sans LLM, sans réponse ou en cas d'erreur, la
+        colonne reste NULL et le rendu retombe sur la formulation de la demande.
+        """
+        llm = getattr(self._bot, "llm_secondary", None)
+        if llm is None:
+            return
+        # Le registre plutôt que `_active_goal` : cet attribut vit en mémoire et la
+        # livraison est posée juste après `docker_rebuild`, donc dans la fenêtre où
+        # le process peut être remplacé. Repli sur l'attribut si la lecture échoue.
+        goal = ""
+        try:
+            demande = await self._registry.get(upgrade_id)
+            goal = (demande.proposal if demande else "") or ""
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.warning("self-fix: lecture de la demande #{} échouée: {}", upgrade_id, e)
+        goal = (goal or self._active_goal or "").strip()
+        if not goal:
+            return
+        try:
+            phrase = await llm.complete(
+                "Tu reformules une demande d'amélioration ACCEPTÉE ET DÉPLOYÉE en une "
+                "phrase décrivant la capacité obtenue. Écris à la PREMIÈRE PERSONNE et "
+                "au PRÉSENT (« Je vois… », « Je reçois… »), une seule phrase courte, "
+                "concrète, sans préambule ni guillemets. Décris ce que la capacité "
+                "PERMET, pas la demande ni son historique.",
+                [{"role": "user", "content": goal[:1500]}],
+            )
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.warning("self-fix: reformulation de la capacité #{} échouée: {}", upgrade_id, e)
+            return
+        phrase = " ".join(str(phrase or "").split())[:300]
+        if not phrase:
+            return
+        try:
+            await self._registry.set_capability(upgrade_id, phrase)
+            logger.info("self-fix: capacité #{} enregistrée — {}", upgrade_id, phrase[:80])
+        except Exception:  # noqa: BLE001 — jamais bloquant
+            logger.exception("self-fix: écriture de la capacité #{} échouée", upgrade_id)
 
     def _publish_feed(self, detail: str, full: str | None = None) -> None:
         """Publie un jalon de self-modification dans le cognitive_feed (type CODEFIX).

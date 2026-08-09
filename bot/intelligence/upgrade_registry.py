@@ -62,6 +62,10 @@ class UpgradeRow:
     status: str
     created_at: str
     decided_at: str | None = None
+    # Ce que la capacité DONNE à Wally, à la première personne et au présent.
+    # Renseignée à la livraison ; None pour tout ce qui n'est pas encore livré (et
+    # pour les 14 livraisons antérieures au 2026-08-09, d'où le repli au rendu).
+    capability: str | None = None
 
 
 class UpgradeRegistry:
@@ -133,7 +137,7 @@ class UpgradeRegistry:
         """
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
-            requete = """SELECT id, proposal, status, created_at, decided_at
+            requete = """SELECT id, proposal, status, created_at, decided_at, capability
                          FROM pending_upgrades ORDER BY created_at DESC"""
             if limit is None:
                 cur = await db.execute(requete)
@@ -142,9 +146,47 @@ class UpgradeRegistry:
             rows = await cur.fetchall()
         return [
             UpgradeRow(id=r["id"], proposal=r["proposal"], status=r["status"],
-                       created_at=r["created_at"], decided_at=r["decided_at"])
+                       created_at=r["created_at"], decided_at=r["decided_at"],
+                       capability=r["capability"])
             for r in rows
         ]
+
+    async def get(self, upgrade_id: int) -> UpgradeRow | None:
+        """Une demande par son id, ou None.
+
+        Source DURABLE de ce qui a été demandé — à préférer à un attribut en
+        mémoire : la livraison est posée juste après un `docker_rebuild`, donc dans
+        une fenêtre où le process peut disparaître à tout instant.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT id, proposal, status, created_at, decided_at, capability
+                   FROM pending_upgrades WHERE id = ?""",
+                (upgrade_id,),
+            )
+            r = await cur.fetchone()
+        if r is None:
+            return None
+        return UpgradeRow(id=r["id"], proposal=r["proposal"], status=r["status"],
+                          created_at=r["created_at"], decided_at=r["decided_at"],
+                          capability=r["capability"])
+
+    async def set_capability(self, upgrade_id: int, capability: str) -> None:
+        """Enregistre ce que la capacité livrée DONNE à Wally, au présent.
+
+        Vide ou blanc → on n'écrit pas : mieux vaut retomber sur la formulation de
+        la demande au rendu qu'afficher une ligne creuse.
+        """
+        capability = (capability or "").strip()
+        if not capability:
+            return
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE pending_upgrades SET capability = ? WHERE id = ?",
+                (capability, upgrade_id),
+            )
+            await db.commit()
 
     async def find_similar(
         self, proposal: str, threshold: float = 0.3

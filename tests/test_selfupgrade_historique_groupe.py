@@ -12,7 +12,6 @@ Deux défauts de rendu expliquent ça :
 · une **fenêtre de 6** demandes, alors qu'il en a 20 dont 14 livrées : 8 capacités
   acquises étaient tout simplement absentes de son prompt.
 """
-import aiosqlite
 import pytest
 
 from bot.intelligence.attention_agent import AttentionContext
@@ -100,16 +99,10 @@ def test_aucun_bloc_quand_il_na_jamais_rien_demande():
 @pytest.mark.asyncio
 async def test_lhistorique_complet_est_rendu_sans_fenetre(tmp_path):
     """14 capacités livrées pour une fenêtre de 6 : 8 étaient invisibles."""
+    from bot.db.schema_v2 import create_v2_tables
+
     chemin = str(tmp_path / "u.db")
-    async with aiosqlite.connect(chemin) as c:
-        await c.execute(
-            """CREATE TABLE pending_upgrades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                proposal TEXT NOT NULL, message_id TEXT, dm_channel_id TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL, decided_at TEXT)"""
-        )
-        await c.commit()
+    await create_v2_tables(chemin)
     reg = UpgradeRegistry(chemin)
     for i in range(14):
         uid = await reg.record_request(f"capacité numéro {i}")
