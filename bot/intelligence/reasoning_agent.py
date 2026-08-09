@@ -25,6 +25,38 @@ _FR_DIRECTIVE = (
 )
 
 
+def _retirer_sections(texte: str, marqueur: str) -> str:
+    """Retire les blocs `<!-- {marqueur}:début -->` … `<!-- {marqueur}:fin -->`.
+
+    Sert à ne pas ENSEIGNER une action indisponible. Le balisage explicite est
+    délibéré : filtrer la prose par motifs aurait cessé de matcher en silence à la
+    première reformulation du prompt, et un filtre inopérant ne se voit pas.
+    """
+    debut, fin = f"<!-- {marqueur}:début -->", f"<!-- {marqueur}:fin -->"
+    morceaux, reste = [], texte
+    while debut in reste:
+        avant, apres = reste.split(debut, 1)
+        morceaux.append(avant)
+        reste = apres.split(fin, 1)[1] if fin in apres else ""
+    morceaux.append(reste)
+    # La découpe laisse des lignes vides là où les sections ont été retirées ; on
+    # resserre pour ne pas ouvrir des trous de trois ou quatre lignes dans le prompt.
+    recolle = "".join(morceaux)
+    while "\n\n\n" in recolle:
+        recolle = recolle.replace("\n\n\n", "\n\n")
+    return recolle
+
+
+def _oter_marqueurs(texte: str, marqueur: str) -> str:
+    """Retire les balises en gardant leur contenu (cas où la section est ACTIVE)."""
+    return (
+        texte.replace(f"<!-- {marqueur}:début -->\n", "")
+        .replace(f"<!-- {marqueur}:fin -->\n", "")
+        .replace(f"<!-- {marqueur}:début -->", "")
+        .replace(f"<!-- {marqueur}:fin -->", "")
+    )
+
+
 def _one_line(text: str, limit: int = 220) -> str:
     """Rend un texte sur une seule ligne, tronqué proprement avec ellipse.
 
@@ -88,6 +120,17 @@ class ReasoningAgent:
         # rédiger un message qui sera jeté au dispatch. Il décidait en boucle une
         # action structurellement impossible (mesuré : 18 messages écrits pour
         # rien en 5 jours).
+        #
+        # Ce paragraphe ne SUFFISAIT pas : le prompt continuait à consacrer 408 mots
+        # sur dix lignes à expliquer comment et quand parler — et son exemple de
+        # réponse publique commençait par `[SPEAK ...]`. Une interdiction posée après
+        # l'enseignement contredit l'enseignement ; elle ne l'efface pas, et un exemple
+        # pèse lourd. Les passages concernés sont donc retirés à la source.
+        self._system = (
+            _oter_marqueurs(self._system, "SPEAK")
+            if spontaneous_speak_enabled
+            else _retirer_sections(self._system, "SPEAK")
+        )
         if not spontaneous_speak_enabled:
             self._system += (
                 "\n\n## Parole spontanée indisponible\n"

@@ -26,7 +26,16 @@ def test_directive_ajoutee_quand_speak_est_coupe():
 
 
 def test_le_prompt_de_base_est_conserve():
-    """La directive s'ajoute, elle ne remplace pas les consignes existantes."""
-    base, bride = _agent(True)._system, _agent(False)._system
-    assert bride.startswith(base)
-    assert len(bride) > len(base)
+    """La directive ne doit pas emporter les consignes SANS RAPPORT avec la parole.
+
+    L'assertion d'origine était `bride.startswith(base)` : la directive s'ajoutait en
+    fin de prompt sans rien retirer. Depuis le 2026-08-09, les passages qui
+    ENSEIGNENT `[SPEAK]` sont au contraire retirés — un mode d'emploi suivi d'une
+    interdiction, plus un exemple qui montrait un `[SPEAK]`, contredisaient la
+    directive au lieu de la servir (cf. tests/test_reasoning_speak_sections.py).
+    Ce test garde donc son intention — ne pas écraser le reste — sans son moyen.
+    """
+    bride = _agent(False)._system
+    for garde in ("ANCRAGE", "[THINK]", "create_desire", "advance_goal", "code_fix",
+                  "Étanchéité des canaux", "EVOLVE"):
+        assert garde in bride, f"« {garde} » a disparu du prompt bridé"
