@@ -55,8 +55,37 @@ def test_preamble_still_ignored_all_sections_loaded(tmp_path):
 
 
 def test_real_emotions_file_loads_15_directives_including_anger_low():
-    """Preuve du fix sur le vrai fichier de prod : 15 directives, anger_low présent."""
+    """Preuve du fix sur le vrai fichier de prod : 15 directives, anger_low présent.
+
+    L'assertion portait sur le TEXTE exact d'`anger_low` (« Plus impatient, plus
+    sec. »). Or ce fichier est bind-monté et éditable depuis l'onglet Prompts : figer
+    sa prose faisait rougir la suite à chaque retouche du personnage, alors que le
+    bug surveillé ici est un bug de PARSEUR. On vérifie donc la présence et la
+    substance, pas la formulation.
+    """
     ps = PersonaService(persona_dir="bot/persona")
     assert len(ps.emotion_directives) == 15
     assert "anger_low" in ps.emotion_directives
-    assert ps.emotion_directives["anger_low"] == "Plus impatient, plus sec."
+    assert ps.emotion_directives["anger_low"].strip()
+
+
+def test_les_trois_paliers_de_colere_sont_substantiels():
+    """Une directive de deux mots ne dirige rien.
+
+    `anger_high` valait « Furax. Insultes familières OK. » — cinq mots, là où les
+    composites en font quatre lignes avec des formulations types. Un palier vidé ou
+    réduit à une étiquette laisse le LLM inventer son propre registre, et c'est
+    exactement ce qui rendait la colère tiède.
+    """
+    ps = PersonaService(persona_dir="bot/persona")
+    for palier in ("anger_low", "anger_mid", "anger_high"):
+        directive = ps.emotion_directives.get(palier, "")
+        assert len(directive) > 120, (
+            f"{palier} ne fait que {len(directive)} caractères — trop court pour "
+            "diriger un comportement"
+        )
+    # L'escalade doit être lisible : plus on monte, plus la consigne est fournie.
+    assert (
+        len(ps.emotion_directives["anger_high"])
+        > len(ps.emotion_directives["anger_low"])
+    )
