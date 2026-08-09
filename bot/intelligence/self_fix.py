@@ -9,7 +9,7 @@ from loguru import logger
 from bot.discord.message_split import send_chunked
 from bot.intelligence.identity import render_identity, creator_name, bot_name
 from bot.intelligence.upgrade_registry import (
-    UpgradeRegistry, DELIVERED, DECLINED, ABANDONED,
+    UpgradeRegistry, DELIVERED, DECLINED, ABANDONED, REQUESTED,
 )
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
@@ -27,6 +27,43 @@ def _next_threshold_crossed(pct: int, last: int) -> int | None:
     (strictement > last), ou None. Garantit un event par palier."""
     crossed = [t for t in _FEED_THRESHOLDS if last < t <= pct]
     return max(crossed) if crossed else None
+
+
+def _motif_de_blocage(hit) -> str:
+    """Ce que la garde anti-redemande inscrit dans la mémoire de Wally.
+
+    Trois exigences, tirées du 2026-08-09 où Wally a redemandé une capacité qu'il
+    possédait depuis quatre jours :
+
+    · **en français, au présent** — l'ancien message injectait le statut anglais
+      brut (« Déjà delivered ») dans un fait français ;
+    · **le bon message selon le statut** — « tu l'as déjà » et « c'est en attente
+      d'autorisation » n'appellent pas du tout la même conduite, et les confondre
+      lui faisait croire qu'une demande en cours était acquise (ou l'inverse) ;
+    · **re-négociable** — la détection ayant été durcie (recouvrement en plus du
+      Jaccard), elle peut se tromper. Sans porte de sortie explicite, un faux
+      blocage devient un mur muet contre lequel il réessaie sans comprendre.
+    """
+    extrait = " ".join((hit.proposal or "").split())[:160]
+    depuis = (hit.decided_at or hit.created_at or "")[:10]
+    if hit.status == DELIVERED:
+        etat = (
+            f"Tu l'as déjà : c'est la demande #{hit.id}, livrée"
+            f"{f' le {depuis}' if depuis else ''}."
+        )
+    elif hit.status == REQUESTED:
+        etat = (
+            f"C'est la demande #{hit.id}, déjà émise"
+            f"{f' le {depuis}' if depuis else ''} et en attente d'autorisation — "
+            "inutile de la réémettre, il faut laisser à ton créateur le temps de répondre."
+        )
+    else:
+        etat = f"Une demande proche existe déjà (#{hit.id}, statut {hit.status})."
+    return (
+        f"{etat} Elle disait : « {extrait} ». Ne la redemande pas telle quelle. "
+        "Si tu penses viser autre chose, formule d'abord EN QUOI ta demande diffère "
+        "de celle-là — sinon considère le sujet comme réglé."
+    )
 
 
 # Cadrage d'ingénierie préfixé à CHAQUE goal envoyé à Claude Code. Garantit un bon
@@ -159,10 +196,7 @@ class SelfFix:
                 hit = None
             if hit is not None:
                 logger.info("self-upgrade ignoré: déjà {} (#{}) — {}", hit.status, hit.id, goal[:60])
-                await self._record_outcome(
-                    goal, f"Déjà {hit.status} (demande #{hit.id} : « {hit.proposal[:120]} ») — "
-                    "inutile de le redemander."
-                )
+                await self._record_outcome(goal, _motif_de_blocage(hit))
                 return
         # Un seul fil de sollicitation owner à la fois : si un MP attend déjà sa
         # réponse, on diffère sans envoyer — la cognition re-soulèvera plus tard.

@@ -37,6 +37,24 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+# Seuil de recouvrement, et taille minimale pour qu'il s'applique (cf. `_recouvrement`).
+_SEUIL_RECOUVREMENT = 0.45
+_MIN_TOKENS_RECOUVREMENT = 8
+
+
+def _recouvrement(a: set[str], b: set[str]) -> float:
+    """Part du PLUS PETIT des deux ensembles que l'autre recouvre.
+
+    Insensible à la verbosité, là où `_jaccard` divise par l'union : deux textes
+    du même sujet mais de longueurs très différentes s'y reconnaissent quand même.
+    C'est ce qui manquait le 2026-08-09 — une redemande deux fois plus longue que
+    la demande déjà livrée tombait à 0.215 de Jaccard, sous le seuil, et passait.
+    """
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
 @dataclass
 class UpgradeRow:
     id: int
@@ -124,7 +142,18 @@ class UpgradeRegistry:
         self, proposal: str, threshold: float = 0.3
     ) -> UpgradeRow | None:
         """Retourne une demande BLOQUANTE (requested/delivered) sémantiquement
-        proche de `proposal`, ou None. Sert la garde anti-redemande."""
+        proche de `proposal`, ou None. Sert la garde anti-redemande.
+
+        Deux mesures, chacune rattrapant l'angle mort de l'autre : `_jaccard`
+        reconnaît les reformulations de longueur comparable, `_recouvrement`
+        reconnaît une redemande DÉLAYÉE (le cas du 2026-08-09). Une seule des
+        deux suffit à considérer que c'est le même sujet.
+
+        Le plancher `_MIN_TOKENS_RECOUVREMENT` protège le recouvrement de son
+        propre angle mort : une demande de trois mots est « entièrement contenue »
+        dans n'importe quelle demande future qui la mentionne au passage, et
+        bloquerait alors un sujet bien plus large qu'elle.
+        """
         target = _tokens(proposal)
         if not target:
             return None
@@ -138,9 +167,18 @@ class UpgradeRegistry:
             )
             rows = await cur.fetchall()
         best: UpgradeRow | None = None
-        best_score = threshold
+        best_score = 0.0
         for r in rows:
-            score = _jaccard(target, _tokens(r["proposal"]))
+            autre = _tokens(r["proposal"])
+            jac = _jaccard(target, autre)
+            rec = (
+                _recouvrement(target, autre)
+                if min(len(target), len(autre)) >= _MIN_TOKENS_RECOUVREMENT
+                else 0.0
+            )
+            if jac < threshold and rec < _SEUIL_RECOUVREMENT:
+                continue
+            score = max(jac, rec)
             if score >= best_score:
                 best_score = score
                 best = UpgradeRow(id=r["id"], proposal=r["proposal"], status=r["status"],
