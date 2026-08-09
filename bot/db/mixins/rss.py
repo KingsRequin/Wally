@@ -67,8 +67,13 @@ class RSSMixin:
         cutoff = time.time() - max_age_seconds
         row = await self.fetch_one(
             "SELECT * FROM rss_articles "
-            "WHERE role = 'stimulus' AND injected_at IS NULL AND fetched_at >= ? "
-            "ORDER BY fetched_at DESC, id DESC LIMIT 1",
+            # Même correctif que `rss_search_knowledge` : la fraîcheur se mesure à la
+            # publication. Sans ça, un flux qui ressort un vieil article le donnait
+            # comme amorce de pensée, et Wally se mettait à réfléchir à une actu de
+            # dix-neuf mois comme si elle venait de paraître.
+            "WHERE role = 'stimulus' AND injected_at IS NULL "
+            "AND COALESCE(published_ts, fetched_at) >= ? "
+            "ORDER BY COALESCE(published_ts, fetched_at) DESC, id DESC LIMIT 1",
             (cutoff,),
         )
         return dict(row) if row else None
@@ -111,7 +116,12 @@ class RSSMixin:
         rows = await self.fetch_all(
             "SELECT a.* FROM rss_articles a "
             "JOIN rss_articles_fts f ON f.rowid = a.id "
-            "WHERE a.role = 'knowledge' AND a.fetched_at >= ? "
+            # Fraîcheur = date de PUBLICATION, pas date de lecture. Sur `fetched_at`,
+            # 132 des 215 articles de la base de prod passaient le filtre de 30 jours
+            # alors qu'ils étaient publiés depuis plus longtemps — le plus ancien
+            # depuis 566 jours. « Le dernier patch note » remontait alors celui du
+            # 22 juin quand celui du 3 août était en base.
+            "WHERE a.role = 'knowledge' AND COALESCE(a.published_ts, a.fetched_at) >= ? "
             "AND rss_articles_fts MATCH ? "
             "ORDER BY bm25(rss_articles_fts), "
             "COALESCE(a.published_ts, a.fetched_at) DESC LIMIT ?",

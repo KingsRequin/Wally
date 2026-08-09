@@ -1390,6 +1390,27 @@ def _is_news_query(text: str | None) -> bool:
     return any(m in t for m in _RSS_NEWS_MARKERS)
 
 
+def _rss_age(article: dict) -> str:
+    """« (paru il y a 6 jours) », ou "" si l'article n'est pas daté.
+
+    Rendu en âge relatif plutôt qu'en date absolue : Wally n'a pas à calculer un
+    écart pour savoir si « le 22 juin » est récent ou pas, et il peut restituer
+    l'information telle quelle à l'oral comme à l'écrit.
+    """
+    ts = article.get("published_ts") or article.get("fetched_at")
+    if not ts:
+        return ""
+    jours = int((time.time() - float(ts)) // 86400)
+    if jours <= 0:
+        return "(paru aujourd'hui) "
+    if jours == 1:
+        return "(paru hier) "
+    if jours < 30:
+        return f"(paru il y a {jours} jours) "
+    mois = jours // 30
+    return f"(paru il y a {mois} mois) " if mois > 1 else "(paru il y a 1 mois) "
+
+
 async def _rss_knowledge_context(bot, text: str) -> str | None:
     """Recall RSS « knowledge » : si le message parle d'un sujet couvert par un
     flux knowledge (ex. Apex, le jeu du serveur), remonte les articles récents
@@ -1416,20 +1437,23 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     if not articles:
         return None
     lines = [
-        "Actus les plus RÉCENTES que tu CONNAIS DÉJÀ sur ce sujet (classées du plus "
-        "récent au plus ancien ; inutile de chercher sur le web, tu as l'info ci-"
-        "dessous). Choisis celle(s) qui répond(ent) vraiment à la question — pour un "
-        "« dernier patch note », prends le patch note le plus récent du lot. Quand tu "
-        "t'appuies sur l'une, colle son marqueur cliquable juste après la phrase "
-        "concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. N'invente jamais "
-        "d'URL ni de numéro :"
+        "Actus que tu CONNAIS DÉJÀ sur ce sujet — inutile de chercher sur le web, tu "
+        "as l'info ci-dessous. Elles sont classées par PERTINENCE, pas par date : "
+        "l'âge de chacune est indiqué, fie-toi à lui et pas à l'ordre. Pour un "
+        "« dernier patch note », prends donc le plus récent du lot, et dis de quand il "
+        "date. Quand tu t'appuies sur l'une, colle son marqueur cliquable juste après "
+        "la phrase concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. N'invente "
+        "jamais d'URL ni de numéro :"
     ]
     for i, a in enumerate(articles, start=1):
         sup = _RSS_SUPERSCRIPTS[i]
         url = a.get("link") or ""
         title = a.get("title") or ""
         summary = a.get("summary") or ""
-        lines.append(f"[{sup}](<{url}>) {title} : {summary}")
+        # L'âge, explicitement : le bloc prétendait un classement chronologique que le
+        # tri BM25 ne respecte pas, et n'affichait aucune date. Wally présentait donc
+        # un patch de sept semaines comme « le dernier » sans pouvoir s'en apercevoir.
+        lines.append(f"[{sup}](<{url}>) {_rss_age(a)}{title} : {summary}")
     return "\n".join(lines)
 
 
