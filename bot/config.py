@@ -86,6 +86,18 @@ class OpenAIConfig:
     max_tokens: int
     reasoning_effort: str = "medium"
     text_verbosity: str = "medium"
+    # Modèle de VISION — la seule « vue » du bot, DeepSeek étant aveugle.
+    #
+    # `bootstrap` le prenait dans `secondary_model`, que le dashboard écrase dès
+    # qu'on touche au modèle texte secondaire. Choisir un modèle non-OpenAI
+    # comme LLM secondaire écrivait donc cet identifiant ici, et au redémarrage
+    # `VisionService` interrogeait l'API OpenAI avec un modèle inexistant : 404
+    # sur chaque image. `VisionService.analyze()` filtrant les fallbacks, la
+    # panne était totalement muette — Wally redevenait aveugle sans un log.
+    #
+    # Champ dédié, jamais touché par les réglages texte. Vide = on retombe sur
+    # `secondary_model`, pour ne rien casser sur une config existante.
+    vision_model: str = ""
 
 
 @dataclass

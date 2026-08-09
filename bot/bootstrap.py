@@ -132,9 +132,13 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     # obligatoirement par un modèle OpenAI multimodal, distinct du client de
     # génération d'images. Désactivé proprement si OPENAI_API_KEY est absente.
     vision_client = None
+    # Champ DÉDIÉ : `secondary_model` est écrasé par le dashboard dès qu'on
+    # change le modèle texte secondaire, ce qui rendait Wally aveugle en silence.
+    # Vide → on retombe sur l'ancien comportement, pour ne rien casser.
+    vision_model = getattr(config.openai, "vision_model", "") or config.openai.secondary_model
     if _os.environ.get("OPENAI_API_KEY"):
         vision_client = OpenAILLMClient(
-            model=config.openai.secondary_model,  # gpt-5-nano : multimodal, peu coûteux
+            model=vision_model,  # gpt-5-nano : multimodal, peu coûteux
             db=db,
             temperature=0.3,
             max_tokens=400,
@@ -142,7 +146,7 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
         )
     vision = VisionService(vision_client)
     if vision.available:
-        logger.info("VisionService initialized (model={m})", m=config.openai.secondary_model)
+        logger.info("VisionService initialized (model={m})", m=vision_model)
     else:
         logger.warning("VisionService disabled — OPENAI_API_KEY missing")
 

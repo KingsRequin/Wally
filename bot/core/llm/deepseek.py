@@ -178,6 +178,57 @@ class DeepSeekLLMClient(BaseLLMClient):
             base_url="https://api.deepseek.com",
         )
 
+    # ── Réglages relus à chaud ────────────────────────────────────────────────
+    #
+    # `OpenAILLMClient` expose ces propriétés depuis toujours ; DeepSeek ne
+    # stockait que `self._model`, `self._max_tokens`… sans accesseur public. Or
+    # la factory ne construit QUE du DeepSeek : `state.primary_llm.model = …`,
+    # écrit par le dashboard et par `/wally setup`, créait un attribut FANTÔME
+    # jamais relu. Les réglages « thinking » étaient en plus gardés par un
+    # `hasattr(..., "thinking_type")` toujours faux, donc ignorés en silence.
+    # Résultat : « sauvegardé » s'affichait, et le client en vol gardait
+    # l'ancienne valeur jusqu'au redémarrage.
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._model = value
+
+    @property
+    def temperature(self) -> float:
+        return self._temperature
+
+    @temperature.setter
+    def temperature(self, value: float) -> None:
+        self._temperature = value
+
+    @property
+    def max_tokens(self) -> int:
+        return self._max_tokens
+
+    @max_tokens.setter
+    def max_tokens(self, value: int) -> None:
+        self._max_tokens = value
+
+    @property
+    def thinking_type(self) -> str:
+        return self._thinking_type
+
+    @thinking_type.setter
+    def thinking_type(self, value: str) -> None:
+        self._thinking_type = value
+
+    @property
+    def thinking_effort(self) -> str:
+        return self._thinking_effort
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: str) -> None:
+        self._thinking_effort = value
+
     # ── Helpers privés ────────────────────────────────────────────────────────
 
     def _extra_body(self, thinking_override: str | None = None) -> dict:
@@ -447,6 +498,7 @@ class DeepSeekLLMClient(BaseLLMClient):
             yield text
             return
 
+        emis = False
         try:
             params = self._api_params()
             async with self._client.chat.completions.stream(
@@ -457,6 +509,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 async for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta and delta.content:
+                        emis = True
                         yield delta.content
                 # Log du coût après épuisement du flux : l'usage (tokens + cache)
                 # n'arrive que dans le chunk final via stream_options.include_usage.
@@ -467,4 +520,8 @@ class DeepSeekLLMClient(BaseLLMClient):
                     logger.debug("DeepSeek stream cost log failed (non-fatal): {e}", e=e)
         except Exception as e:
             logger.error("DeepSeek complete_stream() failed: {e}", e=e)
-            yield FALLBACK_RESPONSE
+            # Le fallback ne remplace que ce qui n'est PAS déjà parti. Émis en
+            # plus, il donnait au lecteur une demi-phrase suivie de « Je
+            # rencontre un problème technique… ».
+            if not emis:
+                yield FALLBACK_RESPONSE

@@ -67,6 +67,16 @@ async def update_config(request: Request, body: dict) -> dict:
             if not (0.0 <= temp <= 2.0):
                 raise HTTPException(status_code=400, detail="temperature must be 0.0–2.0")
             cfg.openai.temperature = temp
+            # Propagée vers `llm:`, comme tous les autres champs de la section
+            # héritée. Elle était le SEUL à ne pas l'être, alors que
+            # `_build_llm_config` privilégie `llm:` dès qu'elle existe et n'y
+            # retombe jamais sur `openai:` : la température réglée au dashboard
+            # n'était appliquée ni à chaud ni au redémarrage.
+            cfg.llm.primary.temperature = temp
+            cfg.llm.secondary.temperature = temp
+            for client in (state.primary_llm, state.secondary_llm):
+                if hasattr(client, "temperature"):
+                    client.temperature = temp
         if "primary_model" in d:
             cfg.openai.primary_model = str(d["primary_model"])
             cfg.llm.primary.model = str(d["primary_model"])

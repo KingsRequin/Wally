@@ -101,6 +101,9 @@ def estimate_cost(
 class OpenAILLMClient(BaseLLMClient):
     """OpenAI LLM client supporting both Chat Completions and Responses API."""
 
+    # Plafond de tours d'outils en streaming (cf. `complete_stream`).
+    STREAM_MAX_TOOL_ITERS = 6
+
     def __init__(
         self,
         model: str,
@@ -159,6 +162,31 @@ class OpenAILLMClient(BaseLLMClient):
     def text_verbosity(self, value: str) -> None:
         self._text_verbosity = value
 
+    async def _log_cost(
+        self, *, input_tokens: int, output_tokens: int, cost: float,
+        purpose: str, user_id: str | None,
+    ) -> None:
+        """Écrit le coût en base. Jamais bloquant.
+
+        Les deux chemins de `complete()` calculaient le coût et le passaient à
+        `logger.info` SANS jamais appeler `log_cost` — seules les variantes
+        outillées le faisaient. Or le seul chemin OpenAI texte réellement vivant
+        aujourd'hui est la VisionService : AUCUNE description d'image n'était
+        comptabilisée, et `get_daily_cost` / le seuil d'alerte sous-estimaient
+        d'autant la dépense réelle.
+        """
+        try:
+            await self._db.log_cost(
+                model=self._model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost,
+                purpose=purpose,
+                user_id=user_id,
+            )
+        except Exception as e:  # noqa: BLE001 — une compta ratée n'est pas fatale
+            logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
+
     def _build_image_content(
         self, text: str, image_urls: list[str], use_responses_api: bool
     ) -> list[dict]:
@@ -206,6 +234,11 @@ class OpenAILLMClient(BaseLLMClient):
                 "OpenAI {model} (Responses) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
                 model=self._model, inp=response.usage.input_tokens,
                 out=response.usage.output_tokens, cost=cost, purpose=purpose,
+            )
+            await self._log_cost(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cost=cost, purpose=purpose, user_id=user_id,
             )
         return text
 
@@ -281,7 +314,18 @@ class OpenAILLMClient(BaseLLMClient):
                     model=self._model, inp=usage.prompt_tokens,
                     out=usage.completion_tokens, cost=cost, purpose=purpose,
                 )
-                return response.choices[0].message.content.strip()
+                await self._log_cost(
+                    input_tokens=usage.prompt_tokens,
+                    output_tokens=usage.completion_tokens,
+                    cost=cost, purpose=purpose, user_id=user_id,
+                )
+                # `content` est None dès que le message porte un refus, un
+                # filtrage de contenu ou des `tool_calls` : l'AttributeError
+                # était avalée par le `except Exception` générique, qui loguait
+                # « OpenAI unexpected error » — on cherchait une panne réseau
+                # alors que l'API avait répondu 200. La variante outillée se
+                # protégeait déjà de la même façon.
+                return (response.choices[0].message.content or "").strip() or FALLBACK_RESPONSE
 
             except RateLimitError:
                 wait = 2 ** attempt
@@ -341,7 +385,13 @@ class OpenAILLMClient(BaseLLMClient):
             current_messages[-1] = last_msg
 
         try:
-            while True:
+            # Plafond d'itérations, comme `_complete_with_tools_chat` (3) et
+            # `DeepSeekLLMClient` (`max_tool_iters=6`). Un `while True:` nu :
+            # un modèle qui redemande un outil en boucle bloquait la coroutine
+            # indéfiniment en consommant du quota. Non atteignable aujourd'hui —
+            # `complete_stream` n'a pas d'appelant hors tests — mais le piège
+            # était armé pour le premier qui câblerait le streaming.
+            for _iteration in range(self.STREAM_MAX_TOOL_ITERS):
                 create_kwargs: dict = dict(
                     model=self._model,
                     messages=current_messages,
@@ -409,6 +459,12 @@ class OpenAILLMClient(BaseLLMClient):
                     # Continue loop: next iteration streams the final response after tool calls
                 else:
                     break
+            else:
+                # Plafond atteint et le modèle redemandait encore un outil.
+                logger.warning(
+                    "OpenAI streaming: plafond de {n} tours d'outils atteint",
+                    n=self.STREAM_MAX_TOOL_ITERS,
+                )
 
         except Exception as exc:
             logger.error("OpenAI streaming error: {e}", e=exc)
@@ -514,6 +570,17 @@ class OpenAILLMClient(BaseLLMClient):
                         pass
 
             text = response.output_text
+            if not text:
+                # Après les 3 itérations, la sortie peut ne contenir QUE des
+                # appels d'outils : `output_text` vaut "" et la méthode rendait
+                # cette chaîne vide comme un succès. Un message Discord/Twitch
+                # vide, ou une pensée cognitive vide, indiscernables d'un modèle
+                # silencieux. Le contrat de `BaseLLMClient` prévoit le fallback.
+                logger.warning(
+                    "OpenAI (Responses+tools): sortie sans texte après {n} tours",
+                    n=max_iterations,
+                )
+                text = FALLBACK_RESPONSE
             cost = estimate_cost(self._model, total_input, total_output, cached_input_tokens=total_cached)
             logger.info(
                 "OpenAI {model} (Responses+tools) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
