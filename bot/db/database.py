@@ -433,8 +433,13 @@ class Database(
         # bloque tout → « database is locked » + échecs d'init FTS (atomic_facts_fts).
         # WAL est PERSISTANT au niveau du fichier : appliqué une fois ici, il profite
         # aussi aux connexions ad-hoc de la mémoire (facts.py / service.py).
-        # busy_timeout : on attend (jusqu'à 10 s) qu'un verrou se libère au lieu de
-        # lever immédiatement, le temps qu'un job nocturne long termine sa transaction.
+        # busy_timeout, en revanche, est un réglage DE CONNEXION : il ne se propage
+        # PAS aux connexions ad-hoc, qui retombaient sur le défaut de 5 s. Le
+        # commentaire affirmait le contraire et aurait envoyé le prochain
+        # diagnostic « database is locked » sur une fausse piste ; `SQLiteFactStore`
+        # pose donc le sien à chaque `connect()`.
+        # On attend (jusqu'à 10 s) qu'un verrou se libère au lieu de lever
+        # immédiatement, le temps qu'un job nocturne long termine sa transaction.
         await conn.execute("PRAGMA journal_mode = WAL")
         await conn.execute("PRAGMA busy_timeout = 10000")
         await conn.executescript(SCHEMA)

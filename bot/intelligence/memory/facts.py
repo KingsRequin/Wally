@@ -129,11 +129,21 @@ class FactRelation:
 class SQLiteFactStore:
     """Accès SQLite pour les AtomicFacts et FactRelations."""
 
+    # Même attente qu'en `Database.create` : `busy_timeout` est un réglage DE
+    # CONNEXION, il ne se propage pas depuis la connexion principale (contrairement
+    # à WAL, stocké dans l'en-tête du fichier). Ces connexions ad-hoc retombaient
+    # donc sur le défaut de 5 s, alors que les jobs nocturnes tiennent des
+    # transactions longues sur le même fichier.
+    BUSY_TIMEOUT_S = 10.0
+
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
 
+    def _connect(self):
+        return aiosqlite.connect(self._db_path, timeout=self.BUSY_TIMEOUT_S)
+
     async def add(self, fact: AtomicFact) -> int:
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 """INSERT INTO atomic_facts
                    (user_id, content, category, subject, predicate, object,
@@ -163,18 +173,27 @@ class SQLiteFactStore:
         categories:     list[FactCategory] | None = None,
         status:         FactStatus = FactStatus.ACTIVE,
     ) -> list[AtomicFact]:
+        # Péremption filtrée ICI aussi, pas seulement sur le chemin FTS.
+        # `archive_expired()` ne tourne qu'une fois par nuit : un fait éphémère
+        # restait donc `active` jusqu'à ~24 h après sa date de péremption. Or le
+        # repli de `MemoryRetrieval.search` — quand la FTS ne rend rien — appelle
+        # justement cette méthode, et `service.py` documente le contraire
+        # (« les faits déjà périmés sont filtrés en amont »). Concrètement,
+        # `_fact_freshness` annotait un fait mort d'un « (dit il y a N jours) »
+        # et l'injectait au prompt.
         query = (
             "SELECT * FROM atomic_facts "
-            "WHERE user_id = ? AND status = ? AND confidence >= ?"
+            "WHERE user_id = ? AND status = ? AND confidence >= ? "
+            "AND (expires_at IS NULL OR expires_at > ?)"
         )
-        params: list = [user_id, status.value, min_confidence]
+        params: list = [user_id, status.value, min_confidence, datetime.utcnow().isoformat()]
         if categories:
             placeholders = ",".join("?" * len(categories))
             query += f" AND category IN ({placeholders})"
             params.extend(c.value for c in categories)
         query += " ORDER BY last_seen_at DESC, confidence DESC"
 
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(query, params)
             return [self._row_to_fact(r) for r in await cursor.fetchall()]
@@ -191,13 +210,13 @@ class SQLiteFactStore:
             f"SELECT * FROM atomic_facts "
             f"WHERE id IN ({placeholders}) AND confidence >= ? AND status = ?"
         )
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(query, [*ids, min_confidence, FactStatus.ACTIVE.value])
             return [self._row_to_fact(r) for r in await cursor.fetchall()]
 
     async def mark_seen(self, fact_id: int) -> None:
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE atomic_facts SET last_seen_at = ? WHERE id = ?",
                 (datetime.utcnow().isoformat(), fact_id),
@@ -205,7 +224,7 @@ class SQLiteFactStore:
             await db.commit()
 
     async def delete_by_user(self, user_id: str) -> int:
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "DELETE FROM atomic_facts WHERE user_id = ?", (user_id,)
             )
@@ -226,7 +245,7 @@ class SQLiteFactStore:
         """
         if not from_user_id or from_user_id == to_user_id:
             return 0
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "UPDATE atomic_facts SET user_id = ? WHERE user_id = ?",
                 (to_user_id, from_user_id),
@@ -235,7 +254,7 @@ class SQLiteFactStore:
             return cursor.rowcount
 
     async def count_by_user(self, user_id: str) -> int:
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM atomic_facts WHERE user_id = ?", (user_id,)
             )
@@ -248,7 +267,7 @@ class SQLiteFactStore:
         Mêmes filtres que `get_by_user` : un compteur affiché sur une carte doit
         annoncer exactement ce que la fiche de l'utilisateur contient.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT user_id, COUNT(*) FROM atomic_facts "
                 "WHERE status = ? AND confidence >= ? GROUP BY user_id",
@@ -260,7 +279,7 @@ class SQLiteFactStore:
         """Réduit confidence de decay_rate pour tous les faits actifs.
         Archive ceux dont confidence tombe sous 0.1. Retourne le nombre de lignes modifiées.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             result = await db.execute(
                 """UPDATE atomic_facts
                    SET confidence = MAX(0.0, confidence - decay_rate),
@@ -279,7 +298,7 @@ class SQLiteFactStore:
         Comparaison lexicographique sur l'ISO UTC naïf (cf. AtomicFact.expires_at).
         Retourne le nombre de faits archivés.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             result = await db.execute(
                 """UPDATE atomic_facts
                    SET status = 'archived'
@@ -301,7 +320,7 @@ class SQLiteFactStore:
         attendait depuis six semaines). Un doute non levé finit donc écarté.
         """
         cutoff = (datetime.utcnow() - timedelta(days=older_than_days)).isoformat()
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             result = await db.execute(
                 """UPDATE atomic_facts
                    SET status = 'archived'
@@ -313,7 +332,7 @@ class SQLiteFactStore:
             return result.rowcount
 
     async def add_relation(self, relation: FactRelation) -> int:
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 """INSERT INTO fact_relations (from_id, to_id, relation_type, created_at)
                    VALUES (?, ?, ?, ?)""",
@@ -330,7 +349,7 @@ class SQLiteFactStore:
         Les deux opérations sont atomiques : aiosqlite démarre un BEGIN implicite
         avant le premier DML, et le commit() final valide les deux ensemble.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE atomic_facts SET status = 'superseded' WHERE id = ?",
                 (old_id,),
@@ -351,16 +370,17 @@ class SQLiteFactStore:
     ) -> "list[AtomicFact]":
         if status is None:
             status = FactStatus.ACTIVE
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """SELECT id, user_id, content, category, confidence, decay_rate,
                           status, emotional_context, source, created_at, last_seen_at
                    FROM atomic_facts
                    WHERE category = ? AND status = ?
+                     AND (expires_at IS NULL OR expires_at > ?)
                    ORDER BY last_seen_at DESC
                    LIMIT ?""",
-                (category.value, status.value, limit),
+                (category.value, status.value, datetime.utcnow().isoformat(), limit),
             ) as cursor:
                 rows = await cursor.fetchall()
         return [self._row_to_fact(r) for r in rows]
@@ -378,9 +398,13 @@ class SQLiteFactStore:
         query = (
             "SELECT id, user_id, content, category, confidence, decay_rate, "
             "status, emotional_context, source, created_at, last_seen_at "
-            "FROM atomic_facts WHERE status = ?"
+            # Même filtre de péremption qu'ailleurs : cette pioche alimente la
+            # boucle cognitive et l'attention agent, qui repartaient donc sur des
+            # intentions caduques jusqu'à 24 h après leur date.
+            "FROM atomic_facts WHERE status = ? "
+            "AND (expires_at IS NULL OR expires_at > ?)"
         )
-        params: list = [FactStatus.ACTIVE.value]
+        params: list = [FactStatus.ACTIVE.value, datetime.utcnow().isoformat()]
         if include_category is not None:
             query += " AND category = ?"
             params.append(include_category.value)
@@ -389,7 +413,7 @@ class SQLiteFactStore:
             params.append(exclude_category.value)
         query += " ORDER BY RANDOM() LIMIT ?"
         params.append(limit)
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
@@ -450,7 +474,7 @@ class SQLiteFactStore:
         match = _fts_match_query(query)
         if not match:
             return []
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             try:
                 cursor = await db.execute(
@@ -502,7 +526,7 @@ class SQLiteFactStore:
             params.append(exclude_category.value)
         sql += " ORDER BY rank LIMIT ?"
         params.append(limit)
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             try:
                 cursor = await db.execute(sql, params)
@@ -521,7 +545,7 @@ class SQLiteFactStore:
         `scheduled_at` est non nul et ≤ now, du plus ancien au plus récent. Sert
         au tick cognitif à faire revenir un rappel à la conscience le moment venu.
         Comparaison lexicographique sûre (isoformat UTC naïf, cf. `scheduled_at`)."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM atomic_facts "
@@ -536,7 +560,7 @@ class SQLiteFactStore:
         """Désarme un rappel programmé (#A3) après qu'il a été ramené à la
         conscience : `scheduled_at` → NULL. Le fait (désir) reste ACTIVE — seule
         l'alarme est consommée, pour ne pas le re-déclencher à chaque tick."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE atomic_facts SET scheduled_at = NULL WHERE id = ?",
                 (fact_id,),
@@ -564,7 +588,7 @@ class SQLiteFactStore:
             query += " AND category = ?"
             params.append(category.value)
         query += " ORDER BY id DESC LIMIT 1"
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(query, params)
             row = await cursor.fetchone()
@@ -578,7 +602,7 @@ class SQLiteFactStore:
         Mieux vaut un triplet d'origine qu'un triplet inventé — c'est `content`
         qui est lu au prompt.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
                 (content, datetime.utcnow().isoformat(), fact_id),
@@ -588,7 +612,7 @@ class SQLiteFactStore:
 
     async def set_status(self, fact_id: int, status: FactStatus) -> None:
         """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED)."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE atomic_facts SET status = ? WHERE id = ?",
                 (status.value, fact_id),
@@ -600,7 +624,7 @@ class SQLiteFactStore:
         `needs_review` et divise la confiance par deux. Réversible. Sert à l'outil
         `doubt_memory` (Wally agit sur son obsession « inférence vs fait » au lieu
         de la ruminer)."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """UPDATE atomic_facts
                    SET status = ?, confidence = confidence * 0.5
@@ -628,7 +652,7 @@ class SQLiteFactStore:
         if not step:
             logger.warning("append_progress: étape vide pour fact #{}", fact_id)
             return False
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT content, status FROM atomic_facts WHERE id = ?", (fact_id,)
@@ -687,7 +711,7 @@ class SQLiteFactStore:
         """Renforce un fait existant sans dupliquer (observation CONFIRM) :
         support_count +1, confidence +0.05 (cap 0.99), last_seen_at = maintenant.
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """UPDATE atomic_facts
                    SET support_count = support_count + 1,
@@ -711,7 +735,7 @@ class SQLiteFactStore:
         category), comparaison de subject/predicate insensible à la casse.
         `None` si aucun. Strictement scopé par user_id (jamais cross-user).
         """
-        async with aiosqlite.connect(self._db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 """SELECT * FROM atomic_facts

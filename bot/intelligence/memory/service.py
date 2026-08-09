@@ -43,6 +43,8 @@ class MemoryService:
         self._bg_tasks: set[asyncio.Task] = set()
         # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
         self._alias_cache: dict[str, str] = {}
+        # Un verrou d'écriture mémoire par utilisateur (cf. `add`).
+        self._add_locks: dict[str, asyncio.Lock] = {}
 
     def set_openai_client(self, client: "BaseLLMClient") -> None:
         self._openai = client
@@ -110,7 +112,18 @@ class MemoryService:
         try:
             nickname_map = await db.get_nickname_alias_map()
             for nickname, canonical_uid in nickname_map.items():
+                # DEUX clés pour la même liaison, chacune lue par un chemin
+                # différent, et c'est voulu :
+                #   `nickname:` — lu par `handlers.py` et `journal.py` ;
+                #   `unknown:`  — la SEULE forme atteignable depuis `_user_id()`,
+                #                 qui compose `f"{platform}:{user_id}"`.
+                # `fact_extractor` posait `unknown:` à la volée mais seule
+                # `nickname:` était persistée : le routage d'un pseudo non résolu
+                # vers son compte canonique marchait donc jusqu'au redémarrage,
+                # puis cessait en silence. Un comportement mémoire qui change au
+                # reboot, sans un log.
                 self._alias_cache[f"nickname:{nickname}"] = canonical_uid
+                self._alias_cache[f"unknown:{nickname}"] = canonical_uid
             logger.info("Nickname aliases loaded: {n}", n=len(nickname_map))
         except Exception as e:
             logger.warning("Failed to load nickname aliases: {e}", e=e)
@@ -157,19 +170,36 @@ class MemoryService:
         # pour cet utilisateur et cette catégorie, on le CONFIRME (support++,
         # confiance++) au lieu de créer un doublon. Évite l'accumulation que
         # l'ancien pipeline produisait (réinsertion verbatim à chaque extraction).
-        norm = _normalize(content)
-        if norm:
-            for f in await self._facts.get_by_user(uid, categories=[cat]):
-                if f.id and _normalize(f.content) == norm:
-                    await self._facts.confirm(f.id)
-                    return
-        now = datetime.now(timezone.utc)
-        await self._retrieval.add_fact(AtomicFact(
-            user_id=uid,
-            content=content, category=cat, confidence=1.0,
-            source=source, origin=origin, expires_at=expires_at,
-            created_at=now, last_seen_at=now,
-        ))
+        #
+        # Sérialisé PAR UTILISATEUR : la lecture et l'écriture sont deux
+        # connexions distinctes, sans transaction commune ni contrainte d'unicité
+        # en base. Discord, Twitch et la boucle cognitive écrivant en parallèle,
+        # deux extractions du même fait passaient toutes deux le test de doublon
+        # et créaient deux lignes — exactement l'accumulation que ce bloc dit
+        # vouloir éviter. Un verrou par `uid` suffit : les écritures d'un même
+        # utilisateur sont rares, celles de deux utilisateurs restent parallèles.
+        async with self._verrou_ajout(uid):
+            norm = _normalize(content)
+            if norm:
+                for f in await self._facts.get_by_user(uid, categories=[cat]):
+                    if f.id and _normalize(f.content) == norm:
+                        await self._facts.confirm(f.id)
+                        return
+            now = datetime.now(timezone.utc)
+            await self._retrieval.add_fact(AtomicFact(
+                user_id=uid,
+                content=content, category=cat, confidence=1.0,
+                source=source, origin=origin, expires_at=expires_at,
+                created_at=now, last_seen_at=now,
+            ))
+
+    def _verrou_ajout(self, uid: str) -> asyncio.Lock:
+        """Verrou d'écriture propre à un utilisateur (créé à la demande)."""
+        verrou = self._add_locks.get(uid)
+        if verrou is None:
+            verrou = asyncio.Lock()
+            self._add_locks[uid] = verrou
+        return verrou
 
     @staticmethod
     def _fact_freshness(f) -> str:
