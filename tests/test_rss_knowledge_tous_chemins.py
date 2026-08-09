@@ -47,7 +47,7 @@ async def test_le_bloc_cite_les_sources_et_coupe_le_web():
     flux = MagicMock()
     flux.role, flux.enabled = "knowledge", True
     bot.config.rss.feeds = [flux]
-    bot.db.rss_search_knowledge = AsyncMock(return_value=[{
+    bot.db.rss_search_knowledge_avec_synthese = AsyncMock(return_value=[{
         "title": "Apex Legends: Overclocked Midseason Patch Notes — WEAPONS",
         "summary": "Le Nemesis perd 2 dégâts par balle.",
         "link": "https://example.invalid/patch",
@@ -73,6 +73,6 @@ async def test_pas_de_bloc_quand_aucun_article_ne_matche():
     flux = MagicMock()
     flux.role, flux.enabled = "knowledge", True
     bot.config.rss.feeds = [flux]
-    bot.db.rss_search_knowledge = AsyncMock(return_value=[])
+    bot.db.rss_search_knowledge_avec_synthese = AsyncMock(return_value=[])
 
     assert await _rss_knowledge_context(bot, "tu aimes les pâtes ?") is None

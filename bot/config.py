@@ -314,8 +314,16 @@ class RSSFeedsConfig:
     summary_max_chars: int = 300
     # Fenêtres de fraîcheur : au-delà, un article n'amorce plus une pensée /
     # n'est plus remonté par le recall knowledge.
+    #
+    # 90 jours plutôt que 30 depuis le 2026-08-09, pour deux raisons. D'abord ce
+    # filtre portait sur la date de LECTURE du flux et ne retenait donc rien —
+    # corrigé le même jour, il devient contraignant pour de bon. Ensuite une saison
+    # Apex dure environ trois mois : à 30 jours, une question sur le patch courant
+    # restait sans réponse dès que le dernier patch avait cinq semaines. L'âge de
+    # chaque article étant désormais affiché, un article de deux mois est utilisable
+    # sans risque de le faire passer pour neuf.
     stimulus_max_age_hours: int = 48
-    knowledge_max_age_days: int = 30
+    knowledge_max_age_days: int = 90
     feeds: list[RSSFeedDef] = field(default_factory=lambda: [
         RSSFeedDef(name="JeuxVideo.com", url="https://www.jeuxvideo.com/rss/rss.xml", role="stimulus", lang="fr"),
         RSSFeedDef(name="Korben", url="https://korben.info/feedfull", role="stimulus", lang="fr"),

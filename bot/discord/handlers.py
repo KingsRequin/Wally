@@ -1428,7 +1428,10 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     if not text or len(text.strip()) < 4:
         return None
     try:
-        articles = await bot.db.rss_search_knowledge(
+        # Avec synthèse : les résultats pertinents PLUS la vue d'ensemble du patch le
+        # plus récent, que BM25 ne remonte jamais de lui-même (cf.
+        # `rss_derniere_synthese`).
+        articles = await bot.db.rss_search_knowledge_avec_synthese(
             text, limit=3, max_age_seconds=cfg.knowledge_max_age_days * 86400
         )
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse

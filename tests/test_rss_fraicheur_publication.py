@@ -95,7 +95,7 @@ async def test_le_bloc_injecte_porte_la_date_de_chaque_article():
     flux = MagicMock()
     flux.role, flux.enabled = "knowledge", True
     bot.config.rss.feeds = [flux]
-    bot.db.rss_search_knowledge = AsyncMock(return_value=[{
+    bot.db.rss_search_knowledge_avec_synthese = AsyncMock(return_value=[{
         "title": "Marked Patch Notes — WEAPONS",
         "summary": "Le Nemesis perd 2 dégâts.",
         "link": "http://x/1",

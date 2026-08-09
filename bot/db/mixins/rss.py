@@ -129,6 +129,43 @@ class RSSMixin:
         )
         return [dict(r) for r in rows]
 
+    async def rss_derniere_synthese(self, *, max_age_seconds: float) -> dict | None:
+        """La section de SYNTHÈSE de patch la plus récente, ou None.
+
+        Un patch note Steam arrive découpé — jusqu'à 39 sections pour un seul patch
+        sur la base de prod. Il porte ses propres sections de vue d'ensemble (`INTRO`,
+        `Designer's Notes — TL;DR`), mais leur titre ne contient aucun mot rare : BM25
+        ne les distingue de rien, et « c'est quoi le dernier patch note ? » repartait
+        avec LOBA, WEAPONS et Map Rotations — trois détails, aucune synthèse.
+        """
+        cutoff = time.time() - max_age_seconds
+        row = await self.fetch_one(
+            "SELECT * FROM rss_articles WHERE role = 'knowledge' "
+            "AND COALESCE(published_ts, fetched_at) >= ? "
+            "AND (title LIKE '%INTRO%' OR title LIKE '%TL;DR%') "
+            "ORDER BY COALESCE(published_ts, fetched_at) DESC LIMIT 1",
+            (cutoff,),
+        )
+        return dict(row) if row else None
+
+    async def rss_search_knowledge_avec_synthese(
+        self, query: str, *, limit: int = 3, max_age_seconds: float
+    ) -> list[dict]:
+        """`rss_search_knowledge`, plus la garantie d'une vue d'ensemble du patch.
+
+        Aucune détection d'intention : distinguer une question « générale » d'une
+        question « ciblée » se devine mal, et connaître le patch courant sert dans les
+        deux cas — savoir de quel patch on parle aide même à répondre sur une arme.
+        La synthèse n'est ajoutée que si la pertinence ne l'a pas déjà remontée.
+        """
+        articles = await self.rss_search_knowledge(
+            query, limit=limit, max_age_seconds=max_age_seconds
+        )
+        synthese = await self.rss_derniere_synthese(max_age_seconds=max_age_seconds)
+        if synthese and synthese["id"] not in {a["id"] for a in articles}:
+            articles.append(synthese)
+        return articles
+
     # ── Purge (rétention) ─────────────────────────────────────────────────────
 
     async def rss_purge_old(self, *, retention_seconds: float) -> int:
