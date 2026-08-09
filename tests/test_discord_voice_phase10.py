@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import inspect
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-import pytest
 
 from bot.discord.voice.service import VoiceService
 
