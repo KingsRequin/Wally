@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from loguru import logger
+
 from bot.core.apex.watcher import current_apex_block
 from bot.core.stream_feed import current_stream_feed_block
 from bot.core.stream_watcher import current_stream_awareness
@@ -59,17 +61,31 @@ def _now_fr() -> str:
     return f"{day} {dt.day} {month} {dt.year}, {dt.hour:02d}h{dt.minute:02d}"
 
 
-def assemble_memory_context(parts: list[tuple[int, str]], max_tokens: int) -> str:
+def assemble_memory_context(parts: list[tuple], max_tokens: int) -> str:
     """Assemble memory context respecting token budget.
 
-    parts: list of (priority, text) tuples. Lower priority number = higher importance.
-    max_tokens: estimated token budget (len(text) / 4).
-    Returns assembled string, truncated to budget.
+    parts: tuples `(priority, text)` ou `(priority, text, label)`. Plus le numéro de
+    priorité est petit, plus le bloc est important. `max_tokens` est un budget estimé
+    (len(text) / 4). Retourne la chaîne assemblée, tronquée au budget.
+
+    L'assemblage était MUET, ce qui rendait l'arbitrage invérifiable : un bloc de
+    priorité basse peut être tronqué ou entièrement jeté sans que rien ne le dise,
+    alors que sa préparation a coûté une requête et des faits. Le cas qui a soulevé la
+    question le 2026-08-09 : les souvenirs d'un tiers (priorité 6, ~320 tokens pour 20
+    faits) recalculés à chaque message derrière un rappel principal qui consomme déjà
+    l'essentiel des 800 tokens. Le `label` sert uniquement à ce journal — on ne
+    diagnostique pas « la priorité 6 » aussi bien que « tiers ».
     """
     sorted_parts = sorted(parts, key=lambda p: p[0])
     result_parts: list[str] = []
     used_tokens = 0.0
-    for _priority, text in sorted_parts:
+    retenus: list[str] = []
+    tronque: str | None = None
+    jetes: list[str] = []
+
+    for i, part in enumerate(sorted_parts):
+        priorite, text = part[0], part[1]
+        label = part[2] if len(part) > 2 else f"p{priorite}"
         if not text or not text.strip():
             continue
         estimated = len(text) / 4
@@ -77,9 +93,33 @@ def assemble_memory_context(parts: list[tuple[int, str]], max_tokens: int) -> st
             remaining = int((max_tokens - used_tokens) * 4)
             if remaining > 50:
                 result_parts.append(text[:remaining] + "…")
+                tronque = f"{label} {int(estimated)}→{remaining // 4}t"
+            else:
+                jetes.append(f"{label} {int(estimated)}t")
+            # Tout ce qui suit est perdu aussi : c'est là que se cache le travail
+            # fait pour rien, et personne ne le voyait.
+            for suivant in sorted_parts[i + 1:]:
+                if suivant[1] and suivant[1].strip():
+                    suiv_label = suivant[2] if len(suivant) > 2 else f"p{suivant[0]}"
+                    jetes.append(f"{suiv_label} {int(len(suivant[1]) / 4)}t")
             break
         result_parts.append(text)
         used_tokens += estimated
+        retenus.append(f"{label} {int(estimated)}t")
+
+    if jetes or tronque:
+        logger.debug(
+            "budget mémoire {used:.0f}/{max}t · retenus [{ok}]{trunc} · JETÉS [{ko}]",
+            used=used_tokens, max=max_tokens,
+            ok=", ".join(retenus) or "—",
+            trunc=f" · tronqué [{tronque}]" if tronque else "",
+            ko=", ".join(jetes) or "—",
+        )
+    else:
+        logger.debug(
+            "budget mémoire {used:.0f}/{max}t · tout retenu [{ok}]",
+            used=used_tokens, max=max_tokens, ok=", ".join(retenus) or "—",
+        )
     return "\n".join(result_parts)
 
 

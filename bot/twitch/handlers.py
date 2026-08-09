@@ -620,14 +620,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         # Priority 1: Semantic memories (already fetched)
         if mem_context:
-            memory_parts.append((1, mem_context))
+            memory_parts.append((1, mem_context, "souvenirs"))
 
         # Priority 2: Résumés de sessions précédentes (cross-session recall)
         try:
             summaries = await bot.db.get_recent_session_summaries(platform, channel_id, limit=3)
             recall_block = build_session_recall_block(summaries)
             if recall_block:
-                memory_parts.append((2, recall_block))
+                memory_parts.append((2, recall_block, "recall-session"))
         except Exception:
             pass
 
@@ -638,7 +638,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 jokes_block = "--- Tes blagues récentes qui ont bien marché dans ce salon ---"
                 for j in recent_jokes:
                     jokes_block += f'\n- "{j}"'
-                memory_parts.append((4, jokes_block))
+                memory_parts.append((4, jokes_block, "blagues"))
         except Exception:
             pass
 
@@ -651,7 +651,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     names = ", ".join(p["name"] for p in t["participants"]) if t["participants"] else ""
                     who = f" — {names} en parlent" if names else ""
                     topics_block += f'\n- {t["name"]}{who} — ton avis : "{t["opinion"]}"'
-                memory_parts.append((5, topics_block))
+                memory_parts.append((5, topics_block, "topics"))
         except Exception:
             pass
 
@@ -661,7 +661,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 bot, platform, user_id, prelude, context_msgs
             )
             if third_party_ctx:
-                memory_parts.append((6, third_party_ctx))
+                memory_parts.append((6, third_party_ctx, "tiers"))
         except Exception:
             pass
 
