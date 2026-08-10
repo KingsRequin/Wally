@@ -51,6 +51,15 @@ def _est_muet(node: ast.ExceptHandler, lignes: list[str]) -> bool:
     for enfant in ast.walk(node):
         if isinstance(enfant, (ast.Raise, ast.Return)):
             return False
+        # Un repli EXPLICITE — `valeur = None`, `mode = "degrade"` — n'est pas un
+        # silence : l'échec devient une donnée que l'appelant peut tester. C'est
+        # ce que la règle annonçait depuis le début, mais que ce contrôle
+        # n'implémentait pas : 45 des 158 signalements étaient de ce type, soit
+        # 28 % de bruit. Un garde-fou qui crie à tort finit contourné.
+        # `AugAssign` volontairement exclu : `compteur += 1` est de la
+        # comptabilité, pas une valeur de repli.
+        if isinstance(enfant, (ast.Assign, ast.AnnAssign)):
+            return False
     # Un commentaire sur la ligne de l'`except` ou juste au-dessus vaut
     # justification : quelqu'un a pris la peine d'écrire pourquoi.
     i = node.lineno - 1
@@ -94,8 +103,16 @@ def main() -> int:
             print(t)
 
     if args.maj:
+        # FUSION, pas remplacement : le fichier porte aussi le cliquet des types
+        # (`lint_types.py`). L'écraser effaçait silencieusement l'autre seuil, et
+        # la vérification correspondante repassait au vert sans rien vérifier.
+        reference = (
+            json.loads(_REFERENCE.read_text(encoding="utf-8"))
+            if _REFERENCE.exists() else {}
+        )
+        reference["max_silences"] = len(trouves)
         _REFERENCE.write_text(
-            json.dumps({"max_silences": len(trouves)}, indent=2) + "\n", encoding="utf-8"
+            json.dumps(reference, indent=2) + "\n", encoding="utf-8"
         )
         print(f"Cliquet mis à jour : {len(trouves)}")
         return 0

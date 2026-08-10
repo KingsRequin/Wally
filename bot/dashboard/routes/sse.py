@@ -19,6 +19,9 @@ admin_router = APIRouter()
 # Le sink loguru itère sur list(_log_queues) pour thread-safety (copie avant itération).
 _log_queues: list[asyncio.Queue] = []
 _sink_id: int | None = None
+# Boucle asyncio qui sert les clients SSE, capturée à l'installation du sink :
+# les logs venant d'un `to_thread` doivent y revenir avant de toucher les queues.
+_boucle: asyncio.AbstractEventLoop | None = None
 
 # Fan-out broadcast pour les événements d'actions (création, exécution, annulation, etc.)
 _action_queues: list[asyncio.Queue] = []
@@ -53,6 +56,11 @@ def _log_sink(message) -> None:
 
     Itère sur une copie de _log_queues pour éviter RuntimeError si la liste est
     modifiée (append/remove) depuis le thread asyncio en parallèle.
+
+    `put_nowait` sur une `asyncio.Queue` n'est PAS thread-safe : des
+    `logger.warning()` partent bel et bien depuis des threads `asyncio.to_thread`
+    (analyse émotionnelle, pipeline vocal, scrape). On repasse donc par la boucle
+    via `call_soon_threadsafe` quand on n'est pas dessus.
     """
     record = message.record
     entry = {
@@ -60,24 +68,53 @@ def _log_sink(message) -> None:
         "message": record["message"],
         "time": record["time"].strftime("%H:%M:%S"),
     }
-    for q in list(_log_queues):
-        try:
-            q.put_nowait(entry)
-        except asyncio.QueueFull:
-            pass  # Queue pleine — log drop silencieux (haute fréquence)
+
+    def _pousser() -> None:
+        for q in list(_log_queues):
+            try:
+                q.put_nowait(entry)
+            except asyncio.QueueFull:
+                pass  # Queue pleine — log drop silencieux (haute fréquence)
+
+    if _boucle is None:
+        _pousser()
+        return
+    try:
+        if asyncio.get_running_loop() is _boucle:
+            _pousser()
+            return
+    # Aucune boucle dans ce thread : c'est le cas normal d'un `to_thread`, on
+    # bascule sur `call_soon_threadsafe` juste en dessous.
+    except RuntimeError:
+        pass
+    try:
+        _boucle.call_soon_threadsafe(_pousser)
+    # Boucle fermée : le bot s'arrête, il n'y a plus personne pour lire ces logs.
+    except RuntimeError:
+        pass
 
 
 def setup_log_sink() -> None:
-    """Enregistre le sink loguru une seule fois (idempotent)."""
-    global _sink_id
+    """Enregistre le sink loguru une seule fois (idempotent).
+
+    Sans `enqueue=True`, volontairement. Loguru y pickle le record ENTIER, et
+    `extra` porte les kwargs de l'appelant : `logger.info("ready as {user}",
+    user=self.user)` y met un `ClientUser`, qui traîne un `_asyncio.Future`.
+    Le pickle échouait, loguru affichait « --- Logging error in Handler #4 --- »
+    et la ligne n'atteignait jamais l'onglet Logs. Toute ligne loguée avec un
+    objet Discord en argument disparaissait ainsi, en silence.
+
+    Ce sink ne lit que trois champs — niveau, message, heure. Il n'a jamais eu
+    besoin de sérialiser quoi que ce soit ; il lui fallait seulement franchir la
+    frontière de thread, ce que `_log_sink` fait maintenant lui-même.
+    """
+    global _sink_id, _boucle
     if _sink_id is None:
-        # `enqueue=True` : le sink fait `put_nowait` sur des `asyncio.Queue`,
-        # or des `logger.warning()` s'exécutent bel et bien dans des threads
-        # `asyncio.to_thread` (analyse émotionnelle à chaque message, pipeline
-        # vocal, scrape…). `_wakeup_next` y appelait `loop.call_soon` depuis le
-        # mauvais thread → RuntimeError avalé par loguru, et l'onglet Logs
-        # n'affichait ces lignes qu'au keepalive suivant, par paquets.
-        _sink_id = logger.add(_log_sink, enqueue=True)
+        try:
+            _boucle = asyncio.get_running_loop()
+        except RuntimeError:
+            _boucle = None
+        _sink_id = logger.add(_log_sink)
 
 
 @public_router.get("/sse/emotions")

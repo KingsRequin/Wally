@@ -48,11 +48,31 @@ def test_le_cliquet_detecte_reellement_un_silence_ajoute():
         return lint_silences._est_muet(handler, lignes)
 
     assert _muet("try:\n    x()\nexcept Exception:\n    pass\n") is True
-    # Les quatre formes légitimes ne doivent PAS être signalées.
+    # Un incrément n'est pas un repli : c'est de la comptabilité, l'échec reste muet.
+    assert _muet("try:\n    x()\nexcept Exception:\n    n += 1\n") is True
+    # Les cinq formes légitimes ne doivent PAS être signalées.
     assert _muet("try:\n    x()\nexcept Exception as e:\n    logger.warning(e)\n") is False
     assert _muet("try:\n    x()\nexcept Exception:\n    raise\n") is False
     assert _muet("try:\n    x()\nexcept Exception:\n    return None\n") is False
     assert _muet("try:\n    x()\n# le champ est optionnel\nexcept Exception:\n    pass\n") is False
+    # Repli explicite : l'échec devient une donnée que l'appelant peut tester.
+    assert _muet("try:\n    x()\nexcept Exception:\n    valeur = None\n") is False
+
+
+def test_mettre_a_jour_un_cliquet_nefface_pas_lautre():
+    """Les deux cliquets partagent un fichier. `--maj` doit fusionner.
+
+    Un `--maj` qui écrasait le fichier effaçait silencieusement le seuil de
+    l'autre contrôle, qui repassait alors au vert sans plus rien vérifier — un
+    garde-fou désarmé par le garde-fou voisin.
+    """
+    import json
+
+    reference = json.loads(
+        (_RACINE / "scripts" / "silences_cliquet.json").read_text(encoding="utf-8")
+    )
+    assert "max_silences" in reference
+    assert "max_erreurs_types" in reference
 
 
 def test_aucune_nouvelle_erreur_de_type():
