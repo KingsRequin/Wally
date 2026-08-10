@@ -381,6 +381,7 @@ def make_tool_executor(
                 player_name=args.get("player_name", ""),
                 platform=args.get("platform", "PC"),
                 remember=bool(args.get("remember")),
+                legend=args.get("legend", "") or "",
                 requester=identity,
                 requester_name=author,
             )

@@ -62,6 +62,9 @@ class PlayerProfile:
     legend: str | None
     skin: str | None
     stats: dict[str, StatValue] = field(default_factory=dict)
+    # Les mêmes notions, mais par légende — `{"Fuse": {"kills": ...}}`. Une
+    # légende sans tracker épinglé est absente, jamais à zéro.
+    legend_stats: dict[str, dict[str, StatValue]] = field(default_factory=dict)
 
 
 def _num(value: Any) -> float | None:
@@ -96,8 +99,20 @@ def _world_ranks(payload: dict) -> dict[str, tuple[int | None, float | None]]:
     found: dict[str, tuple[int | None, float | None]] = {}
     # `or {}` à CHAQUE étage : le défaut de `.get()` ne couvre qu'une clé
     # absente, or l'API rend parfois `"legends": null` — et `.get` sur None lève.
-    glob = ((payload.get("legends") or {}).get("all") or {}).get("Global") or {}
-    for item in glob.get("data") or []:
+    #
+    # Et `or {}` ne suffit pas non plus : une LISTE est vraie, donc elle traverse
+    # le `or` et fait lever le `.get()` suivant. L'API ne promet aucun type ; on
+    # vérifie donc la forme, pas seulement la présence.
+    toutes = (payload.get("legends") or {}).get("all") or {}
+    if not isinstance(toutes, dict):
+        return {}
+    glob = toutes.get("Global") or {}
+    if not isinstance(glob, dict):
+        return {}
+    entrees = glob.get("data")
+    for item in entrees if isinstance(entrees, list) else []:
+        if not isinstance(item, dict):
+            continue
         label = str(item.get("name", "")).lower()
         rank = item.get("rank") or {}
         pos = _positive_int(rank.get("rankPos"))
@@ -108,11 +123,21 @@ def _world_ranks(payload: dict) -> dict[str, tuple[int | None, float | None]]:
 
 
 def _read_stats(payload: dict) -> dict[str, StatValue]:
-    """Les notions connues, telles que ce joueur les publie."""
+    """Les notions connues, telles que ce joueur les publie.
+
+    Plusieurs trackers peuvent porter le MÊME libellé et se compléter : Azraël a
+    « BR Kills » deux fois, `specialEvent_kills` = 92 182 et `kills` = 10 142.
+    Ils s'ADDITIONNENT — la preuve est dans ses propres données, la somme de ses
+    « BR Kills » par légende vaut exactement 102 324, soit les deux réunis.
+
+    On gardait le premier rencontré et on jetait l'autre : Wally annonçait
+    « 92 182 kills » à qui en avait plus de cent mille, avec un aplomb parfait.
+    Une valeur amputée de 10 % ne se voit pas — elle est juste fausse.
+    """
     total = payload.get("total") or {}
     if not isinstance(total, dict):
         return {}
-    # index libellé → (libellé d'origine, valeur)
+    # index libellé → (libellé d'origine, somme des trackers de ce libellé)
     by_label: dict[str, tuple[str, int]] = {}
     for entry in total.values():
         if not isinstance(entry, dict):
@@ -121,7 +146,10 @@ def _read_stats(payload: dict) -> dict[str, StatValue]:
         value = _num(entry.get("value"))
         if not label or value is None:
             continue
-        by_label.setdefault(str(label).lower(), (str(label), int(value)))
+        cle = str(label).lower()
+        precedent = by_label.get(cle)
+        cumul = int(value) + (precedent[1] if precedent else 0)
+        by_label[cle] = (str(label), cumul)
 
     ranks = _world_ranks(payload)
     stats: dict[str, StatValue] = {}
@@ -134,6 +162,85 @@ def _read_stats(payload: dict) -> dict[str, StatValue]:
             stats[notion] = StatValue(label=hit[0], value=hit[1], world_pos=pos, top_percent=pct)
             break
     return stats
+
+
+def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
+    """Les statistiques PAR LÉGENDE, telles que ce joueur les publie.
+
+    Renvoie `{"Fuse": {"kills": StatValue(...), ...}, ...}`. Une légende dont le
+    joueur n'a épinglé aucun tracker n'apparaît PAS — son bloc ne contient que
+    `ImgAssets`. C'est volontaire : « 0 kill avec Fuse » serait un mensonge là où
+    la vérité est « il ne suit pas ce chiffre ».
+
+    Trois formes réelles à encaisser, relevées sur les comptes d'Azraël et de
+    KingsRequin :
+
+    · `Global` est rangé parmi les légendes mais n'en est pas une — il porte les
+      totaux de carrière et le rang mondial. Le confondre avec une légende
+      annonçait déjà « 92 182 kills, 3ᵉ mondial » au lieu de « pas de rang ».
+    · Deux entrées peuvent porter le MÊME libellé sous une même légende :
+      Rampart chez Azraël a « BR Kills » deux fois, `kills` = 982 et
+      `specialEvent_kills` = 2285. Ce ne sont pas des doublons mais deux
+      compteurs qui s'ADDITIONNENT, comme au niveau global — la somme de tous
+      ses « BR Kills » par légende vaut exactement son total, 102 324. Le rang
+      mondial retenu est celui du tracker DOMINANT : un classement porte sur un
+      compteur, jamais sur une somme.
+    · Un bloc de légende peut ne pas être un dict, et `data` peut ne pas être une
+      liste. L'API ne garantit aucune forme.
+    """
+    par_legende: dict[str, dict[str, StatValue]] = {}
+    toutes = ((payload.get("legends") or {}).get("all") or {})
+    if not isinstance(toutes, dict):
+        return {}
+
+    for nom, bloc in toutes.items():
+        if not isinstance(bloc, dict) or str(nom).lower() == "global":
+            continue
+        entrees = bloc.get("data")
+        if not isinstance(entrees, list):
+            continue
+
+        # libellé → (libellé, cumul, rangPos, top%, valeur du tracker dominant)
+        par_libelle: dict[str, tuple[str, int, int | None, float | None, int]] = {}
+        for entree in entrees:
+            if not isinstance(entree, dict):
+                continue
+            libelle = entree.get("name")
+            valeur = _num(entree.get("value"))
+            if not libelle or valeur is None:
+                continue
+            cle = str(libelle).lower()
+            rang = entree.get("rank") or {}
+            pos = _positive_int(rang.get("rankPos"))
+            pct = _num(rang.get("topPercent"))
+            ancien = par_libelle.get(cle)
+            if ancien is None:
+                par_libelle[cle] = (str(libelle), int(valeur), pos, pct, int(valeur))
+                continue
+            # Valeurs cumulées ; rang emprunté au tracker dominant, dont on
+            # garde la valeur à part pour savoir lequel domine.
+            domine = int(valeur) > ancien[4]
+            par_libelle[cle] = (
+                ancien[0], ancien[1] + int(valeur),
+                pos if domine else ancien[2],
+                pct if domine else ancien[3],
+                max(int(valeur), ancien[4]),
+            )
+
+        notions: dict[str, StatValue] = {}
+        for notion, alias_possibles in STAT_ALIASES.items():
+            for alias in alias_possibles:
+                trouve = par_libelle.get(alias.lower())
+                if trouve is None:
+                    continue
+                notions[notion] = StatValue(
+                    label=trouve[0], value=trouve[1],
+                    world_pos=trouve[2], top_percent=trouve[3],
+                )
+                break
+        if notions:
+            par_legende[str(nom)] = notions
+    return par_legende
 
 
 def _read_skin(payload: dict) -> str | None:
@@ -182,4 +289,5 @@ def read_profile(payload: Any) -> PlayerProfile | None:
         legend=str(realtime.get("selectedLegend")) if realtime.get("selectedLegend") else None,
         skin=_read_skin(payload),
         stats=_read_stats(payload),
+        legend_stats=_read_legend_stats(payload),
     )

@@ -62,6 +62,7 @@ class ApexLegendsService:
         remember: bool = False,
         requester: str | None = None,
         requester_name: str = "",
+        legend: str = "",
     ) -> str:
         """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
         c'est ce qui empêche quiconque de déclarer le compte d'un autre."""
@@ -69,6 +70,7 @@ class ApexLegendsService:
             return await self._player_stats(
                 player_name, platform,
                 remember=remember, requester=requester, requester_name=requester_name,
+                legend=legend,
             )
         if action == "map_rotation":
             return await self._map_rotation()
@@ -90,6 +92,7 @@ class ApexLegendsService:
         remember: bool = False,
         requester: str | None = None,
         requester_name: str = "",
+        legend: str = "",
     ) -> str:
         cherche, platform = await self._resolve(player_name, platform, requester)
         uid = await self._resolve_uid(requester, player_name)
@@ -107,7 +110,7 @@ class ApexLegendsService:
             return f"{cherche} : pas trouvé sur l'API Apex ({erreur or 'compte inconnu'})."
         if remember and requester:
             await self._remember(profil, cherche, platform, requester, requester_name)
-        return self._render_profile(profil)
+        return self._render_profile(profil, legend=legend)
 
     async def fetch_profile(
         self, player: str, platform: str = "PC", uid: str | None = None
@@ -187,7 +190,7 @@ class ApexLegendsService:
         except Exception as e:
             logger.warning("Apex: impossible de mémoriser le compte: {e}", e=e)
 
-    def _render_profile(self, p: PlayerProfile) -> str:
+    def _render_profile(self, p: PlayerProfile, legend: str = "") -> str:
         lignes = [f"{p.name} — niveau {_fr(p.level)} ({p.platform})"]
         if p.rank:
             rang = f"Rang BR : {p.rank.name}"
@@ -211,7 +214,65 @@ class ApexLegendsService:
                     ligne += f", {_fr(stat.world_pos)}ᵉ"
                 ligne += ")"
             lignes.append(ligne)
+        lignes += self._render_legends(p, legend)
         return "\n".join(lignes)
+
+    def _render_legends(self, p: PlayerProfile, legende: str = "") -> list[str]:
+        """Les chiffres par légende, ou l'explication de leur absence.
+
+        Sans `legende`, un résumé trié par kills — c'est ce qui permet de
+        répondre « avec quelle légende il tape le plus ». Avec, le détail de
+        celle-là seulement.
+
+        Un joueur ne publie que ce qu'il a ÉPINGLÉ en jeu : Azraël suit 17
+        légendes, KingsRequin 4. Une légende absente n'a pas zéro kill, elle n'a
+        pas de compteur — et le dire évite d'inventer un chiffre rassurant.
+        """
+        if not p.legend_stats:
+            return ["(aucun compteur par légende épinglé sur ce compte)"]
+
+        if legende:
+            cherchee = legende.strip().lower()
+            trouvee = next(
+                (nom for nom in p.legend_stats if nom.lower() == cherchee), None
+            )
+            if trouvee is None:
+                suivies = ", ".join(sorted(p.legend_stats))
+                return [
+                    f"Pas de compteur pour {legende} chez {p.name} — il ne l'a pas "
+                    f"épinglé en jeu, ce n'est pas un zéro. Légendes suivies : {suivies}."
+                ]
+            detail = []
+            for stat in p.legend_stats[trouvee].values():
+                ligne = f"  {stat.label} : {_fr(stat.value)}"
+                if stat.top_percent is not None:
+                    ligne += f" (top {stat.top_percent} % mondial sur ce tracker"
+                    if stat.world_pos is not None:
+                        ligne += f", {_fr(stat.world_pos)}ᵉ"
+                    ligne += ")"
+                detail.append(ligne)
+            return [f"Avec {trouvee} :", *detail]
+
+        # Résumé BORNÉ : Azraël suit 17 légendes, et déballer les trois notions
+        # de chacune à chaque `player_stats` noierait le rang et l'état sous
+        # cinquante lignes. Le podium répond à « avec quoi il tape le plus » ;
+        # les autres noms suffisent pour savoir quoi redemander en détail.
+        classees = sorted(
+            p.legend_stats.items(),
+            key=lambda kv: kv[1]["kills"].value if "kills" in kv[1] else -1,
+            reverse=True,
+        )
+        lignes = ["Par légende (seulement celles qu'il suit en jeu) :"]
+        for nom, notions in classees[:3]:
+            morceaux = [f"{s.label.lower()} {_fr(s.value)}" for s in notions.values()]
+            lignes.append(f"  {nom} : " + ", ".join(morceaux))
+        reste = [nom for nom, _ in classees[3:]]
+        if reste:
+            lignes.append(
+                "  aussi suivies (redemande avec `legend` pour le détail) : "
+                + ", ".join(sorted(reste))
+            )
+        return lignes
 
     # ── Les panneaux de l'overlay ─────────────────────────────────────────────
 

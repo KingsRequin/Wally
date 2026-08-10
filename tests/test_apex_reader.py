@@ -66,7 +66,11 @@ def test_le_rang_mondial_vient_du_bloc_global_seulement():
 
 def test_sans_bloc_global_aucun_rang_mondial_n_est_invente():
     kills = read_profile(_payload("azrael")).stats["kills"]
-    assert kills.value == 92182
+    # 92 182 (`specialEvent_kills`) + 10 142 (`kills`) : deux trackers portent
+    # « BR Kills » et s'additionnent. Ce test figeait la valeur amputée — donc
+    # le défaut : Wally annonçait 10 % de kills en moins à qui en avait
+    # 102 324, ce que confirme la somme de ses kills par légende.
+    assert kills.value == 102324
     assert kills.world_pos is None
     assert kills.top_percent is None
 

@@ -45,7 +45,9 @@ async def test_le_profil_annonce_l_etat_en_jeu_et_la_legende():
 @pytest.mark.asyncio
 async def test_le_profil_donne_les_kills():
     texte = await _service({"bridge": _fixture("bridge_azrael")}).execute("player_stats", "Azrael_ttv")
-    assert "92 182" in texte
+    # Le TOTAL, pas le plus gros de ses deux trackers « BR Kills ». Ce test
+    # attendait « 92 182 » et verrouillait ainsi la valeur amputée.
+    assert "102 324" in texte
 
 
 @pytest.mark.asyncio

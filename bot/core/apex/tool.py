@@ -14,15 +14,19 @@ APEX_LEGENDS_TOOL = {
             "Données Apex Legends. À n'utiliser que pour une question précise sur "
             "le jeu ou sur un joueur.\n"
             "ACTIONS : player_stats → profil d'un joueur (rang, niveau, état en "
-            "jeu, kills et rang mondial). Demande 'player_name' et 'platform' "
-            "(PC par défaut) ; laisse 'player_name' VIDE pour « mes stats », le "
-            "compte déjà mémorisé de la personne sera utilisé. · "
+            "jeu, kills et rang mondial, ET ses chiffres PAR LÉGENDE). Demande "
+            "'player_name' et 'platform' (PC par défaut) ; laisse 'player_name' "
+            "VIDE pour « mes stats », le compte déjà mémorisé de la personne "
+            "sera utilisé. Ajoute 'legend' pour le détail d'une légende précise "
+            "(« combien de kills avec Fuse ? »). · "
             "map_rotation → cartes en cours et suivantes. · "
             "crafting → lots du replicator. · predator → seuil pour Predator. · "
             "server_status → état des serveurs.\n"
-            "CE QUE CETTE API NE DONNE PAS : le classement mondial (top 500, "
-            "classement par légende ou par pays), l'historique des matchs, la "
-            "boutique, les nouveautés du jeu. Si on te le demande, dis-le "
+            "CE QUE CETTE API NE DONNE PAS : le classement mondial en tant que "
+            "TABLEAU (top 500, palmarès par légende ou par pays), l'historique "
+            "des matchs, la boutique, les nouveautés du jeu. Les kills d'un "
+            "joueur AVEC une légende donnée, eux, sont bien disponibles — ne les "
+            "confonds pas avec un classement. Si on te le demande, dis-le "
             "simplement et propose à la place la position et le top % du joueur "
             "via player_stats — ne cherche pas ailleurs, aucun site ne te le "
             "donnera dans un format exploitable.\n"
@@ -31,7 +35,9 @@ APEX_LEGENDS_TOOL = {
             "« mon pseudo Apex c'est Xyz » → player_stats avec player_name=Xyz "
             "ET remember=true, pour ne plus jamais le redemander · "
             "« j'ai combien de kills ? » → player_stats avec player_name VIDE, "
-            "son compte est déjà connu\n"
+            "son compte est déjà connu · "
+            "« Azraël il a combien de kills avec Fuse ? » → player_stats avec "
+            "player_name=Azraël ET legend=Fuse\n"
             "N'UTILISE PAS : « Apex c'est nul » → une opinion, pas une demande de "
             "données."
         ),
@@ -57,6 +63,16 @@ APEX_LEGENDS_TOOL = {
                     "type": "string",
                     "enum": ["PC", "PS4", "X1"],
                     "description": "La plateforme, PC par défaut",
+                },
+                "legend": {
+                    "type": "string",
+                    "description": (
+                        "Une légende (« Fuse », « Wraith »…) pour n'avoir que "
+                        "SES chiffres avec celle-là. Sans ce paramètre, tu "
+                        "reçois son podium et la liste des légendes qu'il suit. "
+                        "Une légende absente de cette liste n'a pas zéro kill : "
+                        "le joueur n'a simplement pas épinglé le compteur."
+                    ),
                 },
                 "remember": {
                     "type": "boolean",
