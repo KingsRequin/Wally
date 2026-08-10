@@ -79,7 +79,30 @@ class PersonaManager:
             system,
             [{"role": "user", "content": current}],
         )
+        new_content = (new_content or "").strip()
         after_len = len(new_content)
+
+        # Un fichier persona ne se vide JAMAIS. Le seul garde-fou était le budget
+        # de changement, et il ne couvrait pas ce cas : pour WEEKDAYS et
+        # COMPOSITES, `max_change_percent` vaut 1.0, donc une réponse vide donne
+        # `0.0 + 1.0 > 1.0` → faux → `write_text("")`. Ces fichiers sont
+        # bind-montés : aucun rebuild ne les restaure, et `_parse_sections`
+        # rendrait {} en silence — plus une seule directive de jour ni de
+        # composite dans le prompt, pour toujours. Un timeout LLM suffisait.
+        # Le seuil suit la TAILLE du fichier : un plancher absolu refuserait les
+        # sections courtes légitimes. Ce qu'on veut attraper, c'est le vide et
+        # l'amputation, pas une réécriture serrée.
+        if after_len < max(20, before_len // 2):
+            raise PersonaManagerError(
+                f"Réponse LLM inexploitable pour {section} "
+                f"({after_len} caractères contre {before_len}) — fichier inchangé"
+            )
+        # Repli sur disque avant écriture : même en cas de contenu plausible mais
+        # abîmé, la version précédente reste récupérable à la main.
+        try:
+            filepath.with_suffix(filepath.suffix + ".bak").write_text(current, encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — l'évolution ne doit pas échouer pour ça
+            logger.warning("Sauvegarde de {s} impossible : {e}", s=section, e=exc)
 
         change_ratio = abs(after_len - before_len) / max(before_len, 1)
         if pct + change_ratio > guardrails["max_change_percent"]:

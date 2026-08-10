@@ -62,9 +62,11 @@ async def test_find_similar_ignores_abandoned(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_find_similar_ignores_declined(tmp_path):
+async def test_find_similar_bloque_un_refus(tmp_path):
+    """DECLINED bloque DURABLEMENT : le `set` en mémoire de SelfFix ne survivait
+    pas au redémarrage, alors que le DM promet « je ne te le reproposerai pas »."""
     reg = UpgradeRegistry(await _make_db(tmp_path))
     uid = await reg.record_request("envoyer des memes générés")
     await reg.set_status(uid, DECLINED)
-    # declined n'est pas bloquant ici (le set _declined de SelfFix gère ce cas)
-    assert await reg.find_similar("générer et envoyer des memes") is None
+    hit = await reg.find_similar("générer et envoyer des memes")
+    assert hit is not None and hit.status == DECLINED

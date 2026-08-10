@@ -97,7 +97,13 @@ async def test_persona_manager_evolve_uses_bot_name():
         soul_file.write_text("# SOUL\nIdentity block.", encoding="utf-8")
 
         pm = PersonaManager(persona_dir=p, evolution_log=evo_log, llm=llm)
-        await pm.evolve("SOUL", "ajoute une ligne sur la curiosité")
+        # Ce test ne regarde QUE le prompt système. Le garde anti-vidage refuse
+        # une réponse plus courte que la moitié du fichier — ici un contenu de
+        # 22 caractères, purement artificiel : l'écriture n'est pas le sujet.
+        try:
+            await pm.evolve("SOUL", "ajoute une ligne sur la curiosité")
+        except Exception:
+            pass
 
     assert captured_system, "llm.complete n'a pas été appelé"
     system = captured_system[0]

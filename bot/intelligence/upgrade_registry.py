@@ -13,9 +13,15 @@ DELIVERED = "delivered"   # acceptée, implémentée et déployée
 DECLINED = "declined"     # refusée par le créateur
 ABANDONED = "abandoned"   # timeout / échec technique / sans changement (re-proposable)
 
-# Statuts qui BLOQUENT une redemande : une demande encore ouverte ou déjà livrée.
-# Les ABANDONED restent re-proposables (cf. "à reproposer" dans self_fix).
-_BLOCKING = (REQUESTED, DELIVERED)
+# Statuts qui BLOQUENT une redemande : une demande encore ouverte, déjà livrée,
+# ou explicitement REFUSÉE. Les ABANDONED restent re-proposables (cf. "à
+# reproposer" dans self_fix).
+#
+# DECLINED en était absent : le seul garde-fou contre une redemande refusée était
+# un `set` EN MÉMOIRE, perdu à chaque redémarrage — alors que le DM promet
+# « Je ne te le reproposerai pas ». Constaté en base : la demande RSS #3
+# (2026-07-02) reproposée à l'identique en #14 (2026-07-30).
+_BLOCKING = (REQUESTED, DELIVERED, DECLINED)
 
 _STOPWORDS = frozenset(
     {"le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "que",

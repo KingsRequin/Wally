@@ -57,6 +57,14 @@ def _motif_de_blocage(hit) -> str:
             f"{f' le {depuis}' if depuis else ''} et en attente d'autorisation — "
             "inutile de la réémettre, il faut laisser à ton créateur le temps de répondre."
         )
+    elif hit.status == DECLINED:
+        # Le cas le plus explicite, et le seul qui n'avait pas sa branche : ton
+        # créateur a dit non, et tu lui as promis de ne pas y revenir.
+        etat = (
+            f"Ton créateur a REFUSÉ cette demande (#{hit.id})"
+            f"{f' le {depuis}' if depuis else ''} — tu lui as répondu que tu ne la "
+            "reproposerais pas. Tiens parole."
+        )
     else:
         etat = f"Une demande proche existe déjà (#{hit.id}, statut {hit.status})."
     return (
@@ -319,6 +327,15 @@ class SelfFix:
                 "ni refusée ni abandonnée définitivement ; à re-soulever plus tard."
             )
             return
+        finally:
+            # Le fil se referme dès que la réaction est arrivée — ou qu'elle
+            # n'est pas venue. `mark_sent()` n'était levé que par un MESSAGE
+            # texte de l'owner en MP, alors que la réponse attendue ici est une
+            # RÉACTION ✅/❌ : après un refus, toute sollicitation owner (self-fix
+            # ET DM cognitif) restait éteinte jusqu'au redémarrage. Constaté
+            # dans les logs : 40 minutes de « sollicitation déjà en attente ».
+            if self._gate is not None:
+                self._gate.clear()
 
         if emoji != "✅":
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")

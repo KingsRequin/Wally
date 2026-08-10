@@ -149,8 +149,28 @@ class WallyTwitch(commands.Bot):
             while True:
                 try:
                     await self.connect()
-                    await self._closing.wait()
-                    return  # clean shutdown
+                    # SURVEILLÉ, et pas seulement attendu. twitchio ne pose
+                    # `_closing` que sur une `AuthenticationError` au connect ou
+                    # sur `close()` : le chemin « Login unsuccessful » appelle
+                    # `_close()` SANS le poser. On attendait alors pour toujours
+                    # une WebSocket morte — l'envoi vers les chaînes invitées
+                    # mourait en silence total et ne repartait jamais. C'est le
+                    # pendant IRC de la surdité EventSub du 2026-08-08, sans son
+                    # watchdog.
+                    while not self._closing.is_set():
+                        try:
+                            await asyncio.wait_for(self._closing.wait(), timeout=30)
+                        except asyncio.TimeoutError:
+                            pass
+                        if self._closing.is_set():
+                            break
+                        if not self._irc_vivante():
+                            logger.warning("Twitch IRC: connexion morte — reconnexion")
+                            break
+                    else:
+                        return  # arrêt propre
+                    if self._closing.is_set():
+                        return
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -158,6 +178,24 @@ class WallyTwitch(commands.Bot):
                     await asyncio.sleep(10)
         except asyncio.CancelledError:
             pass
+
+    def _irc_vivante(self) -> bool:
+        """La connexion IRC est-elle encore utilisable ?
+
+        `is_alive` n'existe pas sur toutes les versions de twitchio : en cas de
+        doute on répond OUI, pour ne jamais reconnecter en boucle sur une sonde
+        qu'on ne sait pas lire.
+        """
+        conn = getattr(self, "_connection", None)
+        if conn is None:
+            return False
+        vivante = getattr(conn, "is_alive", None)
+        if vivante is None:
+            return True
+        try:
+            return bool(vivante() if callable(vivante) else vivante)
+        except Exception:  # noqa: BLE001 — sonde illisible : on ne casse rien
+            return True
 
     async def event_ready(self) -> None:
         """Fired by twitchio when IRC authentication is complete."""
@@ -210,6 +248,32 @@ class WallyTwitch(commands.Bot):
         if not token_changed:
             logger.debug("Twitch token refresh: tokens unchanged, EventSub left intact")
             return
+
+        # L'IRC AUSSI. twitchio fige le token dans `WSConnection._token` et
+        # `TwitchHTTP.token` au constructeur, et `authenticate()` renvoie
+        # `PASS oauth:{_token}` à CHAQUE reconnexion. Sans cette propagation, la
+        # première reconnexion suivant une rotation (toutes les 3 h) échouait :
+        # twitchio journalise « Login unsuccessful » via `logging`, invisible
+        # dans loguru, puis ferme la session — Wally ne pouvait plus rien
+        # envoyer dans les chaînes invitées jusqu'au redémarrage, sans un log.
+        nouveau = self.token_manager.bot_token
+        if nouveau and nouveau != bot_before:
+            # `getattr` : ce sont des attributs INTERNES de twitchio, absents
+            # tant que le client n'est pas construit et susceptibles de bouger
+            # d'une version à l'autre. Ne jamais faire échouer le cycle de
+            # rotation pour ça.
+            propage = False
+            for nom_objet, attribut in (("_http", "token"), ("_connection", "_token")):
+                cible = getattr(self, nom_objet, None)
+                if cible is None:
+                    continue
+                try:
+                    setattr(cible, attribut, nouveau)
+                    propage = True
+                except Exception as exc:  # noqa: BLE001 — API interne de twitchio
+                    logger.warning("Twitch: token IRC non propagé ({a}): {e}", a=attribut, e=exc)
+            if propage:
+                logger.info("Twitch: token IRC mis à jour après rotation")
 
         logger.info("Twitch token rotated — restarting EventSub to pick up new token")
         try:
