@@ -23,11 +23,14 @@ async def store(tmp_path):
     return SQLiteFactStore(path)
 
 
-async def _goal(store) -> int:
+async def _goal(store, content="Tenir un but jusqu'au bout") -> int:
+    # Contenu paramétrable : deux buts au texte identique se replient désormais
+    # en un seul (`idx_facts_actif_unique`), ce qui rendrait ce test aveugle à
+    # ce qu'il vérifie — la distinction entre « accompli » et « abandonné ».
     return await store.add(
         AtomicFact(
             user_id="wally:self",
-            content="Tenir un but jusqu'au bout",
+            content=content,
             category=FactCategory.GOAL,
         )
     )
@@ -46,7 +49,8 @@ def test_fulfilled_est_distinct_d_archived():
 
 @pytest.mark.asyncio
 async def test_but_accompli_se_distingue_d_un_but_abandonne(store):
-    accompli, abandonne = await _goal(store), await _goal(store)
+    accompli = await _goal(store, "Tenir un but jusqu'au bout")
+    abandonne = await _goal(store, "Apprendre le morse")
     await store.set_status(accompli, FactStatus.FULFILLED)
     await store.set_status(abandonne, FactStatus.ARCHIVED)
 

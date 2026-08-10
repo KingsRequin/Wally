@@ -630,6 +630,18 @@ class DailyJournal:
             except Exception as exc:
                 logger.warning("Ménage des questions mémoire échoué : {e}", e=exc)
 
+        # Repli des doublons EXACTS avant le tri LLM, et sur TOUT LE MONDE.
+        # Le tri qui suit ne voit qu'une personne par nuit, par lots de 25 : deux
+        # copies mot pour mot séparées dans deux lots ne se croisent jamais. Ici
+        # rien n'est arbitré — deux textes identiques se replient sans LLM, donc
+        # sans coût et sans limite de portée.
+        store = getattr(self._memory, "fact_store", None)
+        if store is not None:
+            try:
+                await store.merge_exact_duplicates()
+            except Exception as exc:
+                logger.warning("Ménage mémoire : repli des doublons exacts échoué : {e}", e=exc)
+
         try:
             await self._sort_one_user_memory()
         except Exception as exc:

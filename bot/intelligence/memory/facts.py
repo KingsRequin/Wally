@@ -157,6 +157,32 @@ class SQLiteFactStore:
         return aiosqlite.connect(self._db_path, timeout=self.BUSY_TIMEOUT_S)
 
     async def add(self, fact: AtomicFact) -> int:
+        """Insère un fait. Si un fait ACTIF au contenu identique existe déjà,
+        renforce celui-là et renvoie SON id — jamais une erreur.
+
+        L'index unique `idx_facts_actif_unique` attrape la course que le verrou
+        applicatif ne couvre pas : deux ingests concurrents peuvent tous deux
+        passer `find_same_content()` avant que l'un n'ait inséré. Le conflit
+        n'est pas un échec, c'est l'information « ce souvenir existe déjà » —
+        on le confirme, exactement comme la dédup en amont l'aurait fait.
+        """
+        try:
+            return await self._inserer(fact)
+        except aiosqlite.IntegrityError:
+            existant = await self.find_same_content(
+                fact.user_id, fact.category, _normalize(fact.content)
+            )
+            if existant is None:
+                raise
+            logger.debug(
+                "Fait déjà présent en base ({id}), renforcé au lieu d'être dupliqué",
+                id=existant,
+            )
+            await self.confirm(existant)
+            fact.id = existant
+            return existant
+
+    async def _inserer(self, fact: AtomicFact) -> int:
         async with self._connect() as db:
             cursor = await db.execute(
                 """INSERT INTO atomic_facts
@@ -178,7 +204,7 @@ class SQLiteFactStore:
             )
             await db.commit()
             fact.id = cursor.lastrowid
-            return cursor.lastrowid  # type: ignore[return-value]
+            return cursor.lastrowid
 
     async def get_by_user(
         self,
@@ -355,7 +381,7 @@ class SQLiteFactStore:
             )
             await db.commit()
             relation.id = cursor.lastrowid
-            return cursor.lastrowid  # type: ignore[return-value]
+            return cursor.lastrowid
 
     async def supersede(self, old_id: int, new_id: int) -> None:
         """Marque old_id comme superseded et crée la relation supersedes new_id→old_id.
@@ -624,21 +650,42 @@ class SQLiteFactStore:
         qui est lu au prompt.
         """
         async with self._connect() as db:
-            cursor = await db.execute(
-                "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
-                (content, datetime.utcnow().isoformat(), fact_id),
-            )
-            await db.commit()
+            try:
+                cursor = await db.execute(
+                    "UPDATE atomic_facts SET content = ?, last_seen_at = ? WHERE id = ?",
+                    (content, datetime.utcnow().isoformat(), fact_id),
+                )
+                await db.commit()
+            except aiosqlite.IntegrityError:
+                # La correction rendrait ce fait identique à un autre déjà actif.
+                # Le `False` remonte à l'appelant, qui affiche l'échec.
+                logger.info(
+                    "Correction du fait {id} refusée : un fait actif porte déjà ce texte",
+                    id=fact_id,
+                )
+                return False
             return cursor.rowcount > 0
 
     async def set_status(self, fact_id: int, status: FactStatus) -> None:
-        """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED)."""
+        """Change le statut d'un fait (ex. GOAL accompli → ARCHIVED).
+
+        Réactiver un fait dont un jumeau actif existe déjà bute sur
+        `idx_facts_actif_unique`. Ce n'est pas une panne : le souvenir est déjà
+        présent sous un autre id, et le laisser archivé est le bon état. On le
+        dit, on ne lève pas — l'appelant est un outil LLM ou le panel admin.
+        """
         async with self._connect() as db:
-            await db.execute(
-                "UPDATE atomic_facts SET status = ? WHERE id = ?",
-                (status.value, fact_id),
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    "UPDATE atomic_facts SET status = ? WHERE id = ?",
+                    (status.value, fact_id),
+                )
+                await db.commit()
+            except aiosqlite.IntegrityError:
+                logger.info(
+                    "Fait {id} laissé en l'état : un fait actif identique existe déjà",
+                    id=fact_id,
+                )
 
     async def doubt(self, fact_id: int) -> None:
         """Marque un fait comme non vérifié / hallucination probable : passe en
@@ -742,15 +789,27 @@ class SQLiteFactStore:
         Le doublon était cherché en rapatriant TOUS les faits actifs de la
         catégorie puis en normalisant chacun en Python — 2 039 lignes pour
         `wally:self`, à chaque note et chaque pensée écrite par la boucle
-        cognitive, verrou tenu. On pré-filtre en SQL sur la longueur (index
-        `(user_id, status)` déjà présent) et on ne normalise que les candidats
-        de même taille, ce qui en laisse une poignée.
+        cognitive, verrou tenu. On pré-filtre donc en SQL sur la longueur (index
+        `(user_id, status)` déjà présent).
+
+        Le filtre est `>=`, pas `=`, et c'est le fond du problème : `_normalize`
+        RETIRE des caractères (ponctuation, espaces répétés), donc un contenu
+        normalisé est toujours plus court ou égal à l'original. Chercher
+        `length(content) = len(norm)` ratait toute phrase ponctuée — soit la
+        quasi-totalité. « Tenir un but jusqu'au bout » (26) se normalisait en
+        « tenir un but jusquau bout » (25), et son propre doublon devenait
+        introuvable. La dédup live rendait donc systématiquement « rien trouvé »
+        depuis son optimisation, et le filet ne servait plus à rien.
+
+        `>=` ne peut pas rater : la borne est vraie par construction, pas par
+        estimation. Le gain demeure — tout ce qui est plus court est éliminé —
+        et la normalisation Python ne tourne que sur le reste.
         """
         async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id, content FROM atomic_facts "
                 "WHERE user_id = ? AND category = ? AND status = ? "
-                "AND length(content) = ?",
+                "AND length(content) >= ?",
                 (user_id, category.value, FactStatus.ACTIVE.value, len(norm)),
             )
             rows = await cursor.fetchall()
@@ -759,6 +818,74 @@ class SQLiteFactStore:
             if _normalize(contenu) == norm:
                 return fact_id
         return None
+
+    async def merge_exact_duplicates(self, user_id: str | None = None) -> int:
+        """Fusionne les faits actifs au contenu strictement identique. Retourne
+        le nombre de faits repliés.
+
+        Le tri nocturne fait trancher les doublons par le LLM, par lots de 25
+        pris parmi les 150 plus anciens d'UNE personne par nuit. Deux copies
+        identiques tombées dans deux lots différents ne sont donc jamais
+        rapprochées — et pour `wally:self` (2 039 souvenirs) la plupart des lots
+        ne sont jamais examinés. Onze doublons exacts vivaient ainsi en base
+        depuis juillet, dont deux copies mot pour mot de la même opinion créées
+        à treize minutes d'écart.
+
+        Or deux textes identiques n'ont besoin d'aucun arbitrage : c'est du SQL,
+        c'est gratuit, et c'est exhaustif. Le plus ancien est gardé — il porte
+        l'antériorité — en cumulant le crédit accumulé par les autres :
+        `support_count` additionné, `last_seen_at` le plus récent, confiance la
+        plus haute. Les copies passent en `superseded`, jamais supprimées.
+        """
+        garde = "AND user_id = ?" if user_id else ""
+        params = (user_id,) if user_id else ()
+        async with self._connect() as db:
+            cursor = await db.execute(
+                f"""SELECT id, user_id, category, content, support_count,
+                           confidence, last_seen_at
+                    FROM atomic_facts
+                    WHERE status = ? {garde}
+                    ORDER BY id""",
+                (FactStatus.ACTIVE.value, *params),
+            )
+            lignes = await cursor.fetchall()
+
+            groupes: dict[tuple[str, str, str], list[tuple]] = {}
+            for ligne in lignes:
+                cle = (ligne[1], ligne[2], _normalize(ligne[3]))
+                groupes.setdefault(cle, []).append(ligne)
+
+            replies = 0
+            for membres in groupes.values():
+                if len(membres) < 2:
+                    continue
+                # `ORDER BY id` : le premier est le plus ancien, donc le gardé.
+                garde_id = membres[0][0]
+                doublons = [m[0] for m in membres[1:]]
+                await db.execute(
+                    """UPDATE atomic_facts
+                       SET support_count = ?, confidence = ?, last_seen_at = ?
+                       WHERE id = ?""",
+                    (
+                        sum(m[4] for m in membres),
+                        max(m[5] for m in membres),
+                        max(m[6] for m in membres),
+                        garde_id,
+                    ),
+                )
+                await db.execute(
+                    "UPDATE atomic_facts SET status = ? WHERE id IN "
+                    f"({','.join('?' * len(doublons))})",
+                    (FactStatus.SUPERSEDED.value, *doublons),
+                )
+                replies += len(doublons)
+            await db.commit()
+        if replies:
+            logger.info(
+                "Ménage mémoire : {n} doublon(s) exact(s) replié(s){portee}",
+                n=replies, portee=f" pour {user_id}" if user_id else "",
+            )
+        return replies
 
     async def confirm(self, fact_id: int) -> None:
         """Renforce un fait existant sans dupliquer (observation CONFIRM) :

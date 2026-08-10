@@ -55,35 +55,69 @@ async def test_deux_personnes_restent_paralleles():
 
 # ────────────────────────────── A2-dedup ──────────────────────────────
 @pytest.mark.asyncio
-async def test_le_doublon_est_cherche_en_sql_et_non_en_memoire():
-    from bot.intelligence.memory.facts import FactCategory, SQLiteFactStore
+async def test_le_doublon_est_cherche_en_sql_et_non_en_memoire(tmp_path):
+    """Le pré-filtre SQL doit réduire les candidats SANS jamais rater un doublon.
 
-    vues = {}
+    Ce test figeait auparavant la clause exacte (`length(content) = ?`), et
+    verrouillait ainsi le défaut qu'il était censé décrire : `_normalize` retire
+    la ponctuation, donc l'égalité stricte excluait toute phrase ponctuée —
+    c'est-à-dire son propre doublon. On vérifie désormais les deux propriétés
+    qui comptent, et aucune formulation.
+    """
+    from bot.db.schema_v2 import create_v2_tables
+    from bot.intelligence.memory.facts import (
+        AtomicFact, FactCategory, SQLiteFactStore, _normalize,
+    )
 
-    class _Cur:
-        async def fetchall(self):
-            return [(7, "aime les chats")]
+    chemin = str(tmp_path / "k.db")
+    await create_v2_tables(chemin)
+    store = SQLiteFactStore(chemin)
 
-    class _DB:
-        async def __aenter__(self):
-            return self
+    async def _ajouter(texte):
+        return await store.add(
+            AtomicFact(user_id="discord:1", content=texte, category=FactCategory.PREF)
+        )
 
-        async def __aexit__(self, *a):
-            return False
+    ponctue = await _ajouter("Aime les chats, surtout le sien.")
+    for i in range(40):
+        await _ajouter(f"Court {i}")
 
-        async def execute(self, sql, params=()):
-            vues["sql"] = sql
-            vues["params"] = params
-            return _Cur()
+    # 1. Il trouve — malgré la ponctuation, qui raccourcit la forme normalisée.
+    cherche = _normalize("Aime les chats, surtout le sien.")
+    assert await store.find_same_content("discord:1", FactCategory.PREF, cherche) == ponctue
 
-    store = SQLiteFactStore.__new__(SQLiteFactStore)
-    store._connect = lambda: _DB()
+    # 2. Il ne rapatrie pas toute la table pour autant. On compte les lignes
+    #    réellement remontées, sans rien présumer de la façon de les écarter.
+    rapatriees = 0
+    connect_reel = store._connect
 
-    trouve = await store.find_same_content("discord:1", FactCategory.PREF, "aime les chats")
-    assert trouve == 7
-    # Le pré-filtre SQL doit borner par la longueur, pas tout rapatrier.
-    assert "length(content) = ?" in vues["sql"]
-    assert vues["params"][-1] == len("aime les chats")
+    def _espion():
+        db_ctx = connect_reel()
+        execute_reel = db_ctx.execute
+
+        async def execute(sql, params=()):
+            nonlocal rapatriees
+            curseur = await execute_reel(sql, params)
+            lignes = await curseur.fetchall()
+            rapatriees += len(lignes)
+
+            class _Rejoue:
+                async def fetchall(self_inner):
+                    return lignes
+
+            return _Rejoue()
+
+        db_ctx.execute = execute
+        return db_ctx
+
+    store._connect = _espion
+    await store.find_same_content("discord:1", FactCategory.PREF, cherche)
+    store._connect = connect_reel
+
+    assert rapatriees < 41, (
+        f"{rapatriees} lignes remontées sur 41 : le tri se fait en mémoire, "
+        "pas en SQL — c'est ce que ce test existe pour empêcher"
+    )
 
 
 def test_le_service_nappelle_plus_get_by_user_pour_dedupliquer():

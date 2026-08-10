@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import aiosqlite
+from loguru import logger
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS atomic_facts (
@@ -270,3 +271,32 @@ async def create_v2_tables(db_path: str) -> None:
         await db.execute("DROP TABLE IF EXISTS thoughts")
         await db.executescript(_SCHEMA_SQL)
         await db.commit()
+        await _poser_unicite_faits(db)
+
+
+async def _poser_unicite_faits(db) -> None:
+    """Unicité des faits ACTIFS au contenu identique, posée à part.
+
+    Volontairement HORS de `_SCHEMA_SQL` : `executescript` est atomique, et un
+    index unique refusé pour cause de doublons préexistants ferait échouer TOUT
+    le reste — donc le démarrage. Ici l'échec est local et journalisé ; la passe
+    `merge_exact_duplicates()` repliera les doublons la nuit suivante et l'index
+    se posera au boot d'après.
+
+    Filet de dernier recours, pas la dédup principale : `LOWER(TRIM(...))` est
+    plus lâche que `_normalize()` (qui retire aussi la ponctuation). Il attrape
+    ce que le verrou applicatif rate — deux ingests concurrents passant le test
+    d'existence avant que l'un n'ait inséré.
+    """
+    try:
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_actif_unique "
+            "ON atomic_facts(user_id, category, LOWER(TRIM(content))) "
+            "WHERE status = 'active'"
+        )
+        await db.commit()
+    except (aiosqlite.OperationalError, aiosqlite.IntegrityError) as exc:
+        logger.warning(
+            "Unicité des faits actifs non posée ({e}) — des doublons exacts "
+            "subsistent, le ménage nocturne les repliera", e=exc,
+        )
