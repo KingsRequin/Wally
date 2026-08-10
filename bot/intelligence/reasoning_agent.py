@@ -492,4 +492,24 @@ class ReasoningAgent:
                     lines.append(self._widgets_overlay)
             except Exception as e:  # noqa: BLE001 — jamais bloquant
                 logger.debug("catalogue overlay non injecté: {}", e)
+        # CE QUI TOURNE DÉJÀ. Le catalogue ci-dessus dit ce qu'il PEUT afficher ;
+        # sans cet état, rien ne dit ce qui est DÉJÀ à l'écran, et la boucle
+        # rouvrait indéfiniment ce qu'elle venait d'ouvrir. Vécu le 2026-08-10 :
+        # cinq bingos en huit minutes au lancement du live d'Azraël, avec cette
+        # pensée à 19:38 — « je réalise que je ne l'ai pas encore ouvert
+        # concrètement » — alors qu'il en avait ouvert deux dans la minute.
+        #
+        # Le bloc partait déjà dans `build_system_prompt` (les conversations le
+        # voyaient), jamais dans le contexte cognitif : le seul chemin qui prend
+        # des initiatives était aussi le seul aveugle à leur résultat.
+        #
+        # Reste PASSIF, comme dans `build_system_prompt` : aucun `notify_*`
+        # derrière, un bingo ouvert ne réveille donc pas la cadence.
+        try:
+            from bot.intelligence.overlay_narrator import current_overlay_state_block
+
+            if etat := current_overlay_state_block():
+                lines.append(etat)
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.debug("état overlay non injecté: {}", e)
         return "\n".join(lines)

@@ -420,6 +420,26 @@ class ActionDispatcher:
                 logger.info("ACT show_overlay: {w} ({c})", w=widget, c=comment[:40])
                 self._publish_act(f"show_overlay {widget}: ", comment)
 
+        elif act_name == "cancel_overlay" and self._overlay_narrator:
+            # Sans cette action, la cognition pouvait OUVRIR un bingo mais jamais
+            # le refermer. Le 2026-08-10, on lui a demandé trois fois d'annuler —
+            # dans le chat Twitch puis en vocal — et il a raisonné juste :
+            # « il n'y a pas de commande "annuler" dans mes widgets ». Il avait
+            # raison, et il a relancé un bingo deux minutes plus tard.
+            # Le bloc d'état de l'overlay annonçait pourtant `cancel_overlay`
+            # depuis toujours : la promesse existait, pas le moyen de la tenir.
+            cible = str(args.get("target") or "tout").strip().lower()
+            resultat = self._overlay_narrator.cancel(cible)
+            annules = resultat.get("cancelled") or []
+            if resultat.get("unknown"):
+                logger.info("ACT cancel_overlay: cible inconnue « {c} »", c=cible)
+            elif annules:
+                logger.info("ACT cancel_overlay: {a}", a=", ".join(annules))
+                self._publish_act("cancel_overlay: ", ", ".join(annules))
+            else:
+                # La liste vide est une réponse, pas un échec : il n'y avait rien.
+                logger.info("ACT cancel_overlay: rien à annuler ({c})", c=cible)
+
         elif act_name == "create_memory" and self._facts:
             content = args.get("fact_content", "")
             if content:
