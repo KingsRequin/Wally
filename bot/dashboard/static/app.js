@@ -5002,29 +5002,13 @@ async function updateActionPerm(actionType, field, value) {
 }
 
 
-async function generateInvite() {
-  try {
-    var resp = await apiFetch('/api/admin/setup/invite', { method: 'POST' });
-    var data = await resp.json();
-    var url = data.url || (window.location.origin + '/setup/' + data.token);
-    await navigator.clipboard.writeText(url);
-    toast('Lien copié : ' + url, 'success');
-    loadInvites();
-  } catch(e) { toast('Erreur : ' + e.message, 'error'); }
-}
-
-async function copyInviteLink(token) {
-  var url = window.location.origin + '/setup/' + token;
-  await navigator.clipboard.writeText(url);
-  toast('Lien copié !', 'success');
-}
-
-async function revokeInvite(token) {
-  if (!confirm('Révoquer ce lien ?')) return;
-  var r = await apiFetch('/api/admin/setup/invite/' + token, { method: 'DELETE' });
-  if (r && r.ok) { toast('Lien révoqué', 'success'); } else { toast('Erreur révocation', 'error'); }
-  loadInvites();
-}
+// Les trois fonctions de gestion des liens d'invitation ont été retirées :
+// elles appelaient `loadInvites()`, qui n'existe nulle part. `generateInvite`
+// créait bien le lien puis basculait dans son `catch` sur la ReferenceError et
+// affichait « Erreur : loadInvites is not defined » — un faux échec ;
+// `revokeInvite` levait sans être rattrapée. Aucune des trois n'était câblée à
+// l'UI (aucun `onclick`, aucun listener), donc sans effet aujourd'hui — mais le
+// piège se serait refermé au moment de rebrancher le bouton.
 
 // ── Prompts & Persona Management ─────────────────────────────────────────────
 

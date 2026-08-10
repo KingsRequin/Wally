@@ -606,7 +606,12 @@ _CANCEL_LABELS = {
     "bingo": "le bingo est abandonné",
     "pendu": "le pendu est abandonné",
     "sondage": "le sondage est abandonné, sans dépouillement",
-    "chifoumi": "le chifoumi est abandonné, sans gagnant",
+    # Pas de « chifoumi » : il ne figure pas dans `CANCEL_TARGETS`, qui sert à la
+    # fois d'enum au schéma de l'outil et de garde dans `cancel()`. Le libellé
+    # était donc inatteignable, tout en laissant croire que l'annulation d'un
+    # chifoumi était prévue — alors que la demande est refusée par
+    # « 'chifoumi' ne veut rien dire ici ». Un chifoumi est un affichage
+    # instantané : il n'y a rien à annuler.
     "objectif": "l'objectif est retiré",
 }
 
@@ -2406,7 +2411,7 @@ async def _respond(
                 logger.info("RSS: appel '{}' bloqué (actu déjà dans le contexte)", name)
                 return (
                     "Inutile de chercher : tu as DÉJÀ les dernières actus dans ton "
-                    "contexte, section « Actus récentes ». Réponds directement avec "
+                    "contexte, section « Actus que tu CONNAIS DÉJÀ sur ce sujet ». Réponds directement avec "
                     "ces articles et colle leur marqueur de source [¹](<url>)."
                 )
             args = json.loads(arguments)

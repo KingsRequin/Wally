@@ -130,6 +130,16 @@ class EditEventMessageModal(discord.ui.Modal, title="Modifier le message"):
             await interaction.response.send_message(
                 f"Message pour {self.event_name} mis à jour.", ephemeral=True
             )
+        else:
+            # Sans cette branche, l'interaction n'était JAMAIS répondue quand la
+            # clé avait disparu — la vue vit 120 s et `config.save()` peut
+            # réécrire la config entre l'affichage et le clic. Discord montrait
+            # « L'interaction a échoué », sans une trace côté bot, et l'admin
+            # croyait avoir modifié un message qui ne l'était pas.
+            await interaction.response.send_message(
+                f"Événement « {self.event_name} » introuvable dans la config.",
+                ephemeral=True,
+            )
 
 
 class ToggleEventButton(discord.ui.Button):
@@ -147,6 +157,11 @@ class ToggleEventButton(discord.ui.Button):
             status = "actif" if event.active else "inactif"
             await interaction.response.send_message(
                 f"{self.event_name} est maintenant {status}.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Événement « {self.event_name} » introuvable dans la config.",
+                ephemeral=True,
             )
 
 

@@ -430,8 +430,15 @@ async def _send_openai_params_tab(bot: "WallyDiscord", interaction: discord.Inte
 
 async def _send_decay_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
     emotions = bot.config.emotions
+    # L'ennui à part : `_apply_decay` le SAUTE (il monte avec l'inactivité, il
+    # ne décroît pas), et le formulaire édite bien `boredom_rise_per_hour`
+    # depuis le correctif précédent. L'affichage, lui, montrait encore
+    # `decay_lambda` — une valeur morte — puis proposait un défaut différent :
+    # l'owner voyait deux nombres contradictoires pour le même champ.
     lines = ["**Decay des émotions (λ)**"] + [
-        f"**{e}** : {cfg.decay_lambda}" for e, cfg in emotions.items()
+        (f"**{e}** : {cfg.decay_lambda}" if e != "boredom"
+         else f"**boredom** : montée/heure = {cfg.boredom_rise_per_hour}")
+        for e, cfg in emotions.items()
     ]
     view = DecayView(bot)
     await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
@@ -456,7 +463,7 @@ class AdvancedTabSelect(discord.ui.Select):
         if tab == "bot":
             cfg = self.bot.config.bot
             lines = [
-                f"**Bot Général**",
+                "**Bot Général**",
                 f"Langue : {cfg.language_default}",
                 f"Contexte : {cfg.context_window_size} messages / {cfg.context_token_threshold} tokens",
                 f"Journal : {cfg.journal_time} — channel : {cfg.journal_channel_id or 'non défini'}",
@@ -467,7 +474,7 @@ class AdvancedTabSelect(discord.ui.Select):
         elif tab == "discord":
             cfg = self.bot.config.discord
             lines = [
-                f"**Paramètres Discord**",
+                "**Paramètres Discord**",
                 f"Seuil colère : {cfg.anger_trigger_threshold} — Timeout : {cfg.timeout_minutes} min",
                 f"Mode filtre : **{cfg.channel_filter_mode}**",
                 f"Blacklist : {len(cfg.channel_blacklist)} channel(s)",
