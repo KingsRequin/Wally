@@ -139,6 +139,13 @@ class MemoryMixin:
         """Supprime un utilisateur de memory_users (apres fusion de comptes)."""
         await self.execute("DELETE FROM memory_users WHERE user_id = ?", (user_id,))
 
+    async def get_memory_username(self, user_id: str) -> str | None:
+        """Pseudo connu pour un `platform:raw_id`, ou None."""
+        row = await self.fetch_one(
+            "SELECT username FROM memory_users WHERE user_id = ?", (user_id,)
+        )
+        return (row["username"] or None) if row else None
+
     async def list_memory_users(self, q: str | None = None, include_no_memory: bool = False) -> list[dict]:
         # LEFT JOIN avec trust_scores : la cle memory_users.user_id est "platform:raw_id"
         # alors que trust_scores.user_id est "raw_id" -- on extrait via SUBSTR.

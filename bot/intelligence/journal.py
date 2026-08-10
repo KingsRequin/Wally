@@ -1037,6 +1037,17 @@ class DailyJournal:
             purpose="daily_journal",
         )
 
+        # `complete()` ne lève pas : il rend FALLBACK_RESPONSE. Sans ce garde, le
+        # message d'excuse était publié, archivé, puis relu le lendemain comme
+        # « ton journal d'hier » et intégré à la synthèse narrative — 15 journées
+        # perdues entre le 2026-05-16 et le 2026-06-02.
+        if not journal_text or not journal_text.strip() or journal_text.strip() == FALLBACK_RESPONSE:
+            logger.warning(
+                "Journal du {d} : le modèle n'a rien produit (repli) — rien publié ni archivé",
+                d=effective_date.isoformat(),
+            )
+            return
+
         # ── Voice pass — dé-polit le brouillon et le ramène sous le plafond ──
         if journal_text:
             try:
@@ -1183,17 +1194,28 @@ class DailyJournal:
                 [{"role": "user", "content": chunk_text}],
                 purpose="journal_chunk_summary",
             )
-            summaries.append(s)
+            # Un chunk en échec rend le message d'excuse : le laisser entrer
+            # ferait écrire au journal qu'il s'est passé une panne technique.
+            if s and s.strip() and s.strip() != FALLBACK_RESPONSE:
+                summaries.append(s)
+            else:
+                logger.warning("Journal : résumé de chunk en échec, chunk ignoré")
 
+        if not summaries:
+            return ""
         if len(summaries) == 1:
             return summaries[0]
 
         combined = "\n---\n".join(summaries)
-        return await self._llm_secondary.complete(
+        final = await self._llm_secondary.complete(
             render_identity(_FINAL_SYSTEM),
             [{"role": "user", "content": combined}],
             purpose="journal_final_summary",
         )
+        if not final or not final.strip() or final.strip() == FALLBACK_RESPONSE:
+            logger.warning("Journal : synthèse finale en échec — repli sur les résumés bruts")
+            return combined
+        return final
 
     async def _build_memory_fallback_context(self) -> str:
         """Fallback final : souvenirs de tous les utilisateurs connus."""

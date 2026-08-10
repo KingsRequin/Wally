@@ -17,6 +17,7 @@ from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
+    _canonical_uid,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _OVERLAY_CANCEL_TOOL, run_overlay_cancel_tool,
     _LAST_CLIP_TOOL, run_apex_overlay_tool, run_last_clip_tool,
@@ -684,10 +685,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
 
-        # Portrait de la personne (user model) — non-fatal
+        # Portrait de la personne (user model) — non-fatal.
+        # Via `_user_id()` : sur Twitch le portrait vit sous l'uid Discord
+        # canonique dès que les comptes sont liés (24 liaisons au 2026-08-10).
         person_context = ""
         try:
-            person_context = await bot.db.get_user_profile(f"{platform}:{user_id}") or ""
+            _pid = await _canonical_uid(bot, platform, user_id)
+            person_context = await bot.db.get_user_profile(_pid) or ""
         except Exception:
             pass
 

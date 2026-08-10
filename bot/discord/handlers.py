@@ -1460,6 +1460,24 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     return "\n".join(lines)
 
 
+async def _canonical_uid(bot, platform: str, user_id: str) -> str:
+    """UID canonique `platform:raw_id` pour le ResponseGate.
+
+    Le fact store est indexé sur la forme préfixée (convention CLAUDE.md).
+    Avec l'id nu, le gate lisait 0 fait de relation et écrivait ses traces
+    d'ignorance dans un espace mort — 73 faits orphelins au 2026-08-10.
+    Passer par `_user_id()` résout aussi les alias vers l'uid canonique.
+    """
+    memory = getattr(bot, "memory", None)
+    if memory is None:
+        return f"{platform}:{user_id}"
+    try:
+        return memory._user_id(platform, user_id)
+    except Exception as e:  # noqa: BLE001 — le gate ne doit jamais bloquer un message
+        logger.warning("Gate : résolution de l'uid échouée pour {u} : {e}", u=user_id, e=e)
+        return f"{platform}:{user_id}"
+
+
 async def _third_party_mention_context(
     bot,
     platform: str,
@@ -1809,7 +1827,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         try:
             from bot.intelligence.memory.facts import FactCategory
             _store = gate._fact_store  # même paquet : accès interne assumé
-            _rel = await _store.get_by_user(user_id, categories=[FactCategory.REL])
+            _gate_uid = await _canonical_uid(bot, "discord", user_id)
+            _rel = await _store.get_by_user(_gate_uid, categories=[FactCategory.REL])
             _desires = await _store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
             _last = getattr(bot, "_wally_recent_speaks", {}).get(message.channel.id)
             # Toutes les emotes de TOUS les serveurs du bot (Nitro-like), dédupliquées.
@@ -1824,7 +1843,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 _thread = []
             _gd = await gate.decide(
                 message_content=_resolve_mentions(message, message.content or ""),
-                author_user_id=user_id,
+                author_user_id=_gate_uid,
                 emotion_state=bot.emotion.get_state(),
                 relationship_facts=_rel,
                 active_desires=_desires,
@@ -2098,10 +2117,14 @@ async def _respond(
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)
         relationship_context = f"Niveau de confiance : {trust:.2f}/1.0\nNiveau d'affection : {love:.2f}/1.0"
 
-        # Portrait de la personne (user model) — non-fatal
+        # Portrait de la personne (user model) — non-fatal.
+        # Via `_user_id()` : le portrait est écrit sous l'uid CANONIQUE (le
+        # modeler lit les user_id du fact store). Concaténer `platform:raw_id`
+        # privait de leur portrait les 22 comptes Twitch liés à un Discord.
         person_context = ""
         try:
-            person_context = await bot.db.get_user_profile(f"{platform}:{user_id}") or ""
+            _pid = await _canonical_uid(bot, platform, user_id)
+            person_context = await bot.db.get_user_profile(_pid) or ""
         except Exception:
             pass
 

@@ -63,16 +63,28 @@ class UserModeler:
         platform, raw_id = user_id.split(":", 1) if ":" in user_id else ("discord", user_id)
         trust = await self._db.get_trust_score(platform, raw_id)
         love = await self._db.get_love_score(platform, raw_id)
-        portrait = await self._build_portrait(active, superseded, trust, love)
+        name = await self._username(user_id) or raw_id
+        portrait = await self._build_portrait(name, active, superseded, trust, love)
         if not portrait:
             return False
         await self._db.upsert_user_profile(user_id, portrait)
         return True
 
-    async def _build_portrait(self, active, superseded, trust, love) -> str | None:
+    async def _username(self, user_id: str) -> str | None:
+        # Sans nom, le seul nom du contexte est celui du bot (le prompt système
+        # est écrit à la 2e personne) : le modèle attribue alors le portrait à
+        # Wally. 11 fiches sur 95 étaient dans ce cas au 2026-08-10.
+        try:
+            return await self._db.get_memory_username(user_id)
+        except Exception as e:  # noqa: BLE001 — un pseudo manquant ne bloque rien
+            logger.warning("UserModeler : pseudo de {u} illisible : {e}", u=user_id, e=e)
+            return None
+
+    async def _build_portrait(self, name, active, superseded, trust, love) -> str | None:
         present = "\n".join(f"- {f['content']}" for f in active)
         past = "\n".join(f"- {f['content']}" for f in superseded) or "(rien)"
         payload = (
+            f"Personne décrite : {name}\n\n"
             f"Traits actuels :\n{present}\n\n"
             f"Ce qu'elle disait avant (révolu) :\n{past}\n\n"
             f"Confiance : {trust:.2f}/1.0 | Affection : {love:.2f}/1.0"
