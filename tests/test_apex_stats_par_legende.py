@@ -178,3 +178,12 @@ def test_loutil_annonce_les_stats_par_legende():
     # Ce que l'API ne donne pas, c'est le TABLEAU de classement — pas les
     # chiffres d'un joueur avec une légende.
     assert "ne les confonds pas avec un classement" in description
+
+
+def test_le_premier_mondial_ne_secrit_pas_1e():
+    """Azraël est 1ᵉʳ mondial aux dégâts avec Fuse — le cas se voit en vrai."""
+    from bot.core.apex.service import _rang
+
+    assert _rang(1) == "1ᵉʳ"
+    assert _rang(3) == "3ᵉ"
+    assert _rang(432_897) == "432 897ᵉ"

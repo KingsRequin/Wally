@@ -31,6 +31,13 @@ def _fr(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _rang(n: int) -> str:
+    """1 → « 1ᵉʳ », 3 → « 3ᵉ ». Le premier ne se dit pas « 1ᵉ ».
+
+    Azraël est 1ᵉʳ mondial aux dégâts avec Fuse : c'est le cas qui se voit."""
+    return f"{_fr(n)}ᵉʳ" if n == 1 else f"{_fr(n)}ᵉ"
+
+
 class ApexLegendsService:
     # Les libellés des modes, dans l'ordre d'intérêt. `wildcard` manquait :
     # c'est un mode qui tourne, et son absence donnait une rotation incomplète.
@@ -211,7 +218,7 @@ class ApexLegendsService:
             if stat.top_percent is not None:
                 ligne += f" (top {stat.top_percent} % mondial"
                 if stat.world_pos is not None:
-                    ligne += f", {_fr(stat.world_pos)}ᵉ"
+                    ligne += f", {_rang(stat.world_pos)}"
                 ligne += ")"
             lignes.append(ligne)
         lignes += self._render_legends(p, legend)
@@ -248,7 +255,7 @@ class ApexLegendsService:
                 if stat.top_percent is not None:
                     ligne += f" (top {stat.top_percent} % mondial sur ce tracker"
                     if stat.world_pos is not None:
-                        ligne += f", {_fr(stat.world_pos)}ᵉ"
+                        ligne += f", {_rang(stat.world_pos)}"
                     ligne += ")"
                 detail.append(ligne)
             return [f"Avec {trouvee} :", *detail]
