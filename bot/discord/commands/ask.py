@@ -5,6 +5,7 @@ from discord.ext import commands
 from loguru import logger
 
 from bot.discord.handlers import _post_process, _fire
+from bot.discord.message_split import split_for_discord
 
 
 class AskCog(commands.Cog):
@@ -76,7 +77,12 @@ class AskCog(commands.Cog):
                 )
 
             _fire(_post_process(self.bot, question, platform, user_id, guild_id, trust))
-            await interaction.followup.send(reply)
+            # Découpage : au-delà de 2 000 caractères Discord refuse l'envoi, le
+            # `except` en dessous rattrapait l'erreur et l'utilisateur lisait
+            # « Une erreur s'est produite » — après facturation de l'appel, et
+            # alors que le contexte avait déjà été mémorisé.
+            for part in split_for_discord(reply):
+                await interaction.followup.send(part)
 
         except Exception as e:
             logger.error("Error in /wally ask: {e}", e=e)

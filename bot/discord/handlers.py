@@ -943,6 +943,11 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
         return
     if payload.guild_id and payload.guild_id in bot.config.discord.ignored_guilds:
         return
+    # Le filtrage par canal manquait sur ce chemin : du contenu de salons
+    # explicitement exclus (whitelist/blacklist) entrait dans le contexte et
+    # dans la cognition par le biais des réactions.
+    if not _is_channel_allowed(bot.config, payload.channel_id, payload.guild_id):
+        return
     member = payload.member
     if member is not None and member.bot:
         return
@@ -2871,15 +2876,26 @@ async def _spontaneous_respond(
 
         # Intervention spontanée → dans le canal de la discussion, en reply au
         # message qui l'a déclenchée.
+        #
+        # Ce chemin ne passait ni par `redact` ni par le découpage : le mot d'un
+        # pendu en cours pouvait en sortir, et toute réponse de plus de 2 000
+        # caractères était refusée par Discord — donc perdue en silence, après
+        # avoir été payée et mémorisée.
+        from bot.discord.message_split import split_for_discord
+
+        reply = redact(reply)
+        parts = split_for_discord(reply)
         await message.reply(
-            reply, mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
+            parts[0], mention_author=False, allowed_mentions=_ALLOWED_MENTIONS
         )
+        for part in parts[1:]:
+            await message.channel.send(part, allowed_mentions=_ALLOWED_MENTIONS)
         sent_channel_id = str(target_channel.id)
         self_name = bot.config.bot.name
         _clog(
             bot, _conv_channel(message), "message_out",
             trace_id=str(message.id), kind="spontaneous", author=self_name,
-            content=reply, parts=1, react_emoji=react_emoji,
+            content=reply, parts=len(parts), react_emoji=react_emoji,
         )
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(target_channel.id, content=reply)

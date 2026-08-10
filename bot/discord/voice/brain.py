@@ -47,6 +47,9 @@ async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
 
 _WORD_RE = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
 
+# Tâches de fond détachées, gardées en vie le temps qu'elles s'achèvent.
+_TACHES_FOND: set[asyncio.Task] = set()
+
 
 _LEAVE_RE = re.compile(
     r"(quitte\w*\s+(le\s+)?(voc|vocal|salon|chan)"
@@ -483,9 +486,23 @@ async def _respond_once_inner(
     wally_name = getattr(getattr(bot, "config", None), "bot", None)
     wally_name = getattr(wally_name, "name", None) or "Wally"
 
+    # Heuristique locale rapide (0 appel LLM) : décide si Wally prend la parole.
+    named = False
+    try:
+        trigger_names = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
+        named = _is_named(transcript, trigger_names)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Filet déterministe : demande explicite de quitter le vocal → on déconnecte vraiment
     # (sans dépendre du tool-calling du LLM, qui dit parfois "ok je pars" sans agir).
-    if _is_leave_request(transcript):
+    #
+    # Mais SEULEMENT s'il est nommé. Le test venait avant, si bien qu'une phrase
+    # lancée à l'écran ou à quelqu'un d'autre le faisait partir en pleine partie :
+    # « putain dégage », « casse-toi de mon écran », « je me déconnecte deux
+    # minutes » déclenchaient tous le départ. C'est la même règle que sur les
+    # autres chemins — lui parler, c'est le nommer.
+    if named and _is_leave_request(transcript):
         logger.info("voice: demande de départ détectée → déconnexion")
         try:
             await service.speak("Ok, je vous laisse. À plus !")
@@ -495,14 +512,6 @@ async def _respond_once_inner(
                        text="Ok, je vous laisse. À plus !", gen_ms=_gen_ms())
         await service.leave()
         return
-
-    # Heuristique locale rapide (0 appel LLM) : décide si Wally prend la parole.
-    named = False
-    try:
-        trigger_names = [bot.config.bot.name, *(bot.config.bot.trigger_names or [])]
-        named = _is_named(transcript, trigger_names)
-    except Exception:  # noqa: BLE001
-        pass
 
     if not _should_respond_voice(transcript, service.history, named):
         logger.info("voice: parole pas adressée à Wally → il écoute")
@@ -565,9 +574,15 @@ async def _respond_once_inner(
     # Émotions + affinité, en tâche de fond (n'ajoute pas de latence à la parole).
     try:
         ctx = _history_to_context(service.history, getattr(bot.config.bot, "name", ""))
-        asyncio.create_task(_voice_post_emotion(
+        # Référence FORTE : sans elle, le ramasse-miettes peut collecter la tâche
+        # avant qu'elle ne s'achève. C'était le seul `create_task` nu du projet,
+        # et il portait l'humeur, l'affinité et les `user_facts` du vocal —
+        # perdus en silence quand la collecte tombait au mauvais moment.
+        tache = asyncio.create_task(_voice_post_emotion(
             bot, speaker_user_id, speaker_label, transcript,
             service.channel_id, service.channel_name, ctx,
         ))
+        _TACHES_FOND.add(tache)
+        tache.add_done_callback(_TACHES_FOND.discard)
     except Exception as e:  # noqa: BLE001
         logger.warning("voice post-emotion a échoué: {e}", e=e)
