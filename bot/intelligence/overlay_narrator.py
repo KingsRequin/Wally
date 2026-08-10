@@ -470,6 +470,13 @@ class OverlayNarrator:
         if minutes <= 0:
             self._force_until = 0.0
             self._force_epoch = 0.0
+            # `_was_live` REMIS À FAUX : le mode test emprunte le même chemin
+            # qu'un vrai live et pose ce drapeau. Sans cette ligne, le VRAI live
+            # suivant n'était plus vu comme une transition — `reset_live()` ne
+            # partait pas, et il démarrait avec les saluts déjà consommés, le
+            # classement des bavards du réglage, et surtout un pendu ou un bingo
+            # du mode test toujours ouverts, donc injectés dans chaque prompt.
+            self._was_live = False
             logger.info("Overlay: mode test coupé")
             return 0.0
         minutes = min(minutes, _MAX_FORCE_LIVE_MIN)

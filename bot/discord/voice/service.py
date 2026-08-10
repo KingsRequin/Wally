@@ -297,13 +297,20 @@ class VoiceService:
             # Déplacement, pas départ : poser un congé ici l'aurait empêché de
             # revenir en écoute après une conversation.
             await self.leave(voluntary=False)
+        # L'état n'est engagé qu'APRÈS une connexion réussie. `_channel` et
+        # `listen_only` étaient posés avant : si `connect()` levait — timeout
+        # 4006, salon plein, permission manquante — ils restaient pointés sur un
+        # salon jamais rejoint pendant que `_vc` valait None. `/wally status`,
+        # le prélude et le journal citaient alors un salon où Wally n'était pas,
+        # et `_pending_inviter` polluait la salutation du join suivant.
+        vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
+        self._vc = vc
+        self._channel = channel
         self.listen_only = listen_only
         if listen_only:
             # Retour volontaire : il redevient rattrapable par le veilleur.
             self.listen_optout = False
         self._pending_inviter = inviter
-        self._channel = channel
-        self._vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
         # En sourdine tant que le modèle STT charge : sans ce signal, on lui
         # parle dans le vide pendant plusieurs secondes sans le savoir.
         from bot.discord.voice.readiness import (
@@ -502,6 +509,17 @@ class VoiceService:
             if task is not current and not task.done():
                 task.cancel()
         self._detached.clear()
+        # COUPER L'ÉCOUTE D'ABORD. `close_all()` était appelé en premier : pendant
+        # son `await`, le thread audio continuait d'appeler `feed_sync`, qui
+        # rouvrait joyeusement une session WebSocket sur le pipeline qu'on venait
+        # de fermer — et `_maintain_task` étant déjà annulé, plus rien ne la
+        # fermerait. Deux fuites suffisent à faire basculer tout le monde sur le
+        # whisper CPU jusqu'au join suivant.
+        if self._vc is not None:
+            try:
+                self._vc.stop_listening()
+            except Exception:  # noqa: BLE001
+                pass
         if self._streaming is not None:
             try:
                 await self._streaming.close_all()  # ferme toutes les connexions WS distantes
@@ -509,10 +527,6 @@ class VoiceService:
                 logger.warning("voice: fermeture des sessions streaming a échoué: {e}", e=e)
         self._stream_users.clear()
         if self._vc is not None:
-            try:
-                self._vc.stop_listening()
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 await self._vc.disconnect()
             except Exception as e:  # noqa: BLE001
@@ -610,7 +624,14 @@ class VoiceService:
             await stream_fn(text, style, source.feed)
         finally:
             source.finish()  # garantit la fin de lecture même si la synthèse échoue
-        await done.wait()
+            # `await done.wait()` DANS le `finally` : s'il restait dehors, une
+            # synthèse qui lève (Azure, réseau) le sautait, `_speak_locked`
+            # remettait `is_speaking = False` dans son propre `finally`, et
+            # discord.py était encore en train de vider le tampon PCM déjà
+            # alimenté. Or `is_speaking` est le seul filtre anti-larsen : la fin
+            # de sa propre voix rentrait dans l'historique, partait au
+            # fact_extractor, et Wally pouvait se répondre à lui-même.
+            await done.wait()
 
     async def _speak_batch(self, text: str, style: str | None) -> None:
         """Synthèse complète puis lecture (fallback si le provider TTS ne streame pas)."""

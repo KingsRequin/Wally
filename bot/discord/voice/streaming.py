@@ -242,6 +242,10 @@ class RemoteStreamingSTT:
         # `_pending_fallback` incrémenté (le `finally` ne s'exécute pas), de quoi
         # rendre Wally sourd en deux collectes.
         self._detached: set[asyncio.Task] = set()
+        # Posé par `close_all()` : sans lui, `feed_sync` rouvrait une session sur
+        # un pipeline fermé (le thread audio tourne encore pendant l'await de
+        # fermeture). Seul `RemoteSTTSession` avait son drapeau, pas le manager.
+        self._ferme = False
         self._unreachable_until: float = 0.0
         self._consecutive_unreachable: int = 0  # backoff exponentiel : ↑ à chaque échec, remis à 0 au succès
         # Câblés par le service.
@@ -302,6 +306,8 @@ class RemoteStreamingSTT:
 
     def feed_sync(self, speaker_id: str, pcm: bytes) -> None:
         """Streame un chunk audio pour ce locuteur (ouvre la session distante à la demande)."""
+        if self._ferme:
+            return
         now = self._now()
         self._last_activity[speaker_id] = now
         if speaker_id in self._fallback_speakers:
@@ -430,7 +436,13 @@ class RemoteStreamingSTT:
             self._detach(self.on_final(speaker_id, text, stt_ms))
 
     async def maintain(self, interval: float = 5.0) -> None:
-        """Ferme les sessions inactives (libère un slot / la VRAM côté serveur)."""
+        """Ferme les sessions inactives (libère un slot / la VRAM côté serveur).
+
+        Rouvre aussi le manager : `close_all()` le verrouille, et `join()`
+        RÉUTILISE le même objet d'une session vocale à l'autre — sans cette
+        levée, le STT serait mort dès le premier `leave()`.
+        """
+        self._ferme = False
         try:
             while True:
                 await asyncio.sleep(interval)
@@ -450,6 +462,21 @@ class RemoteStreamingSTT:
             await sess.close()
 
     async def close_all(self) -> None:
+        # Verrouillé d'abord : plus aucune session ne s'ouvre à partir d'ici.
+        self._ferme = True
+        # Les transcriptions détachées meurent avec le pipeline : un `final`
+        # produit par un pipeline remplacé remontait au service via `on_final`
+        # et était traité comme une parole courante.
+        for task in list(self._detached):
+            task.cancel()
+        self._detached.clear()
+        self._pending_fallback = 0
+        # Le backoff « injoignable » (`_unreachable_until`,
+        # `_consecutive_unreachable`) survit VOLONTAIREMENT : `close_all()` est
+        # appelé à chaque `leave()`, et l'effacer ferait re-tenter un serveur
+        # mort à chaque join. Un changement de config, lui, reconstruit l'objet
+        # entier via `build_streaming_stt` — le backoff repart donc à neuf de
+        # lui-même, sans qu'on ait à l'oublier ici.
         # Annuler les ouvertures EN COURS aussi : une session en attente de
         # `ready` (jusqu'à 35 s) survivait à la fermeture et se rattachait à un
         # pipeline remplacé.
