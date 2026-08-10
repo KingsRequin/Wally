@@ -11,6 +11,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from bot.config import Config
+    from bot.core.rss_feed import RSSFeedService
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.intelligence.memory.service import MemoryService

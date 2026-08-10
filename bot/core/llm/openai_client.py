@@ -18,6 +18,7 @@ from openai import (AsyncOpenAI, APIConnectionError, APIStatusError,
 from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE, FALLBACK_IMAGE_RESPONSE
 
 if TYPE_CHECKING:
+    from bot.config import ImageGenerationConfig
     from bot.db.database import Database
 
 _RESPONSES_API_PREFIXES = ("o1", "o3", "o4", "gpt-5")

@@ -11,6 +11,8 @@ from bot.intelligence.prompts import load_prompt
 from bot.intelligence.identity import render_identity
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from bot.config import Config
     from bot.core.llm import BaseLLMClient
 
