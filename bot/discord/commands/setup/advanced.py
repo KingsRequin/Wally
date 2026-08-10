@@ -342,7 +342,11 @@ class DecayModal(discord.ui.Modal, title="Decay des émotions (λ)"):
     joy = discord.ui.TextInput(label="joy decay_lambda (0 < x < 1)", max_length=6)
     sadness = discord.ui.TextInput(label="sadness decay_lambda (0 < x < 1)", max_length=6)
     curiosity = discord.ui.TextInput(label="curiosity decay_lambda (0 < x < 1)", max_length=6)
-    boredom = discord.ui.TextInput(label="boredom decay_lambda (0 < x < 1)", max_length=6)
+    # PAS `boredom decay_lambda` : `_apply_decay` saute l'ennui (il ne décroît
+    # pas, il MONTE avec l'inactivité). Ce champ était éditable et sans le
+    # moindre effet — l'owner croyait régler quelque chose. C'est la vitesse de
+    # montée qui gouverne, comme le dashboard l'expose déjà.
+    boredom = discord.ui.TextInput(label="ennui : montée par heure (0 < x < 1)", max_length=6)
 
     def __init__(self, bot: "WallyDiscord"):
         super().__init__()
@@ -352,7 +356,10 @@ class DecayModal(discord.ui.Modal, title="Decay des émotions (λ)"):
         self.joy.default = str(emotions["joy"].decay_lambda)
         self.sadness.default = str(emotions["sadness"].decay_lambda)
         self.curiosity.default = str(emotions["curiosity"].decay_lambda)
-        self.boredom.default = str(emotions["boredom"].decay_lambda)
+        self.boredom.default = str(
+            emotions["boredom"].boredom_rise_per_hour
+            if emotions["boredom"].boredom_rise_per_hour is not None else 0.1
+        )
 
     async def on_submit(self, interaction: discord.Interaction):
         raw = {
@@ -373,7 +380,10 @@ class DecayModal(discord.ui.Modal, title="Decay des émotions (λ)"):
             )
             return
         for emotion, value in parsed.items():
-            self.bot.config.emotions[emotion].decay_lambda = value
+            if emotion == "boredom":
+                self.bot.config.emotions["boredom"].boredom_rise_per_hour = value
+            else:
+                self.bot.config.emotions[emotion].decay_lambda = value
         self.bot.config.save()
         await interaction.response.send_message("✅ Decay des émotions mis à jour.", ephemeral=True)
 

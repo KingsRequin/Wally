@@ -216,7 +216,11 @@ async def log_history(request: Request, lines: int = 200):
     try:
         text = await asyncio.to_thread(log_path.read_text, encoding="utf-8", errors="replace")
         all_lines = text.splitlines()
-        recent = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        # Borné : `?lines=0` donnait `all_lines[-0:]`, c'est-à-dire le fichier
+        # ENTIER — l'inverse de ce que demandait l'appelant. Un négatif faisait
+        # de même à l'envers.
+        lines = max(1, min(int(lines), 5000))
+        recent = all_lines[-lines:]
         entries = [e for line in recent if (e := _parse_log_line(line)) is not None]
         return {"entries": entries, "file": str(log_path)}
     except Exception as exc:

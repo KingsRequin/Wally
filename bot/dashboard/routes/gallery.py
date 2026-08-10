@@ -32,6 +32,21 @@ def _extract_user_id_from_jwt(request: Request) -> tuple[str, dict] | tuple[None
 
 # --- Public routes ---
 
+# Ce que la galerie PUBLIQUE a le droit de montrer. La route renvoyait la ligne
+# entière (`SELECT gi.*`) : l'ID Discord réel du créateur, le chemin du fichier
+# sur le disque et le coût en dollars partaient donc à tout visiteur, sans
+# authentification. Le front public n'utilise que le titre, le prompt, le pseudo
+# et les trois badges — vérifié dans `public-starter/tabs/gallery.js`.
+_CHAMPS_PUBLICS = (
+    "id", "title", "prompt", "username", "model", "quality", "size",
+    "created_at", "votes",
+)
+
+
+def _vue_publique(image: dict) -> dict:
+    return {k: image[k] for k in _CHAMPS_PUBLICS if k in image}
+
+
 @public_router.get("/gallery")
 async def list_gallery(
     request: Request,
@@ -43,7 +58,7 @@ async def list_gallery(
 ):
     state = request.app.state.wally
     images = await state.db.get_gallery_images(search, sort_by, user_filter, limit, offset)
-    return {"images": images, "count": len(images)}
+    return {"images": [_vue_publique(i) for i in images], "count": len(images)}
 
 
 @public_router.get("/gallery/estimate-cost")
@@ -64,7 +79,7 @@ async def random_image(request: Request, filter: str = "all"):
     image = await state.db.get_random_gallery_image(filter)
     if not image:
         raise HTTPException(status_code=404, detail="No images in gallery")
-    return image
+    return _vue_publique(image)
 
 
 @public_router.get("/gallery/{image_id}")
@@ -77,8 +92,9 @@ async def get_image_detail(request: Request, image_id: str):
     user_voted = False
     if user_id:
         user_voted = await state.db.has_voted(image_id, user_id)
-    image["user_voted"] = user_voted
-    return image
+    vue = _vue_publique(image)
+    vue["user_voted"] = user_voted
+    return vue
 
 
 @public_router.get("/gallery/{image_id}/image")

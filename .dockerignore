@@ -9,6 +9,9 @@ __pycache__/
 .gitignore
 *.md
 !bot/persona/*.md
+# `roadmap.py` lit ce fichier au démarrage : exclu de l'image, l'endpoint
+# répondait 200 avec zéro section depuis toujours.
+!ROADMAP.md
 docs/
 tests/
 .claude/
