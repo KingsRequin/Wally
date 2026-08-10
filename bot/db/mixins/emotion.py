@@ -19,6 +19,21 @@ class EmotionMixin:
         rows = await self.fetch_all("SELECT emotion, value FROM emotion_state")
         return {row["emotion"]: float(row["value"]) for row in rows}
 
+    async def load_emotion_state_age(self) -> float | None:
+        """Horodatage de la dernière sauvegarde de l'état, ou None.
+
+        `updated_at` était écrit à chaque `save_emotion_state` et n'était jamais
+        relu : au redémarrage, l'état repartait tel quel, sans rattraper le temps
+        écoulé. Une colère à 0.80 sauvée à 2 h du matin revenait à 0.80 à 14 h.
+        """
+        row = await self.fetch_one("SELECT MAX(updated_at) AS t FROM emotion_state")
+        if row is None or row["t"] is None:
+            return None
+        try:
+            return float(row["t"])
+        except (TypeError, ValueError):
+            return None
+
     async def save_emotion_state(self, state: dict[str, float]) -> None:
         if not state:
             return

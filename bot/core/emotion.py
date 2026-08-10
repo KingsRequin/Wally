@@ -669,6 +669,28 @@ class EmotionEngine:
             for emotion, value in loaded.items():
                 if emotion in self._state:
                     self._state[emotion] = max(0.0, min(1.0, value))
+            # Rattrapage du temps d'arrêt. `updated_at` était écrit à chaque
+            # sauvegarde et jamais relu : l'état repartait figé, si bien qu'une
+            # colère à 0.80 sauvée à 2 h du matin revenait à 0.80 à 14 h. En
+            # reculant `_last_decay` à la date de la sauvegarde, la décroissance
+            # normale s'applique d'elle-même sur l'intervalle écoulé.
+            try:
+                sauvegarde = await self._db.load_emotion_state_age()
+            except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
+                logger.warning("Âge de l'état émotionnel illisible : {e}", e=exc)
+                sauvegarde = None
+            # Seuil : `_apply_decay` déclenche aussi la compétition entre
+            # émotions et la récupération de fatigue. Le faire tourner pour un
+            # redémarrage de trois secondes altérerait l'état sans raison — la
+            # boucle de decay s'en charge de toute façon toutes les 60 s.
+            ecoule = time.time() - sauvegarde if sauvegarde else 0.0
+            if sauvegarde and 0 < sauvegarde < time.time() and ecoule > 60:
+                self._last_decay = sauvegarde
+                self._apply_decay()
+                logger.info(
+                    "État émotionnel vieilli de {h:.1f} h d'arrêt : {s}",
+                    h=ecoule / 3600.0, s=self._state,
+                )
             logger.info("Emotion state loaded from DB: {s}", s=self._state)
             # Load mood layer
             mood = await self._db.load_mood_state()

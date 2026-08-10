@@ -186,6 +186,10 @@ class CognitiveLoop:
         self._typing_seen: dict[tuple[str, str], float] = {}
         self._task: asyncio.Task | None = None
         self._running = False
+        # Posé par `notify_activity`/`notify_event` quand la sollicitation VISE
+        # Wally : écourte le sommeil de `_run()` au lieu d'attendre l'intervalle
+        # calculé avant elle.
+        self._reveil = asyncio.Event()
 
     def notify_activity(
         self, channel_id: int, author: str, content: str,
@@ -205,6 +209,9 @@ class CognitiveLoop:
         # tick suit la cadence idle.
         if relevant or is_dm:
             self._last_relevant_activity_ts = self._last_activity_ts
+            # Écourte le sommeil en cours : sans ça, `_run()` restait bloqué sur
+            # l'intervalle calculé AVANT la sollicitation (jusqu'à une heure).
+            self._reveil.set()
             # Réveil : si ça faisait des heures que plus personne ne le
             # sollicitait, cette sollicitation le tire du sommeil → le digest de
             # ce qui s'est dit entre-temps est armé (généré au tick suivant).
@@ -265,6 +272,7 @@ class CognitiveLoop:
         self._last_activity_ts = time.monotonic()
         if relevant:
             self._last_relevant_activity_ts = self._last_activity_ts
+            self._reveil.set()
         self._recent_interactions.append({
             "channel": str(channel_id),
             "author": "(événement)",
@@ -666,6 +674,14 @@ class CognitiveLoop:
             if self._bedroom_channel_id:
                 known_channels = known_channels | {self._bedroom_channel_id}
             last_channel = self._recent_interactions[-1]["channel"] if self._recent_interactions else None
+            # Horloge RAFRAÎCHIE : le `now` du haut du tick a été pris avant
+            # `build_context` et le raisonnement, soit 30 à 90 s d'appels LLM
+            # plus tôt. Tous les cooldowns qui suivent (silence idle, anti-récap
+            # après réponse directe, fraîcheur d'un canal) le comparaient à un
+            # `time.monotonic()` frais : ils étaient sous-estimés d'un tick
+            # entier, et laissaient donc passer des prises de parole qu'ils
+            # étaient censés retenir.
+            now = time.monotonic()
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
                     await asyncio.sleep(min(decision.sleep_seconds, 3600))
@@ -771,7 +787,12 @@ class CognitiveLoop:
                     # 4. Amortisseur appris : aux heures/jours où l'audience est
                     #    peu réceptive (stats SocialRhythm), la parole spontanée ne
                     #    passe que probabilistiquement. Au-dessus de R_REF : aucun frein.
-                    if self._social_rhythm is not None:
+                    # Un rappel que Wally s'était FIXÉ n'est pas de la parole
+                    # opportuniste : il a déjà été désarmé (`clear_schedule`) et
+                    # ne repassera jamais. Le soumettre à un tirage aléatoire le
+                    # jetait définitivement — la nuit, où la réceptivité apprise
+                    # est basse, cela concernait la majorité d'entre eux.
+                    if self._social_rhythm is not None and forced_seed is None:
                         try:
                             r = self._social_rhythm.receptivity(_now_paris())
                         except Exception:  # noqa: BLE001
@@ -837,7 +858,18 @@ class CognitiveLoop:
                 logger.warning("WakeDigest.bootstrap: {}", e)
         while self._running:
             interval = self._tick_interval()
-            await asyncio.sleep(interval)
+            # Sommeil INTERRUPTIBLE. L'intervalle est figé avant l'attente et
+            # peut atteindre une heure en idle : un `sleep()` nu laissait Wally
+            # dormir tout ce temps même si on lui parlait juste après. La cadence
+            # adaptative était donc morte après chaque période creuse — le
+            # premier message d'un réveil pouvait attendre le plafond entier.
+            try:
+                await asyncio.wait_for(self._reveil.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                self._reveil.clear()
+                logger.debug("CognitiveLoop : sommeil écourté par une sollicitation")
             if not self._running:
                 break
             await self._tick()
