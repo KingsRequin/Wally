@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from bot.intelligence.meta_agent import MetaAgent, MetaDecision, parse_decisions
+from bot.intelligence.meta_agent import MetaDecision, parse_decisions
 
 
 def test_parse_think():

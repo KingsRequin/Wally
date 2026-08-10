@@ -96,7 +96,6 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     from bot.intelligence.fact_extractor import FactExtractor
     from bot.core.reaction_tracker import ReactionTracker
     from bot.dashboard.routes.sse import broadcast_action_event
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     # ── EmotionEngine ─────────────────────────────────────────────────────────
     emotion = EmotionEngine(config, db=db)

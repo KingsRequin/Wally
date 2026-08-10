@@ -3,11 +3,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from loguru import logger
 
-from bot.intelligence.identity import render_identity
 
 _THINK_RE = re.compile(r"\[THINK\]")
 # Deux passes pour SPEAK :
@@ -82,22 +79,3 @@ def parse_decisions(text: str) -> list[MetaDecision]:
         decisions.append(MetaDecision(action="THINK"))
 
     return decisions
-
-
-class MetaAgent:
-    def __init__(self, llm, prompts_dir: str | Path) -> None:
-        self._llm = llm
-        self._system = render_identity((Path(prompts_dir) / "meta_agent_system.md").read_text(encoding="utf-8"))
-
-    async def decide(self, monologue_text: str) -> list[MetaDecision]:
-        response = await self._llm.complete(
-            self._system,
-            [{"role": "user", "content": monologue_text}],
-        )
-        decisions = parse_decisions(response)
-        # Observabilité #3 : le modèle a voulu parler mais le tag n'a pas été
-        # reconnu → on le rend visible au lieu de le perdre silencieusement.
-        if "SPEAK" in response and not any(d.action == "SPEAK" for d in decisions):
-            logger.warning("MetaAgent: intention SPEAK non parsée — réponse brute : {}", response[:300])
-        logger.debug("MetaAgent: {} décision(s) — {}", len(decisions), [d.action for d in decisions])
-        return decisions

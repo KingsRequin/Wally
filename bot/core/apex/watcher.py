@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from typing import Optional
 
 from loguru import logger
 

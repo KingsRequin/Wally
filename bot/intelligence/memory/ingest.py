@@ -154,7 +154,16 @@ class MemoryIngest:
         subject_hint: str | None = None,
     ) -> IngestResult:
         """Extrait les faits du `content` puis réconcilie chacun. Tout est scopé
-        au `user_id` fourni."""
+        au `user_id` fourni.
+
+        AUCUN chemin de production n'emprunte cette méthode : `fact_extractor`
+        fait sa propre extraction multi-utilisateurs puis appelle directement
+        `reconcile_candidate`. Elle n'est pour autant PAS morte — treize
+        scénarios de `test_ingest.py` s'en servent comme façade pour couvrir la
+        réconciliation à deux étages, qui, elle, tourne en prod. La retirer sans
+        réécrire ces tests sur `reconcile_candidate` échangerait 90 lignes
+        inertes contre un trou de couverture sur du code vivant.
+        """
         candidates = await self._extract_facts(content, source, user_id)
         result = IngestResult(raw_extracted_count=len(candidates))
 

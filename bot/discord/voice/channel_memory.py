@@ -6,7 +6,6 @@ soirée, et un simple rebuild d'image le ramenait à son point de départ.
 """
 from __future__ import annotations
 
-from typing import Optional
 
 from loguru import logger
 
