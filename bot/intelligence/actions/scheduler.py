@@ -228,6 +228,11 @@ class ActionScheduler:
             self._scheduler.add_job(self._trigger_job, "cron", args=[task_id],
                                     id=job_id, replace_existing=True, timezone=TZ,
                                     **_TOLERANCE_RETARD, **cron_kwargs)
+        else:
+            # Ceinture : `create()` refuse déjà les types inconnus, mais une
+            # ligne insérée autrement passait ici SANS aucune branche ni `else`
+            # — donc sans job, sans log, et la tâche restait « active » à vie.
+            raise ValueError(f"schedule_type inconnu, aucun job créé : {schedule_type!r}")
 
     async def _trigger_job(self, task_id: int) -> None:
         task = await self._db.get_action_task(task_id)

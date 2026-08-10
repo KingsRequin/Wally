@@ -75,14 +75,14 @@ async def test_execute_without_bots_returns_error(executor):
 @pytest.mark.asyncio
 async def test_deliver_discord(executor, mock_discord_bot):
     executor.set_bots(mock_discord_bot, MagicMock())
-    await executor.deliver("Hello!", "discord", "123", dm=False)
+    await executor.deliver("Hello!", "discord", "123")
     mock_discord_bot.get_channel.assert_called_with(123)
 
 
 @pytest.mark.asyncio
 async def test_deliver_twitch(executor, mock_twitch_bot):
     executor.set_bots(MagicMock(), mock_twitch_bot)
-    await executor.deliver("Hello!", "twitch", "general", dm=False)
+    await executor.deliver("Hello!", "twitch", "general")
     mock_twitch_bot.get_channel.assert_called_with("general")
 
 

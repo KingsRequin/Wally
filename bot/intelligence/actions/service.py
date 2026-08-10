@@ -58,7 +58,14 @@ CREATE_TOOL = {
                     "properties": {
                         "platform": {"type": "string", "enum": ["discord", "twitch", "web"]},
                         "channel_id": {"type": "string"},
-                        "dm": {"type": "boolean", "description": "Envoyer en DM au créateur"},
+                        # `dm` RETIRÉ du schéma : il n'était lu nulle part —
+                        # ni par `create()`, ni en base (aucune colonne), ni par
+                        # `ActionExecutor.execute`, qui appelle toujours
+                        # `deliver(..., dm=False)` en dur. « Rappelle-moi ça en
+                        # privé » produisait donc un rappel délivré PUBLIQUEMENT
+                        # dans le salon d'origine, et le modèle avait toute
+                        # raison de croire que ça marchait : c'est le schéma qui
+                        # le lui promettait. Mieux vaut ne rien promettre.
                     },
                 },
             },
@@ -158,6 +165,17 @@ class ActionService:
             }
 
         schedule_type = schedule.get("type", "")
+        # Une valeur hors énumération — le modèle écrit « daily », « weekly » —
+        # traversait sans `missing`, `spec` restait vide, et
+        # `_add_apscheduler_job` n'avait aucune branche correspondante : la
+        # tâche était annoncée créée, n'était JAMAIS exécutée, et occupait une
+        # des dix places du quota pour toujours (`reload_all` ne marque `missed`
+        # que les `once`).
+        if schedule_type not in ("once", "interval", "cron"):
+            return {
+                "status": "error",
+                "message": "Type de planification inconnu : utilise once, interval ou cron.",
+            }
         missing = []
 
         if schedule_type == "once":
@@ -172,15 +190,27 @@ class ActionService:
                     grace = datetime.now(TZ) - timedelta(seconds=PAST_GRACE_SECONDS)
                     if run_at_dt < grace:
                         return {"status": "error", "message": "L'heure spécifiée est dans le passé."}
-                except ValueError:
+                except (ValueError, TypeError):
+                    # `TypeError` aussi : `run_at` peut ne pas être une chaîne.
                     return {"status": "error", "message": "Format de date invalide."}
 
         elif schedule_type == "interval":
-            interval = schedule.get("interval_minutes")
+            # Converti AVANT comparaison : le schéma annonce `integer`, mais
+            # aucun provider ne le garantit (DeepSeek rend régulièrement "30").
+            # `"30" < 5` levait un TypeError, avalé par la boucle de
+            # tool-calling et rendu au modèle en erreur Python brute — le rappel
+            # n'était pas créé et rien ne nommait la vraie cause.
+            brut = schedule.get("interval_minutes")
+            try:
+                interval = int(brut) if brut is not None else 0
+            except (TypeError, ValueError):
+                return {"status": "error", "message": "Intervalle invalide (minutes entières)."}
             if not interval:
                 missing.append("schedule.interval_minutes")
             elif interval < MIN_INTERVAL_MINUTES:
                 return {"status": "error", "message": f"Intervalle minimum: {MIN_INTERVAL_MINUTES} minutes."}
+            else:
+                schedule["interval_minutes"] = interval
 
         elif schedule_type == "cron":
             if "cron_hour" not in schedule and "cron_minute" not in schedule:

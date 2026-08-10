@@ -190,6 +190,8 @@ class CognitiveLoop:
         # Wally : écourte le sommeil de `_run()` au lieu d'attendre l'intervalle
         # calculé avant elle.
         self._reveil = asyncio.Event()
+        # Durée réclamée par un `[SLEEP]` du dernier tick, consommée une fois.
+        self._sleep_hint: float | None = None
 
     def notify_activity(
         self, channel_id: int, author: str, content: str,
@@ -486,10 +488,24 @@ class CognitiveLoop:
         context.web_finding = f"{query} → {finding}"
         logger.debug("web_search cognitif : 2e passe de raisonnement sur « {} »", query[:60])
         try:
-            return await self._reasoning.reason(context)
+            seconde = await self._reasoning.reason(context)
         except Exception as e:  # noqa: BLE001
             logger.warning("web_search 2e passe échouée, pensée initiale conservée: {}", e)
             return result
+
+        # La 1re passe — celle qui a DÉCIDÉ de chercher — a déjà écrit sa pensée
+        # en base via `reason()`. Le tick ne connaîtra ensuite que la seconde :
+        # sans archivage, la première restait ACTIVE et ressortait par
+        # `search_by_category(THOUGHT)` et `sample_random`, ré-amorçant le
+        # vagabondage avec la pensée qu'on croyait remplacée. Du carburant à
+        # ressassement, compté en prime comme un vrai fil par le juge.
+        if self._facts is not None and getattr(result, "thought_fact_id", None):
+            from bot.intelligence.memory.facts import FactStatus
+            try:
+                await self._facts.set_status(result.thought_fact_id, FactStatus.ARCHIVED)
+            except Exception as e:  # noqa: BLE001 — jamais bloquant
+                logger.warning("Archivage de la pensée de 1re passe échoué : {}", e)
+        return seconde
 
     async def _consume_wake_digest(self) -> str | None:
         """Récupère le digest du sommeil si un réveil est armé. Ne lève jamais :
@@ -684,7 +700,20 @@ class CognitiveLoop:
             now = time.monotonic()
             for decision in decisions:
                 if decision.action == "SLEEP" and getattr(decision, "sleep_seconds", None):
-                    await asyncio.sleep(min(decision.sleep_seconds, 3600))
+                    # REPORTÉ sur le prochain sommeil, pas dormi ici. Un
+                    # `asyncio.sleep` au milieu du tick était triplement
+                    # nuisible : non interruptible par `_reveil` (contrairement
+                    # à celui de `_run`, corrigé exprès), il retardait d'autant
+                    # les décisions SUIVANTES du même tick, et il rendait périmé
+                    # le `now` rafraîchi juste au-dessus — donc tous les
+                    # cooldowns d'après laissaient passer ce qu'ils devaient
+                    # retenir. Un `[SLEEP 3600]` halluciné rendait Wally sourd
+                    # une heure entière, sans un log.
+                    self._sleep_hint = min(float(decision.sleep_seconds), 3600.0)
+                    logger.info(
+                        "CognitiveLoop: SLEEP demandé — prochain tick dans {s:.0f}s",
+                        s=self._sleep_hint,
+                    )
                     continue
                 if decision.action == "SPEAK":
                     # Coupure de la parole spontanée : Wally garde sa vie mentale
@@ -857,7 +886,11 @@ class CognitiveLoop:
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le boot
                 logger.warning("WakeDigest.bootstrap: {}", e)
         while self._running:
-            interval = self._tick_interval()
+            # Un `[SLEEP]` demandé au tick précédent l'emporte, une seule fois.
+            # Il passe par ce sommeil-ci, qui est interruptible : Wally reste
+            # joignable si on lui parle pendant sa sieste.
+            interval = self._sleep_hint or self._tick_interval()
+            self._sleep_hint = None
             # Sommeil INTERRUPTIBLE. L'intervalle est figé avant l'attente et
             # peut atteindre une heure en idle : un `sleep()` nu laissait Wally
             # dormir tout ce temps même si on lui parlait juste après. La cadence

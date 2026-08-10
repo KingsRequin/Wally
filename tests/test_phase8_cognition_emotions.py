@@ -27,6 +27,7 @@ def _boucle():
     c = CognitiveLoop.__new__(CognitiveLoop)
     c._running = False
     c._reveil = asyncio.Event()
+    c._sleep_hint = None   # durée réclamée par un [SLEEP] du tick précédent
     c._last_activity_ts = 0.0
     c._last_relevant_activity_ts = 0.0
     c._social_rhythm = None

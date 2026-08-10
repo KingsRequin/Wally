@@ -55,13 +55,19 @@ class ActionExecutor:
         # Deliver result to target channel
         if result and target["platform"] and target["channel_id"]:
             try:
-                await self.deliver(str(result), target["platform"], target["channel_id"], dm=False)
+                await self.deliver(str(result), target["platform"], target["channel_id"])
             except Exception as e:
                 logger.error("Failed to deliver result for task {}: {}", task["id"], e)
 
         return str(result) if result else "OK"
 
-    async def deliver(self, message: str, platform: str, channel_id: str, dm: bool = False) -> None:
+    async def deliver(self, message: str, platform: str, channel_id: str) -> None:
+        """Publie le message dans le salon cible.
+
+        Le paramètre `dm` a été retiré : il n'était utilisé dans aucune branche
+        du corps, et le schéma de l'outil promettait au modèle un envoi en privé
+        qui n'a jamais existé.
+        """
         if platform == "discord":
             if self._discord_bot is None:
                 logger.warning("Discord bot not available for delivery")
