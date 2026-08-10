@@ -515,6 +515,16 @@ class EmotionEngine:
             return delta
         key = (user_id, emotion)
         now = time.time()
+        # Purge paresseuse : seules les LISTES étaient élaguées, jamais les clés.
+        # Quatre entrées par personne croisée — chat Twitch compris — sur un
+        # process qui tourne des semaines, sans borne. Même patron que celui
+        # déjà appliqué à `_cooldowns` et `_relances`.
+        if len(self._habituation_tracker) > 512:
+            fenetre = getattr(hab_cfg, "reset_seconds", 1800)
+            self._habituation_tracker = {
+                k: v for k, v in self._habituation_tracker.items()
+                if v and now - v[-1][1] < fenetre
+            }
         if key not in self._habituation_tracker:
             self._habituation_tracker[key] = []
         entries = self._habituation_tracker[key]

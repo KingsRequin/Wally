@@ -68,8 +68,18 @@ def cached_weather() -> str | None:
 
     Le cache est alimenté par `fetch_weather_france()` dans la boucle cognitive.
     Permet aux chemins de réponse synchrones (réactifs) d'y accéder sans await.
+
+    BORNÉ par le même TTL que l'écriture : l'horodatage n'était jamais relu ici,
+    et `fetch_weather_france` conserve délibérément l'ancienne valeur en cas
+    d'échec réseau sans rafraîchir sa date. Une panne de wttr.in — ou l'arrêt des
+    appels par la boucle cognitive — faisait donc affirmer à Wally, au présent
+    (« Météo en France en ce moment : … »), une météo vieille de plusieurs jours.
+    Mieux vaut ne rien dire que dire faux.
     """
-    return _weather_cache[1]
+    ts, valeur = _weather_cache
+    if valeur is None or (time.time() - ts) > _WEATHER_TTL * 2:
+        return None
+    return valeur
 
 
 async def fetch_weather_france() -> str | None:

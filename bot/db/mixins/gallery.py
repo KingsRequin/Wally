@@ -131,7 +131,11 @@ class GalleryMixin:
     async def get_user_image_count_today(self, user_id: str) -> int:
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM gallery_images "
-            "WHERE user_id = ? AND date(created_at) = date('now')",
+            # `'localtime'` des DEUX côtés : SQLite écrit `datetime('now')` en
+            # UTC quoi qu'il arrive, alors que l'app vit en Europe/Paris. Sans
+            # conversion, le quota quotidien d'images se réinitialisait à 2 h du
+            # matin heure française, en plein milieu d'un live du soir.
+            "WHERE user_id = ? AND date(created_at, 'localtime') = date('now', 'localtime')",
             (user_id,),
         )
         row = await cursor.fetchone()
@@ -139,7 +143,8 @@ class GalleryMixin:
 
     async def get_total_image_count_today(self) -> int:
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM gallery_images WHERE date(created_at) = date('now')"
+            "SELECT COUNT(*) FROM gallery_images "
+            "WHERE date(created_at, 'localtime') = date('now', 'localtime')"
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
@@ -203,7 +208,10 @@ class GalleryMixin:
             "FROM gallery_images gi "
             "LEFT JOIN (SELECT image_id, COUNT(*) AS votes FROM gallery_votes GROUP BY image_id) v "
             "  ON v.image_id = gi.id "
-            "WHERE date(gi.created_at) = ? "
+            # La date vient de `journal.py`, construite en Europe/Paris : une
+            # image créée entre minuit et 2 h était comptée dans la « galerie du
+            # jour » de la VEILLE, ou disparaissait du journal.
+            "WHERE date(gi.created_at, 'localtime') = ? "
             "ORDER BY gi.created_at ASC",
             (date_str,),
         )

@@ -122,7 +122,19 @@ class TrustMixin:
         """Fetch trust scores for multiple (platform, user_id) pairs in one query."""
         if not users:
             return {}
-        rows = await self.fetch_all("SELECT platform, user_id, score FROM trust_scores")
+        # BORNÉ aux personnes demandées : la requête lisait la table entière
+        # puis filtrait en Python. Le gain « une seule requête » est réel, mais
+        # il ne justifie pas un scan complet pour deux participants — et le coût
+        # croissait avec la base à chaque construction de prompt.
+        marques = ",".join("(?,?)" for _ in users)
+        params: list = []
+        for p_, uid in users:
+            params.extend([p_, uid])
+        rows = await self.fetch_all(
+            "SELECT platform, user_id, score FROM trust_scores "
+            f"WHERE (platform, user_id) IN (VALUES {marques})",
+            tuple(params),
+        )
         lookup = {(r["platform"], r["user_id"]): float(r["score"]) for r in rows}
         return {(p, uid): lookup.get((p, uid), 0.0) for p, uid in users}
 
@@ -132,8 +144,14 @@ class TrustMixin:
         """Fetch love scores for multiple (platform, user_id) pairs in one query with lazy decay."""
         if not users:
             return {}
+        marques = ",".join("(?,?)" for _ in users)
+        params: list = []
+        for p_, uid in users:
+            params.extend([p_, uid])
         rows = await self.fetch_all(
-            "SELECT platform, user_id, love, love_updated_at FROM trust_scores"
+            "SELECT platform, user_id, love, love_updated_at FROM trust_scores "
+            f"WHERE (platform, user_id) IN (VALUES {marques})",
+            tuple(params),
         )
         now = time.time()
         result: dict[tuple[str, str], float] = {}

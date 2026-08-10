@@ -12,7 +12,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.core.apex.reader import PlayerProfile
+from loguru import logger
+
+from bot.core.apex.reader import PlayerProfile, _num
 
 APEX_PANELS = ("rank", "status", "stats", "map", "craft", "predator", "servers")
 
@@ -135,10 +137,16 @@ def predator_panel(raw: Any) -> dict | None:
         info = rp.get(cle)
         if not isinstance(info, dict):
             continue
-        try:
-            valeur = int(info.get("val"))
-        except (TypeError, ValueError):
+        # Le lecteur tolérant, comme le chemin texte : `int()` échouait sur
+        # « 1234.5 » ou « 12 345 » et faisait disparaître la plateforme du
+        # panneau SANS aucune trace — les deux chemins ne montraient donc pas la
+        # même chose pour une même réponse d'API.
+        valeur = _num(info.get("val"))
+        if valeur is None:
+            logger.debug("Apex predator : valeur illisible pour {p} ({v!r})",
+                         p=nom, v=info.get("val"))
             continue
+        valeur = int(valeur)
         rows.append({
             "platform": nom,
             "rp": valeur,
