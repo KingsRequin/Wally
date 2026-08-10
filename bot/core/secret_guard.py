@@ -66,12 +66,15 @@ def _pattern_for(folded: str) -> str:
     """Motif tolérant aux accents, à la casse et à l'épellation.
 
     Un mot épelé — « o r d i n a t e u r » — est un mot dit. Les séparateurs
-    admis entre lettres restent l'espace, le tiret, le point : de quoi attraper
-    l'épellation sans masquer une phrase entière par accident.
+    admis entre lettres couvrent l'espace, le tiret, le point, mais aussi la
+    VIRGULE et ses voisines : « F, L, E, C, H, E » ressortait intact alors que
+    c'est la ponctuation la plus naturelle d'une épellation, et que ce module
+    existe précisément pour ça. Le jeu reste étroit — ni lettres ni chiffres —
+    donc aucun risque de masquer une phrase entière par accident.
     """
     letters = [f"[{_VARIANTS.get(c, c)}]" if c.isalpha() else re.escape(c)
                for c in folded]
-    return r"[\s\-_.]*".join(letters)
+    return r"[\s\-_.,;:/·'’’]*".join(letters)
 
 
 def redact(text: str) -> str:

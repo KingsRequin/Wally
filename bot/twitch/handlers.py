@@ -14,6 +14,7 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
+from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
@@ -161,6 +162,13 @@ async def _envoyer_reponse_twitch(
     exposerait à un ban de la connexion, ce que le gain d'un fil de réponse ne vaut
     pas. Tout imprévu retombe sur la mention plutôt que d'avaler la réponse.
     """
+    # Dernier filet, ICI plutôt que dans `TwitchAPI.send_message` : celui-ci ne
+    # couvre que la chaîne HOME via Helix. Les trois sorties IRC — PRIVMSG
+    # taggé, repli mention, chaîne invitée — envoyaient le texte brut. Or le mot
+    # du pendu circule dans TOUS les prompts tant que la partie tourne, y
+    # compris chez un invité : Wally pouvait le publier hors de portée de la
+    # ceinture, et gâcher la partie pour tout le monde.
+    texte = redact(texte)
     if channel_name not in getattr(bot, "_channel_ids", {}):
         # Le mode « perdu » existait mais n'était atteignable que sur IRC : ce
         # chemin-ci rendait « helix » même quand l'API avait refusé le message.
@@ -544,8 +552,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 relevant=_relevant,
                 user_key=f"twitch:{user_id}",
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — la perception ne casse pas le chat
+            # C'est le SEUL point où le chat Twitch réveille la cadence
+            # cognitive : un silence ici rendait Wally sourd à Twitch sans
+            # qu'aucun log ne l'indique. « Une absence sans log = un `continue`
+            # silencieux », déjà vu sur le congé vocal.
+            logger.warning("Cognition : notify_activity (twitch) en échec : {e}", e=exc)
     if getattr(bot, "fact_extractor", None) is not None:
         bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False,
                                           origin=f"Twitch/{channel_name}")
@@ -561,8 +573,20 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         trace_id=_trace, author=author, author_id=user_id, content=content,
     )
 
+    # Trigger check — calculé AVANT le spontané : les deux chemins ne doivent
+    # pas se cumuler. Le bloc spontané tournait sans aucune garde, alors que le
+    # pendant Discord est enfermé dans un `if not triggered:` ; et
+    # `_check_spontaneous_trigger` répond « emotion » sur le seul état interne,
+    # quel que soit le contenu. Un message mentionnant Wally pendant que l'ennui
+    # est haut déclenchait donc DEUX messages pour une seule sollicitation, le
+    # spontané échappant en prime au cooldown utilisateur.
+    bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
+    triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
+        name.lower() in content_lower for name in bot.config.bot.trigger_names
+    )
+
     # Spontaneous intervention (Twitch)
-    if bot.config.bot.spontaneous_twitch_enabled:
+    if not triggered and bot.config.bot.spontaneous_twitch_enabled:
         import time as _time
         state = bot.emotion.get_state()
         trigger_type = _check_spontaneous_trigger(
@@ -590,11 +614,6 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                 )
                 _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
 
-    # Trigger check
-    bot_nick = os.getenv("TWITCH_BOT_NICK", "").lower()
-    triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
-        name.lower() in content_lower for name in bot.config.bot.trigger_names
-    )
     if not triggered:
         return
 
@@ -981,10 +1000,19 @@ async def _announce_overlay_image(
         # 2. Envoyer overlay + message chat en même temps
         dashboard_state.overlay_image_feed.publish(overlay_payload)
 
+        # `redact` ici aussi : ces deux chemins n'appellent pas
+        # `_envoyer_reponse_twitch`. Et un `if irc_channel:` SANS `else`
+        # abandonnait le message en silence tout en le versant au prélude et à
+        # la mémoire juste après — Wally croyait avoir dit ce que personne
+        # n'avait lu. `_envoyer_reponse_twitch` gère ce cas depuis longtemps ;
+        # ces deux-là ne l'avaient pas repris.
+        reply = redact(reply)
         if channel_name in bot._channel_ids:
             irc_channel = bot.get_channel(channel_name)
-            if irc_channel:
-                await irc_channel.send(reply)
+            if irc_channel is None:
+                logger.warning("IRC non connecté pour {ch}, message ignoré", ch=channel_name)
+                return
+            await irc_channel.send(reply)
         else:
             await bot.twitch_api.send_message(text=reply)
 
@@ -1058,10 +1086,19 @@ async def _spontaneous_respond_twitch(
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
+        # `redact` ici aussi : ces deux chemins n'appellent pas
+        # `_envoyer_reponse_twitch`. Et un `if irc_channel:` SANS `else`
+        # abandonnait le message en silence tout en le versant au prélude et à
+        # la mémoire juste après — Wally croyait avoir dit ce que personne
+        # n'avait lu. `_envoyer_reponse_twitch` gère ce cas depuis longtemps ;
+        # ces deux-là ne l'avaient pas repris.
+        reply = redact(reply)
         if channel_name in bot._channel_ids:
             irc_channel = bot.get_channel(channel_name)
-            if irc_channel:
-                await irc_channel.send(reply)
+            if irc_channel is None:
+                logger.warning("IRC non connecté pour {ch}, message ignoré", ch=channel_name)
+                return
+            await irc_channel.send(reply)
         else:
             await bot.twitch_api.send_message(text=reply)
         _clog(
