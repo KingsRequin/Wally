@@ -61,8 +61,17 @@ async def _resolve_missing_usernames(
         elif platform == "twitch" and raw_id.isdigit() and len(raw_id) <= 12 and twitch_bot is not None:
             twitch_pending.append(u)
 
-    # Discord — try cache first (get_user), fallback to fetch_user
-    for u in discord_pending:
+    # Discord — cache d'abord (`get_user`), repli sur `fetch_user`.
+    #
+    # PARALLÉLISÉ et borné : c'était une boucle séquentielle d'allers-retours
+    # HTTP Discord, un par utilisateur sans pseudo. À la première ouverture de
+    # l'onglet Mémoire après un import, la requête tenait plusieurs secondes ;
+    # et un 429 sur `fetch_user` retardait tout le reste du bot, ces appels
+    # partageant le bucket global du client discord.py. Le sémaphore garde la
+    # pression basse tout en supprimant l'attente cumulée.
+    _semaphore = asyncio.Semaphore(5)
+
+    async def _resoudre_discord(u):
         raw_id = u["user_id"].split(":", 1)[1]
         try:
             discord_user = discord_bot.get_user(int(raw_id))
@@ -94,6 +103,12 @@ async def _resolve_missing_usernames(
                 )
             except Exception:  # noqa: BLE001 — au pire on retentera
                 pass
+
+    async def _resoudre_borne(u):
+        async with _semaphore:
+            await _resoudre_discord(u)
+
+    await asyncio.gather(*(_resoudre_borne(u) for u in discord_pending))
 
     # Twitch — batch fetch (max 100 per call)
     if twitch_pending:

@@ -10,7 +10,7 @@ from loguru import logger
 from bot.core.apex.watcher import current_apex_block
 from bot.core.stream_feed import current_stream_feed_block
 from bot.core.stream_watcher import current_stream_awareness
-from bot.core.system_info import cached_weather, read_host_metrics
+from bot.core.system_info import cached_host_metrics, cached_weather
 from bot.intelligence.identity import render_identity
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "persona", "prompts")
@@ -261,7 +261,7 @@ class PromptBuilder:
         # Injecté sur TOUS les chemins de réponse, pas seulement la boucle cognitive
         # — sinon il nie avoir une température quand on l'interroge directement.
         body_lines = []
-        if host_metrics := read_host_metrics():
+        if host_metrics := cached_host_metrics():
             body_lines.append(
                 f"Ta machine (ton « corps ») en ce moment : {host_metrics}. "
                 f"C'est TA température et TA charge réelles — n'en parle que si "

@@ -34,6 +34,10 @@ def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
+# Au-delà, le MATCH cesse de filtrer (cf. `_fts_match_query`).
+_FTS_MAX_TERMS = 24
+
+
 def _fts_match_query(query: str) -> str:
     """Transforme une requête libre en expression FTS5 MATCH sûre.
 
@@ -45,6 +49,16 @@ def _fts_match_query(query: str) -> str:
     terms = [t for t in tokens if len(t) >= 2 and t not in _FTS_STOPWORDS]
     if not terms:
         return ""
+    # BORNÉ aux termes les plus discriminants. `_known_facts_hint` passe la
+    # conversation ENTIÈRE en requête : mesuré sur la base réelle avec quinze
+    # messages, 200 termes en OR remontaient 10 885 lignes sur 14 388 — le MATCH
+    # ne filtrait plus rien, et bm25 sur autant de termes favorise les faits
+    # LONGS plutôt que les faits pertinents. Le bloc « déjà en mémoire » perdait
+    # sa raison d'être. Les mots longs sont les plus porteurs de sens ; le tri
+    # final reste alphabétique pour que la requête soit reproductible.
+    if len(terms) > _FTS_MAX_TERMS:
+        uniques = sorted(set(terms), key=lambda t: (-len(t), t))[:_FTS_MAX_TERMS]
+        terms = sorted(uniques)
     return " OR ".join(f'"{t}"' for t in terms)
 
 

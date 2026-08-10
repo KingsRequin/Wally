@@ -63,6 +63,30 @@ def read_host_metrics() -> str | None:
     return ", ".join(parts) if parts else None
 
 
+_host_cache: tuple[float, str | None] = (0.0, None)
+_HOST_TTL = 30.0
+
+
+def cached_host_metrics() -> str | None:
+    """Métriques hôte, avec un cache court.
+
+    `read_host_metrics()` fait un `glob` sur /sys/class/thermal puis plusieurs
+    `open().read()` synchrones. `attention_agent` l'enveloppe déjà dans
+    `asyncio.to_thread` — mais `build_system_prompt` l'appelait EN DIRECT, sur le
+    chemin de chaque message Discord, Twitch et vocal : la boucle asyncio gelait
+    le temps des lectures sysfs, à chaque message, sur un conteneur qui partage
+    son SSD avec quinze autres services. Les deux traitements se contredisaient.
+    """
+    global _host_cache
+    ts, valeur = _host_cache
+    maintenant = time.time()
+    if valeur is not None and (maintenant - ts) < _HOST_TTL:
+        return valeur
+    valeur = read_host_metrics()
+    _host_cache = (maintenant, valeur)
+    return valeur
+
+
 def cached_weather() -> str | None:
     """Météo en cache, sans déclencher de requête réseau.
 

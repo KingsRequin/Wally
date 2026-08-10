@@ -93,14 +93,33 @@ class ApexClient:
     async def _fetch(self, endpoint: str, params: dict) -> Any:
         """Le seul point qui touche le réseau — doublé dans les tests."""
         await self._rate_limit()
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{_BASE_URL}/{endpoint}",
-                headers={"Authorization": self._api_key},
-                params=params,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        # Client PERSISTANT : un `AsyncClient` par appel refaisait une poignée
+        # de main TLS complète à chaque fois — 100 à 200 ms ajoutés à chaque
+        # sonde du watcher (toutes les 90 s pendant tout le live) et à chaque
+        # panneau d'overlay. Le docstring de la classe annonçait pourtant
+        # « un seul objet parle au réseau ».
+        client = self._http_client()
+        resp = await client.get(
+            f"/{endpoint}",
+            headers={"Authorization": self._api_key},
+            params=params,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _http_client(self) -> httpx.AsyncClient:
+        client = getattr(self, "_http", None)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(timeout=10, base_url=_BASE_URL)
+            self._http = client
+        return client
+
+    async def aclose(self) -> None:
+        """Ferme le client HTTP persistant (arrêt du bot)."""
+        client = getattr(self, "_http", None)
+        if client is not None and not client.is_closed:
+            await client.aclose()
+        self._http = None
 
     async def _rate_limit(self) -> None:
         # `self._now()` et non `time.monotonic()` : le constructeur accepte une

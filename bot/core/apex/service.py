@@ -135,33 +135,36 @@ class ApexLegendsService:
         personne l'a déclaré ; sans pseudo du tout, on prend celui du demandeur.
         Faute de liaison, on interroge tel quel — l'API tranchera.
         """
-        if self._db is None:
+        lien = await self._lien(player_name, requester)
+        if lien is None:
             return player_name, platform
+        return lien["apex_name"], lien["apex_platform"] or platform
+
+    async def _lien(self, player_name: str, requester: str | None):
+        """La ligne de liaison, lue UNE fois.
+
+        `_resolve` et `_resolve_uid` exécutaient exactement la même requête et
+        n'en extrayaient chacune qu'une colonne : deux allers-retours SQLite
+        pour une seule ligne, sur le chemin chaud `player_stats` comme sur
+        `build_panel`. Et surtout deux résultats potentiellement DIFFÉRENTS si
+        la liaison changeait entre les deux appels — le pseudo venait alors
+        d'une ligne et l'uid d'une autre.
+        """
+        if self._db is None:
+            return None
         try:
-            lien = (
+            return (
                 await self._db.apex_find_by_display_name(player_name)
                 if player_name
                 else (await self._db.apex_get_account(requester) if requester else None)
             )
         except Exception as e:                       # une base grippée ne casse pas la recherche
             logger.warning("Apex: lecture des comptes liés impossible: {e}", e=e)
-            return player_name, platform
-        if lien is None:
-            return player_name, platform
-        return lien["apex_name"], lien["apex_platform"] or platform
+            return None
 
     async def _resolve_uid(self, requester: str | None, player_name: str) -> str | None:
         """L'uid mémorisé du joueur visé, s'il y en a un."""
-        if self._db is None:
-            return None
-        try:
-            lien = (
-                await self._db.apex_find_by_display_name(player_name)
-                if player_name
-                else (await self._db.apex_get_account(requester) if requester else None)
-            )
-        except Exception:  # noqa: BLE001 — l'uid est un confort, pas une condition
-            return None
+        lien = await self._lien(player_name, requester)
         return (lien["uid"] or None) if lien else None
 
     async def _remember(
