@@ -10,6 +10,13 @@ from loguru import logger
 
 TZ = ZoneInfo("Europe/Paris")
 
+# Un rappel dû pendant un pic de charge était purement abandonné : APScheduler
+# tolère UNE seconde de retard par défaut. La tâche restait `active` avec un
+# `next_run_at` périmé, et une tâche `once` ne repartait jamais. Mieux vaut
+# délivrer avec du retard que pas du tout ; `coalesce` évite qu'un arrêt long
+# ne rejoue d'un coup toutes les occurrences manquées d'une tâche récurrente.
+_TOLERANCE_RETARD = {"misfire_grace_time": 3600, "coalesce": True}
+
 
 class ActionScheduler:
     def __init__(self, db, executor, apscheduler, on_change=None) -> None:
@@ -67,7 +74,14 @@ class ActionScheduler:
         spec = json.loads(task["schedule_spec"])
         next_run = self._compute_next_run(task["schedule_type"], spec)
         self._add_apscheduler_job(task_id, task["schedule_type"], spec)
-        await self._db.update_action_task(task_id, status="active", updated_at=now, next_run_at=next_run)
+        # Compteur d'échecs remis à zéro : une tâche mise en pause l'a été après
+        # trois échecs consécutifs, et ce compteur restait à 3. La reprise
+        # re-basculait donc en pause dès le PREMIER échec suivant (3+1 ≥ 3), au
+        # lieu des trois annoncés — reprendre ne servait presque à rien.
+        await self._db.update_action_task(
+            task_id, status="active", updated_at=now, next_run_at=next_run,
+            consecutive_failures=0,
+        )
         logger.info("Resumed action task {}", task_id)
         self._notify("resumed", task_id)
 
@@ -200,17 +214,20 @@ class ActionScheduler:
             if run_at.tzinfo is None:
                 run_at = run_at.replace(tzinfo=TZ)
             self._scheduler.add_job(self._trigger_job, "date", run_date=run_at,
-                                    args=[task_id], id=job_id, replace_existing=True)
+                                    args=[task_id], id=job_id, replace_existing=True,
+                                    **_TOLERANCE_RETARD)
         elif schedule_type == "interval":
             self._scheduler.add_job(self._trigger_job, "interval", minutes=spec.get("minutes", 30),
-                                    args=[task_id], id=job_id, replace_existing=True)
+                                    args=[task_id], id=job_id, replace_existing=True,
+                                    **_TOLERANCE_RETARD)
         elif schedule_type == "cron":
             cron_kwargs = {}
             for key in ("hour", "minute", "day_of_week"):
                 if key in spec:
                     cron_kwargs[key] = spec[key]
             self._scheduler.add_job(self._trigger_job, "cron", args=[task_id],
-                                    id=job_id, replace_existing=True, timezone=TZ, **cron_kwargs)
+                                    id=job_id, replace_existing=True, timezone=TZ,
+                                    **_TOLERANCE_RETARD, **cron_kwargs)
 
     async def _trigger_job(self, task_id: int) -> None:
         task = await self._db.get_action_task(task_id)

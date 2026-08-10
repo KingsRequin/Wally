@@ -674,8 +674,24 @@ async def main() -> None:
             if channel.isdigit():
                 channel_id = channel
             else:
+                # Recherche BORNÉE au serveur d'où vient la tâche. Elle balayait
+                # `discord_bot.guilds` en entier : la permission était validée
+                # sur le serveur d'origine, puis le message pouvait partir dans
+                # n'importe quel salon de n'importe quel autre serveur portant
+                # le même nom. Combiné à l'envoi sans `allowed_mentions`, cela
+                # permettait un ping de masse cross-serveur.
                 ch_name = channel.lstrip("#").lower()
-                for guild in discord_bot.guilds:
+                guildes = discord_bot.guilds
+                origine = target.get("channel_id")
+                if origine:
+                    try:
+                        salon_origine = discord_bot.get_channel(int(origine))
+                    except (TypeError, ValueError):
+                        salon_origine = None
+                    guilde_origine = getattr(salon_origine, "guild", None)
+                    if guilde_origine is not None:
+                        guildes = [guilde_origine]
+                for guild in guildes:
                     for text_channel in guild.text_channels:
                         if text_channel.name.lower() == ch_name:
                             channel_id = str(text_channel.id)

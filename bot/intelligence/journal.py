@@ -114,6 +114,15 @@ _FUNCTION_WORDS = frozenset(
 
 _TZ_JOURNAL = ZoneInfo("Europe/Paris")
 
+# APScheduler abandonne un déclenchement en retard de plus d'UNE seconde par
+# défaut. Trois de ces jobs tirent à la même seconde et sont lourds (appels LLM,
+# rendu matplotlib) : il suffisait que la boucle soit occupée à cet instant pour
+# que la journée saute — 7 journées manquantes dans `journal_archive`, sans une
+# trace, le logger stdlib d'APScheduler n'étant branché sur aucun handler.
+# Une heure de retard vaut mieux qu'un journal perdu ; `coalesce` évite qu'un
+# arrêt prolongé n'en rejoue plusieurs d'affilée.
+_TOLERANCE_RETARD = {"misfire_grace_time": 3600, "coalesce": True}
+
 # ── Passe de ménage mémoire (une personne par nuit) ───────────────────────────
 #
 # La réconciliation live de `MemoryIngest` n'attrape que les faits porteurs d'un
@@ -1290,6 +1299,7 @@ class DailyJournal:
             id="daily_journal",
             replace_existing=True,
             timezone=_TZ_JOURNAL,
+            **_TOLERANCE_RETARD,
         )
         # Memory cleanup 30 min before journal
         cleanup_dt = datetime(2000, 1, 1, hour, minute) - timedelta(minutes=30)
@@ -1301,6 +1311,7 @@ class DailyJournal:
             id="memory_cleanup",
             replace_existing=True,
             timezone=_TZ_JOURNAL,
+            **_TOLERANCE_RETARD,
         )
         logger.info(
             "Memory cleanup scheduler started, fires at {h:02d}:{m:02d}",
@@ -1315,6 +1326,7 @@ class DailyJournal:
                 id="memory_consolidation",
                 replace_existing=True,
                 timezone=_TZ_JOURNAL,
+                **_TOLERANCE_RETARD,
             )
             logger.info("Consolidation nocturne planifiée à {t}", t=time_str)
         if self._user_modeler is not None:
@@ -1326,6 +1338,7 @@ class DailyJournal:
                 id="user_model_refresh",
                 replace_existing=True,
                 timezone=_TZ_JOURNAL,
+                **_TOLERANCE_RETARD,
             )
             logger.info("Modélisation des personnes planifiée à {t}", t=time_str)
         # Only start if we own the scheduler (no shared scheduler provided)
