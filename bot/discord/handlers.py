@@ -2064,8 +2064,8 @@ async def _respond(
                 if days_ago >= 7:
                     absence_note = f"\nDernière interaction avec cet utilisateur : il y a {days_ago} jours."
                     mem_context = (mem_context + absence_note) if mem_context else absence_note.strip()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « note d'absence » ignoré : {e}", e=exc)
 
         # ── Fetch context messages early (needed for priority 6) ──────
         context_messages = await bot.memory.get_context_summarized_if_needed(
@@ -2088,8 +2088,8 @@ async def _respond(
             recall_block = build_session_recall_block(summaries)
             if recall_block:
                 memory_parts.append((2, recall_block, "recall-session"))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « recall de session » ignoré : {e}", e=exc)
 
         # Priority 4: Recent successful jokes for this channel
         try:
@@ -2099,8 +2099,8 @@ async def _respond(
                 for j in recent_jokes:
                     jokes_block += f'\n- "{j}"'
                 memory_parts.append((4, jokes_block, "blagues"))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « blagues récentes » ignoré : {e}", e=exc)
 
         # Priority 5: Community topics (sujets de communauté enrichis)
         try:
@@ -2112,8 +2112,8 @@ async def _respond(
                     who = f" — {names} en parlent" if names else ""
                     topics_block += f'\n- {t["name"]}{who} — ton avis : "{t["opinion"]}"'
                 memory_parts.append((5, topics_block, "topics"))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « sujets de la communauté » ignoré : {e}", e=exc)
 
         # Priority 6: Third-party mentions
         try:
@@ -2122,8 +2122,8 @@ async def _respond(
             )
             if third_party_ctx:
                 memory_parts.append((6, third_party_ctx, "tiers"))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « mentions de tiers » ignoré : {e}", e=exc)
 
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
@@ -2154,8 +2154,8 @@ async def _respond(
         try:
             _pid = await _canonical_uid(bot, platform, user_id)
             person_context = await bot.db.get_user_profile(_pid) or ""
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « portrait de la personne » ignoré : {e}", e=exc)
 
         # Fallback cold start si prelude vide
         if not prelude:
@@ -2167,7 +2167,8 @@ async def _respond(
         # Persistent notes
         try:
             persistent_notes = await bot.db.get_persistent_notes()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — bloc optionnel
+            logger.warning("Mémoire : bloc « notes persistantes » ignoré : {e}", e=exc)
             persistent_notes = []
 
         situation: dict = {"platform": "Discord"}

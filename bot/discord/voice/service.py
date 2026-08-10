@@ -181,11 +181,36 @@ class VoiceService:
         alors qu'ils sont exposés dans le panneau admin : on croyait régler à
         chaud ce qui ne bougeait pas.
         """
+        provider_avant = getattr(self._cfg, "stt_provider", None) if self._cfg else None
         self._cfg = cfg
         try:
             phrases = [self._bot.config.bot.name, *(self._bot.config.bot.trigger_names or [])]
         except Exception:  # noqa: BLE001
             phrases = []
+
+        # Changer de provider EN COURS DE SESSION cassait l'écoute. Le
+        # `WallyAudioSink` est construit au join avec les callbacks du provider
+        # d'alors, et `reload_config` ne le refait pas : selon le sens du
+        # changement, `_emit_segment` routait vers un `_streaming` devenu None
+        # (zéro transcription, zéro log) ou vers un `_stt` None (AttributeError
+        # avalée). Un « Enregistrer » sur les réglages vocaux pendant que Wally
+        # écoute — le cas normal, on règle en écoutant — le rendait sourd et muet
+        # pour tout le reste du live. On tient donc la promesse du docstring :
+        # le provider ne bouge qu'au prochain join.
+        if (provider_avant is not None
+                and cfg.stt_provider != provider_avant
+                and self._vc is not None):
+            logger.warning(
+                "voice: provider STT {a} → {b} ignoré pendant la session en cours — "
+                "quitte et rejoins le salon pour l'appliquer",
+                a=provider_avant, b=cfg.stt_provider,
+            )
+            try:
+                self._tts = build_tts(cfg)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("VoiceService: TTS non rechargé: {e}", e=e)
+            return
+
         # Fermer l'ancien pipeline AVANT d'en construire un nouveau : sinon un
         # simple « Enregistrer » sur les paramètres vocaux du dashboard laissait
         # des WebSockets et leurs `_recv_task`/`_sender_task` orphelins, des

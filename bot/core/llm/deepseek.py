@@ -372,7 +372,11 @@ class DeepSeekLLMClient(BaseLLMClient):
                 **self._api_params(thinking_override="enabled", max_tokens=max_tokens),
             )
             msg = response.choices[0].message
-            content = msg.content or ""
+            # `_strip_dsml` comme sur les trois autres chemins : ce `content`
+            # alimente `parse_decisions` puis devient `thought_text`, stocké en
+            # base et diffusé sur le flux cognitif PUBLIC. C'est le mode d'échec
+            # du correctif `2be2c64`, sur un chemin qu'il n'avait pas couvert.
+            content = _strip_dsml(msg.content or "")
             reasoning = getattr(msg, "reasoning_content", None) or ""
             await self._log_cost(response, purpose, user_id)
             return content, reasoning
@@ -484,7 +488,11 @@ class DeepSeekLLMClient(BaseLLMClient):
         # d'appels pousse le modèle à écrire l'appel suivant en texte (markup DSML).
         logger.warning("DeepSeek: max_tool_iters={n} atteint, génération finale sans appel d'outil", n=self._max_tool_iters)
         try:
-            response = await self._client.chat.completions.create(
+            # Via `_creer_avec_reprises` comme les autres : cette génération
+            # FINALE contournait le backoff. Un 429 d'une seconde ici rendait
+            # FALLBACK_RESPONSE à l'utilisateur, alors que le même incident un
+            # tour plus tôt aurait été absorbé.
+            response = await self._creer_avec_reprises(
                 messages=[{"role": "system", "content": system_prompt}] + history,
                 tools=tools,
                 tool_choice="none",
@@ -521,7 +529,9 @@ class DeepSeekLLMClient(BaseLLMClient):
         # (non-déterminisme du LLM) → un réessai immédiat évite la majorité des échecs.
         for attempt in range(2):
             try:
-                response = await self._client.chat.completions.create(
+                # Idem : la boucle `range(2)` rejouait immédiatement, sans la
+                # moindre attente — le pire schéma face à un rate-limit.
+                response = await self._creer_avec_reprises(
                     messages=[{"role": "system", "content": system_prompt}] + messages,
                     tools=[tool_def],
                     tool_choice={"type": "function", "function": {"name": schema_name}},

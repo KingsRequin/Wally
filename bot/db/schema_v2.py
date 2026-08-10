@@ -84,6 +84,12 @@ CREATE INDEX IF NOT EXISTS idx_facts_confidence
     ON atomic_facts(confidence);
 CREATE INDEX IF NOT EXISTS idx_upgrades_status
     ON pending_upgrades(status);
+-- Index PARTIEL : `get_due_facts` tourne à chaque tick cognitif et n'était
+-- couvert par rien — EXPLAIN donnait `SCAN atomic_facts` + tri temporaire sur
+-- 14 391 lignes, pour 47 qui portent réellement un `scheduled_at`. Le filtre
+-- partiel garde l'index minuscule.
+CREATE INDEX IF NOT EXISTS idx_facts_scheduled
+    ON atomic_facts(scheduled_at) WHERE scheduled_at IS NOT NULL;
 
 -- Recherche plein-texte BM25 (porté de jarvis-OS, remplace Qdrant).
 -- Table FTS5 autonome indexée sur le texte rendu du fait (sujet/prédicat/objet/contenu).

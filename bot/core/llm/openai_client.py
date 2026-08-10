@@ -241,7 +241,21 @@ class OpenAILLMClient(BaseLLMClient):
                 output_tokens=response.usage.output_tokens,
                 cost=cost, purpose=purpose, user_id=user_id,
             )
-        return text
+        # Contrat de `BaseLLMClient.complete` : le texte, ou FALLBACK_RESPONSE.
+        # Le chemin Chat Completions avait été corrigé, celui-ci non — alors que
+        # c'est le SEUL emprunté par la config actuelle (`vision_model:
+        # gpt-5-nano` déclenche `_uses_responses_api`). Avec `reasoning` actif,
+        # `max_output_tokens` est volontairement omis et `output_text` peut
+        # valoir "" : `VisionService` loggait alors « le modèle n'a rien rendu »
+        # sans distinguer un échec API d'une réponse vide.
+        propre = (text or "").strip()
+        if not propre:
+            logger.warning(
+                "OpenAI {m} (Responses) : réponse vide pour {p}",
+                m=self._model, p=purpose,
+            )
+            return FALLBACK_RESPONSE
+        return propre
 
     async def complete(
         self,
