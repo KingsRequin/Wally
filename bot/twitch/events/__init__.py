@@ -81,6 +81,15 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 await purge_stale_subscriptions(client_id, tok)
 
         client = eventsub.EventSubWSClient(bot)
+        # Référencé TOUT DE SUITE, avant les ~15 s de souscriptions qui suivent
+        # (8 × 1.5 s, plus les chaînes invitées). Il n'était posé qu'à la fin :
+        # une exception ou une annulation en cours de route laissait un client
+        # bien vivant, WebSockets ouvertes, mais que plus personne ne pouvait
+        # fermer — d'où des transports occupés (429 au redémarrage) et, deux
+        # clients coexistant, le chat livré en double (vécu le 2026-08-08).
+        # Contrepartie assumée : le dashboard affiche EventSub « actif » pendant
+        # ces quelques secondes de mise en place.
+        bot._eventsub_client = client
 
         # Subscriptions are awaited sequentially — see existing code comment re: 4003 errors.
         # Des FABRIQUES, pas des coroutines : une coroutine ne s'await qu'une fois,
@@ -158,7 +167,6 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 )
             await asyncio.sleep(0.5)
 
-        bot._eventsub_client = client
         logger.info(
             "EventSub WebSocket client active (broadcaster_id={bid})", bid=broadcaster_id
         )

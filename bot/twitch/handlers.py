@@ -162,9 +162,16 @@ async def _envoyer_reponse_twitch(
     pas. Tout imprévu retombe sur la mention plutôt que d'avaler la réponse.
     """
     if channel_name not in getattr(bot, "_channel_ids", {}):
-        await bot.twitch_api.send_message(
+        # Le mode « perdu » existait mais n'était atteignable que sur IRC : ce
+        # chemin-ci rendait « helix » même quand l'API avait refusé le message.
+        # L'appelant posait alors un cooldown et versait au prélude comme à la
+        # mémoire une réplique jamais publiée.
+        publie = await bot.twitch_api.send_message(
             text=texte, reply_parent_message_id=parent_msg_id
         )
+        if not publie:
+            logger.warning("Twitch: publication Helix refusée sur {ch}", ch=channel_name)
+            return "perdu"
         return "helix"
 
     canal = bot.get_channel(channel_name)
@@ -226,6 +233,17 @@ def _build_situation(bot: "WallyTwitch", channel_name: str) -> dict:
     return situation
 
 
+def est_chaine_home(bot: "WallyTwitch", channel_name: str) -> bool:
+    """La chaîne maison, par opposition à une chaîne invitée.
+
+    Les invitées sont enregistrées dans `_channel_ids` à la souscription ; la
+    home ne l'est pas. Le test traînait tel quel en plusieurs endroits — le
+    nommer évite qu'un nouvel appelant l'oublie, ce qui est arrivé pour
+    `!image` et les outils d'overlay.
+    """
+    return channel_name not in getattr(bot, "_channel_ids", {})
+
+
 def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
     """Journalise un événement de conversation Twitch (no-op si logger absent)."""
     clog = getattr(bot, "conv_log", None)
@@ -233,7 +251,7 @@ def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
         clog.log("twitch", channel, event_type, **fields)
 
 
-async def build_chat_tools(bot: "WallyTwitch") -> list[dict]:
+async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[dict]:
     """Les outils offerts au LLM sur le chemin Twitch.
 
     Extrait de `handle_message` pour que le chemin VOCAL offre exactement les
@@ -260,7 +278,10 @@ async def build_chat_tools(bot: "WallyTwitch") -> list[dict]:
         tools.append(_PREDICT_TOOL)
     if getattr(bot, "quotes", None) is not None:
         tools.append(_QUOTE_TOOL)
-    if _overlay_narrator(bot) is not None:
+    # `overlay=False` depuis une chaîne INVITÉE : l'overlay appartient au stream
+    # maison. Sans ce garde, le chat d'un invité pouvait faire afficher bulles,
+    # clips et panneaux Apex chez Azraël.
+    if overlay and _overlay_narrator(bot) is not None:
         tools.append(_OVERLAY_TOOL)
         tools.append(_OVERLAY_CANCEL_TOOL)
         tools.append(_LAST_CLIP_TOOL)
@@ -734,7 +755,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         openai_messages = [{"role": "user", "content": user_content}]
 
         # ── Outils et exécuteur : les mêmes que sur le chemin vocal ───────
-        tools = await build_chat_tools(bot)
+        tools = await build_chat_tools(bot, overlay=est_chaine_home(bot, channel_name))
         _tool_executor = make_tool_executor(
             bot,
             platform="twitch",
@@ -798,11 +819,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             author=author,
             parent_msg_id=getattr(payload, "message_id", None) or None,
         )
-        bot.set_cooldown(user_id)
-        _note_open_question(channel_name, user_id, reply)
-        # Wally vient de parler à cette personne : sa prochaine relance ne sera
-        # pas du spam, elle prolongera l'échange.
-        _note_reply_sent(channel_name, user_id)
+        # Une réplique qui n'est jamais partie ne doit rien poser derrière elle :
+        # ni cooldown (l'utilisateur n'a pas eu de réponse), ni question ouverte,
+        # ni trace « Wally vient de lui parler ».
+        publie = _send_mode != "perdu"
+        if publie:
+            bot.set_cooldown(user_id)
+            _note_open_question(channel_name, user_id, reply)
+            # Wally vient de parler à cette personne : sa prochaine relance ne sera
+            # pas du spam, elle prolongera l'échange.
+            _note_reply_sent(channel_name, user_id)
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,
@@ -810,15 +836,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             # dans les logs qu'une réponse est retombée sur la mention faute d'id.
             send_mode=_send_mode,
         )
-        if getattr(bot, "cognitive_loop", None) is not None:
+        if publie and getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(channel_id, content=reply)
 
-        if getattr(bot, "reaction_tracker", None):
+        if publie and getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_twitch_response(channel_id, reply_text=reply)
 
+        # Le message de l'utilisateur a bien eu lieu : il reste mémorisé quoi
+        # qu'il arrive. Seule la réplique de Wally disparaît si elle n'est pas
+        # partie — sinon il croirait avoir dit une chose que personne n'a lue.
         bot.memory.append_message(channel_id, author, content, platform="twitch")
-        bot.memory.append_prelude(channel_id, self_name, reply)
-        bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
+        if publie:
+            bot.memory.append_prelude(channel_id, self_name, reply)
+            bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
 
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author, trace_id=_trace, conv_channel=channel_name))
 

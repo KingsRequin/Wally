@@ -83,8 +83,13 @@ class TwitchAPI:
         text: str,
         broadcaster_id: Optional[str] = None,
         reply_parent_message_id: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """POST /helix/chat/messages. Retry once on 401 after bot token refresh.
+
+        Retourne True si le message a bien été publié. La fonction avalait
+        toutes ses erreurs en rendant `None` : l'appelant posait alors un
+        cooldown, enrichissait le prélude et la mémoire d'une réplique qui
+        n'était JAMAIS partie. Un échec doit se voir.
 
         broadcaster_id: chaîne cible. Si None, utilise self._broadcaster_id (chaîne home).
         reply_parent_message_id: ID du message parent pour créer un thread de réponse.
@@ -120,10 +125,10 @@ class TwitchAPI:
                                 logger.error(
                                     "Bot token refresh failed, cannot send message"
                                 )
-                                return
+                                return False
                             continue
                         logger.error("Twitch chat API 401 after refresh, giving up")
-                        return
+                        return False
                     if resp.status_code == 429 and attempt == 0:
                         # Franchi pendant un raid : sans attente, le message
                         # était simplement perdu. Twitch donne l'instant de
@@ -133,11 +138,12 @@ class TwitchAPI:
                         await asyncio.sleep(wait)
                         continue
                     resp.raise_for_status()
-                    return
+                    return True
         except httpx.HTTPStatusError as exc:
             logger.error("Twitch send_message HTTP error: {e}", e=exc)
         except Exception as exc:
             logger.error("Twitch send_message error: {e}", e=exc)
+        return False
 
     async def get_broadcaster_id(self, login: str) -> Optional[str]:
         """GET /helix/users?login={login}. Retourne l'ID ou None si introuvable.

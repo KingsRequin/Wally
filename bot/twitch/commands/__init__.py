@@ -21,9 +21,15 @@ async def dispatch_command(
     content_stripped = content.strip()
     content_lower = content_stripped.lower()
 
-    # Overlay image command
+    # Overlay image command — chaîne MAISON uniquement : l'overlay est celui du
+    # stream d'Azraël. Depuis une chaîne invitée, n'importe qui pouvait y
+    # projeter une image, alors que `_scan_tally`, `_emote_waves` et le salut
+    # ont tous été explicitement restreints.
+    from bot.twitch.handlers import est_chaine_home
+
     overlay_cfg = bot.config.overlay_image
-    if overlay_cfg.enabled and content_lower == overlay_cfg.command.lower():
+    if (overlay_cfg.enabled and content_lower == overlay_cfg.command.lower()
+            and est_chaine_home(bot, channel_name)):
         from bot.twitch.handlers import _fire, _announce_overlay_image
         ds = getattr(bot, "dashboard_state", None)
         if ds is not None:
