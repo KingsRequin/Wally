@@ -2,7 +2,8 @@
 """Phase 5 de l'audit du 2026-08-10 : le dashboard exposé.
 
 C23 — `twitch_callback` : seule route du wizard sans validation d'invitation,
-      et le `state` OAuth n'était confronté à rien.
+      et le `state` OAuth n'était confronté à rien. Le `state` porte désormais
+      `token:nonce:account_type` (le nonce est ajouté par le second audit).
 C24 — token admin comparé avec `!=` au lieu de `hmac.compare_digest`.
 C25 — `/api/public/emotions/history` sans LIMIT : 9 344 lignes en base.
 C26 — `NaN`/`Infinity` acceptés par `json.loads` → 500 répétable sans auth.
@@ -30,7 +31,7 @@ async def test_un_state_qui_ne_correspond_pas_au_jeton_est_refuse():
     db = MagicMock()
     db.get_setup_session = AsyncMock(return_value={})
     r = _requete(db)
-    r.query_params = {"code": "abc", "state": "AUTRE_JETON:bot"}
+    r.query_params = {"code": "abc", "state": "AUTRE_JETON:un-nonce:bot"}
 
     with pytest.raises(HTTPException) as e:
         await twitch_callback(r, "MON_JETON")
@@ -57,7 +58,7 @@ async def test_une_invitation_revoquee_ne_donne_plus_de_callback():
     db = MagicMock()
     db.get_setup_invite = AsyncMock(return_value=None)   # révoquée / inconnue
     r = _requete(db)
-    r.query_params = {"code": "abc", "state": "MON_JETON:bot"}
+    r.query_params = {"code": "abc", "state": "MON_JETON:un-nonce:bot"}
 
     with pytest.raises(HTTPException) as e:
         await twitch_callback(r, "MON_JETON")

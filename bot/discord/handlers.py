@@ -1502,10 +1502,16 @@ async def _third_party_mention_context(
     context_messages: list[dict],
 ) -> str:
     """Detect mentions of third-party users and inject their memories."""
-    # Gather text from recent messages
+    # Gather text from recent messages.
+    #
+    # Le CONTENU seul : l'étiquette d'auteur était versée ici aussi, si bien que
+    # le simple fait qu'Alice ait écrit dans les quinze derniers messages
+    # injectait un bloc « Souvenirs sur Alice » dans le prompt de la
+    # conversation de Bob — sans qu'elle ait été nommée par personne. Wally
+    # pouvait alors ressortir à Bob des faits privés d'Alice. La fonction dit
+    # « detect mentions » : quelqu'un qui parle ne se mentionne pas lui-même.
     texts = []
     for msg in (prelude or []):
-        texts.append(msg.get("author", ""))
         texts.append(msg.get("content", ""))
     for msg in (context_messages or []):
         content = msg.get("content", "")

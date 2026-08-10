@@ -147,18 +147,27 @@ async def twitch_auth_url(request: Request, token: str, body: dict) -> dict:
     else:
         scope = "bits:read channel:read:subscriptions moderator:read:followers"
 
+    # Nonce à usage unique. Le `state` ne portait que le jeton de l'URL — or en
+    # mode preview ce jeton est la constante publique `__preview__` : n'importe
+    # qui pouvait forger `?state=__preview__:bot` et déclencher l'échange OAuth
+    # avec le client_id/secret enregistrés par l'admin, puis faire écrire SES
+    # tokens Twitch dans la session. Le callback vient du navigateur et ne porte
+    # aucun en-tête d'authentification : c'est donc au `state` de prouver qu'il
+    # descend bien d'un `authorize` que nous avons émis.
+    nonce = uuid.uuid4().hex
     params = {
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": scope,
-        "state": f"{token}:{account_type}",
+        "state": f"{token}:{nonce}:{account_type}",
     }
     url = "https://id.twitch.tv/oauth2/authorize?" + urllib.parse.urlencode(params)
     await db.save_setup_session(token, {
         "twitch_client_id": client_id,
         "twitch_client_secret": body.get("client_secret", ""),
         "twitch_redirect_uri": redirect_uri,
+        "twitch_oauth_nonce": nonce,
     })
     return {"url": url}
 
@@ -173,20 +182,27 @@ async def twitch_callback(request: Request, token: str):
     if error:
         return JSONResponse({"error": error}, status_code=400)
 
-    parts = state_param.rsplit(":", 1)
-    account_type = parts[1] if len(parts) == 2 else "bot"
+    # `token:nonce:account_type` — trois parties, dans cet ordre.
+    parts = state_param.split(":")
+    account_type = parts[2] if len(parts) == 3 else "bot"
 
     db = request.app.state.wally.db
-    # Seule route du wizard qui n'ouvrait NI l'invitation ni le `state` : un
+    # Seule route du wizard qui n'ouvrait ni l'invitation ni le `state` : un
     # échange OAuth était déclenchable anonymement, et une invitation révoquée
-    # gardait un callback fonctionnel. Le `state` doit désigner le même jeton
-    # que l'URL — c'est la protection CSRF prévue par OAuth, jusqu'ici inutilisée
-    # alors qu'elle était déjà transportée (`f"{token}:{account_type}"`).
-    if len(parts) != 2 or not hmac.compare_digest(parts[0], token):
-        logger.warning("Callback Twitch : `state` ne correspond pas au jeton d'invitation")
+    # gardait un callback fonctionnel. Comparer le jeton ne suffit pas — en mode
+    # preview il vaut la constante publique `__preview__`. C'est le nonce, émis
+    # par `authorize` et à usage unique, qui prouve la filiation.
+    if len(parts) != 3 or not hmac.compare_digest(parts[0], token):
+        logger.warning("Callback Twitch : `state` malformé ou jeton discordant")
         raise HTTPException(status_code=400, detail="state invalide")
     await _get_valid_invite(token, db)
     session = await db.get_setup_session(token)
+    attendu = session.get("twitch_oauth_nonce") or ""
+    if not attendu or not hmac.compare_digest(parts[1], attendu):
+        logger.warning("Callback Twitch : nonce absent ou discordant — échange refusé")
+        raise HTTPException(status_code=400, detail="state invalide")
+    # Brûlé immédiatement : un `code` rejoué ne doit pas repasser.
+    await db.save_setup_session(token, {"twitch_oauth_nonce": ""})
     client_id = session.get("twitch_client_id", "")
     client_secret = session.get("twitch_client_secret", "")
     redirect_uri = session.get("twitch_redirect_uri", "")

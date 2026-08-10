@@ -679,18 +679,6 @@ class EmotionEngine:
             except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
                 logger.warning("Âge de l'état émotionnel illisible : {e}", e=exc)
                 sauvegarde = None
-            # Seuil : `_apply_decay` déclenche aussi la compétition entre
-            # émotions et la récupération de fatigue. Le faire tourner pour un
-            # redémarrage de trois secondes altérerait l'état sans raison — la
-            # boucle de decay s'en charge de toute façon toutes les 60 s.
-            ecoule = time.time() - sauvegarde if sauvegarde else 0.0
-            if sauvegarde and 0 < sauvegarde < time.time() and ecoule > 60:
-                self._last_decay = sauvegarde
-                self._apply_decay()
-                logger.info(
-                    "État émotionnel vieilli de {h:.1f} h d'arrêt : {s}",
-                    h=ecoule / 3600.0, s=self._state,
-                )
             logger.info("Emotion state loaded from DB: {s}", s=self._state)
             # Load mood layer
             mood = await self._db.load_mood_state()
@@ -704,6 +692,32 @@ class EmotionEngine:
             logger.info("Fatigue state loaded from DB: {s}", s=self._fatigue)
             # Load user affinities (emotional memory)
             await self.load_user_affinities()
+
+            # Le vieillissement vient EN DERNIER, une fois toutes les couches
+            # chargées. Placé plus haut, `_apply_decay` faisait décroître une
+            # humeur, une fatigue et des affinités encore à zéro, puis les
+            # lectures ci-dessus écrasaient son travail : seul `_state` était
+            # réellement vieilli, et l'affinité par personne ne redescendait
+            # jamais à travers un redémarrage — le cliquet exact que ce
+            # rattrapage était censé supprimer.
+            #
+            # Seuil de 60 s : `_apply_decay` déclenche aussi la compétition
+            # entre émotions et la récupération de fatigue ; le faire tourner
+            # pour un redémarrage de trois secondes altérerait l'état sans
+            # raison — la boucle de decay s'en charge toutes les 60 s.
+            ecoule = time.time() - sauvegarde if sauvegarde else 0.0
+            if sauvegarde and 0 < sauvegarde < time.time() and ecoule > 60:
+                self._last_decay = sauvegarde
+                # L'ennui ne décroît pas, il MONTE avec l'inactivité, et il se
+                # calcule sur `_last_interaction` — laissé à l'heure du boot, il
+                # rendait `idle_hours ≈ 0` : Wally revenait de douze heures
+                # d'absence sans le moindre ennui accumulé.
+                self._last_interaction = sauvegarde
+                self._apply_decay()
+                logger.info(
+                    "État émotionnel vieilli de {h:.1f} h d'arrêt : {s}",
+                    h=ecoule / 3600.0, s=self._state,
+                )
         except Exception as exc:
             logger.warning("Failed to load emotion state: {e}", e=exc)
 
