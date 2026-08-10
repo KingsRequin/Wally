@@ -24,6 +24,9 @@ RSS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 class _FakeResp:
     def __init__(self, text):
         self.text = text
+        # Le service parse désormais les OCTETS : `httpx.text` décode selon les
+        # en-têtes HTTP et écrase la déclaration d'encodage du prologue XML.
+        self.content = text.encode("utf-8") if isinstance(text, str) else text
 
     def raise_for_status(self):
         pass

@@ -119,7 +119,11 @@ async def update_title(request: Request, image_id: str):
     image = await state.db.get_gallery_image(image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-    if image["user_id"] != user_id:
+    # `gallery_images.user_id` stocke l'ID Discord BRUT, alors que le JWT rend
+    # la forme préfixée `discord:…` (comme `gallery_votes`, qui est cohérent).
+    # La comparaison directe était donc toujours fausse : personne n'a jamais pu
+    # renommer sa propre image, la route répondait 403 depuis sa création.
+    if image["user_id"] not in (user_id, user_id.split(":", 1)[-1]):
         raise HTTPException(status_code=403, detail="Only the creator can edit the title")
     body = await request.json()
     title = body.get("title", "").strip()

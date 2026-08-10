@@ -7,6 +7,11 @@ import time
 # Cache météo : (timestamp, valeur) — rafraîchi toutes les 30min.
 _weather_cache: tuple[float, str | None] = (0.0, None)
 _WEATHER_TTL = 1800
+# Dernier échec réseau, et délai avant de retenter. Le tick cognitif appelle
+# cette fonction toutes les 30 s : sans ce frein, une panne de wttr.in coûtait
+# 5 s de timeout à chaque passage.
+_weather_echec_ts: float = 0.0
+_WEATHER_ECHEC_TTL = 300
 
 _WEATHER_FR: dict[str, str] = {
     "sunny": "ensoleillé", "clear": "dégagé", "partly cloudy": "partiellement nuageux",
@@ -72,9 +77,14 @@ async def fetch_weather_france() -> str | None:
 
     Cache 30 min. Retourne une description qualitative sans mentionner la ville.
     """
-    global _weather_cache
+    global _weather_cache, _weather_echec_ts
     ts, cached = _weather_cache
     if cached is not None and (time.time() - ts) < _WEATHER_TTL:
+        return cached
+    # Cache NÉGATIF : sans lui, une panne de wttr.in faisait attendre les 5 s du
+    # timeout à CHAQUE tick cognitif (toutes les 30 s), puisque l'échec ne
+    # remplit pas le cache positif et que rien ne retenait la tentative suivante.
+    if time.time() - _weather_echec_ts < _WEATHER_ECHEC_TTL:
         return cached
 
     try:
@@ -115,4 +125,5 @@ async def fetch_weather_france() -> str | None:
         return result
     except Exception:
         # En cas d'échec, on conserve le cache expiré plutôt que None
+        _weather_echec_ts = time.time()
         return _weather_cache[1]

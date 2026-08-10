@@ -94,7 +94,9 @@ def _world_ranks(payload: dict) -> dict[str, tuple[int | None, float | None]]:
     simplement pas de rang mondial, et on n'en invente pas.
     """
     found: dict[str, tuple[int | None, float | None]] = {}
-    glob = (payload.get("legends", {}).get("all", {}) or {}).get("Global") or {}
+    # `or {}` à CHAQUE étage : le défaut de `.get()` ne couvre qu'une clé
+    # absente, or l'API rend parfois `"legends": null` — et `.get` sur None lève.
+    glob = ((payload.get("legends") or {}).get("all") or {}).get("Global") or {}
     for item in glob.get("data") or []:
         label = str(item.get("name", "")).lower()
         rank = item.get("rank") or {}
@@ -136,7 +138,7 @@ def _read_stats(payload: dict) -> dict[str, StatValue]:
 
 def _read_skin(payload: dict) -> str | None:
     """Le skin de la légende jouée — de la couleur pour l'overlay, rien de plus."""
-    info = (payload.get("legends", {}).get("selected") or {}).get("gameInfo") or {}
+    info = ((payload.get("legends") or {}).get("selected") or {}).get("gameInfo") or {}
     skin = info.get("skin")
     return str(skin) if skin else None
 

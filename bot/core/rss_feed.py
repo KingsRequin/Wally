@@ -107,7 +107,12 @@ class RSSFeedService:
         resp = await client.get(feed.url)
         resp.raise_for_status()
         # feedparser est synchrone (parsing + normalisation) → hors event loop.
-        parsed = await asyncio.to_thread(feedparser.parse, resp.text)
+        # `.content` (octets) et non `.text` : httpx décode selon les en-têtes
+        # HTTP, ce qui écrase la déclaration d'encodage du XML. Sur un flux
+        # latin-1 annoncé dans le prologue mais servi sans charset, les accents
+        # arrivaient abîmés jusque dans le prompt. feedparser sait lire le
+        # prologue — encore faut-il le lui donner.
+        parsed = await asyncio.to_thread(feedparser.parse, resp.content)
         cfg = self._config.rss
         new = 0
         for entry in parsed.entries[:_MAX_ENTRIES_PER_FEED]:

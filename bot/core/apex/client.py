@@ -74,7 +74,21 @@ class ApexClient:
 
         ttl = self._ttl.get(endpoint, _FALLBACK_TTL)
         self._cache[key] = (self._now() + ttl, value)
+        self._purger()
         return value
+
+    def _purger(self) -> None:
+        """Retire les entrées périmées.
+
+        Le cache n'était jamais nettoyé, et sa clé contient le pseudo demandé
+        dans le chat : chaque joueur cité y laissait un payload `/bridge`
+        complet, pour la durée de vie du process. Croissance monotone, bornée
+        par rien.
+        """
+        maintenant = self._now()
+        perimees = [k for k, (expire, _) in self._cache.items() if expire <= maintenant]
+        for k in perimees:
+            self._cache.pop(k, None)
 
     async def _fetch(self, endpoint: str, params: dict) -> Any:
         """Le seul point qui touche le réseau — doublé dans les tests."""
