@@ -42,6 +42,44 @@ PUBLISH_BRANCH = os.environ.get("PUBLISH_BRANCH", "main")
 _JOBS: dict[str, dict] = {}
 
 
+def _job_reellement_en_cours() -> bool:
+    """Un run Claude tourne-t-il VRAIMENT ?
+
+    L'état `"running"` n'était mis à jour que par `/claude-status`. Le bot cesse
+    de sonder au bout de `max_wait` (30 min) : passé ce délai, l'état restait
+    `"running"` pour toujours et `/claude-run` refusait tout nouveau job en 409.
+    Chaque `code_fix` suivant échouait alors en `HostBridgeError` — auto-
+    modification morte jusqu'au redémarrage de `wally-bridge.service`, qui vit
+    hors Docker et qu'aucun rebuild ne relance. On interroge le process.
+    """
+    for job_id, job in list(_JOBS.items()):
+        if job.get("state") != "running":
+            continue
+        proc = job.get("proc")
+        if proc is None:
+            job["state"] = "failed"
+            continue
+        if proc.poll() is not None:
+            # Terminé sans que personne ne soit venu lire le verdict.
+            job["state"] = "done" if proc.returncode == 0 else "failed"
+            try:
+                job["outf"].close()
+            except (OSError, KeyError, AttributeError):
+                pass
+            logging.info("job %s terminé (rc=%s), état rattrapé", job_id, proc.returncode)
+            continue
+        if time.time() - job.get("started_at", 0) > CLAUDE_TIMEOUT:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            job["state"] = "failed"
+            logging.warning("job %s tué : au-delà de CLAUDE_TIMEOUT", job_id)
+            continue
+        return True
+    return False
+
+
 def _git_head() -> str:
     r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT,
                        capture_output=True, timeout=10)
@@ -184,7 +222,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             if not goal:
                 self._send(400, {"error": "goal vide"})
                 return
-            if any(j.get("state") == "running" for j in _JOBS.values()):
+            if _job_reellement_en_cours():
                 self._send(409, {"error": "un job Claude est déjà en cours"})
                 return
             job_id = uuid.uuid4().hex

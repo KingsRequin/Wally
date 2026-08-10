@@ -518,9 +518,19 @@ class WallyTwitch(commands.Bot):
         if self._eventsub_restart_pending:
             return
         self._eventsub_restart_pending = True
-        async with self._eventsub_restart_lock:
+        try:
+            async with self._eventsub_restart_lock:
+                self._eventsub_restart_pending = False
+                await self._do_restart_eventsub()
+        except asyncio.CancelledError:
+            # Le drapeau est posé AVANT l'attente du verrou. Une annulation
+            # pendant cette attente (requête dashboard abandonnée via
+            # `add_guest_channel`, `_poll_guest_streams`) le laissait à True pour
+            # la vie du process : tout redémarrage ultérieur sortait aussitôt —
+            # y compris celui déclenché par `_check_eventsub_alive`. Le watchdog
+            # écrit après la surdité du 2026-08-08 se désarmait donc en silence.
             self._eventsub_restart_pending = False
-            await self._do_restart_eventsub()
+            raise
 
     async def _do_restart_eventsub(self) -> None:
         from bot.twitch.events import cancel_retry_task, start_eventsub_client

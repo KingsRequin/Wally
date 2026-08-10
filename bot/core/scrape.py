@@ -1,6 +1,7 @@
 # bot/core/scrape.py
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import os
 import socket
@@ -103,6 +104,50 @@ class ScrapeService:
             return False
         return True
 
+    @staticmethod
+    def _adresses_publiques(host: str) -> bool:
+        """Toutes les IP derrière `host` sont-elles publiques ?
+
+        Le contrôle syntaxique ne voit que les littéraux : un nom d'hôte
+        ordinaire comme `interne.attaquant.fr` passait, quelle que soit l'IP
+        derrière. Firecrawl est auto-hébergé et ne filtre rien de son côté —
+        cette fonction est la seule garde entre le chat et le réseau du LXC
+        (Dockge, Qdrant, les autres conteneurs, la passerelle).
+
+        Refuse aussi quand la résolution échoue : sans réponse, on ne sait pas
+        où l'on va.
+        """
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError as exc:
+            logger.warning("Scrape refusé, hôte irrésolu {h} : {e}", h=host, e=exc)
+            return False
+        if not infos:
+            return False
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except ValueError:
+                return False
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_unspecified or ip.is_multicast):
+                logger.warning("Scrape refusé, {h} résout vers {ip} (interne)", h=host, ip=ip)
+                return False
+        return True
+
+    async def cible_autorisee(self, url: str) -> bool:
+        """Contrôle syntaxique, puis résolution DNS hors de la boucle."""
+        if not self.is_scrapable_url(url):
+            return False
+        host = (urlparse(url).hostname or "").lower().rstrip(".")
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            return True  # littéral déjà validé par `is_scrapable_url`
+        return await asyncio.to_thread(self._adresses_publiques, host)
+
     async def daily_limit_reached(self) -> bool:
         count = await self._db.count_scrapes_today()
         return count >= self._config.firecrawl.daily_limit
@@ -110,7 +155,7 @@ class ScrapeService:
     async def scrape(self, url: str) -> str:
         if not self.available:
             return "Le scraping n'est pas disponible (Firecrawl non configuré)."
-        if not self.is_scrapable_url(url):
+        if not await self.cible_autorisee(url):
             return "Cette URL ne peut pas être lue (média ou lien non supporté)."
         try:
             if await self.daily_limit_reached():
