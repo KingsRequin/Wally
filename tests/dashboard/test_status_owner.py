@@ -1,4 +1,10 @@
-"""Tests that /api/public/status exposes owner_discord_id and bot_name."""
+"""`/api/public/status` : ce qu'il publie, et ce qu'il ne publie plus.
+
+Ces tests exigeaient que la route expose `owner_discord_id`. C'est justement le
+défaut : la route est anonyme, et le snowflake réel du propriétaire partait à
+tout visiteur pour une comparaison purement cosmétique côté client (afficher ou
+non le bouton ADMIN). Le verdict est désormais signé dans le JWT (`is_owner`).
+"""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
@@ -28,10 +34,12 @@ def _client(owner_discord_id: str, name: str) -> TestClient:
     return TestClient(app)
 
 
-def test_status_exposes_owner_discord_id():
+def test_status_ne_publie_pas_l_identifiant_du_proprietaire():
     r = _client("42", "Cindy").get("/api/public/status")
     assert r.status_code == 200
-    assert r.json()["owner_discord_id"] == "42"
+    corps = r.json()
+    assert "owner_discord_id" not in corps
+    assert "42" not in str(corps.values())
 
 
 def test_status_exposes_bot_name():
@@ -40,10 +48,10 @@ def test_status_exposes_bot_name():
     assert r.json()["bot_name"] == "Cindy"
 
 
-def test_status_owner_reflects_config():
-    """Wally config: owner_discord_id matches the real owner."""
+def test_le_snowflake_reel_ne_fuit_pas():
+    """Le cas de production : l'identifiant du propriétaire de Wally."""
     r = _client("610550333042589752", "Wally").get("/api/public/status")
     assert r.status_code == 200
     data = r.json()
-    assert data["owner_discord_id"] == "610550333042589752"
-    assert data["bot_name"] == "Wally"
+    assert "610550333042589752" not in str(data)
+    assert data["bot_name"] == "Wally"      # ce qui reste public, lui, est utile

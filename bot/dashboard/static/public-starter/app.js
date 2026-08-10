@@ -204,15 +204,10 @@ drawFlame('spx-nav', 4);
 // ── Auth widget (Discord) ──
 // Bouton de connexion Discord en haut à droite. Si l'owner est connecté,
 // un bouton ADMIN apparaît (token récupéré via le JWT, sans mot de passe).
-let OWNER_DISCORD_ID = '';
-
-async function loadOwnerId() {
-  try {
-    const r = await fetch('/api/public/status');
-    if (r.ok) { const d = await r.json(); OWNER_DISCORD_ID = String(d.owner_discord_id || ''); }
-  } catch (_) {}
-  renderAuth();
-}
+//
+// Le verdict vient du JWT signé (`is_owner`), plus de `/api/public/status` :
+// cette route est anonyme et y publier le snowflake réel du propriétaire, pour
+// une comparaison purement cosmétique, n'avait aucune raison d'être.
 
 function decodeJwt(t) {
   try {
@@ -251,7 +246,7 @@ function renderAuth() {
   who.appendChild(document.createTextNode(p.username || 'connecté'));
   host.appendChild(who);
 
-  if (OWNER_DISCORD_ID && String(p.discord_id) === OWNER_DISCORD_ID) {
+  if (p.is_owner === true) {
     const adm = document.createElement('button');
     adm.className = 'arc-auth-btn admin';
     adm.textContent = 'ADMIN';
@@ -282,7 +277,7 @@ function renderAuth() {
   host.appendChild(out);
 }
 
-ensureFreshToken().then(loadOwnerId);
+ensureFreshToken().then(renderAuth);
 
 // Retour OAuth : chat.js échange le code de façon asynchrone puis émet
 // `wally-auth-changed` quand le JWT est posé — on re-render le widget aussitôt,

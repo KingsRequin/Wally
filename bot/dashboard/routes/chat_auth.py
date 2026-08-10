@@ -43,14 +43,33 @@ def _jwt_secret(request: Request) -> str:
     return _jwt_secret_raw()
 
 
-def create_jwt(discord_id: str, username: str, avatar_url: str | None, secret: str, ttl: int = JWT_TTL) -> str:
+def create_jwt(
+    discord_id: str, username: str, avatar_url: str | None, secret: str,
+    ttl: int = JWT_TTL, is_owner: bool = False,
+) -> str:
     payload = {
         "discord_id": discord_id,
         "username": username,
         "avatar_url": avatar_url,
+        # Le VERDICT, signé, plutôt que la donnée qui permet de le calculer.
+        # Le site public lisait `owner_discord_id` sur `/api/public/status`,
+        # une route anonyme : le snowflake réel du propriétaire partait à tout
+        # visiteur, pour une comparaison purement cosmétique (afficher ou non
+        # le bouton ADMIN). L'autorisation réelle est côté serveur de toute
+        # façon — l'identifiant n'avait aucune raison d'être publié.
+        "is_owner": bool(is_owner),
         "exp": time.time() + ttl,
     }
     return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
+
+
+def _est_owner(request, discord_id: str) -> bool:
+    """Le serveur tranche, une fois, à l'émission du jeton."""
+    owner = getattr(
+        getattr(getattr(request.app.state.wally, "config", None), "bot", None),
+        "owner_discord_id", "",
+    )
+    return bool(owner) and str(discord_id) == str(owner)
 
 
 def decode_jwt(token: str, secret: str) -> dict | None:
@@ -147,7 +166,8 @@ async def callback(code: str, request: Request, state: str = ""):
         raise HTTPException(403, detail="Banned")
 
     secret = _jwt_secret(request)
-    jwt_token = create_jwt(discord_id, username, avatar_url, secret)
+    jwt_token = create_jwt(discord_id, username, avatar_url, secret,
+                           is_owner=_est_owner(request, discord_id))
 
     refresh_token = uuid.uuid4().hex
     await state.db.store_refresh_token(
@@ -233,7 +253,10 @@ async def refresh(request: Request):
     )
 
     secret = _jwt_secret(request)
-    jwt_token = create_jwt(stored["discord_id"], stored["username"], stored["avatar_url"], secret)
+    jwt_token = create_jwt(
+        stored["discord_id"], stored["username"], stored["avatar_url"], secret,
+        is_owner=_est_owner(request, stored["discord_id"]),
+    )
 
     return {"jwt": jwt_token, "refresh_token": new_refresh}
 

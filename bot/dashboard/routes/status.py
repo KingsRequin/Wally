@@ -37,6 +37,9 @@ async def get_status(request: Request) -> dict:
         "git_hash": os.getenv("BOT_GIT_HASH", "unknown"),
         "build_date": os.getenv("BOT_BUILD_DATE", "unknown"),
         "twitch_channel": os.getenv("TWITCH_BROADCASTER_LOGIN", ""),
-        "owner_discord_id": getattr(getattr(getattr(state, "config", None), "bot", None), "owner_discord_id", ""),
+        # `owner_discord_id` RETIRÉ : cette route est anonyme, et le snowflake
+        # réel du propriétaire partait à tout visiteur pour une comparaison
+        # purement cosmétique côté client. Le verdict est désormais signé dans
+        # le JWT (`is_owner`), émis par `chat_auth.create_jwt`.
         "bot_name": getattr(getattr(getattr(state, "config", None), "bot", None), "name", "Wally"),
     }
