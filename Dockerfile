@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot/ ./bot/
 COPY scripts/ ./scripts/
+# Lu par `bot/dashboard/routes/roadmap.py` (`parents[3]` → /app). Absent de
+# l'image, l'endpoint répondait 200 avec zéro section depuis toujours. Le
+# `.dockerignore` n'y suffisait pas : rien ne copiait le fichier.
+COPY ROADMAP.md ./
 
 RUN mkdir -p /app/data /app/logs && chown -R wally:wally /app
 

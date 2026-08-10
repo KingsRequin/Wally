@@ -139,7 +139,24 @@ def test_le_moteur_ignore_bien_le_lambda_de_l_ennui():
 
 # ────────────────────────────── roadmap ──────────────────────────────
 def test_le_fichier_roadmap_entre_dans_l_image():
-    contenu = Path(".dockerignore").read_text(encoding="utf-8")
-    assert "!ROADMAP.md" in contenu
+    """Deux conditions, et la première seule ne suffit pas.
+
+    Ne vérifier que le `.dockerignore` donnait une fausse assurance : le
+    Dockerfile ne copie que `bot/` et `scripts/`, si bien que le fichier
+    n'entrait toujours pas dans l'image après avoir levé l'exclusion.
+    """
+    ignore = Path(".dockerignore").read_text(encoding="utf-8")
+    assert "!ROADMAP.md" in ignore
     # L'exception doit venir APRÈS l'exclusion, sinon elle ne s'applique pas.
-    assert contenu.index("*.md") < contenu.index("!ROADMAP.md")
+    assert ignore.index("*.md") < ignore.index("!ROADMAP.md")
+
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    assert "COPY ROADMAP.md" in dockerfile
+
+
+def test_le_chemin_attendu_par_la_route_correspond_a_l_image():
+    """`parents[3]` depuis bot/dashboard/routes/ doit donner la racine /app."""
+    from bot.dashboard.routes import roadmap
+
+    depuis_module = Path(roadmap.__file__).parents[3]
+    assert (depuis_module / "ROADMAP.md").exists()
