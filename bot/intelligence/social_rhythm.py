@@ -3,7 +3,7 @@ from __future__ import annotations
 import aiosqlite
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -55,7 +55,20 @@ class SocialRhythm:
         if self._cur_day is None:
             self._cur_day, self._cur_daytype = day, _daytype(w)
         elif day != self._cur_day:
-            self._roll_day()
+            # Autant de replis que de jours ÉCOULÉS. Un seul pas d'EMA était
+            # appliqué quel que soit l'écart : après une absence — bot arrêté,
+            # serveur muet — les jours intercalaires ne décroissaient jamais, et
+            # un pic historique restait gelé dans `avg`. La propriété annoncée
+            # (« les créneaux à 0 décroissent, la nuit s'éteint seule ») ne
+            # tenait plus. Borné à 30 : au-delà l'EMA a convergé.
+            manques = 1
+            try:
+                manques = (_date.fromisoformat(day)
+                           - _date.fromisoformat(self._cur_day)).days
+            except (TypeError, ValueError):
+                manques = 1
+            for _ in range(max(1, min(manques, 30))):
+                self._roll_day()
             self._cur_day, self._cur_daytype = day, _daytype(w)
         self._bin(_key(w))["count"] += 1.0
 
@@ -85,10 +98,18 @@ class SocialRhythm:
         max_avg = max((x["avg"] for x in self._bins.values()), default=0.0)
         ambient = (b["avg"] / max_avg) if (b and max_avg > 0) else PRIOR
         eng = b["eng"] if b else PRIOR
-        observed = W_AMBIENT * ambient + W_ENGAGEMENT * eng
-        obs = (b["days"] + b["eng_obs"]) if b else 0
-        conf = min(1.0, obs / self._n_conf)
-        return PRIOR * (1 - conf) + observed * conf
+        # Chaque terme pondéré par SA propre confiance. `days + eng_obs`
+        # additionnait deux compteurs qui ne mesurent pas la même chose : un
+        # `days` élevé suffisait à déclarer l'engagement « pleinement observé »
+        # alors que `eng_obs` valait 0 et que `eng` était resté au PRIOR brut.
+        # Vérifié en base : les 48 bins ont `eng_obs = 0`, donc la moitié de la
+        # réceptivité qui pilote la cadence cognitive était une constante 0.5
+        # présentée comme apprise.
+        c_amb = min(1.0, (b["days"] if b else 0) / self._n_conf)
+        c_eng = min(1.0, (b["eng_obs"] if b else 0) / self._n_conf)
+        amb_lisse = PRIOR * (1 - c_amb) + ambient * c_amb
+        eng_lisse = PRIOR * (1 - c_eng) + eng * c_eng
+        return W_AMBIENT * amb_lisse + W_ENGAGEMENT * eng_lisse
 
     def describe(self, when: datetime) -> str:
         """Phrase FR injectée dans le contexte cognitif (conscience, pas contrainte)."""
@@ -140,6 +161,13 @@ class SocialRhythm:
     def backfill_from_logs(self, logs_dir: str) -> int:
         """Pré-chauffe `ambient` en rejouant les 'message_in' horodatés des logs
         Discord. Best-effort : un fichier illisible est ignoré ligne à ligne."""
+        # UNE SEULE FOIS. `load()` restaure les bins depuis la base, puis ce
+        # backfill rejouait INTÉGRALEMENT l'historique JSONL par-dessus, à
+        # chaque démarrage : `days` valait 4 225 pour 49 jours de logs réels
+        # (~86 boots cumulés), et `load()` était de facto inutile.
+        if self._bins:
+            logger.info("SocialRhythm : bins déjà chargés — pré-chauffage ignoré")
+            return 0
         base = os.path.join(logs_dir, "discord")
         if not os.path.isdir(base):
             return 0

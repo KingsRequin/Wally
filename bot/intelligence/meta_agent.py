@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-
+from loguru import logger
 
 _THINK_RE = re.compile(r"\[THINK\]")
 # Deux passes pour SPEAK :
@@ -65,8 +65,17 @@ def parse_decisions(text: str) -> list[MetaDecision]:
     for m in _ACT_RE.finditer(text):
         try:
             args = json.loads(m.group(2))
-        except json.JSONDecodeError:
-            args = {}
+        except json.JSONDecodeError as exc:
+            # Ne PAS dispatcher une action dont on a perdu les arguments : le
+            # dispatcher no-ope alors en silence sur les branches gardées par
+            # leur argument (`create_memory`, `create_goal`, `show_overlay`),
+            # Wally croit avoir agi, et rien ne distingue « le modèle n'a rien
+            # demandé » de « le modèle a demandé quelque chose d'illisible ».
+            logger.warning(
+                "meta_agent : ACT {n} ignoré, JSON illisible ({e}) : {a}",
+                n=m.group(1), e=exc, a=m.group(2)[:200],
+            )
+            continue
         decisions.append(MetaDecision(action="ACT", act_name=m.group(1), act_args=args))
 
     for m in _EVOLVE_RE.finditer(text):

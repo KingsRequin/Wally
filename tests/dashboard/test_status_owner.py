@@ -35,11 +35,13 @@ def _client(owner_discord_id: str, name: str) -> TestClient:
 
 
 def test_status_ne_publie_pas_l_identifiant_du_proprietaire():
-    r = _client("42", "Cindy").get("/api/public/status")
+    # Un identifiant improbable : « 42 » se retrouvait par hasard dans
+    # `uptime_seconds`, ce qui rendait le test dépendant du moment.
+    r = _client("987654321098765432", "Cindy").get("/api/public/status")
     assert r.status_code == 200
     corps = r.json()
     assert "owner_discord_id" not in corps
-    assert "42" not in str(corps.values())
+    assert "987654321098765432" not in str(corps)
 
 
 def test_status_exposes_bot_name():

@@ -217,8 +217,14 @@ class UpgradeRegistry:
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                f"""SELECT id, proposal, status, created_at, decided_at
-                    FROM pending_upgrades WHERE status IN ({placeholders})""",
+                # `capability` était omis du SELECT — la `UpgradeRow` rendue
+                # avait donc toujours `capability=None`, et le motif de blocage
+                # ne pouvait jamais citer la capacité au présent. `ORDER BY` :
+                # sans lui, deux demandes à score égal donnaient un blocage
+                # non reproductible d'un appel à l'autre.
+                f"""SELECT id, proposal, status, created_at, decided_at, capability
+                    FROM pending_upgrades WHERE status IN ({placeholders})
+                    ORDER BY id DESC""",
                 _BLOCKING,
             )
             rows = await cur.fetchall()
@@ -235,8 +241,9 @@ class UpgradeRegistry:
             if jac < threshold and rec < _SEUIL_RECOUVREMENT:
                 continue
             score = max(jac, rec)
-            if score >= best_score:
+            if score > best_score:
                 best_score = score
                 best = UpgradeRow(id=r["id"], proposal=r["proposal"], status=r["status"],
-                                  created_at=r["created_at"], decided_at=r["decided_at"])
+                                  created_at=r["created_at"], decided_at=r["decided_at"],
+                                  capability=r["capability"])
         return best

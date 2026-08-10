@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, asdict
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -25,7 +25,14 @@ class EvolutionLog:
             f.write(json.dumps(asdict(entry)) + "\n")
 
     def entries_today(self, section: str) -> list[EvolutionEntry]:
-        today = date.today().isoformat()
+        # MÊME base que l'écriture : `persona_manager` estampille en UTC
+        # (`datetime.now(timezone.utc)`), alors que `date.today()` rend la date
+        # LOCALE — Europe/Paris dans le conteneur. Une évolution écrite à 00 h 30
+        # Paris porte « …T22:30Z » la veille : elle n'était comptée ni ce
+        # jour-là ni le lendemain, et les deux garde-fous (`max_change_percent`,
+        # `max_evolutions_per_day`) étaient aveugles de 00 h à 02 h — précisément
+        # la plage creuse où la boucle cognitive vagabonde.
+        today = datetime.now(timezone.utc).date().isoformat()
         if not self._path.exists():
             return []
         entries: list[EvolutionEntry] = []

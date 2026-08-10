@@ -68,6 +68,12 @@ class SelfUpgrade:
                 self._checker.update_available = False
                 await dm.send("❌ Mise à jour ignorée.")
         except asyncio.TimeoutError:
+            # Sans cette trace, rien ne distinguait une proposition EXPIRÉE d'un
+            # refus explicite : le drapeau tombait en silence et on ne pouvait
+            # plus comprendre pourquoi Wally ne reproposait rien.
+            logger.info(
+                "SelfUpgrade : pas de réponse du créateur en 24 h — proposition abandonnée"
+            )
             self._checker.update_available = False
         except Exception as e:
             logger.error("SelfUpgrade._propose failed: {}", e)

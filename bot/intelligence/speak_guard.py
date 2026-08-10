@@ -46,7 +46,15 @@ class SpeakGuard:
         raw = (reply or "").strip()
         reason = raw.split("—", 1)[1].strip() if "—" in raw else raw[:200]
         # On ne bloque que sur un TAIS-TOI explicite ; tout le reste = fail-open.
-        if raw.upper().lstrip().startswith("TAIS-TOI"):
+        # Mais `lstrip()` nu ne retire que des blancs, alors que le prompt du
+        # garde montre le format ENTRE BACKTICKS (`TAIS-TOI — <raison>`) : un
+        # modèle qui recopie la mise en forme produisait « `TAIS-TOI… » ou
+        # « **TAIS-TOI** », qui ne commencent pas par TAIS-TOI. Le verdict de
+        # blocage était donc silencieusement retourné en autorisation — le
+        # dernier filtre avant tout SPEAK spontané ne bloquait jamais. Aucune
+        # ligne « auto-supprimé (guard) » dans les logs, ce qui colle.
+        verdict = raw.upper().strip().lstrip("`*_\"'“« ").strip()
+        if verdict.startswith("TAIS-TOI") or verdict.startswith("TAIS TOI"):
             return False, reason
         if not raw:
             logger.debug("SpeakGuard: verdict vide → envoi")
