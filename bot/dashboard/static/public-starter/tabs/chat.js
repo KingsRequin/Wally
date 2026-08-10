@@ -17,7 +17,9 @@ let _dateDisplayRef = null;
 let _nextBtnRef  = null;
 let _autocompleteDropdown = null;
 
-const DATE_MIN = new Date('2026-03-01');
+// `new Date('2026-03-01')` est un minuit UTC : comparé à une date construite en
+// local, il décalait la borne d'un jour. On la construit dans le même repère.
+const DATE_MIN = new Date(2026, 2, 1);
 
 const IMAGINE_SUGGESTIONS = [
   'un paysage cyberpunk sous la pluie',
@@ -27,9 +29,18 @@ const IMAGINE_SUGGESTIONS = [
   'chat robot dans un café parisien',
 ];
 
+// Les dates sont construites en heure LOCALE puis étaient re-sérialisées en UTC
+// par `toISOString()`. En Europe/Paris, minuit local vaut 22 h ou 23 h la veille
+// en UTC : « Préc. » reculait de DEUX jours et « Suiv. » n'avançait jamais. Un
+// visiteur français ne voyait qu'un jour d'historique sur deux.
+function ymd(dt) {
+  return dt.getFullYear() + '-'
+    + String(dt.getMonth() + 1).padStart(2, '0') + '-'
+    + String(dt.getDate()).padStart(2, '0');
+}
+
 function todayStr() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return ymd(new Date());
 }
 
 function formatDateFR(dateStr) {
@@ -45,14 +56,14 @@ function prevDay(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() - 1);
-  return dt.toISOString().slice(0, 10);
+  return ymd(dt);
 }
 
 function nextDay(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() + 1);
-  return dt.toISOString().slice(0, 10);
+  return ymd(dt);
 }
 
 function isAtMin(dateStr) {
@@ -309,7 +320,16 @@ function buildChatLayout(user) {
   logoutBtn.className = 'chat-logout';
   logoutBtn.textContent = 'Déconnexion';
   logoutBtn.addEventListener('click', () => {
+    // Les DEUX clés. Ne retirer que le JWT ne déconnectait personne : `mount()`
+    // voyait le refresh token, en rebattait un neuf et re-rendait le chat. Sur
+    // un navigateur partagé, le visiteur suivant reprenait la session Discord
+    // du précédent — chat, mémoire, votes — pendant les 30 jours de vie du
+    // refresh. `renderAuth()` retirait bien les deux : les deux chemins de
+    // déconnexion se contredisaient.
     localStorage.removeItem('discord_jwt');
+    localStorage.removeItem('discord_refresh');
+    if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
+    window.dispatchEvent(new CustomEvent('wally-auth-changed'));
     mount(_container);
   });
   userBar.appendChild(logoutBtn);
@@ -595,6 +615,17 @@ function renderMemorySidebar(col, data) {
 }
 
 export function mount(el) {
+  // `mount()` est rappelé après l'échange OAuth, après un rafraîchissement
+  // silencieux du jeton et à chaque déconnexion. Il vidait le DOM sans toucher
+  // à `_ws` : l'ancienne socket restait ouverte, ses handlers écrivaient dans
+  // une liste détachée, et son `onclose` relançait la connexion en boucle sur
+  // un jeton périmé. `unmount()` ferait le ménage, mais n'est appelé nulle part.
+  if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
+  clearTimeout(_retryTimer);
+  _retryTimer = null;
+  _retryDelay = 1000;
+  _typingEl = null;
+
   _container = el;
   _mounted   = true;
   el.textContent = '';

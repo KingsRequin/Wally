@@ -27,7 +27,11 @@ function connectSSE() {
       notifyEmotions();
     } catch (_) {}
   };
-  es.onerror = () => setTimeout(connectSSE, 5000);
+  // `es.close()` AVANT de relancer : le navigateur reconnecte déjà seul une
+  // EventSource en erreur. Sans fermeture, chaque incident laissait l'ancienne
+  // vivante ET en ouvrait une autre — 2, puis 4, puis 8. Après quelques
+  // rebuilds du bot, un onglet laissé ouvert portait des dizaines de flux.
+  es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
 }
 connectSSE();
 
@@ -142,7 +146,17 @@ const _sections = {};
     sec.className = 'arc-section';
     main.appendChild(sec);
     _sections[name] = sec;
-    TABS[name](sec);
+    // Une section qui lève ne doit pas emporter les autres NI la suite du
+    // module : cette IIFE est évaluée au chargement, et une exception ici
+    // laissait la nav, le scroll-spy, le widget d'auth et le fond animé
+    // jamais initialisés. Un champ inattendu rendu par une API transformait
+    // une section cassée en page entièrement morte.
+    try {
+      TABS[name](sec);
+    } catch (e) {
+      console.error('montage de la section ' + name, e);
+      sec.textContent = 'Section indisponible.';
+    }
   });
 })();
 
