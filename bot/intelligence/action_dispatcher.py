@@ -4,7 +4,7 @@ import asyncio
 import difflib
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 from loguru import logger
 
@@ -393,7 +393,12 @@ class ActionDispatcher:
     async def _act(self, act_name: str, args: dict) -> None:
         from bot.intelligence.memory.facts import AtomicFact, FactCategory, FactStatus
 
-        now = datetime.now(timezone.utc)
+        # UTC NAÏF : cette date part dans des `AtomicFact`, et `facts.py`
+        # comme `AtomicFact` écrivent en `utcnow()`. Le format aware faisait
+        # cohabiter deux écritures dans la même colonne — toute soustraction
+        # directe entre les deux lève `TypeError`. Le canari de démarrage a
+        # remonté 111 lignes venues d'ici après la migration du 2026-08-10.
+        now = datetime.utcnow()
 
         if act_name == "show_overlay" and self._overlay_narrator:
             widget = str(args.get("widget") or "").strip()

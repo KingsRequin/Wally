@@ -235,6 +235,17 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     reaction_tracker = ReactionTracker(emotion, db)
     logger.info("ReactionTracker initialized")
 
+    # Canari : les invariants qu'aucun test ne peut voir, parce qu'ils dépendent
+    # de l'état RÉEL de la base et du disque. Ne bloque jamais le démarrage —
+    # un bot qui tourne avec un index manquant vaut mieux qu'un bot qui refuse
+    # de démarrer. C'est le LOG qui compte : c'est lui qui manquait à chaque
+    # fois pendant les audits.
+    from bot.core.canari import verifier_invariants
+    try:
+        await verifier_invariants(config, _db_path)
+    except Exception as exc:  # noqa: BLE001 — un canari ne fait jamais échouer le boot
+        logger.warning("Canari de démarrage indisponible : {e}", e=exc)
+
     return CoreServices(
         config=config,
         db=db,

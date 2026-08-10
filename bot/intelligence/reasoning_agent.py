@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -179,7 +179,8 @@ class ReasoningAgent:
         thought_fact_id: int | None = None
         if thought_text:
             from bot.intelligence.memory.facts import AtomicFact, FactCategory
-            now = datetime.now(timezone.utc)
+            # UTC naïf, comme `AtomicFact` et toutes les requêtes de `facts.py`.
+            now = datetime.utcnow()
             thought = AtomicFact(
                 user_id="wally:self",
                 content=thought_text,

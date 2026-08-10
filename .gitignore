@@ -47,3 +47,6 @@ public-ui/
 # personnelle). Le code actuel ne les reproduit plus ; cette règle empêche
 # qu'un prochain appel mal formé les fasse revenir.
 *Database object at*
+
+# Cache du vérificateur de types (cf. scripts/lint_types.py)
+.mypy_cache/
