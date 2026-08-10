@@ -149,8 +149,22 @@ class ResponseGate:
                 schema_name="gate_decision",
                 purpose="gate",
             )
+            # Normalisée ET vérifiée contre l'enum du schéma. Aucun provider ne
+            # garantit l'énumération — `complete_structured` force un tool_choice
+            # sans validation post-hoc. Une réponse « ignore » en minuscules
+            # traversait, le test de l'appelant (`in ("IGNORE","DEFER","REACT")`)
+            # était faux, et Wally RÉPONDAIT alors qu'il avait décidé de se
+            # taire — pendant que `conv_log` écrivait « ignore ». Le journal
+            # affirmait l'inverse du comportement observé.
+            _brut = str(result.get("decision") or "").strip().upper()
+            if _brut not in ("RESPOND", "IGNORE", "REACT", "DEFER"):
+                logger.warning(
+                    "ResponseGate : décision hors enum {d!r} → RESPOND",
+                    d=result.get("decision"),
+                )
+                _brut = "RESPOND"
             decision = GateDecision(
-                decision=result.get("decision", "RESPOND"),
+                decision=_brut,
                 emoji=result.get("emoji"),
                 defer_seconds=result.get("defer_seconds"),
                 reason=result.get("reason"),

@@ -89,6 +89,13 @@ class RemoteSTTSession:
             await asyncio.wait_for(self._ready_evt.wait(), self._ready_timeout)
         except asyncio.TimeoutError:
             logger.warning("RemoteSTTSession: pas de `ready` après {t}s", t=self._ready_timeout)
+            # Compté comme INJOIGNABLE. Sans ce drapeau, ni `_arm_unreachable_cache`
+            # ni le repli batch ne s'armaient : la session était retirée, et la
+            # frame suivante — 20 ms plus tard — en rouvrait une, qui attendrait
+            # 35 s de plus. Un serveur qui accepte le TCP sans jamais répondre
+            # (modèle en cours de chargement, process figé) entretenait ainsi
+            # deux WebSockets en vol en permanence, backoff jamais déclenché.
+            self.unreachable = True
             return False
         return self.ready and not self.server_full
 

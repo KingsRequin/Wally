@@ -1,6 +1,7 @@
 # bot/dashboard/routes/admin.py
 from __future__ import annotations
 
+import copy
 import asyncio
 import os
 import re
@@ -58,7 +59,26 @@ async def update_config(request: Request, body: dict) -> dict:
     """
     state = request.app.state.wally
     cfg = state.config
+    # Instantané AVANT toute mutation. La fonction écrit dans `cfg` — et dans les
+    # clients LLM vivants — au fil de la lecture du body, mais n'appelle
+    # `cfg.save()` qu'à la toute fin : une validation qui échoue plus loin
+    # (`reasoning_effort`, `thinking_budget_tokens`, `max_messages`, `quality`…)
+    # laissait derrière elle les mutations déjà faites. Le bot tournait alors
+    # avec des réglages absents de `config.yaml`, sans trace, et un
+    # `config.save()` déclenché ailleurs les gravait — pendant que l'appelant,
+    # ayant reçu un 400, croyait que rien n'avait été appliqué.
+    _avant = copy.deepcopy(cfg)
 
+    try:
+        return await _appliquer_config(request, body, state, cfg)
+    except HTTPException:
+        # On rend la config telle qu'elle était, y compris aux clients vivants.
+        state.config = _avant
+        _restaurer_clients_llm(state, _avant)
+        raise
+
+
+async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
     if "openai" in body:
         d = body["openai"]
         if "temperature" in d:
@@ -409,6 +429,18 @@ async def update_config(request: Request, body: dict) -> dict:
 
     cfg.save()
     return {"status": "saved"}
+
+
+def _restaurer_clients_llm(state, cfg) -> None:
+    """Remet la température d'origine sur les clients LLM déjà mutés."""
+    for attribut, role in (("llm", "primary"), ("llm_secondary", "secondary")):
+        client = getattr(state, attribut, None)
+        if client is None:
+            continue
+        try:
+            client.temperature = getattr(cfg.llm, role).temperature
+        except Exception:  # noqa: BLE001 — la restauration ne doit jamais lever
+            pass
 
 
 @router.get("/openai/models")

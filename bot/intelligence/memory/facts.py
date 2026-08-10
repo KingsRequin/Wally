@@ -631,12 +631,18 @@ class SQLiteFactStore:
         `needs_review` et divise la confiance par deux. Réversible. Sert à l'outil
         `doubt_memory` (Wally agit sur son obsession « inférence vs fait » au lieu
         de la ruminer)."""
+        # `last_seen_at` REPOUSSÉ : `archive_stale_doubts` archive sur
+        # `last_seen_at <= maintenant - 14 j`. Sans cette mise à jour, un fait
+        # ancien mis en doute aujourd'hui portait une date vieille de plusieurs
+        # semaines et partait dès le passage suivant — archivé AVANT qu'on ait
+        # eu la moindre chance de lever le doute, alors que le délai de 14 jours
+        # existe précisément pour ça.
         async with self._connect() as db:
             await db.execute(
                 """UPDATE atomic_facts
-                   SET status = ?, confidence = confidence * 0.5
+                   SET status = ?, confidence = confidence * 0.5, last_seen_at = ?
                    WHERE id = ?""",
-                (FactStatus.NEEDS_REVIEW.value, fact_id),
+                (FactStatus.NEEDS_REVIEW.value, datetime.utcnow().isoformat(), fact_id),
             )
             await db.commit()
 

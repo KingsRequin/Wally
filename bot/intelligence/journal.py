@@ -377,6 +377,14 @@ def _plausible_duplicate(a: str, b: str) -> bool:
     return len(_significant_words(a) & _significant_words(b)) >= 2
 
 
+def _entier(v) -> bool:
+    """Un entier VRAI : en Python `bool` est sous-classe de `int`, et `True`
+    passe donc `isinstance(v, int)` — puis `facts[True]` désigne `facts[1]`.
+    Au niveau module : la garde était imbriquée dans `_justified_deletions`, ce
+    qui l'a fait oublier sur le chemin de reformulation."""
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
 def _justified_deletions(
     raw_delete, total: int, user_id: str, contents: list[str] | None = None
 ) -> set[int]:
@@ -394,9 +402,6 @@ def _justified_deletions(
     du cycle sert de survivant : sans ça les deux s'effaceraient et
     l'information serait perdue au lieu d'être dédupliquée.
     """
-    def _entier(v) -> bool:
-        return isinstance(v, int) and not isinstance(v, bool)
-
     proposed: dict[int, int] = {}
     refused = 0
     for item in raw_delete:
@@ -775,7 +780,13 @@ class DailyJournal:
             if not isinstance(item, dict):
                 continue
             idx, new_text = item.get("index"), (item.get("new_text") or "").strip()
-            if not isinstance(idx, int) or not 0 <= idx < len(facts) or not new_text:
+            # `_entier` : en Python `bool` est sous-classe de `int`, donc
+            # `idx = True` passait `isinstance(idx, int)` et `facts[True]`
+            # désigne `facts[1]` — un verdict LLM malformé réécrivait
+            # silencieusement le DEUXIÈME souvenir du lot. La garde existait
+            # déjà côté suppression (`_justified_deletions`), elle avait été
+            # oubliée ici, où aucun contrôle de plausibilité ne rattrape.
+            if not _entier(idx) or not 0 <= idx < len(facts) or not new_text:
                 continue
             if await store.update_content(facts[idx].id, new_text):
                 updated += 1
@@ -1097,10 +1108,16 @@ class DailyJournal:
         # quelques secondes. Aggravant : c'est la minute où trois autres jobs
         # lourds sont planifiés (journal, consolidation, modélisation), et le
         # `misfire_grace_time` d'APScheduler vaut 1 s par défaut.
-        chart_buf = (
-            await asyncio.to_thread(_generate_emotion_chart, snapshots)
-            if snapshots else None
-        )
+        # Protégé : le graphe est un BONUS, il arrive après la génération du
+        # texte et donc après tout le coût LLM déjà payé. Une police manquante
+        # ou un backend matplotlib capricieux faisait perdre l'entière journée
+        # de journal — texte compris — au lieu de la publier sans son image.
+        chart_buf = None
+        if snapshots:
+            try:
+                chart_buf = await asyncio.to_thread(_generate_emotion_chart, snapshots)
+            except Exception as exc:  # noqa: BLE001 — le journal passe sans graphe
+                logger.warning("Journal : graphe des émotions non rendu : {e}", e=exc)
 
         formatted = f"# Journal de {self._config.bot.name} — {display_date}\n\n{journal_text}"
         if self._send_cb:

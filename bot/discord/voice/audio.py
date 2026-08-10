@@ -1,5 +1,7 @@
 import threading
 import warnings
+from loguru import logger
+
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
@@ -12,6 +14,9 @@ FRAME_MS = 20
 SAMPLE_RATE = 16000
 FRAME_BYTES = int(SAMPLE_RATE * (FRAME_MS / 1000)) * 2  # 16-bit mono → 640 octets
 _SILENCE_FRAMES_TO_CUT = 15  # ~300 ms de silence clôt un segment
+# Un énoncé plus long que 30 s n'est plus un énoncé : au-delà, on coupe d'office
+# plutôt que de laisser le tampon grossir sans borne (cf. `feed`).
+_MAX_SEGMENT_BYTES = SAMPLE_RATE * 2 * 30
 
 
 def to_stt_format(pcm48k_stereo: bytes) -> bytes:
@@ -91,6 +96,16 @@ class VadSegmenter:
             self._in_speech = True
             self._silence_run = 0
             self._voiced.extend(frame)
+            # Plafond : le tampon n'est vidé qu'à l'émission. Tant que le VAD
+            # répond « parole » sur chaque frame — musique jouée dans le salon,
+            # micro ouvert sur un ventilateur avec une agressivité basse — il
+            # grossissait de 32 Ko/s par locuteur sans aucune borne, et le
+            # segment finalement remis à whisper faisait plusieurs minutes,
+            # bloquant un slot du sémaphore d'autant.
+            if len(self._voiced) >= _MAX_SEGMENT_BYTES:
+                logger.debug("VAD : segment coupé au plafond ({n} octets)",
+                             n=len(self._voiced))
+                return self._emit()
             return None
         if self._in_speech:
             self._silence_run += 1

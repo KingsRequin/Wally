@@ -159,7 +159,13 @@ class ConversationLogger:
         for platform, channel, record in batch:
             day = datetime.fromtimestamp(record["ts"], _PARIS).strftime("%Y-%m-%d")
             path = self._root / platform / channel / f"{day}.jsonl"
-            by_file.setdefault(path, []).append(json.dumps(record, ensure_ascii=False))
+            # `default=str` : un seul champ non sérialisable — un objet
+            # discord.py glissé dans un événement, un `datetime` — faisait
+            # lever `json.dumps` et emportait TOUT le lot de 200 événements,
+            # avec pour seule trace un warning générique.
+            by_file.setdefault(path, []).append(
+                json.dumps(record, ensure_ascii=False, default=str)
+            )
         for path, lines in by_file.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as fh:

@@ -126,7 +126,17 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
 
         if name == "leave_voice":
             speaker = _speaker()
-            if speaker is None or int(speaker) not in service.members_in_channel():
+            # `int()` gardé : `current_speaker_id()` est alimenté par
+            # `str(user.id)` mais AUSSI par un `speaker_id` venu du serveur STT
+            # distant, qui n'est pas garanti numérique. Un ValueError cassait
+            # alors l'appel d'outil au milieu de `complete_with_tools` : le
+            # modèle ne recevait aucun résultat et enchaînait souvent sur un
+            # « ok je pars » sans partir.
+            try:
+                sid = int(speaker) if speaker is not None else None
+            except (TypeError, ValueError):
+                sid = None
+            if sid is None or sid not in service.members_in_channel():
                 logger.info("voice tool: leave_voice refusé — locuteur absent du salon")
                 return json.dumps(
                     {"status": "denied", "message": "Seul un membre du salon peut me faire partir."}
