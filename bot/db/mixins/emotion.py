@@ -46,12 +46,17 @@ class EmotionMixin:
             ),
         )
 
-    async def get_emotion_snapshots_since(self, since: float) -> list[dict]:
+    async def get_emotion_snapshots_since(self, since: float, limit: int = 5000) -> list[dict]:
+        # Plafond : la route est PUBLIQUE et `?since=0` sérialisait la table
+        # entière dans la boucle d'événements (9 344 lignes en base pour 316
+        # utiles au tracé). On garde les plus RÉCENTES, puis on remet dans
+        # l'ordre chronologique attendu par le graphe.
         rows = await self.fetch_all(
-            "SELECT * FROM emotion_history WHERE snapshot_at >= ? ORDER BY snapshot_at ASC",
-            (since,),
+            "SELECT * FROM emotion_history WHERE snapshot_at >= ? "
+            "ORDER BY snapshot_at DESC LIMIT ?",
+            (since, limit),
         )
-        return [dict(row) for row in rows]
+        return [dict(row) for row in reversed(rows)]
 
     async def cleanup_old_emotion_history(self, days: int = 7) -> None:
         cutoff = time.time() - days * 86400

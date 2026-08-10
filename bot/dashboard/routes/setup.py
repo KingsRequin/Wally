@@ -2,6 +2,7 @@
 """Routes Setup Wizard — admin (génération invitations) + wizard public."""
 from __future__ import annotations
 
+import hmac
 import os
 import time
 import urllib.parse
@@ -53,7 +54,10 @@ def _check_preview_auth(request: Request, token: str) -> None:
         return
     cfg_token = request.app.state.wally.config.bot.dashboard_token
     auth = request.headers.get("Authorization", "")
-    if not cfg_token or not auth.startswith("Bearer ") or auth[7:] != cfg_token:
+    # `compare_digest` comme dans `auth.py` : `!=` sort au premier octet
+    # différent, ce qui laisse mesurer le préfixe correct.
+    if (not cfg_token or not auth.startswith("Bearer ")
+            or not hmac.compare_digest(auth[7:], cfg_token)):
         raise HTTPException(status_code=401, detail="Admin auth required for preview.")
 
 
@@ -173,6 +177,15 @@ async def twitch_callback(request: Request, token: str):
     account_type = parts[1] if len(parts) == 2 else "bot"
 
     db = request.app.state.wally.db
+    # Seule route du wizard qui n'ouvrait NI l'invitation ni le `state` : un
+    # échange OAuth était déclenchable anonymement, et une invitation révoquée
+    # gardait un callback fonctionnel. Le `state` doit désigner le même jeton
+    # que l'URL — c'est la protection CSRF prévue par OAuth, jusqu'ici inutilisée
+    # alors qu'elle était déjà transportée (`f"{token}:{account_type}"`).
+    if len(parts) != 2 or not hmac.compare_digest(parts[0], token):
+        logger.warning("Callback Twitch : `state` ne correspond pas au jeton d'invitation")
+        raise HTTPException(status_code=400, detail="state invalide")
+    await _get_valid_invite(token, db)
     session = await db.get_setup_session(token)
     client_id = session.get("twitch_client_id", "")
     client_secret = session.get("twitch_client_secret", "")

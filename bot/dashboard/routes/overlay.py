@@ -8,6 +8,7 @@ navigateur, et la vraie validation reste les stats OBS chez le streamer.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import time
 from pathlib import Path
@@ -121,8 +122,13 @@ async def overlay_health(request: Request) -> dict:
         raise HTTPException(400, "JSON invalide")
     fps = data.get("fps")
     worst = data.get("worst_frame_ms")
-    if not isinstance(fps, (int, float)) or not isinstance(worst, (int, float)):
-        raise HTTPException(400, "fps et worst_frame_ms requis")
+    # `json.loads` accepte `NaN` et `Infinity` : ce sont des `float`, ils
+    # passaient le test de type, puis `int(nan)` levait ValueError et
+    # `int(inf)` OverflowError — un 500 répétable, sans authentification.
+    if (not isinstance(fps, (int, float)) or isinstance(fps, bool)
+            or not isinstance(worst, (int, float)) or isinstance(worst, bool)
+            or not math.isfinite(fps) or not math.isfinite(worst)):
+        raise HTTPException(400, "fps et worst_frame_ms requis (nombres finis)")
     state.overlay_health = {
         "fps": max(0, min(240, int(fps))),
         "worst_frame_ms": max(0, min(10_000, int(worst))),
