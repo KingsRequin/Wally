@@ -99,13 +99,13 @@ class ActionMixin:
     async def search_action_tasks(
         self, query: str, creator_id: str, creator_platform: str
     ) -> list[dict]:
-        return await self.fetch_all(
+        return [dict(r) for r in await self.fetch_all(
             """SELECT * FROM action_tasks
                WHERE description LIKE ? AND creator_id = ? AND creator_platform = ?
                AND status IN ('active', 'paused')
                ORDER BY created_at DESC""",
             (f"%{query}%", creator_id, creator_platform),
-        )
+        )]
 
     async def count_user_action_tasks(
         self, creator_id: str, creator_platform: str
@@ -119,9 +119,15 @@ class ActionMixin:
         return row["cnt"] if row else 0
 
     async def get_active_action_tasks(self) -> list[dict]:
-        return await self.fetch_all(
+        # `dict`, comme pour `list_action_tasks` plus haut — le correctif n'avait
+        # pas été propagé ici. Le handler d'exception de `reload_all()` appelle
+        # `task.get("id")` : sur un `sqlite3.Row`, l'AttributeError partait HORS
+        # du `except`, remontait jusqu'à `main.py` et empêchait le démarrage.
+        # Le garde-fou censé encaisser une ligne bancale la transformait en panne
+        # totale — l'inverse exact de ce que son commentaire promettait.
+        return [dict(r) for r in await self.fetch_all(
             "SELECT * FROM action_tasks WHERE status = 'active' ORDER BY next_run_at"
-        )
+        )]
 
     # ── Action Permissions ────────────────────────────────────────────────
 

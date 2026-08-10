@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import json
 
+import discord
 from loguru import logger
+
+# Même garde que sur les quatre autres points d'envoi Discord du projet.
+# Celui-ci était nu : une tâche planifiée dont le texte commence par
+# « @everyone » pingait tout le serveur — et si l'appel LLM du gestionnaire de
+# rappel échoue, le texte brut demandé par l'utilisateur part verbatim.
+_ALLOWED_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 
 class ActionExecutor:
@@ -64,7 +71,7 @@ class ActionExecutor:
             except (ValueError, TypeError):
                 channel = None
             if channel:
-                await channel.send(message)
+                await channel.send(message, allowed_mentions=_ALLOWED_MENTIONS)
             else:
                 logger.warning("Discord channel {} not found", channel_id)
         elif platform == "twitch":

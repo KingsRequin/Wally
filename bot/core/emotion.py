@@ -706,7 +706,12 @@ class EmotionEngine:
         """Persist all in-memory affinities to DB."""
         if not self._db:
             return
-        for (user_id, platform), data in self._user_affinity.items():
+        # `list()` : chaque `upsert` cède la main, et un message d'un nouvel
+        # interlocuteur pendant ce temps agrandit le dict — jusqu'à 385 points de
+        # yield avec 77 couples en base. Le RuntimeError qui en résultait était
+        # avalé par `_delayed_save` : la mémoire émotionnelle par personne ne
+        # s'écrivait jamais, précisément pendant un live ou une discussion animée.
+        for (user_id, platform), data in list(self._user_affinity.items()):
             for e in EMOTIONS:
                 aff = data.get(e, 0.0)
                 count = data.get("_count", {}).get(e, 0)
@@ -827,6 +832,12 @@ class EmotionEngine:
         """Valide et ajoute les nouveaux mots appris depuis le LLM."""
         added = False
         for entry in new_words:
+            # Sur le chemin image, la réponse est parsée sans schéma : le modèle
+            # rend parfois une liste de chaînes. `entry.get()` levait alors une
+            # AttributeError qui faisait rejouer toute l'analyse émotionnelle.
+            if not isinstance(entry, dict):
+                logger.debug("Mot appris ignoré (format inattendu) : {e}", e=entry)
+                continue
             word = entry.get("word", "")
             emotion = entry.get("emotion", "")
             delta = entry.get("delta", 0.0)
@@ -1072,30 +1083,43 @@ class EmotionEngine:
     ) -> dict | None:
         self.record_interaction()
         state_before = self.get_state()
+        # SEUL l'appel au LLM est protégé. Le `try` englobait aussi l'application
+        # des deltas, `_learn_words` et `update_user_affinity` : une panne APRÈS
+        # l'application tombait dans le repli, qui recalculait et RÉAPPLIQUAIT —
+        # colère doublée sur un mème insultant, habituation comptée deux fois, et
+        # trust/love/user_facts du LLM jetés au profit de l'heuristique ±0.05.
+        analyse = None
         if self._openai is not None and context_messages:
             try:
-                deltas, new_words, trust_delta, love_delta, user_facts = await self._analyze_llm(
+                analyse = await self._analyze_llm(
                     text, trust_score, context_messages, image_urls=image_urls
                 )
-                prepared = self.prepare_deltas(deltas, user_id, platform, beloved=beloved)
-                for emotion, delta in prepared.items():
-                    self.apply_delta(emotion, delta)
-                if new_words:
-                    await self._learn_words(new_words)
-                if user_id and platform:
-                    self.update_user_affinity(user_id, platform, deltas)
-                # Check for peaks
-                state_after = self.get_state()
-                for emotion, delta in prepared.items():
-                    if delta > 0:
-                        self._fire(self._maybe_log_peak(
-                            emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
-                            trigger_user=trigger_user, trigger_message=text,
-                            channel_id=channel_id, platform=platform,
-                        ))
-                return {"trust_delta": trust_delta, "love_delta": love_delta, "user_facts": user_facts}
             except Exception as exc:
                 logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
+
+        if analyse is not None:
+            deltas, new_words, trust_delta, love_delta, user_facts = analyse
+            prepared = self.prepare_deltas(deltas, user_id, platform, beloved=beloved)
+            for emotion, delta in prepared.items():
+                self.apply_delta(emotion, delta)
+            if new_words:
+                # Écrire sur disque peut échouer sans que l'analyse, elle, soit à refaire.
+                try:
+                    await self._learn_words(new_words)
+                except Exception as exc:
+                    logger.warning("Apprentissage des mots échoué : {e}", e=exc)
+            if user_id and platform:
+                self.update_user_affinity(user_id, platform, deltas)
+            # Check for peaks
+            state_after = self.get_state()
+            for emotion, delta in prepared.items():
+                if delta > 0:
+                    self._fire(self._maybe_log_peak(
+                        emotion, state_before.get(emotion, 0.0), state_after.get(emotion, 0.0),
+                        trigger_user=trigger_user, trigger_message=text,
+                        channel_id=channel_id, platform=platform,
+                    ))
+            return {"trust_delta": trust_delta, "love_delta": love_delta, "user_facts": user_facts}
         # Fallback : NRCLex + FR_EMOTION_WORDS
         deltas = await self.analyze_message(text, trust_score)
         prepared = self.prepare_deltas(deltas, user_id, platform, beloved=beloved)
