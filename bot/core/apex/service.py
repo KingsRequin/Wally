@@ -31,6 +31,30 @@ def _fr(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _classements(stat) -> str:
+    """« (3ᵉ mondial, 2ᵉ sur PC) » — ou rien si l'API n'a pas encore calculé.
+
+    Le rang plateforme arrivait à chaque appel et n'était jamais montré. C'est
+    pourtant souvent le plus parlant : Azraël est 10ᵉ mondial aux wins avec Fuse,
+    mais 3ᵉ sur PC. Ce n'est PAS un rang par pays — celui-là vit dans
+    `/leaderboard`, fermé à notre clé.
+    """
+    morceaux = []
+    if stat.world_pos is not None:
+        mondial = f"{_rang(stat.world_pos)} mondial"
+        # Le top % reste : « top 0.01 % » dit quelque chose que « 3ᵉ » ne dit
+        # pas, et l'inverse est vrai aussi. Un test existant a résisté quand je
+        # l'ai laissé tomber — il avait raison.
+        if stat.top_percent is not None:
+            mondial += f", top {stat.top_percent} %"
+        morceaux.append(mondial)
+    elif stat.top_percent is not None:
+        morceaux.append(f"top {stat.top_percent} % mondial")
+    if stat.platform_pos is not None:
+        morceaux.append(f"{_rang(stat.platform_pos)} sur sa plateforme")
+    return f" ({' — '.join(morceaux)})" if morceaux else ""
+
+
 def _rang(n: int) -> str:
     """1 → « 1ᵉʳ », 3 → « 3ᵉ ». Le premier ne se dit pas « 1ᵉ ».
 
@@ -214,13 +238,7 @@ class ApexLegendsService:
         if p.banned:
             lignes.append(f"⚠️ Banni ({p.ban_reason or 'raison inconnue'})")
         for stat in p.stats.values():
-            ligne = f"{stat.label} : {_fr(stat.value)}"
-            if stat.top_percent is not None:
-                ligne += f" (top {stat.top_percent} % mondial"
-                if stat.world_pos is not None:
-                    ligne += f", {_rang(stat.world_pos)}"
-                ligne += ")"
-            lignes.append(ligne)
+            lignes.append(f"{stat.label} : {_fr(stat.value)}{_classements(stat)}")
         lignes += self._render_legends(p, legend)
         return "\n".join(lignes)
 
@@ -251,13 +269,7 @@ class ApexLegendsService:
                 ]
             detail = []
             for stat in p.legend_stats[trouvee].values():
-                ligne = f"  {stat.label} : {_fr(stat.value)}"
-                if stat.top_percent is not None:
-                    ligne += f" (top {stat.top_percent} % mondial sur ce tracker"
-                    if stat.world_pos is not None:
-                        ligne += f", {_rang(stat.world_pos)}"
-                    ligne += ")"
-                detail.append(ligne)
+                detail.append(f"  {stat.label} : {_fr(stat.value)}{_classements(stat)}")
             return [f"Avec {trouvee} :", *detail]
 
         # Résumé BORNÉ : Azraël suit 17 légendes, et déballer les trois notions

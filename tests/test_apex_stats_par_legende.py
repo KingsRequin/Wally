@@ -129,8 +129,8 @@ def test_le_detail_dune_legende_demandee(azrael):
 
     assert "Avec Fuse :" in rendu
     assert "82 814" in rendu
-    # Le rang porte sur CE tracker, et le rendu doit le dire.
-    assert "sur ce tracker" in rendu
+    # Les deux classements que l'API donne réellement.
+    assert "3ᵉ mondial" in rendu and "2ᵉ sur sa plateforme" in rendu
 
 
 def test_la_legende_se_demande_sans_respecter_la_casse(azrael):
@@ -177,7 +177,7 @@ def test_loutil_annonce_les_stats_par_legende():
     assert "PAR LÉGENDE" in description
     # Ce que l'API ne donne pas, c'est le TABLEAU de classement — pas les
     # chiffres d'un joueur avec une légende.
-    assert "ne les confonds pas avec un classement" in description
+    assert "ne les confonds pas avec un palmarès" in description
 
 
 def test_le_premier_mondial_ne_secrit_pas_1e():
@@ -187,3 +187,37 @@ def test_le_premier_mondial_ne_secrit_pas_1e():
     assert _rang(1) == "1ᵉʳ"
     assert _rang(3) == "3ᵉ"
     assert _rang(432_897) == "432 897ᵉ"
+
+
+# ───────────────────── le rang plateforme, et le pays qui n'existe pas ─────
+def test_le_rang_par_plateforme_est_lu(azrael):
+    """`rankPlatformSpecific` arrivait à chaque appel et était jeté. C'est
+    souvent le chiffre parlant : 10ᵉ mondial aux wins avec Fuse, 3ᵉ sur PC."""
+    fuse = azrael.legend_stats["Fuse"]
+    assert fuse["kills"].platform_pos == 2 and fuse["kills"].world_pos == 3
+    assert fuse["wins"].platform_pos == 3 and fuse["wins"].world_pos == 10
+
+
+def test_not_calculated_yet_reste_une_absence(azrael):
+    """L'API écrit « NOT_CALCULATED_YET » là où on attend un entier — ce n'est
+    ni un rang, ni un zéro."""
+    mirage = azrael.legend_stats["Mirage"]["kills"]
+    assert mirage.platform_pos is None
+
+
+def test_les_deux_classements_sont_rendus(azrael):
+    rendu = _service()._render_profile(azrael, legend="Fuse")
+
+    assert "3ᵉ mondial, top 0.01 % — 2ᵉ sur sa plateforme" in rendu
+
+
+def test_loutil_dit_que_le_rang_par_pays_nexiste_pas():
+    """Vérifié le 2026-08-10 avec notre clé : `/leaderboard` répond
+    « You must be whitelisted », et `/bridge` ne porte aucune notion de pays.
+    L'outil doit le dire pour éviter une cascade `web_search`/`scrape_url`."""
+    from bot.core.apex.tool import APEX_LEGENDS_TOOL
+
+    description = APEX_LEGENDS_TOOL["function"]["description"]
+    assert "AUCUN classement par PAYS" in description
+    # Et proposer le repli qui existe vraiment.
+    assert "sur SA PLATEFORME" in description

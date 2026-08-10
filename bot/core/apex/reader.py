@@ -34,6 +34,16 @@ class StatValue:
     value: int
     world_pos: int | None = None
     top_percent: float | None = None
+    # Le même classement RESTREINT à la plateforme du joueur (`rankPlatformSpecific`).
+    # L'API le renvoie à chaque appel et il était jeté. C'est souvent le chiffre
+    # parlant : Azraël est 3ᵉ mondial aux kills avec Fuse, mais 2ᵉ sur PC, et
+    # 10ᵉ mondial aux wins contre 3ᵉ sur PC.
+    #
+    # Ce n'est PAS un rang par pays : celui-là vivrait dans `/leaderboard`, que
+    # notre clé n'est pas autorisée à interroger (« You must be whitelisted »,
+    # vérifié le 2026-08-10). `/bridge` ne porte aucune notion de pays.
+    platform_pos: int | None = None
+    platform_percent: float | None = None
 
 
 @dataclass(frozen=True)
@@ -200,8 +210,9 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
         if not isinstance(entrees, list):
             continue
 
-        # libellé → (libellé, cumul, rangPos, top%, valeur du tracker dominant)
-        par_libelle: dict[str, tuple[str, int, int | None, float | None, int]] = {}
+        # libellé → (libellé, cumul, rangMondial, top%, rangPlateforme,
+        #            top% plateforme, valeur du tracker dominant)
+        par_libelle: dict[str, tuple] = {}
         for entree in entrees:
             if not isinstance(entree, dict):
                 continue
@@ -211,20 +222,25 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
                 continue
             cle = str(libelle).lower()
             rang = entree.get("rank") or {}
-            pos = _positive_int(rang.get("rankPos"))
-            pct = _num(rang.get("topPercent"))
+            plateforme = entree.get("rankPlatformSpecific") or {}
+            # `NOT_CALCULATED_YET` là où on attend un entier : `_num` le rejette,
+            # donc l'absence reste une absence.
+            rangs = (
+                _positive_int(rang.get("rankPos")), _num(rang.get("topPercent")),
+                _positive_int(plateforme.get("rankPos")),
+                _num(plateforme.get("topPercent")),
+            )
             ancien = par_libelle.get(cle)
             if ancien is None:
-                par_libelle[cle] = (str(libelle), int(valeur), pos, pct, int(valeur))
+                par_libelle[cle] = (str(libelle), int(valeur), *rangs, int(valeur))
                 continue
-            # Valeurs cumulées ; rang emprunté au tracker dominant, dont on
+            # Valeurs cumulées ; rangs empruntés au tracker dominant, dont on
             # garde la valeur à part pour savoir lequel domine.
-            domine = int(valeur) > ancien[4]
+            domine = int(valeur) > ancien[6]
             par_libelle[cle] = (
                 ancien[0], ancien[1] + int(valeur),
-                pos if domine else ancien[2],
-                pct if domine else ancien[3],
-                max(int(valeur), ancien[4]),
+                *(rangs if domine else ancien[2:6]),
+                max(int(valeur), ancien[6]),
             )
 
         notions: dict[str, StatValue] = {}
@@ -236,6 +252,7 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
                 notions[notion] = StatValue(
                     label=trouve[0], value=trouve[1],
                     world_pos=trouve[2], top_percent=trouve[3],
+                    platform_pos=trouve[4], platform_percent=trouve[5],
                 )
                 break
         if notions:
