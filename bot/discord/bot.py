@@ -507,8 +507,13 @@ class WallyDiscord(commands.Bot):
         # Auto-description des emotes custom de tous les serveurs (en tâche de
         # fond : la vision peut enchaîner des dizaines d'appels, on ne bloque
         # pas le démarrage). Idempotent : ne décrit que les emotes sans note.
+        # Via `_fire()` : `create_task` nu ne laisse qu'une référence FAIBLE
+        # côté boucle, et une exception y est totalement invisible — seulement
+        # un « Task exception was never retrieved » au ramassage. L'helper
+        # existe précisément pour ça.
         from bot.discord.emote_describer import run_emote_description
-        self.loop.create_task(run_emote_description(self))
+        from bot.discord.handlers import _fire
+        _fire(run_emote_description(self))
 
         # Rattrapage des interactions manquées pendant l'indisponibilité : scanne les
         # salons depuis le dernier log et rejoue les messages qui mentionnent Wally ou
@@ -517,7 +522,8 @@ class WallyDiscord(commands.Bot):
         if not self._catchup_done:
             self._catchup_done = True
             from bot.discord.catchup import run_catchup
-            self.loop.create_task(run_catchup(self))
+            from bot.discord.handlers import _fire
+            _fire(run_catchup(self))
 
     async def on_guild_emojis_update(self, guild, before, after) -> None:
         """Décrit à chaud les nouvelles emotes ajoutées à un serveur autorisé."""

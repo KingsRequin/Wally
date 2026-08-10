@@ -1044,16 +1044,31 @@ async def _member_join_context(bot: "WallyDiscord", member) -> None:
         logger.warning("cognitive_loop.notify_event (arrivée membre) a échoué: {e}", e=e)
 
 
+_MOT_RE = re.compile(r"\w+", re.UNICODE)
+
+
 def _pick_passive_emoji(text: str, curiosity: float) -> str | None:
     """Choisit un emoji de réaction passive basé sur le contenu du message.
     Retourne None si aucun signal détecté.
     """
     text_lower = text.lower()
-    if any(w in text_lower for w in _LAUGH_WORDS):
+    # Sur les MOTS, pas sur les sous-chaînes : « gg » matchait « suggestion »,
+    # « aggro », « jogging » ; « nul » matchait « annuler » et « nulle part ».
+    # Wally collait donc un 🔥 sur « j'ai une suggestion » et un 😤 sur « c'est
+    # annulé », dans tous les salons autorisés. Les entrées multi-mots
+    # (« bien joué ») restent testées en sous-chaîne, faute de frontière simple.
+    mots = set(_MOT_RE.findall(text_lower))
+
+    def _touche(vocabulaire: set[str]) -> bool:
+        simples = {w for w in vocabulaire if " " not in w and w.isalnum()}
+        autres = vocabulaire - simples
+        return bool(mots & simples) or any(w in text_lower for w in autres)
+
+    if _touche(_LAUGH_WORDS):
         return random.choice(_LAUGH_EMOJIS)
-    if any(w in text_lower for w in _POSITIVE_WORDS):
+    if _touche(_POSITIVE_WORDS):
         return random.choice(_POSITIVE_EMOJIS)
-    if any(w in text_lower for w in _NEGATIVE_WORDS):
+    if _touche(_NEGATIVE_WORDS):
         return random.choice(_NEGATIVE_EMOJIS)
     if curiosity >= 0.4 and "?" in text:
         return "🤔"
@@ -1892,12 +1907,22 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # emoji — son humeur, ou pourquoi il ne répond pas. Le gate fournit l'emoji
     # contextuel ; à défaut, fallback sur l'émotion dominante (résout toujours).
     if decision in ("IGNORE", "DEFER", "REACT"):
+        # Le commentaire promet « il laisse TOUJOURS un emoji ». Or
+        # `_resolve_emoji` rend la chaîne BRUTE du gate quand aucune emote custom
+        # ne correspond : « thinking » ou tout mot inventé par le modèle partait
+        # tel quel à `add_reaction`, qui lève un 400. Sans repli ni log, Wally ne
+        # laissait alors AUCUNE trace — l'utilisateur voyait un silence pur, et
+        # rien n'indiquait que le gate avait pourtant répondu.
         _raw = gate_emoji or _mood_emoji(bot.emotion.get_state())
-        _emoji = _resolve_emoji(_raw, bot)
         try:
-            await message.add_reaction(_emoji)
-        except Exception:
-            pass
+            await message.add_reaction(_resolve_emoji(_raw, bot))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Emoji du gate refusé ({r}) — repli sur l'humeur : {e}",
+                         r=_raw, e=exc)
+            try:
+                await message.add_reaction(_mood_emoji(bot.emotion.get_state()))
+            except Exception:  # noqa: BLE001 — le silence total reste le pire cas
+                pass
         return
 
     await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
@@ -2576,9 +2601,18 @@ async def _respond(
             raw_reply=reply,
         )
 
+        # Le tag est extrait AVANT la passe miroir. Dans l'autre ordre, le
+        # brouillon envoyé au LLM secondaire commençait par « [react:😂] … » et
+        # toute réécriture le faisait disparaître — l'emoji choisi par le modèle
+        # principal était perdu dès que le miroir corrigeait quelque chose, et
+        # le markup pouvait même finir publié tel quel si le miroir le recopiait
+        # ailleurs qu'en tête (le motif est ancré). `_spontaneous_respond`
+        # procédait déjà dans ce sens : les deux chemins divergeaient.
+        reply = strip_stage_directions(reply)
+        react_emoji, reply = _parse_react_tag(reply)
+
         # Mirror pass — detect and fix repetitive patterns or missed memories
         _mirror_before = reply
-        reply = strip_stage_directions(reply)
         reply = await _mirror_pass(bot, str(message.channel.id), reply, mem_context)
         if reply != _mirror_before:
             _clog(
@@ -2586,9 +2620,6 @@ async def _respond(
                 trace_id=str(message.id),
                 before=_mirror_before[:400], after=reply[:400],
             )
-
-        # Parse optional [react:emoji] tag from LLM response
-        react_emoji, reply = _parse_react_tag(reply)
 
         try:
             await message.remove_reaction("🔍", bot.user)
@@ -2897,6 +2928,13 @@ async def _spontaneous_respond(
         )
         for part in parts[1:]:
             await message.channel.send(part, allowed_mentions=_ALLOWED_MENTIONS)
+        # Une question posée en spontané doit attendre sa réponse, comme sur le
+        # chemin normal : `_note_open_question` n'était armé que par
+        # `_send_in_parts`. Or une intervention spontanée est par définition non
+        # mentionnée — la réponse de l'utilisateur ne contient ni le nom de Wally
+        # ni de mention, donc rien ne se déclenchait et le dialogue s'arrêtait
+        # tout seul. C'est précisément le cas que ce mécanisme vise.
+        _note_open_question(message.channel.id, message.author.id, reply)
         sent_channel_id = str(target_channel.id)
         self_name = bot.config.bot.name
         _clog(
