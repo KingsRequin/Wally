@@ -19,6 +19,30 @@ def _narrator(live=True, reply="je m'ennuie ferme", interval=90.0):
     llm.complete = AsyncMock(return_value=reply)
     return OverlayNarrator(feed, llm, lambda: live, min_interval_s=interval), feed, llm
 
+def _evts(q):
+    """Tous les événements en attente, `clear` exclus."""
+    out = []
+    while True:
+        try:
+            e = q.get_nowait()
+        except Exception:
+            return out
+        if e.get("type") != "clear":
+            out.append(e)
+
+
+def _evt(q):
+    """Prochain événement utile, en sautant les `clear`.
+
+    `reset_live()` vide désormais le tampon du flux à la bascule en live (un
+    pendu `sticky` du live précédent revenait sinon à l'écran). Cela publie un
+    `{"type": "clear"}` que ces tests n'attendaient pas.
+    """
+    while True:
+        e = q.get_nowait()
+        if e.get("type") != "clear":
+            return e
+
 
 # ── hors live ──
 
@@ -92,7 +116,7 @@ async def test_la_pensee_publiee_est_une_bulle_de_pensee():
 
     kinds = []
     while not q.empty():
-        kinds.append(q.get_nowait())
+        kinds.append(_evt(q))
     thinking = [e for e in kinds if e["type"] == "thinking"]
     bubbles = [e for e in kinds if e["type"] == "bubble"]
     assert thinking and thinking[0]["active"] is True     # les trois points d'abord
@@ -108,7 +132,7 @@ async def test_rien_a_dire_eteint_les_points():
     assert await n.on_thought("méta-rumination sur ma propre nature") is None
     events = []
     while not q.empty():
-        events.append(q.get_nowait())
+        events.append(_evt(q))
     assert [e["active"] for e in events if e["type"] == "thinking"] == [True, False]
     assert not [e for e in events if e["type"] == "bubble"]
 
@@ -148,7 +172,7 @@ async def test_un_evenement_fort_fait_reagir_l_avatar():
     assert await n.on_stream_event("Un raid de 42 personnes arrive") is not None
     events = []
     while not q.empty():
-        events.append(q.get_nowait())
+        events.append(_evt(q))
     assert [e for e in events if e["type"] == "react"], "l'avatar n'a pas réagi"
     bubble = [e for e in events if e["type"] == "bubble"][0]
     assert bubble["mode"] == "speech"   # réaction, pas pensée
@@ -161,7 +185,7 @@ async def test_un_evenement_neutre_ne_fait_pas_reagir_l_avatar():
     await n.on_stream_event("Le jeu passe à Apex Legends")
     events = []
     while not q.empty():
-        events.append(q.get_nowait())
+        events.append(_evt(q))
     assert not [e for e in events if e["type"] == "react"]
 
 
@@ -218,7 +242,7 @@ def test_le_resultat_est_decide_cote_serveur():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     assert n.show_widget("coinflip", "évidemment") is not None
-    widget = q.get_nowait()
+    widget = _evt(q)
     assert widget["type"] == "widget"
     assert widget["params"]["result"] in ("heads", "tails")
 
@@ -227,21 +251,21 @@ def test_wally_peut_forcer_le_resultat():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("coinflip", "je le sentais", result="tails")
-    assert q.get_nowait()["params"]["result"] == "tails"
+    assert _evt(q)["params"]["result"] == "tails"
 
 
 def test_le_de_est_borne_a_six_faces():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("dice", "allez", result=99)
-    assert q.get_nowait()["params"]["result"] == 6
+    assert _evt(q)["params"]["result"] == 6
 
 
 def test_un_de_sans_resultat_est_tire_au_hasard():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("dice", "au pif")
-    assert 1 <= q.get_nowait()["params"]["result"] <= 6
+    assert 1 <= _evt(q)["params"]["result"] <= 6
 
 
 def test_un_widget_n_ouvre_pas_de_bulle():
@@ -250,7 +274,7 @@ def test_un_widget_n_ouvre_pas_de_bulle():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("coinflip", "bon, pile alors")
-    events = [q.get_nowait() for _ in range(q.qsize())]
+    events = _evts(q)
     assert [e for e in events if e["type"] == "widget"]
     assert not [e for e in events if e["type"] == "bubble"]
 
@@ -280,14 +304,14 @@ def test_la_roue_borne_l_index_gagnant():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("wheel", "allez", result=99, options=["a", "b", "c"])
-    assert q.get_nowait()["params"]["index"] == 2
+    assert _evt(q)["params"]["index"] == 2
 
 
 def test_la_roue_est_plafonnee_a_huit_parts():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("wheel", "", options=[f"opt{i}" for i in range(20)])
-    assert len(q.get_nowait()["params"]["options"]) == 8
+    assert len(_evt(q)["params"]["options"]) == 8
 
 
 def test_le_compte_a_rebours_exige_une_duree():
@@ -300,7 +324,7 @@ def test_la_jauge_borne_le_pourcentage():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     n.show_widget("gauge", "objectif", result=250, label="subs")
-    assert q.get_nowait()["params"]["percent"] == 100.0
+    assert _evt(q)["params"]["percent"] == 100.0
 
 
 def test_le_message_epingle_exige_un_texte():
@@ -315,7 +339,7 @@ def test_uptime_calcule_depuis_le_debut_du_live():
     n, feed = _with_status(started)
     q = feed.subscribe()
     assert n.show_widget("uptime") is not None
-    e = q.get_nowait()
+    e = _evt(q)
     assert e["kind"] == "counter"          # même rendu que le compteur
     assert e["params"]["text"] == "en live depuis 3h12"
 
@@ -326,7 +350,7 @@ def test_uptime_en_minutes_pour_un_live_recent():
     n, feed = _with_status(started)
     q = feed.subscribe()
     n.show_widget("uptime")
-    assert q.get_nowait()["params"]["text"] == "en live depuis 25 min"
+    assert _evt(q)["params"]["text"] == "en live depuis 25 min"
 
 
 def test_uptime_sans_date_de_debut_ne_s_affiche_pas():
@@ -347,7 +371,7 @@ async def test_un_inconnu_est_salue():
     n, feed, _ = _narrator(reply="tiens un nouveau")
     q = feed.subscribe()
     await n.on_chat_message("Nouveau", "salut", days_since=None)
-    bubbles = [q.get_nowait() for _ in range(q.qsize())]
+    bubbles = _evts(q)
     assert any(e["type"] == "bubble" for e in bubbles)
 
 
@@ -409,7 +433,7 @@ async def test_les_votes_du_chat_sont_comptes():
     await n.on_chat_message("carol", "2")
     last = None
     while not q.empty():
-        e = q.get_nowait()
+        e = _evt(q)
         if e["type"] == "widget":
             last = e
     assert last["kind"] == "poll"
@@ -425,7 +449,7 @@ async def test_un_seul_vote_par_personne_mais_changement_d_avis_permis():
     await n.on_chat_message("alice", "2")   # elle change d'avis
     last = None
     while not q.empty():
-        e = q.get_nowait()
+        e = _evt(q)
         if e["type"] == "widget":
             last = e
     assert last["params"]["tally"] == [0, 1]
@@ -471,7 +495,7 @@ def test_le_widget_poll_est_route_vers_le_sondage():
         "poll", "", question="vous aimez le chocolat ?",
         options=["Oui", "Non"], seconds=30,
     ) is not None
-    events = [q.get_nowait() for _ in range(q.qsize())]
+    events = _evts(q)
     widget = next(e for e in events if e["type"] == "widget")
     assert widget["kind"] == "poll"
     assert widget["params"]["options"] == ["Oui", "Non"]
@@ -545,7 +569,7 @@ def test_la_cloture_affiche_le_resultat_a_l_ecran():
     n._count_vote("alice", "1")
     q = feed.subscribe()
     n.close_poll()
-    last = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][-1]
+    last = [e for e in (_evt(q) for _ in range(q.qsize())) if e["type"] == "widget"][-1]
     assert last["params"]["final"] is True
     assert last["params"]["winner"] == 0
     assert last["params"]["seconds"] == 0
@@ -626,7 +650,7 @@ def test_un_commentaire_meme_long_ne_casse_rien():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     assert n.show_widget("dice", "x" * 200) is not None
-    events = [q.get_nowait() for _ in range(q.qsize())]
+    events = _evts(q)
     assert [e for e in events if e["type"] == "widget"]
     assert not [e for e in events if e["type"] == "bubble"]
 
@@ -700,7 +724,7 @@ def test_le_bingo_s_ouvre_avec_ses_cases():
     n, feed, _ = _narrator()
     q = feed.subscribe()
     assert n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"]) is not None
-    ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
+    ev = [e for e in _evts(q) if e["type"] == "widget"][0]
     assert ev["params"]["done"] == [False, False]
 
 
@@ -722,7 +746,7 @@ def test_cocher_une_case_signale_laquelle():
     q = feed.subscribe()
     out = n.show_widget("bingo", "", check=1)
     assert out["checked"] == "il rage" and out["full"] is False
-    ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
+    ev = [e for e in _evts(q) if e["type"] == "widget"][0]
     assert ev["params"]["just"] == 1
     assert ev["params"]["done"] == [False, True, False]
 
@@ -789,7 +813,7 @@ def test_la_grille_se_reaffiche_sur_demande():
     n.start_bingo(["a b c", "d e f"])
     q = feed.subscribe()
     assert n.show_widget("bingo", "") is not None
-    assert [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"]
+    assert [e for e in (_evt(q) for _ in range(q.qsize())) if e["type"] == "widget"]
 
 
 def test_reafficher_sans_grille_ne_fait_rien():
@@ -833,7 +857,7 @@ async def test_une_reaction_repetee_n_est_pas_publiee():
     n._last_event_at = 0.0          # on rouvre le budget
     q = feed.subscribe()
     assert await n.on_stream_event("encore des gens") is None
-    assert not [e for e in (q.get_nowait() for _ in range(q.qsize()))
+    assert not [e for e in (_evt(q) for _ in range(q.qsize()))
                 if e["type"] == "bubble"]
 
 

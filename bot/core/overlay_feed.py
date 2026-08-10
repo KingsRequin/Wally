@@ -32,6 +32,23 @@ _MAX_DURATION_S = 12.0
 _SECONDS_PER_WORD = 0.5
 
 
+def _redact_params(valeur):
+    """Applique `redact` à toute chaîne d'un paramètre de widget, en profondeur.
+
+    Les widgets portent du texte libre (`pinned`, `counter`, question et
+    intitulés d'un sondage, cases de bingo) : le filet du pendu doit y passer
+    comme il passe sur les bulles. Les nombres et booléens sont laissés tels
+    quels — `redact` sur un `int` le transformerait en chaîne.
+    """
+    if isinstance(valeur, str):
+        return redact(valeur)
+    if isinstance(valeur, dict):
+        return {k: _redact_params(v) for k, v in valeur.items()}
+    if isinstance(valeur, (list, tuple)):
+        return type(valeur)(_redact_params(v) for v in valeur)
+    return valeur
+
+
 def bubble_duration(text: str) -> float:
     """Temps d'affichage d'une bulle, proportionnel à sa longueur."""
     words = len([w for w in (text or "").split() if w])
@@ -195,4 +212,9 @@ class OverlayFeed:
         params.setdefault(
             "duration", self._ANIMATION_S.get(kind, 0.0) + self._RESULT_READ_S
         )
-        self.publish({"type": "widget", "kind": kind, "params": params})
+        # Même filet que `say()`. Il n'était posé que sur les bulles : le mot du
+        # pendu pouvait donc sortir par un `pinned`, un `counter`, l'intitulé
+        # d'un sondage ou une case de bingo — des textes libres eux aussi.
+        self.publish({
+            "type": "widget", "kind": kind, "params": _redact_params(params),
+        })

@@ -1083,6 +1083,14 @@ class OverlayNarrator:
         # courant qu'« apex ».
         self._release_hangman_secret()
         self._hangman = None
+        # Le tampon du flux vit à côté de cet état : `recent()` le rejoue à tout
+        # client qui se connecte. Sans ce vidage, un pendu `sticky` du live
+        # PRÉCÉDENT revenait à l'écran dès qu'OBS rouvrait la page — et sans
+        # minuteur, puisque son événement d'origine n'en portait pas.
+        try:
+            self._feed.clear()
+        except Exception as exc:  # noqa: BLE001 — un live qui démarre ne doit pas échouer
+            logger.warning("Overlay: vidage du flux au reset échoué : {e}", e=exc)
 
     # ── annulation ────────────────────────────────────────────────────────
 
@@ -1616,7 +1624,14 @@ class OverlayNarrator:
                           just=i, full=full, duration=12)
         logger.info("Overlay: bingo — « {c} » cochée{f}",
                     c=bingo["cells"][i], f=" (grille complète)" if full else "")
-        return {"widget": "bingo", "checked": bingo["cells"][i], "full": full}
+        coche = bingo["cells"][i]
+        # Une grille complète est TERMINÉE. Elle restait pourtant en place :
+        # injectée dans chaque prompt et réaffichée toutes les dix minutes pour
+        # le reste du live, alors qu'il n'y a plus rien à y cocher.
+        if full:
+            self._bingo = None
+            self._bingo_reminded_at = 0.0
+        return {"widget": "bingo", "checked": coche, "full": full}
 
     # ── pendu ─────────────────────────────────────────────────────────────
 
@@ -1681,18 +1696,23 @@ class OverlayNarrator:
         if token in game["word"]:
             game["found"].add(token)
             won = all(c in game["found"] for c in game["word"] if c.isalpha())
+            # Le secret est levé AVANT la publication finale : c'est cet
+            # événement-là qui révèle le mot, et le filet de sortie le masquerait
+            # (« […] »). La partie est finie, il n'y a plus rien à protéger.
+            if won:
+                self._release_hangman_secret()
             self._publish_hangman(last=token, won=won)
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
-                self._release_hangman_secret()
                 self._hangman = None
             return
         game["missed"].append(token)
         lost = len(game["missed"]) >= self._HANGMAN_MAX_MISSES
+        if lost:
+            self._release_hangman_secret()
         self._publish_hangman(last=token, lost=lost)
         if lost:
             logger.info("Overlay: pendu perdu ({w})", w=game["display"])
-            self._release_hangman_secret()
             self._hangman = None
 
     def _publish_hangman(self, last: str = "", won: bool = False, lost: bool = False) -> None:

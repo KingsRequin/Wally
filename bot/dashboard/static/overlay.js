@@ -247,6 +247,9 @@
     poll(p) {
       const options = Array.isArray(p.options) ? p.options : [];
       const box = el("div", "poll");
+      // Identité du sondage : `renderWidget` s'en sert pour distinguer une mise
+      // à jour de votes d'un sondage entièrement nouveau.
+      box.dataset.signature = JSON.stringify([String(p.question || ""), options]);
 
       const q = el("div", "q");
       const qText = el("span", "");
@@ -932,8 +935,16 @@
     // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
     // chaque vote rejouerait l'animation d'entrée et clignoterait.
     const current = widgets.firstElementChild;
-    const poll = current && current.dataset.kind === "poll"
+    let poll = current && current.dataset.kind === "poll"
       ? current.querySelector(".poll") : null;
+    // …mais seulement s'il s'agit du MÊME sondage. `updatePoll` ne touche ni la
+    // question ni les intitulés : un nouveau sondage lancé pendant que l'ancien
+    // est encore à l'écran s'affichait avec la question et les options de
+    // l'ancien, grisées « terminé », mais avec les votes du nouveau.
+    if (poll) {
+      const signature = JSON.stringify([params.question || "", params.options || []]);
+      if (poll.dataset.signature !== signature) poll = null;
+    }
     // Les widgets qui se RAFRAÎCHISSENT (un vote, une lettre, une case cochée)
     // rejouaient leur animation d'entrée à chaque mise à jour. Faute d'une
     // mutation en place pour chacun, on se contente de ne pas les faire
