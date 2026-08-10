@@ -73,5 +73,11 @@ class VisionService:
         # complete() renvoie un message de repli en cas d'échec API → on le filtre
         # pour ne pas injecter de faux « faits » dans le contexte.
         if not text or text in (FALLBACK_IMAGE_RESPONSE, FALLBACK_RESPONSE):
+            # Filtrer sans le dire, c'est rendre Wally aveugle en silence : un
+            # modèle mal configuré produit un 404 par image et aucune trace.
+            logger.warning(
+                "VisionService : le modèle {m} n'a rien rendu (repli) — image non décrite",
+                m=getattr(self._client, "_model", "?"),
+            )
             return None
         return text

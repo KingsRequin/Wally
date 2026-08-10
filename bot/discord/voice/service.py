@@ -471,6 +471,12 @@ class VoiceService:
             setattr(self, name, None)
             if task is not None and task is not current:
                 task.cancel()
+        # Les tâches détachées aussi : le préchauffage STT y vit, et il démutait
+        # dans un salon déjà quitté — ce qui y ramenait le bot (cf. readiness).
+        for task in list(self._detached):
+            if task is not current and not task.done():
+                task.cancel()
+        self._detached.clear()
         if self._streaming is not None:
             try:
                 await self._streaming.close_all()  # ferme toutes les connexions WS distantes

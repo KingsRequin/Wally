@@ -29,6 +29,10 @@ if TYPE_CHECKING:
     from bot.core.reaction_tracker import ReactionTracker
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+# Repli de la vision quand `openai.vision_model` est vide. Multimodal et peu
+# coûteux. Une constante, pas un champ que le dashboard peut réécrire.
+_VISION_MODEL_DEFAUT = "gpt-5-nano"
+
 
 def make_scheduler() -> "AsyncIOScheduler":
     """Le scheduler applicatif, réglé sur l'heure de Paris.
@@ -134,8 +138,12 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     vision_client = None
     # Champ DÉDIÉ : `secondary_model` est écrasé par le dashboard dès qu'on
     # change le modèle texte secondaire, ce qui rendait Wally aveugle en silence.
-    # Vide → on retombe sur l'ancien comportement, pour ne rien casser.
-    vision_model = getattr(config.openai, "vision_model", "") or config.openai.secondary_model
+    # Le repli était justement `secondary_model` — le commentaire décrivait donc
+    # la panne qu'il laissait ouverte : au premier passage du secondaire sur un
+    # modèle texte DeepSeek, la vision partait interroger OpenAI avec un modèle
+    # inexistant, 404 sur chaque image, et `analyze()` filtre les replis.
+    # On retombe sur un multimodal connu, jamais sur un champ que 3 UIs écrasent.
+    vision_model = getattr(config.openai, "vision_model", "") or _VISION_MODEL_DEFAUT
     if _os.environ.get("OPENAI_API_KEY"):
         vision_client = OpenAILLMClient(
             model=vision_model,  # gpt-5-nano : multimodal, peu coûteux

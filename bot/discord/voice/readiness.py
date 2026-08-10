@@ -72,6 +72,16 @@ async def signal_ready_when_warm(
             await transcriber.transcribe(_SILENCE)
         except Exception as exc:  # noqa: BLE001
             logger.debug("voice: transcription à blanc en échec : {e}", e=exc)
+    # Ce préchauffage dure 10 à 40 s (serveur GPU absent, deux chargements du
+    # modèle, transcription à blanc). Si Wally a quitté entre-temps — /leave,
+    # kick, auto-leave — un `set_muted` envoie un VOICE_STATE_UPDATE portant un
+    # `channel_id` valide, et Discord le REPLACE dans le salon : présent,
+    # démuté, sourd et muet, avec `is_connected` à False et rien pour le
+    # rattraper. Tester `vc.channel` ne suffit pas : discord.py 2.7.1 le laisse
+    # renseigné après `disconnect()`.
+    if not vc.is_connected():
+        logger.info("voice: préchauffage terminé après le départ — on ne démute pas")
+        return
     await set_muted(vc, False)
     logger.info("voice: prêt à écouter")
 

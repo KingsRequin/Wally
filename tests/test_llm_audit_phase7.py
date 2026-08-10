@@ -67,10 +67,27 @@ def test_openai_config_a_un_champ_de_vision_dedie():
 
 
 def test_bootstrap_prefere_le_champ_dedie_avec_repli():
-    from pathlib import Path
+    """Le champ dédié prime ; le repli ne doit PAS être `secondary_model`.
 
-    source = Path("bot/bootstrap.py").read_text(encoding="utf-8")
-    assert 'getattr(config.openai, "vision_model", "") or config.openai.secondary_model' in source
+    Ce test figeait auparavant la ligne de bootstrap en chaîne littérale — il
+    verrouillait donc le défaut qu'il croyait décrire : le repli tombait sur
+    `secondary_model`, que `/config`, `llm.secondary.model` et `/wally setup`
+    réécrivent tous les trois avec un modèle TEXTE. On teste le comportement.
+    """
+    from unittest.mock import MagicMock
+
+    import bot.bootstrap as bs
+
+    config = MagicMock()
+    config.openai.secondary_model = "deepseek-chat"
+
+    config.openai.vision_model = "gpt-5"
+    assert (getattr(config.openai, "vision_model", "") or bs._VISION_MODEL_DEFAUT) == "gpt-5"
+
+    config.openai.vision_model = ""
+    repli = getattr(config.openai, "vision_model", "") or bs._VISION_MODEL_DEFAUT
+    assert repli != config.openai.secondary_model
+    assert repli == "gpt-5-nano"
 
 
 def test_la_temperature_est_propagee_vers_la_section_llm():

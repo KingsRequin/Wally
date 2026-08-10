@@ -17,14 +17,21 @@ class VoiceCog(commands.Cog):
                 "Tu dois être dans un salon vocal pour que je te rejoigne.", ephemeral=True
             )
             return
+        # `connect()` (handshake gateway + IP discovery) dépasse régulièrement
+        # les 3 s du jeton d'interaction : `send_message` levait alors
+        # `NotFound 10062`, et le `except` rappelait `response.send_message`,
+        # qui levait à nouveau. Aucun `tree.error` n'est enregistré dans le
+        # projet — l'utilisateur voyait « L'application n'a pas répondu » alors
+        # que Wally arrivait bel et bien. `/ecoute`, juste à côté, defer déjà.
+        await interaction.response.defer()
         try:
             await self.bot.voice_service.join(
                 voice.channel, inviter=getattr(interaction.user, "display_name", None)
             )
-            await interaction.response.send_message(f"J'arrive dans **{voice.channel.name}** 🎙️")
+            await interaction.followup.send(f"J'arrive dans **{voice.channel.name}** 🎙️")
         except Exception as e:  # noqa: BLE001
             logger.warning("/join a échoué: {e}", e=e)
-            await interaction.response.send_message("Impossible de rejoindre le vocal.", ephemeral=True)
+            await interaction.followup.send("Impossible de rejoindre le vocal.", ephemeral=True)
 
     @app_commands.command(
         name="ecoute",
@@ -84,9 +91,12 @@ class VoiceCog(commands.Cog):
         if not self.bot.voice_service.is_connected:
             await interaction.response.send_message("Je ne suis dans aucun vocal.", ephemeral=True)
             return
+        # Même raison que `/join` : `disconnect()` + fermeture des sessions
+        # streaming distantes peut dépasser les 3 s du jeton d'interaction.
+        await interaction.response.defer()
         try:
             await self.bot.voice_service.leave()
-            await interaction.response.send_message("Je vous laisse 👋")
+            await interaction.followup.send("Je vous laisse 👋")
         except Exception as e:  # noqa: BLE001
             logger.warning("/leave a échoué: {e}", e=e)
-            await interaction.response.send_message("Impossible de quitter le vocal.", ephemeral=True)
+            await interaction.followup.send("Impossible de quitter le vocal.", ephemeral=True)

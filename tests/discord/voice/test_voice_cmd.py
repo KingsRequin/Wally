@@ -12,6 +12,8 @@ async def test_join_uses_caller_voice_channel():
     inter = MagicMock()
     inter.user.voice.channel = MagicMock()
     inter.response.send_message = AsyncMock()
+    inter.response.defer = AsyncMock()
+    inter.followup.send = AsyncMock()
     await cog.join.callback(cog, inter)
     bot.voice_service.join.assert_awaited_once_with(
         inter.user.voice.channel, inviter=inter.user.display_name
@@ -39,5 +41,7 @@ async def test_leave_calls_service():
     cog = VoiceCog(bot)
     inter = MagicMock()
     inter.response.send_message = AsyncMock()
+    inter.response.defer = AsyncMock()
+    inter.followup.send = AsyncMock()
     await cog.leave.callback(cog, inter)
     bot.voice_service.leave.assert_awaited_once()

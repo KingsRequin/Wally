@@ -684,10 +684,21 @@ _SELF_MODIFY_TOOL = {
 
 
 def _resolve_discord_roles(member) -> list[str]:
-    """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable."""
+    """Return member's actual Discord role IDs plus 'everyone' and 'admin' if applicable.
+
+    En MP, `message.author` est un `discord.User` : ni `roles`, ni
+    `guild_permissions`. L'AttributeError était rattrapée par la boucle de
+    tool-calling et rendue au modèle en « Tool error » — donc TOUT rappel
+    demandé en message privé échouait sans être créé, et Wally pouvait
+    répondre qu'il l'avait noté. Le MP est le canal principal de l'owner.
+    """
     roles = ["everyone"]
-    roles.extend(str(r.id) for r in member.roles if not r.is_default())
-    if member.guild_permissions.administrator:
+    membre_roles = getattr(member, "roles", None)
+    if membre_roles is None:
+        return roles
+    roles.extend(str(r.id) for r in membre_roles if not r.is_default())
+    perms = getattr(member, "guild_permissions", None)
+    if perms is not None and perms.administrator:
         roles.append("admin")
     return roles
 
@@ -2004,7 +2015,14 @@ async def _respond(
     enriched_content: str = "",
 ) -> None:
     try:
-        await message.add_reaction("🔍")
+        # Hors du `try` global : celui-ci se contente de logger et de sortir.
+        # Dans un salon où Wally peut écrire mais pas réagir, un 403 sur cette
+        # ligne le rendait TOTALEMENT muet quand on le mentionnait, sans autre
+        # trace qu'un « 403 Forbidden ».
+        try:
+            await message.add_reaction("🔍")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Réaction 🔍 refusée dans {c} : {e}", c=message.channel.id, e=exc)
 
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
