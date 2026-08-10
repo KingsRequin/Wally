@@ -10,6 +10,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from loguru import logger
 
+from bot.core.llm.base import FALLBACK_RESPONSE
+
 load_dotenv()
 
 
@@ -90,6 +92,11 @@ async def _run_discord(
     # correctif ne traitait que l'échec de *login*. On lève : le `gather` remonte
     # et Docker relance.
     raise RuntimeError("Discord: connexion terminée — le process doit redémarrer")
+
+
+# Objets créés en cours de démarrage qu'il faut rendre même si l'arrêt survient
+# avant que le `finally` de la boucle principale ne soit atteignable.
+_AU_DEMARRAGE: dict = {}
 
 
 async def main() -> None:
@@ -303,6 +310,9 @@ async def main() -> None:
             twitch_api=twitch_api,
             persona=persona,
         )
+        # Repéré par `_demarrer()` : un arrêt avant `await gathered` doit tout de
+        # même rendre les transports WebSocket à Twitch.
+        _AU_DEMARRAGE["twitch"] = twitch_bot
         twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
         twitch_bot.scrape = scrape
@@ -603,6 +613,13 @@ async def main() -> None:
                 user_id=creator_id,
             )
             reply = reply.strip()
+            # `complete()` ne lève pas : il rend FALLBACK_RESPONSE. Sans ce
+            # test, l'utilisateur recevait « Je rencontre un problème
+            # technique » à la place de son rappel — et la tâche `once`, elle,
+            # était consommée : le rappel ne repartait jamais.
+            if not reply or reply == FALLBACK_RESPONSE:
+                logger.warning("Rappel : génération en repli, on envoie le texte demandé")
+                reply = raw_msg
         except Exception as e:
             logger.warning("Reminder LLM generation failed, using raw message: {}", e)
             reply = raw_msg
@@ -832,5 +849,30 @@ async def main() -> None:
         logger.info("Arrêt terminé proprement")
 
 
+async def _demarrer() -> None:
+    """Enveloppe `main()` pour rendre les transports Twitch si l'arrêt tombe TÔT.
+
+    Le handler d'arrêt précoce annule la tâche de démarrage, mais le `finally`
+    qui rend les WebSockets EventSub vit sous le `await gathered` — inatteignable
+    tant que le démarrage n'est pas fini (validation des tokens Twitch, init DB,
+    `reload_all()`). Un `docker stop` dans cette fenêtre laissait donc les
+    transports occupés : la limite est de 3 par utilisateur, et deux
+    redémarrages rapprochés suffisaient à faire échouer les souscriptions
+    (429 « websocket transports limit exceeded », vécu le 2026-08-05).
+    """
+    try:
+        await main()
+    except asyncio.CancelledError:
+        twitch_bot = _AU_DEMARRAGE.get("twitch")
+        if twitch_bot is not None:
+            logger.info("Arrêt pendant le démarrage — on rend les transports EventSub")
+            try:
+                from bot.twitch.events import close_eventsub_client
+                await close_eventsub_client(twitch_bot)
+            except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
+                logger.warning("Fermeture EventSub au démarrage échouée: {e}", e=exc)
+        raise
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_demarrer())

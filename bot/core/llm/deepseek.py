@@ -35,6 +35,10 @@ _DEEPSEEK_FALLBACK_COST = (0.0028, 0.14, 0.28)
 _DEEPSEEK_PEAK_START: date | None = None
 _DEEPSEEK_PEAK_MULTIPLIER = 2.0
 
+# Reprises sur panne transitoire — mêmes valeurs que le client OpenAI (1s, 2s, 4s).
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0
+
 
 def _is_deepseek_peak(now: datetime | None = None) -> bool:
     """True si `now` (UTC) tombe dans une plage de pointe DeepSeek (tarif ×2).
@@ -253,6 +257,37 @@ class DeepSeekLLMClient(BaseLLMClient):
             params["temperature"] = self._temperature
         return params
 
+    async def _creer_avec_reprises(self, **kwargs) -> Any:
+        """Appelle l'API en réessayant les pannes transitoires.
+
+        DeepSeek est le SEUL provider texte en production et n'avait aucune
+        reprise, là où le client OpenAI en fait trois avec backoff. Un 429 ou
+        une coupure réseau d'une seconde suffisait donc à servir un message
+        d'excuse à l'utilisateur.
+
+        On ne rejoue PAS les erreurs définitives (4xx hors 408/429) : les
+        renvoyer trois fois ne ferait que retarder l'échec.
+        """
+        derniere: Exception | None = None
+        for tentative in range(_MAX_RETRIES):
+            try:
+                return await self._client.chat.completions.create(**kwargs)
+            except Exception as e:  # noqa: BLE001 — on trie juste après
+                derniere = e
+                statut = getattr(e, "status_code", None) or getattr(
+                    getattr(e, "response", None), "status_code", None
+                )
+                rejouable = statut is None or statut in (408, 429) or statut >= 500
+                if not rejouable or tentative == _MAX_RETRIES - 1:
+                    raise
+                delai = _RETRY_BASE_DELAY * (2 ** tentative)
+                logger.warning(
+                    "DeepSeek: tentative {n}/{m} échouée ({e}) — nouvelle dans {d}s",
+                    n=tentative + 1, m=_MAX_RETRIES, e=e, d=delai,
+                )
+                await asyncio.sleep(delai)
+        raise derniere  # pragma: no cover — la boucle sort toujours avant
+
     @staticmethod
     def _safe_parse_args(raw: str) -> dict:
         """Parse les arguments JSON d'un tool call avec réparation si malformé."""
@@ -296,12 +331,20 @@ class DeepSeekLLMClient(BaseLLMClient):
         max_tokens: int | None = None,
     ) -> str:
         try:
-            response = await self._client.chat.completions.create(
+            response = await self._creer_avec_reprises(
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 **self._api_params(max_tokens=max_tokens),
             )
             text = _strip_dsml(response.choices[0].message.content or "")
             await self._log_cost(response, purpose, user_id)
+            # Contrat de `BaseLLMClient.complete` : le texte du modèle, ou
+            # FALLBACK_RESPONSE. Une sortie vide — contenu nul, ou intégralement
+            # constituée de balises DSML retirées juste au-dessus — le violait :
+            # Wally restait muet sans un log sur Discord, et `/ask` rendait un
+            # HTTP 400. Un silence n'est pas une réponse.
+            if not text.strip():
+                logger.warning("DeepSeek complete() : réponse vide (purpose={p})", p=purpose)
+                return FALLBACK_RESPONSE
             return text
         except Exception as e:
             logger.error("DeepSeek complete() failed: {e}", e=e)
@@ -324,7 +367,7 @@ class DeepSeekLLMClient(BaseLLMClient):
         Fondation du reasoning unifié (un seul appel pense + décide).
         """
         try:
-            response = await self._client.chat.completions.create(
+            response = await self._creer_avec_reprises(
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 **self._api_params(thinking_override="enabled", max_tokens=max_tokens),
             )
@@ -353,7 +396,7 @@ class DeepSeekLLMClient(BaseLLMClient):
 
         for iteration in range(self._max_tool_iters):
             try:
-                response = await self._client.chat.completions.create(
+                response = await self._creer_avec_reprises(
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     tools=tools,
                     **params,
@@ -373,7 +416,14 @@ class DeepSeekLLMClient(BaseLLMClient):
                 if not recovered:
                     # Pas de tool call → NE PAS inclure reasoning_content (règle DeepSeek)
                     await self._log_cost(response, purpose, user_id)
-                    return (_strip_dsml(text), tools_called)
+                    propre = _strip_dsml(text)
+                    if not propre.strip():
+                        logger.warning(
+                            "DeepSeek complete_with_tools() : réponse vide (purpose={p})",
+                            p=purpose,
+                        )
+                        return (FALLBACK_RESPONSE, tools_called)
+                    return (propre, tools_called)
                 logger.warning(
                     "DeepSeek: appel d'outil émis en texte DSML, récupéré: {names}",
                     names=[name for name, _ in recovered],
@@ -397,7 +447,22 @@ class DeepSeekLLMClient(BaseLLMClient):
             # Les tool_calls d'un même tour sont indépendants → exécution en parallèle.
             # (ex. plusieurs web_search enchaînés : 4×4s séquentiel → ~4s en parallèle)
             async def _run_tool(tc):
-                args = self._safe_parse_args(tc.function.arguments)
+                brut = tc.function.arguments
+                args = self._safe_parse_args(brut)
+                # Un JSON irréparable rendait `{}` et l'outil s'exécutait À VIDE
+                # — un rappel sans texte, une recherche sans requête — sans que
+                # le modèle apprenne jamais que ses arguments étaient illisibles.
+                # On le lui dit : il peut réémettre l'appel correctement.
+                if not args and (brut or "").strip() not in ("", "{}"):
+                    logger.warning(
+                        "DeepSeek: arguments illisibles pour {name}, renvoyés au modèle",
+                        name=tc.function.name,
+                    )
+                    return (
+                        f"Erreur : les arguments de {tc.function.name} sont un JSON "
+                        f"invalide et n'ont pas pu être lus. Réémets l'appel avec un "
+                        f"JSON valide."
+                    )
                 try:
                     return await tool_executor(tc.function.name, json.dumps(args))
                 except Exception as e:

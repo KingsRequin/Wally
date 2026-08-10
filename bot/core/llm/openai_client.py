@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Callable, Awaitable
 from loguru import logger
 import os
 
-from openai import AsyncOpenAI, RateLimitError, APIStatusError
+from openai import (AsyncOpenAI, APIConnectionError, APIStatusError,
+                    APITimeoutError, RateLimitError)
 
 from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE, FALLBACK_IMAGE_RESPONSE
 
@@ -286,6 +287,14 @@ class OpenAILLMClient(BaseLLMClient):
                     else:
                         logger.error("OpenAI Responses API error {code}: {e}", code=exc.status_code, e=exc)
                         return fallback
+                # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
+                # `APIStatusError` : ils tombaient dans le `except Exception`
+                # ci-dessous, qui sort sans rejouer. Autrement dit, aucune reprise
+                # sur la panne la PLUS fréquente, là où un 503 en a trois.
+                except (APIConnectionError, APITimeoutError) as exc:
+                    wait = 2 ** attempt
+                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    await asyncio.sleep(wait)
                 except Exception as exc:
                     logger.error("OpenAI Responses API error: {e}", e=exc)
                     return fallback
@@ -345,6 +354,14 @@ class OpenAILLMClient(BaseLLMClient):
                 else:
                     logger.error("OpenAI API error {code}: {e}", code=exc.status_code, e=exc)
                     break
+            # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
+            # `APIStatusError` : ils tombaient dans le `except Exception`
+            # ci-dessous, qui sort sans rejouer. Autrement dit, aucune reprise
+            # sur la panne la PLUS fréquente, là où un 503 en a trois.
+            except (APIConnectionError, APITimeoutError) as exc:
+                wait = 2 ** attempt
+                logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                await asyncio.sleep(wait)
             except Exception as exc:
                 logger.error("OpenAI unexpected error: {e}", e=exc)
                 break
@@ -713,6 +730,14 @@ class OpenAILLMClient(BaseLLMClient):
                 else:
                     logger.error("OpenAI API error {code} (tools): {e}", code=exc.status_code, e=exc)
                     break
+            # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
+            # `APIStatusError` : ils tombaient dans le `except Exception`
+            # ci-dessous, qui sort sans rejouer. Autrement dit, aucune reprise
+            # sur la panne la PLUS fréquente, là où un 503 en a trois.
+            except (APIConnectionError, APITimeoutError) as exc:
+                wait = 2 ** attempt
+                logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                await asyncio.sleep(wait)
             except Exception as exc:
                 logger.error("OpenAI unexpected error (tools): {e}", e=exc)
                 break
@@ -817,6 +842,14 @@ class OpenAILLMClient(BaseLLMClient):
                             code=exc.status_code, e=exc,
                         )
                         break
+                # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
+                # `APIStatusError` : ils tombaient dans le `except Exception`
+                # ci-dessous, qui sort sans rejouer. Autrement dit, aucune reprise
+                # sur la panne la PLUS fréquente, là où un 503 en a trois.
+                except (APIConnectionError, APITimeoutError) as exc:
+                    wait = 2 ** attempt
+                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    await asyncio.sleep(wait)
                 except Exception as exc:
                     logger.error("OpenAI unexpected error (structured/responses): {e}", e=exc)
                     break
@@ -891,6 +924,14 @@ class OpenAILLMClient(BaseLLMClient):
                             code=exc.status_code, e=exc,
                         )
                         break
+                # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
+                # `APIStatusError` : ils tombaient dans le `except Exception`
+                # ci-dessous, qui sort sans rejouer. Autrement dit, aucune reprise
+                # sur la panne la PLUS fréquente, là où un 503 en a trois.
+                except (APIConnectionError, APITimeoutError) as exc:
+                    wait = 2 ** attempt
+                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    await asyncio.sleep(wait)
                 except Exception as exc:
                     logger.error("OpenAI unexpected error (structured/chat): {e}", e=exc)
                     break
