@@ -1189,6 +1189,63 @@ _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous
 # d'articles — un tour de tool-calling gaspillé.
 _LOOKUP_TOOLS = ("web_search", "image_search", "scrape_url", "apex_legends")
 
+async def build_chat_tools(bot, author_id: str) -> list[dict]:
+    """Les outils offerts au LLM pour un message Discord.
+
+    Extraite de `handle_message` pour être comparable à son jumeau Twitch
+    (`bot.twitch.handlers.build_chat_tools`). Les deux listes doivent diverger
+    seulement là où la plateforme l'impose, et `tests/test_parite_plateformes.py`
+    tient l'inventaire de ces écarts : une divergence non prévue échoue.
+
+    C'est la panne qu'on ne voit pas autrement — un outil branché d'un côté et
+    oublié de l'autre ne casse rien, ne journalise rien, et rend simplement
+    Wally incapable sur une plateforme de ce qu'il sait faire sur l'autre.
+    """
+    tools: list[dict] = []
+    web_search = getattr(bot, "web_search", None)
+    if web_search and web_search.available and not await web_search.is_quota_exceeded():
+        tools.extend(web_search.get_tool_definitions())
+    scrape = getattr(bot, "scrape", None)
+    if scrape and scrape.available and not await scrape.daily_limit_reached():
+        tools.extend(scrape.get_tool_definitions())
+    apex_api = getattr(bot, "apex_api", None)
+    if apex_api and apex_api.available:
+        tools.append(apex_api.get_tool_definition())
+    action_service = getattr(bot, "action_service", None)
+    if action_service:
+        tools.extend(action_service.get_tool_definitions())
+    # DISCORD SEULEMENT, et c'est délibéré : `HistorySearchService` fouille les
+    # JSONL de conversation Discord. L'offrir sur Twitch permettrait au chat
+    # public d'exhumer ce qui s'est dit sur le serveur Discord.
+    history_search = getattr(bot, "history_search", None)
+    if history_search and history_search.available:
+        tools.extend(history_search.get_tool_definitions())
+    tools.extend(_NOTE_TOOLS)
+    if getattr(bot, "tally", None) is not None:
+        tools.extend(_TALLY_TOOLS)
+    if getattr(bot, "predictions", None) is not None:
+        tools.append(_PREDICT_TOOL)
+    if getattr(bot, "quotes", None) is not None:
+        tools.append(_QUOTE_TOOL)
+    # Overlay : seulement s'il est branché — un outil mort ferait promettre
+    # un affichage qui n'arriverait jamais.
+    if _overlay_narrator(bot) is not None:
+        tools.append(_OVERLAY_TOOL)
+        tools.append(_OVERLAY_CANCEL_TOOL)
+        tools.append(_LAST_CLIP_TOOL)
+        if getattr(bot, "apex_api", None) is not None:
+            tools.append(_APEX_OVERLAY_TOOL)
+    # DISCORD SEULEMENT : le vocal est un salon Discord, ces outils n'ont aucun
+    # sens depuis un chat Twitch.
+    if getattr(bot, "voice_service", None) is not None:
+        tools += VOICE_TOOLS
+    # DISCORD SEULEMENT : la self-modification est réservée au créateur, qui est
+    # identifié par son id Discord. Un pseudo Twitch ne prouve rien.
+    if author_id == bot.config.bot.owner_discord_id and getattr(bot, "self_fix", None) is not None:
+        tools.append(_SELF_MODIFY_TOOL)
+    return tools
+
+
 _SPAM_TRACKER_PURGE_AT = 500
 _spam_tracker: dict[tuple[str, str], deque] = {}
 _processed_message_ids: dict[int, float] = {}  # message_id → timestamp (dedup Discord replays)
@@ -2360,43 +2417,16 @@ async def _respond(
 
         openai_messages = [{"role": "user", "content": user_content}]
 
-        # ── Collect available tools ──────────────────────────────────────
-        tools: list[dict] = []
+        tools = await build_chat_tools(bot, str(message.author.id))
+
+        # Les services que l'exécuteur ci-dessous appelle. Ils étaient auparavant
+        # les variables locales de la construction des outils : celle-ci est
+        # partie dans `build_chat_tools`, l'exécution reste ici.
         web_search = getattr(bot, "web_search", None)
-        if web_search and web_search.available and not await web_search.is_quota_exceeded():
-            tools.extend(web_search.get_tool_definitions())
         scrape = getattr(bot, "scrape", None)
-        if scrape and scrape.available and not await scrape.daily_limit_reached():
-            tools.extend(scrape.get_tool_definitions())
         apex_api = getattr(bot, "apex_api", None)
-        if apex_api and apex_api.available:
-            tools.append(apex_api.get_tool_definition())
         action_service = getattr(bot, "action_service", None)
-        if action_service:
-            tools.extend(action_service.get_tool_definitions())
         history_search = getattr(bot, "history_search", None)
-        if history_search and history_search.available:
-            tools.extend(history_search.get_tool_definitions())
-        tools.extend(_NOTE_TOOLS)
-        if getattr(bot, "tally", None) is not None:
-            tools.extend(_TALLY_TOOLS)
-        if getattr(bot, "predictions", None) is not None:
-            tools.append(_PREDICT_TOOL)
-        if getattr(bot, "quotes", None) is not None:
-            tools.append(_QUOTE_TOOL)
-        # Overlay : seulement s'il est branché — un outil mort ferait promettre
-        # un affichage qui n'arriverait jamais.
-        if _overlay_narrator(bot) is not None:
-            tools.append(_OVERLAY_TOOL)
-            tools.append(_OVERLAY_CANCEL_TOOL)
-            tools.append(_LAST_CLIP_TOOL)
-            if getattr(bot, "apex_api", None) is not None:
-                tools.append(_APEX_OVERLAY_TOOL)
-        if getattr(bot, "voice_service", None) is not None:
-            tools += VOICE_TOOLS
-        # Self-modification : réservée au créateur, et seulement si SelfFix est câblé.
-        if str(message.author.id) == bot.config.bot.owner_discord_id and getattr(bot, "self_fix", None) is not None:
-            tools.append(_SELF_MODIFY_TOOL)
 
         _reaction_emojis: set[str] = set()
 
