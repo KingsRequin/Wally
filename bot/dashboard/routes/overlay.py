@@ -187,6 +187,14 @@ async def set_force_live(request: Request) -> dict:
             minutes = float(data.get("minutes", 30))
         except (TypeError, ValueError):
             raise HTTPException(400, "minutes invalide")
+        # `math.isfinite` comme sur `overlay_health` 60 lignes plus haut :
+        # `NaN` passe `float()` sans lever, puis `nan <= 0` est faux,
+        # `min(nan, 120)` rend `nan`, et `round(nan, 1)` fait échouer la
+        # sérialisation → 500 sur un POST admin. Pire, `flush_force_live` a déjà
+        # persisté « nan » : au redémarrage l'échéance restait `nan` et le mode
+        # test était mort en silence (toute comparaison contre `nan` est fausse).
+        if not math.isfinite(minutes):
+            raise HTTPException(400, "minutes invalide")
     narrator = _narrator(request)
     granted = narrator.force_live(minutes)
     # Rangé tout de suite : un rebuild peut arriver dans la minute, et c'est

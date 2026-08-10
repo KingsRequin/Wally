@@ -830,6 +830,16 @@ class OpenAILLMClient(BaseLLMClient):
                             model=self._model, inp=response.usage.input_tokens,
                             out=response.usage.output_tokens, cost=cost, purpose=purpose,
                         )
+                        # Le coût était CALCULÉ puis seulement journalisé, jamais
+                        # écrit en base — `complete()` et les deux chemins
+                        # outillés le font pourtant. `get_daily_cost()` et le
+                        # seuil d'alerte sous-estimaient donc tous les appels
+                        # structurés (gate, émotions, extraction de faits…).
+                        await self._log_cost(
+                            input_tokens=response.usage.input_tokens,
+                            output_tokens=response.usage.output_tokens,
+                            cost=cost, purpose=purpose, user_id=user_id,
+                        )
 
                     return parsed
 
@@ -911,6 +921,11 @@ class OpenAILLMClient(BaseLLMClient):
                         "${cost:.6f} [{purpose}]",
                         model=self._model, inp=usage.prompt_tokens,
                         out=usage.completion_tokens, cost=cost, purpose=purpose,
+                    )
+                    await self._log_cost(
+                        input_tokens=usage.prompt_tokens,
+                        output_tokens=usage.completion_tokens,
+                        cost=cost, purpose=purpose, user_id=user_id,
                     )
 
                     return parsed

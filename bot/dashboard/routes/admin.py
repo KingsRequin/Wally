@@ -216,7 +216,12 @@ async def update_config(request: Request, body: dict) -> dict:
         if "journal_channel_id" in d:
             cfg.bot.journal_channel_id = d["journal_channel_id"]
         if "dashboard_token" in d:
-            cfg.bot.dashboard_token = str(d["dashboard_token"]) or None
+            # `str(None)` vaut « None », une chaîne NON VIDE : le `or None`
+            # ne s'appliquait jamais, et un `null` en JSON transformait le jeton
+            # admin en la chaîne devinable « None » — que `config.save()`
+            # gravait, et que `compare_digest` acceptait ensuite.
+            _brut = d["dashboard_token"]
+            cfg.bot.dashboard_token = str(_brut).strip() if _brut else None
         if "trigger_names" in d:
             cfg.bot.trigger_names = list(d["trigger_names"])  # liste : remplacement intégral
         if "cost_alert_threshold" in d:

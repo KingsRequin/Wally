@@ -40,3 +40,10 @@ public-ui/
 
 # Artefacts de captures/logs Playwright — jetables, jamais versionnés.
 .playwright-mcp/
+
+# Bases SQLite parasites : un `Database` passé là où un CHEMIN était attendu
+# crée un fichier nommé d'après son `repr()`. 19 d'entre eux avaient été
+# committés et poussés sur le dépôt public (tables vides, aucune donnée
+# personnelle). Le code actuel ne les reproduit plus ; cette règle empêche
+# qu'un prochain appel mal formé les fasse revenir.
+*Database object at*

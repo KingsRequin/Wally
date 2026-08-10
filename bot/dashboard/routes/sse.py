@@ -71,7 +71,13 @@ def setup_log_sink() -> None:
     """Enregistre le sink loguru une seule fois (idempotent)."""
     global _sink_id
     if _sink_id is None:
-        _sink_id = logger.add(_log_sink)
+        # `enqueue=True` : le sink fait `put_nowait` sur des `asyncio.Queue`,
+        # or des `logger.warning()` s'exécutent bel et bien dans des threads
+        # `asyncio.to_thread` (analyse émotionnelle à chaque message, pipeline
+        # vocal, scrape…). `_wakeup_next` y appelait `loop.call_soon` depuis le
+        # mauvais thread → RuntimeError avalé par loguru, et l'onglet Logs
+        # n'affichait ces lignes qu'au keepalive suivant, par paquets.
+        _sink_id = logger.add(_log_sink, enqueue=True)
 
 
 @public_router.get("/sse/emotions")

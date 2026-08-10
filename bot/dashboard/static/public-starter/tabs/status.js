@@ -3,6 +3,7 @@ import { emotions, onEmotionUpdate, connectCognitiveSSE } from '../app.js';
 
 let _pollInterval    = null;
 let _historyInterval = null;
+let _resizeObserver = null;
 let _historyData     = null;
 let _container       = null;
 let _unsubEmo        = null;
@@ -364,9 +365,16 @@ function renderStatus(el, status, stream) {
   el.appendChild(histCard);
 
   if (_historyData && _historyData.length >= 2) setTimeout(() => drawHistoryChart(canvas, _historyData), 0);
+  // Déconnecté avant d'en créer un nouveau : `renderStatus()` est rappelé
+  // toutes les 30 s et recrée le canvas, mais l'ancien observer n'était jamais
+  // libéré — 120 observers et 120 canvas retenus par heure sur un onglet
+  // laissé ouvert pendant un live.
+  if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
   if (window.ResizeObserver) {
-    const ro = new ResizeObserver(() => { if (_historyData && _historyData.length >= 2) drawHistoryChart(canvas, _historyData); });
-    ro.observe(canvas);
+    _resizeObserver = new ResizeObserver(() => {
+      if (_historyData && _historyData.length >= 2) drawHistoryChart(canvas, _historyData);
+    });
+    _resizeObserver.observe(canvas);
   }
 }
 

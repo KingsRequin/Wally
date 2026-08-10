@@ -16,6 +16,8 @@ let _sendBtnRef  = null;
 let _dateDisplayRef = null;
 let _nextBtnRef  = null;
 let _autocompleteDropdown = null;
+let _clicHorsChampPose = false;
+let _inputWrapCourant = null;
 
 // `new Date('2026-03-01')` est un minuit UTC : comparé à une date construite en
 // local, il décalait la borne d'un jour. On la construit dans le même repère.
@@ -449,9 +451,18 @@ function buildChatLayout(user) {
     if (e.key === 'Enter') { hideAutocomplete(); sendMessage(); }
   });
 
-  document.addEventListener('click', (e) => {
-    if (!inputWrap.contains(e.target)) hideAutocomplete();
-  }, { capture: false });
+  // Un SEUL listener pour toute la page, posé au premier montage. Il était
+  // ajouté dans `buildChatLayout()`, donc une fois par `mount()` — retour
+  // OAuth, rafraîchissement silencieux, chaque cycle déconnexion/reconnexion —
+  // et jamais retiré : après quelques cycles, chaque clic exécutait N closures
+  // retenant des `inputWrap` détachés.
+  _inputWrapCourant = inputWrap;
+  if (!_clicHorsChampPose) {
+    _clicHorsChampPose = true;
+    document.addEventListener('click', (e) => {
+      if (_inputWrapCourant && !_inputWrapCourant.contains(e.target)) hideAutocomplete();
+    }, { capture: false });
+  }
 
   // 🎨 imagine button
   imagineBtn.addEventListener('click', () => {
