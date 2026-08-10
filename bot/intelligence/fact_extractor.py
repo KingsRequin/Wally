@@ -803,7 +803,14 @@ class FactExtractor:
                     # ABSENTE. `raw_id = None` faisait ensuite lever les deux
                     # branches — quatre faits perdus dans les logs, dont un la
                     # veille de l'audit.
-                    raw_id = entry.get("target") or "unknown"
+                    # MINUSCULES, comme partout ailleurs sur cette clé : le
+                    # nickname est minusculé (l. 823), `reassign_user` cherche
+                    # `unknown:{nickname}` et `load_aliases` pose la clé en
+                    # minuscules. Écrite en casse d'origine, `unknown:MrMakkx`
+                    # n'était donc JAMAIS retrouvée : les faits d'un inconnu
+                    # reconnu plus tard ne migraient jamais vers son compte, et
+                    # sa mémoire restait coupée en deux. 31 lignes en base.
+                    raw_id = (entry.get("target") or "unknown").strip().lower()
                 display = participants.get(raw_id, "") if effective_uid else ""
                 expires_at = _compute_expiry(
                     fi.get("ttl"), fact_text, datetime.utcnow()
@@ -822,10 +829,30 @@ class FactExtractor:
 
             nickname = alias_entry.get("nickname", "").lower().strip()
             resolved_to = alias_entry.get("resolved_to", "")
-            resolved_uid = alias_entry.get("resolved_user_id")
+            resolved_uid = (alias_entry.get("resolved_user_id") or "").strip()
 
             if not nickname or not resolved_uid:
                 continue
+
+            # L'uid du LLM était pris au mot. Mesuré : 129 alias sur 188 écrits
+            # SANS namespace (« 610550333042589752 » au lieu de
+            # « discord:610… »). Conséquence : `canonical_uid.split(":", 1)` ne
+            # rend qu'une partie pour 69 % des pseudos connus, la branche
+            # d'injection des souvenirs de tiers est sautée, et l'uid pointe
+            # vers un espace que personne ne lit.
+            if ":" not in resolved_uid:
+                connu = next(
+                    (u["user_id"] for u in all_known_users
+                     if u.get("user_id", "").split(":", 1)[-1] == resolved_uid),
+                    None,
+                )
+                if connu is None:
+                    logger.warning(
+                        "Alias {n} ignoré : identifiant sans namespace ({u})",
+                        n=nickname, u=resolved_uid,
+                    )
+                    continue
+                resolved_uid = connu
 
             try:
                 if self._db is not None:

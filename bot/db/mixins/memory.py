@@ -84,10 +84,15 @@ class MemoryMixin:
         self, user_id: str, max_attempts: int = 3, retry_after_seconds: float = 86400.0
     ) -> dict | None:
         retry_cutoff = time.time() - retry_after_seconds
+        # `attempts < ?` ET la temporisation, pas OU. Avec un OU, la seconde
+        # clause restait vraie pour toujours passé les 3 tentatives : la
+        # question revenait tous les jours, sans fin. Mesuré : 44 questions de
+        # plus de 30 jours, réinjectées au prompt chaque nuit.
         cursor = await self._conn.execute(
             "SELECT * FROM memory_questions"
             " WHERE user_id = ? AND resolved = 0"
-            "   AND (attempts < ? OR (last_attempt_at IS NOT NULL AND last_attempt_at < ?))"
+            "   AND attempts < ?"
+            "   AND (last_attempt_at IS NULL OR last_attempt_at < ?)"
             " ORDER BY"
             "   CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
             "   created_at ASC"
@@ -128,12 +133,21 @@ class MemoryMixin:
             (question_id,),
         )
 
-    async def cleanup_old_questions(self, max_age_days: int = 30) -> None:
+    async def cleanup_old_questions(self, max_age_days: int = 30) -> int:
+        """Purge les questions périmées. Retourne le nombre supprimé.
+
+        Deux défauts cumulés ici : le `WHERE` manquait ses parenthèses, si bien
+        que TOUTE question résolue partait quel que soit son âge — contredisant
+        `max_age_days` — et la fonction n'était appelée par aucun cron. Les
+        questions s'accumulaient donc indéfiniment (45 en base, dont 44 de plus
+        de 30 jours) et repassaient au prompt chaque nuit.
+        """
         cutoff = time.time() - max_age_days * 86400
-        await self.execute(
-            "DELETE FROM memory_questions WHERE resolved = 1 OR created_at < ?",
-            (cutoff,),
+        cur = await self._conn.execute(
+            "DELETE FROM memory_questions WHERE created_at < ?", (cutoff,)
         )
+        await self._conn.commit()
+        return cur.rowcount or 0
 
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (apres fusion de comptes)."""

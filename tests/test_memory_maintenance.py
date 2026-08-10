@@ -42,7 +42,10 @@ async def test_increment_attempts(tmp_path):
     await db.insert_memory_question("discord:123", "mem", "Question?", "high")
     q = await db.get_pending_question("discord:123")
     await db.increment_question_attempts(q["id"])
-    q2 = await db.get_pending_question("discord:123")
+    # `retry_after_seconds=0` : la question est temporisée 24 h après chaque
+    # tentative (l'ancien `OR` rendait cette temporisation inopérante, et la
+    # question revenait ensuite indéfiniment — 44 périmées en base).
+    q2 = await db.get_pending_question("discord:123", retry_after_seconds=0)
     assert q2["attempts"] == 1
     await db.close()
 

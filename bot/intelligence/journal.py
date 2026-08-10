@@ -614,6 +614,17 @@ class DailyJournal:
         except Exception as exc:
             logger.warning("Memory cleanup failed: {e}", e=exc)
 
+        # `cleanup_old_questions` existait depuis le début et n'était branchée
+        # sur AUCUN cron : les questions en attente s'accumulaient sans fin et
+        # repassaient au prompt chaque nuit (45 en base, dont 44 périmées).
+        if self._db is not None:
+            try:
+                n = await self._db.cleanup_old_questions()
+                if n:
+                    logger.info("Ménage mémoire : {n} question(s) périmée(s) retirée(s)", n=n)
+            except Exception as exc:
+                logger.warning("Ménage des questions mémoire échoué : {e}", e=exc)
+
         try:
             await self._sort_one_user_memory()
         except Exception as exc:
