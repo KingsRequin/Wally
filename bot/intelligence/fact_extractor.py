@@ -798,7 +798,12 @@ class FactExtractor:
                 else:
                     # Unknown user: store under unknown:<nickname>
                     plat = "unknown"
-                    raw_id = entry.get("target", "unknown")
+                    # `or`, pas le défaut de `.get()` : le schéma autorise
+                    # `target: null`, et un défaut ne s'applique qu'à une clé
+                    # ABSENTE. `raw_id = None` faisait ensuite lever les deux
+                    # branches — quatre faits perdus dans les logs, dont un la
+                    # veille de l'audit.
+                    raw_id = entry.get("target") or "unknown"
                 display = participants.get(raw_id, "") if effective_uid else ""
                 expires_at = _compute_expiry(
                     fi.get("ttl"), fact_text, datetime.utcnow()

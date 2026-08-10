@@ -288,11 +288,24 @@ class SocialMixin:
         sans que la date bouge. On écarte donc ceux vus récemment dans `daily_log`.
         """
         now = time.time() if now is None else now
+        # On COMPTE les faits, on ne lit plus `memory_users.memory_count` : cette
+        # colonne n'est plus alimentée depuis la V2 (171 lignes à 0, et des
+        # compteurs figés — `lornitorinqu` en annonçait 23 pour 0 fait réel).
+        # Le bloc « habitués absents » du journal jugeait donc sur un compteur
+        # arrêté en juin.
+        # Sous-requête ENVELOPPÉE : `memory_count` existe encore comme colonne
+        # physique de `memory_users`, si bien qu'un `WHERE memory_count >= ?`
+        # posé au même niveau viserait la colonne morte, pas le compte calculé.
         rows = await self.fetch_all(
-            "SELECT username, memory_count, last_updated FROM memory_users "
-            "WHERE username IS NOT NULL AND memory_count >= ? AND last_updated < ? "
+            "SELECT username, last_updated, memory_count FROM ("
+            "  SELECT m.username AS username, m.last_updated AS last_updated, "
+            "    (SELECT COUNT(*) FROM atomic_facts a "
+            "      WHERE a.user_id = m.user_id AND a.status = 'active') AS memory_count "
+            "  FROM memory_users m "
+            "  WHERE m.username IS NOT NULL AND m.last_updated < ?"
+            ") WHERE memory_count >= ? "
             "ORDER BY memory_count DESC",
-            (min_memories, now - min_days_absent * 86400),
+            (now - min_days_absent * 86400, min_memories),
         )
         seen_rows = await self.fetch_all("SELECT DISTINCT author FROM daily_log")
         seen = {_base_name(r["author"]) for r in seen_rows}

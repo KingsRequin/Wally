@@ -159,7 +159,7 @@ class MemoryService:
         if self._retrieval is None:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return
-        from datetime import datetime, timezone
+        from datetime import datetime
         from bot.intelligence.memory.facts import AtomicFact, FactCategory, _normalize
         try:
             cat = FactCategory(category)
@@ -185,7 +185,13 @@ class MemoryService:
                     if f.id and _normalize(f.content) == norm:
                         await self._facts.confirm(f.id)
                         return
-            now = datetime.now(timezone.utc)
+            # UTC NAÏF, comme partout ailleurs (`AtomicFact` et les 15 requêtes
+            # de `facts.py` utilisent `utcnow()`). Ce seul point d'écriture en
+            # aware faisait cohabiter deux formats dans les mêmes colonnes —
+            # 4 101 lignes sur 14 400 au 2026-08-10 — et toute soustraction
+            # directe entre les deux lève `TypeError`. Les helpers défensifs qui
+            # recollent `tzinfo` après coup n'existent que pour ça.
+            now = datetime.utcnow()
             await self._retrieval.add_fact(AtomicFact(
                 user_id=uid,
                 content=content, category=cat, confidence=1.0,
@@ -376,7 +382,10 @@ class MemoryService:
         current = self._context_windows.get(channel_id, [])
         added_during = [m for m in current if m["timestamp"] > snapshot_ts]
         self._context_windows[channel_id] = [summary_entry] + added_during
-        return [summary_entry]
+        # `added_during` était calculé, rangé dans la fenêtre… et absent du
+        # retour : la réponse en cours ne voyait donc AUCUN des messages arrivés
+        # pendant la résumance, alors qu'ils la concernent au premier chef.
+        return [summary_entry] + added_during
 
     async def _summarize_messages(self, messages: list[dict]) -> str:
         """Multi-pass sliding summarization."""

@@ -5,7 +5,13 @@ from bot.db.database import Database
 
 @pytest.fixture
 async def db(tmp_path):
-    d = await Database.create(str(tmp_path / "test.db"))
+    chemin = str(tmp_path / "test.db")
+    # Comme en production : `bootstrap.py` et `discord/bot.py` posent les tables
+    # V2 juste après `Database.create()`. Sans elles, la base de test n'a pas
+    # `atomic_facts` et ne ressemble à aucun environnement réel.
+    from bot.db.schema_v2 import create_v2_tables
+    d = await Database.create(chemin)
+    await create_v2_tables(chemin)
     yield d
     await d.close()
 
@@ -442,6 +448,17 @@ async def test_get_journals_last_n_days_empty(db):
     assert result == []
 
 
+
+async def _poser_faits(db, user_id: str, n: int) -> None:
+    """`memory_count` n'est plus lu : les habitués se comptent sur les faits réels."""
+    for i in range(n):
+        await db.execute(
+            "INSERT INTO atomic_facts (user_id, content, category, status, "
+            "created_at, last_seen_at) VALUES (?,?,?,?,?,?)",
+            (user_id, f"fait {i}", "FAIT", "active", "2026-08-01T00:00:00", "2026-08-01T00:00:00"),
+        )
+
+
 # ── Continuité : habitués sans nouvelles ──
 
 @pytest.mark.asyncio
@@ -452,6 +469,7 @@ async def test_missing_regulars_detects_absent_habitue(db):
         "VALUES (?,?,?,?,?)",
         ("discord:1", "discord", now - 40 * 86400, "Keychka", 25),
     )
+    await _poser_faits(db, "discord:1", 25)
     missing = await db.get_missing_regulars(now=now)
     assert [m["username"] for m in missing] == ["Keychka"]
     assert missing[0]["days"] == 40
@@ -466,6 +484,7 @@ async def test_missing_regulars_ignores_someone_who_just_spoke(db):
         "VALUES (?,?,?,?,?)",
         ("discord:2", "discord", now - 40 * 86400, "Iron d'aile", 16),
     )
+    await _poser_faits(db, "discord:2", 16)
     await db.log_daily_message("ch1", "Iron d'aile (@iron_daile)", "je suis là", platform="discord")
     assert await db.get_missing_regulars(now=now) == []
 
@@ -478,6 +497,7 @@ async def test_missing_regulars_ignores_occasional_visitors(db):
         "VALUES (?,?,?,?,?)",
         ("twitch:3", "twitch", now - 60 * 86400, "passant", 2),
     )
+    await _poser_faits(db, "twitch:3", 2)
     assert await db.get_missing_regulars(now=now) == []
 
 
@@ -493,6 +513,7 @@ async def test_missing_regulars_ranks_by_closeness(db):
             "VALUES (?,?,?,?,?)",
             (uid, "discord", now - days * 86400, name, count),
         )
+        await _poser_faits(db, uid, count)
     # Trié par nombre de souvenirs, pas par fraîcheur de l'absence
     assert [m["username"] for m in await db.get_missing_regulars(now=now)] == ["Proche", "Lointain"]
 
@@ -510,10 +531,12 @@ async def test_missing_regulars_survit_a_une_date_illisible(db):
         "VALUES (?,?,?,?,?)",
         ("discord:90", "discord", "pas-une-date", "Cassé", 20),
     )
+    await _poser_faits(db, "discord:90", 20)
     await db.execute(
         "INSERT INTO memory_users (user_id, platform, last_updated, username, memory_count) "
         "VALUES (?,?,?,?,?)",
         ("discord:91", "discord", now - 30 * 86400, "Valide", 15),
     )
+    await _poser_faits(db, "discord:91", 15)
     missing = await db.get_missing_regulars(now=now)
     assert [m["username"] for m in missing] == ["Valide"]
