@@ -55,6 +55,14 @@ def _classements(stat) -> str:
     return f" ({' — '.join(morceaux)})" if morceaux else ""
 
 
+def _uid_valide(uid: str) -> str:
+    """Un uid Apex est une suite de chiffres. Tout le reste est écarté ici,
+    plutôt que d'être envoyé tel quel à l'API — le modèle confond volontiers
+    « uid » et « pseudo »."""
+    nettoye = str(uid or "").strip()
+    return nettoye if nettoye.isdigit() else ""
+
+
 def _rang(n: int) -> str:
     """1 → « 1ᵉʳ », 3 → « 3ᵉ ». Le premier ne se dit pas « 1ᵉ ».
 
@@ -94,6 +102,7 @@ class ApexLegendsService:
         requester: str | None = None,
         requester_name: str = "",
         legend: str = "",
+        uid: str = "",
     ) -> str:
         """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
         c'est ce qui empêche quiconque de déclarer le compte d'un autre."""
@@ -101,7 +110,7 @@ class ApexLegendsService:
             return await self._player_stats(
                 player_name, platform,
                 remember=remember, requester=requester, requester_name=requester_name,
-                legend=legend,
+                legend=legend, uid=uid,
             )
         if action == "map_rotation":
             return await self._map_rotation()
@@ -124,9 +133,12 @@ class ApexLegendsService:
         requester: str | None = None,
         requester_name: str = "",
         legend: str = "",
+        uid: str = "",
     ) -> str:
         cherche, platform = await self._resolve(player_name, platform, requester)
-        uid = await self._resolve_uid(requester, player_name)
+        # Un uid DONNÉ l'emporte sur celui qu'on avait mémorisé : c'est le seul
+        # recours quand la recherche par pseudo échoue (cf. `_introuvable`).
+        uid = _uid_valide(uid) or (await self._resolve_uid(requester, player_name) or "")
         if not cherche and not uid:
             return "Il me faut un pseudo Apex pour chercher."
         data = await self._client.get(
@@ -137,11 +149,35 @@ class ApexLegendsService:
             return data
         profil = read_profile(data)
         if profil is None:
-            erreur = data.get("Error") if isinstance(data, dict) else ""
-            return f"{cherche} : pas trouvé sur l'API Apex ({erreur or 'compte inconnu'})."
+            erreur = str(data.get("Error") or "") if isinstance(data, dict) else ""
+            return self._introuvable(cherche, erreur, cherche_par_uid=bool(uid))
         if remember and requester:
             await self._remember(profil, cherche, platform, requester, requester_name)
         return self._render_profile(profil, legend=legend)
+
+    def _introuvable(self, cherche: str, erreur: str, *, cherche_par_uid: bool) -> str:
+        """Ce qu'on répond quand l'API ne trouve pas — en disant quoi faire.
+
+        Beaucoup de comptes bien réels sont absents de la recherche par PSEUDO :
+        l'API délègue à un « low priority search service » qui ne les indexe pas.
+        `IBrainroTI67` en est un — introuvable par nom sur les trois plateformes,
+        y compris depuis leur propre site, mais parfaitement lisible par uid.
+
+        Sans cette explication, « pas trouvé » se lit comme « ce joueur n'existe
+        pas », et personne ne pense à donner son uid.
+        """
+        if cherche_par_uid:
+            return (
+                f"Aucun compte Apex derrière cet uid ({erreur or 'inconnu'}). "
+                "Vérifie le numéro."
+            )
+        return (
+            f"{cherche} : introuvable par pseudo ({erreur or 'compte inconnu'}). "
+            "La recherche par nom de l'API rate des comptes pourtant bien réels — "
+            "ce n'est pas forcément une faute de frappe. Demande son uid Apex "
+            "(le nombre à la fin de l'URL de sa page sur apexlegendsstatus.com) "
+            "et rappelle-moi avec le paramètre `uid`."
+        )
 
     async def fetch_profile(
         self, player: str, platform: str = "PC", uid: str | None = None
@@ -208,15 +244,19 @@ class ApexLegendsService:
         if self._db is None:
             return
         try:
+            # Le nom OFFICIEL rendu par l'API, pas celui qui a été tapé : la
+            # casse diffère (`Azrael_ttv` → `Azrael_TTV`), et surtout une
+            # recherche par uid n'a pas de pseudo à mémoriser.
+            nom = profil.name or cherche
             await self._db.apex_link_account(
                 identity=requester,
                 display_name=requester_name or requester,
-                apex_name=cherche,
+                apex_name=nom,
                 apex_platform=platform or "PC",
                 uid=profil.uid or None,
             )
             logger.info(
-                "Apex: compte {name} lié à {who}", name=cherche, who=requester_name or requester
+                "Apex: compte {name} lié à {who}", name=nom, who=requester_name or requester
             )
         except Exception as e:
             logger.warning("Apex: impossible de mémoriser le compte: {e}", e=e)

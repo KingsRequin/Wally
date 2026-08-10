@@ -42,7 +42,9 @@ APEX_LEGENDS_TOOL = {
             "« j'ai combien de kills ? » → player_stats avec player_name VIDE, "
             "son compte est déjà connu · "
             "« Azraël il a combien de kills avec Fuse ? » → player_stats avec "
-            "player_name=Azraël ET legend=Fuse\n"
+            "player_name=Azraël ET legend=Fuse · "
+            "« mon uid c'est 1002761549602 » → player_stats avec uid=… ET "
+            "remember=true\n"
             "N'UTILISE PAS : « Apex c'est nul » → une opinion, pas une demande de "
             "données."
         ),
@@ -68,6 +70,18 @@ APEX_LEGENDS_TOOL = {
                     "type": "string",
                     "enum": ["PC", "PS4", "X1"],
                     "description": "La plateforme, PC par défaut",
+                },
+                "uid": {
+                    "type": "string",
+                    "description": (
+                        "L'identifiant numérique du compte Apex. À utiliser "
+                        "quand la recherche par pseudo a échoué : l'API rate "
+                        "des comptes bien réels, ce n'est pas une faute de "
+                        "frappe. On le lit à la fin de l'URL de la page du "
+                        "joueur sur apexlegendsstatus.com. Combine-le avec "
+                        "remember=true si la personne donne le SIEN, pour ne "
+                        "plus jamais avoir à le redemander."
+                    ),
                 },
                 "legend": {
                     "type": "string",

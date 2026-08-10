@@ -382,6 +382,7 @@ def make_tool_executor(
                 platform=args.get("platform", "PC"),
                 remember=bool(args.get("remember")),
                 legend=args.get("legend", "") or "",
+                uid=args.get("uid", "") or "",
                 requester=identity,
                 requester_name=author,
             )

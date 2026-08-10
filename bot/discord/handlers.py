@@ -2525,6 +2525,7 @@ async def _respond(
                     platform=args.get("platform", "PC"),
                     remember=bool(args.get("remember")),
                     legend=args.get("legend", "") or "",
+                    uid=args.get("uid", "") or "",
                     # L'identité vient d'ICI, jamais du modèle : c'est ce qui
                     # empêche de déclarer le compte Apex de quelqu'un d'autre.
                     requester=f"discord:{message.author.id}",

@@ -99,7 +99,10 @@ async def test_une_declaration_reussie_est_memorisee(db):
     )
 
     compte = await db.apex_get_account("twitch:1")
-    assert compte["apex_name"] == "Azrael_ttv"
+    # La casse OFFICIELLE rendue par l'API, pas celle qui a été tapée. Ce test
+    # figeait `Azrael_ttv` ; or une recherche par uid n'a aucun pseudo tapé à
+    # mémoriser, et c'est justement le recours quand la recherche par nom rate.
+    assert compte["apex_name"] == "Azrael_TTV"
     assert compte["display_name"] == "azra"
     assert compte["uid"] == "2274044345"
 
