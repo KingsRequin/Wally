@@ -181,10 +181,10 @@ class MemoryService:
         async with self._verrou_ajout(uid):
             norm = _normalize(content)
             if norm:
-                for f in await self._facts.get_by_user(uid, categories=[cat]):
-                    if f.id and _normalize(f.content) == norm:
-                        await self._facts.confirm(f.id)
-                        return
+                jumeau = await self._facts.find_same_content(uid, cat, norm)
+                if jumeau is not None:
+                    await self._facts.confirm(jumeau)
+                    return
             # UTC NAÏF, comme partout ailleurs (`AtomicFact` et les 15 requêtes
             # de `facts.py` utilisent `utcnow()`). Ce seul point d'écriture en
             # aware faisait cohabiter deux formats dans les mêmes colonnes —

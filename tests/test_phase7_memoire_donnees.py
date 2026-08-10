@@ -34,7 +34,9 @@ async def test_le_fait_ajoute_porte_une_date_soustractible():
     svc._alias_cache = {}
     svc._add_locks = {}
     svc._facts = MagicMock()
-    svc._facts.get_by_user = AsyncMock(return_value=[])
+    # La déduplication passe maintenant par une requête SQL ciblée plutôt que
+    # par un rapatriement de tous les faits actifs de la catégorie.
+    svc._facts.find_same_content = AsyncMock(return_value=None)
     capture = {}
     svc._retrieval = MagicMock()
 

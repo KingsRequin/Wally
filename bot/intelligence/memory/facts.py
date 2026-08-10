@@ -436,7 +436,14 @@ class SQLiteFactStore:
             importance=_g("importance", 0.5),
             support_count=_g("support_count", 1),
             confidence=row["confidence"],
-            status=FactStatus(row["status"]),
+            # Tolérant : `dismissed` existe en base (60 lignes, vestige d'une
+            # version antérieure) sans figurer dans l'enum. `FactStatus(...)`
+            # aurait levé `ValueError` au premier chemin de lecture sans filtre
+            # de statut — une vue admin « tous les faits », un script d'export.
+            status=next(
+                (st for st in FactStatus if st.value == row["status"]),
+                FactStatus.ARCHIVED,
+            ),
             emotional_context=row["emotional_context"],
             source=row["source"] or "conversation",
             origin=_g("origin"),
@@ -706,6 +713,32 @@ class SQLiteFactStore:
         else:
             logger.debug("append_progress: but #{} +1 étape ({} au total)", fact_id, len(steps))
         return True
+
+    async def find_same_content(
+        self, user_id: str, category: "FactCategory", norm: str
+    ) -> int | None:
+        """L'id d'un fait actif dont le contenu NORMALISÉ est identique, ou None.
+
+        Le doublon était cherché en rapatriant TOUS les faits actifs de la
+        catégorie puis en normalisant chacun en Python — 2 039 lignes pour
+        `wally:self`, à chaque note et chaque pensée écrite par la boucle
+        cognitive, verrou tenu. On pré-filtre en SQL sur la longueur (index
+        `(user_id, status)` déjà présent) et on ne normalise que les candidats
+        de même taille, ce qui en laisse une poignée.
+        """
+        async with self._connect() as db:
+            cursor = await db.execute(
+                "SELECT id, content FROM atomic_facts "
+                "WHERE user_id = ? AND category = ? AND status = ? "
+                "AND length(content) = ?",
+                (user_id, category.value, FactStatus.ACTIVE.value, len(norm)),
+            )
+            rows = await cursor.fetchall()
+        # Index positionnels : `_connect()` ne pose pas de `row_factory`.
+        for fact_id, contenu in rows:
+            if _normalize(contenu) == norm:
+                return fact_id
+        return None
 
     async def confirm(self, fact_id: int) -> None:
         """Renforce un fait existant sans dupliquer (observation CONFIRM) :

@@ -20,6 +20,7 @@ Tout doute de l'arbitre → `new` (refus prudent du faux positif).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
@@ -145,6 +146,8 @@ class MemoryIngest:
         self._extract_system = _load_prompt("memory_extract.md", _EXTRACT_FALLBACK)
         self._arbiter_system = _load_prompt("memory_arbiter.md", _ARBITER_FALLBACK)
         self.arbiter_calls = 0
+        # Un verrou d'écriture par personne (cf. `_verrou`).
+        self._verrous: dict[str, asyncio.Lock] = {}
 
     async def ingest(
         self,
@@ -220,7 +223,29 @@ class MemoryIngest:
 
     # ── Étape 2 : réconciliation 2 étages ─────────────────────────────────────
 
+    def _verrou(self, user_id: str) -> asyncio.Lock:
+        """Verrou d'écriture par personne, créé à la demande.
+
+        `MemoryService.add()` en avait un — mais la production ne passe pas par
+        là : `fact_extractor._store_fact` préfère `reconcile_candidate` dès
+        qu'un prédicat valide est présent, c'est-à-dire dans le cas nominal. La
+        course que le verrou disait empêcher restait donc grande ouverte sur le
+        chemin réel : deux flushes concurrents (Discord, Twitch et boucle
+        cognitive lancent chacun le leur en fire-and-forget) passaient tous deux
+        `find_active_match` et créaient deux lignes pour le même S-P-O, sans
+        contrainte d'unicité en base pour les rattraper.
+        """
+        verrou = self._verrous.get(user_id)
+        if verrou is None:
+            verrou = asyncio.Lock()
+            self._verrous[user_id] = verrou
+        return verrou
+
     async def _reconcile(self, cand: _Candidate, user_id: str):
+        async with self._verrou(user_id):
+            return await self._reconcile_locked(cand, user_id)
+
+    async def _reconcile_locked(self, cand: _Candidate, user_id: str):
         # Hors vocabulaire → needs_review (jamais en base principale active).
         if cand.predicate not in PREDICATES or cand.category not in CATEGORIES:
             fact = self._make_fact(cand, user_id, FactStatus.NEEDS_REVIEW)
