@@ -810,6 +810,31 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
 
+    /* Planning des streams — ce sont des horaires : ils doivent être LISIBLES,
+       pas devinés. À côté de l'avatar il ne reste que 326 px de large, où une
+       image de 1280 tomberait à 308 px — un quart de sa taille. La carte sort
+       donc du flux et prend toute la source le temps de son affichage ;
+       l'avatar réapparaît juste après. */
+    .planning {
+      position: fixed;
+      inset: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      background: rgba(18, 18, 22, .92);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      z-index: 5;
+    }
+    .planning img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto; height: auto;
+      border-radius: 8px;
+    }
+
     /* Pari de Wally — ouverture, puis verdict. */
     .prediction {
       width: 280px;

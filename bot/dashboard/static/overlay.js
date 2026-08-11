@@ -568,6 +568,17 @@
       return box;
     },
 
+    planning(p) {
+      // Une image fixe, sans légende : le planning se lit, il ne se commente
+      // pas dans la carte — Wally a sa bulle pour ça.
+      const box = el("div", "planning");
+      const img = document.createElement("img");
+      img.src = String(p.src || "");
+      img.alt = "";
+      box.appendChild(img);
+      return box;
+    },
+
     prediction(p) {
       const done = p.outcome === "right" || p.outcome === "wrong";
       const box = el("div", done ? `prediction ${p.outcome}` : "prediction");

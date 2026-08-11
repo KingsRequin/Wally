@@ -363,6 +363,35 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 
 ---
 
+## Le planning des streams
+
+> « wally c'est quand le prochain stream »
+> « wally les horaires »
+
+Une image fixe, déposée à la main dans
+`bot/dashboard/static/fichiers/planning.webp`. La remplacer suffit — ni
+redémarrage ni rebuild, le dossier est monté en direct.
+
+L'outil `show_planning` **rend toujours le lien**
+(`https://heywally.fr/static/fichiers/planning.webp`), y compris hors live :
+c'est justement là qu'on demande quand est le prochain stream. Discord en fait
+un aperçu tout seul. Si un live est en cours, l'image s'affiche **en plus** sur
+l'overlay, et l'outil dit à Wally si ça a été le cas — il ne peut donc pas
+prétendre l'avoir montrée alors que rien n'est à l'écran.
+
+La carte **prend toute la source** au lieu de se ranger à côté de l'avatar : à
+côté de lui il ne reste que 326 px de large, où une image de 1280 tomberait à
+308 px, illisible. En plein cadre elle s'affiche à 526 × 296, et les horaires se
+lisent. L'avatar revient dès que la carte s'efface.
+
+Depuis une chaîne Twitch **invitée**, Wally donne le lien mais n'affiche rien :
+l'overlay appartient au stream maison, comme pour tous les autres widgets.
+
+L'URL absolue vient de `WEB_BASE_URL`, déjà utilisée pour les invitations et
+l'OAuth — le domaine n'est écrit en dur nulle part.
+
+---
+
 ## Le rotateur de memes — une seconde source, sans Wally
 
 Un overlay **indépendant** : il fait défiler en boucle les médias de

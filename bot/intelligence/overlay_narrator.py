@@ -18,6 +18,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import re
 import time
@@ -32,6 +33,22 @@ from loguru import logger
 
 from bot.core.secret_guard import guard_secret, release_secret
 from bot.intelligence.prompts import load_prompt
+
+# Le planning des streams : une image fixe déposée à la main dans
+# `bot/dashboard/static/fichiers/`. Le chemin sert l'overlay (même hôte), l'URL
+# absolue sert le chat — collé dans Discord, un chemin relatif ne montre rien.
+PLANNING_PATH = "/static/fichiers/planning.webp"
+
+
+def planning_url() -> str:
+    """URL publique du planning, pour le chat.
+
+    `WEB_BASE_URL` est déjà la base publique du projet (OAuth, invitations) :
+    la réutiliser évite d'écrire le domaine en dur une seconde fois.
+    """
+    base = os.getenv("WEB_BASE_URL", "").rstrip("/")
+    return f"{base}{PLANNING_PATH}"
+
 
 # Intervalle minimal entre deux bulles de pensée. Elles occupent l'écran quand
 # il ne se passe rien : plus fréquentes qu'une réaction, mais loin d'être
@@ -747,7 +764,7 @@ class OverlayNarrator:
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
                 "prediction", "meme", "rps", "hangman", "quote", "goal",
-                "talkers", "clip", "wave")
+                "talkers", "clip", "wave", "planning")
 
     # Sous-ensemble que `show_widget` sait rendre. `quote`, `prediction` et
     # `clip` sont déclenchés ailleurs (`show_quote`, `show_prediction`,
@@ -917,6 +934,12 @@ class OverlayNarrator:
                       "caption": chosen["description"][:70]}
             self._feed.widget("meme", **params)
             return {"widget": "meme", **chosen}
+
+        elif widget == "planning":
+            # Chemin relatif : la page est servie par le même hôte. L'URL
+            # absolue, elle, ne sert qu'au chat.
+            self._feed.widget("planning", src=PLANNING_PATH)
+            return {"widget": "planning", "src": PLANNING_PATH}
 
         elif widget == "bingo":
             # Deux gestes sur le même widget : ouvrir la grille, ou cocher une

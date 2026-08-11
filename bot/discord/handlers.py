@@ -106,7 +106,35 @@ from bot.intelligence.overlay_narrator import (
     CANCEL_TOOL_SPEC as _OVERLAY_CANCEL_TOOL,
     LAST_CLIP_TOOL_SPEC as _LAST_CLIP_TOOL,
     OVERLAY_TOOL_SPEC as _OVERLAY_TOOL,
+    planning_url,
 )
+
+
+PLANNING_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "show_planning",
+        "description": (
+            "Donne le planning des streams — les jours et horaires où le "
+            "streamer est en live. Appelle-le dès qu'on demande quand est le "
+            "prochain stream, les horaires, le programme de la semaine. Il te "
+            "rend le LIEN de l'image : donne-le tel quel, Discord en fait un "
+            "aperçu tout seul. Si un live est en cours, l'image s'affiche EN "
+            "PLUS sur l'overlay — l'outil te dit si ça a été le cas. Ne "
+            "prétends jamais l'avoir affichée s'il te dit le contraire, et "
+            "n'invente jamais d'horaires : tu ne connais que cette image."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string",
+                    "description": "Ta réplique, quelques mots. Optionnelle.",
+                },
+            },
+        },
+    },
+}
 
 
 
@@ -514,6 +542,39 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
         f"Rien affiché : '{widget}' est inconnu ou il manque des données "
         "(la roue veut au moins 2 options, un sondage une question)."
     )})
+
+
+def run_planning_tool(bot, args: dict, *, overlay: bool = True) -> str:
+    """Rend le lien du planning, et l'affiche sur l'overlay si un live tourne.
+
+    Le lien est rendu DANS TOUS LES CAS — hors live, sans overlay branché, quoi
+    qu'il arrive. C'est ce qui justifie un outil dédié plutôt qu'un simple
+    widget : `show_widget` ne répond rien hors direct, et Wally n'aurait alors
+    aucune réponse à « c'est quand les streams ? » le reste du temps.
+
+    `overlay=False` depuis une chaîne Twitch INVITÉE : donner le lien y est
+    inoffensif, mais l'overlay appartient au stream maison — le même garde que
+    pour les autres widgets.
+    """
+    affiche = False
+    narrator = _overlay_narrator(bot) if overlay else None
+    if narrator is not None:
+        try:
+            affiche = narrator.show_widget(
+                "planning", str(args.get("comment") or "")
+            ) is not None
+        except Exception as exc:  # noqa: BLE001 — l'affichage rate, le lien reste
+            logger.warning("show_planning : l'affichage a échoué : {e}", e=exc)
+    return json.dumps({
+        "status": "ok",
+        "url": planning_url(),
+        "affiche_sur_l_overlay": affiche,
+        "message": (
+            "Le planning est à l'écran, et voici le lien à donner."
+            if affiche else
+            "Donne ce lien. (Rien à l'écran : pas de live en cours.)"
+        ),
+    })
 
 
 async def run_last_clip_tool(bot, args: dict) -> str:
@@ -1238,6 +1299,10 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         tools.append(_PREDICT_TOOL)
     if getattr(bot, "quotes", None) is not None:
         tools.append(_QUOTE_TOOL)
+    # Le planning est offert INCONDITIONNELLEMENT : il rend un lien, pas un
+    # affichage. Le conditionner à l'overlay priverait Wally de réponse hors
+    # live — le moment où on demande justement quand est le prochain stream.
+    tools.append(PLANNING_TOOL_SPEC)
     # Overlay : seulement s'il est branché — un outil mort ferait promettre
     # un affichage qui n'arriverait jamais.
     if _overlay_narrator(bot) is not None:
@@ -2493,6 +2558,8 @@ async def _respond(
                 return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
+            if name == "show_planning":
+                return run_planning_tool(bot, args)
             if name == "show_overlay":
                 return run_overlay_tool(
                     bot, args, requester=message.author.display_name

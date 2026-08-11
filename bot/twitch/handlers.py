@@ -22,6 +22,7 @@ from bot.discord.handlers import (
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _OVERLAY_CANCEL_TOOL, run_overlay_cancel_tool,
     _LAST_CLIP_TOOL, run_apex_overlay_tool, run_last_clip_tool,
+    PLANNING_TOOL_SPEC, run_planning_tool,
     _consume_open_question, _note_open_question,
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
@@ -289,6 +290,10 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # `overlay=False` depuis une chaîne INVITÉE : l'overlay appartient au stream
     # maison. Sans ce garde, le chat d'un invité pouvait faire afficher bulles,
     # clips et panneaux Apex chez Azraël.
+    # Le planning est offert partout, chaîne invitée comprise : il rend un lien,
+    # pas un affichage. L'overlay maison, lui, reste protégé — `run_planning_tool`
+    # reçoit le même drapeau que les autres widgets.
+    tools.append(PLANNING_TOOL_SPEC)
     if overlay and _overlay_narrator(bot) is not None:
         tools.append(_OVERLAY_TOOL)
         tools.append(_OVERLAY_CANCEL_TOOL)
@@ -307,6 +312,7 @@ def make_tool_executor(
     channel: str,
     trace: str = "",
     user_roles: list[str] | None = None,
+    overlay: bool = True,
 ):
     """L'exécuteur d'appels d'outils, partagé par le chat et le vocal.
 
@@ -329,6 +335,8 @@ def make_tool_executor(
             return await run_predict_tool(bot, args)
         if name in ("start_counting", "stop_counting", "list_counters"):
             return await run_tally_tool(bot, name, args)
+        if name == "show_planning":
+            return run_planning_tool(bot, args, overlay=overlay)
         if name == "show_overlay":
             return run_overlay_tool(bot, args, requester=author)
         if name == "cancel_overlay":
@@ -778,7 +786,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         openai_messages = [{"role": "user", "content": user_content}]
 
         # ── Outils et exécuteur : les mêmes que sur le chemin vocal ───────
-        tools = await build_chat_tools(bot, overlay=est_chaine_home(bot, channel_name))
+        _est_home = est_chaine_home(bot, channel_name)
+        tools = await build_chat_tools(bot, overlay=_est_home)
         _tool_executor = make_tool_executor(
             bot,
             platform="twitch",
@@ -787,6 +796,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             channel=channel_name,
             trace=_trace,
             user_roles=_resolve_twitch_roles(getattr(payload, "badges", []) or []),
+            overlay=_est_home,
         )
 
         _llm_t0 = time.monotonic()
