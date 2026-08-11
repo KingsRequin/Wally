@@ -112,6 +112,25 @@ async def get_meme(name: str, request: Request):
     )
 
 
+@public_router.get("/rotation")
+async def get_rotation(request: Request) -> dict:
+    """Liste des médias du rotateur : nom et genre, rien d'autre.
+
+    Publique parce que la page tourne dans OBS sans session. Ne lève jamais :
+    une source de live préfère une liste vide à une erreur, qu'elle ne saurait
+    pas distinguer d'une panne du bot — et sur laquelle elle s'acharnerait.
+
+    La clé s'appelle `name` côté bibliothèque (`list_medias` suit `list`, qui
+    existait avant) et `nom` côté JSON. La conversion se fait ici, une seule fois.
+    """
+    library = getattr(request.app.state.wally, "memes", None)
+    if library is None:
+        return {"medias": []}
+    return {"medias": [
+        {"nom": m["name"], "genre": m["genre"]} for m in library.list_medias()
+    ]}
+
+
 @public_router.get("/overlay-version")
 async def get_overlay_version() -> dict:
     """Version courante — l'overlay la compare à la sienne toutes les 30 s."""
