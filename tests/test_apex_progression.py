@@ -73,6 +73,46 @@ async def test_sans_releve_on_n_invente_pas(service):
 
 
 @pytest.mark.asyncio
+async def test_sur_discord_la_reponse_interdit_d_inventer_un_lien(service):
+    """Vécu en prod : « ![Courbe](https://wally.azrael.watch/progression-chart/…) »
+    — une URL inventée de toutes pièces, alors que le PNG était déjà joint."""
+    debut = debut_de_periode("mois")
+    await _releve(service, debut - HEURE, 1000)
+    await _releve(service, debut + HEURE, 1120)
+    rendu = await service._progression(
+        "", "PC", period="mois", notion="kills", requester=None, uid=UID,
+        peut_joindre_image=True,
+    )
+    assert "pièce jointe" in rendu
+    assert "aucun lien" in rendu
+
+
+@pytest.mark.asyncio
+async def test_sans_piece_jointe_on_le_dit_aussi(service):
+    """Un chat Twitch ne porte pas d'image : surtout ne pas en promettre une."""
+    debut = debut_de_periode("mois")
+    await _releve(service, debut - HEURE, 1000)
+    await _releve(service, debut + HEURE, 1120)
+    rendu = await service._progression(
+        "", "PC", period="mois", notion="kills", requester=None, uid=UID,
+    )
+    assert "pas envoyer d'image" in rendu
+    assert "n'invente" in rendu
+
+
+@pytest.mark.asyncio
+async def test_aucune_courbe_n_est_retenue_pour_un_canal_sans_image(service):
+    """Sinon elle attendrait, et s'attacherait à une question Discord ultérieure."""
+    debut = debut_de_periode("mois")
+    await _releve(service, debut - HEURE, 1000)
+    await _releve(service, debut + HEURE, 1120)
+    await service._progression(
+        "", "PC", period="mois", notion="kills", requester="twitch:9", uid=UID,
+    )
+    assert await service.derniere_courbe("twitch:9") is None
+
+
+@pytest.mark.asyncio
 async def test_une_periode_inconnue_est_refusee(service):
     rendu = await service._progression(
         "", "PC", period="trimestre", notion="kills", requester=None, uid=UID

@@ -47,7 +47,8 @@ async def _serie(svc, n: int = 6) -> None:
 async def test_une_progression_demandee_laisse_une_courbe(service):
     await _serie(service)
     await service._progression(
-        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID,
+        peut_joindre_image=True,
     )
     png = await service.derniere_courbe("discord:42")
     assert png is not None and png.getvalue()[:8] == b"\x89PNG\r\n\x1a\n"
@@ -58,7 +59,8 @@ async def test_la_courbe_ne_s_attache_qu_une_fois(service):
     """Sinon la question suivante repartirait avec le graphe de la précédente."""
     await _serie(service)
     await service._progression(
-        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID,
+        peut_joindre_image=True,
     )
     assert await service.derniere_courbe("discord:42") is not None
     assert await service.derniere_courbe("discord:42") is None
@@ -74,7 +76,8 @@ async def test_deux_personnes_ne_se_volent_pas_leur_courbe(service):
     """Discord et Twitch tapent sur le même service en même temps."""
     await _serie(service)
     await service._progression(
-        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID,
+        peut_joindre_image=True,
     )
     assert await service.derniere_courbe("twitch:99") is None
     assert await service.derniere_courbe("discord:42") is not None
@@ -87,7 +90,8 @@ async def test_les_courbes_en_attente_sont_bornees(service):
     await _serie(service)
     for i in range(service._MAX_COURBES + 5):
         await service._progression(
-            "", "PC", period="live", notion="kills", requester=f"discord:{i}", uid=UID
+            "", "PC", period="live", notion="kills", requester=f"discord:{i}", uid=UID,
+            peut_joindre_image=True,
         )
     assert len(service._progressions) <= service._MAX_COURBES
 
@@ -97,7 +101,8 @@ async def test_sans_assez_de_releves_aucune_courbe_n_est_rendue(service):
     """Un point unique ne fait pas une courbe : la réponse reste en chiffres."""
     await service.history.enregistrer(UID, {"kills": 1000})
     await service._progression(
-        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID,
+        peut_joindre_image=True,
     )
     assert await service.derniere_courbe("discord:42") is None
 

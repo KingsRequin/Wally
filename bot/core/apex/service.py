@@ -136,9 +136,15 @@ class ApexLegendsService:
         uid: str = "",
         period: str = "live",
         notion: str = "kills",
+        peut_joindre_image: bool = False,
     ) -> str:
         """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
-        c'est ce qui empêche quiconque de déclarer le compte d'un autre."""
+        c'est ce qui empêche quiconque de déclarer le compte d'un autre.
+
+        `peut_joindre_image` dit si le canal sait porter une pièce jointe —
+        vrai sur Discord, faux dans un chat Twitch. Le modèle doit le savoir :
+        sans ça, il fabrique une URL vers une image imaginaire.
+        """
         if action == "player_stats":
             return await self._player_stats(
                 player_name, platform,
@@ -148,7 +154,7 @@ class ApexLegendsService:
         if action == "progression":
             return await self._progression(
                 player_name, platform, period=period, notion=notion or "kills",
-                requester=requester, uid=uid,
+                requester=requester, uid=uid, peut_joindre_image=peut_joindre_image,
             )
         if action == "map_rotation":
             return await self._map_rotation()
@@ -240,6 +246,7 @@ class ApexLegendsService:
         notion: str,
         requester: str | None,
         uid: str,
+        peut_joindre_image: bool = False,
     ) -> str:
         """Ce qu'un compteur a gagné sur une période, d'après nos relevés.
 
@@ -283,10 +290,14 @@ class ApexLegendsService:
 
         from bot.core.apex.chart import libelle as libelle_notion
 
-        self._retenir_courbe(
-            requester, progression.points, notion,
-            f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
-        )
+        # Retenue SEULEMENT si le canal sait la porter : une courbe rangée pour
+        # un chat Twitch ne serait jamais consommée, et attendrait là que la
+        # même personne pose une question sur Discord.
+        if peut_joindre_image:
+            self._retenir_courbe(
+                requester, progression.points, notion,
+                f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
+            )
         texte = (f"{libelle_periode.capitalize()} : "
                  f"+{_fr(progression.gain)} {libelle_notion(notion)}")
         # Un total qui ne couvre pas la période demandée doit le dire : « ce
@@ -296,7 +307,23 @@ class ApexLegendsService:
             texte += (f" — mais je ne mesure ce compte que depuis le "
                       f"{progression.depuis.strftime('%d/%m à %Hh%M')}, "
                       f"donc c'est un minimum, pas le total de la période")
-        return texte + "."
+        texte += "."
+        # Sans cette phrase, le modèle FABRIQUE une URL vers une image
+        # imaginaire (« ![Courbe](https://…/progression-chart/…) ») : il a par
+        # ailleurs consigne de citer ses sources en lien Markdown, et rien ne
+        # lui disait que le graphe voyage déjà avec sa réponse.
+        if peut_joindre_image:
+            texte += (
+                " [La courbe part AVEC ta réponse, en pièce jointe. N'écris "
+                "aucun lien, aucune URL, aucune image Markdown : elle est déjà "
+                "là. Contente-toi de commenter ce qu'elle montre.]"
+            )
+        else:
+            texte += (
+                " [Tu ne peux pas envoyer d'image ici : donne les chiffres, et "
+                "n'invente surtout pas de lien vers un graphique.]"
+            )
+        return texte
 
     _MAX_COURBES = 20
 

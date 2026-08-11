@@ -2570,6 +2570,9 @@ async def _respond(
                     uid=args.get("uid", "") or "",
                     period=args.get("period", "live") or "live",
                     notion=args.get("notion", "kills") or "kills",
+                    # Discord porte les pièces jointes : la courbe voyagera
+                    # avec la réponse, le modèle n'a pas à inventer de lien.
+                    peut_joindre_image=True,
                     # L'identité vient d'ICI, jamais du modèle : c'est ce qui
                     # empêche de déclarer le compte Apex de quelqu'un d'autre.
                     requester=f"discord:{message.author.id}",
