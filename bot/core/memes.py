@@ -16,7 +16,25 @@ from pathlib import Path
 
 from loguru import logger
 
-_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+# Extension acceptée -> type MIME annoncé par la route publique. On ne laisse
+# PAS `mimetypes` deviner : l'image Docker (Python 3.12, sans /etc/mime.types)
+# ignore `.webp`, et les memes de ce format partaient en
+# `application/octet-stream`. Ils s'affichent quand même — le navigateur renifle
+# le contenu d'un `<img>` — mais rien ne le garantit, et le dossier compte déjà
+# seize webp.
+_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+_EXTENSIONS = frozenset(_MEDIA_TYPES)
+
+
+def media_type(path: Path) -> str:
+    """Type MIME d'un meme, déduit de son extension."""
+    return _MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
 
 # Au-delà, l'image met trop de temps à s'afficher : le widget serait passé avant
 # d'être visible.

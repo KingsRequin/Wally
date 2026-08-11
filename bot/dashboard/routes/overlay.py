@@ -16,6 +16,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from bot.core.memes import media_type
+
 public_router = APIRouter()
 admin_router = APIRouter()
 
@@ -103,7 +105,11 @@ async def get_meme(name: str, request: Request):
     path = library.resolve(name)
     if path is None:
         raise HTTPException(404, "Meme introuvable")
-    return FileResponse(path, headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(
+        path,
+        media_type=media_type(path),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @public_router.get("/overlay-version")

@@ -182,3 +182,43 @@ def test_un_nom_avec_espaces_est_encode_dans_l_url(tmp_path):
     n.show_widget("meme", "")
     ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
     assert ev["params"]["src"].endswith("le%20chat%20de%20requin.png")
+
+
+def test_le_webp_est_servi_comme_une_image(tmp_path):
+    """Sans type explicite, l'overlay recevait `application/octet-stream`.
+
+    L'image Docker (Python 3.12, sans /etc/mime.types) ignore `.webp` :
+    `FileResponse` retombait alors sur le type générique. Le navigateur d'OBS
+    renifle le contenu d'un `<img>` et affichait quand même, mais rien ne
+    l'oblige — et le dossier de prod compte seize webp.
+    """
+    from bot.core.memes import media_type
+
+    assert media_type(tmp_path / "requin.webp") == "image/webp"
+    assert media_type(tmp_path / "requin.WEBP") == "image/webp"
+    assert media_type(tmp_path / "requin.gif") == "image/gif"
+    assert media_type(tmp_path / "requin.jpeg") == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_la_route_annonce_le_type_meme_sans_table_mime_systeme(tmp_path, monkeypatch):
+    """Le test simule l'image Docker : `mimetypes` y ignore tout.
+
+    Sans ce décor, le test passerait sur la machine de dev (Debian fournit
+    /etc/mime.types, qui connaît `.webp`) et raterait le défaut là où il vit :
+    dans le conteneur.
+    """
+    import starlette.responses
+
+    from bot.dashboard.routes.overlay import get_meme
+
+    # On patche la référence de starlette, pas `mimetypes.guess_type` : le module
+    # importe le symbole directement, et patcher la table d'origine ne changeait
+    # rien — le test passait alors même sur le code défaillant.
+    monkeypatch.setattr(starlette.responses, "guess_type", lambda *a, **k: (None, None))
+    (tmp_path / "requin.webp").write_bytes(b"x")
+    state = type("W", (), {"memes": MemeLibrary(tmp_path)})()
+    req = type("R", (), {"app": type("A", (), {"state": type("S", (), {"wally": state})()})()})()
+
+    resp = await get_meme("requin.webp", req)
+    assert resp.media_type == "image/webp"
