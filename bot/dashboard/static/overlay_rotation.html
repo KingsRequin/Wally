@@ -76,6 +76,7 @@
   const PAUSE = nombre('pause', 5, 0) * 1000;
   const ORDRE = params.get('ordre') === 'dossier' ? 'dossier' : 'hasard';
   const SACCADE = nombre('saccade', 33, 1);   // ms par état de glitch
+  const AGRANDIR = nombre('agrandir', 2, 1);  // facteur maximum d'agrandissement
   const ETATS = 7;                          // états par rafale
 
   const FILTRES = [
@@ -174,17 +175,42 @@
     return new Promise(function (resolve, reject) {
       if (media.genre === 'video') {
         const v = document.getElementById('video');
-        v.onloadedmetadata = function () { resolve(); };
+        v.onloadedmetadata = function () { resolve({l: v.videoWidth, h: v.videoHeight}); };
         v.onerror = function () { reject(new Error('vidéo illisible : ' + media.nom)); };
         v.src = url(media);
         v.load();
         return;
       }
       const img = new Image();
-      img.onload = function () { resolve(); };
+      img.onload = function () { resolve({l: img.naturalWidth, h: img.naturalHeight}); };
       img.onerror = function () { reject(new Error('média illisible : ' + media.nom)); };
       img.src = url(media);
     });
+  }
+
+  /** Donne au média la place qu'il mérite dans la source.
+   *
+   *  Les memes du dossier vont de 260 à 2100 px de côté. Sans agrandissement,
+   *  un petit occupe un tiers de ce qu'occupe un grand et paraît perdu au
+   *  milieu ; à remplir la source coûte que coûte, il baverait (près de 3×).
+   *  D'où le plafond : on agrandit jusqu'à `AGRANDIR` fois, pas au-delà.
+   *
+   *  La réduction, elle, reste au CSS (`max-width` / `max-height`) : c'est lui
+   *  qui garde le média dans la source, quelle que soit sa taille.
+   */
+  function dimensionner(element, naturel) {
+    element.style.width = '';
+    element.style.height = '';
+    if (!naturel || !naturel.l || !naturel.h) return;
+    const facteur = Math.min(
+      (window.innerWidth - 40) / naturel.l,
+      (window.innerHeight - 40) / naturel.h,
+      AGRANDIR
+    );
+    if (facteur > 1) {
+      element.style.width = Math.round(naturel.l * facteur) + 'px';
+      element.style.height = 'auto';
+    }
   }
 
   /** Joue la vidéo et rend la main à la fin.
@@ -245,8 +271,9 @@
     depuisRelecture += 1;
     if (depuisRelecture >= medias.length) { depuisRelecture = 0; charger(); }
 
+    let naturel;
     try {
-      await precharger(media);
+      naturel = await precharger(media);
     } catch (e) {
       // Un fichier qui ne charge pas sort de la liste pour la session : sans
       // ça il reviendrait à chaque tour et laisserait un trou à l'écran. C'est
@@ -262,6 +289,7 @@
     img.classList.toggle('absent', estVideo);
     video.classList.toggle('absent', !estVideo);
     if (!estVideo) img.src = url(media);
+    dimensionner(estVideo ? video : img, naturel);
 
     await rafale();
     appliquer(NET);
