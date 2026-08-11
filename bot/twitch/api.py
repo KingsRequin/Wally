@@ -318,13 +318,20 @@ class TwitchAPI:
         return {"url": f"{source}?sig={sig}&token={val}",
                 "duration": clip.get("durationSeconds") or 0}
 
-    async def get_last_clip(self, hours: int = 24,
+    async def get_last_clip(self, days: int = 30,
                             creator: str | None = None) -> dict | None:
         """Le clip le plus RÉCENT de la chaîne, ou None.
 
+        La fenêtre était de 24 h : un clip vieux de trois jours restait donc
+        « le dernier clip de la chaîne » pour tout le monde sauf pour Wally, qui
+        répondait « aucun clip récent, même pas de Lolofun » — deux clips de
+        Lolofun dataient de quatre jours. Trente jours : « le dernier » n'a pas
+        de raison d'expirer, et à ce rythme (16 clips en 90 jours) on reste très
+        loin des 100 que renvoie Helix.
+
         ⚠️ Helix trie les clips par nombre de vues, pas par date : sur une
         fenêtre longue, le dernier créé peut tomber hors du lot renvoyé. D'où
-        `first=100` sur 24 h — au-delà, il faudrait paginer pour un gain nul.
+        `first=100` — au-delà, il faudrait paginer pour un gain nul.
 
         `creator` restreint au clippeur demandé — un surnom suffit (« azra »
         pour « Azrael »). Helix ne sait pas filtrer là-dessus : le tri se fait
@@ -332,7 +339,7 @@ class TwitchAPI:
         reste celle de CETTE chaîne : « le dernier clip d'Azra » veut dire ce
         qu'Azra a clippé ici, pas ce qui a été clippé sur sa chaîne à lui.
         """
-        since = datetime.now(timezone.utc) - timedelta(hours=max(1, hours))
+        since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
         clips = await self.get_recent_clips(
             since.strftime("%Y-%m-%dT%H:%M:%SZ"), first=100
         )
@@ -405,6 +412,15 @@ class TwitchAPI:
                         params={
                             "broadcaster_id": self._broadcaster_id,
                             "started_at": since_iso,
+                            # OBLIGATOIRE, malgré les apparences : sans borne de
+                            # fin, Helix en pose une à `started_at + 1 semaine`.
+                            # « Les clips des 30 derniers jours » ne regardait
+                            # donc que la semaine du 30e au 23e jour, et rien du
+                            # présent. Constaté le 2026-08-11 : 3 clips (tous de
+                            # mai) sur 90 jours, contre 16 avec cette ligne.
+                            "ended_at": datetime.now(timezone.utc).strftime(
+                                "%Y-%m-%dT%H:%M:%SZ"
+                            ),
                             "first": max(1, min(100, int(first))),
                         },
                         headers={
