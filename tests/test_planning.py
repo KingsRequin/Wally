@@ -151,7 +151,11 @@ def test_aucune_carte_de_l_overlay_ne_se_positionne_en_fixed():
     html = (Path(__file__).resolve().parents[1]
             / "bot/dashboard/static/overlay.html").read_text(encoding="utf-8")
     regles = re.sub(r"/\*.*?\*/", "", html, flags=re.S)
-    assert "position: fixed" not in regles
+    assert "position: fixed" not in regles, (
+        "tout ce qui s'affiche ici descend de `#widgets` (une `perspective`) ou "
+        "de `.widget` (un `transform`) : le `fixed` ne visera pas la source OBS "
+        "mais cet ancêtre. Dimensionner l'élément plutôt que le positionner."
+    )
 
 
 def test_le_planning_reste_affiche_assez_longtemps():
