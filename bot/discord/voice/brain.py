@@ -6,6 +6,8 @@ from difflib import SequenceMatcher
 
 from loguru import logger
 
+from bot.core.voice_transcript import active_voice_transcript
+
 
 def _history_to_context(history: list[dict], bot_name: str = "") -> list[dict]:
     """Convertit l'historique vocal ({role, 'label: texte'}) en {author, content} pour l'analyse émotion."""
@@ -323,6 +325,35 @@ async def generate_voice_reply(
 
 _HISTORY_MAX = 20  # fenêtre de contexte de groupe (toutes personnes confondues)
 
+# Comment Wally se désigne lui-même dans le tampon de conversation vocale. Le
+# bloc est rédigé à la 2e personne : « [Toi] » y est sans ambiguïté, là où son
+# pseudo l'obligerait à se reconnaître dans une liste de tiers.
+_SELF_LABEL = "Toi"
+
+
+def _remember_line(service, *, role: str, speaker: str, text: str) -> None:
+    """Consigne une réplique du vocal — fil LLM du salon ET tampon de contexte écrit.
+
+    Point d'écriture UNIQUE des deux tampons : ils portent la même conversation,
+    et deux appelants séparés finissent toujours par diverger le jour où un
+    troisième chemin de parole apparaît.
+
+    Le tampon de contexte, lui, ne retient que ce qui est diffusé au live — cf.
+    `bot/core/voice_transcript.py`. Ce n'est pas à cet appelant d'en juger.
+    """
+    # Sa propre réponse entre nue dans le fil : c'est déjà lui qui parle.
+    content = f"{speaker}: {text}" if role == "user" else text
+    service.history.append({"role": role, "content": content})
+    service.history[:] = service.history[-_HISTORY_MAX:]
+
+    feed = active_voice_transcript()
+    if feed is None:
+        return
+    try:
+        feed.record(getattr(service, "channel_id", None), speaker, text)
+    except Exception as e:  # noqa: BLE001 — un tampon de contexte ne casse pas le vocal
+        logger.warning("VoiceTranscript: réplique non consignée: {e}", e=e)
+
 
 def _voice_publish(bot, service, type_: str, persist: bool = True, **fields) -> None:
     """Publie un événement de debug vocal sur le feed (live SSE + historique). Jamais bloquant.
@@ -355,8 +386,7 @@ async def handle_transcript(
 
     # 1. Toujours consigner la parole dans le fil de conversation (contexte de groupe complet),
     #    même si Wally ne répond pas : il doit suivre ce que les gens se disent entre eux.
-    service.history.append({"role": "user", "content": f"{speaker_label}: {transcript}"})
-    service.history[:] = service.history[-_HISTORY_MAX:]
+    _remember_line(service, role="user", speaker=speaker_label, text=transcript)
 
     # Suivi/debug : ce que le STT a entendu (avec sa latence), publié quoi qu'il advienne.
     _voice_publish(bot, service, "heard", speaker=speaker_label, speaker_id=speaker_user_id,
@@ -562,8 +592,7 @@ async def _respond_once_inner(
     await service.speak(text)
     # Suivi/debug : la réponse de Wally + latence depuis la décision (gate + génération + TTS).
     _voice_publish(bot, service, "reply", speaker=wally_name, text=text, gen_ms=_gen_ms())
-    service.history.append({"role": "assistant", "content": text})
-    service.history[:] = service.history[-_HISTORY_MAX:]
+    _remember_line(service, role="assistant", speaker=_SELF_LABEL, text=text)
 
     try:
         if getattr(bot, "cognitive_loop", None) is not None:

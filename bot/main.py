@@ -372,13 +372,18 @@ async def main() -> None:
             async def _go() -> None:
                 try:
                     if went_live:
-                        if vs.is_connected:
-                            return          # déjà en vocal : on ne le déplace pas
                         from bot.discord.voice.channel_memory import resolve_voice_channel_id
 
                         channel_id = await resolve_voice_channel_id(
                             db, config.bot.stream_voice_channel_id
                         )
+                        # Le vocal de CE salon part désormais dans le live : il
+                        # cesse d'être privé, on peut le remettre au prompt.
+                        # Ouvert avant le retour anticipé ci-dessous — Wally est
+                        # souvent déjà dans le salon quand le live démarre.
+                        voice_transcript.open_broadcast(channel_id)
+                        if vs.is_connected:
+                            return          # déjà en vocal : on ne le déplace pas
                         if not channel_id:
                             return
                         channel = discord_bot.get_channel(channel_id)
@@ -386,10 +391,14 @@ async def main() -> None:
                             logger.warning("voice: salon de stream {c} introuvable", c=channel_id)
                             return
                         await vs.join(channel, listen_only=True, only_if_free=True)
-                    elif ended and vs.is_connected and vs.listen_only:
-                        # Seulement s'il est là POUR le stream : une conversation
-                        # vocale en cours ne doit pas être coupée.
-                        await vs.leave()
+                    elif ended:
+                        # Le live s'arrête : le vocal redevient privé, et ce qui
+                        # y a été dit sort du contexte écrit.
+                        voice_transcript.close_broadcast()
+                        if vs.is_connected and vs.listen_only:
+                            # Seulement s'il est là POUR le stream : une conversation
+                            # vocale en cours ne doit pas être coupée.
+                            await vs.leave()
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
                     logger.warning("voice: auto-join/leave du stream a échoué: {e}", e=e)
 
@@ -468,14 +477,23 @@ async def main() -> None:
                     if not live:
                         # Fin du live : il retrouve le droit de revenir au suivant.
                         vs.listen_optout = False
-                        continue
-                    if vs.is_connected or vs.listen_optout:
+                        # Filet de la transition « fin de live » : elle ne se
+                        # produit qu'une fois, et un flux qui la rate laisserait
+                        # la captation ouverte sur un vocal redevenu privé.
+                        voice_transcript.close_broadcast()
                         continue
                     from bot.discord.voice.channel_memory import resolve_voice_channel_id
 
                     channel_id = await resolve_voice_channel_id(
                         db, config.bot.stream_voice_channel_id
                     )
+                    # Résolu AVANT le test de connexion : après un redémarrage en
+                    # plein stream, aucune transition n'a eu lieu, donc personne
+                    # n'a ouvert la captation — et Wally est peut-être déjà dans
+                    # le salon, auquel cas les deux tests suivants sortent d'ici.
+                    voice_transcript.open_broadcast(channel_id)
+                    if vs.is_connected or vs.listen_optout:
+                        continue
                     if not channel_id:
                         continue
                     channel = discord_bot.get_channel(channel_id)
@@ -491,11 +509,31 @@ async def main() -> None:
         # Twitch, restitué au prompt comme contexte d'ambiance. Aucun réveil
         # cognitif, aucune prise de parole — Wally voit, il ne commente pas.
         from bot.core.stream_feed import StreamFeed
+        from bot.core.voice_transcript import VoiceTranscriptFeed
 
         _streamer_name = os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael_TTV"
         stream_feed = StreamFeed(streamer_name=_streamer_name)
         stream_feed.activate()
         twitch_bot.stream_feed = stream_feed
+
+        # Conversation vocale : ce que Wally entend dans le salon vocal, remis au
+        # prompt de ses réponses ÉCRITES. La captation ne s'ouvre que pendant le
+        # live et sur le salon d'où l'on streame (`_on_stream_voice` plus bas) —
+        # hors de là, un vocal reste privé.
+        voice_transcript = VoiceTranscriptFeed()
+        voice_transcript.activate()
+
+        def _voice_present() -> list[str]:
+            """Les présents en vocal, lus au moment du rendu.
+
+            Paresseux à dessein : le `VoiceService` n'existe pas encore ici (il
+            naît dans le `setup_hook` de Discord), et les gens entrent et
+            sortent du salon pendant toute la soirée.
+            """
+            vs = getattr(discord_bot, "voice_service", None)
+            return vs.members_names() if vs is not None and vs.is_connected else []
+
+        voice_transcript.set_presence_source(_voice_present)
 
         stream_watcher = StreamWatcher(
             twitch_api,

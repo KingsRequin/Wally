@@ -9,6 +9,7 @@ from loguru import logger
 
 from bot.core.apex.watcher import current_apex_block
 from bot.core.stream_feed import current_stream_feed_block
+from bot.core.voice_transcript import current_voice_transcript_block
 from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_host_metrics, cached_weather
 from bot.intelligence.identity import render_identity
@@ -286,6 +287,17 @@ class PromptBuilder:
         _on_stream_channel = bool(situation and situation.get("stream_live"))
         if feed_block := current_stream_feed_block(include_chat=not _on_stream_channel):
             dynamic_parts.append(feed_block)
+
+        # Ce qui se dit dans le vocal, pour les réponses ÉCRITES (chat Twitch,
+        # salons Discord) : sans lui, Wally était dans le salon vocal ET
+        # incapable de dire un mot de ce qui s'y passait.
+        #
+        # Sauté sur le chemin VOCAL lui-même : `build_voice_system` délègue ici,
+        # or ces répliques sont déjà dans ses `messages` — il se serait vu en
+        # double, une fois horodaté et une fois pas.
+        if not (situation and situation.get("platform") == "discord_vocal"):
+            if voice_block := current_voice_transcript_block():
+                dynamic_parts.append(voice_block)
 
         # Ce qu'Azraël fait dans Apex à l'instant, et ce qu'il a gagné depuis le
         # début du live. Passif comme le flux ci-dessus : aucun `notify_*`

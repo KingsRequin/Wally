@@ -431,9 +431,24 @@ class VoiceService:
         `channel_memory` (« on le déplace en cours de soirée »), et il était le
         seul à ne pas l'être.
         """
+        # Ce qui a été entendu l'a été dans l'ANCIEN salon : le garder après un
+        # déplacement l'attribuerait au nouveau, devant d'autres gens.
+        self._forget_transcript("déplacé de salon")
         self._channel = channel
         if self.listen_only:
             self._fire_detached(self._remember_channel(channel))
+
+    def _forget_transcript(self, reason: str) -> None:
+        """Vide le tampon de conversation vocale servant de contexte à l'écrit."""
+        from bot.core.voice_transcript import active_voice_transcript
+
+        feed = active_voice_transcript()
+        if feed is None:
+            return
+        try:
+            feed.clear(reason)
+        except Exception as e:  # noqa: BLE001 — un tampon de contexte ne casse pas le vocal
+            logger.warning("VoiceTranscript: purge échouée: {e}", e=e)
 
     async def _remember_channel(self, channel) -> None:
         """Retient ce salon comme salon de stream, pour le prochain démarrage."""
@@ -539,6 +554,7 @@ class VoiceService:
         self._vc = None
         self._channel = None
         self.history.clear()
+        self._forget_transcript("salon quitté")
         logger.info("voice: salon quitté")
 
     # ------------------------------------------------------------------
