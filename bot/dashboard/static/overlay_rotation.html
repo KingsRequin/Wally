@@ -141,6 +141,7 @@
   let dernier = null;
   let rang = 0;
   let depuisRelecture = 0;
+  let echecsDaffilee = 0;
 
   async function charger() {
     // Une liste vide n'écrase jamais une liste qui marchait : le bot peut être
@@ -274,12 +275,20 @@
     let naturel;
     try {
       naturel = await precharger(media);
+      echecsDaffilee = 0;
     } catch (e) {
-      // Un fichier qui ne charge pas sort de la liste pour la session : sans
-      // ça il reviendrait à chaque tour et laisserait un trou à l'écran. C'est
-      // exactement le défaut qui a fait abandonner StreamElements.
-      medias = medias.filter(function (m) { return m.nom !== media.nom; });
-      setTimeout(tour, 0);
+      echecsDaffilee += 1;
+      // Trois échecs de suite ne désignent plus des fichiers fautifs : c'est le
+      // serveur qui ne répond plus — un rebuild du bot dure une quinzaine de
+      // secondes. Continuer à écarter viderait la bibliothèque entière en
+      // quelques secondes et la page perdrait l'autonomie qui fait tout son
+      // intérêt. On patiente, la liste reste intacte.
+      if (echecsDaffilee < 3) {
+        medias = medias.filter(function (m) { return m.nom !== media.nom; });
+        setTimeout(tour, 0);
+      } else {
+        setTimeout(tour, 5000);
+      }
       return;
     }
 
@@ -293,6 +302,7 @@
 
     await rafale();
     appliquer(NET);
+    signeDeVie();
 
     const sortir = async function () {
       await rafale();
@@ -309,6 +319,32 @@
       setTimeout(sortir, DUREE);
     }
   }
+
+  // Une source de live qui se fige ne le dit à personne : on ne s'en aperçoit
+  // qu'en revoyant le VOD. Le gardien la relance tout seul.
+  let derniereVie = Date.now();
+  let aDejaAffiche = false;
+  function signeDeVie() { derniereVie = Date.now(); aDejaAffiche = true; }
+
+  // Une vidéo longue est un signe de vie par ses `timeupdate` : sans cette
+  // condition, le gardien couperait un média de deux minutes en plein milieu.
+  document.getElementById('video').addEventListener('timeupdate', signeDeVie);
+
+  setInterval(function () {
+    // `aDejaAffiche` borne le gardien à ce qu'il sait guérir. Si le bot est
+    // arrêté quand OBS ouvre la page, il n'y a jamais eu de signe de vie :
+    // recharger afficherait une erreur de connexion dans la scène, alors qu'une
+    // source transparente qui réessaie en silence est le bon comportement.
+    // Les dix secondes de marge couvrent les cadences très courtes, où trois
+    // cycles ne font qu'une poignée de secondes.
+    // `medias.length` : quand la liste est vide, la page est déjà en train de
+    // réessayer et le serveur est probablement absent. Recharger afficherait
+    // une erreur de connexion dans la scène au lieu d'une source transparente.
+    if (aDejaAffiche && medias.length
+        && Date.now() - derniereVie > 3 * (DUREE + PAUSE) + 10000) {
+      location.reload();
+    }
+  }, 5000);
 
   charger().then(tour);
 })();

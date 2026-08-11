@@ -142,6 +142,10 @@ class MemeLibrary:
                 if path.stat().st_size > _MAX_BYTES:
                     logger.debug("Média ignoré (trop lourd) : {n}", n=path.name)
                     continue
+            # Le fichier a disparu entre `iterdir()` et `stat()` : l'owner range
+            # son dossier pendant qu'on le lit. Le sauter est la bonne réponse —
+            # journaliser ferait du bruit à chaque ménage, et lever priverait le
+            # rotateur de TOUS les autres médias.
             except OSError:
                 continue
             genre = "video" if _MEDIA_TYPES[suffix].startswith("video/") else "image"

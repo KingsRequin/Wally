@@ -363,6 +363,62 @@ sont ignorés (trop lents à afficher). Voir `data/memes/LISEZ-MOI.md`.
 
 ---
 
+## Le rotateur de memes — une seconde source, sans Wally
+
+Un overlay **indépendant** : il fait défiler en boucle les médias de
+`data/memes`, vidéos comprises. Wally n'y touche pas — il garde l'overlay
+compagnon pour les memes qu'il commente. Il remplace le widget « Asset rotator »
+de StreamElements, dont les fichiers finissaient par ne plus charger.
+
+| Réglage | Valeur |
+|---|---|
+| Source | Navigateur (`Browser Source`) |
+| URL | `https://heywally.fr/overlay-rotation` |
+| Largeur × hauteur | libre — **800 × 800** est un bon compromis |
+| Fond | transparent |
+| Contrôler l'audio via OBS | **coché**, sinon les vidéos restent muettes |
+
+La taille est libre : les bornes sont relatives à la source. Éviter un format
+très allongé, où les memes portrait seraient réduits au tiers pendant que les
+panoramiques rempliraient ; les memes du dossier sont surtout carrés ou portrait.
+
+**Réglages, dans l'URL** — ils se changent dans OBS, sans rebuild :
+
+| Paramètre | Défaut | Rôle |
+|---|---|---|
+| `duree` | `9` | secondes d'affichage d'une image (une vidéo joue jusqu'au bout) |
+| `pause` | `5` | secondes de noir entre deux médias ; **`0` enchaîne sans temps mort** |
+| `ordre` | `hasard` | `hasard` ou `dossier` (ordre alphabétique) |
+| `saccade` | `33` | millisecondes par état de glitch |
+| `agrandir` | `2` | facteur maximum d'agrandissement des petits memes |
+
+Exemple : `/overlay-rotation?duree=12&pause=0&agrandir=1.5`
+
+**L'agrandissement** existe parce que le dossier va de 260 à 2100 px de côté :
+sans lui, un petit meme occupe le tiers de la place d'un grand et paraît perdu.
+Le plafond évite qu'il bave. Aucune image n'est jamais déformée ni rognée.
+
+**La transition** est un glitch dont les saccades sont tirées au sort à chaque
+passage — rejouée à l'identique, elle se lirait comme une boucle. Elle porte sur
+le bloc entier, cadre compris : c'est ce qui permet au cadre de changer de
+dimensions pendant qu'il est invisible, sans qu'on le voie sauter d'un format à
+l'autre.
+
+**Ce qui la rend increvable**, et qui la distingue de ce qu'elle remplace :
+
+- un fichier qui ne charge pas est écarté, le suivant prend sa place ;
+- trois échecs d'affilée sont lus comme une panne du serveur, pas comme des
+  fichiers fautifs : la liste est conservée intacte et la page patiente ;
+- une vidéo qui refuse de démarrer est retentée en muet, puis abandonnée ;
+- une vidéo qui ne finit pas est coupée par un minuteur de secours ;
+- la page se recharge d'elle-même si elle se fige — mais jamais quand le serveur
+  est absent, où elle attend en silence plutôt que d'afficher une erreur.
+
+Elle **ne dépend pas du bot une fois chargée** : vérifié en coupant le conteneur
+quarante secondes en pleine rotation, la source a continué et repris seule.
+
+---
+
 ## Les clips
 
 > « wally mets le dernier clip » · « wally mets le dernier clip d'azra »
