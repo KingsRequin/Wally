@@ -51,6 +51,12 @@ def media_type(path: Path) -> str:
 # d'être visible.
 _MAX_BYTES = 8 * 1024 * 1024
 
+# `list` est AUSSI le nom d'une méthode de `MemeLibrary`. Dans le corps de la
+# classe, une méthode définie après elle et annotée `-> list[dict]` résout vers
+# la méthode, pas vers le type — mypy le refuse. L'alias supprime le piège pour
+# toutes les méthodes, quel que soit leur ordre.
+_Entrees = list[dict]
+
 
 def _describe(path: Path) -> str:
     """Description d'un meme : le .txt voisin s'il existe, sinon le nom du fichier.
@@ -98,13 +104,13 @@ class MemeLibrary:
     def directory(self) -> Path:
         return self._dir
 
-    def list(self) -> list[dict]:
+    def list(self) -> _Entrees:
         """Memes disponibles, triés par nom. Liste vide si le dossier manque."""
         try:
             entries = sorted(self._dir.iterdir())
         except OSError:
             return []
-        out: list[dict] = []
+        out: _Entrees = []
         for path in entries:
             if not path.is_file() or path.suffix.lower() not in _EXTENSIONS:
                 continue
@@ -117,7 +123,7 @@ class MemeLibrary:
             out.append({"name": path.name, "description": _describe(path)})
         return out
 
-    def list_medias(self) -> list[dict]:
+    def list_medias(self) -> _Entrees:
         """Images ET vidéos, chacune avec son genre. Pour le rotateur.
 
         Séparée de `list()` à dessein : celle-ci alimente une page qui sait
@@ -127,7 +133,7 @@ class MemeLibrary:
             entries = sorted(self._dir.iterdir())
         except OSError:
             return []
-        out: list[dict] = []
+        out: _Entrees = []
         for path in entries:
             suffix = path.suffix.lower()
             if not path.is_file() or suffix not in _EXTENSIONS_MEDIA:
