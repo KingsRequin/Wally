@@ -158,7 +158,11 @@ async def handle_voice_request(bot, discord_id: str, speaker: str, text: str) ->
         if api is None:
             return
         login = str(requester.get("twitch_login") or "").strip()
-        await api.send_message(f"@{login} {reply}" if login else reply)
+        if not await api.send_message(f"@{login} {reply}" if login else reply):
+            # Helix rend 200 sans publier quand la chaîne filtre : sans ce
+            # garde, le journal affirmait « Vocal → chat » pour une réponse que
+            # le chat n'a jamais vue. `send_message` a déjà dit pourquoi.
+            return
         logger.info("Vocal → chat : {who} « {t} »", who=login or speaker, t=reply[:60])
     except Exception as exc:  # noqa: BLE001 — une demande ratée ne casse pas l'écoute
         logger.warning("Demande vocale non traitée : {e}", e=exc)

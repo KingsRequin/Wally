@@ -25,6 +25,34 @@ if TYPE_CHECKING:
 _GQL_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 
 
+def _refus_helix(resp: httpx.Response) -> Optional[dict]:
+    """Le refus que Twitch cache dans un 200. `None` = message publié.
+
+    `POST /helix/chat/messages` répond 200 « requête recevable », puis dit dans
+    son corps s'il a publié quoi que ce soit : `is_sent: false` accompagné d'un
+    `drop_reason` quand AutoMod retient le message, que la chaîne est en mode
+    abonnés ou followers, ou que le bot y est en timeout. Le statut seul ne
+    distingue donc pas une réplique lue de tous d'une réplique tombée dans le
+    vide.
+
+    Le doute profite à l'envoi : un corps illisible rend `None`. Répondre
+    « refusé » à tort ferait oublier à Wally une phrase réellement publiée,
+    alors qu'il la retrouve dans son prélude et sa mémoire.
+    """
+    try:
+        data = (resp.json() or {}).get("data") or []
+        envoi = data[0] if data else {}
+        # `is False` et non `not ...` : un `is_sent` absent est un corps qu'on ne
+        # sait pas lire, pas un refus.
+        if envoi.get("is_sent") is False:
+            # `or {}` plutôt qu'un défaut de `.get` : Twitch écrit
+            # explicitement `drop_reason: null` quand il n'en donne pas.
+            return envoi.get("drop_reason") or {}
+    except Exception:  # noqa: BLE001 — un corps inattendu ne perd pas le message
+        return None
+    return None
+
+
 def _ratelimit_wait(resp, *, default: float = 1.0, cap: float = 5.0) -> float:
     """Secondes à attendre après un 429, d'après `Ratelimit-Reset` (epoch)."""
     try:
@@ -138,6 +166,17 @@ class TwitchAPI:
                         await asyncio.sleep(wait)
                         continue
                     resp.raise_for_status()
+                    refus = _refus_helix(resp)
+                    if refus is not None:
+                        # Pas de nouvel essai : un refus d'AutoMod ou de réglage
+                        # de chaîne ne se répare pas en réémettant le même texte.
+                        logger.warning(
+                            "Twitch a refusé de publier sur {t} : {code} — {msg}",
+                            t=target,
+                            code=refus.get("code") or "sans code",
+                            msg=refus.get("message") or "sans détail",
+                        )
+                        return False
                     return True
         except httpx.HTTPStatusError as exc:
             logger.error("Twitch send_message HTTP error: {e}", e=exc)

@@ -1027,8 +1027,11 @@ async def _announce_overlay_image(
                 logger.warning("IRC non connecté pour {ch}, message ignoré", ch=channel_name)
                 return
             await irc_channel.send(reply)
-        else:
-            await bot.twitch_api.send_message(text=reply)
+        elif not await bot.twitch_api.send_message(text=reply):
+            # Helix répond 200 sans rien publier quand AutoMod retient le
+            # message ou que la chaîne filtre : même conclusion que l'IRC
+            # déconnecté juste au-dessus. `send_message` a déjà dit pourquoi.
+            return
 
         bot.memory.append_prelude(channel_id, self_name, reply)
         bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
@@ -1113,8 +1116,12 @@ async def _spontaneous_respond_twitch(
                 logger.warning("IRC non connecté pour {ch}, message ignoré", ch=channel_name)
                 return
             await irc_channel.send(reply)
-        else:
-            await bot.twitch_api.send_message(text=reply)
+        elif not await bot.twitch_api.send_message(text=reply):
+            # Refus d'Helix (AutoMod, réglage de chaîne, timeout) : ni journal,
+            # ni cognition, ni mémoire. Un `message_out` écrit ici pour une
+            # phrase jamais publiée fait chercher la panne du mauvais côté —
+            # c'est ce qui s'est produit le 2026-08-11.
+            return
         _clog(
             bot, channel_name, "message_out",
             trace_id=_spont_trace, kind="spontaneous", author=self_name,

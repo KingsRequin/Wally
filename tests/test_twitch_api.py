@@ -2,6 +2,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from loguru import logger as _loguru
+
 from bot.twitch.api import TwitchAPI
 
 
@@ -17,9 +19,14 @@ def make_api(bot_token="bot_tok") -> TwitchAPI:
     )
 
 
-def make_http_response(status=200):
+def make_http_response(status=200, payload=None):
     resp = MagicMock()
     resp.status_code = status
+    # Corps réel de l'API : c'est LUI qui dit si le message a été publié, le
+    # statut HTTP valant seulement « la requête était recevable ».
+    resp.json = MagicMock(return_value=payload if payload is not None else {
+        "data": [{"message_id": "abc", "is_sent": True, "drop_reason": None}]
+    })
     if status == 200:
         resp.raise_for_status = MagicMock()
     else:
@@ -163,3 +170,78 @@ async def test_get_last_clip_sans_aucun_clip():
     api = make_api()
     api.get_recent_clips = AsyncMock(return_value=[])
     assert await api.get_last_clip() is None
+
+
+# ── Un message refusé par Twitch ─────────────────────────────────────────────
+# `POST /helix/chat/messages` répond 200 même quand il ne publie RIEN : le refus
+# vit dans le corps, sous `is_sent: false` et `drop_reason`. AutoMod, mode
+# abonnés/followers, bot en timeout — autant de cas où la réponse de Wally
+# n'atteint personne. Sans cette lecture, il posait son cooldown, notait sa
+# question ouverte et rangeait en mémoire une réplique que personne n'a lue.
+
+
+async def _envoi(resp):
+    """Joue un send_message contre une réponse HTTP donnée.
+
+    L'`await` reste DANS le `with` : rendre la coroutine sans l'attendre
+    laissait le patch se refermer avant l'appel, `httpx` partait pour de vrai,
+    et l'échec réseau faisait passer le test du refus pour la mauvaise raison.
+    """
+    api = make_api()
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        mock_http = MockClient.return_value.__aenter__.return_value
+        mock_http.post = AsyncMock(return_value=resp)
+        return await api.send_message("coucou")
+
+
+@pytest.mark.asyncio
+async def test_send_message_rend_faux_quand_twitch_refuse():
+    refuse = make_http_response(200, {"data": [{
+        "message_id": "abc", "is_sent": False,
+        "drop_reason": {"code": "channel_settings",
+                        "message": "follower only mode"},
+    }]})
+    assert await _envoi(refuse) is False
+
+
+@pytest.mark.asyncio
+async def test_send_message_dit_pourquoi_le_message_est_tombe():
+    """La raison vient de Twitch : la deviner coûtait une soirée (cf. le 429
+    EventSub, en réalité un 400 déguisé). On la journalise telle quelle.
+
+    Capture par un puits loguru et non `caplog` : loguru ne passe pas par le
+    module `logging`, où le test aurait constaté un silence trompeur.
+    """
+    refuse = make_http_response(200, {"data": [{
+        "message_id": "abc", "is_sent": False,
+        "drop_reason": {"code": "msg_rejected", "message": "held by AutoMod"},
+    }]})
+    lignes: list[str] = []
+    jeton = _loguru.add(lambda m: lignes.append(str(m)), level="WARNING")
+    try:
+        await _envoi(refuse)
+    finally:
+        _loguru.remove(jeton)
+    assert any("msg_rejected" in l and "AutoMod" in l for l in lignes), lignes
+
+
+@pytest.mark.asyncio
+async def test_send_message_rend_vrai_quand_twitch_publie():
+    assert await _envoi(make_http_response(200)) is True
+
+
+@pytest.mark.asyncio
+async def test_un_corps_illisible_ne_fait_pas_perdre_un_message_parti():
+    """Le doute profite à l'envoi : Twitch a répondu 200, et rendre `False` ici
+    effacerait de la mémoire de Wally une réplique bel et bien publiée."""
+    muet = make_http_response(200)
+    muet.json = MagicMock(side_effect=ValueError("pas du JSON"))
+    assert await _envoi(muet) is True
+
+
+@pytest.mark.asyncio
+async def test_une_reponse_sans_drop_reason_reste_un_refus():
+    """`drop_reason` peut être absent ou nul : c'est `is_sent` qui tranche.
+    Un `.get(clé, défaut)` ne couvre pas `clé: null`."""
+    refuse = make_http_response(200, {"data": [{"is_sent": False, "drop_reason": None}]})
+    assert await _envoi(refuse) is False

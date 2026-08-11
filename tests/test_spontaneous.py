@@ -148,3 +148,72 @@ async def test_spontaneous_memory_twitch():
     complete_call = bot.llm.complete.call_args
     user_content = complete_call.args[1][0]["content"]
     assert "Souvenir qui te revient" in user_content
+
+
+# ── Un envoi refusé par Twitch n'entre pas en mémoire ────────────────────────
+# Même règle que `_envoyer_reponse_twitch` : Wally ne doit pas se souvenir
+# d'avoir dit ce que personne n'a lu. Ces deux chemins-ci géraient déjà l'IRC
+# déconnecté, mais pas le refus d'Helix — un 200 qui ne publie rien.
+
+
+def _bot_chaine_home():
+    bot = make_bot_for_spontaneous()
+    bot._channel_ids = {}                 # pas d'IRC : la chaîne home passe par Helix
+    bot.twitch_api.send_message = AsyncMock(return_value=False)
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_spontane_refuse_par_twitch_ne_va_ni_au_prelude_ni_en_memoire():
+    from bot.twitch.handlers import _spontaneous_respond_twitch
+    bot = _bot_chaine_home()
+
+    await _spontaneous_respond_twitch(bot, "azrael_ttv", "123", "TestUser", "je vais jouer")
+
+    bot.twitch_api.send_message.assert_awaited()
+    bot.memory.append_prelude.assert_not_called()
+    bot.memory.append_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_spontane_publie_entre_bien_en_memoire():
+    """Le pendant du test précédent : sans lui, couper la mémoire pour tout le
+    monde passerait pour un correctif."""
+    from bot.twitch.handlers import _spontaneous_respond_twitch
+    bot = _bot_chaine_home()
+    bot.twitch_api.send_message = AsyncMock(return_value=True)
+
+    await _spontaneous_respond_twitch(bot, "azrael_ttv", "123", "TestUser", "je vais jouer")
+
+    bot.memory.append_prelude.assert_called_once()
+    bot.memory.append_message.assert_called_once()
+
+
+async def _annonce_image(bot):
+    from bot.twitch.handlers import _announce_overlay_image
+    bot.memory.get_context_summarized_if_needed = AsyncMock(return_value=[])
+    await _announce_overlay_image(
+        bot, "azrael_ttv", "123",
+        {"title": "un requin", "username": "kingsrequin", "prompt": "un requin"},
+        MagicMock(), {"url": "/x.png"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_annonce_d_image_refusee_ne_va_pas_en_memoire():
+    bot = _bot_chaine_home()
+    await _annonce_image(bot)
+    bot.memory.append_prelude.assert_not_called()
+    bot.memory.append_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_annonce_d_image_publiee_entre_en_memoire():
+    """Le pendant : sans lui, une annonce qui échoue AVANT l'envoi (un mock
+    incomplet, par exemple) ferait passer le test précédent pour la mauvaise
+    raison."""
+    bot = _bot_chaine_home()
+    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    await _annonce_image(bot)
+    bot.memory.append_prelude.assert_called_once()
+    bot.memory.append_message.assert_called_once()
