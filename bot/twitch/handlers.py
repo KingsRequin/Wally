@@ -383,6 +383,8 @@ def make_tool_executor(
                 remember=bool(args.get("remember")),
                 legend=args.get("legend", "") or "",
                 uid=args.get("uid", "") or "",
+                period=args.get("period", "live") or "live",
+                notion=args.get("notion", "kills") or "kills",
                 requester=identity,
                 requester_name=author,
             )

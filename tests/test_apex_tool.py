@@ -5,8 +5,17 @@ from bot.core.apex.tool import APEX_LEGENDS_TOOL
 
 def test_les_actions_offertes():
     enum = APEX_LEGENDS_TOOL["function"]["parameters"]["properties"]["action"]["enum"]
-    assert enum == ["player_stats", "map_rotation", "crafting", "predator", "server_status"]
+    assert enum == ["player_stats", "progression", "map_rotation", "crafting",
+                    "predator", "server_status"]
     assert "news" not in enum
+
+
+def test_la_progression_annonce_d_ou_vient_le_chiffre():
+    """Il ne sort pas de l'API mais de relevés maison : le modèle doit le savoir,
+    sinon il présentera « depuis le 12 » comme le total du mois."""
+    desc = APEX_LEGENDS_TOOL["function"]["description"].lower()
+    assert "progression" in desc
+    assert "relevés" in desc
 
 
 def test_la_description_nomme_ce_qui_est_hors_de_portee():

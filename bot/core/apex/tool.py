@@ -13,7 +13,14 @@ APEX_LEGENDS_TOOL = {
         "description": (
             "Données Apex Legends. À n'utiliser que pour une question précise sur "
             "le jeu ou sur un joueur.\n"
-            "ACTIONS : player_stats → profil d'un joueur (rang, niveau, état en "
+            "ACTIONS : progression → ce qu'un joueur a GAGNÉ sur une période "
+            "(« combien de kills depuis le début du stream ? », « et ce "
+            "mois-ci ? »). Demande 'period' (live/jour/semaine/mois) et "
+            "'notion' (kills par défaut). Ce chiffre vient de relevés que je "
+            "prends au fil du temps, pas de l'API : il ne remonte pas avant le "
+            "premier relevé, et la réponse le dit quand c'est le cas — reprends "
+            "cette nuance, ne la gomme pas. · "
+            "player_stats → profil d'un joueur (rang, niveau, état en "
             "jeu, kills et rang mondial, ET ses chiffres PAR LÉGENDE). Demande "
             "'player_name' et 'platform' (PC par défaut) ; laisse 'player_name' "
             "VIDE pour « mes stats », le compte déjà mémorisé de la personne "
@@ -55,12 +62,26 @@ APEX_LEGENDS_TOOL = {
                     "type": "string",
                     "enum": [
                         "player_stats",
+                        "progression",
                         "map_rotation",
                         "crafting",
                         "predator",
                         "server_status",
                     ],
                     "description": "La donnée voulue",
+                },
+                "period": {
+                    "type": "string",
+                    "enum": ["live", "jour", "semaine", "mois"],
+                    "description": (
+                        "Pour progression : sur quelle période compter. "
+                        "« live » = la session en cours."
+                    ),
+                },
+                "notion": {
+                    "type": "string",
+                    "enum": ["kills", "wins", "damage", "matches", "headshots"],
+                    "description": "Pour progression : quel compteur suivre (kills par défaut).",
                 },
                 "player_name": {
                     "type": "string",

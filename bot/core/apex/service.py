@@ -8,6 +8,8 @@ l'outil, pour que le modèle n'aille pas le chercher ailleurs.
 from __future__ import annotations
 
 import os
+import time
+from datetime import datetime
 from typing import Any
 
 from loguru import logger
@@ -29,6 +31,20 @@ from bot.core.apex.widgets import (
 def _fr(n: int) -> str:
     """12345 → « 12 345 », lisible dans un chat."""
     return f"{n:,}".replace(",", " ")
+
+
+def _depuis(quand: datetime) -> str:
+    """« il y a 3 jours », « hier », « tout à l'heure » — daté, jamais vague."""
+    from bot.core.apex.history import PARIS
+
+    ecart = datetime.now(PARIS) - quand
+    heures = ecart.total_seconds() / 3600
+    if heures < 2:
+        return "tout à l'heure"
+    if heures < 24:
+        return f"il y a {int(heures)} h"
+    jours = int(heures // 24)
+    return "hier" if jours == 1 else f"il y a {jours} jours"
 
 
 def _classements(stat) -> str:
@@ -107,6 +123,8 @@ class ApexLegendsService:
         requester_name: str = "",
         legend: str = "",
         uid: str = "",
+        period: str = "live",
+        notion: str = "kills",
     ) -> str:
         """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
         c'est ce qui empêche quiconque de déclarer le compte d'un autre."""
@@ -115,6 +133,11 @@ class ApexLegendsService:
                 player_name, platform,
                 remember=remember, requester=requester, requester_name=requester_name,
                 legend=legend, uid=uid,
+            )
+        if action == "progression":
+            return await self._progression(
+                player_name, platform, period=period, notion=notion or "kills",
+                requester=requester, uid=uid,
             )
         if action == "map_rotation":
             return await self._map_rotation()
@@ -157,7 +180,108 @@ class ApexLegendsService:
             return self._introuvable(cherche, erreur, cherche_par_uid=bool(uid))
         if remember and requester:
             await self._remember(profil, cherche, platform, requester, requester_name)
-        return self._render_profile(profil, legend=legend)
+        rendu = self._render_profile(profil, legend=legend)
+        # Les comptes qu'on ne sonde pas n'ont pour historique que leurs
+        # consultations : c'est ici, et nulle part ailleurs, qu'ils en gagnent un.
+        if rappel := await self._comparer_a_la_derniere_fois(profil):
+            rendu = f"{rendu}\n{rappel}"
+        return rendu
+
+    async def _comparer_a_la_derniere_fois(self, profil: PlayerProfile) -> str:
+        """« +124 kills depuis la dernière fois qu'on a regardé », ou "".
+
+        L'ordre compte : on consigne le relevé courant AVANT de chercher le
+        précédent, sinon la comparaison porterait sur des chiffres périmés.
+        """
+        # `getattr` et non `self.history` : le service est parfois construit
+        # sans passer par `__init__` (doublures de test, `__new__`), et un
+        # profil affiché ne doit pas dépendre de la présence de l'historique.
+        historique = getattr(self, "history", None)
+        if historique is None or not profil.uid:
+            return ""
+        stats = {k: s.value for k, s in profil.stats.items()}
+        if not stats:
+            return ""
+        ts = time.time()
+        try:
+            await historique.enregistrer(profil.uid, stats, maintenant=ts)
+            progression = await historique.depuis_derniere_consultation(
+                profil.uid, "kills", avant=ts
+            )
+        except Exception as exc:  # noqa: BLE001 — l'historique est un bonus
+            logger.warning("Apex: historique indisponible: {e}", e=exc)
+            return ""
+        if progression is None or progression.gain <= 0:
+            return ""
+        return (
+            f"Depuis la dernière fois qu'on a regardé son compte "
+            f"({_depuis(progression.depuis)}) : +{progression.gain} kills."
+        )
+
+    # ── La progression dans le temps ─────────────────────────────────────────
+
+    async def _progression(
+        self,
+        player_name: str,
+        platform: str,
+        *,
+        period: str,
+        notion: str,
+        requester: str | None,
+        uid: str,
+    ) -> str:
+        """Ce qu'un compteur a gagné sur une période, d'après nos relevés.
+
+        L'API ne donne que des totaux à vie : ce chiffre-là n'existe que parce
+        qu'on relève les compteurs au fil du temps. Il ne peut donc pas remonter
+        avant le premier relevé, et on le dit quand c'est le cas.
+        """
+        from bot.core.apex.history import debut_de_periode
+
+        historique = getattr(self, "history", None)
+        if historique is None:
+            return ("Je ne garde pas encore d'historique des compteurs, "
+                    "je ne peux pas calculer de progression.")
+
+        cible = _uid_valide(uid) or (await self._resolve_uid(requester, player_name) or "")
+        if not cible:
+            profil = await self.fetch_profile(
+                *(await self._resolve(player_name, platform, requester))
+            )
+            cible = profil.uid if profil else ""
+        if not cible:
+            return ("Il me faut savoir de quel compte Apex on parle pour suivre "
+                    "sa progression.")
+
+        periode = (period or "live").lower()
+        if periode == "live":
+            depuis = time.time() - 12 * 3600      # une soirée de stream, large
+            libelle_periode = "depuis le début de la session"
+        else:
+            try:
+                depuis = debut_de_periode(periode)
+            except ValueError:
+                return f"Période inconnue : {period}. Utilise live, jour, semaine ou mois."
+            libelle_periode = {"jour": "aujourd'hui", "semaine": "cette semaine",
+                               "mois": "ce mois-ci"}[periode]
+
+        progression = await historique.progression(cible, notion, depuis)
+        if progression is None:
+            return (f"Je n'ai aucun relevé de ce compte sur cette période — "
+                    f"je ne peux pas inventer sa progression.")
+
+        from bot.core.apex.chart import libelle as libelle_notion
+
+        texte = (f"{libelle_periode.capitalize()} : "
+                 f"+{_fr(progression.gain)} {libelle_notion(notion)}")
+        # Un total qui ne couvre pas la période demandée doit le dire : « ce
+        # mois-ci » alors qu'on ne mesure que depuis le 12 serait un chiffre
+        # faux présenté comme complet.
+        if progression.couverture_partielle:
+            texte += (f" — mais je ne mesure ce compte que depuis le "
+                      f"{progression.depuis.strftime('%d/%m à %Hh%M')}, "
+                      f"donc c'est un minimum, pas le total de la période")
+        return texte + "."
 
     def _introuvable(self, cherche: str, erreur: str, *, cherche_par_uid: bool) -> str:
         """Ce qu'on répond quand l'API ne trouve pas — en disant quoi faire.
