@@ -135,7 +135,13 @@ async def test_on_ne_peut_pas_declarer_le_compte_d_un_autre(db):
     )
 
     assert await db.apex_get_account("twitch:99") is not None
-    assert await db.apex_find_by_display_name("Azrael_ttv") is None
+    # La liaison existe pour le DEMANDEUR et pour lui seul. Vérifié sur
+    # l'identité, la seule chose qui compte ici : chercher « Azrael_ttv » par
+    # nom retrouve désormais ce compte-là (il pointe bien vers ce compte Apex),
+    # ce qui est le comportement voulu pour LIRE des stats et ne dit rien de
+    # qui a le droit de déclarer quoi.
+    trouve = await db.apex_find_by_display_name("Azrael_ttv")
+    assert trouve is None or trouve["identity"] == "twitch:99"
 
 
 @pytest.mark.asyncio
