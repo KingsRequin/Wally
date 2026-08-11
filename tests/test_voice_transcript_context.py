@@ -209,6 +209,43 @@ def test_le_bloc_est_present_sur_le_chemin_twitch():
     assert "Conversation vocale en cours" in out
 
 
+@pytest.mark.asyncio
+async def test_la_cognition_percoit_toujours_le_vocal(monkeypatch):
+    """Le vocal transitait par le flux du stream, que la cognition lit. L'en
+    sortir ne doit pas rendre la boucle cognitive sourde."""
+    import bot.core.system_info as si
+    from bot.intelligence.attention_agent import AttentionAgent
+
+    monkeypatch.setattr(si, "read_host_metrics", lambda: None, raising=False)
+
+    async def _no_weather():
+        return None
+
+    monkeypatch.setattr(si, "fetch_weather_france", _no_weather, raising=False)
+
+    feed = _feed_en_direct()
+    feed.record(SALON, "Azraël", "on repart sur Storm Point")
+
+    ctx = await AttentionAgent(_FactsMuets()).build_context({"boredom": 0.1}, [])
+    assert ctx.stream_feed and "Storm Point" in ctx.stream_feed
+
+
+class _FactsMuets:
+    """Un magasin de faits qui ne répond rien : seul le bloc vocal nous intéresse."""
+
+    async def search_by_category(self, *a, **k):
+        return []
+
+    async def get_latest_by_source(self, *a, **k):
+        return None
+
+    async def get_by_user(self, *a, **k):
+        return []
+
+    async def sample_random(self, *a, **k):
+        return []
+
+
 # ── Les logs ─────────────────────────────────────────────────────────────────
 
 def test_le_verdict_ne_change_pas_a_chaque_replique():

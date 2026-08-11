@@ -357,6 +357,18 @@ class AttentionAgent:
             from loguru import logger
             logger.warning("AttentionAgent: flux du stream indisponible: {}", e)
 
+        # Ce qui se dit en vocal. La cognition le percevait déjà, mêlé au flux
+        # du stream : le sortir de là ne doit pas l'en priver. Passif comme le
+        # reste — aucun `notify_*`, entendre parler ne réveille pas la cadence.
+        try:
+            from bot.core.voice_transcript import current_voice_transcript_block
+
+            if voice_block := current_voice_transcript_block():
+                stream_feed = f"{stream_feed}\n{voice_block}" if stream_feed else voice_block
+        except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+            from loguru import logger
+            logger.warning("AttentionAgent: conversation vocale indisponible: {}", e)
+
         # Demandes d'amélioration déjà émises (Phase 6) — best-effort.
         # TOUT l'historique, sans fenêtre : les 6 dernières laissaient 8 capacités
         # déjà livrées hors du prompt, et ce sont celles-là qu'il redemandait.

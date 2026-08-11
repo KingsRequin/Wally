@@ -50,17 +50,46 @@ async def test_la_parole_entendue_devient_perception_pas_reponse():
     svc._bot.overlay_narrator = narrator
     feed = MagicMock()
 
-    with patch("bot.core.stream_feed.active_stream_feed", return_value=feed), \
+    # La parole entendue va au tampon de conversation vocale — pas au flux du
+    # stream, où elle noyait les vrais événements du live sans jamais dire que
+    # c'était du vocal.
+    with patch("bot.core.voice_transcript.active_voice_transcript", return_value=feed), \
          patch("bot.discord.voice.service.handle_transcript", new=AsyncMock()) as brain:
         user = SimpleNamespace(id=42, display_name="Azrael", name="azrael")
         await svc._dispatch_transcript(user, "j'ai encore raté mon saut", 120.0)
         await asyncio.sleep(0)
 
     brain.assert_not_awaited()                    # aucune réponse orale
-    args, kwargs = feed.record.call_args
-    assert "j'ai encore raté mon saut" in args[0]
-    assert kwargs["notify"] is False              # perception, pas réveil
+    args, _kwargs = feed.record.call_args
+    assert "j'ai encore raté mon saut" in args
+    assert "Azrael" in args[1]                    # QUI parle, pas juste QUOI
     narrator.on_overheard.assert_awaited()        # l'overlay décide seul
+
+
+@pytest.mark.asyncio
+async def test_l_ecoute_seule_alimente_bien_le_contexte_ecrit():
+    """C'est LE chemin d'un live : Wally y est en écoute seule, donc
+    `handle_transcript` n'est jamais appelé. Brancher le tampon uniquement sur
+    celui-ci le laissait vide pendant tout le stream."""
+    import bot.core.voice_transcript as vt
+
+    svc = _service()
+    svc.listen_only = True
+    svc._vc = MagicMock()
+    svc._channel = SimpleNamespace(id=4242, members=[], name="Stream")
+    svc._bot.overlay_narrator = None
+
+    feed = vt.VoiceTranscriptFeed()
+    feed.activate()
+    with patch.object(vt, "current_stream_status", return_value={"live": True}):
+        feed.open_broadcast(4242)
+        try:
+            user = SimpleNamespace(id=42, display_name="Azrael", name="azrael")
+            await svc._dispatch_transcript(user, "c'est rush, elle est crack", 120.0)
+            await asyncio.sleep(0)
+            assert "c'est rush, elle est crack" in feed.render()
+        finally:
+            vt._active = None
 
 
 @pytest.mark.asyncio

@@ -739,22 +739,30 @@ class VoiceService:
         """Mode écoute : la parole devient perception, jamais réponse orale.
 
         Deux destinations, volontairement distinctes :
-        - le flux du stream, qui alimente le contexte de Wally partout (prompt
-          Discord, Twitch, cognition) sans le faire réagir ;
+        - le tampon de conversation vocale, qui alimente le contexte de Wally
+          partout (prompt Discord, Twitch, cognition) sans le faire réagir ;
         - le narrateur d'overlay, qui décide seul s'il en fait une bulle — son
           budget de parole reste le seul juge.
+
+        C'est LE chemin d'un live : Wally rejoint le salon du stream en écoute
+        seule, donc `handle_transcript` — qui sert la conversation — n'est jamais
+        appelé. Toute perception de la parole doit passer par ici.
         """
         line = f"{label} (vocal) : {text}"
         # En INFO : sans ça, impossible de vérifier qu'il entend quoi que ce soit
         # pendant un live — tout le reste du chemin est en DEBUG.
         logger.info("voice (écoute, {ms:.0f} ms) : {l}", ms=stt_ms, l=line[:160])
         try:
-            from bot.core.stream_feed import active_stream_feed
-            feed = active_stream_feed()
+            from bot.core.voice_transcript import active_voice_transcript
+
+            # Consigné ici et PAS dans le flux du stream : la parole y noyait
+            # les vrais événements du live (20 entrées partagées), sans jamais
+            # dire que c'était du vocal ni que la transcription se trompe.
+            feed = active_voice_transcript()
             if feed is not None:
-                feed.record(line, notify=False)
+                feed.record(self.channel_id, label, text)
         except Exception as e:  # noqa: BLE001 — l'écoute ne casse jamais
-            logger.debug("voice: parole non consignée dans le flux: {e}", e=e)
+            logger.debug("voice: parole non consignée dans le tampon: {e}", e=e)
 
         # Compteurs à la demande : la détection est mécanique (sous-chaînes), donc
         # elle passe sur CHAQUE phrase sans coûter d'appel LLM.
