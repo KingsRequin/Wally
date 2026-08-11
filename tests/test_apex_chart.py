@@ -67,6 +67,29 @@ def test_sans_trou_le_trait_est_continu():
     assert all(v == v for v in valeurs)
 
 
+def test_la_cumulative_est_tracee_en_marches():
+    """Apex ne met ses compteurs à jour qu'en fin de partie : les kills
+    arrivent par paliers. Une diagonale entre deux relevés dessinerait une
+    montée régulière qui n'a pas eu lieu."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    tracés = []
+    vrai_plot = plt.Axes.plot
+
+    def _espion(self, *a, **kw):
+        tracés.append(kw.get("drawstyle"))
+        return vrai_plot(self, *a, **kw)
+
+    plt.Axes.plot = _espion
+    try:
+        render([(T0, 100), (T0 + 8 * MINUTE, 113)], "kills", "titre")
+    finally:
+        plt.Axes.plot = vrai_plot
+    assert "steps-post" in tracés
+
+
 def test_les_gains_sont_regroupes_par_jour():
     points = [
         (T0, 100),

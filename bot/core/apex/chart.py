@@ -133,8 +133,12 @@ def render(points: list[tuple[float, int]], notion: str, titre: str) -> BytesIO 
     else:
         dates, valeurs = _cumul(points)
         xs = mdates.date2num(dates)
-        ax.plot(xs, valeurs, color=TRAIT, linewidth=2)
-        ax.fill_between(xs, valeurs, color=TRAIT, alpha=0.15)
+        # EN MARCHES, jamais en diagonale : Apex ne met ses compteurs à jour
+        # qu'en FIN DE PARTIE. Les kills arrivent donc par paliers — 13 d'un
+        # bloc à 12h51 — et une interpolation linéaire dessinerait une montée
+        # régulière qui n'a pas eu lieu. Constaté sur la première courbe réelle.
+        ax.plot(xs, valeurs, color=TRAIT, linewidth=2, drawstyle="steps-post")
+        ax.fill_between(xs, valeurs, color=TRAIT, alpha=0.15, step="post")
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%Hh%M", tz=PARIS))
         ax.set_ylabel(f"{libelle(notion)} cumulés", color=TEXTE, fontsize=10)
 
