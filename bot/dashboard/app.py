@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import shutil
 import time
 from contextlib import asynccontextmanager
@@ -19,6 +20,14 @@ from bot.dashboard.auth import BearerAuthMiddleware
 
 if TYPE_CHECKING:
     from bot.dashboard.state import AppState
+
+# L'image Docker (Python 3.12, sans /etc/mime.types) ignore `.webp` : tout ce
+# que Starlette sert en devinant le type — `/static`, les `FileResponse` sans
+# `media_type` — partait en `application/octet-stream`. Les navigateurs
+# reniflent le contenu d'un `<img>` et affichaient quand même, mais Discord, lui,
+# se fie au Content-Type et refuse l'aperçu. Une ligne au démarrage vaut mieux
+# qu'un correctif par route, celles à venir comprises.
+mimetypes.add_type("image/webp", ".webp")
 
 STATIC_DIR = Path(__file__).parent / "static"
 PUBLIC_UI_DIR = Path("public-ui")

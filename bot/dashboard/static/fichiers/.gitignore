@@ -1,0 +1,5 @@
+# Fichiers hébergés à la main : ils ne partent PAS sur le dépôt public.
+# Le dossier, lui, doit exister — d'où les exceptions.
+*
+!.gitignore
+!LISEZ-MOI.md
