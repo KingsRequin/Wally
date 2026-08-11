@@ -404,6 +404,22 @@ CREATE TABLE IF NOT EXISTS apex_accounts (
     linked_at REAL NOT NULL
 );
 
+-- Relevés successifs des compteurs Apex d'un compte suivi. Une ligne n'est
+-- écrite que lorsqu'une valeur CHANGE : le compteur est cumulatif, donc entre
+-- deux relevés la valeur est constante par définition et rien n'est perdu.
+-- Écrire à chaque passage referait l'erreur déjà corrigée ailleurs dans ce
+-- fichier — des centaines de commits par jour sur une base partagée, pour
+-- réécrire le même nombre.
+CREATE TABLE IF NOT EXISTS apex_stat_points (
+    uid         TEXT NOT NULL,
+    notion      TEXT NOT NULL,
+    value       INTEGER NOT NULL,
+    recorded_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_apex_points_lookup
+    ON apex_stat_points (uid, notion, recorded_at);
+
 """
 
 

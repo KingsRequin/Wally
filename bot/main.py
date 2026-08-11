@@ -558,7 +558,14 @@ async def main() -> None:
 
         _apex_conf = getattr(config, "apex", None)
         if apex_api is not None and _apex_conf and _apex_conf.streamer_account:
+            from bot.core.apex.history import ApexHistory
             from bot.core.apex.watcher import ApexWatcher
+
+            # Historique des totaux : partagé entre la sonde du streamer et les
+            # consultations manuelles (« +124 kills depuis la dernière fois »),
+            # qui sont le seul historique des comptes non sondés.
+            apex_history = ApexHistory(db)
+            apex_api.history = apex_history
 
             apex_watcher = ApexWatcher(
                 apex_api,
@@ -569,6 +576,7 @@ async def main() -> None:
                 # deux sessions dans les « +N kills depuis le début du live ».
                 live_id=lambda: str(twitch_bot._stream_info.get("started_at") or ""),
                 db=db,
+                history=apex_history,
             )
             apex_watcher.activate()
             _apex_task = asyncio.create_task(apex_watcher.run())

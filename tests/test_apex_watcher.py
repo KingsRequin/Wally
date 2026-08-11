@@ -42,13 +42,41 @@ def _watcher(live=True, service=None):
 
 
 @pytest.mark.asyncio
-async def test_hors_live_on_ne_sonde_pas():
-    """Personne ne regarde : chaque appel coûterait pour rien."""
+async def test_hors_live_on_sonde_sans_rien_percevoir():
+    """La sonde entretient l'historique des totaux même hors live — « combien
+    de kills ce mois-ci » compterait faux sans les parties jouées sans stream.
+
+    La PERCEPTION, elle, garde son contrat : hors live, rien au prompt.
+    """
     service = _FakeService(_bridge("azrael"))
     w = _watcher(live=False, service=service)
     await w.tick()
-    assert service.calls == 0
+    assert service.calls == 1
     assert w.block() is None
+
+
+@pytest.mark.asyncio
+async def test_la_cadence_se_resserre_pendant_le_live():
+    from bot.core.apex.watcher import POLL_INTERVAL_IDLE_S, POLL_INTERVAL_LIVE_S
+
+    assert _watcher(live=True)._cadence() == POLL_INTERVAL_LIVE_S
+    assert _watcher(live=False)._cadence() == POLL_INTERVAL_IDLE_S
+    assert POLL_INTERVAL_LIVE_S < POLL_INTERVAL_IDLE_S
+
+
+@pytest.mark.asyncio
+async def test_hors_live_les_compteurs_sont_quand_meme_historises():
+    releves: list[dict] = []
+
+    class _Hist:
+        async def enregistrer(self, uid, stats, **kw):
+            releves.append({"uid": uid, "stats": stats})
+            return len(stats)
+
+    w = _watcher(live=False, service=_FakeService(_bridge("azrael")))
+    w._history = _Hist()
+    await w.tick()
+    assert releves and releves[0]["stats"]
 
 
 @pytest.mark.asyncio

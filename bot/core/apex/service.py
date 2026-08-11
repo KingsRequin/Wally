@@ -83,6 +83,10 @@ class ApexLegendsService:
     def __init__(self, client: ApexClient | None = None, db: Any = None) -> None:
         self._client = client or ApexClient(os.environ.get("APEX_API_KEY", ""))
         self._db = db
+        # Historique des compteurs (`ApexHistory`), branché après coup par
+        # `main.py` — il a besoin de la base, que ce service ne construit pas.
+        # Absent, tout marche comme avant : rien n'est consigné.
+        self.history: Any = None
 
     @property
     def available(self) -> bool:

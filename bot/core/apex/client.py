@@ -25,7 +25,11 @@ DEFAULT_TTL: dict[str, float] = {
     "crafting": 3600.0,
     "predator": 300.0,
     "servers": 300.0,
-    "bridge": 60.0,
+    # 15 s et non 60 : la sonde du live relève toutes les 30 s, et un TTL de
+    # 60 s lui aurait servi un relevé sur deux depuis le cache — l'historique
+    # aurait eu des trous invisibles, avec des paliers en escalier là où le
+    # joueur enchaînait les parties.
+    "bridge": 15.0,
 }
 _FALLBACK_TTL = 60.0
 

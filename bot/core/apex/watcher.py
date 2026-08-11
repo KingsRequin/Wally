@@ -24,9 +24,17 @@ from bot.core.apex.reader import PlayerProfile
 # soirée remettait sinon la progression à zéro — et les rebuilds sont fréquents.
 BASELINE_KEY = "apex:live_baseline"
 
-# Le compte du streamer ne bouge pas plus vite que ça, et chaque passage coûte
-# un appel : 90 s tient le rythme d'une partie sans marteler l'API.
-POLL_INTERVAL_S = 90.0
+# Deux cadences. Pendant le live, la courbe de progression est regardée en
+# direct et mérite d'être fine ; hors live, on ne fait qu'entretenir
+# l'historique des totaux, pour « combien de kills ce mois-ci ».
+#
+# L'API tolère 5 requêtes/seconde (doc officielle, vérifiée le 2026-08-11 ;
+# la clé renvoie `x-current-rate` et aucun quota mensuel). À 30 s, on est à
+# 0,03 req/s — deux ordres de grandeur sous la limite.
+POLL_INTERVAL_LIVE_S = 30.0
+POLL_INTERVAL_IDLE_S = 60.0
+# Compat : d'anciens appels nommaient cet intervalle unique.
+POLL_INTERVAL_S = POLL_INTERVAL_LIVE_S
 
 _active: ApexWatcher | None = None
 
@@ -48,13 +56,24 @@ class ApexWatcher:
         service,
         account: tuple[str, str] | None,
         is_live: Callable[[], bool],
-        interval_s: float = POLL_INTERVAL_S,
+        interval_s: float = POLL_INTERVAL_LIVE_S,
         db=None,
         live_id: Callable[[], str] | None = None,
+        history=None,
+        idle_interval_s: float = POLL_INTERVAL_IDLE_S,
     ) -> None:
         self._service = service
         self._account = account
         self._is_live = is_live
+        # Historique des totaux (`ApexHistory`), alimenté à CHAQUE passage —
+        # y compris hors live : « ce mois-ci » compterait faux si les parties
+        # jouées sans streamer manquaient à l'appel.
+        self._history = history
+        self._idle_interval = idle_interval_s
+        # Dernier motif d'échec consigné, pour ne pas répéter la même ligne à
+        # chaque passage. Une sonde qui tourne en continu et échoue en silence
+        # laisse un historique vide qu'on découvre des semaines plus tard.
+        self._dernier_echec: str | None = None
         # De QUEL live il s'agit — en pratique le `started_at` du stream. Le
         # point de départ rangé en base n'en portait aucune trace : un process
         # arrêté avant la fin du live A et redémarré pendant le live B rechargeait
@@ -74,14 +93,32 @@ class ApexWatcher:
         _active = self
 
     async def tick(self) -> None:
-        """Un passage : sonde le compte si un live tourne, sinon oublie tout."""
+        """Un passage : relève les compteurs, et suit la progression si un live tourne.
+
+        La sonde tourne désormais AUSSI hors live, pour tenir l'historique des
+        totaux. La perception du live, elle, garde son contrat : hors live, pas
+        de profil au prompt et pas de point de départ.
+        """
         if not self._account:
+            self._echec("aucun compte Apex configuré pour le streamer")
             return
         try:
             live = bool(self._is_live())
-        except Exception as exc:  # noqa: BLE001 — sonde cassée = on se tait
-            logger.debug("Apex watcher: état du live indisponible: {e}", e=exc)
+        except Exception as exc:  # noqa: BLE001 — sonde cassée = on suppose hors live
+            self._echec(f"état du live indisponible ({exc})")
+            live = False
+
+        try:
+            profile = await self._service.fetch_profile(self._account[0], self._account[1])
+        except Exception as exc:  # noqa: BLE001 — une panne d'API ne tue pas le suivi
+            self._echec(f"profil indisponible ({exc})")
             return
+        if profile is None:
+            self._echec("profil introuvable")
+            return
+        self._succes()
+        await self._historiser(profile)
+
         if not live:
             # Le live est fini : la progression ne veut plus rien dire.
             self._profile = None
@@ -93,13 +130,7 @@ class ApexWatcher:
                 self._baseline = {}
                 await self._store_baseline({})
             return
-        try:
-            profile = await self._service.fetch_profile(self._account[0], self._account[1])
-        except Exception as exc:  # noqa: BLE001 — une panne d'API ne tue pas le suivi
-            logger.debug("Apex watcher: profil indisponible: {e}", e=exc)
-            return
-        if profile is None:
-            return
+
         self._profile = profile
         if not self._baseline and not self._baseline_loaded:
             # Un live peut avoir commencé avant ce process : on reprend le point
@@ -115,7 +146,44 @@ class ApexWatcher:
         """Boucle de fond. Ne s'arrête jamais d'elle-même."""
         while True:
             await self.tick()
-            await asyncio.sleep(self._interval)
+            await asyncio.sleep(self._cadence())
+
+    def _cadence(self) -> float:
+        """30 s pendant le live, 60 s sinon. Hors live, seule l'historisation
+        des totaux est en jeu : la finesse n'y sert à rien."""
+        try:
+            return self._interval if self._is_live() else self._idle_interval
+        except Exception:  # noqa: BLE001 — sonde cassée : on prend le rythme lent
+            return self._idle_interval
+
+    async def _historiser(self, profile) -> None:
+        """Range les compteurs du relevé. Jamais bloquant pour la perception."""
+        if self._history is None:
+            return
+        try:
+            await self._history.enregistrer(
+                profile.uid, {k: s.value for k, s in profile.stats.items()}
+            )
+        except Exception as exc:  # noqa: BLE001 — l'historique est un bonus
+            logger.warning("Apex watcher: relevé non historisé: {e}", e=exc)
+
+    def _echec(self, motif: str) -> None:
+        """Consigne un échec de sonde, au CHANGEMENT de motif seulement.
+
+        En INFO et non en DEBUG : les journaux de production filtrent à INFO,
+        et une sonde qui échoue en silence laisse un historique vide qu'on
+        découvre des semaines plus tard. Filtré par motif parce qu'elle repasse
+        toutes les 30 à 60 secondes.
+        """
+        if motif == self._dernier_echec:
+            return
+        self._dernier_echec = motif
+        logger.info("Apex watcher: relevé impossible — {m}", m=motif)
+
+    def _succes(self) -> None:
+        if self._dernier_echec is not None:
+            logger.info("Apex watcher: relevés repris")
+            self._dernier_echec = None
 
     def _live_courant(self) -> str:
         """Identité du live en cours (son `started_at`), ou "" si inconnue."""
