@@ -10,6 +10,22 @@ def test_les_actions_offertes():
     assert "news" not in enum
 
 
+def test_une_courbe_demandee_en_conversation_ne_part_pas_a_l_overlay():
+    """Vécu en prod : « donne-moi la courbe de progression de azra » sur Discord
+    → « je peux pas, y a pas de live ». Seul `show_apex` parlait de COURBE,
+    donc le mot y envoyait le modèle — alors que l'action `progression` joint
+    l'image et marche hors live."""
+    from bot.core.apex.tool import APEX_OVERLAY_TOOL
+
+    donnees = APEX_LEGENDS_TOOL["function"]["description"].lower()
+    assert "courbe" in donnees
+    assert "conversation" in donnees
+
+    ecran = APEX_OVERLAY_TOOL["function"]["parameters"]["properties"]["panel"]["description"]
+    assert "apex_legends" in ecran          # le panneau renvoie vers l'autre outil
+    assert "hors live" in ecran.lower()
+
+
 def test_la_progression_annonce_d_ou_vient_le_chiffre():
     """Il ne sort pas de l'API mais de relevés maison : le modèle doit le savoir,
     sinon il présentera « depuis le 12 » comme le total du mois."""

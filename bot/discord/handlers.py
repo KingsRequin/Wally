@@ -591,8 +591,18 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             f"Panneau « {shown['widget']} » affiché à l'écran."
         )})
     if not narrator.is_active():
+        # Le message d'échec DIT QUOI FAIRE : sans ça, une demande de courbe en
+        # conversation se terminait par « pas de live, rien à afficher » alors
+        # que la réponse était à un appel d'outil près.
+        alternative = (
+            " La personne voulait sûrement voir la donnée, pas l'écran du "
+            "stream : réponds-lui avec `apex_legends` action=progression, qui "
+            "joint la courbe en image et marche hors live."
+            if str(args.get("panel") or "").strip() == "progress" else ""
+        )
         return json.dumps({"status": "offline", "message": (
             "Rien affiché : il n'y a pas de live en cours. Dis-le simplement."
+            + alternative
         )})
     return json.dumps({"status": "nothing", "message": (
         "Rien affiché : la donnée Apex n'est pas disponible. Dis-le, "
