@@ -938,7 +938,11 @@ class OverlayNarrator:
         elif widget == "planning":
             # Chemin relatif : la page est servie par le même hôte. L'URL
             # absolue, elle, ne sert qu'au chat.
-            self._feed.widget("planning", src=PLANNING_PATH)
+            #
+            # `duration` explicite : la valeur par défaut est de 10 s, calibrée
+            # pour un résultat de dé qu'on lit d'un coup d'œil. Sept lignes
+            # d'horaires demandent qu'on s'y arrête.
+            self._feed.widget("planning", src=PLANNING_PATH, duration=25.0)
             return {"widget": "planning", "src": PLANNING_PATH}
 
         elif widget == "bingo":

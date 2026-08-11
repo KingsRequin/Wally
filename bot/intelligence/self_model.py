@@ -41,6 +41,7 @@ _WIDGET_WORDS = {
     "wave": "un signal quand le chat spamme le même emote",
     "talkers": "le classement des plus bavards du chat",
     "clip": "une alerte quand quelqu'un crée un clip",
+    "planning": "le planning des streams de la semaine",
 }
 
 

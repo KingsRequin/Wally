@@ -6,6 +6,8 @@ outil qui ne saurait répondre que pendant un stream laisserait Wally inventer
 une réponse le reste du temps.
 """
 import json
+import re
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -128,3 +130,39 @@ def test_le_planning_fait_partie_des_widgets_connus(widget):
     """Le self-model dérive de cette liste : sans elle, Wally ignore qu'il sait
     montrer le planning."""
     assert widget in OverlayNarrator._WIDGETS
+
+
+def test_aucune_carte_de_l_overlay_ne_se_positionne_en_fixed():
+    """Le défaut qui a rendu le planning invisible sur le stream.
+
+    `.widget` porte un `transform` (son animation d'entrée), et un ancêtre
+    transformé devient le bloc conteneur de tout `position: fixed` descendant.
+    La carte du planning ne visait donc pas la source OBS mais un `.widget` sans
+    hauteur — son unique enfant étant hors flux : mesurée au navigateur, elle
+    faisait 16 x 16 px en dehors du cadre. Rien à l'écran, et l'outil annonçait
+    pourtant « c'est affiché ».
+
+    On garde la SIGNATURE du défaut, pas la solution retenue : une carte occupe
+    le cadre par sa taille, comme `.meme`.
+
+    Les commentaires sont retirés d'abord — ils RACONTENT le piège, et le test
+    doit lire les règles appliquées, pas la prose qui les explique.
+    """
+    html = (Path(__file__).resolve().parents[1]
+            / "bot/dashboard/static/overlay.html").read_text(encoding="utf-8")
+    regles = re.sub(r"/\*.*?\*/", "", html, flags=re.S)
+    assert "position: fixed" not in regles
+
+
+def test_le_planning_reste_affiche_assez_longtemps():
+    """La durée par défaut d'un widget est calibrée pour un dé, pas pour une
+    semaine d'horaires : dix secondes ne suffisent pas à lire sept lignes."""
+    feed = OverlayFeed()
+    n = OverlayNarrator(feed, MagicMock(), lambda: True)
+    q = feed.subscribe()
+
+    n.show_widget("planning")
+
+    ev = next(e for e in (q.get_nowait() for _ in range(q.qsize()))
+              if e["type"] == "widget")
+    assert ev["params"]["duration"] >= 20
