@@ -980,7 +980,7 @@ class OverlayNarrator:
 
     async def show_apex(
         self, panel: str, player: str = "", comment: str = "",
-        requester: Optional[str] = None,
+        requester: Optional[str] = None, period: str = "live",
     ) -> Optional[dict]:
         """Affiche un panneau de données Apex réelles. None si rien à montrer.
 
@@ -991,7 +991,9 @@ class OverlayNarrator:
         if self._apex is None or not self._live():
             return None
         try:
-            data = await self._apex.build_panel(panel, player, requester=requester)
+            data = await self._apex.build_panel(
+                panel, player, requester=requester, period=period
+            )
         except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse rien
             logger.warning("Overlay: panneau Apex {p} échoué: {e}", p=panel, e=exc)
             return None

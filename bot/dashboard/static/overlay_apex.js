@@ -91,6 +91,21 @@
       return box;
     },
 
+    /* La courbe de progression. Le serveur la trace à la demande : ce panneau
+       ne porte qu'une URL. Si le serveur n'a pas assez de relevés il répond
+       404 — on retire alors la carte au lieu de laisser un cadre vide avec un
+       titre qui promet un graphe. */
+    apex_progress(p) {
+      const box = carte(p.player);
+      const img = el("img", "apex-progress-img");
+      img.alt = "";
+      img.onerror = () => { box.remove(); };
+      /* Horodaté : OBS garde les images en cache, et la progression bouge. */
+      img.src = `${String(p.image_url)}&t=${Date.now()}`;
+      box.appendChild(img);
+      return box;
+    },
+
     apex_status(p) {
       const box = carte(p.player);
       if (p.avatar) {

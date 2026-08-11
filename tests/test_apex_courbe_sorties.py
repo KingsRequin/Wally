@@ -1,0 +1,140 @@
+# tests/test_apex_courbe_sorties.py
+"""La courbe de progression, de son calcul à ses deux sorties.
+
+Discord reçoit un PNG en pièce jointe ; l'overlay reçoit une URL que le
+dashboard trace à la demande. Les deux partent des mêmes relevés.
+"""
+import pytest
+import pytest_asyncio
+
+from bot.core.apex.history import ApexHistory
+from bot.core.apex.service import ApexLegendsService
+from bot.core.apex.widgets import APEX_PANELS, progress_panel
+from bot.db.database import Database
+
+UID = "1002761549602"
+HEURE = 3600.0
+
+
+@pytest_asyncio.fixture
+async def db(tmp_path):
+    base = await Database.create(str(tmp_path / "test.db"))
+    try:
+        yield base
+    finally:
+        await base.close()
+
+
+@pytest_asyncio.fixture
+async def service(db):
+    svc = ApexLegendsService(client=object(), db=db)
+    svc.history = ApexHistory(db)
+    return svc
+
+
+async def _serie(svc, n: int = 6) -> None:
+    import time
+    base = time.time() - 6 * HEURE
+    for i in range(n):
+        await svc.history.enregistrer(
+            UID, {"kills": 1000 + i * 5}, maintenant=base + i * 600
+        )
+
+
+# ── Sortie Discord ───────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_une_progression_demandee_laisse_une_courbe(service):
+    await _serie(service)
+    await service._progression(
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+    )
+    png = await service.derniere_courbe("discord:42")
+    assert png is not None and png.getvalue()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.asyncio
+async def test_la_courbe_ne_s_attache_qu_une_fois(service):
+    """Sinon la question suivante repartirait avec le graphe de la précédente."""
+    await _serie(service)
+    await service._progression(
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+    )
+    assert await service.derniere_courbe("discord:42") is not None
+    assert await service.derniere_courbe("discord:42") is None
+
+
+@pytest.mark.asyncio
+async def test_sans_demande_il_n_y_a_pas_de_courbe(service):
+    assert await service.derniere_courbe("discord:42") is None
+
+
+@pytest.mark.asyncio
+async def test_deux_personnes_ne_se_volent_pas_leur_courbe(service):
+    """Discord et Twitch tapent sur le même service en même temps."""
+    await _serie(service)
+    await service._progression(
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+    )
+    assert await service.derniere_courbe("twitch:99") is None
+    assert await service.derniere_courbe("discord:42") is not None
+
+
+@pytest.mark.asyncio
+async def test_les_courbes_en_attente_sont_bornees(service):
+    """Un dict de courbes sans plafond grossirait indéfiniment — c'est ce qui
+    était arrivé au cache du client Apex."""
+    await _serie(service)
+    for i in range(service._MAX_COURBES + 5):
+        await service._progression(
+            "", "PC", period="live", notion="kills", requester=f"discord:{i}", uid=UID
+        )
+    assert len(service._progressions) <= service._MAX_COURBES
+
+
+@pytest.mark.asyncio
+async def test_sans_assez_de_releves_aucune_courbe_n_est_rendue(service):
+    """Un point unique ne fait pas une courbe : la réponse reste en chiffres."""
+    await service.history.enregistrer(UID, {"kills": 1000})
+    await service._progression(
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID
+    )
+    assert await service.derniere_courbe("discord:42") is None
+
+
+# ── Sortie overlay ───────────────────────────────────────────────────────────
+
+class _Profil:
+    name = "Azrael_TTV"
+    avatar = "http://exemple/a.png"
+    uid = UID
+
+
+def test_le_panneau_porte_une_url_pas_des_chiffres():
+    """Le modèle ne fournit aucune donnée, et le panneau n'en transporte pas :
+    c'est le serveur qui tracera, avec ce qu'il a vraiment mesuré."""
+    panneau = progress_panel(_Profil(), period="mois", notion="kills")
+    assert panneau is not None
+    assert panneau["image_url"].startswith("/api/public/apex/progression.png?")
+    assert f"uid={UID}" in panneau["image_url"]
+    assert "period=mois" in panneau["image_url"]
+
+
+def test_sans_uid_il_n_y_a_pas_de_panneau():
+    class _Anonyme:
+        name, avatar, uid = "X", "", ""
+
+    assert progress_panel(_Anonyme()) is None
+    assert progress_panel(None) is None
+
+
+def test_le_panneau_progress_est_declare():
+    assert "progress" in APEX_PANELS
+
+
+def test_l_outil_overlay_propose_la_courbe():
+    from bot.core.apex.tool import APEX_OVERLAY_TOOL
+
+    props = APEX_OVERLAY_TOOL["function"]["parameters"]["properties"]
+    assert "progress" in props["panel"]["enum"]
+    assert "period" in props

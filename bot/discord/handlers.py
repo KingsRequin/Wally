@@ -581,6 +581,7 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             str(args.get("player") or "").strip()[:32],
             str(args.get("comment") or ""),
             requester=requester,
+            period=str(args.get("period") or "live").strip() or "live",
         )
     except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse pas la réponse
         logger.warning("show_apex a échoué : {e}", e=exc)
@@ -1998,11 +1999,16 @@ def _is_list_item(line: str) -> bool:
 
 
 
-async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | None, int]:
+async def _send_in_parts(
+    message: discord.Message, text: str, file: "discord.File | None" = None
+) -> tuple[int | None, int]:
     """Split text on newlines, group consecutive list items, send as separate messages.
 
     Retourne ``(id du premier message envoyé, nombre de parts)`` — le compte de
     parts alimente l'event ``message_out`` (un reply découpé en N messages).
+
+    `file` est joint au PREMIER message : une courbe de progression accompagne
+    la phrase qui la commente, elle n'arrive pas trois messages plus loin.
     """
     text = redact(text)   # un mot en jeu (pendu) ne sort pas, même par ce chemin
     # Dernier filet avant l'envoi : le modèle glisse parfois une didascalie de
@@ -2039,14 +2045,40 @@ async def _send_in_parts(message: discord.Message, text: str) -> tuple[int | Non
     for group in groups:
         parts.extend(split_for_discord(group))
     if not parts:
+        # Une courbe sans texte n'aurait aucun sens : le graphe illustre une
+        # phrase, il ne la remplace pas.
         return None, 0
 
-    first_msg = await message.reply(parts[0], allowed_mentions=_ALLOWED_MENTIONS)
+    first_msg = await message.reply(
+        parts[0], file=file, allowed_mentions=_ALLOWED_MENTIONS
+    ) if file is not None else await message.reply(
+        parts[0], allowed_mentions=_ALLOWED_MENTIONS
+    )
     for part in parts[1:]:
         await asyncio.sleep(random.uniform(0.6, 1.8))
         await message.channel.send(part, allowed_mentions=_ALLOWED_MENTIONS)
     _note_open_question(message.channel.id, message.author.id, " ".join(parts))
     return first_msg.id, len(parts)
+
+
+async def _apex_chart_file(bot, requester: str) -> "discord.File | None":
+    """La courbe de progression Apex en attente pour `requester`, ou None.
+
+    Rien à faire quand personne n'a demandé de progression : le service ne rend
+    un graphe que si l'action `progression` vient de tourner pour cette
+    personne, et il ne le rend qu'une fois.
+    """
+    api = getattr(bot, "apex_api", None)
+    if api is None or not hasattr(api, "derniere_courbe"):
+        return None
+    try:
+        buf = await api.derniere_courbe(requester)
+    except Exception as exc:  # noqa: BLE001 — un graphe raté ne retient pas la réponse
+        logger.warning("Apex: courbe indisponible: {e}", e=exc)
+        return None
+    if buf is None:
+        return None
+    return discord.File(buf, filename="progression.png")
 
 
 async def _fetch_referenced_message(
@@ -2677,7 +2709,12 @@ async def _respond(
                 pass
 
         self_name = bot.config.bot.name
-        reply_msg_id, _parts = await _send_in_parts(message, reply)
+        # Une progression Apex vient d'être calculée pour cette personne ? Sa
+        # courbe part avec la réponse. Rendue seulement maintenant : inutile de
+        # payer une seconde de tracé si le modèle n'a finalement rien répondu.
+        reply_msg_id, _parts = await _send_in_parts(
+            message, reply, file=await _apex_chart_file(bot, f"discord:{message.author.id}")
+        )
         _clog(
             bot, _conv_channel(message), "message_out",
             trace_id=str(message.id), author=self_name, content=reply,

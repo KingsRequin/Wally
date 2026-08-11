@@ -7,9 +7,12 @@ l'outil, pour que le modèle n'aille pas le chercher ailleurs.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import time
+from collections import OrderedDict
 from datetime import datetime
+from io import BytesIO
 from typing import Any
 
 from loguru import logger
@@ -21,6 +24,7 @@ from bot.core.apex.widgets import (
     craft_panel,
     map_panel,
     predator_panel,
+    progress_panel,
     rank_panel,
     servers_panel,
     stats_panel,
@@ -103,6 +107,13 @@ class ApexLegendsService:
         # `main.py` — il a besoin de la base, que ce service ne construit pas.
         # Absent, tout marche comme avant : rien n'est consigné.
         self.history: Any = None
+        # Points de la dernière progression calculée, PAR DEMANDEUR : le
+        # handler vient y chercher de quoi tracer la courbe juste après l'appel
+        # d'outil. Clé par demandeur et non globale, sinon deux questions
+        # simultanées (Discord et Twitch) se voleraient leur graphe.
+        # Borné : sans plafond, ce dict grossirait indéfiniment — c'est
+        # exactement ce qui est arrivé au cache de `client.py`.
+        self._progressions: OrderedDict[str, tuple[list, str, str]] = OrderedDict()
 
     @property
     def available(self) -> bool:
@@ -272,6 +283,10 @@ class ApexLegendsService:
 
         from bot.core.apex.chart import libelle as libelle_notion
 
+        self._retenir_courbe(
+            requester, progression.points, notion,
+            f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
+        )
         texte = (f"{libelle_periode.capitalize()} : "
                  f"+{_fr(progression.gain)} {libelle_notion(notion)}")
         # Un total qui ne couvre pas la période demandée doit le dire : « ce
@@ -282,6 +297,38 @@ class ApexLegendsService:
                       f"{progression.depuis.strftime('%d/%m à %Hh%M')}, "
                       f"donc c'est un minimum, pas le total de la période")
         return texte + "."
+
+    _MAX_COURBES = 20
+
+    def _retenir_courbe(
+        self, requester: str | None, points: list, notion: str, titre: str
+    ) -> None:
+        self._progressions[requester or ""] = (points, notion, titre)
+        while len(self._progressions) > self._MAX_COURBES:
+            self._progressions.popitem(last=False)
+
+    async def derniere_courbe(self, requester: str | None) -> BytesIO | None:
+        """Le PNG de la dernière progression demandée par `requester`, ou None.
+
+        Consommée : une courbe ne s'attache qu'une fois, sinon la question
+        suivante de la même personne repartirait avec le graphe de la
+        précédente.
+
+        Le rendu part dans un thread — l'import de matplotlib et le tracé
+        coûtent près d'une seconde, que la boucle asyncio ne doit pas passer
+        à attendre.
+        """
+        retenu = self._progressions.pop(requester or "", None)
+        if retenu is None:
+            return None
+        points, notion, titre = retenu
+        from bot.core.apex.chart import render
+
+        try:
+            return await asyncio.to_thread(render, points, notion, titre)
+        except Exception as exc:  # noqa: BLE001 — pas de graphe ≠ pas de réponse
+            logger.warning("Apex: courbe non rendue: {e}", e=exc)
+            return None
 
     def _introuvable(self, cherche: str, erreur: str, *, cherche_par_uid: bool) -> str:
         """Ce qu'on répond quand l'API ne trouve pas — en disant quoi faire.
@@ -470,6 +517,8 @@ class ApexLegendsService:
         platform: str = "PC",
         *,
         requester: str | None = None,
+        period: str = "live",
+        notion: str = "kills",
     ) -> dict | None:
         """Le contenu d'un panneau d'overlay, prêt à publier — ou None.
 
@@ -478,7 +527,7 @@ class ApexLegendsService:
         """
         if panel not in APEX_PANELS:
             return None
-        if panel in ("rank", "status", "stats"):
+        if panel in ("rank", "status", "stats", "progress"):
             cherche, platform = await self._resolve(player, platform, requester)
             uid = await self._resolve_uid(requester, player)
             if not cherche and not uid:
@@ -490,7 +539,11 @@ class ApexLegendsService:
             if isinstance(data, str):
                 return None
             profil = read_profile(data)
-            built = {"rank": rank_panel, "status": status_panel, "stats": stats_panel}[panel](profil)
+            if panel == "progress":
+                built = progress_panel(profil, period=period, notion=notion)
+            else:
+                built = {"rank": rank_panel, "status": status_panel,
+                         "stats": stats_panel}[panel](profil)
         else:
             endpoint, params, builder = {
                 "map": ("maprotation", {"version": "2"}, map_panel),

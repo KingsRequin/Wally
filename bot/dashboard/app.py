@@ -113,7 +113,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -122,6 +122,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(sse.public_router, prefix="/api/public")
     app.include_router(roadmap.router, prefix="/api/public")
     app.include_router(gallery.public_router, prefix="/api/public")
+    app.include_router(apex_chart.public_router, prefix="/api/public")
     app.include_router(journal.public_router, prefix="/api/public")
     app.include_router(cognitive.public_router, prefix="/api/public")
     app.include_router(overlay.public_router, prefix="/api/public")

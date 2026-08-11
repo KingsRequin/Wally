@@ -17,7 +17,8 @@ class _FakeApex:
         self._panel = panel
         self.calls = []
 
-    async def build_panel(self, panel, player="", requester=None):
+    async def build_panel(self, panel, player="", requester=None, period="live",
+                          notion="kills"):
         self.calls.append((panel, player, requester))
         return self._panel
 

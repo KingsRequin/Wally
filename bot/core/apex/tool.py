@@ -153,11 +153,15 @@ APEX_OVERLAY_TOOL = {
             "properties": {
                 "panel": {
                     "type": "string",
-                    "enum": ["rank", "status", "stats", "map", "craft", "predator", "servers"],
+                    "enum": ["rank", "status", "stats", "progress", "map", "craft",
+                             "predator", "servers"],
                     "description": (
                         "rank = le rang d'un joueur, avec son écusson · "
                         "status = est-il en partie, sur quelle légende · "
                         "stats = ses chiffres de carrière · "
+                        "progress = la COURBE de sa progression (kills gagnés au "
+                        "fil de la session, ou par jour sur un mois) — utilise "
+                        "'period' pour choisir la fenêtre · "
                         "map = la rotation des cartes, avec le décompte · "
                         "craft = les lots du replicator · "
                         "predator = le seuil Predator · "
@@ -169,6 +173,14 @@ APEX_OVERLAY_TOOL = {
                     "description": (
                         "Le pseudo, pour rank/status/stats. Laisse vide pour la "
                         "personne à qui tu réponds si elle a déjà déclaré son compte."
+                    ),
+                },
+                "period": {
+                    "type": "string",
+                    "enum": ["live", "jour", "semaine", "mois"],
+                    "description": (
+                        "Pour le panneau progress : la fenêtre de la courbe. "
+                        "« live » par défaut."
                     ),
                 },
                 "comment": {

@@ -16,7 +16,8 @@ from loguru import logger
 
 from bot.core.apex.reader import PlayerProfile, _num
 
-APEX_PANELS = ("rank", "status", "stats", "map", "craft", "predator", "servers")
+APEX_PANELS = ("rank", "status", "stats", "progress", "map", "craft", "predator",
+               "servers")
 
 # Les modes de rotation, dans l'ordre d'intérêt (mêmes libellés que le service).
 _MODES = (
@@ -86,6 +87,29 @@ def stats_panel(profile: PlayerProfile | None) -> dict | None:
             }
             for stat in list(profile.stats.values())[:_MAX_ROWS]
         ],
+    }
+
+
+def progress_panel(
+    profile: PlayerProfile | None, period: str = "live", notion: str = "kills"
+) -> dict | None:
+    """La courbe de progression : une image rendue à la demande par le dashboard.
+
+    Le panneau ne porte qu'une URL. C'est le serveur qui décidera s'il a de quoi
+    tracer — et répondra 404 sinon, auquel cas le navigateur n'affiche rien
+    plutôt qu'un cadre vide avec un titre mensonger.
+    """
+    if profile is None or not profile.uid:
+        return None
+    return {
+        "player": profile.name,
+        "avatar": profile.avatar,
+        "period": period,
+        "notion": notion,
+        "image_url": (
+            f"/api/public/apex/progression.png?uid={profile.uid}"
+            f"&period={period}&notion={notion}"
+        ),
     }
 
 

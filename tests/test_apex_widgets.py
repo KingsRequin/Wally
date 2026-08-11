@@ -114,7 +114,8 @@ def test_un_panneau_vide_ne_donne_rien_plutot_qu_une_carte_creuse():
 
 
 def test_la_liste_des_panneaux_est_celle_qu_on_sait_rendre():
-    assert APEX_PANELS == ("rank", "status", "stats", "map", "craft", "predator", "servers")
+    assert APEX_PANELS == ("rank", "status", "stats", "progress", "map", "craft",
+                           "predator", "servers")
 
 
 # ── La façade du service (va chercher la donnée du panneau demandé) ──────────
