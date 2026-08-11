@@ -28,8 +28,19 @@ _MEDIA_TYPES = {
     ".jpeg": "image/jpeg",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
 }
-_EXTENSIONS = frozenset(_MEDIA_TYPES)
+
+# Ce que Wally peut MONTRER. Il affiche dans une balise `<img>` : une vidéo y
+# serait cassée. `list()` s'y tient, et un test le vérifie.
+_EXTENSIONS = frozenset(
+    e for e, t in _MEDIA_TYPES.items() if t.startswith("image/")
+)
+
+# Ce que la route publique peut SERVIR. Servir un fichier ne demande pas de
+# savoir l'afficher : le rotateur, lui, sait jouer les vidéos.
+_EXTENSIONS_MEDIA = frozenset(_MEDIA_TYPES)
 
 
 def media_type(path: Path) -> str:
@@ -106,6 +117,31 @@ class MemeLibrary:
             out.append({"name": path.name, "description": _describe(path)})
         return out
 
+    def list_medias(self) -> list[dict]:
+        """Images ET vidéos, chacune avec son genre. Pour le rotateur.
+
+        Séparée de `list()` à dessein : celle-ci alimente une page qui sait
+        jouer une vidéo, celle-là un `<img>` qui ne le sait pas.
+        """
+        try:
+            entries = sorted(self._dir.iterdir())
+        except OSError:
+            return []
+        out: list[dict] = []
+        for path in entries:
+            suffix = path.suffix.lower()
+            if not path.is_file() or suffix not in _EXTENSIONS_MEDIA:
+                continue
+            try:
+                if path.stat().st_size > _MAX_BYTES:
+                    logger.debug("Média ignoré (trop lourd) : {n}", n=path.name)
+                    continue
+            except OSError:
+                continue
+            genre = "video" if _MEDIA_TYPES[suffix].startswith("video/") else "image"
+            out.append({"name": path.name, "genre": genre})
+        return out
+
     def pick(self, hint: str = "") -> dict | None:
         """Choisit un meme. `hint` privilégie ceux dont la description colle.
 
@@ -138,9 +174,13 @@ class MemeLibrary:
         return chosen
 
     def resolve(self, name: str) -> Path | None:
-        """Chemin d'un meme servi publiquement, ou None si le nom est invalide."""
+        """Chemin d'un média servi publiquement, ou None si le nom est invalide.
+
+        Accepte les vidéos : servir un fichier ne demande pas de savoir
+        l'afficher, et le rotateur en réclame.
+        """
         safe = _safe_name(name)
-        if not safe or Path(safe).suffix.lower() not in _EXTENSIONS:
+        if not safe or Path(safe).suffix.lower() not in _EXTENSIONS_MEDIA:
             return None
         path = self._dir / safe
         try:

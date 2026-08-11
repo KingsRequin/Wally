@@ -222,3 +222,36 @@ async def test_la_route_annonce_le_type_meme_sans_table_mime_systeme(tmp_path, m
 
     resp = await get_meme("requin.webp", req)
     assert resp.media_type == "image/webp"
+
+
+def test_les_videos_sont_listees_a_part_des_images(tmp_path):
+    """Wally affiche dans un <img> : une vidéo dans sa liste serait cassée.
+
+    Le rotateur, lui, sait jouer les deux. Deux consommateurs, deux besoins —
+    d'où deux listes.
+    """
+    (tmp_path / "chat.png").write_bytes(b"x")
+    (tmp_path / "requin.mp4").write_bytes(b"x")
+    lib = MemeLibrary(tmp_path)
+
+    assert [m["name"] for m in lib.list()] == ["chat.png"]
+    assert [(m["name"], m["genre"]) for m in lib.list_medias()] == [
+        ("chat.png", "image"),
+        ("requin.mp4", "video"),
+    ]
+
+
+def test_la_route_peut_servir_une_video(tmp_path):
+    """`resolve` sert un fichier ; il n'a pas à savoir l'afficher."""
+    (tmp_path / "requin.mp4").write_bytes(b"x")
+    lib = MemeLibrary(tmp_path)
+
+    assert lib.resolve("requin.mp4") == tmp_path / "requin.mp4"
+    assert lib.resolve("requin.exe") is None
+
+
+def test_le_type_mime_des_videos(tmp_path):
+    from bot.core.memes import media_type
+
+    assert media_type(tmp_path / "a.mp4") == "video/mp4"
+    assert media_type(tmp_path / "a.WEBM") == "video/webm"
