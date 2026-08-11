@@ -227,6 +227,35 @@ def test_le_verdict_ne_change_pas_a_chaque_replique():
     assert feed._last_verdict == premier
 
 
+def test_un_refus_repete_ne_se_relogue_pas():
+    """Hors live, Wally entend une phrase toutes les deux secondes : sans le
+    filtre par motif, une soirée écrirait une ligne de log par phrase."""
+    feed = VoiceTranscriptFeed()
+    feed.activate()
+    feed.record(SALON, "Azraël", "une")
+    motif = feed._last_refusal
+    assert motif is not None
+    feed.record(SALON, "Azraël", "deux")
+    assert feed._last_refusal == motif
+
+
+def test_un_refus_pour_un_autre_motif_est_bien_trace():
+    feed = _feed_en_direct()
+    feed.record(AUTRE_SALON, "Bob", "ailleurs")
+    premier = feed._last_refusal
+    feed.close_broadcast()
+    feed.record(SALON, "Azraël", "et maintenant hors live")
+    assert feed._last_refusal != premier
+
+
+def test_une_replique_retenue_rearme_la_trace_de_refus():
+    """Sinon le refus qui suit une période normale passerait sous silence."""
+    feed = _feed_en_direct()
+    feed.record(AUTRE_SALON, "Bob", "ailleurs")
+    feed.record(SALON, "Azraël", "ici")
+    assert feed._last_refusal is None
+
+
 def test_le_verdict_change_quand_le_bloc_disparait():
     feed = _feed_en_direct()
     feed.record(SALON, "Azraël", "une")

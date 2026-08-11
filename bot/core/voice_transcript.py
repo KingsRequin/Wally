@@ -90,8 +90,11 @@ class VoiceTranscriptFeed:
         # rendu toujours à jour sans que le service ait à pousser quoi que ce
         # soit, et sans référence inverse. Même patron que `set_observer`.
         self._presence_source: Optional[Callable[[], list[str]]] = None
-        # Dernier verdict d'injection, pour ne logger qu'aux transitions.
+        # Dernier verdict d'injection et dernier motif de refus : on ne logge
+        # qu'aux transitions, ces deux chemins étant parcourus à chaque message
+        # reçu et à chaque phrase entendue.
         self._last_verdict: str | None = None
+        self._last_refusal: str | None = None
 
     def activate(self) -> None:
         """Enregistre ce flux comme source globale du bloc de contexte."""
@@ -164,24 +167,40 @@ class VoiceTranscriptFeed:
             return False
 
         if self._broadcast_channel_id is None:
-            logger.debug("VoiceTranscript: réplique ignorée — aucune captation ouverte (hors live)")
+            self._refus("aucune captation ouverte (hors live)")
             return False
         if channel_id is None or int(channel_id) != self._broadcast_channel_id:
-            logger.debug(
-                "VoiceTranscript: réplique ignorée — salon {c} hors diffusion (diffusé : {b})",
-                c=channel_id, b=self._broadcast_channel_id,
+            self._refus(
+                f"salon {channel_id} hors diffusion "
+                f"(le salon diffusé est {self._broadcast_channel_id})"
             )
             return False
         # Deuxième verrou : le drapeau de captation pourrait rester ouvert si la
         # transition de fin de live était ratée (le watcher lit parfois une
         # erreur d'API comme un stream éteint, l'inverse n'est pas exclu).
         if not (current_stream_status() or {}).get("live"):
-            logger.debug("VoiceTranscript: réplique ignorée — le live n'est plus actif")
+            self._refus("le live n'est plus actif")
             return False
 
         self._lines.append((time.monotonic(), speaker, text[:200]))
+        # Le CONTENU reste en DEBUG, donc hors des journaux de prod : c'est la
+        # parole de vraies personnes, `app.log` est gardé 30 jours.
         logger.debug("VoiceTranscript: [{s}] {t}", s=speaker, t=text[:200])
+        self._last_refusal = None
         return True
+
+    def _refus(self, raison: str) -> None:
+        """Trace un refus d'enregistrement, au CHANGEMENT de raison seulement.
+
+        En INFO, pas en DEBUG : les trois sinks de `setup_logging` filtrent à
+        INFO, un diagnostic en DEBUG serait donc invisible exactement le jour
+        où on le cherche. Et sans le filtre par raison, un vocal actif hors
+        live écrirait une ligne par phrase entendue.
+        """
+        if raison == self._last_refusal:
+            return
+        self._last_refusal = raison
+        logger.info("VoiceTranscript: réplique NON retenue — {r}", r=raison)
 
     # ------------------------------------------------------------------
     # Rendu
