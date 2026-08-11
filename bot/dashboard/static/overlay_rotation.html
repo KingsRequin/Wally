@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Wally — rotateur de memes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent; overflow: hidden;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Passe-partout sombre. La plupart des memes sont sur fond blanc : sur un
+     overlay noir, ça fait une dalle plus lumineuse que le reste de l'écran.
+     Le liseré sombre casse le contact entre ce blanc et la bordure orange. */
+  #cadre {
+    padding: 14px;
+    background: rgba(8, 6, 5, 0.94);
+    border: 3px solid #ff7a2f;
+    border-radius: 16px;
+    box-shadow:
+      0 0 24px rgba(255, 122, 47, 0.6),
+      inset 0 0 30px rgba(0, 0, 0, 0.9),
+      0 18px 45px rgba(0, 0, 0, 0.8);
+    opacity: 0;
+    line-height: 0;
+  }
+
+  /* Borné en largeur ET en hauteur, jamais agrandi : c'est le cadre qui épouse
+     l'image. En unités relatives à la source OBS et non en pixels, pour
+     survivre à un redimensionnement de celle-ci. */
+  #cadre img, #cadre video {
+    display: block;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 40px);
+    width: auto; height: auto;
+    border-radius: 6px;
+  }
+
+  /* `#cadre .absent` et non `.absent` : la règle au-dessus est portée par un
+     ID (`#cadre video`), qui l'emporterait sur une simple classe. Sans ce
+     sélecteur, la balise vidéo vide restait affichée et ajoutait ses 150 px de
+     hauteur par défaut sous chaque image. */
+  #cadre .absent { display: none; }
+</style>
+</head>
+<body>
+<div id="cadre">
+  <img id="media" alt="">
+  <video id="video" class="absent" playsinline></video>
+</div>
+
+<script>
+(function () {
+  const cadre = document.getElementById('cadre');
+  const params = new URLSearchParams(location.search);
+  const nombre = function (cle, defaut) {
+    const v = Number(params.get(cle));
+    return Number.isFinite(v) && v > 0 ? v : defaut;
+  };
+
+  const DUREE = nombre('duree', 9) * 1000;
+  const PAUSE = nombre('pause', 5) * 1000;
+  const ORDRE = params.get('ordre') === 'dossier' ? 'dossier' : 'hasard';
+
+  let medias = [];
+  let dernier = null;
+  let rang = 0;
+  let depuisRelecture = 0;
+
+  async function charger() {
+    // Une liste vide n'écrase jamais une liste qui marchait : le bot peut être
+    // en train de redémarrer, la source doit continuer de tourner.
+    try {
+      const r = await fetch('/api/public/rotation', { cache: 'no-store' });
+      const data = await r.json();
+      if (Array.isArray(data.medias) && data.medias.length) medias = data.medias;
+    } catch (e) { /* on garde la liste précédente */ }
+  }
+
+  function tirer() {
+    if (ORDRE === 'dossier') {
+      const m = medias[rang % medias.length];
+      rang += 1;
+      return m;
+    }
+    // Deux fois le même d'affilée passerait pour un bug d'affichage.
+    const pool = medias.filter(function (m) { return m.nom !== dernier; });
+    const choix = pool.length ? pool : medias;
+    return choix[Math.floor(Math.random() * choix.length)];
+  }
+
+  function url(media) {
+    return '/api/public/meme/' + encodeURIComponent(media.nom);
+  }
+
+  /** Charge le média et attend ses dimensions AVANT de l'afficher.
+   *  Sans ça, le cadre naîtrait à la taille de l'ancien média puis grandirait
+   *  d'un coup quand le nouveau arrive : le saut de format serait visible. */
+  function precharger(media) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      img.onload = function () { resolve(); };
+      img.onerror = function () { reject(new Error('média illisible : ' + media.nom)); };
+      img.src = url(media);
+    });
+  }
+
+  function montrer() { cadre.style.opacity = '1'; }
+  function cacher() { cadre.style.opacity = '0'; }
+
+  async function tour() {
+    cacher();
+
+    if (!medias.length) {
+      await charger();
+      setTimeout(tour, medias.length ? 0 : 10000);
+      return;
+    }
+
+    const media = tirer();
+    dernier = media.nom;
+
+    // Tous les N affichages, où N est la taille de la liste : un meme déposé
+    // pendant le live entre dans la rotation sans toucher à OBS.
+    depuisRelecture += 1;
+    if (depuisRelecture >= medias.length) { depuisRelecture = 0; charger(); }
+
+    try {
+      await precharger(media);
+    } catch (e) {
+      // Un fichier qui ne charge pas sort de la liste pour la session : sans
+      // ça il reviendrait à chaque tour et laisserait un trou à l'écran. C'est
+      // exactement le défaut qui a fait abandonner StreamElements.
+      medias = medias.filter(function (m) { return m.nom !== media.nom; });
+      setTimeout(tour, 0);
+      return;
+    }
+
+    document.getElementById('media').src = url(media);
+    montrer();
+    setTimeout(function () {
+      cacher();
+      setTimeout(tour, PAUSE);
+    }, DUREE);
+  }
+
+  charger().then(tour);
+})();
+</script>
+</body>
+</html>

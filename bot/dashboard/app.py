@@ -196,6 +196,18 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
 
+    @app.get("/overlay-rotation")
+    async def overlay_rotation_page():
+        """Le rotateur de memes : une source OBS qui tourne seule.
+
+        Elle ne dépend du bot que pour la liste des médias, demandée au
+        chargement — un rebuild ne coupe donc pas la rotation.
+        """
+        return FileResponse(
+            "bot/dashboard/static/overlay_rotation.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
+
     @app.get("/setup/preview")
     async def setup_preview_page():
         html = (STATIC_DIR / "setup.html").read_text()
