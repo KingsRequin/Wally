@@ -37,15 +37,21 @@ async def progression_png(
         raise HTTPException(status_code=400, detail="période ou compteur inconnu")
 
     state = request.app.state.wally
-    history = getattr(getattr(state, "apex_api", None), "history", None)
-    if history is None:
-        raise HTTPException(status_code=503, detail="historique indisponible")
+    db = getattr(state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="base indisponible")
 
     import asyncio
     import time
 
     from bot.core.apex.chart import libelle, render
-    from bot.core.apex.history import debut_de_periode
+    from bot.core.apex.history import ApexHistory, debut_de_periode
+
+    # Instance neuve plutôt qu'un service partagé : `ApexHistory` ne garde
+    # d'état que pour ÉCRIRE (la dernière valeur vue, pour éviter les doublons).
+    # En lecture, elle n'a besoin que de la base — et `AppState` ne porte pas le
+    # service Apex, qui vit sur les adaptateurs.
+    history = ApexHistory(db)
 
     depuis = (time.time() - 12 * 3600) if period == "live" else debut_de_periode(period)
     try:
