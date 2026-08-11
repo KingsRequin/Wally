@@ -25,6 +25,9 @@
       0 18px 45px rgba(0, 0, 0, 0.8);
     opacity: 0;
     line-height: 0;
+    /* Rien ne doit dépasser des coins : sans ça, l'angle droit du média
+       réapparaît derrière l'arrondi du cadre. */
+    overflow: hidden;
   }
 
   /* Borné en largeur ET en hauteur, jamais agrandi : c'est le cadre qui épouse
@@ -55,15 +58,24 @@
 (function () {
   const cadre = document.getElementById('cadre');
   const params = new URLSearchParams(location.search);
-  const nombre = function (cle, defaut) {
+  /** Lit un réglage numérique de l'URL.
+   *
+   *  `params.has` d'abord, et non `Number(...)` seul : `Number(null)` vaut 0,
+   *  donc un paramètre ABSENT passerait pour un zéro explicite dès qu'on
+   *  autorise le zéro. Le minimum est donc porté par l'appelant, pas deviné.
+   */
+  const nombre = function (cle, defaut, minimum) {
+    if (!params.has(cle)) return defaut;
     const v = Number(params.get(cle));
-    return Number.isFinite(v) && v > 0 ? v : defaut;
+    return Number.isFinite(v) && v >= minimum ? v : defaut;
   };
 
-  const DUREE = nombre('duree', 9) * 1000;
-  const PAUSE = nombre('pause', 5) * 1000;
+  // `pause=0` est une valeur légitime : elle enchaîne les memes sans temps
+  // mort, le glitch de sortie de l'un touchant celui d'entrée du suivant.
+  const DUREE = nombre('duree', 9, 0.05) * 1000;
+  const PAUSE = nombre('pause', 5, 0) * 1000;
   const ORDRE = params.get('ordre') === 'dossier' ? 'dossier' : 'hasard';
-  const SACCADE = nombre('saccade', 33);   // ms par état de glitch
+  const SACCADE = nombre('saccade', 33, 1);   // ms par état de glitch
   const ETATS = 7;                          // états par rafale
 
   const FILTRES = [
@@ -97,8 +109,13 @@
     };
   }
 
-  const NET = { clipPath: 'inset(0 0 0 0)', transform: 'none', filter: 'none', opacity: '1' };
-  const ETEINT = { clipPath: 'inset(0 0 100% 0)', transform: 'none', filter: 'none', opacity: '0' };
+  // `round 16px` et non `inset(0 0 0 0)` nu : un clip rectangulaire laisse
+  // l'angle droit du contenu réapparaître derrière les coins arrondis du cadre.
+  // Le rayon doit suivre celui du CSS. Les états de glitch, eux, coupent à
+  // angles droits — c'est l'effet recherché.
+  const RAYON = '16px';
+  const NET = { clipPath: 'inset(0 0 0 0 round ' + RAYON + ')', transform: 'none', filter: 'none', opacity: '1' };
+  const ETEINT = { clipPath: 'inset(0 0 100% 0 round ' + RAYON + ')', transform: 'none', filter: 'none', opacity: '0' };
 
   function appliquer(etat) {
     cadre.style.clipPath = etat.clipPath;
@@ -155,10 +172,56 @@
    *  d'un coup quand le nouveau arrive : le saut de format serait visible. */
   function precharger(media) {
     return new Promise(function (resolve, reject) {
+      if (media.genre === 'video') {
+        const v = document.getElementById('video');
+        v.onloadedmetadata = function () { resolve(); };
+        v.onerror = function () { reject(new Error('vidéo illisible : ' + media.nom)); };
+        v.src = url(media);
+        v.load();
+        return;
+      }
       const img = new Image();
       img.onload = function () { resolve(); };
       img.onerror = function () { reject(new Error('média illisible : ' + media.nom)); };
       img.src = url(media);
+    });
+  }
+
+  /** Joue la vidéo et rend la main à la fin.
+   *
+   *  Trois façons de ne jamais rendre la main, trois parades :
+   *  - le navigateur refuse la lecture audio automatique → seconde tentative
+   *    en muet, puis abandon ;
+   *  - le fichier est tronqué et `ended` n'arrive jamais → minuteur de secours ;
+   *  - la lecture cale → le même minuteur.
+   *  Sans elles, la source resterait figée sur cette vidéo pour tout le live.
+   */
+  function jouerVideo() {
+    const v = document.getElementById('video');
+    return new Promise(function (fini) {
+      let rendu = false;
+      const rendreLaMain = function () {
+        if (rendu) return;
+        rendu = true;
+        clearTimeout(secours);
+        v.onended = null;
+        fini();
+      };
+
+      const limite = Number.isFinite(v.duration) && v.duration > 0
+        ? (v.duration + 5) * 1000
+        : 60000;
+      const secours = setTimeout(rendreLaMain, limite);
+
+      v.onended = rendreLaMain;
+      v.muted = false;
+      v.currentTime = 0;
+      v.play().catch(function () {
+        // Chrome bloque la lecture audio automatique tant qu'OBS n'a pas
+        // autorisé la source. Muet vaut mieux que rien.
+        v.muted = true;
+        v.play().catch(rendreLaMain);
+      });
     });
   }
 
@@ -193,15 +256,30 @@
       return;
     }
 
-    document.getElementById('media').src = url(media);
+    const img = document.getElementById('media');
+    const video = document.getElementById('video');
+    const estVideo = media.genre === 'video';
+    img.classList.toggle('absent', estVideo);
+    video.classList.toggle('absent', !estVideo);
+    if (!estVideo) img.src = url(media);
 
     await rafale();
     appliquer(NET);
-    setTimeout(async function () {
+
+    const sortir = async function () {
       await rafale();
       appliquer(ETEINT);
+      if (estVideo) video.pause();
       setTimeout(tour, PAUSE);
-    }, DUREE);
+    };
+
+    // Une vidéo dure ce qu'elle dure ; une image, le temps réglé.
+    if (estVideo) {
+      await jouerVideo();
+      sortir();
+    } else {
+      setTimeout(sortir, DUREE);
+    }
   }
 
   charger().then(tour);
