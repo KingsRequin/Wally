@@ -89,6 +89,18 @@ def test_un_dossier_vide_commence_a_un(tmp_path):
     assert meme_import.prochain_numero(tmp_path) == 1
 
 
+def test_les_memes_sans_sidecar_sont_reperes(tmp_path):
+    (tmp_path / "meme1.webp").write_bytes(b"a")
+    (tmp_path / "meme1.webp.txt").write_text("décrit", encoding="utf-8")
+    (tmp_path / "meme2.png").write_bytes(b"b")
+    (tmp_path / "meme3.jpg").write_bytes(b"c")
+    (tmp_path / "meme3.txt").write_text("forme sans extension", encoding="utf-8")
+
+    muets = meme_import.memes_sans_description(tmp_path)
+
+    assert [p.name for p in muets] == ["meme2.png"]
+
+
 def test_les_empreintes_indexent_les_fichiers_presents(tmp_path):
     (tmp_path / "meme1.webp").write_bytes(b"contenu")
     (tmp_path / "meme1.webp.txt").write_text("desc", encoding="utf-8")

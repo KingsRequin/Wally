@@ -224,6 +224,24 @@ def verifier_conversion(src: Path, dst: Path) -> str:
     return ""
 
 
+def memes_sans_description(dossier: Path) -> list[Path]:
+    """Les médias dont aucun `.txt` ne parle.
+
+    Leur description retombe alors sur le nom du fichier — « meme80 » : ils sont
+    introuvables par `pick(hint)`, qui cherche dans les descriptions, et Wally
+    les commente à l'aveugle quand le tirage les sort.
+
+    Les deux formes de sidecar comptent : `meme3.jpg.txt` et `meme3.txt`.
+    """
+    muets: list[Path] = []
+    for p in sorted(dossier.iterdir()):
+        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS_MEDIA:
+            continue
+        if sidecar_de(p) is None and not p.with_suffix(".txt").is_file():
+            muets.append(p)
+    return muets
+
+
 def sidecar_de(path: Path) -> Path | None:
     """Le `.txt` collé à l'extension, s'il existe.
 
