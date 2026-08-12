@@ -41,30 +41,45 @@ _REDIRECTIONS = frozenset({301, 302, 303, 307, 308})
 
 
 def image_du_message(message) -> tuple[str, str] | None:
-    """`(url, suffixe)` de la première image du message, ou None.
+    """`(url, suffixe)` du premier média du message, ou None s'il n'en porte aucun.
 
     Les pièces jointes d'abord ; à défaut l'image d'un embed, ce qui rattrape
     les liens Tenor ou Klipy postés sans fichier.
 
-    Les deux branches appliquent le MÊME filtre d'extension. Sans lui côté pièce
-    jointe, un `.bmp` était retenu, téléchargé, décrit comme une vidéo dans
-    l'aperçu, puis refusé à l'écriture : trois messages faux pour un fichier que
-    l'on savait écarter dès la première ligne.
+    Le format n'est PAS filtré ici, et les deux branches se tiennent à cette
+    règle. Filtrer au plus tôt semblait propre, mais rendait `None` sur un
+    message qui porte visiblement une image : un `.mov` d'iPhone ou un `.heic`
+    valait « ce message ne porte aucune image », soit le mensonge d'origine
+    déplacé du préaperçu vers l'entrée. C'est à l'appelant de nommer le format
+    trouvé et la liste des formats admis.
+
+    Les formats admis restent PRIORITAIRES : un message portant un `.heic` et un
+    `.png` range le `.png`, sans rien demander à personne.
     """
+    repli: tuple[str, str] | None = None
+
+    def _retenir(url: str, suffixe: str) -> tuple[str, str] | None:
+        nonlocal repli
+        if suffixe in _EXTENSIONS_MEDIA:
+            return url, suffixe
+        if repli is None:
+            repli = (url, suffixe)
+        return None
+
     for a in message.attachments:
         if a.content_type and a.content_type.startswith(("image/", "video/")):
             suffixe = Path(urlparse(a.url).path).suffix.lower()
-            if suffixe in _EXTENSIONS_MEDIA:
-                return a.url, suffixe
+            if suffixe and (trouve := _retenir(a.url, suffixe)):
+                return trouve
     for embed in message.embeds:
         for source in (getattr(embed, "image", None), getattr(embed, "thumbnail", None)):
             url = getattr(source, "url", None)
             if not url:
                 continue
             suffixe = Path(urlparse(url).path).suffix.lower()
-            if suffixe in _EXTENSIONS_MEDIA:
-                return url, suffixe
-    return None
+            if suffixe and (trouve := _retenir(url, suffixe)):
+                return trouve
+    return repli
 
 
 async def cible_publique(url: str) -> str:
@@ -276,6 +291,16 @@ class MemeCog(commands.Cog):
             )
             return
         url, suffixe = trouve
+        # Une image bien présente, mais dans un format qu'on ne range pas. Le
+        # dire ici, avant tout téléchargement : « aucune image » devant un .mov
+        # d'iPhone envoie chercher un problème dans le message, pas le format.
+        if suffixe not in _EXTENSIONS_MEDIA:
+            admis = " ".join(sorted(_EXTENSIONS_MEDIA))
+            await interaction.followup.send(
+                content=f"Format `{suffixe}` non admis — attendus : {admis}.",
+                ephemeral=True,
+            )
+            return
 
         try:
             octets = await telecharger(url)

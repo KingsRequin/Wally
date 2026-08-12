@@ -145,3 +145,94 @@ async def test_une_description_trop_longue_est_tronquee_a_l_ecriture(tmp_path, m
 
     ecrit = (dossier / "meme1.jpg.txt").read_text(encoding="utf-8")
     assert len(ecrit) <= MAX_DESCRIPTION
+
+
+# ── Le câblage de la vision ────────────────────────────────────────────────────
+
+
+def _config_avec(vision_model, secondary_model="deepseek-chat"):
+    from types import SimpleNamespace
+
+    class _Config:
+        @staticmethod
+        def load():
+            return SimpleNamespace(openai=SimpleNamespace(
+                vision_model=vision_model, secondary_model=secondary_model,
+            ))
+
+    return _Config
+
+
+def _sans_base(monkeypatch):
+    from bot.db.database import Database
+
+    monkeypatch.setattr(Database, "create", AsyncMock(return_value=AsyncMock()))
+
+
+@pytest.mark.asyncio
+async def test_le_repli_du_modele_est_celui_de_bootstrap(tmp_path, monkeypatch):
+    """Retomber sur `secondary_model` réintroduit une panne documentée.
+
+    Le dashboard écrase ce champ dès qu'on change le modèle texte secondaire :
+    un secondaire DeepSeek envoyait la vision interroger OpenAI avec un modèle
+    inexistant — 404 par image, filtrés par `analyze()`, donc N fois « aucune
+    description obtenue », sortie 0, et aucune erreur visible. `bootstrap`
+    interdit ce repli par écrit ; le script doit s'aligner sur la MÊME
+    constante, pas sur une copie.
+    """
+    from bot.bootstrap import _VISION_MODEL_DEFAUT
+
+    module = _module()
+    monkeypatch.setattr(module, "Config", _config_avec(""))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-de-test")
+    _sans_base(monkeypatch)
+
+    _svc, _db, modele = await module._vision(str(tmp_path / "x.db"))
+
+    assert modele == _VISION_MODEL_DEFAUT
+    assert modele != "deepseek-chat"
+
+
+@pytest.mark.asyncio
+async def test_le_champ_dedie_reste_prioritaire(tmp_path, monkeypatch):
+    module = _module()
+    monkeypatch.setattr(module, "Config", _config_avec("gpt-5"))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-de-test")
+    _sans_base(monkeypatch)
+
+    _svc, _db, modele = await module._vision(str(tmp_path / "x.db"))
+
+    assert modele == "gpt-5"
+
+
+@pytest.mark.asyncio
+async def test_le_rattrapage_ne_paie_pas_plus_de_raisonnement_que_le_bot(tmp_path, monkeypatch):
+    """`bootstrap` passe « low » ; le défaut de la classe est « medium »."""
+    module = _module()
+    monkeypatch.setattr(module, "Config", _config_avec("gpt-5-nano"))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-de-test")
+    _sans_base(monkeypatch)
+
+    svc, _db, _modele = await module._vision(str(tmp_path / "x.db"))
+
+    assert svc._client.reasoning_effort == "low"
+
+
+@pytest.mark.asyncio
+async def test_sans_cle_openai_la_cause_est_nommee(tmp_path, monkeypatch, capsys):
+    """`OpenAILLMClient` retombe sur `dummy-key-for-testing` : sans contrôle de
+    la clé, `available` reste vrai et le script rendait N fois « aucune
+    description obtenue » au lieu de nommer la cause."""
+    module = _module()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _sans_base(monkeypatch)
+    dossier = tmp_path / "memes"
+    dossier.mkdir()
+    _png(dossier / "meme1.jpg")
+
+    await _lancer(module, monkeypatch, dossier, "--apply")
+
+    sortie = capsys.readouterr().out
+    assert "OPENAI_API_KEY" in sortie
+    assert "aucune description obtenue" not in sortie
+    assert not (dossier / "meme1.jpg.txt").exists()

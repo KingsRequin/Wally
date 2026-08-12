@@ -1,5 +1,6 @@
 # tests/test_meme_cmd.py
 """La commande contextuelle qui range un meme."""
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -367,12 +368,48 @@ def test_la_commande_est_reservee_a_la_gestion_du_serveur(tmp_path):
 # ── Ce que l'aperçu annonce ────────────────────────────────────────────────────
 
 
-def test_une_piece_jointe_au_format_non_admis_est_ignoree():
-    """Les deux branches doivent filtrer pareil. Sans cela un `.bmp` était
-    retenu, téléchargé, présenté comme une vidéo, puis refusé à l'écriture."""
+def test_un_format_non_admis_est_rendu_tel_quel_pas_efface():
+    """Le rendre `None` était le mensonge d'origine déplacé : l'utilisateur
+    lisait « ce message ne porte aucune image » devant une image bien visible.
+    L'appelant doit recevoir de quoi nommer le format."""
     bmp = _piece_jointe(url="https://cdn.discordapp.com/a/vieux.bmp",
                         content_type="image/bmp")
-    assert image_du_message(_message([bmp])) is None
+    assert image_du_message(_message([bmp])) == (
+        "https://cdn.discordapp.com/a/vieux.bmp", ".bmp",
+    )
+
+
+def test_un_format_admis_l_emporte_sur_un_format_qui_ne_l_est_pas():
+    heic = _piece_jointe(url="https://cdn.discordapp.com/a/photo.heic",
+                         content_type="image/heic")
+    png = _piece_jointe(url="https://cdn.discordapp.com/a/chat.png")
+
+    assert image_du_message(_message([heic, png])) == (
+        "https://cdn.discordapp.com/a/chat.png", ".png",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nom,mime", [("clip.mov", "video/quicktime"),
+                                      ("vieux.bmp", "image/bmp"),
+                                      ("photo.heic", "image/heic")])
+async def test_un_format_non_admis_est_nomme_pas_nie(tmp_path, monkeypatch, nom, mime):
+    """« Ce message ne porte aucune image » devant une vidéo iPhone envoie
+    chercher un problème dans le message, alors qu'il est dans le format."""
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_cmd, "telecharger",
+                        AsyncMock(side_effect=AssertionError("rien à rapatrier")))
+    interaction = _interaction()
+
+    await MemeCog(_bot(tmp_path)).ranger(interaction, _message([
+        _piece_jointe(url=f"https://cdn.discordapp.com/a/{nom}", content_type=mime)
+    ]))
+
+    dit = interaction.followup.send.call_args.kwargs["content"]
+    assert Path(nom).suffix in dit          # le format trouvé est nommé
+    assert ".webp" in dit and ".mp4" in dit  # la liste des formats admis y est
+    assert "aucune image" not in dit
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.asyncio

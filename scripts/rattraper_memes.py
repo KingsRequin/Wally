@@ -46,20 +46,38 @@ from bot.core.memes import _EXTENSIONS, _MEDIA_TYPES, tronquer_description  # no
 async def _vision(db_path: str):
     """Le service de vision du bot, câblé comme au démarrage.
 
-    Le modèle vient de `config.openai.vision_model` — le champ dédié que le
-    canari surveille — et non d'un identifiant en dur qui divergerait du reste
-    du projet. La vraie `Database` est branchée pour que `log_cost` enregistre :
-    ce rattrapage facture comme n'importe quel appel, l'onglet des coûts n'a pas
-    à ignorer une dépense parce qu'elle vient d'un script.
+    Le repli est `_VISION_MODEL_DEFAUT`, IMPORTÉ de `bootstrap` et non recopié.
+    Retomber sur `secondary_model` est précisément la panne que `bootstrap`
+    interdit par écrit : le dashboard écrase ce champ dès qu'on change le modèle
+    texte secondaire, et un secondaire DeepSeek envoyait la vision interroger
+    OpenAI avec un modèle inexistant — 404 par image, filtrés par `analyze()`,
+    donc « aucune description obtenue » en boucle et sortie 0.
+
+    La clé est contrôlée comme dans `bootstrap` : sans elle `OpenAILLMClient`
+    retombe sur `dummy-key-for-testing`, `available` reste vrai, et le script
+    facturerait des 401 au lieu de nommer la cause.
+
+    La vraie `Database` est branchée pour que `log_cost` enregistre : ce
+    rattrapage facture comme n'importe quel appel, l'onglet des coûts n'a pas à
+    ignorer une dépense parce qu'elle vient d'un script.
     """
+    from bot.bootstrap import _VISION_MODEL_DEFAUT
     from bot.core.llm.openai_client import OpenAILLMClient
     from bot.core.vision import VisionService
     from bot.db.database import Database
 
     config = Config.load()
-    modele = getattr(config.openai, "vision_model", "") or config.openai.secondary_model
+    modele = getattr(config.openai, "vision_model", "") or _VISION_MODEL_DEFAUT
     db = await Database.create(db_path)
-    client = OpenAILLMClient(model=modele, db=db, max_tokens=400)
+    client = None
+    if os.environ.get("OPENAI_API_KEY"):
+        # Mêmes réglages que `bootstrap` : « low » et non le « medium » par
+        # défaut, sinon le rattrapage paie plus de jetons de raisonnement par
+        # meme que le bot lui-même.
+        client = OpenAILLMClient(
+            model=modele, db=db, temperature=0.3, max_tokens=400,
+            reasoning_effort="low",
+        )
     return VisionService(client), db, modele
 
 
@@ -147,7 +165,8 @@ async def _decrire_les_muets(dossier: Path, apply: bool, db_path: str) -> None:
     svc, db, modele = await _vision(db_path)
     try:
         if not svc.available:
-            print(f"  vision indisponible (modèle {modele}) — aucune description écrite")
+            print(f"  OPENAI_API_KEY absente — vision ({modele}) indisponible, "
+                  f"aucune description écrite")
             return
         for chemin in a_decrire:
             texte = await _decrire(svc, chemin)
