@@ -112,11 +112,29 @@ régulière : ni les libellés empilés ni les heures qui se recouvrent ne se re
 cadence lisse, et l'instant de départ compte autant que les écarts puisque la grille se cale sur
 des heures rondes — un `T0` à 20h00 pile évitait le défaut par chance.
 
-## Lot 3 — classé vs non classé
+## Lot 3 — classé vs non classé  ✅ construit le 2026-08-12
 
 `ApexWatcher` range `rank_score` avec les autres compteurs (écriture au changement seulement).
 Au tracé, une marche dont l'intervalle contient un changement de RP est colorée « classé », les
 autres « non classé », avec une légende.
+
+Le RP est relu **brut** (`ApexHistory.releves`), jamais par `progression()` : ce qui compte n'est
+pas de combien il est monté mais QUAND il a bougé, et `progression()` écrase justement les
+baisses — qui portent ici autant d'information que les hausses.
+
+Le tracé **surtrace** les tronçons classés par-dessus une courbe d'un seul tenant, plutôt que de
+la découper en morceaux colorés : aucune rupture ne peut apparaître à la jointure de deux
+couleurs. Les marches classées consécutives forment un seul trait.
+
+Les deux sorties reçoivent le RP — l'image Discord comme la route de l'overlay. Une seule des
+deux l'aurait laissé les mêmes parties s'afficher colorées à l'écran et monochromes sur Discord,
+exactement le genre de double vérité que la garde côté serveur du lot précédent cherchait déjà à
+éviter.
+
+**Un point de vigilance pour la relecture** : ce qui est coloré, c'est l'intervalle entre deux
+relevés du compteur tracé. Comme `enregistrer()` n'écrit qu'au CHANGEMENT, un relevé correspond à
+une partie — et la coloration couvre bien la partie entière. Sur des relevés générés à cadence
+fixe (ce que la base ne stocke jamais), la couleur se réduirait à un filet de trente secondes.
 
 Deux limites assumées, à dire plutôt qu'à masquer :
 

@@ -154,3 +154,77 @@ def test_l_outil_overlay_propose_la_courbe():
     props = APEX_OVERLAY_TOOL["function"]["parameters"]["properties"]
     assert "progress" in props["panel"]["enum"]
     assert "period" in props
+
+
+# ── Le RP suit la courbe, sur les DEUX sorties ───────────────────────────────
+#
+# Le mode d'une partie n'existe nulle part dans l'API : un RP qui bouge est le
+# seul signal qu'elle était classée. Si une seule des deux sorties le reçoit,
+# les mêmes parties s'affichent colorées à l'écran et monochromes sur Discord.
+
+async def _serie_avec_rp(svc, n: int = 6):
+    import time
+    base = time.time() - 6 * HEURE
+    for i in range(n):
+        await svc.history.enregistrer(
+            UID, {"kills": 1000 + i * 5}, maintenant=base + i * 600
+        )
+    await svc.history.enregistrer(UID, {"rank_score": 6400}, maintenant=base + 700)
+    return base
+
+
+def _espionner_render(monkeypatch):
+    """Capture le `rp` que le rendu reçoit, sans empêcher le tracé."""
+    from bot.core.apex import chart
+
+    recu: dict = {}
+    vrai = chart.render
+
+    def _espion(points, notion, titre, *, rp=None):
+        recu["rp"] = rp
+        return vrai(points, notion, titre, rp=rp)
+
+    monkeypatch.setattr(chart, "render", _espion)
+    return recu
+
+
+@pytest.mark.asyncio
+async def test_la_courbe_discord_emporte_les_releves_de_rp(service, monkeypatch):
+    base = await _serie_avec_rp(service)
+    recu = _espionner_render(monkeypatch)
+
+    await service._progression(
+        "", "PC", period="live", notion="kills", requester="discord:42", uid=UID,
+        peut_joindre_image=True,
+    )
+    await service.derniere_courbe("discord:42")
+
+    assert recu["rp"] == [(pytest.approx(base + 700), 6400)]
+
+
+@pytest.mark.asyncio
+async def test_la_courbe_de_l_overlay_emporte_les_releves_de_rp(db, monkeypatch):
+    """La route publique trace la même fenêtre que la carte affichée : elle doit
+    partir des mêmes relevés, RP compris."""
+    import time
+    import types
+
+    from bot.dashboard.routes.apex_chart import progression_png
+
+    hist = ApexHistory(db)
+    base = time.time() - 6 * HEURE
+    for i in range(6):
+        await hist.enregistrer(UID, {"kills": 1000 + i * 5}, maintenant=base + i * 600)
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=base + 700)
+
+    recu = _espionner_render(monkeypatch)
+    requete = types.SimpleNamespace(
+        app=types.SimpleNamespace(state=types.SimpleNamespace(
+            wally=types.SimpleNamespace(db=db)))
+    )
+    reponse = await progression_png(
+        requete, uid=UID, depuis=base - 60, notion="kills", libelle="duree"
+    )
+
+    assert reponse.media_type == "image/png"
+    assert recu["rp"] == [(pytest.approx(base + 700), 6400)]

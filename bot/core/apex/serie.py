@@ -26,6 +26,7 @@ graduer l'axe. C'est `Serie.graduations()` qui rend les heures vraies, et
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -140,6 +141,31 @@ class Serie:
     ys: list[float]
     trous: list[Trou]
     segments: list[Segment]
+    # `classes[i]` décrit la marche tracée de `xs[i]` à `xs[i+1]` : vrai si le
+    # RP a bougé pendant cet intervalle, donc si la partie était classée.
+    classes: list[bool]
+    # Faux quand la fenêtre ne contient AUCUN relevé de RP. La courbe reste
+    # alors monochrome et sans légende : l'historique d'avant qu'on relève le RP
+    # ne dit pas « ces parties n'étaient pas classées », il ne dit rien.
+    rp_connu: bool
+
+    def runs_classees(self) -> list[tuple[list[float], list[float]]]:
+        """Les suites de marches classées, prêtes à être surtracées.
+
+        Deux marches classées d'affilée forment un seul trait : les tracer
+        séparément laisserait une rupture visible entre elles.
+        """
+        runs: list[tuple[list[float], list[float]]] = []
+        debut: int | None = None
+        for i, classe in enumerate(self.classes):
+            if classe and debut is None:
+                debut = i
+            elif not classe and debut is not None:
+                runs.append((self.xs[debut : i + 1], self.ys[debut : i + 1]))
+                debut = None
+        if debut is not None:
+            runs.append((self.xs[debut:], self.ys[debut:]))
+        return runs
 
     @property
     def duree_utile(self) -> float:
@@ -230,12 +256,20 @@ def construire(
     points: list[tuple[float, int]],
     *,
     seuil_compression_s: float = SEUIL_COMPRESSION_S,
+    rp: list[tuple[float, int]] | None = None,
 ) -> Serie:
     """La série cumulative des gains, trous coupés et longs vides comprimés.
 
     Les `NaN` interrompent le trait de matplotlib : c'est ce qui distingue « il
     n'a rien fait » de « on n'a pas regardé ».
+
+    `rp` porte les relevés de `rank_score` sur la fenêtre. Le mode d'une partie
+    n'existe nulle part dans l'API : un RP qui bouge est le seul signal qu'elle
+    était classée — qu'il monte ou qu'il descende, une partie classée perdue
+    reste une partie classée. Le RP n'entre PAS dans le gain : il éclaire la
+    courbe, il n'y ajoute pas un kill.
     """
+    instants_rp = sorted(t for t, _ in (rp or []))
     ecarts = [t2 - t1 for (t1, _), (t2, _) in zip(points, points[1:])]
     median = sorted(ecarts)[len(ecarts) // 2] if ecarts else 0.0
     seuil_coupure = max(median * FACTEUR_TROU, COUPURE_MIN_S)
@@ -252,6 +286,7 @@ def construire(
 
     xs: list[float] = [0.0]
     ys: list[float] = [0.0]
+    classes: list[bool] = []
     trous: list[Trou] = []
     segments: list[Segment] = []
     x = 0.0
@@ -262,11 +297,13 @@ def construire(
     for rang, ((t_av, av), (t_ap, ap)) in enumerate(zip(points, points[1:])):
         dt = t_ap - t_av
         comprime = rang in comprimes
-        if comprime or dt > seuil_coupure:
+        coupe = comprime or dt > seuil_coupure
+        if coupe:
             # Juste après le dernier relevé : le palier ne s'étale pas sur un
             # intervalle qu'on n'a pas mesuré.
             xs.append(x + min(1.0, dt / 2.0))
             ys.append(float("nan"))
+            classes.append(False)
         if comprime:
             segments.append(Segment(segment_debut_t, t_av, segment_debut_x))
             debut_bande = x
@@ -283,7 +320,16 @@ def construire(
             total += ecart
         xs.append(x)
         ys.append(total)
+        # Une marche coupée n'existe pas à l'écran : rien à colorer, et un
+        # changement de RP pendant la nuit ne dit pas quand la partie a eu lieu.
+        classes.append(
+            not coupe
+            and bisect_right(instants_rp, t_av) < bisect_right(instants_rp, t_ap)
+        )
 
     if points:
         segments.append(Segment(segment_debut_t, points[-1][0], segment_debut_x))
-    return Serie(xs=xs, ys=ys, trous=trous, segments=segments)
+    return Serie(
+        xs=xs, ys=ys, trous=trous, segments=segments,
+        classes=classes, rp_connu=bool(instants_rp),
+    )

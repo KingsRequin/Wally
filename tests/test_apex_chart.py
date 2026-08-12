@@ -139,3 +139,42 @@ def test_le_decoupage_par_jour_suit_l_heure_de_paris():
               ((minuit_paris + timedelta(minutes=20)).timestamp(), 120)]
     par_jour = _gains_par_jour(points)
     assert list(par_jour)[0].day == 11
+
+
+# ── Classé vs non classé ─────────────────────────────────────────────────────
+
+def _legende(points, rp=None):
+    """Les intitulés de la légende réellement dessinée, ou [] s'il n'y en a pas."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    intitules: list[str] = []
+    vraie = plt.Axes.legend
+
+    def _espion(self, *a, **kw):
+        boite = vraie(self, *a, **kw)
+        intitules.extend(t.get_text() for t in boite.get_texts())
+        return boite
+
+    plt.Axes.legend = _espion
+    try:
+        render(points, "kills", "titre", rp=rp)
+    finally:
+        plt.Axes.legend = vraie
+    return intitules
+
+
+def test_sans_releve_de_rp_la_courbe_n_a_pas_de_legende():
+    """Aucune rétroactivité : l'historique d'avant qu'on relève le RP ne dit pas
+    « ces parties n'étaient pas classées », il ne dit rien. Une légende serait
+    une affirmation qu'on ne peut pas tenir."""
+    points = [(T0 + i * MINUTE, 100 + i) for i in range(10)]
+    assert _legende(points) == []
+
+
+def test_avec_du_rp_la_legende_distingue_les_deux_modes():
+    points = [(T0 + i * MINUTE, 100 + i) for i in range(10)]
+    intitules = _legende(points, rp=[(T0 + 90, 6455)])
+    assert any("non classé" in t for t in intitules), intitules
+    assert any(t.strip() == "classé" for t in intitules), intitules

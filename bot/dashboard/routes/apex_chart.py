@@ -81,11 +81,20 @@ async def progression_png(
                     uid=uid, n=notion, p=libelle)
         raise HTTPException(status_code=404, detail="aucun relevé")
 
+    # Le RP sur la même fenêtre : c'est lui qui distingue les parties classées,
+    # le mode d'une partie n'existant nulle part dans l'API. Une panne de cette
+    # lecture ne doit pas coûter l'image — la courbe reste simplement monochrome.
+    try:
+        rp = await history.releves(uid, "rank_score", depuis)
+    except Exception as exc:  # noqa: BLE001 — sans RP la courbe se trace quand même
+        logger.warning("Apex chart: relevés de RP illisibles: {e}", e=exc)
+        rp = []
+
     fenetre = libelle_de(libelle, depuis, maintenant=maintenant)
     titre = f"{libelle_notion(notion).capitalize()} — {fenetre}"
     # En thread : matplotlib bloque, et cette route partage la boucle avec tout
     # le reste du bot.
-    buf = await asyncio.to_thread(render, progression.points, notion, titre)
+    buf = await asyncio.to_thread(render, progression.points, notion, titre, rp=rp)
     if buf is None:
         logger.info("Apex chart: {n} relevé(s) pour {uid} — trop peu pour tracer",
                     n=len(progression.points), uid=uid)

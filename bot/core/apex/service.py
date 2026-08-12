@@ -117,7 +117,8 @@ class ApexLegendsService:
         # simultanées (Discord et Twitch) se voleraient leur graphe.
         # Borné : sans plafond, ce dict grossirait indéfiniment — c'est
         # exactement ce qui est arrivé au cache de `client.py`.
-        self._progressions: OrderedDict[str, tuple[list, str, str]] = OrderedDict()
+        # (points, notion, titre, relevés de RP)
+        self._progressions: OrderedDict[str, tuple[list, str, str, list]] = OrderedDict()
 
     @property
     def available(self) -> bool:
@@ -313,9 +314,15 @@ class ApexLegendsService:
         # un chat Twitch ne serait jamais consommée, et attendrait là que la
         # même personne pose une question sur Discord.
         if peut_joindre_image:
+            # Les relevés de RP partent avec les points : sans eux l'image
+            # Discord serait monochrome là où l'overlay, sur la MÊME fenêtre,
+            # colorerait les parties classées. Deux vérités pour les mêmes
+            # parties, c'est exactement ce que la garde côté serveur cherchait
+            # déjà à éviter pour le panneau.
             self._retenir_courbe(
                 requester, progression.points, notion,
                 f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
+                rp=await historique.releves(cible, "rank_score", fenetre.depuis),
             )
         texte = (f"{libelle_periode.capitalize()} : "
                  f"+{_fr(progression.gain)} {libelle_notion(notion)}")
@@ -359,9 +366,10 @@ class ApexLegendsService:
     _MAX_COURBES = 20
 
     def _retenir_courbe(
-        self, requester: str | None, points: list, notion: str, titre: str
+        self, requester: str | None, points: list, notion: str, titre: str,
+        *, rp: list | None = None,
     ) -> None:
-        self._progressions[requester or ""] = (points, notion, titre)
+        self._progressions[requester or ""] = (points, notion, titre, rp or [])
         while len(self._progressions) > self._MAX_COURBES:
             self._progressions.popitem(last=False)
 
@@ -379,11 +387,11 @@ class ApexLegendsService:
         retenu = self._progressions.pop(requester or "", None)
         if retenu is None:
             return None
-        points, notion, titre = retenu
-        from bot.core.apex.chart import render
+        points, notion, titre, rp = retenu
+        from bot.core.apex import chart
 
         try:
-            return await asyncio.to_thread(render, points, notion, titre)
+            return await asyncio.to_thread(chart.render, points, notion, titre, rp=rp)
         except Exception as exc:  # noqa: BLE001 — pas de graphe ≠ pas de réponse
             logger.warning("Apex: courbe non rendue: {e}", e=exc)
             return None

@@ -232,3 +232,65 @@ def test_deux_releves_isoles_ne_font_pas_planter_la_serie():
     """Cas dégénéré : tout l'intervalle est un trou, il ne reste rien à mesurer."""
     serie = construire([(T0, 100), (T0 + 9 * HEURE, 200)])
     assert serie.xs and len(serie.xs) == len(serie.ys)
+
+
+# ── Classé vs non classé ─────────────────────────────────────────────────────
+#
+# Le mode d'une partie n'existe nulle part dans l'API. Un RP qui bouge est le
+# seul signal exploitable, et il n'existe que depuis qu'on le relève : pas de
+# rétroactivité possible sur l'historique d'avant.
+
+def test_sans_releve_de_rp_la_courbe_reste_monochrome():
+    """Inventer une couleur pour l'historique d'avant le relevé du RP dirait
+    « ces parties n'étaient pas classées » — ce qu'on ne sait pas."""
+    serie = construire(_mesures(T0, 10))
+    assert serie.rp_connu is False
+    assert not any(serie.classes)
+
+
+def test_une_marche_pendant_un_changement_de_rp_est_classee():
+    points = _mesures(T0, 4)                       # relevés à 0, 1, 2, 3 min
+    serie = construire(points, rp=[(T0 + 90, 6455)])
+    # Le RP a bougé entre le 2e et le 3e relevé : c'est cette marche-là.
+    assert serie.rp_connu is True
+    assert serie.classes == [False, True, False]
+
+
+def test_une_marche_sans_changement_de_rp_reste_non_classee():
+    serie = construire(_mesures(T0, 4), rp=[(T0 + 10 * MINUTE, 6455)])
+    assert serie.rp_connu is True
+    assert not any(serie.classes)
+
+
+def test_un_rp_qui_descend_classe_quand_meme_la_partie():
+    """Une partie classée perdue reste une partie classée. Le compteur de RP
+    n'est pas un score à faire monter, c'est un révélateur de mode."""
+    serie = construire(_mesures(T0, 4), rp=[(T0 + 90, 6100)])
+    assert serie.classes == [False, True, False]
+
+
+def test_le_rp_ne_compte_pas_dans_le_gain():
+    """`rank_score` est une notion interne : elle éclaire la courbe, elle n'y
+    ajoute pas un kill."""
+    points = _mesures(T0, 4)
+    sans = construire(points)
+    avec = construire(points, rp=[(T0 + 90, 6455)])
+    assert avec.ys == sans.ys
+
+
+def test_une_marche_coupee_par_un_trou_n_est_jamais_classee():
+    """Le trait est interrompu : il n'y a pas de marche à colorer, et un
+    changement de RP pendant la nuit ne dit pas quand la partie a eu lieu."""
+    points = _mesures(T0, 3) + _mesures(T0 + 9 * HEURE, 3, valeur=200)
+    serie = construire(points, rp=[(T0 + 4 * HEURE, 6455)])
+    assert not any(serie.classes)
+
+
+def test_les_marches_classees_se_regroupent_pour_le_trace():
+    """Deux marches classées d'affilée forment un seul trait, sans rupture."""
+    points = _mesures(T0, 5)
+    serie = construire(points, rp=[(T0 + 90, 6455), (T0 + 150, 6480)])
+    runs = serie.runs_classees()
+    assert len(runs) == 1
+    xs, ys = runs[0]
+    assert len(xs) == 3 and xs == serie.xs[1:4]

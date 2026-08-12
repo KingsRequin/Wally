@@ -44,6 +44,11 @@ class _FakeHistory:
         self._points = points_par_uid
         self.demandes = []
 
+    async def releves(self, uid, notion, depuis):
+        """Aucun relevé de RP : ces comptes-là ne sont pas sondés, et la courbe
+        doit rester monochrome plutôt que d'inventer un mode de jeu."""
+        return []
+
     async def debut_derniere_session(self, uid, **kw):
         """Le début du dernier bloc de jeu — ce sur quoi « ce stream » retombe
         une fois le live terminé."""

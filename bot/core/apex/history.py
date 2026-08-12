@@ -216,6 +216,23 @@ class ApexHistory:
                 debut = suivant
         return debut
 
+    async def releves(
+        self, uid: str, notion: str, depuis: float
+    ) -> list[tuple[float, int]]:
+        """Les relevés bruts d'une notion sur une fenêtre, sans aucun calcul.
+
+        Sert au RP, dont on ne veut pas le gain mais les INSTANTS de changement :
+        une partie qui fait bouger le `rankScore` était classée, qu'il monte ou
+        qu'il descende. Passer par `progression()` écraserait justement les
+        baisses, qui portent ici autant d'information que les hausses.
+        """
+        rows = await self._db.fetch_all(
+            "SELECT value, recorded_at FROM apex_stat_points "
+            "WHERE uid = ? AND notion = ? AND recorded_at >= ? ORDER BY recorded_at",
+            (str(uid), notion, depuis),
+        )
+        return [(float(r["recorded_at"]), int(r["value"])) for r in rows or []]
+
     async def progression(
         self, uid: str, notion: str, depuis: float, *, maintenant: float | None = None
     ) -> Progression | None:

@@ -37,6 +37,7 @@ FOND = "#1a1a1a"
 GRILLE = "#333333"
 TEXTE = "#aaaaaa"
 TRAIT = "#e0245e"        # le rouge Apex
+CLASSE = "#f5a623"       # l'ambre des rangs — se distingue du rouge sur ce fond
 
 # En deçà, la cumulative n'a rien à raconter : on passe aux bâtons par jour.
 SEUIL_HISTOGRAMME_S = 2 * 86400
@@ -70,6 +71,34 @@ def _gains_par_jour(points: list[tuple[float, int]]) -> dict[datetime, int]:
     return par_jour
 
 
+def _colorer_le_classe(ax, serie: Serie) -> None:
+    """Surtrace les marches jouées en classé, et pose la légende.
+
+    Surtracer plutôt que découper la courbe en morceaux : le trait de base reste
+    d'une seule pièce, donc aucune rupture ne peut apparaître à la jointure de
+    deux couleurs.
+
+    La légende n'existe QUE si le RP a été relevé sur la fenêtre. Sans relevé,
+    tout afficher en « non classé » affirmerait quelque chose qu'on ne sait pas :
+    l'historique d'avant ce déploiement n'a simplement pas de RP.
+    """
+    if not serie.rp_connu:
+        return
+    runs = serie.runs_classees()
+    for rang, (xs, ys) in enumerate(runs):
+        ax.plot(xs, ys, color=CLASSE, linewidth=2.5, drawstyle="steps-post",
+                label="classé" if rang == 0 else None)
+    if not runs:
+        # Aucune partie classée sur la fenêtre : la légende garde quand même ses
+        # deux entrées. « Il n'a fait que du non classé » est une information,
+        # et une légende à une seule ligne se lirait comme un oubli.
+        ax.plot([], [], color=CLASSE, linewidth=2.5, label="classé")
+    ax.legend(
+        loc="upper left", fontsize=8, facecolor=FOND, edgecolor="#444444",
+        labelcolor=TEXTE, framealpha=0.85,
+    )
+
+
 def _marquer_les_vides(ax, serie: Serie) -> None:
     """Dit ce que remplace chaque bande comprimée.
 
@@ -94,11 +123,22 @@ def _marquer_les_vides(ax, serie: Serie) -> None:
         )
 
 
-def render(points: list[tuple[float, int]], notion: str, titre: str) -> BytesIO | None:
+def render(
+    points: list[tuple[float, int]],
+    notion: str,
+    titre: str,
+    *,
+    rp: list[tuple[float, int]] | None = None,
+) -> BytesIO | None:
     """Le PNG de la progression, ou None s'il n'y a rien à tracer.
 
     Sous `MIN_POINTS` relevés, pas de courbe : un graphe à un point est un
     mensonge graphique. L'appelant répond alors en chiffres.
+
+    `rp` porte les relevés de `rank_score` : les marches jouées pendant qu'il
+    bougeait sont surtracées en « classé ». Sans lui, la courbe reste monochrome
+    et SANS légende — l'historique d'avant qu'on relève le RP ne dit pas « ces
+    parties n'étaient pas classées », il ne dit rien.
 
     Bloquant (import matplotlib + rendu ≈ 1 s) — à appeler dans un thread.
     """
@@ -139,13 +179,15 @@ def render(points: list[tuple[float, int]], notion: str, titre: str) -> BytesIO 
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m", tz=PARIS))
         ax.set_ylabel(f"{libelle(notion)} par jour", color=TEXTE, fontsize=10)
     else:
-        serie = construire(points)
+        serie = construire(points, rp=rp)
         # EN MARCHES, jamais en diagonale : Apex ne met ses compteurs à jour
         # qu'en FIN DE PARTIE. Les kills arrivent donc par paliers — 13 d'un
         # bloc à 12h51 — et une interpolation linéaire dessinerait une montée
         # régulière qui n'a pas eu lieu. Constaté sur la première courbe réelle.
-        ax.plot(serie.xs, serie.ys, color=TRAIT, linewidth=2, drawstyle="steps-post")
+        ax.plot(serie.xs, serie.ys, color=TRAIT, linewidth=2, drawstyle="steps-post",
+                label="non classé" if serie.rp_connu else None)
         ax.fill_between(serie.xs, serie.ys, color=TRAIT, alpha=0.15, step="post")
+        _colorer_le_classe(ax, serie)
         _marquer_les_vides(ax, serie)
         # L'abscisse est comprimée : ce n'est plus une date, et le formateur de
         # matplotlib daterait le néant au milieu des bandes. C'est la série qui

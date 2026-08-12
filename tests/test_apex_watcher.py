@@ -80,6 +80,46 @@ async def test_hors_live_les_compteurs_sont_quand_meme_historises():
 
 
 @pytest.mark.asyncio
+async def test_le_rp_est_releve_avec_les_autres_compteurs():
+    """Le mode d'une partie n'existe NULLE PART dans l'API : ni les trackers
+    (« BR Kills » inclut le classé) ni `realtime` ne disent la file de jeu.
+
+    Un RP qui bouge est le seul signal exploitable qu'une partie était classée.
+    Sans ce relevé, la courbe ne pourra jamais distinguer les deux.
+    """
+    releves: list[dict] = []
+
+    class _Hist:
+        async def enregistrer(self, uid, stats, **kw):
+            releves.append(stats)
+            return len(stats)
+
+    w = _watcher(live=True, service=_FakeService(_bridge("azrael")))
+    w._history = _Hist()
+    await w.tick()
+    assert releves[0].get("rank_score") == 6422
+
+
+@pytest.mark.asyncio
+async def test_un_compte_sans_rang_ne_range_pas_de_rp():
+    """Pas de rang classé = pas de notion `rank_score` : un zéro se lirait comme
+    une chute de RP, donc comme une partie classée perdue."""
+    releves: list[dict] = []
+
+    class _Hist:
+        async def enregistrer(self, uid, stats, **kw):
+            releves.append(stats)
+            return len(stats)
+
+    sans_rang = _bridge("azrael")
+    sans_rang["global"]["rank"] = {}
+    w = _watcher(live=True, service=_FakeService(sans_rang))
+    w._history = _Hist()
+    await w.tick()
+    assert "rank_score" not in releves[0]
+
+
+@pytest.mark.asyncio
 async def test_pendant_le_live_l_etat_est_lisible_au_prompt():
     w = _watcher()
     await w.tick()

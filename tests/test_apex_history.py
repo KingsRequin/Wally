@@ -298,3 +298,33 @@ async def test_une_fenetre_qui_precede_les_mesures_reste_partielle(hist):
     await _releve(hist, debut + 10 * JOUR + 600, 505)
     p = await hist.progression(UID, "kills", debut)
     assert p is not None and p.couverture_partielle is True
+
+
+# ── Le RP, relu brut ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_les_releves_de_rp_se_relisent_bruts(hist):
+    """Le RP ne passe pas par le calcul de gain : ce qui intéresse la courbe,
+    c'est QUAND il a bougé, pas de combien il est monté."""
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=1_000.0)
+    await hist.enregistrer(UID, {"rank_score": 6455}, maintenant=2_000.0)
+    await hist.enregistrer(UID, {"rank_score": 6380}, maintenant=3_000.0)
+    assert await hist.releves(UID, "rank_score", 0.0) == [
+        (1_000.0, 6400), (2_000.0, 6455), (3_000.0, 6380),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_les_releves_de_rp_se_bornent_a_la_fenetre(hist):
+    """Un changement d'avant la fenêtre ne classe pas une partie de dedans."""
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=1_000.0)
+    await hist.enregistrer(UID, {"rank_score": 6455}, maintenant=5_000.0)
+    assert await hist.releves(UID, "rank_score", 4_000.0) == [(5_000.0, 6455)]
+
+
+@pytest.mark.asyncio
+async def test_sans_releve_de_rp_la_liste_est_vide(hist):
+    """Aucune rétroactivité : l'historique d'avant ce déploiement n'a pas de RP,
+    et il ne faut surtout pas inventer une couleur pour lui."""
+    await _releve(hist, 1_000.0, 500)
+    assert await hist.releves(UID, "rank_score", 0.0) == []

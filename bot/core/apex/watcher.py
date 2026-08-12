@@ -160,10 +160,18 @@ class ApexWatcher:
         """Range les compteurs du relevé. Jamais bloquant pour la perception."""
         if self._history is None:
             return
+        compteurs = {k: s.value for k, s in profile.stats.items()}
+        # Le RP part avec les autres. Le mode d'une partie n'existe NULLE PART
+        # dans l'API — « BR Kills » inclut le classé, et `realtime` ne porte pas
+        # la file de jeu — donc un RP qui bouge est le seul signal exploitable
+        # qu'une partie était classée.
+        #
+        # Absent plutôt qu'à zéro quand le compte n'a pas de rang : un zéro se
+        # lirait comme une chute de RP, donc comme une partie classée perdue.
+        if profile.rank is not None:
+            compteurs["rank_score"] = profile.rank.score
         try:
-            await self._history.enregistrer(
-                profile.uid, {k: s.value for k, s in profile.stats.items()}
-            )
+            await self._history.enregistrer(profile.uid, compteurs)
         except Exception as exc:  # noqa: BLE001 — l'historique est un bonus
             logger.warning("Apex watcher: relevé non historisé: {e}", e=exc)
 
