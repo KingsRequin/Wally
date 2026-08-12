@@ -46,16 +46,22 @@ class VisionService:
         image_urls: Iterable[str] | None,
         caption: str = "",
         purpose: str = "image_analysis",
+        prompt_name: str = "image_analyze_system",
     ) -> str | None:
         """Retourne une analyse factuelle de la/des image(s), ou None.
 
         `caption` = le texte qui accompagne l'image (oriente l'analyse).
+        `prompt_name` = le registre à charger (par défaut : analyse générale).
+        Registres disponibles : "image_analyze_system" (défaut),
+        "meme_describe_system" (pour description dense des memes).
         """
         urls = [u for u in (image_urls or []) if u]
         if not self._client or not urls:
             return None
 
-        system = load_prompt("image_analyze_system", _DEFAULT_PROMPT)
+        # Le registre est un paramètre : décrire un meme pour la banque et
+        # commenter une image du chat ne demandent pas la même sortie.
+        system = load_prompt(prompt_name, _DEFAULT_PROMPT)
         user_text = (caption or "").strip() or "Décris cette image."
         try:
             result = await self._client.complete(

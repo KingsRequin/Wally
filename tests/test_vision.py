@@ -81,3 +81,24 @@ async def test_analyze_swallows_client_exception():
     client.raises = True
     svc = VisionService(client)
     assert await svc.analyze(["https://cdn/img.png"]) is None
+
+
+@pytest.mark.asyncio
+async def test_analyze_accepte_un_registre_dedie(monkeypatch):
+    """Décrire un meme n'est pas commenter une capture d'écran de partie.
+
+    Le registre par défaut consacre un bloc entier à l'extraction de stats de
+    jeu : appliqué à un meme, il produit une fiche au lieu d'une phrase.
+    """
+    vus = []
+    monkeypatch.setattr(
+        "bot.core.vision.load_prompt",
+        lambda nom, defaut="": vus.append(nom) or f"registre {nom}",
+    )
+    client = _FakeClient(response="un chat à lunettes")
+    svc = VisionService(client)
+
+    await svc.analyze(["data:image/png;base64,AAA"], prompt_name="meme_describe_system")
+
+    assert vus == ["meme_describe_system"]
+    assert client.last_call["system_prompt"] == "registre meme_describe_system"
