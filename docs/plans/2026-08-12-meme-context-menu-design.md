@@ -131,10 +131,10 @@ Il ne remplace pas le message éphémère de l'étape 4, qui est un aperçu avan
 | Plusieurs images | La première ; le message public dit combien ont été laissées |
 | Lien Tenor/Klipy sans pièce jointe | On prend l'image de l'embed |
 | `.mp4` / `.webm` | Acceptés — le rotateur les joue — mais pas d'analyse visuelle. L'aperçu s'ouvre avec une description vide et invite à la corriger ; « Ranger » reste possible, le nom du fichier servant alors de description comme pour tout dépôt manuel |
-| Plus de 8 Mo après conversion | **Refus.** Rangé, le fichier serait ignoré par `MemeLibrary.list()`, dont le rejet est logué en DEBUG donc invisible en production : un meme qui dort sans que rien ne le signale |
+| Plus de 8 Mo après conversion | **Refus, pour tout média — vidéos comprises.** Rangé, le fichier serait ignoré par `MemeLibrary.list()` ET par `list_medias()`, qui applique le même plafond au rotateur ; les deux rejets sont logués en DEBUG, donc invisibles en production. Un meme qui dort sans que rien ne le signale. La conception a d'abord exempté les vidéos, sur l'idée fausse qu'aucun consommateur ne les bornait |
 | Fichier distant de plus de 16 Mo | Téléchargement interrompu et refus, avant toute tentative de conversion |
 | Extension inconnue | Refus, avec la liste des formats admis |
-| URL d'embed non publique | Refus via la garde SSRF |
+| URL d'embed non publique | Refus via la garde SSRF, réutilisée depuis `ScrapeService._adresses_publiques`. Une règle s'y ajoute : un nom d'hôte **sans point** est refusé, parce que le résolveur de la machine détourne les NXDOMAIN vers une IP publique et laissait donc passer les alias Docker (`wally-qdrant`). Redirections non suivies : chaque saut est revalidé, trois au plus |
 | Écriture impossible (droits, disque) | Refus éphémère avec la cause ; rien de partiel ne subsiste |
 
 ## Rattrapage de l'existant
@@ -168,13 +168,20 @@ fait déjà le script existant.
 ## État de la banque au démarrage
 
 Aujourd'hui, un meme trop lourd est écarté par `MemeLibrary.list()` avec un log en DEBUG —
-invisible en production, où les sinks sont à INFO. Un `.mp4` ne s'affichera jamais sans que rien ne
-le dise. Ce sont des silences, exactement ce que le canari de démarrage existe pour rompre.
+invisible en production, où les sinks sont à INFO. C'est un silence, exactement ce que le canari de
+démarrage existe pour rompre.
 
 Une fonction `_verifier_memes()` rejoint `bot/core/canari.py`, au même format que ses voisines :
-elle renvoie la liste des anomalies — memes sans description, fichiers au-delà de 8 Mo donc jamais
-tirés, vidéos que l'affichage ignore — et le canari les loge. Aucun changement de comportement, un
-constat qui cesse d'être muet.
+elle renvoie la liste des anomalies — tout média au-delà de 8 Mo donc jamais tiré, et les images
+sans description — et le canari les loge. Aucun changement de comportement, un constat qui cesse
+d'être muet.
+
+**Les vidéos ne sont pas une anomalie.** Cette section prévoyait de les signaler, sur une prémisse
+fausse : le rotateur les joue, via `list_medias()` et la route `/overlay-rotation`. Seul le tirage à
+la demande de Wally les ignore, et c'est voulu — il affiche dans une balise `<img>`. Une alerte sur
+un `.mp4` serait donc permanente et sans correction possible, ce qui use un canari au lieu de le
+servir. Décision de l'owner, le 2026-08-12. Corollaire : une vidéo sans `.txt` n'est pas signalée
+non plus, personne ne lisant la description d'un fichier que `pick()` ne tire jamais.
 
 ## Découpage
 
@@ -224,8 +231,8 @@ Sur le rattrapage et le canari :
 - la simulation n'écrit rien, `--apply` écrit
 - un meme déjà décrit n'est pas redécrit — on ne repasse pas la facture ni sur une main humaine
 - la conversion réécrit l'image ET son sidecar, jamais l'une sans l'autre
-- `_verifier_memes` signale un meme sans description, un fichier au-delà de 8 Mo, une vidéo ; et
-  ne dit rien d'un dossier sain
+- `_verifier_memes` signale une image sans description et tout média au-delà de 8 Mo, vidéos
+  comprises ; il ne dit rien d'une vidéo saine, ni d'une vidéo sans description, ni d'un dossier sain
 
 ## Hors périmètre
 
