@@ -5,19 +5,28 @@ Route publique : c'est un `<img src>` dans l'overlay, chargé par OBS, qui ne
 porte ni cookie ni jeton. Elle ne révèle rien de plus que le panneau de stats
 déjà affiché à l'écran — des compteurs de jeu publics.
 
+Elle reçoit un INSTANT de départ, pas un mot de période : « ce stream » ne veut
+rien dire ici (le dashboard ignore quand le live a commencé), et deux calculs de
+fenêtre séparés laisseraient passer une carte que cette route refuserait ensuite
+de tracer. Le titre se reconstruit à partir d'une clé de liste blanche : rien de
+ce qui arrive par l'URL n'est dessiné tel quel dans l'image.
+
 Rendue à la volée plutôt qu'écrite sur disque : un fichier temporaire par
 demande, c'est un cycle de vie à gérer, un répertoire à purger et des images
 périmées servies après coup. Le tracé coûte moins d'une seconde.
 """
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from loguru import logger
 
+from bot.core.apex.periode import CLES, MAX_DUREE_S, MIN_DUREE_S
+
 public_router = APIRouter()
 
-PERIODES = ("live", "jour", "semaine", "mois")
 NOTIONS = ("kills", "wins", "damage", "matches", "headshots")
 
 
@@ -25,16 +34,24 @@ NOTIONS = ("kills", "wins", "damage", "matches", "headshots")
 async def progression_png(
     request: Request,
     uid: str = Query(..., min_length=1, max_length=32),
-    period: str = Query("live"),
+    depuis: float = Query(...),
     notion: str = Query("kills"),
+    libelle: str = Query("duree"),
 ) -> Response:
     """Le PNG de la progression d'un compte, ou 404 si rien à tracer."""
     # Un uid Apex est purement numérique. Valider ici évite qu'un paramètre
     # d'URL arbitraire descende jusqu'à une requête SQL.
     if not uid.isdigit():
         raise HTTPException(status_code=400, detail="uid invalide")
-    if period not in PERIODES or notion not in NOTIONS:
-        raise HTTPException(status_code=400, detail="période ou compteur inconnu")
+    if notion not in NOTIONS or libelle not in CLES:
+        raise HTTPException(status_code=400, detail="compteur ou fenêtre inconnu")
+    maintenant = time.time()
+    # Une fenêtre hors bornes ne vient pas de nous : elle est refusée plutôt que
+    # rabotée en silence, sinon l'image montrerait une autre période que la
+    # carte qui la porte.
+    age = maintenant - depuis
+    if not (MIN_DUREE_S <= age <= MAX_DUREE_S):
+        raise HTTPException(status_code=400, detail="fenêtre hors bornes")
 
     state = request.app.state.wally
     db = getattr(state, "db", None)
@@ -43,8 +60,10 @@ async def progression_png(
 
     import asyncio
 
-    from bot.core.apex.chart import libelle, render
-    from bot.core.apex.history import ApexHistory, debut_de_fenetre
+    from bot.core.apex.chart import libelle as libelle_notion
+    from bot.core.apex.chart import render
+    from bot.core.apex.history import ApexHistory
+    from bot.core.apex.periode import libelle_de
 
     # Instance neuve plutôt qu'un service partagé : `ApexHistory` ne garde
     # d'état que pour ÉCRIRE (la dernière valeur vue, pour éviter les doublons).
@@ -52,9 +71,6 @@ async def progression_png(
     # service Apex, qui vit sur les adaptateurs.
     history = ApexHistory(db)
 
-    # Même fenêtre que la garde du panneau : deux calculs distincts laisseraient
-    # passer une carte que cette route refuserait ensuite de tracer.
-    depuis = debut_de_fenetre(period)
     try:
         progression = await history.progression(uid, notion, depuis)
     except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour un graphe
@@ -62,10 +78,11 @@ async def progression_png(
         raise HTTPException(status_code=503, detail="historique illisible") from exc
     if progression is None:
         logger.info("Apex chart: aucun relevé pour {uid} ({n}, {p})",
-                    uid=uid, n=notion, p=period)
+                    uid=uid, n=notion, p=libelle)
         raise HTTPException(status_code=404, detail="aucun relevé")
 
-    titre = f"{libelle(notion).capitalize()} — {period}"
+    fenetre = libelle_de(libelle, depuis, maintenant=maintenant)
+    titre = f"{libelle_notion(notion).capitalize()} — {fenetre}"
     # En thread : matplotlib bloque, et cette route partage la boucle avec tout
     # le reste du bot.
     buf = await asyncio.to_thread(render, progression.points, notion, titre)
@@ -77,7 +94,7 @@ async def progression_png(
     # est bien arrivée jusqu'à l'écran d'OBS. Sans elle, « il n'a rien affiché »
     # ne se distingue pas de « je n'ai pas regardé au bon moment ».
     logger.info("Apex chart servi: uid={uid} ({n}, {p}, {k} points)",
-                uid=uid, n=notion, p=period, k=len(progression.points))
+                uid=uid, n=notion, p=fenetre, k=len(progression.points))
     return Response(
         content=buf.getvalue(),
         media_type="image/png",

@@ -203,3 +203,45 @@ async def test_les_vieux_releves_sont_purges(db):
     await hist.enregistrer(UID, {"kills": 2}, maintenant=1000.0 + 365 * JOUR)
     rows = await db.fetch_all("SELECT value FROM apex_stat_points ORDER BY value")
     assert [int(r["value"]) for r in rows] == [2]
+
+
+# ── Le dernier bloc de jeu ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_la_derniere_session_commence_apres_le_dernier_grand_trou(hist):
+    """« La courbe de ce stream » quand le stream est fini : on repart du
+    dernier bloc de relevés, pas d'une fenêtre glissante de douze heures."""
+    for i, kills in enumerate((500, 503, 506)):        # une soirée d'hier
+        await _releve(hist, 1000.0 + i * 600, kills)
+    debut_soir = 1000.0 + 3 * JOUR                     # deux jours plus tard
+    for i, kills in enumerate((510, 514, 520)):
+        await _releve(hist, debut_soir + i * 600, kills)
+    assert await hist.debut_derniere_session(
+        UID, maintenant=debut_soir + 3600
+    ) == pytest.approx(debut_soir)
+
+
+@pytest.mark.asyncio
+async def test_une_pause_courte_ne_coupe_pas_la_session(hist):
+    """Un lobby, un pipi, une partie qui traîne : dix minutes sans relevé ne
+    sont pas la fin du stream."""
+    await _releve(hist, 1000.0, 500)
+    await _releve(hist, 1000.0 + 600, 505)
+    await _releve(hist, 1000.0 + 1200, 509)
+    assert await hist.debut_derniere_session(
+        UID, maintenant=1000.0 + 1800
+    ) == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
+async def test_sans_aucun_releve_il_n_y_a_pas_de_session(hist):
+    assert await hist.debut_derniere_session("inconnu") is None
+
+
+@pytest.mark.asyncio
+async def test_la_session_ne_melange_pas_les_comptes(hist):
+    await _releve(hist, 1000.0, 500, uid="aaa")
+    await _releve(hist, 1000.0 + 5 * JOUR, 900, uid="bbb")
+    assert await hist.debut_derniere_session(
+        "aaa", maintenant=1000.0 + 3600
+    ) == pytest.approx(1000.0)

@@ -85,10 +85,13 @@ APEX_LEGENDS_TOOL = {
                 },
                 "period": {
                     "type": "string",
-                    "enum": ["live", "jour", "semaine", "mois"],
                     "description": (
-                        "Pour progression : sur quelle période compter. "
-                        "« live » = la session en cours."
+                        "Sur quelle période compter, en clair : « stream » (le "
+                        "live en cours, ou le dernier s'il est fini), « jour », "
+                        "« semaine », « mois », ou une DURÉE libre — « 5m », "
+                        "« 30min », « 2h », « 1h30 », « 3j ». Reprends ce qui "
+                        "est demandé : « la courbe des 10 dernières minutes » "
+                        "→ period=10m. Défaut « stream »."
                     ),
                 },
                 "notion": {
@@ -201,10 +204,12 @@ APEX_OVERLAY_TOOL = {
                 },
                 "period": {
                     "type": "string",
-                    "enum": ["live", "jour", "semaine", "mois"],
                     "description": (
-                        "Pour le panneau progress : la fenêtre de la courbe. "
-                        "« live » par défaut."
+                        "Pour le panneau progress : la fenêtre de la courbe, en "
+                        "clair — « stream » (défaut), « jour », « semaine », "
+                        "« mois », ou une durée libre (« 10m », « 2h », « 3j »). "
+                        "Colle à la demande : « la courbe de ce stream » ne doit "
+                        "pas rendre une image de quinze heures."
                     ),
                 },
                 "comment": {

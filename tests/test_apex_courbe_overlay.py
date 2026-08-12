@@ -44,6 +44,12 @@ class _FakeHistory:
         self._points = points_par_uid
         self.demandes = []
 
+    async def debut_derniere_session(self, uid, **kw):
+        """Le début du dernier bloc de jeu — ce sur quoi « ce stream » retombe
+        une fois le live terminé."""
+        points = self._points.get(str(uid), [])
+        return points[0][0] if points else None
+
     async def progression(self, uid, notion, depuis, **kw):
         from bot.core.apex.history import Progression
         from datetime import datetime
@@ -119,9 +125,19 @@ async def test_la_fenetre_verifiee_est_celle_que_l_image_tracera():
 @pytest.mark.asyncio
 async def test_sans_historique_branche_le_panneau_part_comme_avant():
     """L'historique est monté après coup par `main.py` : son absence ne doit
-    pas faire disparaître un panneau qui marchait."""
-    panel = await _service(None).build_panel("progress", "Azrael_ttv")
+    pas faire disparaître un panneau qui marchait. La fenêtre doit alors être
+    datable sans lui — « ce stream » ne l'est pas, une période nommée si."""
+    panel = await _service(None).build_panel("progress", "Azrael_ttv", period="jour")
     assert panel["kind"] == "apex_progress"
+
+
+@pytest.mark.asyncio
+async def test_sans_rien_pour_dater_le_stream_aucune_carte_ne_part():
+    """Ni live en cours, ni relevé : « la courbe de ce stream » n'a pas de
+    début. Une carte partirait sur une fenêtre inventée."""
+    assert await _service(None).build_panel(
+        "progress", "Azrael_ttv", period="stream"
+    ) is None
 
 
 # ── Le refus dit DE QUI il parle ─────────────────────────────────────────────
@@ -147,7 +163,7 @@ async def test_le_refus_nomme_le_compte_et_signale_le_repli_sur_le_demandeur():
     svc = ApexLegendsService(client=_FakeClient(_raw("bridge_azrael")), db=_DB())
     svc.history = _FakeHistory({})
     reponse = await svc.execute(
-        "progression", "", period="live", requester="twitch:105904256",
+        "progression", "", period="jour", requester="twitch:105904256",
     )
     assert "KingsRequin" in reponse
     assert "player_name" in reponse

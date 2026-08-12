@@ -566,6 +566,15 @@ async def main() -> None:
             # qui sont le seul historique des comptes non sondés.
             apex_history = ApexHistory(db)
             apex_api.history = apex_history
+            # Quand le live a commencé : c'est ce qui donne son sens à « la
+            # courbe de ce stream ». Hors live, `started_at` est vide et le
+            # service retombe sur le dernier bloc de relevés.
+            from bot.core.apex.periode import epoch_depuis_iso
+
+            apex_api.debut_du_live = lambda: epoch_depuis_iso(
+                twitch_bot._stream_info.get("started_at")
+                if twitch_bot._stream_info.get("live") else None
+            )
 
             apex_watcher = ApexWatcher(
                 apex_api,

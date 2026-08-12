@@ -107,6 +107,10 @@ class ApexLegendsService:
         # `main.py` — il a besoin de la base, que ce service ne construit pas.
         # Absent, tout marche comme avant : rien n'est consigné.
         self.history: Any = None
+        # Quand le live en cours a commencé (`started_at` Twitch), branché par
+        # `main.py`. Absent ou hors live, « ce stream » retombe sur le dernier
+        # bloc de jeu lu dans les relevés.
+        self.debut_du_live: Any = None
         # Points de la dernière progression calculée, PAR DEMANDEUR : le
         # handler vient y chercher de quoi tracer la courbe juste après l'appel
         # d'outil. Clé par demandeur et non globale, sinon deux questions
@@ -262,8 +266,6 @@ class ApexLegendsService:
         qu'on relève les compteurs au fil du temps. Il ne peut donc pas remonter
         avant le premier relevé, et on le dit quand c'est le cas.
         """
-        from bot.core.apex.history import debut_de_fenetre
-
         historique = getattr(self, "history", None)
         if historique is None:
             return ("Je ne garde pas encore d'historique des compteurs, "
@@ -284,16 +286,13 @@ class ApexLegendsService:
             return ("Il me faut savoir de quel compte Apex on parle pour suivre "
                     "sa progression.")
 
-        periode = (period or "live").lower()
         try:
-            depuis = debut_de_fenetre(periode)
-        except ValueError:
-            return f"Période inconnue : {period}. Utilise live, jour, semaine ou mois."
-        libelle_periode = {"live": "depuis le début de la session",
-                           "jour": "aujourd'hui", "semaine": "cette semaine",
-                           "mois": "ce mois-ci"}[periode]
+            fenetre = await self._fenetre(period, cible)
+        except ValueError as refus:
+            return str(refus)
+        libelle_periode = fenetre.libelle
 
-        progression = await historique.progression(cible, notion, depuis)
+        progression = await historique.progression(cible, notion, fenetre.depuis)
         if progression is None:
             # Le refus NOMME le compte. Sans ça, « aucun relevé de ce compte »
             # se lit comme « aucun relevé d'Azraël » alors qu'on vient
@@ -599,9 +598,19 @@ class ApexLegendsService:
                 return None
             profil = read_profile(data)
             if panel == "progress":
-                if not await self._a_de_quoi_tracer(profil, period, notion):
+                try:
+                    fenetre = await self._fenetre(
+                        period, profil.uid if profil else ""
+                    )
+                except ValueError as refus:
+                    # Rien à l'écran plutôt qu'une carte sur une fenêtre
+                    # inventée : le modèle apprend le refus par `apex_legends`,
+                    # qui rend le texte de l'erreur.
+                    logger.info("Apex: panneau de courbe refusé — {r}", r=refus)
                     return None
-                built = progress_panel(profil, period=period, notion=notion)
+                if not await self._a_de_quoi_tracer(profil, fenetre, notion):
+                    return None
+                built = progress_panel(profil, fenetre=fenetre, notion=notion)
             else:
                 built = {"rank": rank_panel, "status": status_panel,
                          "stats": stats_panel}[panel](profil)
@@ -618,7 +627,45 @@ class ApexLegendsService:
             built = builder(data)
         return {"kind": f"apex_{panel}", **built} if built else None
 
-    async def _a_de_quoi_tracer(self, profil, period: str, notion: str) -> bool:
+    async def _fenetre(self, period: str, uid: str):
+        """La fenêtre demandée, « ce stream » résolu. Lève `ValueError`.
+
+        Le parseur ne connaît ni Twitch ni la base : c'est ici qu'on lui dit
+        quand le stream a commencé.
+        """
+        from bot.core.apex.periode import parse_periode
+
+        return parse_periode(period, debut_stream=await self._debut_du_stream(uid))
+
+    async def _debut_du_stream(self, uid: str) -> float | None:
+        """Le début du live en cours ou, à défaut, du dernier bloc de jeu.
+
+        Le repli est ce qui fait marcher « la courbe du stream » une fois le
+        stream fini — et aussi quand le bot a redémarré en pleine soirée et ne
+        connaît plus le `started_at` du live qu'il traverse.
+        """
+        rappel = getattr(self, "debut_du_live", None)
+        if callable(rappel):
+            try:
+                debut = rappel()
+            except Exception as exc:  # noqa: BLE001 — une sonde cassée n'est pas fatale
+                logger.debug("Apex: début du live indisponible: {e}", e=exc)
+                debut = None
+            if debut:
+                return float(debut)
+        historique = getattr(self, "history", None)
+        # `getattr` sur la MÉTHODE, pas un try/except large : une doublure sans
+        # cette méthode doit se voir, pas être avalée avec les pannes de base.
+        derniere = getattr(historique, "debut_derniere_session", None)
+        if derniere is None or not uid:
+            return None
+        try:
+            return await derniere(uid)
+        except Exception as exc:  # noqa: BLE001 — pas de session ≠ pas de réponse
+            logger.warning("Apex: dernière session illisible: {e}", e=exc)
+            return None
+
+    async def _a_de_quoi_tracer(self, profil, fenetre, notion: str) -> bool:
         """Y a-t-il assez de relevés pour que l'image existe vraiment ?
 
         Le panneau ne porte qu'une URL : sans cette garde, la carte part à
@@ -632,7 +679,6 @@ class ApexLegendsService:
         pas : on publie comme avant plutôt que de faire disparaître un panneau.
         """
         from bot.core.apex.chart import MIN_POINTS
-        from bot.core.apex.history import debut_de_fenetre
 
         historique = getattr(self, "history", None)
         if historique is None:
@@ -640,11 +686,9 @@ class ApexLegendsService:
         if profil is None or not profil.uid:
             return False
         try:
-            depuis = debut_de_fenetre(period)
-        except ValueError:
-            return False
-        try:
-            progression = await historique.progression(profil.uid, notion, depuis)
+            progression = await historique.progression(
+                profil.uid, notion, fenetre.depuis
+            )
         except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour ça
             logger.warning("Apex: relevés illisibles pour le panneau: {e}", e=exc)
             return False
@@ -652,7 +696,7 @@ class ApexLegendsService:
             logger.info(
                 "Apex: panneau de courbe refusé — pas assez de relevés pour "
                 "{uid} ({notion}, {periode})",
-                uid=profil.uid, notion=notion, periode=period,
+                uid=profil.uid, notion=notion, periode=fenetre.libelle,
             )
             return False
         return True

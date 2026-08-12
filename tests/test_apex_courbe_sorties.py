@@ -117,20 +117,31 @@ class _Profil:
 
 def test_le_panneau_porte_une_url_pas_des_chiffres():
     """Le modèle ne fournit aucune donnée, et le panneau n'en transporte pas :
-    c'est le serveur qui tracera, avec ce qu'il a vraiment mesuré."""
-    panneau = progress_panel(_Profil(), period="mois", notion="kills")
+    c'est le serveur qui tracera, avec ce qu'il a vraiment mesuré.
+
+    L'URL porte un INSTANT et une clé de fenêtre : un mot comme « stream » y
+    serait intraçable, le dashboard ignorant quand le live a commencé."""
+    from bot.core.apex.periode import parse_periode
+
+    fenetre = parse_periode("mois")
+    panneau = progress_panel(_Profil(), fenetre=fenetre, notion="kills")
     assert panneau is not None
     assert panneau["image_url"].startswith("/api/public/apex/progression.png?")
     assert f"uid={UID}" in panneau["image_url"]
-    assert "period=mois" in panneau["image_url"]
+    assert f"depuis={fenetre.depuis:.0f}" in panneau["image_url"]
+    assert "libelle=mois" in panneau["image_url"]
+    assert panneau["period"] == "ce mois-ci"
 
 
 def test_sans_uid_il_n_y_a_pas_de_panneau():
+    from bot.core.apex.periode import parse_periode
+
     class _Anonyme:
         name, avatar, uid = "X", "", ""
 
-    assert progress_panel(_Anonyme()) is None
-    assert progress_panel(None) is None
+    fenetre = parse_periode("jour")
+    assert progress_panel(_Anonyme(), fenetre=fenetre) is None
+    assert progress_panel(None, fenetre=fenetre) is None
 
 
 def test_le_panneau_progress_est_declare():

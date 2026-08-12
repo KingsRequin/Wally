@@ -182,6 +182,40 @@ class ApexHistory:
             "DELETE FROM apex_stat_points WHERE recorded_at < ?", (limite,)
         )
 
+    # Au-delà, on considère que le joueur a arrêté : une partie dure une
+    # quinzaine de minutes, et la sonde passe toutes les 30 à 60 secondes.
+    TROU_DE_SESSION_S = 1800.0
+
+    async def debut_derniere_session(
+        self, uid: str, *, trou_s: float | None = None, jours: int = 7,
+        maintenant: float | None = None,
+    ) -> float | None:
+        """Le premier relevé du dernier bloc de jeu, ou None sans relevé.
+
+        Sert quand on demande « la courbe de ce stream » alors que le stream est
+        fini — ou que le bot a redémarré en plein live et ne connaît plus son
+        `started_at`. Toutes notions confondues : les dégâts bougent presque à
+        chaque partie, les kills non.
+
+        Borné à `jours` : lire tout l'historique pour retrouver hier serait
+        payer une année de relevés à chaque question.
+        """
+        seuil = trou_s if trou_s is not None else self.TROU_DE_SESSION_S
+        depuis = (maintenant or _maintenant()) - jours * 86400
+        rows = await self._db.fetch_all(
+            "SELECT DISTINCT recorded_at FROM apex_stat_points "
+            "WHERE uid = ? AND recorded_at >= ? ORDER BY recorded_at",
+            (str(uid), depuis),
+        )
+        instants = [float(r["recorded_at"]) for r in rows or []]
+        if not instants:
+            return None
+        debut = instants[0]
+        for precedent, suivant in zip(instants, instants[1:]):
+            if suivant - precedent > seuil:
+                debut = suivant
+        return debut
+
     async def progression(
         self, uid: str, notion: str, depuis: float, *, maintenant: float | None = None
     ) -> Progression | None:

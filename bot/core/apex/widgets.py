@@ -91,24 +91,26 @@ def stats_panel(profile: PlayerProfile | None) -> dict | None:
 
 
 def progress_panel(
-    profile: PlayerProfile | None, period: str = "live", notion: str = "kills"
+    profile: PlayerProfile | None, fenetre: Any, notion: str = "kills"
 ) -> dict | None:
     """La courbe de progression : une image rendue à la demande par le dashboard.
 
-    Le panneau ne porte qu'une URL. C'est le serveur qui décidera s'il a de quoi
-    tracer — et répondra 404 sinon, auquel cas le navigateur n'affiche rien
-    plutôt qu'un cadre vide avec un titre mensonger.
+    Le panneau ne porte qu'une URL. Elle transmet un INSTANT (`depuis`) et une
+    clé de fenêtre, jamais un mot comme « stream » : le dashboard ne sait pas
+    quand le live a commencé, et il tracerait une autre période que celle que
+    le serveur vient de valider. La clé sert au titre, et vient d'une liste
+    blanche — cette route est publique, et son titre finit dessiné dans l'image.
     """
     if profile is None or not profile.uid:
         return None
     return {
         "player": profile.name,
         "avatar": profile.avatar,
-        "period": period,
+        "period": fenetre.libelle,
         "notion": notion,
         "image_url": (
             f"/api/public/apex/progression.png?uid={profile.uid}"
-            f"&period={period}&notion={notion}"
+            f"&notion={notion}&depuis={fenetre.depuis:.0f}&libelle={fenetre.cle}"
         ),
     }
 

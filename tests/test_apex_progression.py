@@ -114,10 +114,13 @@ async def test_aucune_courbe_n_est_retenue_pour_un_canal_sans_image(service):
 
 @pytest.mark.asyncio
 async def test_une_periode_inconnue_est_refusee(service):
+    """Le refus liste les formes valides : sans elles, le modèle réessaie au
+    hasard ou répond un chiffre qu'il n'a pas."""
     rendu = await service._progression(
-        "", "PC", period="trimestre", notion="kills", requester=None, uid=UID
+        "", "PC", period="depuis mardi", notion="kills", requester=None, uid=UID
     )
-    assert "inconnue" in rendu.lower()
+    assert "incomprise" in rendu.lower()
+    assert "stream" in rendu and "2h" in rendu
 
 
 @pytest.mark.asyncio
