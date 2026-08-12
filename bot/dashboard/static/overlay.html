@@ -940,10 +940,13 @@
        en plus : l'image du rang, l'état en jeu, un décompte qui tourne. */
     .apex .apex-rank-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .apex .apex-rank-img { width: 34px; height: 34px; object-fit: contain; }
-    /* La courbe est rendue en 1000×400 : on la borne à la largeur du panneau
-       (560) pour qu'elle ne déborde pas de la carte. */
-    .apex .apex-progress-img { width: 100%; max-width: 520px; display: block;
-                               border-radius: 8px; }
+    /* Un graphe n'est pas une liste de valeurs : la carte de `.stats` fait
+       260 px, et la courbe s'y retrouvait dessinée à 234 px — 23 % de sa taille
+       native, heures et durées illisibles à l'écran. Elle prend donc les 560 px
+       de large utiles de la source OBS, bornés à ce que la source offre
+       vraiment pour qu'une source étroite ne la fasse pas déborder. */
+    .apex.apex-large { width: min(560px, calc(100vw - 24px)); }
+    .apex .apex-progress-img { width: 100%; display: block; border-radius: 8px; }
     .apex .apex-rank-name { font-size: 15px; font-weight: 700; }
     .apex .apex-avatar {
       width: 30px; height: 30px; border-radius: 50%; object-fit: cover;

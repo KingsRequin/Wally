@@ -97,6 +97,11 @@
        titre qui promet un graphe. */
     apex_progress(p) {
       const box = carte(p.player);
+      /* La carte de `.stats` fait 260 px : parfaite pour une liste de valeurs,
+         beaucoup trop étroite pour un graphe. Sans cette classe, la courbe était
+         réduite à 234 px — 23 % de sa taille — et ses heures devenaient
+         illisibles à l'écran. */
+      box.classList.add("apex-large");
       const img = el("img", "apex-progress-img");
       img.alt = "";
       img.onerror = () => { box.remove(); };
