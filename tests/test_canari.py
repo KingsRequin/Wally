@@ -137,7 +137,7 @@ def test_le_canari_se_tait_sur_une_banque_saine(tmp_path):
     assert _verifier_memes(tmp_path) == []
 
 
-def test_le_canari_signale_une_video_meme_avec_description(tmp_path):
+def test_le_canari_ne_signale_pas_une_video_saine(tmp_path):
     from bot.core.canari import _verifier_memes
 
     memes = tmp_path / "data" / "memes"
@@ -145,9 +145,8 @@ def test_le_canari_signale_une_video_meme_avec_description(tmp_path):
     (memes / "video.mp4").write_bytes(b"fake mp4")
     (memes / "video.mp4.txt").write_text("une vidéo drôle", encoding="utf-8")
 
-    alertes = _verifier_memes(tmp_path)
-
-    assert any("video.mp4" in a and "ne s'affichent jamais" in a for a in alertes)
+    # Les vidéos s'affichent via le rotateur — pas d'alerte même sans description
+    assert _verifier_memes(tmp_path) == []
 
 
 def test_le_canari_est_bien_branche_au_demarrage():
