@@ -12,6 +12,13 @@ import pytest
 from PIL import Image
 
 from bot.core import meme_import
+from bot.core.memes import (
+    MAX_DESCRIPTION,
+    _describe,
+    _EXTENSIONS_MEDIA,
+    _MAX_BYTES,
+    MemeLibrary,
+)
 
 
 def _gif_anime(chemin: Path, frames: int = 4, duree: int = 80) -> Path:
@@ -211,6 +218,49 @@ def test_un_fichier_au_nom_libre_est_detecte_comme_doublon(tmp_path):
     assert res.doublon == "azrael-blame-le-ping.jpg"
     assert not (tmp_path / "meme1.jpg").exists()
     assert not (tmp_path / "meme1.jpg.txt").exists()
+
+
+@pytest.mark.parametrize("suffixe", sorted(_EXTENSIONS_MEDIA))
+@pytest.mark.parametrize("poids", [16, _MAX_BYTES + 1], ids=["leger", "au_dessus"])
+def test_ce_que_l_import_accepte_est_vu_par_un_consommateur(tmp_path, suffixe, poids):
+    """La propriété que la revue de tâche ne pouvait pas voir.
+
+    `importer()` et `MemeLibrary` sont deux modules ; rien ne garantissait qu'un
+    fichier accepté par le premier soit visible du second. Il l'était pour les
+    images et pas pour les vidéos : un `.mp4` de 12 Mo entrait, s'annonçait
+    « rangé », et `list()` comme `list_medias()` l'écartaient ensuite en
+    silence — le rejet de `list_medias()` est un log DEBUG, muet en production.
+
+    Écrite comme une propriété et non comme le cas particulier du `.mp4` : le
+    jour où un format s'ajoute à `_EXTENSIONS_MEDIA`, elle le couvre déjà.
+    """
+    res = meme_import.importer(b"\x00" * poids, suffixe, "une description", tmp_path)
+
+    biblio = MemeLibrary(tmp_path)
+    vus = {e["name"] for e in biblio.list()} | {e["name"] for e in biblio.list_medias()}
+
+    if res.ok:
+        assert res.nom in vus, "rangé, annoncé rangé, et visible de personne"
+    else:
+        assert vus == set()
+        assert res.raison, "un refus doit dire pourquoi"
+
+
+def test_la_description_ecrite_ne_depasse_pas_ce_qui_sera_relu(tmp_path):
+    """Sinon le sidecar se coupe en plein mot à la lecture.
+
+    Vu en production : `meme80.webp.txt` faisait 163 caractères et rendait
+    « … SORT SON SKIN BL ». Le lecteur coupait à 160, l'écriture l'ignorait.
+    """
+    longue = "Un chat très mécontent devant un écran. " * 10
+
+    res = meme_import.importer(b"\x00\x00\x00\x18ftypmp42", ".mp4", longue, tmp_path)
+
+    ecrit = (tmp_path / f"{res.nom}.txt").read_text(encoding="utf-8")
+    assert len(ecrit) <= MAX_DESCRIPTION
+    assert MemeLibrary(tmp_path).list_medias()  # le fichier est bien en rayon
+    assert _describe(tmp_path / res.nom) == ecrit  # rien n'est perdu à la lecture
+    assert not ecrit.endswith(" ") and ecrit.split()[-1] == "écran."  # mot entier
 
 
 def test_un_sidecar_qui_echoue_ne_laisse_pas_l_image_orpheline(tmp_path, monkeypatch):

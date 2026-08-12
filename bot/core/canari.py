@@ -114,14 +114,19 @@ def _verifier_identite(config) -> list[str]:
 def _verifier_memes(racine: Path) -> list[str]:
     """Ce que la banque de memes tait.
 
-    `MemeLibrary.list()` écarte un fichier trop lourd (> 8 Mo) avec un log DEBUG,
-    muet en production où les sinks sont à INFO ; un meme sans `.txt` est
-    introuvable par mot-clé et reçoit un commentaire générique. Les vidéos
-    s'affichent via le rotateur (`list_medias()`) — seul le tirage à la demande
-    de Wally les exclut, c'est voulu.
+    `list()` et `list_medias()` écartent toutes deux un fichier de plus de 8 Mo
+    avec un log DEBUG, muet en production où les sinks sont à INFO : le balayage
+    des tailles couvre donc TOUS les médias, vidéos comprises. Un meme sans
+    `.txt` est introuvable par mot-clé et reçoit un commentaire générique.
+
+    L'absence de description ne se signale en revanche que sur ce qui s'AFFICHE
+    dans un `<img>` : `pick(hint)` ne tire jamais de vidéo et `list_medias()` ne
+    lit aucune description, si bien que le sidecar d'un `.mp4` n'est lu par
+    personne. Crier dessus donnerait une alerte permanente que la seule
+    « correction » possible serait d'écrire un fichier que rien ne consulte.
     """
     from bot.core.meme_import import memes_sans_description
-    from bot.core.memes import _EXTENSIONS, _MAX_BYTES
+    from bot.core.memes import _EXTENSIONS, _EXTENSIONS_MEDIA, _MAX_BYTES
 
     dossier = racine / "data" / "memes"
     if not dossier.is_dir():
@@ -130,7 +135,7 @@ def _verifier_memes(racine: Path) -> list[str]:
     alertes: list[str] = []
 
     # Memes sans description — introuvables par mot-clé
-    muets = memes_sans_description(dossier)
+    muets = memes_sans_description(dossier, formats=_EXTENSIONS)
     if muets:
         noms = ", ".join(p.name for p in muets[:5])
         suite = f" (+{len(muets) - 5})" if len(muets) > 5 else ""
@@ -139,9 +144,9 @@ def _verifier_memes(racine: Path) -> list[str]:
             f"commentés à l'aveugle : {noms}{suite}"
         )
 
-    # Images affichables au-dessus du plafond d'affichage
+    # Médias au-dessus du plafond — écartés par `list()` ET par `list_medias()`
     for p in sorted(dossier.iterdir()):
-        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS:
+        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS_MEDIA:
             continue
         try:
             size = p.stat().st_size
@@ -151,7 +156,7 @@ def _verifier_memes(racine: Path) -> list[str]:
         if size > _MAX_BYTES:
             alertes.append(
                 f"{p.name} pèse {size / 1e6:.1f} Mo : au-dessus du plafond, "
-                f"il ne sera jamais tiré"
+                f"il ne sera jamais montré"
             )
 
     return alertes

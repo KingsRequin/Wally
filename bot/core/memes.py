@@ -48,8 +48,30 @@ def media_type(path: Path) -> str:
     return _MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
 
 # Au-delà, l'image met trop de temps à s'afficher : le widget serait passé avant
-# d'être visible.
+# d'être visible. S'applique à TOUT média servi — le rotateur joue les vidéos,
+# et `list_medias()` les écarte au même plafond que les images.
 _MAX_BYTES = 8 * 1024 * 1024
+
+# Ce qu'une description peut peser. La lecture coupait à 160 sans que personne
+# ne le sache côté écriture : `meme80.webp.txt` faisait 163 caractères et se
+# terminait sur « SORT SON SKIN BL ». Une seule valeur, partagée par le lecteur
+# (`_describe`), par l'import (`meme_import.importer`) et par le formulaire de
+# la commande Discord — sinon la chaîne recommence à diverger.
+MAX_DESCRIPTION = 160
+
+
+def tronquer_description(texte: str) -> str:
+    """Description mise à plat et ramenée à `MAX_DESCRIPTION`, sans couper un mot.
+
+    Le mot entier ou rien : « SORT SON SKIN BL » est pire qu'une phrase plus
+    courte — Wally lit cette description à voix haute quand il montre le meme.
+    """
+    plat = " ".join((texte or "").split())
+    if len(plat) <= MAX_DESCRIPTION:
+        return plat
+    coupe = plat[:MAX_DESCRIPTION]
+    espace = coupe.rfind(" ")
+    return (coupe[:espace] if espace > 0 else coupe).rstrip(" ,;:")
 
 # `list` est AUSSI le nom d'une méthode de `MemeLibrary`. Dans le corps de la
 # classe, une méthode définie après elle et annotée `-> list[dict]` résout vers
@@ -78,10 +100,10 @@ def _describe(path: Path) -> str:
             # bibliothèque, pas seulement le fautif.
             text = sidecar.read_text(encoding="utf-8", errors="replace").strip()
             if text:
-                return " ".join(text.split())[:160]
+                return tronquer_description(text)
         except (OSError, ValueError):
             pass
-    return " ".join(path.stem.replace("-", " ").replace("_", " ").split())[:160]
+    return tronquer_description(path.stem.replace("-", " ").replace("_", " "))
 
 
 def _safe_name(name: str) -> str:

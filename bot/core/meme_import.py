@@ -23,7 +23,12 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image, ImageSequence
 
-from bot.core.memes import _EXTENSIONS, _EXTENSIONS_MEDIA, _MAX_BYTES
+# Importés plutôt que recopiés : deux plafonds qui divergent, c'est un meme qui
+# disparaît de la bibliothèque sans que personne ne comprenne pourquoi. Ce
+# commentaire s'était perdu à l'extraction du module, et le raisonnement a
+# dérapé aussitôt — un plafond appliqué aux seules images laissait entrer des
+# vidéos que `list_medias()` écartait ensuite en silence.
+from bot.core.memes import _EXTENSIONS_MEDIA, _MAX_BYTES, tronquer_description
 
 A_CONVERTIR = frozenset({".gif", ".png"})
 
@@ -33,8 +38,11 @@ QUALITE_ANIMEE = 80
 
 _NUMERO = re.compile(r"^meme(\d+)\.", re.IGNORECASE)
 
-# Au-delà, on n'essaie même pas de convertir : le fichier ne pourra de toute
-# façon pas descendre sous le plafond d'affichage.
+# Garde de TÉLÉCHARGEMENT, distincte du plafond d'affichage : on coupe le flux
+# plutôt que d'avaler ce qu'un CDN veut bien envoyer. Elle est deux fois plus
+# haute que `_MAX_BYTES` parce que la conversion peut faire redescendre le
+# fichier sous le plafond — −89 % sur un PNG, −75 % sur un GIF. Ce qui reste
+# au-dessus après conversion est refusé plus bas, dans `importer()`.
 MAX_TELECHARGEMENT = 16 * 1024 * 1024
 
 
@@ -99,23 +107,28 @@ def importer(
         if depuis:
             return ResultatImport(False, doublon=depuis, raison="déjà rangé")
 
-    # Le plafond ne s'applique qu'à ce qui doit s'AFFICHER : une vidéo n'est
-    # jamais tirée par `list()`, la borner sur ce critère n'aurait pas de sens.
-    if suffixe_final in _EXTENSIONS and len(finaux) > _MAX_BYTES:
+    # Le plafond vaut pour TOUT média, vidéos comprises : `list_medias()`, celle
+    # qui sert le rotateur, l'applique aussi — avec un log DEBUG, donc muet en
+    # production. Le borner aux seules images laissait entrer un .mp4 de 12 Mo
+    # annoncé « rangé », que plus rien ensuite ne montrait ni ne signalait.
+    if len(finaux) > _MAX_BYTES:
         return ResultatImport(
             False,
             raison=(
                 f"{len(finaux) / 1e6:.1f} Mo après conversion, au-dessus du plafond de "
-                f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais tiré"
+                f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais montré"
             ),
         )
 
     nom = f"meme{prochain_numero(dossier)}{suffixe_final}"
     chemin = dossier / nom
     chemin.write_bytes(finaux)
-    if description.strip():
+    # Écrire au-delà de ce que `_describe` relira, c'est écrire une phrase que
+    # personne ne lira jusqu'au bout : la lecture coupe à `MAX_DESCRIPTION`.
+    texte = tronquer_description(description)
+    if texte:
         try:
-            (dossier / f"{nom}.txt").write_text(description.strip(), encoding="utf-8")
+            (dossier / f"{nom}.txt").write_text(texte, encoding="utf-8")
         except Exception:
             # Le sidecar est le second temps d'une écriture en deux temps : s'il
             # échoue, l'image ne doit pas rester seule en rayon — un meme sans
@@ -224,7 +237,9 @@ def verifier_conversion(src: Path, dst: Path) -> str:
     return ""
 
 
-def memes_sans_description(dossier: Path) -> list[Path]:
+def memes_sans_description(
+    dossier: Path, formats: frozenset[str] = _EXTENSIONS_MEDIA
+) -> list[Path]:
     """Les médias dont aucun `.txt` ne parle.
 
     Leur description retombe alors sur le nom du fichier — « meme80 » : ils sont
@@ -232,10 +247,15 @@ def memes_sans_description(dossier: Path) -> list[Path]:
     les commente à l'aveugle quand le tirage les sort.
 
     Les deux formes de sidecar comptent : `meme3.jpg.txt` et `meme3.txt`.
+
+    `formats` restreint le balayage. Par défaut tous les médias, ce dont le
+    rattrapage a besoin pour dire d'une vidéo qu'il la laisse ; le canari, lui,
+    passe `_EXTENSIONS` — le sidecar d'un `.mp4` n'est lu par personne, alerter
+    dessus produirait un cri qu'on ne peut pas faire taire.
     """
     muets: list[Path] = []
     for p in sorted(dossier.iterdir()):
-        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS_MEDIA:
+        if not p.is_file() or p.suffix.lower() not in formats:
             continue
         if sidecar_de(p) is None and not p.with_suffix(".txt").is_file():
             muets.append(p)

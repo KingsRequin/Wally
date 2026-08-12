@@ -112,18 +112,25 @@ def test_le_canari_signale_un_meme_sans_description(tmp_path):
     assert any("meme1.webp" in a for a in alertes)
 
 
-def test_le_canari_signale_un_fichier_au_dessus_du_plafond(tmp_path):
+@pytest.mark.parametrize("nom", ["enorme.webp", "enorme.mp4"])
+def test_le_canari_signale_un_media_au_dessus_du_plafond(tmp_path, nom):
+    """Quel que soit son format : `list_medias()` applique le MÊME plafond.
+
+    Le balayage ne regardait que les formats affichables. Un `.mp4` de 12 Mo
+    passait donc l'import, était annoncé « rangé », n'apparaissait ni dans
+    `list()` ni dans `list_medias()`, et le canari se taisait.
+    """
     from bot.core.canari import _verifier_memes
     from bot.core.memes import _MAX_BYTES
 
     memes = tmp_path / "data" / "memes"
     memes.mkdir(parents=True)
-    (memes / "enorme.webp").write_bytes(b"\x00" * (_MAX_BYTES + 1))
-    (memes / "enorme.webp.txt").write_text("d", encoding="utf-8")
+    (memes / nom).write_bytes(b"\x00" * (_MAX_BYTES + 1))
+    (memes / f"{nom}.txt").write_text("d", encoding="utf-8")
 
     alertes = _verifier_memes(tmp_path)
 
-    assert any("enorme.webp" in a and "jamais tiré" in a for a in alertes)
+    assert any(nom in a and "jamais montré" in a for a in alertes)
 
 
 def test_le_canari_se_tait_sur_une_banque_saine(tmp_path):
@@ -145,8 +152,37 @@ def test_le_canari_ne_signale_pas_une_video_saine(tmp_path):
     (memes / "video.mp4").write_bytes(b"fake mp4")
     (memes / "video.mp4.txt").write_text("une vidéo drôle", encoding="utf-8")
 
-    # Les vidéos s'affichent via le rotateur — pas d'alerte même sans description
     assert _verifier_memes(tmp_path) == []
+
+
+def test_une_video_sans_description_ne_fait_pas_crier_le_canari(tmp_path):
+    """Une alerte qu'on ne peut pas faire taire détruit la valeur du canari.
+
+    `pick(hint)` ne tire jamais de vidéo et `list_medias()` ne lit aucune
+    description : le sidecar d'un `.mp4` n'est lu par personne. La seule
+    « correction » possible serait d'écrire un fichier que rien ne consulte —
+    le canari signalait donc `meme35.mp4` à chaque démarrage, pour rien.
+    """
+    from bot.core.canari import _verifier_memes
+
+    memes = tmp_path / "data" / "memes"
+    memes.mkdir(parents=True)
+    (memes / "meme35.mp4").write_bytes(b"fake mp4")
+
+    assert _verifier_memes(tmp_path) == []
+
+
+def test_le_rattrapage_liste_toujours_la_video_muette(tmp_path):
+    """Le filtre est chez l'APPELANT : le script, lui, doit encore la voir.
+
+    C'est lui qui affiche « laissé — pas d'analyse possible sur une vidéo », ce
+    qui suppose de la trouver parmi les muets.
+    """
+    from bot.core.meme_import import memes_sans_description
+
+    (tmp_path / "meme35.mp4").write_bytes(b"fake mp4")
+
+    assert [p.name for p in memes_sans_description(tmp_path)] == ["meme35.mp4"]
 
 
 def test_le_canari_est_bien_branche_au_demarrage():
