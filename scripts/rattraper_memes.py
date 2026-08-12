@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from bot.core import meme_import  # noqa: E402
-from bot.core.memes import _MEDIA_TYPES  # noqa: E402
+from bot.core.memes import _EXTENSIONS, _MEDIA_TYPES  # noqa: E402
 
 
 async def _decrire(chemin: Path) -> str:
@@ -111,7 +111,7 @@ async def main() -> int:
     print(f"{len(muets)} meme(s) sans description")
     if not args.sans_decrire:
         for chemin in muets:
-            if chemin.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            if chemin.suffix.lower() not in _EXTENSIONS:
                 print(f"  {chemin.name:16} laissé — pas d'analyse possible sur une vidéo")
                 continue
             texte = await _decrire(chemin)

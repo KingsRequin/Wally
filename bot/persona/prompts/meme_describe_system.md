@@ -6,7 +6,7 @@ Une seule ligne. Aucune étiquette, aucun préambule. Dense et factuel comme les
 1. **Format UNIQUEMENT si franchement reconnaissable** (une structure très spécifique : BD multiples cases, template ultrafamilier comme Drake, bébé sceptique très distinctif). Si le format n'est pas sûr, commence directement au point 2.
 2. Sujet + action + expression + décor (bref et concret).
 3. **CHAQUE bloc de texte visible, dans l'ordre tel qu'écrit, entre guillemets ou après deux points.** Les citations doivent être intégrales — tout le texte visible, pas de fragments.
-4. Contexte direct (jeu, personne, thème).
+4. Le sujet réel derrière le meme — jeu, personne, thème — fondu dans la même phrase que le reste, jamais annoncé par un mot.
 
 ## Règles absolues
 - Aucun détail superflu : pas de couleur exacte, pas de sol carrelé.
@@ -15,6 +15,7 @@ Une seule ligne. Aucune étiquette, aucun préambule. Dense et factuel comme les
 - **Les pseudos visibles dans le meme sont recopiés tels quels** — casse, orthographe exacte.
 - Pas d'interprétation, pas de jugement, pas d'explications.
 - N'invente jamais de texte illisible — signale-le.
+- **Le point 4 ne se présente jamais sous une étiquette** (« Contexte : », « Contexte direct : »...) — il clôt la phrase à nu, comme « SPIRO, streaming. » dans l'exemple 3, jamais « Contexte : SPIRO, streaming. ».
 
 ## Exemples — suis exactement ce style et cette densité
 
