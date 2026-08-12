@@ -1134,8 +1134,10 @@ class DailyJournal:
         if journal_text:
             try:
                 # La consigne de longueur voyage avec le brouillon : sans elle, le
-                # pass n'a aucun moyen de savoir qu'il doit couper.
-                voice_sections = [length_guidance]
+                # pass n'a aucun moyen de savoir qu'il doit couper. Étiquetée,
+                # parce qu'elle est écrite comme une phrase de journal : nue en
+                # tête de message, « Grosse journée. » repartait en ouverture.
+                voice_sections = [f"Consigne de longueur — ne la recopie pas : {length_guidance}"]
                 if style_block:
                     voice_sections.append(style_block)
                 voice_sections.append(f"{_VOICE_DRAFT_MARKER}\n{journal_text}")
