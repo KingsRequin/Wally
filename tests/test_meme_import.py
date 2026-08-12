@@ -8,6 +8,7 @@ ressemble à une réussite.
 """
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from bot.core import meme_import
@@ -198,3 +199,22 @@ def test_un_fichier_au_nom_libre_est_detecte_comme_doublon(tmp_path):
     assert res.doublon == "azrael-blame-le-ping.jpg"
     assert not (tmp_path / "meme1.jpg").exists()
     assert not (tmp_path / "meme1.jpg.txt").exists()
+
+
+def test_un_sidecar_qui_echoue_ne_laisse_pas_l_image_orpheline(tmp_path, monkeypatch):
+    """L'écriture est en deux temps (image puis sidecar) : si le second échoue,
+    le premier ne doit pas rester seul en rayon — sans description, il ne
+    porterait plus que son nom de fichier."""
+    original = Path.write_text
+
+    def _write_text_qui_echoue(self, *args, **kwargs):
+        if self.suffix == ".txt":
+            raise OSError("disque plein")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", _write_text_qui_echoue)
+
+    with pytest.raises(OSError):
+        meme_import.importer(b"\x00\x00\x00\x18ftypmp42", ".mp4", "un clip", tmp_path)
+
+    assert list(tmp_path.iterdir()) == []

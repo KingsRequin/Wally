@@ -111,9 +111,19 @@ def importer(
         )
 
     nom = f"meme{prochain_numero(dossier)}{suffixe_final}"
-    (dossier / nom).write_bytes(finaux)
+    chemin = dossier / nom
+    chemin.write_bytes(finaux)
     if description.strip():
-        (dossier / f"{nom}.txt").write_text(description.strip(), encoding="utf-8")
+        try:
+            (dossier / f"{nom}.txt").write_text(description.strip(), encoding="utf-8")
+        except Exception:
+            # Le sidecar est le second temps d'une écriture en deux temps : s'il
+            # échoue, l'image ne doit pas rester seule en rayon — un meme sans
+            # description n'a que son nom de fichier à offrir à l'antenne. Le
+            # dossier doit revenir à son état d'avant l'appel, comme sur tout
+            # autre chemin de refus.
+            chemin.unlink(missing_ok=True)
+            raise
     return ResultatImport(True, nom=nom, converti=converti, octets=len(finaux))
 
 
