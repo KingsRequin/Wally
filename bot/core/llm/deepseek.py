@@ -233,6 +233,15 @@ class DeepSeekLLMClient(BaseLLMClient):
     def thinking_effort(self, value: str) -> None:
         self._thinking_effort = value
 
+    async def list_models(self) -> list[str]:
+        """Le catalogue DeepSeek, trié. Liste vide si l'API ne répond pas."""
+        try:
+            catalogue = await self._client.models.list()
+            return sorted(m.id for m in catalogue.data)
+        except Exception as e:
+            logger.warning("DeepSeek list_models() a échoué : {e}", e=e)
+            return []
+
     # ── Helpers privés ────────────────────────────────────────────────────────
 
     def _extra_body(self, thinking_override: str | None = None) -> dict:

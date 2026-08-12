@@ -22,14 +22,26 @@ from bot.discord.commands.setup.utils import is_valid_model
     "gpt-image-1.5", "gpt-image-1", "gpt-4o-transcribe", "gpt-4o-mini-tts",
     "gpt-3.5-turbo-instruct", "text-embedding-3-large", "omni-moderation-latest",
     "gpt-4o-realtime-preview", "gpt-4o-audio-preview",
+    "deepseek-vision-preview", "deepseek-embedding",
 ])
 def test_un_modele_non_conversationnel_est_ecarte(modele):
     assert is_valid_model(modele) is False
 
 
-@pytest.mark.parametrize("modele", ["gpt-5.1", "gpt-4o", "chatgpt-4o-latest", "o3-mini", "o4-mini"])
+# Ce cas exigeait l'inverse : `gpt-5.1`, `gpt-4o`, `o3-mini`… devaient RESTER
+# offerts. C'était vrai quand le texte passait par OpenAI ; depuis, la factory
+# ne construit plus que du DeepSeek, et le modèle retenu ici part vers
+# `api.deepseek.com`. Le test verrouillait donc un menu qui ne proposait que des
+# choix cassants — la garde utile est qu'un modèle d'un AUTRE fournisseur soit
+# écarté.
+@pytest.mark.parametrize("modele", ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"])
 def test_un_modele_conversationnel_reste_offert(modele):
     assert is_valid_model(modele) is True
+
+
+@pytest.mark.parametrize("modele", ["gpt-5.1", "gpt-4o", "chatgpt-4o-latest", "o3-mini"])
+def test_un_modele_d_un_autre_fournisseur_est_ecarte(modele):
+    assert is_valid_model(modele) is False
 
 
 # ── Un pseudo de deux lettres ne matche plus tout le monde ───────────────────

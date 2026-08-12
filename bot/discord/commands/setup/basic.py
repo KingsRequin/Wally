@@ -301,10 +301,9 @@ async def _send_model_tab(
     bot: "WallyDiscord", interaction: discord.Interaction
 ) -> None:
     try:
-        models_resp = await bot.image_client._client.models.list()
-        valid_models = sorted(
-            [m.id for m in models_resp.data if is_valid_model(m.id)]
-        )
+        # Le catalogue du LLM TEXTE. On interrogeait `image_client`, c'est-à-dire
+        # OpenAI : le menu listait des modèles que ce menu ne peut pas régler.
+        valid_models = sorted(m for m in await bot.llm.list_models() if is_valid_model(m))
 
         if not valid_models:
             await interaction.followup.send(

@@ -75,6 +75,15 @@ class BaseLLMClient(ABC):
         Raises RuntimeError on truncation or total failure.
         """
 
+    async def list_models(self) -> list[str]:
+        """Les identifiants de modèles que ce fournisseur propose.
+
+        Sert au menu « Modèle principal » de `/wally setup`. Concrète et non
+        abstraite : un client qui n'expose pas de catalogue rend une liste vide,
+        et l'appelant affiche « aucun modèle compatible » plutôt que de casser.
+        """
+        return []
+
     @abstractmethod
     async def complete_stream(
         self,

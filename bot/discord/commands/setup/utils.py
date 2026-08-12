@@ -32,10 +32,13 @@ EXCLUDED_MODEL_KEYWORDS = [
     "realtime", "preview", "audio", "vision",
     "image", "tts", "transcribe", "instruct", "embedding", "moderation", "search",
 ]
-# Familles conversationnelles. `o1`/`o3`/`o4` sont testées en PRÉFIXE : en
-# sous-chaîne non ancrée, elles matchaient au hasard des identifiants futurs.
-INCLUDED_MODEL_KEYWORDS = ["gpt", "chatgpt"]
-INCLUDED_MODEL_PREFIXES = ("o1", "o3", "o4")
+# Familles conversationnelles acceptées. La liste valait ["gpt", "chatgpt"] plus
+# les préfixes o1/o3/o4, héritée de l'époque où le texte passait par OpenAI. Or
+# `create_llm_client` ne construit plus que du DeepSeek : le menu ne proposait
+# donc QUE des modèles que le LLM texte ne sait pas servir. En choisir un
+# écrivait `llm.primary.model = "gpt-…"` puis l'envoyait à `api.deepseek.com` —
+# chaque appel en échec, sur les deux plateformes, jusqu'à édition du YAML.
+INCLUDED_MODEL_KEYWORDS = ["deepseek"]
 
 
 # ── Utilitaires .env ──────────────────────────────────────────────────────────
@@ -96,8 +99,6 @@ def is_valid_model(model_id: str) -> bool:
     mid = model_id.lower()
     if any(ex in mid for ex in EXCLUDED_MODEL_KEYWORDS):
         return False
-    if mid.startswith(INCLUDED_MODEL_PREFIXES):
-        return True
     return any(inc in mid for inc in INCLUDED_MODEL_KEYWORDS)
 
 

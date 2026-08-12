@@ -89,29 +89,60 @@ def test_make_bar_half():
 
 # ── is_valid_model ────────────────────────────────────────────────────────────
 
-def test_is_valid_model_accepts_included():
-    assert is_valid_model("gpt-5") is True
-    assert is_valid_model("gpt-5-mini") is True
-    assert is_valid_model("gpt-4o") is True
-    assert is_valid_model("gpt-4o-mini") is True
-    assert is_valid_model("chatgpt-4o-latest") is True
-    assert is_valid_model("o1") is True
-    assert is_valid_model("o1-mini") is True
-    assert is_valid_model("o3-mini") is True
-    assert is_valid_model("o4-mini") is True
+def test_is_valid_model_accepts_deepseek_chat_models():
+    assert is_valid_model("deepseek-v4-pro") is True
+    assert is_valid_model("deepseek-v4-flash") is True
+    assert is_valid_model("deepseek-chat") is True
 
 
-def test_is_valid_model_rejects_excluded():
-    assert is_valid_model("gpt-5-realtime") is False
-    assert is_valid_model("gpt-5-audio-preview") is False
-    assert is_valid_model("gpt-4o-audio-preview") is False
-    assert is_valid_model("o1-preview") is False
+def test_is_valid_model_rejects_models_of_other_providers():
+    """Un modèle d'un autre fournisseur choisi ici casse le bot en silence.
+
+    `create_llm_client` ne construit que du DeepSeek : le modèle retenu part
+    vers `api.deepseek.com`. Proposer `gpt-5` dans le menu, c'est armer un
+    piège — le choix est persisté par `config.save()`, et CHAQUE appel échoue
+    ensuite sur les deux plateformes jusqu'à édition manuelle du YAML.
+    """
+    assert is_valid_model("gpt-5") is False
+    assert is_valid_model("gpt-4o") is False
+    assert is_valid_model("chatgpt-4o-latest") is False
+    assert is_valid_model("o1") is False
+    assert is_valid_model("o3-mini") is False
+    assert is_valid_model("claude-haiku-4-5-20251001") is False
 
 
-def test_is_valid_model_rejects_unknown():
+def test_is_valid_model_rejects_non_conversational():
+    assert is_valid_model("deepseek-vision-preview") is False
     assert is_valid_model("whisper-1") is False
     assert is_valid_model("dall-e-3") is False
     assert is_valid_model("text-embedding-ada-002") is False
+
+
+@pytest.mark.asyncio
+async def test_model_tab_lists_models_from_the_text_client():
+    """Le menu doit interroger le client TEXTE, pas celui des images.
+
+    Il listait le catalogue d'OpenAI (`bot.image_client`), soit exactement les
+    modèles que le LLM texte ne sait pas servir.
+    """
+    from bot.discord.commands.setup.basic import _send_model_tab
+
+    bot = make_bot(primary_model="deepseek-v4-flash", secondary_model="deepseek-v4-flash")
+    bot.llm.list_models = AsyncMock(return_value=["deepseek-v4-pro", "deepseek-v4-flash"])
+    bot.image_client._client.models.list = AsyncMock(
+        return_value=MagicMock(data=[MagicMock(id="gpt-5")])
+    )
+    interaction = make_interaction()
+
+    await _send_model_tab(bot, interaction)
+
+    bot.llm.list_models.assert_awaited_once()
+    bot.image_client._client.models.list.assert_not_awaited()
+    proposes = [
+        option.value
+        for option in interaction.followup.send.call_args.kwargs["view"].children[0].options
+    ]
+    assert proposes == ["deepseek-v4-flash", "deepseek-v4-pro"]
 
 
 # ── /wally mood ───────────────────────────────────────────────────────────────

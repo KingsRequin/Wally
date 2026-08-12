@@ -13,7 +13,7 @@ from bot.discord.events import register_events
 from bot.discord.presence import PresenceService
 
 if TYPE_CHECKING:
-    from bot.config import Config
+    from bot.config import Config, LLMConfig, LLMRoleConfig
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.intelligence.memory.service import MemoryService
@@ -24,6 +24,26 @@ if TYPE_CHECKING:
     from bot.intelligence.persona import PersonaService
 
 from bot.discord.guild_sync import parse_guild_ids  # noqa: E402  (re-exporté pour compat)
+
+
+def cognition_llm_config(cog_cfg: dict, llm_cfg: "LLMConfig") -> "LLMRoleConfig":
+    """Le réglage des clients LLM de la boucle cognitive.
+
+    La cognition ne passe pas par `llm.primary` : elle a sa propre section
+    `cognitive_loop` (provider, model_pro) et construit ses clients au boot.
+    Le `LLMRoleConfig` était monté avec ces deux champs et rien d'autre, donc
+    `max_tokens` retombait sur le défaut du dataclass — 1000 tokens. Sur 30
+    jours, 479 pensées sur 5250 sortaient pile à ce plafond, tronquées avec les
+    tags d'action qu'elles portaient. Le plafond suit désormais celui du modèle
+    principal plutôt qu'un défaut implicite.
+    """
+    from bot.config import LLMRoleConfig
+
+    return LLMRoleConfig(
+        provider=cog_cfg.get("provider", "deepseek"),
+        model=cog_cfg.get("model_pro", "deepseek-v4-pro"),
+        max_tokens=llm_cfg.primary.max_tokens,
+    )
 
 
 class WallyDiscord(commands.Bot):
@@ -145,7 +165,6 @@ class WallyDiscord(commands.Bot):
             from bot.intelligence.channels import ChannelDirectory
             from bot.intelligence.memory.facts import SQLiteFactStore
             from bot.core.llm.factory import create_llm_client as create_v2_llm
-            from bot.config import LLMRoleConfig
             import os as _os_cog
 
             _db_path = self._v2_db_path or _os_cog.getenv("DB_PATH", "data/wally.db")
@@ -160,16 +179,15 @@ class WallyDiscord(commands.Bot):
             logger.info("ChannelDirectory : {} canal(aux) textuel(s) chargé(s)", len(_chan_dir.speakable_ids()))
 
             _cog_cfg = self.config.cognitive_loop
-            _provider = _cog_cfg.get("provider", "deepseek")
-            _model_pro = _cog_cfg.get("model_pro", "deepseek-v4-pro")
 
             _fact_store = SQLiteFactStore(_db_path)
             # Exposé pour les routes publiques (but courant, mémoire) — #observability.
             self.fact_store = _fact_store
             # Reasoning unifié : un seul appel (pense + décide) sur le modèle "pro"
             # (celui qui portait le monologue intérieur).
-            _reasoning_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
-            _persona_llm = create_v2_llm(LLMRoleConfig(provider=_provider, model=_model_pro), self.db)
+            _cog_role = cognition_llm_config(_cog_cfg, self.config.llm)
+            _reasoning_llm = create_v2_llm(_cog_role, self.db)
+            _persona_llm = create_v2_llm(_cog_role, self.db)
 
             _evo_log = EvolutionLog()
             _persona_mgr = PersonaManager(_persona_dir, _evo_log, _persona_llm, self.persona)
@@ -391,7 +409,10 @@ class WallyDiscord(commands.Bot):
                 _dash.cognitive_feed = self.cognitive_feed
                 _dash.fact_store = self.fact_store
                 _dash.cognitive_event_store = self.cognitive_event_store
-            logger.info("CognitiveLoop V2 initialisée (reasoning unifié {}/{})", _provider, _model_pro)
+            logger.info(
+                "CognitiveLoop V2 initialisée (reasoning unifié {}/{}, plafond {} tokens)",
+                _cog_role.provider, _cog_role.model, _cog_role.max_tokens,
+            )
 
         import os as _os_auto
         _bridge_socket = _os_auto.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
