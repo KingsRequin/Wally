@@ -22,7 +22,11 @@ APEX_LEGENDS_TOOL = {
             "qu'on a dit « courbe ».) "
             "Exemples : « combien de kills depuis le début du stream ? », "
             "« donne-moi la courbe de kills d'azra aujourd'hui », « et ce "
-            "mois-ci ? ». Demande 'period' (live/jour/semaine/mois) et "
+            "mois-ci ? ». Demande 'player_name' — LE JOUEUR VISÉ, à remplir dès "
+            "que la question nomme quelqu'un (« la courbe d'azra » → "
+            "player_name=azra) ; ne le laisse vide que pour la personne à qui "
+            "tu réponds, sinon tu obtiens SA progression à elle et pas celle "
+            "dont on parle. Demande aussi 'period' (live/jour/semaine/mois) et "
             "'notion' (kills par défaut). Ce chiffre vient de relevés que je "
             "prends au fil du temps, pas de l'API : il ne remonte pas avant le "
             "premier relevé, et la réponse le dit quand c'est le cas — reprends "
@@ -92,7 +96,12 @@ APEX_LEGENDS_TOOL = {
                 },
                 "player_name": {
                     "type": "string",
-                    "description": "Le pseudo Apex, requis pour player_stats",
+                    "description": (
+                        "Le pseudo du joueur visé — requis pour player_stats, "
+                        "et tout aussi utile pour progression : « la courbe "
+                        "d'azra » se demande avec player_name=azra. Vide = la "
+                        "personne à qui tu réponds."
+                    ),
                 },
                 "platform": {
                     "type": "string",
@@ -181,8 +190,11 @@ APEX_OVERLAY_TOOL = {
                 "player": {
                     "type": "string",
                     "description": (
-                        "Le pseudo, pour rank/status/stats. Laisse vide pour la "
-                        "personne à qui tu réponds si elle a déjà déclaré son compte."
+                        "Le pseudo du joueur visé, pour rank/status/stats ET "
+                        "progress — « affiche la courbe d'azra » se demande "
+                        "avec player=azra. Laisse vide UNIQUEMENT pour la "
+                        "personne à qui tu réponds : sinon c'est SON compte qui "
+                        "part à l'écran, pas celui dont on parle."
                     ),
                 },
                 "period": {

@@ -98,6 +98,24 @@ def debut_de_periode(periode: str, *, maintenant: float | None = None) -> float:
     return debut.timestamp()
 
 
+# Une soirée de stream, large : « live » n'a pas de début consigné quelque part,
+# on remonte donc d'une fenêtre fixe.
+FENETRE_LIVE_S = 12 * 3600
+
+
+def debut_de_fenetre(periode: str, *, maintenant: float | None = None) -> float:
+    """Le début de la fenêtre d'une courbe, « live » compris.
+
+    Trois endroits calculaient ce début : la réponse en conversation, l'image
+    servie à l'overlay, et la garde qui décide si un panneau a de quoi être
+    tracé. Deux vérités auraient suffi à laisser passer un panneau que l'image
+    aurait ensuite refusé de tracer.
+    """
+    if (periode or "live") == "live":
+        return (maintenant or _maintenant()) - FENETRE_LIVE_S
+    return debut_de_periode(periode, maintenant=maintenant)
+
+
 class ApexHistory:
     """Écrit les relevés, relit les progressions."""
 

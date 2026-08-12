@@ -42,10 +42,9 @@ async def progression_png(
         raise HTTPException(status_code=503, detail="base indisponible")
 
     import asyncio
-    import time
 
     from bot.core.apex.chart import libelle, render
-    from bot.core.apex.history import ApexHistory, debut_de_periode
+    from bot.core.apex.history import ApexHistory, debut_de_fenetre
 
     # Instance neuve plutôt qu'un service partagé : `ApexHistory` ne garde
     # d'état que pour ÉCRIRE (la dernière valeur vue, pour éviter les doublons).
@@ -53,13 +52,17 @@ async def progression_png(
     # service Apex, qui vit sur les adaptateurs.
     history = ApexHistory(db)
 
-    depuis = (time.time() - 12 * 3600) if period == "live" else debut_de_periode(period)
+    # Même fenêtre que la garde du panneau : deux calculs distincts laisseraient
+    # passer une carte que cette route refuserait ensuite de tracer.
+    depuis = debut_de_fenetre(period)
     try:
         progression = await history.progression(uid, notion, depuis)
     except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour un graphe
         logger.warning("Apex chart: progression illisible: {e}", e=exc)
         raise HTTPException(status_code=503, detail="historique illisible") from exc
     if progression is None:
+        logger.info("Apex chart: aucun relevé pour {uid} ({n}, {p})",
+                    uid=uid, n=notion, p=period)
         raise HTTPException(status_code=404, detail="aucun relevé")
 
     titre = f"{libelle(notion).capitalize()} — {period}"
@@ -67,7 +70,14 @@ async def progression_png(
     # le reste du bot.
     buf = await asyncio.to_thread(render, progression.points, notion, titre)
     if buf is None:
+        logger.info("Apex chart: {n} relevé(s) pour {uid} — trop peu pour tracer",
+                    n=len(progression.points), uid=uid)
         raise HTTPException(status_code=404, detail="pas assez de relevés")
+    # Une ligne par image servie : c'est la seule preuve qu'une carte de courbe
+    # est bien arrivée jusqu'à l'écran d'OBS. Sans elle, « il n'a rien affiché »
+    # ne se distingue pas de « je n'ai pas regardé au bon moment ».
+    logger.info("Apex chart servi: uid={uid} ({n}, {p}, {k} points)",
+                uid=uid, n=notion, p=period, k=len(progression.points))
     return Response(
         content=buf.getvalue(),
         media_type="image/png",

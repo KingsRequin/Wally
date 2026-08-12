@@ -36,6 +36,11 @@ TRAIT = "#e0245e"        # le rouge Apex
 FACTEUR_TROU = 4.0
 # En deçà, la cumulative n'a rien à raconter : on passe aux bâtons par jour.
 SEUIL_HISTOGRAMME_S = 2 * 86400
+# Sous deux relevés, pas de courbe : un graphe à un point est un mensonge
+# graphique. Exposé parce que l'overlay doit connaître ce seuil AVANT de mettre
+# une carte à l'écran — sinon elle s'affiche au nom du joueur, et l'image qui
+# devait la remplir répond 404.
+MIN_POINTS = 2
 
 _LIBELLES = {
     "kills": "kills", "wins": "victoires", "damage": "dégâts",
@@ -89,12 +94,12 @@ def _cumul(points: list[tuple[float, int]]) -> tuple[list[datetime], list[float]
 def render(points: list[tuple[float, int]], notion: str, titre: str) -> BytesIO | None:
     """Le PNG de la progression, ou None s'il n'y a rien à tracer.
 
-    Sous deux relevés, pas de courbe : un graphe à un point est un mensonge
-    graphique. L'appelant répond alors en chiffres.
+    Sous `MIN_POINTS` relevés, pas de courbe : un graphe à un point est un
+    mensonge graphique. L'appelant répond alors en chiffres.
 
     Bloquant (import matplotlib + rendu ≈ 1 s) — à appeler dans un thread.
     """
-    if len(points) < 2:
+    if len(points) < MIN_POINTS:
         return None
     try:
         import matplotlib

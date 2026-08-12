@@ -254,39 +254,51 @@ class ApexLegendsService:
         qu'on relève les compteurs au fil du temps. Il ne peut donc pas remonter
         avant le premier relevé, et on le dit quand c'est le cas.
         """
-        from bot.core.apex.history import debut_de_periode
+        from bot.core.apex.history import debut_de_fenetre
 
         historique = getattr(self, "history", None)
         if historique is None:
             return ("Je ne garde pas encore d'historique des compteurs, "
                     "je ne peux pas calculer de progression.")
 
-        cible = _uid_valide(uid) or (await self._resolve_uid(requester, player_name) or "")
+        # Le compte visé et son NOM, lus d'un seul coup : le refus doit pouvoir
+        # dire de qui il parle (cf. plus bas).
+        lien = await self._lien(player_name, requester)
+        cible = _uid_valide(uid) or ((lien["uid"] or "") if lien else "")
+        nom_cible = (lien["apex_name"] if lien else "") or player_name.strip()
         if not cible:
             profil = await self.fetch_profile(
                 *(await self._resolve(player_name, platform, requester))
             )
             cible = profil.uid if profil else ""
+            nom_cible = (profil.name if profil else "") or nom_cible
         if not cible:
             return ("Il me faut savoir de quel compte Apex on parle pour suivre "
                     "sa progression.")
 
         periode = (period or "live").lower()
-        if periode == "live":
-            depuis = time.time() - 12 * 3600      # une soirée de stream, large
-            libelle_periode = "depuis le début de la session"
-        else:
-            try:
-                depuis = debut_de_periode(periode)
-            except ValueError:
-                return f"Période inconnue : {period}. Utilise live, jour, semaine ou mois."
-            libelle_periode = {"jour": "aujourd'hui", "semaine": "cette semaine",
-                               "mois": "ce mois-ci"}[periode]
+        try:
+            depuis = debut_de_fenetre(periode)
+        except ValueError:
+            return f"Période inconnue : {period}. Utilise live, jour, semaine ou mois."
+        libelle_periode = {"live": "depuis le début de la session",
+                           "jour": "aujourd'hui", "semaine": "cette semaine",
+                           "mois": "ce mois-ci"}[periode]
 
         progression = await historique.progression(cible, notion, depuis)
         if progression is None:
-            return (f"Je n'ai aucun relevé de ce compte sur cette période — "
-                    f"je ne peux pas inventer sa progression.")
+            # Le refus NOMME le compte. Sans ça, « aucun relevé de ce compte »
+            # se lit comme « aucun relevé d'Azraël » alors qu'on vient
+            # d'interroger, faute de pseudo, celui de la personne qui parle —
+            # et Wally annonce au chat une absence de données qui est fausse.
+            qui = f"du compte {nom_cible}" if nom_cible else "de ce compte"
+            texte = (f"Je n'ai aucun relevé {qui} sur cette période — "
+                     f"je ne peux pas inventer sa progression.")
+            if not player_name.strip() and not _uid_valide(uid):
+                texte += (" C'est le compte de la personne à qui tu réponds, "
+                          "faute de pseudo précisé : si la question portait sur "
+                          "quelqu'un d'autre, rappelle-moi avec player_name.")
+            return texte
 
         from bot.core.apex.chart import libelle as libelle_notion
 
@@ -567,6 +579,8 @@ class ApexLegendsService:
                 return None
             profil = read_profile(data)
             if panel == "progress":
+                if not await self._a_de_quoi_tracer(profil, period, notion):
+                    return None
                 built = progress_panel(profil, period=period, notion=notion)
             else:
                 built = {"rank": rank_panel, "status": status_panel,
@@ -583,6 +597,45 @@ class ApexLegendsService:
                 return None
             built = builder(data)
         return {"kind": f"apex_{panel}", **built} if built else None
+
+    async def _a_de_quoi_tracer(self, profil, period: str, notion: str) -> bool:
+        """Y a-t-il assez de relevés pour que l'image existe vraiment ?
+
+        Le panneau ne porte qu'une URL : sans cette garde, la carte part à
+        l'écran au nom du joueur, l'image répond 404, et le navigateur ne peut
+        plus que retirer ce qu'il a déjà montré. Wally, lui, a déjà annoncé au
+        chat qu'elle était affichée. Le 2026-08-12, une demande de courbe sans
+        pseudo est ainsi partie sur le compte du DEMANDEUR, qui n'est pas
+        sondé : les spectateurs ont vu un nom et rien d'autre.
+
+        Sans historique branché (il l'est par `main.py`, après coup), on ne sait
+        pas : on publie comme avant plutôt que de faire disparaître un panneau.
+        """
+        from bot.core.apex.chart import MIN_POINTS
+        from bot.core.apex.history import debut_de_fenetre
+
+        historique = getattr(self, "history", None)
+        if historique is None:
+            return True
+        if profil is None or not profil.uid:
+            return False
+        try:
+            depuis = debut_de_fenetre(period)
+        except ValueError:
+            return False
+        try:
+            progression = await historique.progression(profil.uid, notion, depuis)
+        except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour ça
+            logger.warning("Apex: relevés illisibles pour le panneau: {e}", e=exc)
+            return False
+        if progression is None or len(progression.points) < MIN_POINTS:
+            logger.info(
+                "Apex: panneau de courbe refusé — pas assez de relevés pour "
+                "{uid} ({notion}, {periode})",
+                uid=profil.uid, notion=notion, periode=period,
+            )
+            return False
+        return True
 
     # ── L'état du jeu ─────────────────────────────────────────────────────────
 

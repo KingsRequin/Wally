@@ -665,9 +665,18 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             "Rien affiché : il n'y a pas de live en cours. Dis-le simplement."
             + alternative
         )})
+    # Pour la courbe, la donnée manquante a une cause précise et rattrapable :
+    # le compte visé n'a pas assez de relevés. Le dire évite qu'on annonce une
+    # absence de mesures qui ne concerne pas la personne dont on parle.
+    precision = (
+        " Le compte visé n'a pas assez de relevés sur cette période — si tu "
+        "visais quelqu'un d'autre que la personne à qui tu réponds, recommence "
+        "en remplissant `player`."
+        if str(args.get("panel") or "").strip() == "progress" else ""
+    )
     return json.dumps({"status": "nothing", "message": (
         "Rien affiché : la donnée Apex n'est pas disponible. Dis-le, "
-        "ne prétends pas l'avoir montré."
+        "ne prétends pas l'avoir montré." + precision
     )})
 
 
