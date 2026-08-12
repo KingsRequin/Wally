@@ -639,3 +639,60 @@ async def test_voice_pass_a_le_droit_de_couper_fort():
     await journal.generate_and_send()
 
     assert "Rien de spécial aujourd'hui" in " ".join(sent)
+
+
+# ── Le graphe du jour ne s'écrit que là où on le lui dit ─────────────────────
+# Vécu : `test_journal_arc_injected_when_db_has_snapshots` isole sa base dans
+# tmp_path mais pas le PNG — `Path("data/journal_charts")` est relatif au cwd.
+# Chaque passage de la suite écrasait le graphe de PROD du jour par celui des
+# 2 snapshots de la fixture (joie 80 → 50, le reste à plat). 26 graphes publiés
+# depuis le 2026-04-03 étaient ce faux graphe, octet pour octet identiques.
+
+
+@pytest.mark.asyncio
+async def test_le_graphe_suit_le_dossier_configure(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from bot.db.database import Database
+    from bot.intelligence.journal import DailyJournal as _DJ
+
+    charts = tmp_path / "charts"
+    monkeypatch.setattr("bot.intelligence.journal._JOURNAL_CHARTS_DIR", charts)
+
+    db = await Database.create(str(tmp_path / "test.db"))
+    minuit = datetime.now(ZoneInfo("Europe/Paris")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).timestamp()
+    for delta, joie in ((3600, 0.8), (7200, 0.5)):
+        await db.execute(
+            "INSERT INTO emotion_history (snapshot_at, anger, joy, sadness, curiosity, boredom) "
+            "VALUES (?, 0.0, ?, 0.0, 0.0, 0.0)",
+            (minuit + delta, joie),
+        )
+
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory, db=db)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    attendu = charts / f"{_DJ._today_date().isoformat()}.png"
+    assert attendu.exists(), "le graphe doit atterrir dans le dossier configuré"
+    row = await db.fetch_one("SELECT chart_path FROM journal_archive WHERE date = ?",
+                             (_DJ._today_date().isoformat(),))
+    assert row["chart_path"] == str(attendu)
+    await db.close()
+
+
+def test_le_dashboard_sert_le_dossier_ou_le_journal_ecrit(tmp_path, monkeypatch):
+    """Le chemin était écrit en dur des deux côtés — deux occasions de diverger.
+
+    La lecture doit suivre l'écriture même quand le dossier change : importer la
+    valeur (`from … import _JOURNAL_CHARTS_DIR`) la fige au premier import.
+    """
+    from bot.dashboard.routes import journal as route
+
+    monkeypatch.setattr("bot.intelligence.journal._JOURNAL_CHARTS_DIR", tmp_path / "ailleurs")
+
+    assert route._journal._JOURNAL_CHARTS_DIR == tmp_path / "ailleurs"

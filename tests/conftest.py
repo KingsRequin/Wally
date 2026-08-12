@@ -25,6 +25,24 @@ def isolate_learned_emotion_words(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_journal_charts(tmp_path, monkeypatch):
+    """Coupe les tests du dossier de graphes de production.
+
+    `generate_and_send()` écrit `data/journal_charts/{date}.png` — un chemin
+    RELATIF au cwd, donc le vrai dossier quand la suite tourne à la racine du
+    dépôt. Les tests isolaient leur base dans `tmp_path` mais pas ce PNG : le
+    graphe du jour publié dans le journal du soir était écrasé par celui des
+    2 snapshots d'une fixture (joie 80 → 50, le reste à plat). 26 entrées entre
+    le 2026-04-03 et le 2026-08-12 portaient ce faux graphe, octet pour octet
+    identiques. Même famille que `isolate_learned_emotion_words` ci-dessus.
+    """
+    monkeypatch.setattr(
+        "bot.intelligence.journal._JOURNAL_CHARTS_DIR",
+        tmp_path / "journal_charts",
+    )
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 

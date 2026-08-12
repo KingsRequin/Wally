@@ -8,6 +8,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
@@ -228,6 +229,15 @@ def _get_length_guidance(message_count: int) -> str:
         return "Il y a eu de la matière aujourd'hui. 400 mots maximum, moins si tu as fait le tour."
     return "Grosse journée. 600 mots maximum, moins si tu as fait le tour."
 
+
+# Chemin de sortie des graphes d'émotions. Constante de module, et non un
+# `Path("data/journal_charts")` posé au fil de `generate_and_send` : c'est un
+# chemin RELATIF au cwd, donc les tests qui appellent `generate_and_send`
+# écrasaient le graphe de production du jour. 26 entrées publiées entre le
+# 2026-04-03 et le 2026-08-12 portaient le graphe des 2 snapshots d'une fixture.
+# Le dashboard lit la même constante — le chemin était écrit en dur des deux
+# côtés, soit deux occasions de diverger.
+_JOURNAL_CHARTS_DIR = Path("data/journal_charts")
 
 _VOICE_DRAFT_MARKER = "Brouillon :"
 
@@ -1198,10 +1208,8 @@ class DailyJournal:
                 # Save emotion chart PNG to disk if available
                 chart_path: str | None = None
                 if chart_buf is not None:
-                    from pathlib import Path
-                    charts_dir = Path("data/journal_charts")
-                    charts_dir.mkdir(parents=True, exist_ok=True)
-                    chart_file = charts_dir / f"{effective_date.isoformat()}.png"
+                    _JOURNAL_CHARTS_DIR.mkdir(parents=True, exist_ok=True)
+                    chart_file = _JOURNAL_CHARTS_DIR / f"{effective_date.isoformat()}.png"
                     chart_buf.seek(0)
                     chart_file.write_bytes(chart_buf.read())
                     chart_path = str(chart_file)

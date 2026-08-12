@@ -3,6 +3,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
+# Le module, pas la valeur : `from … import _JOURNAL_CHARTS_DIR` fige la
+# référence au premier import, et la lecture cesse de suivre l'écriture.
+from bot.intelligence import journal as _journal
+
 public_router = APIRouter()
 
 
@@ -26,7 +30,7 @@ async def get_journal_chart(date: str, request: Request):
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
         raise HTTPException(status_code=400, detail="Format de date invalide")
 
-    chart_file = Path("data/journal_charts") / f"{date}.png"
+    chart_file = _journal._JOURNAL_CHARTS_DIR / f"{date}.png"
     if not chart_file.exists():
         raise HTTPException(status_code=404, detail="Graphe non disponible")
     return FileResponse(str(chart_file), media_type="image/png")
