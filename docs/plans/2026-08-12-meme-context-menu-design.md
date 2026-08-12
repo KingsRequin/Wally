@@ -137,6 +137,45 @@ Il ne remplace pas le message éphémère de l'étape 4, qui est un aperçu avan
 | URL d'embed non publique | Refus via la garde SSRF |
 | Écriture impossible (droits, disque) | Refus éphémère avec la cause ; rien de partiel ne subsiste |
 
+## Rattrapage de l'existant
+
+Les mêmes briques, passées en revue sur le dossier : `scripts/rattraper_memes.py`, calqué sur
+`convertir_memes_webp.py` — simulation par défaut, `--apply` pour écrire.
+
+Il fait deux choses, et rien d'autre :
+
+1. **Décrire les memes muets.** Cinq n'ont pas de sidecar — `meme77.png`, `meme78.png`,
+   `meme79.png`, `meme80.gif`, `meme35.mp4`. Leur description est donc leur nom de fichier :
+   « meme80 ». `pick(hint)` cherchant dans les descriptions, ils sont **introuvables** par
+   mot-clé ; et quand l'un sort, Wally le commente à l'aveugle. Le `.mp4` reste à l'écart, faute
+   d'analyse possible.
+2. **Convertir ce qui y gagne.** Quatre fichiers déposés après la conversion du 11 août :
+
+   | fichier | actuel | WebP | |
+   |---|---|---|---|
+   | meme77.png | 197 Ko | 21 Ko | −89 % |
+   | meme78.png | 171 Ko | 19 Ko | −89 % |
+   | meme79.png | 343 Ko | 38 Ko | −89 % |
+   | meme80.gif | 3 375 Ko | 834 Ko | −75 %, 64 images |
+
+   4,1 Mo → 0,9 Mo. Le GIF est le cas que `LISEZ-MOI.md` décrit — « plusieurs secondes à traverser
+   le tunnel, le widget passe avant d'être visible » — et celui où Pillow peut aplatir l'animation
+   en silence : la garde doit confirmer les 64 images.
+
+Renommer un fichier casserait le lien avec son sidecar : la conversion réécrit les deux, comme le
+fait déjà le script existant.
+
+## État de la banque au démarrage
+
+Aujourd'hui, un meme trop lourd est écarté par `MemeLibrary.list()` avec un log en DEBUG —
+invisible en production, où les sinks sont à INFO. Un `.mp4` ne s'affichera jamais sans que rien ne
+le dise. Ce sont des silences, exactement ce que le canari de démarrage existe pour rompre.
+
+Une fonction `_verifier_memes()` rejoint `bot/core/canari.py`, au même format que ses voisines :
+elle renvoie la liste des anomalies — memes sans description, fichiers au-delà de 8 Mo donc jamais
+tirés, vidéos que l'affichage ignore — et le canari les loge. Aucun changement de comportement, un
+constat qui cesse d'être muet.
+
 ## Découpage
 
 **`bot/core/meme_import.py`** — nouveau, sans dépendance à Discord, donc testable seul :
@@ -153,6 +192,11 @@ de la porter. Une seule garde anti-perte d'animation, pas deux qui divergeraient
 formulaire. Enregistré dans `bot/discord/bot.py` avec les autres cogs.
 
 **`bot/core/vision.py`** — un paramètre `prompt_name` sur `analyze()`.
+
+**`scripts/rattraper_memes.py`** — nouveau : le passage en revue du dossier, sans logique propre,
+il enchaîne les fonctions de `meme_import`.
+
+**`bot/core/canari.py`** — une fonction `_verifier_memes()` de plus, au format des autres.
 
 **`bot/persona/prompts/meme_describe_system.md`** — nouveau registre.
 
@@ -175,6 +219,13 @@ Sur la commande, Discord simulé :
 - la description corrigée au formulaire est bien celle qui finit dans le `.txt`
 - « Annuler » n'écrit rien
 - le message public part dans le salon d'origine
+
+Sur le rattrapage et le canari :
+- la simulation n'écrit rien, `--apply` écrit
+- un meme déjà décrit n'est pas redécrit — on ne repasse pas la facture ni sur une main humaine
+- la conversion réécrit l'image ET son sidecar, jamais l'une sans l'autre
+- `_verifier_memes` signale un meme sans description, un fichier au-delà de 8 Mo, une vidéo ; et
+  ne dit rien d'un dossier sain
 
 ## Hors périmètre
 
