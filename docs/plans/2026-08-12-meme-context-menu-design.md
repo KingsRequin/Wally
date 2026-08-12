@@ -105,6 +105,15 @@ du narrateur, du rendu et de la feuille de style — le widget ne reçoit plus q
 `VisionService.analyze()` charge aujourd'hui son prompt en dur ; il reçoit un paramètre
 `prompt_name` optionnel, sans changement pour les appelants actuels.
 
+**Une seule fois, à l'import.** Le `.txt` n'est pas un cache qu'on pourrait rafraîchir : c'est la
+vision du meme, figée au moment où il entre dans la banque. Rien ne rappelle le modèle quand
+l'image s'affiche — l'overlay tire, `MemeLibrary` lit le sidecar, et c'est tout. Décrire les 81
+memes existants coûterait quatre centimes, une fois ; ensuite le fichier répond gratuitement.
+
+Les fichiers déjà rangés n'étant pas exposés publiquement, le rattrapage les envoie en `data:`
+base64 — vérifié sur `meme77.png` : le client l'accepte et rend une description exploitable pour
+0,000473 $.
+
 ## Message public
 
 Posté dans le salon du clic droit une fois le fichier écrit : qui a rangé quoi, sous quel nom, la
