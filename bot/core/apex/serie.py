@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from bot.core.apex.history import PARIS, plafond_plausible
@@ -252,6 +252,27 @@ class Serie:
         return [(x, moment) for x, moment, _ in gardees]
 
 
+def _espacer_les_libelles(trous: list[Trou], largeur: float) -> list[Trou]:
+    """Retire leur libellé aux trous dont l'annotation en recouvrirait une autre.
+
+    Même contrainte que pour les heures, oubliée sur les durées : « ⋯ 28 m » se
+    faisait manger par « ⋯ 24 min » sur la session du 2026-08-12. Les plus longs
+    gardent la parole — c'est leur durée qui change la lecture de la courbe.
+    """
+    if largeur <= 0:
+        return trous
+    minimum = ESPACEMENT_MIN * largeur
+    gardes: list[float] = []
+    for trou in sorted(trous, key=lambda t: t.duree, reverse=True):
+        if not trou.notable:
+            continue
+        if any(abs(trou.x_milieu - x) < minimum for x in gardes):
+            trous[trous.index(trou)] = replace(trou, notable=False)
+            continue
+        gardes.append(trou.x_milieu)
+    return trous
+
+
 def construire(
     points: list[tuple[float, int]],
     *,
@@ -329,6 +350,7 @@ def construire(
 
     if points:
         segments.append(Segment(segment_debut_t, points[-1][0], segment_debut_x))
+    trous = _espacer_les_libelles(trous, x)
     return Serie(
         xs=xs, ys=ys, trous=trous, segments=segments,
         classes=classes, rp_connu=bool(instants_rp),

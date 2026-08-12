@@ -294,3 +294,48 @@ def test_les_marches_classees_se_regroupent_pour_le_trace():
     assert len(runs) == 1
     xs, ys = runs[0]
     assert len(xs) == 3 and xs == serie.xs[1:4]
+
+
+# ── Les libellés de trous ne se recouvrent pas non plus ──────────────────────
+
+# Les écarts de la session du 2026-08-12 (10h15 → 13h52), tels qu'en base.
+# Trois trous y dépassent le dixième de la période : leurs libellés se
+# retrouvaient collés, « ⋯ 28 m » tronqué par « ⋯ 24 min ».
+ECARTS_SESSION = [280, 496, 901, 528, 540, 1682, 1214, 1422, 279, 1255, 651,
+                  1327, 821, 900, 713]
+
+
+def _session_reelle():
+    points, t, v = [(T0, 100)], T0, 100
+    for ecart in ECARTS_SESSION:
+        t += ecart
+        v += 4 if ecart < 1200 else 0
+        points.append((t, v))
+    return points
+
+
+def test_deux_libelles_de_trou_ne_se_recouvrent_pas():
+    """Même défaut que pour les heures, jamais appliqué aux durées de trous.
+
+    Un libellé comme « ⋯ 24 min » occupe environ 4 % de l'axe : deux annotations
+    ont besoin d'écart pour rester lisibles, sinon la boîte de l'une mange
+    l'autre.
+    """
+    serie = construire(_session_reelle())
+    largeur = serie.xs[-1] - serie.xs[0]
+    nommes = sorted(t.x_milieu for t in serie.trous if t.notable)
+    trop_proches = [
+        (a, b) for a, b in zip(nommes, nommes[1:]) if (b - a) < 0.07 * largeur
+    ]
+    assert not trop_proches, (
+        f"{len(trop_proches)} paire(s) de libellés à moins de 7 % de la largeur"
+    )
+
+
+def test_entre_deux_libelles_trop_proches_c_est_le_plus_long_qui_reste():
+    """La durée la plus grande est celle qui change la lecture de la courbe."""
+    serie = construire(_session_reelle())
+    nommes = [t for t in serie.trous if t.notable]
+    assert nommes, "aucun trou nommé"
+    plus_long = max(serie.trous, key=lambda t: t.duree)
+    assert plus_long.notable, "le trou le plus long a perdu son libellé"
