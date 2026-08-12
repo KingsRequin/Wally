@@ -163,13 +163,20 @@ def test_l_outil_overlay_propose_la_courbe():
 # les mêmes parties s'affichent colorées à l'écran et monochromes sur Discord.
 
 async def _serie_avec_rp(svc, n: int = 6):
+    """Des kills, et un RP relevé DÈS AVANT la fenêtre.
+
+    Le premier relevé de RP précède les kills : sans ça, l'observation ne
+    couvrirait pas la fenêtre et la courbe refuserait — à raison — de colorer
+    des parties dont elle ignore le mode.
+    """
     import time
     base = time.time() - 6 * HEURE
+    await svc.history.enregistrer(UID, {"rank_score": 6400}, maintenant=base - HEURE)
     for i in range(n):
         await svc.history.enregistrer(
             UID, {"kills": 1000 + i * 5}, maintenant=base + i * 600
         )
-    await svc.history.enregistrer(UID, {"rank_score": 6400}, maintenant=base + 700)
+    await svc.history.enregistrer(UID, {"rank_score": 6455}, maintenant=base + 700)
     return base
 
 
@@ -199,7 +206,7 @@ async def test_la_courbe_discord_emporte_les_releves_de_rp(service, monkeypatch)
     )
     await service.derniere_courbe("discord:42")
 
-    assert recu["rp"] == [(pytest.approx(base + 700), 6400)]
+    assert (pytest.approx(base + 700), 6455) in recu["rp"]
 
 
 @pytest.mark.asyncio
@@ -213,9 +220,10 @@ async def test_la_courbe_de_l_overlay_emporte_les_releves_de_rp(db, monkeypatch)
 
     hist = ApexHistory(db)
     base = time.time() - 6 * HEURE
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=base - HEURE)
     for i in range(6):
         await hist.enregistrer(UID, {"kills": 1000 + i * 5}, maintenant=base + i * 600)
-    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=base + 700)
+    await hist.enregistrer(UID, {"rank_score": 6455}, maintenant=base + 700)
 
     recu = _espionner_render(monkeypatch)
     requete = types.SimpleNamespace(
@@ -227,4 +235,4 @@ async def test_la_courbe_de_l_overlay_emporte_les_releves_de_rp(db, monkeypatch)
     )
 
     assert reponse.media_type == "image/png"
-    assert recu["rp"] == [(pytest.approx(base + 700), 6400)]
+    assert recu["rp"] == [(pytest.approx(base + 700), 6455)]

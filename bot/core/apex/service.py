@@ -322,7 +322,7 @@ class ApexLegendsService:
             self._retenir_courbe(
                 requester, progression.points, notion,
                 f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
-                rp=await historique.releves(cible, "rank_score", fenetre.depuis),
+                rp=await historique.rp_de_la_fenetre(cible, fenetre.depuis),
             )
         texte = (f"{libelle_periode.capitalize()} : "
                  f"+{_fr(progression.gain)} {libelle_notion(notion)}")

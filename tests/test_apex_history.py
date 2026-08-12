@@ -328,3 +328,31 @@ async def test_sans_releve_de_rp_la_liste_est_vide(hist):
     et il ne faut surtout pas inventer une couleur pour lui."""
     await _releve(hist, 1_000.0, 500)
     assert await hist.releves(UID, "rank_score", 0.0) == []
+
+
+@pytest.mark.asyncio
+async def test_le_rp_ne_sert_pas_si_l_observation_ne_couvre_pas_la_fenetre(hist):
+    """Vu en prod le 2026-08-12, juste après avoir commencé à relever le RP.
+
+    Un premier relevé au MILIEU de la fenêtre ne dit rien des parties d'avant.
+    Les rendre « non classées » affirmerait ce qu'on ne sait pas — c'est
+    exactement la rétroactivité que la courbe doit refuser.
+    """
+    await _releve(hist, 1_000.0, 500)
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=5_000.0)
+    assert await hist.rp_de_la_fenetre(UID, 1_000.0) == []
+
+
+@pytest.mark.asyncio
+async def test_le_rp_sert_quand_l_observation_precede_la_fenetre(hist):
+    """On relevait déjà le RP avant que la fenêtre commence : ce qui n'a pas
+    bougé n'a pas bougé, et la couleur dit vrai."""
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=1_000.0)
+    await hist.enregistrer(UID, {"rank_score": 6455}, maintenant=9_000.0)
+    assert await hist.rp_de_la_fenetre(UID, 5_000.0) == [(9_000.0, 6455)]
+
+
+@pytest.mark.asyncio
+async def test_sans_aucun_releve_de_rp_la_fenetre_reste_muette(hist):
+    await _releve(hist, 1_000.0, 500)
+    assert await hist.rp_de_la_fenetre(UID, 0.0) == []

@@ -44,7 +44,7 @@ class _FakeHistory:
         self._points = points_par_uid
         self.demandes = []
 
-    async def releves(self, uid, notion, depuis):
+    async def rp_de_la_fenetre(self, uid, depuis):
         """Aucun relevé de RP : ces comptes-là ne sont pas sondés, et la courbe
         doit rester monochrome plutôt que d'inventer un mode de jeu."""
         return []

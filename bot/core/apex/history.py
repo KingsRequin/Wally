@@ -233,6 +233,32 @@ class ApexHistory:
         )
         return [(float(r["recorded_at"]), int(r["value"])) for r in rows or []]
 
+    async def rp_de_la_fenetre(self, uid: str, depuis: float) -> list[tuple[float, int]]:
+        """Les relevés de RP d'une fenêtre, ou [] si l'observation ne la couvre pas.
+
+        Le RP sert à distinguer les parties classées. Encore faut-il l'avoir
+        relevé PENDANT toute la fenêtre : un premier relevé tombé au milieu ne
+        dit rien des parties d'avant, et les afficher « non classées »
+        affirmerait ce qu'on ne sait pas.
+
+        Le cas s'est présenté en prod le 2026-08-12, quelques minutes après la
+        mise en service du relevé : un unique point de RP aurait suffi à
+        étiqueter vingt-quatre heures d'historique.
+
+        Décidé ICI et pas chez les appelants : l'image Discord et la route de
+        l'overlay tracent la même fenêtre, et deux jugements séparés finiraient
+        par diverger.
+        """
+        premier = await self._db.fetch_one(
+            "SELECT MIN(recorded_at) AS debut FROM apex_stat_points "
+            "WHERE uid = ? AND notion = ?",
+            (str(uid), "rank_score"),
+        )
+        debut = premier["debut"] if premier else None
+        if debut is None or float(debut) > depuis:
+            return []
+        return await self.releves(uid, "rank_score", depuis)
+
     async def progression(
         self, uid: str, notion: str, depuis: float, *, maintenant: float | None = None
     ) -> Progression | None:

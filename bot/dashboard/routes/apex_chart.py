@@ -85,7 +85,7 @@ async def progression_png(
     # le mode d'une partie n'existant nulle part dans l'API. Une panne de cette
     # lecture ne doit pas coûter l'image — la courbe reste simplement monochrome.
     try:
-        rp = await history.releves(uid, "rank_score", depuis)
+        rp = await history.rp_de_la_fenetre(uid, depuis)
     except Exception as exc:  # noqa: BLE001 — sans RP la courbe se trace quand même
         logger.warning("Apex chart: relevés de RP illisibles: {e}", e=exc)
         rp = []
