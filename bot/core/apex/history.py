@@ -237,16 +237,27 @@ class ApexHistory:
             return None
 
         # Le relevé qui PRÉCÈDE la fenêtre en donne le vrai point de départ :
-        # sans lui, le premier gain de la période serait perdu.
+        # sans lui, le premier gain de la période serait perdu — deux relevés à
+        # cheval sur minuit appartiennent à la journée qui commence.
+        #
+        # Mais SEULEMENT s'il est proche. Le 2026-08-12, « la courbe de ce
+        # stream » annonçait +74 kills là où l'image en traçait 63 : le relevé
+        # précédent datait de neuf heures, et les onze kills de la nuit
+        # tombaient dans le stream du matin. On ne sait pas quand ils ont été
+        # faits — donc on ne les attribue à personne.
         avant = await self._db.fetch_one(
             "SELECT value, recorded_at FROM apex_stat_points "
-            "WHERE uid = ? AND notion = ? AND recorded_at < ? "
+            "WHERE uid = ? AND notion = ? AND recorded_at < ? AND recorded_at >= ? "
             "ORDER BY recorded_at DESC LIMIT 1",
-            (str(uid), notion, depuis),
+            (str(uid), notion, depuis, depuis - self.TROU_DE_SESSION_S),
         )
-        complet = avant is not None
         if avant is not None:
             points.insert(0, (float(avant["recorded_at"]), int(avant["value"])))
+        # Complète aussi quand la fenêtre commence juste avant son premier
+        # relevé : « ce stream » démarre quelques minutes avant la première
+        # partie, il n'y manque rien et annoncer un minimum serait une réserve
+        # inutile.
+        complet = avant is not None or (points[0][0] - depuis) <= self.TROU_DE_SESSION_S
 
         gain = self._gain(points, uid=str(uid), notion=notion)
         return Progression(

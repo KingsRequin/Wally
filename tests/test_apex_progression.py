@@ -41,7 +41,9 @@ async def _releve(svc, t: float, kills: int) -> None:
 @pytest.mark.asyncio
 async def test_la_progression_du_mois_se_calcule(service):
     debut = debut_de_periode("mois")
-    await _releve(service, debut - HEURE, 1000)      # avant le mois : point de départ
+    # Dix minutes avant le mois : assez proche pour que le gain qui suit lui
+    # appartienne. Au-delà d'une demi-heure, il n'est plus rattachable.
+    await _releve(service, debut - 600, 1000)
     await _releve(service, debut + HEURE, 1120)
     rendu = await service._progression(
         "", "PC", period="mois", notion="kills", requester=None, uid=UID

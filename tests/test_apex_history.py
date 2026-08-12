@@ -122,8 +122,11 @@ def test_le_plafond_croit_avec_l_intervalle():
 
 @pytest.mark.asyncio
 async def test_le_releve_precedant_la_fenetre_sert_de_depart(hist):
-    """Sans lui, le premier gain de la période serait invisible."""
-    await _releve(hist, 1000.0, 500)                    # avant la fenêtre
+    """Sans lui, le premier gain de la période serait invisible.
+
+    Encore faut-il qu'il soit PROCHE : un relevé d'il y a des heures ne dit pas
+    quand son gain a été fait (cf. le test du relevé lointain)."""
+    await _releve(hist, 3800.0, 500)                    # 200 s avant la fenêtre
     await _releve(hist, 5000.0, 530)
     p = await hist.progression(UID, "kills", 4000.0)
     assert p is not None and p.gain == 30 and p.complet
@@ -133,8 +136,8 @@ async def test_le_releve_precedant_la_fenetre_sert_de_depart(hist):
 async def test_une_fenetre_non_couverte_est_signalee(hist):
     """« Ce mois-ci » alors qu'on ne mesure que depuis le 12 : le total est
     exact pour ce qu'il couvre, mais il ne couvre pas le mois."""
-    await _releve(hist, 5000.0, 500)
-    await _releve(hist, 9000.0, 530)
+    await _releve(hist, 4000.0 + 3 * JOUR, 500)
+    await _releve(hist, 4000.0 + 3 * JOUR + 600, 530)
     p = await hist.progression(UID, "kills", 4000.0)
     assert p is not None and p.couverture_partielle
 
@@ -245,3 +248,53 @@ async def test_la_session_ne_melange_pas_les_comptes(hist):
     assert await hist.debut_derniere_session(
         "aaa", maintenant=1000.0 + 3600
     ) == pytest.approx(1000.0)
+
+
+# ── Le point de contexte, et jusqu'où il est légitime ────────────────────────
+
+@pytest.mark.asyncio
+async def test_un_releve_juste_avant_la_fenetre_donne_le_vrai_depart(hist):
+    """Deux relevés à cheval sur minuit : le gain du premier appartient bien à
+    la journée qui commence — sans lui, il serait perdu."""
+    debut = debut_de_periode("jour")
+    await _releve(hist, debut - 300, 500)
+    await _releve(hist, debut + 300, 507)
+    p = await hist.progression(UID, "kills", debut)
+    assert p is not None and p.gain == 7
+    assert p.complet is True
+
+
+@pytest.mark.asyncio
+async def test_un_releve_lointain_n_est_pas_le_depart_de_la_fenetre(hist):
+    """Le cas vécu : « la courbe de ce stream » annonçait +74 kills quand
+    l'image en traçait 63. Le relevé précédent datait de neuf heures — les onze
+    kills de la nuit tombaient dans le stream du matin. On ne sait pas QUAND ils
+    ont été faits : on ne les attribue pas."""
+    debut = debut_de_periode("jour")
+    await _releve(hist, debut - 9 * HEURE, 500)     # la veille au soir
+    await _releve(hist, debut + 300, 511)           # première partie du matin
+    await _releve(hist, debut + 900, 514)
+    p = await hist.progression(UID, "kills", debut)
+    assert p is not None and p.gain == 3
+
+
+@pytest.mark.asyncio
+async def test_une_fenetre_qui_commence_a_son_premier_releve_est_complete(hist):
+    """« Ce stream » commence quelques minutes avant la première partie : rien
+    n'est manquant, et annoncer un minimum serait une réserve inutile."""
+    debut = 100_000.0
+    await _releve(hist, debut - 9 * HEURE, 500)
+    await _releve(hist, debut + 120, 505)
+    p = await hist.progression(UID, "kills", debut)
+    assert p is not None and p.complet is True
+
+
+@pytest.mark.asyncio
+async def test_une_fenetre_qui_precede_les_mesures_reste_partielle(hist):
+    """« Ce mois-ci » alors qu'on ne mesure que depuis le 12 : c'est un
+    minimum, et la réponse doit le dire."""
+    debut = debut_de_periode("mois")
+    await _releve(hist, debut + 10 * JOUR, 500)
+    await _releve(hist, debut + 10 * JOUR + 600, 505)
+    p = await hist.progression(UID, "kills", debut)
+    assert p is not None and p.couverture_partielle is True
