@@ -263,11 +263,14 @@ def _espacer_les_libelles(trous: list[Trou], largeur: float) -> list[Trou]:
         return trous
     minimum = ESPACEMENT_MIN * largeur
     gardes: list[float] = []
-    for trou in sorted(trous, key=lambda t: t.duree, reverse=True):
+    # Par RANG, jamais par valeur : `Trou` est comparé champ à champ, et
+    # `list.index()` rendrait le premier trou ÉGAL plutôt que celui qu'on tient.
+    for rang in sorted(range(len(trous)), key=lambda i: trous[i].duree, reverse=True):
+        trou = trous[rang]
         if not trou.notable:
             continue
         if any(abs(trou.x_milieu - x) < minimum for x in gardes):
-            trous[trous.index(trou)] = replace(trou, notable=False)
+            trous[rang] = replace(trou, notable=False)
             continue
         gardes.append(trou.x_milieu)
     return trous

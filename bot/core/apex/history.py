@@ -269,7 +269,11 @@ class ApexHistory:
             (str(uid), "rank_score"),
         )
         debut = premier["debut"] if premier else None
-        if debut is None or float(debut) > depuis:
+        # Marge d'une session : `progression()` remonte jusque-là en arrière
+        # pour trouver son point de départ, donc la courbe peut commencer AVANT
+        # la fenêtre demandée. Sans cette marge, cette demi-heure serait jugée
+        # sur une observation qui n'existait pas encore.
+        if debut is None or float(debut) > depuis - self.TROU_DE_SESSION_S:
             return []
         return await self.releves(uid, "rank_score", depuis)
 

@@ -385,3 +385,22 @@ async def test_une_vraie_pause_ouvre_toujours_une_nouvelle_session(hist):
     await _releve(hist, 2_000.0, 505)
     await _releve(hist, 20_000.0, 530)          # cinq heures plus tard : autre session
     assert await hist.debut_derniere_session(UID, maintenant=21_000.0) == 20_000.0
+
+
+@pytest.mark.asyncio
+async def test_l_observation_du_rp_doit_couvrir_aussi_le_point_de_contexte(hist):
+    """La courbe peut commencer AVANT la fenêtre demandée.
+
+    `progression()` remonte jusqu'à trente minutes en arrière pour trouver son
+    point de départ. Garantir l'observation du RP seulement à partir de `depuis`
+    laisserait cette demi-heure jugée sur une observation qui n'existait pas —
+    la même erreur, en plus petit, que le premier relevé pris pour une session.
+    """
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=10_000.0)
+    await hist.enregistrer(UID, {"rank_score": 6455}, maintenant=15_000.0)
+
+    # Fenêtre ouverte dix minutes après le début de l'observation : la courbe
+    # peut remonter avant elle, donc on ne colore pas.
+    assert await hist.rp_de_la_fenetre(UID, 10_600.0) == []
+    # Plus de trente minutes après : tout ce qui sera tracé a été observé.
+    assert await hist.rp_de_la_fenetre(UID, 12_000.0) == [(15_000.0, 6455)]
