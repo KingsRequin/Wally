@@ -326,6 +326,17 @@ def make_tool_executor(
     apex_api = getattr(bot, "apex_api", None)
     action_service = getattr(bot, "action_service", None)
 
+    def _ecran_disponible() -> bool:
+        """L'overlay peut-il porter une image, ici et maintenant ?
+
+        Évalué à l'appel et non à la construction : un live peut commencer
+        entre deux messages, et `show_apex` refuserait de toute façon hors live.
+        """
+        if not overlay:
+            return False
+        narrator = _overlay_narrator(bot)
+        return narrator is not None and narrator.is_active()
+
     async def _impl(name: str, arguments: str) -> str:
         _clog(bot, channel, "tool_called", trace_id=trace, tool=name, args=arguments)
         args = json.loads(arguments)
@@ -395,6 +406,12 @@ def make_tool_executor(
                 notion=args.get("notion", "kills") or "kills",
                 requester=identity,
                 requester_name=author,
+                # Le chat Twitch ne porte pas d'image, mais l'écran du stream
+                # si — à condition d'être branché ET en live, et que la demande
+                # ne vienne pas d'une chaîne invitée (`overlay`). Sans ça, le
+                # modèle s'excuse de ne pas pouvoir montrer de courbe alors
+                # qu'elle a sa place à l'écran, sous les yeux des spectateurs.
+                ecran_disponible=_ecran_disponible(),
             )
         if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
             if action_service is None:

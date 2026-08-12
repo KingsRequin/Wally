@@ -151,3 +151,61 @@ async def test_le_refus_nomme_le_compte_et_signale_le_repli_sur_le_demandeur():
     )
     assert "KingsRequin" in reponse
     assert "player_name" in reponse
+
+
+# ── Le chat Twitch ne porte pas d'image, l'écran du stream si ────────────────
+
+
+def _service_avec_courbe():
+    uid = str(_raw("bridge_azrael")["global"]["uid"])
+    svc = _service(_FakeHistory({uid: [(time.time() - 600, 100),
+                                       (time.time() - 60, 174)]}))
+
+    class _DB:
+        async def apex_find_by_display_name(self, name):
+            return {"apex_name": "Azrael_TTV", "apex_platform": "PC", "uid": uid}
+
+        async def apex_get_account(self, identity):
+            return None
+
+    svc._db = _DB()
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_sans_piece_jointe_mais_avec_un_live_la_courbe_va_a_l_ecran():
+    """Le cas vécu sur Twitch : « affiche la courbe de kill d'azra » pendant le
+    live. L'outil répondait « tu ne peux pas envoyer d'image ici » et s'arrêtait
+    là — Wally s'excusait au lieu de la mettre sur l'overlay, qui est pourtant
+    la seule sortie visuelle du chat Twitch."""
+    reponse = await _service_avec_courbe().execute(
+        "progression", "azra", period="live", requester="twitch:105904256",
+        peut_joindre_image=False, ecran_disponible=True,
+    )
+    assert "+74 kills" in reponse
+    assert "show_apex" in reponse
+    assert "Azrael_TTV" in reponse
+
+
+@pytest.mark.asyncio
+async def test_sans_ecran_ni_piece_jointe_on_reste_aux_chiffres():
+    """Hors live, il n'y a aucune sortie visuelle : proposer l'écran ferait
+    promettre un affichage qui n'arrivera pas."""
+    reponse = await _service_avec_courbe().execute(
+        "progression", "azra", period="live", requester="twitch:105904256",
+        peut_joindre_image=False, ecran_disponible=False,
+    )
+    assert "show_apex" not in reponse
+    assert "n'invente" in reponse
+
+
+@pytest.mark.asyncio
+async def test_avec_piece_jointe_l_ecran_ne_change_rien():
+    """Sur Discord la courbe voyage avec la réponse : on ne renvoie personne
+    vers l'overlay, et surtout pas vers un lien à inventer."""
+    reponse = await _service_avec_courbe().execute(
+        "progression", "azra", period="live", requester="discord:610550333042589752",
+        peut_joindre_image=True, ecran_disponible=True,
+    )
+    assert "pièce jointe" in reponse
+    assert "show_apex" not in reponse

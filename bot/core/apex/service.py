@@ -137,6 +137,7 @@ class ApexLegendsService:
         period: str = "live",
         notion: str = "kills",
         peut_joindre_image: bool = False,
+        ecran_disponible: bool = False,
     ) -> str:
         """Exécute une action. `requester` vient du HANDLER, jamais du modèle :
         c'est ce qui empêche quiconque de déclarer le compte d'un autre.
@@ -144,6 +145,11 @@ class ApexLegendsService:
         `peut_joindre_image` dit si le canal sait porter une pièce jointe —
         vrai sur Discord, faux dans un chat Twitch. Le modèle doit le savoir :
         sans ça, il fabrique une URL vers une image imaginaire.
+
+        `ecran_disponible` dit qu'un live tourne et que l'overlay écoute : dans
+        un chat sans pièce jointe, c'est la SEULE sortie visuelle qui reste, et
+        le modèle ne la trouve pas tout seul — il s'excuse de ne pas pouvoir
+        envoyer d'image et en reste là.
         """
         if action == "player_stats":
             return await self._player_stats(
@@ -155,6 +161,7 @@ class ApexLegendsService:
             return await self._progression(
                 player_name, platform, period=period, notion=notion or "kills",
                 requester=requester, uid=uid, peut_joindre_image=peut_joindre_image,
+                ecran_disponible=ecran_disponible,
             )
         if action == "map_rotation":
             return await self._map_rotation()
@@ -247,6 +254,7 @@ class ApexLegendsService:
         requester: str | None,
         uid: str,
         peut_joindre_image: bool = False,
+        ecran_disponible: bool = False,
     ) -> str:
         """Ce qu'un compteur a gagné sur une période, d'après nos relevés.
 
@@ -329,6 +337,18 @@ class ApexLegendsService:
                 " [La courbe part AVEC ta réponse, en pièce jointe. N'écris "
                 "aucun lien, aucune URL, aucune image Markdown : elle est déjà "
                 "là. Contente-toi de commenter ce qu'elle montre.]"
+            )
+        elif ecran_disponible:
+            # Sans cette phrase, « affiche la courbe » sur Twitch se terminait
+            # par des excuses : le modèle constatait qu'il ne pouvait pas
+            # envoyer d'image et n'allait pas chercher la seule sortie visuelle
+            # qui lui restait — l'écran du stream, que les spectateurs voient.
+            qui = f" player={nom_cible}" if nom_cible else ""
+            texte += (
+                " [Ce chat ne porte pas d'image, mais le live tourne : mets la "
+                f"courbe SUR L'ÉCRAN maintenant avec `show_apex` panel=progress"
+                f"{qui}, puis commente-la. N'invente aucun lien et ne t'excuse "
+                "pas de ne pas pouvoir montrer d'image — tu peux.]"
             )
         else:
             texte += (
