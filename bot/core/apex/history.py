@@ -186,6 +186,17 @@ class ApexHistory:
     # quinzaine de minutes, et la sonde passe toutes les 30 à 60 secondes.
     TROU_DE_SESSION_S = 1800.0
 
+    # Notions rangées dans la même table mais qui ne PROUVENT pas qu'on a joué.
+    # `rank_score` sert à colorer les parties classées ; son tout premier relevé
+    # est écrit à la mise en service du suivi, personne ne jouant à ce
+    # moment-là. Le 2026-08-12 il a suffi à ouvrir une « dernière session » à
+    # 17h45 : « la courbe de ce stream » ne trouvait plus un seul kill, alors
+    # que la session réelle avait commencé à 10h15 et valait 63 kills.
+    #
+    # Toute notion interne ajoutée ici plus tard doit rejoindre cet ensemble,
+    # sinon elle redéfinira silencieusement ce qu'est une session.
+    NOTIONS_INTERNES = ("rank_score",)
+
     async def debut_derniere_session(
         self, uid: str, *, trou_s: float | None = None, jours: int = 7,
         maintenant: float | None = None,
@@ -194,18 +205,21 @@ class ApexHistory:
 
         Sert quand on demande « la courbe de ce stream » alors que le stream est
         fini — ou que le bot a redémarré en plein live et ne connaît plus son
-        `started_at`. Toutes notions confondues : les dégâts bougent presque à
-        chaque partie, les kills non.
+        `started_at`. Tous les compteurs de JEU comptent : les dégâts bougent
+        presque à chaque partie, les kills non. Les notions internes
+        (`NOTIONS_INTERNES`) sont écartées — elles ne prouvent pas qu'on a joué.
 
         Borné à `jours` : lire tout l'historique pour retrouver hier serait
         payer une année de relevés à chaque question.
         """
         seuil = trou_s if trou_s is not None else self.TROU_DE_SESSION_S
         depuis = (maintenant or _maintenant()) - jours * 86400
+        exclues = ",".join("?" * len(self.NOTIONS_INTERNES))
         rows = await self._db.fetch_all(
             "SELECT DISTINCT recorded_at FROM apex_stat_points "
-            "WHERE uid = ? AND recorded_at >= ? ORDER BY recorded_at",
-            (str(uid), depuis),
+            f"WHERE uid = ? AND recorded_at >= ? AND notion NOT IN ({exclues}) "
+            "ORDER BY recorded_at",
+            (str(uid), depuis, *self.NOTIONS_INTERNES),
         )
         instants = [float(r["recorded_at"]) for r in rows or []]
         if not instants:

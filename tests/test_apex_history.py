@@ -356,3 +356,32 @@ async def test_le_rp_sert_quand_l_observation_precede_la_fenetre(hist):
 async def test_sans_aucun_releve_de_rp_la_fenetre_reste_muette(hist):
     await _releve(hist, 1_000.0, 500)
     assert await hist.rp_de_la_fenetre(UID, 0.0) == []
+
+
+@pytest.mark.asyncio
+async def test_un_releve_interne_ne_fait_pas_une_nouvelle_session(hist):
+    """Régression du 2026-08-12, introduite en commençant à relever le RP.
+
+    Le premier `rank_score`, écrit à la mise en service alors que personne ne
+    jouait, ouvrait une « dernière session » à cet instant-là. « La courbe de ce
+    stream » partait donc de 17h45 et ne trouvait aucun kill, alors que la
+    session de jeu réelle avait commencé à 10h15 et valait 63 kills.
+
+    Une notion INTERNE ne prouve pas qu'une partie a été jouée. Les compteurs de
+    jeu, eux, bougent à chaque partie — les dégâts presque toujours.
+    """
+    await hist.enregistrer(UID, {"kills": 500}, maintenant=1_000.0)
+    await hist.enregistrer(UID, {"kills": 505}, maintenant=2_000.0)
+    # Cinq heures plus tard, hors de toute partie : la mise en service du relevé.
+    await hist.enregistrer(UID, {"rank_score": 6400}, maintenant=20_000.0)
+
+    assert await hist.debut_derniere_session(UID, maintenant=21_000.0) == 1_000.0
+
+
+@pytest.mark.asyncio
+async def test_une_vraie_pause_ouvre_toujours_une_nouvelle_session(hist):
+    """La correction ne doit pas rendre le découpage aveugle aux vraies pauses."""
+    await _releve(hist, 1_000.0, 500)
+    await _releve(hist, 2_000.0, 505)
+    await _releve(hist, 20_000.0, 530)          # cinq heures plus tard : autre session
+    assert await hist.debut_derniere_session(UID, maintenant=21_000.0) == 20_000.0
