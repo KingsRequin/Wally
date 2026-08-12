@@ -787,7 +787,8 @@
     .rps.wally    .rps-verdict { color: #ffb066; }
     .rps.draw     .rps-verdict { color: rgba(255, 255, 255, .6); }
 
-    /* Meme de la communauté — l'image commande, la légende reste discrète.
+    /* Meme de la communauté — l'image seule, sans légende : sa description est
+       le contexte que Wally lit pour le commenter, pas un texte à afficher.
        Bornée en hauteur : une image verticale sortirait du cadre. */
     .meme {
       max-width: 100%;
@@ -802,12 +803,6 @@
       max-height: 260px;
       width: auto; height: auto;
       border-radius: 8px;
-    }
-    .meme-cap {
-      margin-top: 6px;
-      font-size: 11.5px;
-      color: rgba(255, 255, 255, .55);
-      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
 
     /* Planning des streams — ce sont des horaires : ils doivent être LISIBLES,

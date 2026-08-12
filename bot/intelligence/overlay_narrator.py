@@ -930,8 +930,11 @@ class OverlayNarrator:
             chosen = library.pick(str(extra.get("about") or comment or ""))
             if chosen is None:
                 return None
-            params = {"src": f"/api/public/meme/{quote(chosen['name'])}",
-                      "caption": chosen["description"][:70]}
+            # Seule l'image part à l'écran. La description reste dans le retour,
+            # donc au prompt : elle existe pour que Wally commente juste, pas
+            # pour être lue. En légende, elle doublait ce qu'il allait dire et
+            # montrait aux spectateurs une note écrite pour lui seul.
+            params = {"src": f"/api/public/meme/{quote(chosen['name'])}"}
             self._feed.widget("meme", **params)
             return {"widget": "meme", **chosen}
 

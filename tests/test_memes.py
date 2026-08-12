@@ -141,6 +141,12 @@ def test_un_fichier_absent_ou_non_image_est_refuse(lib):
 # ── widget ──
 
 def test_le_widget_choisit_une_image_et_sa_description(tmp_path):
+    """La description revient à Wally, l'overlay ne reçoit que l'image.
+
+    Elle existe pour qu'il commente juste une image qu'il ne voit pas — c'est un
+    contexte interne. L'afficher en légende doublait à l'écran ce qu'il allait
+    dire, et exposait aux spectateurs une note écrite pour lui.
+    """
     from unittest.mock import MagicMock
 
     from bot.core.overlay_feed import OverlayFeed
@@ -152,9 +158,10 @@ def test_le_widget_choisit_une_image_et_sa_description(tmp_path):
     q = feed.subscribe()
     out = n.show_widget("meme", "")
     assert out["name"] == "azrael-blame-le-ping.jpg"
+    assert out["description"] == "azrael blame le ping"
     ev = [e for e in (q.get_nowait() for _ in range(q.qsize())) if e["type"] == "widget"][0]
     assert ev["params"]["src"].endswith("azrael-blame-le-ping.jpg")
-    assert ev["params"]["caption"] == "azrael blame le ping"
+    assert "caption" not in ev["params"]
 
 
 def test_le_widget_ne_montre_rien_si_le_dossier_est_vide(tmp_path):

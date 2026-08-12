@@ -52,7 +52,8 @@ Les boutons expirent au bout de 120 s et n'obéissent qu'à celui qui a lancé l
 ## Nommage
 
 Suite de la numérotation existante : le plus grand `N` trouvé parmi les fichiers `memeN.*` du
-dossier, plus un — `meme38` aujourd'hui. Le maximum, pas le premier trou : réutiliser le numéro
+dossier, plus un — `meme81` aujourd'hui, la série comptant neuf trous (9, 26, 27, 37, 39, 41, 42,
+43, 69). Le maximum, pas le premier trou : réutiliser le numéro
 d'un meme supprimé le confondrait avec son `.txt` s'il en reste un. Les sidecars comptent dans le
 balayage pour cette raison même — `meme12.webp.txt` orphelin réserve le numéro 12.
 
@@ -73,10 +74,10 @@ Les JPEG ne sont pas convertis : le projet a tranché que l'échange n'en vaut p
 
 Empreinte SHA-256, sans index à maintenir. À l'import on calcule l'empreinte des octets
 téléchargés et, si conversion il y a, celle du fichier converti ; on les confronte aux empreintes
-des fichiers déjà présents, calculées à la volée (37 fichiers, 28 Mo — instantané).
+des fichiers déjà présents, calculées à la volée (81 fichiers, 32 Mo — instantané).
 
 Ce que ça attrape : le repost exact, le double-clic sur le même message, un meme déjà rangé — les
-37 existants compris, sans migration. Ce que ça ne voit pas : le même meme ré-encodé ailleurs, en
+81 existants compris, sans migration. Ce que ça ne voit pas : le même meme ré-encodé ailleurs, en
 autre résolution ou recompressé. Une détection perceptuelle le verrait, au prix d'une dépendance
 et de faux positifs entre deux memes du même modèle ; écarté volontairement.
 
@@ -95,6 +96,11 @@ deux mots de contexte, le tout en une à deux phrases :
 
 Ces descriptions ne servent pas qu'au tirage : elles nourrissent ce que Wally raconte en montrant
 le meme. Le dossier `bot/persona/prompts/` est bind-monté, le registre s'édite sans rebuild.
+
+**Elle ne s'affiche jamais.** La description est un contexte interne, écrit pour que Wally commente
+juste une image qu'il ne voit pas. L'overlay l'affichait en légende sous le meme : elle doublait à
+l'écran ce qu'il allait dire, et exposait aux spectateurs une note qui lui était destinée. Retiré
+du narrateur, du rendu et de la feuille de style — le widget ne reçoit plus que `src`.
 
 `VisionService.analyze()` charge aujourd'hui son prompt en dur ; il reçoit un paramètre
 `prompt_name` optionnel, sans changement pour les appelants actuels.

@@ -555,16 +555,13 @@
     },
 
     meme(p) {
+      // L'image seule, sans légende : la description d'un meme sert à Wally
+      // pour le commenter, elle n'est pas destinée aux spectateurs.
       const box = el("div", "meme");
       const img = document.createElement("img");
       img.src = String(p.src || "");
       img.alt = "";
       box.appendChild(img);
-      if (p.caption) {
-        const cap = el("div", "meme-cap");
-        cap.textContent = String(p.caption);
-        box.appendChild(cap);
-      }
       return box;
     },
 
