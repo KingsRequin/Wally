@@ -494,6 +494,9 @@ class WallyDiscord(commands.Bot):
         await self.add_cog(TestCog(self))
         await self.add_cog(ImagineCog(self))
 
+        from bot.discord.commands.meme_cmd import MemeCog
+        await self.add_cog(MemeCog(self))
+
         register_events(self)
 
         # Sync slash commands — wrap in try/except so a 403 (bot not yet in guild) doesn't crash startup
