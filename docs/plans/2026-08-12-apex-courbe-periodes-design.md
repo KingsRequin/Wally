@@ -74,7 +74,7 @@ quelques minutes de plat en moins.
 blanche**, jamais du texte libre, parce que cette route est publique et que son titre finit
 dessiné dans l'image.
 
-## Lot 2 — les trous compressés
+## Lot 2 — les trous compressés  ✅ construit le 2026-08-12
 
 Sur la cumulative uniquement (l'histogramme par jour ne souffre pas du problème) : tout
 intervalle sans relevé de plus de **vingt minutes** est réduit à une bande étroite, marquée d'un
@@ -84,6 +84,33 @@ et d'autre. Le trait reste interrompu : on compresse le vide, on ne le comble pa
 La construction des séries (marches, trous, couleurs) sort dans `bot/core/apex/serie.py`,
 testable sans matplotlib. `chart.py` ne garde que le dessin — il porterait sinon la compression
 et la coloration en plus du reste, et deviendrait le genre de bloc qu'on ne relit plus.
+
+### Trois règles que la donnée réelle a imposées
+
+La première image tracée sur les relevés d'Azraël a montré ce que la spec n'avait pas prévu : un
+compte n'est sondé qu'en live ou à la consultation, si bien qu'une journée compte **3,7 h de
+relevés pour 13,5 h de vide** et **onze trous** de plus de vingt minutes. Comprimer restait juste,
+mais tout le reste s'écroulait.
+
+- **Nommer ≠ comprimer.** Onze bandes annotées empilaient onze durées en bouillie sur le haut de
+  l'image. Le pointillé marque désormais TOUS les vides — c'est lui qui dit « on n'a pas
+  regardé » — mais le libellé ne va qu'aux vides pesant au moins un dixième de la période
+  couverte. Savoir qu'une pause a duré vingt minutes ne change pas la lecture de la courbe ;
+  savoir qu'une nuit de neuf heures est passée, si.
+- **Les bandes ont un budget commun.** À 4 % de la largeur chacune, onze bandes reprenaient 26 %
+  de l'image — un quart de la place rendu au vide qu'on venait d'en chasser. Au-delà de deux ou
+  trois trous, chacune rétrécit pour que l'ensemble tienne dans 15 %.
+- **Les heures s'écartent.** Chaque bloc gradue sur sa propre grille d'heures rondes : rien
+  n'empêchait la dernière d'un bloc de tomber juste avant la première du suivant. « 21h30 » et
+  « 22h00 » se sont retrouvés collés de part et d'autre d'une bande étroite. Deux heures affichées
+  gardent maintenant 7 % de la largeur entre elles — un libellé en occupe 4,3 % — et quand deux se
+  disputent la place, c'est celle qui OUVRE un bloc qui reste, faute de quoi un bloc entier ne
+  serait plus daté du tout.
+
+Les tests rejouent les **intervalles exactement relevés en base**, pas une approximation
+régulière : ni les libellés empilés ni les heures qui se recouvrent ne se reproduisent sur une
+cadence lisse, et l'instant de départ compte autant que les écarts puisque la grille se cale sur
+des heures rondes — un `T0` à 20h00 pile évitait le défaut par chance.
 
 ## Lot 3 — classé vs non classé
 

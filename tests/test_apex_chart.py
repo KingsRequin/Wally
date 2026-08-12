@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from bot.core.apex.chart import _cumul, _gains_par_jour, render
+from bot.core.apex.chart import _gains_par_jour, render
 from bot.core.apex.history import PARIS
 
 MINUTE = 60.0
@@ -35,36 +35,53 @@ def test_un_mois_donne_une_image():
 
 
 # ── Ce que la courbe raconte ─────────────────────────────────────────────────
-
-def test_le_cumul_ignore_les_bonds_de_tracker():
-    """Un tracker réépinglé ferait décoller la courbe d'un coup."""
-    points = [(T0, 1000), (T0 + MINUTE, 1010), (T0 + 2 * MINUTE, 92_000)]
-    _, valeurs = _cumul(points)
-    assert max(v for v in valeurs if v == v) == 10
+#
+# Le cumul lui-même (marches, chutes, bonds de tracker, trous coupés) est
+# vérifié dans `test_apex_serie.py`, sans matplotlib. Ici on ne teste que ce que
+# le DESSIN en fait.
 
 
-def test_le_cumul_ignore_les_chutes():
-    points = [(T0, 1000), (T0 + MINUTE, 200), (T0 + 2 * MINUTE, 215)]
-    _, valeurs = _cumul(points)
-    assert max(v for v in valeurs if v == v) == 15
+def _textes_traces(points, titre="titre"):
+    """Rend tout ce que le rendu écrit sur les axes : annotations et graduations."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ecrits: list[str] = []
+    vrai_text, vrai_labels = plt.Axes.text, plt.Axes.set_xticklabels
+
+    def _espion_text(self, x, y, s, *a, **kw):
+        ecrits.append(str(s))
+        return vrai_text(self, x, y, s, *a, **kw)
+
+    def _espion_labels(self, labels, *a, **kw):
+        ecrits.extend(str(v) for v in labels)
+        return vrai_labels(self, labels, *a, **kw)
+
+    plt.Axes.text, plt.Axes.set_xticklabels = _espion_text, _espion_labels
+    try:
+        render(points, "kills", titre)
+    finally:
+        plt.Axes.text, plt.Axes.set_xticklabels = vrai_text, vrai_labels
+    return ecrits
 
 
-def test_un_trou_de_mesure_coupe_le_trait():
-    """Bot arrêté six heures : le total reste juste, mais relier les deux points
-    dessinerait une progression régulière qui n'a pas eu lieu."""
-    points = [
-        (T0, 100), (T0 + MINUTE, 105), (T0 + 2 * MINUTE, 110),
-        (T0 + 6 * 3600, 300),                     # long trou
-        (T0 + 6 * 3600 + MINUTE, 305),
-    ]
-    _, valeurs = _cumul(points)
-    assert any(v != v for v in valeurs)           # un NaN = trait interrompu
-
-
-def test_sans_trou_le_trait_est_continu():
+def test_un_long_vide_est_annonce_par_sa_duree():
+    """La bande comprimée doit dire ce qu'elle remplace, sinon l'image ment sur
+    le temps écoulé entre les deux blocs."""
     points = [(T0 + i * MINUTE, 100 + i) for i in range(10)]
-    _, valeurs = _cumul(points)
-    assert all(v == v for v in valeurs)
+    points += [(T0 + 9 * 3600 + i * MINUTE, 200 + i) for i in range(10)]
+    assert "⋯ 9 h" in _textes_traces(points)
+
+
+def test_les_heures_restent_lisibles_de_part_et_d_autre_du_vide():
+    """Comprimer le vide ne doit pas décrocher l'axe du temps réel : les deux
+    blocs restent datés, à 20 h et à 5 h du matin."""
+    points = [(T0 + i * MINUTE, 100 + i) for i in range(20)]
+    points += [(T0 + 9 * 3600 + i * MINUTE, 300 + i) for i in range(20)]
+    ecrits = _textes_traces(points)
+    assert any(t.startswith("20h") for t in ecrits), ecrits
+    assert any(t.startswith("05h") for t in ecrits), ecrits
 
 
 def test_la_cumulative_est_tracee_en_marches():
