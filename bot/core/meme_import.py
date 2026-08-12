@@ -13,18 +13,133 @@ réussite. Deux copies de cette garde finiraient par diverger.
 """
 from __future__ import annotations
 
+import hashlib
+import re
 import struct
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageSequence
 
-from bot.core.memes import _MAX_BYTES
+from bot.core.memes import _EXTENSIONS, _EXTENSIONS_MEDIA, _MAX_BYTES
 
 A_CONVERTIR = frozenset({".gif", ".png"})
 
 # Une animation supporte le lossy sans qu'on le voie — c'est ce qui donne les
 # 70 % de gain. Une image fixe de meme, c'est d'abord du texte : sans perte.
 QUALITE_ANIMEE = 80
+
+_NUMERO = re.compile(r"^meme(\d+)\.", re.IGNORECASE)
+
+# Au-delà, on n'essaie même pas de convertir : le fichier ne pourra de toute
+# façon pas descendre sous le plafond d'affichage.
+MAX_TELECHARGEMENT = 16 * 1024 * 1024
+
+
+@dataclass
+class ResultatImport:
+    """Ce qu'il est advenu d'une tentative d'import."""
+
+    ok: bool
+    nom: str = ""
+    raison: str = ""
+    doublon: str = ""
+    converti: bool = False
+    octets: int = 0
+
+
+def convertir_si_avantageux(octets: bytes, suffixe: str) -> tuple[bytes, str]:
+    """Rend `(octets, suffixe)` en WebP si l'échange fait gagner, tels quels sinon.
+
+    Passe par des fichiers temporaires plutôt que de travailler en mémoire : la
+    vérification relit le WebP écrit pour compter ses frames et lire leurs
+    durées dans les chunks ANMF. La réécrire sur des octets, c'est reprendre une
+    garde éprouvée pour rien.
+    """
+    if suffixe.lower() not in A_CONVERTIR:
+        return octets, suffixe
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / f"src{suffixe}"
+        dst = Path(tmp) / "dst.webp"
+        src.write_bytes(octets)
+        try:
+            convertir(src, dst)
+            if verifier_conversion(src, dst):
+                return octets, suffixe
+        except Exception:  # noqa: BLE001 — un format exotique ne fait pas échouer l'import
+            return octets, suffixe
+        return dst.read_bytes(), ".webp"
+
+
+def importer(
+    octets: bytes, suffixe: str, description: str, dossier: Path
+) -> ResultatImport:
+    """Range une image dans la banque. N'écrit rien si elle est refusée."""
+    suffixe = suffixe.lower()
+    if suffixe not in _EXTENSIONS_MEDIA:
+        admis = " ".join(sorted(_EXTENSIONS_MEDIA))
+        return ResultatImport(False, raison=f"format {suffixe} non admis — attendus : {admis}")
+    if len(octets) > MAX_TELECHARGEMENT:
+        return ResultatImport(
+            False, raison=f"{len(octets) / 1e6:.1f} Mo — au-delà de la limite de téléchargement"
+        )
+
+    index = empreintes(dossier)
+    depuis = index.get(hashlib.sha256(octets).hexdigest())
+    if depuis:
+        return ResultatImport(False, doublon=depuis, raison="déjà rangé")
+
+    finaux, suffixe_final = convertir_si_avantageux(octets, suffixe)
+    converti = suffixe_final != suffixe
+    if converti:
+        depuis = index.get(hashlib.sha256(finaux).hexdigest())
+        if depuis:
+            return ResultatImport(False, doublon=depuis, raison="déjà rangé")
+
+    # Le plafond ne s'applique qu'à ce qui doit s'AFFICHER : une vidéo n'est
+    # jamais tirée par `list()`, la borner sur ce critère n'aurait pas de sens.
+    if suffixe_final in _EXTENSIONS and len(finaux) > _MAX_BYTES:
+        return ResultatImport(
+            False,
+            raison=(
+                f"{len(finaux) / 1e6:.1f} Mo après conversion, au-dessus du plafond de "
+                f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais tiré"
+            ),
+        )
+
+    nom = f"meme{prochain_numero(dossier)}{suffixe_final}"
+    (dossier / nom).write_bytes(finaux)
+    if description.strip():
+        (dossier / f"{nom}.txt").write_text(description.strip(), encoding="utf-8")
+    return ResultatImport(True, nom=nom, converti=converti, octets=len(finaux))
+
+
+def prochain_numero(dossier: Path) -> int:
+    """Le maximum trouvé plus un — jamais le premier trou.
+
+    Les sidecars comptent : un `meme9.webp.txt` resté seul réserve le 9, sinon
+    le numéro est réattribué et cette vieille description se retrouve collée à
+    une image qui n'a rien à voir.
+    """
+    numeros = [
+        int(m.group(1))
+        for p in dossier.iterdir()
+        if p.is_file() and (m := _NUMERO.match(p.name))
+    ]
+    return max(numeros, default=0) + 1
+
+
+def empreintes(dossier: Path) -> dict[str, str]:
+    """SHA-256 → nom, pour les médias du dossier. Les `.txt` sont ignorés."""
+    index: dict[str, str] = {}
+    for p in sorted(dossier.iterdir()):
+        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS_MEDIA:
+            continue
+        if not _NUMERO.match(p.name):
+            continue
+        index.setdefault(hashlib.sha256(p.read_bytes()).hexdigest(), p.name)
+    return index
 
 
 def durees_gif(im: Image.Image) -> list[int]:

@@ -67,3 +67,115 @@ def test_le_script_de_conversion_ne_redefinit_pas_la_garde():
 
     assert module.convertir is meme_import.convertir
     assert module.verifier_conversion is meme_import.verifier_conversion
+
+
+def test_le_prochain_numero_suit_le_maximum(tmp_path):
+    for nom in ("meme3.webp", "meme7.jpg", "meme7.jpg.txt"):
+        (tmp_path / nom).write_bytes(b"x")
+
+    assert meme_import.prochain_numero(tmp_path) == 8
+
+
+def test_un_sidecar_orphelin_reserve_son_numero(tmp_path):
+    """Sinon le numéro est réattribué et l'ancien .txt décrit une autre image."""
+    (tmp_path / "meme4.webp").write_bytes(b"x")
+    (tmp_path / "meme9.webp.txt").write_text("image supprimée", encoding="utf-8")
+
+    assert meme_import.prochain_numero(tmp_path) == 10
+
+
+def test_un_dossier_vide_commence_a_un(tmp_path):
+    assert meme_import.prochain_numero(tmp_path) == 1
+
+
+def test_les_empreintes_indexent_les_fichiers_presents(tmp_path):
+    (tmp_path / "meme1.webp").write_bytes(b"contenu")
+    (tmp_path / "meme1.webp.txt").write_text("desc", encoding="utf-8")
+
+    index = meme_import.empreintes(tmp_path)
+
+    import hashlib
+    assert index[hashlib.sha256(b"contenu").hexdigest()] == "meme1.webp"
+    assert len(index) == 1  # le .txt n'est pas un meme
+
+
+def test_un_png_est_converti_quand_il_y_gagne(tmp_path):
+    src = tmp_path / "gros.png"
+    Image.new("RGB", (400, 400), (200, 30, 30)).save(src, "PNG")
+
+    octets, suffixe = meme_import.convertir_si_avantageux(src.read_bytes(), ".png")
+
+    assert suffixe == ".webp"
+    assert len(octets) < src.stat().st_size
+
+
+def test_un_jpeg_n_est_jamais_converti(tmp_path):
+    src = tmp_path / "photo.jpg"
+    Image.new("RGB", (200, 200), (10, 10, 10)).save(src, "JPEG")
+    original = src.read_bytes()
+
+    octets, suffixe = meme_import.convertir_si_avantageux(original, ".jpg")
+
+    assert (octets, suffixe) == (original, ".jpg")
+
+
+def test_l_import_ecrit_l_image_et_son_sidecar(tmp_path):
+    src = tmp_path / "src.png"
+    Image.new("RGB", (120, 120), (0, 120, 255)).save(src, "PNG")
+
+    res = meme_import.importer(src.read_bytes(), ".png", "un carré bleu", tmp_path)
+
+    assert res.ok is True
+    assert res.nom == "meme1.webp"
+    assert res.converti is True
+    assert (tmp_path / "meme1.webp").is_file()
+    assert (tmp_path / "meme1.webp.txt").read_text(encoding="utf-8") == "un carré bleu"
+
+
+def test_un_doublon_n_est_pas_range_deux_fois(tmp_path):
+    src = tmp_path / "src.png"
+    Image.new("RGB", (120, 120), (0, 120, 255)).save(src, "PNG")
+    octets = src.read_bytes()
+    src.unlink()
+    premier = meme_import.importer(octets, ".png", "un carré bleu", tmp_path)
+
+    second = meme_import.importer(octets, ".png", "le même", tmp_path)
+
+    assert second.ok is False
+    assert second.doublon == premier.nom
+    assert not (tmp_path / "meme2.webp").exists()
+    assert not (tmp_path / "meme2.webp.txt").exists()
+
+
+def test_un_fichier_trop_lourd_est_refuse(tmp_path):
+    from bot.core.memes import _MAX_BYTES
+
+    res = meme_import.importer(b"\x00" * (_MAX_BYTES + 1), ".jpg", "trop gros", tmp_path)
+
+    assert res.ok is False
+    assert "8" in res.raison  # le plafond figure dans le message
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_une_extension_inconnue_est_refusee(tmp_path):
+    res = meme_import.importer(b"MZ", ".exe", "non merci", tmp_path)
+
+    assert res.ok is False
+    assert ".exe" in res.raison
+
+
+def test_une_video_est_acceptee_sans_conversion(tmp_path):
+    res = meme_import.importer(b"\x00\x00\x00\x18ftypmp42", ".mp4", "un clip", tmp_path)
+
+    assert res.ok is True
+    assert res.nom == "meme1.mp4"
+    assert res.converti is False
+
+
+def test_une_description_vide_n_ecrit_pas_de_sidecar(tmp_path):
+    """Sans description, `_describe` retombe sur le nom du fichier — un sidecar
+    vide ferait pire, en donnant une description vraiment vide."""
+    res = meme_import.importer(b"\x00\x00\x00\x18ftypmp42", ".mp4", "   ", tmp_path)
+
+    assert res.ok is True
+    assert not (tmp_path / "meme1.mp4.txt").exists()
