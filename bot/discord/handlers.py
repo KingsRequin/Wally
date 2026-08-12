@@ -652,19 +652,23 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             f"Panneau « {shown['widget']} » affiché à l'écran."
         )})
     if not narrator.is_active():
-        # Le message d'échec DIT QUOI FAIRE : sans ça, une demande de courbe en
-        # conversation se terminait par « pas de live, rien à afficher » alors
-        # que la réponse était à un appel d'outil près.
-        alternative = (
-            " La personne voulait sûrement voir la donnée, pas l'écran du "
-            "stream : réponds-lui avec `apex_legends` action=progression, qui "
-            "joint la courbe en image et marche hors live."
-            if str(args.get("panel") or "").strip() == "progress" else ""
-        )
-        return json.dumps({"status": "offline", "message": (
-            "Rien affiché : il n'y a pas de live en cours. Dis-le simplement."
-            + alternative
-        )})
+        # Le message d'échec ORDONNE la suite au lieu de la suggérer. Nommer
+        # l'outil qui reste ne suffit pas : le 2026-08-12, ce refus commençait
+        # par « Dis-le simplement » — une consigne de PAROLE — et présentait
+        # l'alternative en complément. Wally a obéi à la lettre et répondu
+        # « je peux te la sortir en image », sans jamais appeler l'outil.
+        # Troisième fois que ce chemin se termine par une promesse.
+        if str(args.get("panel") or "").strip() == "progress":
+            message = (
+                "Rien affiché : il n'y a pas de live en cours. Mais la personne "
+                "veut la DONNÉE, pas l'écran du stream : appelle `apex_legends` "
+                "action=progression MAINTENANT — elle joint la courbe en image "
+                "et marche hors live — puis commente le résultat. N'annonce "
+                "surtout pas que tu peux le faire : fais-le."
+            )
+        else:
+            message = "Rien affiché : il n'y a pas de live en cours. Dis-le simplement."
+        return json.dumps({"status": "offline", "message": message})
     # Pour la courbe, la donnée manquante a une cause précise et rattrapable :
     # le compte visé n'a pas assez de relevés. Le dire évite qu'on annonce une
     # absence de mesures qui ne concerne pas la personne dont on parle.
@@ -1268,7 +1272,17 @@ _spontaneous_cooldowns: dict[str, float] = {}  # channel_id → last spontaneous
 # `image_search`, que le refus d'exécution listait pourtant. Le modèle pouvait
 # donc appeler un outil qu'on lui proposait, et ne recevoir qu'un refus parlant
 # d'articles — un tour de tool-calling gaspillé.
-_LOOKUP_TOOLS = ("web_search", "image_search", "scrape_url", "apex_legends")
+# Les outils qu'un recall RSS positif rend inutiles : ils iraient chercher
+# dehors ce que Wally a déjà sous la main.
+#
+# `apex_legends` n'en fait PAS partie, et c'est le fond du problème vécu le
+# 2026-08-12. Le recall RSS couvre les patch notes et les articles ; l'outil
+# Apex ne rend que de la donnée de jeu en direct — rang, stats, progression,
+# rotation de map, statut des serveurs. Aucune de ses six actions ne peut être
+# couverte par un article, donc le recall ne se substitue jamais à lui. Le
+# couper laissait le refus de `show_apex` renvoyer vers un outil absent de
+# l'offre, et Wally promettait une courbe qu'il ne pouvait plus produire.
+_LOOKUP_TOOLS = ("web_search", "image_search", "scrape_url")
 
 async def build_chat_tools(bot, author_id: str) -> list[dict]:
     """Les outils offerts au LLM pour un message Discord.
@@ -1554,11 +1568,19 @@ _RSS_SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 
 # Marqueurs d'une question d'ACTUALITÉ (sous-chaînes, insensibles à la casse).
 # Quand le message en contient un ET que le recall RSS a matché, on coupe les
-# outils de lookup (web_search/apex_legends) : Wally répond avec les articles
-# qu'il a déjà, au lieu d'aller chercher ailleurs. Les questions hors-actu
-# (« mon rang apex ») ne matchent pas → apex_legends reste dispo.
+# outils de lookup : Wally répond avec les articles qu'il a déjà, au lieu
+# d'aller chercher ailleurs.
+#
+# « derni » a été RETIRÉ le 2026-08-12. Il visait « les dernières actus » et
+# « le dernier patch », mais « dernier » est un mot ordinaire : « la courbe du
+# dernier stream », « la dernière fois qu'il a joué », « les 10 dernières
+# minutes » se faisaient couper leurs outils. Rien n'est perdu — ces vraies
+# questions d'actu portent toutes un autre marqueur (« actus », « patch »).
+#
+# Leçon du même jour : un marqueur en SOUS-CHAÎNE doit porter le sens à lui
+# seul. Un fragment fréquent attrape des phrases qui n'ont rien à voir.
 _RSS_NEWS_MARKERS = (
-    "actu", "news", "nouveaut", "nouvelle", "derni", "quoi de neuf", "neuf",
+    "actu", "news", "nouveaut", "nouvelle", "quoi de neuf",
     "maj", "mise à jour", "mise a jour", "patch", "sortie", "roadmap", "annonce",
 )
 

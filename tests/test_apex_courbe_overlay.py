@@ -230,3 +230,39 @@ async def test_avec_piece_jointe_l_ecran_ne_change_rien():
     )
     assert "pièce jointe" in reponse
     assert "show_apex" not in reponse
+
+
+# ── Un chemin fermé doit ouvrir l'autre, pas se contenter de le mentionner ────
+
+@pytest.mark.asyncio
+async def test_hors_live_la_courbe_est_ordonnee_a_l_autre_outil_pas_annoncee():
+    """Vécu le 2026-08-12 dans #chambre-de-wally, TROISIÈME fois sur ce chemin :
+
+        moi : wally donne la courbe de kill de azra du dernier stream
+        lui : Pas de live en cours — la courbe, je peux te la sortir en image
+              directement dans la conversation.
+
+    Il l'a annoncée au lieu de la produire. Le refus commençait par « Dis-le
+    simplement » — une instruction à PARLER — et présentait l'alternative comme
+    un complément. Un chemin fermé doit ordonner l'autre, au présent, et
+    interdire explicitement de se contenter de l'annoncer.
+    """
+    import json
+
+    from bot.discord.handlers import run_apex_overlay_tool
+
+    class _Narrateur:
+        async def show_apex(self, *a, **kw):
+            return None
+
+        def is_active(self):
+            return False        # pas de live
+
+    bot = type("B", (), {"overlay_narrator": _Narrateur()})()
+    brut = await run_apex_overlay_tool(bot, {"panel": "progress", "player": "azraël"})
+    message = json.loads(brut)["message"].lower()
+
+    assert "apex_legends" in message                  # l'outil qui reste est NOMMÉ
+    assert "progression" in message                   # et l'action aussi
+    assert "maintenant" in message                    # au présent, pas « tu pourrais »
+    assert "annonce" in message or "promets" in message   # interdit de se contenter de le dire

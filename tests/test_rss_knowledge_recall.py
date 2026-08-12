@@ -19,6 +19,37 @@ def test_is_news_query():
         assert not _is_news_query(q), q
 
 
+def test_dernier_tout_seul_ne_fait_pas_une_question_d_actu():
+    """Vécu le 2026-08-12 : « donne la courbe de kill de azra du dernier stream ».
+
+    Le fragment « derni » visait « les dernières actus » et « le dernier
+    patch » — mais « dernier » est un mot ordinaire. Il coupait les outils de
+    lookup sur des demandes qui n'ont rien d'une question d'actualité. Les vraies
+    questions d'actu portent toutes un autre marqueur (news, patch, maj…).
+    """
+    for q in ["donne la courbe de kill de azra du dernier stream",
+              "la dernière fois que azra a joué",
+              "montre le dernier clip",
+              "il a fait combien de kills sur les 10 dernières minutes ?",
+              "il a fait neuf kills sur la partie"]:
+        assert not _is_news_query(q), q
+
+
+def test_apex_legends_n_est_pas_un_outil_de_lookup():
+    """Le recall RSS couvre les patch notes et les articles. `apex_legends` ne
+    rend que de la donnée de jeu en direct — rang, stats, progression, rotation
+    de map, statut des serveurs. Les deux ne se recoupent JAMAIS, donc le recall
+    ne peut pas se substituer à l'outil.
+
+    Le 2026-08-12, il était coupé de l'offre en même temps que `web_search` :
+    le refus de `show_apex` renvoyait alors vers un outil que le modèle n'avait
+    plus, et Wally a promis une courbe qu'il ne pouvait plus produire.
+    """
+    from bot.discord.handlers import _LOOKUP_TOOLS
+
+    assert "apex_legends" not in _LOOKUP_TOOLS
+
+
 async def _make_db(tmp_path):
     path = str(tmp_path / "t.db")
     db = await Database.create(path)
