@@ -19,6 +19,20 @@ from bot.discord.commands.meme_cmd import (
 _MP4 = b"\x00\x00\x00\x18ftypmp42"
 
 
+def _png(couleur=(0, 120, 255)) -> bytes:
+    """Une vraie image : `importer()` la convertit, donc elle doit être décodable."""
+    import io
+
+    from PIL import Image
+
+    tampon = io.BytesIO()
+    Image.new("RGB", (120, 120), couleur).save(tampon, "PNG")
+    return tampon.getvalue()
+
+
+_PNG = _png()
+
+
 def _piece_jointe(url="https://cdn.discordapp.com/a/chat.png", content_type="image/png"):
     a = MagicMock()
     a.url = url
@@ -266,9 +280,57 @@ async def test_ranger_ecrit_le_fichier_le_sidecar_et_annonce(tmp_path, monkeypat
     assert (tmp_path / "meme1.mp4").read_bytes() == _MP4
     assert (tmp_path / "meme1.mp4.txt").read_text(encoding="utf-8") == "un clip qui tourne"
     assert salon.send.await_count == 1
-    assert "meme1.mp4" in salon.send.call_args.args[0]
+    embed = salon.send.call_args.kwargs["embed"]
+    assert "meme1.mp4" in str(embed.to_dict())
     assert isinstance(salon.send.call_args.kwargs["file"], discord.File)
     assert vue.is_finished()
+
+
+@pytest.mark.asyncio
+async def test_l_annonce_montre_l_image_dans_l_embed(tmp_path, monkeypatch):
+    """Une image s'affiche DANS l'embed, via la pièce jointe qui l'accompagne."""
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    salon = _salon()
+    vue = VueRangement(42, _PNG, ".png", "un carré", salon)
+
+    await vue.ranger(_interaction())
+
+    embed = salon.send.call_args.kwargs["embed"]
+    nom = salon.send.call_args.kwargs["file"].filename
+    assert embed.image.url == f"attachment://{nom}"
+    assert "Testeur" in str(embed.to_dict())
+
+
+@pytest.mark.asyncio
+async def test_l_annonce_ne_pose_pas_de_video_en_image_d_embed(tmp_path, monkeypatch):
+    """Un `.mp4` en `set_image` donne un cadre vide : la vidéo reste en pièce jointe.
+
+    Discord n'affiche pas de vidéo dans un embed. L'y désigner ne casse rien
+    côté API, mais rend un embed avec un emplacement d'image qui ne se remplit
+    jamais — le meme paraît manquant alors qu'il est bien joint en dessous.
+    """
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    salon = _salon()
+    vue = VueRangement(42, _MP4, ".mp4", "un clip", salon)
+
+    await vue.ranger(_interaction())
+
+    assert salon.send.call_args.kwargs["embed"].image.url is None
+
+
+@pytest.mark.asyncio
+async def test_l_annonce_ne_publie_pas_la_description(tmp_path, monkeypatch):
+    """La description est le contexte interne de Wally, jamais du texte à lire.
+
+    Même règle que sur l'overlay, où la légende a été retirée pour cette raison.
+    """
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    salon = _salon()
+    vue = VueRangement(42, _PNG, ".png", "SECRET DE POLICHINELLE", salon)
+
+    await vue.ranger(_interaction())
+
+    assert "SECRET DE POLICHINELLE" not in str(salon.send.call_args.kwargs["embed"].to_dict())
 
 
 @pytest.mark.asyncio

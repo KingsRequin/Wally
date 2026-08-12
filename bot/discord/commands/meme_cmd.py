@@ -27,6 +27,10 @@ from bot.core.scrape import ScrapeService
 
 DOSSIER_MEMES = Path("data/memes")
 
+# Le cyan d'accent du projet, celui du dashboard et de l'écran de chargement
+# d'`/wally imagine`.
+COULEUR_ACCENT = "#06b6d4"
+
 # Ce que l'aperçu laisse le temps de décider avant de se figer.
 DELAI_APERCU = 120.0
 
@@ -148,6 +152,36 @@ async def telecharger(url: str, limite: int = meme_import.MAX_TELECHARGEMENT) ->
     raise ValueError(f"plus de {MAX_REDIRECTIONS} redirections")
 
 
+def _embed_annonce(resultat: meme_import.ResultatImport, auteur) -> discord.Embed:
+    """L'annonce publique d'un meme rangé.
+
+    Ne porte PAS la description : elle est le contexte que Wally lit pour
+    commenter une image qu'il ne voit pas, pas un texte à afficher. Même règle
+    que sur l'overlay, où la légende a été retirée pour cette raison.
+
+    `set_image` n'est posé que sur un format affichable : Discord ne joue pas de
+    vidéo dans un embed, et l'y désigner rend un cadre qui ne se remplit jamais
+    — le meme paraîtrait manquant alors qu'il est joint juste en dessous.
+    """
+    embed = discord.Embed(
+        title="Nouveau meme dans la banque",
+        colour=discord.Colour.from_str(COULEUR_ACCENT),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Fichier", value=f"`{resultat.nom}`", inline=True)
+    poids = f"{resultat.octets / 1024:.0f} Ko"
+    embed.add_field(
+        name="Poids", value=f"{poids} (WebP)" if resultat.converti else poids, inline=True
+    )
+    if Path(resultat.nom).suffix.lower() in _EXTENSIONS:
+        embed.set_image(url=f"attachment://{resultat.nom}")
+    embed.set_footer(
+        text=f"Rangé par {auteur.display_name}",
+        icon_url=getattr(getattr(auteur, "display_avatar", None), "url", None),
+    )
+    return embed
+
+
 class FormulaireDescription(discord.ui.Modal, title="Description du meme"):
     """Le texte qui servira de vision à Wally — jamais affiché aux spectateurs."""
 
@@ -243,10 +277,7 @@ class VueRangement(discord.ui.View):
         try:
             # `discord.File` OUVRE le fichier : bloquant, comme tout le reste ici.
             fichier = await asyncio.to_thread(discord.File, DOSSIER_MEMES / resultat.nom)
-            await self.salon.send(
-                f"📥 **{interaction.user.display_name}** a rangé un meme — `{resultat.nom}`",
-                file=fichier,
-            )
+            await self.salon.send(embed=_embed_annonce(resultat, interaction.user), file=fichier)
         except Exception as e:  # noqa: BLE001 — le fichier EST rangé, seule l'annonce manque
             logger.error("Annonce publique du meme {n} impossible : {e}", n=resultat.nom, e=e)
             await interaction.followup.send(
