@@ -229,6 +229,45 @@ def _get_length_guidance(message_count: int) -> str:
     return "Grosse journée. 600 mots maximum, moins si tu as fait le tour."
 
 
+_VOICE_DRAFT_MARKER = "Brouillon :"
+
+
+def _budget_reecriture(brouillon: str) -> int:
+    """Plafond de sortie du pass de dé-polissage, taillé sur le brouillon.
+
+    Le pass réémet le texte entier — il ne rallonge jamais, mais il doit pouvoir
+    tout redire. Le secondaire est configuré pour des réponses de chat (1000
+    tokens le 2026-08-12) : un brouillon de jour chargé ne rentrait pas, et la
+    sortie repartait coupée en pleine phrase. Deux tokens et demi par mot couvre
+    le français avec sa marge d'accents et de ponctuation.
+    """
+    return max(1200, int(len(brouillon.split()) * 2.5))
+
+
+def _voice_pass_invalide(sortie: str) -> str:
+    """Motif de rejet du pass de dé-polissage, ou "" s'il a fait son travail.
+
+    Le 2026-08-12, le secondaire a recopié son message d'entrée au lieu de le
+    réécrire : la consigne de longueur, le relevé des ouvertures déjà usées et
+    le marqueur du brouillon sont partis sur Discord puis en archive, où le
+    lendemain les relit comme « ton journal d'hier ». La seule garde était
+    « non vide et pas le repli » — elle laissait passer n'importe quel texte.
+    """
+    if not sortie or not sortie.strip() or sortie.strip() == FALLBACK_RESPONSE:
+        return "repli du modèle"
+    if _VOICE_DRAFT_MARKER in sortie:
+        return "le message d'entrée recopié"
+    # Une sortie amputée par le plafond de tokens s'arrête sur un mot nu. Un
+    # journal fini s'arrête sur une ponctuation, un emoji ou un guillemet — même
+    # quand il laisse une pensée en suspens.
+    if sortie.rstrip()[-1:].isalnum():
+        return "sortie coupée en pleine phrase"
+    # Rien sur le raccourcissement en revanche : couper fort EST le travail du
+    # pass. Les jours creux le plafond tombe à 80 mots, et un brouillon de 400
+    # mots doit pouvoir repartir à 80 sans être pris pour une troncature.
+    return ""
+
+
 def _build_active_hours(messages: list[dict]) -> str:
     """Build human-readable active hour ranges from messages."""
     if not messages:
@@ -1099,17 +1138,26 @@ class DailyJournal:
                 voice_sections = [length_guidance]
                 if style_block:
                     voice_sections.append(style_block)
-                voice_sections.append(f"Brouillon :\n{journal_text}")
+                voice_sections.append(f"{_VOICE_DRAFT_MARKER}\n{journal_text}")
                 voice_input = "\n\n---\n\n".join(voice_sections)
                 voice_result = await self._llm_secondary.complete(
                     render_identity(_JOURNAL_VOICE_PASS_SYSTEM),
                     [{"role": "user", "content": voice_input}],
                     purpose="journal_voice_pass",
+                    # Le secondaire sert d'abord aux réponses de chat : son plafond
+                    # de sortie (1000 tokens) ne tient pas les 600 mots d'un jour
+                    # chargé. Le pass ne rallonge jamais, donc le brouillon donne
+                    # la borne haute de ce qu'il a à réémettre.
+                    max_tokens=_budget_reecriture(journal_text),
                 )
-                if voice_result and voice_result != FALLBACK_RESPONSE:
-                    journal_text = voice_result
+                motif = _voice_pass_invalide(voice_result)
+                if motif:
+                    logger.warning(
+                        "Journal : pass de dé-polissage écarté ({m}) — brouillon conservé",
+                        m=motif,
+                    )
                 else:
-                    logger.warning("Journal voice pass returned fallback — keeping primary output")
+                    journal_text = voice_result
             except Exception as exc:
                 logger.warning("Journal voice pass failed: {e}", e=exc)
 

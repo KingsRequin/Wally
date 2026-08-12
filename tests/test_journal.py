@@ -551,3 +551,91 @@ async def test_voice_pass_receives_length_ceiling():
     assert len(voice_inputs) == 1
     assert "mots maximum" in voice_inputs[0]
     assert "Brouillon :" in voice_inputs[0]
+
+
+# ── Le pass de dé-polissage ne doit jamais pouvoir publier son propre message ──
+# Vécu le 2026-08-12 : le secondaire a recopié son entrée au lieu de la réécrire.
+# Publié sur Discord et archivé : la consigne « 600 mots maximum », le relevé des
+# ouvertures déjà usées, « Brouillon : », puis le vrai texte coupé en pleine phrase.
+
+
+@pytest.mark.asyncio
+async def test_voice_pass_qui_recopie_son_entree_est_rejete():
+    """Une sortie qui contient le marqueur du brouillon EST l'entrée, pas une réécriture."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    llm.complete = AsyncMock(return_value="Alors là, faut que je te raconte ma journée.")
+
+    async def echo(system, messages, purpose="", **kwargs):
+        return messages[0]["content"]  # le modèle régurgite son entrée
+
+    llm_secondary.complete = echo
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+
+    await journal.generate_and_send()
+
+    publie = " ".join(sent)
+    assert "Brouillon :" not in publie
+    assert "mots maximum" not in publie
+    assert "Alors là, faut que je te raconte ma journée." in publie
+
+
+@pytest.mark.asyncio
+async def test_voice_pass_coupe_en_pleine_phrase_est_rejete():
+    """Une sortie tronquée par le plafond de tokens n'est pas une entrée de journal."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    llm.complete = AsyncMock(return_value="Le brouillon complet, lui, se termine bien.")
+    llm_secondary.complete = AsyncMock(
+        return_value="Je te raconte la soirée, et là mon ego en a profité, je vais pas"
+    )
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+
+    await journal.generate_and_send()
+
+    publie = " ".join(sent)
+    assert "je vais pas" not in publie
+    assert "Le brouillon complet, lui, se termine bien." in publie
+
+
+@pytest.mark.asyncio
+async def test_voice_pass_a_de_quoi_restituer_le_brouillon():
+    """Le budget de sortie du secondaire (1000 tokens) ne tient pas 600 mots.
+
+    Le pass doit rendre le brouillon entier : son plafond de sortie se calcule
+    sur la taille du brouillon, il ne peut pas rester celui d'une réponse de chat.
+    """
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    brouillon = " ".join(f"mot{i}" for i in range(600))
+    llm.complete = AsyncMock(return_value=brouillon)
+    captured = {}
+
+    async def capture(system, messages, purpose="", **kwargs):
+        captured[purpose] = kwargs.get("max_tokens")
+        return "Texte repassé, propre et fini."
+
+    llm_secondary.complete = capture
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    journal.set_send_callback(AsyncMock())
+
+    await journal.generate_and_send()
+
+    assert captured["journal_voice_pass"] is not None
+    assert captured["journal_voice_pass"] >= 1200
+
+
+@pytest.mark.asyncio
+async def test_voice_pass_a_le_droit_de_couper_fort():
+    """Les jours creux, le plafond est de 80 mots : ramener 400 mots à 80 est le travail du pass."""
+    config, llm, llm_secondary, emotion, memory = make_deps()
+    llm.complete = AsyncMock(return_value=" ".join(f"mot{i}" for i in range(400)) + ".")
+    llm_secondary.complete = AsyncMock(return_value="Rien de spécial aujourd'hui, j'ai tourné en rond.")
+    journal = DailyJournal(config, llm, llm_secondary, emotion, memory)
+    sent = []
+    journal.set_send_callback(AsyncMock(side_effect=lambda t, **kw: sent.append(t)))
+
+    await journal.generate_and_send()
+
+    assert "Rien de spécial aujourd'hui" in " ".join(sent)

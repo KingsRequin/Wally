@@ -346,6 +346,16 @@ class DeepSeekLLMClient(BaseLLMClient):
             )
             text = _strip_dsml(response.choices[0].message.content or "")
             await self._log_cost(response, purpose, user_id)
+            # Une sortie amputée par `max_tokens` est indiscernable d'une sortie
+            # finie une fois rendue en `str`. Le 2026-08-12, le journal du soir
+            # est parti sur Discord coupé en pleine phrase sans une ligne de log.
+            if getattr(response.choices[0], "finish_reason", None) == "length":
+                logger.warning(
+                    "DeepSeek complete() : réponse coupée au plafond de tokens "
+                    "(purpose={p}, max_tokens={m})",
+                    p=purpose,
+                    m=max_tokens or self._max_tokens,
+                )
             # Contrat de `BaseLLMClient.complete` : le texte du modèle, ou
             # FALLBACK_RESPONSE. Une sortie vide — contenu nul, ou intégralement
             # constituée de balises DSML retirées juste au-dessus — le violait :
