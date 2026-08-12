@@ -46,7 +46,14 @@ def _base(tmp_path, avec_index=True, dates_aware=0):
 
 @pytest.mark.asyncio
 async def test_une_installation_saine_ne_produit_aucune_alerte(tmp_path):
-    assert await verifier_invariants(_config(), _base(tmp_path)) == []
+    # Créer une racine vierge pour isoler du dossier réel de memes
+    (tmp_path / "data" / "memes").mkdir(parents=True)
+    (tmp_path / "bot" / "persona" / "prompts").mkdir(parents=True)
+    (tmp_path / "bot" / "intelligence" / "persona" / "prompts").mkdir(parents=True)
+    assert (
+        await verifier_invariants(_config(), _base(tmp_path), racine=tmp_path)
+        == []
+    )
 
 
 @pytest.mark.asyncio
@@ -91,6 +98,43 @@ async def test_une_base_absente_nest_pas_une_anomalie(tmp_path):
     """Première installation : la base n'existe pas encore, ce n'est pas un défaut."""
     alertes = await verifier_invariants(_config(), str(tmp_path / "jamais_creee.db"))
     assert not any("index" in a or "aware" in a for a in alertes)
+
+
+def test_le_canari_signale_un_meme_sans_description(tmp_path):
+    from bot.core.canari import _verifier_memes
+
+    memes = tmp_path / "data" / "memes"
+    memes.mkdir(parents=True)
+    (memes / "meme1.webp").write_bytes(b"a")
+
+    alertes = _verifier_memes(tmp_path)
+
+    assert any("meme1.webp" in a for a in alertes)
+
+
+def test_le_canari_signale_un_fichier_au_dessus_du_plafond(tmp_path):
+    from bot.core.canari import _verifier_memes
+    from bot.core.memes import _MAX_BYTES
+
+    memes = tmp_path / "data" / "memes"
+    memes.mkdir(parents=True)
+    (memes / "enorme.webp").write_bytes(b"\x00" * (_MAX_BYTES + 1))
+    (memes / "enorme.webp.txt").write_text("d", encoding="utf-8")
+
+    alertes = _verifier_memes(tmp_path)
+
+    assert any("enorme.webp" in a and "jamais tiré" in a for a in alertes)
+
+
+def test_le_canari_se_tait_sur_une_banque_saine(tmp_path):
+    from bot.core.canari import _verifier_memes
+
+    memes = tmp_path / "data" / "memes"
+    memes.mkdir(parents=True)
+    (memes / "meme1.webp").write_bytes(b"a")
+    (memes / "meme1.webp.txt").write_text("un chat", encoding="utf-8")
+
+    assert _verifier_memes(tmp_path) == []
 
 
 def test_le_canari_est_bien_branche_au_demarrage():

@@ -111,17 +111,56 @@ def _verifier_identite(config) -> list[str]:
     return alertes
 
 
-async def verifier_invariants(config, db_path: str | None = None) -> list[str]:
+def _verifier_memes(racine: Path) -> list[str]:
+    """Ce que la banque de memes tait.
+
+    `MemeLibrary.list()` écarte un fichier trop lourd avec un log DEBUG, muet en
+    production où les sinks sont à INFO ; une vidéo ne s'affiche jamais sans que
+    rien ne le dise ; un meme sans `.txt` est introuvable par mot-clé. Trois
+    silences, aucune erreur.
+    """
+    from bot.core.meme_import import memes_sans_description
+    from bot.core.memes import _EXTENSIONS, _MAX_BYTES
+
+    dossier = racine / "data" / "memes"
+    if not dossier.is_dir():
+        return []
+
+    alertes: list[str] = []
+    muets = memes_sans_description(dossier)
+    if muets:
+        noms = ", ".join(p.name for p in muets[:5])
+        suite = f" (+{len(muets) - 5})" if len(muets) > 5 else ""
+        alertes.append(
+            f"{len(muets)} meme(s) sans description — introuvables par mot-clé et "
+            f"commentés à l'aveugle : {noms}{suite}"
+        )
+    for p in sorted(dossier.iterdir()):
+        if not p.is_file() or p.suffix.lower() not in _EXTENSIONS:
+            continue
+        if p.stat().st_size > _MAX_BYTES:
+            alertes.append(
+                f"{p.name} pèse {p.stat().st_size / 1e6:.1f} Mo : au-dessus du plafond, "
+                f"il ne sera jamais tiré"
+            )
+    return alertes
+
+
+async def verifier_invariants(
+    config, db_path: str | None = None, racine: Path | None = None
+) -> list[str]:
     """Passe tous les invariants en revue. Retourne la liste des alertes.
 
     Ne lève jamais, ne bloque jamais : la valeur est dans le LOG.
     """
-    racine = Path(__file__).resolve().parents[2]
+    if racine is None:
+        racine = Path(__file__).resolve().parents[2]
     chemin: str = db_path or os.getenv("DB_PATH") or "data/wally.db"
 
     alertes: list[str] = []
     alertes += _verifier_prompts(racine)
     alertes += _verifier_identite(config)
+    alertes += _verifier_memes(racine)
     if Path(chemin).exists():
         alertes += await _verifier_index(chemin)
         alertes += await _verifier_formats_de_date(chemin)
