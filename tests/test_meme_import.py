@@ -122,8 +122,10 @@ def test_un_jpeg_n_est_jamais_converti(tmp_path):
 def test_l_import_ecrit_l_image_et_son_sidecar(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (120, 120), (0, 120, 255)).save(src, "PNG")
+    octets = src.read_bytes()
+    src.unlink()
 
-    res = meme_import.importer(src.read_bytes(), ".png", "un carré bleu", tmp_path)
+    res = meme_import.importer(octets, ".png", "un carré bleu", tmp_path)
 
     assert res.ok is True
     assert res.nom == "meme1.webp"
@@ -179,3 +181,20 @@ def test_une_description_vide_n_ecrit_pas_de_sidecar(tmp_path):
 
     assert res.ok is True
     assert not (tmp_path / "meme1.mp4.txt").exists()
+
+
+def test_un_fichier_au_nom_libre_est_detecte_comme_doublon(tmp_path):
+    """Les noms libres sont acceptés : mon-image.jpg est une convention valide."""
+    # Créer un fichier au nom libre
+    src = tmp_path / "azrael-blame-le-ping.jpg"
+    Image.new("RGB", (100, 100), (255, 0, 0)).save(src, "JPEG")
+    octets = src.read_bytes()
+
+    # Essayer d'importer les mêmes octets via importer()
+    res = meme_import.importer(octets, ".jpg", "mon image", tmp_path)
+
+    # Doit être refusé comme doublon
+    assert res.ok is False
+    assert res.doublon == "azrael-blame-le-ping.jpg"
+    assert not (tmp_path / "meme1.jpg").exists()
+    assert not (tmp_path / "meme1.jpg.txt").exists()

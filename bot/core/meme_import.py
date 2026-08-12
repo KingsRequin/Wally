@@ -20,6 +20,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
 from PIL import Image, ImageSequence
 
 from bot.core.memes import _EXTENSIONS, _EXTENSIONS_MEDIA, _MAX_BYTES
@@ -67,7 +68,8 @@ def convertir_si_avantageux(octets: bytes, suffixe: str) -> tuple[bytes, str]:
             convertir(src, dst)
             if verifier_conversion(src, dst):
                 return octets, suffixe
-        except Exception:  # noqa: BLE001 — un format exotique ne fait pas échouer l'import
+        except Exception as e:  # noqa: BLE001 — un format exotique ne fait pas échouer l'import
+            logger.warning("conversion de {suffixe} échouée : {err}", suffixe=suffixe, err=e)
             return octets, suffixe
         return dst.read_bytes(), ".webp"
 
@@ -135,8 +137,6 @@ def empreintes(dossier: Path) -> dict[str, str]:
     index: dict[str, str] = {}
     for p in sorted(dossier.iterdir()):
         if not p.is_file() or p.suffix.lower() not in _EXTENSIONS_MEDIA:
-            continue
-        if not _NUMERO.match(p.name):
             continue
         index.setdefault(hashlib.sha256(p.read_bytes()).hexdigest(), p.name)
     return index
