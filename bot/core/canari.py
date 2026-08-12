@@ -114,19 +114,21 @@ def _verifier_identite(config) -> list[str]:
 def _verifier_memes(racine: Path) -> list[str]:
     """Ce que la banque de memes tait.
 
-    `MemeLibrary.list()` écarte un fichier trop lourd avec un log DEBUG, muet en
-    production où les sinks sont à INFO ; une vidéo ne s'affiche jamais sans que
-    rien ne le dise ; un meme sans `.txt` est introuvable par mot-clé. Trois
-    silences, aucune erreur.
+    `MemeLibrary.list()` écarte un fichier trop lourd (> 8 Mo) avec un log DEBUG,
+    muet en production où les sinks sont à INFO ; une vidéo ne s'affichera jamais
+    dans l'overlay, sans que rien ne le signale ; un meme sans `.txt` est
+    introuvable par mot-clé et reçoit un commentaire générique. Trois silences.
     """
     from bot.core.meme_import import memes_sans_description
-    from bot.core.memes import _EXTENSIONS, _MAX_BYTES
+    from bot.core.memes import _EXTENSIONS, _EXTENSIONS_MEDIA, _MAX_BYTES
 
     dossier = racine / "data" / "memes"
     if not dossier.is_dir():
         return []
 
     alertes: list[str] = []
+
+    # Memes sans description — introuvables par mot-clé
     muets = memes_sans_description(dossier)
     if muets:
         noms = ", ".join(p.name for p in muets[:5])
@@ -135,14 +137,39 @@ def _verifier_memes(racine: Path) -> list[str]:
             f"{len(muets)} meme(s) sans description — introuvables par mot-clé et "
             f"commentés à l'aveugle : {noms}{suite}"
         )
+
+    # Images affichables au-dessus du plafond d'affichage
     for p in sorted(dossier.iterdir()):
         if not p.is_file() or p.suffix.lower() not in _EXTENSIONS:
             continue
-        if p.stat().st_size > _MAX_BYTES:
+        try:
+            size = p.stat().st_size
+        except OSError:
+            logger.debug("Meme inaccessible au scan du canari : {n}", n=p.name)
+            continue
+        if size > _MAX_BYTES:
             alertes.append(
-                f"{p.name} pèse {p.stat().st_size / 1e6:.1f} Mo : au-dessus du plafond, "
+                f"{p.name} pèse {size / 1e6:.1f} Mo : au-dessus du plafond, "
                 f"il ne sera jamais tiré"
             )
+
+    # Vidéos — ne s'afficheront jamais dans l'overlay, quelle que soit la description
+    videos = []
+    for p in sorted(dossier.iterdir()):
+        if not p.is_file():
+            continue
+        ext = p.suffix.lower()
+        if ext in _EXTENSIONS_MEDIA and ext not in _EXTENSIONS:
+            videos.append(p)
+
+    if videos:
+        noms = ", ".join(p.name for p in videos[:5])
+        suite = f" (+{len(videos) - 5})" if len(videos) > 5 else ""
+        alertes.append(
+            f"{len(videos)} fichier(s) vidéo — ne s'affichent jamais dans l'overlay, "
+            f"la description ne change rien : {noms}{suite}"
+        )
+
     return alertes
 
 
