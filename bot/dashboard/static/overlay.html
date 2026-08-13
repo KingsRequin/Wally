@@ -177,7 +177,7 @@
     /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
     body[data-side="right"] #bubble.speech::after {
       left: auto;
-      right: 34px;
+      right: 10px;
       /* Le triangle est effilé vers la GAUCHE : retourné, il pointe vers
          l'avatar quand celui-ci est à droite. */
       clip-path: polygon(0 0, 100% 0, 100% 100%);
@@ -244,18 +244,23 @@
        de l'avatar, effilé vers lui. Sans contour à raccorder, la jonction n'a
        plus lieu d'être réglée — c'est ce qui avait coûté trois passes sur la
        version dessinée : deux traits qui doivent se rejoindre au pixel.
-       Elle recouvre le bord de 2 px pour qu'aucun liseré d'anticrénelage ne
-       sépare les deux surfaces. */
+       Poussée DANS l'angle : c'est ce qui la fait lire comme la bouche de
+       Wally, et non comme un appendice au milieu du bord.
+
+       Le rayon de 18 px interdit d'aller jusqu'au coin exact — le bord s'y
+       incurve et un liseré de fond apparaîtrait entre la boîte et la pointe.
+       Elle mord donc de 8 px dans la boîte, hauteur à laquelle le coin n'est
+       plus rentré que de 3 px : à 10 px du bord, son angle supérieur reste au
+       large. */
     #bubble.speech::after {
       content: "";
       position: absolute;
-      left: 34px;
-      bottom: -22px;
+      left: 10px;
+      bottom: -16px;
       width: 30px;
       height: 24px;
       background: var(--bulle-fond);
       clip-path: polygon(100% 0, 0 0, 0 100%);
-      margin-bottom: 2px;
     }
 
     /* Bulle de pensée : un vrai nuage de BD, pour qu'on ne la confonde JAMAIS
