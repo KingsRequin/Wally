@@ -9,8 +9,15 @@ Spec : docs/superpowers/specs/2026-08-13-apex-duel-points-chaine-design.md
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Au-delà de ce delta sur une seule manche, ce n'est pas un score : c'est un
+# tracker qu'on vient d'épingler. Mesuré le 2026-08-13 : +7793 d'un coup, sans
+# un kill joué. Le plafond est volontairement haut — les records connus en Apex
+# tournent autour de 25-30 kills — pour ne jamais mordre sur un vrai résultat.
+PLAFOND_KILLS_MANCHE = 30
 
 # Le viewer a ce délai pour rejoindre le squad. Au-delà, remboursement : un
 # viewer qui a payé et ne voit rien est le pire résultat possible.
@@ -49,11 +56,24 @@ class Duel:
     manches: int = 3
     redemption_id: str = ""
     etat: Etat = Etat.RESOLUTION
-    # Un score par manche jouée : {"azrael": int|None, "viewer": int|None}
+    # Rien de figé en dur : ce sont des champs, donc sérialisés et modifiables
+    # par duel, jamais des constantes lues directement dans avancer().
+    attente_squad_s: float = ATTENTE_SQUAD_S
+    plafond_kills_manche: int = PLAFOND_KILLS_MANCHE
+    # Un score par manche jouée : {"azrael": int|None, "viewer": int|None}.
+    # Les deux valent None dès que la manche n'est pas mesurable pour L'UN
+    # des deux joueurs — jamais un score réel comparé à une absence de mesure.
     scores: list[dict] = field(default_factory=list)
     _base_azrael: dict = field(default_factory=dict)
     _base_viewer: dict = field(default_factory=dict)
     _t_attente: float | None = None
+    # Debounce anti-hoquet : un flag de présence EA peut mentir sur une seule
+    # lecture. Deux relevés consécutifs concordants sont exigés pour changer
+    # d'état (entrée en partie comme retour au lobby). Volontairement pas
+    # sérialisés : perdre une confirmation en attente sur un rebuild ne fait
+    # que retarder la transition d'un cycle de sonde, sans jamais la fausser.
+    _pending_debut: bool = False
+    _pending_fin: bool = False
 
     # -- Totaux -------------------------------------------------------------
     @property
@@ -75,16 +95,29 @@ class Duel:
         self._base_azrael = {}
         self._base_viewer = {}
         self._t_attente = None
+        self._pending_debut = False
+        self._pending_fin = False
         self.etat = Etat.ATTENTE_SQUAD
 
     # -- Persistance --------------------------------------------------------
     def to_dict(self) -> dict:
+        """Une PHOTO de l'état, jamais une référence.
+
+        Un appelant qui capture ce dict et laisse le duel continuer avant de
+        l'écrire (I/O async) ne doit jamais voir cette suite bouger la
+        capture — sinon une manche encore en cours à l'instant du snapshot se
+        retrouve comptée deux fois à la reprise.
+        """
         return {
             "viewer_nom": self.viewer_nom, "viewer_uid": self.viewer_uid,
             "azrael_uid": self.azrael_uid, "manches": self.manches,
             "redemption_id": self.redemption_id, "etat": self.etat.value,
-            "scores": self.scores, "base_azrael": self._base_azrael,
-            "base_viewer": self._base_viewer, "t_attente": self._t_attente,
+            "attente_squad_s": self.attente_squad_s,
+            "plafond_kills_manche": self.plafond_kills_manche,
+            "scores": copy.deepcopy(self.scores),
+            "base_azrael": copy.deepcopy(self._base_azrael),
+            "base_viewer": copy.deepcopy(self._base_viewer),
+            "t_attente": self._t_attente,
         }
 
     @classmethod
@@ -94,10 +127,12 @@ class Duel:
             azrael_uid=d.get("azrael_uid", ""), manches=int(d.get("manches", 3)),
             redemption_id=d.get("redemption_id", ""),
             etat=Etat(d.get("etat", Etat.RESOLUTION.value)),
-            scores=list(d.get("scores") or []),
+            attente_squad_s=float(d.get("attente_squad_s", ATTENTE_SQUAD_S)),
+            plafond_kills_manche=int(d.get("plafond_kills_manche", PLAFOND_KILLS_MANCHE)),
+            scores=copy.deepcopy(d.get("scores") or []),
         )
-        duel._base_azrael = dict(d.get("base_azrael") or {})
-        duel._base_viewer = dict(d.get("base_viewer") or {})
+        duel._base_azrael = copy.deepcopy(d.get("base_azrael") or {})
+        duel._base_viewer = copy.deepcopy(d.get("base_viewer") or {})
         duel._t_attente = d.get("t_attente")
         return duel
 
@@ -112,51 +147,93 @@ class Duel:
                 self._t_attente = r.t
             # Les DEUX en partie : la manche commence. On ne peut pas vérifier
             # qu'ils sont dans le même squad — l'API ne donne pas la composition
-            # d'une équipe (§2 de la spec).
+            # d'une équipe (§2 de la spec). Il faut DEUX relevés consécutifs
+            # concordants pour confirmer : un flag de présence EA hoquette.
             if r.azrael_in_game and r.viewer_in_game:
+                if not self._pending_debut:
+                    self._pending_debut = True
+                    return []
+                self._pending_debut = False
                 self._base_azrael = dict(r.kills_azrael)
                 self._base_viewer = dict(r.kills_viewer)
                 self._t_attente = None
                 self.etat = Etat.MANCHE
                 return [Evenement("manche_debut", {"manche": self.manche_courante,
                                                    "sur": self.manches})]
-            if r.t - self._t_attente >= ATTENTE_SQUAD_S:
-                self.etat = Etat.ABANDON
+            self._pending_debut = False
+            if r.t - self._t_attente < self.attente_squad_s:
+                return []
+            # Timeout. Le ruling diffère selon qu'une manche a déjà été jouée :
+            # quitter avant tout resultat mesuré ouvre droit au remboursement,
+            # quitter après (ENTRE_MANCHES) n'y ouvre plus droit — sinon ce
+            # serait un raccourci pour abandonner dès qu'on perd, et l'API ne
+            # distingue pas un départ volontaire d'une coupure.
+            etat_avant = self.etat
+            self.etat = Etat.ABANDON
+            if etat_avant is Etat.ENTRE_MANCHES:
+                a, v = self.total_azrael, self.total_viewer
                 return [Evenement("abandon", {
-                    "rembourser": True,
-                    "motif": "personne n'a rejoint le squad dans le délai",
+                    "rembourser": False,
+                    "motif": (f"le duel s'est arrêté après la manche "
+                              f"{len(self.scores)}/{self.manches} — pas de "
+                              f"retour dans le délai"),
+                    "azrael": a, "viewer": v,
+                    "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
+                    "scores": list(self.scores),
                 })]
-            return []
+            return [Evenement("abandon", {
+                "rembourser": True,
+                "motif": "personne n'a rejoint le squad dans le délai",
+            })]
 
         if self.etat is Etat.MANCHE:
             # C'est le retour au lobby d'Azraël qui clôt la manche : les
-            # compteurs y sont déjà à jour, mesuré deux fois sur deux.
-            if r.azrael_in_game:
-                return []
-            sa = score_manche(self._base_azrael, r.kills_azrael)
-            sv = score_manche(self._base_viewer, r.kills_viewer)
-            self.scores.append({"azrael": sa, "viewer": sv})
-            evts = [Evenement("manche_fin", {
-                "manche": len(self.scores), "sur": self.manches,
-                "azrael": sa, "viewer": sv,
-                "mesurable": sa is not None or sv is not None,
-                "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
-            })]
-            if len(self.scores) >= self.manches:
-                evts.extend(self._clore())
-            else:
-                self.etat = Etat.ENTRE_MANCHES
-                self._t_attente = None
-            return evts
+            # compteurs y sont déjà à jour. Deux relevés consécutifs "hors
+            # partie" sont exigés — un hoquet isolé du flag de présence ne
+            # doit ni clore la manche en cours ni en ouvrir une autre.
+            if not r.azrael_in_game:
+                if not self._pending_fin:
+                    self._pending_fin = True
+                    return []
+                self._pending_fin = False
+                sa = score_manche(self._base_azrael, r.kills_azrael,
+                                  plafond=self.plafond_kills_manche)
+                sv = score_manche(self._base_viewer, r.kills_viewer,
+                                  plafond=self.plafond_kills_manche)
+                # Mesurable seulement si LES DEUX côtés le sont : on ne compare
+                # jamais un score réel à une absence de mesure. Une manche non
+                # mesurable pour un seul joueur ne compte pour personne.
+                mesurable = sa is not None and sv is not None
+                self.scores.append({
+                    "azrael": sa if mesurable else None,
+                    "viewer": sv if mesurable else None,
+                })
+                evts = [Evenement("manche_fin", {
+                    "manche": len(self.scores), "sur": self.manches,
+                    "azrael": sa, "viewer": sv, "mesurable": mesurable,
+                    "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
+                })]
+                if len(self.scores) >= self.manches:
+                    evts.extend(self._clore())
+                else:
+                    self.etat = Etat.ENTRE_MANCHES
+                    self._t_attente = None
+                return evts
+            self._pending_fin = False
+            return []
 
         return []
 
     def _clore(self) -> list[Evenement]:
-        """Verdict, ou abandon si rien n'a jamais été mesurable."""
-        # Aucune manche mesurable : Mixtape (10 kills → 0 compteur, mesuré) ou
-        # API muette. Dans les deux cas le duel n'est pas arbitrable. Annoncer
-        # un match nul serait mentir avec aplomb.
-        if all(s["azrael"] is None and s["viewer"] is None for s in self.scores):
+        """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part.
+
+        Un delta de 0 mesuré (vraie Mixtape : trackers présents mais figés,
+        `score_manche` rend 0) doit finir ici exactement comme un dict vide
+        (API muette, `score_manche` rend None) : dans les deux cas, aucun
+        kill n'a été enregistré de tout le duel, donc le duel n'est pas
+        arbitrable. Annoncer un match nul serait mentir avec aplomb.
+        """
+        if all((s["azrael"] or 0) == 0 and (s["viewer"] or 0) == 0 for s in self.scores):
             self.etat = Etat.ABANDON
             return [Evenement("abandon", {
                 "rembourser": True,
@@ -170,13 +247,6 @@ class Duel:
             "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
             "scores": list(self.scores),
         })]
-
-
-# Au-delà de ce delta sur une seule manche, ce n'est pas un score : c'est un
-# tracker qu'on vient d'épingler. Mesuré le 2026-08-13 : +7793 d'un coup, sans
-# un kill joué. Le plafond est volontairement haut — les records connus en Apex
-# tournent autour de 25-30 kills — pour ne jamais mordre sur un vrai résultat.
-PLAFOND_KILLS_MANCHE = 30
 
 
 def score_manche(avant: dict[str, int], apres: dict[str, int],
