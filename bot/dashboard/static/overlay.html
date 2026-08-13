@@ -28,13 +28,20 @@
       font-display: swap;
     }
 
-    /* Encre et papier : les deux bulles sont dessinées comme une planche de BD —
-       aplat clair, trait sombre épais. Le contraste tient sur n'importe quel
-       gameplay, clair ou sombre, sans avoir à rendre quoi que ce soit
-       translucide (une bulle translucide laisse voir ses propres raccords). */
+    /* Les bulles sont des BOÎTES sombres, sans contour, avec une ombre portée
+       dure et décalée — un aplat, pas un cadre. Le contour épais et la
+       silhouette organique ont été abandonnés : ce que le propriétaire veut est
+       une box, pas un ovale dessiné.
+
+       L'aplat reste OPAQUE : le nuage de pensée est fait de bosses qui se
+       chevauchent, et un aplat translucide laisserait voir chaque raccord. */
     :root {
-      --ink:   #14121c;
-      --paper: #f7f3e9;
+      --bulle-fond:  #16141f;
+      --bulle-texte: #f7f3e9;
+      /* Décalée et sans flou : c'est ce décalage net qui fait le style. Portée
+         par un `drop-shadow` et non une `box-shadow`, pour qu'elle suive la
+         SILHOUETTE — pointe comprise — et pas la boîte. */
+      --bulle-ombre: 6px 6px 0 rgba(0, 0, 0, .45);
 
       /* Le verre sombre des widgets — UNE valeur. Elle traînait à quatre
          opacités différentes (.85 .88 .90 .92), au gré de l'ordre d'écriture. */
@@ -170,49 +177,38 @@
     /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
     body[data-side="right"] #bubble.speech::after {
       left: auto;
-      right: calc(1.9% - 54px);
-      transform: scaleX(-1);
+      right: 34px;
+      /* Le triangle est effilé vers la GAUCHE : retourné, il pointe vers
+         l'avatar quand celui-ci est à droite. */
+      clip-path: polygon(0 0, 100% 0, 100% 100%);
     }
-    body[data-side="right"] #bubble.thought::after  { left: auto; right: 30px; }
-    body[data-side="right"] #bubble.thought::before { left: auto; right: 12px; }
+    body[data-side="right"] #bubble.thought::after  { left: auto; right: 34px; }
+    body[data-side="right"] #bubble.thought::before { left: auto; right: 14px; }
 
     /* ── Bulle ──────────────────────────────────────────────────────────── */
     #bubble {
       position: relative;
-      /* 260 px et pas 300 : au-delà, trois lignes de texte donnent une boîte de
-         rapport 3:1 — n'importe quelle forme convexe y paraît plate sur le
-         dessus. Plus étroite, la bulle prend de la hauteur et redevient ronde.
-         La borne basse suit la source OBS : 234px = avatar (200) + gap (10) +
-         padding (24), pour que la bulle rétrécisse au lieu de sortir du cadre. */
-      max-width: min(260px, calc(100vw - 234px));
+      /* Une box n'a plus besoin d'être étroite : c'est l'ovale qui paraissait
+         plat au-delà d'un certain rapport, pas un rectangle. La borne basse
+         suit la source OBS : 234px = avatar (200) + gap (10) + padding (24). */
+      max-width: min(300px, calc(100vw - 234px));
       /* Remontée à hauteur de tête : la bulle flotte en haut de la mascotte
          plutôt qu'à ses pieds. */
       margin-bottom: 132px;
-      /* Marges généreuses, et surtout en Y : c'est la ligne la PLUS LONGUE qui
-         fixe la largeur de la bulle, et rien ne garantit qu'elle soit au milieu.
-         Si elle est la première, elle atterrit là où la silhouette se referme et
-         se fait rogner. 36 px la ramènent dans la zone large — vérifié de une à
-         huit lignes. */
-      padding: 36px 50px;
+      /* Marges d'une box : les 36 px en Y ne servaient qu'à éloigner le texte
+         d'une silhouette qui se refermait sur les côtés. */
+      padding: 16px 22px;
       font-size: 17px;
       font-weight: 600;
       line-height: 1.35;
       /* Lettrage de BD : centré dans la bulle, jamais aligné à gauche. */
       text-align: center;
-      color: var(--ink);
-      /* La forme vient d'une silhouette SVG, pas d'un `border-radius` : celui-ci
-         raisonne en rayons de coin, donc il laisse forcément des bords droits
-         entre les coins — c'est ce qui donnait une bulle carrée. Le SVG, lui,
-         garde ses PROPORTIONS quand on l'étire : la courbure ne s'aplatit
-         jamais, quelle que soit la longueur du texte. La forme est une
-         superellipse (n = 2,2) à peine gondolée, pour un trait tracé à la main
-         plutôt qu'un ovale de géométrie. */
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M196.0%2050.0L196.2%2055.9L195.3%2061.2L193.4%2066.1L190.3%2070.7L186.1%2075.0L180.8%2079.0L174.6%2082.5L167.5%2085.6L159.6%2088.2L151.1%2090.4L142.1%2092.1L132.6%2093.4L122.6%2094.3L112.1%2094.8L100.0%2095.0L87.9%2094.8L77.4%2094.3L67.4%2093.4L57.9%2092.1L48.9%2090.4L40.4%2088.2L32.5%2085.6L25.4%2082.5L19.2%2079.0L13.9%2075.0L9.7%2070.7L6.6%2066.1L4.7%2061.2L3.8%2055.9L4.0%2050.0L5.1%2044.1L7.1%2039.1L9.9%2034.5L13.4%2030.1L17.6%2026.0L22.5%2022.2L28.0%2018.6L34.2%2015.3L41.2%2012.3L48.9%209.6L57.3%207.3L66.6%205.5L76.6%204.1L87.4%203.3L100.0%203.0L112.6%203.3L123.4%204.1L133.4%205.5L142.7%207.3L151.1%209.6L158.8%2012.3L165.8%2015.3L172.0%2018.6L177.5%2022.2L182.4%2026.0L186.6%2030.1L190.1%2034.5L192.9%2039.1L194.9%2044.1Z%27%20fill=%27%23f7f3e9%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linejoin=%27round%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/svg%3E");
-      background-size: 100% 100%;
-      background-repeat: no-repeat;
-      /* L'ombre porte sur la silhouette réelle, queue comprise — une box-shadow
-         suivrait la boîte et laisserait la queue à plat. */
-      filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .45));
+      color: var(--bulle-texte);
+      background: var(--bulle-fond);
+      border-radius: 18px;
+      /* L'ombre suit la silhouette, pointe comprise : une `box-shadow` s'
+         arrêterait à la boîte et laisserait la pointe à plat. */
+      filter: drop-shadow(var(--bulle-ombre));
       opacity: 0;
       transform: translateY(8px) scale(.88);
       /* Elle grandit depuis sa QUEUE, pas depuis son centre : elle sort de la
@@ -244,61 +240,38 @@
       overflow: hidden;
     }
 
-    /* Queue de la bulle de dialogue : une corne courbe et effilée, pas un
-       triangle. Taille fixe, jamais étirée.
-
-       Sa greffe se règle au pixel, sinon elle se voit. Deux contraintes :
-
-       — L'aplat de la queue et ses deux traits se terminent au MÊME endroit.
-         Tout ce que l'aplat efface du contour de la bulle, les traits le
-         remplacent. Quand l'aplat mordait 10 px plus loin que les traits, il
-         effaçait du contour que rien ne reprenait : une encoche de chaque côté
-         de la mouche.
-
-       — Ce point de greffe vise le CONTOUR, pas le bord de la boîte. La
-         silhouette est en retrait de 1,9 % de la largeur — la marge qui empêche
-         le trait d'être rogné par le viewBox du SVG — un retrait qui grandit
-         donc avec la bulle : d'où un décalage en `%` et non en px. Les 2 px
-         retirés enfoncent la greffe juste sous le contour, pour l'effacer sur
-         toute son épaisseur. */
+    /* Pointe de la bulle : un triangle du MÊME aplat, posé au coin bas, du côté
+       de l'avatar, effilé vers lui. Sans contour à raccorder, la jonction n'a
+       plus lieu d'être réglée — c'est ce qui avait coûté trois passes sur la
+       version dessinée : deux traits qui doivent se rejoindre au pixel.
+       Elle recouvre le bord de 2 px pour qu'aucun liseré d'anticrénelage ne
+       sépare les deux surfaces. */
     #bubble.speech::after {
       content: "";
       position: absolute;
-      left: calc(1.9% - 54px);
-      /* Pile à mi-hauteur : c'est là que la silhouette est la plus large, et
-         le gondolement s'y annule — le seul point dont la position est connue
-         exactement quelle que soit la taille de la bulle. */
-      top: 50%;
-      margin-top: -11.5px;
-      width: 56px;
-      height: 48px;
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2056%2048%27%3E%3Cpath%20d=%27M56%203C36%208%2020%2022%202%2045C20%2032%2034%2025%2056%2020Z%27%20fill=%27%23f7f3e9%27/%3E%3Cpath%20d=%27M56%203C36%208%2020%2022%202%2045C20%2032%2034%2025%2056%2020%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
+      left: 34px;
+      bottom: -22px;
+      width: 30px;
+      height: 24px;
+      background: var(--bulle-fond);
+      clip-path: polygon(100% 0, 0 0, 0 100%);
+      margin-bottom: 2px;
     }
 
     /* Bulle de pensée : un vrai nuage de BD, pour qu'on ne la confonde JAMAIS
        avec une réplique. */
     #bubble.thought {
       font-style: italic;
-      background: transparent;
-      padding: 26px 38px;
-      /* Silhouette vectorielle plutôt que des gradients : en pourcentages,
-         les cercles s'aplatissaient avec la boîte et le nuage redevenait un
-         rectangle. Le SVG s'étire (preserveAspectRatio=none) en gardant ses
-         bosses, quelle que soit la longueur du texte.
-
-         Le contour est obtenu en dessinant la silhouette DEUX fois : une passe
-         d'encre élargie par un trait épais, puis la même forme en papier
-         par-dessus. Les chevauchements entre bosses disparaissent — chaque
-         passe est d'une seule couleur OPAQUE. Des aplats translucides, eux,
-         laissaient voir le contour de chaque cercle à travers ses voisins.
-         `non-scaling-stroke` garde le trait à 3 px même quand le SVG est étiré
-         en largeur : sans lui, une pensée courte aurait un trait deux fois plus
-         fin qu'une longue. */
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cdefs%3E%3Cg%20id=%27c%27%3E%3Crect%20x=%2716%27%20y=%2730%27%20width=%27168%27%20height=%2742%27%20rx=%2720%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%2746%27%20cy=%2732%27%20rx=%2730%27%20ry=%2724%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%27100%27%20cy=%2728%27%20rx=%2734%27%20ry=%2721%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%27154%27%20cy=%2733%27%20rx=%2731%27%20ry=%2723%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%2752%27%20cy=%2770%27%20rx=%2732%27%20ry=%2722%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%27108%27%20cy=%2773%27%20rx=%2736%27%20ry=%2720%27%20vector-effect=%27non-scaling-stroke%27/%3E%3Cellipse%20cx=%27158%27%20cy=%2768%27%20rx=%2730%27%20ry=%2723%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/g%3E%3C/defs%3E%3Cuse%20href=%27%23c%27%20fill=%27%2314121c%27%20stroke=%27%2314121c%27%20stroke-width=%276%27%20stroke-linejoin=%27round%27/%3E%3Cuse%20href=%27%23c%27%20fill=%27%23f7f3e9%27/%3E%3C/svg%3E");
-      background-size: 100% 100%;
-      background-repeat: no-repeat;
+      /* Une ELLIPSE, pas un nuage à bosses : `border-radius: 50%` sur une boîte
+         large en donne une exactement, sans le moindre SVG. La silhouette
+         vectorielle qui servait ici n'avait plus lieu d'être — elle existait
+         pour porter des bosses et un contour, dont plus rien ne dépend.
+         Marges larges : le texte d'une pensée est borné à 90 caractères, et
+         une ellipse se referme sur ses coins. */
+      border-radius: 50%;
+      padding: 30px 50px;
     }
+
     /* Les deux bulles satellites qui descendent vers l'avatar : la signature
        visuelle de la pensée en BD. Détachées du nuage, jamais superposées :
        deux contours qui se croisent trahissent le montage. */
@@ -306,12 +279,11 @@
     #bubble.thought::before {
       content: "";
       position: absolute;
-      background: var(--paper);
-      border: 3px solid var(--ink);
+      background: var(--bulle-fond);
       border-radius: 50%;
     }
-    #bubble.thought::after  { left: 30px; bottom: -9px;  width: 17px; height: 17px; }
-    #bubble.thought::before { left: 12px; bottom: -26px; width: 11px; height: 11px; }
+    #bubble.thought::after  { left: 34px; bottom: -14px; width: 34px; height: 24px; }
+    #bubble.thought::before { left: 14px; bottom: -38px; width: 20px; height: 15px; }
     /* Une pensée MONTE : le plus petit satellite apparaît d'abord, puis le
        second, puis le nuage se déploie. C'est la grammaire de la BD — un bloc
        qui surgit d'un coup lit comme une réplique, pas comme une pensée.
@@ -345,7 +317,7 @@
     .dots { display: inline-flex; gap: 5px; align-items: center; height: 10px; }
     .dots span {
       width: 7px; height: 7px;
-      background: var(--ink);
+      background: var(--bulle-texte);
       border-radius: 50%;
       animation: blink 1.25s infinite ease-in-out;
     }
