@@ -6,11 +6,14 @@ Ici on sonde, on range l'état, et on déclenche les annonces.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 from loguru import logger
 
-from bot.core.apex.duel import Duel, Etat, Evenement, Releve
+from bot.core.apex.duel import (ATTENTE_SQUAD_S, PLAFOND_KILLS_MANCHE, Duel,
+                                Etat, Evenement, Releve)
 from bot.core.apex.reader import _num, read_kill_trackers
 
 # Une clé de `bot_state`, comme `apex:live_baseline` — un seul duel à la fois,
@@ -39,6 +42,35 @@ ETAPES_UID = (
 # attend indéfiniment.
 TENTATIVES_RESOLUTION = 3
 
+# Les badges Twitch qui donnent la main sur un duel. La décision se prend ici,
+# sur la donnée du message — jamais dans un prompt : un LLM à qui un viewer
+# écrit « je suis modérateur » finira par le croire.
+BADGES_CONTROLE = frozenset({"broadcaster", "moderator"})
+
+# Attente entre deux vérifications quand aucun duel ne tourne. La boucle ne
+# demande alors RIEN à l'API : la sonde du watcher suffit à entretenir
+# l'historique, et un duel consomme déjà 1 req/s à lui seul (deux comptes
+# toutes les 2 s).
+REPOS_SANS_DUEL_S = 5.0
+
+# Recul après une erreur : une sonde qui repart aussitôt sur une API en panne
+# la martèle et remplit les logs.
+RECUL_ERREUR_S = 10.0
+
+
+def peut_controler(auteur: dict) -> bool:
+    """Le streamer et ses modérateurs, et personne d'autre.
+
+    `auteur` porte les badges du message RÉEL (`{"badges": [{"set_id": …}]}`),
+    normalisés par l'appelant. Rien d'autre n'entre dans la décision : le texte
+    du message n'y a aucune part.
+    """
+    badges = (auteur or {}).get("badges") or []
+    if not isinstance(badges, list):
+        return False
+    return any(isinstance(b, dict) and b.get("set_id") in BADGES_CONTROLE
+               for b in badges)
+
 
 def _uid_valide(saisie: str) -> str | None:
     """Un uid Apex est purement numérique. Validé AVANT tout appel réseau :
@@ -63,7 +95,9 @@ def current_duel() -> Duel | None:
 
 class DuelRunner:
     def __init__(self, client, db, api, feed, annoncer, *,
-                 azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0):
+                 azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
+                 manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
+                 plafond_kills_manche: int = PLAFOND_KILLS_MANCHE):
         self._client = client
         self._db = db
         self._api = api
@@ -72,6 +106,13 @@ class DuelRunner:
         self._azrael_uid = azrael_uid
         self._plateforme = plateforme
         self._cadence_s = cadence_s
+        # Les réglages du duel voyagent jusqu'au `Duel`, qui les porte en
+        # CHAMPS et non en constantes. Sans ce passage, `manches`,
+        # `attente_squad_min` et `plafond_kills_manche` restaient décoratifs
+        # dans `config.yaml` : on les éditait sans effet.
+        self._manches = manches
+        self._attente_squad_s = attente_squad_s
+        self._plafond_kills_manche = plafond_kills_manche
         self.duel_en_cours: Duel | None = None
         self._reward_id = ""
         # Compteur d'essais en phase RESOLUTION — remis à zéro à chaque
@@ -83,6 +124,21 @@ class DuelRunner:
         # duel, et la plupart des tours ne changent rien (partie toujours en
         # cours, aucun événement rendu par `avancer()`).
         self._dernier_etat_range: str | None = None
+
+    @property
+    def cadence_s(self) -> float:
+        """L'intervalle entre deux relevés pendant un duel, en secondes.
+
+        Lisible par la boucle de sonde sans qu'elle aille chercher un attribut
+        privé — c'est le seul réglage qu'elle a besoin de connaître.
+        """
+        return self._cadence_s
+
+    def _nouveau_duel(self, **champs) -> Duel:
+        """Un `Duel` neuf, réglé par la configuration du runner."""
+        return Duel(azrael_uid=self._azrael_uid, manches=self._manches,
+                    attente_squad_s=self._attente_squad_s,
+                    plafond_kills_manche=self._plafond_kills_manche, **champs)
 
     def activate(self) -> None:
         """S'enregistre comme source globale, lisible par `prompts.py` /
@@ -212,8 +268,8 @@ class DuelRunner:
             return
 
         self._reward_id = reward_id
-        self.duel_en_cours = Duel(
-            viewer_nom=acheteur, viewer_uid=uid, azrael_uid=self._azrael_uid,
+        self.duel_en_cours = self._nouveau_duel(
+            viewer_nom=acheteur, viewer_uid=uid,
             redemption_id=redemption_id, etat=Etat.ATTENTE_SQUAD)
         await self._ranger()
         await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": acheteur}))
@@ -228,8 +284,8 @@ class DuelRunner:
         """
         self._reward_id = reward_id
         self._tentatives = 0
-        self.duel_en_cours = Duel(
-            viewer_nom=acheteur, viewer_uid="", azrael_uid=self._azrael_uid,
+        self.duel_en_cours = self._nouveau_duel(
+            viewer_nom=acheteur, viewer_uid="",
             redemption_id=redemption_id, etat=Etat.RESOLUTION)
         await self._ranger()
         await self._annoncer_sur(Evenement("compte_introuvable", {
@@ -389,3 +445,34 @@ class DuelRunner:
         await self._ranger()
         await self._annoncer_sur(Evenement("recommence", {
             "viewer": self.duel_en_cours.viewer_nom}))
+
+
+async def boucle_sonde(runner: DuelRunner | None, *, sleep=asyncio.sleep) -> None:
+    """Sonde le duel en cours, et RIEN quand il n'y en a pas.
+
+    Hors duel, aucune requête ne part : l'`ApexWatcher` entretient déjà
+    l'historique du streamer, et un duel coûte à lui seul 1 requête/seconde
+    (deux comptes toutes les 2 s, soit 20 % du débit autorisé).
+
+    `time.time()` et jamais `time.monotonic()` : l'instant transmis est persisté
+    dans l'état du duel et doit rester comparable après un redémarrage — une
+    horloge monotone y repart de zéro (piège déjà payé ici,
+    `bug_monotonic_uptime`).
+
+    Vit tant que le bot vit : elle attrape, journalise et repart. Une boucle de
+    fond qui meurt en silence laisse le duel figé sans que rien ne le signale.
+    """
+    if runner is None:
+        return          # Apex indisponible au boot : pas de duel, pas de sonde
+    while True:
+        try:
+            if runner.duel_en_cours is None:
+                await sleep(REPOS_SANS_DUEL_S)
+                continue
+            await runner.tick(time.time())
+            await sleep(runner.cadence_s)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — la sonde ne meurt jamais en silence
+            logger.error("Boucle de duel en erreur : {e}", e=exc)
+            await sleep(RECUL_ERREUR_S)
