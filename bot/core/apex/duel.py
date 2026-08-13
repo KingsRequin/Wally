@@ -85,6 +85,25 @@ class Duel:
         return sum(s["viewer"] or 0 for s in self.scores)
 
     @property
+    def mesurable(self) -> bool:
+        """Au moins une manche a été MESURÉE — donc les totaux veulent dire
+        quelque chose.
+
+        Faux tant qu'aucune ne l'est : `total_azrael` et `total_viewer` valent
+        alors 0 par sommation de `None or 0`, et les annoncer serait affirmer
+        un « 0 — 0 » que personne n'a mesuré. C'est exactement le zéro inventé
+        que le reste du code refuse partout — sur un duel joué en Mixtape,
+        chaque manche est déclarée non mesurable et le total dirait pourtant
+        zéro à zéro avec aplomb.
+
+        Lu par le bloc de perception (`prompts.bloc_duel_en_cours`) et par
+        l'outil `duel_apex` : les deux disaient l'inverse de l'annonceur, qui
+        refuse déjà d'afficher un tableau non mesurable.
+        """
+        return any(s["azrael"] is not None or s["viewer"] is not None
+                   for s in self.scores)
+
+    @property
     def manche_courante(self) -> int:
         """1-indexée, pour l'affichage."""
         return min(len(self.scores) + 1, self.manches)

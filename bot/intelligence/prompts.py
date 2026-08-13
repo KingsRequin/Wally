@@ -518,6 +518,11 @@ def bloc_duel_en_cours(duel) -> str:
     Une manche non mesurable est dite telle quelle. Afficher « 0 » pour une
     absence de mesure serait un mensonge : `None` dans `duel.scores` signifie
     « non mesurable », jamais zéro kill.
+
+    La ligne de TOTAL suit la même règle, et ne s'écrivait pas : elle sommait
+    `None or 0` sans condition. Sur un duel joué en Mixtape, le bloc disait
+    « Manche 1 : non mesurable » puis affirmait « Total : Azraël 0 — Bob 0 »,
+    dans le prompt système comme dans le contexte cognitif.
     """
     if duel is None:
         return ""
@@ -533,7 +538,14 @@ def bloc_duel_en_cours(duel) -> str:
             lignes.append(
                 f"Manche {i} : Azraël {s['azrael'] if s['azrael'] is not None else '?'}"
                 f" — {duel.viewer_nom} {s['viewer'] if s['viewer'] is not None else '?'}")
-    lignes.append(f"Total : Azraël {duel.total_azrael} — {duel.viewer_nom} {duel.total_viewer}.")
+    if duel.mesurable:
+        lignes.append(
+            f"Total : Azraël {duel.total_azrael} — {duel.viewer_nom} {duel.total_viewer}.")
+    else:
+        # Un négatif explicite, jamais un silence : sans cette ligne, le modèle
+        # comblerait le trou tout seul — et le comblerait par un zéro.
+        lignes.append("Total : aucune manche n'a encore pu être mesurée. "
+                      "N'annonce ni score ni égalité, il n'y a rien à comparer.")
     return "\n".join(lignes)
 
 

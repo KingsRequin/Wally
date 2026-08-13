@@ -179,3 +179,26 @@ async def test_l_outil_n_est_offert_que_si_un_runner_existe(monkeypatch):
     await _executeur(bot, make_payload(content="wally salut", author_name="bob"))
     offerts = [t["function"]["name"] for t in bot.llm.complete_with_tools.call_args.args[2]]
     assert "duel_apex" not in offerts
+
+
+# ── Revue finale — l'outil et l'annonceur disent la MÊME chose ───────────────
+@pytest.mark.asyncio
+async def test_score_sur_un_duel_non_mesurable_ne_pousse_pas_un_tableau_vide():
+    """`DuelAnnonceur._ecran` refuse déjà d'afficher un tableau non mesurable,
+    et le widget est censé être la source visuelle EXACTE. L'outil, lui,
+    annonçait les totaux et poussait un 0 — 0 à l'écran sans tester
+    `mesurable` : deux composants, deux vérités opposées."""
+    bot = _bot_avec_duel()
+    bot.duel_runner.duel_en_cours.scores = [{"azrael": None, "viewer": None}]
+    narrator = MagicMock()
+    with patch("bot.twitch.handlers._overlay_narrator", return_value=narrator):
+        executeur = make_tool_executor(
+            bot, platform="twitch", user_id="9", author="bob",
+            channel="azrael_ttv", badges=[], overlay=True,
+        )
+        reponse = json.loads(await executeur("duel_apex", json.dumps({"action": "score"})))
+
+    narrator.show_widget.assert_not_called()
+    assert reponse["status"] != "ok"
+    assert "0" not in reponse["message"], (
+        f"un score affirmé sur du vide : {reponse['message']!r}")

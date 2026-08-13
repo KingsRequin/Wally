@@ -372,6 +372,18 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
         )})
 
     if action == "score":
+        if not duel.mesurable:
+            # Aligné sur `DuelAnnonceur._ecran`, qui refuse déjà d'afficher un
+            # tableau non mesurable. Sans ça, les deux composants donnaient
+            # deux vérités opposées : l'annonceur se taisait, l'outil poussait
+            # un widget 0 — 0 sur l'écran censé être la source visuelle EXACTE.
+            return json.dumps({"status": "nothing", "message": (
+                f"Le duel de {duel.viewer_nom} est en manche "
+                f"{duel.manche_courante} sur {duel.manches}, mais aucun kill "
+                "n'a encore pu être compté : il n'y a pas de score à montrer, "
+                "et surtout pas une égalité. Dis-le tel quel, n'invente aucun "
+                "chiffre."
+            )})
         tableau = (f"Azraël {duel.total_azrael} — {duel.viewer_nom} "
                    f"{duel.total_viewer}, manche {duel.manche_courante} sur "
                    f"{duel.manches}")

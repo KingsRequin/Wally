@@ -142,3 +142,31 @@ async def test_attention_context_sans_duel(monkeypatch):
     _neutralize_io(monkeypatch)
     ctx = await AttentionAgent(_FakeFacts()).build_context({"boredom": 0.1}, [])
     assert ctx.duel_block is None
+
+
+# ── Revue finale — le TOTAL ne s'affirme pas sur du vide ─────────────────────
+
+def test_aucune_manche_mesurable_ne_donne_JAMAIS_un_total_de_zero():
+    """Duel joué en Mixtape : chaque manche est déclarée non mesurable, et la
+    ligne de total sommait pourtant `None or 0` sans condition — « Total :
+    Azraël 0 — Bob 0 », dans le prompt système comme dans le contexte
+    cognitif. C'est le zéro inventé que tout le reste du code évite."""
+    d = _duel()
+    d.scores = [{"azrael": None, "viewer": None}, {"azrael": None, "viewer": None}]
+
+    lignes = [l for l in bloc_duel_en_cours(d).splitlines() if l.startswith("Total")]
+
+    assert len(lignes) == 1, "le bloc doit dire quelque chose du total, jamais rien"
+    assert "0" not in lignes[0], f"un total affirmé sur du vide : {lignes[0]!r}"
+
+
+def test_un_total_reste_donne_des_qu_une_manche_est_mesuree():
+    """L'inverse doit rester vrai : une seule manche mesurée suffit à ce que
+    les totaux veuillent dire quelque chose, même si les suivantes sont
+    perdues."""
+    d = _duel()
+    d.scores = [{"azrael": 4, "viewer": 2}, {"azrael": None, "viewer": None}]
+
+    ligne = [l for l in bloc_duel_en_cours(d).splitlines() if l.startswith("Total")][0]
+
+    assert "4" in ligne and "2" in ligne
