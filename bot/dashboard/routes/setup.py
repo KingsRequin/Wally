@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hmac
-import os
 import time
 import urllib.parse
 import uuid
@@ -69,7 +68,8 @@ async def generate_invite(request: Request) -> dict:
     token = uuid.uuid4().hex
     expires_at = time.time() + 7 * 86400
     await state.db.create_setup_invite(token, expires_at=expires_at)
-    base_url = os.getenv("WEB_BASE_URL", "")
+    from bot.dashboard.routes.twitch_auth import _base_url_propre
+    base_url = _base_url_propre("")
     url = f"{base_url}/setup/{token}" if base_url else f"/setup/{token}"
     logger.info("Setup invite generated: token={}", token[:8] + "...")
     return {"token": token, "url": url, "expires_at": expires_at}
@@ -137,7 +137,8 @@ async def twitch_auth_url(request: Request, token: str, body: dict) -> dict:
     db = request.app.state.wally.db
     await _get_valid_invite(token, db)
 
-    base_url = os.getenv("WEB_BASE_URL", "")
+    from bot.dashboard.routes.twitch_auth import _base_url_propre
+    base_url = _base_url_propre("")
     account_type = body.get("account_type", "bot")
     client_id = body.get("client_id", "")
     redirect_uri = f"{base_url}/api/setup/{token}/twitch/callback"
@@ -145,7 +146,8 @@ async def twitch_auth_url(request: Request, token: str, body: dict) -> dict:
     if account_type == "bot":
         scope = "user:read:chat user:write:chat user:bot moderator:read:followers chat:read chat:edit"
     else:
-        scope = "bits:read channel:read:subscriptions moderator:read:followers"
+        from bot.dashboard.routes.twitch_auth import _STREAMER_SCOPES
+        scope = _STREAMER_SCOPES
 
     # Nonce à usage unique. Le `state` ne portait que le jeton de l'URL — or en
     # mode preview ce jeton est la constante publique `__preview__` : n'importe

@@ -3649,7 +3649,7 @@ async function _renderSystemeTwitch(panel) {
   var clientIdSet       = status ? status.client_id_set : false;
 
   var BOT_SCOPES      = 'user:read:chat · user:write:chat · user:bot · moderator:read:followers · chat:read · chat:edit';
-  var STREAMER_SCOPES = 'channel:read:subscriptions · bits:read';
+  var STREAMER_SCOPES = 'channel:read:subscriptions · bits:read · channel:read:redemptions · channel:manage:redemptions';
 
   function _authCard(id, icon, title, connected, username, scopes) {
     var dotColor   = connected ? '#22c55e' : '#ef4444';

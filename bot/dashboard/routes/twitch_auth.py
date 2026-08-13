@@ -13,7 +13,13 @@ router = APIRouter()
 _TWITCH_TOKEN_URL  = "https://id.twitch.tv/oauth2/token"
 _TWITCH_USERS_URL  = "https://api.twitch.tv/helix/users"
 _BOT_SCOPES        = "user:read:chat user:write:chat user:bot moderator:read:followers chat:read chat:edit"
-_STREAMER_SCOPES   = "channel:read:subscriptions bits:read"
+# Les QUATRE scopes, pas seulement les nouveaux : un token fraîchement émis
+# remplace l'ancien avec exactement ce qu'on lui demande. N'en demander que deux
+# ferait perdre les abonnés et les bits sans un mot dans les logs.
+# Vérifié le 2026-08-13 via /oauth2/validate : le token en service ne porte rien
+# d'autre que ce que ce code demande — contrôle à refaire avant toute évolution.
+_STREAMER_SCOPES   = ("channel:read:subscriptions bits:read "
+                      "channel:read:redemptions channel:manage:redemptions")
 
 _pending_states: dict[str, dict] = {}   # state_key -> {account, expires_at}
 _status_cache:   dict[str, dict] = {}   # token_prefix -> {info, cached_at}
@@ -27,6 +33,17 @@ def _replace_or_append(text: str, key: str, value: str) -> str:
     if re.search(pattern, text, flags=re.MULTILINE):
         return re.sub(pattern, f"{key}={value}", text, flags=re.MULTILINE)
     return text.rstrip("\n") + f"\n{key}={value}\n"
+
+
+def _base_url_propre(defaut: str) -> str:
+    """L'URL publique, sans slash final.
+
+    `.rstrip("/")` n'était appliqué qu'à la valeur PAR DÉFAUT, jamais à
+    `WEB_BASE_URL` — qui vaut `https://heywally.fr/`. Le `redirect_uri` généré
+    portait donc un double slash, et Twitch exige une correspondance exacte avec
+    l'URI enregistrée dans l'application.
+    """
+    return (os.getenv("WEB_BASE_URL", "") or defaut).rstrip("/")
 
 
 def _cleanup_states() -> None:
@@ -108,7 +125,7 @@ async def twitch_auth_url(request: Request) -> dict:
     client_id = os.getenv("TWITCH_CLIENT_ID","")
     if not client_id:
         raise HTTPException(400, "TWITCH_CLIENT_ID non configure dans .env")
-    base_url     = os.getenv("WEB_BASE_URL", str(request.base_url).rstrip("/"))
+    base_url     = _base_url_propre(str(request.base_url))
     redirect_uri = f"{base_url}/api/admin/twitch/auth/callback"
     _cleanup_states()
     state_key = uuid.uuid4().hex
@@ -147,7 +164,7 @@ async def twitch_auth_callback(request: Request):
     account       = pending["account"]
     client_id     = os.getenv("TWITCH_CLIENT_ID","")
     client_secret = os.getenv("TWITCH_CLIENT_SECRET","")
-    base_url      = os.getenv("WEB_BASE_URL", str(request.base_url).rstrip("/"))
+    base_url      = _base_url_propre(str(request.base_url))
     redirect_uri  = f"{base_url}/api/admin/twitch/auth/callback"
 
     try:
