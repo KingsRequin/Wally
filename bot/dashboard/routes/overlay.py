@@ -40,6 +40,7 @@ _OVERLAY_FILES = (
     "overlay.html",
     "overlay.js",
     "overlay_apex.js",
+    "glitch.js",
     "vendor/canvas-confetti.js",
     "vendor/spin-wheel.js",
 )
