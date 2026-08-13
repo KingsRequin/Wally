@@ -3367,22 +3367,39 @@ body.is-mobile .mobile-back-btn {
 }
 .apex-people-menu.ouvert { display: block; }
 
+/* Deux lignes, pas une : l'identité Discord fait 27 caractères et le menu la
+   largeur du champ. Sur une seule ligne, le surnom se cassait mot par mot et
+   l'identité débordait du cadre. */
 .apex-people-item {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 1px;
   padding: 6px 10px;
   cursor: pointer;
   font-size: 0.78rem;
+  min-width: 0;
 }
 .apex-people-item:hover, .apex-people-item.actif { background: rgba(6, 182, 212, 0.1); }
-.apex-people-nom { color: var(--text-primary); }
+.apex-people-nom {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Le nom par lequel on l'a trouvé, quand ce n'est pas celui qu'on affiche. */
-.apex-people-via { color: var(--accent); font-size: 0.72rem; }
+.apex-people-via {
+  color: var(--accent);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .apex-people-id {
-  margin-left: auto;
   color: var(--text-secondary);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .apex-people-vide { padding: 8px 10px; color: var(--text-secondary); font-size: 0.74rem; }
