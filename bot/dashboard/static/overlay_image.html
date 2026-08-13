@@ -7,6 +7,26 @@
      réseau sortant d'OBS. Sans accès, la page perdait TOUTES ses animations. -->
 <link rel="stylesheet" href="/static/animate.min.css">
 <style>
+  /* Même source de live que l'overlay principal : mêmes polices, même palette.
+     Cette page portait encore Segoe UI et le cyan `#06b6d4` du DASHBOARD, que
+     l'overlay n'a jamais eu — deux sources côte à côte sur le même stream. */
+  @font-face {
+    font-family: "Fredoka";
+    src: url("/static/fonts/fredoka.woff2") format("woff2");
+    font-weight: 300 700;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "Bangers";
+    src: url("/static/fonts/bangers.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+  }
+  :root {
+    --who:  #b79cff;
+    --line: rgba(255, 255, 255, .14);
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: transparent; overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 3vh; }
   #image-container { display: none; max-width: 90vw; max-height: 90vh; }
@@ -18,7 +38,7 @@
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.1),
       0 12px 40px rgba(0, 0, 0, 0.6),
-      0 0 80px rgba(6, 182, 212, 0.08);
+      0 0 80px rgba(183, 156, 255, 0.08);
   }
 
   #overlay-img {
@@ -35,23 +55,24 @@
     right: 0;
     padding: 20px 24px 16px;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 60%, transparent 100%);
-    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-family: "Fredoka", 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     display: flex;
     align-items: baseline;
     gap: 8px;
   }
 
   #overlay-credit .credit-label {
-    font-size: 1.6rem;
-    font-weight: 400;
+    font-family: "Bangers", 'Segoe UI', sans-serif;
+    font-size: 1.8rem;
+    letter-spacing: .04em;
     color: rgba(255, 255, 255, 0.7);
   }
 
   #overlay-credit .credit-name {
     font-size: 2.4rem;
     font-weight: 800;
-    color: #06b6d4;
-    text-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+    color: var(--who);
+    text-shadow: 0 0 20px rgba(183, 156, 255, 0.4);
     letter-spacing: -0.02em;
   }
 </style>

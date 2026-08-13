@@ -9,6 +9,25 @@
        pendant qu'il joue). Fond transparent, tout est en position fixe. */
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    /* Auto-hébergées : OBS ne doit pas dépendre d'un appel réseau pour afficher
+       du texte pendant un live. `swap` plutôt que `block` : mieux vaut une
+       fraction de seconde dans la police de repli qu'une bulle vide.
+       Fredoka est VARIABLE (300–700) : les widgets demandent du 400 comme du
+       700, et un fichier à poids unique ferait fabriquer au navigateur un faux
+       gras baveux. */
+    @font-face {
+      font-family: "Fredoka";
+      src: url("/static/fonts/fredoka.woff2") format("woff2");
+      font-weight: 300 700;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Bangers";
+      src: url("/static/fonts/bangers.woff2") format("woff2");
+      font-weight: 400;
+      font-display: swap;
+    }
+
     /* Encre et papier : les deux bulles sont dessinées comme une planche de BD —
        aplat clair, trait sombre épais. Le contraste tient sur n'importe quel
        gameplay, clair ou sombre, sans avoir à rendre quoi que ce soit
@@ -52,13 +71,18 @@
       --t-slow: .42s;
       --ease:     cubic-bezier(.22, .9, .3, 1);
       --ease-pop: cubic-bezier(.22, 1.35, .36, 1);
+
+      /* La police qui ANNONCE : capitales penchées, réservée aux étiquettes et
+         aux gros moments. Wally, lui, parle en Fredoka — sinon il aurait l'air
+         de crier à chaque réplique. */
+      --display: "Bangers", "Segoe UI", sans-serif;
     }
 
     body {
       background: transparent;
       overflow: hidden;
       height: 100vh;
-      font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+      font-family: "Fredoka", "Segoe UI", Roboto, system-ui, sans-serif;
       /* Empêche OBS de sélectionner/afficher un curseur sur la source. */
       user-select: none;
       cursor: none;
@@ -603,7 +627,8 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .talkers-title {
-      font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
+      font-family: var(--display);
+      font-size: 13.5px; text-transform: uppercase; letter-spacing: .05em;
       color: var(--dim); margin-bottom: 8px;
     }
     .talker {
@@ -688,11 +713,13 @@
       animation: raid-in .55s cubic-bezier(.22, 1.5, .4, 1);
     }
     .raid-tag {
-      font-size: 10.5px; font-weight: 800; letter-spacing: .22em;
+      font-family: var(--display);
+      font-size: 12.5px; letter-spacing: .18em;
       color: var(--gold); margin-bottom: 4px;
     }
     .raid-name {
-      font-size: 25px; font-weight: 800; line-height: 1.15;
+      font-family: var(--display);
+      font-size: 29px; letter-spacing: .01em; line-height: 1.1;
       /* Un pseudo long est déjà borné côté serveur, mais un mot sans espace
          peut encore déborder : il se coupe plutôt que d'élargir la carte. */
       max-width: 380px; overflow: hidden; text-overflow: ellipsis;
@@ -723,8 +750,9 @@
       letter-spacing: .02em;
     }
     .wave-label {
-      margin-top: 2px; font-size: 11px; text-transform: uppercase;
-      letter-spacing: .08em; color: var(--dim);
+      font-family: var(--display);
+      margin-top: 2px; font-size: 13px; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--dim);
     }
     @keyframes wave-in {
       0%   { transform: scale(.6) rotate(-4deg); opacity: 0; }
@@ -838,7 +866,8 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .rps-title {
-      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      font-family: var(--display);
+      font-size: 14px; text-transform: uppercase; letter-spacing: .05em;
       color: var(--dim); margin-bottom: 10px;
     }
     .rps-hand { font-size: 38px; line-height: 1; }
@@ -853,7 +882,8 @@
       text-overflow: ellipsis; white-space: nowrap;
     }
     .rps-vs {
-      font-size: 13px; font-weight: 800; letter-spacing: .08em;
+      font-family: var(--display);
+      font-size: 16px; letter-spacing: .06em;
       color: var(--dimmer);
       animation: vs-pulse 1.2s ease-in-out infinite;
     }
@@ -980,7 +1010,8 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .bingo-title {
-      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      font-family: var(--display);
+      font-size: 14px; text-transform: uppercase; letter-spacing: .05em;
       color: var(--dim); margin-bottom: 8px;
     }
     .bingo.full .bingo-title {
@@ -1078,7 +1109,8 @@
 
     /* Comparaison — barres relatives au meilleur des deux. */
     .versus .vs-label {
-      font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+      font-family: var(--display);
+      font-size: 14px; text-transform: uppercase; letter-spacing: .05em;
       color: var(--dim); margin-bottom: 8px;
     }
     .versus .vs-row {
