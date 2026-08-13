@@ -90,13 +90,27 @@ async def link_apex_account(payload: LinkRequest, request: Request):
         raise HTTPException(400, "Il faut une personne et un compte Apex")
 
     uid = _uid_valide(ref)
+    # Le REGISTRE avant l'API : un profil déjà croisé donne son uid, et c'est
+    # précisément pour les comptes que la recherche par pseudo rate qu'il
+    # existe. Sans cette consultation, taper « licornekssandre » ici échouait
+    # en 404 alors que Wally connaissait ce compte — constaté en prod.
+    connu = None
+    if not uid:
+        try:
+            connu = await state.db.apex_uid_pour_nom(ref)
+        except Exception as e:  # noqa: BLE001 — le registre est un appui, pas une dépendance
+            logger.warning("Apex: registre illisible à la liaison: {e}", e=e)
+        if connu:
+            uid = connu["uid"]
+
     profil = await apex.fetch_profile("" if uid else ref, uid=uid or None)
     if profil is None or not profil.uid:
         raise HTTPException(
             404,
-            "Aucun compte Apex derrière cette référence. La recherche par pseudo "
-            "rate des comptes bien réels : donne plutôt le lien de la page "
-            "apexlegendsstatus.com qui contient l'uid.",
+            "Aucun compte Apex derrière cette référence, et aucun profil connu "
+            "ne porte ce pseudo. La recherche par nom de l'API rate des comptes "
+            "bien réels : donne plutôt le lien de la page apexlegendsstatus.com "
+            "qui contient l'uid (profile/uid/PC/1234567890).",
         )
 
     await state.db.apex_link_account(
@@ -116,6 +130,9 @@ async def link_apex_account(payload: LinkRequest, request: Request):
         "apex_name": profil.name,
         "platform": profil.platform or "PC",
         "url": lien_profil(profil.uid, profil.platform),
+        # Une liaison est durable : la poser sur une simple ressemblance sans le
+        # dire ferait porter à quelqu'un le compte d'un autre, sans trace.
+        "rapproche": bool(connu and not connu["exact"]),
     }
 
 

@@ -292,3 +292,64 @@ async def test_un_compte_lie_sur_deux_plateformes_napparait_quune_fois(db, clien
     assert {o["identity"] for o in profils[0]["owners"]} == {
         "discord:419172225451556874", "twitch:659251746"
     }
+
+
+# ── Lier en s'appuyant sur ce qu'on connaît déjà ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_lier_par_un_pseudo_deja_au_registre(db, client):
+    """Vu en prod : lier « licornekssandre » échouait en 404 alors que ce
+    profil était AU REGISTRE avec son uid. La route interrogeait l'API par
+    pseudo — l'échec que tout le registre existe pour contourner."""
+    await db.apex_remember_profile(uid=UID, apex_name="LicorneKssandre", platform="PC")
+    # L'API ne répond QUE par uid, comme mesuré sur ce compte.
+    apex = client._transport.app.state.wally.apex
+    apex._client.get = AsyncMock(
+        side_effect=lambda ep, params: _PROFIL if params.get("uid") else
+        {"Error": "Player not found."}
+    )
+
+    r = await client.post(
+        "/api/admin/apex/link", headers=HEADERS,
+        json={"identity": "discord:1", "display_name": "Kassandre",
+              "ref": "licornekssandre"},
+    )
+
+    assert r.status_code == 200
+    assert (await db.apex_get_account("discord:1"))["uid"] == UID
+
+
+@pytest.mark.asyncio
+async def test_lier_par_rapprochement_le_signale(db, client):
+    """Une liaison est durable : la poser sur une simple ressemblance sans le
+    dire ferait porter à quelqu'un le compte d'un autre, sans trace."""
+    await db.apex_remember_profile(uid=UID, apex_name="LicorneKssandre", platform="PC")
+    apex = client._transport.app.state.wally.apex
+    apex._client.get = AsyncMock(
+        side_effect=lambda ep, params: _PROFIL if params.get("uid") else
+        {"Error": "Player not found."}
+    )
+
+    r = await client.post(
+        "/api/admin/apex/link", headers=HEADERS,
+        json={"identity": "discord:1", "display_name": "Kassandre",
+              "ref": "licornekassandre"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["rapproche"] is True
+
+
+@pytest.mark.asyncio
+async def test_un_pseudo_inconnu_partout_reste_refuse(db, client):
+    apex = client._transport.app.state.wally.apex
+    apex._client.get = AsyncMock(return_value={"Error": "Player not found."})
+
+    r = await client.post(
+        "/api/admin/apex/link", headers=HEADERS,
+        json={"identity": "discord:1", "display_name": "X", "ref": "personneicitres"},
+    )
+
+    assert r.status_code == 404
+    assert await db.apex_get_account("discord:1") is None

@@ -3326,3 +3326,13 @@ body.is-mobile .mobile-back-btn {
 }
 .apex-mini-btn:hover { border-color: var(--border-accent); color: var(--text-primary); }
 .apex-mini-btn.danger:hover { border-color: rgba(239, 68, 68, 0.5); color: #ef4444; }
+
+/* Un profil que Wally a croisé sans qu'il appartienne à personne d'ici.
+   Dit à voix haute ce que l'absence de badge laissait deviner. */
+.apex-orphelin {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}

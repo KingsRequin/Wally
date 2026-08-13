@@ -4230,7 +4230,14 @@ async function submitApexLink() {
   });
   if (r && r.ok) {
     const d = await r.json();
-    toast('Compte ' + d.apex_name + ' lié', 'success');
+    // Un rapprochement se dit : la liaison est durable, et rien d'autre à
+    // l'écran ne montrerait qu'elle repose sur une ressemblance de pseudos.
+    if (d.rapproche) {
+      toast('Lié à ' + d.apex_name + ' — rapproché de « ' + ref.value.trim()
+        + ' », vérifie que c\'est le bon compte', 'info');
+    } else {
+      toast('Compte ' + d.apex_name + ' lié', 'success');
+    }
     ref.value = '';
     renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
   } else {
@@ -4274,6 +4281,23 @@ function apexProfileCard(p) {
     badge.appendChild(x);
     head.appendChild(badge);
   });
+  // L'ABSENCE de badge est muette : une carte sans propriétaire se lisait comme
+  // une carte normale, et on croyait le compte rattaché à quelqu'un. Cet onglet
+  // liste tout le registre — croisé ≠ appartenant à quelqu'un d'ici.
+  if (!(p.owners || []).length) {
+    const seul = document.createElement('span');
+    seul.className = 'apex-orphelin';
+    seul.textContent = 'personne rattachée';
+    seul.title = "Wally a croisé ce compte, mais il n'appartient à personne "
+      + "d'ici. Tant qu'il n'est rattaché à personne, son prénom ne mène à rien.";
+    head.appendChild(seul);
+
+    const lier = document.createElement('button');
+    lier.className = 'apex-mini-btn';
+    lier.textContent = 'Lier à…';
+    lier.onclick = function() { apexLierDepuisCarte(p); };
+    head.appendChild(lier);
+  }
   card.appendChild(head);
 
   const noms = document.createElement('div');
@@ -4325,6 +4349,18 @@ function apexProfileCard(p) {
 
   card.appendChild(pied);
   return card;
+}
+
+function apexLierDepuisCarte(p) {
+  // Le formulaire du haut sait déjà tout faire : on le pré-remplit avec l'uid
+  // du profil plutôt que d'écrire un second chemin de liaison.
+  const ref = document.getElementById('apex-link-ref');
+  const who = document.getElementById('apex-link-who');
+  if (!ref || !who) return;
+  ref.value = p.uid;
+  who.focus();
+  who.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toast('Choisis la personne à rattacher à ' + p.apex_name, 'info');
 }
 
 function apexDepuis(ts) {

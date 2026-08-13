@@ -39,7 +39,7 @@ def test_les_classes_css_du_registre_existent(source):
     """Une classe posée par le JS mais absente du CSS donne un écran nu."""
     css = STYLE.read_text(encoding="utf-8")
     for classe in ("apex-grid", "apex-card", "apex-name-chip", "apex-owner",
-                   "apex-link-form", "apex-mini-btn"):
+                   "apex-link-form", "apex-mini-btn", "apex-orphelin"):
         assert f".{classe}" in css, f"classe {classe} posée par le JS, absente du CSS"
 
 
