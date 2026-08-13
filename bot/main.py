@@ -604,7 +604,6 @@ async def main() -> None:
         # récompense, elle, serait bel et bien créée sur la chaîne.
         if (apex_api is not None and apex_api.available and _apex_conf is not None
                 and _duel_conf is not None and _duel_conf.active):
-            from bot.core.apex.client import ApexClient
             from bot.core.apex.duel_runner import DuelRunner, armer_le_duel
             from bot.core.apex.seed import uid_declare
             from bot.twitch.duel_announce import DuelAnnonceur
@@ -619,11 +618,17 @@ async def main() -> None:
                 )
             else:
                 try:
-                    # Client Apex DÉDIÉ : la sonde du duel tourne à 2 s alors que
-                    # le TTL de `bridge` est de 15 s. Un client séparé évite que
-                    # ses relevés ne deviennent la réponse servie au reste du bot.
+                    # LE client Apex, celui du service — pas un second. Le
+                    # limiteur de débit (`_MIN_INTERVAL`, 5 req/s mesurées) vit
+                    # PAR INSTANCE : deux clients porteraient le plafond réel à
+                    # 10 req/s et les deux prendraient un 429, le duel ratant
+                    # ses relevés en silence. Le seul intérêt d'un client dédié
+                    # — ne pas peupler le cache partagé — est déjà obtenu par le
+                    # `sans_cache=True` que `_profil()` passe à chaque relevé.
+                    # `_client` est privé faute d'accesseur public sur le
+                    # service, hors périmètre de cette tâche.
                     _duel_runner = DuelRunner(
-                        client=ApexClient(os.getenv("APEX_API_KEY", "")),
+                        client=apex_api._client,
                         db=db,
                         api=twitch_bot.twitch_api,
                         annoncer=DuelAnnonceur(twitch_bot,
@@ -653,10 +658,20 @@ async def main() -> None:
                     # Même règle que le canari : un bot qui tourne sans duel vaut
                     # mieux qu'un bot qui refuse de démarrer.
                     logger.error("Duel Apex non armé : {e}", e=exc)
-        elif _duel_conf is not None and not _duel_conf.active:
-            # Le drapeau est LU : c'est ce qui permet de couper le duel sans
-            # supprimer la récompense de la chaîne.
-            logger.info("Duel Apex désactivé en configuration (apex.duel.active)")
+        else:
+            # JAMAIS de silence : c'est ici qu'un démarrage rate le plus
+            # souvent, et une capacité absente sans un mot est indétectable.
+            # Le drapeau `active` est LU — c'est ce qui permet de couper le duel
+            # sans supprimer la récompense de la chaîne.
+            if _duel_conf is None:
+                _raison = "aucune section apex.duel dans config.yaml"
+            elif not _duel_conf.active:
+                _raison = "coupé en configuration (apex.duel.active: false)"
+            elif apex_api is None or not apex_api.available:
+                _raison = "APEX_API_KEY absente — aucun relevé ne serait mesurable"
+            else:
+                _raison = "aucune section apex dans config.yaml"
+            logger.info("Duel Apex non armé : {r}", r=_raison)
 
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())

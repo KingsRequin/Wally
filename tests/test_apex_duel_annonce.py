@@ -74,6 +74,41 @@ async def test_l_adresse_du_site_est_collee_par_le_code():
 
 
 @pytest.mark.asyncio
+async def test_une_replique_bavarde_ne_coupe_pas_l_adresse_en_deux():
+    """Tronquer APRÈS avoir collé l'URL casserait précisément ce que le code
+    dit protéger — et un lien mort rend le duel impossible à démarrer."""
+    bot = _bot("Bon. " + "je t'explique posément ce qu'il faut faire. " * 20)
+    await DuelAnnonceur(bot, channel="azrael_ttv")(Evenement("compte_introuvable", {
+        "viewer": "Bob", "url": URL_APEX_STATUS, "etapes": "ouvre ton profil"}))
+    texte = _envoye(bot)
+    assert texte.endswith(URL_APEX_STATUS)
+    assert len(texte) <= 500          # plafond d'un message Twitch
+
+
+@pytest.mark.asyncio
+async def test_apres_un_redemarrage_le_duelliste_est_encore_nomme():
+    """Le nom retenu en mémoire disparaît au rebuild ; le duel repris, lui,
+    le porte toujours."""
+    from bot.core.apex import duel_runner as mod
+    from bot.core.apex.duel import Duel, Etat
+
+    runner = MagicMock()
+    runner.duel_en_cours = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7",
+                                etat=Etat.MANCHE)
+    mod._active = runner
+    try:
+        bot = _bot()
+        bot.llm.complete = AsyncMock(side_effect=RuntimeError("LLM mort"))
+        # Aucun `duel_ouvert` reçu : ce processus vient de démarrer.
+        await DuelAnnonceur(bot, channel="azrael_ttv")(Evenement("manche_fin", {
+            "manche": 1, "sur": 3, "azrael": 4, "viewer": 2, "mesurable": True,
+            "total_azrael": 4, "total_viewer": 2}))
+        assert "Bob" in _envoye(bot)
+    finally:
+        mod._active = None
+
+
+@pytest.mark.asyncio
 async def test_une_manche_non_mesurable_n_est_pas_un_zero():
     """Les deltas bruts voyagent dans l'événement même quand rien n'est
     mesurable : les annoncer donnerait « 3 à None, total 0-0 »."""

@@ -146,10 +146,13 @@ class WallyTwitch(commands.Bot):
         Le corps vit dans `bot.core.apex.duel_runner` : il s'y teste sans monter
         un bot twitchio, et c'est là que se vérifient ses deux exigences —
         aucune requête hors duel, et une horloge murale.
+
+        L'attribut est passé en LECTURE différée : `main.py` le pose pendant le
+        démarrage, et rien ne garantit qu'il l'ait fait avant ce `gather`.
         """
         from bot.core.apex.duel_runner import boucle_sonde
 
-        await boucle_sonde(self.duel_runner)
+        await boucle_sonde(lambda: self.duel_runner)
 
     async def _irc_run(self) -> None:
         """Maintain IRC connection for sending messages to guest channels.

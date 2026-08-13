@@ -85,3 +85,61 @@ async def test_hors_resolution_le_chat_n_est_pas_consomme():
                         reward_id="rw", redemption_id="rd")
     assert runner.duel_en_cours.etat is Etat.ATTENTE_SQUAD
     assert await runner.repondre_resolution("bob", "gg") is False
+
+
+# ── Le silence du duelliste ne gèle plus la fonctionnalité ────────────────────
+
+@pytest.mark.asyncio
+async def test_un_duelliste_qui_se_tait_finit_par_etre_rembourse():
+    """Le seul défaut capable de geler le duel en silence.
+
+    Une saisie illisible puis plus un mot laissait le duel peuplé pour
+    toujours — état persisté, donc rejoué à chaque redémarrage : points jamais
+    rendus, et tout acheteur suivant refusé « un duel est déjà en cours ».
+    """
+    runner, api, _ = _runner([])
+    await runner.ouvrir(acheteur="bob", saisie="mon pseudo",
+                        reward_id="rw", redemption_id="rd")
+    attente = runner.duel_en_cours.attente_squad_s
+
+    await runner.tick(1_000.0)                      # le minuteur démarre
+    assert runner.duel_en_cours is not None
+    api.refund_redemption.assert_not_awaited()
+
+    await runner.tick(1_000.0 + attente + 1)
+
+    api.refund_redemption.assert_awaited_once()
+    assert runner.duel_en_cours is None
+
+
+@pytest.mark.asyncio
+async def test_attendre_un_uid_ne_coute_aucune_requete():
+    """Aucun compte à sonder tant qu'on n'a pas d'uid : rien ne part au réseau."""
+    runner, _, _ = _runner([])
+    await runner.ouvrir(acheteur="bob", saisie="mon pseudo",
+                        reward_id="rw", redemption_id="rd")
+    runner._client.get.reset_mock()
+
+    await runner.tick(1_000.0)
+    await runner.tick(1_030.0)
+
+    runner._client.get.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_le_compte_donne_a_temps_rouvre_un_delai_entier():
+    """Le délai d'attente du squad repart à neuf, il n'hérite pas de la
+    résolution — sinon un viewer lent serait abandonné avant d'avoir joué."""
+    # Assez de profils pour les relevés qui suivront la reprise du duel.
+    runner, api, _ = _runner([PROFIL_OK] * 5)
+    await runner.ouvrir(acheteur="bob", saisie="x", reward_id="rw", redemption_id="rd")
+    attente = runner.duel_en_cours.attente_squad_s
+    await runner.tick(1_000.0)                      # minuteur de résolution
+
+    await runner.repondre_resolution("bob", "1012242925358")
+    # Passé le délai compté DEPUIS la résolution : avec un minuteur hérité, le
+    # duel serait abandonné ici alors que le squad vient tout juste d'être formé.
+    await runner.tick(1_000.0 + attente + 1)
+
+    assert runner.duel_en_cours is not None
+    api.refund_redemption.assert_not_awaited()

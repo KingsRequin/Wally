@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Callable
 
 from loguru import logger
 
@@ -129,11 +130,21 @@ class DuelRunner:
 
     @property
     def cadence_s(self) -> float:
-        """L'intervalle entre deux relevés pendant un duel, en secondes.
+        """L'intervalle entre deux relevés pendant une manche, en secondes."""
+        return self._cadence_s
 
-        Lisible par la boucle de sonde sans qu'elle aille chercher un attribut
-        privé — c'est le seul réglage qu'elle a besoin de connaître.
+    @property
+    def cadence_courante(self) -> float:
+        """Le sommeil qui convient à l'état du duel.
+
+        Rapprochée seulement quand il y a quelque chose à mesurer. En
+        RESOLUTION on attend un message du duelliste, pas un relevé : se
+        réveiller toutes les deux secondes n'y sert qu'à faire tourner un
+        minuteur.
         """
+        duel = self.duel_en_cours
+        if duel is None or duel.etat is Etat.RESOLUTION:
+            return REPOS_SANS_DUEL_S
         return self._cadence_s
 
     def _nouveau_duel(self, **champs) -> Duel:
@@ -312,7 +323,9 @@ class DuelRunner:
             profil = await self._profil(uid)
             if profil is not None and read_kill_trackers(profil):
                 duel.viewer_uid = uid
-                duel.etat = Etat.ATTENTE_SQUAD
+                # Le délai d'attente du squad repart à neuf : il ne doit pas
+                # hériter du temps passé à chercher son uid.
+                duel.demarrer_attente_squad()
                 await self._ranger()
                 await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": duel.viewer_nom}))
                 return True
@@ -395,7 +408,16 @@ class DuelRunner:
         projet (bug_monotonic_uptime).
         """
         duel = self.duel_en_cours
-        if duel is None or duel.etat in (Etat.RESOLUTION, Etat.VERDICT, Etat.ABANDON):
+        if duel is None or duel.etat in (Etat.VERDICT, Etat.ABANDON):
+            return
+        if duel.etat is Etat.RESOLUTION:
+            # Aucun compte à sonder tant que l'uid n'est pas donné : ce tour ne
+            # coûte AUCUNE requête. Il ne sert qu'à faire avancer le délai de
+            # résolution, sans quoi un duelliste qui se tait gèle le duel pour
+            # toujours.
+            await self._avancer(duel, Releve(
+                t=maintenant, azrael_in_game=False, viewer_in_game=False,
+                kills_azrael={}, kills_viewer={}))
             return
         azrael = await self._profil(duel.azrael_uid)
         viewer = await self._profil(duel.viewer_uid)
@@ -472,12 +494,17 @@ async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
     return reward_id
 
 
-async def boucle_sonde(runner: DuelRunner | None, *, sleep=asyncio.sleep) -> None:
+async def boucle_sonde(source: Callable[[], "DuelRunner | None"], *,
+                       sleep=asyncio.sleep) -> None:
     """Sonde le duel en cours, et RIEN quand il n'y en a pas.
 
     Hors duel, aucune requête ne part : l'`ApexWatcher` entretient déjà
     l'historique du streamer, et un duel coûte à lui seul 1 requête/seconde
     (deux comptes toutes les 2 s, soit 20 % du débit autorisé).
+
+    `source` est relue à CHAQUE tour, et non capturée une fois : le runner est
+    câblé pendant le démarrage, et la boucle ne doit pas dépendre de qui, du
+    câblage ou du `gather`, part le premier. Absent, elle attend simplement.
 
     `time.time()` et jamais `time.monotonic()` : l'instant transmis est persisté
     dans l'état du duel et doit rester comparable après un redémarrage — une
@@ -487,15 +514,16 @@ async def boucle_sonde(runner: DuelRunner | None, *, sleep=asyncio.sleep) -> Non
     Vit tant que le bot vit : elle attrape, journalise et repart. Une boucle de
     fond qui meurt en silence laisse le duel figé sans que rien ne le signale.
     """
-    if runner is None:
-        return          # Apex indisponible au boot : pas de duel, pas de sonde
     while True:
         try:
-            if runner.duel_en_cours is None:
+            runner = source()
+            if runner is None or runner.duel_en_cours is None:
                 await sleep(REPOS_SANS_DUEL_S)
                 continue
             await runner.tick(time.time())
-            await sleep(runner.cadence_s)
+            # La cadence vient du runner : rapprochée pendant une manche,
+            # relâchée tant qu'il n'y a rien à mesurer.
+            await sleep(runner.cadence_courante)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — la sonde ne meurt jamais en silence

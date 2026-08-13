@@ -150,21 +150,37 @@ class DuelAnnonceur:
         # été effacé de `duel_en_cours` (le nettoyage précède les annonces).
         self._viewer = ""
 
+    def _nom(self) -> str:
+        """Le duelliste, même après un redémarrage en pleine manche.
+
+        Le nom retenu en mémoire ne survit pas au rebuild ; le duel repris de
+        la base, lui, le porte toujours. À l'inverse, au verdict le duel a déjà
+        été effacé et seule la mémoire l'a encore : les deux sources se
+        complètent, aucune ne suffit.
+        """
+        if self._viewer:
+            return self._viewer
+        from bot.core.apex.duel_runner import current_duel
+
+        return str(getattr(current_duel(), "viewer_nom", "") or "")
+
     async def __call__(self, evt: Evenement) -> None:
         if nom := nom_du_viewer(evt):
             self._viewer = nom
-        fait = _fait(evt, self._viewer)
+        fait = _fait(evt, self._nom())
         if not fait:
             logger.warning("Duel : type d'événement sans annonce ({t})", t=evt.type)
             return
 
-        ligne = await self._rediger(evt.type, fait) or fait
-        if evt.type == "compte_introuvable":
-            # L'adresse est collée ICI, jamais laissée au modèle : une URL
-            # reformulée rend le duel impossible à démarrer.
-            ligne = f"{ligne} {(evt.donnees or {}).get('url') or ''}".strip()
+        # L'adresse est collée par le CODE, jamais laissée au modèle : une URL
+        # reformulée rend le duel impossible à démarrer. Elle voyage comme un
+        # suffixe pour que la troncature morde sur la réplique et jamais sur
+        # elle — tronquer après l'avoir collée casserait ce qu'on protège.
+        suffixe = (str((evt.donnees or {}).get("url") or "")
+                   if evt.type == "compte_introuvable" else "")
 
-        await self._publier(ligne)
+        ligne = await self._rediger(evt.type, fait) or fait
+        await self._publier(ligne, suffixe=suffixe)
         self._ecran(evt, ligne)
 
     # -- Rédaction ----------------------------------------------------------
@@ -202,9 +218,12 @@ class DuelAnnonceur:
         return reponse
 
     # -- Sorties ------------------------------------------------------------
-    async def _publier(self, texte: str) -> None:
-        if len(texte) > MAX_CHAT:
-            texte = texte[:MAX_CHAT - 3] + "..."
+    async def _publier(self, texte: str, *, suffixe: str = "") -> None:
+        plafond = MAX_CHAT - (len(suffixe) + 1 if suffixe else 0)
+        if len(texte) > plafond:
+            texte = texte[:plafond - 3] + "..."
+        if suffixe:
+            texte = f"{texte} {suffixe}"
         try:
             # Le retour est LU : sur Twitch, un 200 ne prouve pas la
             # publication — un refus d'AutoMod arrive dans le corps
@@ -244,7 +263,7 @@ class DuelAnnonceur:
             narrator.show_widget(
                 "versus", commentaire, label=label,
                 left_name="Azraël", left_value=gauche,
-                right_name=self._viewer or "le duelliste", right_value=droite,
+                right_name=self._nom() or "le duelliste", right_value=droite,
             )
         except Exception as exc:  # noqa: BLE001 — l'écran n'est pas le canal principal
             logger.warning("Duel : tableau non affiché : {e}", e=exc)

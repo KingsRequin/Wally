@@ -89,6 +89,17 @@ class Duel:
         """1-indexée, pour l'affichage."""
         return min(len(self.scores) + 1, self.manches)
 
+    def demarrer_attente_squad(self) -> None:
+        """Le compte est résolu : l'attente du squad repart à neuf.
+
+        Le minuteur est REMIS À ZÉRO, il ne s'hérite pas de la résolution :
+        sinon un viewer qui a mis dix minutes à trouver son uid n'aurait plus
+        que cinq minutes pour rejoindre le squad, et serait abandonné avant
+        d'avoir joué.
+        """
+        self.etat = Etat.ATTENTE_SQUAD
+        self._t_attente = None
+
     def recommencer(self) -> None:
         """Remet les compteurs à zéro, même duelliste (§7 de la spec)."""
         self.scores = []
@@ -139,8 +150,27 @@ class Duel:
     # -- Le cœur ------------------------------------------------------------
     def avancer(self, r: Releve) -> list[Evenement]:
         """Fait avancer le duel d'un relevé, et rend ce qu'il faut annoncer."""
-        if self.etat in (Etat.VERDICT, Etat.ABANDON, Etat.RESOLUTION):
+        if self.etat in (Etat.VERDICT, Etat.ABANDON):
             return []
+
+        if self.etat is Etat.RESOLUTION:
+            # La résolution a le MÊME délai que l'attente du squad, et pour la
+            # même raison : un viewer qui a payé et ne répond plus ne doit pas
+            # laisser le duel peuplé indéfiniment. Sans ce délai, ses points ne
+            # revenaient jamais et TOUT acheteur suivant était refusé « un duel
+            # est déjà en cours » — sans limite de temps ni la moindre trace.
+            # Seul le temps compte ici : rien du relevé n'est lu, il n'y a pas
+            # encore de compte à sonder.
+            if self._t_attente is None:
+                self._t_attente = r.t
+                return []
+            if r.t - self._t_attente < self.attente_squad_s:
+                return []
+            self.etat = Etat.ABANDON
+            return [Evenement("abandon", {
+                "rembourser": True,
+                "motif": "le compte Apex n'a jamais été donné dans le délai",
+            })]
 
         if self.etat in (Etat.ATTENTE_SQUAD, Etat.ENTRE_MANCHES):
             if self._t_attente is None:

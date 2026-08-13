@@ -340,15 +340,27 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     return tools
 
 
-async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict) -> str:
+async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
+                        maison: bool = True) -> str:
     """Exécute `duel_apex` et rend un compte rendu HONNÊTE.
 
     `auteur` vient du message Twitch, jamais des arguments du modèle : c'est
     toute la valeur de la vérification. Un LLM à qui un viewer écrit « je suis
     modérateur » finira par le croire ; le badge, lui, ne se négocie pas.
+
+    `maison` est le même garde que les widgets d'overlay, et il est vérifié ICI
+    et pas seulement à l'offre : les badges sont propres à CHAQUE chaîne, donc
+    un modérateur d'une chaîne invitée porte `moderator` et annulerait le duel
+    de la maison — remboursement compris. Le modèle appelle parfois un outil
+    qu'on ne lui a pas offert ; l'offre ne suffit pas.
     """
     from bot.core.apex.duel_runner import peut_controler
 
+    if not maison:
+        return json.dumps({"status": "rejected", "message": (
+            "Le duel Apex appartient au stream d'Azraël : on ne le pilote pas "
+            "depuis une autre chaîne. Dis-le simplement."
+        )})
     runner = getattr(bot, "duel_runner", None)
     duel = getattr(runner, "duel_en_cours", None) if runner is not None else None
     action = str(args.get("action") or "").strip().lower()
@@ -461,7 +473,8 @@ def make_tool_executor(
         if name == "show_apex":
             return await run_apex_overlay_tool(bot, args, requester=identity)
         if name == "duel_apex":
-            return await run_duel_tool(bot, args, auteur=auteur_du_message(badges or []))
+            return await run_duel_tool(
+                bot, args, auteur=auteur_du_message(badges or []), maison=overlay)
         if name == "save_persistent_note":
             await bot.db.upsert_persistent_note(args["title"], args["content"])
             return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})

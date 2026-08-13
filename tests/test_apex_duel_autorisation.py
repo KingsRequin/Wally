@@ -126,6 +126,27 @@ async def test_sans_duel_l_outil_le_dit_au_lieu_de_se_taire(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_un_moderateur_d_une_chaine_INVITEE_ne_controle_pas_le_duel():
+    """Les badges sont propres à CHAQUE chaîne.
+
+    Sur une chaîne invitée, un modérateur de chez elle porte `moderator` : sans
+    le garde de chaîne maison, il annulerait le duel d'Azraël — et déclencherait
+    un remboursement. Le modèle appelle parfois un outil qu'on ne lui offre
+    pas ; l'offre ne suffit donc pas.
+    """
+    bot = _bot_avec_duel()
+    executeur = make_tool_executor(
+        bot, platform="twitch", user_id="9", author="mod_invite",
+        channel="une_autre_chaine", badges=[_badge("moderator")], overlay=False,
+    )
+
+    reponse = json.loads(await executeur("duel_apex", json.dumps({"action": "annuler"})))
+
+    bot.duel_runner.annuler.assert_not_awaited()
+    assert reponse["status"] == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_un_badge_en_dict_vaut_un_badge_twitchio():
     """Le chemin vocal passe l'autorité en dict (`set_id`), le chat en objets.
 
