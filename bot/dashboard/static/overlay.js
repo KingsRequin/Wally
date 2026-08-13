@@ -52,10 +52,25 @@
     bubble.classList.remove("visible");
   }
 
+  // Wally accuse le coup quand il parle. Sur `say` seulement, pas sur les trois
+  // points : il hoche la tête en prenant la parole, pas en réfléchissant.
+  let nodTimer = null;
+  function nod() {
+    // Un raid en cours l'emporte : on ne coupe pas une réaction ample pour un
+    // hochement.
+    if (slot.classList.contains("reacting")) return;
+    clearTimeout(nodTimer);
+    slot.classList.remove("speaking");
+    void slot.offsetWidth;                      // relance l'animation
+    slot.classList.add("speaking");
+    nodTimer = setTimeout(() => slot.classList.remove("speaking"), 500);
+  }
+
   function say(text, mode, durationSeconds) {
     // textContent via createTextNode : le texte vient du LLM, jamais interprété
     // comme du HTML.
     showBubble(document.createTextNode(text), mode);
+    nod();
     hideTimer = setTimeout(hideBubble, Math.max(1, durationSeconds || 3) * 1000);
   }
 

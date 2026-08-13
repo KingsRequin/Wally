@@ -41,6 +41,17 @@
       --r-sm: 6px;
       --r-md: 12px;
       --r-lg: 16px;
+
+      /* Trois durées et deux courbes, contre onze réglages improvisés. La
+         nuance qui compte : `--ease` pose sans rebondir, `--ease-pop` dépasse
+         légèrement — réservé à ce qui ENTRE en scène. Les animations physiques
+         (pièce, dé, roue, remplissage de barre) gardent leur temps propre :
+         elles simulent un mouvement, elles ne suivent pas une charte. */
+      --t-fast: .18s;
+      --t-base: .3s;
+      --t-slow: .42s;
+      --ease:     cubic-bezier(.22, .9, .3, 1);
+      --ease-pop: cubic-bezier(.22, 1.35, .36, 1);
     }
 
     body {
@@ -64,7 +75,7 @@
       align-items: flex-end;
       gap: 10px;
       padding: 12px;
-      transition: opacity .4s ease;
+      transition: opacity var(--t-slow) var(--ease);
     }
     #stage.hidden { opacity: 0; }
 
@@ -81,11 +92,26 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      /* transform/opacity uniquement : composé par le GPU, sans repaint. */
-      transition: transform .25s ease;
+      /* transform/opacity uniquement : composé par le GPU, sans repaint.
+         La transition est posée plus bas, avec l'effacement pendant un
+         widget — elle était déclarée DEUX fois, dont une jamais appliquée. */
       transform-origin: bottom center;
     }
-    /* Réaction ponctuelle (raid, série de subs) — le personnage s'emballe. */
+    /* Wally accuse le coup quand il parle : la bulle ne surgit plus à côté d'un
+       personnage indifférent. Volontairement discret — la boucle vidéo de
+       l'avatar respire déjà largement (la silhouette varie de 19 % en hauteur
+       sur ses 3,7 s), une animation ample par-dessus la ferait bégayer.
+       Le miroir de l'ancrage à droite porte sur le SLOT : la tête penche donc
+       toujours vers la bulle, des deux côtés. */
+    #avatar-slot.speaking > * { animation: nod var(--t-slow) var(--ease); }
+    @keyframes nod {
+      0%   { transform: none; }
+      38%  { transform: translateY(-4px) rotate(-2.5deg); }
+      100% { transform: none; }
+    }
+
+    /* Réaction ponctuelle (raid, série de subs) — le personnage s'emballe.
+       Déclarée APRÈS le hochement : un gros moment l'emporte sur une réplique. */
     #avatar-slot.reacting > * { animation: flare .9s ease-out; }
     @keyframes flare {
       0%   { transform: scale(1); }
@@ -160,7 +186,7 @@
       transform: translateY(10px) scale(.94);
       /* Dépassement léger à l'arrivée (le ressort d'une bulle qui « pop »),
          retrait plus sec au départ : l'œil suit l'apparition, pas la sortie. */
-      transition: opacity .2s ease, transform .34s cubic-bezier(.22, 1.4, .4, 1);
+      transition: opacity var(--t-fast) var(--ease), transform var(--t-slow) var(--ease-pop);
       pointer-events: none;
     }
     #bubble.visible { opacity: 1; transform: translateY(0) scale(1); }
@@ -288,7 +314,7 @@
     body.widget-on #bubble { opacity: 0; transform: translateY(6px) scale(.97); }
 
     /* L'avatar cède la place, sans disparaître brutalement. */
-    #avatar-slot > * { transition: transform .35s cubic-bezier(.3, .9, .3, 1), opacity .3s ease; }
+    #avatar-slot > * { transition: transform var(--t-slow) var(--ease), opacity var(--t-base) var(--ease); }
     .widget {
       /* Un widget peut occuper toute la zone : l'avatar ET la bulle s'effacent
          pendant son affichage, il n'a personne à ménager. Chaque widget fixe
@@ -301,12 +327,14 @@
       /* Le widget monte depuis la place de l'avatar, qui s'efface en même temps
          — un passage de relais plutôt qu'une superposition. */
       transform: translateY(16px) scale(.9);
-      transition: opacity .28s ease, transform .42s cubic-bezier(.22, 1.3, .36, 1);
+      transition: opacity var(--t-base) var(--ease), transform var(--t-slow) var(--ease-pop);
     }
     .widget.visible { opacity: 1; transform: translateY(0) scale(1); }
 
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
-    body.widget-on #avatar-slot > * { opacity: 0; transform: translateY(10px) scale(.94); }
+    /* `animation: none` d'abord : une animation en cours l'emporte sur une
+       transition, l'avatar serait resté figé au lieu de céder la place. */
+    body.widget-on #avatar-slot > * { animation: none; opacity: 0; transform: translateY(10px) scale(.94); }
 
     /* Pièce — deux faces, rotation sur Y. Le classique CSS 3D : plus léger
        qu'un moteur, et composé par le GPU. */
@@ -399,7 +427,7 @@
       opacity: 0;
       pointer-events: none;
       z-index: 2;
-      transition: opacity .35s ease, transform .35s cubic-bezier(.22, 1.5, .4, 1);
+      transition: opacity var(--t-base) var(--ease), transform var(--t-slow) var(--ease-pop);
     }
     .wheel-box .label.visible {
       opacity: 1;
@@ -418,7 +446,7 @@
       stroke: #34343c;               /* éteint : le tiret reste visible */
       stroke-width: 4;
       stroke-linecap: round;
-      transition: stroke .25s linear;
+      transition: stroke var(--t-base) linear;
     }
     .cd-seg.on {
       stroke: var(--on, var(--wally));
@@ -545,7 +573,7 @@
     .poll .opt.win .bar span { background: linear-gradient(90deg, var(--win-deep), var(--win)); }
     /* À la clôture : le gagnant pulse une fois, les perdants reculent. */
     .poll.final .opt.win { animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1); }
-    .poll.final .opt.lose { opacity: .45; transition: opacity .4s ease; }
+    .poll.final .opt.lose { opacity: .45; transition: opacity var(--t-slow) var(--ease); }
     @keyframes win-pop {
       0%   { transform: scale(1); }
       40%  { transform: scale(1.06); }
@@ -561,7 +589,7 @@
       display: block; height: 100%; width: 0;
       background: linear-gradient(90deg, var(--info), var(--who-deep));
       border-radius: var(--r-sm);
-      transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
+      transition: width .45s cubic-bezier(.3, .9, .3, 1), background var(--t-base) var(--ease);
     }
 
     /* Classement des bavards — mécanique, donc sobre. */
