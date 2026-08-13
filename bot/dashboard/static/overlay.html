@@ -33,11 +33,17 @@
        silhouette organique ont été abandonnés : ce que le propriétaire veut est
        une box, pas un ovale dessiné.
 
-       L'aplat reste OPAQUE : le nuage de pensée est fait de bosses qui se
-       chevauchent, et un aplat translucide laisserait voir chaque raccord. */
+       L'aplat lui-même reste OPAQUE. La légère transparence est portée par
+       `--bulle-voile`, appliquée à l'ÉLÉMENT et non à la couleur de fond : la
+       pointe mord de 8 px dans la boîte, et deux aplats translucides superposés
+       feraient apparaître une tache plus sombre à la jonction. Posée sur
+       l'élément, elle compose d'abord la bulle entière en un seul calque, puis
+       la voile — le recouvrement disparaît. Même principe que la silhouette du
+       nuage, qui se dessinait en deux passes opaques pour la même raison. */
     :root {
       --bulle-fond:  #16141f;
       --bulle-texte: #f7f3e9;
+      --bulle-voile: .88;
       /* Décalée et sans flou : c'est ce décalage net qui fait le style. Portée
          par un `drop-shadow` et non une `box-shadow`, pour qu'elle suive la
          SILHOUETTE — pointe comprise — et pas la boîte. */
@@ -221,7 +227,7 @@
     }
     body[data-side="right"] #bubble { transform-origin: 100% 50%; }
     #bubble.visible {
-      opacity: 1;
+      opacity: var(--bulle-voile);
       transform: translateY(0) scale(1);
       /* Entrée : dépassement léger, le ressort d'une bulle qui « pop ». */
       transition: opacity var(--t-fast) var(--ease), transform var(--t-slow) var(--ease-pop);
