@@ -3,6 +3,7 @@
 
 La machine à états est testée ailleurs — ici on vérifie le câblage.
 """
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -394,3 +395,120 @@ async def test_assurer_recompense_recree_si_id_connu_absent_des_gerables():
     assert rid == "NOUVEAU"
     api.creer_recompense.assert_awaited_once()
     db.set_state.assert_awaited_once_with(CLE_RECOMPENSE, "NOUVEAU")
+
+
+# ── Revue finale — CRITICAL 1 : une manche ne se gèle pas pour toujours ──────
+# En MANCHE, `tick()` sort sans rien faire quand un relevé manque, et c'est
+# délibéré (test ci-dessus). Mais sans contrepartie, une panne prolongée — ou
+# un profil devenu illisible — gèle le duel indéfiniment : aucun minuteur ne
+# tourne dans cet état, donc jamais de remboursement, et `duel_en_cours` reste
+# peuplé, ce qui refuse tous les acheteurs suivants.
+def _en_manche(runner):
+    duel = Duel(viewer_nom="bob", viewer_uid="42", azrael_uid="7", redemption_id="rd")
+    duel.etat = Etat.MANCHE
+    duel._base_azrael = {"k": 0}
+    duel._base_viewer = {"k": 0}
+    runner.duel_en_cours = duel
+    runner._reward_id = "rw"
+    return duel
+
+
+@pytest.mark.asyncio
+async def test_une_api_muette_trop_longtemps_en_manche_rembourse_et_libere():
+    runner, client, db, api = _runner()
+    duel = _en_manche(runner)
+    client.get = AsyncMock(return_value="Apex API error: timeout")
+
+    await runner.tick(maintenant=1000)          # premier silence
+    await runner.tick(maintenant=1000 + 179)    # sous le seuil : on tolère
+    assert runner.duel_en_cours is duel, "quelques relevés ratés restent tolérés"
+    api.refund_redemption.assert_not_awaited()
+
+    await runner.tick(maintenant=1000 + 181)    # au-delà : plus rien ne viendra
+
+    assert runner.duel_en_cours is None, "le duel doit être libéré, pas gelé"
+    api.refund_redemption.assert_awaited_once_with("rw", "rd")
+    db.set_state.assert_awaited_with(CLE_ETAT, "")
+    evt = runner._annoncer.await_args.args[0]
+    assert evt.type == "abandon" and evt.donnees["rembourser"] is True
+    assert evt.donnees["motif"], "un abandon muet est aussi mauvais qu'un gel"
+
+
+@pytest.mark.asyncio
+async def test_un_relevé_qui_repasse_efface_le_silence_accumulé():
+    """Le seuil porte sur un silence CONTINU. Un trou de deux minutes suivi
+    d'un relevé qui passe, puis d'un nouveau trou, ne doit pas s'additionner :
+    ce serait abandonner un duel dont l'API répond."""
+    profil = {"realtime": {"isInGame": 1}, "total": {"k": {"name": "BR Kills", "value": 3}}}
+    runner, client, _, api = _runner()
+    duel = _en_manche(runner)
+    client.get = AsyncMock(return_value="Apex API error: timeout")
+
+    await runner.tick(maintenant=1000)
+    await runner.tick(maintenant=1120)          # 120 s de silence
+    client.get = AsyncMock(return_value=profil)
+    await runner.tick(maintenant=1130)          # ça repasse
+    client.get = AsyncMock(return_value="Apex API error: timeout")
+    await runner.tick(maintenant=1140)
+    await runner.tick(maintenant=1260)          # 120 s de plus, mais pas 240
+
+    assert runner.duel_en_cours is duel
+    assert duel.etat is Etat.MANCHE
+    api.refund_redemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_le_seuil_de_silence_vient_de_la_configuration():
+    """Le délai est réglable comme les autres paramètres du duel. Figé dans le
+    code, il resterait décoratif dans `config.yaml` — le piège déjà payé sur
+    `manches`, `attente_squad_min` et `plafond_kills_manche`."""
+    runner, client, _, api = _runner()
+    runner._api_muette_max_s = 10.0
+    _en_manche(runner)
+    client.get = AsyncMock(return_value="Apex API error: timeout")
+
+    await runner.tick(maintenant=500)
+    await runner.tick(maintenant=505)
+    assert runner.duel_en_cours is not None, "sous le seuil réglé : toléré"
+    await runner.tick(maintenant=512)
+
+    assert runner.duel_en_cours is None
+    api.refund_redemption.assert_awaited_once()
+
+
+# ── Revue finale — CRITICAL 3 : deux achats à la même seconde ────────────────
+@pytest.mark.asyncio
+async def test_deux_achats_simultanes_ne_perdent_pas_le_premier():
+    """Le test « un duel est-il déjà en cours ? » précède un appel réseau d'une
+    seconde environ, et `duel_en_cours` n'était affecté qu'après : deux achats
+    rapprochés passaient tous les deux. Le second écrasait le premier, dont le
+    `redemption_id` était perdu définitivement — points jamais rendus.
+
+    Le profil rendu ici cède la main (`sleep(0)`) : c'est ce que fait un vrai
+    appel réseau, et sans ça les deux coroutines s'exécuteraient bout à bout
+    sans jamais s'entrelacer."""
+    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    runner, client, _, api = _runner()
+
+    async def _lent(*a, **k):
+        await asyncio.sleep(0)
+        return profil
+
+    client.get = _lent
+
+    await asyncio.gather(
+        runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd1"),
+        runner.ouvrir(acheteur="carol", saisie="99", reward_id="rw", redemption_id="rd2"),
+    )
+
+    assert runner.duel_en_cours is not None
+    retenu = runner.duel_en_cours.redemption_id
+    perdants = {"rd1", "rd2"} - {retenu}
+    # Celui qui n'a pas eu le duel doit avoir récupéré ses points, et l'avoir
+    # appris : jamais un remboursement muet, jamais un silence.
+    rembourses = {c.args[1] for c in api.refund_redemption.await_args_list}
+    assert rembourses == perdants, (
+        f"duel retenu : {retenu}, remboursés : {rembourses}")
+    types = [c.args[0].type for c in runner._annoncer.await_args_list]
+    assert "refus" in types
+    assert runner.duel_en_cours.viewer_nom in ("bob", "carol")

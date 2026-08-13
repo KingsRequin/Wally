@@ -18,6 +18,7 @@ apex:
     cadence_s: 2
     attente_squad_min: 15
     plafond_kills_manche: 30
+    api_muette_max_s: 180             # API muette en pleine manche au-delà → abandon + remboursement
 bot:
   context_token_threshold: 3000
   context_window_size: 20

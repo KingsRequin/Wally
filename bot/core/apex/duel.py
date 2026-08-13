@@ -100,6 +100,25 @@ class Duel:
         self.etat = Etat.ATTENTE_SQUAD
         self._t_attente = None
 
+    def abandonner(self, motif: str) -> list[Evenement]:
+        """Abandon décidé de l'EXTÉRIEUR, avec remboursement.
+
+        La machine ne peut pas le déduire seule : elle ne voit pas les relevés
+        qui n'arrivent PAS. Le seul à savoir que l'API est muette, c'est le
+        runner qui l'interroge — d'où cette entrée.
+
+        Le remboursement est inconditionnel, à la différence de l'abandon
+        d'ENTRE_MANCHES : là-bas c'est le duelliste qui n'est pas revenu, ici
+        c'est la mesure qui a disparu. Le viewer n'y est pour rien.
+        """
+        if self.etat in (Etat.VERDICT, Etat.ABANDON):
+            return []
+        self.etat = Etat.ABANDON
+        return [Evenement("abandon", {
+            "rembourser": True, "motif": motif,
+            "manches_jouees": len(self.scores),
+        })]
+
     def recommencer(self) -> None:
         """Remet les compteurs à zéro, même duelliste (§7 de la spec)."""
         self.scores = []

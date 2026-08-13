@@ -279,6 +279,11 @@ class DuelConfig:
     cadence_s: float = 2.0
     attente_squad_min: float = 15.0
     plafond_kills_manche: int = 30
+    # Durée maximale pendant laquelle l'API peut rester muette EN PLEINE
+    # MANCHE. Quelques relevés ratés sont tolérés — c'est une API publique —
+    # mais au-delà le duel n'a plus aucun moyen de se terminer : on abandonne
+    # et on rend les points plutôt que de geler le duel pour toujours.
+    api_muette_max_s: float = 180.0
 
 
 @dataclass

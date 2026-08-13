@@ -58,6 +58,15 @@ REPOS_SANS_DUEL_S = 5.0
 # la martèle et remplit les logs.
 RECUL_ERREUR_S = 10.0
 
+# Une manche ne peut se clore que sur un relevé : tant que l'API est muette,
+# rien n'avance. Quelques relevés ratés sont tolérés — c'est une API publique —
+# mais au-delà de ce délai le duel n'a plus AUCUN moyen de se terminer. Sans
+# ce plafond, une panne prolongée (ou un profil devenu illisible) gèle le duel
+# pour toujours : pas de timeout, pas de remboursement, et `duel_en_cours`
+# reste peuplé donc tout acheteur suivant est refusé « un duel est déjà en
+# cours ». La seule issue serait qu'un modérateur pense à dire « annule ».
+API_MUETTE_MAX_S = 180.0
+
 
 def peut_controler(auteur: dict) -> bool:
     """Le streamer et ses modérateurs, et personne d'autre.
@@ -98,7 +107,8 @@ class DuelRunner:
     def __init__(self, client, db, api, annoncer, *,
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
                  manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
-                 plafond_kills_manche: int = PLAFOND_KILLS_MANCHE):
+                 plafond_kills_manche: int = PLAFOND_KILLS_MANCHE,
+                 api_muette_max_s: float = API_MUETTE_MAX_S):
         self._client = client
         self._db = db
         self._api = api
@@ -116,8 +126,22 @@ class DuelRunner:
         self._manches = manches
         self._attente_squad_s = attente_squad_s
         self._plafond_kills_manche = plafond_kills_manche
+        self._api_muette_max_s = api_muette_max_s
         self.duel_en_cours: Duel | None = None
         self._reward_id = ""
+        # Instant du PREMIER relevé raté d'une série, pendant une manche.
+        # Remis à None dès qu'un relevé passe — ce qui suffit à ne jamais
+        # transmettre un silence d'un duel au suivant : on n'entre en MANCHE
+        # que sur des relevés réussis. Volontairement pas persisté : un
+        # rebuild remet le compteur à zéro, ce qui ne fait qu'accorder de la
+        # tolérance en plus, jamais un abandon prématuré.
+        self._muet_depuis: float | None = None
+        # Deux achats à moins d'une seconde d'intervalle passaient tous les
+        # deux le test « un duel est-il déjà en cours ? » : il précède un appel
+        # réseau d'environ une seconde, et `duel_en_cours` n'était affecté
+        # qu'après. Le second écrasait le premier, dont le `redemption_id`
+        # était perdu — points jamais rendus.
+        self._verrou_ouverture = asyncio.Lock()
         # Compteur d'essais en phase RESOLUTION — remis à zéro à chaque
         # ouverture d'une nouvelle attente d'uid, jamais partagé entre deux
         # viewers successifs.
@@ -254,6 +278,23 @@ class DuelRunner:
 
     async def ouvrir(self, *, acheteur: str, saisie: str,
                      reward_id: str, redemption_id: str) -> None:
+        """Sérialisée : deux achats simultanés s'ouvrent l'un APRÈS l'autre.
+
+        Sans ce verrou, le test « un duel est-il déjà en cours ? » et
+        l'affectation de `duel_en_cours` étaient séparés par un appel réseau
+        d'environ une seconde. Deux achats à moins d'une seconde d'intervalle
+        passaient donc tous les deux : le second écrasait le premier, dont le
+        `redemption_id` était perdu définitivement — ses points n'étaient
+        jamais rendus, et l'annonce d'ouverture parlait de quelqu'un d'autre.
+        Le second entre maintenant après le premier, voit le duel en cours et
+        se fait refuser proprement : remboursé ET annoncé.
+        """
+        async with self._verrou_ouverture:
+            await self._ouvrir(acheteur=acheteur, saisie=saisie,
+                               reward_id=reward_id, redemption_id=redemption_id)
+
+    async def _ouvrir(self, *, acheteur: str, saisie: str,
+                      reward_id: str, redemption_id: str) -> None:
         if self.duel_en_cours is not None:
             # Un duel tourne déjà : le remboursement seul laissait le viewer
             # sans un mot d'explication (Task 7, faute de canal d'annonce).
@@ -368,7 +409,11 @@ class DuelRunner:
         return p
 
     async def _avancer(self, duel: Duel, releve: Releve) -> None:
-        """Fait avancer la machine d'un relevé, et applique les effets.
+        """Fait avancer la machine d'un relevé, et applique les effets."""
+        await self._appliquer(duel, duel.avancer(releve))
+
+    async def _appliquer(self, duel: Duel, evts: list[Evenement]) -> None:
+        """Applique les effets d'une salve d'événements.
 
         Ordre STRICT : remboursement(s) → nettoyage de `duel_en_cours` →
         persistance → annonces. Si l'annonce d'un abandon levait AVANT le
@@ -376,8 +421,10 @@ class DuelRunner:
         du viewer non rendus, `duel_en_cours` toujours peuplé (donc tous les
         viewers suivants refusés indéfiniment) et l'état persisté périmé — un
         rebuild ressusciterait ce duel fantôme via `charger()`.
+
+        Partagé par `_avancer()` (relevé) et par l'abandon sur API muette :
+        les deux doivent tenir cet ordre, et un seul endroit le garantit.
         """
-        evts = duel.avancer(releve)
         for evt in evts:
             if evt.type == "abandon":
                 # `manches_jouees` n'existe que sur les abandons issus
@@ -396,6 +443,36 @@ class DuelRunner:
         await self._ranger()
         for evt in evts:
             await self._annoncer_sur(evt)
+
+    async def _api_muette(self, duel: Duel, maintenant: float) -> None:
+        """Une manche que plus aucun relevé ne peut clore.
+
+        `tick()` sort sans rien faire quand un relevé manque en MANCHE, et
+        c'est délibéré : injecter un relevé fictif « hors partie » clôturerait
+        une manche réellement en cours sur un simple hoquet. Mais sans
+        contrepartie, une panne prolongée — ou un profil devenu illisible —
+        gèle le duel pour toujours. C'est cette contrepartie.
+        """
+        if self._muet_depuis is None:
+            self._muet_depuis = maintenant
+            # WARNING et non DEBUG : c'est le seul signe visible en production
+            # qu'un duel est en train de s'enliser. Une seule ligne par série,
+            # pas une par tour de sonde (2 s).
+            logger.warning(
+                "Duel Apex : plus aucun relevé lisible en pleine manche {m}/{s} — "
+                "abandon et remboursement si ça dure au-delà de {d:.0f} s",
+                m=duel.manche_courante, s=duel.manches, d=self._api_muette_max_s)
+            return
+        silence = maintenant - self._muet_depuis
+        if silence < self._api_muette_max_s:
+            return
+        duree = f"{int(silence // 60)} min" if silence >= 60 else f"{int(silence)} s"
+        logger.error(
+            "Duel Apex : API muette depuis {d} en pleine manche — abandon", d=duree)
+        self._muet_depuis = None
+        await self._appliquer(duel, duel.abandonner(
+            f"l'API Apex ne répond plus depuis {duree} en pleine manche, "
+            "plus rien ne peut être compté"))
 
     async def tick(self, maintenant: float) -> None:
         """Un tour de sonde. Appelé toutes les `cadence_s` pendant un duel.
@@ -431,12 +508,17 @@ class DuelRunner:
             # en MANCHE : y injecter un relevé fictif "hors partie" risquerait
             # de clore une manche réellement en cours via le debounce de fin
             # de partie, sur un simple hoquet de l'API.
-            logger.debug("Duel : relevé incomplet, tour sauté")
             if duel.etat in (Etat.ATTENTE_SQUAD, Etat.ENTRE_MANCHES):
+                logger.debug("Duel : relevé incomplet, tour sauté")
                 await self._avancer(duel, Releve(
                     t=maintenant, azrael_in_game=False, viewer_in_game=False,
                     kills_azrael={}, kills_viewer={}))
+                return
+            # En MANCHE il n'y a AUCUN autre minuteur : c'est ici, et nulle
+            # part ailleurs, que la panne prolongée se voit et se solde.
+            await self._api_muette(duel, maintenant)
             return
+        self._muet_depuis = None
 
         releve = Releve(
             t=maintenant,

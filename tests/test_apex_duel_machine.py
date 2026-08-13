@@ -435,3 +435,35 @@ def test_recommencer_remet_les_compteurs_a_zero():
     assert d.scores == []
     assert d.etat is Etat.ATTENTE_SQUAD
     assert d.viewer_nom == "Bob", "le duelliste garde sa place"
+
+
+# ── Revue finale — abandon décidé de l'extérieur (API muette) ────────────────
+def test_abandonner_ferme_le_duel_et_demande_le_remboursement():
+    """La machine ne voit pas les relevés qui n'ARRIVENT pas : seul le runner
+    qui interroge l'API sait qu'elle est muette. D'où cette entrée."""
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    assert d.etat is Etat.MANCHE
+
+    evts = d.abandonner("l'API ne répond plus")
+
+    assert d.etat is Etat.ABANDON
+    assert [e.type for e in evts] == ["abandon"]
+    assert evts[0].donnees["rembourser"] is True
+    assert evts[0].donnees["motif"] == "l'API ne répond plus"
+    # Et la machine reste close : plus aucun relevé ne la fait repartir.
+    assert d.avancer(Releve(t=600, azrael_in_game=True, viewer_in_game=True,
+                            kills_azrael=kills(9), kills_viewer=K0)) == []
+
+
+def test_un_duel_deja_termine_ne_se_rembourse_pas_une_seconde_fois():
+    """Un abandon rendu sur un duel clos ferait rembourser des points déjà
+    rendus — ou pire, ceux d'un duel régulièrement gagné."""
+    d = duel_pret()
+    d.etat = Etat.VERDICT
+
+    assert d.abandonner("trop tard") == []
+    assert d.etat is Etat.VERDICT

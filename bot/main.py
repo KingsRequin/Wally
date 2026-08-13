@@ -639,6 +639,7 @@ async def main() -> None:
                         manches=int(_duel_conf.manches),
                         attente_squad_s=float(_duel_conf.attente_squad_min) * 60,
                         plafond_kills_manche=int(_duel_conf.plafond_kills_manche),
+                        api_muette_max_s=float(_duel_conf.api_muette_max_s),
                     )
                     # Reprise de l'état, récompense, source globale : l'ordre
                     # des trois est dans `armer_le_duel`, où il se teste.
