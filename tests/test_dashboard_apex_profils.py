@@ -428,3 +428,27 @@ async def test_lannuaire_necarte_les_identites_sans_plateforme(db, client):
     identites = {p["identity"] for p in r.json()["people"]}
     assert "discord:610550333042589752" in identites
     assert not [i for i in identites if i.startswith(("unknown:", "global:"))]
+
+
+@pytest.mark.asyncio
+async def test_la_carte_montre_les_identites_couvertes(db, client):
+    """Déclarer le compte sur Twitch le rend valable sur Discord aussi, les
+    deux comptes étant liés. Ne montrer que l'identité déclarée laisse croire
+    que l'autre côté est resté sans compte."""
+    disc, tw = "discord:182881216884637696", "twitch:90774597"
+    await db.upsert_memory_user(disc, "discord", "KassandreYunikon")
+    await db.upsert_memory_user(tw, "twitch", "kassandreyunikon")
+    await db.upsert_link_proposal(disc, tw, 0.95)
+    props = await db.list_link_proposals()
+    await db.accept_link(props[0]["id"])
+    await db.apex_remember_profile(uid=UID, apex_name="LicorneKssandre", platform="PC")
+    await db.apex_link_account(
+        identity=tw, display_name="kassandreyunikon",
+        apex_name="LicorneKssandre", apex_platform="PC", uid=UID,
+    )
+
+    r = await client.get("/api/admin/apex/profiles", headers=HEADERS)
+
+    profil = r.json()["profiles"][0]
+    assert [o["identity"] for o in profil["owners"]] == [tw], "une seule liaison déclarée"
+    assert disc in profil["couvre"], "l'identité liée est couverte par la même déclaration"

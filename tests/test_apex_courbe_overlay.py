@@ -156,7 +156,9 @@ async def test_le_refus_nomme_le_compte_et_signale_le_repli_sur_le_demandeur():
     d'autre — c'est exactement ce qui s'est produit."""
 
     class _DB:
-        async def apex_get_account(self, identity):
+        # `for_person` et non `get_account` : le compte suit la personne sur
+        # toutes ses identités liées (cf. test_apex_identites_liees).
+        async def apex_account_for_person(self, identity):
             return {"apex_name": "KingsRequin", "apex_platform": "PC",
                     "uid": "1012242925358"}
 

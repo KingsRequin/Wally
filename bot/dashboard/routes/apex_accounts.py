@@ -35,6 +35,17 @@ async def list_apex_profiles(request: Request):
     profils = await db.apex_list_profiles()
     for p in profils:
         p["url"] = lien_profil(p["uid"], p["platform"])
+        # Les identités que la déclaration atteint SANS être déclarées :
+        # déclarer son compte sur Twitch le rend valable sur le Discord lié, et
+        # ne montrer que l'identité déclarée laisserait croire que l'autre côté
+        # est resté sans compte.
+        couvre: list[str] = []
+        for o in p["owners"]:
+            declarees = {x["identity"] for x in p["owners"]}
+            for autre in await db.apex_identities_for(o["identity"]):
+                if autre not in declarees and autre not in couvre:
+                    couvre.append(autre)
+        p["couvre"] = couvre
     return {"profiles": profils}
 
 

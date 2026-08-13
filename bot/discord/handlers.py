@@ -1696,11 +1696,13 @@ async def _apex_account_context(bot, platform: str, user_id: str) -> str:
     if db is None:
         return ""
     try:
-        compte = await db.apex_get_account(f"{platform}:{user_id}")
+        # `for_person` et non `get_account` : la liaison peut être posée sur
+        # l'identité Twitch de quelqu'un qui écrit depuis Discord.
+        compte = await db.apex_account_for_person(f"{platform}:{user_id}")
         if compte is None:
             canonique = await _canonical_uid(bot, platform, user_id)
             if canonique != f"{platform}:{user_id}":
-                compte = await db.apex_get_account(canonique)
+                compte = await db.apex_account_for_person(canonique)
     except Exception as e:  # noqa: BLE001 — un bloc optionnel ne casse pas une réponse
         logger.warning("Apex : compte de la personne illisible : {e}", e=e)
         return ""

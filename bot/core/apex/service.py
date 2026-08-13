@@ -548,7 +548,10 @@ class ApexLegendsService:
             return (
                 await self._db.apex_find_by_display_name(player_name)
                 if player_name
-                else (await self._db.apex_get_account(requester) if requester else None)
+                # Le compte du demandeur par quelque identité qu'il passe : sans
+                # pseudo, « donne mes stats » depuis Discord ne trouvait rien
+                # quand le compte avait été déclaré côté Twitch.
+                else (await self._db.apex_account_for_person(requester) if requester else None)
             )
         except Exception as e:                       # une base grippée ne casse pas la recherche
             logger.warning("Apex: lecture des comptes liés impossible: {e}", e=e)

@@ -3403,3 +3403,11 @@ body.is-mobile .mobile-back-btn {
   text-overflow: ellipsis;
 }
 .apex-people-vide { padding: 8px 10px; color: var(--text-secondary); font-size: 0.74rem; }
+
+/* Une identité atteinte par la déclaration faite sur l'autre compte de la même
+   personne : réelle, mais pas déclarée ici — d'où le trait discontinu. */
+.apex-owner.couvert {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-secondary);
+}

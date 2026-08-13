@@ -4405,6 +4405,17 @@ function apexProfileCard(p) {
     badge.appendChild(x);
     head.appendChild(badge);
   });
+  // Les identités atteintes sans être déclarées : le compte vaut pour la
+  // PERSONNE, et n'afficher que l'identité déclarée laissait croire que son
+  // autre compte était resté sans rien.
+  (p.couvre || []).forEach(function(ident) {
+    const badge = document.createElement('span');
+    badge.className = 'apex-owner couvert';
+    badge.textContent = String(ident).split(':')[0] + ' · via ses comptes liés';
+    badge.title = ident + " — atteint par la déclaration faite sur l'autre "
+      + 'identité, les deux comptes étant liés';
+    head.appendChild(badge);
+  });
   // L'ABSENCE de badge est muette : une carte sans propriétaire se lisait comme
   // une carte normale, et on croyait le compte rattaché à quelqu'un. Cet onglet
   // liste tout le registre — croisé ≠ appartenant à quelqu'un d'ici.

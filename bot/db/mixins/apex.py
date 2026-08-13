@@ -54,6 +54,47 @@ class ApexMixin:
             "SELECT * FROM apex_accounts WHERE identity = ?", (identity,)
         )
 
+    async def apex_identities_for(self, identity: str) -> list[str]:
+        """Toutes les identités qui désignent cette personne, elle d'abord.
+
+        Quelqu'un a un compte Discord ET un compte Twitch, liés dans le panneau.
+        Un compte Apex déclaré depuis l'un vaut pour l'autre : c'est la même
+        personne qui joue.
+
+        Seuls les liens ACCEPTÉS comptent — une proposition rejetée dit que ce
+        ne sont justement pas les mêmes personnes.
+        """
+        if not identity:
+            return []
+        rows = await self.fetch_all(
+            "SELECT canonical_id, alias_id FROM user_links "
+            "WHERE status = 'accepted' AND (canonical_id = ? OR alias_id = ?)",
+            (identity, identity),
+        )
+        # L'identité courante en TÊTE : si elle a déclaré son propre compte, il
+        # prime sur celui d'une identité voisine — sinon on servirait un compte
+        # périmé à quelqu'un qui vient d'en déclarer un.
+        identites = [identity]
+        for r in rows or []:
+            for autre in (r["canonical_id"], r["alias_id"]):
+                if autre and autre not in identites:
+                    identites.append(autre)
+        return identites
+
+    async def apex_account_for_person(self, identity: str) -> aiosqlite.Row | None:
+        """Le compte Apex de cette personne, par quelque identité qu'elle passe.
+
+        `apex_get_account` seul ne voyait que l'identité exacte : une liaison
+        posée sur le compte Twitch restait invisible depuis le Discord de la
+        même personne — constaté en prod, et c'est le côté Discord qui porte
+        l'essentiel des conversations.
+        """
+        for candidate in await self.apex_identities_for(identity):
+            compte = await self.apex_get_account(candidate)
+            if compte is not None:
+                return compte
+        return None
+
     async def apex_find_by_display_name(self, display_name: str) -> "aiosqlite.Row | None":
         """Le compte de la personne qui portait ce pseudo, casse ignorée.
 
