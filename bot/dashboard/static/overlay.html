@@ -44,6 +44,10 @@
       --bulle-fond:  #16141f;
       --bulle-texte: #f7f3e9;
       --bulle-voile: .88;
+      /* Flou de l'ARRIÈRE-PLAN, pas de la bulle. Volontairement court : un
+         `backdrop-filter` relit le fond et le refloute à chaque image, sur une
+         machine qui fait déjà tourner le jeu et l'encodage. */
+      --bulle-flou: 5px;
       /* Décalée et sans flou : c'est ce décalage net qui fait le style. Portée
          par un `drop-shadow` et non une `box-shadow`, pour qu'elle suive la
          SILHOUETTE — pointe comprise — et pas la boîte. */
@@ -212,6 +216,10 @@
       color: var(--bulle-texte);
       background: var(--bulle-fond);
       border-radius: 18px;
+      /* Détache la bulle du gameplay sans l'assombrir davantage. Clippé par le
+         rayon, donc il suit la boîte. */
+      -webkit-backdrop-filter: blur(var(--bulle-flou));
+      backdrop-filter: blur(var(--bulle-flou));
       /* L'ombre suit la silhouette, pointe comprise : une `box-shadow` s'
          arrêterait à la boîte et laisserait la pointe à plat. */
       filter: drop-shadow(var(--bulle-ombre));
