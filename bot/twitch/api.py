@@ -94,6 +94,7 @@ class TwitchAPI:
     STREAMS_URL = "https://api.twitch.tv/helix/streams"
     USERS_URL = "https://api.twitch.tv/helix/users"
     REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
+    REWARDS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards"
 
     def __init__(
         self,
@@ -542,6 +543,119 @@ class TwitchAPI:
         except Exception as exc:  # noqa: BLE001 — un remboursement raté ne tue pas le duel
             logger.error("Remboursement en erreur : {e}", e=exc)
             return False
+
+    async def recompenses_gerables(self) -> list[dict]:
+        """Les récompenses que NOTRE application peut piloter.
+
+        `only_manageable_rewards=true` ne rend que celles créées par ce
+        `client_id`. Les autres — créées depuis le site Twitch — sont
+        inaccessibles à l'API : les rembourser renvoie 403.
+
+        Retry une fois sur 401 après renouvellement du token streamer, comme
+        `refund_redemption` : un token expiré ne doit pas faire disparaître la
+        liste des récompenses pilotables.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.get(
+                        self.REWARDS_URL,
+                        params={"broadcaster_id": self._broadcaster_id,
+                                "only_manageable_rewards": "true"},
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Liste des récompenses 401 — renouvellement du token streamer"
+                            )
+                            refreshed = await self._tm.refresh("streamer")
+                            if not refreshed:
+                                logger.error(
+                                    "Renouvellement du token streamer échoué — "
+                                    "liste des récompenses abandonnée"
+                                )
+                                return []
+                            continue
+                        logger.error("Liste des récompenses 401 après renouvellement — abandon")
+                        return []
+                    if resp.status_code != 200:
+                        logger.error("Liste des récompenses refusée HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return []
+                    return (resp.json() or {}).get("data") or []
+                return []
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Liste des récompenses en erreur : {e}", e=exc)
+            return []
+
+    async def creer_recompense(self, titre: str, cout: int, prompt: str) -> str | None:
+        """Crée la récompense de points de chaîne, et rend son ID.
+
+        C'est Wally qui doit la créer : Twitch réserve la mise à jour d'une
+        redemption à l'application qui a créé la récompense. Une récompense
+        posée à la main dans la console renverrait 403 à chaque remboursement —
+        et chaque refus de duel rembourse.
+
+        Retry une fois sur 401 après renouvellement du token streamer, comme
+        `refund_redemption` — sans lui, un token expiré pile à la création
+        rendrait le duel indisponible sans rattrapage.
+        """
+        corps = {
+            "title": (titre or "")[:45],           # 45 caractères max côté Twitch
+            "cost": max(1, int(cout)),
+            "prompt": (prompt or "")[:200],        # 200 max
+            "is_user_input_required": True,        # le viewer colle son uid
+            "is_enabled": True,
+            # JAMAIS True : une redemption qui saute la file est aussitôt
+            # FULFILLED, et seul un statut UNFULFILLED peut être mis à jour.
+            # On perdrait tout moyen de rendre les points.
+            "should_redemptions_skip_request_queue": False,
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.post(
+                        self.REWARDS_URL,
+                        params={"broadcaster_id": self._broadcaster_id},
+                        json=corps,
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Création de récompense 401 — renouvellement du token streamer"
+                            )
+                            refreshed = await self._tm.refresh("streamer")
+                            if not refreshed:
+                                logger.error(
+                                    "Renouvellement du token streamer échoué — "
+                                    "création de récompense abandonnée"
+                                )
+                                return None
+                            continue
+                        logger.error(
+                            "Création de récompense 401 après renouvellement — abandon"
+                        )
+                        return None
+                    if resp.status_code not in (200, 201):
+                        logger.error("Création de récompense refusée HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return None
+                    data = (resp.json() or {}).get("data") or []
+                    rid = (data[0] or {}).get("id") if data else None
+                    if rid:
+                        logger.info("Récompense de duel créée : {t} ({i})",
+                                    t=corps["title"], i=rid)
+                    return rid
+                return None
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Création de récompense en erreur : {e}", e=exc)
+            return None
 
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
