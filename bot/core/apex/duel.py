@@ -163,28 +163,42 @@ class Duel:
             self._pending_debut = False
             if r.t - self._t_attente < self.attente_squad_s:
                 return []
-            # Timeout. Le ruling diffère selon qu'une manche a déjà été jouée :
-            # quitter avant tout resultat mesuré ouvre droit au remboursement,
-            # quitter après (ENTRE_MANCHES) n'y ouvre plus droit — sinon ce
-            # serait un raccourci pour abandonner dès qu'on perd, et l'API ne
-            # distingue pas un départ volontaire d'une coupure.
-            etat_avant = self.etat
-            self.etat = Etat.ABANDON
-            if etat_avant is Etat.ENTRE_MANCHES:
-                a, v = self.total_azrael, self.total_viewer
+            # Timeout. Le motif dépend de l'état : depuis ATTENTE_SQUAD rien
+            # n'a commencé, depuis ENTRE_MANCHES le duel s'est arrêté EN
+            # COURS. Le même message pour les deux ferait annoncer « personne
+            # n'a rejoint le squad » à un viewer qui vient de gagner sa manche.
+            if self.etat is Etat.ATTENTE_SQUAD:
+                self.etat = Etat.ABANDON
                 return [Evenement("abandon", {
-                    "rembourser": False,
-                    "motif": (f"le duel s'est arrêté après la manche "
-                              f"{len(self.scores)}/{self.manches} — pas de "
-                              f"retour dans le délai"),
-                    "azrael": a, "viewer": v,
-                    "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
-                    "scores": list(self.scores),
+                    "rembourser": True,
+                    "motif": "personne n'a rejoint le squad dans le délai",
                 })]
-            return [Evenement("abandon", {
-                "rembourser": True,
-                "motif": "personne n'a rejoint le squad dans le délai",
+
+            # ENTRE_MANCHES : au moins une manche a été JOUÉE — reste à savoir
+            # si elle a été MESURÉE. Sans mesure, il n'y a rien à arbitrer et
+            # annoncer un 0-0 serait le faux match nul qu'on refuse partout
+            # ailleurs : on rembourse.
+            if self._aucun_kill_compte():
+                self.etat = Etat.ABANDON
+                return [Evenement("abandon", {
+                    "rembourser": True,
+                    "motif": ("le duel s'est arrêté en cours de route, et aucun "
+                              "kill n'avait pu être compté — rien à arbitrer"),
+                    "manches_jouees": len(self.scores),
+                })]
+            # Une manche mesurée au moins : PAS de remboursement. Rembourser
+            # qui part après avoir joué encouragerait l'abandon dès qu'on perd,
+            # et l'API ne distingue pas un départ volontaire d'une coupure de
+            # stream. Le verdict porte alors sur les manches réellement jouées.
+            evts = [Evenement("abandon", {
+                "rembourser": False,
+                "motif": (f"le duel s'est arrêté en cours, après la manche "
+                          f"{len(self.scores)}/{self.manches} — pas de retour "
+                          f"dans le délai"),
+                "manches_jouees": len(self.scores),
             })]
+            evts.extend(self._clore())
+            return evts
 
         if self.etat is Etat.MANCHE:
             # C'est le retour au lobby d'Azraël qui clôt la manche : les
@@ -208,6 +222,10 @@ class Duel:
                     "azrael": sa if mesurable else None,
                     "viewer": sv if mesurable else None,
                 })
+                # `azrael`/`viewer` sont les deltas BRUTS, à n'annoncer que si
+                # `mesurable` : quand un seul côté est lisible, les dire tels
+                # quels informe (« je t'ai vu en faire 3, mais rien de ton
+                # côté ») sans jamais rentrer dans les totaux ci-dessous.
                 evts = [Evenement("manche_fin", {
                     "manche": len(self.scores), "sur": self.manches,
                     "azrael": sa, "viewer": sv, "mesurable": mesurable,
@@ -224,16 +242,22 @@ class Duel:
 
         return []
 
-    def _clore(self) -> list[Evenement]:
-        """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part.
+    def _aucun_kill_compte(self) -> bool:
+        """Aucun kill compté de tout le duel — quelle qu'en soit la raison.
 
-        Un delta de 0 mesuré (vraie Mixtape : trackers présents mais figés,
-        `score_manche` rend 0) doit finir ici exactement comme un dict vide
-        (API muette, `score_manche` rend None) : dans les deux cas, aucun
-        kill n'a été enregistré de tout le duel, donc le duel n'est pas
-        arbitrable. Annoncer un match nul serait mentir avec aplomb.
+        Un delta de 0 MESURÉ (vraie Mixtape : les trackers sont présents mais
+        figés, `score_manche` rend 0) doit compter ici exactement comme un
+        dict vide (API muette, `score_manche` rend None). Une condition qui ne
+        chercherait que des `None` laisserait passer la Mixtape mesurée le
+        2026-08-13 — 10 kills joués, neuf trackers figés — et annoncerait
+        « 0-0, match nul » à deux joueurs qui ont fait trois parties.
         """
-        if all((s["azrael"] or 0) == 0 and (s["viewer"] or 0) == 0 for s in self.scores):
+        return all((s["azrael"] or 0) == 0 and (s["viewer"] or 0) == 0
+                   for s in self.scores)
+
+    def _clore(self) -> list[Evenement]:
+        """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part."""
+        if self._aucun_kill_compte():
             self.etat = Etat.ABANDON
             return [Evenement("abandon", {
                 "rembourser": True,
@@ -245,7 +269,7 @@ class Duel:
         return [Evenement("verdict", {
             "azrael": a, "viewer": v,
             "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
-            "scores": list(self.scores),
+            "scores": copy.deepcopy(self.scores),
         })]
 
 

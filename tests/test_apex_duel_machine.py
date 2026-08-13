@@ -223,27 +223,60 @@ def test_abandon_apres_une_manche_jouee_ne_rembourse_pas_et_rend_verdict():
     """Après une manche déjà mesurée (ENTRE_MANCHES) : plus de remboursement,
     ce serait un raccourci pour abandonner dès qu'on perd — et l'API ne
     distingue pas un départ volontaire d'une coupure. Le verdict porte sur
-    les manches réellement jouées."""
+    les manches réellement jouées, et le motif ne parle plus de squad."""
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    # Le viewer gagne la manche 1, puis ne revient jamais.
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(2), kills_viewer=kills(5)))
+    d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(2), kills_viewer=kills(5)))
+    assert d.etat is Etat.ENTRE_MANCHES
+
+    d.avancer(Releve(t=500, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(2), kills_viewer=kills(5)))
+    evts = d.avancer(Releve(t=500 + 16 * 60, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(2), kills_viewer=kills(5)))
+    assert d.etat is Etat.VERDICT
+    abandon = [e for e in evts if e.type == "abandon"][0]
+    assert abandon.donnees["rembourser"] is False
+    assert abandon.donnees["manches_jouees"] == 1
+    assert "squad" not in abandon.donnees["motif"].lower(), (
+        "le motif de l'attente initiale mentirait ici : une manche a été jouée")
+    # Les scores acquis ne sont pas jetés : ils font un verdict.
+    verdict = [e for e in evts if e.type == "verdict"][0]
+    assert verdict.donnees["azrael"] == 2
+    assert verdict.donnees["viewer"] == 5
+    assert verdict.donnees["gagnant"] == "viewer"
+
+
+def test_abandon_apres_une_manche_NON_mesuree_rembourse_et_ne_rend_pas_de_verdict():
+    """Même départ en cours de duel, mais la manche jouée n'a rien donné de
+    mesurable (Mixtape, ou viewer illisible). Il n'y a alors rien à arbitrer :
+    on rembourse, et surtout on n'annonce pas le 0-0 qu'on refuse partout
+    ailleurs."""
     d = duel_pret()
     d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
                      kills_azrael=K0, kills_viewer=K0))
     d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
                      kills_azrael=K0, kills_viewer=K0))
     d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
-                     kills_azrael=kills(4), kills_viewer=kills(2)))
+                     kills_azrael=K0, kills_viewer=K0))
     d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
-                     kills_azrael=kills(4), kills_viewer=kills(2)))
+                     kills_azrael=K0, kills_viewer=K0))
     assert d.etat is Etat.ENTRE_MANCHES
 
     d.avancer(Releve(t=500, azrael_in_game=False, viewer_in_game=False,
-                     kills_azrael=kills(4), kills_viewer=kills(2)))
+                     kills_azrael=K0, kills_viewer=K0))
     evts = d.avancer(Releve(t=500 + 16 * 60, azrael_in_game=False, viewer_in_game=False,
-                            kills_azrael=kills(4), kills_viewer=kills(2)))
+                            kills_azrael=K0, kills_viewer=K0))
     assert d.etat is Etat.ABANDON
     abandon = [e for e in evts if e.type == "abandon"][0]
-    assert abandon.donnees["rembourser"] is False
-    assert abandon.donnees["azrael"] == 4
-    assert abandon.donnees["viewer"] == 2
+    assert abandon.donnees["rembourser"] is True
+    assert not any(e.type == "verdict" for e in evts)
 
 
 def test_un_hoquet_isole_ne_clot_pas_la_manche():
@@ -338,6 +371,54 @@ def test_le_duel_survit_a_un_rebuild():
     assert fin_repris.donnees["manche"] == fin_ref.donnees["manche"] == 1
     assert fin_repris.donnees["azrael"] == fin_ref.donnees["azrael"] == 4
     assert fin_repris.donnees["viewer"] == fin_ref.donnees["viewer"] == 2
+
+
+def test_le_delai_dattente_survit_a_un_rebuild():
+    """L'autre champ que la reprise doit porter : l'instant où l'attente a
+    commencé. Sans lui, chaque redémarrage du conteneur remettrait le compte à
+    rebours à zéro — un viewer absent ferait attendre le duel indéfiniment."""
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=K0, kills_viewer=K0))
+
+    repris = Duel.from_dict(d.to_dict())
+    evts = repris.avancer(Releve(t=16 * 60, azrael_in_game=False, viewer_in_game=False,
+                                 kills_azrael=K0, kills_viewer=K0))
+    assert repris.etat is Etat.ABANDON, "l'attente a bien commencé à t=0, pas à la reprise"
+    assert [e for e in evts if e.type == "abandon"][0].donnees["rembourser"] is True
+
+
+def test_le_delai_et_le_plafond_sont_des_champs_configurables():
+    """Rien de figé en dur : un délai d'attente et un plafond de kills posés
+    à la construction doivent atteindre `avancer()` — et survivre au
+    redémarrage comme le reste de l'état."""
+    court = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3,
+                 attente_squad_s=60)
+    court.etat = Etat.ATTENTE_SQUAD
+    court.avancer(Releve(t=0, azrael_in_game=False, viewer_in_game=False,
+                         kills_azrael=K0, kills_viewer=K0))
+    court.avancer(Releve(t=61, azrael_in_game=False, viewer_in_game=False,
+                         kills_azrael=K0, kills_viewer=K0))
+    assert court.etat is Etat.ABANDON, "le délai du duel, pas la constante du module"
+
+    bas = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3,
+               plafond_kills_manche=2)
+    bas.etat = Etat.ATTENTE_SQUAD
+    bas.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                       kills_azrael=K0, kills_viewer=K0))
+    bas.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                       kills_azrael=K0, kills_viewer=K0))
+    bas.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                       kills_azrael=kills(4), kills_viewer=kills(4)))
+    evts = bas.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                              kills_azrael=kills(4), kills_viewer=kills(4)))
+    fin = [e for e in evts if e.type == "manche_fin"][0]
+    assert fin.donnees["mesurable"] is False, (
+        "+4 dépasse le plafond de 2 : le plafond du duel a bien été passé à score_manche")
+
+    repris = Duel.from_dict(court.to_dict())
+    assert repris.attente_squad_s == 60
+    assert Duel.from_dict(bas.to_dict()).plafond_kills_manche == 2
 
 
 def test_recommencer_remet_les_compteurs_a_zero():
