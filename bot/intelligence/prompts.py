@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from bot.core.apex.duel_runner import current_duel
 from bot.core.apex.watcher import current_apex_block
 from bot.core.stream_feed import current_stream_feed_block
 from bot.core.voice_transcript import current_voice_transcript_block
@@ -305,6 +306,14 @@ class PromptBuilder:
         if apex_block := current_apex_block():
             dynamic_parts.append(apex_block)
 
+        # Le duel Apex en cours (récompense de points de chaîne), pour que
+        # Wally puisse en PARLER — pas seulement le montrer sur l'overlay.
+        # Injecté aussi dans le contexte cognitif (AttentionContext.duel_block) :
+        # même précédent que le flux du stream ci-dessus, un seul des deux
+        # chemins branché aurait laissé la cognition aveugle au duel en cours.
+        if duel_block := bloc_duel_en_cours(current_duel()):
+            dynamic_parts.append(duel_block)
+
         # Ce qui tourne sur l'overlay (bingo, pendu, objectif…). Passif comme le
         # flux ci-dessus : aucun `notify_*` derrière, donc un bingo ouvert ne
         # réveille pas la cadence et ne fait pas parler Wally tout seul. Absent
@@ -496,6 +505,36 @@ class PromptBuilder:
                 e=exc, t=template[:80],
             )
             return template
+
+
+def bloc_duel_en_cours(duel) -> str:
+    """Le duel Apex courant, pour que Wally puisse en PARLER.
+
+    Injecté à la fois dans `build_system_prompt` et dans le contexte cognitif
+    (`AttentionContext.duel_block`) : n'alimenter que le premier laissait la
+    cognition aveugle à ses propres effets — c'est ainsi qu'un bingo se
+    relançait en boucle (précédent du projet).
+
+    Une manche non mesurable est dite telle quelle. Afficher « 0 » pour une
+    absence de mesure serait un mensonge : `None` dans `duel.scores` signifie
+    « non mesurable », jamais zéro kill.
+    """
+    if duel is None:
+        return ""
+    lignes = [
+        "--- Duel Apex en cours ---",
+        f"Lancé par {duel.viewer_nom} (récompense de points de chaîne).",
+        f"Manche {duel.manche_courante} sur {duel.manches}.",
+    ]
+    for i, s in enumerate(duel.scores, start=1):
+        if s["azrael"] is None and s["viewer"] is None:
+            lignes.append(f"Manche {i} : non mesurable (aucun kill enregistré).")
+        else:
+            lignes.append(
+                f"Manche {i} : Azraël {s['azrael'] if s['azrael'] is not None else '?'}"
+                f" — {duel.viewer_nom} {s['viewer'] if s['viewer'] is not None else '?'}")
+    lignes.append(f"Total : Azraël {duel.total_azrael} — {duel.viewer_nom} {duel.total_viewer}.")
+    return "\n".join(lignes)
 
 
 def build_session_recall_block(summaries: list[dict]) -> str:

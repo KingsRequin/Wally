@@ -89,6 +89,10 @@ class AttentionContext:
     # rédigé par StreamFeed. None hors live ou sans flux actif. Purement
     # contextuel : il ne crée ni interaction, ni cadence, ni sollicitation.
     stream_feed: str | None = None
+    # Duel Apex en cours (récompense de points de chaîne) — bloc déjà rédigé
+    # par `bloc_duel_en_cours()`. None hors duel. Même contrat que stream_feed :
+    # contexte seul, ne réveille pas la cadence, ne force aucune décision.
+    duel_block: str | None = None
     # Météo générale en France (sans ville). None si non disponible.
     weather_fr: str | None = None
     # Historique des SPEAKs cognitifs récents → anti-répétition dans le prompt.
@@ -357,6 +361,19 @@ class AttentionAgent:
             from loguru import logger
             logger.warning("AttentionAgent: flux du stream indisponible: {}", e)
 
+        # Duel Apex en cours — même patron que le flux ci-dessus : sans ce
+        # bloc côté cognition, Wally restait aveugle à un duel qu'il vient
+        # lui-même d'annoncer (le précédent déjà payé sur le bingo).
+        duel_block = None
+        try:
+            from bot.core.apex.duel_runner import current_duel
+            from bot.intelligence.prompts import bloc_duel_en_cours
+
+            duel_block = bloc_duel_en_cours(current_duel()) or None
+        except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
+            from loguru import logger
+            logger.warning("AttentionAgent: duel Apex indisponible: {}", e)
+
         # Ce qui se dit en vocal. La cognition le percevait déjà, mêlé au flux
         # du stream : le sortir de là ne doit pas l'en priver. Passif comme le
         # reste — aucun `notify_*`, entendre parler ne réveille pas la cadence.
@@ -419,6 +436,7 @@ class AttentionAgent:
             host_metrics=host_metrics,
             weather_fr=weather_fr,
             stream_feed=stream_feed,
+            duel_block=duel_block,
             recent_speaks=recent_speaks or [],
             emotes_known=emotes_known,
             emotes_unknown=emotes_unknown,

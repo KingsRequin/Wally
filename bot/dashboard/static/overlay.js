@@ -753,10 +753,21 @@
         n.textContent = String(name || "?");
         v.textContent = value.toLocaleString("fr-FR");
         head.append(n, v);
+        row.appendChild(head);
+        // Sous-titre optionnel (légende jouée, niveau du compte) — le duel s'en
+        // sert, les appels génériques ne le passent pas et n'affichent rien.
+        // Placé sous le nom/score, avant la barre : c'est une précision sur
+        // le camp, pas une donnée qui doit peser sur la comparaison lue.
+        const subs = [p.left_sub, p.right_sub];
+        if (subs[i]) {
+          const sub = el("div", "vs-sub");
+          sub.textContent = String(subs[i]);
+          row.appendChild(sub);
+        }
         const bar = el("div", "bar");
         const fill = document.createElement("span");
         bar.appendChild(fill);
-        row.append(head, bar);
+        row.appendChild(bar);
         box.appendChild(row);
         requestAnimationFrame(() => {
           fill.style.transform = `scaleX(${top ? value / top : 0})`;

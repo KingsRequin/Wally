@@ -399,6 +399,10 @@ class ReasoningAgent:
             # il nourrit ta compréhension de la situation, il n'appelle AUCUNE
             # décision — surtout pas un [SPEAK] pour commenter le live.
             lines.append(ctx.stream_feed.strip())
+        if getattr(ctx, "duel_block", None):
+            # Duel Apex en cours (points de chaîne) — même contrat que le flux
+            # ci-dessus : contexte pur, ne force aucune décision.
+            lines.append(ctx.duel_block.strip())
         if ctx.active_desires:
             lines.append("**Désirs actifs :**")
             for d in ctx.active_desires[:3]:

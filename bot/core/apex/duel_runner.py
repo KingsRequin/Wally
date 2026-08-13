@@ -47,6 +47,20 @@ def _uid_valide(saisie: str) -> str | None:
     return nettoye if nettoye.isdigit() else None
 
 
+# Même patron que `bot/core/apex/watcher.py` (`_active`/`current_apex_block()`)
+# et `bot/core/stream_feed.py` (`_active`/`current_stream_feed_block()`) : le
+# runner s'enregistre comme source globale (`activate()`), lisible par
+# `prompts.py` et l'`AttentionAgent` sans injection de dépendance. Le runner
+# lui-même n'est construit qu'au câblage final (Task 10) — d'ici là,
+# `current_duel()` rend toujours None.
+_active: DuelRunner | None = None
+
+
+def current_duel() -> Duel | None:
+    """Le duel en cours, si le runner est actif. None sinon."""
+    return _active.duel_en_cours if _active is not None else None
+
+
 class DuelRunner:
     def __init__(self, client, db, api, feed, annoncer, *,
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0):
@@ -69,6 +83,12 @@ class DuelRunner:
         # duel, et la plupart des tours ne changent rien (partie toujours en
         # cours, aucun événement rendu par `avancer()`).
         self._dernier_etat_range: str | None = None
+
+    def activate(self) -> None:
+        """S'enregistre comme source globale, lisible par `prompts.py` /
+        l'`AttentionAgent` — cf. `current_duel()`."""
+        global _active
+        _active = self
 
     # -- Annonce --------------------------------------------------------------
     async def _annoncer_sur(self, evt: Evenement) -> None:
