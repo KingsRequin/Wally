@@ -63,6 +63,10 @@ class AppState:
     action_service: Optional["ActionService"] = None
     update_checker: Optional["UpdateChecker"] = None
     cognitive_feed: Optional["CognitiveFeed"] = None
+    # Le service Apex, partagé avec les adaptateurs : lier un compte depuis le
+    # panneau admin exige de le VÉRIFIER auprès de l'API, et en construire un
+    # deuxième ici perdrait le cache et laisserait un client HTTP ouvert.
+    apex: object = None
     # Exposés pour les routes publiques observability (but courant, mémoire,
     # historique du flux) — propagés depuis le bot Discord au boot (cf. bot.py).
     fact_store: object = None

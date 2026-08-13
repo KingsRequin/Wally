@@ -4066,12 +4066,14 @@ function renderMemoireTab() {
         <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
         <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
+        <button class="mem-subnav-pill" data-subtab="apex" onclick="switchMemoireSubTab('apex')">Comptes Apex</button>
         <button class="mem-subnav-pill" data-subtab="self" onclick="switchMemoireSubTab('self')">Dans la tête de Wally</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
       <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
       <div class="mem-subnav-content" id="memoire-sub-notes"></div>
+      <div class="mem-subnav-content" id="memoire-sub-apex"></div>
       <div class="mem-subnav-content" id="memoire-sub-self"></div>
     `;
   }
@@ -4104,8 +4106,269 @@ function switchMemoireSubTab(subtab) {
     }
   } else if (subtab === 'notes') {
     if (panel) loadNotesTab(panel);
+  } else if (subtab === 'apex') {
+    if (panel) renderApexProfilesTab(panel);
   } else if (subtab === 'self') {
     if (panel) renderWallySelfTab(panel);
+  }
+}
+
+// ── Comptes Apex : le registre des profils croisés ───────────────────────────
+//
+// Le registre se remplit tout seul (chat, overlay, sonde du watcher) et un
+// rapprochement approximatif peut y inscrire un pseudo qui mène au mauvais
+// joueur. C'est le seul endroit où on peut le constater et le corriger.
+//
+// Tout est construit par le DOM, jamais par concaténation de HTML : ces pseudos
+// viennent de l'API Apex et du chat, ils ne sont contrôlés par personne ici.
+
+let _apexPeopleCache = null;
+
+async function renderApexProfilesTab(panel) {
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement…</p>';
+
+  const r = await apiFetch('/api/admin/apex/profiles');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const profiles = (await r.json()).profiles || [];
+
+  panel.innerHTML = '';
+  panel.appendChild(apexLinkForm());
+
+  if (!profiles.length) {
+    const vide = document.createElement('p');
+    vide.style.cssText = 'color:var(--text-secondary);padding:16px';
+    vide.textContent = 'Aucun profil Apex croisé pour le moment. Le registre se '
+      + 'remplit dès que quelqu\'un demande des stats, ou que la sonde du live tourne.';
+    panel.appendChild(vide);
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'apex-grid';
+  profiles.forEach(function(p) { grid.appendChild(apexProfileCard(p)); });
+  panel.appendChild(grid);
+}
+
+function apexLinkForm() {
+  const card = document.createElement('div');
+  card.className = 'card apex-link-form';
+
+  const titre = document.createElement('h3');
+  titre.textContent = 'Lier un compte Apex à quelqu\'un';
+  card.appendChild(titre);
+
+  const aide = document.createElement('p');
+  aide.className = 'apex-hint';
+  aide.textContent = "Colle le lien de la page apexlegendsstatus.com qui contient "
+    + "l'uid (profile/uid/PC/1234567890), l'uid seul, ou un pseudo. Le compte est "
+    + "vérifié auprès de l'API avant d'être enregistré.";
+  card.appendChild(aide);
+
+  const ligne = document.createElement('div');
+  ligne.className = 'apex-link-row';
+
+  const who = document.createElement('select');
+  who.className = 'mem-sort-select';
+  who.id = 'apex-link-who';
+  const attente = document.createElement('option');
+  attente.value = '';
+  attente.textContent = 'Chargement des personnes…';
+  who.appendChild(attente);
+  ligne.appendChild(who);
+
+  const ref = document.createElement('input');
+  ref.type = 'text';
+  ref.id = 'apex-link-ref';
+  ref.placeholder = 'Lien du profil, uid, ou pseudo';
+  ligne.appendChild(ref);
+
+  const go = document.createElement('button');
+  go.className = 'btn btn-success';
+  go.textContent = 'Lier';
+  go.onclick = function() { submitApexLink(); };
+  ligne.appendChild(go);
+
+  card.appendChild(ligne);
+  fillApexPeople(who);
+  return card;
+}
+
+async function fillApexPeople(select) {
+  if (!_apexPeopleCache) {
+    const r = await apiFetch('/api/admin/memory/users?show_all=1&limit=200');
+    if (!r || !r.ok) { select.options[0].textContent = 'Personnes indisponibles'; return; }
+    _apexPeopleCache = (await r.json()).users || [];
+  }
+  select.innerHTML = '';
+  const vide = document.createElement('option');
+  vide.value = '';
+  vide.textContent = '— Choisis une personne —';
+  select.appendChild(vide);
+  _apexPeopleCache.forEach(function(u) {
+    const o = document.createElement('option');
+    o.value = u.user_id;
+    // Le pseudo seul ne suffit pas : deux personnes peuvent porter le même sur
+    // Discord et Twitch, et c'est l'identité qui sera écrite en base.
+    o.textContent = (u.username || u.user_id) + ' (' + u.user_id + ')';
+    select.appendChild(o);
+  });
+}
+
+async function submitApexLink() {
+  const who = document.getElementById('apex-link-who');
+  const ref = document.getElementById('apex-link-ref');
+  if (!who || !ref) return;
+  if (!who.value) { toast('Choisis une personne', 'error'); return; }
+  if (!ref.value.trim()) { toast('Donne un lien, un uid ou un pseudo', 'error'); return; }
+
+  const nom = who.options[who.selectedIndex].textContent.split(' (')[0];
+  const r = await apiFetch('/api/admin/apex/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identity: who.value, display_name: nom, ref: ref.value.trim() }),
+  });
+  if (r && r.ok) {
+    const d = await r.json();
+    toast('Compte ' + d.apex_name + ' lié', 'success');
+    ref.value = '';
+    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+  } else {
+    const err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Liaison impossible', 'error');
+  }
+}
+
+function apexProfileCard(p) {
+  const card = document.createElement('div');
+  card.className = 'apex-card';
+
+  const head = document.createElement('div');
+  head.className = 'apex-card-head';
+
+  const nom = document.createElement('strong');
+  nom.textContent = p.apex_name;
+  head.appendChild(nom);
+
+  const plat = document.createElement('span');
+  plat.className = 'apex-platform';
+  plat.textContent = p.platform || 'PC';
+  head.appendChild(plat);
+
+  if (p.owner) {
+    const badge = document.createElement('span');
+    badge.className = 'apex-owner';
+    badge.textContent = '🔗 ' + (p.owner.display_name || p.owner.identity);
+    badge.title = p.owner.identity;
+    head.appendChild(badge);
+
+    const delier = document.createElement('button');
+    delier.className = 'apex-mini-btn';
+    delier.textContent = 'Délier';
+    delier.onclick = function() { apexUnlink(p.owner.identity, p.apex_name); };
+    head.appendChild(delier);
+  }
+  card.appendChild(head);
+
+  const noms = document.createElement('div');
+  noms.className = 'apex-names';
+  p.names.forEach(function(n) {
+    const chip = document.createElement('span');
+    chip.className = 'apex-name-chip';
+    const label = document.createElement('span');
+    label.textContent = n;
+    chip.appendChild(label);
+    // Le nom officiel n'est pas retirable : le prochain scan le réinscrirait.
+    if (n.toLowerCase() === String(p.apex_name).toLowerCase()) {
+      chip.classList.add('officiel');
+      chip.title = 'Nom officiel du compte — le prochain scan le réinscrirait';
+    } else {
+      const x = document.createElement('button');
+      x.className = 'apex-chip-x';
+      x.textContent = '✕';
+      x.title = 'Oublier ce pseudo';
+      x.onclick = function() { apexForgetName(p.uid, n); };
+      chip.appendChild(x);
+    }
+    noms.appendChild(chip);
+  });
+  card.appendChild(noms);
+
+  const pied = document.createElement('div');
+  pied.className = 'apex-card-foot';
+
+  const vu = document.createElement('span');
+  vu.textContent = 'vu ' + (p.seen_count || 1) + '× · ' + apexDepuis(p.last_seen);
+  pied.appendChild(vu);
+
+  const lien = document.createElement('a');
+  lien.href = p.url;
+  lien.target = '_blank';
+  lien.rel = 'noopener noreferrer';
+  lien.className = 'apex-link';
+  lien.textContent = '↗ Profil';
+  pied.appendChild(lien);
+
+  const oublier = document.createElement('button');
+  oublier.className = 'apex-mini-btn danger';
+  oublier.textContent = 'Oublier ce profil';
+  oublier.onclick = function() { apexForgetProfile(p.uid, p.apex_name, !!p.owner); };
+  pied.appendChild(oublier);
+
+  card.appendChild(pied);
+  return card;
+}
+
+function apexDepuis(ts) {
+  if (!ts) return 'jamais vu';
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 3600) return 'il y a ' + Math.round(s / 60) + ' min';
+  if (s < 86400) return 'il y a ' + Math.round(s / 3600) + ' h';
+  return 'il y a ' + Math.round(s / 86400) + ' j';
+}
+
+async function apexForgetName(uid, name) {
+  if (!confirm('Oublier le pseudo « ' + name + ' » ?')) return;
+  const r = await apiFetch(
+    '/api/admin/apex/profiles/' + encodeURIComponent(uid) + '/names/' + encodeURIComponent(name),
+    { method: 'DELETE' }
+  );
+  if (r && r.ok) {
+    toast('Pseudo oublié', 'success');
+    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+  } else {
+    const err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Suppression impossible', 'error');
+  }
+}
+
+async function apexForgetProfile(uid, name, hasOwner) {
+  let question = 'Retirer « ' + name + ' » du registre ? Wally ne saura plus '
+    + 'retrouver ce compte par son pseudo.';
+  // Les deux tables sont distinctes : le taire ferait croire que le geste
+  // délie aussi la personne, ce qu'il ne fait pas.
+  if (hasOwner) question += '\n\nLa personne restera liée à ce compte.';
+  if (!confirm(question)) return;
+  const r = await apiFetch('/api/admin/apex/profiles/' + encodeURIComponent(uid),
+    { method: 'DELETE' });
+  if (r && r.ok) {
+    toast('Profil retiré du registre', 'success');
+    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+  } else {
+    toast('Suppression impossible', 'error');
+  }
+}
+
+async function apexUnlink(identity, name) {
+  if (!confirm('Délier ce compte de ' + identity + ' ? Le profil « ' + name
+      + ' » reste connu de Wally.')) return;
+  const r = await apiFetch('/api/admin/apex/link/' + encodeURIComponent(identity),
+    { method: 'DELETE' });
+  if (r && r.ok) {
+    toast('Compte délié', 'success');
+    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+  } else {
+    toast('Déliage impossible', 'error');
   }
 }
 

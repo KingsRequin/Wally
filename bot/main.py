@@ -813,6 +813,7 @@ async def main() -> None:
         action_service=action_service,
         update_checker=update_checker,
         cognitive_feed=getattr(discord_bot, "cognitive_feed", None),
+        apex=apex_api,
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

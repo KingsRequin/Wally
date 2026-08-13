@@ -3223,3 +3223,106 @@ body.is-mobile .mobile-back-btn {
 .v-partial .v-text { color:var(--text-secondary); font-style:italic; }
 .v-live-dot { color:#06b6d4; flex-shrink:0; animation:voicePulse 1s ease-in-out infinite; }
 @keyframes voicePulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
+
+/* ── Comptes Apex : le registre des profils croisés ─────────────────────────
+   Glassmorphism comme le reste du panneau : fond très légèrement voilé, bord
+   fin, pas d'ombre portée dure. */
+.apex-link-form { margin-bottom: 16px; }
+.apex-link-form h3 { margin: 0 0 6px; }
+.apex-hint { margin: 0 0 12px; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; }
+.apex-link-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.apex-link-row input {
+  flex: 1;
+  min-width: 220px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+.apex-link-row input:focus { outline: none; border-color: var(--accent); }
+
+.apex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+
+.apex-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s;
+}
+.apex-card:hover { border-color: var(--border-accent); }
+
+.apex-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.apex-card-head strong { font-size: 0.95rem; }
+
+.apex-platform {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.apex-owner {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: var(--accent);
+}
+
+.apex-names { display: flex; flex-wrap: wrap; gap: 6px; }
+.apex-name-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+/* Le nom officiel se distingue : son ✕ serait sans effet durable. */
+.apex-name-chip.officiel { border-style: dashed; color: var(--text-primary); }
+.apex-chip-x {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0;
+  line-height: 1;
+}
+.apex-chip-x:hover { color: #ef4444; }
+
+.apex-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+.apex-link { color: var(--accent); text-decoration: none; }
+.apex-link:hover { text-decoration: underline; }
+
+.apex-mini-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.apex-mini-btn:hover { border-color: var(--border-accent); color: var(--text-primary); }
+.apex-mini-btn.danger:hover { border-color: rgba(239, 68, 68, 0.5); color: #ef4444; }

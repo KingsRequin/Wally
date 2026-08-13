@@ -128,6 +128,65 @@ class ApexMixin:
             return {**dict(exact), "exact": True}
         return await self._apex_profil_approchant(nom)
 
+    async def apex_list_profiles(self) -> list[dict]:
+        """Tout le registre, chaque profil avec ses noms et son propriétaire.
+
+        Deux requêtes plutôt qu'un `GROUP_CONCAT` : un pseudo peut contenir
+        n'importe quel caractère, y compris celui qui servirait de séparateur.
+        """
+        profils = await self.fetch_all(
+            "SELECT p.uid, p.apex_name, p.platform, p.first_seen, p.last_seen, "
+            "       p.seen_count, a.identity, a.display_name "
+            "FROM apex_profiles p "
+            "LEFT JOIN apex_accounts a ON a.uid = p.uid "
+            "ORDER BY p.last_seen DESC"
+        )
+        noms: dict[str, list[str]] = {}
+        for row in await self.fetch_all(
+            "SELECT uid, name FROM apex_profile_names ORDER BY seen_at DESC"
+        ) or []:
+            noms.setdefault(row["uid"], []).append(row["name"])
+        return [
+            {
+                "uid": r["uid"],
+                "apex_name": r["apex_name"],
+                "platform": r["platform"],
+                "first_seen": r["first_seen"],
+                "last_seen": r["last_seen"],
+                "seen_count": r["seen_count"],
+                "names": noms.get(r["uid"], []),
+                "owner": (
+                    {"identity": r["identity"], "display_name": r["display_name"]}
+                    if r["identity"] else None
+                ),
+            }
+            for r in profils or []
+        ]
+
+    async def apex_forget_name(self, uid: str, name: str) -> bool:
+        """Retire un nom qui menait à ce profil. Faux si rien n'a été retiré."""
+        avant = await self.fetch_one(
+            "SELECT count(*) AS n FROM apex_profile_names WHERE uid = ? AND name = ?",
+            (uid, name),
+        )
+        if not avant or not avant["n"]:
+            return False
+        await self.execute(
+            "DELETE FROM apex_profile_names WHERE uid = ? AND name = ?", (uid, name)
+        )
+        return True
+
+    async def apex_forget_profile(self, uid: str) -> None:
+        """Retire un profil ET ses noms — sinon les alias resteraient orphelins
+        et continueraient de rapprocher au nom d'un profil disparu."""
+        await self.execute("DELETE FROM apex_profile_names WHERE uid = ?", (uid,))
+        await self.execute("DELETE FROM apex_profiles WHERE uid = ?", (uid,))
+
+    async def apex_unlink_account(self, identity: str) -> None:
+        """Défait la liaison personne ↔ compte. Le registre, lui, garde le
+        profil : ce que Wally a croisé reste vrai, seule l'appartenance change."""
+        await self.execute("DELETE FROM apex_accounts WHERE identity = ?", (identity,))
+
     async def _apex_profil_approchant(self, nom: str) -> dict | None:
         """Le profil dont un des noms connus ressemble le plus à `nom`.
 
