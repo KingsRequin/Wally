@@ -121,13 +121,18 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 ("gift_sub", lambda: client.subscribe_channel_subscription_gifts(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
+                # Devant cheer/subscription_end (pas en fin de liste) : le 429 du
+                # 2026-08-05 frappe par POSITION, les deux dernières sautent. En fin
+                # de liste, une souscription perdue ici veut dire une récompense
+                # achetable dont l'achat n'arrive JAMAIS — et donc pas remboursable,
+                # faute du moindre événement pour le déclencher.
+                ("duel_redemption", lambda: client.subscribe_channel_points_redeemed(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
                 ("cheer", lambda: client.subscribe_channel_cheers(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
                 ("subscription_end", lambda: client.subscribe_channel_subscription_end(
-                    broadcaster=broadcaster_id, token=streamer_token
-                )),
-                ("duel_redemption", lambda: client.subscribe_channel_points_redeemed(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
             ]

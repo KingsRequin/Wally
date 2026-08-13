@@ -499,7 +499,11 @@ class Config:
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
             apex_raw = dict(raw.get("apex", {}))
-            duel_raw = apex_raw.pop("duel", {})
+            # `or {}` : un `duel:` présent mais toutes ses clés commentées rend
+            # `None`, pas `{}` — sans le repli, `DuelConfig(**None)` lève un
+            # TypeError qui remonte en « section manquante », trompeur, et
+            # refuse le boot pour un YAML pourtant valide.
+            duel_raw = apex_raw.pop("duel", {}) or {}
             firecrawl_raw = raw.get("firecrawl", {})
             # RSS : liste imbriquée de flux (comme circadian/spontaneous).
             rss_raw = dict(raw.get("rss", {}))

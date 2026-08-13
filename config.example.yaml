@@ -2,6 +2,22 @@
 # Copier vers config.yaml puis ajuster :  cp config.example.yaml config.yaml
 # config.yaml est ignoré par git (il contient le token admin et des IDs Discord privés).
 # Toutes ces valeurs sont modifiables à chaud via /wally setup ou le dashboard web.
+apex:
+  streamer_account: ''                # pseudo Apex du streamer — vide = suivi passif désactivé
+  streamer_platform: PC
+  duel:
+    # La récompense est CRÉÉE PAR WALLY au premier boot, jamais à la main dans
+    # la console : Twitch réserve le remboursement à l'application qui a créé la
+    # récompense. Son ID est retenu dans `bot_state` (clé `apex:duel_reward_id`),
+    # jamais ici.
+    active: false                     # true pour activer le duel Apex en points de chaîne
+    titre: "Duel Apex contre Azraël"   # 45 caractères max
+    cout: 5000
+    prompt: "Colle ton UID Apex (apexlegendsstatus.com)"   # 200 max
+    manches: 3
+    cadence_s: 2
+    attente_squad_min: 15
+    plafond_kills_manche: 30
 bot:
   context_token_threshold: 3000
   context_window_size: 20

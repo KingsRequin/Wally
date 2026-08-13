@@ -6,13 +6,14 @@ import pytest
 from bot.twitch.events.redemptions import _est_notre_recompense, handle_redemption
 
 
-def _bot(reward_id="RW", duel_en_cours=None):
+def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     bot = MagicMock()
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
     bot.duel_runner = MagicMock()
     bot.duel_runner._reward_id = reward_id
     bot.duel_runner.duel_en_cours = duel_en_cours
     bot.duel_runner.ouvrir = AsyncMock()
+    bot.db.get_state = AsyncMock(return_value=persisted_reward_id)
     return bot
 
 
@@ -25,16 +26,18 @@ def _event(reward_id="RW", user="bob", texte="1012242925358"):
     return e
 
 
-def test_une_autre_recompense_est_ignoree():
-    assert _est_notre_recompense(_bot("RW"), "AUTRE") is False
-    assert _est_notre_recompense(_bot("RW"), "RW") is True
+@pytest.mark.asyncio
+async def test_une_autre_recompense_est_ignoree():
+    assert await _est_notre_recompense(_bot("RW"), "AUTRE") is False
+    assert await _est_notre_recompense(_bot("RW"), "RW") is True
 
 
-def test_reward_id_non_configure_n_attrape_rien():
+@pytest.mark.asyncio
+async def test_reward_id_non_configure_n_attrape_rien():
     """Vide = duel désactivé. Sans ce garde, toute récompense de la chaîne
     lancerait un duel."""
-    assert _est_notre_recompense(_bot(""), "") is False
-    assert _est_notre_recompense(_bot(""), "RW") is False
+    assert await _est_notre_recompense(_bot("", persisted_reward_id=None), "") is False
+    assert await _est_notre_recompense(_bot("", persisted_reward_id=None), "RW") is False
 
 
 @pytest.mark.asyncio
@@ -62,3 +65,26 @@ async def test_une_exception_ne_remonte_jamais():
     bot = _bot()
     bot.duel_runner.ouvrir = AsyncMock(side_effect=RuntimeError("boum"))
     await handle_redemption(bot, _event())  # ne doit pas lever
+
+
+@pytest.mark.asyncio
+async def test_runner_absent_rembourse_via_lid_persiste():
+    """CRITICAL : sans repli sur `bot_state`, cette branche était du code mort —
+    `_est_notre_recompense` rendait False avant que `handle_redemption` puisse
+    seulement atteindre son `if runner is None`. Un achat pendant que le runner
+    est indisponible (Apex down au boot) n'était donc JAMAIS remboursé."""
+    bot = _bot(persisted_reward_id="RW")
+    bot.duel_runner = None
+    await handle_redemption(bot, _event(reward_id="RW"))
+    bot.twitch_api.refund_redemption.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_exception_dans_ouvrir_rembourse():
+    """Un crash réseau au milieu d'`ouvrir()` ne doit pas avaler les points du
+    viewer : à ce stade reward_id/redemption_id sont connus, aucun duel n'est
+    ouvert."""
+    bot = _bot()
+    bot.duel_runner.ouvrir = AsyncMock(side_effect=RuntimeError("timeout"))
+    await handle_redemption(bot, _event())
+    bot.twitch_api.refund_redemption.assert_awaited_once_with("RW", "RD1")
