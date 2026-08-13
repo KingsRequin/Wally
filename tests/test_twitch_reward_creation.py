@@ -82,3 +82,21 @@ async def test_recompenses_gerables_ne_liste_QUE_les_notres(monkeypatch):
     rewards = await api.recompenses_gerables()
     assert rewards == [{"id": "A", "title": "Duel Apex"}]
     assert client.get.call_args.kwargs["params"]["only_manageable_rewards"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_recompenses_gerables_rend_liste_vide_si_vraiment_aucune(monkeypatch):
+    api, client = _api(_resp(200, {"data": []}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.recompenses_gerables() == []
+
+
+@pytest.mark.asyncio
+async def test_recompenses_gerables_rend_None_sur_erreur_jamais_liste_vide(monkeypatch):
+    """Un `[]` sur erreur était indiscernable d'une vraie liste vide :
+    `DuelRunner.assurer_recompense()` en concluait « ma récompense a
+    disparu » sur un simple hoquet Twitch, et en recréait une seconde —
+    écrasant l'ID persisté et rendant l'ancienne irremboursable (403)."""
+    api, client = _api(_resp(500, {"message": "Internal Server Error"}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.recompenses_gerables() is None

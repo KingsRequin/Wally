@@ -544,8 +544,8 @@ class TwitchAPI:
             logger.error("Remboursement en erreur : {e}", e=exc)
             return False
 
-    async def recompenses_gerables(self) -> list[dict]:
-        """Les récompenses que NOTRE application peut piloter.
+    async def recompenses_gerables(self) -> list[dict] | None:
+        """Les récompenses que NOTRE application peut piloter. `None` sur erreur.
 
         `only_manageable_rewards=true` ne rend que celles créées par ce
         `client_id`. Les autres — créées depuis le site Twitch — sont
@@ -554,6 +554,12 @@ class TwitchAPI:
         Retry une fois sur 401 après renouvellement du token streamer, comme
         `refund_redemption` : un token expiré ne doit pas faire disparaître la
         liste des récompenses pilotables.
+
+        `None` et non `[]` sur une erreur : les deux étaient indiscernables, et
+        `DuelRunner.assurer_recompense()` lisait un `[]` d'erreur comme « ma
+        récompense a disparu » — un simple hoquet Twitch au boot suffisait à en
+        recréer une seconde, écrasant l'ID persisté et rendant l'ancienne
+        irremboursable (403). `[]` reste réservé à une vraie liste vide.
         """
         try:
             async with httpx.AsyncClient() as client:
@@ -577,19 +583,19 @@ class TwitchAPI:
                                     "Renouvellement du token streamer échoué — "
                                     "liste des récompenses abandonnée"
                                 )
-                                return []
+                                return None
                             continue
                         logger.error("Liste des récompenses 401 après renouvellement — abandon")
-                        return []
+                        return None
                     if resp.status_code != 200:
                         logger.error("Liste des récompenses refusée HTTP {c} : {t}",
                                      c=resp.status_code, t=resp.text[:200])
-                        return []
+                        return None
                     return (resp.json() or {}).get("data") or []
-                return []
+                return None
         except Exception as exc:  # noqa: BLE001
             logger.error("Liste des récompenses en erreur : {e}", e=exc)
-            return []
+            return None
 
     async def creer_recompense(self, titre: str, cout: int, prompt: str) -> str | None:
         """Crée la récompense de points de chaîne, et rend son ID.

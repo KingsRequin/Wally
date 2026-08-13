@@ -89,11 +89,10 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
             await bot.twitch_api.refund_redemption(reward_id, redemption_id)
             return
 
-        if runner.duel_en_cours is not None:
-            logger.info("Duel déjà en cours — remboursement de {u}", u=acheteur)
-            await bot.twitch_api.refund_redemption(reward_id, redemption_id)
-            return
-
+        # Le cas « duel déjà en cours » n'est PLUS court-circuité ici : seul
+        # `ouvrir()` détient à la fois le remboursement ET le canal d'annonce
+        # (Task 8) — un refus muet, remboursé en direct depuis ce handler,
+        # laissait le viewer sans un mot d'explication.
         await runner.ouvrir(
             acheteur=acheteur, saisie=saisie,
             reward_id=reward_id, redemption_id=redemption_id,

@@ -11,7 +11,7 @@ import json
 from loguru import logger
 
 from bot.core.apex.duel import Duel, Etat, Evenement, Releve
-from bot.core.apex.reader import read_kill_trackers
+from bot.core.apex.reader import _num, read_kill_trackers
 
 # Une clé de `bot_state`, comme `apex:live_baseline` — un seul duel à la fois,
 # donc pas de table. L'état survit ainsi aux rebuilds, qui sont fréquents ici.
@@ -43,23 +43,49 @@ class DuelRunner:
         self._cadence_s = cadence_s
         self.duel_en_cours: Duel | None = None
         self._reward_id = ""
+        # Dernier JSON écrit en base — `_ranger()` évite de réécrire un état
+        # inchangé : sonde à 2 s pendant potentiellement une demi-heure de
+        # duel, et la plupart des tours ne changent rien (partie toujours en
+        # cours, aucun événement rendu par `avancer()`).
+        self._dernier_etat_range: str | None = None
+
+    # -- Annonce --------------------------------------------------------------
+    async def _annoncer_sur(self, evt: Evenement) -> None:
+        """Une annonce ratée (LLM, envoi Twitch…) ne doit JAMAIS empêcher la
+        suite : à chaque appel, le remboursement et la persistance sont déjà
+        faits avant qu'elle soit seulement tentée."""
+        try:
+            await self._annoncer(evt)
+        except Exception as exc:  # noqa: BLE001 — une annonce ratée n'est pas fatale
+            logger.warning("Annonce de duel en erreur ({t}) : {e}", t=evt.type, e=exc)
 
     # -- Récompense -----------------------------------------------------------
     async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
         """L'ID de notre récompense, créée si besoin. `""` si impossible.
 
-        Appelée au boot. On vérifie que l'ID retenu figure toujours parmi les
-        récompenses GÉRABLES — celles créées par notre client_id. Une récompense
-        supprimée par le streamer, ou créée à la main dans la console, ne l'est
-        pas : dans les deux cas on en crée une neuve, faute de quoi les
-        remboursements échoueraient en 403.
+        Appelée au boot. Si un ID est déjà connu, on vérifie qu'il figure
+        toujours parmi les récompenses GÉRABLES — celles créées par notre
+        client_id. Une récompense supprimée par le streamer, ou créée à la
+        main dans la console, ne l'est pas : on en crée alors une neuve, faute
+        de quoi les remboursements échoueraient en 403.
+
+        Si la vérification elle-même échoue (`recompenses_gerables()` rend
+        `None`, panne Twitch), on ne recrée JAMAIS sur ce doute : ce serait
+        perdre l'ID connu, écraser la clé persistée, et rendre irremboursable
+        (403) toute redemption en vol sur l'ancienne récompense.
         """
         connu = await self._db.get_state(CLE_RECOMPENSE)
-        gerables = {r.get("id") for r in await self._api.recompenses_gerables()}
-        if connu and connu in gerables:
-            self._reward_id = connu
-            return connu
         if connu:
+            gerables = await self._api.recompenses_gerables()
+            if gerables is None:
+                logger.warning(
+                    "Liste des récompenses gérables indisponible — on garde l'ID connu {i}",
+                    i=connu)
+                self._reward_id = connu
+                return connu
+            if connu in {r.get("id") for r in gerables}:
+                self._reward_id = connu
+                return connu
             logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
         nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
         if not nouvel_id:
@@ -72,9 +98,19 @@ class DuelRunner:
     # -- Persistance --------------------------------------------------------
     async def _ranger(self) -> None:
         if self.duel_en_cours is None:
-            await self._db.set_state(CLE_ETAT, "")
+            brut = ""
+        else:
+            etat = self.duel_en_cours.to_dict()
+            # `_reward_id` voyage AVEC le duel : sans lui, un remboursement
+            # après rebuild dépend de la chance qu'`assurer_recompense()`
+            # retombe sur le même ID au redémarrage — sinon
+            # `refund_redemption("", …)` échoue.
+            etat["reward_id"] = self._reward_id
+            brut = json.dumps(etat)
+        if brut == self._dernier_etat_range:
             return
-        await self._db.set_state(CLE_ETAT, json.dumps(self.duel_en_cours.to_dict()))
+        await self._db.set_state(CLE_ETAT, brut)
+        self._dernier_etat_range = brut
 
     async def charger(self) -> None:
         """Reprend un duel interrompu par un rebuild."""
@@ -82,7 +118,12 @@ class DuelRunner:
             brut = await self._db.get_state(CLE_ETAT)
             if not brut:
                 return
-            self.duel_en_cours = Duel.from_dict(json.loads(brut))
+            data = json.loads(brut)
+            self.duel_en_cours = Duel.from_dict(data)
+            self._reward_id = str(data.get("reward_id") or "")
+            # Base de comparaison pour la déduplication de `_ranger()` : sans
+            # elle, le premier tick après reprise réécrirait un JSON identique.
+            self._dernier_etat_range = brut
             logger.info("Duel Apex repris après redémarrage : {v} en état {e}",
                         v=self.duel_en_cours.viewer_nom, e=self.duel_en_cours.etat.value)
         except Exception as exc:  # noqa: BLE001 — un état illisible ne bloque pas le boot
@@ -91,10 +132,15 @@ class DuelRunner:
 
     # -- Ouverture ----------------------------------------------------------
     async def _refuser(self, reward_id: str, redemption_id: str, motif: str) -> None:
-        """Un refus s'annonce ET se rembourse. Jamais un silence."""
+        """Un refus se rembourse ET s'annonce — dans cet ordre.
+
+        Le remboursement d'abord : si l'annonce lève (appel LLM, envoi
+        Twitch…), le viewer doit avoir récupéré ses points malgré tout. C'est
+        déjà la règle suivie par `annuler()` ; elle doit valoir partout.
+        """
         logger.info("Duel refusé : {m}", m=motif)
-        await self._annoncer(Evenement("refus", {"motif": motif}))
         await self._api.refund_redemption(reward_id, redemption_id)
+        await self._annoncer_sur(Evenement("refus", {"motif": motif}))
 
     async def ouvrir(self, *, acheteur: str, saisie: str,
                      reward_id: str, redemption_id: str) -> None:
@@ -115,9 +161,8 @@ class DuelRunner:
                                 "un duel contre soi-même n'a pas de vainqueur")
             return
 
-        profil = await self._client.get(
-            "bridge", {"uid": uid, "platform": self._plateforme}, sans_cache=True)
-        if not isinstance(profil, dict) or not read_kill_trackers(profil):
+        profil = await self._profil(uid)
+        if profil is None or not read_kill_trackers(profil):
             await self._refuser(
                 reward_id, redemption_id,
                 "aucun tracker de kills n'est épinglé sur ce compte")
@@ -128,36 +173,39 @@ class DuelRunner:
             viewer_nom=acheteur, viewer_uid=uid, azrael_uid=self._azrael_uid,
             redemption_id=redemption_id, etat=Etat.ATTENTE_SQUAD)
         await self._ranger()
-        await self._annoncer(Evenement("duel_ouvert", {"viewer": acheteur}))
+        await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": acheteur}))
 
     # -- Sonde --------------------------------------------------------------
     async def _profil(self, uid: str) -> dict | None:
+        """Le profil, ou `None` si la sonde n'a rien donné d'exploitable.
+
+        Deux formes d'échec à écarter, pas une seule : `client.get` peut
+        rendre une CHAÎNE d'erreur (panne réseau, cf. `ApexClient.get`), mais
+        peut aussi rendre un dict `{"Error": "Player not found."}` avec un
+        200 tout à fait normal — piège documenté du projet (`reader.py`,
+        `service.py`). Un `_profil()` qui acceptait ce second cas comme un
+        relevé valide donnait `isInGame` absent → `False`, et deux relevés
+        d'erreur consécutifs suffisaient à faire croire à un retour au lobby
+        en pleine manche réelle.
+        """
         p = await self._client.get(
             "bridge", {"uid": uid, "platform": self._plateforme}, sans_cache=True)
-        return p if isinstance(p, dict) else None
+        if not isinstance(p, dict) or "Error" in p:
+            return None
+        return p
 
-    async def tick(self, maintenant: float) -> None:
-        """Un tour de sonde. Appelé toutes les `cadence_s` pendant un duel."""
-        duel = self.duel_en_cours
-        if duel is None or duel.etat in (Etat.RESOLUTION, Etat.VERDICT, Etat.ABANDON):
-            return
-        azrael = await self._profil(duel.azrael_uid)
-        viewer = await self._profil(duel.viewer_uid)
-        if azrael is None or viewer is None:
-            # L'API muette quelques relevés est tolérée : la machine à états ne
-            # voit simplement rien passer.
-            logger.debug("Duel : relevé incomplet, tour sauté")
-            return
+    async def _avancer(self, duel: Duel, releve: Releve) -> None:
+        """Fait avancer la machine d'un relevé, et applique les effets.
 
-        releve = Releve(
-            t=maintenant,
-            azrael_in_game=bool((azrael.get("realtime") or {}).get("isInGame")),
-            viewer_in_game=bool((viewer.get("realtime") or {}).get("isInGame")),
-            kills_azrael=read_kill_trackers(azrael),
-            kills_viewer=read_kill_trackers(viewer),
-        )
-        for evt in duel.avancer(releve):
-            await self._annoncer(evt)
+        Ordre STRICT : remboursement(s) → nettoyage de `duel_en_cours` →
+        persistance → annonces. Si l'annonce d'un abandon levait AVANT le
+        remboursement et le nettoyage, l'exception sortirait avec les points
+        du viewer non rendus, `duel_en_cours` toujours peuplé (donc tous les
+        viewers suivants refusés indéfiniment) et l'état persisté périmé — un
+        rebuild ressusciterait ce duel fantôme via `charger()`.
+        """
+        evts = duel.avancer(releve)
+        for evt in evts:
             if evt.type == "abandon":
                 # `manches_jouees` n'existe que sur les abandons issus
                 # d'ENTRE_MANCHES — jamais un accès direct.
@@ -173,6 +221,53 @@ class DuelRunner:
         if duel.etat in (Etat.VERDICT, Etat.ABANDON):
             self.duel_en_cours = None
         await self._ranger()
+        for evt in evts:
+            await self._annoncer_sur(evt)
+
+    async def tick(self, maintenant: float) -> None:
+        """Un tour de sonde. Appelé toutes les `cadence_s` pendant un duel.
+
+        `maintenant` DOIT venir d'une horloge MURALE (`time.time()`), jamais
+        monotone : cet instant est persisté dans l'état du duel
+        (`Duel._t_attente`, via `to_dict()`/`from_dict()`) et doit rester
+        comparable après un redémarrage — une horloge monotone y repart de
+        zéro, ce qui rendrait la comparaison absurde. Piège déjà payé sur ce
+        projet (bug_monotonic_uptime).
+        """
+        duel = self.duel_en_cours
+        if duel is None or duel.etat in (Etat.RESOLUTION, Etat.VERDICT, Etat.ABANDON):
+            return
+        azrael = await self._profil(duel.azrael_uid)
+        viewer = await self._profil(duel.viewer_uid)
+        if azrael is None or viewer is None:
+            # L'API muette ou en erreur est tolérée : la machine à états ne
+            # voit simplement rien passer CE tour-ci. Mais le minuteur
+            # d'attente doit continuer d'avancer pendant ATTENTE_SQUAD et
+            # ENTRE_MANCHES — sinon une panne prolongée gèlerait le duel pour
+            # toujours (jamais de timeout, jamais de remboursement, et le
+            # viewer suivant resterait refusé indéfiniment). On s'en abstient
+            # en MANCHE : y injecter un relevé fictif "hors partie" risquerait
+            # de clore une manche réellement en cours via le debounce de fin
+            # de partie, sur un simple hoquet de l'API.
+            logger.debug("Duel : relevé incomplet, tour sauté")
+            if duel.etat in (Etat.ATTENTE_SQUAD, Etat.ENTRE_MANCHES):
+                await self._avancer(duel, Releve(
+                    t=maintenant, azrael_in_game=False, viewer_in_game=False,
+                    kills_azrael={}, kills_viewer={}))
+            return
+
+        releve = Releve(
+            t=maintenant,
+            # `_num` et non `bool()` nu : cette API glisse des chaînes là où
+            # on attend un nombre, et `bool("0")` vaut `True` — ça ferait
+            # démarrer des manches qui n'ont jamais eu lieu. Même garde que
+            # `reader.py` sur le même piège.
+            azrael_in_game=bool(_num((azrael.get("realtime") or {}).get("isInGame"))),
+            viewer_in_game=bool(_num((viewer.get("realtime") or {}).get("isInGame"))),
+            kills_azrael=read_kill_trackers(azrael),
+            kills_viewer=read_kill_trackers(viewer),
+        )
+        await self._avancer(duel, releve)
 
     # -- Contrôle (streamer et modérateurs) ---------------------------------
     async def annuler(self, motif: str) -> None:
@@ -180,15 +275,15 @@ class DuelRunner:
         if duel is None:
             return
         await self._api.refund_redemption(self._reward_id, duel.redemption_id)
-        await self._annoncer(Evenement("abandon", {"motif": motif, "rembourser": True}))
         self.duel_en_cours = None
         await self._ranger()
+        await self._annoncer_sur(Evenement("abandon", {"motif": motif, "rembourser": True}))
 
     async def recommencer(self) -> None:
         """Compteurs à zéro, même duelliste — pas de remboursement, il garde sa place."""
         if self.duel_en_cours is None:
             return
         self.duel_en_cours.recommencer()
-        await self._annoncer(Evenement("recommence", {
-            "viewer": self.duel_en_cours.viewer_nom}))
         await self._ranger()
+        await self._annoncer_sur(Evenement("recommence", {
+            "viewer": self.duel_en_cours.viewer_nom}))

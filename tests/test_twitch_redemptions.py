@@ -41,11 +41,15 @@ async def test_reward_id_non_configure_n_attrape_rien():
 
 
 @pytest.mark.asyncio
-async def test_duel_deja_en_cours_rembourse():
+async def test_duel_deja_en_cours_est_delegue_a_ouvrir():
+    """Le refus « déjà en cours » n'est plus court-circuité ici (Task 8 —
+    revue) : `ouvrir()` est le seul endroit qui détient à la fois le
+    remboursement ET le canal d'annonce, un court-circuit muet dans ce
+    handler laissait le viewer sans un mot d'explication."""
     bot = _bot(duel_en_cours=object())
     await handle_redemption(bot, _event())
-    bot.twitch_api.refund_redemption.assert_awaited_once()
-    bot.duel_runner.ouvrir.assert_not_awaited()
+    bot.duel_runner.ouvrir.assert_awaited_once()
+    bot.twitch_api.refund_redemption.assert_not_awaited()
 
 
 @pytest.mark.asyncio
