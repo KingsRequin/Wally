@@ -71,6 +71,13 @@
       --t-slow: .42s;
       --ease:     cubic-bezier(.22, .9, .3, 1);
       --ease-pop: cubic-bezier(.22, 1.35, .36, 1);
+      /* Une sortie ACCÉLÈRE et s'en va ; elle ne rebondit pas. `--ease-pop`
+         était déclarée sur la règle de base, donc elle s'appliquait dans les
+         DEUX sens : la bulle dépassait et revenait en partant. Le commentaire
+         d'origine annonçait pourtant « retrait plus sec au départ » — l'intention
+         était là, la déclaration ne la tenait pas. */
+      --t-out:   .16s;
+      --ease-in: cubic-bezier(.5, 0, .85, .35);
 
       /* La police qui ANNONCE : capitales penchées, réservée aux étiquettes et
          aux gros moments. Wally, lui, parle en Fredoka — sinon il aurait l'air
@@ -207,13 +214,22 @@
          suivrait la boîte et laisserait la queue à plat. */
       filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .45));
       opacity: 0;
-      transform: translateY(10px) scale(.94);
-      /* Dépassement léger à l'arrivée (le ressort d'une bulle qui « pop »),
-         retrait plus sec au départ : l'œil suit l'apparition, pas la sortie. */
-      transition: opacity var(--t-fast) var(--ease), transform var(--t-slow) var(--ease-pop);
+      transform: translateY(8px) scale(.88);
+      /* Elle grandit depuis sa QUEUE, pas depuis son centre : elle sort de la
+         bouche de Wally au lieu de se matérialiser à côté de lui. */
+      transform-origin: 0% 50%;
+      /* Réglages de SORTIE (l'état par défaut est celui vers lequel on revient).
+         L'entrée a les siens, sur `.visible`. */
+      transition: opacity var(--t-out) var(--ease-in), transform var(--t-out) var(--ease-in);
       pointer-events: none;
     }
-    #bubble.visible { opacity: 1; transform: translateY(0) scale(1); }
+    body[data-side="right"] #bubble { transform-origin: 100% 50%; }
+    #bubble.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      /* Entrée : dépassement léger, le ressort d'une bulle qui « pop ». */
+      transition: opacity var(--t-fast) var(--ease), transform var(--t-slow) var(--ease-pop);
+    }
 
     /* Le texte porte seul le garde-fou anti-débordement : une réplique trop
        longue est coupée net plutôt que de pousser le décor hors de l'écran.
@@ -296,9 +312,70 @@
     }
     #bubble.thought::after  { left: 30px; bottom: -9px;  width: 17px; height: 17px; }
     #bubble.thought::before { left: 12px; bottom: -26px; width: 11px; height: 11px; }
+    /* Une pensée MONTE : le plus petit satellite apparaît d'abord, puis le
+       second, puis le nuage se déploie. C'est la grammaire de la BD — un bloc
+       qui surgit d'un coup lit comme une réplique, pas comme une pensée.
+       `backwards` maintient l'échelle 0 pendant le délai, sinon les satellites
+       seraient déjà là, à taille pleine, avant leur tour. */
+    #bubble.thought.visible::before { animation: puff .3s var(--ease-pop) 0ms   backwards; }
+    #bubble.thought.visible::after  { animation: puff .3s var(--ease-pop) 70ms  backwards; }
+    #bubble.thought.visible { transition-delay: 0s, 150ms; }
+    @keyframes puff { from { transform: scale(0); } to { transform: scale(1); } }
     /* Ancrage à droite : les satellites descendent vers l'avatar, donc à droite. */
     body[data-side="right"] #bubble.thought::after  { left: auto; right: 26px; }
     body[data-side="right"] #bubble.thought::before { left: auto; right: 8px; }
+
+    /* ── Éclatement, à la disparition ───────────────────────────────────────
+       Une bulle d'eau qui se rompt, PAS une explosion. La différence tient en
+       deux points : le film gonfle d'abord sous la tension, et les gouttes
+       partent du BORD sur une course courte, avec un rien de gravité. Une
+       explosion partirait du centre, vite et loin.
+
+       Deux dosages : la bulle de parole disparaît toutes les quelques secondes
+       (155 relevées sur un live), les widgets sont bien plus rares. Même
+       grammaire, moitié moins de gouttes — sinon l'overlay crépite en continu. */
+    #bubble.popping, .widget.popping {
+      animation: pop .26s cubic-bezier(.3, 0, .75, .5) forwards;
+    }
+    @keyframes pop {
+      0%   { transform: scale(1);    opacity: 1; }
+      45%  { transform: scale(1.05); opacity: .92; }   /* la tension avant la rupture */
+      100% { transform: scale(1.13); opacity: 0; }
+    }
+
+    /* Les gouttes vivent hors de la boîte qui éclate : elle disparaît avant
+       elles. Position fixe, donc jamais rognées par un parent. */
+    .burst {
+      /* `absolute` et non `fixed` : la page ne défile pas (`body` est en
+         `overflow: hidden; height: 100vh`), donc les coordonnées du document et
+         celles du viewport coïncident, et `getBoundingClientRect()` suffit.
+         `fixed` est proscrit dans ce fichier — un ancêtre transformé devient
+         son bloc conteneur et l'élément ne vise plus la source OBS. */
+      position: absolute;
+      pointer-events: none;
+      z-index: 4;
+    }
+    .burst i {
+      position: absolute;
+      display: block;
+      border-radius: 50%;
+      /* Cernées d'encre, comme la bulle dont elles sortent : un aplat pâle seul
+         disparaît sur un gameplay clair — c'est déjà la raison d'être du trait
+         autour de la bulle. */
+      background: var(--drop, var(--paper));
+      border: 2px solid var(--ink);
+      animation: droplet var(--ms, 340ms) cubic-bezier(.15, .7, .35, 1) forwards;
+    }
+    /* Elles tiennent leur pleine opacité jusqu'aux deux tiers, puis s'effacent
+       d'un coup. Un fondu réparti sur toute la course les rendait fantomatiques
+       dès le premier tiers — à l'échelle d'un stream, « fugace » revient à
+       « invisible ». */
+    @keyframes droplet {
+      0%   { transform: translate(var(--x0), var(--y0)) scale(.35); opacity: 0; }
+      15%  { transform: translate(var(--x0), var(--y0)) scale(1);   opacity: 1; }
+      65%  { opacity: 1; }
+      100% { transform: translate(var(--x1), var(--y1)) scale(.55); opacity: 0; }
+    }
 
     /* ── Trois points, pendant la génération ────────────────────────────── */
     .dots { display: inline-flex; gap: 5px; align-items: center; height: 10px; }
@@ -351,9 +428,16 @@
       /* Le widget monte depuis la place de l'avatar, qui s'efface en même temps
          — un passage de relais plutôt qu'une superposition. */
       transform: translateY(16px) scale(.9);
+      /* Il monte de la place de l'avatar : c'est de là qu'il doit grandir. */
+      transform-origin: bottom left;
+      transition: opacity var(--t-out) var(--ease-in), transform var(--t-out) var(--ease-in);
+    }
+    body[data-side="right"] .widget { transform-origin: bottom right; }
+    .widget.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
       transition: opacity var(--t-base) var(--ease), transform var(--t-slow) var(--ease-pop);
     }
-    .widget.visible { opacity: 1; transform: translateY(0) scale(1); }
 
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
     /* `animation: none` d'abord : une animation en cours l'emporte sur une
@@ -507,10 +591,16 @@
     }
     .gauge .fill {
       height: 100%;
-      width: 0;
+      /* Pleine largeur puis comprimée : `transform` est composé par le GPU,
+         là où `width` refaisait la mise en page à chaque image. La barre
+         continue de glisser même quand le thread principal hoquette — ce qui
+         arrive précisément quand un lot d'événements SSE tombe. */
+      width: 100%;
+      transform: scaleX(0);
+      transform-origin: left center;
       background: linear-gradient(90deg, var(--info), var(--who-deep));
       border-radius: var(--r-md);
-      transition: width 1.1s cubic-bezier(.2, .7, .3, 1);
+      transition: transform 1.1s cubic-bezier(.2, .7, .3, 1);
     }
 
     /* Message du chat épinglé — c'est Wally qui choisit lequel mérite l'écran. */
@@ -610,10 +700,12 @@
       overflow: hidden;
     }
     .poll .bar span {
-      display: block; height: 100%; width: 0;
+      display: block; height: 100%; width: 100%;
+      transform: scaleX(0);
+      transform-origin: left center;
       background: linear-gradient(90deg, var(--info), var(--who-deep));
       border-radius: var(--r-sm);
-      transition: width .45s cubic-bezier(.3, .9, .3, 1), background var(--t-base) var(--ease);
+      transition: transform .45s cubic-bezier(.3, .9, .3, 1), background var(--t-base) var(--ease);
     }
 
     /* Classement des bavards — mécanique, donc sobre. */
@@ -1128,9 +1220,11 @@
       background: rgba(255, 255, 255, .1);
     }
     .versus .bar span {
-      display: block; height: 100%; width: 0; border-radius: var(--r-sm);
+      display: block; height: 100%; width: 100%; border-radius: var(--r-sm);
+      transform: scaleX(0);
+      transform-origin: left center;
       background: linear-gradient(90deg, var(--info), var(--who-deep));
-      transition: width .6s cubic-bezier(.3, .9, .3, 1);
+      transition: transform .6s cubic-bezier(.3, .9, .3, 1);
     }
     .versus .vs-row.lead .bar span {
       background: linear-gradient(90deg, var(--win-deep), var(--win));

@@ -36,10 +36,14 @@
   // se fera sur ce modèle, pas en restaurant celui-ci.
 
   // ── Bulle ────────────────────────────────────────────────────────────────
+  // Déclarés ensemble et AVANT leurs lecteurs : un `let` lu avant sa ligne de
+  // déclaration lève une TDZ, que `node --check` ne détecte pas.
   let hideTimer = null;
+  let sayTimer = null;
 
   function showBubble(node, mode) {
     clearTimeout(hideTimer);
+    clearTimeout(sayTimer);
     bubble.className = mode === "thought" ? "thought" : "speech";
     bubbleText.replaceChildren(node);
     // Force un reflow pour que la transition reparte même sur deux bulles
@@ -49,7 +53,59 @@
   }
 
   function hideBubble() {
+    clearTimeout(sayTimer);
     bubble.classList.remove("visible");
+  }
+
+  /** Éclatement d'une bulle d'eau : le film cède, quelques gouttes partent du
+   *  BORD sur une course courte. Les gouttes vivent hors de l'élément — il
+   *  disparaît avant elles — et se nettoient toutes seules.
+   *
+   *  Rien n'est fait si l'élément n'a pas de surface : un widget déjà retiré du
+   *  flux mesurerait 0, et on sèmerait des gouttes dans le coin de l'écran. */
+  function burst(el, { count = 8, spread = 22, ms = 340, drop = null } = {}) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    const host = document.createElement("div");
+    host.className = "burst";
+    host.style.left = `${r.left + r.width / 2}px`;
+    host.style.top = `${r.top + r.height / 2}px`;
+    host.style.setProperty("--ms", `${ms}ms`);
+    if (drop) host.style.setProperty("--drop", drop);
+
+    for (let i = 0; i < count; i++) {
+      // Réparties sur le pourtour, avec un décalage impair pour que deux
+      // éclatements de suite ne donnent pas exactement la même figure.
+      const a = ((i + 0.5) / count) * 2 * Math.PI + (i % 3) * 0.21;
+      const rx = (r.width / 2) * 0.94, ry = (r.height / 2) * 0.94;
+      const x0 = Math.cos(a) * rx, y0 = Math.sin(a) * ry;
+      const taille = 7 + (i % 3) * 3;   // 7, 10, 13 px — lisibles à 1×
+      const d = document.createElement("i");
+      d.style.width = d.style.height = `${taille}px`;
+      d.style.marginLeft = d.style.marginTop = `${-taille / 2}px`;
+      d.style.setProperty("--x0", `${x0.toFixed(1)}px`);
+      d.style.setProperty("--y0", `${y0.toFixed(1)}px`);
+      // Course courte, vers l'extérieur, avec un rien de gravité : c'est ce qui
+      // sépare une goutte d'eau d'un éclat d'explosion.
+      const k = 1 + (i % 4) * 0.14;
+      d.style.setProperty("--x1", `${(x0 + Math.cos(a) * spread * k).toFixed(1)}px`);
+      d.style.setProperty("--y1", `${(y0 + Math.sin(a) * spread * k + spread * 0.42).toFixed(1)}px`);
+      host.appendChild(d);
+    }
+    document.body.appendChild(host);
+    setTimeout(() => host.remove(), ms + 60);
+  }
+
+  /** La bulle éclate en partant. Pas sur les trois points : le serveur émet
+   *  `thinking(false)` JUSTE avant chaque réponse — la bulle n'est pas en train
+   *  de partir, elle est remplacée, et on ferait un « pop » avant chaque
+   *  réplique. */
+  function popBubble() {
+    if (!bubble.classList.contains("visible")) return;
+    burst(bubble, { count: 6, spread: 20, ms: 340, drop: "var(--paper)" });
+    bubble.classList.add("popping");
+    setTimeout(() => bubble.classList.remove("popping"), 300);
+    hideBubble();
   }
 
   // Wally accuse le coup quand il parle. Sur `say` seulement, pas sur les trois
@@ -67,11 +123,21 @@
   }
 
   function say(text, mode, durationSeconds) {
-    // textContent via createTextNode : le texte vient du LLM, jamais interprété
-    // comme du HTML.
-    showBubble(document.createTextNode(text), mode);
+    // Wally bouge D'ABORD, la bulle suit 90 ms plus tard. Simultanés, les deux
+    // ne sont qu'une coïncidence ; décalés, l'un devient la cause de l'autre.
     nod();
-    hideTimer = setTimeout(hideBubble, Math.max(1, durationSeconds || 3) * 1000);
+    clearTimeout(sayTimer);
+    sayTimer = setTimeout(() => {
+      // textContent via createTextNode : le texte vient du LLM, jamais
+      // interprété comme du HTML.
+      showBubble(document.createTextNode(text), mode);
+      // Armé APRÈS `showBubble`, qui désarme `hideTimer` : posé avant, il
+      // annulait le minuteur qu'on venait de poser et la bulle restait à
+      // l'écran indéfiniment. Effet de bord du décalage de 90 ms.
+      // La durée d'affichage part de l'apparition RÉELLE, ce qui est aussi
+      // ce que le serveur a calculé.
+      hideTimer = setTimeout(popBubble, Math.max(1, durationSeconds || 3) * 1000);
+    }, 90);
   }
 
   function makeDots() {
@@ -281,7 +347,8 @@
       track.appendChild(fill);
       box.append(cap, track);
       // Laisse le navigateur peindre à 0 avant d'animer vers la valeur.
-      requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
+      // `scaleX` et non `width` : composé par le GPU, pas de mise en page.
+      requestAnimationFrame(() => { fill.style.transform = `scaleX(${pct / 100})`; });
       return box;
     },
 
@@ -722,7 +789,7 @@
         row.append(head, bar);
         box.appendChild(row);
         requestAnimationFrame(() => {
-          fill.style.width = `${Math.round((value / top) * 100)}%`;
+          fill.style.transform = `scaleX(${top ? value / top : 0})`;
         });
       });
       return box;
@@ -801,9 +868,9 @@
         void count.offsetWidth;
         count.classList.add("bump");
       }
-      // La largeur est animée par CSS : la barre glisse au lieu de sauter.
+      // Animée par CSS : la barre glisse au lieu de sauter.
       const fill = opt.querySelector(".bar span");
-      if (fill) requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
+      if (fill) requestAnimationFrame(() => { fill.style.transform = `scaleX(${pct / 100})`; });
       opt.classList.toggle("win", i === winner);
       opt.classList.toggle("lose", winner >= 0 && i !== winner);
     });
@@ -1053,6 +1120,10 @@
     // n'ayant plus la question sous les yeux pour voter.
     const seconds = Math.min(180, Math.max(2, Number(params.duration) || 12));
     widgetTimer = setTimeout(() => {
+      // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
+      // fois par live là où une bulle part toutes les quelques secondes.
+      burst(box, { count: 11, spread: 34, ms: 400, drop: "rgba(255,255,255,.92)" });
+      box.classList.add("popping");
       box.classList.remove("visible");
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
@@ -1061,7 +1132,7 @@
       widgetTimer = setTimeout(() => {
         clearWidgets();
         playNext();       // la suivante prend le relais, si elle a tenu
-      }, 300);
+      }, 280);            // la durée de `pop`, plus une marge
     }, seconds * 1000);
   }
 
