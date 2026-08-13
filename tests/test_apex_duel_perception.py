@@ -54,10 +54,17 @@ def test_le_bloc_donne_le_total():
 
 
 def test_une_manche_non_mesurable_est_dite_comme_telle():
+    """La ligne de SCORE de la manche 1, pas l'en-tête « Manche 2 sur 3. » qui la
+    précède : un découpage sur le mauvais segment laisserait passer un « 0 »
+    inventé sans jamais faire échouer ce test (revue du 2026-08-13)."""
     d = _duel()
     d.scores = [{"azrael": None, "viewer": None}]
     bloc = bloc_duel_en_cours(d)
-    assert "0" not in bloc.split("Manche")[1][:40], "ne jamais afficher 0 pour une absence"
+    lignes_manche_1 = [l for l in bloc.splitlines() if l.startswith("Manche 1")]
+    assert len(lignes_manche_1) == 1, f"ligne de la manche 1 introuvable dans : {bloc!r}"
+    ligne = lignes_manche_1[0]
+    assert "non mesurable" in ligne
+    assert "0" not in ligne, "ne jamais afficher 0 pour une absence"
 
 
 def test_pas_de_duel_pas_de_bloc():
