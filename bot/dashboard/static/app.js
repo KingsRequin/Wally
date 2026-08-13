@@ -4260,7 +4260,11 @@ function apexProfileCard(p) {
   (p.owners || []).forEach(function(o) {
     const badge = document.createElement('span');
     badge.className = 'apex-owner';
-    badge.textContent = '🔗 ' + (o.display_name || o.identity);
+    // La plateforme est DANS le badge, pas seulement en infobulle : les deux
+    // identités d'une même personne portent le même pseudo, et deux badges
+    // identiques côte à côte ne disent pas lequel on s'apprête à délier.
+    const ou = String(o.identity || '').split(':')[0];
+    badge.textContent = (ou ? ou + ' · ' : '') + (o.display_name || o.identity);
     badge.title = o.identity;
     const x = document.createElement('button');
     x.className = 'apex-chip-x';
