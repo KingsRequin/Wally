@@ -79,12 +79,17 @@ comptée zéro. Un zéro inventé est un mensonge, pas une valeur par défaut.
   quelqu'un qui a bien joué. Et **la présence d'une clé ne prouve pas qu'elle est
   vivante** : un tracker non épinglé garde sa valeur du jour où il l'a été (§1, point
   4). Le seul test valable est qu'un compteur **bouge** pendant une manche.
-- **Le duel ne vaut qu'en Battle Royale.** Un tracker « BR Kills » ne compte pas les
-  parties de Mixtape, d'Arènes ni les modes temporaires. Trois parties d'affilée en BR
-  strict n'ont rien d'automatique : un squad qui bascule en Mixtape produirait un
-  **0–0**, que la règle du §8 rembourserait comme une panne de mesure alors que tout
-  le monde a bien joué. Le mode voulu est **annoncé au lancement** ; si le mode est
-  détectable dans le payload, on l'exploite, sinon on s'en tient à l'avertissement.
+- **Le mode de jeu conditionne la mesure, mais moins qu'on ne le croyait.** La partie
+  observée le 2026-08-13 était en **Joker** — un mode dérivé du BR, et le mode de
+  référence de la chaîne depuis plusieurs saisons, le BR classique n'étant plus guère
+  joué. Elle a bien incrémenté `BR Kills` et `career_kills`. **« Seul le BR strict
+  compte » était donc faux**, et l'aurait été de la pire façon : la spec aurait
+  restreint le duel à un mode que personne ne joue.
+
+  Reste **la Mixtape**, non mesurée à ce jour : si ses kills n'alimentent aucun
+  tracker, un squad qui y bascule produirait un 0–0 remboursé alors que tout le monde
+  a bien joué. Tant que ce n'est pas mesuré, on s'en tient à un avertissement au
+  lancement ; si les compteurs y bougent aussi, la restriction disparaît entièrement.
 
 ## 3. Déroulé
 
