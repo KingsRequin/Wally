@@ -35,6 +35,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         channel.subscribe, channel.subscription.message,
         channel.subscription.gift, channel.subscription.end — channel:read:subscriptions
         channel.cheer — bits:read
+        channel.channel_points_custom_reward_redemption.add — channel:read:redemptions
     """
     broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID", "").strip()
     bot_id = os.getenv("TWITCH_BOT_ID", "").strip() or broadcaster_id
@@ -124,6 +125,9 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
                 ("subscription_end", lambda: client.subscribe_channel_subscription_end(
+                    broadcaster=broadcaster_id, token=streamer_token
+                )),
+                ("duel_redemption", lambda: client.subscribe_channel_points_redeemed(
                     broadcaster=broadcaster_id, token=streamer_token
                 )),
             ]

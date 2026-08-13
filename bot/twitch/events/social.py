@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 # Imported at module level so tests can patch bot.twitch.events.social.handle_message
 from bot.twitch.handlers import handle_message, _fire
+from bot.twitch.events.redemptions import handle_redemption
 
 
 def _check_peak(bot, emotion: str, old_val: float, delta: float, username: str = "", event_name: str = ""):
@@ -303,3 +304,7 @@ def register_events(bot: "WallyTwitch") -> None:
     @bot.event()
     async def event_eventsub_notification_channel_chat_message(payload) -> None:
         await handle_message(bot, payload.data)
+
+    @bot.event()
+    async def event_eventsub_notification_channel_reward_redeem(payload) -> None:
+        await handle_redemption(bot, payload.data)

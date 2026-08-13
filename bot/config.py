@@ -263,6 +263,25 @@ class TwitchEventConfig:
 
 
 @dataclass
+class DuelConfig:
+    """Le duel Apex payé en points de chaîne.
+
+    Pas de `reward_id` ici : Twitch réserve le remboursement d'une redemption
+    à l'application qui l'a CRÉÉE, donc c'est Wally qui crée la récompense au
+    démarrage. Son ID est découvert à l'exécution et vit dans `bot_state`
+    (clé `apex:duel_reward_id`), jamais en configuration.
+    """
+    active: bool = False
+    titre: str = ""
+    cout: int = 5000
+    prompt: str = ""
+    manches: int = 3
+    cadence_s: float = 2.0
+    attente_squad_min: float = 15.0
+    plafond_kills_manche: int = 30
+
+
+@dataclass
 class ApexConfig:
     """Le compte Apex du streamer, suivi passivement pendant ses lives.
 
@@ -272,6 +291,7 @@ class ApexConfig:
     """
     streamer_account: str = ""
     streamer_platform: str = "PC"
+    duel: DuelConfig = field(default_factory=DuelConfig)
 
 
 @dataclass
@@ -478,7 +498,8 @@ class Config:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
             tavily_raw = raw.get("tavily", {})
-            apex_raw = raw.get("apex", {})
+            apex_raw = dict(raw.get("apex", {}))
+            duel_raw = apex_raw.pop("duel", {})
             firecrawl_raw = raw.get("firecrawl", {})
             # RSS : liste imbriquée de flux (comme circadian/spontaneous).
             rss_raw = dict(raw.get("rss", {}))
@@ -559,7 +580,7 @@ class Config:
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
-                apex=ApexConfig(**apex_raw),
+                apex=ApexConfig(**apex_raw, duel=DuelConfig(**duel_raw)),
                 firecrawl=FirecrawlConfig(**firecrawl_raw),
                 rss=rss_cfg,
                 web_chat=WebChatConfig(**web_chat_raw),
