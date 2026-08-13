@@ -93,6 +93,7 @@ class TwitchAPI:
     MESSAGES_URL = "https://api.twitch.tv/helix/chat/messages"
     STREAMS_URL = "https://api.twitch.tv/helix/streams"
     USERS_URL = "https://api.twitch.tv/helix/users"
+    REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
 
     def __init__(
         self,
@@ -482,13 +483,14 @@ class TwitchAPI:
             logger.debug("Twitch clips API a échoué : {e}", e=exc)
             return []
 
-    REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
-
     async def refund_redemption(self, reward_id: str, redemption_id: str) -> bool:
         """Annule une redemption — les points sont RENDUS au viewer.
 
         Utilise le token STREAMER : `channel:manage:redemptions` est un scope de
-        la chaîne, le token du bot ne l'a pas.
+        la chaîne, le token du bot ne l'a pas. Retry une fois sur 401 après
+        renouvellement du token streamer, comme `get_stream()`/`send_message()` —
+        c'est le filet de sécurité de toute la feature : si le token expire pile
+        pendant un remboursement, rien d'autre ne rattrape les points perdus.
 
         Comme partout sur Helix, un 200 ne prouve pas que l'ordre est passé : on
         vérifie que le corps renvoie bien `status: CANCELED`. Ce projet a déjà
@@ -499,26 +501,44 @@ class TwitchAPI:
             return False
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.patch(
-                    self.REDEMPTIONS_URL,
-                    params={"broadcaster_id": self._broadcaster_id,
-                            "reward_id": reward_id, "id": redemption_id},
-                    json={"status": "CANCELED"},
-                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
-                             "Client-Id": self._client_id},
-                    timeout=10,
-                )
-            if resp.status_code != 200:
-                logger.error("Remboursement refusé HTTP {c} : {t}",
-                             c=resp.status_code, t=resp.text[:200])
+                for attempt in range(2):
+                    resp = await client.patch(
+                        self.REDEMPTIONS_URL,
+                        params={"broadcaster_id": self._broadcaster_id,
+                                "reward_id": reward_id, "id": redemption_id},
+                        json={"status": "CANCELED"},
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Remboursement 401 — renouvellement du token streamer"
+                            )
+                            refreshed = await self._tm.refresh("streamer")
+                            if not refreshed:
+                                logger.error(
+                                    "Renouvellement du token streamer échoué — "
+                                    "remboursement abandonné"
+                                )
+                                return False
+                            continue
+                        logger.error("Remboursement 401 après renouvellement — abandon")
+                        return False
+                    if resp.status_code != 200:
+                        logger.error("Remboursement refusé HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return False
+                    data = (resp.json() or {}).get("data") or []
+                    statut = (data[0] or {}).get("status") if data else None
+                    if statut != "CANCELED":
+                        logger.error("Remboursement non appliqué — statut rendu : {s}",
+                                     s=statut)
+                        return False
+                    logger.info("Points rendus au viewer (redemption {r})", r=redemption_id)
+                    return True
                 return False
-            data = (resp.json() or {}).get("data") or []
-            statut = (data[0] or {}).get("status") if data else None
-            if statut != "CANCELED":
-                logger.error("Remboursement non appliqué — statut rendu : {s}", s=statut)
-                return False
-            logger.info("Points rendus au viewer (redemption {r})", r=redemption_id)
-            return True
         except Exception as exc:  # noqa: BLE001 — un remboursement raté ne tue pas le duel
             logger.error("Remboursement en erreur : {e}", e=exc)
             return False

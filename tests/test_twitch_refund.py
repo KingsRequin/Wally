@@ -61,3 +61,43 @@ async def test_erreur_http_ne_leve_pas(monkeypatch):
     api, client = _api(_resp(403, {"error": "Forbidden"}))
     monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
     assert await api.refund_redemption("rw", "rd") is False
+
+
+@pytest.mark.asyncio
+async def test_reward_id_ou_redemption_id_vide_ne_fait_aucun_appel_reseau(monkeypatch):
+    api, client = _api(_resp(200, {"data": [{"status": "CANCELED"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.refund_redemption("", "rd") is False
+    assert await api.refund_redemption("rw", "") is False
+    client.patch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_corps_json_illisible_ne_leve_pas(monkeypatch):
+    reponse = _resp(200, {})
+    reponse.json.side_effect = ValueError("pas du JSON")
+    api, client = _api(reponse)
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.refund_redemption("rw", "rd") is False
+
+
+@pytest.mark.asyncio
+async def test_401_puis_refresh_reussi_puis_200_rend_true(monkeypatch):
+    api, client = _api(_resp(200, {"data": [{"status": "CANCELED"}]}))
+    unauthorized = _resp(401, {"error": "Unauthorized"})
+    ok = _resp(200, {"data": [{"status": "CANCELED"}]})
+    client.patch = AsyncMock(side_effect=[unauthorized, ok])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.refund_redemption("rw", "rd") is True
+    assert client.patch.await_count == 2
+    api._tm.refresh.assert_awaited_once_with("streamer")
+
+
+@pytest.mark.asyncio
+async def test_401_avec_refresh_en_echec_rend_false(monkeypatch):
+    api, client = _api(_resp(401, {"error": "Unauthorized"}))
+    api._tm.refresh = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.refund_redemption("rw", "rd") is False
+    client.patch.assert_awaited_once()
+    api._tm.refresh.assert_awaited_once_with("streamer")
