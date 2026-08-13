@@ -100,11 +100,17 @@
    *  `thinking(false)` JUSTE avant chaque réponse — la bulle n'est pas en train
    *  de partir, elle est remplacée, et on ferait un « pop » avant chaque
    *  réplique. */
+  // Le film ondule d'abord, il ne cède qu'à 74 % de l'animation : les gouttes
+  // partent À CE MOMENT-LÀ. Émises au début, elles jaillissaient d'une bulle
+  // encore intacte — on voyait des particules, pas une rupture.
+  const POP_MS = 380;
+  const RUPTURE = Math.round(POP_MS * 0.74);
+
   function popBubble() {
     if (!bubble.classList.contains("visible")) return;
-    burst(bubble, { count: 6, spread: 20, ms: 340, drop: "var(--paper)" });
     bubble.classList.add("popping");
-    setTimeout(() => bubble.classList.remove("popping"), 300);
+    setTimeout(() => burst(bubble, { count: 6, spread: 20, ms: 320, drop: "var(--paper)" }), RUPTURE);
+    setTimeout(() => bubble.classList.remove("popping"), POP_MS);
     hideBubble();
   }
 
@@ -1154,20 +1160,21 @@
     widgetTimer = setTimeout(() => {
       // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
       // fois par live là où une bulle part toutes les quelques secondes.
-      burst(box, { count: 11, spread: 34, ms: 400, drop: "rgba(255,255,255,.92)" });
       // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
       // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
       // lisent comme deux événements ; avec, comme un seul mouvement.
       box.classList.add("popping", "leaving");
       box.classList.remove("visible");
+      setTimeout(() => burst(box, { count: 11, spread: 34, ms: 380, drop: "rgba(255,255,255,.92)" }), RUPTURE);
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
       // autre chose. Vaut pour bingo, hangman et poll.
-      // Appelée à ~55 % de la sortie, pas à la fin : c'est là tout le
-      // recouvrement. Le widget sortant se retire tout seul juste après.
-      widgetTimer = setTimeout(playNext, 150);
-      setTimeout(() => disposeWidget(box), 300);
+      // Appelée à la RUPTURE, pas au début de la sortie : le widget reste
+      // entier pendant qu'il ondule, deux cartes pleinement visibles l'une sur
+      // l'autre seraient illisibles. Le recouvrement porte donc sur l'éclat.
+      widgetTimer = setTimeout(playNext, RUPTURE);
+      setTimeout(() => disposeWidget(box), POP_MS + 80);
     }, seconds * 1000);
   }
 

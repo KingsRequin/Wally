@@ -55,6 +55,29 @@ def bubble_duration(text: str) -> float:
     return max(_MIN_DURATION_S, min(_MAX_DURATION_S, words * _SECONDS_PER_WORD))
 
 
+def ecourter(text: str, max_chars: int) -> str:
+    """Raccourcit un texte sans couper un mot en deux.
+
+    Une coupe brute laissait à l'écran « Bonjour. Enfin un truc qui marche
+    dans c » : le viewer voit une phrase amputée en plein mot, et rien ne lui
+    dit qu'il en manque. La coupe recule jusqu'à l'espace précédent et pose des
+    points de suspension.
+
+    Un mot unique plus long que la limite reste coupé net — mieux vaut ça
+    qu'une chaîne vide. Le seuil de la moitié évite aussi qu'un texte comme
+    « Aaaaaaaa bb » ne se réduise à « Aaaaaaaa… » quand une coupe plus tardive
+    perdrait presque tout.
+    """
+    text = " ".join((text or "").split())
+    if len(text) <= max_chars:
+        return text
+    coupe = text[: max_chars - 1].rstrip()      # une place pour le « … »
+    espace = coupe.rfind(" ")
+    if espace >= max_chars // 2:
+        coupe = coupe[:espace]
+    return coupe.rstrip(" ,;:.!?—-…") + "…"
+
+
 class OverlayFeed:
     """Diffuseur d'événements vers les overlays connectés."""
 

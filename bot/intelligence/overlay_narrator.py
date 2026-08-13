@@ -31,6 +31,7 @@ from typing import Optional
 
 from loguru import logger
 
+from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
 from bot.intelligence.prompts import load_prompt
 
@@ -813,7 +814,7 @@ class OverlayNarrator:
             params["results"] = values
             params["result"] = values[0]   # compat : un seul dé reste un entier
         elif widget == "counter":
-            params["text"] = str(result or comment)[:40]
+            params["text"] = ecourter(str(result or comment), 40)
 
         elif widget == "wheel":
             options = [str(o).strip()[:24] for o in (extra.get("options") or []) if str(o).strip()]
@@ -859,13 +860,14 @@ class OverlayNarrator:
             except (TypeError, ValueError):
                 return None
             params = {"percent": max(0.0, min(100.0, percent)),
-                      "label": str(extra.get("label") or comment)[:40]}
+                      "label": ecourter(str(extra.get("label") or comment), 40)}
 
         elif widget == "pinned":
             text = str(extra.get("text") or "").strip()
             if not text:
                 return None
-            params = {"author": str(extra.get("author") or "")[:24], "text": text[:160]}
+            params = {"author": str(extra.get("author") or "")[:24],
+                      "text": ecourter(text, 160)}
 
         elif widget == "poll":
             # Le sondage n'est pas un affichage ponctuel : il ouvre un dépouillement
@@ -986,7 +988,7 @@ class OverlayNarrator:
             if not left_name or not right_name:
                 return None
             params = {
-                "label": str(extra.get("label") or comment)[:24],
+                "label": ecourter(str(extra.get("label") or comment), 24),
                 "left_name": left_name, "left_value": left_value,
                 "right_name": right_name, "right_value": right_value,
             }
@@ -1356,7 +1358,7 @@ class OverlayNarrator:
             return False
         if kind not in self._GOAL_KINDS or target < 1 or not self._live():
             return False
-        self._goal = {"label": " ".join((label or "").split())[:40] or self._GOAL_KINDS[kind],
+        self._goal = {"label": ecourter(label or "", 40) or self._GOAL_KINDS[kind],
                       "target": min(target, 100000), "kind": kind, "count": 0}
         self._publish_goal()
         logger.info("Overlay: objectif « {l} » — {n} {k}",
@@ -1454,7 +1456,7 @@ class OverlayNarrator:
         """
         if not self._live():
             return False
-        params: dict = {"title": str(title)[:80], "author": str(author)[:24]}
+        params: dict = {"title": ecourter(str(title), 80), "author": str(author)[:24]}
         embed_url = str(embed_url or "")
         video_url = str(video_url or "")
         if self._is_clip_video(video_url):
@@ -1530,7 +1532,7 @@ class OverlayNarrator:
             return None
         rows = [
             {
-                "title": str(c.get("title") or "sans titre")[:48],
+                "title": ecourter(str(c.get("title") or "sans titre"), 48),
                 "author": str(c.get("creator_name") or "?")[:20],
                 "views": int(c.get("view_count") or 0),
             }
@@ -1591,7 +1593,7 @@ class OverlayNarrator:
         if not self._may_react():
             return False
         self._last_event_at = time.monotonic()
-        self._feed.widget("counter", text=str(text)[:40])
+        self._feed.widget("counter", text=ecourter(str(text), 40))
         return True
 
     # ── bingo du stream (widget 20) ───────────────────────────────────────
