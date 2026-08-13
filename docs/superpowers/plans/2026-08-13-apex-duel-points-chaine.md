@@ -1437,39 +1437,15 @@ apex:
     plafond_kills_manche: 30
 ```
 
-Et le runner apprend à garantir la récompense — ajouter à `bot/core/apex/duel_runner.py` :
+> **Ruling du contrôleur (pré-exécution).** Le code d'`assurer_recompense` figurait
+> ici, alors que `bot/core/apex/duel_runner.py` n'existe qu'à partir de la Task 8 —
+> dépendance d'ordre impossible à satisfaire. Il est **déplacé dans la Task 8**. La
+> Task 7 ne touche donc que `redemptions.py`, `events/__init__.py` et `config.yaml`.
 
-```python
-CLE_RECOMPENSE = "apex:duel_reward_id"
-
-
-class DuelRunner:  # (suite)
-    async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
-        """L'ID de notre récompense, créée si besoin. `""` si impossible.
-
-        Appelée au boot. On vérifie que l'ID retenu figure toujours parmi les
-        récompenses GÉRABLES — celles créées par notre client_id. Une récompense
-        supprimée par le streamer, ou créée à la main dans la console, ne l'est
-        pas : dans les deux cas on en crée une neuve, faute de quoi les
-        remboursements échoueraient en 403.
-        """
-        connu = await self._db.get_state(CLE_RECOMPENSE)
-        gerables = {r.get("id") for r in await self._api.recompenses_gerables()}
-        if connu and connu in gerables:
-            self._reward_id = connu
-            return connu
-        if connu:
-            logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
-        nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
-        if not nouvel_id:
-            logger.error("Récompense de duel impossible à créer — duel indisponible")
-            return ""
-        await self._db.set_state(CLE_RECOMPENSE, nouvel_id)
-        self._reward_id = nouvel_id
-        return nouvel_id
-```
-
-⚠️ `handle_redemption` (Task 7) compare alors le `reward_id` reçu à `runner._reward_id`, **plus à la config** : adapter `_est_notre_recompense` pour lire `getattr(bot.duel_runner, "_reward_id", "")`.
+⚠️ **Le `reward_id` n'est plus en configuration** : il est découvert à l'exécution, la
+récompense étant créée par Wally (Task 6 bis). `_est_notre_recompense` compare donc le
+`reward_id` reçu à `getattr(bot.duel_runner, "_reward_id", "")`, **jamais à la config**.
+Les tests de cette tâche posent `bot.duel_runner._reward_id` sur leur mock.
 
 - [ ] **Step 2 : Écrire les tests qui échouent**
 
@@ -1663,7 +1639,40 @@ récompenses de la chaîne."
 - Consumes: `Duel`, `Releve`, `Etat` (Task 4), `read_kill_trackers` (Task 2), `ApexClient.get(..., sans_cache=True)` (Task 1), `refund_redemption` (Task 5)
 - Produces: `DuelRunner(client, db, api, feed, annoncer)` avec `.duel_en_cours`, `.ouvrir(...)`, `.tick()`, `.charger()`, `.annuler(motif)`, `.recommencer()`
 
-**Clé de persistance :** `apex:duel` dans `bot_state`, comme `apex:live_baseline` de `watcher.py`.
+**Clés de persistance :** `apex:duel` (l'état du duel) et `apex:duel_reward_id` (l'ID de la récompense), dans `bot_state`, comme `apex:live_baseline` de `watcher.py`.
+
+**Déplacé ici depuis la Task 7 par ruling du contrôleur** — `duel_runner.py` n'existait pas avant cette tâche. À ajouter à la classe `DuelRunner`, avec la constante à côté de `CLE_ETAT` :
+
+```python
+CLE_RECOMPENSE = "apex:duel_reward_id"
+
+
+    async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
+        """L'ID de notre récompense, créée si besoin. `""` si impossible.
+
+        Appelée au boot. On vérifie que l'ID retenu figure toujours parmi les
+        récompenses GÉRABLES — celles créées par notre client_id. Une récompense
+        supprimée par le streamer, ou créée à la main dans la console, ne l'est
+        pas : dans les deux cas on en crée une neuve, faute de quoi les
+        remboursements échoueraient en 403.
+        """
+        connu = await self._db.get_state(CLE_RECOMPENSE)
+        gerables = {r.get("id") for r in await self._api.recompenses_gerables()}
+        if connu and connu in gerables:
+            self._reward_id = connu
+            return connu
+        if connu:
+            logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
+        nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
+        if not nouvel_id:
+            logger.error("Récompense de duel impossible à créer — duel indisponible")
+            return ""
+        await self._db.set_state(CLE_RECOMPENSE, nouvel_id)
+        self._reward_id = nouvel_id
+        return nouvel_id
+```
+
+Deux tests à ajouter à ceux du brief : un ID connu et toujours gérable est réutilisé sans rien recréer ; un ID connu mais absent des récompenses gérables (supprimée côté Twitch) déclenche une recréation.
 
 - [ ] **Step 1 : Écrire les tests qui échouent**
 
