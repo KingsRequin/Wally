@@ -18,7 +18,7 @@ from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
-    _canonical_uid,
+    _canonical_uid, _apex_account_context,
     _OVERLAY_TOOL, _overlay_narrator, run_overlay_tool,
     _OVERLAY_CANCEL_TOOL, run_overlay_cancel_tool,
     _LAST_CLIP_TOOL, run_apex_overlay_tool, run_last_clip_tool,
@@ -763,6 +763,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             person_context = await bot.db.get_user_profile(_pid) or ""
         except Exception:
             pass
+        # Même bloc que sur Discord : le compte Apex déclaré est une propriété
+        # de la personne, elle vaut sur les deux plateformes.
+        if apex_compte := await _apex_account_context(bot, platform, user_id):
+            person_context = f"{person_context}\n{apex_compte}" if person_context else apex_compte
 
         # Persistent notes
         try:

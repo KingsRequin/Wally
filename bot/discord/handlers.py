@@ -1678,6 +1678,37 @@ async def _canonical_uid(bot, platform: str, user_id: str) -> str:
         return f"{platform}:{user_id}"
 
 
+async def _apex_account_context(bot, platform: str, user_id: str) -> str:
+    """« Compte Apex : Keychka (PC) », ou "" si la personne n'en a pas déclaré.
+
+    Sans ce bloc, le compte lié ne servait QU'AU moment où l'outil était appelé :
+    Wally ignorait qu'il parlait à quelqu'un qui joue, et « j'ai fait un 20 bombe
+    hier » ne lui donnait aucune raison d'aller regarder ses stats.
+
+    Le repli sur l'uid CANONIQUE n'est pas un luxe : le panneau admin ne lie
+    qu'une identité à la fois, et sans lui la même personne serait inconnue dès
+    qu'elle passe du Discord au chat Twitch.
+
+    Importée par `twitch/handlers.py` — un bloc de contexte branché d'un seul
+    côté rend Wally amnésique sur l'autre, sans erreur ni trace.
+    """
+    db = getattr(bot, "db", None)
+    if db is None:
+        return ""
+    try:
+        compte = await db.apex_get_account(f"{platform}:{user_id}")
+        if compte is None:
+            canonique = await _canonical_uid(bot, platform, user_id)
+            if canonique != f"{platform}:{user_id}":
+                compte = await db.apex_get_account(canonique)
+    except Exception as e:  # noqa: BLE001 — un bloc optionnel ne casse pas une réponse
+        logger.warning("Apex : compte de la personne illisible : {e}", e=e)
+        return ""
+    if compte is None or not compte["apex_name"]:
+        return ""
+    return f"Compte Apex : {compte['apex_name']} ({compte['apex_platform'] or 'PC'})"
+
+
 async def _third_party_mention_context(
     bot,
     platform: str,
@@ -2381,6 +2412,12 @@ async def _respond(
             person_context = await bot.db.get_user_profile(_pid) or ""
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
             logger.warning("Mémoire : bloc « portrait de la personne » ignoré : {e}", e=exc)
+        # Le compte Apex déclaré, s'il y en a un : un fait, pas une déduction du
+        # portrait nocturne. Il rejoint le portrait plutôt que le budget mémoire
+        # — c'est une propriété de la personne, pas un souvenir en concurrence
+        # avec d'autres.
+        if apex_compte := await _apex_account_context(bot, platform, user_id):
+            person_context = f"{person_context}\n{apex_compte}" if person_context else apex_compte
 
         # Fallback cold start si prelude vide
         if not prelude:
