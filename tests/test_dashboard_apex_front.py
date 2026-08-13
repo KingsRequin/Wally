@@ -45,10 +45,11 @@ def test_les_classes_css_du_registre_existent(source):
 
 def test_les_routes_apex_appelees_par_le_front_existent():
     """Chaque `/api/admin/apex/...` du JS doit correspondre à une route montée."""
-    from bot.dashboard.app import create_dashboard_app
-    from tests.test_dashboard_apex_profils import _make_config
     from unittest.mock import MagicMock
+
+    from bot.dashboard.app import create_dashboard_app
     from bot.dashboard.state import AppState
+    from tests.test_dashboard_apex_profils import _make_config
 
     emotion = MagicMock()
     emotion.get_state.return_value = {}

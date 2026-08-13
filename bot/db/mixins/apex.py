@@ -135,17 +135,25 @@ class ApexMixin:
         n'importe quel caractère, y compris celui qui servirait de séparateur.
         """
         profils = await self.fetch_all(
-            "SELECT p.uid, p.apex_name, p.platform, p.first_seen, p.last_seen, "
-            "       p.seen_count, a.identity, a.display_name "
-            "FROM apex_profiles p "
-            "LEFT JOIN apex_accounts a ON a.uid = p.uid "
-            "ORDER BY p.last_seen DESC"
+            "SELECT uid, apex_name, platform, first_seen, last_seen, seen_count "
+            "FROM apex_profiles ORDER BY last_seen DESC"
         )
         noms: dict[str, list[str]] = {}
         for row in await self.fetch_all(
             "SELECT uid, name FROM apex_profile_names ORDER BY seen_at DESC"
         ) or []:
             noms.setdefault(row["uid"], []).append(row["name"])
+        # Les propriétaires sont agrégés APRÈS coup, jamais par jointure : une
+        # même personne est déclarée sur ses DEUX identités (le vocal la
+        # reconnaît en Discord, le chat en Twitch), et un `LEFT JOIN` rendait
+        # alors le profil en double — vu en prod dès la première ouverture.
+        proprietaires: dict[str, list[dict]] = {}
+        for row in await self.fetch_all(
+            "SELECT uid, identity, display_name FROM apex_accounts WHERE uid IS NOT NULL"
+        ) or []:
+            proprietaires.setdefault(row["uid"], []).append(
+                {"identity": row["identity"], "display_name": row["display_name"]}
+            )
         return [
             {
                 "uid": r["uid"],
@@ -155,10 +163,7 @@ class ApexMixin:
                 "last_seen": r["last_seen"],
                 "seen_count": r["seen_count"],
                 "names": noms.get(r["uid"], []),
-                "owner": (
-                    {"identity": r["identity"], "display_name": r["display_name"]}
-                    if r["identity"] else None
-                ),
+                "owners": proprietaires.get(r["uid"], []),
             }
             for r in profils or []
         ]

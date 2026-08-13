@@ -4255,19 +4255,21 @@ function apexProfileCard(p) {
   plat.textContent = p.platform || 'PC';
   head.appendChild(plat);
 
-  if (p.owner) {
+  // Une personne est souvent déclarée sur ses DEUX identités (Discord pour le
+  // vocal, Twitch pour le chat) : autant de badges, et un déliage par identité.
+  (p.owners || []).forEach(function(o) {
     const badge = document.createElement('span');
     badge.className = 'apex-owner';
-    badge.textContent = '🔗 ' + (p.owner.display_name || p.owner.identity);
-    badge.title = p.owner.identity;
+    badge.textContent = '🔗 ' + (o.display_name || o.identity);
+    badge.title = o.identity;
+    const x = document.createElement('button');
+    x.className = 'apex-chip-x';
+    x.textContent = '✕';
+    x.title = 'Délier ' + o.identity;
+    x.onclick = function() { apexUnlink(o.identity, p.apex_name); };
+    badge.appendChild(x);
     head.appendChild(badge);
-
-    const delier = document.createElement('button');
-    delier.className = 'apex-mini-btn';
-    delier.textContent = 'Délier';
-    delier.onclick = function() { apexUnlink(p.owner.identity, p.apex_name); };
-    head.appendChild(delier);
-  }
+  });
   card.appendChild(head);
 
   const noms = document.createElement('div');
@@ -4312,7 +4314,9 @@ function apexProfileCard(p) {
   const oublier = document.createElement('button');
   oublier.className = 'apex-mini-btn danger';
   oublier.textContent = 'Oublier ce profil';
-  oublier.onclick = function() { apexForgetProfile(p.uid, p.apex_name, !!p.owner); };
+  oublier.onclick = function() {
+    apexForgetProfile(p.uid, p.apex_name, (p.owners || []).length > 0);
+  };
   pied.appendChild(oublier);
 
   card.appendChild(pied);

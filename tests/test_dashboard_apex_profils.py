@@ -122,8 +122,9 @@ async def test_la_liste_dit_a_qui_le_compte_appartient(db, client):
     r = await client.get("/api/admin/apex/profiles", headers=HEADERS)
 
     profil = r.json()["profiles"][0]
-    assert profil["owner"]["identity"] == "discord:610550333042589752"
-    assert profil["owner"]["display_name"] == "Brain"
+    assert profil["owners"] == [
+        {"identity": "discord:610550333042589752", "display_name": "Brain"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -133,7 +134,7 @@ async def test_un_profil_sans_proprietaire_le_dit_sans_mentir(db, client):
 
     r = await client.get("/api/admin/apex/profiles", headers=HEADERS)
 
-    assert r.json()["profiles"][0]["owner"] is None
+    assert r.json()["profiles"][0]["owners"] == []
 
 
 @pytest.mark.asyncio
@@ -270,3 +271,24 @@ async def test_delier_ne_supprime_pas_le_profil_du_registre(db, client):
 
     assert r.status_code == 200, "sans déliage effectif, l'assertion suivante ne prouve rien"
     assert (await db.apex_uid_pour_nom("LicorneKssandre"))["uid"] == UID
+
+
+@pytest.mark.asyncio
+async def test_un_compte_lie_sur_deux_plateformes_napparait_quune_fois(db, client):
+    """Vu en prod dès la première ouverture : Azraël est déclaré sur ses DEUX
+    identités (le vocal l'identifie en Discord, le chat en Twitch), et le
+    profil sortait en double — une ligne par liaison, pas une par compte."""
+    await db.apex_remember_profile(uid=UID, apex_name="LicorneKssandre", platform="PC")
+    for identity in ("discord:419172225451556874", "twitch:659251746"):
+        await db.apex_link_account(
+            identity=identity, display_name="azrael_ttv",
+            apex_name="LicorneKssandre", apex_platform="PC", uid=UID,
+        )
+
+    r = await client.get("/api/admin/apex/profiles", headers=HEADERS)
+
+    profils = r.json()["profiles"]
+    assert len(profils) == 1, "un compte, une carte — quel que soit le nombre de liaisons"
+    assert {o["identity"] for o in profils[0]["owners"]} == {
+        "discord:419172225451556874", "twitch:659251746"
+    }
