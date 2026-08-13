@@ -163,6 +163,33 @@ rebuilds étant fréquents, un duel en cours doit y survivre ; la clé le garant
 Filtrage **par ID de récompense**, jamais par titre — un titre se renomme d'un clic
 et casserait tout en silence.
 
+### 🚨 C'est Wally qui doit CRÉER la récompense
+
+Contrainte Twitch, vérifiée le 2026-08-13 : **« The app used to create the reward is the
+only app that may update the redemption. »** Le `Client-Id` qui met à jour une
+redemption doit être celui qui a créé la récompense. Une récompense créée **depuis le
+site Twitch** ne peut donc pas être gérée par l'API — toute tentative de remboursement
+renvoie un **403**.
+
+Or le remboursement est au cœur de chaque cas d'erreur du §8. Faire créer la récompense
+à la main dans la console aurait rendu la feature **entièrement inopérante en cas de
+refus** : le viewer paie, le duel est refusé, et ses points ne reviennent jamais.
+
+Donc : **Wally crée la récompense lui-même** via
+`POST /helix/channel_points/custom_rewards` (scope `channel:manage:redemptions`, déjà
+prévu), et retient son ID dans `bot_state`. Au boot, si l'ID est absent ou si la
+récompense a disparu, il la recrée.
+
+Deux paramètres non négociables à la création :
+
+| Paramètre | Valeur | Pourquoi |
+|---|---|---|
+| `is_user_input_required` | `true` | Le viewer colle son uid Apex à l'achat |
+| `should_redemptions_skip_request_queue` | `false` | Une redemption qui saute la file est aussitôt `FULFILLED`, et **seul un statut `UNFULFILLED` peut être mis à jour** — donc plus aucun remboursement possible |
+
+Limites Twitch : 45 caractères pour le titre, 200 pour le `prompt`, 50 récompenses par
+chaîne.
+
 **Scopes.** Deux à ajouter au token streamer, donc une réautorisation OAuth :
 `channel:read:redemptions` et `channel:manage:redemptions`. Validité **prouvée le
 2026-08-13** contre les serveurs Twitch avec notre `client_id` : les deux passent le

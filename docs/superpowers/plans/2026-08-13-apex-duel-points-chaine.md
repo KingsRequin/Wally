@@ -1196,6 +1196,211 @@ Expected: les quatre scopes présents.
 
 ---
 
+## Task 6 bis : Créer la récompense depuis Wally
+
+**Files:**
+- Modify: `bot/twitch/api.py`
+- Test: `tests/test_twitch_reward_creation.py`
+
+**Interfaces:**
+- Produces: `TwitchAPI.creer_recompense(titre, cout, prompt) -> str | None`, `TwitchAPI.recompenses_gerables() -> list[dict]`
+
+**Pourquoi cette tâche existe — et pourquoi elle est bloquante :** Twitch impose que *« the app used to create the reward is the only app that may update the redemption »*. Une récompense créée depuis la console renvoie **403** à toute tentative de remboursement. Or chaque cas d'erreur de la spec rembourse : sans cette tâche, un viewer refusé perdrait ses points définitivement.
+
+- [ ] **Step 1 : Écrire les tests qui échouent**
+
+```python
+# tests/test_twitch_reward_creation.py
+"""Wally doit créer la récompense lui-même.
+
+« The app used to create the reward is the only app that may update the
+redemption » : une récompense créée depuis le site Twitch renvoie 403 à tout
+remboursement. Et chaque refus du duel rembourse.
+"""
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
+def _api(reponse):
+    from bot.twitch.api import TwitchAPI
+    tm = MagicMock(); tm.streamer_token = "tok"; tm.refresh = AsyncMock(return_value=True)
+    api = TwitchAPI(tm, client_id="cid", broadcaster_id="123")
+    client = MagicMock()
+    client.post = AsyncMock(return_value=reponse)
+    client.get = AsyncMock(return_value=reponse)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    return api, client
+
+
+def _resp(status, payload):
+    r = MagicMock(); r.status_code = status
+    r.json.return_value = payload; r.text = str(payload)
+    return r
+
+
+@pytest.mark.asyncio
+async def test_creation_rend_l_id(monkeypatch):
+    api, client = _api(_resp(200, {"data": [{"id": "RW42", "title": "Duel Apex"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.creer_recompense("Duel Apex", 5000, "Ton uid Apex") == "RW42"
+
+
+@pytest.mark.asyncio
+async def test_la_saisie_de_texte_est_OBLIGATOIRE(monkeypatch):
+    """Le viewer colle son uid à l'achat — sans ça, tout duel commence par une
+    conversation."""
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.creer_recompense("Duel Apex", 5000, "Ton uid")
+    corps = client.post.call_args.kwargs["json"]
+    assert corps["is_user_input_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_la_file_de_validation_n_est_JAMAIS_sautee(monkeypatch):
+    """Une redemption qui saute la file est aussitôt FULFILLED, et seul un
+    statut UNFULFILLED peut être mis à jour : plus aucun remboursement."""
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.creer_recompense("Duel Apex", 5000, "Ton uid")
+    corps = client.post.call_args.kwargs["json"]
+    assert corps["should_redemptions_skip_request_queue"] is False
+
+
+@pytest.mark.asyncio
+async def test_le_titre_est_tronque_a_45_caracteres(monkeypatch):
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.creer_recompense("x" * 200, 5000, "y" * 500)
+    corps = client.post.call_args.kwargs["json"]
+    assert len(corps["title"]) <= 45
+    assert len(corps["prompt"]) <= 200
+
+
+@pytest.mark.asyncio
+async def test_echec_de_creation_rend_None(monkeypatch):
+    api, client = _api(_resp(403, {"message": "Forbidden"}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.creer_recompense("Duel", 100, "p") is None
+
+
+@pytest.mark.asyncio
+async def test_recompenses_gerables_ne_liste_QUE_les_notres(monkeypatch):
+    """only_manageable_rewards=true : celles créées par notre client_id, donc
+    celles qu'on pourra rembourser."""
+    api, client = _api(_resp(200, {"data": [{"id": "A", "title": "Duel Apex"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    rewards = await api.recompenses_gerables()
+    assert rewards == [{"id": "A", "title": "Duel Apex"}]
+    assert client.get.call_args.kwargs["params"]["only_manageable_rewards"] == "true"
+```
+
+- [ ] **Step 2 : Lancer les tests, vérifier qu'ils échouent**
+
+Run: `python3 -m pytest tests/test_twitch_reward_creation.py -v`
+Expected: FAIL — `AttributeError: 'TwitchAPI' object has no attribute 'creer_recompense'`
+
+- [ ] **Step 3 : Implémenter**
+
+Ajouter à `bot/twitch/api.py`, à côté de `refund_redemption` :
+
+```python
+    REWARDS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards"
+
+    async def recompenses_gerables(self) -> list[dict]:
+        """Les récompenses que NOTRE application peut piloter.
+
+        `only_manageable_rewards=true` ne rend que celles créées par ce
+        `client_id`. Les autres — créées depuis le site Twitch — sont
+        inaccessibles à l'API : les rembourser renvoie 403.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    self.REWARDS_URL,
+                    params={"broadcaster_id": self._broadcaster_id,
+                            "only_manageable_rewards": "true"},
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+            if resp.status_code != 200:
+                logger.error("Liste des récompenses refusée HTTP {c} : {t}",
+                             c=resp.status_code, t=resp.text[:200])
+                return []
+            return (resp.json() or {}).get("data") or []
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Liste des récompenses en erreur : {e}", e=exc)
+            return []
+
+    async def creer_recompense(self, titre: str, cout: int, prompt: str) -> str | None:
+        """Crée la récompense de points de chaîne, et rend son ID.
+
+        C'est Wally qui doit la créer : Twitch réserve la mise à jour d'une
+        redemption à l'application qui a créé la récompense. Une récompense
+        posée à la main dans la console renverrait 403 à chaque remboursement —
+        et chaque refus de duel rembourse.
+        """
+        corps = {
+            "title": (titre or "")[:45],           # 45 caractères max côté Twitch
+            "cost": max(1, int(cout)),
+            "prompt": (prompt or "")[:200],        # 200 max
+            "is_user_input_required": True,        # le viewer colle son uid
+            "is_enabled": True,
+            # JAMAIS True : une redemption qui saute la file est aussitôt
+            # FULFILLED, et seul un statut UNFULFILLED peut être mis à jour.
+            # On perdrait tout moyen de rendre les points.
+            "should_redemptions_skip_request_queue": False,
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self.REWARDS_URL,
+                    params={"broadcaster_id": self._broadcaster_id},
+                    json=corps,
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+            if resp.status_code not in (200, 201):
+                logger.error("Création de récompense refusée HTTP {c} : {t}",
+                             c=resp.status_code, t=resp.text[:200])
+                return None
+            data = (resp.json() or {}).get("data") or []
+            rid = (data[0] or {}).get("id") if data else None
+            if rid:
+                logger.info("Récompense de duel créée : {t} ({i})", t=corps["title"], i=rid)
+            return rid
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Création de récompense en erreur : {e}", e=exc)
+            return None
+```
+
+- [ ] **Step 4 : Lancer les tests, vérifier qu'ils passent**
+
+Run: `python3 -m pytest tests/test_twitch_reward_creation.py -v`
+Expected: 6 passed
+
+- [ ] **Step 5 : Commit**
+
+```bash
+git add bot/twitch/api.py tests/test_twitch_reward_creation.py
+git commit -m "feat(twitch): créer la récompense de duel depuis le bot
+
+Twitch réserve la mise à jour d'une redemption à l'application qui a CRÉÉ la
+récompense : une récompense posée à la main dans la console renvoie 403 à tout
+remboursement. Comme chaque refus de duel rembourse, la feature aurait été
+inopérante — le viewer paie, on refuse, ses points ne reviennent jamais.
+
+should_redemptions_skip_request_queue reste à false : une redemption qui saute
+la file est aussitôt FULFILLED, et seul un statut UNFULFILLED peut être mis à
+jour."
+```
+
+---
+
 ## Task 7 : Percevoir l'achat de la récompense
 
 **Files:**
@@ -1217,15 +1422,54 @@ apex:
   streamer_account: Azrael_ttv
   streamer_platform: PC
   duel:
-    # ID de la récompense de points de chaîne, lu dans la console Twitch.
-    # Vide = duel désactivé. Filtrage par ID et JAMAIS par titre : un titre se
-    # renomme d'un clic et casserait tout en silence.
-    reward_id: ""
+    # La récompense est CRÉÉE PAR WALLY au premier boot, jamais à la main dans
+    # la console : Twitch réserve le remboursement à l'application qui a créé la
+    # récompense. Son ID est retenu dans `bot_state` (clé `apex:duel_reward_id`).
+    #
+    # `active: false` désactive le duel sans supprimer la récompense.
+    active: true
+    titre: "Duel Apex contre Azraël"          # 45 caractères max
+    cout: 5000
+    prompt: "Colle ton UID Apex (apexlegendsstatus.com)"   # 200 max
     manches: 3
     cadence_s: 2
     attente_squad_min: 15
     plafond_kills_manche: 30
 ```
+
+Et le runner apprend à garantir la récompense — ajouter à `bot/core/apex/duel_runner.py` :
+
+```python
+CLE_RECOMPENSE = "apex:duel_reward_id"
+
+
+class DuelRunner:  # (suite)
+    async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
+        """L'ID de notre récompense, créée si besoin. `""` si impossible.
+
+        Appelée au boot. On vérifie que l'ID retenu figure toujours parmi les
+        récompenses GÉRABLES — celles créées par notre client_id. Une récompense
+        supprimée par le streamer, ou créée à la main dans la console, ne l'est
+        pas : dans les deux cas on en crée une neuve, faute de quoi les
+        remboursements échoueraient en 403.
+        """
+        connu = await self._db.get_state(CLE_RECOMPENSE)
+        gerables = {r.get("id") for r in await self._api.recompenses_gerables()}
+        if connu and connu in gerables:
+            self._reward_id = connu
+            return connu
+        if connu:
+            logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
+        nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
+        if not nouvel_id:
+            logger.error("Récompense de duel impossible à créer — duel indisponible")
+            return ""
+        await self._db.set_state(CLE_RECOMPENSE, nouvel_id)
+        self._reward_id = nouvel_id
+        return nouvel_id
+```
+
+⚠️ `handle_redemption` (Task 7) compare alors le `reward_id` reçu à `runner._reward_id`, **plus à la config** : adapter `_est_notre_recompense` pour lire `getattr(bot.duel_runner, "_reward_id", "")`.
 
 - [ ] **Step 2 : Écrire les tests qui échouent**
 
@@ -2399,7 +2643,7 @@ Après déploiement, dans l'ordre :
 
 1. **Scopes** — `curl -H "Authorization: OAuth $TOKEN" https://id.twitch.tv/oauth2/validate` doit lister les quatre.
 2. **Souscription EventSub** — les logs de boot doivent montrer `duel_redemption` souscrit sans erreur.
-3. **`reward_id`** — le renseigner dans `config.yaml` depuis la console Twitch, puis `config.save()` ou redémarrage.
+3. **Récompense** — vérifier dans les logs de boot qu'elle a été **créée par Wally** (`Récompense de duel créée : …`). Elle doit apparaître dans la liste des points de chaîne de la chaîne, avec la saisie de texte activée. **Ne jamais la recréer à la main** : une récompense posée depuis la console renverrait 403 à chaque remboursement.
 4. **Un duel réel** — acheter la récompense soi-même, vérifier : annonce, widget, score par manche, verdict, et surtout **que les points sont rendus** sur un refus.
 5. **Mesurer `marge_lobby_s`** avec `scripts/probe_duel.py` sur le duel réel, et ajuster si les compteurs se révélaient plus lents qu'observé.
 
