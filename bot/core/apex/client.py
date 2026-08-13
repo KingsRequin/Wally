@@ -33,8 +33,16 @@ DEFAULT_TTL: dict[str, float] = {
 }
 _FALLBACK_TTL = 60.0
 
-# L'API tolère 2 requêtes/seconde.
-_MIN_INTERVAL = 0.5
+# L'API tolère 5 requêtes/seconde. Mesuré à la clé le 2026-08-13 par montée
+# progressive : 3 et 5 req/s passent intégralement, à 8 req/s la 6e requête de
+# la seconde prend un 429 dont le CORPS donne la limite en toutes lettres
+# (« You have 5 req/s allowed »). Aucun en-tête ne l'annonce — seul
+# `x-current-rate` est renvoyé, et il ne dit que le compteur courant.
+#
+# Ce commentaire annonçait « 2 requêtes/seconde » et bridait le client à 0,5 s :
+# 60 % du débit disponible inutilisé, pour tout le projet. Il contredisait
+# `watcher.py`, qui disait juste.
+_MIN_INTERVAL = 0.2
 
 
 class ApexClient:
@@ -56,16 +64,24 @@ class ApexClient:
     def available(self) -> bool:
         return bool(self._api_key)
 
-    async def get(self, endpoint: str, params: dict | None = None) -> Any:
+    async def get(self, endpoint: str, params: dict | None = None,
+                  *, sans_cache: bool = False) -> Any:
         """La réponse de l'endpoint, depuis le cache si elle y est encore fraîche.
 
         Une erreur est retournée sous forme de chaîne et n'entre jamais dans le
         cache : une panne d'une seconde condamnerait l'endpoint tout son TTL.
+
+        `sans_cache` court-circuite le cache dans les DEUX sens — ni lu, ni
+        écrit. Le duel sonde à 2 s alors que le TTL de `bridge` est de 15 s :
+        sans ce chemin, il verrait sept relevés sur huit depuis la mémoire et
+        raterait les mouvements de compteurs. Et ne pas écrire non plus évite
+        qu'un relevé de duel devienne la réponse servie au reste du bot.
         """
         key = (endpoint, tuple(sorted((params or {}).items())))
-        cached = self._cache.get(key)
-        if cached and cached[0] > self._now():
-            return cached[1]
+        if not sans_cache:
+            cached = self._cache.get(key)
+            if cached and cached[0] > self._now():
+                return cached[1]
 
         try:
             value = await self._fetch(endpoint, params or {})
@@ -76,9 +92,10 @@ class ApexClient:
             logger.error("Apex {ep} error: {e}", ep=endpoint, e=exc)
             return f"Apex API error: {exc}"
 
-        ttl = self._ttl.get(endpoint, _FALLBACK_TTL)
-        self._cache[key] = (self._now() + ttl, value)
-        self._purger()
+        if not sans_cache:
+            ttl = self._ttl.get(endpoint, _FALLBACK_TTL)
+            self._cache[key] = (self._now() + ttl, value)
+            self._purger()
         return value
 
     def _purger(self) -> None:
