@@ -17,20 +17,56 @@ donnée : ce ne peut être qu'une soustraction entre deux relevés du total carr
 C'est déjà pour cette raison que `watcher.py` fabrique la progression du live par
 différence de compteurs.
 
-S'ajoute une inconnue mesurable seulement en live : **à quel moment le tracker de
-kills s'incrémente**. Présomption forte qu'il ne bouge qu'au retour au lobby, pas
-kill par kill. Le design ne doit donc jamais dépendre d'un relevé pris à un instant
-précis.
+### Ce que la mesure en live a établi (2026-08-13, partie réelle de KingsRequin)
 
-**Décision — approche « global pour le verdict, manches pour l'affichage » :**
+Une partie complète observée à 2 s, du lobby au lobby, avec 4 kills annoncés par le
+joueur. Quatre résultats, tous contre-intuitifs :
 
-- Le vainqueur est tranché par la **différence entre la baseline prise au lancement
-  et le relevé final**, une fois les compteurs stabilisés. C'est la mesure robuste.
-- Les relevés de fin de manche alimentent le widget en **best-effort**. Si l'un
-  rate, l'affichage est approximatif pendant une manche ; **le résultat reste juste**.
+**1. `isInGame` est fiable.** `currentState` passe par `inLobby` → `inMatch` → `inLobby`,
+avec `isInGame` cohérent. Le découpage en manches tient. Partie de **8 minutes** — trois
+manches feront ~30 min avec les lobbies, pas une heure.
 
-Aucun chemin ne permet à un relevé de manche raté de fausser le verdict. C'est
-l'invariant central de cette spec.
+**2. Le tracker se met à jour AU RETOUR AU LOBBY, sans délai.** Au relevé exact où l'API
+annonce `inLobby`, les compteurs ont déjà bougé. La présomption d'un délai de mise à jour
+— qui justifiait toute la prudence de la version précédente de cette spec — est **fausse**.
+
+**3. Tous les trackers de kills bougent du MÊME montant.** Les 4 kills ont donné `+4` sur
+`career_kills`, sur `specialEvent_kills`, et sur les deux équivalents par légende. **Les
+sommer annoncerait 16 kills au lieu de 4.** La règle du projet « les trackers de même
+libellé s'additionnent » vaut pour un *total carrière*, jamais pour un *delta de partie* :
+piège exactement symétrique.
+
+**4. 🚨 Un tracker non épinglé porte une valeur GELÉE.** `total.career_kills` affichait
+`10989` — valeur morte, datant de la dernière fois où le joueur l'avait épinglé. À la
+seconde où il l'a remis sur sa bannière, elle est passée à `18782` (**+7793**), sans
+qu'aucun kill soit joué et sans que la liste des clés change. **Une clé présente ne
+signifie donc pas une valeur à jour**, et rien dans le payload ne distingue un compteur
+vivant d'un compteur mort.
+
+### Décision — somme des deltas PAR MANCHE
+
+La version précédente tranchait sur un delta global (baseline au lancement, relevé à la
+fin) parce qu'on croyait les relevés de manche peu fiables. **Le point 2 l'infirme** : le
+relevé de fin de manche est solide. Et le point 4 rend le delta global dangereux — un
+joueur qui épingle un tracker entre deux manches remporterait le duel avec +7793.
+
+Donc : **baseline reprise au début de CHAQUE manche**, score du duel = somme des scores de
+manche. Un épinglage entre deux manches est absorbé par la nouvelle baseline.
+
+**Score d'une manche = le plus GRAND delta parmi tous les trackers de kills**, jamais leur
+somme (point 3). On suit les quatre : on ignore lequel le viewer a épinglé, et un tracker
+non épinglé ne bougera pas (point 4).
+
+Trois filtres, chacun adossé à une mesure :
+
+| Filtre | Pourquoi |
+|---|---|
+| Clé absente au début de la manche → ignorée | Tracker apparu en cours de route |
+| Delta négatif → ignoré | Incohérence de l'API |
+| Delta > `plafond_kills_manche` → ignoré | Signature d'un épinglage (+7793), pas d'un score |
+
+Si **tous** les deltas sont écartés, la manche est déclarée **non mesurable** — jamais
+comptée zéro. Un zéro inventé est un mensonge, pas une valeur par défaut.
 
 ## 2. Ce qu'on ne peut pas faire, et qu'on assume
 
@@ -40,7 +76,9 @@ l'invariant central de cette spec.
   côté. Accepté : c'est un jeu entre gens de bonne foi.
 - **Sans tracker de kills épinglé en jeu, un compte est illisible.** Détecté à la
   résolution, refusé avec remboursement et explication — jamais un « 0 » annoncé à
-  quelqu'un qui a bien joué.
+  quelqu'un qui a bien joué. Et **la présence d'une clé ne prouve pas qu'elle est
+  vivante** : un tracker non épinglé garde sa valeur du jour où il l'a été (§1, point
+  4). Le seul test valable est qu'un compteur **bouge** pendant une manche.
 - **Le duel ne vaut qu'en Battle Royale.** Un tracker « BR Kills » ne compte pas les
   parties de Mixtape, d'Arènes ni les modes temporaires. Trois parties d'affilée en BR
   strict n'ont rien d'automatique : un squad qui bascule en Mixtape produirait un
@@ -57,8 +95,9 @@ l'invariant central de cette spec.
 3. Compte validé → Wally annonce le duel et attend que les deux comptes soient en
    partie ensemble. Azraël invite le viewer en jeu ; **cette étape est hors de portée
    du bot**, il ne fait que constater.
-4. Trois manches. À chaque fin de partie, le widget se met à jour et Wally commente.
-5. Compteurs stabilisés → verdict.
+4. Trois manches. Au retour au lobby de chacune, le score est relevé, le widget se met
+   à jour et Wally commente.
+5. Dernière manche comptée → verdict.
 
 ## 4. Machine à états
 
@@ -71,33 +110,22 @@ runner autour d'elle porte la sonde et le réseau.
 |---|---|---|
 | `RESOLUTION` | Récompense achetée | UID résolu **et** tracker de kills lisible |
 | `ATTENTE_SQUAD` | Compte validé | Les deux comptes `in_game` → manche 1 |
-| `EN_COURS` | 1ʳᵉ manche lancée | Fin de la 3ᵉ manche (`in_game` d'Azraël retombe) |
-| `STABILISATION` | 3ᵉ manche finie | Les deux compteurs n'ont plus bougé pendant le délai de stabilité |
-| `VERDICT` | Compteurs stables | — |
+| `MANCHE` | Les deux `in_game` | `in_game` d'Azraël retombe → score de la manche |
+| `ENTRE_MANCHES` | Manche close | Manche suivante, ou verdict après la dernière |
+| `VERDICT` | Dernière manche comptée | — |
 
-`STABILISATION` est la pièce qui sauve le résultat : trancher à la seconde où la 3ᵉ
-partie se termine amputerait le score des kills de cette partie si le tracker se met
-à jour au lobby. Un plafond de durée borne l'attente ; passé ce plafond, on tranche
-sur ce qu'on a, sauf si rien n'a jamais bougé (§8).
+**Une baseline par manche**, prise à l'entrée en `MANCHE`, soustraite à la sortie. Le
+score du duel est la somme des scores de manche (§1). Il n'y a **pas** d'état
+`STABILISATION` : la mesure du 2026-08-13 montre que les compteurs sont à jour au
+relevé même du retour au lobby. Une marge de quelques secondes suffit, par prudence
+sur un échantillon unique.
 
-Baseline des deux comptes prise à l'entrée en `EN_COURS`, relevé final en `VERDICT`,
-le verdict **est** cette soustraction.
+`ENTRE_MANCHES` existe pour une raison précise : c'est là que le joueur peut changer de
+légende ou épingler un tracker, et c'est la nouvelle baseline qui absorbe le saut.
 
-Les kills se lisent via `reader.py`, qui sait déjà que **les trackers de même libellé
-s'additionnent** (le total d'Azraël, c'est `specialEvent_kills` + `kills`). Cette
-lecture est réutilisée, pas refaite.
-
-> **Prérequis bloquant du lot 1 — `isInGame` n'a jamais été observé à `1`.** Tout le
-> découpage en manches repose sur ce champ, et les seules mesures dont on dispose ont
-> été prises **compte hors ligne**, où il vaut `0`. On ignore ce que valent `isInGame`
-> et `currentState` en lobby, en file d'attente et en partie, et donc si la transition
-> qu'on veut détecter existe sous cette forme.
->
-> Coder le cœur du duel contre une supposition est précisément la faute que ce projet
-> a déjà payée plusieurs fois. **Dix secondes d'observation pendant qu'Azraël joue**
-> (`/tmp/probe_apex.py`) lèvent le doute, et la même séquence donne `stabilite_s` en
-> montrant quand le tracker de kills s'incrémente. À faire **avant** d'écrire la
-> machine à états, pas après.
+Les kills se lisent via `reader.py`. **Mais pas sa règle d'addition** : elle vaut pour
+un total carrière, pas pour un delta de partie, où tous les trackers bougent du même
+montant (§1). Le duel prend le **maximum** des deltas, jamais la somme.
 
 ## 5. Persistance
 
@@ -174,6 +202,7 @@ un viewer qui a payé et ne voit rien est le pire résultat possible.
 | Personne ne rejoint sous 15 min | Remboursement |
 | Stream coupé en cours de duel | Remboursement |
 | API muette quelques relevés | Toléré ; au-delà d'un seuil d'échecs consécutifs, abandon + remboursement |
+| Manche non mesurable (tous les deltas écartés) | Annoncée comme telle, non comptée ; si aucune manche n'est mesurable, remboursement |
 | Rebuild en plein duel | Reprise depuis `bot_state` |
 
 **Égalité vraie** = match nul annoncé, pas de remboursement : le duel a eu lieu.
@@ -328,13 +357,18 @@ premier duel réel — aucune n'est figée dans le code.
 | `manches` | 3 | La demande |
 | `cadence_s` | 2 | 1 req/s pour deux comptes, 20 % du débit autorisé |
 | `attente_squad_min` | 15 | Le temps de lire le chat, lancer le jeu et être invité |
-| `stabilite_s` | 90 | Sans changement sur les deux compteurs → tracker à jour |
-| `stabilisation_max_s` | 300 | Plafond : au-delà on tranche sur ce qu'on a (sauf §8) |
+| `marge_lobby_s` | 10 | Les compteurs sont à jour dès le retour au lobby (mesuré) ; marge de prudence sur un échantillon unique |
+| `plafond_kills_manche` | 30 | Au-delà, c'est un épinglage de tracker (+7793 mesuré), pas un score |
 | `api_muette_max_s` | 180 | API muette en continu au-delà → abandon + remboursement |
 
-`stabilite_s` est le seul dont la valeur ne repose sur **aucune mesure** : elle
-dépend du délai de mise à jour des trackers, inconnu tant qu'un duel réel n'a pas eu
-lieu. À mesurer en priorité (`/tmp/probe_apex.py` pendant qu'Azraël joue).
+`marge_lobby_s` et `plafond_kills_manche` reposent sur **une seule partie observée**
+(2026-08-13). Un second échantillon les confirmerait à peu de frais — la sonde
+`scripts/probe_duel.py` est prête et n'a qu'à tourner pendant une partie.
+
+`plafond_kills_manche = 30` est volontairement haut : les records connus en Apex
+tournent autour de 25–30 kills, donc un score légitime ne devrait jamais l'atteindre,
+alors qu'un artefact d'épinglage se compte en milliers. Le filtre ne peut pas mordre
+sur un vrai résultat.
 
 ## 13. Tests
 
@@ -346,6 +380,11 @@ relevés :
 - **un relevé de manche raté — le verdict doit rester juste** (le test qui prouve §1) ;
 - API muette, coupure de stream, reprise après rebuild ;
 - 0–0 sans aucun mouvement → remboursement, pas match nul ;
+- **tous les trackers bougent de +4 pour 4 kills → le score est 4, pas 16** (le test qui
+  interdit la somme) ;
+- **un tracker épinglé en cours de duel (+7793) est écarté par le plafond** et n'emporte
+  pas la victoire ;
+- une manche dont tous les deltas sont écartés est **non mesurable**, jamais zéro ;
 - annulation et remise à zéro par un modérateur ; **refus** de la même demande venant
   d'un viewer ordinaire ;
 - le bloc de perception (§11 bis) porte le demandeur, le score de chaque manche et le
