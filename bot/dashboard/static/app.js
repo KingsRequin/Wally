@@ -4168,14 +4168,25 @@ function apexLinkForm() {
   const ligne = document.createElement('div');
   ligne.className = 'apex-link-row';
 
-  const who = document.createElement('select');
-  who.className = 'mem-sort-select';
+  // Un champ de recherche et non un menu déroulant : 494 personnes sont
+  // connues, et parcourir la liste à la main n'est pas praticable. Le champ
+  // porte l'identité choisie dans son dataset — c'est elle qui part en base.
+  const boite = document.createElement('div');
+  boite.className = 'apex-people-box';
+  const who = document.createElement('input');
+  who.type = 'text';
   who.id = 'apex-link-who';
-  const attente = document.createElement('option');
-  attente.value = '';
-  attente.textContent = 'Chargement des personnes…';
-  who.appendChild(attente);
-  ligne.appendChild(who);
+  who.placeholder = 'Cherche une personne (pseudo, surnom, id…)';
+  who.autocomplete = 'off';
+  who.oninput = function() { who.dataset.identity = ''; renderApexPeopleMenu(who.value); };
+  who.onfocus = function() { renderApexPeopleMenu(who.value); };
+  who.onkeydown = function(e) { apexPeopleKeys(e); };
+  boite.appendChild(who);
+  const menu = document.createElement('div');
+  menu.className = 'apex-people-menu';
+  menu.id = 'apex-people-menu';
+  boite.appendChild(menu);
+  ligne.appendChild(boite);
 
   const ref = document.createElement('input');
   ref.type = 'text';
@@ -4194,39 +4205,150 @@ function apexLinkForm() {
   return card;
 }
 
-async function fillApexPeople(select) {
-  if (!_apexPeopleCache) {
-    const r = await apiFetch('/api/admin/memory/users?show_all=1&limit=200');
-    if (!r || !r.ok) { select.options[0].textContent = 'Personnes indisponibles'; return; }
-    _apexPeopleCache = (await r.json()).users || [];
+async function fillApexPeople(champ) {
+  if (_apexPeopleCache) return;
+  const r = await apiFetch('/api/admin/apex/personnes');
+  if (!r || !r.ok) {
+    champ.placeholder = 'Annuaire indisponible — donne l\'identité à la main';
+    return;
   }
-  select.innerHTML = '';
-  const vide = document.createElement('option');
-  vide.value = '';
-  vide.textContent = '— Choisis une personne —';
-  select.appendChild(vide);
-  _apexPeopleCache.forEach(function(u) {
-    const o = document.createElement('option');
-    o.value = u.user_id;
-    // Le pseudo seul ne suffit pas : deux personnes peuvent porter le même sur
-    // Discord et Twitch, et c'est l'identité qui sera écrite en base.
-    o.textContent = (u.username || u.user_id) + ' (' + u.user_id + ')';
-    select.appendChild(o);
+  _apexPeopleCache = (await r.json()).people || [];
+  champ.placeholder = 'Cherche parmi ' + _apexPeopleCache.length
+    + ' personnes (pseudo, surnom, id…)';
+}
+
+// Combien de propositions on affiche. Au-delà, la liste devient un mur qu'on
+// ne lit plus : c'est le compte affiché en pied qui dit qu'il reste du monde.
+const APEX_PEOPLE_MAX = 12;
+
+function apexPeopleTrouves(q) {
+  const gens = _apexPeopleCache || [];
+  const terme = (q || '').trim().toLowerCase();
+  if (!terme) return { liste: gens.slice(0, APEX_PEOPLE_MAX), total: gens.length };
+  const trouves = [];
+  gens.forEach(function(p) {
+    // Le nom qui a MATCHÉ est retenu : chercher « mon ptit pote » et voir
+    // s'afficher « KingsRequin » sans explication ressemble à une erreur.
+    const via = (p.noms || []).find(function(n) {
+      return String(n).toLowerCase().includes(terme);
+    });
+    if (via) trouves.push({ p: p, via: via });
   });
+  // Un nom qui COMMENCE par ce qu'on tape passe devant : on tape le début.
+  trouves.sort(function(a, b) {
+    const ap = a.p.nom.toLowerCase().startsWith(terme) ? 0 : 1;
+    const bp = b.p.nom.toLowerCase().startsWith(terme) ? 0 : 1;
+    return ap - bp || a.p.nom.localeCompare(b.p.nom);
+  });
+  return { liste: trouves.slice(0, APEX_PEOPLE_MAX).map(function(t) {
+    return Object.assign({}, t.p, { via: t.via });
+  }), total: trouves.length };
+}
+
+function renderApexPeopleMenu(q) {
+  const menu = document.getElementById('apex-people-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  const { liste, total } = apexPeopleTrouves(q);
+  if (!liste.length) {
+    const rien = document.createElement('div');
+    rien.className = 'apex-people-vide';
+    rien.textContent = _apexPeopleCache ? 'Personne ne porte ce nom' : 'Chargement…';
+    menu.appendChild(rien);
+    menu.classList.add('ouvert');
+    return;
+  }
+  liste.forEach(function(p, i) {
+    const item = document.createElement('div');
+    item.className = 'apex-people-item' + (i === 0 ? ' actif' : '');
+    item.dataset.identity = p.identity;
+    item.dataset.nom = p.nom;
+
+    const nom = document.createElement('span');
+    nom.className = 'apex-people-nom';
+    nom.textContent = p.nom;
+    item.appendChild(nom);
+
+    // Trouvé via un autre nom que celui qu'on affiche : on dit lequel.
+    if (p.via && p.via.toLowerCase() !== String(p.nom).toLowerCase()) {
+      const via = document.createElement('span');
+      via.className = 'apex-people-via';
+      via.textContent = '« ' + p.via + ' »';
+      item.appendChild(via);
+    }
+
+    const ident = document.createElement('span');
+    ident.className = 'apex-people-id';
+    ident.textContent = p.identity;
+    item.appendChild(ident);
+
+    item.onmousedown = function(e) { e.preventDefault(); apexChoisirPersonne(item); };
+    menu.appendChild(item);
+  });
+  if (total > liste.length) {
+    const reste = document.createElement('div');
+    reste.className = 'apex-people-vide';
+    reste.textContent = '… et ' + (total - liste.length) + ' autres — précise ta recherche';
+    menu.appendChild(reste);
+  }
+  menu.classList.add('ouvert');
+}
+
+function apexChoisirPersonne(item) {
+  const champ = document.getElementById('apex-link-who');
+  const menu = document.getElementById('apex-people-menu');
+  if (!champ) return;
+  champ.value = item.dataset.nom;
+  // L'identité voyage à part : deux personnes peuvent porter le même pseudo,
+  // et c'est l'identité — pas le texte affiché — qui part en base.
+  champ.dataset.identity = item.dataset.identity;
+  if (menu) menu.classList.remove('ouvert');
+}
+
+function apexPeopleKeys(e) {
+  const menu = document.getElementById('apex-people-menu');
+  if (!menu || !menu.classList.contains('ouvert')) return;
+  const items = Array.from(menu.querySelectorAll('.apex-people-item'));
+  if (!items.length) return;
+  let i = items.findIndex(function(el) { return el.classList.contains('actif'); });
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (i >= 0) items[i].classList.remove('actif');
+    i = e.key === 'ArrowDown'
+      ? (i + 1) % items.length
+      : (i <= 0 ? items.length - 1 : i - 1);
+    items[i].classList.add('actif');
+    items[i].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    apexChoisirPersonne(items[i >= 0 ? i : 0]);
+  } else if (e.key === 'Escape') {
+    menu.classList.remove('ouvert');
+  }
 }
 
 async function submitApexLink() {
   const who = document.getElementById('apex-link-who');
   const ref = document.getElementById('apex-link-ref');
   if (!who || !ref) return;
-  if (!who.value) { toast('Choisis une personne', 'error'); return; }
+  // Taper un nom ne suffit pas : il faut avoir CHOISI quelqu'un dans la liste,
+  // sinon on ne sait pas quelle identité écrire — deux personnes peuvent
+  // porter le même pseudo.
+  if (!who.dataset.identity) {
+    toast('Choisis une personne dans la liste', 'error');
+    renderApexPeopleMenu(who.value);
+    return;
+  }
   if (!ref.value.trim()) { toast('Donne un lien, un uid ou un pseudo', 'error'); return; }
 
-  const nom = who.options[who.selectedIndex].textContent.split(' (')[0];
   const r = await apiFetch('/api/admin/apex/link', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identity: who.value, display_name: nom, ref: ref.value.trim() }),
+    body: JSON.stringify({
+      identity: who.dataset.identity,
+      display_name: who.value,
+      ref: ref.value.trim(),
+    }),
   });
   if (r && r.ok) {
     const d = await r.json();
@@ -4239,6 +4361,8 @@ async function submitApexLink() {
       toast('Compte ' + d.apex_name + ' lié', 'success');
     }
     ref.value = '';
+    who.value = '';
+    who.dataset.identity = '';
     renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
   } else {
     const err = r ? await r.json().catch(function() { return {}; }) : {};

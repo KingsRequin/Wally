@@ -353,3 +353,54 @@ async def test_un_pseudo_inconnu_partout_reste_refuse(db, client):
 
     assert r.status_code == 404
     assert await db.apex_get_account("discord:1") is None
+
+
+# ── L'annuaire cherchable ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_lannuaire_ne_sarrete_pas_a_deux_cents_personnes(db, client):
+    """Le formulaire chargeait `limit=200` : sur 494 personnes connues en prod,
+    294 étaient introuvables — pas seulement longues à trouver."""
+    for i in range(230):
+        await db.upsert_memory_user(f"discord:{100000 + i}", "discord", f"personne{i}")
+
+    r = await client.get("/api/admin/apex/personnes", headers=HEADERS)
+
+    assert r.status_code == 200
+    assert len(r.json()["people"]) >= 230
+
+
+@pytest.mark.asyncio
+async def test_on_retrouve_quelquun_par_son_surnom(db, client):
+    """« mon ptit pote » désigne KingsRequin : 189 alias existent en prod, et
+    c'est souvent le seul nom dont on se souvienne."""
+    await db.upsert_memory_user("discord:610550333042589752", "discord", "KingsRequin")
+    await db.upsert_alias("mon ptit pote", "discord:610550333042589752",
+                          "KingsRequin", "manual", 1.0)
+
+    r = await client.get("/api/admin/apex/personnes", headers=HEADERS)
+
+    fiche = next(p for p in r.json()["people"]
+                 if p["identity"] == "discord:610550333042589752")
+    assert "mon ptit pote" in fiche["noms"]
+    assert "KingsRequin" in fiche["noms"]
+
+
+@pytest.mark.asyncio
+async def test_on_retrouve_quelquun_par_son_pseudo_de_lautre_plateforme(db, client):
+    """Quelqu'un change de pseudo Discord mais garde son pseudo Twitch — ou
+    l'inverse. Les deux doivent mener à la même personne."""
+    # Un vrai snowflake : `_fix_platform` reclasse en Twitch tout id Discord de
+    # moins de 13 chiffres, et le test porterait alors sur autre chose.
+    moi = "discord:610550333042589752"
+    await db.upsert_memory_user(moi, "discord", "NouveauPseudo")
+    await db.upsert_memory_user("twitch:105904256", "twitch", "ancienpseudo_ttv")
+    await db.upsert_link_proposal(moi, "twitch:105904256", 0.9)
+    props = await db.list_link_proposals()
+    await db.accept_link(props[0]["id"])
+
+    r = await client.get("/api/admin/apex/personnes", headers=HEADERS)
+
+    fiche = next(p for p in r.json()["people"] if p["identity"] == moi)
+    assert "ancienpseudo_ttv" in fiche["noms"], "le pseudo Twitch lié doit être cherchable"

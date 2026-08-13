@@ -38,6 +38,56 @@ async def list_apex_profiles(request: Request):
     return {"profiles": profils}
 
 
+@router.get("/apex/personnes")
+async def list_people(request: Request):
+    """L'annuaire cherchable : chaque personne avec TOUS les noms qui la
+    désignent — son pseudo, ses surnoms, et celui de son compte lié sur l'autre
+    plateforme.
+
+    Rendu d'un coup et non page par page : le formulaire chargeait les 200
+    premières personnes, et sur les 494 connues en prod les 294 autres étaient
+    introuvables — pas seulement longues à trouver. Le filtrage se fait ensuite
+    dans le navigateur, sans aller-retour à chaque touche.
+
+    Les surnoms comptent autant que les pseudos : « mon ptit pote » est parfois
+    le seul nom dont on se souvienne, et un pseudo qui change laisse l'ancien
+    comme seule prise.
+    """
+    db = request.app.state.wally.db
+    gens = await db.list_memory_users(include_no_memory=True)
+    noms: dict[str, list[str]] = {}
+    principal: dict[str, str] = {}
+    for u in gens or []:
+        uid = u["user_id"]
+        principal[uid] = u.get("username") or uid
+        noms.setdefault(uid, [])
+        for n in (u.get("username"), uid.split(":", 1)[-1]):
+            if n and n not in noms[uid]:
+                noms[uid].append(n)
+
+    for a in await db.list_aliases() or []:
+        cible = a["canonical_uid"]
+        if cible in noms and a["nickname"] not in noms[cible]:
+            noms[cible].append(a["nickname"])
+
+    # Le compte lié de l'autre plateforme : c'est ce qui permet de retrouver
+    # quelqu'un par son ancien pseudo quand il en a changé d'un seul côté.
+    for lien in await db.list_link_proposals(status="accepted") or []:
+        cible, autre = lien["canonical_id"], lien["alias_id"]
+        if cible not in noms:
+            continue
+        for n in (lien.get("alias_username"), autre.split(":", 1)[-1]):
+            if n and n not in noms[cible]:
+                noms[cible].append(n)
+
+    return {
+        "people": [
+            {"identity": uid, "nom": principal[uid], "noms": noms[uid]}
+            for uid in sorted(noms, key=lambda u: principal[u].lower())
+        ]
+    }
+
+
 @router.delete("/apex/profiles/{uid}/names/{name:path}")
 async def forget_apex_name(uid: str, name: str, request: Request):
     """Oublie un pseudo qui menait à ce profil.
