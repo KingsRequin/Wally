@@ -404,3 +404,27 @@ async def test_on_retrouve_quelquun_par_son_pseudo_de_lautre_plateforme(db, clie
 
     fiche = next(p for p in r.json()["people"] if p["identity"] == moi)
     assert "ancienpseudo_ttv" in fiche["noms"], "le pseudo Twitch lié doit être cherchable"
+
+
+@pytest.mark.asyncio
+async def test_lannuaire_necarte_les_identites_sans_plateforme(db, client):
+    """91 entrées « unknown: » existent en prod — des pseudos croisés sans
+    jamais être rattachés à un compte. Les proposer offrirait un choix qui ne
+    peut pas marcher : le contexte n'interroge que `discord:` et `twitch:`, une
+    liaison posée là serait muette pour toujours. Idem pour « global: », qui
+    n'est pas une personne mais la mémoire communautaire."""
+    await db.upsert_memory_user("discord:610550333042589752", "discord", "KingsRequin")
+    await db.execute(
+        "INSERT INTO memory_users(user_id, platform, last_updated, username) "
+        "VALUES(?,?,?,?)", ("unknown:mks_zedd", "unknown", 0, None),
+    )
+    await db.execute(
+        "INSERT INTO memory_users(user_id, platform, last_updated, username) "
+        "VALUES(?,?,?,?)", ("global:communaute", "global", 0, None),
+    )
+
+    r = await client.get("/api/admin/apex/personnes", headers=HEADERS)
+
+    identites = {p["identity"] for p in r.json()["people"]}
+    assert "discord:610550333042589752" in identites
+    assert not [i for i in identites if i.startswith(("unknown:", "global:"))]

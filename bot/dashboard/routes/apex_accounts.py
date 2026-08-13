@@ -59,6 +59,13 @@ async def list_people(request: Request):
     principal: dict[str, str] = {}
     for u in gens or []:
         uid = u["user_id"]
+        # Seules les identités d'une VRAIE plateforme : 91 entrées « unknown: »
+        # existent (des pseudos croisés sans jamais être rattachés à un compte)
+        # et une entrée « global: » qui n'est pas une personne. Y rattacher un
+        # compte Apex donnerait une liaison muette pour toujours — le contexte
+        # n'interroge que `discord:` et `twitch:`.
+        if not uid.startswith(("discord:", "twitch:")):
+            continue
         principal[uid] = u.get("username") or uid
         noms.setdefault(uid, [])
         for n in (u.get("username"), uid.split(":", 1)[-1]):
