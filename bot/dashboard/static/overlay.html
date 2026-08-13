@@ -97,27 +97,37 @@
     /* ── Bulle ──────────────────────────────────────────────────────────── */
     #bubble {
       position: relative;
-      /* La largeur s'adapte à la source OBS au lieu de la supposer assez grande :
-         234px = avatar (200) + gap (10) + padding (24). Sur une source étroite,
-         la bulle rétrécit au lieu de sortir du cadre. */
-      max-width: min(300px, calc(100vw - 234px));
+      /* 260 px et pas 300 : au-delà, trois lignes de texte donnent une boîte de
+         rapport 3:1 — n'importe quelle forme convexe y paraît plate sur le
+         dessus. Plus étroite, la bulle prend de la hauteur et redevient ronde.
+         La borne basse suit la source OBS : 234px = avatar (200) + gap (10) +
+         padding (24), pour que la bulle rétrécisse au lieu de sortir du cadre. */
+      max-width: min(260px, calc(100vw - 234px));
       /* Remontée à hauteur de tête : la bulle flotte en haut de la mascotte
          plutôt qu'à ses pieds. */
       margin-bottom: 132px;
-      padding: 20px 30px;
+      /* Marges généreuses, et surtout en Y : c'est la ligne la PLUS LONGUE qui
+         fixe la largeur de la bulle, et rien ne garantit qu'elle soit au milieu.
+         Si elle est la première, elle atterrit là où la silhouette se referme et
+         se fait rogner. 36 px la ramènent dans la zone large — vérifié de une à
+         huit lignes. */
+      padding: 36px 50px;
       font-size: 17px;
       font-weight: 600;
       line-height: 1.35;
       /* Lettrage de BD : centré dans la bulle, jamais aligné à gauche. */
       text-align: center;
       color: var(--ink);
-      background: var(--paper);
-      border: 3px solid var(--ink);
-      /* Ovale plutôt que rectangle arrondi : les deux extrémités sont des arcs
-         entiers (rayon horizontal = 50 %), et les flancs gardent un segment
-         droit (rayon vertical = 26 % < 50 %) sur lequel la queue vient se
-         greffer quelle que soit la hauteur du texte. */
-      border-radius: 50% / 26%;
+      /* La forme vient d'une silhouette SVG, pas d'un `border-radius` : celui-ci
+         raisonne en rayons de coin, donc il laisse forcément des bords droits
+         entre les coins — c'est ce qui donnait une bulle carrée. Le SVG, lui,
+         garde ses PROPORTIONS quand on l'étire : la courbure ne s'aplatit
+         jamais, quelle que soit la longueur du texte. La forme est une
+         superellipse (n = 2,2) à peine gondolée, pour un trait tracé à la main
+         plutôt qu'un ovale de géométrie. */
+      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M197.2%2050.0L197.2%2056.0L196.0%2061.3L193.7%2066.2L190.3%2070.7L185.8%2074.9L180.2%2078.8L173.8%2082.2L166.7%2085.1L158.9%2087.7L150.5%2089.9L141.6%2091.6L132.3%2093.0L122.5%2094.1L112.1%2094.8L100.0%2095.2L87.8%2095.2L77.1%2094.8L67.0%2093.9L57.4%2092.6L48.2%2090.9L39.7%2088.6L32.0%2085.8L25.1%2082.6L19.2%2079.0L14.2%2074.9L10.4%2070.6L7.6%2065.9L5.9%2061.0L5.1%2055.9L5.2%2050.0L6.1%2044.2L7.9%2039.2L10.3%2034.5L13.4%2030.1L17.3%2025.9L21.9%2022.0L27.2%2018.3L33.4%2014.9L40.4%2011.8L48.2%209.1L56.9%206.9L66.3%205.1L76.5%203.9L87.4%203.3L100.0%203.2L112.5%203.6L123.2%204.6L133.0%206.0L142.1%207.9L150.5%2010.1L158.2%2012.7L165.2%2015.6L171.7%2018.8L177.5%2022.2L182.7%2025.9L187.2%2030.0L191.0%2034.3L194.0%2039.0L196.1%2044.1Z%27%20fill=%27%23f7f3e9%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linejoin=%27round%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/svg%3E");
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
       /* L'ombre porte sur la silhouette réelle, queue comprise — une box-shadow
          suivrait la boîte et laisserait la queue à plat. */
       filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .45));
@@ -135,24 +145,28 @@
        Il est sur un élément INTERNE, sinon le `overflow: hidden` rognerait la
        queue de la bulle, qui déborde volontairement. */
     #bubble-text {
-      max-height: calc(100vh - 200px);
+      /* 232 = marge basse (132) + marges hautes et basses de la bulle (72) +
+         padding du décor (12) + un peu d'air. Le compte doit couvrir TOUT ce qui
+         s'ajoute sous et autour du texte : borné à `100vh` moins la seule marge
+         basse, le sommet de la bulle sortait par le haut de la source. */
+      max-height: calc(100vh - 232px);
       overflow: hidden;
     }
 
     /* Queue de la bulle de dialogue : une corne courbe et effilée, pas un
        triangle. Taille fixe (jamais étirée), greffée sur le flanc de la bulle à
-       mi-hauteur — là où l'ovale offre son segment vertical. Le SVG déborde de
-       4 px sur la bulle : son aplat recouvre le trait à cet endroit et le
-       raccord disparaît. */
+       mi-hauteur, là où la silhouette est la plus verticale. Le SVG déborde de
+       10 px sur la bulle : son aplat recouvre le trait à cet endroit et le
+       raccord disparaît, même si la silhouette s'incurve un peu sous la mouche. */
     #bubble.speech::after {
       content: "";
       position: absolute;
       left: -44px;
       top: 54%;
       margin-top: -12px;
-      width: 48px;
+      width: 54px;
       height: 48px;
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2048%2048%27%3E%3Cpath%20d=%27M48%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2048%2023Z%27%20fill=%27%23f7f3e9%27/%3E%3Cpath%20d=%27M44%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2044%2023%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2054%2048%27%3E%3Cpath%20d=%27M54%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2054%2023Z%27%20fill=%27%23f7f3e9%27/%3E%3Cpath%20d=%27M44%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2044%2023%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E");
       background-repeat: no-repeat;
     }
 
@@ -160,8 +174,6 @@
        avec une réplique. */
     #bubble.thought {
       font-style: italic;
-      border: none;
-      border-radius: 0;
       background: transparent;
       padding: 26px 38px;
       /* Silhouette vectorielle plutôt que des gradients : en pourcentages,
