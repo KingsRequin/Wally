@@ -41,6 +41,12 @@ l'invariant central de cette spec.
 - **Sans tracker de kills épinglé en jeu, un compte est illisible.** Détecté à la
   résolution, refusé avec remboursement et explication — jamais un « 0 » annoncé à
   quelqu'un qui a bien joué.
+- **Le duel ne vaut qu'en Battle Royale.** Un tracker « BR Kills » ne compte pas les
+  parties de Mixtape, d'Arènes ni les modes temporaires. Trois parties d'affilée en BR
+  strict n'ont rien d'automatique : un squad qui bascule en Mixtape produirait un
+  **0–0**, que la règle du §8 rembourserait comme une panne de mesure alors que tout
+  le monde a bien joué. Le mode voulu est **annoncé au lancement** ; si le mode est
+  détectable dans le payload, on l'exploite, sinon on s'en tient à l'avertissement.
 
 ## 3. Déroulé
 
@@ -80,6 +86,18 @@ le verdict **est** cette soustraction.
 Les kills se lisent via `reader.py`, qui sait déjà que **les trackers de même libellé
 s'additionnent** (le total d'Azraël, c'est `specialEvent_kills` + `kills`). Cette
 lecture est réutilisée, pas refaite.
+
+> **Prérequis bloquant du lot 1 — `isInGame` n'a jamais été observé à `1`.** Tout le
+> découpage en manches repose sur ce champ, et les seules mesures dont on dispose ont
+> été prises **compte hors ligne**, où il vaut `0`. On ignore ce que valent `isInGame`
+> et `currentState` en lobby, en file d'attente et en partie, et donc si la transition
+> qu'on veut détecter existe sous cette forme.
+>
+> Coder le cœur du duel contre une supposition est précisément la faute que ce projet
+> a déjà payée plusieurs fois. **Dix secondes d'observation pendant qu'Azraël joue**
+> (`/tmp/probe_apex.py`) lèvent le doute, et la même séquence donne `stabilite_s` en
+> montrant quand le tracker de kills s'incrémente. À faire **avant** d'écrire la
+> machine à états, pas après.
 
 ## 5. Persistance
 
@@ -207,12 +225,59 @@ un sondage à deux options**. Mêmes variables de thème (`--glass`, `--line`, `
 - Au verdict : `.final`, le gagnant pulse en `--win`, le perdant s'estompe à 45 % —
   le comportement de clôture du sondage.
 
-Publié en **`sticky: true`** : le mécanisme existant le maintient sans péremption
-pendant tout le duel, puis le verdict part en `sticky: false` avec une durée de
-lecture. C'est exactement ce que `_purge_sticky_obsoletes` implémente.
+**Le widget n'est PAS `sticky`.** `renderWidget` appelle `clearWidgets()` : l'overlay
+n'a qu'**un seul slot**. Un duel dure environ une heure ; le premier sondage, clip ou
+bingo lancé pendant ce temps détruirait un widget sticky, que `recent()` ne
+rediffuserait qu'à une reconnexion. Le score disparaîtrait au bout de quelques minutes
+pour ne jamais revenir. `sticky` est fait pour des widgets de quelques minutes, pas
+pour un état de fond d'une heure.
+
+Le duel s'affiche donc **par apparitions**, et le cycle normal des widgets continue
+entre-temps :
+
+1. au **début** de chaque manche (avec la légende jouée, déjà dans le payload) ;
+2. à la **fin** de chaque manche, score mis à jour ;
+3. **à la demande** — « wally, affiche le score » — via un outil dédié (§11 bis) ;
+4. au **verdict**, en `.final`.
+
+Modèle visuel : le widget **`rps`** (chifoumi) existe déjà et met en scène un
+affrontement à deux dans ce thème. Il est plus proche du besoin que le sondage, dont
+on ne reprend que la grammaire des barres et le comportement de clôture.
 
 Deux pièges connus du fichier : `position: fixed` n'y vise jamais le viewport, et
 `overflow: hidden` y mange les pseudo-éléments.
+
+## 11 bis. Wally doit pouvoir répondre sur le duel
+
+Wally doit savoir dire **qui a lancé le duel**, **le score courant** et **le score de
+chaque manche** — en conversation, pas seulement à l'écran.
+
+**Le piège à ne pas refaire** : l'état de l'overlay n'était injecté qu'au prompt des
+*conversations*, et la cognition restait aveugle à ses propres effets (Wally relançait
+un bingo déjà en cours). L'état du duel va donc aux **deux** endroits, sur le patron
+de `current_stream_feed_block()` :
+
+- `build_system_prompt` → bloc « Duel Apex en cours » ;
+- le contexte cognitif (`AttentionContext`) → même bloc.
+
+Le bloc porte : le pseudo du demandeur, la manche courante, le score de chaque manche
+jouée et le total. Absent quand aucun duel ne court.
+
+**L'outil d'affichage refuse explicitement s'il n'y a pas de duel** plutôt que de
+publier un widget vide — une capacité sans donnée se répond par un négatif, jamais par
+un silence.
+
+## 11 ter. Le duel laisse une trace
+
+En fin de duel, le résultat part en `memory.add()` : « tu m'avais mis 11–6 le mois
+dernier » est exactement ce qui rend Wally vivant, et une revanche a besoin d'un
+précédent.
+
+**Pas de nouvelle table** — donc rien de gelé — et le journal quotidien récupère
+l'information gratuitement, puisqu'il lit déjà la mémoire.
+
+Attention à la convention : `memory.add(platform, user_id, ...)` attend l'**id brut**,
+jamais la forme préfixée ; la méthode construit `platform:user_id` elle-même.
 
 ## 12. Cadence et lot 0
 
@@ -282,7 +347,11 @@ relevés :
 - API muette, coupure de stream, reprise après rebuild ;
 - 0–0 sans aucun mouvement → remboursement, pas match nul ;
 - annulation et remise à zéro par un modérateur ; **refus** de la même demande venant
-  d'un viewer ordinaire.
+  d'un viewer ordinaire ;
+- le bloc de perception (§11 bis) porte le demandeur, le score de chaque manche et le
+  total, et **disparaît** quand aucun duel ne court ;
+- l'outil d'affichage **refuse** quand il n'y a pas de duel, au lieu de publier un
+  widget vide.
 
 Deux règles de la maison : **aucun test n'assertera une ligne d'implémentation** (ça
 verrouille le bug — vu 5 fois ici), et chaque test sera **rejoué contre le code d'avant**
@@ -299,8 +368,15 @@ pour prouver qu'il échoue vraiment.
 | `bot/twitch/api.py` | remboursement |
 | `bot/dashboard/routes/twitch_auth.py`, `setup.py`, `static/app.js` | scopes + slash |
 | `bot/dashboard/static/overlay.html`, `overlay.js` | widget `.duel` |
+| `bot/intelligence/prompts.py` | bloc « Duel Apex en cours » (§11 bis) |
+| `bot/intelligence/cognitive_loop.py` | même bloc dans `AttentionContext` |
+| `bot/intelligence/action_dispatcher.py` | outils : afficher le score, annuler, recommencer |
 | `bot/intelligence/persona/prompts/` | registre d'annonces |
-| `config.yaml` | ID de récompense, délais, cadence |
+| `config.yaml` | ID de récompense, délais, cadence, mode de jeu annoncé |
 
 **Gelés — ne pas toucher** : `service.py`, `tool.py`, `database.py`, `mixins/apex.py`
-(session Claude Code en cours sur le registre des profils Apex).
+(session Claude Code en cours sur le registre des profils Apex). Cette session a
+étendu son emprise à `dashboard/routes/apex_accounts.py`, `static/app.js` et
+`static/style.css` — or `app.js` porte le libellé des scopes à mettre à jour. **Le
+lot 0 ne peut pas démarrer tant qu'elle n'est pas close**, ou doit se limiter aux
+fichiers qu'elle ne touche pas.
