@@ -482,6 +482,47 @@ class TwitchAPI:
             logger.debug("Twitch clips API a échoué : {e}", e=exc)
             return []
 
+    REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
+
+    async def refund_redemption(self, reward_id: str, redemption_id: str) -> bool:
+        """Annule une redemption — les points sont RENDUS au viewer.
+
+        Utilise le token STREAMER : `channel:manage:redemptions` est un scope de
+        la chaîne, le token du bot ne l'a pas.
+
+        Comme partout sur Helix, un 200 ne prouve pas que l'ordre est passé : on
+        vérifie que le corps renvoie bien `status: CANCELED`. Ce projet a déjà
+        payé la leçon avec `is_sent` sur l'envoi de messages.
+        """
+        if not (reward_id and redemption_id):
+            logger.warning("Remboursement impossible : reward_id ou redemption_id vide")
+            return False
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.patch(
+                    self.REDEMPTIONS_URL,
+                    params={"broadcaster_id": self._broadcaster_id,
+                            "reward_id": reward_id, "id": redemption_id},
+                    json={"status": "CANCELED"},
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+            if resp.status_code != 200:
+                logger.error("Remboursement refusé HTTP {c} : {t}",
+                             c=resp.status_code, t=resp.text[:200])
+                return False
+            data = (resp.json() or {}).get("data") or []
+            statut = (data[0] or {}).get("status") if data else None
+            if statut != "CANCELED":
+                logger.error("Remboursement non appliqué — statut rendu : {s}", s=statut)
+                return False
+            logger.info("Points rendus au viewer (redemption {r})", r=redemption_id)
+            return True
+        except Exception as exc:  # noqa: BLE001 — un remboursement raté ne tue pas le duel
+            logger.error("Remboursement en erreur : {e}", e=exc)
+            return False
+
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
 
