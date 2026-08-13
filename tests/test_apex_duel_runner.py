@@ -22,7 +22,7 @@ def _runner(profil_viewer=None):
     api.refund_redemption = AsyncMock(return_value=True)
     api.recompenses_gerables = AsyncMock(return_value=[])
     api.creer_recompense = AsyncMock(return_value="")
-    return DuelRunner(client=client, db=db, api=api, feed=MagicMock(),
+    return DuelRunner(client=client, db=db, api=api,
                       annoncer=AsyncMock(), azrael_uid="7", plateforme="PC"), client, db, api
 
 

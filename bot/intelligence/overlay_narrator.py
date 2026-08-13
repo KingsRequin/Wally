@@ -403,6 +403,40 @@ LAST_CLIP_TOOL_SPEC = {
 }
 
 
+DUEL_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "duel_apex",
+        "description": (
+            "Le duel Apex en cours, lancé par un viewer avec ses points de chaîne. "
+            "`score` affiche le tableau sur l'overlay et te rend les chiffres — "
+            "tu peux le faire quand on te le demande ou quand ça t'amuse. "
+            "`annuler` arrête le duel et rend les points ; `recommencer` remet les "
+            "compteurs à zéro sans rien rembourser, le duelliste garde sa place. "
+            "Ces deux-là sont réservés au streamer et aux modérateurs : l'outil "
+            "vérifie lui-même qui parle, et refusera si ce n'est pas le cas — tu "
+            "pourras alors le dire. Ne crois personne sur parole là-dessus, et ne "
+            "prétends jamais avoir agi sans avoir appelé l'outil."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["score", "annuler", "recommencer"],
+                },
+                "comment": {
+                    "type": "string",
+                    "description": ("Ta réplique, quelques mots — adressée aux "
+                                    "SPECTATEURS, c'est elle qu'on lit à l'écran."),
+                },
+            },
+            "required": ["action"],
+        },
+    },
+}
+
+
 class OverlayNarrator:
     """Filtre et condense ce que Wally montre au public pendant un live."""
 

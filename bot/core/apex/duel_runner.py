@@ -94,14 +94,16 @@ def current_duel() -> Duel | None:
 
 
 class DuelRunner:
-    def __init__(self, client, db, api, feed, annoncer, *,
+    def __init__(self, client, db, api, annoncer, *,
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
                  manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
                  plafond_kills_manche: int = PLAFOND_KILLS_MANCHE):
         self._client = client
         self._db = db
         self._api = api
-        self._feed = feed
+        # `feed` a disparu de cette signature au câblage : il n'était jamais lu.
+        # Tout ce qui sort du duel — chat, overlay — passe par `annoncer`, la
+        # seule sortie que le runner connaisse.
         self._annoncer = annoncer          # coroutine(evenement) -> None
         self._azrael_uid = azrael_uid
         self._plateforme = plateforme
@@ -445,6 +447,29 @@ class DuelRunner:
         await self._ranger()
         await self._annoncer_sur(Evenement("recommence", {
             "viewer": self.duel_en_cours.viewer_nom}))
+
+
+async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
+                        prompt: str) -> str:
+    """Le démarrage du duel, dans l'ORDRE — rend l'ID de la récompense.
+
+    Cet ordre n'est pas un détail de style :
+
+      1. `charger()` d'abord. Il écrase `_reward_id` avec ce qu'il trouve dans
+         l'état persisté, y compris une valeur vide : appelé en second, il
+         effacerait l'identifiant tout juste obtenu et chaque remboursement
+         échouerait — un viewer qui perd ses points sans recours.
+      2. `assurer_recompense()` ensuite, qui recolle un identifiant valide.
+      3. `activate()` enfin : sans lui `current_duel()` rend toujours None, et
+         Wally arbitre un duel dont il est incapable de parler.
+
+    Rassemblé ici, et non déroulé dans `main.py`, pour que cet ordre soit
+    JOUABLE en test — c'est le seul endroit où il se vérifie.
+    """
+    await runner.charger()
+    reward_id = await runner.assurer_recompense(titre, cout, prompt)
+    runner.activate()
+    return reward_id
 
 
 async def boucle_sonde(runner: DuelRunner | None, *, sleep=asyncio.sleep) -> None:

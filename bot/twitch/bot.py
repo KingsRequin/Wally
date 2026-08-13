@@ -20,6 +20,7 @@ EVENTSUB_RESTART_BACKOFF_MAX_S = 1800
 
 if TYPE_CHECKING:
     from bot.config import Config
+    from bot.core.apex.duel_runner import DuelRunner
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.intelligence.memory.service import MemoryService
@@ -74,6 +75,10 @@ class WallyTwitch(commands.Bot):
         self._bg_tasks: set[asyncio.Task] = set()
         self._init_eventsub_restart_state()
         self.fact_extractor = None  # set by main.py after construction
+        # Duel Apex payé en points de chaîne — construit par main.py quand la
+        # config l'active. Absent, la sonde s'arrête d'elle-même et l'achat
+        # d'une récompense est remboursé (cf. `events/redemptions.py`).
+        self.duel_runner: Optional["DuelRunner"] = None
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]
         # Cached stream info — alimenté par StreamWatcher (bot.core.stream_watcher)
@@ -132,7 +137,19 @@ class WallyTwitch(commands.Bot):
             self._poll_guest_streams(),
             self._resolve_missing_usernames(),
             self._eventsub_watchdog(),
+            self._duel_poll_loop(),
         )
+
+    async def _duel_poll_loop(self) -> None:
+        """Sonde le duel Apex en cours, s'il y en a un.
+
+        Le corps vit dans `bot.core.apex.duel_runner` : il s'y teste sans monter
+        un bot twitchio, et c'est là que se vérifient ses deux exigences —
+        aucune requête hors duel, et une horloge murale.
+        """
+        from bot.core.apex.duel_runner import boucle_sonde
+
+        await boucle_sonde(self.duel_runner)
 
     async def _irc_run(self) -> None:
         """Maintain IRC connection for sending messages to guest channels.

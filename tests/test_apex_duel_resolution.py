@@ -21,7 +21,7 @@ def _runner(profils):
     db = MagicMock(); db.get_state = AsyncMock(return_value=None); db.set_state = AsyncMock()
     api = MagicMock(); api.refund_redemption = AsyncMock(return_value=True)
     annoncer = AsyncMock()
-    r = DuelRunner(client=client, db=db, api=api, feed=MagicMock(),
+    r = DuelRunner(client=client, db=db, api=api,
                    annoncer=annoncer, azrael_uid="7", plateforme="PC")
     return r, api, annoncer
 

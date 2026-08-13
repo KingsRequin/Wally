@@ -15,7 +15,7 @@ import pytest
 
 from bot.core.apex.duel import Duel, Etat
 from bot.core.apex.duel_runner import peut_controler
-from bot.twitch.handlers import handle_message
+from bot.twitch.handlers import handle_message, make_tool_executor
 from tests.test_twitch_handlers import make_bot, make_payload
 
 
@@ -123,6 +123,25 @@ async def test_sans_duel_l_outil_le_dit_au_lieu_de_se_taire(monkeypatch):
 
     bot.duel_runner.annuler.assert_not_awaited()
     assert reponse["status"] == "nothing"
+
+
+@pytest.mark.asyncio
+async def test_un_badge_en_dict_vaut_un_badge_twitchio():
+    """Le chemin vocal passe l'autorité en dict (`set_id`), le chat en objets.
+
+    Le vocal n'a pas de badge à lire : l'autorité y est établie par la liste
+    blanche `voice.requesters`, en amont, et voyage sous la même forme.
+    """
+    bot = _bot_avec_duel()
+    executeur = make_tool_executor(
+        bot, platform="discord", user_id="1", author="azrael",
+        channel="azrael_ttv", badges=[{"set_id": "broadcaster"}],
+    )
+
+    reponse = json.loads(await executeur("duel_apex", json.dumps({"action": "recommencer"})))
+
+    bot.duel_runner.recommencer.assert_awaited_once()
+    assert reponse["status"] == "ok"
 
 
 @pytest.mark.asyncio

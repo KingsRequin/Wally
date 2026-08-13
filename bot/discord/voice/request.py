@@ -111,6 +111,10 @@ async def _answer(bot, text: str, *, requester: dict, speaker: str) -> str:
         channel=str(requester.get("twitch_login") or ""),
         # Les deux seuls demandeurs sont le streamer et le créateur du bot.
         user_roles=["everyone", "moderator", "admin"],
+        # Même raison pour le duel : l'autorisation se lit sur un badge, que la
+        # voix ne porte pas. Elle est établie ICI, par la liste blanche des
+        # demandeurs de `voice.requesters` — jamais par ce que dit la phrase.
+        badges=[{"set_id": "broadcaster"}],
     )
 
     from bot.intelligence.prompts import load_prompt

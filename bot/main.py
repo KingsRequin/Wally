@@ -593,6 +593,68 @@ async def main() -> None:
             _apex_task.add_done_callback(_stream_voice_tasks.discard)
             twitch_bot.apex_watcher = apex_watcher
             logger.info("ApexWatcher démarré pour {a}", a=_apex_conf.streamer_account)
+
+        # Duel Apex payé en points de chaîne. Câblé ICI et non dans
+        # `bootstrap.py` : il lui faut le bot Twitch (API de chat pour les
+        # annonces, remboursement des redemptions), qui n'existe qu'à ce stade —
+        # même raison que l'`ApexWatcher` juste au-dessus.
+        _duel_conf = getattr(_apex_conf, "duel", None) if _apex_conf else None
+        if (apex_api is not None and _apex_conf is not None
+                and _duel_conf is not None and _duel_conf.active):
+            from bot.core.apex.client import ApexClient
+            from bot.core.apex.duel_runner import DuelRunner, armer_le_duel
+            from bot.core.apex.seed import uid_declare
+            from bot.twitch.duel_announce import DuelAnnonceur
+
+            _azrael_uid = uid_declare(
+                getattr(config.voice, "requesters", []), _apex_conf.streamer_account
+            )
+            if not _azrael_uid:
+                logger.warning(
+                    "Duel Apex indisponible : aucun uid déclaré pour {a} dans "
+                    "voice.requesters (apex_uid)", a=_apex_conf.streamer_account,
+                )
+            else:
+                try:
+                    # Client Apex DÉDIÉ : la sonde du duel tourne à 2 s alors que
+                    # le TTL de `bridge` est de 15 s. Un client séparé évite que
+                    # ses relevés ne deviennent la réponse servie au reste du bot.
+                    _duel_runner = DuelRunner(
+                        client=ApexClient(os.getenv("APEX_API_KEY", "")),
+                        db=db,
+                        api=twitch_bot.twitch_api,
+                        annoncer=DuelAnnonceur(twitch_bot,
+                                               channel=_streamer_name.lower()),
+                        azrael_uid=_azrael_uid,
+                        plateforme=_apex_conf.streamer_platform,
+                        cadence_s=float(_duel_conf.cadence_s),
+                        manches=int(_duel_conf.manches),
+                        attente_squad_s=float(_duel_conf.attente_squad_min) * 60,
+                        plafond_kills_manche=int(_duel_conf.plafond_kills_manche),
+                    )
+                    # Reprise de l'état, récompense, source globale : l'ordre
+                    # des trois est dans `armer_le_duel`, où il se teste.
+                    _reward_id = await armer_le_duel(
+                        _duel_runner, titre=_duel_conf.titre,
+                        cout=int(_duel_conf.cout), prompt=_duel_conf.prompt,
+                    )
+                    # En DERNIER : tant que le runner n'est pas attaché, un achat
+                    # de récompense est remboursé par `events/redemptions.py` au
+                    # lieu d'ouvrir un duel à moitié armé.
+                    twitch_bot.duel_runner = _duel_runner
+                    logger.info(
+                        "Duel Apex armé (uid {u}, récompense {r})",
+                        u=_azrael_uid, r=_reward_id or "INDISPONIBLE",
+                    )
+                except Exception as exc:  # noqa: BLE001 — un duel raté ne bloque pas le boot
+                    # Même règle que le canari : un bot qui tourne sans duel vaut
+                    # mieux qu'un bot qui refuse de démarrer.
+                    logger.error("Duel Apex non armé : {e}", e=exc)
+        elif _duel_conf is not None and not _duel_conf.active:
+            # Le drapeau est LU : c'est ce qui permet de couper le duel sans
+            # supprimer la récompense de la chaîne.
+            logger.info("Duel Apex désactivé en configuration (apex.duel.active)")
+
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())
         _stream_voice_tasks.add(_watch_task)

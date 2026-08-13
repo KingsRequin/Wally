@@ -10,6 +10,27 @@ from __future__ import annotations
 from loguru import logger
 
 
+def uid_declare(requesters: list[dict], apex_name: str) -> str:
+    """L'uid Apex déclaré en config pour ce compte, `""` s'il n'y en a pas.
+
+    Même source que `seed_known_accounts` — `voice.requesters` — plutôt qu'une
+    variable d'environnement de plus : le compte du streamer y est déjà, avec
+    son uid. Comparaison insensible à la casse, `config.apex.streamer_account`
+    et `apex_name` étant saisis à la main dans deux sections différentes.
+
+    Aucun rapprochement approximatif ici : un duel arbitré sur le compte d'un
+    homonyme serait pire qu'un duel indisponible.
+    """
+    cible = (apex_name or "").strip().lower()
+    if not cible:
+        return ""
+    for entry in requesters or []:
+        entry = entry or {}
+        if str(entry.get("apex_name") or "").strip().lower() == cible:
+            return str(entry.get("apex_uid") or "").strip()
+    return ""
+
+
 async def seed_known_accounts(db, requesters: list[dict]) -> int:
     """Inscrit les comptes déclarés en config. Rend le nombre d'entrées créées.
 

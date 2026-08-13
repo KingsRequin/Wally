@@ -35,7 +35,12 @@ _DISCORD_SEULEMENT = {
     "join_voice": "pilote un salon vocal Discord",
     "leave_voice": "pilote un salon vocal Discord",
 }
-_TWITCH_SEULEMENT: dict[str, str] = {}
+_TWITCH_SEULEMENT: dict[str, str] = {
+    # L'autorisation d'annuler ou de recommencer se lit sur le badge de
+    # modérateur du message Twitch. Un salon Discord n'en porte pas : offrir
+    # l'outil là-bas ne donnerait qu'un refus systématique.
+    "duel_apex": "l'autorisation vient du badge de modérateur Twitch",
+}
 
 
 def _bot_avec_tout():
