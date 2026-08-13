@@ -100,16 +100,35 @@
    *  `thinking(false)` JUSTE avant chaque réponse — la bulle n'est pas en train
    *  de partir, elle est remplacée, et on ferait un « pop » avant chaque
    *  réplique. */
-  // Le film ondule d'abord, il ne cède qu'à 74 % de l'animation : les gouttes
-  // partent À CE MOMENT-LÀ. Émises au début, elles jaillissaient d'une bulle
-  // encore intacte — on voyait des particules, pas une rupture.
-  const POP_MS = 380;
-  const RUPTURE = Math.round(POP_MS * 0.74);
+  // La rupture tombe à 38 % d'une animation volontairement très courte : une
+  // bulle de savon ne dure que quelques images. Gouttes ET anneau partent à cet
+  // instant précis — émis plus tôt, ils jaillissaient d'une forme encore
+  // intacte, et on voyait des particules au lieu d'un éclatement.
+  const POP_MS = 130;
+  const RUPTURE = Math.round(POP_MS * 0.38);
+
+  /** L'anneau de film qui s'écarte de la forme au moment où elle cède.
+   *  `forme` vaut `bubble` (la silhouette réelle, queue comprise) ou `card`. */
+  function ring(el, forme) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    const n = document.createElement("div");
+    n.className = `burst-ring ${forme}`;
+    n.style.left = `${r.left}px`;
+    n.style.top = `${r.top}px`;
+    n.style.width = `${r.width}px`;
+    n.style.height = `${r.height}px`;
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 380);
+  }
 
   function popBubble() {
     if (!bubble.classList.contains("visible")) return;
     bubble.classList.add("popping");
-    setTimeout(() => burst(bubble, { count: 6, spread: 20, ms: 320, drop: "var(--paper)" }), RUPTURE);
+    setTimeout(() => {
+      ring(bubble, "bubble");
+      burst(bubble, { count: 6, spread: 22, ms: 320, drop: "var(--paper)" });
+    }, RUPTURE);
     setTimeout(() => bubble.classList.remove("popping"), POP_MS);
     hideBubble();
   }
@@ -1165,16 +1184,19 @@
       // lisent comme deux événements ; avec, comme un seul mouvement.
       box.classList.add("popping", "leaving");
       box.classList.remove("visible");
-      setTimeout(() => burst(box, { count: 11, spread: 34, ms: 380, drop: "rgba(255,255,255,.92)" }), RUPTURE);
+      setTimeout(() => {
+        ring(box, "card");
+        burst(box, { count: 11, spread: 36, ms: 360, drop: "rgba(255,255,255,.92)" });
+      }, RUPTURE);
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
       // autre chose. Vaut pour bingo, hangman et poll.
-      // Appelée à la RUPTURE, pas au début de la sortie : le widget reste
-      // entier pendant qu'il ondule, deux cartes pleinement visibles l'une sur
-      // l'autre seraient illisibles. Le recouvrement porte donc sur l'éclat.
-      widgetTimer = setTimeout(playNext, RUPTURE);
-      setTimeout(() => disposeWidget(box), POP_MS + 80);
+      // Appelée quand la forme a fini de céder : la suivante entre DANS les
+      // débris — l'anneau et les gouttes vivent 320 ms de plus. Deux cartes
+      // pleines l'une sur l'autre seraient illisibles.
+      widgetTimer = setTimeout(playNext, POP_MS);
+      setTimeout(() => disposeWidget(box), POP_MS + 40);
     }, seconds * 1000);
   }
 
