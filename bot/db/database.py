@@ -404,6 +404,39 @@ CREATE TABLE IF NOT EXISTS apex_accounts (
     linked_at REAL NOT NULL
 );
 
+-- Tout profil Apex déjà croisé, qu'il appartienne à quelqu'un d'ici ou non.
+-- `apex_accounts` ne peut pas jouer ce rôle : sa clé est l'identité Discord ou
+-- Twitch de la personne, et un joueur cité en passant n'en a pas.
+--
+-- Mesuré le 2026-08-13 : `/bridge?player=licornekssandre` échoue (« low
+-- priority search service »), y compris avec la casse officielle, et
+-- `/nametouid` tape dans le même index cassé — seul `/bridge?uid=` répond. Sans
+-- registre, cet uid était perdu dès la réponse rendue et il fallait le
+-- redonner à chaque question.
+CREATE TABLE IF NOT EXISTS apex_profiles (
+    uid        TEXT PRIMARY KEY,
+    apex_name  TEXT NOT NULL,          -- le nom officiel, au dernier passage
+    platform   TEXT NOT NULL,
+    first_seen REAL NOT NULL,
+    last_seen  REAL NOT NULL,
+    seen_count INTEGER NOT NULL DEFAULT 1
+);
+
+-- Tous les noms qui ont mené à ce profil : le nom officiel rendu par l'API,
+-- mais AUSSI celui qui a été tapé. Le second est le seul qui rattrape les
+-- comptes que la recherche par nom n'indexe pas. `COLLATE NOCASE` sur la clé :
+-- « LicorneKssandre » et « licornekssandre » sont le même nom, et le stocker
+-- deux fois multiplierait les lignes à chaque passage du watcher.
+CREATE TABLE IF NOT EXISTS apex_profile_names (
+    uid     TEXT NOT NULL,
+    name    TEXT NOT NULL COLLATE NOCASE,
+    seen_at REAL NOT NULL,
+    PRIMARY KEY (uid, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_apex_profile_names_nom
+    ON apex_profile_names (name);
+
 -- Relevés successifs des compteurs Apex d'un compte suivi. Une ligne n'est
 -- écrite que lorsqu'une valeur CHANGE : le compteur est cumulatif, donc entre
 -- deux relevés la valeur est constante par définition et rien n'est perdu.

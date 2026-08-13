@@ -119,10 +119,15 @@ APEX_LEGENDS_TOOL = {
                         "L'identifiant numérique du compte Apex. À utiliser "
                         "quand la recherche par pseudo a échoué : l'API rate "
                         "des comptes bien réels, ce n'est pas une faute de "
-                        "frappe. On le lit à la fin de l'URL de la page du "
-                        "joueur sur apexlegendsstatus.com. Combine-le avec "
-                        "remember=true si la personne donne le SIEN, pour ne "
-                        "plus jamais avoir à le redemander."
+                        "frappe. Il se lit sur apexlegendsstatus.com dans "
+                        "l'adresse de la forme profile/uid/PC/1234567890 — tu "
+                        "peux d'ailleurs me passer ce lien entier, j'en tire "
+                        "le numéro. L'autre forme (profile/PC/pseudo) ne "
+                        "contient pas d'uid et n'aide en rien. Donne aussi "
+                        "player_name avec le pseudo employé : je retiens les "
+                        "deux ensemble, et ce pseudo suffira les fois "
+                        "suivantes. Combine-le avec remember=true si la "
+                        "personne donne le SIEN."
                     ),
                 },
                 "legend": {

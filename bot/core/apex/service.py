@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from collections import OrderedDict
 from datetime import datetime
@@ -75,12 +76,51 @@ def _classements(stat) -> str:
     return f" ({' — '.join(morceaux)})" if morceaux else ""
 
 
+# La page d'un profil sur apexlegendsstatus.com. Deux formes existent :
+# `/profile/<plateforme>/<pseudo>` et `/profile/uid/<plateforme>/<uid>`. Seule
+# la seconde sert : la première ne contient que le pseudo, c'est-à-dire
+# exactement ce que la recherche par nom de l'API refuse déjà.
+_ALS = "https://apexlegendsstatus.com/profile/uid"
+_URL_UID = re.compile(r"profile/uid/[A-Za-z0-9]+/(\d+)")
+
+
+def lien_profil(uid: str, platform: str = "PC") -> str:
+    """L'adresse de la page ALS d'un profil, à donner pour vérifier de qui on
+    parle. Vide sans uid — un lien par pseudo ne prouverait rien."""
+    uid = str(uid or "").strip()
+    if not uid:
+        return ""
+    return f"{_ALS}/{(platform or '').strip() or 'PC'}/{uid}"
+
+
+def _rapprochement(demande: str, nom: str, uid: str, platform: str) -> str:
+    """Ce qu'on ajoute quand le nom demandé n'existait pas tel quel.
+
+    Deux pseudos voisins peuvent appartenir à deux joueurs, et personne ne
+    valide derrière : on annonce le rapprochement ET on donne la page du profil,
+    seule façon de trancher.
+    """
+    return (
+        f"(Aucun profil connu ne s'appelle exactement « {demande} » : "
+        f"c'est {nom} que je te montre, le plus proche que j'aie déjà croisé. "
+        f"Vérifie que c'est bien lui : {lien_profil(uid, platform)})"
+    )
+
+
 def _uid_valide(uid: str) -> str:
     """Un uid Apex est une suite de chiffres. Tout le reste est écarté ici,
     plutôt que d'être envoyé tel quel à l'API — le modèle confond volontiers
-    « uid » et « pseudo »."""
+    « uid » et « pseudo ».
+
+    Une URL de profil ALS est acceptée et réduite à son uid : personne ne va
+    extraire le nombre à la main, on colle le lien. Celle qui ne porte qu'un
+    pseudo est refusée — en tirer un « uid » enverrait une requête absurde.
+    """
     nettoye = str(uid or "").strip()
-    return nettoye if nettoye.isdigit() else ""
+    if nettoye.isdigit():
+        return nettoye
+    trouve = _URL_UID.search(nettoye)
+    return trouve.group(1) if trouve else ""
 
 
 def _rang(n: int) -> str:
@@ -195,6 +235,14 @@ class ApexLegendsService:
         # Un uid DONNÉ l'emporte sur celui qu'on avait mémorisé : c'est le seul
         # recours quand la recherche par pseudo échoue (cf. `_introuvable`).
         uid = _uid_valide(uid) or (await self._resolve_uid(requester, player_name) or "")
+        # À défaut, un profil DÉJÀ CROISÉ portant ce nom. Sans ce repli, on
+        # repartirait sur la recherche par pseudo — celle qui rate des comptes
+        # bien réels — alors qu'on tient son uid depuis la dernière fois.
+        connu = None
+        if not uid and cherche:
+            connu = await self._registre(cherche)
+            if connu:
+                uid, platform = connu["uid"], connu["platform"] or platform
         if not cherche and not uid:
             return "Il me faut un pseudo Apex pour chercher."
         data = await self._client.get(
@@ -207,9 +255,15 @@ class ApexLegendsService:
         if profil is None:
             erreur = str(data.get("Error") or "") if isinstance(data, dict) else ""
             return self._introuvable(cherche, erreur, cherche_par_uid=bool(uid))
+        # Un nom seulement RAPPROCHÉ n'entre pas au registre : il y deviendrait
+        # un alias exact du profil, et la fois suivante plus rien ne signalerait
+        # le rapprochement. Une visée fautive se figerait en silence.
+        await self._consigner(profil, "" if connu and not connu["exact"] else cherche)
         if remember and requester:
             await self._remember(profil, cherche, platform, requester, requester_name)
         rendu = self._render_profile(profil, legend=legend)
+        if connu and not connu["exact"]:
+            rendu = f"{rendu}\n{_rapprochement(cherche, profil.name, profil.uid, profil.platform)}"
         # Les comptes qu'on ne sonde pas n'ont pour historique que leurs
         # consultations : c'est ici, et nulle part ailleurs, qu'ils en gagnent un.
         if rappel := await self._comparer_a_la_derniere_fois(profil):
@@ -277,6 +331,24 @@ class ApexLegendsService:
         lien = await self._lien(player_name, requester)
         cible = _uid_valide(uid) or ((lien["uid"] or "") if lien else "")
         nom_cible = (lien["apex_name"] if lien else "") or player_name.strip()
+        # Le registre AVANT l'appel réseau : un profil déjà croisé donne son uid
+        # sans rien demander à l'API — dont la recherche par nom, elle, échoue
+        # justement sur les comptes qui nous ont amenés à retenir cet uid.
+        connu = None
+        if not cible and player_name.strip() and (connu := await self._registre(player_name)):
+            cible, nom_cible = connu["uid"], connu["apex_name"] or nom_cible
+
+        def _signe(texte: str) -> str:
+            """Le doute sur QUI est visé ne dépend pas de l'action demandée :
+            une progression attribuée au mauvais compte trompe autant qu'un
+            profil."""
+            if not connu or connu["exact"]:
+                return texte
+            garde = _rapprochement(
+                player_name, connu["apex_name"], connu["uid"], connu["platform"]
+            )
+            return f"{texte}\n{garde}"
+
         if not cible:
             profil = await self.fetch_profile(
                 *(await self._resolve(player_name, platform, requester))
@@ -306,7 +378,7 @@ class ApexLegendsService:
                 texte += (" C'est le compte de la personne à qui tu réponds, "
                           "faute de pseudo précisé : si la question portait sur "
                           "quelqu'un d'autre, rappelle-moi avec player_name.")
-            return texte
+            return _signe(texte)
 
         from bot.core.apex.chart import libelle as libelle_notion
 
@@ -361,7 +433,7 @@ class ApexLegendsService:
                 " [Tu ne peux pas envoyer d'image ici : donne les chiffres, et "
                 "n'invente surtout pas de lien vers un graphique.]"
             )
-        return texte
+        return _signe(texte)
 
     _MAX_COURBES = 20
 
@@ -415,9 +487,11 @@ class ApexLegendsService:
         return (
             f"{cherche} : introuvable par pseudo ({erreur or 'compte inconnu'}). "
             "La recherche par nom de l'API rate des comptes pourtant bien réels — "
-            "ce n'est pas forcément une faute de frappe. Demande son uid Apex "
-            "(le nombre à la fin de l'URL de sa page sur apexlegendsstatus.com) "
-            "et rappelle-moi avec le paramètre `uid`."
+            "ce n'est pas forcément une faute de frappe. Demande le lien de sa "
+            "page sur apexlegendsstatus.com dans sa forme qui contient l'uid "
+            f"({_ALS}/PC/1234567890 — un nombre, pas un pseudo) et rappelle-moi "
+            "avec le paramètre `uid`. Une fois vu, je retiens le compte et son "
+            "pseudo : tu n'auras pas à le redonner."
         )
 
     async def fetch_profile(
@@ -435,7 +509,14 @@ class ApexLegendsService:
         data = await self._client.get("bridge", {**params, "platform": platform or "PC"})
         if isinstance(data, str):
             return None
-        return read_profile(data)
+        profil = read_profile(data)
+        if profil is not None:
+            # Le watcher passe par ici : ce qu'il voit profite aux questions
+            # posées plus tard dans le chat. Le pseudo n'est retenu que si c'est
+            # LUI qui a trouvé le compte — quand l'uid a servi, personne ne l'a
+            # validé et il n'a rien à faire au registre.
+            await self._consigner(profil, "" if uid else player)
+        return profil
 
     async def _resolve(
         self, player_name: str, platform: str, requester: str | None
@@ -477,6 +558,41 @@ class ApexLegendsService:
         """L'uid mémorisé du joueur visé, s'il y en a un."""
         lien = await self._lien(player_name, requester)
         return (lien["uid"] or None) if lien else None
+
+    async def _registre(self, nom: str) -> dict | None:
+        """Le profil déjà croisé que ce nom désigne, ou None.
+
+        Le registre est un bonus : une base grippée ne doit pas empêcher la
+        recherche normale, comme pour les comptes déclarés.
+        """
+        if self._db is None:
+            return None
+        try:
+            return await self._db.apex_uid_pour_nom(nom)
+        except Exception as e:                       # noqa: BLE001
+            logger.warning("Apex: registre des profils illisible: {e}", e=e)
+            return None
+
+    async def _consigner(self, profil: PlayerProfile, tape: str = "") -> None:
+        """Inscrit au registre le profil qu'on vient de lire.
+
+        Appelé sur CHAQUE lecture réussie, d'où qu'elle vienne : c'est ainsi
+        qu'un uid croisé une fois reste joignable par son pseudo ensuite. Le nom
+        TAPÉ est retenu à côté du nom officiel — c'est le seul moment où l'on
+        tient les deux bouts, et c'est lui qui rattrape les comptes que la
+        recherche par nom de l'API n'indexe pas.
+        """
+        if self._db is None or not profil.uid or not profil.name:
+            return
+        try:
+            await self._db.apex_remember_profile(
+                uid=profil.uid,
+                apex_name=profil.name,
+                platform=profil.platform or "PC",
+                saisi=tape,
+            )
+        except Exception as e:                       # noqa: BLE001
+            logger.warning("Apex: profil non consigné: {e}", e=e)
 
     async def _remember(
         self, profil, cherche: str, platform: str, requester: str, requester_name: str
@@ -596,6 +712,14 @@ class ApexLegendsService:
         if panel in ("rank", "status", "stats", "progress"):
             cherche, platform = await self._resolve(player, platform, requester)
             uid = await self._resolve_uid(requester, player)
+            # Même repli que dans le chat : sans lui, « affiche les stats de X »
+            # échouait à l'écran pour un compte que la conversation, elle,
+            # trouvait — deux réponses différentes à la même question.
+            connu = None
+            if not uid and cherche:
+                connu = await self._registre(cherche)
+                if connu:
+                    uid, platform = connu["uid"], connu["platform"] or platform
             if not cherche and not uid:
                 return None
             data = await self._client.get(
@@ -605,6 +729,10 @@ class ApexLegendsService:
             if isinstance(data, str):
                 return None
             profil = read_profile(data)
+            if profil is not None:
+                await self._consigner(
+                    profil, "" if connu and not connu["exact"] else cherche
+                )
             if panel == "progress":
                 try:
                     fenetre = await self._fenetre(

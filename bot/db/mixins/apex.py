@@ -74,6 +74,90 @@ class ApexMixin:
             return exact
         return await self._apex_find_approchant(display_name)
 
+    # ── Le registre des profils croisés ──────────────────────────────────────
+
+    async def apex_remember_profile(
+        self, *, uid: str, apex_name: str, platform: str, saisi: str = ""
+    ) -> None:
+        """Consigne un profil vu, et le(s) nom(s) sous le(s)quel(s) on l'a vu.
+
+        `saisi` est le pseudo que la personne a employé. Il compte autant que le
+        nom officiel : c'est lui qu'on redira la prochaine fois, et l'API ne
+        sait pas forcément le résoudre — c'est même tout l'intérêt du registre.
+        """
+        if not uid or not apex_name:
+            return
+        maintenant = time.time()
+        await self.execute(
+            """
+            INSERT INTO apex_profiles (uid, apex_name, platform, first_seen, last_seen, seen_count)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(uid) DO UPDATE SET
+                apex_name  = excluded.apex_name,
+                platform   = excluded.platform,
+                last_seen  = excluded.last_seen,
+                seen_count = seen_count + 1
+            """,
+            (uid, apex_name, platform or "PC", maintenant, maintenant),
+        )
+        for nom in {apex_name, saisi.strip()} - {""}:
+            await self.execute(
+                "INSERT INTO apex_profile_names (uid, name, seen_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(uid, name) DO UPDATE SET seen_at = excluded.seen_at",
+                (uid, nom, maintenant),
+            )
+
+    async def apex_uid_pour_nom(self, nom: str) -> dict | None:
+        """Le profil déjà croisé que ce nom désigne, ou None.
+
+        Rend `exact` : un rapprochement approximatif doit pouvoir être ANNONCÉ,
+        avec le lien du profil, plutôt que d'être servi comme une certitude —
+        deux joueurs peuvent porter des pseudos voisins et personne ne valide
+        derrière.
+        """
+        nom = (nom or "").strip()
+        if not nom:
+            return None
+        exact = await self.fetch_one(
+            "SELECT p.uid, p.apex_name, p.platform FROM apex_profile_names n "
+            "JOIN apex_profiles p ON p.uid = n.uid "
+            "WHERE n.name = ? ORDER BY n.seen_at DESC LIMIT 1",
+            (nom,),
+        )
+        if exact is not None:
+            return {**dict(exact), "exact": True}
+        return await self._apex_profil_approchant(nom)
+
+    async def _apex_profil_approchant(self, nom: str) -> dict | None:
+        """Le profil dont un des noms connus ressemble le plus à `nom`.
+
+        Même règle que pour les comptes déclarés : `matches_name` et son
+        plancher de trois caractères, pour qu'« az » ne désigne pas le premier
+        venu.
+        """
+        from bot.core.account_linker import matches_name, score
+
+        rows = await self.fetch_all(
+            "SELECT n.name, p.uid, p.apex_name, p.platform FROM apex_profile_names n "
+            "JOIN apex_profiles p ON p.uid = n.uid"
+        )
+        meilleur, meilleur_score = None, 0.0
+        for row in rows or []:
+            candidat = str(row["name"] or "")
+            if not candidat or not matches_name(candidat, nom):
+                continue
+            s = score(candidat, nom)
+            if s > meilleur_score:
+                meilleur, meilleur_score = row, s
+        if meilleur is None:
+            return None
+        return {
+            "uid": meilleur["uid"],
+            "apex_name": meilleur["apex_name"],
+            "platform": meilleur["platform"],
+            "exact": False,
+        }
+
     async def _apex_find_approchant(self, nom: str) -> "aiosqlite.Row | None":
         """Le compte lié dont un des noms ressemble le plus à `nom`, ou None.
 
