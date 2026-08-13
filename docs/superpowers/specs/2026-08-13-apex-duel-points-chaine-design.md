@@ -86,10 +86,25 @@ comptée zéro. Un zéro inventé est un mensonge, pas une valeur par défaut.
   compte » était donc faux**, et l'aurait été de la pire façon : la spec aurait
   restreint le duel à un mode que personne ne joue.
 
-  Reste **la Mixtape**, non mesurée à ce jour : si ses kills n'alimentent aucun
-  tracker, un squad qui y bascule produirait un 0–0 remboursé alors que tout le monde
-  a bien joué. Tant que ce n'est pas mesuré, on s'en tient à un avertissement au
-  lancement ; si les compteurs y bougent aussi, la restriction disparaît entièrement.
+- **🚨 La Mixtape ne compte pas — mesuré, sans ambiguïté.** Une partie de Mixtape avec
+  **10 kills annoncés** n'a bougé **aucun** des neuf trackers. Le niveau, lui, a
+  progressé (285 → 286) : l'API voit donc bien la partie, seuls les kills sont ignorés.
+  Un duel joué en Mixtape se solderait par un 0–0 intégral.
+
+- **Et le mode n'est PAS détectable.** Le bloc `realtime` a été listé exhaustivement le
+  2026-08-13 : `lobbyState`, `isOnline`, `isInGame`, `canJoin`, `partyFull`,
+  `selectedLegend`, `currentState`, `currentStateAsText`. Rien d'autre. Wally ne peut
+  pas distinguer une manche de Mixtape d'une manche normale — il verra une partie qui
+  ne rapporte rien.
+
+  L'heuristique du niveau ne sauve pas la mise : un joueur qui fait réellement 0 kill en
+  BR progresse en niveau exactement comme en Mixtape. Les deux cas sont **indiscernables
+  sur une manche isolée**.
+
+  Donc **l'avertissement au lancement est obligatoire** : c'est la seule protection qui
+  existe. Sur l'ensemble d'un duel, en revanche, un 0–0 sur trois manches reste
+  hautement improbable en BR — c'est ce qui justifie de le traiter comme non arbitrable
+  (§8) plutôt que comme un match nul.
 
 ## 3. Déroulé
 
@@ -212,8 +227,11 @@ un viewer qui a payé et ne voit rien est le pire résultat possible.
 
 **Égalité vraie** = match nul annoncé, pas de remboursement : le duel a eu lieu.
 
-**0–0 avec des compteurs qui n'ont jamais bougé de tout le duel ≠ égalité.** C'est la
-signature d'une panne de mesure. Remboursement. Sans cette distinction, une API muette
+**0–0 avec des compteurs qui n'ont jamais bougé de tout le duel ≠ égalité.** Deux causes
+possibles, toutes deux mesurées ou constatées : une **Mixtape** (10 kills → 0 compteur,
+§2) ou une panne de l'API. Dans les deux cas le duel n'est pas arbitrable →
+remboursement, en nommant la Mixtape comme cause probable puisque c'est la seule sur
+laquelle le viewer peut agir. Sans cette distinction, une API muette
 ferait annoncer un faux match nul avec aplomb — la panne silencieuse que ce projet a
 déjà payée plusieurs fois.
 
@@ -362,13 +380,14 @@ premier duel réel — aucune n'est figée dans le code.
 | `manches` | 3 | La demande |
 | `cadence_s` | 2 | 1 req/s pour deux comptes, 20 % du débit autorisé |
 | `attente_squad_min` | 15 | Le temps de lire le chat, lancer le jeu et être invité |
-| `marge_lobby_s` | 10 | Les compteurs sont à jour dès le retour au lobby (mesuré) ; marge de prudence sur un échantillon unique |
+| `marge_lobby_s` | 10 | Compteurs à jour dès le retour au lobby (mesuré 2× sur 2). **Plafond dur : 39 s** — c'est l'intervalle observé entre un retour au lobby et le lancement suivant ; au-delà, une manche mordrait sur la suivante |
 | `plafond_kills_manche` | 30 | Au-delà, c'est un épinglage de tracker (+7793 mesuré), pas un score |
 | `api_muette_max_s` | 180 | API muette en continu au-delà → abandon + remboursement |
 
-`marge_lobby_s` et `plafond_kills_manche` reposent sur **une seule partie observée**
-(2026-08-13). Un second échantillon les confirmerait à peu de frais — la sonde
-`scripts/probe_duel.py` est prête et n'a qu'à tourner pendant une partie.
+`marge_lobby_s` repose désormais sur **deux parties observées** (4 kills en Joker, puis
+2 kills en BR normal) : dans les deux cas les compteurs étaient à jour au relevé même du
+retour au lobby, et tous bougeaient du même montant. `plafond_kills_manche` reste calé
+sur le seul artefact d'épinglage observé (+7793).
 
 `plafond_kills_manche = 30` est volontairement haut : les records connus en Apex
 tournent autour de 25–30 kills, donc un score légitime ne devrait jamais l'atteindre,
