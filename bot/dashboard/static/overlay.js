@@ -12,6 +12,9 @@
   const stage  = document.getElementById("stage");
   const slot   = document.getElementById("avatar-slot");
   const bubble = document.getElementById("bubble");
+  // Le texte vit dans un enfant : c'est LUI qui porte le garde-fou
+  // anti-débordement. Posé sur la bulle, il rognerait sa queue.
+  const bubbleText = document.getElementById("bubble-text");
 
   const RECONNECT_MS = 5000;
   const RECONNECT_MAX_MS = 60000;   // plafond du backoff de reconnexion
@@ -38,7 +41,7 @@
   function showBubble(node, mode) {
     clearTimeout(hideTimer);
     bubble.className = mode === "thought" ? "thought" : "speech";
-    bubble.replaceChildren(node);
+    bubbleText.replaceChildren(node);
     // Force un reflow pour que la transition reparte même sur deux bulles
     // consécutives.
     void bubble.offsetWidth;
