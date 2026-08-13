@@ -109,6 +109,18 @@ qu'**après** le login. Une sonde `curl` non authentifiée reçoit la redirectio
 page de connexion quelle que soit l'URI, et ne prouve donc **rien** sur elle — elle ne
 vaut que pour les scopes. Seul un clic depuis une session connectée tranche.
 
+**Un nouveau token remplace l'ancien avec exactement les scopes demandés.** Demander
+les deux nouveaux seuls ferait perdre les abonnés et les bits **en silence** :
+`_STREAMER_SCOPES` doit porter les quatre. Vérifié le 2026-08-13 via
+`/oauth2/validate` — le token streamer en service porte exactement
+`bits:read channel:read:subscriptions`, le token bot exactement les six de
+`_BOT_SCOPES` : **aucun scope acquis hors du code**, donc rien d'autre à préserver.
+Ce contrôle est à refaire avant toute future modification de scope.
+
+**Ordre d'exécution obligatoire** : scopes dans le code → rebuild → autorisation
+depuis le bouton du dashboard (qui seul génère un `state` valide). Autoriser via une
+URL fabriquée à la main échoue au callback et n'écrit aucun token.
+
 **Remboursement** : `PATCH /helix/channel_points/custom_rewards/redemptions` avec
 `status=CANCELED`, dans `bot/twitch/api.py`. Sur Helix, **un `200` ne prouve pas que
 l'ordre est passé** — ce projet l'a déjà payé avec `is_sent` : on vérifie le corps.
