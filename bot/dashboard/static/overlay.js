@@ -57,80 +57,25 @@
     bubble.classList.remove("visible");
   }
 
-  /** Éclatement d'une bulle d'eau : le film cède, quelques gouttes partent du
-   *  BORD sur une course courte. Les gouttes vivent hors de l'élément — il
-   *  disparaît avant elles — et se nettoient toutes seules.
+  // Sortie parasitée : la MÊME rafale que le rotateur de memes, qui s'affiche
+  // sur le même stream. Cinq états à 30 ms — plus court que les sept du
+  // rotateur : une bulle part toutes les quelques secondes, une transition de
+  // meme toutes les quinze.
+  const GLITCH = { etats: 5, saccade: 30, decalage: 14 };
+  const GLITCH_MS = GLITCH.etats * GLITCH.saccade;
+
+  /** La bulle part en glitch.
    *
-   *  Rien n'est fait si l'élément n'a pas de surface : un widget déjà retiré du
-   *  flux mesurerait 0, et on sèmerait des gouttes dans le coin de l'écran. */
-  function burst(el, { count = 8, spread = 22, ms = 340, drop = null } = {}) {
-    const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) return;
-    const host = document.createElement("div");
-    host.className = "burst";
-    host.style.left = `${r.left + r.width / 2}px`;
-    host.style.top = `${r.top + r.height / 2}px`;
-    host.style.setProperty("--ms", `${ms}ms`);
-    if (drop) host.style.setProperty("--drop", drop);
-
-    for (let i = 0; i < count; i++) {
-      // Réparties sur le pourtour, avec un décalage impair pour que deux
-      // éclatements de suite ne donnent pas exactement la même figure.
-      const a = ((i + 0.5) / count) * 2 * Math.PI + (i % 3) * 0.21;
-      const rx = (r.width / 2) * 0.94, ry = (r.height / 2) * 0.94;
-      const x0 = Math.cos(a) * rx, y0 = Math.sin(a) * ry;
-      const taille = 7 + (i % 3) * 3;   // 7, 10, 13 px — lisibles à 1×
-      const d = document.createElement("i");
-      d.style.width = d.style.height = `${taille}px`;
-      d.style.marginLeft = d.style.marginTop = `${-taille / 2}px`;
-      d.style.setProperty("--x0", `${x0.toFixed(1)}px`);
-      d.style.setProperty("--y0", `${y0.toFixed(1)}px`);
-      // Course courte, vers l'extérieur, avec un rien de gravité : c'est ce qui
-      // sépare une goutte d'eau d'un éclat d'explosion.
-      const k = 1 + (i % 4) * 0.14;
-      d.style.setProperty("--x1", `${(x0 + Math.cos(a) * spread * k).toFixed(1)}px`);
-      d.style.setProperty("--y1", `${(y0 + Math.sin(a) * spread * k + spread * 0.42).toFixed(1)}px`);
-      host.appendChild(d);
-    }
-    document.body.appendChild(host);
-    setTimeout(() => host.remove(), ms + 60);
-  }
-
-  /** La bulle éclate en partant. Pas sur les trois points : le serveur émet
-   *  `thinking(false)` JUSTE avant chaque réponse — la bulle n'est pas en train
-   *  de partir, elle est remplacée, et on ferait un « pop » avant chaque
-   *  réplique. */
-  // La rupture tombe à 38 % d'une animation volontairement très courte : une
-  // bulle de savon ne dure que quelques images. Gouttes ET anneau partent à cet
-  // instant précis — émis plus tôt, ils jaillissaient d'une forme encore
-  // intacte, et on voyait des particules au lieu d'un éclatement.
-  const POP_MS = 130;
-  const RUPTURE = Math.round(POP_MS * 0.38);
-
-  /** L'anneau de film qui s'écarte de la forme au moment où elle cède.
-   *  `forme` vaut `bubble` (la silhouette réelle, queue comprise) ou `card`. */
-  function ring(el, forme) {
-    const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) return;
-    const n = document.createElement("div");
-    n.className = `burst-ring ${forme}`;
-    n.style.left = `${r.left}px`;
-    n.style.top = `${r.top}px`;
-    n.style.width = `${r.width}px`;
-    n.style.height = `${r.height}px`;
-    document.body.appendChild(n);
-    setTimeout(() => n.remove(), 380);
-  }
-
+   *  `nettoyer` est indispensable : la rafale écrit les quatre propriétés EN
+   *  LIGNE, où elles l'emportent sur la feuille de style. Sans ce ménage, la
+   *  bulle suivante naîtrait décalée, filtrée, à moitié transparente.
+   */
   function popBubble() {
     if (!bubble.classList.contains("visible")) return;
-    bubble.classList.add("popping");
-    setTimeout(() => {
-      ring(bubble, "bubble");
-      burst(bubble, { count: 6, spread: 22, ms: 320, drop: "var(--paper)" });
-    }, RUPTURE);
-    setTimeout(() => bubble.classList.remove("popping"), POP_MS);
-    hideBubble();
+    WallyGlitch.rafale(bubble, GLITCH).then(() => {
+      WallyGlitch.nettoyer(bubble);
+      hideBubble();
+    });
   }
 
   // Wally accuse le coup quand il parle. Sur `say` seulement, pas sur les trois
@@ -1182,21 +1127,25 @@
       // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
       // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
       // lisent comme deux événements ; avec, comme un seul mouvement.
-      box.classList.add("popping", "leaving");
-      box.classList.remove("visible");
-      setTimeout(() => {
-        ring(box, "card");
-        burst(box, { count: 11, spread: 36, ms: 360, drop: "rgba(255,255,255,.92)" });
-      }, RUPTURE);
+      // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
+      // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
+      // lisent comme deux événements ; avec, comme un seul mouvement.
+      box.classList.add("leaving");
+      // Une carte est plus large qu'une bulle : elle encaisse un décalage plus
+      // franc sans sortir du cadre.
+      WallyGlitch.rafale(box, { ...GLITCH, decalage: 22 }).then(() => {
+        WallyGlitch.nettoyer(box);
+        box.classList.remove("visible");
+      });
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
       // autre chose. Vaut pour bingo, hangman et poll.
-      // Appelée quand la forme a fini de céder : la suivante entre DANS les
-      // débris — l'anneau et les gouttes vivent 320 ms de plus. Deux cartes
-      // pleines l'une sur l'autre seraient illisibles.
-      widgetTimer = setTimeout(playNext, POP_MS);
-      setTimeout(() => disposeWidget(box), POP_MS + 40);
+      // Appelée à la fin de la rafale : la suivante entre quand la précédente
+      // a fini de se parasiter. Deux cartes pleines l'une sur l'autre seraient
+      // illisibles.
+      widgetTimer = setTimeout(playNext, GLITCH_MS);
+      setTimeout(() => disposeWidget(box), GLITCH_MS + 260);
     }, seconds * 1000);
   }
 

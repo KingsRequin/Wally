@@ -334,84 +334,12 @@
        Deux dosages : la bulle de parole disparaît toutes les quelques secondes
        (155 relevées sur un live), les widgets sont bien plus rares. Même
        grammaire, moitié moins de gouttes — sinon l'overlay crépite en continu. */
-    /* La rupture elle-même : quelques images, pas plus.
-       Vérifié auprès des animateurs — même au ralenti, l'éclatement d'une bulle
-       de savon ne dure que quelques images : elle est là, puis elle n'est plus
-       là, et ce qui reste ensuite ce sont les gouttes. La version précédente
-       faisait onduler la membrane sur 380 ms : à l'écran, ça lisait comme un
-       rebond de balle, pas comme un film qui cède. */
-    #bubble.popping, .widget.popping {
-      animation: pop 130ms linear forwards;
-    }
-    @keyframes pop {
-      0%   { transform: scale(1);     opacity: 1;
-             animation-timing-function: cubic-bezier(.3, 0, .7, 1); }
-      38%  { transform: scale(1.035); opacity: 1;     /* la tension, deux images */
-             animation-timing-function: cubic-bezier(.4, 0, 1, .55); }
-      100% { transform: scale(1.09);  opacity: 0; }   /* rompu */
-    }
-
-    /* L'anneau de film qui s'écarte — c'est LUI qui fait lire un éclatement
-       plutôt qu'une disparition. Sans lui, la forme s'efface simplement et les
-       gouttes ont l'air posées par-dessus. Il vit plus longtemps que la forme :
-       ce qu'on regarde après la rupture, c'est ce qu'elle a laissé. */
-    .burst-ring {
-      position: absolute;
-      pointer-events: none;
-      z-index: 4;
-      background-repeat: no-repeat;
-      background-size: 100% 100%;
-      animation: ring 320ms cubic-bezier(.1, .7, .3, 1) forwards;
-    }
-    /* La silhouette RÉELLE de la bulle, en trait seul : un ovale approché se
-       verrait, la queue en moins. */
-    .burst-ring.bubble {
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M196.0%2050.0L196.2%2055.9L195.3%2061.2L193.4%2066.1L190.3%2070.7L186.1%2075.0L180.8%2079.0L174.6%2082.5L167.5%2085.6L159.6%2088.2L151.1%2090.4L142.1%2092.1L132.6%2093.4L122.6%2094.3L112.1%2094.8L100.0%2095.0L87.9%2094.8L77.4%2094.3L67.4%2093.4L57.9%2092.1L48.9%2090.4L40.4%2088.2L32.5%2085.6L25.4%2082.5L19.2%2079.0L13.9%2075.0L9.7%2070.7L6.6%2066.1L4.7%2061.2L3.8%2055.9L4.0%2050.0L5.1%2044.1L7.1%2039.1L9.9%2034.5L13.4%2030.1L17.6%2026.0L22.5%2022.2L28.0%2018.6L34.2%2015.3L41.2%2012.3L48.9%209.6L57.3%207.3L66.6%205.5L76.6%204.1L87.4%203.3L100.0%203.0L112.6%203.3L123.4%204.1L133.4%205.5L142.7%207.3L151.1%209.6L158.8%2012.3L165.8%2015.3L172.0%2018.6L177.5%2022.2L182.4%2026.0L186.6%2030.1L190.1%2034.5L192.9%2039.1L194.9%2044.1Z%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linejoin=%27round%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/svg%3E");
-    }
-    /* Une carte de widget est une boîte : son anneau suit son rayon. */
-    .burst-ring.card {
-      border: 2px solid rgba(255, 255, 255, .9);
-      border-radius: var(--r-md);
-    }
-    @keyframes ring {
-      0%   { transform: scale(1);    opacity: .95; }
-      70%  { opacity: .35; }
-      100% { transform: scale(1.45); opacity: 0; }
-    }
-
-    /* Les gouttes vivent hors de la boîte qui éclate : elle disparaît avant
-       elles. Position fixe, donc jamais rognées par un parent. */
-    .burst {
-      /* `absolute` et non `fixed` : la page ne défile pas (`body` est en
-         `overflow: hidden; height: 100vh`), donc les coordonnées du document et
-         celles du viewport coïncident, et `getBoundingClientRect()` suffit.
-         `fixed` est proscrit dans ce fichier — un ancêtre transformé devient
-         son bloc conteneur et l'élément ne vise plus la source OBS. */
-      position: absolute;
-      pointer-events: none;
-      z-index: 4;
-    }
-    .burst i {
-      position: absolute;
-      display: block;
-      border-radius: 50%;
-      /* Cernées d'encre, comme la bulle dont elles sortent : un aplat pâle seul
-         disparaît sur un gameplay clair — c'est déjà la raison d'être du trait
-         autour de la bulle. */
-      background: var(--drop, var(--paper));
-      border: 2px solid var(--ink);
-      animation: droplet var(--ms, 340ms) cubic-bezier(.15, .7, .35, 1) forwards;
-    }
-    /* Elles tiennent leur pleine opacité jusqu'aux deux tiers, puis s'effacent
-       d'un coup. Un fondu réparti sur toute la course les rendait fantomatiques
-       dès le premier tiers — à l'échelle d'un stream, « fugace » revient à
-       « invisible ». */
-    @keyframes droplet {
-      0%   { transform: translate(var(--x0), var(--y0)) scale(.35); opacity: 0; }
-      15%  { transform: translate(var(--x0), var(--y0)) scale(1);   opacity: 1; }
-      65%  { opacity: 1; }
-      100% { transform: translate(var(--x1), var(--y1)) scale(.55); opacity: 0; }
-    }
+    /* La sortie est parasitée par le glitch de `glitch.js` — le même que celui
+       du rotateur de memes, qui s'affiche sur le même stream. Rien à déclarer
+       ici : la rafale tire ses états au sort et écrit `clip-path`, `transform`,
+       `filter` et `opacity` EN LIGNE, où ils l'emportent sur cette feuille.
+       L'ombre portée de la bulle cède donc d'elle-même, son `filter` étant
+       remplacé à chaque état. */
 
     /* ── Trois points, pendant la génération ────────────────────────────── */
     .dots { display: inline-flex; gap: 5px; align-items: center; height: 10px; }
@@ -1318,6 +1246,8 @@
   <script src="/static/vendor/canvas-confetti.js"></script>
   <!-- spin-wheel (MIT) — la roue, labels dessinés dans les secteurs. -->
   <script src="/static/vendor/spin-wheel.js"></script>
+  <!-- Chargé avant `overlay.js`, qui s'en sert pour la sortie des bulles. -->
+  <script src="/static/glitch.js"></script>
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay.js"></script>
 </body>

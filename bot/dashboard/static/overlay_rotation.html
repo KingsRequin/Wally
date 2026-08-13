@@ -54,6 +54,7 @@
   <video id="video" class="absent" playsinline></video>
 </div>
 
+<script src="/static/glitch.js"></script>
 <script>
 (function () {
   const cadre = document.getElementById('cadre');
@@ -79,63 +80,18 @@
   const AGRANDIR = nombre('agrandir', 2, 1);  // facteur maximum d'agrandissement
   const ETATS = 7;                          // états par rafale
 
-  const FILTRES = [
-    'invert(1) hue-rotate(90deg)',
-    'hue-rotate(200deg) saturate(6)',
-    'brightness(2.6) saturate(0)',
-    'drop-shadow(7px 0 0 rgba(255,0,64,.9)) drop-shadow(-7px 0 0 rgba(0,225,255,.9))',
-    'invert(1) saturate(4)',
-    'hue-rotate(-70deg) saturate(5) brightness(1.4)',
-  ];
+  // Le glitch vit dans `glitch.js` : cette source et l'overlay principal
+  // s'affichent sur le même stream, ils doivent parasiter à l'identique.
+  const G = window.WallyGlitch;
 
-  const hasard = function (min, max) { return min + Math.random() * (max - min); };
-  const parmi = function (liste) { return liste[Math.floor(Math.random() * liste.length)]; };
-
-  /** Un état de glitch : une bande visible, un décalage, une couleur qui dérive.
-   *
-   *  Tiré au sort à chaque passage plutôt qu'écrit en @keyframes : un glitch
-   *  qui rejoue la même chorégraphie toutes les quinze secondes se lit comme
-   *  une boucle et devient mécanique. Le coût est identique — ce sont les mêmes
-   *  propriétés qui bougent.
-   */
-  function etatAuHasard() {
-    const haut = hasard(0, 70);
-    const bas = hasard(0, 100 - haut - 12);
-    return {
-      clipPath: 'inset(' + haut.toFixed(0) + '% 0 ' + bas.toFixed(0) + '% 0)',
-      transform: 'translateX(' + hasard(-26, 26).toFixed(0) + 'px) scaleY('
-                 + hasard(0.94, 1.07).toFixed(2) + ')',
-      filter: parmi(FILTRES),
-      opacity: Math.random() < 0.2 ? '0.45' : '1',
-    };
-  }
-
-  // `round 16px` et non `inset(0 0 0 0)` nu : un clip rectangulaire laisse
-  // l'angle droit du contenu réapparaître derrière les coins arrondis du cadre.
-  // Le rayon doit suivre celui du CSS. Les états de glitch, eux, coupent à
-  // angles droits — c'est l'effet recherché.
+  // `round 16px` : le rayon doit suivre celui du CSS, sinon l'angle droit du
+  // contenu réapparaît derrière les coins arrondis du cadre.
   const RAYON = '16px';
-  const NET = { clipPath: 'inset(0 0 0 0 round ' + RAYON + ')', transform: 'none', filter: 'none', opacity: '1' };
-  const ETEINT = { clipPath: 'inset(0 0 100% 0 round ' + RAYON + ')', transform: 'none', filter: 'none', opacity: '0' };
+  const NET = G.net(RAYON);
+  const ETEINT = G.eteint(RAYON);
 
-  function appliquer(etat) {
-    cadre.style.clipPath = etat.clipPath;
-    cadre.style.transform = etat.transform;
-    cadre.style.filter = etat.filter;
-    cadre.style.opacity = etat.opacity;
-  }
-
-  function rafale() {
-    return new Promise(function (fini) {
-      let n = 0;
-      (function saccade() {
-        if (n >= ETATS) { fini(); return; }
-        appliquer(etatAuHasard());
-        n += 1;
-        setTimeout(saccade, SACCADE);
-      })();
-    });
-  }
+  const appliquer = function (etat) { G.appliquer(cadre, etat); };
+  const rafale = function () { return G.rafale(cadre, { etats: ETATS, saccade: SACCADE }); };
 
   let medias = [];
   let dernier = null;
