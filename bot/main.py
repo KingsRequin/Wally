@@ -599,7 +599,10 @@ async def main() -> None:
         # annonces, remboursement des redemptions), qui n'existe qu'à ce stade —
         # même raison que l'`ApexWatcher` juste au-dessus.
         _duel_conf = getattr(_apex_conf, "duel", None) if _apex_conf else None
-        if (apex_api is not None and _apex_conf is not None
+        # `available` et pas seulement « le service existe » : sans clé Apex,
+        # chaque relevé échoue et le duel n'est jamais mesurable — mais la
+        # récompense, elle, serait bel et bien créée sur la chaîne.
+        if (apex_api is not None and apex_api.available and _apex_conf is not None
                 and _duel_conf is not None and _duel_conf.active):
             from bot.core.apex.client import ApexClient
             from bot.core.apex.duel_runner import DuelRunner, armer_le_duel

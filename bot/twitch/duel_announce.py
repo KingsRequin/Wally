@@ -3,8 +3,9 @@
 
 `DuelRunner` ne connaît qu'une chose de la sortie : une coroutine
 `annoncer(evenement)`. Tout ce qui suit vit ici — le registre de ton
-(`bot/persona/prompts/apex_duel.md`, une section par type d'événement, éditable
-sans rebuild), la rédaction, l'envoi Twitch et le widget d'overlay.
+(`bot/persona/prompts/apex_duel.md`, une section par type d'événement ; le
+dossier est bind-monté, donc un redémarrage suffit à changer le ton, sans
+rebuild), la rédaction, l'envoi Twitch et le widget d'overlay.
 
 Deux règles tiennent ce fichier :
 
@@ -205,7 +206,13 @@ class DuelAnnonceur:
         if len(texte) > MAX_CHAT:
             texte = texte[:MAX_CHAT - 3] + "..."
         try:
-            await self._bot.twitch_api.send_message(text=texte)
+            # Le retour est LU : sur Twitch, un 200 ne prouve pas la
+            # publication — un refus d'AutoMod arrive dans le corps
+            # (`is_sent: false`), et `send_message` le traduit en `False`. Une
+            # étape de duel avalée en silence est indétectable autrement.
+            if not await self._bot.twitch_api.send_message(text=texte):
+                logger.warning("Duel : annonce refusée par Twitch — « {t} »",
+                               t=texte[:80])
         except Exception as exc:  # noqa: BLE001 — l'overlay doit rester servi
             logger.error("Duel : annonce non publiée dans le chat : {e}", e=exc)
 
