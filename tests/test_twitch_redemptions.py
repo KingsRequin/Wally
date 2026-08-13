@@ -9,6 +9,7 @@ from bot.twitch.events.redemptions import _est_notre_recompense, handle_redempti
 def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     bot = MagicMock()
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
+    bot.twitch_api.send_message = AsyncMock(return_value=True)
     bot.duel_runner = MagicMock()
     bot.duel_runner._reward_id = reward_id
     bot.duel_runner.duel_en_cours = duel_en_cours
@@ -92,3 +93,52 @@ async def test_exception_dans_ouvrir_rembourse():
     bot.duel_runner.ouvrir = AsyncMock(side_effect=RuntimeError("timeout"))
     await handle_redemption(bot, _event())
     bot.twitch_api.refund_redemption.assert_awaited_once_with("RW", "RD1")
+
+
+# ── Revue finale — CRITICAL 2 : un remboursement muet reste un silence ───────
+# La récompense reste achetable en permanence : rien ne la désactive, et elle
+# est toujours reconnue via l'identifiant persisté. Sur ces deux chemins, le
+# viewer voyait ses points revenir sans jamais savoir pourquoi.
+def _dit(bot) -> str:
+    return " ".join(str(c.kwargs.get("text", ""))
+                    for c in bot.twitch_api.send_message.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_runner_absent_le_dit_dans_le_chat():
+    bot = _bot(persisted_reward_id="RW")
+    bot.duel_runner = None
+
+    await handle_redemption(bot, _event(user="bob", reward_id="RW"))
+
+    bot.twitch_api.refund_redemption.assert_awaited_once()
+    dit = _dit(bot)
+    assert dit.strip(), "un remboursement sans un mot est le pire résultat possible"
+    assert "bob" in dit, "le viewer qui a payé doit savoir que ça le concerne"
+    # Ces chemins existent quand la machinerie du duel n'est PAS disponible :
+    # y appeler le modèle serait la dernière chose à tenter.
+    bot.llm.complete.assert_not_called()
+    bot.llm.complete_with_tools.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_un_crash_pendant_l_ouverture_est_dit_dans_le_chat():
+    bot = _bot()
+    bot.duel_runner.ouvrir = AsyncMock(side_effect=RuntimeError("timeout"))
+
+    await handle_redemption(bot, _event(user="carol"))
+
+    bot.twitch_api.refund_redemption.assert_awaited_once_with("RW", "RD1")
+    assert _dit(bot).strip(), "le viewer doit apprendre que sa demande a échoué"
+
+
+@pytest.mark.asyncio
+async def test_un_chat_injoignable_ne_fait_pas_remonter_l_exception():
+    """L'annonce est un bonus : le remboursement, lui, est déjà passé."""
+    bot = _bot(persisted_reward_id="RW")
+    bot.duel_runner = None
+    bot.twitch_api.send_message = AsyncMock(side_effect=RuntimeError("Twitch down"))
+
+    await handle_redemption(bot, _event(reward_id="RW"))  # ne doit pas lever
+
+    bot.twitch_api.refund_redemption.assert_awaited_once()

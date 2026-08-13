@@ -33,6 +33,29 @@ def _feed(bot, description: str) -> None:
         logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
 
 
+async def _dire(bot, acheteur: str, texte: str) -> None:
+    """Un mot dans le chat à celui qui a payé, en direct et SANS le modèle.
+
+    Ces deux chemins existent justement quand la machinerie du duel n'est pas
+    disponible : le canal d'annonce du runner (`DuelAnnonceur`, avec sa
+    rédaction LLM) n'est pas joignable ici, et un appel au modèle serait de
+    toute façon la dernière chose à tenter dans un état dégradé. Le bot Twitch,
+    lui, sait toujours envoyer un message — c'est ce que font les handlers
+    d'événements sociaux.
+
+    Sans ça, le viewer voyait ses points revenir sans un mot d'explication.
+    Et la récompense reste achetable en permanence : rien ne la désactive, et
+    elle est toujours reconnue via l'identifiant persisté.
+    """
+    # `acheteur` vaut « ? » quand l'événement ne porte pas de pseudo : mieux
+    # vaut un message sans mention qu'un « @? » adressé à personne.
+    mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
+    try:
+        await bot.twitch_api.send_message(text=f"{mention}{texte}")
+    except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
+        logger.error("Duel : refus non annoncé dans le chat : {e}", e=exc)
+
+
 async def _est_notre_recompense(bot, reward_id: str) -> bool:
     """La récompense créée par Wally lui-même, identifiée par son ID.
 
@@ -71,6 +94,7 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
     """Point d'entrée EventSub. N'échoue jamais vers l'appelant."""
     reward_id = ""
     redemption_id = ""
+    acheteur = ""
     try:
         reward_id = str(getattr(getattr(event, "reward", None), "id", ""))
         if not await _est_notre_recompense(bot, reward_id):
@@ -86,7 +110,13 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
         runner = getattr(bot, "duel_runner", None)
         if runner is None:
             logger.error("Duel demandé mais aucun runner câblé — remboursement")
+            # Rembourser D'ABORD, annoncer ENSUITE : si l'envoi Twitch lève,
+            # le viewer a déjà récupéré ses points. Même ordre que
+            # `DuelRunner._refuser()`.
             await bot.twitch_api.refund_redemption(reward_id, redemption_id)
+            await _dire(bot, acheteur, (
+                "le duel Apex n'est pas disponible en ce moment (je n'ai pas "
+                "la main dessus) — tes points t'ont été rendus."))
             return
 
         # Le cas « duel déjà en cours » n'est PLUS court-circuité ici : seul
@@ -109,3 +139,9 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
                 await bot.twitch_api.refund_redemption(reward_id, redemption_id)
             except Exception as exc2:  # noqa: BLE001 — le repli ne relève jamais non plus
                 logger.error("Remboursement de secours en erreur : {e}", e=exc2)
+            # Annoncé même si le remboursement a levé : le viewer doit savoir
+            # que sa demande a échoué. Un silence lui laisse croire que le duel
+            # va démarrer.
+            await _dire(bot, acheteur, (
+                "ton duel Apex n'a pas pu être lancé (pépin technique de mon "
+                "côté) — tes points t'ont été rendus."))
