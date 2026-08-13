@@ -127,6 +127,69 @@ async def test_attendre_un_uid_ne_coute_aucune_requete():
 
 
 @pytest.mark.asyncio
+async def test_le_duel_qui_expire_pendant_l_appel_reseau_n_est_pas_ressuscite():
+    """La sonde de fond (`tick()`) peut faire expirer le duel PENDANT
+    l'appel réseau `_profil()` d'`repondre_resolution()` (~1 s de latence) :
+    remboursement, `duel_en_cours = None`, abandon déjà annoncé. Sans garde,
+    `repondre_resolution()` reprend sur l'objet orphelin, appelle
+    `demarrer_attente_squad()` et annonce un second « duel_ouvert » — le
+    viewer lit « ton duel démarre » juste après « ton duel est abandonné »."""
+    runner, api, annoncer = _runner([])
+    await runner.ouvrir(acheteur="bob", saisie="mon pseudo",
+                        reward_id="rw", redemption_id="rd")
+    attente = runner.duel_en_cours.attente_squad_s
+    await runner.tick(1_000.0)                      # démarre le minuteur de résolution
+    annoncer.reset_mock()
+
+    async def profil_pendant_lequel_le_duel_expire(*args, **kwargs):
+        # Simule la boucle de sonde qui tourne PENDANT l'appel réseau et
+        # solde le duel (timeout de résolution) avant que la réponse arrive.
+        await runner.tick(1_000.0 + attente + 1)
+        return PROFIL_OK
+
+    runner._client.get = AsyncMock(side_effect=profil_pendant_lequel_le_duel_expire)
+
+    consomme = await runner.repondre_resolution("bob", "1012242925358")
+
+    assert consomme is True
+    assert runner.duel_en_cours is None
+    api.refund_redemption.assert_awaited_once()
+    assert annoncer.await_count == 1
+    assert annoncer.await_args.args[0].type == "abandon"
+
+
+@pytest.mark.asyncio
+async def test_le_duel_qui_expire_pendant_le_dernier_essai_ne_rembourse_pas_deux_fois():
+    """Symétrique : la 3e tentative échouée peut aussi croiser un duel qui
+    vient d'expirer pendant l'appel réseau. Sans garde, `repondre_resolution()`
+    rembourse une seconde fois la même redemption (refusée par Twitch) et
+    annonce un second abandon."""
+    runner, api, annoncer = _runner([])
+    await runner.ouvrir(acheteur="bob", saisie="mon pseudo",
+                        reward_id="rw", redemption_id="rd")
+    attente = runner.duel_en_cours.attente_squad_s
+    await runner.tick(1_000.0)                      # démarre le minuteur de résolution
+
+    # Deux échecs de saisie, pour amener le compteur juste avant le seuil.
+    await runner.repondre_resolution("bob", "toujours pas un uid")
+    await runner.repondre_resolution("bob", "toujours pas un uid")
+    annoncer.reset_mock()
+
+    async def profil_pendant_lequel_le_duel_expire(*args, **kwargs):
+        await runner.tick(1_000.0 + attente + 1)
+        return None  # compte introuvable : la sonde a de toute façon déjà tranché
+
+    runner._client.get = AsyncMock(side_effect=profil_pendant_lequel_le_duel_expire)
+
+    consomme = await runner.repondre_resolution("bob", "1012242925358")
+
+    assert consomme is True
+    api.refund_redemption.assert_awaited_once()
+    assert annoncer.await_count == 1
+    assert annoncer.await_args.args[0].type == "abandon"
+
+
+@pytest.mark.asyncio
 async def test_le_compte_donne_a_temps_rouvre_un_delai_entier():
     """Le délai d'attente du squad repart à neuf, il n'hérite pas de la
     résolution — sinon un viewer lent serait abandonné avant d'avoir joué."""

@@ -362,6 +362,17 @@ class DuelRunner:
         uid = _uid_valide(texte)
         if uid is not None and uid != self._azrael_uid:
             profil = await self._profil(uid)
+            if self.duel_en_cours is not duel:
+                # La sonde de fond (`tick()`) a pu faire expirer ce duel
+                # PENDANT cet appel réseau d'~1 s (délai de résolution
+                # écoulé) : remboursement et abandon déjà annoncés sur
+                # l'objet `duel` capturé ci-dessus, qui est maintenant
+                # orphelin. Reprendre dessus rouvrirait un duel fantôme
+                # (« duel_ouvert » juste après « abandonné ») ou, plus bas,
+                # rembourserait une seconde fois la même redemption. Le
+                # message reste consommé : il ne doit pas repartir dans le
+                # traitement normal du chat.
+                return True
             if profil is not None and read_kill_trackers(profil):
                 duel.viewer_uid = uid
                 # Le délai d'attente du squad repart à neuf : il ne doit pas
