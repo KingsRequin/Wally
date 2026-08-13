@@ -16,6 +16,31 @@
     :root {
       --ink:   #14121c;
       --paper: #f7f3e9;
+
+      /* Le verre sombre des widgets — UNE valeur. Elle traînait à quatre
+         opacités différentes (.85 .88 .90 .92), au gré de l'ordre d'écriture. */
+      --glass: rgba(18, 18, 22, .9);
+      --line:  rgba(255, 255, 255, .14);
+      --dim:   rgba(255, 255, 255, .6);
+      --dimmer: rgba(255, 255, 255, .42);
+
+      /* Un accent par INTENTION, pas par widget. Il y en avait quinze : quatre
+         verts disaient « gagné », quatre rouges « perdu », quatre ambres
+         « attention ». Chaque widget avait redécidé dans son coin. */
+      --win:      #7dffb0;   /* gagné, en tête, actif */
+      --win-deep: #34d17f;   /* fond du dégradé de victoire */
+      --lose:     #ff7d7d;   /* perdu, raté, en baisse */
+      --gold:     #ffd166;   /* 1re place, raid, distinction */
+      --wally:    #ffb066;   /* ce qui appartient à Wally — l'orange de la flamme */
+      --who:      #b79cff;   /* qui parle, qui joue */
+      --who-deep: #9d7bff;   /* fond du dégradé de quantité */
+      --info:     #46c6ff;   /* quantité neutre, clip, lien */
+
+      /* Trois rayons, contre sept auparavant (2 5 8 10 12 14 16). */
+      --r-xs: 3px;
+      --r-sm: 6px;
+      --r-md: 12px;
+      --r-lg: 16px;
     }
 
     body {
@@ -322,7 +347,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 34px; font-weight: 700; color: #1a1a1a;
       background: linear-gradient(150deg, #fdfdfd, #d8d8dc);
-      border-radius: 12px;
+      border-radius: var(--r-md);
       box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .12);
     }
     .die .s1 { transform: rotateY(0deg)   translateZ(39px); }
@@ -368,9 +393,9 @@
       padding: 6px 13px;
       max-width: 150px;
       font-size: 15px; font-weight: 700; color: #fff; text-align: center;
-      background: rgba(18, 18, 22, .92);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 10px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       opacity: 0;
       pointer-events: none;
       z-index: 2;
@@ -396,8 +421,8 @@
       transition: stroke .25s linear;
     }
     .cd-seg.on {
-      stroke: var(--on, #f59e0b);
-      filter: drop-shadow(0 0 3px var(--on, #f59e0b));
+      stroke: var(--on, var(--wally));
+      filter: drop-shadow(0 0 3px var(--on, var(--wally)));
     }
     .cd-time {
       position: absolute;
@@ -408,7 +433,7 @@
       text-shadow: 0 2px 6px rgba(0, 0, 0, .95);
     }
     .cd-time.tick { animation: tick .45s ease-out; }
-    .countdown.done .cd-time { color: #ef4444; font-size: 30px; }
+    .countdown.done .cd-time { color: var(--lose); font-size: 30px; }
     @keyframes tick {
       0%   { transform: scale(1.16); }
       100% { transform: scale(1); }
@@ -423,16 +448,16 @@
     }
     .gauge .track {
       height: 17px;
-      background: rgba(18, 18, 22, .85);
+      background: var(--glass);
       border: 1px solid rgba(255, 255, 255, .16);
-      border-radius: 10px;
+      border-radius: var(--r-md);
       overflow: hidden;
     }
     .gauge .fill {
       height: 100%;
       width: 0;
-      background: linear-gradient(90deg, #46c6ff, #9d7bff);
-      border-radius: 10px;
+      background: linear-gradient(90deg, var(--info), var(--who-deep));
+      border-radius: var(--r-md);
       transition: width 1.1s cubic-bezier(.2, .7, .3, 1);
     }
 
@@ -440,23 +465,23 @@
     .pinned {
       max-width: 290px;
       padding: 9px 13px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-left: 3px solid #9d7bff;
-      border-radius: 10px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--who-deep);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
-    .pinned .who { font-size: 12px; font-weight: 700; color: #b79cff; }
+    .pinned .who { font-size: 12px; font-weight: 700; color: var(--who); }
     .pinned .msg { font-size: 15px; line-height: 1.3; }
 
     /* Sondage — les viewers votent en tapant le numéro dans le chat. */
     .poll {
       width: 260px;
       padding: 10px 12px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
@@ -465,7 +490,7 @@
       font-size: 15px; font-weight: 700;
       display: flex; justify-content: space-between; gap: 8px;
     }
-    .poll .q .left { font-size: 13px; color: #b79cff; font-variant-numeric: tabular-nums; }
+    .poll .q .left { font-size: 13px; color: var(--who); font-variant-numeric: tabular-nums; }
     /* Options : arrivée en cascade, ~60 ms d'écart — le regard descend la liste
        au lieu de la découvrir d'un bloc. */
     .poll .opt {
@@ -486,7 +511,7 @@
     .poll .count.bump { animation: count-bump .32s ease-out; }
     @keyframes count-bump {
       0%   { transform: scale(1);   color: #fff; }
-      35%  { transform: scale(1.22); color: #7dffb0; }
+      35%  { transform: scale(1.22); color: var(--win); }
       100% { transform: scale(1);   color: #fff; }
     }
 
@@ -496,7 +521,7 @@
       height: 3px;
       margin: 2px 0 8px;
       background: rgba(255, 255, 255, .08);
-      border-radius: 2px;
+      border-radius: var(--r-xs);
       overflow: hidden;
     }
     .poll .timer span {
@@ -504,7 +529,7 @@
       height: 100%;
       width: 100%;
       transform-origin: left center;
-      background: linear-gradient(90deg, #b79cff, #46c6ff);
+      background: linear-gradient(90deg, var(--who), var(--info));
       animation: timer-drain linear forwards;
       animation-duration: var(--dur, 0s);
     }
@@ -516,8 +541,8 @@
     .poll .opt .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
     /* Gagnant, une fois le décompte terminé. Teinte + graisse plutôt qu'un cadre
        supplémentaire : plus lisible dans un widget de 250 px. */
-    .poll .opt.win .row { color: #7dffb0; font-weight: 700; }
-    .poll .opt.win .bar span { background: linear-gradient(90deg, #34d17f, #7dffb0); }
+    .poll .opt.win .row { color: var(--win); font-weight: 700; }
+    .poll .opt.win .bar span { background: linear-gradient(90deg, var(--win-deep), var(--win)); }
     /* À la clôture : le gagnant pulse une fois, les perdants reculent. */
     .poll.final .opt.win { animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1); }
     .poll.final .opt.lose { opacity: .45; transition: opacity .4s ease; }
@@ -529,13 +554,13 @@
     .poll .bar {
       height: 9px;
       background: rgba(255, 255, 255, .1);
-      border-radius: 5px;
+      border-radius: var(--r-sm);
       overflow: hidden;
     }
     .poll .bar span {
       display: block; height: 100%; width: 0;
-      background: linear-gradient(90deg, #46c6ff, #9d7bff);
-      border-radius: 5px;
+      background: linear-gradient(90deg, var(--info), var(--who-deep));
+      border-radius: var(--r-sm);
       transition: width .45s cubic-bezier(.3, .9, .3, 1), background .3s ease;
     }
 
@@ -543,15 +568,15 @@
     .talkers {
       width: 260px;
       padding: 11px 13px;
-      background: rgba(18, 18, 22, .9);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .talkers-title {
       font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .55); margin-bottom: 8px;
+      color: var(--dim); margin-bottom: 8px;
     }
     .talker {
       display: flex; align-items: baseline; gap: 8px;
@@ -561,27 +586,27 @@
     }
     .talker .pos { width: 22px; flex: 0 0 22px; }
     .talker .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .talker .n { font-weight: 700; font-variant-numeric: tabular-nums; color: #b79cff; }
-    .talker.rank1 .who { color: #ffd479; font-weight: 700; }
+    .talker .n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--who); }
+    .talker.rank1 .who { color: var(--gold); font-weight: 700; }
 
     /* Clip — l'auteur compte autant que le titre : c'est lui qu'on récompense. */
     .clip {
       width: 300px;
       padding: 11px 13px;
-      background: rgba(18, 18, 22, .9);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-left: 3px solid #46c6ff;
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--info);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
       animation: wave-in .5s cubic-bezier(.22, 1.4, .4, 1);
     }
     .clip-head {
       font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
-      color: #46c6ff; margin-bottom: 5px;
+      color: var(--info); margin-bottom: 5px;
     }
     .clip-title { font-size: 14px; line-height: 1.3; }
-    .clip-author { margin-top: 5px; font-size: 12px; color: rgba(255, 255, 255, .55); }
+    .clip-author { margin-top: 5px; font-size: 12px; color: var(--dim); }
 
     /* Clip joué : la vidéo prend la largeur utile de la source OBS (560 px),
        en 16:9. Le padding de la carte disparaît — un liseré autour d'une vidéo
@@ -625,9 +650,9 @@
        opaque et la bordure dorée. */
     .raid {
       padding: 14px 26px;
-      background: rgba(18, 18, 22, .92);
+      background: var(--glass);
       border: 1px solid rgba(255, 209, 102, .45);
-      border-radius: 16px;
+      border-radius: var(--r-lg);
       text-align: center;
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
@@ -636,7 +661,7 @@
     }
     .raid-tag {
       font-size: 10.5px; font-weight: 800; letter-spacing: .22em;
-      color: #ffd166; margin-bottom: 4px;
+      color: var(--gold); margin-bottom: 4px;
     }
     .raid-name {
       font-size: 25px; font-weight: 800; line-height: 1.15;
@@ -647,7 +672,7 @@
     }
     .raid-count {
       margin-top: 5px; font-size: 12.5px;
-      color: rgba(255, 255, 255, .62);
+      color: var(--dim);
       font-variant-numeric: tabular-nums;
     }
     @keyframes raid-in {
@@ -657,21 +682,21 @@
 
     .wave {
       padding: 10px 18px;
-      background: rgba(18, 18, 22, .85);
+      background: var(--glass);
       border: 1px solid rgba(255, 176, 102, .35);
-      border-radius: 14px;
+      border-radius: var(--r-lg);
       text-align: center;
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
       animation: wave-in .5s cubic-bezier(.22, 1.5, .4, 1);
     }
     .wave-emote {
-      font-size: 26px; font-weight: 800; color: #ffb066;
+      font-size: 26px; font-weight: 800; color: var(--wally);
       letter-spacing: .02em;
     }
     .wave-label {
       margin-top: 2px; font-size: 11px; text-transform: uppercase;
-      letter-spacing: .08em; color: rgba(255, 255, 255, .5);
+      letter-spacing: .08em; color: var(--dim);
     }
     @keyframes wave-in {
       0%   { transform: scale(.6) rotate(-4deg); opacity: 0; }
@@ -685,10 +710,10 @@
       position: relative;
       width: 300px;
       padding: 14px 16px 12px;
-      background: rgba(18, 18, 22, .9);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-left: 3px solid #ffb066;
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--wally);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
@@ -707,7 +732,7 @@
     }
     .quote-author {
       margin-top: 8px; font-size: 12px; text-align: right;
-      color: rgba(255, 255, 255, .55);
+      color: var(--dim);
       animation: opt-in .4s cubic-bezier(.22, 1.3, .4, 1) .45s backwards;
     }
 
@@ -717,19 +742,19 @@
       display: flex; align-items: center; gap: 14px;
       width: 400px;
       padding: 12px 14px;
-      background: rgba(18, 18, 22, .9);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 14px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .gallows { width: 96px; height: 104px; flex: 0 0 96px; }
     .gallows .post {
-      stroke: rgba(255, 255, 255, .35); stroke-width: 4; stroke-linecap: round;
+      stroke: var(--dimmer); stroke-width: 4; stroke-linecap: round;
     }
     /* Chaque membre se TRACE : un trait qui surgit ne se remarque pas. */
     .gallows .part {
-      stroke: #ff8a8a; stroke-width: 4; stroke-linecap: round; fill: none;
+      stroke: var(--lose); stroke-width: 4; stroke-linecap: round; fill: none;
       stroke-dasharray: 120; stroke-dashoffset: 120;
       animation: draw-part .45s ease-out forwards;
       animation-delay: calc(var(--i, 0) * 40ms);
@@ -739,7 +764,7 @@
     .hangman-side { flex: 1; min-width: 0; }
     .hangman-hint {
       font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
-      color: rgba(255, 255, 255, .5); margin-bottom: 8px;
+      color: var(--dim); margin-bottom: 8px;
     }
     .hangman-word { display: flex; flex-wrap: wrap; gap: 5px; }
     .hangman-word .slot {
@@ -750,7 +775,7 @@
     }
     /* La lettre trouvée tombe en place au lieu d'apparaître. */
     .hangman-word .slot.filled {
-      color: #7dffb0; border-bottom-color: rgba(125, 255, 176, .5);
+      color: var(--win); border-bottom-color: rgba(125, 255, 176, .5);
       animation: slot-drop .32s cubic-bezier(.22, 1.4, .4, 1) backwards;
       animation-delay: calc(var(--i, 0) * 35ms);
     }
@@ -759,17 +784,17 @@
     }
     .hangman-missed {
       margin-top: 8px; font-size: 12px; letter-spacing: .16em;
-      color: #ff8a8a; text-decoration: line-through;
+      color: var(--lose); text-decoration: line-through;
     }
     .hangman-help {
-      margin-top: 8px; font-size: 11.5px; color: rgba(255, 255, 255, .45);
+      margin-top: 8px; font-size: 11.5px; color: var(--dimmer);
     }
     .hangman-verdict {
       margin-top: 8px; font-size: 14px; font-weight: 700;
       animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1);
     }
-    .hangman.won  .hangman-verdict { color: #7dffb0; }
-    .hangman.lost .hangman-verdict { color: #ff8a8a; }
+    .hangman.won  .hangman-verdict { color: var(--win); }
+    .hangman.lost .hangman-verdict { color: var(--lose); }
 
     /* Chifoumi — le geste du vrai jeu : les mains secouent trois fois avant de
        se figer sur le coup joué. Sans ce battement, le résultat tombe sans
@@ -777,16 +802,16 @@
     .rps {
       width: 320px;
       padding: 12px 14px;
-      background: rgba(18, 18, 22, .9);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 14px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
       color: #fff;
       text-align: center;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .rps-title {
       font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .6); margin-bottom: 10px;
+      color: var(--dim); margin-bottom: 10px;
     }
     .rps-hand { font-size: 38px; line-height: 1; }
 
@@ -795,13 +820,13 @@
     .rps-side { display: flex; flex-direction: column; align-items: center; gap: 4px; }
     /* Le pseudo peut être long : il se coupe plutôt que d'écarter les mains. */
     .rps-name {
-      font-size: 11.5px; color: rgba(255, 255, 255, .6);
+      font-size: 11.5px; color: var(--dim);
       max-width: 120px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
     .rps-vs {
       font-size: 13px; font-weight: 800; letter-spacing: .08em;
-      color: rgba(255, 255, 255, .35);
+      color: var(--dimmer);
       animation: vs-pulse 1.2s ease-in-out infinite;
     }
     @keyframes vs-pulse {
@@ -834,9 +859,9 @@
          les deux mains soient posées. */
       animation: opt-in .4s cubic-bezier(.22, 1.3, .4, 1) 1.35s backwards;
     }
-    .rps.opponent .rps-verdict { color: #7dffb0; }
-    .rps.wally    .rps-verdict { color: #ffb066; }
-    .rps.draw     .rps-verdict { color: rgba(255, 255, 255, .6); }
+    .rps.opponent .rps-verdict { color: var(--win); }
+    .rps.wally    .rps-verdict { color: var(--wally); }
+    .rps.draw     .rps-verdict { color: var(--dim); }
 
     /* Meme de la communauté — l'image seule, sans légende : sa description est
        le contexte que Wally lit pour le commenter, pas un texte à afficher.
@@ -844,16 +869,16 @@
     .meme {
       max-width: 100%;
       padding: 8px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
     }
     .meme img {
       display: block;
       max-width: 380px;
       max-height: 260px;
       width: auto; height: auto;
-      border-radius: 8px;
+      border-radius: var(--r-sm);
     }
 
     /* Planning des streams — ce sont des horaires : ils doivent être LISIBLES,
@@ -872,9 +897,9 @@
     .planning {
       max-width: 100%;
       padding: 8px;
-      background: rgba(18, 18, 22, .92);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
     }
     .planning img {
       display: block;
@@ -884,33 +909,33 @@
       max-width: calc(100vw - 40px);
       max-height: calc(100vh - 40px);
       width: auto; height: auto;
-      border-radius: 8px;
+      border-radius: var(--r-sm);
     }
 
     /* Pari de Wally — ouverture, puis verdict. */
     .prediction {
       width: 280px;
       padding: 11px 13px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-left: 3px solid #b79cff;
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--who);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
-    .prediction.right { border-left-color: #7dffb0; }
-    .prediction.wrong { border-left-color: #ff7d7d; }
+    .prediction.right { border-left-color: var(--win); }
+    .prediction.wrong { border-left-color: var(--lose); }
     .pred-head {
       font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .6); margin-bottom: 5px;
+      color: var(--dim); margin-bottom: 5px;
     }
-    .prediction.right .pred-head { color: #7dffb0; font-weight: 700; }
-    .prediction.wrong .pred-head { color: #ff7d7d; font-weight: 700; }
+    .prediction.right .pred-head { color: var(--win); font-weight: 700; }
+    .prediction.wrong .pred-head { color: var(--lose); font-weight: 700; }
     .pred-bet { font-size: 14px; line-height: 1.3; }
     .prediction.wrong .pred-bet { text-decoration: line-through; opacity: .7; }
     .pred-score {
       margin-top: 7px; font-size: 12px; font-variant-numeric: tabular-nums;
-      color: rgba(255, 255, 255, .55);
+      color: var(--dim);
     }
 
     /* Bingo du stream — liste plutôt que grille : à 200 px, une grille 3×3
@@ -920,18 +945,18 @@
       width: 420px;
       max-width: 100%;
       padding: 10px 12px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .bingo-title {
       font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+      color: var(--dim); margin-bottom: 8px;
     }
     .bingo.full .bingo-title {
-      color: #7dffb0; font-weight: 800; letter-spacing: .12em;
+      color: var(--win); font-weight: 800; letter-spacing: .12em;
       animation: win-pop .6s cubic-bezier(.22, 1.5, .4, 1);
     }
     /* 3 colonnes tant qu'il y a assez de cases, sinon autant que nécessaire. */
@@ -947,38 +972,38 @@
       font-size: 12px; line-height: 1.2;
       background: rgba(255, 255, 255, .05);
       border: 1px solid rgba(255, 255, 255, .09);
-      border-radius: 8px;
+      border-radius: var(--r-sm);
       animation: opt-in .34s cubic-bezier(.22, 1.2, .4, 1) backwards;
       animation-delay: calc(var(--i, 0) * 55ms + 100ms);
     }
     .bingo .mark {
-      width: 11px; flex: 0 0 11px; color: #7dffb0; font-weight: 700;
+      width: 11px; flex: 0 0 11px; color: var(--win); font-weight: 700;
     }
     .bingo .cell.done {
       background: rgba(52, 209, 127, .12);
       border-color: rgba(125, 255, 176, .3);
     }
     .bingo .cell.done .txt {
-      color: rgba(255, 255, 255, .55);
+      color: var(--dim);
       text-decoration: line-through;
     }
     /* La case qu'on vient de cocher : sinon on ne voit pas ce qui a changé. */
-    .bingo .cell.just .txt { color: #7dffb0; text-decoration: none; font-weight: 700; }
+    .bingo .cell.just .txt { color: var(--win); text-decoration: none; font-weight: 700; }
     .bingo .cell.just { animation: win-pop .5s cubic-bezier(.22, 1.5, .4, 1); }
 
     /* Stats d'un joueur — les chiffres viennent de l'API, pas du modèle. */
     .stats, .versus {
       width: 260px;
       padding: 10px 12px;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     .stats .who {
       font-size: 14px; font-weight: 700; margin-bottom: 7px;
-      color: #ffb066;
+      color: var(--wally);
     }
     .stats .line {
       display: flex; justify-content: space-between; gap: 8px;
@@ -997,7 +1022,7 @@
        de large utiles de la source OBS, bornés à ce que la source offre
        vraiment pour qu'une source étroite ne la fasse pas déborder. */
     .apex.apex-large { width: min(560px, calc(100vw - 24px)); }
-    .apex .apex-progress-img { width: 100%; display: block; border-radius: 8px; }
+    .apex .apex-progress-img { width: 100%; display: block; border-radius: var(--r-sm); }
     .apex .apex-rank-name { font-size: 15px; font-weight: 700; }
     .apex .apex-avatar {
       width: 30px; height: 30px; border-radius: 50%; object-fit: cover;
@@ -1005,28 +1030,28 @@
     }
     .apex .apex-state {
       font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+      color: var(--dim); margin-bottom: 8px;
     }
-    .apex .apex-state.live { color: #7ee787; }
-    .apex .apex-world { font-size: 11px; color: #ffb066; margin-left: 6px; }
+    .apex .apex-state.live { color: var(--win); }
+    .apex .apex-world { font-size: 11px; color: var(--wally); margin-left: 6px; }
     .apex .apex-timer {
-      font-size: 11px; color: rgba(255, 255, 255, .55);
+      font-size: 11px; color: var(--dim);
       margin-left: 6px; font-variant-numeric: tabular-nums;
     }
-    .apex .apex-up .v { color: #7ee787; }
-    .apex .apex-down .v { color: #ff7b72; }
+    .apex .apex-up .v { color: var(--win); }
+    .apex .apex-down .v { color: var(--lose); }
     .cliptop { width: 320px; }
     .cliptop .cliptop-row { margin-bottom: 6px; }
     .cliptop .line { margin-bottom: 0; }
     .cliptop .line .k { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cliptop .cliptop-by { font-size: 11px; color: rgba(255, 255, 255, .45); }
-    .stats .line .k { color: rgba(255, 255, 255, .62); }
+    .cliptop .cliptop-by { font-size: 11px; color: var(--dimmer); }
+    .stats .line .k { color: var(--dim); }
     .stats .line .v { font-weight: 700; font-variant-numeric: tabular-nums; }
 
     /* Comparaison — barres relatives au meilleur des deux. */
     .versus .vs-label {
       font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-      color: rgba(255, 255, 255, .6); margin-bottom: 8px;
+      color: var(--dim); margin-bottom: 8px;
     }
     .versus .vs-row {
       margin-bottom: 8px; font-size: 13px;
@@ -1037,27 +1062,27 @@
       display: flex; justify-content: space-between; margin-bottom: 3px;
       font-variant-numeric: tabular-nums;
     }
-    .versus .vs-row.lead .row { color: #7dffb0; font-weight: 700; }
+    .versus .vs-row.lead .row { color: var(--win); font-weight: 700; }
     .versus .bar {
-      height: 9px; border-radius: 5px; overflow: hidden;
+      height: 9px; border-radius: var(--r-sm); overflow: hidden;
       background: rgba(255, 255, 255, .1);
     }
     .versus .bar span {
-      display: block; height: 100%; width: 0; border-radius: 5px;
-      background: linear-gradient(90deg, #46c6ff, #9d7bff);
+      display: block; height: 100%; width: 0; border-radius: var(--r-sm);
+      background: linear-gradient(90deg, var(--info), var(--who-deep));
       transition: width .6s cubic-bezier(.3, .9, .3, 1);
     }
     .versus .vs-row.lead .bar span {
-      background: linear-gradient(90deg, #34d17f, #7dffb0);
+      background: linear-gradient(90deg, var(--win-deep), var(--win));
     }
 
     /* Compteur (uptime) — texte simple, lisible sur tout fond. */
     .counter {
       padding: 9px 16px;
       font-size: 26px; font-weight: 600; color: #fff;
-      background: rgba(18, 18, 22, .88);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
       font-variant-numeric: tabular-nums;
     }

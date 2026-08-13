@@ -85,6 +85,25 @@
     reactTimer = setTimeout(() => slot.classList.remove("reacting"), 1000);
   }
 
+  // ── Palette ──────────────────────────────────────────────────────────────
+  // Les couleurs vivent dans le `:root` du CSS, une seule fois. Les lire ici
+  // plutôt que les redéclarer : la bague du compte à rebours interpolait entre
+  // `rgb(245,158,11)` et `rgb(239,68,68)`, soit les deux mêmes couleurs que le
+  // CSS, réécrites en chiffres — une retouche de palette en oubliait la moitié.
+  const _tokens = {};
+  function token(nom) {
+    if (!(nom in _tokens)) {
+      _tokens[nom] = getComputedStyle(document.documentElement)
+        .getPropertyValue(`--${nom}`).trim();
+    }
+    return _tokens[nom];
+  }
+  /** Composantes d'un token, ou `null` s'il n'est pas un `#rrggbb`. */
+  function tokenRGB(nom) {
+    const m = /^#([0-9a-f]{6})$/i.exec(token(nom));
+    return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null;
+  }
+
   // ── Widgets ──────────────────────────────────────────────────────────────
   // Rendus en CSS 3D plutôt qu'avec un moteur : plus léger, et composé par le
   // GPU du streamer — qui fait déjà tourner le jeu et l'encodage.
@@ -181,10 +200,16 @@
         seg.setAttribute("y2", (70 + Math.sin(angle) * 62).toFixed(2));
         seg.setAttribute("class", "cd-seg");
         // Ambre → rouge le long de l'anneau : la fin de course se voit venir.
+        // Les deux bouts sortent de la palette ; si un token n'est pas un
+        // `#rrggbb`, l'anneau reste d'une seule couleur plutôt que de virer au
+        // gris — un dégradé raté doit se voir, pas se deviner.
         const t = i / (SEGMENTS - 1);
+        const a = tokenRGB("wally"), b = tokenRGB("lose");
         seg.style.setProperty(
           "--on",
-          `rgb(${Math.round(245 + (239 - 245) * t)}, ${Math.round(158 + (68 - 158) * t)}, ${Math.round(11 + (68 - 11) * t)})`,
+          a && b
+            ? `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * t)).join(", ")})`
+            : token("wally"),
         );
         svg.appendChild(seg);
         segs.push(seg);
@@ -848,9 +873,12 @@
     widgetTimer = setTimeout(clearWidgets, 300);   // le temps de la sortie animée
   }
 
-  // Les couleurs de l'overlay, pas celles de la fête foraine : le violet des
-  // accents et le cyan, plus un or qui accroche l'œil sur une image de jeu.
-  const CONFETTI_COLORS = ["#b79cff", "#06b6d4", "#ffd166", "#ffffff"];
+  // Les couleurs de l'overlay, pas celles de la fête foraine : les accents de
+  // la palette, plus un blanc qui accroche l'œil sur une image de jeu.
+  // Lus au premier raid, pas au chargement : le CSS est prêt bien avant.
+  // Le cyan `#06b6d4` qui traînait ici venait du DASHBOARD — l'overlay, lui,
+  // n'a jamais eu ce bleu.
+  const confettiColors = () => [token("who"), token("info"), token("gold"), "#ffffff"];
 
   function burstConfetti(viewers) {
     // Absente si le fichier n'a pas été servi : un overlay sans confettis reste
@@ -871,7 +899,7 @@
         spread: 62,
         startVelocity: 48,
         origin: { x, y: 0.95 },
-        colors: CONFETTI_COLORS,
+        colors: confettiColors(),
         disableForReducedMotion: false,
         scalar: 0.9,
         ticks: 220,          // ~3,5 s de vol : la carte en reste 10
@@ -881,8 +909,13 @@
 
   // Les couleurs des secteurs. Deux voisins ne doivent jamais se ressembler :
   // la roue tourne vite, c'est le contraste qui donne la sensation de vitesse.
-  const WHEEL_COLORS = ["#46c6ff", "#9d7bff", "#ff7ba8", "#ffcf5c",
-                        "#6ee7a8", "#ff9f68", "#7fd1ff", "#c9a0ff"];
+  // Six teintes viennent de la palette, deux la complètent — une roue a besoin
+  // de plus de teintes distinctes que le reste de l'overlay, mais elle n'a
+  // aucune raison d'en inventer huit.
+  const wheelColors = () => [
+    token("info"), token("who-deep"), token("lose"), token("gold"),
+    token("win"), token("wally"), "#7fd1ff", "#c9a0ff",
+  ];
   const WHEEL_SPIN_MS = 4000;      // le widget reste 10 s : 6 s pour lire
 
   function mountWheel(host, params) {
@@ -906,7 +939,7 @@
     disposeWheel();
     activeWheel = new window.spinWheel.Wheel(host, {
       items: options.map((o) => ({ label: String(o) })),
-      itemBackgroundColors: WHEEL_COLORS,
+      itemBackgroundColors: wheelColors(),
       itemLabelColors: ["#141419"],
       // Les labels DANS les secteurs : c'est tout l'intérêt du changement. La
       // roue d'avant ne montrait que des couleurs, et le viewer découvrait les
@@ -1082,6 +1115,14 @@
       case "clear":    clearAll(); break;
     }
   });
+
+  // Aperçu local (`?preview=1`) : rendre un widget SANS passer par le flux.
+  // Le flux part vers tous les clients connectés — donc vers l'OBS du streamer :
+  // régler une couleur ou une animation ne doit pas s'afficher en plein live.
+  // Le crochet n'existe que sous ce paramètre, et n'émet rien.
+  if (new URLSearchParams(location.search).has("preview")) {
+    window.__overlayPreview = { showWidget, say, showThinking, react, kinds: () => Object.keys(BUILDERS) };
+  }
 
 
   // ── Instrumentation ──────────────────────────────────────────────────────
