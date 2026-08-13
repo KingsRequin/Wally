@@ -880,6 +880,10 @@
   // qu'on ne l'a pas retirée : sortir son canvas du DOM ne suffit PAS, la
   // boucle continuerait de tourner dans le vide pour tout le reste du live.
   let activeWheel = null;
+  // La carte qui possède la roue en cours. Avec le relais recouvrant, une roue
+  // sortante se retire 300 ms APRÈS que la suivante a été montée : sans savoir
+  // à qui appartient `activeWheel`, la sortante détruisait la nouvelle.
+  let activeWheelBox = null;
 
   function disposeWheel() {
     if (!activeWheel) return;
@@ -889,17 +893,43 @@
       /* déjà retirée : rien à faire */
     }
     activeWheel = null;
+    activeWheelBox = null;
   }
 
-  function clearWidgets() {
-    // Un compte à rebours remplacé doit voir son timer coupé, sinon il continue
-    // de tourner dans le vide pendant tout le live.
-    widgets.querySelectorAll("[data-interval]").forEach((n) => {
+  /** Le widget en place, en ignorant ceux qui finissent de sortir. */
+  function currentWidget() {
+    return widgets.querySelector(".widget:not(.leaving)");
+  }
+
+  /** Retire UN widget et coupe ce qu'il faisait tourner. Un compte à rebours
+   *  retiré sans ça continue de tourner dans le vide tout le live. */
+  function disposeWidget(box) {
+    if (!box) return;
+    box.querySelectorAll("[data-interval]").forEach((n) => {
       clearInterval(Number(n.dataset.interval));
     });
-    disposeWheel();
-    widgets.replaceChildren();
-    document.body.classList.remove("widget-on");
+    // Uniquement SA roue : une carte sortante ne doit pas emporter celle que la
+    // suivante vient de monter pendant le recouvrement.
+    if (activeWheelBox === box) disposeWheel();
+    box.remove();
+    if (!widgets.firstElementChild) document.body.classList.remove("widget-on");
+  }
+
+  /** Retire les widgets EN PLACE.
+   *
+   *  Ceux qui finissent de sortir (`.leaving`) sont laissés : ils se retirent
+   *  seuls, et c'est ce qui permet à la suivante d'entrer pendant qu'ils
+   *  s'en vont. `tout` force le nettoyage complet, pour une annulation. */
+  function clearWidgets(tout = false) {
+    const cibles = tout
+      ? widgets.querySelectorAll(".widget")
+      : widgets.querySelectorAll(".widget:not(.leaving)");
+    cibles.forEach(disposeWidget);
+    if (tout) {
+      disposeWheel();
+      widgets.replaceChildren();
+      document.body.classList.remove("widget-on");
+    }
   }
 
   // File d'attente : deux demandes rapprochées se remplaçaient, la seconde
@@ -912,7 +942,7 @@
     const build = BUILDERS[kind];
     if (!build) return;
 
-    const current = widgets.firstElementChild;
+    const current = currentWidget();
     // Même nature que le widget affiché : c'est une MISE À JOUR (un vote de
     // sondage, une case de bingo, le verdict d'un pari), pas une nouvelle
     // demande — l'empiler la ferait arriver après coup, sur un widget disparu.
@@ -949,10 +979,11 @@
     clearTimeout(widgetTimer);
     hideBubble();
     showThinking(false);
-    const box = widgets.firstElementChild;
-    if (!box) { clearWidgets(); return; }
+    const box = currentWidget();
+    if (!box) { clearWidgets(true); return; }
     box.classList.remove("visible");
-    widgetTimer = setTimeout(clearWidgets, 300);   // le temps de la sortie animée
+    // `true` : une annulation emporte AUSSI ce qui était en train de sortir.
+    widgetTimer = setTimeout(() => clearWidgets(true), 300);
   }
 
   // Les couleurs de l'overlay, pas celles de la fête foraine : les accents de
@@ -1019,6 +1050,7 @@
     }
 
     disposeWheel();
+    activeWheelBox = host.closest(".widget");
     activeWheel = new window.spinWheel.Wheel(host, {
       items: options.map((o) => ({ label: String(o) })),
       itemBackgroundColors: wheelColors(),
@@ -1060,7 +1092,7 @@
 
     // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
     // chaque vote rejouerait l'animation d'entrée et clignoterait.
-    const current = widgets.firstElementChild;
+    const current = currentWidget();
     let poll = current && current.dataset.kind === "poll"
       ? current.querySelector(".poll") : null;
     // …mais seulement s'il s'agit du MÊME sondage. `updatePoll` ne touche ni la
@@ -1088,7 +1120,7 @@
       const box = el("div", "widget");
       box.dataset.kind = kind;
       box.appendChild(build(params));
-      widgets.replaceChildren(box);
+      widgets.appendChild(box);
       if (refresh) {
         box.classList.add("visible");   // déjà à l'écran : pas de réapparition
       } else {
@@ -1096,7 +1128,7 @@
         box.classList.add("visible");
       }
     }
-    const box = widgets.firstElementChild;
+    const box = currentWidget();
     // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
     // sa place.
     document.body.classList.add("widget-on");
@@ -1123,16 +1155,19 @@
       // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
       // fois par live là où une bulle part toutes les quelques secondes.
       burst(box, { count: 11, spread: 34, ms: 400, drop: "rgba(255,255,255,.92)" });
-      box.classList.add("popping");
+      // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
+      // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
+      // lisent comme deux événements ; avec, comme un seul mouvement.
+      box.classList.add("popping", "leaving");
       box.classList.remove("visible");
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
       // autre chose. Vaut pour bingo, hangman et poll.
-      widgetTimer = setTimeout(() => {
-        clearWidgets();
-        playNext();       // la suivante prend le relais, si elle a tenu
-      }, 280);            // la durée de `pop`, plus une marge
+      // Appelée à ~55 % de la sortie, pas à la fin : c'est là tout le
+      // recouvrement. Le widget sortant se retire tout seul juste après.
+      widgetTimer = setTimeout(playNext, 150);
+      setTimeout(() => disposeWidget(box), 300);
     }, seconds * 1000);
   }
 

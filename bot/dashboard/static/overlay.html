@@ -433,6 +433,15 @@
       transition: opacity var(--t-out) var(--ease-in), transform var(--t-out) var(--ease-in);
     }
     body[data-side="right"] .widget { transform-origin: bottom right; }
+    /* Le widget qui SORT quitte le flux : la suivante prend sa place tout de
+       suite, pendant qu'il finit de partir. `#widgets` est déjà positionné, et
+       `bottom: 0` le laisse exactement là où il était. */
+    .widget.leaving {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
     .widget.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
