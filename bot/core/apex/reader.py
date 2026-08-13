@@ -308,3 +308,52 @@ def read_profile(payload: Any) -> PlayerProfile | None:
         stats=_read_stats(payload),
         legend_stats=_read_legend_stats(payload),
     )
+
+
+def read_kill_trackers(payload: Any) -> dict[str, int]:
+    """Tous les compteurs de kills BRUTS : clé de tracker → valeur.
+
+    `_read_stats()` ne convient pas pour mesurer une partie. Il normalise par
+    notion et retient le PREMIER alias connu (« Career Kills » avant « BR
+    Kills »), donc un joueur dont ce premier tracker est GELÉ — retiré de sa
+    bannière, valeur figée au jour du retrait — verrait son compteur immobile
+    quoi qu'il fasse en jeu. Mesuré le 2026-08-13 : `career_kills` affichait
+    10 989 pour un joueur qui en avait 18 782, et n'a bougé qu'au ré-épinglage.
+
+    On rend donc TOUS les trackers, sans en préférer aucun. L'appelant prendra
+    le MAXIMUM de leurs deltas — jamais la somme : les quatre bougent du même
+    montant à chaque kill, les additionner quadruplerait le score.
+
+    Les trackers de la légende sélectionnée sont préfixés `legend:` : ils
+    portent parfois la même clé que ceux de `total` sans compter la même chose.
+    """
+    trackers: dict[str, int] = {}
+
+    total = payload.get("total") if isinstance(payload, dict) else None
+    if isinstance(total, dict):
+        for cle, entree in total.items():
+            if not isinstance(entree, dict):
+                continue
+            if "kill" not in str(entree.get("name", "")).lower() and "kill" not in str(cle).lower():
+                continue
+            valeur = _num(entree.get("value"))
+            if valeur is not None:
+                trackers[str(cle)] = int(valeur)
+
+    legendes = payload.get("legends") if isinstance(payload, dict) else None
+    selected = (legendes or {}).get("selected") if isinstance(legendes, dict) else None
+    data = (selected or {}).get("data") if isinstance(selected, dict) else None
+    # `data` est une LISTE ici, un DICT dans `total` — les deux formes coexistent
+    # dans le même payload.
+    if isinstance(data, list):
+        for entree in data:
+            if not isinstance(entree, dict):
+                continue
+            cle = str(entree.get("key", ""))
+            if "kill" not in str(entree.get("name", "")).lower() and "kill" not in cle.lower():
+                continue
+            valeur = _num(entree.get("value"))
+            if valeur is not None and cle:
+                trackers[f"legend:{cle}"] = int(valeur)
+
+    return trackers
