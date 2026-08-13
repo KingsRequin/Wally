@@ -88,7 +88,7 @@
     /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
     body[data-side="right"] #bubble.speech::after {
       left: auto;
-      right: -44px;
+      right: calc(1.9% - 54px);
       transform: scaleX(-1);
     }
     body[data-side="right"] #bubble.thought::after  { left: auto; right: 30px; }
@@ -125,7 +125,7 @@
          jamais, quelle que soit la longueur du texte. La forme est une
          superellipse (n = 2,2) à peine gondolée, pour un trait tracé à la main
          plutôt qu'un ovale de géométrie. */
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M197.2%2050.0L197.2%2056.0L196.0%2061.3L193.7%2066.2L190.3%2070.7L185.8%2074.9L180.2%2078.8L173.8%2082.2L166.7%2085.1L158.9%2087.7L150.5%2089.9L141.6%2091.6L132.3%2093.0L122.5%2094.1L112.1%2094.8L100.0%2095.2L87.8%2095.2L77.1%2094.8L67.0%2093.9L57.4%2092.6L48.2%2090.9L39.7%2088.6L32.0%2085.8L25.1%2082.6L19.2%2079.0L14.2%2074.9L10.4%2070.6L7.6%2065.9L5.9%2061.0L5.1%2055.9L5.2%2050.0L6.1%2044.2L7.9%2039.2L10.3%2034.5L13.4%2030.1L17.3%2025.9L21.9%2022.0L27.2%2018.3L33.4%2014.9L40.4%2011.8L48.2%209.1L56.9%206.9L66.3%205.1L76.5%203.9L87.4%203.3L100.0%203.2L112.5%203.6L123.2%204.6L133.0%206.0L142.1%207.9L150.5%2010.1L158.2%2012.7L165.2%2015.6L171.7%2018.8L177.5%2022.2L182.7%2025.9L187.2%2030.0L191.0%2034.3L194.0%2039.0L196.1%2044.1Z%27%20fill=%27%23f7f3e9%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linejoin=%27round%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%20200%20100%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M196.0%2050.0L196.2%2055.9L195.3%2061.2L193.4%2066.1L190.3%2070.7L186.1%2075.0L180.8%2079.0L174.6%2082.5L167.5%2085.6L159.6%2088.2L151.1%2090.4L142.1%2092.1L132.6%2093.4L122.6%2094.3L112.1%2094.8L100.0%2095.0L87.9%2094.8L77.4%2094.3L67.4%2093.4L57.9%2092.1L48.9%2090.4L40.4%2088.2L32.5%2085.6L25.4%2082.5L19.2%2079.0L13.9%2075.0L9.7%2070.7L6.6%2066.1L4.7%2061.2L3.8%2055.9L4.0%2050.0L5.1%2044.1L7.1%2039.1L9.9%2034.5L13.4%2030.1L17.6%2026.0L22.5%2022.2L28.0%2018.6L34.2%2015.3L41.2%2012.3L48.9%209.6L57.3%207.3L66.6%205.5L76.6%204.1L87.4%203.3L100.0%203.0L112.6%203.3L123.4%204.1L133.4%205.5L142.7%207.3L151.1%209.6L158.8%2012.3L165.8%2015.3L172.0%2018.6L177.5%2022.2L182.4%2026.0L186.6%2030.1L190.1%2034.5L192.9%2039.1L194.9%2044.1Z%27%20fill=%27%23f7f3e9%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linejoin=%27round%27%20vector-effect=%27non-scaling-stroke%27/%3E%3C/svg%3E");
       background-size: 100% 100%;
       background-repeat: no-repeat;
       /* L'ombre porte sur la silhouette réelle, queue comprise — une box-shadow
@@ -154,19 +154,34 @@
     }
 
     /* Queue de la bulle de dialogue : une corne courbe et effilée, pas un
-       triangle. Taille fixe (jamais étirée), greffée sur le flanc de la bulle à
-       mi-hauteur, là où la silhouette est la plus verticale. Le SVG déborde de
-       10 px sur la bulle : son aplat recouvre le trait à cet endroit et le
-       raccord disparaît, même si la silhouette s'incurve un peu sous la mouche. */
+       triangle. Taille fixe, jamais étirée.
+
+       Sa greffe se règle au pixel, sinon elle se voit. Deux contraintes :
+
+       — L'aplat de la queue et ses deux traits se terminent au MÊME endroit.
+         Tout ce que l'aplat efface du contour de la bulle, les traits le
+         remplacent. Quand l'aplat mordait 10 px plus loin que les traits, il
+         effaçait du contour que rien ne reprenait : une encoche de chaque côté
+         de la mouche.
+
+       — Ce point de greffe vise le CONTOUR, pas le bord de la boîte. La
+         silhouette est en retrait de 1,9 % de la largeur — la marge qui empêche
+         le trait d'être rogné par le viewBox du SVG — un retrait qui grandit
+         donc avec la bulle : d'où un décalage en `%` et non en px. Les 2 px
+         retirés enfoncent la greffe juste sous le contour, pour l'effacer sur
+         toute son épaisseur. */
     #bubble.speech::after {
       content: "";
       position: absolute;
-      left: -44px;
-      top: 54%;
-      margin-top: -12px;
-      width: 54px;
+      left: calc(1.9% - 54px);
+      /* Pile à mi-hauteur : c'est là que la silhouette est la plus large, et
+         le gondolement s'y annule — le seul point dont la position est connue
+         exactement quelle que soit la taille de la bulle. */
+      top: 50%;
+      margin-top: -11.5px;
+      width: 56px;
       height: 48px;
-      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2054%2048%27%3E%3Cpath%20d=%27M54%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2054%2023Z%27%20fill=%27%23f7f3e9%27/%3E%3Cpath%20d=%27M44%202C32%208%2018%2022%202%2045C20%2032%2032%2027%2044%2023%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2056%2048%27%3E%3Cpath%20d=%27M56%203C36%208%2020%2022%202%2045C20%2032%2034%2025%2056%2020Z%27%20fill=%27%23f7f3e9%27/%3E%3Cpath%20d=%27M56%203C36%208%2020%2022%202%2045C20%2032%2034%2025%2056%2020%27%20fill=%27none%27%20stroke=%27%2314121c%27%20stroke-width=%273%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E");
       background-repeat: no-repeat;
     }
 
