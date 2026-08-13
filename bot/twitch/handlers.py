@@ -472,6 +472,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if "bot" in badge_ids:
         return
 
+    # Réponse d'un duelliste en attente de son uid Apex (Task 8bis) : AVANT
+    # tout cooldown et tout appel LLM, sinon le message serait traité comme
+    # un message ordinaire au lieu de résoudre le duel en attente.
+    runner = getattr(bot, "duel_runner", None)
+    if runner is not None and await runner.repondre_resolution(author, content):
+        return
+
     # Utilisateur banni : le ban est keyé sur le discord_id. On l'applique sur
     # Twitch UNIQUEMENT si ce compte Twitch est lié à un discord banni (alias
     # accepté). Sans liaison, on ne peut pas savoir → non filtré.

@@ -22,6 +22,23 @@ CLE_ETAT = "apex:duel"
 # récompense : cet ID est découvert à l'exécution, jamais configuré.
 CLE_RECOMPENSE = "apex:duel_reward_id"
 
+# Collée en dur dans le message, jamais laissée au LLM : un modèle qui
+# reformule une adresse finit par la casser, et un lien mort rend le duel
+# impossible à démarrer. Le ton est libre, l'adresse ne l'est pas.
+URL_APEX_STATUS = "https://apexlegendsstatus.com"
+
+# Étapes exactes et non devinables — fournies au prompt comme des FAITS.
+ETAPES_UID = (
+    "cherche ton pseudo sur le site, ouvre ton profil, et regarde l'URL : si "
+    "elle ne contient pas de numéro, clique sur « Not the profile you are "
+    "looking for? Try deep search », puis reclique sur ton compte — l'URL "
+    "devient une adresse en profile/uid/… C'est ce numéro qu'il me faut."
+)
+
+# Au-delà, on rend les points : mieux vaut un remboursement qu'un viewer qui
+# attend indéfiniment.
+TENTATIVES_RESOLUTION = 3
+
 
 def _uid_valide(saisie: str) -> str | None:
     """Un uid Apex est purement numérique. Validé AVANT tout appel réseau :
@@ -43,6 +60,10 @@ class DuelRunner:
         self._cadence_s = cadence_s
         self.duel_en_cours: Duel | None = None
         self._reward_id = ""
+        # Compteur d'essais en phase RESOLUTION — remis à zéro à chaque
+        # ouverture d'une nouvelle attente d'uid, jamais partagé entre deux
+        # viewers successifs.
+        self._tentatives = 0
         # Dernier JSON écrit en base — `_ranger()` évite de réécrire un état
         # inchangé : sonde à 2 s pendant potentiellement une demi-heure de
         # duel, et la plupart des tours ne changent rien (partie toujours en
@@ -153,8 +174,10 @@ class DuelRunner:
 
         uid = _uid_valide(saisie)
         if uid is None:
-            await self._refuser(reward_id, redemption_id,
-                                "l'identifiant fourni n'est pas un uid Apex")
+            # Pas de remboursement au premier essai : la recherche par pseudo
+            # de l'API rate des comptes bien réels, ce serait punir le viewer
+            # pour un défaut qui n'est pas le sien.
+            await self._demander_uid(acheteur, reward_id, redemption_id)
             return
         if uid == self._azrael_uid:
             await self._refuser(reward_id, redemption_id,
@@ -174,6 +197,65 @@ class DuelRunner:
             redemption_id=redemption_id, etat=Etat.ATTENTE_SQUAD)
         await self._ranger()
         await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": acheteur}))
+
+    async def _demander_uid(self, acheteur: str, reward_id: str,
+                            redemption_id: str) -> None:
+        """Explique comment trouver son uid, et garde le duel en attente.
+
+        Pas de remboursement ici : c'est le point même de cette étape (§9 de
+        la spec) — le viewer garde ses points dépensés pendant qu'on lui
+        laisse une vraie chance de répondre correctement.
+        """
+        self._reward_id = reward_id
+        self._tentatives = 0
+        self.duel_en_cours = Duel(
+            viewer_nom=acheteur, viewer_uid="", azrael_uid=self._azrael_uid,
+            redemption_id=redemption_id, etat=Etat.RESOLUTION)
+        await self._ranger()
+        await self._annoncer_sur(Evenement("compte_introuvable", {
+            "viewer": acheteur, "url": URL_APEX_STATUS, "etapes": ETAPES_UID,
+        }))
+
+    async def repondre_resolution(self, auteur: str, texte: str) -> bool:
+        """Une réponse du duelliste pendant la phase de résolution.
+
+        Rend `True` si le message a été consommé par le duel — l'appelant
+        sait alors qu'il n'a pas à le traiter comme un message ordinaire
+        (donc ni cooldown, ni appel LLM dessus).
+        """
+        duel = self.duel_en_cours
+        if duel is None or duel.etat is not Etat.RESOLUTION:
+            return False
+        if auteur.lower() != duel.viewer_nom.lower():
+            return False
+
+        uid = _uid_valide(texte)
+        if uid is not None and uid != self._azrael_uid:
+            profil = await self._profil(uid)
+            if profil is not None and read_kill_trackers(profil):
+                duel.viewer_uid = uid
+                duel.etat = Etat.ATTENTE_SQUAD
+                await self._ranger()
+                await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": duel.viewer_nom}))
+                return True
+
+        self._tentatives += 1
+        if self._tentatives >= TENTATIVES_RESOLUTION:
+            # Rembourser D'ABORD, nettoyer et persister ENSUITE, annoncer
+            # SEULEMENT après — même ordre que `_avancer()` : une annonce qui
+            # lève ne doit jamais laisser un remboursement en suspens ni un
+            # duel fantôme derrière elle.
+            await self._api.refund_redemption(self._reward_id, duel.redemption_id)
+            self.duel_en_cours = None
+            await self._ranger()
+            await self._annoncer_sur(Evenement("abandon", {
+                "rembourser": True,
+                "motif": "impossible de retrouver ce compte Apex"}))
+            return True
+
+        await self._annoncer_sur(Evenement("compte_introuvable", {
+            "viewer": duel.viewer_nom, "url": URL_APEX_STATUS, "etapes": ETAPES_UID}))
+        return True
 
     # -- Sonde --------------------------------------------------------------
     async def _profil(self, uid: str) -> dict | None:

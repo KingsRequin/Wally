@@ -27,18 +27,21 @@ def _runner(profil_viewer=None):
 
 
 @pytest.mark.asyncio
-async def test_uid_non_numerique_refuse_avant_tout_appel_reseau():
+async def test_uid_non_numerique_demande_l_uid_avant_tout_appel_reseau():
     """Un UID est purement numérique. Le valider AVANT le réseau évite
-    d'envoyer n'importe quelle saisie de viewer à l'API. Un refus qui ne
-    rembourse ni n'annonce est le pire résultat possible — et c'est le
-    chemin le plus probable en prod (un viewer colle son pseudo)."""
+    d'envoyer n'importe quelle saisie de viewer à l'API. Depuis la Task 8bis,
+    une saisie illisible n'est plus remboursée d'emblée : elle ouvre une
+    attente de résolution, un silence n'étant jamais acceptable non plus
+    (cf. tests/test_apex_duel_resolution.py pour le détail du repli)."""
     runner, client, _, api = _runner()
     await runner.ouvrir(acheteur="bob", saisie="'; DROP TABLE--",
                         reward_id="rw", redemption_id="rd")
     client.get.assert_not_awaited()
-    api.refund_redemption.assert_awaited_once_with("rw", "rd")
+    api.refund_redemption.assert_not_awaited()
+    assert runner.duel_en_cours is not None
+    assert runner.duel_en_cours.etat is Etat.RESOLUTION
     evt = runner._annoncer.await_args.args[0]
-    assert evt.type == "refus"
+    assert evt.type == "compte_introuvable"
 
 
 @pytest.mark.asyncio
