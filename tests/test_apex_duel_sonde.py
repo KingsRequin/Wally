@@ -1,6 +1,6 @@
 """La boucle de sonde du duel : muette hors duel, et sur une horloge murale.
 
-Trois exigences que le brief pose comme non négociables :
+Quatre exigences que le brief pose comme non négociables :
 
   · hors duel, la boucle ne demande RIEN à l'API — la sonde du watcher suffit à
     entretenir l'historique, et un duel consomme déjà 1 req/s à lui seul ;
@@ -10,7 +10,12 @@ Trois exigences que le brief pose comme non négociables :
     `bug_monotonic_uptime`) ;
   · le runner est relu à chaque tour : il est câblé pendant le démarrage, et la
     boucle ne doit pas dépendre de qui, du câblage ou du `gather`, part le
-    premier.
+    premier ;
+  · le sommeil déduit la durée du tour : dormir la cadence PLEINE après un tour
+    qui a déjà coûté du temps réseau fait dériver la période réelle bien
+    au-delà de la cadence configurée (mesuré : ~3,2 s au lieu de 2 s). La durée
+    se mesure en horloge MONOTONE (`time.monotonic()`), jamais murale — c'est
+    un intervalle, pas une date.
 """
 import asyncio
 import time
@@ -19,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.core.apex.duel import Duel, Etat
-from bot.core.apex.duel_runner import boucle_sonde
+from bot.core.apex.duel_runner import REPOS_SANS_DUEL_S, boucle_sonde
 
 
 def _runner(duel, cadence=2.0, cadence_courante=None):
@@ -140,3 +145,66 @@ async def test_sans_runner_la_sonde_attend_sans_rien_demander():
         await boucle_sonde(lambda: None, sleep=_sommeil_borne(2, dodos))
 
     assert len(dodos) == 2
+
+
+class _HorlogeFactice:
+    """Remplace le nom `time` importé dans `duel_runner`, pas le module `time`
+    global : patcher `time.monotonic` en place contaminerait `asyncio`
+    lui-même, qui s'en sert pour piloter la boucle d'événements."""
+
+    def __init__(self, monotoniques):
+        self._monotoniques = iter(monotoniques)
+
+    def monotonic(self) -> float:
+        return next(self._monotoniques)
+
+    def time(self) -> float:
+        return 0.0
+
+
+# -- Reliquat : la cadence réelle ne doit pas dériver au-delà de la cible ----
+@pytest.mark.asyncio
+async def test_le_sommeil_deduit_la_duree_du_tour(monkeypatch):
+    """Le tour lui-même coûte du temps réseau (mesuré ~1,2 s en prod : deux
+    requêtes désormais parallèles, espacées de 0,2 s par le limiteur du
+    client). Dormir la cadence PLEINE après ça portait la période réelle à
+    ~3,2 s au lieu des 2 s demandés. On dort le RELIQUAT."""
+    runner = _runner(object(), cadence=2.0)
+    monkeypatch.setattr(
+        "bot.core.apex.duel_runner.time",
+        _HorlogeFactice([100.0, 101.2]))  # 1,2 s de tour, en monotone
+    dodos: list[float] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        await boucle_sonde(lambda: runner, sleep=_sommeil_borne(1, dodos))
+
+    assert dodos[0] == pytest.approx(2.0 - 1.2)
+
+
+@pytest.mark.asyncio
+async def test_un_tour_plus_long_que_la_cadence_ne_dort_pas_a_negatif(monkeypatch):
+    """Un tour qui dépasse la cadence repart aussitôt — jamais de sommeil
+    négatif, jamais de retard accumulé au tour suivant."""
+    runner = _runner(object(), cadence=2.0)
+    monkeypatch.setattr(
+        "bot.core.apex.duel_runner.time",
+        _HorlogeFactice([100.0, 103.5]))  # le tour a duré plus que la cadence
+    dodos: list[float] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        await boucle_sonde(lambda: runner, sleep=_sommeil_borne(1, dodos))
+
+    assert dodos[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_hors_duel_la_mesure_de_duree_ne_change_rien():
+    """Le comportement hors duel — où aucune requête n'est émise — ne doit pas
+    changer : la boucle dort toujours le plein `REPOS_SANS_DUEL_S`."""
+    runner = _runner(None)
+    dodos: list[float] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        await boucle_sonde(lambda: runner, sleep=_sommeil_borne(2, dodos))
+
+    assert dodos == [REPOS_SANS_DUEL_S, REPOS_SANS_DUEL_S]

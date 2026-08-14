@@ -450,18 +450,20 @@ class DuelRunner:
     async def _profil(self, uid: str) -> dict | None:
         """Le profil, ou `None` si la sonde n'a rien donné d'exploitable.
 
-        Deux formes d'échec à écarter, pas une seule : `client.get` peut
-        rendre une CHAÎNE d'erreur (panne réseau, cf. `ApexClient.get`), mais
-        peut aussi rendre un dict `{"Error": "Player not found."}` avec un
-        200 tout à fait normal — piège documenté du projet (`reader.py`,
-        `service.py`). Un `_profil()` qui acceptait ce second cas comme un
-        relevé valide donnait `isInGame` absent → `False`, et deux relevés
-        d'erreur consécutifs suffisaient à faire croire à un retour au lobby
-        en pleine manche réelle.
+        Trois formes d'échec à écarter, pas une seule : `client.get` peut
+        rendre une CHAÎNE d'erreur (panne réseau, cf. `ApexClient.get`), un
+        dict `{"Error": "Player not found."}` avec un 200 tout à fait normal
+        — piège documenté du projet (`reader.py`, `service.py`) — ou un dict
+        VIDE (ni erreur ni contenu). Un `_profil()` qui acceptait l'un de ces
+        cas comme un relevé valide donnait `isInGame` absent → `False`, et
+        deux relevés d'erreur consécutifs suffisaient à faire croire à un
+        retour au lobby en pleine manche réelle. `realtime` est présent dans
+        tous les profils authentiques — y compris ceux vérifiés à l'ouverture
+        d'un duel — donc son absence signe un corps inexploitable.
         """
         p = await self._client.get(
             "bridge", {"uid": uid, "platform": self._plateforme}, sans_cache=True)
-        if not isinstance(p, dict) or "Error" in p:
+        if not isinstance(p, dict) or "Error" in p or "realtime" not in p:
             return None
         return p
 
@@ -704,10 +706,17 @@ async def boucle_sonde(source: Callable[[], "DuelRunner | None"], *,
     câblé pendant le démarrage, et la boucle ne doit pas dépendre de qui, du
     câblage ou du `gather`, part le premier. Absent, elle attend simplement.
 
-    `time.time()` et jamais `time.monotonic()` : l'instant transmis est persisté
-    dans l'état du duel et doit rester comparable après un redémarrage — une
-    horloge monotone y repart de zéro (piège déjà payé ici,
-    `bug_monotonic_uptime`).
+    `time.time()` et jamais `time.monotonic()` pour l'instant transmis à
+    `tick()` : il est persisté dans l'état du duel et doit rester comparable
+    après un redémarrage — une horloge monotone y repart de zéro (piège déjà
+    payé ici, `bug_monotonic_uptime`). La DURÉE du tour, elle, se mesure avec
+    `time.monotonic()` (un intervalle, jamais une date) : le tour lui-même
+    coûte du temps — deux requêtes réseau, désormais parallèles mais espacées
+    par le limiteur du client — et dormir la cadence PLEINE après un tour qui
+    en a déjà consommé une partie fait dériver la période réelle bien au-delà
+    de celle configurée. On dort donc le RELIQUAT (`cadence − durée`), jamais
+    moins que zéro : un tour plus long que la cadence repart aussitôt, sans
+    accumuler de retard.
 
     Vit tant que le bot vit : elle attrape, journalise et repart. Une boucle de
     fond qui meurt en silence laisse le duel figé sans que rien ne le signale.
@@ -718,10 +727,15 @@ async def boucle_sonde(source: Callable[[], "DuelRunner | None"], *,
             if runner is None or runner.duel_en_cours is None:
                 await sleep(REPOS_SANS_DUEL_S)
                 continue
+            debut = time.monotonic()
             await runner.tick(time.time())
             # La cadence vient du runner : rapprochée pendant une manche,
-            # relâchée tant qu'il n'y a rien à mesurer.
-            await sleep(runner.cadence_courante)
+            # relâchée tant qu'il n'y a rien à mesurer. Lue APRÈS le tick,
+            # comme avant ce correctif : le tour peut avoir fait changer
+            # l'état (donc la cadence qui convient) entre les deux.
+            cadence = runner.cadence_courante
+            duree = time.monotonic() - debut
+            await sleep(max(0.0, cadence - duree))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — la sonde ne meurt jamais en silence

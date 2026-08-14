@@ -5,12 +5,15 @@ La machine à états est testée ailleurs — ici on vérifie le câblage.
 """
 import asyncio
 import json
+import pathlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from bot.core.apex.duel import Duel, Etat
-from bot.core.apex.duel_runner import CLE_ETAT, CLE_RECOMPENSE, DuelRunner
+from bot.core.apex.duel_runner import CLE_ETAT, CLE_RECOMPENSE, DuelRunner, _camp
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "apex"
 
 
 def _runner(profil_viewer=None, memory=None):
@@ -94,7 +97,7 @@ async def test_ouvrir_refuse_si_lapi_rend_une_chaine_derreur():
 
 @pytest.mark.asyncio
 async def test_ouverture_reussie_persiste_l_etat():
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, client, db, api = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     assert runner.duel_en_cours is not None
@@ -153,7 +156,7 @@ async def test_charger_restaure_le_reward_id_pour_pouvoir_rembourser():
 
 @pytest.mark.asyncio
 async def test_annuler_rembourse_et_efface():
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, _, db, api = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     api.refund_redemption.reset_mock()
@@ -169,7 +172,7 @@ async def test_annuler_rembourse_et_efface():
 @pytest.mark.asyncio
 async def test_recommencer_ne_rembourse_PAS():
     """Le viewer garde sa place — les points restent dépensés."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, _, _, api = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     runner.duel_en_cours.scores = [{"azrael": 2, "viewer": 1}]
@@ -234,6 +237,42 @@ async def test_profil_rejette_un_corps_error_meme_en_200():
     api.refund_redemption.assert_not_awaited()
 
 
+# -- Un corps vide (ni erreur, ni `realtime`) n'est pas non plus un relevé --
+@pytest.mark.asyncio
+async def test_profil_rejette_un_corps_sans_realtime():
+    """`realtime` est présent dans tous les profils authentiques — y compris
+    ceux vérifiés à l'ouverture d'un duel (cf. les deux fixtures réelles
+    `bridge_azrael.json` / `bridge_kingsrequin.json`). Un dict SANS clé
+    `Error` mais aussi sans `realtime` reproduirait le même piège que le corps
+    `{"Error": …}` : `isInGame` absent -> False pour les deux joueurs, et deux
+    relevés consécutifs suffiraient à faire croire à un retour au lobby en
+    pleine manche réellement en cours."""
+    runner, client, _, api = _runner()
+    client.get = AsyncMock(return_value={})
+    duel = Duel(viewer_nom="bob", viewer_uid="42", azrael_uid="7")
+    duel.etat = Etat.MANCHE
+    duel._base_azrael = {"k": 0}
+    duel._base_viewer = {"k": 0}
+    runner.duel_en_cours = duel
+
+    await runner.tick(maintenant=100)
+    await runner.tick(maintenant=102)
+
+    assert duel.etat is Etat.MANCHE, "un corps sans `realtime` ne doit jamais valoir 'hors partie'"
+    api.refund_redemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ouvrir_refuse_un_profil_sans_realtime():
+    """Même garde côté ouverture : un corps vide (200, ni `Error` ni
+    `realtime`) ne doit pas suffire à lancer un duel."""
+    runner, client, _, api = _runner()
+    client.get = AsyncMock(return_value={"total": {"k": {"name": "BR Kills", "value": 10}}})
+    await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
+    api.refund_redemption.assert_awaited_once()
+    assert runner.duel_en_cours is None
+
+
 # -- IMPORTANT 2 : ne jamais recréer sur un doute ---------------------------
 @pytest.mark.asyncio
 async def test_assurer_recompense_garde_l_id_connu_si_la_liste_est_indisponible():
@@ -259,7 +298,7 @@ async def test_le_minuteur_avance_meme_quand_les_releves_echouent():
     minuteur qui avance, aucun timeout n'est jamais atteint, donc aucun
     remboursement — et `duel_en_cours` resterait peuplé pour toujours,
     refusant tous les viewers suivants."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, client, _, api = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     assert runner.duel_en_cours.etat is Etat.ATTENTE_SQUAD
@@ -298,7 +337,7 @@ async def test_isInGame_chaine_0_ne_vaut_pas_en_partie():
     """`bool("0")` vaut `True` en Python nu : cette API glisse parfois des
     chaînes là où on attend un nombre (cf. `reader._num`). Sans cette garde,
     un tel relevé ferait démarrer une manche qui n'a jamais eu lieu."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, client, _, _ = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     duel = runner.duel_en_cours
@@ -317,7 +356,7 @@ async def test_isInGame_chaine_0_ne_vaut_pas_en_partie():
 # -- IMPORTANT 5 : sans_cache exercé côté sonde également -------------------
 @pytest.mark.asyncio
 async def test_la_sonde_de_tick_ignore_aussi_le_cache():
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, client, _, _ = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     duel = runner.duel_en_cours
@@ -336,7 +375,7 @@ async def test_la_sonde_de_tick_ignore_aussi_le_cache():
 # détient `_annoncer`, c'est donc ici que ce chemin se ferme.
 @pytest.mark.asyncio
 async def test_duel_deja_en_cours_est_refuse_et_annonce_sans_ecraser_le_duel():
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, _, _, api = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     en_cours = runner.duel_en_cours
@@ -504,7 +543,7 @@ async def test_deux_achats_simultanes_ne_perdent_pas_le_premier():
     Le profil rendu ici cède la main (`sleep(0)`) : c'est ce que fait un vrai
     appel réseau, et sans ça les deux coroutines s'exécuteraient bout à bout
     sans jamais s'entrelacer."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, client, _, api = _runner()
 
     async def _lent(*a, **k):
@@ -658,7 +697,7 @@ async def test_sans_identifiant_twitch_rien_n_est_ecrit_en_memoire():
 async def test_un_identifiant_de_duelliste_fantaisiste_n_est_pas_retenu():
     """Un id Twitch est purement numérique. Tout le reste est écarté avant
     d'atteindre la mémoire."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, _, _, _ = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="bob", acheteur_id="bob", saisie="42",
                         reward_id="rw", redemption_id="rd")
@@ -669,7 +708,7 @@ async def test_un_identifiant_de_duelliste_fantaisiste_n_est_pas_retenu():
 async def test_l_identifiant_du_duelliste_survit_a_un_rebuild():
     """L'état persisté doit le porter : un duel repris après rebuild se termine
     normalement, et sa trace ne doit pas s'être perdue en route."""
-    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    profil = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
     runner, _, db, _ = _runner(profil_viewer=profil)
     await runner.ouvrir(acheteur="Bob", acheteur_id="105904256", saisie="42",
                         reward_id="rw", redemption_id="rd")
@@ -680,3 +719,28 @@ async def test_l_identifiant_du_duelliste_survit_a_un_rebuild():
     await repris.charger()
 
     assert repris.duel_en_cours.viewer_id == "105904256"
+
+
+# ── `_camp()` : légende jouée + niveau, sous le nom de chaque joueur ─────────
+# Non couvert directement ailleurs — seulement de façon indirecte via `tick()`.
+# Un renommage de clé côté API (`selectedLegend`, `global.level`) viderait les
+# sous-titres du widget en silence sans qu'aucun test ne le voie.
+@pytest.mark.parametrize("nom_fixture", ["bridge_azrael.json", "bridge_kingsrequin.json"])
+def test_camp_lit_legende_et_niveau_sur_des_payloads_reels(nom_fixture):
+    """Payloads RÉELS versionnés dans les fixtures, pour deux comptes
+    distincts — pas une forme reconstruite à la main."""
+    profil = json.loads((FIXTURES / nom_fixture).read_text(encoding="utf-8"))
+
+    camp = _camp(profil)
+
+    assert camp["legende"] == profil["realtime"]["selectedLegend"]
+    assert camp["niveau"] == profil["global"]["level"]
+
+
+def test_camp_omet_les_cles_absentes_sur_un_profil_vide():
+    """Un sous-titre qui s'écourte, jamais un « niv. 0 » inventé."""
+    assert _camp({}) == {}
+
+
+def test_camp_ne_casse_pas_sur_none():
+    assert _camp(None) == {}

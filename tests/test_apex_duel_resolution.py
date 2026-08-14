@@ -12,7 +12,7 @@ from bot.core.apex.duel import Etat
 from bot.core.apex.duel_runner import (TENTATIVES_RESOLUTION, URL_APEX_STATUS,
                                        DuelRunner)
 
-PROFIL_OK = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+PROFIL_OK = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
 
 
 def _runner(profils):
