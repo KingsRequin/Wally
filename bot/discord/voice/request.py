@@ -11,6 +11,7 @@ streamer et serait réinjecté dans son micro.
 """
 from __future__ import annotations
 
+import unicodedata
 from typing import Optional
 
 from loguru import logger
@@ -20,6 +21,29 @@ from loguru import logger
 # mots ordinaires (« valise ») et il répondrait à tort. La tolérance porte sur
 # le nom uniquement : jamais sur ce qui est demandé.
 _NAME_MAX_DISTANCE = 2
+
+# En dessous de cette longueur, un mot n'a pas assez de lettres pour survivre à
+# deux corrections sans devenir autre chose : « all » et « way » sont à distance
+# 2 de « wally ». Ces mots-là doivent donc tomber JUSTE.
+_MIN_FUZZY_LEN = 5
+
+# Mots relevés en live comme ayant déclenché Wally à tort (13/08 : 9 des 31
+# déclenchements ; jusqu'à 60 % sur un autre jour). Les deux règles ci-dessus les
+# écartent déjà toutes ; cette liste est un cliquet explicite et nommé — elle dit
+# QUELS mots ont fait parler le bot dans le vide, et ferait tomber un test si la
+# tolérance était un jour rouverte.
+# « wallah » n'a pas été constaté mais passe les deux règles (même initiale, 6
+# lettres, distance 2) : c'est une interjection, jamais son nom.
+_JAMAIS_SON_NOM = frozenset({
+    "balle", "salle", "dalle", "allo", "alle", "aller", "all", "well", "way",
+    "early", "wallah",
+})
+
+
+def _plier(mot: str) -> str:
+    """Minuscules sans accents : « allô » et « allé » se rangent avec « allo »."""
+    plie = unicodedata.normalize("NFD", (mot or "").lower())
+    return "".join(c for c in plie if unicodedata.category(c) != "Mn")
 
 # Une réponse de chat, pas un exposé : deux phrases, comme à l'écrit.
 _MAX_REPLY_CHARS = 380
@@ -61,19 +85,42 @@ def _distance(a: str, b: str) -> int:
 
 
 def is_addressed(text: str, names: list[str]) -> bool:
-    """Vrai si la phrase le nomme, même mal transcrite."""
-    mots = [m.strip(".,!?;:«»\"'").lower() for m in (text or "").split()]
+    """Vrai si la phrase le nomme, même mal transcrite.
+
+    Trois garde-fous, tous nés du même constat : une tolérance de deux
+    corrections sur cinq lettres attrape la moitié du français courant. Mesuré
+    sur quatre jours de live, 29 % à 60 % des déclenchements portaient sur une
+    phrase qui ne le nommait pas — et chacun coûte un appel au modèle ET un
+    message publié dans le chat de la chaîne.
+
+    1. **L'initiale ne se corrige pas.** « wally » sans son `w` n'est plus son
+       nom : balle, salle, dalle, allô, allé, early tombent ici.
+    2. **Les mots courts doivent tomber juste** (`_MIN_FUZZY_LEN`) : « all »,
+       « way », « well » sont à deux corrections de « wally » alors qu'ils n'ont
+       rien à voir.
+    3. **Une liste de mots qui ne sont jamais son nom**, en clair.
+
+    Ce qui doit continuer de passer : « Walli », « Wallie », « Wallis », « le
+    wally », et les fautes de frappe qui gardent l'initiale et la longueur.
+    """
+    mots = [_plier(m.strip(".,!?;:«»\"'()…-")) for m in (text or "").split()]
     for nom in names:
-        nom = (nom or "").strip().lower()
+        nom = _plier((nom or "").strip())
         if not nom:
             continue
         for mot in mots:
-            if not mot:
+            if not mot or mot in _JAMAIS_SON_NOM:
                 continue
-            # Un mot court ne tolère pas deux corrections : « pile » deviendrait
-            # « wally » pour peu qu'on cherche assez loin.
-            marge = _NAME_MAX_DISTANCE if len(nom) >= 5 else 1
-            if _distance(mot, nom) <= marge:
+            if mot == nom:
+                return True
+            # Approcher un nom suppose d'en avoir la première lettre et assez de
+            # lettres pour que deux corrections restent une transcription ratée
+            # et non un autre mot.
+            if len(mot) < _MIN_FUZZY_LEN or len(nom) < _MIN_FUZZY_LEN:
+                continue
+            if mot[0] != nom[0]:
+                continue
+            if _distance(mot, nom) <= _NAME_MAX_DISTANCE:
                 return True
     return False
 

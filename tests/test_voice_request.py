@@ -48,6 +48,10 @@ def test_sans_liste_personne_ne_demande_rien():
     "Wally, tu peux afficher mon rang ?",
     "wallis fait un pile ou face",      # le STT entend mal son nom
     "walli t'en penses quoi",       # idem
+    "wallie tu dors ?",             # idem
+    "le wally il a rien compris",   # nommé au milieu d'une phrase
+    "wallly regarde ça",            # faute de frappe
+    "WALLY !!",                     # casse et ponctuation
 ])
 def test_son_nom_est_reconnu_meme_mal_transcrit(phrase):
     assert is_addressed(phrase, ["wally"])
@@ -60,6 +64,30 @@ def test_son_nom_est_reconnu_meme_mal_transcrit(phrase):
 ])
 def test_une_phrase_qui_ne_le_nomme_pas_ne_declenche_rien(phrase):
     assert not is_addressed(phrase, ["wally"])
+
+
+# Relevés en live : 9 déclenchements sur 31 le 13/08 (29 %), et jusqu'à 60 % sur
+# un autre jour. Chacun coûte un appel au modèle ET un message publié dans le
+# chat de la chaîne — Azraël dit « Well… », Wally répond « Allez, accouche, on
+# t'écoute 😄 » à quelqu'un qui n'a rien demandé.
+@pytest.mark.parametrize("mot", [
+    "balle", "salle", "dalle", "allô", "allé", "aller", "all", "well", "way",
+    "early",
+])
+def test_les_mots_qui_le_declenchaient_a_tort(mot):
+    assert not is_addressed(f"si on n'a pas de {mot} on fait comment", ["wally"])
+
+
+def test_son_nom_prive_de_son_initiale_nest_plus_son_nom():
+    """« wally » sans le `w` n'est pas une transcription ratée : c'est autre chose."""
+    assert not is_addressed("ally tu m'entends", ["wally"])
+
+
+def test_un_mot_court_doit_tomber_juste():
+    """Trois lettres n'ont pas de quoi encaisser deux corrections."""
+    assert not is_addressed("on y va", ["wally"])
+    assert not is_addressed("waly", ["wally"])          # 4 lettres : trop court
+    assert is_addressed("wal", ["wal"])                 # sauf s'il tombe pile
 
 
 # ── le chemin complet ────────────────────────────────────────────────────────
