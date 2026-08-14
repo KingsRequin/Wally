@@ -43,6 +43,26 @@ def isolate_journal_charts(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_secret_guard():
+    """Vide le registre des mots protégés entre deux tests.
+
+    `bot.core.secret_guard._SECRETS` est un dict de MODULE : un test qui lance
+    un pendu sur « fuse » sans jamais le lever le laisse protégé pour toute la
+    suite, et le mot ressort en « […] » dans un test qui n'a rien à voir —
+    exactement le sous-titre « Fuse · niv. 285 » d'un tableau de duel. Panne
+    d'ordonnancement pure : chaque fichier passait seul.
+
+    Un test le contournait déjà en appelant `clear_secrets()` lui-même
+    (test_phase10_overlay.py) ; c'est le genre de garde qui a sa place ici, une
+    fois, plutôt que dans chaque fichier qui y pense.
+    """
+    from bot.core.secret_guard import clear_secrets
+    clear_secrets()
+    yield
+    clear_secrets()
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 
