@@ -9,6 +9,7 @@ from loguru import logger
 
 from bot.core.apex.duel_runner import current_duel
 from bot.core.apex.watcher import current_apex_block
+from bot.core.self_trace import current_self_trace_block
 from bot.core.stream_feed import current_stream_feed_block
 from bot.core.voice_transcript import current_voice_transcript_block
 from bot.core.stream_watcher import current_stream_awareness
@@ -377,6 +378,17 @@ class PromptBuilder:
         from bot.intelligence.overlay_narrator import current_overlay_state_block
         if overlay_block := current_overlay_state_block():
             dynamic_parts.append(overlay_block)
+
+        # CE QU'IL VIENT DE FAIRE, tous canaux confondus. Le bloc ci-dessus dit
+        # ce qui TOURNE sur l'overlay ; celui-ci dit ce qu'il a FAIT, y compris
+        # là où rien ne reste affiché — une réponse publiée, un meme sorti, une
+        # bulle. C'est ce qui manquait quand on lui demandait d'arrêter les
+        # bingos sans qu'il sache qu'il en affichait.
+        #
+        # Passif comme les précédents : aucun `notify_*` derrière. Absent quand
+        # il n'a rien fait — zéro jeton dans le cas courant.
+        if self_block := current_self_trace_block():
+            dynamic_parts.append(self_block)
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         # Priority: secondary emotions > composite pairs > atomic with fluid transitions

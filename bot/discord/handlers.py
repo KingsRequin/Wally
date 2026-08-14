@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.core.audit_log import observe_reception
+from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.secret_guard import redact
@@ -1863,9 +1863,10 @@ def _clog(bot: "WallyDiscord", channel: str, event_type: str, **fields) -> None:
     clog = getattr(bot, "conv_log", None)
     if clog is not None:
         clog.log("discord", channel, event_type, **fields)
-    # Signal de réception : ce point voit passer TOUS les `message_in` et
-    # `message_out` du salon, et il est le seul. Ne lève jamais.
-    observe_reception(clog, "discord", channel, event_type, fields)
+    # Observateurs en mémoire (signal de réception, trace de ses propres actes) :
+    # ce point voit passer TOUS les événements du salon, et il est le seul.
+    # Ne lève jamais.
+    observe_event(clog, "discord", channel, event_type, fields)
 
 
 def maybe_clear_owner_gate(gate, config, author_id: str, is_dm: bool) -> None:
@@ -2931,6 +2932,9 @@ async def _respond(
             trace_id=str(message.id), author=self_name, content=reply,
             parts=_parts, sent_msg_id=str(reply_msg_id) if reply_msg_id else None,
             react_emoji=react_emoji,
+            # À qui il vient de répondre — lu par la trace de ses propres actes
+            # (`self_trace`), qui n'en garde que le nom, jamais le contenu.
+            target=_author_label(message.author),
         )
         # Signale à la boucle cognitive que le bot a déjà répondu ici → pas de SPEAK
         # proactif redondant dans la foulée.

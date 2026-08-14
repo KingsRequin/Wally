@@ -15,7 +15,7 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 # par ce chemin, et son exécution reste ici plutôt que dans `discord/handlers`.
 from bot.intelligence.overlay_narrator import DUEL_TOOL_SPEC as _DUEL_TOOL
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
-from bot.core.audit_log import observe_reception
+from bot.core.audit_log import observe_event
 from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.secret_guard import redact
@@ -291,9 +291,10 @@ def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
     clog = getattr(bot, "conv_log", None)
     if clog is not None:
         clog.log("twitch", channel, event_type, **fields)
-    # Signal de réception : ce point voit passer TOUS les `message_in` et
-    # `message_out` du chat, et il est le seul. Ne lève jamais.
-    observe_reception(clog, "twitch", channel, event_type, fields)
+    # Observateurs en mémoire (signal de réception, trace de ses propres actes) :
+    # ce point voit passer TOUS les événements du chat, et il est le seul.
+    # Ne lève jamais.
+    observe_event(clog, "twitch", channel, event_type, fields)
 
 
 async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[dict]:
@@ -1091,6 +1092,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,
+            # À QUI il vient de répondre, et si la réplique est réellement
+            # partie : la trace de ses propres actes (`self_trace`) lit ces deux
+            # champs. Sans `published`, une réplique perdue par Helix lui ferait
+            # croire qu'il a répondu — le journal, lui, garde la ligne pour
+            # qu'on voie la panne.
+            target=author, published=publie,
             # Mode RÉEL et non déduit du type de chaîne : c'est ce qui permet de voir
             # dans les logs qu'une réponse est retombée sur la mention faute d'id.
             send_mode=_send_mode,

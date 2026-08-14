@@ -20,6 +20,7 @@ from typing import Literal
 from loguru import logger
 
 from bot.core.secret_guard import redact
+from bot.core.self_trace import note_act
 
 # Modes d'affichage d'une bulle.
 BubbleMode = Literal["speech", "thought"]
@@ -187,6 +188,15 @@ class OverlayFeed:
         # Point de passage unique de TOUTES les bulles : sans cette trace, ce que
         # l'overlay a réellement dit pendant un live est introuvable après coup.
         logger.info("Overlay [{m}] : {t}", m=mode, t=text)
+        # Trace de soi : il ignorait qu'il venait de parler à l'écran, et
+        # commentait à la troisième personne des scènes dont il était l'acteur.
+        # Le TEXTE n'y entre pas : une bulle peut paraphraser une phrase
+        # entendue en vocal hors diffusion, et ce bloc part dans tous ses
+        # prompts (cf. `self_trace`, § confidentialité).
+        note_act(
+            "tu as pensé tout haut sur ton overlay" if mode == "thought"
+            else "tu as sorti une bulle sur ton overlay"
+        )
         self.publish({
             "type": "bubble",
             "mode": mode,
@@ -223,6 +233,7 @@ class OverlayFeed:
         d'OBS suffisait à le faire réapparaître tout seul.
         """
         self._buffer.clear()
+        note_act("tu as vidé ton overlay")
         self.publish({"type": "clear"})
 
     def widget(self, kind: str, /, **params) -> None:
@@ -235,6 +246,11 @@ class OverlayFeed:
         params.setdefault(
             "duration", self._ANIMATION_S.get(kind, 0.0) + self._RESULT_READ_S
         )
+        # Seul le TYPE du widget est retenu, jamais ses paramètres : ils portent
+        # du texte libre (message épinglé, cases de bingo, mot du pendu) qui n'a
+        # rien à faire dans un bloc rendu sur tous les canaux. Le type nommé
+        # sans table de correspondance : un widget ajouté demain entre tout seul.
+        note_act(f"tu as affiché le widget « {kind} » sur ton overlay")
         # Même filet que `say()`. Il n'était posé que sur les bulles : le mot du
         # pendu pouvait donc sortir par un `pinned`, un `counter`, l'intitulé
         # d'un sondage ou une case de bingo — des textes libres eux aussi.

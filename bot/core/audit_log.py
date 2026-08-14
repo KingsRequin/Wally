@@ -29,6 +29,7 @@ from typing import Optional
 from loguru import logger
 
 from bot.core.secret_guard import redact
+from bot.core.self_trace import note_journal_act
 
 # Plafond par champ texte. Le ConversationLogger coupe déjà à 8000 caractères,
 # mais ces journaux-ci tournent en boucle chaude : une transcription ou un
@@ -77,6 +78,10 @@ def journal(conv_log, platform: str, channel: str, event_type: str, /, **fields)
     à une décision métier : un appelant ne doit pas se comporter différemment
     selon qu'il a été journalisé ou non.
     """
+    # La trace de soi vient AVANT l'écriture, et sans dépendre d'elle : un
+    # `conv_log` absent (vocal hors bot, tests) ne doit pas rendre Wally aveugle
+    # à ce qu'il vient de faire. Elle ne lève jamais.
+    note_journal_act(platform, channel, event_type, fields)
     if conv_log is None:
         return False
     try:
@@ -193,14 +198,17 @@ def note_audience(conv_log, platform: str, channel: str, author: str,
         logger.debug("signal de réception non crédité : {e}", e=exc)
 
 
-def observe_reception(conv_log, platform: str, channel: str, event_type: str,
-                      fields: dict) -> None:
-    """Branche le signal de réception sur un flux d'événements existant.
+def observe_event(conv_log, platform: str, channel: str, event_type: str,
+                  fields: dict) -> None:
+    """Branche les observateurs EN MÉMOIRE sur un flux d'événements journalisés.
 
     Appelé depuis les `_clog` des adaptateurs : ils voient déjà passer tous les
-    `message_in` et `message_out`, et c'est le seul endroit qui les voie tous.
-    Ne lève jamais.
+    événements de leur canal, et c'est le seul endroit qui les voie tous. Un
+    point d'entrée UNIQUE, et pas un par observateur : c'est ce qui fait qu'un
+    adaptateur ajouté demain hérite du signal de réception ET de la trace de
+    soi sans qu'on ait à y penser. Ne lève jamais.
     """
+    note_journal_act(platform, channel, event_type, fields)
     if event_type == "message_out":
         note_speech(conv_log, platform, channel, str(fields.get("trace_id") or ""))
     elif event_type == "message_in":

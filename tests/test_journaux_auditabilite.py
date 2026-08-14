@@ -20,7 +20,7 @@ import pytest
 
 from bot.core import audit_log
 from bot.core.audit_log import (
-    ReceptionTracker, conv_log_of, journal, observe_reception, reset_reception,
+    ReceptionTracker, conv_log_of, journal, observe_event, reset_reception,
 )
 
 
@@ -123,13 +123,13 @@ def test_un_silence_total_est_une_fiche_a_zero():
 
 def test_observe_reception_ecrit_la_fiche_quand_la_fenetre_se_ferme():
     jrnl = _Journal()
-    observe_reception(jrnl, "twitch", "azrael", "message_out", {"trace_id": "t1"})
-    observe_reception(jrnl, "twitch", "azrael", "message_in",
+    observe_event(jrnl, "twitch", "azrael", "message_out", {"trace_id": "t1"})
+    observe_event(jrnl, "twitch", "azrael", "message_in",
                       {"author": "bob", "content": "salut"})
     assert jrnl.of("reception") == []
     # La fenêtre se ferme : la fiche part au prochain événement observé.
     audit_log._RECEPTION._pending[0]["ts"] -= 120
-    observe_reception(jrnl, "twitch", "azrael", "message_in",
+    observe_event(jrnl, "twitch", "azrael", "message_in",
                       {"author": "carol", "content": "hep"})
     fiche, = jrnl.of("reception")
     assert fiche["trace_id"] == "t1" and fiche["replies"] == 1

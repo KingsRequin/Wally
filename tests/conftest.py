@@ -93,6 +93,22 @@ def isolate_pending_questions():
 
 
 @pytest.fixture(autouse=True)
+def isolate_self_trace():
+    """Vide la trace de ses propres actes entre deux tests.
+
+    Même famille que `isolate_secret_guard` : un singleton de MODULE
+    (`bot.core.self_trace._TRACE`). Tout test qui publie une bulle d'overlay ou
+    journalise un `message_out` y laisse une ligne, et le test suivant verrait
+    un bloc « Ce que TU viens de faire » qu'il n'a pas produit — un faux positif
+    dans un prompt, et un faux négatif quand la ligne attendue est déjà là.
+    """
+    from bot.core.self_trace import reset_self_trace
+    reset_self_trace()
+    yield
+    reset_self_trace()
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 

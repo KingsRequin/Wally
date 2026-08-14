@@ -249,6 +249,7 @@ class ActionDispatcher:
             self._journal_act_rejected(act_name, args, f"exception : {exc}")
             raise
         if self._act_events != avant or act_name in self._ACTIONS_SANS_TRACE_ACT:
+            self._note_acte_abouti(act_name)
             return
         if not act_name:
             motif = "nom d'action absent"
@@ -270,6 +271,23 @@ class ActionDispatcher:
                             "code_fix") and not self._facts:
             return "fact_store"
         return ""
+
+    def _note_acte_abouti(self, act_name: str) -> None:
+        """Inscrit un ACT qui est allé au bout dans la trace de ses propres actes.
+
+        Seul le NOM de l'action y entre, jamais ses arguments : une note ou un
+        souvenir portent du texte libre, et ce bloc part dans tous ses prompts,
+        canaux confondus (cf. `self_trace`, § confidentialité).
+
+        Ce qui touche l'overlay est écarté : son effet est déjà tracé par
+        `OverlayFeed`, en plus précis (« affiché le widget bingo »). La liste
+        est celle de `self_trace` — deux copies finiraient par diverger.
+        """
+        from bot.core.self_trace import OUTILS_TRACES_AILLEURS, note_act
+
+        if not act_name or act_name in OUTILS_TRACES_AILLEURS:
+            return
+        note_act(f"tu as agi de ta propre initiative : « {act_name} »")
 
     def _journal_act_rejected(self, act_name: str, args: dict, motif: str) -> None:
         """Consigne une action décidée qui n'a rien produit. Ne lève jamais."""
@@ -357,16 +375,17 @@ class ActionDispatcher:
         de canal (seulement, indirectement, dans le brain) — invisible pour le
         débogage chronologique. kind='cognitive' le distingue d'une réponse réactive.
         """
+        # Passe par `journal()` et non par `clog.log()` en direct : c'est lui
+        # qui masque les secrets à l'écriture, et lui qui alimente la trace de
+        # ses propres actes. Un SPEAK écrit à la main échappait aux deux —
+        # Wally ne savait pas qu'il venait de prendre la parole tout seul.
+        from bot.core.audit_log import journal
+        from bot.core.conversation_log import new_trace_id
+
         clog = getattr(self._bot, "conv_log", None) or getattr(self._twitch_bot, "conv_log", None)
-        if clog is None:
-            return
-        try:
-            from bot.core.conversation_log import new_trace_id
-            clog.log(platform, conv_channel, "message_out",
-                     trace_id=new_trace_id("cognitive"), kind="cognitive",
-                     author=self._self_name(), content=message)
-        except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
-            logger.warning("conv_log SPEAK échoué: {}", e)
+        journal(clog, platform, conv_channel, "message_out",
+                trace_id=new_trace_id("cognitive"), kind="cognitive",
+                author=self._self_name(), content=message)
 
     def _record_self_message(self, channel_id: str, message: str) -> None:
         """Enregistre un message sortant SPONTANÉ de Wally dans la mémoire de contexte.

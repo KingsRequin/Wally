@@ -555,4 +555,16 @@ class ReasoningAgent:
                 lines.append(etat)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
             logger.debug("état overlay non injecté: {}", e)
+        # ET CE QU'IL VIENT DE FAIRE, tous canaux confondus. L'état ci-dessus ne
+        # couvre que l'overlay et que ce qui y TOURNE encore : la boucle
+        # cognitive restait aveugle à ses propres réponses publiées ailleurs, à
+        # ses bulles et à ses widgets déjà effacés. Même contrat passif — aucun
+        # `notify_*` derrière, la cadence ne bouge pas.
+        try:
+            from bot.core.self_trace import current_self_trace_block
+
+            if actes := current_self_trace_block():
+                lines.append(actes)
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.debug("trace de ses actes non injectée: {}", e)
         return "\n".join(lines)

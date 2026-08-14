@@ -8,6 +8,7 @@ from pathlib import Path
 from loguru import logger
 
 from bot.core.llm.base import BaseLLMClient
+from bot.core.self_trace import COMPACT_LIMIT, current_self_trace_block
 from bot.intelligence.identity import bot_name, render_identity
 from bot.intelligence.memory.facts import AtomicFact, FactCategory, SQLiteFactStore
 
@@ -141,6 +142,13 @@ class ResponseGate:
         context_parts.append(f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})")
         if wally_last_message:
             context_parts.append(f"{bot_name()} vient de parler dans ce canal : \"{wally_last_message[:200]}\"")
+        # Ce qu'il vient de faire AILLEURS. La porte ne voyait que ce canal-ci :
+        # elle laissait passer un neuvième aller-retour sur Twitch sans savoir
+        # qu'il ignorait la même personne sur Discord, et rouvrait un bingo
+        # qu'il venait d'ouvrir. Forme COMPACTE (5 actes, sans consigne) : elle
+        # tourne à chaque message reçu et doit rester bon marché.
+        if actes := current_self_trace_block(limit=COMPACT_LIMIT, compact=True):
+            context_parts.append(actes)
         if relationship_facts:
             rel_summary = " | ".join(f.content for f in relationship_facts[:3])
             context_parts.append(f"Relation connue : {rel_summary}")
