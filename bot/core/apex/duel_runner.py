@@ -72,6 +72,13 @@ RECUL_ERREUR_S = 10.0
 # cours ». La seule issue serait qu'un modérateur pense à dire « annule ».
 API_MUETTE_MAX_S = 180.0
 
+# Le stream doit être vu éteint pendant ce temps AVANT de solder le duel. La
+# sonde du `StreamWatcher` tourne à 60 s : deux relevés concordants, donc, sur
+# le patron du debounce d'entrée/sortie de manche. Un `/helix/streams` qui rend
+# une liste vide sur une chaîne pourtant allumée existe, et abandonner un duel
+# là-dessus coûterait au duelliste une partie qu'il est en train de jouer.
+STREAM_COUPE_MAX_S = 120.0
+
 
 def peut_controler(auteur: dict) -> bool:
     """Le streamer et ses modérateurs, et personne d'autre.
@@ -223,7 +230,9 @@ class DuelRunner:
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
                  manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
                  plafond_kills_manche: int = PLAFOND_KILLS_MANCHE,
-                 api_muette_max_s: float = API_MUETTE_MAX_S):
+                 api_muette_max_s: float = API_MUETTE_MAX_S,
+                 stream_en_ligne: Callable[[], bool | None] | None = None,
+                 stream_coupe_max_s: float = STREAM_COUPE_MAX_S):
         self._client = client
         self._db = db
         self._api = api
@@ -246,6 +255,18 @@ class DuelRunner:
         self._attente_squad_s = attente_squad_s
         self._plafond_kills_manche = plafond_kills_manche
         self._api_muette_max_s = api_muette_max_s
+        # Le statut du live, tel que le `StreamWatcher` le tient déjà à jour
+        # (60 s). TROIS réponses possibles, et la troisième compte autant que
+        # les deux autres : True, False, et None — « on ne sait pas », avant le
+        # premier relevé. Une absence de donnée n'est pas un stream éteint.
+        # Absent (None en construction), le garde-fou est simplement inactif :
+        # un duel doit pouvoir tourner sans lui.
+        self._stream_en_ligne = stream_en_ligne
+        self._stream_coupe_max_s = stream_coupe_max_s
+        # Instant du premier relevé « hors ligne » d'une série. Même patron que
+        # `_muet_depuis`, et pas persisté pour la même raison : un rebuild ne
+        # fait qu'accorder de la tolérance en plus.
+        self._offline_depuis: float | None = None
         self.duel_en_cours: Duel | None = None
         self._reward_id = ""
         # Instant du PREMIER relevé raté d'une série, pendant une manche.
@@ -758,35 +779,95 @@ class DuelRunner:
         except Exception as exc:  # noqa: BLE001 — une trace ratée n'annule pas un duel
             logger.warning("Duel Apex : résultat non mémorisé : {e}", e=exc)
 
-    async def _api_muette(self, duel: Duel, maintenant: float) -> None:
-        """Une manche que plus aucun relevé ne peut clore.
+    async def _api_muette(self, duel: Duel, maintenant: float) -> bool:
+        """Un duel que plus aucun relevé ne peut faire avancer.
 
         `tick()` sort sans rien faire quand un relevé manque en MANCHE, et
         c'est délibéré : injecter un relevé fictif « hors partie » clôturerait
         une manche réellement en cours sur un simple hoquet. Mais sans
         contrepartie, une panne prolongée — ou un profil devenu illisible —
         gèle le duel pour toujours. C'est cette contrepartie.
+
+        Vaut AUSSI entre deux manches, et pas seulement pendant l'une d'elles.
+        Là-bas le minuteur d'attente du squad continuait bien de tourner, mais
+        il finissait sur « le duelliste n'est pas revenu dans le délai » : pas
+        de remboursement, et un viewer accusé d'un abandon dont l'API seule
+        était l'auteur. Le même silence doit rendre le même verdict — une
+        panne, donc les points.
+
+        Rend `True` quand le duel a été soldé : l'appelant s'arrête là.
         """
+        ou = ("en pleine manche" if duel.etat is Etat.MANCHE
+              else "entre deux manches")
         if self._muet_depuis is None:
             self._muet_depuis = maintenant
             # WARNING et non DEBUG : c'est le seul signe visible en production
             # qu'un duel est en train de s'enliser. Une seule ligne par série,
             # pas une par tour de sonde (2 s).
             logger.warning(
-                "Duel Apex : plus aucun relevé lisible en pleine manche {m}/{s} — "
-                "abandon et remboursement si ça dure au-delà de {d:.0f} s",
-                m=duel.manche_courante, s=duel.manches, d=self._api_muette_max_s)
-            return
+                "Duel Apex : plus aucun relevé lisible {o} ({m}/{s}) — abandon "
+                "et remboursement si ça dure au-delà de {d:.0f} s",
+                o=ou, m=duel.manche_courante, s=duel.manches,
+                d=self._api_muette_max_s)
+            return False
         silence = maintenant - self._muet_depuis
         if silence < self._api_muette_max_s:
-            return
+            return False
         duree = f"{int(silence // 60)} min" if silence >= 60 else f"{int(silence)} s"
         logger.error(
-            "Duel Apex : API muette depuis {d} en pleine manche — abandon", d=duree)
+            "Duel Apex : API muette depuis {d} {o} — abandon", d=duree, o=ou)
         self._muet_depuis = None
         await self._appliquer(duel, duel.abandonner(
-            f"l'API Apex ne répond plus depuis {duree} en pleine manche, "
-            "plus rien ne peut être compté"))
+            f"l'API Apex ne répond plus depuis {duree} {ou}, plus rien ne peut "
+            "être compté — une panne, pas un abandon du duelliste"))
+        return True
+
+    async def _stream_coupe(self, duel: Duel, maintenant: float) -> bool:
+        """Le live d'Azraël s'est éteint pendant le duel (§8 de la spec).
+
+        Un duel sans stream n'a plus d'objet : Azraël ne joue plus, le viewer
+        ne peut plus rien mesurer, et rien de tout ça n'est de son fait. La
+        spec le range depuis toujours parmi les remboursements ; il n'était
+        simplement branché nulle part, et le duel finissait par tomber sur le
+        timeout d'attente, qui lui NE rembourse pas et annonce « il n'est pas
+        allé au bout du duel ». Le viewer était puni et accusé pour une panne.
+
+        Deux gardes, pour deux erreurs différentes :
+          · `None` (le watcher n'a pas encore sondé) n'est PAS « hors ligne » —
+            un rebuild en plein duel ne doit pas solder sur une valeur par
+            défaut ;
+          · un seul relevé « hors ligne » ne suffit pas : `/helix/streams` rend
+            parfois une liste vide sur une chaîne allumée, et ça coûterait au
+            duelliste une partie qu'il est en train de jouer.
+
+        Rend `True` quand le duel a été soldé : l'appelant s'arrête là.
+        """
+        if self._stream_en_ligne is None:
+            return False
+        try:
+            en_ligne = self._stream_en_ligne()
+        except Exception as exc:  # noqa: BLE001 — un statut illisible n'abandonne rien
+            logger.warning("Duel Apex : statut du live illisible : {e}", e=exc)
+            return False
+        if en_ligne is not False:
+            self._offline_depuis = None
+            return False
+        if self._offline_depuis is None:
+            self._offline_depuis = maintenant
+            logger.warning(
+                "Duel Apex : le stream est vu hors ligne — abandon et "
+                "remboursement si ça se confirme au-delà de {d:.0f} s",
+                d=self._stream_coupe_max_s)
+            return False
+        if maintenant - self._offline_depuis < self._stream_coupe_max_s:
+            return False
+        self._offline_depuis = None
+        logger.error("Duel Apex : stream coupé en cours de duel — abandon et "
+                     "remboursement")
+        await self._appliquer(duel, duel.abandonner(
+            "le stream d'Azraël s'est coupé en cours de duel — une panne, pas "
+            "un abandon du duelliste"))
+        return True
 
     async def tick(self, maintenant: float) -> None:
         """Un tour de sonde. Appelé toutes les `cadence_s` pendant un duel.
@@ -800,6 +881,11 @@ class DuelRunner:
         """
         duel = self.duel_en_cours
         if duel is None or duel.etat in (Etat.VERDICT, Etat.ABANDON):
+            return
+        # AVANT tout le reste : un duel sans stream n'a plus d'objet, quel que
+        # soit l'état où il se trouve. Continuer à sonder ne ferait que le
+        # mener au timeout d'attente, qui ne rembourse pas et accuse le viewer.
+        if await self._stream_coupe(duel, maintenant):
             return
         if duel.etat is Etat.RESOLUTION:
             # Aucun compte à sonder tant que l'uid n'est pas donné : ce tour ne
@@ -831,15 +917,30 @@ class DuelRunner:
             # en MANCHE : y injecter un relevé fictif "hors partie" risquerait
             # de clore une manche réellement en cours via le debounce de fin
             # de partie, sur un simple hoquet de l'API.
-            if duel.etat in (Etat.ATTENTE_SQUAD, Etat.ENTRE_MANCHES):
-                logger.debug("Duel : relevé incomplet, tour sauté")
-                await self._avancer(duel, Releve(
-                    t=maintenant, azrael_in_game=False, viewer_in_game=False,
-                    kills_azrael={}, kills_viewer={}))
+            if duel.etat is Etat.ENTRE_MANCHES:
+                # Le même garde-fou qu'en MANCHE, et pour la même raison : le
+                # minuteur qui tourne ici finit sur « le duelliste n'est pas
+                # revenu », donc SANS remboursement, alors que c'est l'API qui
+                # s'est tue. Il passe en premier — un silence prolongé est une
+                # panne, jamais un abandon.
+                if await self._api_muette(duel, maintenant):
+                    return
+            elif duel.etat is Etat.MANCHE:
+                # En MANCHE il n'y a AUCUN autre minuteur : c'est ici, et nulle
+                # part ailleurs, que la panne prolongée se voit et se solde.
+                await self._api_muette(duel, maintenant)
                 return
-            # En MANCHE il n'y a AUCUN autre minuteur : c'est ici, et nulle
-            # part ailleurs, que la panne prolongée se voit et se solde.
-            await self._api_muette(duel, maintenant)
+            # ATTENTE_SQUAD et ENTRE_MANCHES : le minuteur d'attente doit
+            # continuer d'avancer malgré la panne — sinon elle gèlerait le duel
+            # pour toujours (jamais de timeout, jamais de remboursement, et le
+            # viewer suivant resterait refusé indéfiniment). On s'en abstient en
+            # MANCHE : y injecter un relevé fictif "hors partie" risquerait de
+            # clore une manche réellement en cours via le debounce de fin de
+            # partie, sur un simple hoquet de l'API.
+            logger.debug("Duel : relevé incomplet, tour sauté")
+            await self._avancer(duel, Releve(
+                t=maintenant, azrael_in_game=False, viewer_in_game=False,
+                kills_azrael={}, kills_viewer={}))
             return
         self._muet_depuis = None
 

@@ -644,6 +644,17 @@ async def main() -> None:
                         attente_squad_s=float(_duel_conf.attente_squad_min) * 60,
                         plafond_kills_manche=int(_duel_conf.plafond_kills_manche),
                         api_muette_max_s=float(_duel_conf.api_muette_max_s),
+                        # Le stream coupé rembourse (§8 de la spec). Le statut
+                        # est déjà tenu à jour toutes les 60 s par le
+                        # `StreamWatcher` — même source que l'`ApexWatcher`
+                        # juste au-dessus, aucune requête de plus. `None` tant
+                        # qu'aucun relevé n'est passé : le défaut `live: False`
+                        # n'est pas un stream éteint, et un duel repris d'un
+                        # rebuild ne doit pas être soldé là-dessus.
+                        stream_en_ligne=lambda: (
+                            bool(twitch_bot._stream_info.get("live"))
+                            if stream_watcher.a_sonde else None
+                        ),
                     )
                     # Reprise de l'état, récompense, source globale : l'ordre
                     # des trois est dans `armer_le_duel`, où il se teste.

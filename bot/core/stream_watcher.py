@@ -100,6 +100,18 @@ class StreamWatcher:
         """Copie défensive du dernier statut : {live, title, category, viewers, started_at}."""
         return dict(self._status or {})
 
+    @property
+    def a_sonde(self) -> bool:
+        """Un relevé au moins est passé — avant lui, `status` n'est qu'un défaut.
+
+        Ce défaut porte `live: False`, ce qui n'est pas « le stream est
+        éteint » mais « on ne sait pas encore ». Le duel Apex rembourse et
+        abandonne quand le live se coupe : sans cette distinction, un rebuild
+        en plein duel (fréquents ici) solderait le duel repris avant même le
+        premier poll, en accusant un stream parfaitement allumé.
+        """
+        return self._initialized
+
     def activate(self) -> None:
         """Enregistre ce watcher comme source globale de l'awareness prompt."""
         global _active
