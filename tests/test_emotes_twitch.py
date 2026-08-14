@@ -75,6 +75,27 @@ async def test_les_emotes_de_chaine_entrent_des_que_le_bot_y_a_droit():
 
 
 @pytest.mark.asyncio
+async def test_la_reserve_de_chaine_fonctionne_aussi_depuis_lapi_reelle():
+    """`test_les_emotes_de_chaine_gardent_une_place...` le prouve en passant
+    par `set_verified(channel_names=...)` directement ; ce test rejoue la même
+    pression (huit globales toutes plus employées que la meilleure emote de
+    chaîne) mais en passant par `refresh_from_api`, le seul chemin emprunté en
+    production — pour qu'un oubli de câblage de `channel_names` s'y voie."""
+    globales = ["LUL", "Kappa", "SeemsGood", "HeyGuys", "NotLikeThis",
+                "KonCha", "MyAvatar", "PogChamp"]
+    chaine = ["azrael74SpongeFuse", "azrael74ChadFuse"]
+    await em.refresh_from_api(_FauxAPI(globales, chaine))
+    registre = em.active_emote_registry()
+    for nom, n in {"LUL": 554, "Kappa": 514, "SeemsGood": 90, "HeyGuys": 65,
+                   "NotLikeThis": 60, "KonCha": 56, "MyAvatar": 49,
+                   "PogChamp": 40, "azrael74SpongeFuse": 23,
+                   "azrael74ChadFuse": 23}.items():
+        for _ in range(n):
+            registre.note_chat(nom)
+    assert set(registre.top()) & set(chaine)
+
+
+@pytest.mark.asyncio
 async def test_sans_droit_sur_les_emotes_de_chaine_les_globales_restent():
     """`/chat/emotes/user` rend 401 tant que le scope manque : ce refus ne doit
     pas priver Wally des 304 globales, qui n'ont jamais demandé de droit."""
@@ -203,9 +224,12 @@ def test_les_emotes_de_chaine_gardent_une_place_malgre_lecrasement_des_globales(
     (23 emplois au mieux) alors que ce sont elles qui font sonner Wally comme
     un habitué de CETTE chaîne plutôt que de Twitch en général."""
     registre = em.active_emote_registry()
+    # Huit globales, TOUTES employées davantage que la meilleure emote de la
+    # chaîne (23) : sans réserve, elles rempliraient à elles seules les 8
+    # places et aucune `azrael74*` n'apparaîtrait jamais.
     globales = {
         "LUL": 554, "Kappa": 514, "SeemsGood": 90, "HeyGuys": 65,
-        "NotLikeThis": 60, "KonCha": 56, "MyAvatar": 49,
+        "NotLikeThis": 60, "KonCha": 56, "MyAvatar": 49, "PogChamp": 40,
     }
     chaine = {
         "azrael74SpongeFuse": 23, "azrael74ChadFuse": 23,
