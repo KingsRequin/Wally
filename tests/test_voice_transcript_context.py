@@ -313,3 +313,45 @@ def test_l_horloge_utilisee_est_monotone():
     feed.record(SALON, "Azraël", "maintenant")
     ts = feed._lines[0][0]
     assert avant <= ts <= time.monotonic()
+
+
+# ── L'échange, pour qui a besoin des tours et pas du bloc rédigé ─────────────
+
+
+def test_les_derniers_tours_sont_rendus_avec_qui_les_a_dits():
+    """L'overlay condense un ÉCHANGE : sans le locuteur ni les tours d'avant,
+    « et toi ? » ne veut rien dire et la bulle ne peut nommer personne."""
+    feed = _feed_en_direct()
+    feed.record(SALON, "Azraël", "j'ai encore raté le saut")
+    feed.record(SALON, "Kassandre", "et toi ?")
+
+    assert feed.recent_lines() == [
+        ("Azraël", "j'ai encore raté le saut"),
+        ("Kassandre", "et toi ?"),
+    ]
+
+
+def test_les_derniers_tours_sarretent_au_nombre_demande():
+    feed = _feed_en_direct()
+    for i in range(6):
+        feed.record(SALON, "Azraël", f"réplique {i}")
+
+    tours = feed.recent_lines(2)
+    assert [t for _s, t in tours] == ["réplique 4", "réplique 5"]
+
+
+def test_aucun_tour_hors_diffusion():
+    """Même règle que le reste, et par le même chemin : ce qui n'a pas été
+    retenu ne peut pas ressortir."""
+    feed = VoiceTranscriptFeed()
+    feed.activate()
+    assert feed.record(SALON, "Azraël", "un secret entre nous") is False
+    assert feed.recent_lines() == []
+
+
+def test_un_tour_perime_ne_ressort_pas(monkeypatch):
+    feed = _feed_en_direct(line_ttl=0.01)
+    feed.record(SALON, "Azraël", "c'était il y a longtemps")
+    monkeypatch.setattr(time, "monotonic", lambda: time.perf_counter() + 3600)
+
+    assert feed.recent_lines() == []

@@ -200,13 +200,16 @@ async def test_nommer_quelquun_ne_compte_pas_comme_une_redite(monkeypatch):
     a été entendu : s'il comptait comme un mot recopié, le filtre punirait
     exactement ce qu'on demande."""
     n = _narrator()
-    _condensant(n, "Azraël transforme chaque mur en trampoline")
+    _condensant(n, "Azraël justifie son plafond auprès de Kassandre")
 
     with patch("bot.core.voice_transcript.active_voice_transcript",
-               return_value=_tampon([("Azraël", "je vise les murs")])):
-        dit = await n.on_overheard("Azraël (vocal) : je vise les murs")
+               return_value=_tampon([
+                   ("Azraël", "je vise le plafond là"),
+                   ("Kassandre", "mais pourquoi tu fais ça"),
+               ])):
+        dit = await n.on_overheard("Kassandre (vocal) : mais pourquoi tu fais ça")
 
-    assert dit == "Azraël transforme chaque mur en trampoline"
+    assert dit == "Azraël justifie son plafond auprès de Kassandre"
 
 
 @pytest.mark.asyncio
@@ -302,3 +305,32 @@ async def test_deux_phrases_daffilee_ne_font_pas_deux_appels():
 async def _capture(vus, text):
     vus.append(text)
     return None
+
+
+@pytest.mark.asyncio
+async def test_une_observation_deja_faite_ne_revient_pas_une_heure_plus_tard():
+    """« il rit tout seul » est ressorti cinq fois en trois jours, avec cinq
+    jugements différents. La mémoire anti-répétition doit couvrir la soirée,
+    pas les vingt dernières minutes."""
+    remplissage = ("orage", "brique", "tunnel", "cactus", "radeau", "fusible",
+                   "bocal", "tiroir", "falaise", "clavier", "vitrine", "poulie",
+                   "serpent", "banquise", "poteau", "vernis", "hameau", "gousse",
+                   "pinceau", "levier")
+    observation = "il rigole tout seul devant son écran"
+    tour = [0]
+
+    async def _condense(text, system=None, **_):
+        i = tour[0]
+        tour[0] += 1
+        return observation if i == 0 else remplissage[i - 1] + " en approche"
+
+    n = _cadence_narrator()
+    n._overheard_interval = 0.0
+    n._condense = _condense
+
+    dit = [await n.on_overheard("Azraël (vocal) : bon on continue")
+           for _ in range(len(remplissage) + 1)]
+    assert dit[0] == observation and all(dit), "le décor du test ne publie rien"
+
+    tour[0] = 0                                  # la même observation revient
+    assert await n.on_overheard("Azraël (vocal) : bon on continue") is None
