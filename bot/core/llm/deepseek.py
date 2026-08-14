@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 
@@ -16,23 +16,35 @@ from bot.core.llm.base import BaseLLMClient, FALLBACK_RESPONSE
 
 
 # Coût DeepSeek par 1M tokens : (input cache hit, input cache miss, output) en USD.
-# Source : https://api-docs.deepseek.com/quick_start/pricing/ (vérifié 2026-06-24).
+# Source : https://api-docs.deepseek.com/quick_start/pricing/ (vérifié 2026-08-14).
 # deepseek-chat / deepseek-reasoner = alias de flash, dépréciés le 2026-07-24.
-_DEEPSEEK_COSTS: dict[str, tuple[float, float, float]] = {
+#
+# Deux grilles, parce que DeepSeek a relevé ses tarifs le 2026-08-16 à 16:00 UTC
+# (×1,5 à ×12 selon la case) en introduisant des heures pleines. On garde
+# l'ancienne : un appel daté du 15/08 doit rester chiffré au tarif que DeepSeek a
+# réellement facturé ce jour-là, sinon le `cost_log` ment sur son propre passé.
+_DEEPSEEK_COSTS_LEGACY: dict[str, tuple[float, float, float]] = {
     "deepseek-v4-pro": (0.003625, 0.435, 0.87),
     "deepseek-v4-flash": (0.0028, 0.14, 0.28),
     "deepseek-chat": (0.0028, 0.14, 0.28),
     "deepseek-reasoner": (0.0028, 0.14, 0.28),
 }
-_DEEPSEEK_FALLBACK_COST = (0.0028, 0.14, 0.28)
+_DEEPSEEK_FALLBACK_COST_LEGACY = (0.0028, 0.14, 0.28)
 
-# Peak-valley DeepSeek : avec la sortie officielle de V4 (mi-juillet 2026), le
-# tarif passe ×2 pendant les heures de pointe UTC (surtaxe uniforme sur hit/miss/
-# output). Source : email DeepSeek 2026-06-29.
-# `_DEEPSEEK_PEAK_START` = date UTC d'activation ; laissée à None tant que la
-# bascule n'est pas confirmée (DeepSeek envoie un préavis 24h avant). Tant qu'elle
-# vaut None, le calcul reste au tarif normal — zéro changement de comportement.
-_DEEPSEEK_PEAK_START: date | None = None
+# Grille en vigueur. Elle porte les tarifs HEURES CREUSES ; les heures pleines
+# sont le même tarif ×`_DEEPSEEK_PEAK_MULTIPLIER`.
+_DEEPSEEK_COSTS: dict[str, tuple[float, float, float]] = {
+    "deepseek-v4-pro": (0.022, 0.66, 1.98),
+    "deepseek-v4-flash": (0.007, 0.22, 0.66),
+    "deepseek-chat": (0.007, 0.22, 0.66),
+    "deepseek-reasoner": (0.007, 0.22, 0.66),
+}
+_DEEPSEEK_FALLBACK_COST = (0.007, 0.22, 0.66)
+
+# Instant exact de la bascule (annonce DeepSeek du 2026-08-13). Gouverne à la fois
+# le changement de grille et l'apparition des heures pleines : les deux arrivent
+# ensemble. Une `date` ne suffirait pas — la bascule tombe à 16:00, pas à minuit.
+_NEW_PRICING_START = datetime(2026, 8, 16, 16, 0, tzinfo=timezone.utc)
 _DEEPSEEK_PEAK_MULTIPLIER = 2.0
 
 # Reprises sur panne transitoire — mêmes valeurs que le client OpenAI (1s, 2s, 4s).
@@ -43,17 +55,35 @@ _RETRY_BASE_DELAY = 1.0
 def _is_deepseek_peak(now: datetime | None = None) -> bool:
     """True si `now` (UTC) tombe dans une plage de pointe DeepSeek (tarif ×2).
 
-    Plages UTC : 01:00–04:00 et 06:00–10:00 (04:00–06:00 = creux). Inactif tant
-    que `_DEEPSEEK_PEAK_START` est None ou que la date d'activation n'est pas
-    atteinte. `now` est injectable pour les tests.
+    Plages UTC : 01:00–04:00 et 06:00–10:00 (04:00–06:00 = creux). Les heures
+    pleines n'existent qu'à partir de `_NEW_PRICING_START`. `now` est injectable
+    pour les tests.
     """
-    if _DEEPSEEK_PEAK_START is None:
-        return False
     now = now or datetime.now(timezone.utc)
-    if now.date() < _DEEPSEEK_PEAK_START:
+    if now < _NEW_PRICING_START:
         return False
     h = now.hour
     return (1 <= h < 4) or (6 <= h < 10)
+
+
+def _deepseek_rates(model: str, now: datetime | None = None) -> tuple[float, float, float]:
+    """Tarifs (hit, miss, output) par 1M tokens pour `model` à l'instant `now`.
+
+    Le matching privilégie le préfixe le plus long (ex. `deepseek-v4-pro-2026...`
+    → `deepseek-v4-pro`), et retombe sur le tarif flash pour un modèle inconnu.
+    Avant `_NEW_PRICING_START`, c'est l'ancienne grille qui s'applique.
+    """
+    now = now or datetime.now(timezone.utc)
+    table, fallback = (
+        (_DEEPSEEK_COSTS, _DEEPSEEK_FALLBACK_COST)
+        if now >= _NEW_PRICING_START
+        else (_DEEPSEEK_COSTS_LEGACY, _DEEPSEEK_FALLBACK_COST_LEGACY)
+    )
+    return table.get(model) or next(
+        (v for k, v in sorted(table.items(), key=lambda x: len(x[0]), reverse=True)
+         if model.startswith(k)),
+        fallback,
+    )
 
 
 def _deepseek_cost(model: str, usage: Any, now: datetime | None = None) -> float:
@@ -61,17 +91,11 @@ def _deepseek_cost(model: str, usage: Any, now: datetime | None = None) -> float
 
     DeepSeek expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
     (leur somme = `prompt_tokens`). Si absents (vieux modèle, mock), tout est
-    facturé au tarif cache miss. Le matching modèle privilégie le préfixe le
-    plus long (ex. `deepseek-v4-pro-2026...` → `deepseek-v4-pro`).
+    facturé au tarif cache miss.
 
-    Le tarif de pointe (×2) s'applique si `_is_deepseek_peak(now)` — inactif par
-    défaut (voir `_DEEPSEEK_PEAK_START`).
+    Le tarif de pointe (×2) s'applique si `_is_deepseek_peak(now)`.
     """
-    rates = _DEEPSEEK_COSTS.get(model) or next(
-        (v for k, v in sorted(_DEEPSEEK_COSTS.items(), key=lambda x: len(x[0]), reverse=True)
-         if model.startswith(k)),
-        _DEEPSEEK_FALLBACK_COST,
-    )
+    rates = _deepseek_rates(model, now)
     prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
     hit = getattr(usage, "prompt_cache_hit_tokens", None)
     miss = getattr(usage, "prompt_cache_miss_tokens", None)
