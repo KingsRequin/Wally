@@ -134,6 +134,29 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
     return ""
 
 
+def _sous_titre(camp) -> str:
+    """« Fuse · niv. 285 » sous un camp, à partir de ce qu'on sait de lui.
+
+    Les deux valeurs viennent du profil sondé à chaque relevé, via l'événement.
+    Ce qui manque est OMIS : sans légende on n'écrit que le niveau, sans niveau
+    que la légende, et sans rien un sous-titre vide — que l'overlay n'affiche
+    pas. Un « niv. 0 » serait une affirmation fausse de plus.
+    """
+    if not isinstance(camp, dict):
+        return ""
+    morceaux = []
+    legende = str(camp.get("legende") or "").strip()
+    if legende:
+        morceaux.append(legende)
+    try:
+        niveau = int(camp.get("niveau") or 0)
+    except (TypeError, ValueError):
+        niveau = 0
+    if niveau > 0:
+        morceaux.append(f"niv. {niveau}")
+    return " · ".join(morceaux)
+
+
 class DuelAnnonceur:
     """La sortie du duel : le chat de la chaîne maison, et l'overlay.
 
@@ -241,14 +264,27 @@ class DuelAnnonceur:
         Jamais bloquant : un overlay absent ou en panne ne doit pas empêcher
         l'annonce, qui est déjà partie.
         """
-        if evt.type == "manche_fin":
-            d = evt.donnees or {}
+        d = evt.donnees or {}
+        if evt.type == "manche_debut":
+            # Le tableau reparaît à CHAQUE début de manche (§11 de la spec) :
+            # le widget n'est pas `sticky`, un duel dure une heure et le cycle
+            # normal des widgets l'efface entre-temps.
+            #
+            # Avant la première manche, « 0 — 0 » ne prétend rien : rien n'a
+            # encore été joué. Après une ou plusieurs manches dont AUCUNE n'a
+            # pu être mesurée, les mêmes chiffres affirmeraient un score que
+            # personne n'a compté — on se tait alors, comme à la fin d'une
+            # manche non mesurable.
+            if d.get("manches_jouees") and not d.get("total_mesurable"):
+                return
+            gauche, droite = d.get("total_azrael"), d.get("total_viewer")
+            label = f"Duel — manche {d.get('manche')}/{d.get('sur')}"
+        elif evt.type == "manche_fin":
             if not d.get("mesurable"):
                 return          # rien de comparable : pas de tableau
             gauche, droite = d.get("total_azrael"), d.get("total_viewer")
             label = f"Duel — manche {d.get('manche')}/{d.get('sur')}"
         elif evt.type == "verdict":
-            d = evt.donnees or {}
             gauche, droite = d.get("azrael"), d.get("viewer")
             label = "Duel — score final"
         else:
@@ -259,11 +295,14 @@ class DuelAnnonceur:
         narrator = _overlay_narrator(self._bot)
         if narrator is None:
             return
+        camps = d.get("camps") or {}
         try:
             narrator.show_widget(
                 "versus", commentaire, label=label,
                 left_name="Azraël", left_value=gauche,
+                left_sub=_sous_titre(camps.get("azrael")),
                 right_name=self._nom() or "le duelliste", right_value=droite,
+                right_sub=_sous_titre(camps.get("viewer")),
             )
         except Exception as exc:  # noqa: BLE001 — l'écran n'est pas le canal principal
             logger.warning("Duel : tableau non affiché : {e}", e=exc)

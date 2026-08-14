@@ -185,3 +185,99 @@ async def test_un_overlay_en_panne_n_empeche_pas_le_chat():
         "azrael": 7, "viewer": 4, "gagnant": "azrael",
         "scores": [{"azrael": 7, "viewer": 4}]}))
     assert _envoye(bot)
+
+
+# ── Sous-titres : la légende jouée et le niveau du compte ────────────────────
+def _narrateur(bot):
+    narrator = MagicMock()
+    bot.overlay_narrator = narrator
+    return narrator
+
+
+CAMPS = {"azrael": {"legende": "Fuse", "niveau": 285},
+         "viewer": {"legende": "Wraith", "niveau": 120}}
+
+
+@pytest.mark.asyncio
+async def test_le_tableau_porte_la_legende_et_le_niveau_de_chaque_camp():
+    """La spec promet « Fuse · niv. 285 » sous chaque joueur. Les deux valeurs
+    viennent du profil déjà sondé à chaque relevé."""
+    bot = _bot("4 à 2 pour Azraël.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("manche_fin", {
+        "manche": 1, "sur": 3, "azrael": 4, "viewer": 2, "mesurable": True,
+        "total_azrael": 4, "total_viewer": 2, "camps": CAMPS}))
+
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["left_sub"] == "Fuse · niv. 285"
+    assert kwargs["right_sub"] == "Wraith · niv. 120"
+
+
+@pytest.mark.asyncio
+async def test_un_niveau_inconnu_ne_devient_pas_un_niv_0():
+    """Une donnée absente n'est jamais un zéro : elle est omise."""
+    bot = _bot("et voilà.")
+    narrator = _narrateur(bot)
+    await DuelAnnonceur(bot, channel="azrael_ttv")(Evenement("verdict", {
+        "azrael": 7, "viewer": 4, "gagnant": "azrael",
+        "scores": [{"azrael": 7, "viewer": 4}],
+        "camps": {"azrael": {"legende": "Fuse"}, "viewer": {"niveau": 120}}}))
+
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["left_sub"] == "Fuse"
+    assert kwargs["right_sub"] == "niv. 120"
+
+
+# ── Le tableau reparaît au DÉBUT de chaque manche ───────────────────────────
+@pytest.mark.asyncio
+async def test_le_tableau_reparait_au_debut_d_une_manche():
+    """Le widget n'est pas `sticky` et un duel dure une heure : le cycle normal
+    des widgets l'efface entre deux manches. Sans réapparition au lancement de
+    la suivante, le score n'est à l'écran qu'une poignée de secondes par
+    manche."""
+    bot = _bot("manche 2, ça repart.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("manche_debut", {
+        "manche": 2, "sur": 3, "manches_jouees": 1, "total_mesurable": True,
+        "total_azrael": 4, "total_viewer": 2, "camps": CAMPS}))
+
+    assert narrator.show_widget.called, "rien n'est allé à l'écran"
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["left_value"] == 4 and kwargs["right_value"] == 2
+    assert kwargs["right_name"] == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_le_debut_de_la_premiere_manche_affiche_le_tableau_a_zero():
+    """Avant la première manche, « 0 — 0 » ne prétend rien : rien n'a été joué.
+    C'est le moment où les deux camps se présentent à l'écran."""
+    bot = _bot("c'est parti.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("manche_debut", {
+        "manche": 1, "sur": 3, "manches_jouees": 0, "total_mesurable": False,
+        "total_azrael": 0, "total_viewer": 0, "camps": CAMPS}))
+
+    assert narrator.show_widget.called
+
+
+@pytest.mark.asyncio
+async def test_pas_de_tableau_au_debut_d_une_manche_si_rien_n_a_ete_compte():
+    """Une manche jouée sans qu'aucun kill n'ait pu être compté (Mixtape, API
+    muette) : afficher « 0 — 0 » au lancement de la suivante affirmerait un
+    score que personne n'a mesuré."""
+    bot = _bot("on repart.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("manche_debut", {
+        "manche": 2, "sur": 3, "manches_jouees": 1, "total_mesurable": False,
+        "total_azrael": 0, "total_viewer": 0, "camps": CAMPS}))
+
+    narrator.show_widget.assert_not_called()
+    assert _envoye(bot), "le chat, lui, doit toujours annoncer la manche"

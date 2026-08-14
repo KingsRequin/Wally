@@ -40,6 +40,12 @@ class Releve:
     viewer_in_game: bool
     kills_azrael: dict[str, int]
     kills_viewer: dict[str, int]
+    # Ce qui se montre à l'écran sous chaque camp — la légende jouée et le
+    # niveau du compte — lu dans le MÊME profil que les kills, donc sans une
+    # requête de plus. Facultatif : un relevé fictif (API muette, tour de
+    # résolution) n'en porte pas, et une absence ne vaut jamais zéro.
+    camp_azrael: dict = field(default_factory=dict)
+    camp_viewer: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,12 @@ class Duel:
     viewer_nom: str
     viewer_uid: str
     azrael_uid: str
+    # L'identifiant Twitch BRUT du duelliste (« 105904256 »), porté par
+    # l'événement de redemption. Il ne sert qu'à la trace mémoire de fin de
+    # duel : `memory.add()` veut l'id, pas le pseudo — un pseudo change, et
+    # deux comptes peuvent porter successivement le même. Vide quand la
+    # redemption ne l'a pas donné : la trace est alors sautée, jamais devinée.
+    viewer_id: str = ""
     manches: int = 3
     redemption_id: str = ""
     etat: Etat = Etat.RESOLUTION
@@ -64,6 +76,9 @@ class Duel:
     # Les deux valent None dès que la manche n'est pas mesurable pour L'UN
     # des deux joueurs — jamais un score réel comparé à une absence de mesure.
     scores: list[dict] = field(default_factory=list)
+    # Dernier état connu de chaque camp : {"azrael": {"legende": …, "niveau": …}}.
+    # Sert au sous-titre du tableau à l'écran, jamais à l'arbitrage.
+    camps: dict = field(default_factory=dict)
     _base_azrael: dict = field(default_factory=dict)
     _base_viewer: dict = field(default_factory=dict)
     _t_attente: float | None = None
@@ -159,11 +174,13 @@ class Duel:
         """
         return {
             "viewer_nom": self.viewer_nom, "viewer_uid": self.viewer_uid,
+            "viewer_id": self.viewer_id,
             "azrael_uid": self.azrael_uid, "manches": self.manches,
             "redemption_id": self.redemption_id, "etat": self.etat.value,
             "attente_squad_s": self.attente_squad_s,
             "plafond_kills_manche": self.plafond_kills_manche,
             "scores": copy.deepcopy(self.scores),
+            "camps": copy.deepcopy(self.camps),
             "base_azrael": copy.deepcopy(self._base_azrael),
             "base_viewer": copy.deepcopy(self._base_viewer),
             "t_attente": self._t_attente,
@@ -173,12 +190,14 @@ class Duel:
     def from_dict(cls, d: dict) -> "Duel":
         duel = cls(
             viewer_nom=d.get("viewer_nom", ""), viewer_uid=d.get("viewer_uid", ""),
+            viewer_id=str(d.get("viewer_id") or ""),
             azrael_uid=d.get("azrael_uid", ""), manches=int(d.get("manches", 3)),
             redemption_id=d.get("redemption_id", ""),
             etat=Etat(d.get("etat", Etat.RESOLUTION.value)),
             attente_squad_s=float(d.get("attente_squad_s", ATTENTE_SQUAD_S)),
             plafond_kills_manche=int(d.get("plafond_kills_manche", PLAFOND_KILLS_MANCHE)),
             scores=copy.deepcopy(d.get("scores") or []),
+            camps=copy.deepcopy(d.get("camps") or {}),
         )
         duel._base_azrael = copy.deepcopy(d.get("base_azrael") or {})
         duel._base_viewer = copy.deepcopy(d.get("base_viewer") or {})
@@ -190,6 +209,7 @@ class Duel:
         """Fait avancer le duel d'un relevé, et rend ce qu'il faut annoncer."""
         if self.etat in (Etat.VERDICT, Etat.ABANDON):
             return []
+        self._noter_camps(r)
 
         if self.etat is Etat.RESOLUTION:
             # La résolution a le MÊME délai que l'attente du squad, et pour la
@@ -226,8 +246,21 @@ class Duel:
                 self._base_viewer = dict(r.kills_viewer)
                 self._t_attente = None
                 self.etat = Etat.MANCHE
-                return [Evenement("manche_debut", {"manche": self.manche_courante,
-                                                   "sur": self.manches})]
+                # Les totaux voyagent AUSSI au début de manche : c'est ce qui
+                # permet d'afficher le tableau à l'écran là aussi (§11 de la
+                # spec). `total_mesurable` et `manches_jouees` disent à
+                # l'affichage s'il a le droit d'écrire ces chiffres : avant la
+                # première manche, un « 0 — 0 » ne prétend rien ; après une
+                # manche non mesurable, il affirmerait un score que personne
+                # n'a compté.
+                return [Evenement("manche_debut", {
+                    "manche": self.manche_courante, "sur": self.manches,
+                    "manches_jouees": len(self.scores),
+                    "total_azrael": self.total_azrael,
+                    "total_viewer": self.total_viewer,
+                    "total_mesurable": self.mesurable,
+                    "camps": copy.deepcopy(self.camps),
+                })]
             self._pending_debut = False
             if r.t - self._t_attente < self.attente_squad_s:
                 return []
@@ -298,6 +331,7 @@ class Duel:
                     "manche": len(self.scores), "sur": self.manches,
                     "azrael": sa, "viewer": sv, "mesurable": mesurable,
                     "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
+                    "camps": copy.deepcopy(self.camps),
                 })]
                 if len(self.scores) >= self.manches:
                     evts.extend(self._clore())
@@ -309,6 +343,19 @@ class Duel:
             return []
 
         return []
+
+    def _noter_camps(self, r: Releve) -> None:
+        """Retient le DERNIER état connu de chaque camp (légende, niveau).
+
+        Retenu, et non relu à la demande : le verdict se rend parfois depuis un
+        relevé fictif (abandon entre deux manches, API muette) qui ne porte
+        rien. Une valeur vide n'écrase jamais une valeur connue — une donnée
+        absente n'est pas une donnée, et surtout pas un zéro.
+        """
+        for cote, camp in (("azrael", r.camp_azrael), ("viewer", r.camp_viewer)):
+            for cle, valeur in (camp or {}).items():
+                if valeur:
+                    self.camps.setdefault(cote, {})[cle] = valeur
 
     def _aucun_kill_compte(self) -> bool:
         """Aucun kill compté de tout le duel — quelle qu'en soit la raison.
@@ -338,6 +385,7 @@ class Duel:
             "azrael": a, "viewer": v,
             "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
             "scores": copy.deepcopy(self.scores),
+            "camps": copy.deepcopy(self.camps),
         })]
 
 

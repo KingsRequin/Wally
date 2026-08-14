@@ -82,6 +82,44 @@ def peut_controler(auteur: dict) -> bool:
                for b in badges)
 
 
+def _id_twitch(valeur) -> str:
+    """L'identifiant Twitch BRUT, ou `""` si ce n'en est pas un.
+
+    Un id Twitch est purement numérique. Le filtrer ici évite d'écrire en
+    mémoire sous une clé fantaisiste : le namespace `twitch:` est indexé par
+    id, et une clé inventée fabrique un utilisateur qui n'existe pas — que
+    personne ne retrouvera jamais et que rien ne nettoiera.
+
+    Jamais préfixé (`twitch:…`) : `memory.add()` construit `platform:user_id`
+    lui-même, et lui passer la forme préfixée donne `twitch:twitch:…`.
+    """
+    brut = str(valeur or "").strip()
+    return brut if brut.isdigit() else ""
+
+
+def _camp(profil: dict) -> dict:
+    """La légende jouée et le niveau du compte, lus dans le profil déjà sondé.
+
+    Ces deux valeurs vont sous le nom de chaque joueur à l'écran (« Fuse ·
+    niv. 285 »). Elles voyagent donc par le même chemin que les kills — relevé,
+    machine à états, événement — plutôt que par une requête de plus : elles
+    sont dans le MÊME payload.
+
+    Une clé absente est OMISE, jamais rendue en zéro : le sous-titre s'écourte
+    alors tout seul, et un « niv. 0 » serait une affirmation fausse.
+    """
+    if not isinstance(profil, dict):
+        return {}
+    legende = str((profil.get("realtime") or {}).get("selectedLegend") or "").strip()
+    niveau = int(_num((profil.get("global") or {}).get("level")) or 0)
+    camp: dict = {}
+    if legende:
+        camp["legende"] = legende
+    if niveau > 0:
+        camp["niveau"] = niveau
+    return camp
+
+
 def _uid_valide(saisie: str) -> str | None:
     """Un uid Apex est purement numérique. Validé AVANT tout appel réseau :
     la saisie vient d'un viewer, c'est de l'entrée non fiable."""
@@ -104,7 +142,7 @@ def current_duel() -> Duel | None:
 
 
 class DuelRunner:
-    def __init__(self, client, db, api, annoncer, *,
+    def __init__(self, client, db, api, annoncer, *, memory=None,
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
                  manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
                  plafond_kills_manche: int = PLAFOND_KILLS_MANCHE,
@@ -116,6 +154,10 @@ class DuelRunner:
         # Tout ce qui sort du duel — chat, overlay — passe par `annoncer`, la
         # seule sortie que le runner connaisse.
         self._annoncer = annoncer          # coroutine(evenement) -> None
+        # `MemoryService`, pour la trace de fin de duel (§11 ter). Facultatif :
+        # un duel doit pouvoir se jouer sans mémoire branchée, jamais échouer
+        # parce qu'elle manque.
+        self._memory = memory
         self._azrael_uid = azrael_uid
         self._plateforme = plateforme
         self._cadence_s = cadence_s
@@ -277,7 +319,8 @@ class DuelRunner:
         await self._annoncer_sur(Evenement("refus", {"motif": motif}))
 
     async def ouvrir(self, *, acheteur: str, saisie: str,
-                     reward_id: str, redemption_id: str) -> None:
+                     reward_id: str, redemption_id: str,
+                     acheteur_id: str = "") -> None:
         """Sérialisée : deux achats simultanés s'ouvrent l'un APRÈS l'autre.
 
         Sans ce verrou, le test « un duel est-il déjà en cours ? » et
@@ -291,10 +334,12 @@ class DuelRunner:
         """
         async with self._verrou_ouverture:
             await self._ouvrir(acheteur=acheteur, saisie=saisie,
-                               reward_id=reward_id, redemption_id=redemption_id)
+                               reward_id=reward_id, redemption_id=redemption_id,
+                               acheteur_id=acheteur_id)
 
     async def _ouvrir(self, *, acheteur: str, saisie: str,
-                      reward_id: str, redemption_id: str) -> None:
+                      reward_id: str, redemption_id: str,
+                      acheteur_id: str = "") -> None:
         if self.duel_en_cours is not None:
             # Un duel tourne déjà : le remboursement seul laissait le viewer
             # sans un mot d'explication (Task 7, faute de canal d'annonce).
@@ -307,7 +352,8 @@ class DuelRunner:
             # Pas de remboursement au premier essai : la recherche par pseudo
             # de l'API rate des comptes bien réels, ce serait punir le viewer
             # pour un défaut qui n'est pas le sien.
-            await self._demander_uid(acheteur, reward_id, redemption_id)
+            await self._demander_uid(acheteur, reward_id, redemption_id,
+                                     acheteur_id=acheteur_id)
             return
         if uid == self._azrael_uid:
             await self._refuser(reward_id, redemption_id,
@@ -323,13 +369,13 @@ class DuelRunner:
 
         self._reward_id = reward_id
         self.duel_en_cours = self._nouveau_duel(
-            viewer_nom=acheteur, viewer_uid=uid,
+            viewer_nom=acheteur, viewer_uid=uid, viewer_id=_id_twitch(acheteur_id),
             redemption_id=redemption_id, etat=Etat.ATTENTE_SQUAD)
         await self._ranger()
         await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": acheteur}))
 
     async def _demander_uid(self, acheteur: str, reward_id: str,
-                            redemption_id: str) -> None:
+                            redemption_id: str, *, acheteur_id: str = "") -> None:
         """Explique comment trouver son uid, et garde le duel en attente.
 
         Pas de remboursement ici : c'est le point même de cette étape (§9 de
@@ -339,7 +385,7 @@ class DuelRunner:
         self._reward_id = reward_id
         self._tentatives = 0
         self.duel_en_cours = self._nouveau_duel(
-            viewer_nom=acheteur, viewer_uid="",
+            viewer_nom=acheteur, viewer_uid="", viewer_id=_id_twitch(acheteur_id),
             redemption_id=redemption_id, etat=Etat.RESOLUTION)
         await self._ranger()
         await self._annoncer_sur(Evenement("compte_introuvable", {
@@ -454,6 +500,54 @@ class DuelRunner:
         await self._ranger()
         for evt in evts:
             await self._annoncer_sur(evt)
+        # EN DERNIER, après la chaîne intouchable remboursement → nettoyage →
+        # persistance → annonce : la trace mémoire est un bonus, elle ne prend
+        # jamais le pas sur les points du viewer ni sur ce qui se dit à l'écran.
+        for evt in evts:
+            if evt.type == "verdict":
+                await self._memoriser(duel, evt)
+
+    async def _memoriser(self, duel: Duel, evt: Evenement) -> None:
+        """Le duel laisse une trace : « tu m'avais mis 11–6 le mois dernier ».
+
+        Écrit un fait lisible tel quel — par un humain comme par le journal
+        quotidien, qui lit déjà la mémoire et n'a donc rien à brancher.
+
+        Ne fait JAMAIS échouer un duel : le verdict est déjà annoncé et les
+        points déjà arbitrés quand on arrive ici. Une mémoire absente,
+        indisponible ou en erreur se journalise et s'oublie.
+        """
+        if self._memory is None:
+            return
+        if not duel.viewer_id:
+            # Pas de silence : sans id, il n'y a pas de fiche où ranger ça, et
+            # deviner (par pseudo) fabriquerait un utilisateur fantôme.
+            logger.warning(
+                "Duel Apex : résultat non mémorisé, l'identifiant Twitch de {v} "
+                "est inconnu", v=duel.viewer_nom or "?")
+            return
+        d = evt.donnees or {}
+        nom = duel.viewer_nom or "le duelliste"
+        gagnant = d.get("gagnant")
+        issue = ("personne ne l'emporte, égalité" if gagnant is None
+                 else ("Azraël l'emporte" if gagnant == "azrael" else f"{nom} l'emporte"))
+        # Seules les manches MESURÉES sont comptées : annoncer « sur 3 manches »
+        # quand une seule a pu être lue serait un chiffre inventé de plus.
+        comptees = sum(1 for s in (d.get("scores") or []) if s.get("azrael") is not None)
+        manches = f"{comptees} manche{'s' if comptees > 1 else ''} comptée" \
+                  f"{'s' if comptees > 1 else ''}"
+        fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses points "
+                f"de chaîne : Azraël {d.get('azrael')} — {nom} {d.get('viewer')} "
+                f"sur {manches}, {issue}.")
+        try:
+            # Id BRUT, jamais préfixé : `memory.add()` construit `twitch:<id>`
+            # lui-même. La forme préfixée donnerait `twitch:twitch:<id>`.
+            await self._memory.add("twitch", duel.viewer_id, fait,
+                                   username=duel.viewer_nom or None,
+                                   source="apex_duel",
+                                   origin="Duel Apex (points de chaîne)")
+        except Exception as exc:  # noqa: BLE001 — une trace ratée n'annule pas un duel
+            logger.warning("Duel Apex : résultat non mémorisé : {e}", e=exc)
 
     async def _api_muette(self, duel: Duel, maintenant: float) -> None:
         """Une manche que plus aucun relevé ne peut clore.
@@ -507,8 +601,17 @@ class DuelRunner:
                 t=maintenant, azrael_in_game=False, viewer_in_game=False,
                 kills_azrael={}, kills_viewer={}))
             return
-        azrael = await self._profil(duel.azrael_uid)
-        viewer = await self._profil(duel.viewer_uid)
+        # EN PARALLÈLE, et c'est la cadence même du duel qui en dépend : une
+        # requête `/bridge` coûte ~1 s de latence, donc deux profils sondés
+        # l'un après l'autre portaient le tour à ~2 s AVANT le sommeil de
+        # `cadence_s`. La cadence réelle valait le double de celle annoncée (4 s
+        # au lieu de 2), et le debounce à deux relevés reportait la détection
+        # d'une transition à ~8 s — pour un plafond dur mesuré à 39 s entre un
+        # retour au lobby et le lancement suivant. L'API accepte 5 req/s
+        # (mesuré) et le limiteur du client espace de toute façon les deux
+        # départs : deux requêtes simultanées ne coûtent rien.
+        azrael, viewer = await asyncio.gather(
+            self._profil(duel.azrael_uid), self._profil(duel.viewer_uid))
         if azrael is None or viewer is None:
             # L'API muette ou en erreur est tolérée : la machine à états ne
             # voit simplement rien passer CE tour-ci. Mais le minuteur
@@ -541,6 +644,8 @@ class DuelRunner:
             viewer_in_game=bool(_num((viewer.get("realtime") or {}).get("isInGame"))),
             kills_azrael=read_kill_trackers(azrael),
             kills_viewer=read_kill_trackers(viewer),
+            camp_azrael=_camp(azrael),
+            camp_viewer=_camp(viewer),
         )
         await self._avancer(duel, releve)
 

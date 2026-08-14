@@ -390,12 +390,20 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
         narrator = _overlay_narrator(bot)
         affiche = False
         if narrator is not None:
+            # Le même tableau que celui de l'annonceur, sous-titres compris :
+            # deux rendus du même score ne doivent pas montrer deux choses
+            # différentes à l'écran.
+            from bot.twitch.duel_announce import _sous_titre
+
+            camps = duel.camps or {}
             try:
                 affiche = narrator.show_widget(
                     "versus", str(args.get("comment") or ""),
                     label=f"Duel — manche {duel.manche_courante}/{duel.manches}",
                     left_name="Azraël", left_value=duel.total_azrael,
+                    left_sub=_sous_titre(camps.get("azrael")),
                     right_name=duel.viewer_nom, right_value=duel.total_viewer,
+                    right_sub=_sous_titre(camps.get("viewer")),
                 ) is not None
             except Exception as exc:  # noqa: BLE001 — les chiffres restent dicibles
                 logger.warning("duel_apex : tableau non affiché : {e}", e=exc)

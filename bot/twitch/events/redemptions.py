@@ -102,6 +102,10 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
 
         redemption_id = str(getattr(event, "id", ""))
         acheteur = str(getattr(getattr(event, "user", None), "name", "") or "?")
+        # L'identifiant Twitch du duelliste, porté par la redemption. Il ne
+        # sert qu'à la trace mémoire de fin de duel : un pseudo se change, un
+        # id non. `DuelRunner` le filtre (numérique) avant de s'en servir.
+        acheteur_id = str(getattr(getattr(event, "user", None), "id", "") or "")
         saisie = str(getattr(event, "input", "") or "")
 
         logger.info("Duel Apex demandé par {u} (saisie : {s!r})", u=acheteur, s=saisie[:60])
@@ -124,7 +128,7 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
         # (Task 8) — un refus muet, remboursé en direct depuis ce handler,
         # laissait le viewer sans un mot d'explication.
         await runner.ouvrir(
-            acheteur=acheteur, saisie=saisie,
+            acheteur=acheteur, acheteur_id=acheteur_id, saisie=saisie,
             reward_id=reward_id, redemption_id=redemption_id,
         )
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot

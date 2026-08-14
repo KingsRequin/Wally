@@ -504,6 +504,32 @@ def test_le_widget_poll_est_route_vers_le_sondage():
     assert not [e for e in events if e["type"] == "bubble"]
 
 
+def test_le_versus_publie_les_sous_titres_de_chaque_camp():
+    """L'overlay sait rendre une précision sous chaque camp (la légende jouée,
+    le niveau du compte) : le filtre des paramètres doit la laisser passer,
+    sans quoi le rendu est du code mort."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("versus", "", label="Duel", left_name="Azraël", left_value=11,
+                  right_name="Bob", right_value=6,
+                  left_sub="Fuse · niv. 285", right_sub="Wraith · niv. 120")
+    widget = next(e for e in _evts(q) if e["type"] == "widget")
+    assert widget["params"]["left_sub"] == "Fuse · niv. 285"
+    assert widget["params"]["right_sub"] == "Wraith · niv. 120"
+
+
+def test_le_versus_n_affiche_pas_un_sous_titre_vide():
+    """Une ligne vide sous un nom n'est pas une information : rien à dire,
+    rien à publier."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("versus", "", label="Duel", left_name="Azraël", left_value=11,
+                  right_name="Bob", right_value=6, left_sub="", right_sub="   ")
+    widget = next(e for e in _evts(q) if e["type"] == "widget")
+    assert "left_sub" not in widget["params"]
+    assert "right_sub" not in widget["params"]
+
+
 def test_le_widget_poll_refuse_une_question_vide():
     n, _, _ = _narrator()
     assert n.show_widget("poll", "", options=["Oui", "Non"]) is None

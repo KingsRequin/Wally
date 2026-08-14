@@ -1026,6 +1026,15 @@ class OverlayNarrator:
                 "left_name": left_name, "left_value": left_value,
                 "right_name": right_name, "right_value": right_value,
             }
+            # Sous-titres facultatifs (« Fuse · niv. 285 »), que l'overlay sait
+            # rendre depuis toujours mais que ce filtre ne laissait jamais
+            # passer : le duel les remplit, un appel générique ne les donne pas
+            # et rien ne s'affiche alors. Une valeur vide est OMISE plutôt que
+            # publiée : une ligne vide sous un nom n'est pas une information.
+            for cote in ("left_sub", "right_sub"):
+                sous_titre = str(extra.get(cote) or "").strip()
+                if sous_titre:
+                    params[cote] = ecourter(sous_titre, 24)
 
         elif widget == "uptime":
             label = self._uptime_label()

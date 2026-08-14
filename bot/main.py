@@ -633,6 +633,10 @@ async def main() -> None:
                         api=twitch_bot.twitch_api,
                         annoncer=DuelAnnonceur(twitch_bot,
                                                channel=_streamer_name.lower()),
+                        # La trace de fin de duel (§11 ter) : une revanche a
+                        # besoin d'un précédent, et le journal quotidien lit
+                        # déjà la mémoire.
+                        memory=memory,
                         azrael_uid=_azrael_uid,
                         plateforme=_apex_conf.streamer_platform,
                         cadence_s=float(_duel_conf.cadence_s),

@@ -13,7 +13,7 @@ from bot.core.apex.duel import Duel, Etat
 from bot.core.apex.duel_runner import CLE_ETAT, CLE_RECOMPENSE, DuelRunner
 
 
-def _runner(profil_viewer=None):
+def _runner(profil_viewer=None, memory=None):
     client = MagicMock()
     client.get = AsyncMock(return_value=profil_viewer or {})
     db = MagicMock()
@@ -23,8 +23,25 @@ def _runner(profil_viewer=None):
     api.refund_redemption = AsyncMock(return_value=True)
     api.recompenses_gerables = AsyncMock(return_value=[])
     api.creer_recompense = AsyncMock(return_value="")
-    return DuelRunner(client=client, db=db, api=api,
+    return DuelRunner(client=client, db=db, api=api, memory=memory,
                       annoncer=AsyncMock(), azrael_uid="7", plateforme="PC"), client, db, api
+
+
+def _lobby(kills: int, en_partie: bool = False) -> dict:
+    """Un profil de retour au lobby, avec son compteur de kills."""
+    return {"realtime": {"isInGame": 1 if en_partie else 0},
+            "total": {"career_kills": {"name": "BR Kills", "value": kills}}}
+
+
+def _par_uid(profils: dict):
+    """Un `client.get` qui répond selon le compte sondé.
+
+    Un compte absent de la table est en PANNE : `ApexClient.get` rend alors une
+    chaîne d'erreur, pas un dict.
+    """
+    async def _get(endpoint, params=None, sans_cache=False):
+        return profils.get(str((params or {}).get("uid")), "Apex API error: timeout")
+    return AsyncMock(side_effect=_get)
 
 
 @pytest.mark.asyncio
@@ -512,3 +529,154 @@ async def test_deux_achats_simultanes_ne_perdent_pas_le_premier():
     types = [c.args[0].type for c in runner._annoncer.await_args_list]
     assert "refus" in types
     assert runner.duel_en_cours.viewer_nom in ("bob", "carol")
+
+
+# ── Cadence : les deux comptes se sondent EN MÊME TEMPS ─────────────────────
+@pytest.mark.asyncio
+async def test_les_deux_profils_sont_sondes_en_parallele():
+    """Une requête `/bridge` coûte ~1 s de latence, mesurée. Sondés l'un après
+    l'autre, les deux comptes coûtent donc ~2 s AVANT le sommeil de cadence :
+    la cadence réelle vaut le double de celle annoncée, et le debounce à deux
+    relevés porte la détection d'une transition à ~8 s — pour 39 s seulement
+    entre un retour au lobby et le lancement suivant. L'API accepte 5 req/s.
+    """
+    en_vol = 0
+    simultanes = 0
+
+    async def _get(endpoint, params=None, sans_cache=False):
+        nonlocal en_vol, simultanes
+        en_vol += 1
+        simultanes = max(simultanes, en_vol)
+        await asyncio.sleep(0.01)      # la latence réseau
+        en_vol -= 1
+        return _lobby(10, en_partie=True)
+
+    runner, client, _, _ = _runner()
+    client.get = AsyncMock(side_effect=_get)
+    duel = Duel(viewer_nom="bob", viewer_uid="42", azrael_uid="7")
+    duel.etat = Etat.ATTENTE_SQUAD
+    runner.duel_en_cours = duel
+
+    await runner.tick(maintenant=100)
+
+    assert client.get.await_count == 2
+    assert simultanes == 2, "les deux comptes doivent être en vol en même temps"
+
+
+@pytest.mark.asyncio
+async def test_un_seul_profil_illisible_abandonne_le_releve_entier():
+    """Le garde qui protège des manches closes à tort : si le viewer est
+    illisible, on ne clôt pas la manche sur le seul retour au lobby d'Azraël —
+    son score à lui serait inventé."""
+    runner, client, _, _ = _runner()
+    client.get = _par_uid({"7": _lobby(114)})     # le viewer ne répond pas
+    duel = Duel(viewer_nom="bob", viewer_uid="42", azrael_uid="7")
+    duel.etat = Etat.MANCHE
+    duel._base_azrael = {"career_kills": 100}
+    duel._base_viewer = {"career_kills": 50}
+    runner.duel_en_cours = duel
+
+    await runner.tick(maintenant=100)
+    await runner.tick(maintenant=102)
+
+    assert duel.etat is Etat.MANCHE
+    assert duel.scores == []
+
+
+# ── §11 ter : le duel laisse une trace ──────────────────────────────────────
+def _duel_sur_le_fil(runner, viewer_id="105904256"):
+    """Un duel d'une manche, en cours, prêt à se clore au prochain lobby."""
+    runner._client.get = _par_uid({"7": _lobby(111), "42": _lobby(53)})
+    duel = Duel(viewer_nom="Bob", viewer_uid="42", viewer_id=viewer_id,
+                azrael_uid="7", manches=1)
+    duel.etat = Etat.MANCHE
+    duel._base_azrael = {"career_kills": 100}
+    duel._base_viewer = {"career_kills": 50}
+    runner.duel_en_cours = duel
+    return duel
+
+
+async def _clore(runner):
+    await runner.tick(maintenant=100)
+    await runner.tick(maintenant=102)
+
+
+@pytest.mark.asyncio
+async def test_le_resultat_du_duel_part_en_memoire():
+    """« tu m'avais mis 11–6 le mois dernier » : une revanche a besoin d'un
+    précédent. Le fait doit se lire tel quel — par un humain comme par le
+    journal quotidien, qui lit déjà la mémoire."""
+    memory = MagicMock()
+    memory.add = AsyncMock()
+    runner, _, _, _ = _runner(memory=memory)
+    _duel_sur_le_fil(runner)
+
+    await _clore(runner)
+
+    memory.add.assert_awaited_once()
+    args = memory.add.await_args.args
+    assert args[0] == "twitch"
+    assert args[1] == "105904256", "l'id BRUT, jamais la forme préfixée"
+    fait = args[2]
+    assert "Bob" in fait and "Azraël" in fait, f"les deux joueurs : {fait!r}"
+    assert "11" in fait and "3" in fait, f"le score final : {fait!r}"
+    assert "points de chaîne" in fait, f"l'origine du duel : {fait!r}"
+
+
+@pytest.mark.asyncio
+async def test_une_memoire_en_panne_ne_fait_pas_echouer_le_duel():
+    """Le verdict est déjà rendu et les points déjà arbitrés : une trace ratée
+    ne doit rien emporter avec elle."""
+    memory = MagicMock()
+    memory.add = AsyncMock(side_effect=RuntimeError("base morte"))
+    runner, _, _, _ = _runner(memory=memory)
+    _duel_sur_le_fil(runner)
+
+    await _clore(runner)
+
+    assert runner.duel_en_cours is None
+    types = [c.args[0].type for c in runner._annoncer.await_args_list]
+    assert "verdict" in types
+
+
+@pytest.mark.asyncio
+async def test_sans_identifiant_twitch_rien_n_est_ecrit_en_memoire():
+    """Sans id, il n'y a pas de fiche où ranger ça : deviner par le pseudo
+    fabriquerait un utilisateur fantôme que personne ne retrouverait."""
+    memory = MagicMock()
+    memory.add = AsyncMock()
+    runner, _, _, _ = _runner(memory=memory)
+    _duel_sur_le_fil(runner, viewer_id="")
+
+    await _clore(runner)
+
+    memory.add.assert_not_awaited()
+    assert runner.duel_en_cours is None, "le duel se termine quand même"
+
+
+@pytest.mark.asyncio
+async def test_un_identifiant_de_duelliste_fantaisiste_n_est_pas_retenu():
+    """Un id Twitch est purement numérique. Tout le reste est écarté avant
+    d'atteindre la mémoire."""
+    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    runner, _, _, _ = _runner(profil_viewer=profil)
+    await runner.ouvrir(acheteur="bob", acheteur_id="bob", saisie="42",
+                        reward_id="rw", redemption_id="rd")
+    assert runner.duel_en_cours.viewer_id == ""
+
+
+@pytest.mark.asyncio
+async def test_l_identifiant_du_duelliste_survit_a_un_rebuild():
+    """L'état persisté doit le porter : un duel repris après rebuild se termine
+    normalement, et sa trace ne doit pas s'être perdue en route."""
+    profil = {"total": {"k": {"name": "BR Kills", "value": 10}}}
+    runner, _, db, _ = _runner(profil_viewer=profil)
+    await runner.ouvrir(acheteur="Bob", acheteur_id="105904256", saisie="42",
+                        reward_id="rw", redemption_id="rd")
+    ecrit = db.set_state.await_args_list[-1].args[1]
+
+    repris, _, _, _ = _runner()
+    repris._db.get_state = AsyncMock(return_value=ecrit)
+    await repris.charger()
+
+    assert repris.duel_en_cours.viewer_id == "105904256"

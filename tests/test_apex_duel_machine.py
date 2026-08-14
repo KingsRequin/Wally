@@ -467,3 +467,58 @@ def test_un_duel_deja_termine_ne_se_rembourse_pas_une_seconde_fois():
 
     assert d.abandonner("trop tard") == []
     assert d.etat is Etat.VERDICT
+
+
+# ── La légende jouée et le niveau du compte, jusqu'à l'écran ─────────────────
+def test_la_legende_et_le_niveau_voyagent_avec_les_scores():
+    """Ces deux valeurs s'affichent sous chaque camp (« Fuse · niv. 285 »).
+    Elles sont dans le MÊME payload que les kills : elles doivent donc suivre
+    le même chemin — relevé, machine, événement — sans une requête de plus.
+
+    Et un relevé qui ne les porte pas (API muette, tour de résolution) ne doit
+    surtout pas les EFFACER : une absence de donnée n'est pas une donnée.
+    """
+    d = duel_pret()
+    vu = {"camp_azrael": {"legende": "Fuse", "niveau": 285},
+          "camp_viewer": {"legende": "Wraith", "niveau": 120}}
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0, **vu))
+    evts = d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                            kills_azrael=K0, kills_viewer=K0, **vu))
+    assert evts[0].type == "manche_debut"
+    assert evts[0].donnees["camps"]["azrael"] == {"legende": "Fuse", "niveau": 285}
+
+    # Les relevés suivants ne portent plus rien : ce qu'on sait doit tenir.
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(4), kills_viewer=kills(2)))
+    evts = d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(4), kills_viewer=kills(2)))
+    assert evts[0].type == "manche_fin"
+    assert evts[0].donnees["camps"]["viewer"] == {"legende": "Wraith", "niveau": 120}
+
+
+def test_le_debut_de_manche_dit_ce_qui_a_ete_MESURE_avant_lui():
+    """Le tableau reparaît au début de chaque manche : il lui faut de quoi
+    savoir s'il a le droit d'écrire « 0 — 0 ». Avant la première manche, ces
+    chiffres ne prétendent rien ; après une manche non mesurable, ils
+    affirmeraient un score que personne n'a compté."""
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    evts = d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                            kills_azrael=K0, kills_viewer=K0))
+    assert evts[0].donnees["manches_jouees"] == 0
+    assert evts[0].donnees["total_mesurable"] is False
+
+    # Manche 1 jouée en Mixtape : aucun tracker ne bouge, rien n'est mesurable.
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael={}, kills_viewer={}))
+    d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael={}, kills_viewer={}))
+    d.avancer(Releve(t=520, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    evts = d.avancer(Releve(t=522, azrael_in_game=True, viewer_in_game=True,
+                            kills_azrael=K0, kills_viewer=K0))
+    assert evts[0].type == "manche_debut"
+    assert evts[0].donnees["manches_jouees"] == 1
+    assert evts[0].donnees["total_mesurable"] is False

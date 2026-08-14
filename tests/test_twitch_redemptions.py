@@ -18,11 +18,12 @@ def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     return bot
 
 
-def _event(reward_id="RW", user="bob", texte="1012242925358"):
+def _event(reward_id="RW", user="bob", texte="1012242925358", user_id="105904256"):
     e = MagicMock()
     e.reward.id = reward_id
     e.id = "RD1"
     e.user.name = user
+    e.user.id = user_id
     e.input = texte
     return e
 
@@ -142,3 +143,13 @@ async def test_un_chat_injoignable_ne_fait_pas_remonter_l_exception():
     await handle_redemption(bot, _event(reward_id="RW"))  # ne doit pas lever
 
     bot.twitch_api.refund_redemption.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_l_identifiant_twitch_du_duelliste_est_transmis():
+    """Le duelliste est connu par son pseudo, mais la mémoire s'indexe par id :
+    sans lui, la trace de fin de duel n'a nulle part où se ranger. La
+    redemption le porte — inutile d'aller le rechercher ailleurs."""
+    bot = _bot()
+    await handle_redemption(bot, _event(user="bob", user_id="105904256"))
+    assert bot.duel_runner.ouvrir.await_args.kwargs["acheteur_id"] == "105904256"
