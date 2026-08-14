@@ -81,8 +81,12 @@ def _bot_watchdog(actifs: int | None):
     bot._eventsub_zero_readings = 0
     bot._eventsub_failed_restarts = 0
     bot._eventsub_last_restart_at = 0.0
-    bot.token_manager.bot_token = "tok"
+    bot.token_manager.bot_token = "tok-bot"
+    bot.token_manager.streamer_token = "tok-streamer"
     bot._restart_eventsub = AsyncMock()
+    # Les deux jeux de souscriptions (bot / streamer) sont surveillés séparément :
+    # ils ne sont visibles que du token qui les a créés.
+    bot._eventsub_watched_tokens = WallyTwitch._eventsub_watched_tokens.__get__(bot)
     bot._check_eventsub_alive = WallyTwitch._check_eventsub_alive.__get__(bot)
     return bot
 

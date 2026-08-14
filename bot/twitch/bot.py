@@ -514,8 +514,39 @@ class WallyTwitch(commands.Bot):
             except Exception as exc:
                 logger.warning("_finalize_visit: DB write failed: {e}", e=exc)
 
+    def _eventsub_watched_tokens(self) -> list[tuple[str, str]]:
+        """Les jeux de souscriptions à surveiller — un par token utilisé.
+
+        Une souscription EventSub n'est **visible que du token qui l'a créée**.
+        `start_eventsub_client` en crée avec deux tokens : follow/raid/chat avec
+        celui du bot, abonnements/resubs/gifts/cheer/points de chaîne avec celui
+        du streamer. Sonder le seul token du bot rendait donc le chien de garde
+        structurellement aveugle à la moitié des souscriptions — et précisément
+        à celles qui portent les revenus de la chaîne.
+
+        Vécu le 2026-08-13 en plein live : les six souscriptions du streamer
+        étaient toutes en `websocket_disconnected` (achat d'une récompense de
+        points de chaîne jamais reçu) pendant que les six du bot répondaient
+        `enabled`. Le chien de garde ne voyait que ces dernières et concluait
+        que tout allait bien.
+
+        Le token streamer peut être absent (`STREAMER_ACCESS_TOKEN` vide) : dans
+        ce cas aucune souscription streamer n'a été créée, il n'y a rien à
+        surveiller de ce côté.
+        """
+        sides: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for label, token in (
+            ("bot", self.token_manager.bot_token),
+            ("streamer", self.token_manager.streamer_token),
+        ):
+            if token and token not in seen:
+                seen.add(token)
+                sides.append((label, token))
+        return sides
+
     async def _check_eventsub_alive(self) -> None:
-        """Relance EventSub si Twitch ne lui reconnaît plus aucune souscription.
+        """Relance EventSub si Twitch ne reconnaît plus les souscriptions d'un côté.
 
         Une WebSocket EventSub peut mourir sans un mot dans les logs — une
         coupure réseau de quelques secondes suffit. Twitch révoque alors les
@@ -523,6 +554,17 @@ class WallyTwitch(commands.Bot):
         pas, et Wally devient SOURD sur Twitch jusqu'au prochain redémarrage
         manuel. Vécu le 2026-08-08 : plus de vingt minutes de silence en plein
         live, sans la moindre erreur journalisée.
+
+        twitchio ouvre **une WebSocket par token** : les deux jeux de
+        souscriptions meurent séparément, et c'est bien un seul côté qui est
+        tombé le 2026-08-13. La surveillance interroge donc chaque token
+        (cf. `_eventsub_watched_tokens`) et se déclenche dès que **l'un** d'eux
+        ne répond plus rien.
+
+        `None` veut dire « je n'ai pas pu demander », pas « il n'y a plus rien » :
+        un côté muet ne compte ni comme mort ni comme vivant, sans quoi une
+        coupure réseau — la cause même de l'incident — déclencherait des
+        relances en boucle.
         """
         from bot.twitch.events import count_active_subscriptions
 
@@ -530,20 +572,39 @@ class WallyTwitch(commands.Bot):
             return  # une reconstruction est en cours : elle passe par 0 souscription
 
         client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
-        active = await count_active_subscriptions(client_id, self.token_manager.bot_token)
-        if active is None:
-            return
-        if active > 0:
-            # Le service est rendu : on oublie l'historique d'échecs.
-            self._eventsub_zero_readings = 0
-            self._eventsub_failed_restarts = 0
+        morts: list[str] = []
+        vivants: list[str] = []
+        muets: list[str] = []
+        for label, token in self._eventsub_watched_tokens():
+            actives = await count_active_subscriptions(client_id, token)
+            if actives is None:
+                muets.append(label)
+            elif actives > 0:
+                vivants.append(label)
+            else:
+                morts.append(label)
+
+        if muets:
+            logger.debug(
+                "EventSub: état des souscriptions indisponible côté {c}",
+                c=", ".join(muets),
+            )
+
+        if not morts:
+            if vivants:
+                # Le service est rendu : on oublie l'historique d'échecs.
+                self._eventsub_zero_readings = 0
+                self._eventsub_failed_restarts = 0
             return
 
         # Deux lectures à zéro AVANT d'agir : une reconstruction dure une
         # quinzaine de secondes et passe elle-même par zéro souscription.
         self._eventsub_zero_readings += 1
         if self._eventsub_zero_readings < 2:
-            logger.debug("EventSub: 0 souscription (1re lecture) — on confirme au tour suivant")
+            logger.debug(
+                "EventSub: 0 souscription côté {c} (1re lecture) — on confirme au tour suivant",
+                c=", ".join(morts),
+            )
             return
 
         # Backoff : la relance rejoue `purge_stale_subscriptions` + 9 créations.
@@ -565,24 +626,42 @@ class WallyTwitch(commands.Bot):
             )
             return
 
+        # Nommer le côté tombé : le message précédent ne le distinguait pas, et
+        # c'est ce qui a rendu l'incident du 2026-08-13 invisible dans les logs.
         logger.warning(
-            "EventSub: plus aucune souscription vivante côté Twitch — relance "
-            "(tentative {n})", n=self._eventsub_failed_restarts + 1,
+            "EventSub: plus aucune souscription vivante côté {c} — relance "
+            "(tentative {n})",
+            c=" + ".join(morts), n=self._eventsub_failed_restarts + 1,
         )
         self._eventsub_last_restart_at = maintenant
+        # La relance reconstruit TOUT (les deux tokens) : c'est le seul chemin
+        # disponible, et le même que celui d'un ajout de chaîne invitée. Le côté
+        # resté vivant est donc coupé puis recréé, soit ~15 s de silence et une
+        # entame du quota de création — le recul progressif ci-dessus est ce qui
+        # empêche que ça se répète en boucle.
         await self._restart_eventsub()
 
         # Une relance ne compte que si Twitch reconnaît à nouveau des
-        # souscriptions. Sinon on recule davantage au tour suivant.
-        apres = await count_active_subscriptions(client_id, self.token_manager.bot_token)
-        if apres:
+        # souscriptions DES DEUX CÔTÉS. Sinon on recule davantage au tour
+        # suivant. Un côté muet ne prouve rien : faute de confirmation, on
+        # préfère reculer que de croire la panne réglée.
+        apres = {
+            label: await count_active_subscriptions(client_id, token)
+            for label, token in self._eventsub_watched_tokens()
+        }
+        restes = [label for label, n in apres.items() if not n]
+        if apres and not restes:
             self._eventsub_failed_restarts = 0
             self._eventsub_zero_readings = 0
-            logger.info("EventSub: relance réussie ({n} souscription(s))", n=apres)
+            logger.info(
+                "EventSub: relance réussie ({d})",
+                d=", ".join(f"{label}={n}" for label, n in apres.items()),
+            )
         else:
             self._eventsub_failed_restarts += 1
             logger.warning(
-                "EventSub: relance sans effet ({n} échec(s) consécutif(s))",
+                "EventSub: relance sans effet côté {c} ({n} échec(s) consécutif(s))",
+                c=" + ".join(restes) or "inconnu",
                 n=self._eventsub_failed_restarts,
             )
 
