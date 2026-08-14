@@ -798,7 +798,7 @@ class VoiceService:
         # chat Twitch. Réservée aux demandeurs déclarés (`voice.requesters`) —
         # les autres sont entendus, jamais obéis, et retombent en perception.
         from bot.discord.voice.request import (
-            handle_voice_request, is_addressed, resolve_requester,
+            handle_voice_request, is_addressed, journal_near_miss, resolve_requester,
         )
 
         speaker_id = self._current_speaker_id or ""
@@ -806,10 +806,22 @@ class VoiceService:
             speaker_id, getattr(self._bot.config.voice, "requesters", [])
         )
         addressed = requester is not None and is_addressed(text, names)
+        # Le « non » de la détection était muet : un mot qui frôle son nom sans
+        # correspondre ne laissait aucune trace, donc rien ne disait si la
+        # tolérance était trop serrée. Réservé aux demandeurs déclarés — pour
+        # les autres, la question ne se pose pas.
+        if requester is not None and not addressed:
+            journal_near_miss(self._bot, self.channel_id, self.channel_name or "",
+                              label, text, names)
         try:
             loop = asyncio.get_running_loop()
             task = loop.create_task(
-                handle_voice_request(self._bot, speaker_id, label, text) if addressed
+                handle_voice_request(
+                    self._bot, speaker_id, label, text,
+                    channel_id=self.channel_id,
+                    channel_name=self.channel_name or "",
+                    stt_ms=stt_ms,
+                ) if addressed
                 else narrator.on_overheard(line)
             )
             self._listen_tasks.add(task)
