@@ -11,12 +11,23 @@ automatiquement les anomalies comportementales de Wally :
   • réponse de secours     → ``raw_reply`` == fallback (LLM en échec)
   • latence anormale       → ``llm_call.latency_ms`` au-dessus du seuil
 
+Trois journaux s'ajoutent au même format et ont leur propre vue :
+
+  • ``overlay/bulles``  → ce que l'overlay a dit, et surtout ce qu'il a REFUSÉ
+                          de dire (``--overlay``)
+  • ``voice/{salon}``   → les demandes vocales, outils et latences (``--voice``)
+  • ``reception``       → ce qui a bougé dans la minute suivant chaque prise de
+                          parole (compté dans les deux vues ci-dessus)
+
 Usage :
     python3 scripts/audit_traces.py                          # tout, aujourd'hui inclus
     python3 scripts/audit_traces.py --platform discord
     python3 scripts/audit_traces.py --channel général --date 2026-06-23
     python3 scripts/audit_traces.py --trace 134256...        # dump complet d'un trace
     python3 scripts/audit_traces.py --slow-ms 8000           # seuil latence
+    python3 scripts/audit_traces.py --overlay                # bulles publiées vs refusées
+    python3 scripts/audit_traces.py --voice                  # demandes vocales + latences
+    python3 scripts/audit_traces.py --silences               # pourquoi il s'est tu
 """
 from __future__ import annotations
 
@@ -224,6 +235,40 @@ def audit_cognitive(root: Path, date: str | None) -> None:
 
     print(f"### 😴 THINK IGNORÉS (anti-rumination) — {n_skipped}\n")
 
+    # Actions décidées qui n'ont rien produit : le trou de 20 % (66 décidées,
+    # 56 journalisées) est désormais nommé, action par action et motif par motif.
+    rejets = _of_type(events, "act_rejected")
+    acts = _of_type(events, "act")
+    print(f"### 🕳️  ACTIONS SANS EFFET — {len(rejets)} "
+          f"(sur {len(acts) + len(rejets)} décidées)")
+    par_motif: dict[str, int] = defaultdict(int)
+    for ev in rejets:
+        par_motif[f"{ev.get('act_name', '?')} — {ev.get('reason', '?')}"] += 1
+    for cle, n in sorted(par_motif.items(), key=lambda x: -x[1])[:20]:
+        print(f"  {cle:<60} {n}")
+    print()
+
+    # Chaîne pensée → action : ce que le journal ne permettait pas de relire.
+    pensees = {ev.get("thought_id"): ev for ev in _of_type(events, "think")
+               if ev.get("thought_id")}
+    enfants: dict[str, list[dict]] = defaultdict(list)
+    for ev in events:
+        tid = ev.get("thought_id")
+        if tid and ev.get("type") != "think":
+            enfants[tid].append(ev)
+    fertiles = [(tid, kids) for tid, kids in enfants.items() if len(kids) > 1]
+    print(f"### 🔗 PENSÉES → ACTIONS — {len(pensees)} pensées identifiées, "
+          f"{len(fertiles)} en ont produit plusieurs")
+    for tid, kids in fertiles[-10:]:
+        pensee = pensees.get(tid, {})
+        emo = pensee.get("emotion") or {}
+        dom = max(emo.items(), key=lambda x: x[1])[0] if emo else "?"
+        print(f"  [{dom}] {_trunc(pensee.get('text') or '(pensée absente du jour)', 70)}")
+        for kid in kids:
+            detail = kid.get("detail") or kid.get("reason") or kid.get("message") or ""
+            print(f"      └─ {kid.get('type')}: {_trunc(detail, 60)}")
+    print()
+
     # Cycle de vie des goals : advance vs fulfill → repère ceux qui tournent en rond.
     goal_adv: dict[str, int] = defaultdict(int)
     goal_done: set[str] = set()
@@ -253,6 +298,229 @@ def audit_cognitive(root: Path, date: str | None) -> None:
         print(f"  → {repr(_trunc(ev.get('message') or ''))}")
     for ev in dm_supp[:15]:
         print(f"  ⊘ supprimé ({ev.get('reason', '?')}) — {repr(_trunc(ev.get('message') or ''))}")
+    print()
+
+
+def _percentiles(values: list[int]) -> str:
+    """« moy 1234ms médiane 900ms p95 4200ms », ou "" si rien à mesurer."""
+    vals = sorted(v for v in values if isinstance(v, (int, float)))
+    if not vals:
+        return ""
+    p95 = vals[min(len(vals) - 1, int(len(vals) * 0.95))]
+    return (f"moy {int(sum(vals) / len(vals))}ms   "
+            f"médiane {int(vals[len(vals) // 2])}ms   p95 {int(p95)}ms")
+
+
+def _load_dir(root: Path, *parts: str, date: str | None = None) -> list[dict]:
+    """Tous les events d'un sous-dossier du journal (``overlay/bulles``…)."""
+    base = root.joinpath(*parts)
+    files = sorted(base.glob("**/*.jsonl")) if base.exists() else []
+    if date:
+        files = [p for p in files if date in p.name]
+    events: list[dict] = []
+    for path in files:
+        events.extend(_load(path))
+    return events
+
+
+def audit_overlay(root: Path, date: str | None, limit: int = 25) -> None:
+    """Ce que l'overlay a dit — et surtout ce qu'il a refusé de dire.
+
+    L'overlay est la surface la plus vue d'un live. Le taux de refus et le
+    contenu des refus sont l'information : un filtre qui jette le mordant et
+    garde le fade ne se voit qu'en lisant les deux colonnes côte à côte.
+    """
+    events = _load_dir(root, "overlay", "bulles", date=date)
+    print(f"\n{'='*70}")
+    print(f"AUDIT OVERLAY — {len(events)} events")
+    print(f"{'='*70}\n")
+    if not events:
+        print("  (aucune bulle journalisée)\n")
+        return
+
+    bulles = _of_type(events, "overlay_bubble")
+    refus = _of_type(events, "overlay_rejected")
+    total = len(bulles) + len(refus)
+    taux = f"{100 * len(refus) / total:.0f}%" if total else "—"
+    print(f"### 💬 BULLES — {len(bulles)} publiées, {len(refus)} refusées ({taux} de refus)")
+
+    par_source: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for ev in bulles:
+        par_source[ev.get("source", "?")][0] += 1
+    for ev in refus:
+        par_source[ev.get("source", "?")][1] += 1
+    for src, (pub, ref) in sorted(par_source.items(), key=lambda x: -sum(x[1])):
+        print(f"  {src:<22} {pub:>4} publiées   {ref:>4} refusées")
+
+    lat = _percentiles([e.get("condense_ms") for e in bulles if e.get("condense_ms")])
+    if lat:
+        print(f"  condensation : {lat}")
+
+    budget: dict[str, int] = defaultdict(int)
+    for ev in events:
+        for raison, n in (ev.get("budget_ignores") or {}).items():
+            budget[raison] += int(n or 0)
+    if budget:
+        print("  écartés par le budget, avant tout appel LLM :")
+        for raison, n in sorted(budget.items(), key=lambda x: -x[1]):
+            print(f"     {raison:<38} {n}")
+    print()
+
+    motifs: dict[str, int] = defaultdict(int)
+    for ev in refus:
+        motifs[str(ev.get("motif", "?"))] += 1
+    print("### 🚫 MOTIFS DE REFUS")
+    for motif, n in sorted(motifs.items(), key=lambda x: -x[1]):
+        print(f"  {motif:<50} {n}")
+    print()
+
+    print(f"### ✍️  TEXTES ÉCARTÉS (les {limit} derniers)")
+    for ev in refus[-limit:]:
+        candidat = _trunc_line(ev.get("candidat") or "—", 70)
+        print(f"  [{ev.get('source', '?')}] {ev.get('motif', '?')}")
+        print(f"      entrée   : {_trunc_line(ev.get('entree') or '', 90)}")
+        print(f"      candidat : {candidat}")
+    print()
+
+    print(f"### 📺 BULLES PUBLIÉES (les {limit} dernières)")
+    for ev in bulles[-limit:]:
+        emo = ev.get("emotion") or {}
+        dom = max(emo.items(), key=lambda x: x[1])[0] if emo else "?"
+        print(f"  [{ev.get('source', '?')}/{dom}] {_trunc_line(ev.get('texte') or '', 90)}")
+    print()
+
+    _report_reception(_of_type(events, "reception"), "l'overlay")
+
+
+def audit_voice(root: Path, date: str | None, limit: int = 25) -> None:
+    """Les demandes vocales : ce qui a été demandé, fait, répondu, et en combien
+    de temps depuis la FIN DE LA PHRASE."""
+    events = _load_dir(root, "voice", date=date)
+    print(f"\n{'='*70}")
+    print(f"AUDIT VOCAL — {len(events)} events")
+    print(f"{'='*70}\n")
+    if not events:
+        print("  (aucune demande vocale journalisée)\n")
+        return
+
+    outs = _of_type(events, "message_out")
+    ins = _of_type(events, "message_in")
+    tools = _of_type(events, "tool_called")
+    muets = [e for e in _of_type(events, "gate_decision")
+             if e.get("decision") == "silence"]
+    quasi = _of_type(events, "voice_near_miss")
+    print(f"### 🎙️  DEMANDES — {len(ins)} entendues, {len(outs)} publiées, "
+          f"{len(muets)} restées sans réponse")
+
+    for etape, label in (("stt_ms", "transcription"), ("decide_ms", "décision"),
+                         ("llm_ms", "génération"), ("publish_ms", "publication"),
+                         ("total_ms", "TOTAL fin de phrase → chat")):
+        mesure = _percentiles([e.get(etape) for e in outs if e.get(etape) is not None])
+        if mesure:
+            print(f"  {label:<28} {mesure}")
+    print()
+
+    if quasi:
+        print(f"### 🎯 QUASI-DÉCLENCHEMENTS — {len(quasi)}")
+        par_regle: dict[str, int] = defaultdict(int)
+        for ev in quasi:
+            par_regle[f"{ev.get('word', '?')} ≁ {ev.get('name', '?')} "
+                      f"({ev.get('rule', '?')})"] += 1
+        for cle, n in sorted(par_regle.items(), key=lambda x: -x[1])[:20]:
+            print(f"  {cle:<50} {n}")
+        print()
+
+    if muets:
+        print(f"### 🤐 DEMANDES SANS RÉPONSE — {len(muets)}")
+        par_motif: dict[str, int] = defaultdict(int)
+        for ev in muets:
+            par_motif[str(ev.get("reason", "?"))] += 1
+        for motif, n in sorted(par_motif.items(), key=lambda x: -x[1]):
+            print(f"  {motif:<50} {n}")
+        print()
+
+    # Les traces sans `message_in` (quasi-déclenchements, silences) ont déjà
+    # leur section : les remontrer ici en « incomplet » n'apprendrait rien.
+    echanges = [t for t in _group_by_trace(events).values()
+                if any(e.get("type") == "message_in" for e in t)]
+    print(f"### 🔧 ÉCHANGES (les {limit} derniers sur {len(echanges)})")
+    for trace in echanges[-limit:]:
+        entree = next(e for e in trace if e.get("type") == "message_in")
+        sortie = next((e for e in trace if e.get("type") == "message_out"), None)
+        resultats = {e.get("tool"): e for e in trace if e.get("type") == "tool_result"}
+        print(f"  [{entree.get('author', '?')}] "
+              f"{_trunc_line(entree.get('content') or '', 90)}")
+        for call in (e for e in trace if e.get("type") == "tool_called"):
+            res = resultats.get(call.get("tool"), {})
+            issue = res.get("error") or res.get("result") or "(sans résultat)"
+            print(f"      🔧 {call.get('tool')} → {_trunc_line(str(issue), 70)}")
+        if sortie is None:
+            muet = next((e for e in trace if e.get("type") == "gate_decision"), {})
+            print(f"      ⊘ rien publié — {muet.get('reason', 'sans motif')}")
+            continue
+        print(f"      → {_trunc_line(sortie.get('content') or '', 90)} "
+              f"[{sortie.get('total_ms', '?')}ms]")
+    print()
+
+    print(f"### 🔧 OUTILS APPELÉS — {len(tools)}")
+    par_outil: dict[str, int] = defaultdict(int)
+    for ev in tools:
+        par_outil[str(ev.get("tool", "?"))] += 1
+    for outil, n in sorted(par_outil.items(), key=lambda x: -x[1]):
+        print(f"  {outil:<30} {n}")
+    print()
+
+
+def _trunc_line(value, n: int = 80) -> str:
+    return " ".join(str(value or "").split())[:n]
+
+
+def _report_reception(receptions: list[dict], quoi: str) -> None:
+    """Le seul retour spectateur mesurable : ce qui a bougé dans la minute."""
+    if not receptions:
+        return
+    muets = [r for r in receptions if not r.get("replies")]
+    delais = [r["first_delay_s"] for r in receptions
+              if isinstance(r.get("first_delay_s"), (int, float))]
+    total = sum(int(r.get("replies") or 0) for r in receptions)
+    print(f"### 👀 RÉCEPTION ({quoi}) — {len(receptions)} prises de parole")
+    print(f"  {len(muets)} sans le moindre message dans la minute "
+          f"({100 * len(muets) / len(receptions):.0f}%)")
+    print(f"  {total} messages au total, "
+          f"{total / len(receptions):.1f} en moyenne par prise de parole")
+    if delais:
+        delais.sort()
+        print(f"  premier message : médiane {delais[len(delais)//2]:.1f}s")
+    print()
+
+
+def audit_silences(root: Path, date: str | None) -> None:
+    """Pourquoi Wally s'est tu — la moitié invisible de son comportement."""
+    events: list[dict] = []
+    for plat in ("discord", "twitch", "voice"):
+        events.extend(_load_dir(root, plat, date=date))
+    gates = _of_type(events, "gate_decision")
+    print(f"\n{'='*70}")
+    print(f"AUDIT DES SILENCES — {len(gates)} décisions de réponse")
+    print(f"{'='*70}\n")
+    if not gates:
+        print("  (aucune décision journalisée)\n")
+        return
+    par_decision: dict[str, int] = defaultdict(int)
+    for ev in gates:
+        par_decision[str(ev.get("decision", "?"))] += 1
+    print("### ⚖️  DÉCISIONS")
+    for dec, n in sorted(par_decision.items(), key=lambda x: -x[1]):
+        print(f"  {dec:<20} {n}")
+    print()
+    muets = [e for e in gates
+             if str(e.get("decision")) not in ("respond", "spontaneous")]
+    par_motif: dict[str, int] = defaultdict(int)
+    for ev in muets:
+        par_motif[str(ev.get("reason") or "(motif absent)")] += 1
+    print(f"### 🤐 MOTIFS DE SILENCE — {len(muets)}")
+    for motif, n in sorted(par_motif.items(), key=lambda x: -x[1])[:25]:
+        print(f"  {motif:<50} {n}")
     print()
 
 
@@ -302,9 +570,23 @@ def _timeline_summary(ev: dict) -> str:
         tg = f"[{tgt}] " if tgt and tgt != "—" else ""
         return f"{t.upper():7}{tg}{body[:120]}"
     if t == "gate_decision":
-        return f"gate → {ev.get('decision')} (spontaneous={ev.get('spontaneous')})"
+        motif = f" — {ev['reason']}" if ev.get("reason") else ""
+        return f"gate → {ev.get('decision')} (spontaneous={ev.get('spontaneous')}){motif}"
     if t == "speak_suppressed":
         return f"SPEAK supprimé — {ev.get('reason')}"
+    if t == "overlay_bubble":
+        return f"💬 [{ev.get('source')}] {_trunc_line(ev.get('texte'), 110)}"
+    if t == "overlay_rejected":
+        return (f"🚫 [{ev.get('source')}] {ev.get('motif')} — "
+                f"{_trunc_line(ev.get('candidat') or ev.get('entree'), 80)}")
+    if t == "voice_near_miss":
+        return (f"🎯 quasi « {ev.get('word')} » ≁ « {ev.get('name')} » "
+                f"({ev.get('rule')})")
+    if t == "reception":
+        return (f"👀 réception — {ev.get('replies')} message(s) dans la minute "
+                f"({', '.join(ev.get('authors') or []) or 'personne'})")
+    if t == "act_rejected":
+        return f"🕳️  ACT {ev.get('act_name')} sans effet — {ev.get('reason')}"
     extra = {k: v for k, v in ev.items() if k not in ("ts", "type", "trace_id")}
     return f"{t}: {json.dumps(extra, ensure_ascii=False)[:120]}"
 
@@ -377,6 +659,12 @@ def main() -> None:
     ap.add_argument("--trace", help="dump complet d'un trace_id précis")
     ap.add_argument("--slow-ms", type=int, default=8000, help="seuil de latence anormale (ms)")
     ap.add_argument("--cognitive-only", action="store_true", help="n'analyse QUE le flux cognitif")
+    ap.add_argument("--overlay", action="store_true",
+                    help="n'analyse QUE les bulles d'overlay (publiées ET refusées)")
+    ap.add_argument("--voice", action="store_true",
+                    help="n'analyse QUE les demandes vocales (outils, latences)")
+    ap.add_argument("--silences", action="store_true",
+                    help="n'analyse QUE les décisions de NE PAS répondre, par motif")
     ap.add_argument("--timeline", action="store_true",
                     help="vue chronologique unifiée (tous canaux + brain entrelacés par ts)")
     ap.add_argument("--compact", action="store_true",
@@ -393,9 +681,20 @@ def main() -> None:
         dump_trace(root, args.trace)
     elif args.cognitive_only:
         audit_cognitive(root, args.date)
+    elif args.overlay:
+        audit_overlay(root, args.date)
+    elif args.voice:
+        audit_voice(root, args.date)
+    elif args.silences:
+        audit_silences(root, args.date)
     else:
+        # Tout, par défaut : un journal que personne ne pense à ouvrir ne sert à
+        # rien, et personne ne retient une liste de drapeaux.
         audit(root, args.platform, args.channel, args.date, args.slow_ms)
         audit_cognitive(root, args.date)
+        audit_overlay(root, args.date)
+        audit_voice(root, args.date)
+        audit_silences(root, args.date)
 
 
 if __name__ == "__main__":
