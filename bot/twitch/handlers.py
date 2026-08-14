@@ -15,6 +15,7 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 # par ce chemin, et son exécution reste ici plutôt que dans `discord/handlers`.
 from bot.intelligence.overlay_narrator import DUEL_TOOL_SPEC as _DUEL_TOOL
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
+from bot.core.audit_log import observe_reception
 from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.secret_guard import redact
@@ -289,6 +290,9 @@ def _clog(bot: "WallyTwitch", channel: str, event_type: str, **fields) -> None:
     clog = getattr(bot, "conv_log", None)
     if clog is not None:
         clog.log("twitch", channel, event_type, **fields)
+    # Signal de réception : ce point voit passer TOUS les `message_in` et
+    # `message_out` du chat, et il est le seul. Ne lève jamais.
+    observe_reception(clog, "twitch", channel, event_type, fields)
 
 
 async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[dict]:
@@ -772,6 +776,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
 
+    # Motif du silence, affiné au fil des gardes traversées. « non interpellé »
+    # est le cas ordinaire ; les autres disent qu'il a failli parler.
+    _silence = "non interpellé"
+
     # Spontaneous intervention (Twitch)
     if not triggered and bot.config.bot.spontaneous_twitch_enabled:
         import time as _time
@@ -800,8 +808,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
                     trigger_type=trigger_type, decision="spontaneous",
                 )
                 _fire(_spontaneous_respond_twitch(bot, channel_name, channel_id, author, content, prelude_snapshot=prelude))
+            else:
+                _silence = f"tirage spontané perdu ({trigger_type}, p={prob})"
+        elif trigger_type:
+            _silence = "spontané en cooldown"
 
     if not triggered:
+        # Le SILENCE est une décision, et c'était la seule qui ne laissait
+        # aucune trace : 479 messages sans réponse sur un live, invisibles par
+        # construction. On ne pouvait auditer que ce que Wally dit, jamais
+        # pourquoi il s'est tu.
+        _clog(bot, channel_name, "gate_decision", trace_id=_trace,
+              triggered=False, spontaneous=False, decision="silence",
+              reason=_silence)
         return
 
     # Le cooldown ne s'applique ni à la réponse d'une question que Wally vient
@@ -816,10 +835,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         # Journalisé : ce refus était muet, et un message avalé sans trace est
         # indiagnosticable — c'est ce qui a masqué le défaut du 2026-08-08.
         _clog(bot, channel_name, "gate_decision", trace_id=_trace,
-              triggered=True, decision="cooldown")
+              triggered=True, decision="cooldown",
+              reason=f"cooldown utilisateur ({user_id})")
         return
 
-    _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True, decision="respond")
+    _clog(bot, channel_name, "gate_decision", trace_id=_trace, triggered=True,
+          decision="respond", reason="interpellé")
 
     try:
         self_name = bot.config.bot.name

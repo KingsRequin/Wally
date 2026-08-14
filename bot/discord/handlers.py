@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.audit_log import observe_reception
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.secret_guard import redact
@@ -1861,6 +1862,9 @@ def _clog(bot: "WallyDiscord", channel: str, event_type: str, **fields) -> None:
     clog = getattr(bot, "conv_log", None)
     if clog is not None:
         clog.log("discord", channel, event_type, **fields)
+    # Signal de réception : ce point voit passer TOUS les `message_in` et
+    # `message_out` du salon, et il est le seul. Ne lève jamais.
+    observe_reception(clog, "discord", channel, event_type, fields)
 
 
 def maybe_clear_owner_gate(gate, config, author_id: str, is_dm: bool) -> None:
@@ -2009,6 +2013,9 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     )
     logger.debug("triggered={} mentioned={} always={} channel={}", triggered, mentioned, always_trigger, message.channel.id)
     if not triggered:
+        # Motif du silence, affiné au fil des gardes traversées. Même parité que
+        # Twitch : le silence est une décision, et il ne laissait aucune trace.
+        _silence = "non interpellé"
         # Passive emoji reaction on non-trigger messages (Discord only)
         if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
             curiosity = bot.emotion.get_state().get("curiosity", 0.0)
@@ -2050,6 +2057,18 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                         trigger_type=trigger_type, decision="spontaneous",
                     )
                     _fire(_spontaneous_respond(bot, message, prelude_snapshot=prelude))
+                    return
+                _silence = f"tirage spontané perdu ({trigger_type}, p={prob})"
+            elif trigger_type:
+                _silence = "spontané en cooldown"
+        # Journalisé sur le MÊME périmètre que `message_in` ci-dessus : hors
+        # salon autorisé, rien n'entre, donc rien à expliquer.
+        if channel_allowed:
+            _clog(
+                bot, _conv_channel(message), "gate_decision",
+                trace_id=str(message.id), triggered=False, spontaneous=False,
+                decision="silence", reason=_silence,
+            )
         return
 
     if not channel_allowed:
