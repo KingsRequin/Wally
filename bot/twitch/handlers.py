@@ -1312,9 +1312,9 @@ async def _veiller_questions(
         # Wally qui décide de se taire des deux côtés. Absent (gate désactivé
         # en config) → on ne parle pas ; ce chemin n'a pas de repli « réponds ».
         gate = getattr(getattr(bot, "discord_bot", None), "response_gate", None)
+        # Le prélude courant porte TOUT ce qui a été dit depuis la question :
+        # c'est là-dedans que le gate lit si quelqu'un y a déjà répondu.
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
-        # Le fil DEPUIS la question : c'est là que le gate lit si quelqu'un y a
-        # déjà répondu. Le prélude courant contient tout ce qui a suivi.
         # L'uid canonique, comme sur le chemin principal : c'est lui que le gate
         # utilise pour poser sa trace « j'ai choisi d'ignorer ». Le pseudo Twitch
         # y écrirait une trace orpheline, invisible à la mémoire de la personne.
