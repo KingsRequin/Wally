@@ -821,7 +821,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         # nous a rien demandé n'est pas rendre service.
         if est_chaine_home(bot, channel_name):
             _fire(_veiller_questions(bot, channel_name, channel_id, content, author,
-                                     prelude_snapshot=prelude))
+                                     user_id, prelude_snapshot=prelude))
         # Le SILENCE est une décision, et c'était la seule qui ne laissait
         # aucune trace : 479 messages sans réponse sur un live, invisibles par
         # construction. On ne pouvait auditer que ce que Wally dit, jamais
@@ -1267,7 +1267,7 @@ async def _announce_overlay_image(
 
 async def _veiller_questions(
     bot: "WallyTwitch", channel_name: str, channel_id: str,
-    content: str, author: str,
+    content: str, author: str, user_id: str,
     prelude_snapshot: list[dict] | None = None,
 ) -> None:
     """Enregistre une question posée au chat, et relève celle qui a mûri.
@@ -1286,7 +1286,11 @@ async def _veiller_questions(
     if not getattr(cfg, "unanswered_question_enabled", False):
         return
     try:
-        pending_question.noter(channel_name, author, content)
+        # `charge` = l'id numérique. Le chemin principal indexe le fil sur l'id,
+        # pas sur le pseudo : sans lui, une intervention sur question ouvrirait
+        # un second compteur pour la même personne et la profondeur repartirait
+        # de zéro au message suivant.
+        pending_question.noter(channel_name, author, content, charge=user_id)
         question = pending_question.relever(
             channel_name,
             delai_s=cfg.unanswered_question_delay_seconds,
@@ -1311,9 +1315,13 @@ async def _veiller_questions(
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
         # Le fil DEPUIS la question : c'est là que le gate lit si quelqu'un y a
         # déjà répondu. Le prélude courant contient tout ce qui a suivi.
+        # L'uid canonique, comme sur le chemin principal : c'est lui que le gate
+        # utilise pour poser sa trace « j'ai choisi d'ignorer ». Le pseudo Twitch
+        # y écrirait une trace orpheline, invisible à la mémoire de la personne.
+        _uid = await _canonical_uid(bot, "twitch", question["charge"] or user_id)
         repondre, motif = await pending_question.le_gate_veut_repondre(
             gate, question,
-            auteur_uid=f"twitch:{question['auteur']}",
+            auteur_uid=_uid,
             emotion_state=bot.emotion.get_state(),
             fil=prelude,
         )
@@ -1327,6 +1335,7 @@ async def _veiller_questions(
         await _spontaneous_respond_twitch(
             bot, channel_name, channel_id, question["auteur"], question["texte"],
             prelude_snapshot=prelude,
+            personne=question["charge"] or question["auteur"],
             consigne=(
                 f"[CONTEXTE: Tu n'as PAS été mentionné. {question['auteur']} a posé "
                 f"cette question au chat il y a {int(question.get('age_s', 0))} secondes "
@@ -1345,8 +1354,15 @@ async def _spontaneous_respond_twitch(
     recall_memory: str | None = None,
     prelude_snapshot: list[dict] | None = None,
     consigne: str | None = None,
+    personne: str | None = None,
 ) -> None:
-    """Generate and send a spontaneous Twitch response."""
+    """Generate and send a spontaneous Twitch response.
+
+    `personne` est la clé du fil (l'id numérique quand on l'a). Le chemin
+    principal indexe `thread_sense` sur l'id : mesurer le pseudo ici ouvrirait
+    un second compteur pour le même interlocuteur.
+    """
+    personne = personne or author
     try:
         self_name = bot.config.bot.name
         prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
@@ -1365,7 +1381,7 @@ async def _spontaneous_respond_twitch(
             # Le chemin spontané échappait à la mesure du fil : il pouvait
             # recoller le tic que le chemin principal venait de retirer.
             thread_context=thread_sense.bloc_fil(
-                channel_name, author, nom_personne=author,
+                channel_name, personne, nom_personne=author,
                 paliers=bot.persona.fil_directives,
             ),
         )
@@ -1442,7 +1458,7 @@ async def _spontaneous_respond_twitch(
 
         bot.memory.append_prelude(channel_id, self_name, reply)
         bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
-        thread_sense.note_reponse(channel_name, author, reply)
+        thread_sense.note_reponse(channel_name, personne, reply)
         logger.info("Spontaneous intervention in twitch:{ch}", ch=channel_name)
 
     except Exception as e:
