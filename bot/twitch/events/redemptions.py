@@ -56,6 +56,25 @@ async def _dire(bot, acheteur: str, texte: str) -> None:
         logger.error("Duel : refus non annoncé dans le chat : {e}", e=exc)
 
 
+def _rendus_ou_pas(rendu: bool, redemption_id: str, motif: str) -> str:
+    """Le message du viewer, selon que Twitch a VRAIMENT rendu les points.
+
+    `refund_redemption()` lit le corps de la réponse Helix et rend un booléen ;
+    ces deux chemins l'ignoraient et affirmaient « tes points t'ont été rendus »
+    quoi qu'il arrive. Un 403 (récompense créée hors de notre application),
+    un scope perdu ou une redemption déjà soldée produisaient donc un mensonge
+    en direct, avec pour seule trace une ligne de log.
+    """
+    if rendu:
+        return f"{motif} — tes points t'ont été rendus."
+    logger.error(
+        "Duel Apex : REMBOURSEMENT REFUSÉ par Twitch (redemption {i}) — les "
+        "points du viewer ne sont pas revenus, il faut les rendre à la main",
+        i=redemption_id or "?")
+    return (f"{motif}, et je n'ai pas réussi à te rendre tes points — préviens "
+            "le streamer, il n'y a que lui qui puisse te les rendre à la main.")
+
+
 async def _est_notre_recompense(bot, reward_id: str) -> bool:
     """La récompense créée par Wally lui-même, identifiée par son ID.
 
@@ -117,10 +136,11 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
             # Rembourser D'ABORD, annoncer ENSUITE : si l'envoi Twitch lève,
             # le viewer a déjà récupéré ses points. Même ordre que
             # `DuelRunner._refuser()`.
-            await bot.twitch_api.refund_redemption(reward_id, redemption_id)
-            await _dire(bot, acheteur, (
+            rendu = await bot.twitch_api.refund_redemption(reward_id, redemption_id)
+            await _dire(bot, acheteur, _rendus_ou_pas(
+                rendu, redemption_id,
                 "le duel Apex n'est pas disponible en ce moment (je n'ai pas "
-                "la main dessus) — tes points t'ont été rendus."))
+                "la main dessus)"))
             return
 
         # Le cas « duel déjà en cours » n'est PLUS court-circuité ici : seul
@@ -139,13 +159,16 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
         # rien à rembourser. Un remboursement en double sur une redemption déjà
         # traitée est refusé proprement côté Twitch, donc sans risque.
         if reward_id and redemption_id:
+            rendu = False
             try:
-                await bot.twitch_api.refund_redemption(reward_id, redemption_id)
+                rendu = await bot.twitch_api.refund_redemption(reward_id, redemption_id)
             except Exception as exc2:  # noqa: BLE001 — le repli ne relève jamais non plus
                 logger.error("Remboursement de secours en erreur : {e}", e=exc2)
-            # Annoncé même si le remboursement a levé : le viewer doit savoir
-            # que sa demande a échoué. Un silence lui laisse croire que le duel
-            # va démarrer.
-            await _dire(bot, acheteur, (
+            # Annoncé même si le remboursement a levé ou a été refusé : le
+            # viewer doit savoir que sa demande a échoué, ET si ses points sont
+            # revenus. Un silence lui laisse croire que le duel va démarrer ;
+            # une promesse de remboursement qui n'a pas eu lieu est pire.
+            await _dire(bot, acheteur, _rendus_ou_pas(
+                rendu, redemption_id,
                 "ton duel Apex n'a pas pu être lancé (pépin technique de mon "
-                "côté) — tes points t'ont été rendus."))
+                "côté)"))

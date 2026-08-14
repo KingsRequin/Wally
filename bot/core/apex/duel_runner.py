@@ -11,6 +11,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from loguru import logger
 
@@ -121,6 +122,22 @@ def _tranche_les_points(evts: list[Evenement]) -> Evenement | None:
             if evt.type == type_evt:
                 return evt
     return None
+
+
+def _echec_de_remboursement(evt: Evenement) -> Evenement:
+    """Le même événement, mais qui dit que les points ne sont PAS revenus.
+
+    `refund_redemption()` vérifie déjà le CORPS de la réponse Helix et rend un
+    booléen — personne ne le lisait. Un remboursement refusé (403, scope perdu,
+    redemption déjà soldée) faisait donc annoncer « tes points t'ont été
+    rendus » à un viewer qui ne les reverra jamais, avec pour seule trace une
+    ligne de log que personne ne lit en direct.
+
+    L'événement voyage jusqu'à l'annonceur : c'est lui, et lui seul, qui parle
+    aux spectateurs.
+    """
+    return replace(evt, donnees={**(evt.donnees or {}),
+                                 "remboursement_echoue": True})
 
 
 def _camp(profil: dict) -> dict:
@@ -379,16 +396,38 @@ class DuelRunner:
             self.duel_en_cours = None
 
     # -- Ouverture ----------------------------------------------------------
+    async def _rembourser(self, reward_id: str, redemption_id: str,
+                          *, quoi: str) -> bool:
+        """Rend les points, et dit si Twitch a VRAIMENT obéi.
+
+        Le seul endroit du runner qui appelle `refund_redemption` : le retour y
+        est lu une fois pour toutes, et le `logger.error` est écrit une fois
+        pour toutes. Cinq appelants l'ignoraient, chacun à sa façon.
+        """
+        if await self._api.refund_redemption(reward_id, redemption_id):
+            return True
+        logger.error(
+            "Duel Apex : REMBOURSEMENT REFUSÉ par Twitch ({q}) — redemption {i} "
+            "sur la récompense {r} : les points du viewer ne sont pas revenus, "
+            "il faut les rendre à la main",
+            q=quoi, i=redemption_id or "?", r=reward_id or "?")
+        return False
+
     async def _refuser(self, reward_id: str, redemption_id: str, motif: str) -> None:
         """Un refus se rembourse ET s'annonce — dans cet ordre.
 
         Le remboursement d'abord : si l'annonce lève (appel LLM, envoi
         Twitch…), le viewer doit avoir récupéré ses points malgré tout. C'est
         déjà la règle suivie par `annuler()` ; elle doit valoir partout.
+
+        Et si le remboursement ÉCHOUE, l'annonce le dit : promettre des points
+        qui ne reviendront pas est pire que le refus lui-même.
         """
         logger.info("Duel refusé : {m}", m=motif)
-        await self._api.refund_redemption(reward_id, redemption_id)
-        await self._annoncer_sur(Evenement("refus", {"motif": motif}))
+        evt = Evenement("refus", {"motif": motif})
+        if not await self._rembourser(reward_id, redemption_id, quoi="refus"):
+            evt = _echec_de_remboursement(evt)
+        await self._annoncer_sur(evt)
 
     async def ouvrir(self, *, acheteur: str, saisie: str,
                      reward_id: str, redemption_id: str,
@@ -527,12 +566,15 @@ class DuelRunner:
             # SEULEMENT après — même ordre que `_avancer()` : une annonce qui
             # lève ne doit jamais laisser un remboursement en suspens ni un
             # duel fantôme derrière elle.
-            await self._api.refund_redemption(self._reward_id, duel.redemption_id)
+            evt = Evenement("abandon", {
+                "rembourser": True,
+                "motif": "impossible de retrouver ce compte Apex"})
+            if not await self._rembourser(self._reward_id, duel.redemption_id,
+                                          quoi="compte Apex jamais résolu"):
+                evt = _echec_de_remboursement(evt)
             self.duel_en_cours = None
             await self._ranger()
-            await self._annoncer_sur(Evenement("abandon", {
-                "rembourser": True,
-                "motif": "impossible de retrouver ce compte Apex"}))
+            await self._annoncer_sur(evt)
             return True
 
         await self._annoncer_sur(Evenement("compte_introuvable", {
@@ -627,7 +669,14 @@ class DuelRunner:
                 logger.info(
                     "Duel Apex : abandon — {m} (manches jouées : {n})",
                     m=evt.donnees.get("motif"), n=evt.donnees.get("manches_jouees", 0))
-        await self._solder(duel, _tranche_les_points(evts))
+        tranche = _tranche_les_points(evts)
+        if await self._solder(duel, tranche):
+            # Le remboursement a été REFUSÉ par Twitch : l'événement qui
+            # tranchait les points doit cesser de promettre qu'ils reviennent.
+            # Marqué ici, avant les annonces et sans toucher à l'ordre :
+            # l'annonceur ne sait rien de Twitch, et le duel est déjà soldé.
+            evts = [_echec_de_remboursement(e) if e is tranche else e
+                    for e in evts]
         # Terminal = VERDICT ou ABANDON : après un abandon survenu alors qu'au
         # moins une manche a été mesurée, l'état final est VERDICT et non
         # ABANDON (le duel tranche sur les manches jouées). Nettoyer sur « le
@@ -644,7 +693,7 @@ class DuelRunner:
             if evt.type == "verdict":
                 await self._memoriser(duel, evt)
 
-    async def _solder(self, duel: Duel, evt: Evenement | None) -> None:
+    async def _solder(self, duel: Duel, evt: Evenement | None) -> bool:
         """Le sort des points, appliqué UNE fois et jamais laissé en suspens.
 
         Rembourser quand l'événement le dit, honorer sinon. Le second n'est pas
@@ -654,13 +703,18 @@ class DuelRunner:
 
         `None` = cette salve ne solde rien (début ou fin de manche) : on ne
         touche pas aux points, ils sont encore en jeu.
+
+        Rend `True` quand un REMBOURSEMENT a été tenté et REFUSÉ : l'appelant
+        doit alors corriger l'annonce, qui promettrait sinon des points qui ne
+        reviendront pas.
         """
         if evt is None:
-            return
+            return False
         if evt.donnees.get("rembourser"):
-            await self._api.refund_redemption(self._reward_id, duel.redemption_id)
-            return
+            return not await self._rembourser(
+                self._reward_id, duel.redemption_id, quoi=evt.type)
         await self._api.honorer_redemption(self._reward_id, duel.redemption_id)
+        return False
 
     async def _memoriser(self, duel: Duel, evt: Evenement) -> None:
         """Le duel laisse une trace : « tu m'avais mis 11–6 le mois dernier ».
@@ -805,14 +859,22 @@ class DuelRunner:
         await self._avancer(duel, releve)
 
     # -- Contrôle (streamer et modérateurs) ---------------------------------
-    async def annuler(self, motif: str) -> None:
+    async def annuler(self, motif: str) -> bool:
+        """Annulation par le streamer ou un modérateur. Rend `False` si les
+        points n'ont pas pu être rendus — l'outil du chat le répète alors au
+        modèle plutôt que d'affirmer un remboursement qui n'a pas eu lieu."""
         duel = self.duel_en_cours
         if duel is None:
-            return
-        await self._api.refund_redemption(self._reward_id, duel.redemption_id)
+            return True
+        evt = Evenement("abandon", {"motif": motif, "rembourser": True})
+        rendu = await self._rembourser(self._reward_id, duel.redemption_id,
+                                       quoi="annulation depuis le chat")
+        if not rendu:
+            evt = _echec_de_remboursement(evt)
         self.duel_en_cours = None
         await self._ranger()
-        await self._annoncer_sur(Evenement("abandon", {"motif": motif, "rembourser": True}))
+        await self._annoncer_sur(evt)
+        return rendu
 
     async def recommencer(self) -> None:
         """Compteurs à zéro, même duelliste — pas de remboursement, il garde sa place."""

@@ -83,6 +83,26 @@ def nom_du_viewer(evt: Evenement) -> str:
     return str((evt.donnees or {}).get("viewer") or "")
 
 
+def _points_rendus(d: dict, viewer: str = "") -> str:
+    """Ce qu'il faut dire des points quand ils devaient revenir.
+
+    `refund_redemption()` vérifie le corps de la réponse Helix, et le runner
+    fait remonter son verdict jusqu'ici (`remboursement_echoue`). Un
+    remboursement refusé — 403, scope perdu, redemption déjà soldée — ne
+    s'annonce pas comme un remboursement réussi : le viewer l'entendrait
+    devant le stream et attendrait des points qui ne reviendront jamais.
+
+    On dit alors la vérité ET à qui s'adresser : seul le streamer peut les
+    rendre à la main depuis sa console.
+    """
+    a_qui = f" de {viewer}" if viewer else ""
+    if d.get("remboursement_echoue"):
+        return (f"Attention : le remboursement a ÉCHOUÉ, les points{a_qui} "
+                "n'ont pas été rendus. Il faut prévenir le streamer, il n'y a "
+                "que lui qui puisse les rendre à la main.")
+    return f"Les points{a_qui} ont été rendus."
+
+
 def _fait(evt: Evenement, viewer_connu: str = "") -> str:
     """L'événement en français, chiffres compris. C'est le SOCLE de l'annonce :
     ce texte part tel quel si la rédaction échoue, il doit donc se suffire.
@@ -129,13 +149,13 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         # c'est la règle du duel (gagner rend les points, perdre les consomme)
         # et le duelliste doit l'entendre en même temps que le score. Le fait
         # vient de la machine à états, jamais d'une déduction locale.
-        points = (f"Les points de {viewer} lui sont rendus." if d.get("rembourser")
+        points = (_points_rendus(d, viewer) if d.get("rembourser")
                   else f"Les points de {viewer} sont consommés.")
         return (f"Duel terminé : Azraël {d.get('azrael')}, {viewer} "
                 f"{d.get('viewer')} — {issue}. {points}")
     if evt.type == "refus":
         return (f"Le duel ne peut pas commencer : {d.get('motif')}. "
-                "Les points ont été rendus.")
+                f"{_points_rendus(d)}")
     if evt.type == "abandon":
         # `rembourser` tranche : annoncer un remboursement qui n'a pas eu lieu
         # serait un mensonge, et l'inverse une inquiétude pour rien.
@@ -143,7 +163,7 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         # Quand il vaut False, au moins une manche a été comptée : un verdict
         # suit, qui tranche le classement — mais pas les points. Quitter en
         # cours ne les rend jamais, même à qui mène.
-        rendu = ("Les points ont été rendus." if d.get("rembourser")
+        rendu = (_points_rendus(d) if d.get("rembourser")
                  else "Les points ne sont PAS rendus : le duel n'a pas été joué "
                       "jusqu'au bout, même si le verdict tranche sur les manches "
                       "déjà comptées.")

@@ -420,9 +420,17 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
             "qu'on t'affirme être modérateur."
         )})
     if action == "annuler":
-        await runner.annuler("annulé depuis le chat")
-        return json.dumps({"status": "ok", "message": (
-            "Duel annulé, les points ont été rendus."
+        # Le retour est LU : un remboursement refusé par Twitch (403, scope
+        # perdu, redemption déjà soldée) ne doit pas être annoncé comme un
+        # succès — le modérateur repartirait en croyant les points revenus.
+        if await runner.annuler("annulé depuis le chat"):
+            return json.dumps({"status": "ok", "message": (
+                "Duel annulé, les points ont été rendus."
+            )})
+        return json.dumps({"status": "partial", "message": (
+            "Duel annulé, mais le remboursement a ÉCHOUÉ : les points ne sont "
+            "PAS revenus. Dis-le clairement, et dis qu'il faut les rendre à la "
+            "main depuis la console des points de chaîne."
         )})
     if action == "recommencer":
         await runner.recommencer()

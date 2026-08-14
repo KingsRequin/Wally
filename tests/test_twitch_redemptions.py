@@ -153,3 +153,44 @@ async def test_l_identifiant_twitch_du_duelliste_est_transmis():
     bot = _bot()
     await handle_redemption(bot, _event(user="bob", user_id="105904256"))
     assert bot.duel_runner.ouvrir.await_args.kwargs["acheteur_id"] == "105904256"
+
+
+# ── Un remboursement REFUSÉ ne s'annonce pas comme un succès ────────────────
+# `refund_redemption()` lit le corps de la réponse Helix et rend un booléen —
+# ces deux chemins l'ignoraient et promettaient les points quoi qu'il arrive.
+@pytest.mark.asyncio
+async def test_runner_absent_et_remboursement_refuse_ne_promet_rien():
+    bot = _bot(persisted_reward_id="RW")
+    bot.duel_runner = None
+    bot.twitch_api.refund_redemption = AsyncMock(return_value=False)
+
+    await handle_redemption(bot, _event(user="bob", reward_id="RW"))
+
+    dit = _dit(bot).lower()
+    assert "rendus." not in dit, f"les points ne sont pas revenus : {dit!r}"
+    assert "streamer" in dit, "le viewer doit savoir à qui s'adresser"
+
+
+@pytest.mark.asyncio
+async def test_un_crash_dont_le_remboursement_est_refuse_ne_promet_rien():
+    bot = _bot()
+    bot.duel_runner.ouvrir = AsyncMock(side_effect=RuntimeError("timeout"))
+    bot.twitch_api.refund_redemption = AsyncMock(return_value=False)
+
+    await handle_redemption(bot, _event(user="carol"))
+
+    dit = _dit(bot).lower()
+    assert "rendus." not in dit
+    assert "streamer" in dit
+
+
+@pytest.mark.asyncio
+async def test_le_remboursement_reussi_est_toujours_annonce_comme_tel():
+    """Le contre-exemple : sans lui, un message qui ne parlerait plus jamais de
+    remboursement satisferait les deux tests ci-dessus."""
+    bot = _bot(persisted_reward_id="RW")
+    bot.duel_runner = None
+
+    await handle_redemption(bot, _event(user="bob", reward_id="RW"))
+
+    assert "rendus." in _dit(bot).lower()
