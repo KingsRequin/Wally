@@ -625,6 +625,21 @@ async def test_mirror_pass_returns_draft_on_ok(monkeypatch):
     assert result == "Ouais bof."
 
 
+@pytest.mark.parametrize("verdict", ["`OK`", "OK.", "Rien à corriger. OK"])
+@pytest.mark.asyncio
+async def test_mirror_pass_ne_publie_pas_son_marqueur(monkeypatch, verdict):
+    """`OK` est un mot de service — et le prompt l'épelle entre backticks.
+
+    Même famille que le « RIEN » de l'overlay : l'égalité stricte laissait le
+    marqueur habillé remplacer la réponse, publié tel quel dans le salon.
+    """
+    from bot.discord.handlers import _mirror_pass
+    monkeypatch.setattr("bot.discord.handlers.load_prompt", lambda name, fallback="": "check this" if name == "response_mirror_system" else fallback)
+    draft = "Ouais c'est pas terrible comme idée en fait, franchement."
+    bot = _FakeBot(verdict)
+    assert await _mirror_pass(bot, "ch1", draft, "mem") == draft
+
+
 @pytest.mark.asyncio
 async def test_mirror_pass_returns_corrected_on_fix(monkeypatch):
     from bot.discord.handlers import _mirror_pass

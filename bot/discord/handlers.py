@@ -18,7 +18,12 @@ from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
-from bot.intelligence.prompts import assemble_memory_context, build_session_recall_block, load_prompt
+from bot.intelligence.prompts import (
+    assemble_memory_context,
+    build_session_recall_block,
+    load_prompt,
+    marqueur_de_service,
+)
 from bot.intelligence.self_fix import UpgradeRequest
 
 try:
@@ -1422,7 +1427,11 @@ async def _mirror_pass(
             purpose="response_mirror",
         )
         corrected = corrected.strip()
-        if not corrected or corrected.upper() == "OK" or corrected == FALLBACK_RESPONSE:
+        # Même famille que le « RIEN » de l'overlay : `OK` est un mot de service,
+        # et le prompt l'épelle entre backticks (« réponds uniquement `OK` »). Une
+        # égalité stricte laissait passer « `OK` » ou « Rien à corriger. OK » —
+        # publié tel quel dans le salon, marqueur compris.
+        if not corrected or marqueur_de_service(corrected, "OK") or corrected == FALLBACK_RESPONSE:
             return draft
         return corrected
 

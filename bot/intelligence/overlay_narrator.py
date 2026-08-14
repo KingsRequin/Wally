@@ -33,7 +33,11 @@ from loguru import logger
 
 from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
-from bot.intelligence.prompts import load_prompt
+from bot.intelligence.prompts import (
+    load_prompt,
+    marqueur_de_service,
+    nettoyer_decorations,
+)
 
 # Le planning des streams : une image fixe déposée à la main dans
 # `bot/dashboard/static/fichiers/`. Le chemin sert l'overlay (même hôte), l'URL
@@ -1273,8 +1277,7 @@ class OverlayNarrator:
             return ""
         lines: list[str] = []
         if self._bingo:
-            done = sum(1 for d in self._bingo["done"] if d)
-            lines.append(f"Bingo : {done}/{len(self._bingo['cells'])} cases cochées.")
+            lines.append(self._bingo_context())
         if self._hangman:
             lines.append(self._hangman_context())
         if self._goal:
@@ -1298,6 +1301,36 @@ class OverlayNarrator:
         if not lines:
             return ""
         return "\n--- Sur ton overlay ---\n" + "\n".join(lines)
+
+    def _bingo_context(self) -> str:
+        """La grille en cours, case par case — pas seulement le score.
+
+        Le bloc n'annonçait que « Bingo : 0/6 cases cochées ». Wally l'a dit
+        lui-même en live le 13/08 : « je n'ai pas les cases du bingo en tête ».
+        Sans le texte des cases, il ne peut RIEN cocher — trois lives d'affilée
+        se sont terminés sur une grille ouverte et vierge.
+
+        Même patron que `_hangman_context`, et même prudence : la consigne voyage
+        COLLÉE à la donnée. Ici elle dit l'inverse du pendu — la grille est déjà à
+        l'écran, il n'y a rien à cacher ; ce qu'il faut rappeler, c'est que cocher
+        est un GESTE (l'outil `overlay` avec `check`), pas une phrase à dire.
+        """
+        bingo = self._bingo or {}
+        cells, done = bingo.get("cells") or [], bingo.get("done") or []
+        n = sum(1 for d in done if d)
+        lignes = [
+            f"Bingo en cours : {n}/{len(cells)} cases cochées. La grille, "
+            "dans l'ordre (le numéro est celui à donner à `check`) :"
+        ]
+        for i, cell in enumerate(cells):
+            lignes.append(f"  {i} [{'x' if done[i] else ' '}] {cell}")
+        lignes.append(
+            "Quand l'une de ces prédictions se réalise pour de vrai, coche-la "
+            "toi-même : outil `overlay`, widget=bingo, check=<numéro ou quelques "
+            "mots de la case>. Personne d'autre ne le fera. Une case déjà cochée "
+            "ne se recoche pas, et on ne coche pas une case « pour voir »."
+        )
+        return "\n".join(lignes)
 
     def _hangman_context(self) -> str:
         """La partie en cours, telle que Wally doit la voir pour l'animer.
@@ -2203,13 +2236,18 @@ class OverlayNarrator:
             [{"role": "user", "content": text}],
             purpose="overlay_thought",
         )
-        short = " ".join((raw or "").split()).strip('"').strip()
+        # `nettoyer_decorations` retire aussi les backticks : le prompt épelle le
+        # marqueur entre backticks, et le modèle les reprenait autour de sa PHRASE
+        # — l'overlay ne rend pas le Markdown, ils s'affichaient tels quels.
+        short = nettoyer_decorations(raw)
         # Le prompt répond RIEN quand la pensée n'a aucun intérêt pour un
-        # spectateur — se taire est une réponse valide.
+        # spectateur — se taire est une réponse valide. Le marqueur se lit aussi
+        # en FIN de texte : « C'est le genre de moment où l'on se tait. RIEN »
+        # partait à l'écran, marqueur compris (12 fois en 5 jours).
         # En INFO : une pensée qui n'arrive jamais à l'écran est invisible dans
         # les logs, et on ne sait pas si c'est le budget, le « RIEN » ou la
         # longueur qui l'a retenue.
-        if not short or short.upper().rstrip(".") == "RIEN":
+        if not short or marqueur_de_service(short, "RIEN"):
             logger.info("Overlay: pensée jugée sans intérêt pour le public (RIEN)")
             return None
         if len(short) > _MAX_BUBBLE_CHARS:

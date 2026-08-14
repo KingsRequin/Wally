@@ -137,6 +137,40 @@ async def test_rien_a_dire_eteint_les_points():
     assert not [e for e in events if e["type"] == "bubble"]
 
 
+@pytest.mark.parametrize("sortie", [
+    "`RIEN`",
+    "Il parle comme un vieux sage. RIEN",
+    "C'est le genre de moment où l'on se tait. RIEN",
+])
+@pytest.mark.asyncio
+async def test_le_marqueur_ne_monte_jamais_a_lecran(sortie):
+    """Relevé en live : 12 fois en 5 jours, `RIEN` s'est affiché aux spectateurs
+    parce que le garde ne reconnaissait le marqueur que SEUL."""
+    n, feed, _ = _narrator(reply=sortie)
+    q = feed.subscribe()
+    assert await n.on_thought("une pensée sans intérêt public") is None
+    assert not [e for e in _evts(q) if e["type"] == "bubble"]
+
+
+@pytest.mark.asyncio
+async def test_une_bulle_qui_parle_de_rien_reste_affichable():
+    """Le garde ne doit pas manger une vraie phrase finissant par « rien »."""
+    n, feed, _ = _narrator(reply="personne dit rien")
+    q = feed.subscribe()
+    assert await n.on_thought("le salon est mort") == "personne dit rien"
+    assert [e for e in _evts(q) if e["type"] == "bubble"]
+
+
+@pytest.mark.asyncio
+async def test_les_backticks_ne_sarrivent_pas_a_lecran():
+    """L'overlay ne rend pas le Markdown : ce qu'on lui envoie s'affiche tel quel."""
+    n, feed, _ = _narrator(reply="`je m'ennuie ferme`")
+    q = feed.subscribe()
+    assert await n.on_thought("longue rumination") == "je m'ennuie ferme"
+    bulles = [e for e in _evts(q) if e["type"] == "bubble"]
+    assert bulles and "`" not in bulles[0]["text"]
+
+
 @pytest.mark.asyncio
 async def test_une_condensation_trop_longue_est_rejetee():
     n, _, _ = _narrator(reply="mot " * 60)

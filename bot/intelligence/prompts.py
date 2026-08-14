@@ -43,6 +43,52 @@ def load_prompt(name: str, fallback: str = "", render: bool = True) -> str:
         logger.warning("Prompt file read error {f}: {e}", f=path, e=exc)
     return render_identity(fallback) if render else fallback
 
+
+# Décorations que le modèle ajoute autour d'un mot de service : les backticks du
+# prompt (« réponds exactement : `RIEN` »), des guillemets, une ponctuation finale.
+_DECORATIONS = " \t\r\n`*_\"'«»<>[]().,;:!?…-—–"
+
+
+def nettoyer_decorations(texte: str) -> str:
+    """Le texte débarrassé de ses décorations de bord (backticks, guillemets…).
+
+    Sert AUSSI à l'affichage : une bulle rendue « `je m'ennuie ferme` » montrait
+    ses backticks Markdown en clair à l'écran, l'overlay n'interprétant pas le
+    Markdown.
+    """
+    return " ".join((texte or "").split()).strip(_DECORATIONS).strip()
+
+
+def marqueur_de_service(texte: str, marqueur: str) -> bool:
+    """Vrai si `texte` n'est que le marqueur interne, ou s'il s'y termine.
+
+    Un marqueur (`RIEN` sur l'overlay, `OK` pour la passe miroir) est un mot de
+    service : le modèle est censé le rendre SEUL. En pratique il le décore ou le
+    colle après sa phrase — « C'est le genre de moment où l'on se tait. RIEN ».
+    L'égalité exacte laissait alors tout passer à l'écran : 12 fois en 5 jours
+    devant les spectateurs.
+
+    Deux cas, volontairement distincts :
+      · le texte entier vaut le marqueur → refusé quelle que soit la casse ;
+      · le marqueur est le DERNIER mot → refusé seulement s'il est écrit comme le
+        prompt l'épelle (majuscules). Sans ça, « personne dit rien » — une bulle
+        parfaitement valable — serait pris pour un refus.
+
+    Un marqueur en tête ou au milieu ne compte pas : le mot y a son sens ordinaire
+    (« RIEN à signaler »).
+    """
+    marqueur = (marqueur or "").strip()
+    if not marqueur:
+        return False
+    propre = nettoyer_decorations(texte)
+    if not propre:
+        return False
+    if propre.upper() == marqueur.upper():
+        return True
+    dernier = nettoyer_decorations(propre.rsplit(" ", 1)[-1])
+    return dernier == marqueur
+
+
 _MEMORY_RECALL_DIRECTIVE = load_prompt("memory_recall_directive")
 
 _TZ = ZoneInfo("Europe/Paris")
