@@ -360,6 +360,10 @@ class WallyDiscord(commands.Bot):
                     apex=getattr(self, "apex_api", None),
                     db=self.db,
                     persona=self.persona,
+                    # Journal des bulles : l'overlay est la surface la plus vue
+                    # du live et n'apparaissait dans aucune trace structurée.
+                    conv_log=_conv_log,
+                    emotion=self.emotion,
                 )
                 # Rend l'état de l'overlay lisible par `prompts.py` : sans ça,
                 # Wally ne saurait pas qu'un bingo tourne et n'aurait aucune

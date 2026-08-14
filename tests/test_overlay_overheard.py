@@ -64,7 +64,7 @@ async def test_une_bribe_de_conversation_a_son_propre_cadrage():
     n = _narrator()
     seen = {}
 
-    async def _condense(text, system=None):
+    async def _condense(text, system=None, **_):
         seen["system"] = system
         return "il raconte n'importe quoi"
 
@@ -84,7 +84,7 @@ async def test_les_vrais_evenements_gardent_leur_cadrage():
     n = _narrator()
     seen = {}
 
-    async def _condense(text, system=None):
+    async def _condense(text, system=None, **_):
         seen["system"] = system
         return "du monde débarque"
 
@@ -101,7 +101,7 @@ async def test_la_parole_entendue_nallume_pas_les_trois_points():
     clignoteraient toute la soirée, la plupart sans bulle derrière."""
     n = _narrator()
 
-    async def _condense(text, system=None):
+    async def _condense(text, system=None, **_):
         return None  # le silence, cas normal sur du vocal
 
     n._condense = _condense
@@ -116,7 +116,7 @@ async def test_la_parole_entendue_nagite_pas_lavatar():
     moments forts, pas à chaque phrase prononcée pendant une partie."""
     n = _narrator()
 
-    async def _condense(text, system=None):
+    async def _condense(text, system=None, **_):
         return "mouais"
 
     n._condense = _condense

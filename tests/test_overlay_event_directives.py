@@ -33,7 +33,7 @@ def _narrator(directives=None):
 async def _capture(n, description, **kw):
     seen = {}
 
-    async def _condense(text, system=None):
+    async def _condense(text, system=None, **_):
         seen["system"] = system
         seen["text"] = text
         return "une réplique"

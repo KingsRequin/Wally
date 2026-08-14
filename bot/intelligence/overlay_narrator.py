@@ -31,6 +31,8 @@ from typing import Optional
 
 from loguru import logger
 
+from bot.core.audit_log import journal, note_audience, note_speech
+from bot.core.conversation_log import new_trace_id
 from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
 from bot.intelligence.prompts import (
@@ -43,6 +45,11 @@ from bot.intelligence.prompts import (
 # `bot/dashboard/static/fichiers/`. Le chemin sert l'overlay (même hôte), l'URL
 # absolue sert le chat — collé dans Discord, un chemin relatif ne montre rien.
 PLANNING_PATH = "/static/fichiers/planning.webp"
+
+# Où atterrit le journal des bulles, dans l'arborescence existante :
+# `logs/conversations/overlay/bulles/{date}.jsonl`.
+OVERLAY_JOURNAL_PLATFORM = "overlay"
+OVERLAY_JOURNAL_CHANNEL = "bulles"
 
 
 def planning_url() -> str:
@@ -449,6 +456,14 @@ DUEL_TOOL_SPEC = {
 class OverlayNarrator:
     """Filtre et condense ce que Wally montre au public pendant un live."""
 
+    # Défauts de CLASSE, et pas seulement d'`__init__` : un journal ne doit
+    # jamais dépendre de la façon dont son sujet a été construit. Plusieurs
+    # appelants bâtissent un narrateur par `__new__` sans passer par
+    # `__init__` ; sans ces défauts, la première bulle lèverait un
+    # `AttributeError` au milieu d'un live.
+    _conv_log = None
+    _emotion = None
+
     def __init__(
         self,
         overlay_feed,
@@ -464,7 +479,22 @@ class OverlayNarrator:
         apex=None,
         db=None,
         persona=None,
+        conv_log=None,
+        emotion=None,
     ) -> None:
+        # Journal des bulles (`logs/conversations/overlay/bulles/`). L'overlay est
+        # la surface la plus vue du live et n'existait que sous forme de lignes
+        # plates dans `app.log` : reconstituer un couple entrée/sortie s'y faisait
+        # par proximité de ligne, ce qui est une heuristique, pas une trace.
+        self._conv_log = conv_log
+        # Moteur d'émotions, pour agrafer l'état du moment à chaque bulle : sans
+        # lui, juger une réplique demande d'aller chercher l'humeur ailleurs.
+        self._emotion = emotion
+        # Refus de budget depuis la dernière ligne écrite. Comptés, jamais
+        # journalisés un par un : `on_overheard` passe ici à CHAQUE phrase
+        # entendue du live, et une ligne par refus noierait le journal sous le
+        # bruit qu'il sert justement à écarter.
+        self._budget_refus: dict[str, int] = {}
         self._feed = overlay_feed
         # Registres de ton par type d'événement (EVENTS.md), rechargés par
         # `/reload-persona` comme le reste de la persona.
@@ -649,6 +679,59 @@ class OverlayNarrator:
         if words:
             self._recent_bubbles.append(words)
 
+    # ── journal des bulles ────────────────────────────────────────────────
+
+    def _emotion_vector(self) -> dict:
+        """L'humeur du moment, agrafée à chaque ligne du journal."""
+        if self._emotion is None:
+            return {}
+        try:
+            return {k: round(float(v), 3)
+                    for k, v in (self._emotion.get_state() or {}).items()}
+        except Exception as exc:  # noqa: BLE001 — une humeur illisible ne bloque rien
+            logger.debug("Overlay: humeur illisible pour le journal: {e}", e=exc)
+            return {}
+
+    def _note_budget(self, raison: str) -> None:
+        """Compte un refus de budget, sans écrire de ligne.
+
+        Le compte part avec la prochaine bulle journalisée : on veut savoir
+        COMBIEN le budget a mangé, pas lire mille fois « intervalle non écoulé ».
+        """
+        refus = getattr(self, "_budget_refus", None)
+        if refus is None:
+            refus = self._budget_refus = {}
+        refus[raison] = refus.get(raison, 0) + 1
+
+    def _drain_budget(self) -> dict:
+        refus = getattr(self, "_budget_refus", None) or {}
+        self._budget_refus = {}
+        return refus
+
+    def _journal(self, event_type: str, source: str, entree: str, **fields) -> None:
+        """Écrit une ligne du journal des bulles. Ne lève jamais.
+
+        `entree` est ce qui a DÉCLENCHÉ la bulle — la pensée brute, la phrase
+        entendue, l'événement du stream. Sans elle, on ne peut pas juger si le
+        filtre garde le fade et jette le mordant.
+        """
+        journal(
+            self._conv_log, OVERLAY_JOURNAL_PLATFORM, OVERLAY_JOURNAL_CHANNEL,
+            event_type, source=source, entree=(entree or "")[:400],
+            emotion=self._emotion_vector(), budget_ignores=self._drain_budget(),
+            **fields,
+        )
+
+    def _journal_publication(self, source: str, entree: str, texte: str,
+                             mode: str, trace: str, depart: float) -> None:
+        """Une bulle est partie à l'écran : trace + ouverture du signal de réception."""
+        self._journal(
+            "overlay_bubble", source, entree, trace_id=trace, texte=texte,
+            mode=mode, condense_ms=int((time.monotonic() - depart) * 1000),
+        )
+        note_speech(self._conv_log, OVERLAY_JOURNAL_PLATFORM,
+                    OVERLAY_JOURNAL_CHANNEL, trace)
+
     # ── pensées ───────────────────────────────────────────────────────────
 
     async def on_thought(self, text: str) -> Optional[str]:
@@ -661,18 +744,23 @@ class OverlayNarrator:
         if not self._may_speak():
             # Distinguer les deux refus : « pas de live » et « trop tôt » n'ont
             # pas la même correction.
-            logger.info("Overlay: pensée retenue ({r})",
-                        r="hors live" if not self._live() else "intervalle non écoulé")
+            raison = "hors live" if not self._live() else "intervalle non écoulé"
+            logger.info("Overlay: pensée retenue ({r})", r=raison)
+            self._note_budget(raison)
             return None
 
         # Réserve le créneau avant l'appel : deux pensées quasi simultanées ne
         # doivent pas passer toutes les deux pendant que la première condense.
         self._mark_spoken()
         self._feed.thinking(True)
+        trace = new_trace_id("overlay")
+        depart = time.monotonic()
         try:
-            short = await self._condense(text)
+            short = await self._condense(text, source="thought", trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("OverlayNarrator: condensation échouée: {e}", e=exc)
+            self._journal("overlay_rejected", "thought", text, trace_id=trace,
+                          motif=f"condensation en échec : {exc}")
             short = None
 
         if not short:
@@ -680,12 +768,16 @@ class OverlayNarrator:
             return None
         if self._is_repeat(short):
             logger.info("Overlay: pensée écartée (déjà dite) — « {t} »", t=short)
+            self._journal("overlay_rejected", "thought", text, trace_id=trace,
+                          motif="déjà dit", candidat=short,
+                          condense_ms=int((time.monotonic() - depart) * 1000))
             self._feed.thinking(False)
             return None
         # Après le test, pas avant : sinon les logs comptent des bulles jetées.
         logger.info("Overlay: pensée affichée — « {t} »", t=short)
         self._remember_bubble(short)
         self._feed.think_aloud(short)
+        self._journal_publication("thought", text, short, "thought", trace, depart)
         return short
 
     # ── événements du stream ──────────────────────────────────────────────
@@ -710,6 +802,7 @@ class OverlayNarrator:
             show_thinking=show_thinking,
             strong_hints=kind not in _EVENT_KINDS,
             strong=kind in _STRONG_EVENT_KINDS,
+            source=f"stream_event:{kind}" if kind else "stream_event",
         )
 
     def _event_system(self, kind: str) -> str:
@@ -745,6 +838,7 @@ class OverlayNarrator:
         """
         return await self._react_to(
             line, system=_OVERHEARD_SYSTEM, show_thinking=False, strong_hints=False,
+            source="overheard",
         )
 
     async def _react_to(
@@ -755,9 +849,15 @@ class OverlayNarrator:
         show_thinking: bool,
         strong_hints: bool = True,
         strong: bool = False,
+        source: str = "react",
     ) -> Optional[str]:
         description = (description or "").strip()
-        if not description or not self._may_react():
+        if not description:
+            return None
+        if not self._may_react():
+            self._note_budget(
+                "hors live" if not self._live() else "intervalle événement non écoulé"
+            )
             return None
 
         self._last_event_at = time.monotonic()
@@ -775,10 +875,15 @@ class OverlayNarrator:
 
         if show_thinking:
             self._feed.thinking(True)
+        trace = new_trace_id("overlay")
+        depart = time.monotonic()
         try:
-            short = await self._condense(description, system=system)
+            short = await self._condense(description, system=system,
+                                         source=source, trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("OverlayNarrator: réaction échouée: {e}", e=exc)
+            self._journal("overlay_rejected", source, description, trace_id=trace,
+                          motif=f"condensation en échec : {exc}")
             short = None
 
         if not short:
@@ -789,6 +894,9 @@ class OverlayNarrator:
         # pensée pourrait s'empiler juste derrière.
         if self._is_repeat(short):
             logger.info("Overlay: réplique écartée (déjà dite) — « {t} »", t=short)
+            self._journal("overlay_rejected", source, description, trace_id=trace,
+                          motif="déjà dit", candidat=short,
+                          condense_ms=int((time.monotonic() - depart) * 1000))
             # N'éteindre que ce qu'on a allumé. Le vocal passif passe ici à chaque
             # phrase entendue avec `show_thinking=False` ; un `thinking(False)`
             # non apparié efface la bulle affichée deux secondes plus tôt.
@@ -798,6 +906,7 @@ class OverlayNarrator:
         self._mark_spoken()
         self._remember_bubble(short)
         self._feed.say(short, mode="speech")
+        self._journal_publication(source, description, short, "speech", trace, depart)
         return short
 
     # ── widgets ───────────────────────────────────────────────────────────
@@ -1136,6 +1245,11 @@ class OverlayNarrator:
         # second `strip()` d'avant laissaient croire qu'un auteur vide restait
         # possible à cet endroit.
         self._talkers[author] = self._talkers.get(author, 0) + 1
+        # Signal de réception : le chat qui bouge dans la minute qui suit une
+        # bulle est le SEUL retour spectateur exploitable — sans lui, rien ne
+        # distingue un compagnon de stream vivant d'un meuble à l'écran.
+        note_audience(self._conv_log, OVERLAY_JOURNAL_PLATFORM,
+                      OVERLAY_JOURNAL_CHANNEL, author, text or "")
         self.maybe_remind_bingo()
         # Les trois compteurs attendent un message NU : une lettre seule, un
         # chiffre seul, un nom de coup. Or on répond à un bot en le mentionnant —
@@ -1164,10 +1278,15 @@ class OverlayNarrator:
 
         self._last_event_at = time.monotonic()
         self._feed.thinking(True)
+        trace = new_trace_id("overlay")
+        depart = time.monotonic()
         try:
-            short = await self._condense(kind, system=_EVENT_SYSTEM)
+            short = await self._condense(kind, system=_EVENT_SYSTEM,
+                                         source="greet", trace=trace)
         except Exception as exc:  # noqa: BLE001
             logger.debug("OverlayNarrator: salut échoué: {e}", e=exc)
+            self._journal("overlay_rejected", "greet", kind, trace_id=trace,
+                          motif=f"condensation en échec : {exc}")
             short = None
         if not short:
             self._feed.thinking(False)
@@ -1178,11 +1297,15 @@ class OverlayNarrator:
         # contre le salut non plus.
         if self._is_repeat(short):
             logger.info("Overlay: salut écarté (déjà dit) — « {t} »", t=short)
+            self._journal("overlay_rejected", "greet", kind, trace_id=trace,
+                          motif="déjà dit", candidat=short,
+                          condense_ms=int((time.monotonic() - depart) * 1000))
             self._feed.thinking(False)
             return
         self._mark_spoken()
         self._remember_bubble(short)
         self._feed.say(short, mode="speech")
+        self._journal_publication("greet", kind, short, "speech", trace, depart)
 
     def reset_live(self) -> None:
         """Remet à zéro l'état lié à un live (saluts, sondage, bingo)."""
@@ -1506,22 +1629,29 @@ class OverlayNarrator:
             return None
         # Réserve le créneau avant l'appel, comme `on_thought`.
         self._mark_spoken()
+        entree = f"Le compteur « {label} » vient d'atteindre {count}."
+        trace = new_trace_id("overlay")
+        depart = time.monotonic()
         try:
-            short = await self._condense(
-                f"Le compteur « {label} » vient d'atteindre {count}.",
-                system=_EVENT_SYSTEM,
-            )
+            short = await self._condense(entree, system=_EVENT_SYSTEM,
+                                         source="milestone", trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("Overlay: commentaire de palier échoué: {e}", e=exc)
+            self._journal("overlay_rejected", "milestone", entree, trace_id=trace,
+                          motif=f"condensation en échec : {exc}")
             return None
         if not short:
             return None
         if self._is_repeat(short):
             logger.info("Overlay: palier écarté (déjà dit) — « {t} »", t=short)
+            self._journal("overlay_rejected", "milestone", entree, trace_id=trace,
+                          motif="déjà dit", candidat=short,
+                          condense_ms=int((time.monotonic() - depart) * 1000))
             return None
         self._remember_bubble(short)
         self._feed.say(short, mode="speech")
         logger.info("Overlay: palier {n} sur « {l} » — {t}", n=count, l=label, t=short)
+        self._journal_publication("milestone", entree, short, "speech", trace, depart)
         return short
 
     def maybe_remind_bingo(self, every_s: float = 600.0) -> bool:
@@ -2230,7 +2360,9 @@ class OverlayNarrator:
             return f"en live depuis {minutes} min"
         return f"en live depuis {minutes // 60}h{minutes % 60:02d}"
 
-    async def _condense(self, text: str, system: Optional[str] = None) -> Optional[str]:
+    async def _condense(self, text: str, system: Optional[str] = None,
+                        *, source: str = "", trace: str = "") -> Optional[str]:
+        depart = time.monotonic()
         raw = await self._llm.complete(
             system or _CONDENSE_SYSTEM,
             [{"role": "user", "content": text}],
@@ -2247,11 +2379,25 @@ class OverlayNarrator:
         # En INFO : une pensée qui n'arrive jamais à l'écran est invisible dans
         # les logs, et on ne sait pas si c'est le budget, le « RIEN » ou la
         # longueur qui l'a retenue.
+        condense_ms = int((time.monotonic() - depart) * 1000)
         if not short or marqueur_de_service(short, "RIEN"):
             logger.info("Overlay: pensée jugée sans intérêt pour le public (RIEN)")
+            # Le motif seul ne dit RIEN du filtre : sans le texte écarté, on ne
+            # peut pas savoir s'il jette le mordant et garde le fade. C'était
+            # 424 lignes muettes en une journée.
+            self._journal(
+                "overlay_rejected", source, text, trace_id=trace,
+                motif="sans intérêt pour le public (RIEN)" if short else "modèle muet",
+                candidat=short, condense_ms=condense_ms,
+            )
             return None
         if len(short) > _MAX_BUBBLE_CHARS:
             logger.info("Overlay: condensation trop longue ({n} car) : {t}",
                         n=len(short), t=short[:80])
+            self._journal(
+                "overlay_rejected", source, text, trace_id=trace,
+                motif=f"condensation trop longue ({len(short)} car)",
+                candidat=short, condense_ms=condense_ms,
+            )
             return None
         return short

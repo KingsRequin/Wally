@@ -55,6 +55,15 @@ def active_voice_transcript() -> "VoiceTranscriptFeed | None":
     return _active
 
 
+def voice_is_broadcast(channel_id: int | None) -> bool:
+    """Vrai si la parole de ce salon est diffusée au live, ici et maintenant.
+
+    **Fermé par défaut** : sans tampon actif, on répond non. Un consommateur qui
+    n'a pas la preuve que la parole est publique doit se taire, pas supposer.
+    """
+    return _active is not None and _active.is_broadcast(channel_id)
+
+
 def current_voice_transcript_block() -> Optional[str]:
     """Bloc de conversation vocale prêt à injecter au prompt, ou None."""
     if _active is None:
@@ -155,6 +164,31 @@ class VoiceTranscriptFeed:
     # Écriture
     # ------------------------------------------------------------------
 
+    def broadcast_refusal(self, channel_id: int | None) -> str | None:
+        """Pourquoi la parole de ce salon n'est PAS diffusée au live, ou None.
+
+        La règle de confidentialité vit ici, en un seul exemplaire. `record()`
+        s'en sert pour refuser d'écrire ; tout autre consommateur (journal
+        d'audit, notamment) s'en sert pour refuser de LIRE ce qu'il ne devrait
+        pas voir. Deux copies de cette règle finiraient par diverger, et c'est
+        la seule du projet dont l'écart se paie en parole privée publiée.
+        """
+        if self._broadcast_channel_id is None:
+            return "aucune captation ouverte (hors live)"
+        if channel_id is None or int(channel_id) != self._broadcast_channel_id:
+            return (f"salon {channel_id} hors diffusion "
+                    f"(le salon diffusé est {self._broadcast_channel_id})")
+        # Deuxième verrou : le drapeau de captation pourrait rester ouvert si la
+        # transition de fin de live était ratée (le watcher lit parfois une
+        # erreur d'API comme un stream éteint, l'inverse n'est pas exclu).
+        if not (current_stream_status() or {}).get("live"):
+            return "le live n'est plus actif"
+        return None
+
+    def is_broadcast(self, channel_id: int | None) -> bool:
+        """Vrai si ce salon est diffusé au live, ici et maintenant."""
+        return self.broadcast_refusal(channel_id) is None
+
     def record(self, channel_id: int | None, speaker: str, text: str) -> bool:
         """Retient une réplique entendue. Renvoie True si elle a été retenue.
 
@@ -166,20 +200,9 @@ class VoiceTranscriptFeed:
         if not text or not speaker:
             return False
 
-        if self._broadcast_channel_id is None:
-            self._refus("aucune captation ouverte (hors live)")
-            return False
-        if channel_id is None or int(channel_id) != self._broadcast_channel_id:
-            self._refus(
-                f"salon {channel_id} hors diffusion "
-                f"(le salon diffusé est {self._broadcast_channel_id})"
-            )
-            return False
-        # Deuxième verrou : le drapeau de captation pourrait rester ouvert si la
-        # transition de fin de live était ratée (le watcher lit parfois une
-        # erreur d'API comme un stream éteint, l'inverse n'est pas exclu).
-        if not (current_stream_status() or {}).get("live"):
-            self._refus("le live n'est plus actif")
+        refus = self.broadcast_refusal(channel_id)
+        if refus is not None:
+            self._refus(refus)
             return False
 
         self._lines.append((time.monotonic(), speaker, text[:200]))
