@@ -303,16 +303,65 @@ async def test_la_porte_de_reponse_reste_muette_sans_acte(tmp_path):
 
 # ── ses actions cognitives ────────────────────────────────────────────────
 
+class _MessageBidon:
+    reactions = []
+
+    def __init__(self):
+        self.reactions = []
+        self.reactions_posees = []
+
+    async def add_reaction(self, emoji):
+        self.reactions_posees.append(emoji)
+
+
+class _MessageRefusant(_MessageBidon):
+    async def add_reaction(self, emoji):
+        raise RuntimeError("permissions manquantes")
+
+
+class _CanalBidon:
+    def __init__(self, message):
+        self._message = message
+
+    async def fetch_message(self, _id):
+        return self._message
+
+
+class _BotBidon:
+    def __init__(self, message):
+        self._canal = _CanalBidon(message)
+
+    def get_channel(self, _id):
+        return self._canal
+
+
 @pytest.mark.asyncio
-async def test_une_action_decidee_seule_entre_dans_la_trace():
+async def test_une_reaction_cognitive_reussie_entre_dans_la_trace():
     """Une ACT partie de sa propre pensée est un acte comme un autre."""
     from bot.intelligence.action_dispatcher import ActionDispatcher
     from bot.intelligence.meta_agent import MetaDecision
 
-    dispatcher = ActionDispatcher()
-    await dispatcher.dispatch(MetaDecision(action="ACT", act_name="react",
-                                           act_args={}))
+    dispatcher = ActionDispatcher(bot=_BotBidon(_MessageBidon()))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "1", "message_id": "2", "emoji": "\U0001f602"},
+    ))
     assert "react" in st.current_self_trace_block()
+
+
+@pytest.mark.asyncio
+async def test_une_reaction_refusee_par_discord_nest_pas_un_acte():
+    """`_react` avale son exception et repart en silence : la compter d'office
+    lui ferait croire qu'il a réagi alors qu'il n'a rien fait."""
+    from bot.intelligence.action_dispatcher import ActionDispatcher
+    from bot.intelligence.meta_agent import MetaDecision
+
+    dispatcher = ActionDispatcher(bot=_BotBidon(_MessageRefusant()))
+    await dispatcher.dispatch(MetaDecision(
+        action="ACT", act_name="react",
+        act_args={"channel_id": "1", "message_id": "2", "emoji": "\U0001f602"},
+    ))
+    assert st.current_self_trace_block() is None
 
 
 @pytest.mark.asyncio
@@ -324,7 +373,7 @@ async def test_une_action_dispatchee_ne_dit_jamais_ses_arguments():
 
     dispatcher = ActionDispatcher()
     await dispatcher.dispatch(MetaDecision(
-        action="ACT", act_name="react",
+        action="ACT", act_name="create_memory",
         act_args={"content": "le mot de passe est nougat"},
     ))
-    assert "nougat" not in st.current_self_trace_block()
+    assert "nougat" not in (st.current_self_trace_block() or "")

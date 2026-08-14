@@ -248,8 +248,15 @@ class ActionDispatcher:
         except Exception as exc:
             self._journal_act_rejected(act_name, args, f"exception : {exc}")
             raise
-        if self._act_events != avant or act_name in self._ACTIONS_SANS_TRACE_ACT:
+        if self._act_events != avant:
+            # Seul un ACT qui a laissé une trace entre dans sa conscience de
+            # soi. `_ACTIONS_SANS_TRACE_ACT` (react, dm) est délibérément
+            # EXCLU ici : ces deux-là avalent leur exception et repartent en
+            # silence, les compter d'office lui ferait croire qu'il a réagi ou
+            # écrit alors qu'il n'a rien fait. Ils se signalent eux-mêmes, à
+            # l'endroit où ils ont réellement abouti.
             self._note_acte_abouti(act_name)
+        if self._act_events != avant or act_name in self._ACTIONS_SANS_TRACE_ACT:
             return
         if not act_name:
             motif = "nom d'action absent"
@@ -439,6 +446,9 @@ class ActionDispatcher:
                 return
             await message.add_reaction(emoji)
             logger.info("Cognitive REACT {} → msg {}", emoji, message_id)
+            # Après `add_reaction`, jamais avant : une réaction refusée par
+            # Discord ne doit pas lui faire croire qu'il a réagi.
+            self._note_acte_abouti(f"react {emoji}")
             if self._feed:
                 self._feed.publish({
                     "type": "REACT", "emoji": emoji, "channel": str(channel_id),
@@ -512,6 +522,9 @@ class ActionDispatcher:
             if self._gate is not None:
                 self._gate.mark_sent()
             logger.info("Cognitive DM → {} : {}", user_id, message[:80])
+            # Ni le destinataire ni le texte : un DM reste privé, et ce bloc
+            # part aussi dans ses prompts publics.
+            self._note_acte_abouti("dm")
             channel = getattr(sent, "channel", None)
             if channel is not None:
                 self._record_self_message(str(channel.id), message)
