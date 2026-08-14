@@ -195,6 +195,66 @@ def test_une_emote_mal_capitalisee_nest_pas_la_meme_chose():
     assert registre.top() == []
 
 
+# ── la chaîne garde une place, sans se la faire imposer ───────────────────
+
+def test_les_emotes_de_chaine_gardent_une_place_malgre_lecrasement_des_globales():
+    """Chiffres réels d'un relevé sur 7 jours de chat : les globales (`LUL`
+    554, `Kappa` 514...) écrasent en fréquence pure les emotes de la chaîne
+    (23 emplois au mieux) alors que ce sont elles qui font sonner Wally comme
+    un habitué de CETTE chaîne plutôt que de Twitch en général."""
+    registre = em.active_emote_registry()
+    globales = {
+        "LUL": 554, "Kappa": 514, "SeemsGood": 90, "HeyGuys": 65,
+        "NotLikeThis": 60, "KonCha": 56, "MyAvatar": 49,
+    }
+    chaine = {
+        "azrael74SpongeFuse": 23, "azrael74ChadFuse": 23,
+        "azrael74FuZe": 8, "azrael74Potato": 3,
+    }
+    registre.set_verified(
+        [*globales, *chaine, "azrael74Azrael"],  # jamais employée
+        channel_names=[*chaine, "azrael74Azrael"],
+    )
+    for nom, n in {**globales, **chaine}.items():
+        for _ in range(n):
+            registre.note_chat(nom)
+
+    proposees = registre.top()
+    assert len(proposees) == em.MAX_PROPOSEES
+    # Les deux globales les plus employées du chat restent en tête : la
+    # réserve ne les évince jamais.
+    assert {"LUL", "Kappa"}.issubset(proposees)
+    # Au moins une emote de la chaîne obtient sa place, malgré un nombre
+    # d'emplois sans commune mesure avec les globales.
+    assert set(proposees) & set(chaine)
+    # Vérifiée mais jamais employée : la réserve ne l'invente pas pour autant.
+    assert "azrael74Azrael" not in proposees
+
+
+def test_une_emote_de_chaine_jamais_employee_ne_prend_pas_la_reserve():
+    """Une emote de chaîne à laquelle le bot a droit mais que personne
+    n'emploie ne doit pas remonter — la réserve suit l'usage, pas le droit."""
+    registre = em.active_emote_registry()
+    registre.set_verified(
+        ["LUL", "azrael74Azrael"], channel_names=["azrael74Azrael"]
+    )
+    registre.note_chat("LUL")
+    assert registre.top() == ["LUL"]
+
+
+def test_la_reserve_ne_mord_sur_rien_si_la_chaine_est_silencieuse():
+    """Aucune emote de chaîne employée cette semaine : le classement reste
+    une pure fréquence, comme si la distinction d'origine n'existait pas."""
+    registre = em.active_emote_registry()
+    registre.set_verified(
+        ["LUL", "KonCha", "azrael74HYPE"], channel_names=["azrael74HYPE"]
+    )
+    for _ in range(3):
+        registre.note_chat("LUL")
+    registre.note_chat("KonCha")
+    assert registre.top() == ["LUL", "KonCha"]
+
+
 # ── amorçage depuis les journaux ──────────────────────────────────────────
 
 def _ecrire_journal(tmp_path, canal, evenements, date="2026-08-13"):

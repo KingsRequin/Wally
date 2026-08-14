@@ -45,6 +45,25 @@ Le registre se construit donc en croisant deux sources, et rien d'autre :
 Le prompt ne reçoit qu'une poignée des plus employées — 304 emotes en contexte
 seraient absurdes, et un modèle noyé sous un catalogue n'en retient aucune.
 
+## Une place garantie, pas imposée, aux emotes de la chaîne
+
+Une fréquence pure noie mécaniquement les emotes DE LA CHAÎNE sous les
+globales : `LUL` ou `Kappa` peuvent être employées par tout Twitch, une
+`azrael74*` seulement par les spectateurs d'un seul canal. Sept jours de chat
+réel : `LUL` à 554 emplois contre 23 pour la meilleure emote de la chaîne — à
+égalité de mérite relatif, elle ne franchirait jamais la limite de 8, et Wally
+ne « sonnerait » jamais comme un habitué de CETTE chaîne, seulement de Twitch
+en général.
+
+`top()` (cf. sa docstring) réserve donc un quart des places aux emotes de
+chaîne les plus employées, mais seulement celles qui ONT un emploi — une
+`azrael74Azrael` jamais vue reste invisible, elle aussi. Ce quart est une
+fraction de `MAX_PROPOSEES`, pas un compte figé : il grandit ou rétrécit avec
+lui, et il ne mord sur rien tant que la chaîne compte zéro emote employée.
+Les places restantes vont, comme avant, à la fréquence pure — donc si une
+emote de chaîne devient plus populaire que les globales, elle y monte d'elle-
+même, sans passer par la réserve.
+
 ## Ce qu'on ne dit PAS au modèle
 
 Le sens de chaque emote n'est écrit nulle part ici. Les globales Twitch (`LUL`,
@@ -90,6 +109,10 @@ class EmoteRegistry:
         # Emotes dont on a la PREUVE qu'il peut les envoyer. Vide par défaut :
         # sans preuve, on ne propose rien.
         self._verified: set[str] = set()
+        # Sous-ensemble de `_verified` qui vient de LA chaîne (par opposition
+        # aux globales, ouvertes à tout Twitch). Sert uniquement à leur garder
+        # une place au classement — cf. `top()`.
+        self._channel: set[str] = set()
         # Emotes vérifiées vues passer dans le chat → nombre d'occurrences.
         self._counts: Counter = Counter()
 
@@ -97,11 +120,22 @@ class EmoteRegistry:
     # Ce qu'il a le droit d'écrire
     # ------------------------------------------------------------------
 
-    def set_verified(self, names: Optional[Iterable[str]]) -> None:
+    def set_verified(
+        self,
+        names: Optional[Iterable[str]],
+        channel_names: Optional[Iterable[str]] = None,
+    ) -> None:
         """Remplace la liste des emotes autorisées. `None` = API muette, on garde.
 
         Les compteurs sont refiltrés : une emote qui sort du registre (fin
         d'abonnement) ne doit pas continuer d'être proposée par son historique.
+
+        `channel_names` marque celles qui viennent DE LA CHAÎNE plutôt que du
+        catalogue global — uniquement pour leur garder une place au classement
+        (cf. `top()`), jamais pour les autoriser : elles doivent de toute façon
+        figurer dans `names`. Omis (cas des appels directs, notamment en test),
+        aucune emote n'est marquée « de chaîne » et le classement reste une
+        pure fréquence, comme avant cette distinction.
         """
         if names is None:
             logger.warning(
@@ -113,6 +147,7 @@ class EmoteRegistry:
         if nouveau == self._verified:
             return
         self._verified = nouveau
+        self._channel = {str(n).strip() for n in (channel_names or []) if str(n).strip()} & nouveau
         self._counts = Counter({
             nom: compte for nom, compte in self._counts.items() if nom in nouveau
         })
@@ -149,10 +184,46 @@ class EmoteRegistry:
                 self._counts[token] += 1
 
     def top(self, limit: Optional[int] = None) -> list[str]:
-        """Les emotes les plus employées ici, de la plus fréquente à la moins."""
+        """Les emotes les plus employées ici, de la plus fréquente à la moins.
+
+        Un classement en fréquence pure noie systématiquement les emotes DE LA
+        CHAÎNE : elles ne peuvent être employées que par ses spectateurs, alors
+        qu'une globale (`LUL`, `Kappa`...) l'est par tout Twitch — elle part
+        avec un bassin d'utilisateurs sans commune mesure. Sept jours de chat
+        réel donnent `LUL` à 554 emplois contre 23 pour la meilleure emote de
+        la chaîne : à fréquence égale, cette dernière ne franchirait jamais la
+        limite de 8.
+
+        On lui réserve donc un quart des places (`self._max // 4`, au moins 1)
+        — SEULEMENT si au moins une emote de chaîne a été vue au moins une
+        fois ; une jamais employée n'apparaît pas dans `_counts` et ne peut
+        donc jamais prendre cette place. La réserve elle-même reste classée
+        par fréquence : entre deux emotes de chaîne, la plus employée passe
+        devant, exactement comme pour les globales.
+
+        Le quart n'est pas une préférence figée pour telle ou telle emote : il
+        se réajuste tout seul en proportion de `self._max` si ce dernier
+        change, et il ne mord sur rien si la chaîne n'a personne dedans
+        aujourd'hui. Les places restantes vont, comme avant, à qui a le plus
+        d'emplois — chaîne ou globale confondues — donc si l'usage change (une
+        globale décroît, une emote de chaîne explose), le classement suit sans
+        toucher au code : la réserve n'est qu'un plancher, jamais un plafond.
+        """
         limite = self._max if limit is None else limit
-        classe = sorted(self._counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        return [nom for nom, _ in classe[:max(0, limite)]]
+        limite = max(0, limite)
+        classees = sorted(self._counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if limite == 0:
+            return []
+        chaine_employees = [item for item in classees if item[0] in self._channel]
+        if not chaine_employees:
+            return [nom for nom, _ in classees[:limite]]
+        reserve = min(max(1, self._max // 4), len(chaine_employees), limite)
+        retenues = {nom for nom, _ in chaine_employees[:reserve]}
+        for nom, _ in classees:
+            if len(retenues) >= limite:
+                break
+            retenues.add(nom)
+        return [nom for nom, _ in classees if nom in retenues][:limite]
 
     # ------------------------------------------------------------------
     # Amorçage depuis les journaux
@@ -239,6 +310,7 @@ def active_emote_registry() -> EmoteRegistry:
 def reset_emotes() -> None:
     """Vide le registre (tests)."""
     _REGISTRE._verified = set()
+    _REGISTRE._channel = set()
     _REGISTRE._counts = Counter()
 
 
@@ -282,6 +354,6 @@ async def refresh_from_api(api) -> None:
         chaine = await api.get_entitled_channel_emotes()
         if chaine:
             logger.info("Emotes : {n} emote(s) de chaîne ouverte(s) au bot", n=len(chaine))
-        _REGISTRE.set_verified([*globales, *(chaine or [])])
+        _REGISTRE.set_verified([*globales, *(chaine or [])], channel_names=chaine)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
         logger.warning("Emotes : rafraîchissement impossible ({e})", e=exc)
