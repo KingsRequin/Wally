@@ -44,19 +44,24 @@ def load_prompt(name: str, fallback: str = "", render: bool = True) -> str:
     return render_identity(fallback) if render else fallback
 
 
-# Décorations que le modèle ajoute autour d'un mot de service : les backticks du
-# prompt (« réponds exactement : `RIEN` »), des guillemets, une ponctuation finale.
-_DECORATIONS = " \t\r\n`*_\"'«»<>[]().,;:!?…-—–"
+# Emballage : ce que le modèle met AUTOUR de sa réponse sans que ça en fasse
+# partie — les backticks du prompt (« réponds exactement : `RIEN` »), des
+# guillemets, du gras Markdown. La ponctuation de phrase n'est PAS là : un « ? »
+# ou un « ! » final appartient à la bulle, et l'en priver la dénature.
+_EMBALLAGE = " \t\r\n`*_\"'«»<>"
+# Pour COMPARER à un marqueur, la ponctuation finale s'ajoute : « RIEN. » et
+# « RIEN » sont le même refus.
+_PONCTUATION = _EMBALLAGE + "[]().,;:!?…-—–"
 
 
 def nettoyer_decorations(texte: str) -> str:
-    """Le texte débarrassé de ses décorations de bord (backticks, guillemets…).
+    """Le texte débarrassé de son emballage (backticks, guillemets, gras).
 
     Sert AUSSI à l'affichage : une bulle rendue « `je m'ennuie ferme` » montrait
     ses backticks Markdown en clair à l'écran, l'overlay n'interprétant pas le
-    Markdown.
+    Markdown. D'où le périmètre étroit — on retire l'emballage, pas la voix.
     """
-    return " ".join((texte or "").split()).strip(_DECORATIONS).strip()
+    return " ".join((texte or "").split()).strip(_EMBALLAGE).strip()
 
 
 def marqueur_de_service(texte: str, marqueur: str) -> bool:
@@ -80,12 +85,12 @@ def marqueur_de_service(texte: str, marqueur: str) -> bool:
     marqueur = (marqueur or "").strip()
     if not marqueur:
         return False
-    propre = nettoyer_decorations(texte)
+    propre = " ".join((texte or "").split()).strip(_PONCTUATION)
     if not propre:
         return False
     if propre.upper() == marqueur.upper():
         return True
-    dernier = nettoyer_decorations(propre.rsplit(" ", 1)[-1])
+    dernier = propre.rsplit(" ", 1)[-1].strip(_PONCTUATION)
     return dernier == marqueur
 
 

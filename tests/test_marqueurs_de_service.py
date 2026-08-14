@@ -66,3 +66,14 @@ def test_un_marqueur_vide_ne_refuse_rien():
 ])
 def test_les_decorations_ne_montent_pas_a_lecran(brut, attendu):
     assert nettoyer_decorations(brut) == attendu
+
+
+@pytest.mark.parametrize("bulle", [
+    "il joue encore comme ça ?",
+    "franchement bien joué !",
+    "toujours personne…",
+])
+def test_la_ponctuation_de_la_bulle_lui_appartient(bulle):
+    """Retirer l'emballage ne doit pas retirer la voix : un « ? » final change
+    le sens de la phrase affichée."""
+    assert nettoyer_decorations(bulle) == bulle
