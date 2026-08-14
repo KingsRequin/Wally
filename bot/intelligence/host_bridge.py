@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import httpx
 from loguru import logger
 
@@ -103,3 +105,16 @@ class HostBridgeClient:
             if r.status_code != 200:
                 raise HostBridgeError(r.json().get("error", "unknown error"))
             return r.json()
+
+
+def bridge_from_env() -> HostBridgeClient | None:
+    """Construit le client vers le pont hôte (`wally-bridge.service`) depuis
+    l'environnement, ou `None` si `BRIDGE_SECRET` n'est pas configuré sur cette
+    instance — même garde que `Wally._self_modify_allowed` côté SelfFix/SelfUpgrade,
+    reprise ici pour les routes dashboard qui ont besoin du pont indépendamment
+    du flag `self_modify_enabled` (redémarrer un container n'est pas de l'auto-modif)."""
+    secret = os.getenv("BRIDGE_SECRET", "")
+    if not secret:
+        return None
+    socket_path = os.getenv("BRIDGE_SOCKET_PATH", "/app/data/bridge.sock")
+    return HostBridgeClient(socket_path, secret)

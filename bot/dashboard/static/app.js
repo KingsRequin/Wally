@@ -211,7 +211,8 @@ async function restartContainer() {
   if (btn) btn.disabled = true;
   var r = await apiFetch('/api/admin/bot/restart', { method: 'POST' });
   if (!r || !r.ok) {
-    toast('Erreur restart', 'error');
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Erreur restart', 'error');
     if (btn) btn.disabled = false;
     return;
   }
@@ -266,7 +267,11 @@ async function startTwitchOAuth(account) {
 async function restartTwitchContainer() {
   if (!confirm('Redemarrer le container Wally ? Le dashboard sera indisponible ~10s.')) return;
   var r = await apiFetch('/api/admin/twitch/restart', { method: 'POST' });
-  if (!r || !r.ok) { toast('Erreur restart', 'error'); return; }
+  if (!r || !r.ok) {
+    var err = r ? await r.json().catch(function() { return {}; }) : {};
+    toast(err.detail || 'Erreur restart', 'error');
+    return;
+  }
   _twitchPendingRestart = false;
   toast('Redemerrage en cours...', 'success');
   _waitForReconnect();

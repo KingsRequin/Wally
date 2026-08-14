@@ -809,30 +809,47 @@ async def save_system_prompt(filename: str, request: Request) -> dict:
 
 @router.post("/bot/restart")
 async def restart_container(request: Request) -> dict:
+    """Redémarre le container via le pont hôte (`wally-bridge.service`).
+
+    Un `docker compose restart` local est structurellement impossible depuis
+    l'intérieur du container : ni le binaire `docker`, ni `docker-compose.yml`,
+    ni le socket Docker n'y sont montés — d'où l'échec
+    `open /app/docker-compose.yml: no such file or directory` vu en prod. Le
+    pont hôte (`bot/intelligence/host_bridge.py`) tourne côté hôte et expose
+    `docker_restart`, déjà utilisé par `SelfUpgrade`.
+
+    `docker-restart` côté daemon (`scripts/host_bridge_daemon.py`) ne fait que
+    DISPATCHER la commande (`subprocess.Popen(..., start_new_session=True)`)
+    avant de répondre 200 — la commande `docker compose up -d --force-recreate`
+    tourne ensuite de façon détachée sur l'hôte. La réponse HTTP de cette route
+    part donc bien avant que ce container ne reçoive son SIGTERM.
+    """
     logger.warning("Container restart requested via dashboard")
+    from bot.intelligence.host_bridge import bridge_from_env
 
-    compose_file = os.getenv("COMPOSE_FILE", "")
-    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
-
-    async def _do_restart():
-        await asyncio.sleep(1)
-        cmd = ["/usr/bin/docker", "compose"]
-        if compose_file:
-            cmd += ["-f", compose_file]
-        cmd += ["restart", service_name]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    bridge = bridge_from_env()
+    if bridge is None:
+        logger.error("Container restart: pont hôte non configuré (BRIDGE_SECRET absent)")
+        raise HTTPException(
+            status_code=503,
+            detail="Pont hôte non configuré (BRIDGE_SECRET absent) — redémarrage impossible depuis le container.",
         )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.error("Restart failed: {}", stderr.decode())
+    if not await bridge.health():
+        logger.error("Container restart: pont hôte injoignable")
+        raise HTTPException(
+            status_code=503,
+            detail="Pont hôte injoignable — le service wally-bridge est-il actif sur l'hôte ?",
+        )
 
-    task = asyncio.create_task(_do_restart())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
-    return {"ok": True, "message": "Restart initiated"}
+    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
+    try:
+        await bridge.docker_restart(service_name)
+    except Exception as e:  # noqa: BLE001 — le résultat réel doit remonter à l'appelant
+        logger.error("Container restart failed: {}", e)
+        raise HTTPException(status_code=503, detail=f"Échec du déclenchement du redémarrage : {e}")
+
+    logger.info("Container restart dispatched via host bridge")
+    return {"ok": True, "message": "Redémarrage déclenché via le pont hôte."}
 
 
 # ── Persistent notes ─────────────────────────────────────────────────────────
@@ -944,8 +961,9 @@ async def self_update(request: Request) -> dict:
         # `create_subprocess_shell` et non `subprocess.Popen` : le `fork()` d'un
         # process Python à gros tas duplique l'espace d'adressage et GÈLE toute
         # la boucle le temps de l'opération — Discord, Twitch, dashboard, ticks
-        # cognitifs compris. La bonne forme existait déjà cent lignes plus haut,
-        # dans `restart_container`.
+        # cognitifs compris. `restart_container` (juste au-dessus) est passé par
+        # le pont hôte depuis, mais le principe (jamais de fork lourd dans la
+        # boucle asyncio) vaut toujours ici, où le socket Docker est monté.
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.DEVNULL,

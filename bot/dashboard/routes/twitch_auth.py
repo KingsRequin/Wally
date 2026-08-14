@@ -1,6 +1,6 @@
 # bot/dashboard/routes/twitch_auth.py
 from __future__ import annotations
-import asyncio, hashlib, html, os, re, time, urllib.parse, uuid
+import hashlib, html, os, re, time, urllib.parse, uuid
 from pathlib import Path
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -29,7 +29,6 @@ _STREAMER_SCOPES   = ("channel:read:subscriptions bits:read "
 _pending_states: dict[str, dict] = {}   # state_key -> {account, expires_at}
 _status_cache:   dict[str, dict] = {}   # token_prefix -> {info, cached_at}
 _STATUS_CACHE_TTL = 60
-_bg_tasks: set[asyncio.Task] = set()
 
 
 def _replace_or_append(text: str, key: str, value: str) -> str:
@@ -238,21 +237,33 @@ async def twitch_auth_callback(request: Request):
 
 @router.post("/twitch/restart")
 async def restart_twitch_container(request: Request) -> dict:
+    """Redémarre le container via le pont hôte — voir `admin.restart_container`
+    pour le détail : un `docker compose` local est impossible depuis le
+    container (`open /app/docker-compose.yml: no such file or directory`,
+    exactement l'erreur historiquement loguée par cette route)."""
     logger.warning("Twitch restart requested via dashboard")
-    compose_file = os.getenv("COMPOSE_FILE", "/app/docker-compose.yml")
-    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
+    from bot.intelligence.host_bridge import bridge_from_env
 
-    async def _do():
-        await asyncio.sleep(1)
-        proc = await asyncio.create_subprocess_exec(
-            "/usr/bin/docker", "compose", "-f", compose_file, "restart", service_name,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    bridge = bridge_from_env()
+    if bridge is None:
+        logger.error("Twitch restart: pont hôte non configuré (BRIDGE_SECRET absent)")
+        raise HTTPException(
+            status_code=503,
+            detail="Pont hôte non configuré (BRIDGE_SECRET absent) — redémarrage impossible depuis le container.",
         )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.error("Twitch restart failed: {}", stderr.decode())
+    if not await bridge.health():
+        logger.error("Twitch restart: pont hôte injoignable")
+        raise HTTPException(
+            status_code=503,
+            detail="Pont hôte injoignable — le service wally-bridge est-il actif sur l'hôte ?",
+        )
 
-    task = asyncio.create_task(_do())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
-    return {"ok": True}
+    service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")
+    try:
+        await bridge.docker_restart(service_name)
+    except Exception as e:  # noqa: BLE001 — le résultat réel doit remonter à l'appelant
+        logger.error("Twitch restart failed: {}", e)
+        raise HTTPException(status_code=503, detail=f"Échec du déclenchement du redémarrage : {e}")
+
+    logger.info("Twitch restart dispatched via host bridge")
+    return {"ok": True, "message": "Redémarrage déclenché via le pont hôte."}
