@@ -125,11 +125,6 @@ def address_match(text: str, names: list[str]) -> AddressVerdict:
     mots = [_plier(m.strip(".,!?;:«»\"'()…-")) for m in (text or "").split()]
     quasi: Optional[AddressVerdict] = None
 
-    def _retiens(verdict: AddressVerdict) -> None:
-        nonlocal quasi
-        if quasi is None:
-            quasi = verdict
-
     for nom in names:
         nom = _plier((nom or "").strip())
         if not nom:
@@ -137,26 +132,29 @@ def address_match(text: str, names: list[str]) -> AddressVerdict:
         for mot in mots:
             if not mot:
                 continue
-            if mot == nom and mot not in _JAMAIS_SON_NOM:
-                return AddressVerdict(True, mot, nom, "exact", 0)
             ecart = _distance(mot, nom)
-            if mot in _JAMAIS_SON_NOM:
-                if (len(mot) >= _MIN_FUZZY_LEN and len(nom) >= _MIN_FUZZY_LEN
-                        and mot[0] == nom[0] and ecart <= _NAME_MAX_DISTANCE):
-                    _retiens(AddressVerdict(False, mot, nom, "jamais son nom", ecart))
-                continue
-            if len(mot) < _MIN_FUZZY_LEN or len(nom) < _MIN_FUZZY_LEN:
-                if ecart <= _NAME_MAX_DISTANCE:
-                    _retiens(AddressVerdict(False, mot, nom, "mot trop court", ecart))
-                continue
-            if mot[0] != nom[0]:
-                if ecart <= _NAME_MAX_DISTANCE:
-                    _retiens(AddressVerdict(False, mot, nom, "initiale différente", ecart))
-                continue
-            if ecart <= _NAME_MAX_DISTANCE:
+            interdit = mot in _JAMAIS_SON_NOM
+            if ecart == 0 and not interdit:
+                return AddressVerdict(True, mot, nom, "exact", 0)
+            # La règle qui a tranché, dans l'ordre où les gardes s'appliquent.
+            if interdit:
+                regle = "jamais son nom"
+            elif len(mot) < _MIN_FUZZY_LEN or len(nom) < _MIN_FUZZY_LEN:
+                regle = "mot trop court"
+            elif mot[0] != nom[0]:
+                regle = "initiale différente"
+            elif ecart <= _NAME_MAX_DISTANCE:
                 return AddressVerdict(True, mot, nom, "approché", ecart)
-            if ecart == _NAME_MAX_DISTANCE + 1:
-                _retiens(AddressVerdict(False, mot, nom, "trop loin", ecart))
+            else:
+                regle = "trop loin"
+            # Quasi-déclenchement : un mot à une correction de plus que la
+            # tolérance reste un raté possible de transcription. Au-delà, ce
+            # n'est pas un raté, c'est un autre mot — et le signaler noierait la
+            # mesure sous le français courant. Le plus proche l'emporte.
+            if ecart <= _NAME_MAX_DISTANCE + 1 and (
+                quasi is None or ecart < (quasi.distance or 0)
+            ):
+                quasi = AddressVerdict(False, mot, nom, regle, ecart)
     return quasi or AddressVerdict(False)
 
 
