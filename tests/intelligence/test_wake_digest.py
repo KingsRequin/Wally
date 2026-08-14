@@ -180,16 +180,33 @@ def test_le_dernier_mot_revient_a_la_plateforme_la_plus_recente(tmp_path):
     assert last_engagement_ts(tmp_path) == pytest.approx(now - 300)
 
 
-def test_les_traces_internes_ne_font_pas_une_sollicitation(tmp_path):
-    """`cognitive/` et `facts/` s'écrivent même quand personne ne lui parle : les
-    compter ferait de « maintenant » l'éternelle dernière veille, et plus aucun
-    réveil ne serait jamais détecté."""
+def test_seul_il_pense_et_range_ses_souvenirs_nest_pas_une_veille(tmp_path):
+    """`cognitive/` et `facts/` s'écrivent même quand personne ne lui parle.
+
+    Les compter ferait de « maintenant » l'éternelle dernière veille : plus aucun
+    réveil ne serait jamais détecté, la boucle cognitive tournant en continu.
+    """
     now = time.time()
-    _write_log(tmp_path, "general", [_msg(now - 40000, type="message_out")])
     _write_log(tmp_path, "brain", [_msg(now - 10, type="think")], platform="cognitive")
     _write_log(tmp_path, "discord", [_msg(now - 5, type="fact_stored")], platform="facts")
 
-    assert last_engagement_ts(tmp_path) == pytest.approx(now - 40000)
+    assert last_engagement_ts(tmp_path) is None
+
+
+def test_une_pensee_recente_neclipse_pas_une_conversation_plus_vieille(tmp_path):
+    """Le repli « dernier événement journalisé » ne doit pas non plus aller les
+    chercher : une pensée d'il y a dix secondes effacerait un après-midi entier
+    de silence."""
+    # Horodatages fixés le même jour : le fichier du jour le plus récent est
+    # l'unité de lecture, on ne veut pas que minuit décide du résultat.
+    from bot.intelligence.wake_digest import _PARIS
+
+    veille = datetime(2026, 8, 13, 14, 0, tzinfo=_PARIS).timestamp()
+    pensee = datetime(2026, 8, 13, 23, 0, tzinfo=_PARIS).timestamp()
+    _write_log(tmp_path, "general", [_msg(veille, type="message_in")])
+    _write_log(tmp_path, "brain", [_msg(pensee, type="think")], platform="cognitive")
+
+    assert last_engagement_ts(tmp_path) == pytest.approx(veille)
 
 
 # ── Scoring ──────────────────────────────────────────────────────────────────
