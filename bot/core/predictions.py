@@ -34,11 +34,20 @@ class PredictionService:
 
     async def open(self, bet: str) -> dict | None:
         """Ouvre un pari. Un seul à la fois : le précédent resté ouvert est
-        abandonné, sinon on trancherait le mauvais."""
+        abandonné, sinon on trancherait le mauvais.
+
+        Le pari abandonné est rendu dans `voided` (vide s'il n'y en avait pas).
+        L'abandon est la bonne règle, mais il était MUET : l'outil répondait
+        « Pari ouvert » et rien d'autre, si bien que Wally pouvait encore
+        défendre dix minutes plus tard un pronostic que la base avait classé
+        sans suite. Même exigence que sur l'overlay — on n'écrase pas quelque
+        chose qui dure sans le dire à celui qui a demandé.
+        """
         bet = " ".join((bet or "").split())[:90]
         if not bet:
             return None
         async with self._lock:
+            previous = await self._current_locked()
             await self._db.execute(
                 "UPDATE predictions SET outcome = 'void', resolved_at = ? WHERE outcome IS NULL",
                 (time.time(),),
@@ -47,7 +56,13 @@ class PredictionService:
                 "INSERT INTO predictions (bet, created_at) VALUES (?, ?)", (bet, time.time())
             )
             logger.info("Prédiction ouverte : « {b} »", b=bet)
-            return await self._current_locked()
+            if previous is not None:
+                logger.info("Prédiction « {b} » abandonnée au profit de la nouvelle",
+                            b=previous["bet"])
+            row = await self._current_locked()
+            if row is not None:
+                row["voided"] = previous["bet"] if previous else ""
+            return row
 
     async def current(self) -> dict | None:
         """Le pari en cours, s'il n'est pas périmé."""

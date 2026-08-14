@@ -150,6 +150,50 @@ async def test_sans_service_l_outil_le_dit():
     assert out["status"] == "unavailable"
 
 
+# ── l'abandon doit être DIT ──
+# Même classe de défaut que les bingos rouverts en boucle du 2026-08-13 : quelque
+# chose qui DURE est remplacé sans que celui qui l'a demandé l'apprenne. L'abandon
+# reste la bonne règle — sinon on tranche le mauvais pari — mais il était muet.
+
+@pytest.mark.asyncio
+async def test_le_pari_abandonne_est_rendu_a_l_appelant():
+    s = _svc()
+    await s.open("on finit top 3")
+    row = await s.open("on gagne le prochain")
+    assert row["voided"] == "on finit top 3"
+
+
+@pytest.mark.asyncio
+async def test_un_premier_pari_n_abandonne_personne():
+    s = _svc()
+    assert (await s.open("on finit top 3"))["voided"] == ""
+
+
+@pytest.mark.asyncio
+async def test_l_outil_annonce_le_pari_qu_on_vient_de_perdre():
+    """Sans ça, Wally défendait encore dix minutes plus tard un pronostic que la
+    base avait classé sans suite."""
+    bot, _ = _bot(open={"bet": "on gagne", "voided": "on finit top 3"},
+                  score={"right": 2, "total": 3})
+    msg = json.loads(await run_predict_tool(bot, {"bet": "on gagne"}))["message"]
+    assert "on finit top 3" in msg
+    assert "abandonné" in msg
+
+
+@pytest.mark.asyncio
+async def test_sans_abandon_le_message_ne_s_alourdit_pas():
+    bot, _ = _bot(open={"bet": "on gagne", "voided": ""},
+                  score={"right": 2, "total": 3})
+    msg = json.loads(await run_predict_tool(bot, {"bet": "on gagne"}))["message"]
+    assert "abandonné" not in msg
+
+
+def test_la_description_de_l_outil_annonce_l_abandon():
+    from bot.discord.handlers import _PREDICT_TOOL
+
+    assert "ABANDONNE" in _PREDICT_TOOL["function"]["description"]
+
+
 @pytest.mark.asyncio
 async def test_un_pari_expire_est_classe_en_base():
     """L'ignorer ne suffit pas : laissé ouvert, il reste « en cours » et fausse

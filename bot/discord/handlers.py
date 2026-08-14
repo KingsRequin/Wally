@@ -208,7 +208,9 @@ _PREDICT_TOOL = {
             "AUCUNE source ne te dit si une partie est gagnée — c'est toi qui "
             "constates, en écoutant le vocal et en lisant le chat. Tranche quand tu "
             "es sûr, et assume : ton score cumulé se voit à l'écran. Ne t'attribue "
-            "jamais un point sans avoir parié avant."
+            "jamais un point sans avoir parié avant. ⚠️ Un seul pari à la fois : en "
+            "ouvrir un nouveau ABANDONNE celui en cours, qui ne comptera plus — "
+            "l'outil te dira lequel tu viens de perdre. Tranche avant d'en relancer un."
         ),
         "parameters": {
             "type": "object",
@@ -254,8 +256,15 @@ async def run_predict_tool(bot, args: dict) -> str:
         score = await predictions.score()
         shown = narrator is not None and narrator.show_prediction(
             row["bet"], right=score["right"], total=score["total"])
+        # Un pari en remplace un autre : le DIRE. Sans ça Wally continuait de
+        # défendre un pronostic déjà classé sans suite — il n'avait aucun moyen
+        # de savoir qu'il venait de l'abandonner lui-même.
+        abandonne = str(row.get("voided") or "")
         return json.dumps({"status": "ok", "message": (
             f"Pari ouvert : « {row['bet']} ». Tranche-le quand tu connaîtras l'issue."
+            + (f" ⚠️ Ton pari précédent, « {abandonne} », est abandonné du même "
+               "coup : il ne comptera pas, et tu ne pourras plus le trancher."
+               if abandonne else "")
             + ("" if shown else " Rien à l'écran (pas de live).")
         )})
     except Exception as exc:  # noqa: BLE001 — un pari ne casse pas la réponse
