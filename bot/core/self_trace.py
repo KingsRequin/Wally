@@ -175,6 +175,48 @@ def note_act(summary: str) -> None:
         logger.debug("SelfTrace: acte non consigné: {e}", e=exc)
 
 
+def note_voice_speech(channel_id, present: Optional[list] = None) -> None:
+    """Wally vient de parler À VOIX HAUTE dans un salon vocal Discord.
+
+    Le vocal ne passe par aucun journal de conversation quand il est privé (cf.
+    `bot/discord/voice/request._VoiceJournal`) : il n'a donc pas d'événement
+    `message_out` à traduire, et c'était le dernier de ses canaux dont il ne
+    savait rien. Il pouvait répondre à un viewer « je n'ai pas parlé de la
+    soirée » pendant qu'il tenait une conversation à l'oral.
+
+    **Ce qu'il a dit n'entre pas**, comme partout ailleurs dans ce module — et
+    ici la raison est plus dure qu'une convention : la parole d'un vocal non
+    diffusé ne doit jamais être retenue (`voice_transcript`, § la
+    confidentialité se joue à l'écriture). Le contenu, lui, est déjà là où il
+    est légitime : dans `service.history` sur le chemin vocal, et dans le
+    tampon `voice_transcript` — sous le label `[Toi]`, et seulement quand le
+    live le diffuse — pour ses réponses écrites.
+
+    **Le NOM des présents suit la même règle que le DM** : il n'est écrit que si
+    la parole est diffusée au live, donc déjà publique. Hors diffusion, dire
+    « tu as parlé avec X » dans un prompt de chat Twitch révélerait que X est en
+    vocal avec lui. Le verdict est pris ici, jamais chez l'appelant : c'est la
+    règle de `voice_transcript.broadcast_refusal`, en un seul exemplaire.
+
+    Ne lève jamais.
+    """
+    try:
+        from bot.core.voice_transcript import voice_is_broadcast
+
+        diffuse = bool(voice_is_broadcast(channel_id))
+    except Exception as exc:  # noqa: BLE001 — dans le doute, la parole est privée
+        logger.debug("SelfTrace: diffusion vocale indéterminée: {e}", e=exc)
+        diffuse = False
+    if not diffuse:
+        note_act("tu as parlé à voix haute dans un salon vocal privé (Discord)")
+        return
+    qui = ", ".join(str(n).strip() for n in (present or []) if str(n or "").strip())
+    note_act(
+        f"tu as parlé à voix haute dans le salon vocal du live, avec {qui}"
+        if qui else "tu as parlé à voix haute dans le salon vocal du live"
+    )
+
+
 def current_self_trace_block(*, limit: int = MAX_ACTS,
                              compact: bool = False) -> Optional[str]:
     """Bloc prêt à injecter au prompt, ou None s'il n'a rien fait récemment."""

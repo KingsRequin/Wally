@@ -14,6 +14,7 @@ from loguru import logger
 
 from bot.config import VoiceConfig
 from bot.core.secret_guard import redact
+from bot.core.self_trace import note_voice_speech
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
 # Plafond dur d'une prise de parole. Généreux : une longue réplique en
@@ -611,6 +612,21 @@ class VoiceService:
                     self._speak_batch(text, style), timeout=_SPEAK_TIMEOUT_S
                 )
             await asyncio.sleep(POST_SPEAK_MUTE_S)
+            # Il vient de PARLER, et il est le dernier à l'apprendre. Consigné
+            # ici et pas dans `brain.py` : `speak()` est le point de passage
+            # unique de tout ce qui sort de sa bouche — réponse, salutation,
+            # accueil d'un arrivant, « ok je vous laisse », bruits de réflexion
+            # d'une recherche. Un chemin de parole ajouté demain en hérite sans
+            # une ligne de plus, ce qui est exactement l'erreur que `self_trace`
+            # a été écrit pour ne plus refaire.
+            #
+            # Après la lecture, jamais avant : une synthèse en échec ou expirée
+            # n'a rien fait entendre, et lui faire croire qu'il a parlé serait
+            # le symétrique du `published is False` côté chat.
+            try:
+                note_voice_speech(self.channel_id, self.members_names())
+            except Exception as exc:  # noqa: BLE001 — une trace ne casse pas la voix
+                logger.debug("voice: parole non tracée: {e}", e=exc)
         except asyncio.TimeoutError:
             logger.warning("voice: parole abandonnée après {t}s", t=_SPEAK_TIMEOUT_S)
             try:

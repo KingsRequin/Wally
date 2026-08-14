@@ -105,6 +105,106 @@ def test_une_demande_vocale_ne_nomme_pas_le_salon_ou_il_ecoute():
     assert "vocal" in bloc
 
 
+# ── la parole VOCALE : il savait tout sauf qu'il avait parlé ──────────────
+
+
+@pytest.fixture
+def vocal_diffuse(monkeypatch):
+    """Le salon 42 est diffusé au live ; tout le reste est privé."""
+    monkeypatch.setattr(
+        "bot.core.voice_transcript.voice_is_broadcast",
+        lambda channel_id: channel_id == 42,
+    )
+
+
+def test_parler_en_vocal_est_un_acte_dont_il_se_souvient(vocal_diffuse):
+    """C'était son dernier canal muet : il pouvait tenir une conversation à
+    l'oral et répondre à côté qu'il n'avait pas parlé de la soirée."""
+    st.note_voice_speech(42, ["Azraël", "Malef"])
+    bloc = st.current_self_trace_block()
+    assert bloc is not None
+    assert "vocal" in bloc
+
+
+def test_il_sait_avec_qui_il_a_parle_quand_le_live_les_entend(vocal_diffuse):
+    st.note_voice_speech(42, ["Azraël", "Malef"])
+    bloc = st.current_self_trace_block()
+    assert "Azraël" in bloc and "Malef" in bloc
+
+
+def test_un_vocal_prive_ne_dit_pas_avec_qui_il_parlait(vocal_diffuse):
+    """Même règle que le DM : ce bloc part dans TOUS ses prompts, et « tu as
+    parlé avec X en vocal » révélerait à un viewer que X est avec lui."""
+    st.note_voice_speech(7, ["Azraël", "Malef"])
+    bloc = st.current_self_trace_block()
+    assert "Azraël" not in bloc and "Malef" not in bloc
+    assert "vocal" in bloc
+
+
+def test_hors_live_il_sait_quand_meme_quil_a_parle(vocal_diffuse):
+    """Se taire complètement ferait de lui un menteur sur un fait qui n'a rien
+    de confidentiel : qu'il ait ouvert la bouche."""
+    st.note_voice_speech(7, ["Azraël"])
+    assert st.current_self_trace_block() is not None
+
+
+def test_ce_quil_a_dit_en_vocal_nentre_jamais_dans_la_trace(vocal_diffuse):
+    """Le contenu du vocal est déjà là où il est légitime — `service.history`
+    et le tampon `voice_transcript`, tous deux gardés à l'écriture. Ici il
+    partirait dans un prompt de chat Twitch."""
+    st.note_voice_speech(42, ["Azraël"])
+    bloc = st.current_self_trace_block()
+    assert "Azraël" in bloc          # les présents, oui
+    assert bloc.count("·") == 1      # une ligne d'acte, pas une réplique
+
+
+def test_diffusion_indeterminee_vaut_vocal_prive(monkeypatch):
+    """Fermé par défaut : un consommateur qui n'a pas la preuve que la parole
+    est publique se tait, il ne suppose pas."""
+    def _casse(channel_id):
+        raise RuntimeError("tampon absent")
+
+    monkeypatch.setattr("bot.core.voice_transcript.voice_is_broadcast", _casse)
+    st.note_voice_speech(42, ["Azraël"])
+    bloc = st.current_self_trace_block()
+    assert bloc is not None
+    assert "Azraël" not in bloc
+
+
+def test_parler_dix_fois_ne_chasse_pas_le_reste_de_la_fenetre(vocal_diffuse):
+    """Une réponse, ses bruits de réflexion et un accueil passent tous par
+    `speak()` : comptés, pas empilés."""
+    OverlayFeed().widget("bingo", cells=["a"])
+    for _ in range(10):
+        st.note_voice_speech(42, ["Azraël"])
+    bloc = st.current_self_trace_block()
+    assert "bingo" in bloc
+    assert "×10" in bloc
+
+
+def test_parler_en_vocal_ne_reveille_pas_la_cadence_cognitive(vocal_diffuse):
+    """Passif comme le reste de la trace : aucun `notify_*`."""
+    from bot.intelligence.cognitive_loop import CognitiveLoop
+
+    loop = CognitiveLoop(None, None, None)
+    avant = loop._last_relevant_activity_ts
+    st.note_voice_speech(42, ["Azraël"])
+    assert loop._last_relevant_activity_ts == avant
+    assert not loop._reveil.is_set()
+
+
+def test_toute_parole_vocale_passe_par_le_meme_point():
+    """Réponse, salutation, accueil d'un arrivant, « ok je vous laisse »,
+    bruits de recherche : cinq chemins, une seule `speak()`. La trace est
+    posée là, pour qu'un sixième chemin en hérite sans une ligne de plus."""
+    import inspect
+
+    import bot.discord.voice.service as service
+
+    source = inspect.getsource(service)
+    assert source.count("note_voice_speech(") == 1
+
+
 # ── ce qui n'y entre JAMAIS ───────────────────────────────────────────────
 
 def test_une_bulle_ne_laisse_pas_son_texte_dans_la_trace():
