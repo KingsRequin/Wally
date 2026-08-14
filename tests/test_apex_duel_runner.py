@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.core.apex.duel import Duel, Etat
-from bot.core.apex.duel_runner import CLE_ETAT, CLE_RECOMPENSE, DuelRunner, _camp
+from bot.core.apex.duel_runner import (CLE_ETAT, CLE_RECOMPENSE, DuelRunner,
+                                      _camp, _progression)
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "apex"
 
@@ -769,3 +770,56 @@ def test_camp_omet_les_cles_absentes_sur_un_profil_vide():
 
 def test_camp_ne_casse_pas_sur_none():
     assert _camp(None) == {}
+
+
+# ── `_progression()` : le second marqueur de fin de manche ──────────────────
+# Sa lecture ne se voit nulle part ailleurs. Un renommage de clé côté API la
+# rendrait muette en silence — et le duel redeviendrait aveugle à la requeue,
+# où c'est le SEUL marqueur de fin de partie.
+@pytest.mark.parametrize("nom_fixture", ["bridge_azrael.json", "bridge_kingsrequin.json"])
+def test_la_progression_se_lit_sur_des_payloads_reels(nom_fixture):
+    profil = json.loads((FIXTURES / nom_fixture).read_text(encoding="utf-8"))
+
+    assert _progression(profil) == (profil["global"]["level"] * 100.0
+                                    + profil["global"]["toNextLevelPercent"])
+
+
+def test_un_passage_de_niveau_est_une_hausse_jamais_une_chute():
+    """Le piège du signal : le pourcentage RETOMBE au passage de niveau, à
+    l'instant même où le plus d'expérience vient d'être gagnée. Lu nu, il
+    dirait « rien n'a bougé » — ou pire, « ça a reculé »."""
+    avant = _progression({"global": {"level": 285, "toNextLevelPercent": 97}})
+    apres = _progression({"global": {"level": 286, "toNextLevelPercent": 3}})
+
+    assert apres > avant
+
+
+def test_une_progression_illisible_n_est_jamais_un_zero():
+    """Une absence ne conclut rien. Rendre 0 ferait passer le retour à la
+    normale pour un gain d'expérience, et clôturerait une manche en pleine
+    partie."""
+    assert _progression({}) is None
+    assert _progression(None) is None
+    assert _progression({"global": {"level": 285}}) is None
+    assert _progression({"global": {"toNextLevelPercent": 77}}) is None
+    # Aucun compte réel n'est au niveau 0 : c'est un payload dégradé.
+    assert _progression({"global": {"level": 0, "toNextLevelPercent": 77}}) is None
+    # Et l'API glisse des chaînes là où on attend des nombres (piège maison).
+    assert _progression({"global": {"level": "285", "toNextLevelPercent": "77"}}) == 28577.0
+
+
+@pytest.mark.asyncio
+async def test_la_sonde_porte_la_progression_d_azrael_jusqu_a_la_machine():
+    """Câblage : sans ce passage, le signal existe et ne sert à rien."""
+    runner, client, _, _ = _runner()
+    duel = _en_manche(runner)
+    client.get = _par_uid({
+        "7": {"realtime": {"isInGame": 1}, "global": {"level": 285, "toNextLevelPercent": 77},
+              "total": {"k": {"name": "BR Kills", "value": 10}}},
+        "42": {"realtime": {"isInGame": 1}, "global": {"level": 12, "toNextLevelPercent": 5},
+               "total": {"k": {"name": "BR Kills", "value": 3}}},
+    })
+
+    releve = await runner._sonder(duel, maintenant=1000)
+
+    assert releve.progression_azrael == 28577.0

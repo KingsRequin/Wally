@@ -286,7 +286,11 @@ class DuelConfig:
     manches: int = 3
     cadence_s: float = 2.0
     attente_squad_min: float = 15.0
-    plafond_kills_manche: int = 30
+    # Au-delà de ce delta sur une manche, ce n'est pas un score mais un tracker
+    # ré-épinglé qui rattrape des semaines d'un coup (+7793 mesuré). Un ORDRE
+    # DE GRANDEUR, pas une limite serrée : à 30, il a jeté 39 kills réels le
+    # 2026-08-13 au soir. Cf. `duel.PLAFOND_KILLS_MANCHE`.
+    plafond_kills_manche: int = 500
     # Délai laissé aux compteurs entre le retour au lobby et l'instant où le
     # score de la manche est figé. PLAFOND DUR de 39 s (l'intervalle mesuré
     # entre un retour au lobby et le lancement suivant) : au-delà, une manche

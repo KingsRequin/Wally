@@ -240,6 +240,40 @@ def _camp(profil: dict) -> dict:
     return camp
 
 
+def _progression(profil: dict) -> float | None:
+    """Où en est ce compte dans sa barre d'expérience — index MONOTONE.
+
+    `niveau × 100 + pourcentage`, et non le pourcentage nu : un passage de
+    niveau le remet à zéro, donc il RECULE à l'instant précis où le plus
+    d'expérience vient d'être gagnée. Composé ainsi, un niveau gagné vaut
+    toujours une hausse, et une hausse veut toujours dire « une partie vient de
+    se terminer » — le second marqueur de fin de manche, celui qui fonctionne
+    en requeue (cf. `Duel._fin_par_xp`).
+
+    Lu dans le MÊME profil que les kills : pas une requête de plus.
+
+    `None` dès qu'une des deux valeurs manque, et un niveau nul est traité
+    comme une absence — aucun compte réel n'est au niveau 0, donc c'est un
+    payload dégradé. Rendre 0 ferait passer le retour à la normale pour un gain
+    d'expérience, et clôturerait une manche en pleine partie.
+
+    Une piste morte, à ne pas ressortir : `realtime.currentStateSinceTimestamp`
+    vaut toujours l'instant présent — il suit l'horloge au lieu de marquer
+    l'entrée dans l'état. Vérifié trois fois à six secondes d'intervalle le
+    2026-08-13.
+    """
+    if not isinstance(profil, dict):
+        return None
+    glob = profil.get("global")
+    if not isinstance(glob, dict):
+        return None
+    niveau = _num(glob.get("level"))
+    pourcent = _num(glob.get("toNextLevelPercent"))
+    if niveau is None or pourcent is None or niveau <= 0:
+        return None
+    return niveau * 100.0 + pourcent
+
+
 def _uid_valide(saisie: str) -> str | None:
     """Un uid Apex est purement numérique. Validé AVANT tout appel réseau :
     la saisie vient d'un viewer, c'est de l'entrée non fiable."""
@@ -1189,6 +1223,9 @@ class DuelRunner:
             kills_viewer=read_kill_trackers(viewer),
             camp_azrael=_camp(azrael),
             camp_viewer=_camp(viewer),
+            # Le second marqueur de fin de manche. Celui d'Azraël seul : c'est
+            # sa partie qui découpe le duel, exactement comme `azrael_in_game`.
+            progression_azrael=_progression(azrael),
         )
 
     async def tick(self, maintenant: float) -> None:

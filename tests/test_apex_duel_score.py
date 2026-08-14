@@ -68,3 +68,69 @@ def test_le_plafond_est_haut_pour_ne_jamais_mordre_sur_un_vrai_score():
     assert PLAFOND_KILLS_MANCHE >= 25
     avant, apres = {"k_kills": 0}, {"k_kills": 25}
     assert score_manche(avant, apres) == 25
+
+
+# ── Le plafond sépare deux ORDRES DE GRANDEUR ──────────────────────────────
+def test_une_manche_genereuse_n_est_pas_un_artefact():
+    """39 kills, mesurés le 2026-08-13 sur trois parties enchaînées, et jetés
+    par un plafond calé à 30. Une manche généreuse — ou un découpage qui rate
+    et fusionne deux parties — n'a rien à voir avec un tracker ré-épinglé.
+
+    Le plafond doit laisser passer des dizaines : c'est le seul moyen de ne
+    jamais reprendre à quelqu'un des kills qu'il a réellement faits.
+    """
+    assert score_manche({"k_kills": 0}, {"k_kills": 39}) == 39
+    assert score_manche({"k_kills": 0}, {"k_kills": 60}) == 60
+
+
+def test_le_rattrapage_d_un_tracker_reepingle_reste_ecarte():
+    """Et il continue de séparer : +7793 d'un coup, c'est des semaines
+    rattrapées, pas une partie."""
+    avant = {"career_kills": 10989, "specialEvent_kills": 8522}
+    apres = {"career_kills": 18782, "specialEvent_kills": 8524}
+    assert score_manche(avant, apres) == 2
+
+
+# ── Un zéro ne tient jamais lieu de témoin écarté ──────────────────────────
+def test_un_zero_ne_remplace_pas_un_compteur_ecarte():
+    """Le faux zéro annoncé en direct le 2026-08-13.
+
+    Les deux compteurs vivants sont jetés comme aberrants ; restent deux
+    trackers dépinglés, figés, qui n'ont rien mesuré et valent 0. Le maximum de
+    [0, 0] a donné 0 — annoncé comme un score à quelqu'un qui venait de faire
+    39 kills. Ce n'est pas un zéro : c'est une absence de mesure.
+    """
+    avant = {"specialEvent_kills": 93331, "legend:specialEvent_kills": 83963,
+             "grandsoiree_kills": 1480, "kills": 10155}
+    apres = {"specialEvent_kills": 93370, "legend:specialEvent_kills": 84002,
+             "grandsoiree_kills": 1480, "kills": 10155}
+    # Avec un plafond assez bas pour jeter les deux compteurs vivants.
+    assert score_manche(avant, apres, plafond=30) is None
+    # Et le plafond en vigueur les garde, donc le vrai score sort.
+    assert score_manche(avant, apres) == 39
+
+
+def test_un_zero_ne_remplace_pas_un_tracker_disparu():
+    """Un tracker dépinglé EN COURS de manche disparaît du second relevé : on
+    ne saura jamais ce qu'il avait à dire. Le compteur mort qui reste ne parle
+    pas à sa place."""
+    avant = {"specialEvent_kills": 8522, "grandsoiree_kills": 1480}
+    apres = {"grandsoiree_kills": 1480}
+    assert score_manche(avant, apres) is None
+
+
+def test_un_zero_l_emporte_quand_rien_n_a_ete_perdu():
+    """L'inverse doit rester vrai, sinon une manche sans kill deviendrait
+    impossible à mesurer : tous les compteurs se lisent du début à la fin,
+    aucun ne bouge — c'est un vrai 0, et il vaut 0."""
+    avant = {"career_kills": 100, "specialEvent_kills": 50, "kills": 7}
+    apres = {"career_kills": 100, "specialEvent_kills": 50, "kills": 7}
+    assert score_manche(avant, apres) == 0
+
+
+def test_un_compteur_vivant_l_emporte_sur_les_morts():
+    """Un seul compteur qui bouge suffit à trancher : les zéros qui
+    l'accompagnent sont des compteurs morts, pas un désaccord."""
+    avant = {"specialEvent_kills": 8522, "grandsoiree_kills": 1480, "kills": 10155}
+    apres = {"specialEvent_kills": 8525, "grandsoiree_kills": 1480, "kills": 10155}
+    assert score_manche(avant, apres) == 3

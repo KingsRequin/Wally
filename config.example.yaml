@@ -22,7 +22,9 @@ apex:
     manches: 3
     cadence_s: 2
     attente_squad_min: 15
-    plafond_kills_manche: 30
+    # Un ordre de grandeur, pas une limite serrée : au-delà c'est un tracker
+    # ré-épinglé qui rattrape des semaines (+7793 mesuré), pas une manche.
+    plafond_kills_manche: 500
     api_muette_max_s: 180             # API muette en pleine manche au-delà → abandon + remboursement
 bot:
   context_token_threshold: 3000

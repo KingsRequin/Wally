@@ -14,10 +14,39 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 # Au-delà de ce delta sur une seule manche, ce n'est pas un score : c'est un
-# tracker qu'on vient d'épingler. Mesuré le 2026-08-13 : +7793 d'un coup, sans
-# un kill joué. Le plafond est volontairement haut — les records connus en Apex
-# tournent autour de 25-30 kills — pour ne jamais mordre sur un vrai résultat.
-PLAFOND_KILLS_MANCHE = 30
+# tracker qu'on vient d'épingler. Ce que ce plafond vise est un ARTEFACT DE
+# RATTRAPAGE : un tracker resté dépinglé pendant des semaines saute d'un coup
+# de tout ce qu'il n'a pas compté — +7793 mesuré le 2026-08-13, sans un kill
+# joué. C'est un ORDRE DE GRANDEUR, pas une valeur limite : des milliers d'un
+# côté, des dizaines de l'autre.
+#
+# Il valait 30, calé au plus près des records connus en Apex — et le
+# 2026-08-13 au soir il a jeté 39 kills parfaitement réels, faits sur trois
+# parties enchaînées en requeue que le découpage en manches n'avait pas su
+# séparer. Un seuil serré ne discrimine rien : il transforme la moindre manche
+# généreuse (ou le moindre raté de découpage) en manche perdue, et — depuis le
+# correctif de `score_manche` ci-dessous — en manche non mesurable.
+#
+# 500 se pose dans le vide entre les deux populations : dix fois au-dessus de
+# ce qu'une manche peut plausiblement porter (le record du monde sur UNE partie
+# tourne autour de 45, trois parties cumulées d'un joueur de très haut niveau
+# n'atteindraient pas 150), et quinze fois sous le plus petit rattrapage
+# observé. Aucune des deux populations n'est près de la frontière : c'est ça,
+# discriminer sur l'ordre de grandeur.
+PLAFOND_KILLS_MANCHE = 500
+
+# Durée en dessous de laquelle une manche ne PEUT PAS s'être terminée. Sert
+# uniquement au signal d'expérience (`_fin_par_xp`) : l'XP d'une partie est
+# publiée avec un léger décalage, et celle de la partie PRÉCÉDENTE peut donc
+# tomber juste après le début de la manche en cours. Sous ce plancher, une
+# hausse d'XP est attribuée à la partie d'avant — elle rejoint la référence au
+# lieu de clore une manche qui vient à peine de commencer.
+#
+# 60 s est un fait de jeu, pas un réglage de confort : entre le vaisseau, la
+# chute et l'atterrissage, une partie d'Apex ne peut pas être finie avant. Le
+# retour au lobby, lui, n'a jamais eu besoin de ce plancher — il ne se produit
+# pas deux fois pour la même partie.
+DELAI_MIN_MANCHE_S = 60.0
 
 # Le viewer a ce délai pour rejoindre le squad. Au-delà, remboursement : un
 # viewer qui a payé et ne voit rien est le pire résultat possible.
@@ -79,6 +108,21 @@ class Releve:
     # résolution) n'en porte pas, et une absence ne vaut jamais zéro.
     camp_azrael: dict = field(default_factory=dict)
     camp_viewer: dict = field(default_factory=dict)
+    # Où en est Azraël dans sa barre d'expérience, sous forme d'un index
+    # MONOTONE (`niveau × 100 + pourcentage`, construit par le runner). L'XP
+    # est attribuée à la FIN de chaque partie — mesuré le 2026-08-13 : 77 % →
+    # 87 % pile au retour au lobby, immobile pendant toute la partie. C'est le
+    # second marqueur de fin de manche, celui qui marche AUSSI en requeue, là
+    # où le retour au lobby n'apparaît jamais.
+    #
+    # Monotone et pas le pourcentage nu, parce qu'un passage de niveau le fait
+    # RETOMBER : lu seul, il dirait « rien n'a bougé » exactement à l'instant
+    # où le plus d'expérience vient d'être gagnée.
+    #
+    # `None` quand rien n'est lisible — un relevé fictif, un payload dégradé,
+    # un compte au niveau maximum dont la barre ne bouge plus. Une absence ne
+    # conclut jamais rien : le retour au lobby reste le cas nominal.
+    progression_azrael: float | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +150,11 @@ class Duel:
     attente_squad_s: float = ATTENTE_SQUAD_S
     plafond_kills_manche: int = PLAFOND_KILLS_MANCHE
     marge_lobby_s: float = MARGE_LOBBY_S
+    # Plancher de durée d'une manche, pour le seul signal d'expérience. Champ
+    # et non constante, comme ses voisins — mais volontairement PAS exposé en
+    # configuration : ce n'est pas un réglage de confort, c'est la durée
+    # minimale d'une partie d'Apex. Il n'y a rien à y accorder.
+    delai_min_manche_s: float = DELAI_MIN_MANCHE_S
     # Un score par manche jouée : {"azrael": int|None, "viewer": int|None}.
     # Les deux valent None dès que la manche n'est pas mesurable pour L'UN
     # des deux joueurs — jamais un score réel comparé à une absence de mesure.
@@ -133,6 +182,20 @@ class Duel:
     # rebuild pendant la marge la fait repartir, ce qui ne coûte au pire que
     # quelques secondes de plus avant de figer le score.
     _t_lobby: float | None = None
+    # Le signal d'expérience : la référence prise au début de la manche, et
+    # l'instant de ce début. SÉRIALISÉS, au même titre que `_base_azrael` — un
+    # rebuild en pleine manche ne doit pas rendre la manche interminable en
+    # requeue, où l'XP est le seul marqueur de fin. Absents d'un état écrit par
+    # la version d'avant : la référence se reprend alors sur le premier relevé
+    # lisible, ce qui ne peut que faire manquer la fin de la manche EN COURS —
+    # jamais en inventer une.
+    _base_progression: float | None = None
+    _t_manche: float | None = None
+    # La hausse d'XP en attente de confirmation, sur le patron de
+    # `_pending_fin` : une seule lecture ne clôt jamais une manche. Pas
+    # sérialisée pour la même raison que lui — perdre une confirmation en
+    # attente ne coûte qu'un cycle de sonde.
+    _xp_en_attente: float | None = None
 
     # -- Totaux -------------------------------------------------------------
     @property
@@ -252,6 +315,9 @@ class Duel:
         self._pending_debut = False
         self._pending_fin = False
         self._t_lobby = None
+        self._base_progression = None
+        self._t_manche = None
+        self._xp_en_attente = None
         self.etat = Etat.ATTENTE_SQUAD
 
     # -- Persistance --------------------------------------------------------
@@ -271,10 +337,13 @@ class Duel:
             "attente_squad_s": self.attente_squad_s,
             "plafond_kills_manche": self.plafond_kills_manche,
             "marge_lobby_s": self.marge_lobby_s,
+            "delai_min_manche_s": self.delai_min_manche_s,
             "scores": copy.deepcopy(self.scores),
             "camps": copy.deepcopy(self.camps),
             "base_azrael": copy.deepcopy(self._base_azrael),
             "base_viewer": copy.deepcopy(self._base_viewer),
+            "base_progression": self._base_progression,
+            "t_manche": self._t_manche,
             "t_attente": self._t_attente,
         }
 
@@ -293,11 +362,20 @@ class Duel:
             # dépend — la marge ne fait que retarder de quelques secondes
             # l'instant où le score d'une manche est figé.
             marge_lobby_s=float(d.get("marge_lobby_s", MARGE_LOBBY_S)),
+            delai_min_manche_s=float(d.get("delai_min_manche_s",
+                                           DELAI_MIN_MANCHE_S)),
             scores=copy.deepcopy(d.get("scores") or []),
             camps=copy.deepcopy(d.get("camps") or {}),
         )
         duel._base_azrael = copy.deepcopy(d.get("base_azrael") or {})
         duel._base_viewer = copy.deepcopy(d.get("base_viewer") or {})
+        # Absentes d'un état écrit avant l'existence du signal d'expérience :
+        # `None` fait simplement reprendre la référence sur le premier relevé
+        # lisible de la manche en cours. `.get()` nu et pas `or` : une
+        # référence de 0.0 n'existe pas (le niveau 0 non plus), mais l'instant
+        # 0.0 d'une horloge murale n'a pas à être confondu avec une absence.
+        duel._base_progression = d.get("base_progression")
+        duel._t_manche = d.get("t_manche")
         duel._t_attente = d.get("t_attente")
         return duel
 
@@ -341,6 +419,11 @@ class Duel:
                 self._pending_debut = False
                 self._base_azrael = dict(r.kills_azrael)
                 self._base_viewer = dict(r.kills_viewer)
+                # La référence d'expérience se prend au MÊME instant que celle
+                # des kills : les deux mesurent la même fenêtre.
+                self._base_progression = r.progression_azrael
+                self._t_manche = r.t
+                self._xp_en_attente = None
                 self._t_attente = None
                 self.etat = Etat.MANCHE
                 # Les totaux voyagent AUSSI au début de manche : c'est ce qui
@@ -423,6 +506,12 @@ class Duel:
                 # partie qui commence, eux, ne sont pas encore faits.
                 return self._clore_manche(r)
             self._pending_fin = False
+            # Toujours en partie, donc le retour au lobby n'a rien à dire — et
+            # en REQUEUE il ne dira jamais rien : le 2026-08-13, trois parties
+            # enchaînées se sont additionnées en une seule manche parce que ce
+            # drapeau n'est pas retombé une seule fois. L'expérience gagnée, si.
+            if self._fin_par_xp(r):
+                return self._clore_manche(r)
             return []
 
         return []
@@ -446,6 +535,12 @@ class Duel:
         """
         self._pending_fin = False
         self._t_lobby = None
+        # La fenêtre d'expérience se referme avec celle des kills : la manche
+        # suivante reprendra sa référence à son propre début. La laisser
+        # traîner ferait clore la manche suivante sur l'XP de celle-ci.
+        self._base_progression = None
+        self._t_manche = None
+        self._xp_en_attente = None
         sa = score_manche(self._base_azrael, r.kills_azrael,
                           plafond=self.plafond_kills_manche)
         sv = score_manche(self._base_viewer, r.kills_viewer,
@@ -477,6 +572,64 @@ class Duel:
             "camps": copy.deepcopy(self.camps),
         })]
         return evts
+
+    def _fin_par_xp(self, r: Releve) -> bool:
+        """Une partie vient de se terminer, vu à l'expérience gagnée.
+
+        SECOND marqueur de fin de manche, jamais un remplaçant : le retour au
+        lobby reste le cas nominal, et celui-ci existe pour le cas où il
+        n'arrive pas — la requeue, où l'on repart en partie sans jamais
+        repasser par un lobby détectable. Trois parties s'y sont additionnées
+        en une seule manche le 2026-08-13.
+
+        L'XP est attribuée à la FIN de chaque partie, requeue ou pas : 77 % →
+        87 % pile au retour au lobby, immobile pendant toute la partie
+        (mesuré). Trois précautions l'entourent, une par façon de se tromper :
+
+          · le PASSAGE DE NIVEAU fait retomber le pourcentage. La comparaison
+            porte donc sur un index monotone (`niveau × 100 + pourcentage`),
+            construit par le runner : un niveau gagné est une hausse, jamais
+            une chute ;
+          · une seule lecture ne conclut pas. Il faut deux relevés — le second
+            doit confirmer la hausse du premier, sinon c'était un hoquet.
+            C'est le patron du debounce de retour au lobby, appliqué au même
+            genre de doute ;
+          · l'XP arrive avec un léger décalage, donc celle de la partie
+            PRÉCÉDENTE peut tomber juste après le début de la manche en cours.
+            Sous `delai_min_manche_s`, une hausse est attribuée à la partie
+            d'avant et REJOINT LA RÉFÉRENCE — l'absorber vaut mieux que
+            l'ignorer, sinon elle resterait au-dessus de la référence et
+            clôturerait la manche à la seconde où le plancher est franchi.
+
+        Une valeur illisible ne conclut rien et n'efface aucune attente : une
+        absence n'est ni une confirmation ni un démenti. Une valeur qui RECULE
+        (l'index est monotone, donc c'est une lecture douteuse) annule
+        l'attente sans jamais abaisser la référence : l'abaisser fabriquerait
+        une hausse de toutes pièces au retour à la normale.
+        """
+        xp = r.progression_azrael
+        if xp is None:
+            return False
+        if self._base_progression is None or self._t_manche is None:
+            # Première lecture exploitable de la manche — ou reprise d'un état
+            # persisté avant que ce signal n'existe. On se cale dessus.
+            self._base_progression = xp
+            self._t_manche = r.t
+            return False
+        if xp <= self._base_progression:
+            self._xp_en_attente = None
+            return False
+        if r.t - self._t_manche < self.delai_min_manche_s:
+            self._base_progression = xp
+            self._xp_en_attente = None
+            return False
+        if self._xp_en_attente is None:
+            self._xp_en_attente = xp
+            return False
+        if xp < self._xp_en_attente:
+            self._xp_en_attente = None
+            return False
+        return True
 
     def _noter_camps(self, r: Releve) -> None:
         """Retient le DERNIER état connu de chaque camp (légende, niveau).
@@ -612,16 +765,51 @@ def score_manche(avant: dict[str, int], apres: dict[str, int],
     `None` et non `0` quand rien n'est mesurable : un zéro inventé est un
     mensonge, pas une valeur par défaut. La Mixtape, qui n'incrémente aucun
     compteur (10 kills → 0, mesuré), tombe dans ce cas.
+
+    ── Un zéro ne tient jamais lieu de témoin écarté ────────────────────────
+    Le maximum suppose que les compteurs qui ne bougent pas sont MORTS
+    (dépinglés, donc figés) et que ceux qui bougent disent la vérité. Tant
+    qu'un compteur vivant reste dans le lot, il l'emporte et le raisonnement
+    tient. Mais qu'on l'écarte, et il ne reste que des zéros — qui n'ont rien
+    mesuré du tout et gagnent le maximum par forfait.
+
+    C'est exactement ce qui s'est produit le 2026-08-13 : `specialEvent_kills`
+    et son jumeau par légende disaient +39, le plafond (30 à l'époque) les a
+    jetés tous les deux, et `grandsoiree_kills` / `kills` — deux trackers que
+    le streamer n'épingle plus — sont restés seuls avec leur delta de zéro.
+    Résultat annoncé en direct : 0 kill à quelqu'un qui venait d'en faire 39.
+
+    Un delta de zéro ne prouve donc rien tout seul : « personne n'a tué » et
+    « ce compteur est mort » s'écrivent pareil. Il ne devient une mesure que
+    lorsque RIEN n'a été perdu en route — ni un compteur écarté comme aberrant,
+    ni un compteur qu'on lisait au départ et qui n'est plus là à l'arrivée
+    (dépinglé en pleine manche). Dans ces cas-là, ce qui avait quelque chose à
+    dire s'est tu, et les zéros ne parlent pas à sa place : la manche n'est pas
+    mesurable.
+
+    Un vrai zéro reste un zéro : une manche où tous les compteurs se lisent du
+    début à la fin et où aucun ne bouge vaut bien 0 — c'est le cas nominal
+    d'une manche sans kill, et le duel entier à zéro reste attrapé plus haut
+    par `_aucun_kill_compte()`.
     """
     deltas = []
+    # Un témoin qu'on avait au départ et dont on n'a pas pu lire le mot de la
+    # fin. Pas la même chose qu'un tracker absent des deux bouts : celui-là
+    # n'a jamais rien promis.
+    temoin_perdu = False
     for cle, depart in avant.items():
         arrivee = apres.get(cle)
         if arrivee is None:
+            temoin_perdu = True
             continue
         delta = arrivee - depart
         if delta < 0 or delta > plafond:
+            temoin_perdu = True
             continue
         deltas.append(delta)
     if not deltas:
         return None
-    return max(deltas)
+    score = max(deltas)
+    if score == 0 and temoin_perdu:
+        return None
+    return score
