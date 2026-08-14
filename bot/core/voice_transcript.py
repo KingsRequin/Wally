@@ -55,6 +55,16 @@ def active_voice_transcript() -> "VoiceTranscriptFeed | None":
     return _active
 
 
+def voice_broadcast_open() -> bool:
+    """Vrai si une captation vocale est ouverte ET que le live tourne encore.
+
+    Pour les consommateurs qui reçoivent de la parole déjà détachée de son
+    salon — le narrateur d'overlay ne voit qu'une ligne de texte. Même règle,
+    même défaut fermé : sans tampon actif, la réponse est non.
+    """
+    return _active is not None and _active.is_broadcast(_active._broadcast_channel_id)
+
+
 def voice_is_broadcast(channel_id: int | None) -> bool:
     """Vrai si la parole de ce salon est diffusée au live, ici et maintenant.
 

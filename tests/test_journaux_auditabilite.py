@@ -181,8 +181,47 @@ async def test_le_texte_rejete_est_enregistre_avec_son_motif():
     assert jrnl.of("overlay_bubble") == []
 
 
+@pytest.fixture
+def _vocal_diffuse(monkeypatch):
+    """La parole vocale est diffusée au live (donc consignable)."""
+    import bot.intelligence.overlay_narrator as narrator_mod
+
+    monkeypatch.setattr(narrator_mod, "_vocal_diffuse", lambda: True)
+
+
 @pytest.mark.asyncio
-async def test_une_replique_deja_dite_est_enregistree_avec_son_candidat():
+async def test_le_vocal_non_diffuse_ne_laisse_aucun_MOT_dans_le_journal():
+    """Le mode test de l'overlay suffit à faire passer de la parole PRIVÉE par
+    `on_overheard`. La mesure reste, les mots partent."""
+    jrnl = _Journal()
+    n = _narrateur(jrnl, condense="Ils parlent de leur boulot.")
+
+    await n.on_overheard("Azraël (vocal) : mon salaire c'est 2400 net")
+
+    bulle, = jrnl.of("overlay_bubble")
+    assert "salaire" not in str(bulle)
+    assert "2400" not in str(bulle)
+    assert "boulot" not in str(bulle)
+    # Ce qui reste est ce qui sert à auditer le FILTRE, pas la conversation.
+    assert bulle["source"] == "overheard"
+    assert isinstance(bulle["condense_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_le_vocal_diffuse_est_consigne_en_clair(_vocal_diffuse):
+    """Pendant un live, ce vocal est déjà entendu par les viewers."""
+    jrnl = _Journal()
+    n = _narrateur(jrnl, condense="Il a raté le saut.")
+
+    await n.on_overheard("Azraël (vocal) : j'ai encore raté le saut")
+
+    bulle, = jrnl.of("overlay_bubble")
+    assert "raté le saut" in bulle["entree"]
+    assert bulle["texte"] == "Il a raté le saut."
+
+
+@pytest.mark.asyncio
+async def test_une_replique_deja_dite_est_enregistree_avec_son_candidat(_vocal_diffuse):
     """« Déjà dit » est un verdict sur le TEXTE : sans lui, on ne peut rien juger."""
     jrnl = _Journal()
     n = _narrateur(jrnl, condense="Le chat s'emballe pour rien.")

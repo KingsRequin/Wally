@@ -52,6 +52,22 @@ OVERLAY_JOURNAL_PLATFORM = "overlay"
 OVERLAY_JOURNAL_CHANNEL = "bulles"
 
 
+def _vocal_diffuse() -> bool:
+    """La parole vocale entendue est-elle diffusée au live ? Fermé par défaut.
+
+    Import PARESSEUX : `voice_transcript` tire `stream_watcher`, et ce module
+    est importé très tôt par `twitch/handlers`. La question ne se pose qu'aux
+    bulles issues du vocal, quelques centaines de fois par live.
+    """
+    try:
+        from bot.core.voice_transcript import voice_broadcast_open
+
+        return voice_broadcast_open()
+    except Exception as exc:  # noqa: BLE001 — dans le doute, on n'écrit pas
+        logger.debug("Overlay: diffusion vocale indéterminée ({e})", e=exc)
+        return False
+
+
 def planning_url() -> str:
     """URL publique du planning, pour le chat.
 
@@ -708,13 +724,30 @@ class OverlayNarrator:
         self._budget_refus = {}
         return refus
 
+    # Ce qui, dans une ligne de journal, porte des MOTS plutôt qu'une mesure.
+    _CHAMPS_PARLANTS = ("candidat", "texte")
+    _HORS_DIFFUSION = "[hors diffusion — parole non consignée]"
+
     def _journal(self, event_type: str, source: str, entree: str, **fields) -> None:
         """Écrit une ligne du journal des bulles. Ne lève jamais.
 
         `entree` est ce qui a DÉCLENCHÉ la bulle — la pensée brute, la phrase
         entendue, l'événement du stream. Sans elle, on ne peut pas juger si le
         filtre garde le fade et jette le mordant.
+
+        ⚠️ Sauf pour le vocal. Un salon vocal Discord est privé par défaut, et
+        `on_overheard` reçoit la parole DÉJÀ détachée de son salon : impossible
+        de juger ici de sa diffusion. La règle est donc demandée à qui la
+        détient (`voice_broadcast_open`), et hors diffusion on garde la mesure
+        — motif, latence, comptage — mais pas un mot de ce qui a été dit. Le
+        mode test de l'overlay suffit à faire passer de la parole privée par ce
+        chemin sans que personne ne la regarde.
         """
+        if source == "overheard" and not _vocal_diffuse():
+            entree = self._HORS_DIFFUSION
+            for champ in self._CHAMPS_PARLANTS:
+                if fields.get(champ):
+                    fields[champ] = self._HORS_DIFFUSION
         journal(
             self._conv_log, OVERLAY_JOURNAL_PLATFORM, OVERLAY_JOURNAL_CHANNEL,
             event_type, source=source, entree=(entree or "")[:400],
