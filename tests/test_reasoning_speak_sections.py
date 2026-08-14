@@ -16,7 +16,7 @@ que les marqueurs sont toujours là.
 """
 from pathlib import Path
 
-from bot.intelligence.reasoning_agent import ReasoningAgent
+from bot.intelligence.reasoning_agent import SPEAK_COUPE, ReasoningAgent
 
 _PROMPTS = Path(__file__).parent.parent / "bot" / "intelligence" / "persona" / "prompts"
 
@@ -62,7 +62,7 @@ def test_speak_coupe_plus_aucune_consigne_ni_exemple():
     assert "Choix du canal" not in sys_coupe
     assert "le message doit être court" not in sys_coupe
 
-    assert "Parole spontanée indisponible" in sys_coupe
+    assert SPEAK_COUPE in sys_coupe
     # Les marqueurs eux-mêmes ne doivent pas fuiter dans le prompt envoyé.
     assert "SPEAK:début" not in sys_coupe
 

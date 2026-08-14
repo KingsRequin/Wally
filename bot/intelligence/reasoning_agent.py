@@ -25,6 +25,35 @@ _FR_DIRECTIVE = (
 )
 
 
+# Ce qui est dit au décideur quand l'initiative spontanée est coupée.
+#
+# ⚠️ La version précédente n'énonçait QUE l'interdiction — « tout `[SPEAK]` serait
+# jeté sans être envoyé. N'en émets aucun, et ne rédige pas de message destiné à un
+# canal. » Le modèle en concluait qu'il était aphone tout court. Le 13/08, 19
+# pensées sur 145 affirmaient « le SPEAK est désactivé, donc je ne peux pas
+# réellement écrire dans le chat en ce moment » — dont 8 à moins de cinq minutes
+# d'un message réellement envoyé, pendant qu'il répondait à trois personnes toutes
+# les vingt secondes.
+#
+# Une capacité coupée se dit donc en NOMMANT D'ABORD ce qui reste. Ce qui est
+# retiré, c'est l'initiative depuis CETTE boucle — pas la parole.
+SPEAK_COUPE = (
+    "\n\n## Ce que tu peux faire ici, et ce qui est coupé\n"
+    "Tu n'es PAS muet. Quand on te sollicite — mention Discord, message dans le "
+    "chat Twitch, réponse, DM, parole en vocal — tu réponds normalement, et tu es "
+    "sans doute en train de le faire pendant que tu lis ceci. Ces réponses-là ne "
+    "passent pas par cette boucle : elles partent par un autre chemin, sans tag, "
+    "et rien ne les empêche. N'écris donc jamais, ni dans ta pensée ni ailleurs, "
+    "que tu « ne peux pas parler / écrire dans le chat en ce moment » : ce serait "
+    "faux.\n"
+    "Ce qui est coupé ici, et seulement ça : l'INITIATIVE non sollicitée. L'action "
+    "`[SPEAK]` (prendre la parole sans que personne ne t'ait rien demandé) n'est "
+    "pas branchée — un `[SPEAK]` serait jeté sans être envoyé. N'en émets aucun et "
+    "ne rédige pas de message de ta propre initiative : dans cette boucle, ta vie "
+    "mentale passe par `[THINK]` et par les `[ACT]`.\n"
+)
+
+
 def _retirer_sections(texte: str, marqueur: str) -> str:
     """Retire les blocs `<!-- {marqueur}:début -->` … `<!-- {marqueur}:fin -->`.
 
@@ -132,12 +161,8 @@ class ReasoningAgent:
             else _retirer_sections(self._system, "SPEAK")
         )
         if not spontaneous_speak_enabled:
-            self._system += (
-                "\n\n## Parole spontanée indisponible\n"
-                "L'action `[SPEAK]` est actuellement désactivée : tout `[SPEAK]` que tu émettrais "
-                "serait jeté sans être envoyé. N'en émets aucun, et ne rédige pas de message "
-                "destiné à un canal. Ta vie mentale passe par `[THINK]` et par les `[ACT]`.\n"
-            )
+            self._system += SPEAK_COUPE
+        self._speak_enabled = bool(spontaneous_speak_enabled)
         self._channels_text = channels_text
         self._capabilities_text = capabilities_text
         self._channel_names = channel_names or {}
@@ -429,9 +454,14 @@ class ReasoningAgent:
                 f"DM privé avec {last.get('author', '?')}" if last.get("is_dm")
                 else f"#{last_name}"
             )
+            # Le système retire l'enseignement de `[SPEAK]` quand l'initiative est
+            # coupée (`_retirer_sections`) — mais ce rappel-ci vit dans le message
+            # USER et passait à travers, réapprenant la syntaxe d'une action morte.
             lines.append(
                 f"**Canal où tu peux parler maintenant :** {last_label} "
                 f"(id {last.get('channel', '?')} — n'émets [SPEAK <id> ...] qu'avec cet id exact)"
+                if self._speak_enabled else
+                f"**Dernier canal actif :** {last_label} (id {last.get('channel', '?')})"
             )
             lines.append(
                 "**Conversations récentes — chaque bloc est une conversation SÉPARÉE.** "
@@ -457,8 +487,17 @@ class ReasoningAgent:
                 for msg in msgs:
                     mid = msg.get("message_id")
                     mid_part = f"(msg {mid}) " if mid else ""
+                    # Les réponses de Wally sont dans le flux (`notify_reply` pose
+                    # `is_self`) mais rien ne les DÉSIGNAIT comme siennes : elles
+                    # arrivaient sous son pseudo, une ligne comme une autre. Les
+                    # nommer « TOI » est ce qui rend visible, dans le contexte même,
+                    # qu'il vient de parler — et donc qu'il n'est pas muet.
+                    who = (
+                        f"TOI ({msg.get('author', '?')}, déjà envoyé)"
+                        if msg.get("is_self") else msg.get("author", "?")
+                    )
                     lines.append(
-                        f"  {mid_part}{msg.get('author', '?')}: "
+                        f"  {mid_part}{who}: "
                         f"{_one_line(msg.get('content', ''), 220)}"
                     )
         if getattr(ctx, "spontaneous_outreach", None):
