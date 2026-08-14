@@ -59,7 +59,11 @@ def test_une_action_cognitive_spontanee_se_distingue_dune_reponse():
     observe_event(None, "discord", "Serveur/chambre", "message_out",
                   {"kind": "cognitive"})
     bloc = st.current_self_trace_block()
-    assert "de toi-même" in bloc
+    # « de toi-même » seul ne prouvait rien : la consigne de bas de bloc porte
+    # déjà « Tu n'ouvres pas le sujet de toi-même », et le test passait avec
+    # l'acte rendu comme une réponse ordinaire (trouvé par mutation).
+    assert "pris la parole de toi-même" in bloc
+    assert "tu as répondu" not in bloc
 
 
 def test_un_outil_utilise_entre_dans_la_trace():
@@ -86,8 +90,19 @@ def test_une_plateforme_inconnue_entre_sans_code_neuf():
 
 def test_journal_alimente_la_trace_meme_sans_logger_cable():
     """Un `conv_log` absent ne doit pas le rendre aveugle à ses propres actes."""
-    journal(None, "voice", "vocal", "message_out", target="azrael_ttv")
+    journal(None, "voice", "Chambre à coucher", "message_out",
+            target="azrael_ttv")
     assert "azrael_ttv" in st.current_self_trace_block()
+
+
+def test_une_demande_vocale_ne_nomme_pas_le_salon_ou_il_ecoute():
+    """La réponse part dans le chat Twitch, donc elle est publique ; le salon
+    vocal d'où venait la question, lui, ne regarde personne."""
+    journal(None, "voice", "Chambre à coucher", "message_out",
+            target="azrael_ttv")
+    bloc = st.current_self_trace_block()
+    assert "Chambre" not in bloc
+    assert "vocal" in bloc
 
 
 # ── ce qui n'y entre JAMAIS ───────────────────────────────────────────────
@@ -175,6 +190,17 @@ def test_la_trace_ne_garde_pas_plus_que_sa_fenetre():
     assert trace.render().count("·") == 3
 
 
+def test_le_lecteur_peut_demander_moins_dactes_que_la_fenetre():
+    """La porte de réponse tourne à chaque message : son plafond doit tenir
+    même quand le tampon est plein."""
+    trace = st.SelfTrace(max_acts=12)
+    for i in range(10):
+        trace.record(f"acte {i}")
+    rendu = trace.render(limit=3, compact=True)
+    assert rendu.count("·") == 3
+    assert "acte 9" in rendu and "acte 0" not in rendu
+
+
 # ── perception PASSIVE : elle ne le fait jamais parler ────────────────────
 
 def test_agir_ne_reveille_pas_la_cadence_cognitive():
@@ -259,7 +285,9 @@ async def test_la_porte_de_reponse_voit_ce_quil_vient_de_faire(tmp_path):
     llm = _LLMEspion()
     gate = ResponseGate(llm, _FactsMuets(), prompts_dir=tmp_path)
     OverlayFeed().widget("bingo", cells=["a"])
-    await gate.decide("arrête avec tes bingos", "discord:1", _EMOTIONS_FLAT,
+    # Le message reçu ne dit PAS « bingo » : il partait tel quel dans le prompt
+    # de la porte, et le test passait même sans injection (trouvé par mutation).
+    await gate.decide("arrête avec ça", "discord:1", _EMOTIONS_FLAT,
                       [], [], is_mentioned=True)
     assert "bingo" in llm.user_msg
 

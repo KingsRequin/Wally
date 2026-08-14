@@ -76,7 +76,6 @@ OUTILS_TRACES_AILLEURS = frozenset({
 _PLATEFORMES = {
     "discord": "Discord",
     "twitch": "Twitch",
-    "voice": "Twitch",  # une demande faite en vocal est répondue dans le chat
     "cognitive": "Discord",
 }
 
@@ -210,6 +209,17 @@ def _note_message_out(platform: str, channel: str, fields: dict) -> None:
     # (elle sert à voir la panne) ; la trace, elle, ne doit pas lui faire
     # croire qu'il a répondu.
     if fields.get("published") is False:
+        return
+    if platform == "voice":
+        # Une demande faite EN VOCAL, répondue dans le chat Twitch : la réponse
+        # est publique, la question ne l'est pas. Le salon vocal n'est donc pas
+        # nommé — il n'apprendrait rien à Wally et dirait où il se trouve.
+        cible = str(fields.get("target") or "").strip()
+        note_act(
+            f"tu as répondu à {cible} dans le chat Twitch, à une demande "
+            f"faite en vocal" if cible else
+            "tu as répondu dans le chat Twitch, à une demande faite en vocal"
+        )
         return
     lieu = _lieu(platform, channel)
     spontane = str(fields.get("kind") or "") in ("cognitive", "spontaneous")
