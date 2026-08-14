@@ -22,6 +22,9 @@ def _bot(shown=True, active=True, widget_result=None):
         (widget_result or {"widget": "coinflip", "result": "heads"}) if shown else None
     )
     narrator.is_active.return_value = active
+    # Aucune partie en cours par défaut : sans ça le MagicMock rend un objet
+    # truthy, et tout refus passerait pour « une partie tourne déjà ».
+    narrator.game_already_running.return_value = None
     return SimpleNamespace(overlay_narrator=narrator), narrator
 
 

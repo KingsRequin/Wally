@@ -126,6 +126,32 @@ class ActionDispatcher:
         full = f"{label}{body}"
         self._feed.publish({"type": "ACT", "detail": full[:300], "full": full[:2000]})
 
+    def _note_overlay_refus(self, widget: str, extra: dict) -> None:
+        """Consigne le refus d'écraser une partie en cours, pour qu'il le lise.
+
+        `notify=False` : perception PASSIVE, comme le reste du flux du stream.
+        Un refus ne doit surtout pas réveiller la cadence — ce serait rendre
+        payante l'insistance qu'on cherche justement à calmer.
+        """
+        narrator = self._overlay_narrator
+        try:
+            occupe = narrator.game_already_running(widget, **extra)
+        except Exception as exc:  # noqa: BLE001 — un diagnostic ne casse pas un tick
+            logger.warning("ACT show_overlay: état de l'overlay illisible: {e}", e=exc)
+            return
+        if not occupe:
+            return
+        logger.info("ACT show_overlay: {w} refusé — une partie du même type "
+                    "tourne déjà", w=widget)
+        try:
+            from bot.core.stream_feed import active_stream_feed
+
+            feed = active_stream_feed()
+            if feed is not None:
+                feed.record(occupe, notify=False)
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.debug("ACT show_overlay: refus non consigné: {e}", e=exc)
+
     def _owner_id(self) -> str:
         for b in (self._bot, self._twitch_bot):
             cfg = getattr(b, "config", None)
@@ -419,6 +445,14 @@ class ActionDispatcher:
             if shown:
                 logger.info("ACT show_overlay: {w} ({c})", w=widget, c=comment[:40])
                 self._publish_act(f"show_overlay {widget}: ", comment)
+            else:
+                # Cette voie est un aller simple : aucun retour ne remonte au
+                # modèle, contrairement à l'outil de conversation. Un refus
+                # d'écraser une partie en cours resterait donc muet, et c'est
+                # PAR ICI qu'ont été ouverts les trois bingos du 2026-08-13. On
+                # le consigne dans le flux du stream — perception passive, sans
+                # `notify` — pour qu'il le LISE au tick suivant.
+                self._note_overlay_refus(widget, extra)
 
         elif act_name == "cancel_overlay" and self._overlay_narrator:
             # Sans cette action, la cognition pouvait OUVRIR un bingo mais jamais

@@ -538,6 +538,13 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
             "Rien affiché : il n'y a pas de live en cours, l'overlay ne s'affiche "
             "que pendant un stream. Dis-le simplement."
         )})
+    # Le refus d'écraser une partie en cours doit être DIT, pas avalé : sans ça
+    # Wally lisait « widget inconnu ou données manquantes » et rouvrait un bingo
+    # trente secondes plus tard. L'état n'a pas bougé depuis `show_widget` — le
+    # garde a justement refusé d'y toucher — donc la phrase est encore juste.
+    occupe = narrator.game_already_running(widget, **extra)
+    if occupe:
+        return json.dumps({"status": "busy", "message": occupe})
     return json.dumps({"status": "rejected", "message": (
         f"Rien affiché : '{widget}' est inconnu ou il manque des données "
         "(la roue veut au moins 2 options, un sondage une question)."

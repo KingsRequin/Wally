@@ -163,7 +163,12 @@ OVERLAY_TOOL_SPEC = {
             "résultat, et même forcer le tirage pour tricher. ⚠️ L'overlay est vu "
             "par les SPECTATEURS, pas par le streamer : ton `comment` s'adresse à "
             "eux. Ne prétends jamais avoir affiché quelque chose sans appeler cet "
-            "outil."
+            "outil. ⚠️ Une seule partie à la fois : le bingo, le sondage, le "
+            "pendu et l'objectif DURENT — si l'un d'eux tourne déjà, l'outil "
+            "REFUSE d'en rouvrir un du même type et te dit ce qui tourne et où "
+            "ça en est ; rien n'est écrasé. Continue celle-là, ou annule-la "
+            "d'abord avec `cancel_overlay`. Les autres widgets se relancent "
+            "autant que tu veux."
         ),
         "parameters": {
             "type": "object",
@@ -824,6 +829,18 @@ class OverlayNarrator:
         if widget not in self._DIRECT_WIDGETS or not self._live():
             return None
 
+        # Une partie qui DURE ne s'écrase pas en silence. Le garde est ici, au
+        # point de passage unique de tout ce que Wally décide d'afficher : quel
+        # que soit le chemin d'appel — outil de conversation ou initiative
+        # cognitive —, la partie en cours survit. Le POURQUOI est rendu par les
+        # appelants, qui redemandent la phrase à `game_already_running` ; celui
+        # qui oublierait de le faire n'annoncera au moins pas un succès.
+        occupe = self.game_already_running(widget, **extra)
+        if occupe is not None:
+            logger.info("Overlay: '{w}' refusé — une partie du même type tourne déjà",
+                        w=widget)
+            return None
+
         params: dict = {}
         if widget == "coinflip":
             params["result"] = result if result in ("heads", "tails") else random.choice(
@@ -1317,6 +1334,96 @@ class OverlayNarrator:
             "Les messages d'une seule lettre sont des propositions, comptées "
             "automatiquement — n'y réponds pas une par une."
         )
+
+    def game_already_running(self, widget: str, **extra) -> Optional[str]:
+        """La partie du même type qui tourne DÉJÀ, et qu'ouvrir écraserait.
+
+        Rend la phrase à donner à Wally — ce qui tourne, où ça en est, et par où
+        passer pour recommencer — ou None quand la voie est libre.
+
+        Le 2026-08-13, au lancement du live, trois bingos ont été ouverts en dix
+        minutes (19:58:56, 20:01:27, 20:09:08), chacun de six cases, chacun
+        effaçant le précédent — le premier treize secondes après la détection du
+        live. L'état de l'overlay était pourtant au prompt depuis le 2026-08-10 :
+        une ligne de contexte ne pèse rien face à l'envie d'ouvrir un bingo au
+        démarrage d'un stream. Il fallait que l'OUTIL réponde, au moment du
+        geste. Même patron que `cancel_overlay`, qui annonce déjà « il te dira
+        s'il y avait vraiment quelque chose » — ici c'est l'inverse : il te dira
+        s'il y a déjà quelque chose.
+
+        Ne concerne QUE les parties qui durent. Un meme, un dé, un chifoumi, un
+        message épinglé sont des affichages qui passent : les relancer n'écrase
+        rien qu'on regrette, et les brider ne ferait que retirer de l'initiative.
+
+        Prédicat PUR : il ne publie rien et ne change rien. `show_widget` s'en
+        sert pour ne pas remplacer la partie en cours, les appelants pour dire
+        POURQUOI rien n'a bougé.
+        """
+        widget = (widget or "").strip()
+
+        if widget == "bingo":
+            # Sans `cells`, l'appel ne rouvre rien : c'est une coche ou un rappel
+            # de grille, les deux gestes normaux d'un bingo en cours.
+            if not [c for c in (extra.get("cells") or []) if str(c).strip()]:
+                return None
+            if not self._bingo:
+                return None
+            done = sum(1 for d in self._bingo["done"] if d)
+            return (
+                f"Rien affiché : un bingo tourne DÉJÀ sur l'overlay — "
+                f"{done}/{len(self._bingo['cells'])} cases cochées. Ta nouvelle "
+                "grille n'a PAS remplacé la sienne, rien n'est perdu. Pour "
+                "cocher une case qui vient de se réaliser, rappelle "
+                "`show_overlay` avec `check` ; pour la remontrer, `show_overlay` "
+                "widget=bingo tout court. Si tu veux vraiment repartir de zéro, "
+                "appelle d'abord `cancel_overlay` target=bingo, puis relance."
+            )
+
+        if widget == "poll":
+            if not self._poll:
+                return None
+            return (
+                f"Rien affiché : un sondage tourne DÉJÀ — "
+                f"« {self._poll['question']} », le chat est en train de voter. "
+                "Ta question n'a PAS écrasé la sienne. Attends la clôture — le "
+                "résultat t'arrivera dans ton flux du stream — ou appelle "
+                "`cancel_overlay` target=sondage d'abord si tu veux vraiment "
+                "l'abandonner, sans dépouillement."
+            )
+
+        if widget == "hangman":
+            # Sans `word`, l'appel remontre la partie en cours : rien à refuser.
+            if not str(extra.get("word") or "").strip():
+                return None
+            game = self._hangman
+            if not game:
+                return None
+            # Ni le mot ni l'indice : ce message peut finir dans un contexte que
+            # la partie en cours ne devrait pas polluer, et il n'apprendrait
+            # rien que `_hangman_context` ne dise déjà, avec ses gardes.
+            restantes = len({c for c in game["word"] if c.isalpha()} - game["found"])
+            essais = self._HANGMAN_MAX_MISSES - len(game["missed"])
+            return (
+                f"Rien affiché : un pendu tourne DÉJÀ — {restantes} lettre(s) "
+                f"encore à trouver, {essais} essai(s) avant la fin. Ton nouveau "
+                "mot a été ignoré, la partie en cours est intacte. Pour "
+                "remontrer la grille, `show_overlay` widget=hangman SANS `word`. "
+                "Pour en lancer une autre, `cancel_overlay` target=pendu "
+                "d'abord — mais n'abandonne pas une partie que le chat joue."
+            )
+
+        if widget == "goal":
+            goal = self._goal
+            if not goal:
+                return None
+            return (
+                f"Rien affiché : un objectif tourne DÉJÀ — « {goal['label']} » : "
+                f"{goal['count']}/{goal['target']}. Le tien n'a PAS remplacé le "
+                "sien. Celui-là se remplit tout seul, il n'y a rien à rouvrir ; "
+                "pour en changer, `cancel_overlay` target=objectif d'abord."
+            )
+
+        return None
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:
