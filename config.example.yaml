@@ -54,6 +54,11 @@ bot:
   spontaneous_passion_probability: 0.15
   spontaneous_probability: 0.05
   spontaneous_twitch_enabled: false
+  # Une question posée au chat que personne ne relève : le seul cas où Wally
+  # ouvre la bouche sans qu'on l'ait nommé. Le ResponseGate décide en dernier.
+  unanswered_question_enabled: true
+  unanswered_question_delay_seconds: 45     # temps laissé au chat pour répondre lui-même
+  unanswered_question_forget_seconds: 300   # au-delà, y revenir revient à déterrer
   trigger_names:
   - wally
   update_image: ''                   # ex: ghcr.io/ton-user/wally-ai:latest (vide = polling désactivé)

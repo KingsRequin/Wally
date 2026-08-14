@@ -35,6 +35,14 @@ class BotConfig:
     spontaneous_passion_probability: float = 0.15
     spontaneous_cooldown_seconds: int = 300
     spontaneous_memory_probability: float = 0.2
+    # Questions posées au chat que personne ne relève. La SEULE brèche laissée
+    # dans la coupure ci-dessus : pas un monologue né de l'ennui, mais le besoin
+    # réel d'une personne présente. Le `ResponseGate` garde le dernier mot.
+    # Délai : le temps laissé au chat pour répondre lui-même. Oubli : au-delà,
+    # répondre revient à déterrer.
+    unanswered_question_enabled: bool = True
+    unanswered_question_delay_seconds: int = 45
+    unanswered_question_forget_seconds: int = 300
     memory_recall_min_score: float = 0.75
     memory_search_min_score: float = 0.5
     memory_context_max_tokens: int = 800

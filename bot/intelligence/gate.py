@@ -88,6 +88,7 @@ class ResponseGate:
         emoji_usage: list[str] | None = None,
         recent_messages: list[dict] | None = None,
         thread_depth: int = 0,
+        unanswered_question_age_s: float | None = None,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -104,6 +105,16 @@ class ResponseGate:
             trigger_line = f"L'utilisateur a appelé {bot_name()} par son nom — répondre est la norme, ignorer l'exception."
         elif is_mentioned:
             trigger_line = f"@{bot_name()} mentionné directement."
+        elif unanswered_question_age_s is not None:
+            # Le seul cas où {{BOT_NAME}} peut ouvrir la bouche sans qu'on l'ait
+            # nommé. Le dire explicitement, plutôt que de le laisser sous
+            # « message passif » : un prompt qui ment sur ce qui l'a réveillé
+            # produit des réponses hors-sol (précédent des faux raids d'overlay).
+            trigger_line = (
+                f"Question posée au chat il y a {int(unanswered_question_age_s)} s, "
+                f"sans appeler {bot_name()}. Le fil ci-dessous est TOUT ce qui a été "
+                f"dit depuis : à toi de juger si quelqu'un y a déjà répondu."
+            )
         else:
             trigger_line = f"Message passif dans le channel (sans appel direct à {bot_name()})."
         context_parts = [

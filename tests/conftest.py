@@ -79,6 +79,20 @@ def isolate_thread_sense():
 
 
 @pytest.fixture(autouse=True)
+def isolate_pending_questions():
+    """Vide le registre des questions sans réponse entre deux tests.
+
+    Même famille que ci-dessus : un dict de MODULE. Une question laissée en
+    attente par un test la rend « mûre » pour le suivant, qui verrait Wally
+    ouvrir la bouche sans qu'on lui ait rien demandé.
+    """
+    from bot.intelligence.pending_question import oublier_tout
+    oublier_tout()
+    yield
+    oublier_tout()
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 

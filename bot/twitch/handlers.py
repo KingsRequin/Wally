@@ -20,7 +20,7 @@ from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
-from bot.intelligence import thread_sense
+from bot.intelligence import pending_question, thread_sense
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _canonical_uid, _apex_account_context,
@@ -815,6 +815,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             _silence = "spontané en cooldown"
 
     if not triggered:
+        # Une question posée à la cantonade entre au registre ; le balayage
+        # d'après lui laisse le temps d'être relevée par le chat lui-même.
+        # Chaîne maison seulement : s'inviter dans le chat d'un hôte qui ne
+        # nous a rien demandé n'est pas rendre service.
+        if est_chaine_home(bot, channel_name):
+            _fire(_veiller_questions(bot, channel_name, channel_id, content, author,
+                                     prelude_snapshot=prelude))
         # Le SILENCE est une décision, et c'était la seule qui ne laissait
         # aucune trace : 479 messages sans réponse sur un live, invisibles par
         # construction. On ne pouvait auditer que ce que Wally dit, jamais
@@ -1258,11 +1265,86 @@ async def _announce_overlay_image(
         logger.error("Overlay image announce error: {e}", e=e)
 
 
+async def _veiller_questions(
+    bot: "WallyTwitch", channel_name: str, channel_id: str,
+    content: str, author: str,
+    prelude_snapshot: list[dict] | None = None,
+) -> None:
+    """Enregistre une question posée au chat, et relève celle qui a mûri.
+
+    Le 13/08, 89 réponses sur 89 partaient d'une mention de son nom : à 21h14,
+    « comment on fait pour remettre le jeu en français depuis la maj ? » est
+    restée sans réponse utile, et Wally s'est tu. C'est le seul chemin par
+    lequel il peut parler sans qu'on l'ait appelé, et il est étroit — une vraie
+    question, mûre depuis un délai, et le `ResponseGate` qui tranche.
+
+    Balayage à la volée, sans tâche de fond : le chat d'un live ne reste jamais
+    silencieux assez longtemps pour qu'une question mûre attende son tour, et
+    une boucle en plus serait une source de panne muette de plus.
+    """
+    cfg = bot.config.bot
+    if not getattr(cfg, "unanswered_question_enabled", False):
+        return
+    try:
+        pending_question.noter(channel_name, author, content)
+        question = pending_question.relever(
+            channel_name,
+            delai_s=cfg.unanswered_question_delay_seconds,
+            oubli_s=cfg.unanswered_question_forget_seconds,
+        )
+        if question is None:
+            return
+        # Un seul relevé par fenêtre de cooldown spontané : sans ça, un chat qui
+        # pose cinq questions en une minute déclenche cinq interventions et
+        # Wally passe pour le bot qui répond à tout.
+        maintenant = time.time()
+        if maintenant - _spontaneous_cooldowns.get(channel_id, 0) < cfg.spontaneous_cooldown_seconds:
+            _clog(bot, channel_name, "gate_decision", triggered=False,
+                  spontaneous=True, decision="silence",
+                  reason="question sans réponse — intervention en cooldown")
+            return
+
+        # Le gate de l'adaptateur Discord : c'est le MÊME objet, donc le même
+        # Wally qui décide de se taire des deux côtés. Absent (gate désactivé
+        # en config) → on ne parle pas ; ce chemin n'a pas de repli « réponds ».
+        gate = getattr(getattr(bot, "discord_bot", None), "response_gate", None)
+        prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(channel_id)
+        # Le fil DEPUIS la question : c'est là que le gate lit si quelqu'un y a
+        # déjà répondu. Le prélude courant contient tout ce qui a suivi.
+        repondre, motif = await pending_question.le_gate_veut_repondre(
+            gate, question,
+            auteur_uid=f"twitch:{question['auteur']}",
+            emotion_state=bot.emotion.get_state(),
+            fil=prelude,
+        )
+        _clog(bot, channel_name, "gate_decision", triggered=False, spontaneous=True,
+              decision="question_relevee" if repondre else "silence",
+              reason=motif or "question sans réponse — rien à apporter",
+              question=question["texte"][:200], question_age_s=int(question.get("age_s", 0)))
+        if not repondre:
+            return
+        _spontaneous_cooldowns[channel_id] = maintenant
+        await _spontaneous_respond_twitch(
+            bot, channel_name, channel_id, question["auteur"], question["texte"],
+            prelude_snapshot=prelude,
+            consigne=(
+                f"[CONTEXTE: Tu n'as PAS été mentionné. {question['auteur']} a posé "
+                f"cette question au chat il y a {int(question.get('age_s', 0))} secondes "
+                f"et personne n'y a répondu. Tu interviens parce que tu SAIS. Donne "
+                f"l'information, court et direct — si finalement tu n'es sûr de rien, "
+                f"dis-le en une ligne plutôt que d'inventer.]"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — une veille qui casse ne casse pas le chat
+        logger.warning("Veille des questions sans réponse en échec : {e}", e=exc)
+
+
 async def _spontaneous_respond_twitch(
     bot: "WallyTwitch", channel_name: str, channel_id: str,
     author: str, content: str,
     recall_memory: str | None = None,
     prelude_snapshot: list[dict] | None = None,
+    consigne: str | None = None,
 ) -> None:
     """Generate and send a spontaneous Twitch response."""
     try:
@@ -1280,6 +1362,12 @@ async def _spontaneous_respond_twitch(
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             user_directive=bot.persona.user_directive("twitch", "", author),
+            # Le chemin spontané échappait à la mesure du fil : il pouvait
+            # recoller le tic que le chemin principal venait de retirer.
+            thread_context=thread_sense.bloc_fil(
+                channel_name, author, nom_personne=author,
+                paliers=bot.persona.fil_directives,
+            ),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""
@@ -1292,9 +1380,11 @@ async def _spontaneous_respond_twitch(
             )
             logger.info("Memory recall for {user} on Twitch: {mem}", user=author, mem=recall_memory[:80])
         user_content = (
-            "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
-            "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
-            "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
+            (consigne or
+             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
+             "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
+             "phrase courte et percutante, comme un commentaire lâché en passant.]")
+            + "\n\n"
             + recall_block
             + prelude_block
             + f"\n[{author}]: {content}"
@@ -1319,6 +1409,7 @@ async def _spontaneous_respond_twitch(
         if reply.startswith("[react:"):
             import re as _re
             reply = _re.sub(r"^\[react:.+?\]\s*", "", reply)
+        reply = thread_sense.retirer_tic(channel_name, reply)
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
@@ -1351,6 +1442,7 @@ async def _spontaneous_respond_twitch(
 
         bot.memory.append_prelude(channel_id, self_name, reply)
         bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
+        thread_sense.note_reponse(channel_name, author, reply)
         logger.info("Spontaneous intervention in twitch:{ch}", ch=channel_name)
 
     except Exception as e:

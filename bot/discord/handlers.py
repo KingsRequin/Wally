@@ -19,7 +19,7 @@ from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
-from bot.intelligence import thread_sense
+from bot.intelligence import pending_question, thread_sense
 from bot.intelligence.prompts import (
     assemble_memory_context,
     build_session_recall_block,
@@ -2062,6 +2062,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 _silence = f"tirage spontané perdu ({trigger_type}, p={prob})"
             elif trigger_type:
                 _silence = "spontané en cooldown"
+        # Une question posée au salon entre au registre ; le balayage d'après
+        # lui laisse le temps d'être relevée par quelqu'un d'autre.
+        if channel_allowed and message.guild is not None:
+            _fire(_veiller_questions(bot, message, prelude_snapshot=prelude))
         # Journalisé sur le MÊME périmètre que `message_in` ci-dessus : hors
         # salon autorisé, rien n'entre, donc rien à expliquer.
         if channel_allowed:
@@ -3100,10 +3104,79 @@ async def _post_process(
         logger.error("Post-process error: {e}", e=e)
 
 
+async def _veiller_questions(
+    bot: "WallyDiscord", message: discord.Message,
+    prelude_snapshot: list[dict] | None = None,
+) -> None:
+    """Le pendant Discord de la veille des questions sans réponse.
+
+    Le 13/08, 92 messages reçus sur Discord et UNE réponse — parce que presque
+    personne n'y prononce son nom, alors que sur Twitch 16 % des messages le
+    font. Même bot, deux présences opposées, et la seule différence était le
+    comportement des gens. Un salon Discord pose exactement les mêmes questions
+    en l'air qu'un chat de live ; elles doivent réveiller le même Wally.
+    """
+    cfg = bot.config.bot
+    if not getattr(cfg, "unanswered_question_enabled", False):
+        return
+    try:
+        chan_id = str(message.channel.id)
+        pending_question.noter(
+            chan_id, message.author.display_name,
+            _resolve_mentions(message, message.content or ""), charge=message,
+        )
+        question = pending_question.relever(
+            chan_id,
+            delai_s=cfg.unanswered_question_delay_seconds,
+            oubli_s=cfg.unanswered_question_forget_seconds,
+        )
+        if question is None:
+            return
+        maintenant = time.time()
+        if maintenant - _spontaneous_cooldowns.get(chan_id, 0) < cfg.spontaneous_cooldown_seconds:
+            _clog(bot, _conv_channel(message), "gate_decision",
+                  triggered=False, spontaneous=True, decision="silence",
+                  reason="question sans réponse — intervention en cooldown")
+            return
+
+        source = question.get("charge")
+        if source is None:
+            return
+        prelude = prelude_snapshot if prelude_snapshot is not None else bot.memory.get_prelude(chan_id)
+        _uid = await _canonical_uid(bot, "discord", str(source.author.id))
+        repondre, motif = await pending_question.le_gate_veut_repondre(
+            getattr(bot, "response_gate", None), question,
+            auteur_uid=_uid,
+            emotion_state=bot.emotion.get_state(),
+            fil=prelude,
+        )
+        _clog(bot, _conv_channel(message), "gate_decision",
+              trace_id=str(source.id), triggered=False, spontaneous=True,
+              decision="question_relevee" if repondre else "silence",
+              reason=motif or "question sans réponse — rien à apporter",
+              question=question["texte"][:200], question_age_s=int(question.get("age_s", 0)))
+        if not repondre:
+            return
+        _spontaneous_cooldowns[chan_id] = maintenant
+        await _spontaneous_respond(
+            bot, source, prelude_snapshot=prelude,
+            consigne=(
+                f"[CONTEXTE: Tu n'as PAS été mentionné. {question['auteur']} a posé "
+                f"cette question dans le salon il y a {int(question.get('age_s', 0))} "
+                f"secondes et personne n'y a répondu. Tu interviens parce que tu SAIS. "
+                f"Donne l'information, court et direct — si finalement tu n'es sûr de "
+                f"rien, dis-le en une ligne plutôt que d'inventer.]"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — une veille qui casse ne casse pas le salon
+        logger.warning("Veille des questions sans réponse (Discord) en échec : {e}", e=exc)
+
+
 async def _spontaneous_respond(
     bot: "WallyDiscord", message: discord.Message,
     recall_memory: str | None = None,
     prelude_snapshot: list[dict] | None = None,
+    consigne: str | None = None,
 ) -> None:
     """Generate and send a spontaneous (unsolicited) response.
 
@@ -3140,6 +3213,13 @@ async def _spontaneous_respond(
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             user_directive=bot.persona.user_directive("discord", str(message.author.id)),
+            # Comme sur Twitch : le chemin spontané échappait à la mesure du fil
+            # et pouvait recoller le tic que le chemin principal venait d'ôter.
+            thread_context=thread_sense.bloc_fil(
+                str(message.channel.id), str(message.author.id),
+                nom_personne=message.author.display_name,
+                paliers=bot.persona.fil_directives,
+            ),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         recall_block = ""
@@ -3152,9 +3232,11 @@ async def _spontaneous_respond(
             )
         mention_block = _build_mention_directory(message)
         user_content = (
-            "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
-            "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
-            "phrase courte et percutante, comme un commentaire lâché en passant.]\n\n"
+            (consigne or
+             "[CONTEXTE: Tu n'as PAS été mentionné. Tu interviens spontanément "
+             "parce que le sujet t'intéresse ou te fait réagir. Réponds en une "
+             "phrase courte et percutante, comme un commentaire lâché en passant.]")
+            + "\n\n"
             + recall_block
             + prelude_block
             + mention_block
@@ -3207,6 +3289,7 @@ async def _spontaneous_respond(
         # avoir été payée et mémorisée.
         from bot.discord.message_split import split_for_discord
 
+        reply = thread_sense.retirer_tic(str(message.channel.id), reply)
         reply = redact(reply)
         parts = split_for_discord(reply)
         await message.reply(
@@ -3235,6 +3318,7 @@ async def _spontaneous_respond(
         bot.memory.append_message(
             sent_channel_id, self_name, reply, platform="discord"
         )
+        thread_sense.note_reponse(sent_channel_id, str(message.author.id), reply)
         logger.info("Spontaneous intervention → #{ch}", ch=getattr(target_channel, 'name', 'dm'))
         if recall_memory:
             logger.info("Memory recall for {user}: {mem}", user=message.author.display_name, mem=recall_memory[:80])
