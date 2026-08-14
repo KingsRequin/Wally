@@ -42,6 +42,18 @@ async def test_le_vocal_ne_passe_plus_par_le_prompt_des_evenements():
     narrator.on_stream_event.assert_not_awaited()
 
 
+@pytest.fixture(autouse=True)
+def _vocal_diffuse(monkeypatch):
+    """Le vocal de ces tests est diffusé au live.
+
+    Sans ça, `on_overheard` refuse tout — et les tests qui vérifient une
+    ABSENCE (trois-points, avatar) passeraient sans rien exercer.
+    """
+    import bot.intelligence.overlay_narrator as narrator_mod
+
+    monkeypatch.setattr(narrator_mod, "_vocal_diffuse", lambda: True)
+
+
 def _narrator():
     from bot.intelligence.overlay_narrator import OverlayNarrator
 
@@ -49,6 +61,7 @@ def _narrator():
     n._feed = MagicMock()
     n._recent_bubbles = __import__("collections").deque(maxlen=8)
     n._may_react = lambda: True
+    n._overheard_interval = 0.0
     n._mark_spoken = lambda: None
     n._is_repeat = lambda text: False
     n._remember_bubble = lambda text: None
@@ -124,3 +137,168 @@ async def test_la_parole_entendue_nagite_pas_lavatar():
 
     assert not any(c.args and c.args[0] == "stream_event"
                    for c in n._feed.react.call_args_list)
+
+
+# ── Une bulle doit APPORTER quelque chose ────────────────────────────────────
+#
+# Le 2026-08-13, sur 148 bulles d'un même live : 44 % ouvraient sur « Il / Elle
+# / Ils / On dirait » et 50 % finissaient sur une virgule suivie d'un jugement
+# creux. Le squelette dominant était la paraphrase à la 3e personne de la
+# phrase qui venait d'être entendue — « je vise les murs » devenait « Il vise
+# encore les murs ». Interdire des tournures ne servirait à rien : le modèle en
+# invente d'autres. Ce qu'on peut exiger, c'est que la bulle contienne des mots
+# que personne ne venait de prononcer.
+
+
+class _tampon:
+    """Un tampon de conversation vocale déjà rempli."""
+
+    def __init__(self, tours):
+        self._tours = tours
+
+    def recent_lines(self, limit=8):
+        return list(self._tours)[-limit:]
+
+
+def _condensant(n, sortie):
+    async def _condense(text, system=None, **_):
+        _condense.vu = text
+        return sortie
+
+    _condense.vu = None
+    n._condense = _condense
+    return _condense
+
+
+@pytest.mark.asyncio
+async def test_une_bulle_qui_ne_fait_que_redire_lechange_nest_pas_publiee():
+    n = _narrator()
+    _condensant(n, "Il vise encore les murs")
+
+    dit = await n.on_overheard("Azraël (vocal) : je vise les murs là encore")
+
+    assert dit is None
+    n._feed.say.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_une_bulle_qui_apporte_un_angle_est_publiee():
+    """Le garde-fou vise le vide, pas la brièveté : les bonnes bulles du même
+    live rapprochent, décalent, précisent — et passent."""
+    n = _narrator()
+    _condensant(n, "Il compte ses heures comme des PV")
+
+    dit = await n.on_overheard("Azraël (vocal) : ça fait trois heures qu'on joue")
+
+    assert dit == "Il compte ses heures comme des PV"
+    n._feed.say.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_nommer_quelquun_ne_compte_pas_comme_une_redite(monkeypatch):
+    """3 % des bulles nommaient quelqu'un. Le prénom vient forcément de ce qui
+    a été entendu : s'il comptait comme un mot recopié, le filtre punirait
+    exactement ce qu'on demande."""
+    n = _narrator()
+    _condensant(n, "Azraël transforme chaque mur en trampoline")
+
+    with patch("bot.core.voice_transcript.active_voice_transcript",
+               return_value=_tampon([("Azraël", "je vise les murs")])):
+        dit = await n.on_overheard("Azraël (vocal) : je vise les murs")
+
+    assert dit == "Azraël transforme chaque mur en trampoline"
+
+
+@pytest.mark.asyncio
+async def test_le_modele_recoit_lechange_pas_la_phrase_seule():
+    """« Et toi ? » ne veut rien dire sans le tour d'avant, et une vanne à
+    quatre se comprend sur trois tours. Condenser une réplique isolée ne laisse
+    rien à faire d'autre que la paraphraser."""
+    n = _narrator()
+    condense = _condensant(n, "Personne ne répond à Kassandre")
+
+    with patch("bot.core.voice_transcript.active_voice_transcript",
+               return_value=_tampon([
+                   ("Azraël", "j'ai encore raté le saut"),
+                   ("TaKi", "faut viser plus haut"),
+                   ("Kassandre", "et toi ?"),
+               ])):
+        await n.on_overheard("Kassandre (vocal) : et toi ?")
+
+    assert "raté le saut" in condense.vu       # les tours précédents
+    assert "TaKi" in condense.vu               # et QUI a dit quoi
+    assert "et toi ?" in condense.vu
+
+
+@pytest.mark.asyncio
+async def test_le_prompt_du_vocal_nomme_le_bot_au_lieu_de_sa_sentinelle():
+    """Ces prompts sont des constantes de module, chargées avant l'identité :
+    le modèle recevait « la réaction de {{BOT_NAME}} » en toutes lettres."""
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    n = _narrator()
+    n._llm = MagicMock()
+    n._llm.complete = _AsyncMock(return_value="RIEN")
+
+    await n.on_overheard("Azraël (vocal) : bon on y retourne")
+
+    envoye = n._llm.complete.await_args.args[0]
+    assert "{{BOT_NAME}}" not in envoye
+
+
+# ── Cadence : le vocal n'est pas un événement ────────────────────────────────
+
+
+def _cadence_narrator():
+    """Un narrateur avec ses vrais budgets, en live."""
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+
+    return OverlayNarrator(MagicMock(), MagicMock(), lambda: True)
+
+
+@pytest.mark.asyncio
+async def test_le_bavardage_vocal_ne_fait_pas_taire_un_raid():
+    """Une horloge unique laissait le vocal — qui arrive en continu — manger le
+    créneau des événements, qui sont rares et attendus."""
+    n = _cadence_narrator()
+    vus = []
+    n._condense = lambda text, system=None, **kw: _capture(vus, text)
+
+    await n.on_overheard("Azraël (vocal) : bon ça se complique")
+    await n.on_stream_event("raid de Kassandre avec 42 spectateurs", kind="raid")
+
+    assert len(vus) == 2, "le raid a été avalé par le budget du vocal"
+
+
+@pytest.mark.asyncio
+async def test_un_raid_nouvre_pas_un_creneau_a_la_parole_entendue():
+    """L'inverse est vrai aussi : un événement ne doit pas relancer le
+    bavardage juste derrière."""
+    n = _cadence_narrator()
+    vus = []
+    n._condense = lambda text, system=None, **kw: _capture(vus, text)
+
+    await n.on_overheard("Azraël (vocal) : bon ça se complique")
+    await n.on_stream_event("raid de Kassandre avec 42 spectateurs", kind="raid")
+    await n.on_overheard("TaKi (vocal) : ils débarquent d'où ceux-là")
+
+    assert len(vus) == 2, "la parole entendue a repris le créneau du raid"
+
+
+@pytest.mark.asyncio
+async def test_deux_phrases_daffilee_ne_font_pas_deux_appels():
+    """148 bulles en 162 min, 357 appels au modèle : une bulle toutes les 46 à
+    66 s pendant trois heures. Le vocal est un flux, pas un événement."""
+    n = _cadence_narrator()
+    vus = []
+    n._condense = lambda text, system=None, **kw: _capture(vus, text)
+
+    for phrase in ("bon ça se complique", "attends attends", "il est où lui"):
+        await n.on_overheard(f"Azraël (vocal) : {phrase}")
+
+    assert len(vus) == 1
+
+
+async def _capture(vus, text):
+    vus.append(text)
+    return None

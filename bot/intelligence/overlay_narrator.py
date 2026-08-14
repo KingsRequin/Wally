@@ -88,6 +88,36 @@ _MIN_THOUGHT_INTERVAL_S = 90.0
 # événements sont rares et attendus par le public.
 _MIN_EVENT_INTERVAL_S = 20.0
 
+# La parole entendue en vocal a son PROPRE créneau, et il est long.
+#
+# Mesuré sur le live du 2026-08-13 : 148 bulles en 162 min (une toutes les 46 à
+# 66 s) pour 357 appels au modèle, dont l'essentiel venait d'ici. À ce rythme
+# l'overlay commente en continu, et une observation quelconque chasse de l'écran
+# celle qui valait le coup. Le vocal est un flux permanent, pas un événement :
+# son budget doit être celui d'un compagnon qui place un mot de temps en temps.
+#
+# Créneau séparé de `_MIN_EVENT_INTERVAL_S` dans les DEUX sens : le bavardage ne
+# doit pas faire taire un raid, et un raid ne doit pas ouvrir un créneau au
+# vocal. C'est justement ce que faisait l'horloge unique.
+_MIN_OVERHEARD_INTERVAL_S = 150.0
+
+# Combien de tours de vocal on met sous les yeux du modèle. Une réplique seule
+# ne se comprend pas — « et toi ? », « ah bah bravo » — et condenser une phrase
+# isolée ne laisse rien d'autre à faire que la paraphraser, ce que 44 % des
+# bulles du 13/08 faisaient (« Il a… », « Il vise… », « Il parle… »).
+_OVERHEARD_CONTEXT_LINES = 8
+
+# Part minimale de mots qui appartiennent à la BULLE et non à ce qu'elle vient
+# d'entendre. En dessous, la bulle ne fait que redire l'échange avec d'autres
+# pronoms : elle occupe l'écran sans rien apprendre à personne.
+#
+# Le seuil sépare nettement les deux familles observées le 13/08 :
+# « Il vise encore les murs » (1 mot à lui sur 3) tombe, « Il compte ses heures
+# comme des PV » (2 sur 3) et « Ils se croient dans un film d'action » (3 sur 3)
+# passent. Les prénoms sont exclus du calcul : nommer quelqu'un ne doit être ni
+# récompensé ni puni par ce filtre.
+_MIN_APPORT = 0.5
+
 # Événements sur lesquels l'avatar s'emballe en plus de la bulle. Repérage par
 # mot-clé sur la description déjà rédigée en français par StreamFeed.
 _STRONG_EVENT_HINTS = ("raid", "sub", "abonn", "bits", "cheer", "don")
@@ -479,6 +509,11 @@ class OverlayNarrator:
     # `AttributeError` au milieu d'un live.
     _conv_log = None
     _emotion = None
+    # Même raison : le créneau du vocal doit exister sur un narrateur bâti par
+    # `__new__`, sans quoi la première phrase entendue lèverait un
+    # `AttributeError` au milieu d'un live.
+    _last_overheard_at = 0.0
+    _overheard_interval = _MIN_OVERHEARD_INTERVAL_S
 
     def __init__(
         self,
@@ -487,6 +522,7 @@ class OverlayNarrator:
         is_live: Callable[[], bool],
         min_interval_s: float = _MIN_THOUGHT_INTERVAL_S,
         event_interval_s: float = _MIN_EVENT_INTERVAL_S,
+        overheard_interval_s: float = _MIN_OVERHEARD_INTERVAL_S,
         stream_status: Optional[Callable[[], dict]] = None,
         stream_feed=None,
         memes=None,
@@ -525,6 +561,7 @@ class OverlayNarrator:
         self._is_live = is_live
         self._min_interval = min_interval_s
         self._event_interval = event_interval_s
+        self._overheard_interval = overheard_interval_s
         # Statut du live ({live, title, category, viewers, started_at}) pour les
         # widgets qui ont besoin de données réelles (uptime).
         self._stream_status = stream_status
@@ -552,13 +589,18 @@ class OverlayNarrator:
         # Objectif du live (follows / subs / bits), rempli par les
         # événements réels plutôt que par un chiffre saisi à la main.
         self._goal: Optional[dict] = None
-        # Dernières bulles dites : sert à ne pas répéter la même chose.
-        self._recent_bubbles: deque = deque(maxlen=8)
+        # Dernières bulles dites : sert à ne pas répéter la même chose. La
+        # profondeur suit la cadence — à un tour de parole toutes les 2 min 30,
+        # huit bulles ne couvraient que vingt minutes, et « il rit tout seul »
+        # revenait trois fois dans la même soirée avec un jugement différent.
+        # Quarante couvrent un live entier.
+        self._recent_bubbles: deque = deque(maxlen=40)
         # Messages du chat par personne depuis le début du live : sert au
         # classement des bavards, à la demande.
         self._talkers: dict = {}
         self._last_bubble_at: float = 0.0
         self._last_event_at: float = 0.0
+        self._last_overheard_at = 0.0
 
     def activate(self) -> None:
         """S'enregistre comme narrateur lu par `current_overlay_state_block()`."""
@@ -660,6 +702,23 @@ class OverlayNarrator:
             return False
         return (time.monotonic() - self._last_event_at) >= self._event_interval
 
+    def _may_overhear(self) -> bool:
+        """Budget de la parole entendue, distinct de celui des événements.
+
+        Le vocal arrive en continu ; les événements sont rares et attendus. Une
+        horloge commune faisait que l'un mangeait le créneau de l'autre — dans
+        les deux sens, et toujours au détriment du plus rare.
+
+        Le créneau des événements reste consulté : deux bulles ne doivent pas se
+        chevaucher à l'écran. L'inverse n'est pas vrai.
+        """
+        if not self._may_react():
+            return False
+        dernier = getattr(self, "_last_overheard_at", 0.0)
+        if dernier <= 0.0:
+            return True     # jamais réagi : l'horloge monotone ne dit rien
+        return (time.monotonic() - dernier) >= self._overheard_interval
+
     def _mark_spoken(self) -> None:
         self._last_bubble_at = time.monotonic()
 
@@ -690,6 +749,26 @@ class OverlayNarrator:
                 return True
         return False
 
+    def _is_echo(self, text: str, entendu: str, noms: Optional[set] = None) -> bool:
+        """Vrai si la bulle n'apporte aucun mot à elle : elle redit l'échange.
+
+        Le défaut le plus massif de l'overlay n'est pas une faute, c'est le
+        vide : « Il vise encore les murs » juste après « je vise les murs ».
+        Écrire la liste des tournures à bannir ne servirait à rien — le modèle
+        en trouve d'autres à l'infini. Ce qu'on peut exiger mécaniquement, c'est
+        qu'une bulle contienne des mots que personne ne venait de prononcer.
+
+        Les prénoms des présents (`noms`) sortent du calcul : la consigne
+        demande de nommer les gens, ce filtre ne doit ni y pousser ni le punir.
+        """
+        mots = self._key_words(text) - (noms or set())
+        if len(mots) < 2:
+            # Une bulle de deux mots porteurs n'a pas de quoi se juger — et une
+            # brève bien placée n'est pas du remplissage.
+            return False
+        apport = mots - self._key_words(entendu)
+        return (len(apport) / len(mots)) < _MIN_APPORT
+
     def _remember_bubble(self, text: str) -> None:
         words = self._key_words(text)
         if words:
@@ -718,6 +797,12 @@ class OverlayNarrator:
         if refus is None:
             refus = self._budget_refus = {}
         refus[raison] = refus.get(raison, 0) + 1
+        if refus[raison] == 1:
+            # Une seule ligne par motif et par salve : sans elle, un overlay
+            # muet toute une soirée ne laisse RIEN dans `app.log` tant qu'aucune
+            # bulle ne part vider le compteur — et c'est justement le jour où on
+            # cherche pourquoi il s'est tu.
+            logger.info("Overlay: bulle retenue ({r})", r=raison)
 
     def _drain_budget(self) -> dict:
         refus = getattr(self, "_budget_refus", None) or {}
@@ -778,7 +863,8 @@ class OverlayNarrator:
             # Distinguer les deux refus : « pas de live » et « trop tôt » n'ont
             # pas la même correction.
             raison = "hors live" if not self._live() else "intervalle non écoulé"
-            logger.info("Overlay: pensée retenue ({r})", r=raison)
+            # La trace est posée par `_note_budget`, une fois par salve : la
+            # même ligne à chaque pensée retenue noyait le reste.
             self._note_budget(raison)
             return None
 
@@ -868,11 +954,55 @@ class OverlayNarrator:
 
         Jamais de trois-points ni d'avatar qui s'emballe : le vocal passe ici à
         chaque phrase du live, et le silence y est le cas normal.
+
+        Ce n'est pas la phrase seule qui part au modèle mais l'ÉCHANGE dont elle
+        est le dernier tour : une réplique isolée ne laisse rien à faire d'autre
+        que la paraphraser, et une conversation à quatre ne se comprend que sur
+        plusieurs tours.
         """
+        # Une bulle est publique et définitive. Tant que la parole du vocal
+        # n'est pas diffusée au live, elle est PRIVÉE : la paraphraser à l'écran
+        # la publie tout autant que la citer. Le mode test de l'overlay suffit à
+        # faire passer un vocal privé par ici.
+        if not _vocal_diffuse():
+            self._note_budget("vocal non diffusé")
+            return None
+        if not self._may_overhear():
+            self._note_budget(
+                "hors live" if not self._live() else "tour de parole non écoulé"
+            )
+            return None
+        # Le créneau est réservé avant l'appel : l'attente vaut pour la
+        # tentative, pas pour la publication — sinon un « RIEN » relancerait
+        # aussitôt un appel sur la phrase suivante.
+        self._last_overheard_at = time.monotonic()
+        echange, noms = self._overheard_context(line)
         return await self._react_to(
-            line, system=_OVERHEARD_SYSTEM, show_thinking=False, strong_hints=False,
-            source="overheard",
+            echange, system=_OVERHEARD_SYSTEM, show_thinking=False, strong_hints=False,
+            source="overheard", noms=noms, evenement=False,
         )
+
+    def _overheard_context(self, line: str) -> tuple[str, set]:
+        """L'échange récent du vocal, et les mots qui sont des PRÉNOMS.
+
+        Retombe sur la phrase seule si le tampon n'a rien : un contexte absent
+        ne doit pas faire taire l'overlay.
+        """
+        tours: list[tuple[str, str]] = []
+        try:
+            from bot.core.voice_transcript import active_voice_transcript
+
+            feed = active_voice_transcript()
+            if feed is not None:
+                tours = feed.recent_lines(_OVERHEARD_CONTEXT_LINES)
+        except Exception as exc:  # noqa: BLE001 — un contexte absent n'est pas fatal
+            logger.debug("Overlay: échange vocal illisible ({e})", e=exc)
+        if not tours:
+            return line, set()
+        noms: set = set()
+        for locuteur, _texte in tours:
+            noms |= self._key_words(locuteur)
+        return "\n".join(f"{locuteur} : {texte}" for locuteur, texte in tours), noms
 
     async def _react_to(
         self,
@@ -883,6 +1013,8 @@ class OverlayNarrator:
         strong_hints: bool = True,
         strong: bool = False,
         source: str = "react",
+        noms: Optional[set] = None,
+        evenement: bool = True,
     ) -> Optional[str]:
         description = (description or "").strip()
         if not description:
@@ -893,7 +1025,11 @@ class OverlayNarrator:
             )
             return None
 
-        self._last_event_at = time.monotonic()
+        # Le vocal tient son propre créneau (`_may_overhear`) : lui laisser
+        # consommer celui des événements muselait un raid pendant tout le temps
+        # d'un commentaire de partie.
+        if evenement:
+            self._last_event_at = time.monotonic()
         # L'avatar s'emballe tout de suite sur les gros moments : la réaction
         # visuelle est immédiate, la bulle arrive après la condensation.
         #
@@ -933,6 +1069,15 @@ class OverlayNarrator:
             # N'éteindre que ce qu'on a allumé. Le vocal passif passe ici à chaque
             # phrase entendue avec `show_thinking=False` ; un `thinking(False)`
             # non apparié efface la bulle affichée deux secondes plus tôt.
+            if show_thinking:
+                self._feed.thinking(False)
+            return None
+        if self._is_echo(short, description, noms):
+            logger.info("Overlay: réplique écartée (n'apporte rien) — « {t} »", t=short)
+            self._journal("overlay_rejected", source, description, trace_id=trace,
+                          motif="n'apporte rien à ce qui vient d'être dit",
+                          candidat=short,
+                          condense_ms=int((time.monotonic() - depart) * 1000))
             if show_thinking:
                 self._feed.thinking(False)
             return None
@@ -2396,8 +2541,14 @@ class OverlayNarrator:
     async def _condense(self, text: str, system: Optional[str] = None,
                         *, source: str = "", trace: str = "") -> Optional[str]:
         depart = time.monotonic()
+        # Rendu ICI et pas au chargement : ces prompts sont des constantes de
+        # module, lues avant que l'identité ne soit posée (`render=False`). Le
+        # modèle recevait donc « la réaction de {{BOT_NAME}} » en toutes
+        # lettres — même patron que `emotion.py`, qui rend au moment de l'appel.
+        from bot.intelligence.identity import render_identity
+
         raw = await self._llm.complete(
-            system or _CONDENSE_SYSTEM,
+            render_identity(system or _CONDENSE_SYSTEM),
             [{"role": "user", "content": text}],
             purpose="overlay_thought",
         )

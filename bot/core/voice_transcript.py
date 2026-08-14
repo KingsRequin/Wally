@@ -242,6 +242,23 @@ class VoiceTranscriptFeed:
     def _fresh(self, now: float) -> list[tuple[float, str, str]]:
         return [line for line in self._lines if now - line[0] <= self._line_ttl]
 
+    def recent_lines(self, limit: int = 8) -> list[tuple[str, str]]:
+        """Les dernières répliques fraîches, de la plus ancienne à la plus récente.
+
+        Pour les consommateurs qui ont besoin de l'ÉCHANGE et non d'une phrase
+        seule : « et toi ? » ne veut rien dire sans le tour d'avant, et une
+        vanne à quatre se comprend sur trois tours. `render()` ne convient pas
+        pour ça — il emballe les répliques dans des consignes destinées aux
+        réponses écrites.
+
+        Même garde que le reste : hors diffusion, le tampon est vide de toute
+        façon, mais on refuse explicitement plutôt que de compter dessus.
+        """
+        if self._broadcast_channel_id is None:
+            return []
+        lines = self._fresh(time.monotonic())
+        return [(speaker, text) for _ts, speaker, text in lines][-max(1, limit):]
+
     def _present_label(self) -> str:
         if self._presence_source is None:
             return ""

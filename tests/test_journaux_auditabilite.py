@@ -148,6 +148,7 @@ def _narrateur(jrnl, condense="Une réplique courte.", emotion=None):
     n = OverlayNarrator(MagicMock(), llm, lambda: True, conv_log=jrnl, emotion=moteur)
     n._min_interval = 0.0
     n._event_interval = 0.0
+    n._overheard_interval = 0.0
     return n
 
 
@@ -190,34 +191,37 @@ def _vocal_diffuse(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_le_vocal_non_diffuse_ne_laisse_aucun_MOT_dans_le_journal():
+async def test_le_vocal_non_diffuse_ne_produit_aucune_bulle():
     """Le mode test de l'overlay suffit à faire passer de la parole PRIVÉE par
-    `on_overheard`. La mesure reste, les mots partent."""
+    `on_overheard`. Une bulle la publierait aussi sûrement qu'une citation :
+    paraphraser sur un écran public reste publier.
+
+    Ce test disait l'inverse jusqu'au 2026-08-14 — il exigeait qu'une bulle
+    parte, en se contentant de vérifier que le JOURNAL, lui, était caviardé.
+    """
     jrnl = _Journal()
     n = _narrateur(jrnl, condense="Ils parlent de leur boulot.")
 
-    await n.on_overheard("Azraël (vocal) : mon salaire c'est 2400 net")
+    dit = await n.on_overheard("Azraël (vocal) : mon salaire c'est 2400 net")
 
-    bulle, = jrnl.of("overlay_bubble")
-    assert "salaire" not in str(bulle)
-    assert "2400" not in str(bulle)
-    assert "boulot" not in str(bulle)
-    # Ce qui reste est ce qui sert à auditer le FILTRE, pas la conversation.
-    assert bulle["source"] == "overheard"
-    assert isinstance(bulle["condense_ms"], int)
+    assert dit is None
+    assert jrnl.of("overlay_bubble") == []
+    n._feed.say.assert_not_called()
+    # Le refus est compté, pas silencieux : il repart avec la prochaine ligne.
+    assert n._budget_refus == {"vocal non diffusé": 1}
 
 
 @pytest.mark.asyncio
 async def test_le_vocal_diffuse_est_consigne_en_clair(_vocal_diffuse):
     """Pendant un live, ce vocal est déjà entendu par les viewers."""
     jrnl = _Journal()
-    n = _narrateur(jrnl, condense="Il a raté le saut.")
+    n = _narrateur(jrnl, condense="Il compte ses chutes comme des trophées.")
 
     await n.on_overheard("Azraël (vocal) : j'ai encore raté le saut")
 
     bulle, = jrnl.of("overlay_bubble")
     assert "raté le saut" in bulle["entree"]
-    assert bulle["texte"] == "Il a raté le saut."
+    assert bulle["texte"] == "Il compte ses chutes comme des trophées."
 
 
 @pytest.mark.asyncio
@@ -235,12 +239,12 @@ async def test_une_replique_deja_dite_est_enregistree_avec_son_candidat(_vocal_d
 
 
 @pytest.mark.asyncio
-async def test_les_refus_de_budget_sont_comptes_pas_ecrits_un_par_un():
+async def test_les_refus_de_budget_sont_comptes_pas_ecrits_un_par_un(_vocal_diffuse):
     """`on_overheard` passe à CHAQUE phrase du live : une ligne par refus
     noierait le journal sous le bruit qu'il sert à écarter."""
     jrnl = _Journal()
     n = _narrateur(jrnl)
-    n._event_interval = 3600.0          # tout est refusé sauf la première
+    n._overheard_interval = 3600.0      # tout est refusé sauf la première
 
     for i in range(5):
         await n.on_overheard(f"Bob (vocal) : phrase {i}")
