@@ -83,6 +83,27 @@ _UNKNOWN_STREAM = {**_OFFLINE_STREAM, "unknown": True}
 
 
 
+# Limites Twitch sur une récompense de points de chaîne (§6 de la spec du duel).
+TITRE_MAX = 45
+PROMPT_MAX = 200
+
+
+def _corps_recompense(titre: str, cout: int, prompt: str) -> dict:
+    """Les champs éditables d'une récompense, tronqués aux limites Twitch.
+
+    Partagé par la création et la mise à jour, et c'est tout l'intérêt : une
+    récompense créée et la même récompense mise à jour portent ainsi le MÊME
+    libellé au caractère près. Sans ce partage, un titre trop long serait
+    tronqué à la création puis jugé « différent » du titre configuré à chaque
+    démarrage — un PATCH par boot, indéfiniment.
+    """
+    return {
+        "title": (titre or "")[:TITRE_MAX],
+        "cost": max(1, int(cout)),
+        "prompt": (prompt or "")[:PROMPT_MAX],
+    }
+
+
 def _fold(text: str) -> str:
     """Minuscules sans accents : « fusée » et « fusee » se cherchent pareil."""
     text = unicodedata.normalize("NFD", (text or "").lower())
@@ -497,8 +518,35 @@ class TwitchAPI:
         vérifie que le corps renvoie bien `status: CANCELED`. Ce projet a déjà
         payé la leçon avec `is_sent` sur l'envoi de messages.
         """
+        return await self._trancher_redemption(reward_id, redemption_id, "CANCELED")
+
+    async def honorer_redemption(self, reward_id: str, redemption_id: str) -> bool:
+        """Marque une redemption comme honorée — les points sont CONSOMMÉS.
+
+        Le pendant du remboursement, et il n'est pas décoratif : une redemption
+        laissée `UNFULFILLED` reste dans la file de validation du streamer et
+        s'y accumule duel après duel. Chaque duel se solde donc par l'un ou par
+        l'autre, jamais par rien.
+
+        Même patron que `refund_redemption` — token streamer, retry sur 401,
+        vérification du CORPS (`status: FULFILLED`) et non du seul statut HTTP.
+        """
+        return await self._trancher_redemption(reward_id, redemption_id, "FULFILLED")
+
+    async def _trancher_redemption(self, reward_id: str, redemption_id: str,
+                                   statut: str) -> bool:
+        """Le PATCH commun aux deux issues d'une redemption.
+
+        Un seul corps de méthode pour `CANCELED` et `FULFILLED` : les deux
+        portent le même filet (token streamer, retry sur 401, lecture du corps),
+        et le dédoubler garantissait qu'une correction future ne s'applique qu'à
+        moitié.
+        """
+        rendu = ("points rendus au viewer" if statut == "CANCELED"
+                 else "points consommés")
         if not (reward_id and redemption_id):
-            logger.warning("Remboursement impossible : reward_id ou redemption_id vide")
+            logger.warning("Redemption {s} impossible : reward_id ou redemption_id vide",
+                           s=statut)
             return False
         try:
             async with httpx.AsyncClient() as client:
@@ -507,7 +555,7 @@ class TwitchAPI:
                         self.REDEMPTIONS_URL,
                         params={"broadcaster_id": self._broadcaster_id,
                                 "reward_id": reward_id, "id": redemption_id},
-                        json={"status": "CANCELED"},
+                        json={"status": statut},
                         headers={"Authorization": f"Bearer {self._tm.streamer_token}",
                                  "Client-Id": self._client_id},
                         timeout=10,
@@ -515,33 +563,35 @@ class TwitchAPI:
                     if resp.status_code == 401:
                         if attempt == 0:
                             logger.warning(
-                                "Remboursement 401 — renouvellement du token streamer"
+                                "Redemption {s} 401 — renouvellement du token streamer",
+                                s=statut,
                             )
                             refreshed = await self._tm.refresh("streamer")
                             if not refreshed:
                                 logger.error(
                                     "Renouvellement du token streamer échoué — "
-                                    "remboursement abandonné"
+                                    "redemption {s} abandonnée", s=statut,
                                 )
                                 return False
                             continue
-                        logger.error("Remboursement 401 après renouvellement — abandon")
-                        return False
-                    if resp.status_code != 200:
-                        logger.error("Remboursement refusé HTTP {c} : {t}",
-                                     c=resp.status_code, t=resp.text[:200])
-                        return False
-                    data = (resp.json() or {}).get("data") or []
-                    statut = (data[0] or {}).get("status") if data else None
-                    if statut != "CANCELED":
-                        logger.error("Remboursement non appliqué — statut rendu : {s}",
+                        logger.error("Redemption {s} 401 après renouvellement — abandon",
                                      s=statut)
                         return False
-                    logger.info("Points rendus au viewer (redemption {r})", r=redemption_id)
+                    if resp.status_code != 200:
+                        logger.error("Redemption {s} refusée HTTP {c} : {t}",
+                                     s=statut, c=resp.status_code, t=resp.text[:200])
+                        return False
+                    data = (resp.json() or {}).get("data") or []
+                    rendu_api = (data[0] or {}).get("status") if data else None
+                    if rendu_api != statut:
+                        logger.error("Redemption non appliquée — statut rendu : {s}",
+                                     s=rendu_api)
+                        return False
+                    logger.info("Duel : {r} (redemption {i})", r=rendu, i=redemption_id)
                     return True
                 return False
-        except Exception as exc:  # noqa: BLE001 — un remboursement raté ne tue pas le duel
-            logger.error("Remboursement en erreur : {e}", e=exc)
+        except Exception as exc:  # noqa: BLE001 — un arbitrage raté ne tue pas le duel
+            logger.error("Redemption {s} en erreur : {e}", s=statut, e=exc)
             return False
 
     async def recompenses_gerables(self) -> list[dict] | None:
@@ -610,10 +660,8 @@ class TwitchAPI:
         rendrait le duel indisponible sans rattrapage.
         """
         corps = {
-            "title": (titre or "")[:45],           # 45 caractères max côté Twitch
-            "cost": max(1, int(cout)),
-            "prompt": (prompt or "")[:200],        # 200 max
-            "is_user_input_required": True,        # le viewer colle son uid
+            **_corps_recompense(titre, cout, prompt),
+            "is_user_input_required": True,        # le viewer colle son pseudo ou son uid
             "is_enabled": True,
             # JAMAIS True : une redemption qui saute la file est aussitôt
             # FULFILLED, et seul un statut UNFULFILLED peut être mis à jour.
@@ -662,6 +710,91 @@ class TwitchAPI:
         except Exception as exc:  # noqa: BLE001
             logger.error("Création de récompense en erreur : {e}", e=exc)
             return None
+
+    async def maj_recompense(self, reward_id: str, titre: str, cout: int,
+                             prompt: str, *, actuelle: dict | None = None) -> bool:
+        """Aligne une récompense EXISTANTE sur le libellé voulu (PATCH).
+
+        Sans elle, éditer `apex.duel` dans `config.yaml` ne changeait rien :
+        la récompense n'était écrite qu'à sa création, et la seule façon de la
+        corriger aurait été de la recréer — or une récompense recréée perd son
+        historique, et une récompense créée hors de notre application est
+        irremboursable (403). On modifie donc, jamais on ne remplace.
+
+        `actuelle` est la récompense telle que Twitch la rend. Les champs qu'on
+        y lit déjà à la bonne valeur ne déclenchent rien, et si RIEN ne diffère
+        aucun appel ne part — un boot ne doit pas écrire pour écrire. Un champ
+        ABSENT de `actuelle` n'est pas un champ vide : on n'en conclut pas
+        qu'il diffère, sinon une réponse partielle de Twitch ferait patcher à
+        chaque démarrage.
+
+        Même patron que ses voisines : token streamer, retry une fois sur 401,
+        lecture du CORPS (le champ doit être revenu à la valeur demandée) et
+        non du seul statut HTTP, et aucune exception qui remonte.
+        """
+        if not reward_id:
+            logger.warning("Mise à jour de récompense impossible : reward_id vide")
+            return False
+        try:
+            # DANS le `try` : un coût illisible en configuration ne doit pas
+            # remonter jusqu'au démarrage du bot pour un simple libellé.
+            corps = _corps_recompense(titre, cout, prompt)
+            if actuelle is not None:
+                ecarts = {c: v for c, v in corps.items()
+                          if c in actuelle and actuelle[c] != v}
+                if not ecarts:
+                    return True
+                logger.info("Récompense de duel {i} à réaligner : {e}",
+                            i=reward_id, e=", ".join(sorted(ecarts)))
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.patch(
+                        self.REWARDS_URL,
+                        params={"broadcaster_id": self._broadcaster_id,
+                                "id": reward_id},
+                        json=corps,
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401:
+                        if attempt == 0:
+                            logger.warning(
+                                "Mise à jour de récompense 401 — renouvellement du "
+                                "token streamer"
+                            )
+                            refreshed = await self._tm.refresh("streamer")
+                            if not refreshed:
+                                logger.error(
+                                    "Renouvellement du token streamer échoué — "
+                                    "mise à jour de récompense abandonnée"
+                                )
+                                return False
+                            continue
+                        logger.error(
+                            "Mise à jour de récompense 401 après renouvellement — abandon"
+                        )
+                        return False
+                    if resp.status_code != 200:
+                        logger.error("Mise à jour de récompense refusée HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return False
+                    data = (resp.json() or {}).get("data") or []
+                    rendue = (data[0] or {}) if data else {}
+                    restants = [c for c, v in corps.items()
+                                if c in rendue and rendue[c] != v]
+                    if not rendue or restants:
+                        logger.error(
+                            "Mise à jour de récompense non appliquée — toujours "
+                            "différent : {r}", r=", ".join(sorted(restants)) or "corps vide")
+                        return False
+                    logger.info("Récompense de duel mise à jour : {t} ({i})",
+                                t=corps["title"], i=reward_id)
+                    return True
+                return False
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Mise à jour de récompense en erreur : {e}", e=exc)
+            return False
 
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.

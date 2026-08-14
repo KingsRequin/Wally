@@ -49,6 +49,7 @@ def _runner_avec_duel_persiste(reward_id_dans_le_duel: str = ""):
     api = MagicMock()
     api.recompenses_gerables = AsyncMock(return_value=[{"id": "rw-1"}])
     api.creer_recompense = AsyncMock(return_value="rw-NEUVE")
+    api.maj_recompense = AsyncMock(return_value=True)
     return DuelRunner(client=MagicMock(), db=db, api=api, annoncer=AsyncMock(),
                       azrael_uid="7"), api
 

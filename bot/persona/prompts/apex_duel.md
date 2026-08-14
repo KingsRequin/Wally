@@ -24,7 +24,10 @@ Donne le score de la manche et le total. Si la manche est « non mesurable », d
 franchement : aucun kill n'a été enregistré, ce n'est pas un zéro.
 
 ## verdict
-Nomme le vainqueur et le score final. En cas d'égalité, dis que personne ne l'emporte.
+Nomme le vainqueur et le score final, puis dis ce qui arrive aux points — c'est la
+règle du duel, pas un détail : le duelliste qui gagne récupère ses points de chaîne,
+celui qui perd les a dépensés, et une égalité rembourse aussi. Les chiffres et l'issue
+te sont donnés, tu ne les recalcules pas ; le ton, lui, t'appartient.
 
 ## refus
 Explique pourquoi le duel ne peut pas commencer, et précise que les points ont été

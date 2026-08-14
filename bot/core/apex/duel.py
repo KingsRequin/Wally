@@ -381,9 +381,16 @@ class Duel:
             })]
         self.etat = Etat.VERDICT
         a, v = self.total_azrael, self.total_viewer
+        gagnant = None if a == v else ("azrael" if a > v else "viewer")
         return [Evenement("verdict", {
             "azrael": a, "viewer": v,
-            "gagnant": None if a == v else ("azrael" if a > v else "viewer"),
+            "gagnant": gagnant,
+            # La règle du duel : le duelliste qui gagne est REMBOURSÉ — c'est
+            # ça, la récompense — et celui qui perd a dépensé ses points.
+            # L'égalité rembourse : il n'a pas perdu, et le doute lui profite.
+            # C'est ici et nulle part ailleurs que ça se décide : le runner ne
+            # fait qu'exécuter, l'annonceur ne fait que le dire.
+            "rembourser": gagnant != "azrael",
             "scores": copy.deepcopy(self.scores),
             "camps": copy.deepcopy(self.camps),
         })]

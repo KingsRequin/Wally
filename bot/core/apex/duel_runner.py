@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable
 
@@ -42,6 +43,9 @@ ETAPES_UID = (
 # Au-delà, on rend les points : mieux vaut un remboursement qu'un viewer qui
 # attend indéfiniment.
 TENTATIVES_RESOLUTION = 3
+
+# Le compte du streamer, quelle que soit la façon dont on l'a désigné.
+MOTIF_SOI_MEME = "un duel contre soi-même n'a pas de vainqueur"
 
 # Les badges Twitch qui donnent la main sur un duel. La décision se prend ici,
 # sur la donnée du message — jamais dans un prompt : un LLM à qui un viewer
@@ -97,6 +101,26 @@ def _id_twitch(valeur) -> str:
     return brut if brut.isdigit() else ""
 
 
+def _tranche_les_points(evts: list[Evenement]) -> Evenement | None:
+    """L'événement qui SOLDE les points de la redemption — un seul par salve.
+
+    Une salve peut en porter deux : quand le duelliste ne revient pas après une
+    manche mesurée, `avancer()` rend un `abandon` PUIS un `verdict`. C'est le
+    verdict qui tranche, parce qu'il dit qui a gagné et que depuis la règle du
+    propriétaire c'est le vainqueur qui décide du sort des points ; l'abandon,
+    lui, dit seulement que partir ne rend rien de soi-même.
+
+    Solder deux fois enverrait à Twitch deux ordres contradictoires sur la même
+    redemption, et le second serait perdu : une redemption `FULFILLED` ne
+    redevient jamais `CANCELED`.
+    """
+    for type_evt in ("verdict", "abandon"):
+        for evt in evts:
+            if evt.type == type_evt:
+                return evt
+    return None
+
+
 def _camp(profil: dict) -> dict:
     """La légende jouée et le niveau du compte, lus dans le profil déjà sondé.
 
@@ -125,6 +149,40 @@ def _uid_valide(saisie: str) -> str | None:
     la saisie vient d'un viewer, c'est de l'entrée non fiable."""
     nettoye = (saisie or "").strip()
     return nettoye if nettoye.isdigit() else None
+
+
+# Un pseudo Apex plausible : lettres (accents compris), chiffres, et les
+# quelques signes que les identifiants EA tolèrent. Tout le reste — ponctuation
+# de requête, guillemets, caractères de contrôle — est écarté SANS appel réseau :
+# la saisie vient d'un viewer, et rien ne justifie d'envoyer « '; DROP TABLE-- »
+# à une API tierce. Le pseudo retenu part ensuite en PARAMÈTRE de requête
+# (`params=`, échappé par httpx), jamais concaténé dans une URL.
+_PSEUDO_APEX = re.compile(r"[\w .\-\[\]|]{3,32}", re.UNICODE)
+
+
+def _pseudo_valide(saisie: str) -> str | None:
+    """Un pseudo Apex exploitable, ou None. Validé AVANT tout appel réseau.
+
+    Les espaces multiples sont réduits et les bords rognés : un viewer colle
+    souvent son pseudo avec un retour à la ligne. Ce qui ne ressemble pas à un
+    pseudo tombe sur le repli « voici comment trouver ton UID » (§9 de la
+    spec) — jamais sur un refus, la recherche par pseudo de cette API ratant
+    par ailleurs des comptes parfaitement réels.
+    """
+    nettoye = " ".join((saisie or "").split())
+    return nettoye if _PSEUDO_APEX.fullmatch(nettoye) else None
+
+
+def _uid_du_profil(profil: dict) -> str:
+    """L'identifiant Apex porté par un profil `/bridge`, `""` s'il n'y en a pas.
+
+    Sans lui, un compte résolu par pseudo n'aurait aucun identifiant à sonder
+    ensuite — et surtout, la comparaison avec le compte du streamer se ferait
+    sur un pseudo, qui s'écrit de dix façons.
+    """
+    if not isinstance(profil, dict):
+        return ""
+    return str((profil.get("global") or {}).get("uid") or "").strip()
 
 
 # Même patron que `bot/core/apex/watcher.py` (`_active`/`current_apex_block()`)
@@ -249,6 +307,13 @@ class DuelRunner:
         `None`, panne Twitch), on ne recrée JAMAIS sur ce doute : ce serait
         perdre l'ID connu, écraser la clé persistée, et rendre irremboursable
         (403) toute redemption en vol sur l'ancienne récompense.
+
+        Une récompense retrouvée est aussi REMISE À JOUR si son titre, son coût
+        ou son invite ont bougé en configuration. Sans ça, éditer `apex.duel`
+        n'avait aucun effet : le libellé n'était écrit qu'à la création, et la
+        récompense en service continuait d'annoncer autre chose. On la modifie,
+        jamais on ne la recrée — une récompense recréée perd son historique, et
+        une récompense créée hors de notre application est irremboursable.
         """
         connu = await self._db.get_state(CLE_RECOMPENSE)
         if connu:
@@ -259,8 +324,13 @@ class DuelRunner:
                     i=connu)
                 self._reward_id = connu
                 return connu
-            if connu in {r.get("id") for r in gerables}:
+            actuelle = next((r for r in gerables if r.get("id") == connu), None)
+            if actuelle is not None:
                 self._reward_id = connu
+                # Une mise à jour ratée ne coûte que le libellé : le duel reste
+                # jouable et remboursable sur la récompense existante.
+                await self._api.maj_recompense(connu, titre, cout, prompt,
+                                               actuelle=actuelle)
                 return connu
             logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
         nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
@@ -347,21 +417,36 @@ class DuelRunner:
             await self._refuser(reward_id, redemption_id, "un duel est déjà en cours")
             return
 
-        uid = _uid_valide(saisie)
-        if uid is None:
-            # Pas de remboursement au premier essai : la recherche par pseudo
-            # de l'API rate des comptes bien réels, ce serait punir le viewer
-            # pour un défaut qui n'est pas le sien.
+        saisie_numerique = _uid_valide(saisie)
+        if saisie_numerique == self._azrael_uid:
+            # Tranché sans le moindre appel réseau quand l'identifiant est
+            # donné tel quel.
+            await self._refuser(reward_id, redemption_id, MOTIF_SOI_MEME)
+            return
+
+        resolu = await self._resoudre(saisie)
+        if resolu is None:
+            if saisie_numerique is not None:
+                # Un identifiant numérique qu'on ne sait pas lire : c'est ce
+                # compte-là qui est en cause, pas la façon de l'écrire.
+                await self._refuser(
+                    reward_id, redemption_id,
+                    "aucun tracker de kills n'est épinglé sur ce compte")
+                return
+            # Un pseudo non résolu : PAS de remboursement au premier essai, la
+            # recherche par pseudo de l'API rate des comptes bien réels — ce
+            # serait punir le viewer pour un défaut qui n'est pas le sien.
             await self._demander_uid(acheteur, reward_id, redemption_id,
                                      acheteur_id=acheteur_id)
             return
-        if uid == self._azrael_uid:
-            await self._refuser(reward_id, redemption_id,
-                                "un duel contre soi-même n'a pas de vainqueur")
-            return
 
-        profil = await self._profil(uid)
-        if profil is None or not read_kill_trackers(profil):
+        uid, profil = resolu
+        if uid == self._azrael_uid:
+            # Le viewer a donné le PSEUDO d'Azraël : la comparaison ne portait
+            # que sur l'identifiant, et ce chemin-là passait au travers.
+            await self._refuser(reward_id, redemption_id, MOTIF_SOI_MEME)
+            return
+        if not read_kill_trackers(profil):
             await self._refuser(
                 reward_id, redemption_id,
                 "aucun tracker de kills n'est épinglé sur ce compte")
@@ -405,21 +490,27 @@ class DuelRunner:
         if auteur.lower() != duel.viewer_nom.lower():
             return False
 
-        uid = _uid_valide(texte)
-        if uid is not None and uid != self._azrael_uid:
-            profil = await self._profil(uid)
-            if self.duel_en_cours is not duel:
-                # La sonde de fond (`tick()`) a pu faire expirer ce duel
-                # PENDANT cet appel réseau d'~1 s (délai de résolution
-                # écoulé) : remboursement et abandon déjà annoncés sur
-                # l'objet `duel` capturé ci-dessus, qui est maintenant
-                # orphelin. Reprendre dessus rouvrirait un duel fantôme
-                # (« duel_ouvert » juste après « abandonné ») ou, plus bas,
-                # rembourserait une seconde fois la même redemption. Le
-                # message reste consommé : il ne doit pas repartir dans le
-                # traitement normal du chat.
-                return True
-            if profil is not None and read_kill_trackers(profil):
+        # Un pseudo est accepté ici aussi : le viewer a pu se tromper de
+        # plateforme ou d'orthographe au premier essai, pas forcément renoncer
+        # à son pseudo. Le compte d'Azraël reste écarté, donné sous l'une ou
+        # l'autre forme.
+        resolu = None
+        if _uid_valide(texte) != self._azrael_uid:
+            resolu = await self._resoudre(texte)
+        if self.duel_en_cours is not duel:
+            # La sonde de fond (`tick()`) a pu faire expirer ce duel
+            # PENDANT cet appel réseau d'~1 s (délai de résolution
+            # écoulé) : remboursement et abandon déjà annoncés sur
+            # l'objet `duel` capturé ci-dessus, qui est maintenant
+            # orphelin. Reprendre dessus rouvrirait un duel fantôme
+            # (« duel_ouvert » juste après « abandonné ») ou, plus bas,
+            # rembourserait une seconde fois la même redemption. Le
+            # message reste consommé : il ne doit pas repartir dans le
+            # traitement normal du chat.
+            return True
+        if resolu is not None and resolu[0] != self._azrael_uid:
+            uid, profil = resolu
+            if read_kill_trackers(profil):
                 duel.viewer_uid = uid
                 # Le délai d'attente du squad repart à neuf : il ne doit pas
                 # hériter du temps passé à chercher son uid.
@@ -448,6 +539,23 @@ class DuelRunner:
 
     # -- Sonde --------------------------------------------------------------
     async def _profil(self, uid: str) -> dict | None:
+        """Le profil du compte d'identifiant `uid`, ou `None`."""
+        return await self._bridge({"uid": uid})
+
+    async def _profil_par_pseudo(self, pseudo: str) -> dict | None:
+        """Le profil du compte qui porte ce pseudo, ou `None`.
+
+        L'API veut `platform` dans les deux cas — c'est déjà ce que fait le
+        reste du paquet (`service.py`), qui bascule entre `uid` et `player`
+        sans jamais lâcher la plateforme.
+
+        Rate des comptes parfaitement réels, mesuré sur plusieurs comptes y
+        compris avec la casse officielle : d'où le repli qui explique comment
+        trouver l'UID, et qui ne disparaît pas avec cette voie-ci.
+        """
+        return await self._bridge({"player": pseudo})
+
+    async def _bridge(self, cle: dict) -> dict | None:
         """Le profil, ou `None` si la sonde n'a rien donné d'exploitable.
 
         Trois formes d'échec à écarter, pas une seule : `client.get` peut
@@ -462,10 +570,36 @@ class DuelRunner:
         d'un duel — donc son absence signe un corps inexploitable.
         """
         p = await self._client.get(
-            "bridge", {"uid": uid, "platform": self._plateforme}, sans_cache=True)
+            "bridge", {**cle, "platform": self._plateforme}, sans_cache=True)
         if not isinstance(p, dict) or "Error" in p or "realtime" not in p:
             return None
         return p
+
+    async def _resoudre(self, saisie: str) -> tuple[str, dict] | None:
+        """Le compte Apex derrière une saisie de viewer : `(uid, profil)`.
+
+        Les DEUX formes prévues par la spec (§3) sont acceptées : un identifiant
+        purement numérique, ou un pseudo. Exiger l'uid renvoyait tout le monde
+        au mode d'emploi pour un achat qui coûte des points.
+
+        `None` dès que rien n'est exploitable — saisie aberrante écartée sans
+        appel réseau, compte introuvable, ou profil sans identifiant. L'appelant
+        décide alors quoi en faire : le repli explicatif pour un pseudo, un
+        refus pour un identifiant qu'on ne sait pas lire.
+        """
+        uid = _uid_valide(saisie)
+        if uid is not None:
+            profil = await self._profil(uid)
+            return (uid, profil) if profil is not None else None
+
+        pseudo = _pseudo_valide(saisie)
+        if pseudo is None:
+            return None
+        profil = await self._profil_par_pseudo(pseudo)
+        if profil is None:
+            return None
+        uid = _uid_du_profil(profil)
+        return (uid, profil) if uid else None
 
     async def _avancer(self, duel: Duel, releve: Releve) -> None:
         """Fait avancer la machine d'un relevé, et applique les effets."""
@@ -491,8 +625,7 @@ class DuelRunner:
                 logger.info(
                     "Duel Apex : abandon — {m} (manches jouées : {n})",
                     m=evt.donnees.get("motif"), n=evt.donnees.get("manches_jouees", 0))
-                if evt.donnees.get("rembourser"):
-                    await self._api.refund_redemption(self._reward_id, duel.redemption_id)
+        await self._solder(duel, _tranche_les_points(evts))
         # Terminal = VERDICT ou ABANDON : après un abandon survenu alors qu'au
         # moins une manche a été mesurée, l'état final est VERDICT et non
         # ABANDON (le duel tranche sur les manches jouées). Nettoyer sur « le
@@ -508,6 +641,24 @@ class DuelRunner:
         for evt in evts:
             if evt.type == "verdict":
                 await self._memoriser(duel, evt)
+
+    async def _solder(self, duel: Duel, evt: Evenement | None) -> None:
+        """Le sort des points, appliqué UNE fois et jamais laissé en suspens.
+
+        Rembourser quand l'événement le dit, honorer sinon. Le second n'est pas
+        une formalité : une redemption laissée `UNFULFILLED` reste dans la file
+        de validation du streamer et s'y empile duel après duel — c'est le
+        « ni l'un ni l'autre » qu'on refuse ici.
+
+        `None` = cette salve ne solde rien (début ou fin de manche) : on ne
+        touche pas aux points, ils sont encore en jeu.
+        """
+        if evt is None:
+            return
+        if evt.donnees.get("rembourser"):
+            await self._api.refund_redemption(self._reward_id, duel.redemption_id)
+            return
+        await self._api.honorer_redemption(self._reward_id, duel.redemption_id)
 
     async def _memoriser(self, duel: Duel, evt: Evenement) -> None:
         """Le duel laisse une trace : « tu m'avais mis 11–6 le mois dernier ».

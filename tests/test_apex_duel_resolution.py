@@ -14,12 +14,29 @@ from bot.core.apex.duel_runner import (TENTATIVES_RESOLUTION, URL_APEX_STATUS,
 
 PROFIL_OK = {"realtime": {}, "total": {"k": {"name": "BR Kills", "value": 10}}}
 
+# Ce que l'API rend quand elle ne trouve pas le compte — y compris pour des
+# comptes parfaitement réels cherchés par pseudo, ce qui est précisément la
+# raison d'être du repli testé ici.
+INTROUVABLE = {"Error": "Player not found."}
+
 
 def _runner(profils):
+    """Un runner dont l'API rend `profils` dans l'ordre, puis « introuvable ».
+
+    Le repli est le défaut : une saisie qui ressemble à un pseudo part
+    désormais au réseau, et ces tests portent tous sur ce qui se passe quand
+    ce compte n'est pas retrouvé.
+    """
+    restants = list(profils)
+
+    async def _get(*_args, **_kwargs):
+        return restants.pop(0) if restants else INTROUVABLE
+
     client = MagicMock()
-    client.get = AsyncMock(side_effect=list(profils))
+    client.get = AsyncMock(side_effect=_get)
     db = MagicMock(); db.get_state = AsyncMock(return_value=None); db.set_state = AsyncMock()
     api = MagicMock(); api.refund_redemption = AsyncMock(return_value=True)
+    api.honorer_redemption = AsyncMock(return_value=True)
     annoncer = AsyncMock()
     r = DuelRunner(client=client, db=db, api=api,
                    annoncer=annoncer, azrael_uid="7", plateforme="PC")

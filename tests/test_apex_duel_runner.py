@@ -24,8 +24,10 @@ def _runner(profil_viewer=None, memory=None):
     db.set_state = AsyncMock()
     api = MagicMock()
     api.refund_redemption = AsyncMock(return_value=True)
+    api.honorer_redemption = AsyncMock(return_value=True)
     api.recompenses_gerables = AsyncMock(return_value=[])
     api.creer_recompense = AsyncMock(return_value="")
+    api.maj_recompense = AsyncMock(return_value=True)
     return DuelRunner(client=client, db=db, api=api, memory=memory,
                       annoncer=AsyncMock(), azrael_uid="7", plateforme="PC"), client, db, api
 
@@ -413,7 +415,12 @@ async def test_tick_nettoie_meme_quand_labandon_tranche_en_verdict():
 
     assert duel.etat is Etat.VERDICT
     assert runner.duel_en_cours is None, "le duel terminal doit être nettoyé, VERDICT compris"
-    api.refund_redemption.assert_not_awaited()
+    # Le duelliste menait 5-2 sur la manche comptée : c'est le VERDICT qui
+    # solde, et depuis la règle du 2026-08-14 un duelliste vainqueur récupère
+    # ses points. L'abandon, lui, ne rembourse toujours pas de lui-même — il
+    # renvoie au verdict. Un seul ordre part vers Twitch, jamais deux.
+    api.refund_redemption.assert_awaited_once()
+    api.honorer_redemption.assert_not_awaited()
     types_annonces = [c.args[0].type for c in runner._annoncer.await_args_list]
     assert "abandon" in types_annonces
     assert "verdict" in types_annonces

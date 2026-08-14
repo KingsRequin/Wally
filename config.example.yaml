@@ -10,10 +10,15 @@ apex:
     # la console : Twitch réserve le remboursement à l'application qui a créé la
     # récompense. Son ID est retenu dans `bot_state` (clé `apex:duel_reward_id`),
     # jamais ici.
+    # Titre, coût et invite sont REMIS À JOUR au démarrage quand ils diffèrent
+    # de ce que Twitch renvoie (PATCH) : les éditer ici suffit, la récompense
+    # n'est jamais recréée — elle perdrait son historique.
     active: false                     # true pour activer le duel Apex en points de chaîne
     titre: "Duel Apex contre Azraël"   # 45 caractères max
     cout: 5000
-    prompt: "Colle ton UID Apex (apexlegendsstatus.com)"   # 200 max
+    # 200 max. Dit au viewer ce qu'il achète : le nombre de manches, ce qui
+    # départage, et ce qu'il peut coller dans la case (pseudo OU identifiant).
+    prompt: "3 manches contre Azraël sur Apex, le plus de kills gagne. Tu gagnes : tes points te sont rendus. Tu perds : ils sont dépensés. Colle ton pseudo Apex ou ton UID (apexlegendsstatus.com)."
     manches: 3
     cadence_s: 2
     attente_squad_min: 15

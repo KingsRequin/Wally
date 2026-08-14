@@ -116,17 +116,29 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         issue = ("personne ne l'emporte, c'est une égalité" if gagnant is None
                  else ("Azraël l'emporte" if gagnant == "azrael"
                        else f"{viewer} l'emporte"))
+        # Le sort des points fait partie du résultat, pas d'un post-scriptum :
+        # c'est la règle du duel (gagner rend les points, perdre les consomme)
+        # et le duelliste doit l'entendre en même temps que le score. Le fait
+        # vient de la machine à états, jamais d'une déduction locale.
+        points = (f"Les points de {viewer} lui sont rendus." if d.get("rembourser")
+                  else f"Les points de {viewer} sont consommés.")
         return (f"Duel terminé : Azraël {d.get('azrael')}, {viewer} "
-                f"{d.get('viewer')} — {issue}.")
+                f"{d.get('viewer')} — {issue}. {points}")
     if evt.type == "refus":
         return (f"Le duel ne peut pas commencer : {d.get('motif')}. "
                 "Les points ont été rendus.")
     if evt.type == "abandon":
         # `rembourser` tranche : annoncer un remboursement qui n'a pas eu lieu
         # serait un mensonge, et l'inverse une inquiétude pour rien.
+        #
+        # Quand il vaut False, un VERDICT suit dans la même salve (au moins une
+        # manche a été comptée) et c'est lui qui décide du sort des points. On
+        # renvoie donc vers lui au lieu d'affirmer une perte : depuis que le
+        # vainqueur est remboursé, « les points ne sont pas rendus » serait faux
+        # dès que le duelliste mène.
         rendu = ("Les points ont été rendus." if d.get("rembourser")
-                 else "Les points ne sont PAS rendus : au moins une manche a été "
-                      "jouée et comptée, le verdict tranche dessus.")
+                 else "Partir ne rend pas les points : c'est le verdict, sur les "
+                      "manches déjà comptées, qui tranche.")
         return f"Le duel s'arrête : {d.get('motif')}. {rendu}"
     if evt.type == "recommence":
         return (f"Les compteurs du duel repartent de zéro. {viewer} garde sa "
