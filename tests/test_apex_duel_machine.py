@@ -18,7 +18,15 @@ def kills(n):
 
 
 def duel_pret():
-    d = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3)
+    """Un duel prêt à jouer, SANS marge de lobby.
+
+    Ces séquences arbitrent des scores, pas des temporisations : la marge qui
+    laisse les compteurs se poser après un retour au lobby (`marge_lobby_s`) a
+    ses propres tests, dans `test_apex_duel_marge_lobby.py`. La neutraliser ici
+    garde les séquences lisibles — deux relevés au lobby, un score.
+    """
+    d = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3,
+             marge_lobby_s=0)
     d.etat = Etat.ATTENTE_SQUAD
     return d
 
@@ -471,7 +479,7 @@ def test_le_delai_et_le_plafond_sont_des_champs_configurables():
     à la construction doivent atteindre `avancer()` — et survivre au
     redémarrage comme le reste de l'état."""
     court = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3,
-                 attente_squad_s=60)
+                 attente_squad_s=60, marge_lobby_s=0)
     court.etat = Etat.ATTENTE_SQUAD
     court.avancer(Releve(t=0, azrael_in_game=False, viewer_in_game=False,
                          kills_azrael=K0, kills_viewer=K0))
@@ -480,7 +488,7 @@ def test_le_delai_et_le_plafond_sont_des_champs_configurables():
     assert court.etat is Etat.ABANDON, "le délai du duel, pas la constante du module"
 
     bas = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7", manches=3,
-               plafond_kills_manche=2)
+               plafond_kills_manche=2, marge_lobby_s=0)
     bas.etat = Etat.ATTENTE_SQUAD
     bas.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
                        kills_azrael=K0, kills_viewer=K0))

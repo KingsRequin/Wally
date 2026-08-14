@@ -643,6 +643,10 @@ async def main() -> None:
                         manches=int(_duel_conf.manches),
                         attente_squad_s=float(_duel_conf.attente_squad_min) * 60,
                         plafond_kills_manche=int(_duel_conf.plafond_kills_manche),
+                        # Bornée par le runner : 39 s entre un retour au lobby
+                        # et le lancement suivant est une contrainte dure, et le
+                        # debounce anti-hoquet en consomme déjà une part.
+                        marge_lobby_s=float(_duel_conf.marge_lobby_s),
                         api_muette_max_s=float(_duel_conf.api_muette_max_s),
                         # Le stream coupé rembourse (§8 de la spec). Le statut
                         # est déjà tenu à jour toutes les 60 s par le

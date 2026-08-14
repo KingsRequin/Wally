@@ -23,6 +23,24 @@ PLAFOND_KILLS_MANCHE = 30
 # viewer qui a payé et ne voit rien est le pire résultat possible.
 ATTENTE_SQUAD_S = 15 * 60
 
+# Le temps laissé aux compteurs entre le retour au lobby CONFIRMÉ et l'instant
+# où le score de la manche est figé (§12 bis de la spec).
+#
+# La mesure du 2026-08-13 dit que les trackers sont déjà à jour au relevé même
+# du retour au lobby — mais elle porte sur deux parties d'une seule journée.
+# Cette marge est la couverture de ce pari : si l'API mettait un jour quelques
+# secondes à publier, le score serait figé trop tôt et la manche perdue pour
+# celui qui venait de tuer. Elle ne se confond pas avec le debounce
+# anti-hoquet, qui filtre un flag de présence MENTEUR ; ici le retour au lobby
+# est déjà tenu pour vrai, on attend seulement que les chiffres se posent.
+#
+# Plafond DUR : 39 s, l'intervalle mesuré entre un retour au lobby et le
+# lancement de la partie suivante. Au-delà, une manche mordrait sur la
+# suivante. Le bornage vit dans `duel_runner.marge_lobby_bornee()`, qui seul
+# connaît la cadence de sonde — le debounce consomme deux relevés AVANT que
+# cette marge ne démarre, et les deux entrent dans le même budget de 39 s.
+MARGE_LOBBY_S = 10.0
+
 
 class Etat(str, Enum):
     RESOLUTION = "resolution"
@@ -87,6 +105,7 @@ class Duel:
     # par duel, jamais des constantes lues directement dans avancer().
     attente_squad_s: float = ATTENTE_SQUAD_S
     plafond_kills_manche: int = PLAFOND_KILLS_MANCHE
+    marge_lobby_s: float = MARGE_LOBBY_S
     # Un score par manche jouée : {"azrael": int|None, "viewer": int|None}.
     # Les deux valent None dès que la manche n'est pas mesurable pour L'UN
     # des deux joueurs — jamais un score réel comparé à une absence de mesure.
@@ -109,6 +128,11 @@ class Duel:
     # que retarder la transition d'un cycle de sonde, sans jamais la fausser.
     _pending_debut: bool = False
     _pending_fin: bool = False
+    # Instant du retour au lobby CONFIRMÉ, d'où court `marge_lobby_s`. Pas
+    # sérialisé, pour la même raison que les deux drapeaux ci-dessus : un
+    # rebuild pendant la marge la fait repartir, ce qui ne coûte au pire que
+    # quelques secondes de plus avant de figer le score.
+    _t_lobby: float | None = None
 
     # -- Totaux -------------------------------------------------------------
     @property
@@ -181,6 +205,7 @@ class Duel:
         self._t_attente = None
         self._pending_debut = False
         self._pending_fin = False
+        self._t_lobby = None
         self.etat = Etat.ATTENTE_SQUAD
 
     # -- Persistance --------------------------------------------------------
@@ -199,6 +224,7 @@ class Duel:
             "redemption_id": self.redemption_id, "etat": self.etat.value,
             "attente_squad_s": self.attente_squad_s,
             "plafond_kills_manche": self.plafond_kills_manche,
+            "marge_lobby_s": self.marge_lobby_s,
             "scores": copy.deepcopy(self.scores),
             "camps": copy.deepcopy(self.camps),
             "base_azrael": copy.deepcopy(self._base_azrael),
@@ -216,6 +242,11 @@ class Duel:
             etat=Etat(d.get("etat", Etat.RESOLUTION.value)),
             attente_squad_s=float(d.get("attente_squad_s", ATTENTE_SQUAD_S)),
             plafond_kills_manche=int(d.get("plafond_kills_manche", PLAFOND_KILLS_MANCHE)),
+            # Absente des états écrits avant l'existence de ce réglage : le
+            # duel repris prend alors la valeur par défaut. Aucun point n'en
+            # dépend — la marge ne fait que retarder de quelques secondes
+            # l'instant où le score d'une manche est figé.
+            marge_lobby_s=float(d.get("marge_lobby_s", MARGE_LOBBY_S)),
             scores=copy.deepcopy(d.get("scores") or []),
             camps=copy.deepcopy(d.get("camps") or {}),
         )
@@ -321,55 +352,75 @@ class Duel:
             return evts
 
         if self.etat is Etat.MANCHE:
-            # C'est le retour au lobby d'Azraël qui clôt la manche : les
-            # compteurs y sont déjà à jour. Deux relevés consécutifs "hors
-            # partie" sont exigés — un hoquet isolé du flag de présence ne
-            # doit ni clore la manche en cours ni en ouvrir une autre.
+            # C'est le retour au lobby d'Azraël qui clôt la manche. Deux
+            # relevés consécutifs "hors partie" sont exigés — un hoquet isolé
+            # du flag de présence ne doit ni clore la manche en cours ni en
+            # ouvrir une autre. Puis `marge_lobby_s` s'écoule avant de figer le
+            # score : les deux temporisations ne font pas le même travail, la
+            # première décide si le retour au lobby est VRAI, la seconde laisse
+            # aux compteurs le temps de se poser.
             if not r.azrael_in_game:
                 if not self._pending_fin:
                     self._pending_fin = True
                     return []
-                self._pending_fin = False
-                sa = score_manche(self._base_azrael, r.kills_azrael,
-                                  plafond=self.plafond_kills_manche)
-                sv = score_manche(self._base_viewer, r.kills_viewer,
-                                  plafond=self.plafond_kills_manche)
-                # Mesurable seulement si LES DEUX côtés le sont : on ne compare
-                # jamais un score réel à une absence de mesure. Une manche non
-                # mesurable pour un seul joueur ne compte pour personne.
-                mesurable = sa is not None and sv is not None
-                # `*_lu` garde ce qui a RÉELLEMENT été lu de chaque côté. Sans
-                # cette trace, trois manches où seul le viewer est illisible
-                # sont indiscernables de trois manches où l'API est muette pour
-                # tout le monde — et le duel entier se remboursait dans les deux
-                # cas, ce qui faisait du dépinglage de tracker une sortie
-                # gratuite pour qui perdait.
-                self.scores.append({
-                    "azrael": sa if mesurable else None,
-                    "viewer": sv if mesurable else None,
-                    "azrael_lu": sa,
-                    "viewer_lu": sv,
-                })
-                # `azrael`/`viewer` sont les deltas BRUTS, à n'annoncer que si
-                # `mesurable` : quand un seul côté est lisible, les dire tels
-                # quels informe (« je t'ai vu en faire 3, mais rien de ton
-                # côté ») sans jamais rentrer dans les totaux ci-dessous.
-                evts = [Evenement("manche_fin", {
-                    "manche": len(self.scores), "sur": self.manches,
-                    "azrael": sa, "viewer": sv, "mesurable": mesurable,
-                    "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
-                    "camps": copy.deepcopy(self.camps),
-                })]
-                if len(self.scores) >= self.manches:
-                    evts.extend(self._clore())
-                else:
-                    self.etat = Etat.ENTRE_MANCHES
-                    self._t_attente = None
-                return evts
+                if self._t_lobby is None:
+                    self._t_lobby = r.t
+                if r.t - self._t_lobby < self.marge_lobby_s:
+                    return []
+                return self._clore_manche(r)
+            if self._t_lobby is not None:
+                # Le retour au lobby était confirmé, la marge courait encore, et
+                # la partie SUIVANTE démarre déjà. On fige maintenant, avec les
+                # compteurs les plus frais qu'on ait : attendre plus longtemps
+                # ferait mordre cette manche sur la suivante — c'est très
+                # exactement ce que le plafond de 39 s interdit. Les kills de la
+                # partie qui commence, eux, ne sont pas encore faits.
+                return self._clore_manche(r)
             self._pending_fin = False
             return []
 
         return []
+
+    def _clore_manche(self, r: Releve) -> list[Evenement]:
+        """Fige le score de la manche sur ce relevé, et enchaîne."""
+        self._pending_fin = False
+        self._t_lobby = None
+        sa = score_manche(self._base_azrael, r.kills_azrael,
+                          plafond=self.plafond_kills_manche)
+        sv = score_manche(self._base_viewer, r.kills_viewer,
+                          plafond=self.plafond_kills_manche)
+        # Mesurable seulement si LES DEUX côtés le sont : on ne compare
+        # jamais un score réel à une absence de mesure. Une manche non
+        # mesurable pour un seul joueur ne compte pour personne.
+        mesurable = sa is not None and sv is not None
+        # `*_lu` garde ce qui a RÉELLEMENT été lu de chaque côté. Sans
+        # cette trace, trois manches où seul le viewer est illisible
+        # sont indiscernables de trois manches où l'API est muette pour
+        # tout le monde — et le duel entier se remboursait dans les deux
+        # cas, ce qui faisait du dépinglage de tracker une sortie
+        # gratuite pour qui perdait.
+        self.scores.append({
+            "azrael": sa if mesurable else None,
+            "viewer": sv if mesurable else None,
+            "azrael_lu": sa,
+            "viewer_lu": sv,
+        })
+        # `azrael`/`viewer` sont les deltas BRUTS, à n'annoncer que si
+        # `mesurable` : quand un seul côté est lisible, les dire tels
+        # quels informe (« je t'ai vu en faire 3, mais rien de ton
+        # côté ») sans jamais rentrer dans les totaux ci-dessous.
+        evts = [Evenement("manche_fin", {
+            "manche": len(self.scores), "sur": self.manches,
+            "azrael": sa, "viewer": sv, "mesurable": mesurable,
+            "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
+            "camps": copy.deepcopy(self.camps),
+        })]
+        if len(self.scores) >= self.manches:
+            evts.extend(self._clore())
+        else:
+            self.etat = Etat.ENTRE_MANCHES
+            self._t_attente = None
+        return evts
 
     def _noter_camps(self, r: Releve) -> None:
         """Retient le DERNIER état connu de chaque camp (légende, niveau).

@@ -659,8 +659,10 @@ def _duel_sur_le_fil(runner, viewer_id="105904256"):
 
 
 async def _clore(runner):
-    await runner.tick(maintenant=100)
-    await runner.tick(maintenant=102)
+    # Deux relevés pour confirmer le retour au lobby, puis la marge laissée aux
+    # compteurs (`marge_lobby_s`, 10 s par défaut) avant que le score ne soit figé.
+    for t in (100, 102, 112):
+        await runner.tick(maintenant=t)
 
 
 @pytest.mark.asyncio

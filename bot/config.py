@@ -279,6 +279,21 @@ class DuelConfig:
     cadence_s: float = 2.0
     attente_squad_min: float = 15.0
     plafond_kills_manche: int = 30
+    # Délai laissé aux compteurs entre le retour au lobby et l'instant où le
+    # score de la manche est figé. PLAFOND DUR de 39 s (l'intervalle mesuré
+    # entre un retour au lobby et le lancement suivant) : au-delà, une manche
+    # mordrait sur la suivante. Bornée à l'exécution par
+    # `duel_runner.marge_lobby_bornee()`, qui retranche aussi les deux relevés
+    # du debounce anti-hoquet.
+    marge_lobby_s: float = 10.0
+    # Le mode de jeu ANNONCÉ à l'ouverture d'un duel. Il n'est lisible nulle
+    # part dans l'API (bloc `realtime` listé exhaustivement) : Wally ne peut
+    # pas vérifier qu'il est respecté, seulement le dire. C'est la seule
+    # protection contre une Mixtape, qui ne compte AUCUN kill (mesuré : 10
+    # kills, zéro tracker bougé) et solderait le duel par un 0-0 intégral.
+    # Source unique — le code d'annonce le lit ici, le registre persona ne le
+    # répète pas.
+    mode_jeu: str = "Battle Royale ou Joker"
     # Durée maximale pendant laquelle l'API peut rester muette EN PLEINE
     # MANCHE. Quelques relevés ratés sont tolérés — c'est une API publique —
     # mais au-delà le duel n'a plus aucun moyen de se terminer : on abandonne

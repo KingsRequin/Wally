@@ -15,8 +15,9 @@ from dataclasses import replace
 
 from loguru import logger
 
-from bot.core.apex.duel import (ATTENTE_SQUAD_S, PLAFOND_KILLS_MANCHE, Duel,
-                                Etat, Evenement, Releve)
+from bot.core.apex.duel import (ATTENTE_SQUAD_S, MARGE_LOBBY_S,
+                                PLAFOND_KILLS_MANCHE, Duel, Etat, Evenement,
+                                Releve)
 from bot.core.apex.reader import _num, read_kill_trackers
 
 # Une clé de `bot_state`, comme `apex:live_baseline` — un seul duel à la fois,
@@ -89,6 +90,46 @@ API_MUETTE_MAX_S = 180.0
 # une liste vide sur une chaîne pourtant allumée existe, et abandonner un duel
 # là-dessus coûterait au duelliste une partie qu'il est en train de jouer.
 STREAM_COUPE_MAX_S = 120.0
+
+# Contrainte DURE, et pas un réglage de confort : 39 s est l'intervalle mesuré
+# le 2026-08-13 entre un retour au lobby et le lancement de la partie suivante.
+# Tout ce qui s'écoule entre le retour au lobby et l'instant où le score est
+# figé doit tenir là-dedans, sans quoi une manche mord sur la suivante et son
+# score compte les kills de deux parties.
+PLAFOND_MARGE_LOBBY_S = 39.0
+
+
+def marge_lobby_bornee(marge: float, cadence_s: float) -> float:
+    """La marge de lobby réellement applicable, plafond dur compris.
+
+    Le budget n'est pas la marge seule : le debounce anti-hoquet consomme DEUX
+    relevés avant qu'elle ne démarre, donc `2 × cadence + marge` doit rester
+    sous les 39 s mesurées. C'est le seul endroit où les deux temporisations se
+    rencontrent — les empiler sans compter leur somme reviendrait à les laisser
+    se marcher dessus.
+
+    Une valeur qui déborde n'est pas refusée en silence : elle est bornée, et
+    dite en log. Un duel qui refuserait de démarrer parce qu'un délai est mal
+    réglé serait pire que le délai mal réglé.
+    """
+    budget = PLAFOND_MARGE_LOBBY_S - 2 * max(0.0, cadence_s)
+    if budget <= 0:
+        logger.error(
+            "Duel Apex : la cadence de sonde ({c:.0f} s) mange à elle seule les "
+            "{p:.0f} s entre un retour au lobby et la partie suivante — marge de "
+            "lobby ramenée à 0", c=cadence_s, p=PLAFOND_MARGE_LOBBY_S)
+        return 0.0
+    if marge < 0:
+        logger.error("Duel Apex : marge de lobby négative ({m}) — ramenée à 0", m=marge)
+        return 0.0
+    if marge > budget:
+        logger.error(
+            "Duel Apex : marge de lobby de {m:.0f} s trop proche du plafond dur "
+            "de {p:.0f} s (le debounce consomme déjà 2 × {c:.0f} s) — bornée à "
+            "{b:.0f} s, sinon une manche mordrait sur la suivante",
+            m=marge, p=PLAFOND_MARGE_LOBBY_S, c=cadence_s, b=budget)
+        return budget
+    return marge
 
 
 def peut_controler(auteur: dict) -> bool:
@@ -241,6 +282,7 @@ class DuelRunner:
                  azrael_uid: str, plateforme: str = "PC", cadence_s: float = 2.0,
                  manches: int = 3, attente_squad_s: float = ATTENTE_SQUAD_S,
                  plafond_kills_manche: int = PLAFOND_KILLS_MANCHE,
+                 marge_lobby_s: float = MARGE_LOBBY_S,
                  api_muette_max_s: float = API_MUETTE_MAX_S,
                  stream_en_ligne: Callable[[], bool | None] | None = None,
                  stream_coupe_max_s: float = STREAM_COUPE_MAX_S):
@@ -265,6 +307,10 @@ class DuelRunner:
         self._manches = manches
         self._attente_squad_s = attente_squad_s
         self._plafond_kills_manche = plafond_kills_manche
+        # Bornée ICI, une fois, à la construction : la valeur qui atteint la
+        # machine à états est déjà jouable, et l'état persisté la porte telle
+        # quelle. La borne dépend de la cadence, que seul le runner connaît.
+        self._marge_lobby_s = marge_lobby_bornee(marge_lobby_s, cadence_s)
         self._api_muette_max_s = api_muette_max_s
         # Le statut du live, tel que le `StreamWatcher` le tient déjà à jour
         # (60 s). TROIS réponses possibles, et la troisième compte autant que
@@ -326,7 +372,8 @@ class DuelRunner:
         """Un `Duel` neuf, réglé par la configuration du runner."""
         return Duel(azrael_uid=self._azrael_uid, manches=self._manches,
                     attente_squad_s=self._attente_squad_s,
-                    plafond_kills_manche=self._plafond_kills_manche, **champs)
+                    plafond_kills_manche=self._plafond_kills_manche,
+                    marge_lobby_s=self._marge_lobby_s, **champs)
 
     def activate(self) -> None:
         """S'enregistre comme source globale, lisible par `prompts.py` /

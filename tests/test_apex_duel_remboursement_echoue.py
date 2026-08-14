@@ -83,8 +83,9 @@ async def test_un_verdict_qui_rembourse_dit_la_verite_si_twitch_refuse():
                 "total": {"career_kills": {"name": "BR Kills", "value": n}}}
 
     runner._client.get = AsyncMock(side_effect=_profils)
-    await runner.tick(maintenant=100)
-    await runner.tick(maintenant=102)
+    # Retour au lobby confirmé (2 relevés), puis la marge laissée aux compteurs.
+    for t in (100, 102, 112):
+        await runner.tick(maintenant=t)
 
     assert duel.etat is Etat.VERDICT
     api.refund_redemption.assert_awaited_once()

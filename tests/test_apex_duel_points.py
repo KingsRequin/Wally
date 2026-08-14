@@ -24,13 +24,18 @@ def kills(n: int) -> dict:
 
 def _duel(manches: int = 1) -> Duel:
     d = Duel(viewer_nom="Bob", viewer_uid="42", viewer_id="105904256",
-             azrael_uid="7", redemption_id="rd", manches=manches)
+             azrael_uid="7", redemption_id="rd", manches=manches,
+             marge_lobby_s=0)
     d.etat = Etat.ATTENTE_SQUAD
     return d
 
 
 def _manche(d: Duel, t: float, azrael: int, viewer: int) -> list:
-    """Une manche complète, jouée puis close au lobby."""
+    """Une manche complète, jouée puis close au lobby.
+
+    Marge de lobby neutralisée (`_duel`) : ici on arbitre des POINTS, pas le
+    délai laissé aux compteurs. Ce délai a ses propres tests.
+    """
     d.avancer(Releve(t=t, azrael_in_game=True, viewer_in_game=True,
                      kills_azrael=kills(0), kills_viewer=kills(0)))
     d.avancer(Releve(t=t + 2, azrael_in_game=True, viewer_in_game=True,
@@ -101,8 +106,10 @@ async def _clore(runner, azrael: int, viewer: int):
     duel._base_viewer = {"career_kills": 0}
     runner.duel_en_cours = duel
     runner._client.get = _profils(azrael, viewer)
-    await runner.tick(maintenant=100)
-    await runner.tick(maintenant=102)
+    # La vraie cadence, marge de lobby comprise : deux relevés pour confirmer
+    # le retour au lobby, puis les 10 s laissées aux compteurs.
+    for t in (100, 102, 112):
+        await runner.tick(maintenant=t)
     assert duel.etat is Etat.VERDICT, "le duel doit être allé jusqu'au bout"
 
 
