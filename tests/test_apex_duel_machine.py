@@ -167,11 +167,15 @@ def test_vraie_mixtape_compteurs_presents_mais_figes_est_un_abandon():
 
 
 def test_viewer_illisible_les_3_manches_est_un_abandon_pas_un_verdict():
-    """Azraël mesurable, viewer illisible (profil sans tracker épinglé, API
-    silencieuse pour lui seul) sur les 3 manches : on ne compare pas 4 à
-    rien. Une manche non mesurable pour un seul des deux ne compte pour
-    personne, donc le duel entier finit en abandon — jamais en 'victoire'
-    d'Azraël sur un 0 fantôme côté viewer."""
+    """Azraël mesurable, viewer illisible (tracker dépinglé) sur les 3 manches :
+    on ne compare pas 4 à rien. Une manche non mesurable pour un seul des deux
+    ne compte pour personne, donc le duel entier finit en abandon — jamais en
+    'victoire' d'Azraël sur un 0 fantôme côté viewer.
+
+    Mais il ne se REMBOURSE pas : l'API répondait, elle répondait même pour
+    Azraël au même relevé. Ce n'est pas une panne, c'est un compte devenu
+    illisible — et rembourser là-dessus offrait une sortie gratuite à qui
+    perdait, dépingler son tracker suffisant à récupérer ses points."""
     d = duel_pret()
     for i in range(3):
         base_a = kills(i * 2)
@@ -186,8 +190,55 @@ def test_viewer_illisible_les_3_manches_est_un_abandon_pas_un_verdict():
                                 viewer_in_game=False, kills_azrael=fin_a, kills_viewer={}))
     assert d.etat is Etat.ABANDON
     abandon = [e for e in evts if e.type == "abandon"][0]
-    assert abandon.donnees["rembourser"] is True
+    assert abandon.donnees["rembourser"] is False
+    assert "panne" in abandon.donnees["motif"].lower(), (
+        "le motif doit dire que ce n'en est pas une, sans quoi le viewer "
+        "s'entend accuser d'une chose et Wally d'une autre")
     assert not any(e.type == "verdict" for e in evts)
+
+
+def test_azrael_illisible_pendant_que_le_viewer_se_lit_ne_rembourse_pas_non_plus():
+    """La distinction porte sur l'ASYMÉTRIE, pas sur qui en est la cause.
+
+    Le camp illisible peut être celui du streamer : rien n'est arbitrable non
+    plus, et ce n'est toujours pas une panne. Un test qui n'exercerait que le
+    côté viewer laisserait passer une condition écrite « le viewer est None »,
+    qui rendrait le duel remboursable dès qu'Azraël dépingle son tracker."""
+    d = duel_pret()
+    for i in range(3):
+        base_v = kills(i * 2)
+        fin_v = kills(i * 2 + 3)
+        d.avancer(Releve(t=i * 600, azrael_in_game=True, viewer_in_game=True,
+                         kills_azrael={}, kills_viewer=base_v))
+        d.avancer(Releve(t=i * 600 + 2, azrael_in_game=True, viewer_in_game=True,
+                         kills_azrael={}, kills_viewer=base_v))
+        d.avancer(Releve(t=i * 600 + 480, azrael_in_game=False,
+                         viewer_in_game=False, kills_azrael={}, kills_viewer=fin_v))
+        evts = d.avancer(Releve(t=i * 600 + 482, azrael_in_game=False,
+                                viewer_in_game=False, kills_azrael={}, kills_viewer=fin_v))
+    assert d.etat is Etat.ABANDON
+    abandon = [e for e in evts if e.type == "abandon"][0]
+    assert abandon.donnees["rembourser"] is False
+
+
+def test_un_duel_repris_d_avant_le_correctif_garde_ses_regles():
+    """Un état persisté par la version en production ne porte pas la trace de
+    ce qui a été lu de chaque côté. Le duel repris ne doit ni lever, ni changer
+    de règle en cours de route : faute de savoir, il rembourse — le doute
+    profite à celui qui a payé."""
+    d = duel_pret()
+    ancien = d.to_dict()
+    ancien["etat"] = Etat.ENTRE_MANCHES.value
+    ancien["scores"] = [{"azrael": None, "viewer": None}]   # format d'avant
+    ancien["t_attente"] = 0
+
+    repris = Duel.from_dict(ancien)
+    evts = repris.avancer(Releve(t=16 * 60, azrael_in_game=False,
+                                 viewer_in_game=False,
+                                 kills_azrael=K0, kills_viewer=K0))
+
+    abandon = [e for e in evts if e.type == "abandon"][0]
+    assert abandon.donnees["rembourser"] is True
 
 
 def test_egalite_vraie_est_un_match_nul_sans_remboursement():
@@ -276,6 +327,33 @@ def test_abandon_apres_une_manche_NON_mesuree_rembourse_et_ne_rend_pas_de_verdic
     assert d.etat is Etat.ABANDON
     abandon = [e for e in evts if e.type == "abandon"][0]
     assert abandon.donnees["rembourser"] is True
+    assert not any(e.type == "verdict" for e in evts)
+
+
+def test_abandon_apres_une_manche_illisible_d_un_seul_cote_ne_rembourse_pas():
+    """Même départ en cours de duel, mais la manche jouée n'était illisible que
+    d'un côté. Rien à arbitrer là non plus — et toujours pas de panne : partir
+    après avoir rendu son compte illisible ne doit pas rendre les points."""
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer={}))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer={}))
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(4), kills_viewer={}))
+    d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(4), kills_viewer={}))
+    assert d.etat is Etat.ENTRE_MANCHES
+
+    d.avancer(Releve(t=500, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(4), kills_viewer={}))
+    evts = d.avancer(Releve(t=500 + 16 * 60, azrael_in_game=False,
+                            viewer_in_game=False,
+                            kills_azrael=kills(4), kills_viewer={}))
+
+    assert d.etat is Etat.ABANDON
+    abandon = [e for e in evts if e.type == "abandon"][0]
+    assert abandon.donnees["rembourser"] is False
     assert not any(e.type == "verdict" for e in evts)
 
 

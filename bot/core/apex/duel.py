@@ -33,6 +33,21 @@ class Etat(str, Enum):
     ABANDON = "abandon"
 
 
+def _lu(score: dict, cote: str) -> int | None:
+    """Ce qui a été LU de ce côté à cette manche : un nombre, ou None.
+
+    À ne pas confondre avec `score[cote]`, qui porte le score ARBITRÉ — mis à
+    None des deux côtés dès qu'un seul l'était.
+
+    Un état persisté par la version d'avant ne porte pas ces clés : on retombe
+    alors sur le score arbitré, donc sur le comportement exact sous lequel ce
+    duel-là a commencé. Un rebuild en plein duel ne change jamais les règles en
+    cours de route, et ne lève pas.
+    """
+    cle = f"{cote}_lu"
+    return score[cle] if cle in score else score.get(cote)
+
+
 @dataclass(frozen=True)
 class Releve:
     t: float
@@ -75,6 +90,11 @@ class Duel:
     # Un score par manche jouée : {"azrael": int|None, "viewer": int|None}.
     # Les deux valent None dès que la manche n'est pas mesurable pour L'UN
     # des deux joueurs — jamais un score réel comparé à une absence de mesure.
+    #
+    # S'y ajoutent `azrael_lu` / `viewer_lu` : ce qui a été LU de chaque côté,
+    # avant cette mise au même niveau. C'est la seule trace qui distingue
+    # « plus rien n'était lisible pour personne » (panne, Mixtape) de « un seul
+    # des deux comptes est devenu illisible » — cf. `_illisible_d_un_seul_cote`.
     scores: list[dict] = field(default_factory=list)
     # Dernier état connu de chaque camp : {"azrael": {"legende": …, "niveau": …}}.
     # Sert au sous-titre du tableau à l'écran, jamais à l'arbitrage.
@@ -278,15 +298,10 @@ class Duel:
             # ENTRE_MANCHES : au moins une manche a été JOUÉE — reste à savoir
             # si elle a été MESURÉE. Sans mesure, il n'y a rien à arbitrer et
             # annoncer un 0-0 serait le faux match nul qu'on refuse partout
-            # ailleurs : on rembourse.
+            # ailleurs. Le sort des points dépend alors de la CAUSE.
             if self._aucun_kill_compte():
-                self.etat = Etat.ABANDON
-                return [Evenement("abandon", {
-                    "rembourser": True,
-                    "motif": ("le duel s'est arrêté en cours de route, et aucun "
-                              "kill n'avait pu être compté — rien à arbitrer"),
-                    "manches_jouees": len(self.scores),
-                })]
+                return [self._abandon_faute_de_mesure(
+                    "le duel s'est arrêté en cours de route, et ")]
             # Une manche mesurée au moins : PAS de remboursement, même si le
             # duelliste MÈNE. Rembourser qui part après avoir joué
             # encouragerait l'abandon dès qu'on perd — et depuis que le
@@ -323,9 +338,17 @@ class Duel:
                 # jamais un score réel à une absence de mesure. Une manche non
                 # mesurable pour un seul joueur ne compte pour personne.
                 mesurable = sa is not None and sv is not None
+                # `*_lu` garde ce qui a RÉELLEMENT été lu de chaque côté. Sans
+                # cette trace, trois manches où seul le viewer est illisible
+                # sont indiscernables de trois manches où l'API est muette pour
+                # tout le monde — et le duel entier se remboursait dans les deux
+                # cas, ce qui faisait du dépinglage de tracker une sortie
+                # gratuite pour qui perdait.
                 self.scores.append({
                     "azrael": sa if mesurable else None,
                     "viewer": sv if mesurable else None,
+                    "azrael_lu": sa,
+                    "viewer_lu": sv,
                 })
                 # `azrael`/`viewer` sont les deltas BRUTS, à n'annoncer que si
                 # `mesurable` : quand un seul côté est lisible, les dire tels
@@ -374,6 +397,47 @@ class Duel:
         return all((s["azrael"] or 0) == 0 and (s["viewer"] or 0) == 0
                    for s in self.scores)
 
+    def _illisible_d_un_seul_cote(self) -> bool:
+        """Une manche au moins où UN camp se lisait et l'autre pas.
+
+        Ce n'est pas une panne : au même relevé, l'API répondait — elle
+        répondait pour l'autre joueur. La cause est du côté du compte devenu
+        illisible, typiquement un tracker de kills dépinglé en cours de duel.
+
+        La manche reste non arbitrable (on ne compare jamais un score réel à
+        une absence de mesure), mais le DUEL ne se rembourse pas pour autant.
+        Sans cette distinction, dépingler son tracker sur trois manches rendait
+        le duel « non mesurable » et remboursait intégralement — y compris
+        quand les kills d'Azraël, eux, avaient été parfaitement mesurés. Une
+        sortie gratuite pour qui perdait.
+        """
+        return any((_lu(s, "azrael") is None) != (_lu(s, "viewer") is None)
+                   for s in self.scores)
+
+    def _abandon_faute_de_mesure(self, prefixe: str = "") -> Evenement:
+        """Le duel s'arrête sans rien d'arbitrable — reste à dire POURQUOI.
+
+        Et le pourquoi décide des points : une panne (API muette) ou un mode de
+        jeu qui ne compte pas les kills (Mixtape) ne sont pas imputables au
+        duelliste, donc remboursement ; un seul compte devenu illisible pendant
+        que l'autre continuait d'être lu, si.
+        """
+        self.etat = Etat.ABANDON
+        if self._illisible_d_un_seul_cote():
+            return Evenement("abandon", {
+                "rembourser": False,
+                "motif": (f"{prefixe}un seul des deux comptes restait lisible : "
+                          "le tracker de kills de l'autre ne se lisait plus. Il "
+                          "n'y a rien à arbitrer, et ce n'est pas une panne"),
+                "manches_jouees": len(self.scores),
+            })
+        return Evenement("abandon", {
+            "rembourser": True,
+            "motif": (f"{prefixe}aucun kill n'a pu être compté d'aucun côté — "
+                      "la Mixtape ne compte pas les kills, ou l'API n'a rien vu"),
+            "manches_jouees": len(self.scores),
+        })
+
     def _clore(self, *, abandon: bool = False) -> list[Evenement]:
         """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part.
 
@@ -383,12 +447,7 @@ class Duel:
         restent dépensés » serait la moitié de la vérité.
         """
         if self._aucun_kill_compte():
-            self.etat = Etat.ABANDON
-            return [Evenement("abandon", {
-                "rembourser": True,
-                "motif": ("aucun kill n'a été enregistré de tout le duel — "
-                          "la Mixtape ne compte pas les kills, ou l'API n'a rien vu"),
-            })]
+            return [self._abandon_faute_de_mesure()]
         self.etat = Etat.VERDICT
         a, v = self.total_azrael, self.total_viewer
         gagnant = None if a == v else ("azrael" if a > v else "viewer")
