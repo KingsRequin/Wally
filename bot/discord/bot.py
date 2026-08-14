@@ -372,6 +372,11 @@ class WallyDiscord(commands.Bot):
                 # règle l'overlay ENTRE deux déploiements, c'est exactement là
                 # qu'il était perdu.
                 await _overlay_narrator.restore_force_live()
+                # Les parties laissées en cours par le process précédent. Sans
+                # ça, un rebuild en plein live effaçait le bingo côté serveur
+                # alors qu'il tournait encore : Wally n'en voyait plus la trace,
+                # en concluait qu'il n'en avait pas ouvert, et en relançait un.
+                await _overlay_narrator.restore_live_state()
                 _overlay_narrator.activate()
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator

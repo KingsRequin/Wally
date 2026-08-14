@@ -18,6 +18,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 import re
@@ -156,6 +157,24 @@ _MAX_FORCE_LIVE_MIN = 120
 # perdu à chaque redémarrage — au moment précis où l'on s'en sert, puisqu'on
 # règle l'overlay entre deux déploiements.
 FORCE_LIVE_KEY = "overlay:force_until"
+
+# Les parties en cours (bingo, pendu, objectif), rangées en base pour traverser
+# un redémarrage. Le 2026-08-14, quatre bingos ont été ouverts dans la journée,
+# un redémarrage entre chaque, les deux derniers dans le MÊME live — et sa
+# pensée de 22:06:32 dit exactement pourquoi : « Est-ce que j'ai déjà ouvert le
+# bingo ? Je ne vois pas de trace dans "Sur ton overlay" ni dans "Ce que TU
+# viens de faire" ». La garde `game_already_running` est juste, mais elle ne
+# protège que dans le process qui a ouvert la partie.
+#
+# Le sondage reste dehors : sa clôture est une tâche asyncio qui ne survit pas
+# au process, et il dure quelques minutes — le ressusciter sans son minuteur
+# laisserait un dépouillement qui n'arrive jamais.
+LIVE_STATE_KEY = "overlay:live_state"
+
+# Âge au-delà duquel un état rangé n'est plus celui du live en cours, quand le
+# live n'est pas identifiable (statut Twitch pas encore revenu du poll). Un
+# redémarrage se compte en minutes ; un live précédent, en heures.
+_LIVE_STATE_MAX_AGE_S = 900.0
 
 # Les mentions en tête d'un message adressé au bot. Uniquement en TÊTE : un
 # « @toto » en fin de phrase appartient à la phrase, pas à l'interpellation.
@@ -523,6 +542,11 @@ class OverlayNarrator:
     # `AttributeError` au milieu d'un live.
     _last_overheard_at = 0.0
     _overheard_interval = _MIN_OVERHEARD_INTERVAL_S
+    # Même raison encore : les mutations de partie rangent leur état, et sans
+    # base à qui parler elles doivent simplement ne rien faire — pas lever au
+    # milieu d'un pendu. Valeur immuable : un `set` de classe serait partagé
+    # entre toutes les instances (`_flush_tasks` naît donc à la volée).
+    _db = None
 
     def __init__(
         self,
@@ -588,8 +612,11 @@ class OverlayNarrator:
         self._poll: Optional[dict] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._last_poll: Optional[dict] = None
-        # Grille du bingo (widget 20) : vit le temps d'un live.
+        # Grille du bingo (widget 20) : vit le temps d'un live — et, depuis le
+        # 2026-08-14, d'un redémarrage à l'autre tant que le live continue.
         self._bingo: Optional[dict] = None
+        # Références fortes des rangements en cours (cf. `_planifier_flush`).
+        self._flush_tasks: set = set()
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
@@ -672,6 +699,162 @@ class OverlayNarrator:
     def force_live_remaining(self) -> float:
         """Minutes restantes de mode test (0 s'il est inactif)."""
         return max(0.0, (self._force_until - time.monotonic()) / 60)
+
+    # ── parties en cours, d'un process à l'autre ──────────────────────────
+
+    def _stream_key(self) -> str:
+        """Ce qui identifie le live en cours, ou "" si on ne sait pas.
+
+        `started_at` plutôt qu'un drapeau : deux lives se suivent, et le bingo
+        du précédent n'a rien à faire dans le suivant.
+        """
+        if self._stream_status is None:
+            return ""
+        try:
+            return str((self._stream_status() or {}).get("started_at") or "")
+        except Exception:  # noqa: BLE001 — une sonde cassée ne doit rien ressusciter
+            return ""
+
+    def _en_live_sans_effet(self) -> bool:
+        """Le live tourne-t-il ? Sans passer par `_live()`, qui remet l'état à
+        zéro sur transition — ce qu'on est précisément en train de restaurer."""
+        if time.monotonic() < self._force_until:
+            return True
+        try:
+            return bool(self._is_live())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _live_state_snapshot(self) -> dict:
+        """L'état sérialisable des parties en cours. `set` et `deque` n'entrent
+        pas dans du JSON : les lettres trouvées repartent en liste triée."""
+        bingo = None
+        if self._bingo:
+            bingo = {"cells": list(self._bingo["cells"]),
+                     "done": list(self._bingo["done"])}
+        pendu = None
+        if self._hangman:
+            jeu = self._hangman
+            pendu = {"word": jeu["word"], "display": jeu["display"],
+                     "hint": jeu["hint"], "found": sorted(jeu["found"]),
+                     "missed": list(jeu["missed"])}
+        return {
+            "stream_key": self._stream_key(),
+            # Repli quand le live n'est pas identifiable : au démarrage, le
+            # statut Twitch n'est pas encore revenu du poll (60 s), donc
+            # `_stream_key()` rend "" — sans cette date, la reprise échouait
+            # silencieusement dans le cas même qu'elle vise, le rebuild.
+            "saved_at": time.time(),
+            "bingo": bingo,
+            "hangman": pendu,
+            "goal": dict(self._goal) if self._goal else None,
+        }
+
+    def _meme_session(self, data: dict) -> bool:
+        """L'état rangé appartient-il au live en cours ?
+
+        La clé du live tranche dès qu'on la connaît des deux côtés. Sinon on
+        retombe sur l'âge : un redémarrage se compte en minutes, le live
+        précédent en heures.
+        """
+        rangee = str(data.get("stream_key") or "")
+        courante = self._stream_key()
+        if rangee and courante:
+            return rangee == courante
+        try:
+            age = time.time() - float(data.get("saved_at") or 0)
+        except (TypeError, ValueError):
+            return False
+        return 0 <= age <= _LIVE_STATE_MAX_AGE_S
+
+    async def flush_live_state(self) -> None:
+        """Range les parties en cours, pour le prochain démarrage."""
+        if self._db is None:
+            return
+        try:
+            await self._db.set_state(LIVE_STATE_KEY,
+                                     json.dumps(self._live_state_snapshot()))
+        except Exception as exc:  # noqa: BLE001 — un état non rangé n'est pas fatal
+            logger.debug("Overlay: parties en cours non rangées: {e}", e=exc)
+
+    def _planifier_flush(self) -> None:
+        """Range l'état sans attendre : les mutations de partie sont synchrones.
+
+        Référence forte sur la tâche : la boucle asyncio n'en garde qu'une
+        faible, et une tâche collectée en vol perdrait précisément l'écriture
+        qui doit survivre au process.
+        """
+        if self._db is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return          # hors boucle (appel synchrone en test) : rien à ranger
+        taches = getattr(self, "_flush_tasks", None)
+        if taches is None:
+            taches = self._flush_tasks = set()
+        tache = loop.create_task(self.flush_live_state())
+        taches.add(tache)
+        tache.add_done_callback(taches.discard)
+
+    async def restore_live_state(self) -> None:
+        """Reprend les parties laissées en cours par le process précédent.
+
+        Trois conditions, et il en faut trois : un état lisible, un live qui
+        tourne, et le MÊME live qu'à la sauvegarde.
+        """
+        if self._db is None:
+            return
+        try:
+            raw = await self._db.get_state(LIVE_STATE_KEY)
+            data = json.loads(raw) if raw else None
+        except Exception as exc:  # noqa: BLE001 — une valeur illisible ne bloque rien
+            logger.debug("Overlay: parties en cours illisibles: {e}", e=exc)
+            return
+        if not isinstance(data, dict) or not self._en_live_sans_effet():
+            return
+        if not self._meme_session(data):
+            return          # autre live : ses parties ne nous regardent pas
+
+        repris: list[str] = []
+        bingo = data.get("bingo")
+        if isinstance(bingo, dict) and bingo.get("cells"):
+            cells = [str(c) for c in bingo["cells"]]
+            done = [bool(d) for d in (bingo.get("done") or [])]
+            # La grille fait foi : une liste de coches plus courte (état écrit
+            # par une version antérieure) ne doit pas décaler les cases.
+            done = (done + [False] * len(cells))[:len(cells)]
+            self._bingo = {"cells": cells, "done": done}
+            repris.append(f"bingo {sum(done)}/{len(cells)}")
+
+        pendu = data.get("hangman")
+        if isinstance(pendu, dict) and pendu.get("word"):
+            self._hangman = {
+                "word": str(pendu["word"]),
+                "display": str(pendu.get("display") or pendu["word"]),
+                "hint": str(pendu.get("hint") or ""),
+                "found": set(pendu.get("found") or []),
+                "missed": list(pendu.get("missed") or []),
+            }
+            # Le filet du mot ne survit pas au process non plus : sans ce
+            # `guard_secret`, la partie reprend et le mot qu'elle consiste à
+            # cacher ressort en clair à la première phrase.
+            guard_secret(self._hangman["display"])
+            repris.append("pendu")
+
+        goal = data.get("goal")
+        if isinstance(goal, dict) and goal.get("label"):
+            self._goal = dict(goal)
+            repris.append("objectif")
+
+        if not repris:
+            return
+        # `_was_live` DOIT être posé : sans lui, le premier `_live()` du nouveau
+        # process voit une transition « pas de live → live » et appelle
+        # `reset_live()`, qui balaie ce qu'on vient de relire.
+        self._was_live = True
+        logger.info("Overlay: parties reprises du process précédent — {r}",
+                    r=", ".join(repris))
 
     def is_active(self) -> bool:
         """Vrai si l'overlay doit réagir : vrai live, ou mode test en cours."""
@@ -1517,6 +1700,9 @@ class OverlayNarrator:
             self._feed.clear()
         except Exception as exc:  # noqa: BLE001 — un live qui démarre ne doit pas échouer
             logger.warning("Overlay: vidage du flux au reset échoué : {e}", e=exc)
+        # L'oubli doit franchir le redémarrage comme le reste : sans ce
+        # rangement, la base garderait la partie du live précédent.
+        self._planifier_flush()
 
     # ── annulation ────────────────────────────────────────────────────────
 
@@ -1566,6 +1752,11 @@ class OverlayNarrator:
 
         logger.info("Overlay: annulation « {t} » — {d}",
                     t=target, d=", ".join(done) or "rien en cours")
+        # Une annulation est un ORDRE — souvent celui du streamer, agacé. Elle
+        # doit franchir le redémarrage : ressusciter au rebuild suivant un bingo
+        # qu'on vient de lui demander de retirer serait pire que de l'oublier.
+        if done:
+            self._planifier_flush()
         return {"target": target, "cancelled": done}
 
     def _cancel_task(self, attr: str) -> None:
@@ -1874,6 +2065,7 @@ class OverlayNarrator:
         self._publish_goal()
         logger.info("Overlay: objectif « {l} » — {n} {k}",
                     l=self._goal["label"], n=target, k=kind)
+        self._planifier_flush()
         return True
 
     def record_goal_event(self, kind: str, amount: int = 1) -> bool:
@@ -1890,6 +2082,7 @@ class OverlayNarrator:
         if goal["count"] >= goal["target"]:
             logger.info("Overlay: objectif « {l} » atteint", l=goal["label"])
             self._goal = None
+        self._planifier_flush()
         return True
 
     def _publish_goal(self) -> None:
@@ -2121,6 +2314,7 @@ class OverlayNarrator:
         self._bingo = {"cells": cells, "done": [False] * len(cells)}
         self._feed.widget("bingo", cells=cells, done=list(self._bingo["done"]))
         logger.info("Overlay: bingo ouvert ({n} cases)", n=len(cells))
+        self._planifier_flush()
         return True
 
     def show_bingo(self) -> Optional[dict]:
@@ -2183,6 +2377,7 @@ class OverlayNarrator:
         if full:
             self._bingo = None
             self._bingo_reminded_at = 0.0
+        self._planifier_flush()
         return {"widget": "bingo", "checked": coche, "full": full}
 
     # ── pendu ─────────────────────────────────────────────────────────────
@@ -2233,6 +2428,7 @@ class OverlayNarrator:
         guard_secret(self._hangman["display"])
         self._publish_hangman()
         logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(set(letters)))
+        self._planifier_flush()
         return True
 
     def _count_hangman(self, author: str, text: str) -> None:
@@ -2257,6 +2453,9 @@ class OverlayNarrator:
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
                 self._hangman = None
+            # Chaque coup compte : reprendre la partie au redémarrage sans les
+            # lettres déjà trouvées la ferait recommencer sous les yeux du chat.
+            self._planifier_flush()
             return
         game["missed"].append(token)
         lost = len(game["missed"]) >= self._HANGMAN_MAX_MISSES
@@ -2266,6 +2465,7 @@ class OverlayNarrator:
         if lost:
             logger.info("Overlay: pendu perdu ({w})", w=game["display"])
             self._hangman = None
+        self._planifier_flush()
 
     def _publish_hangman(self, last: str = "", won: bool = False, lost: bool = False) -> None:
         game = self._hangman
