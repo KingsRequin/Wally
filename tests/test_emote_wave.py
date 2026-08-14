@@ -27,6 +27,37 @@ def test_les_mots_ordinaires_ne_le_sont_pas():
         assert not _looks_like_emote(mot)
 
 
+def test_une_emote_verifiee_est_reconnue_quelle_qu_en_soit_la_forme():
+    """La règle de forme exige une majuscule ailleurs qu'en tête : elle rejette
+    72 des 304 globales, dont `Kappa` — 128 emplois en sept jours, l'emote la
+    plus utilisée du chat. Le registre vérifié par l'API tranche avant elle."""
+    from bot.core.twitch_emotes import active_emote_registry
+
+    active_emote_registry().set_verified(["Kappa", "Kreygasm", ":D"])
+    for nom in ("Kappa", "Kreygasm", ":D"):
+        assert _looks_like_emote(nom)
+
+
+def test_une_vague_de_kappa_atteint_enfin_lecran():
+    from bot.core.twitch_emotes import active_emote_registry
+
+    active_emote_registry().set_verified(["Kappa"])
+    d, now = _d(), time.time()
+    for qui in ("a", "b", "c"):
+        assert d.feed(qui, "Kappa", now=now) is None
+    assert d.feed("d", "Kappa", now=now) == "Kappa"
+
+
+def test_le_registre_nouvre_pas_la_porte_aux_mots_ordinaires():
+    """Il ne contient que des emotes réelles : un mot français n'y entre pas,
+    et la règle de forme reste seule juge pour tout le reste."""
+    from bot.core.twitch_emotes import active_emote_registry
+
+    active_emote_registry().set_verified(["Kappa"])
+    for mot in ("bonjour", "Salut", "ptdr"):
+        assert not _looks_like_emote(mot)
+
+
 # ── détection ──
 
 def test_quatre_personnes_font_une_vague():

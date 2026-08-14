@@ -11,6 +11,7 @@ qui n'y entre jamais, et le fait qu'elle atteigne les trois endroits où il
 décide — jamais sur la façon dont c'est écrit.
 """
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -191,6 +192,57 @@ def test_parler_en_vocal_ne_reveille_pas_la_cadence_cognitive(vocal_diffuse):
     st.note_voice_speech(42, ["Azraël"])
     assert loop._last_relevant_activity_ts == avant
     assert not loop._reveil.is_set()
+
+
+def _service_vocal():
+    """Un `VoiceService` monté, sa synthèse remplacée par un mannequin."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from tests.test_voice_listen_only import _service
+
+    svc = _service()
+    svc._vc = MagicMock()
+    svc._channel = SimpleNamespace(
+        id=42, name="stream",
+        members=[SimpleNamespace(id=7, display_name="Azraël", name="azrael", bot=False)],
+    )
+    svc._cfg.azure_voice = "fr-FR-DeniseNeural"
+    svc._bot.emotion.get_state.return_value = dict(_EMOTIONS_FLAT)
+    svc._speak_streaming = AsyncMock()
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_une_parole_reellement_prononcee_entre_dans_la_trace(vocal_diffuse):
+    svc = _service_vocal()
+
+    await svc.speak("bonsoir tout le monde")
+
+    assert st.current_self_trace_block() is not None
+
+
+@pytest.mark.asyncio
+async def test_une_synthese_en_echec_ne_lui_fait_pas_croire_quil_a_parle(vocal_diffuse):
+    """Symétrique du `published is False` côté chat : rien n'a été entendu."""
+    from unittest.mock import AsyncMock
+
+    svc = _service_vocal()
+    svc._speak_streaming = AsyncMock(side_effect=RuntimeError("Azure muet"))
+
+    await svc.speak("bonsoir tout le monde")
+
+    assert st.current_self_trace_block() is None
+
+
+@pytest.mark.asyncio
+async def test_en_mode_ecoute_il_ne_croit_pas_avoir_parle(vocal_diffuse):
+    """Pendant le live il est muet à l'oral : sa réaction passe par l'overlay."""
+    svc = _service_vocal()
+    svc.listen_only = True
+
+    await svc.speak("je devrais me taire")
+
+    assert st.current_self_trace_block() is None
 
 
 def test_toute_parole_vocale_passe_par_le_meme_point():
