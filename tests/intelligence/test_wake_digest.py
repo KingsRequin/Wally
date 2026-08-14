@@ -30,13 +30,13 @@ _PROMPTS = "bot/intelligence/persona/prompts"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _write_log(root, channel, ts_records):
+def _write_log(root, channel, ts_records, platform="discord"):
     """Écrit des events JSONL dans le fichier du jour correspondant au ts."""
     from bot.intelligence.wake_digest import _PARIS
 
     for rec in ts_records:
         day = datetime.fromtimestamp(rec["ts"], _PARIS).strftime("%Y-%m-%d")
-        path = root / "discord" / channel / f"{day}.jsonl"
+        path = root / platform / channel / f"{day}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -157,6 +157,39 @@ def test_last_engagement_fallback_dernier_event(tmp_path):
 
 def test_last_engagement_sans_logs(tmp_path):
     assert last_engagement_ts(tmp_path) is None
+
+
+def test_une_soiree_sur_twitch_compte_comme_une_veille(tmp_path):
+    """Le 13/08 à 22:45, Wally s'annonçait « réveillé après 9,2 h sans
+    sollicitation » — il venait d'envoyer 89 messages dans le chat de la chaîne.
+    Seul `discord/` était lu."""
+    now = time.time()
+    _write_log(tmp_path, "azrael_ttv", [_msg(now - 600, type="message_out")],
+               platform="twitch")
+
+    assert last_engagement_ts(tmp_path) == pytest.approx(now - 600)
+
+
+def test_le_dernier_mot_revient_a_la_plateforme_la_plus_recente(tmp_path):
+    """Deux plateformes, un seul « dernier moment » : le plus récent des deux."""
+    now = time.time()
+    _write_log(tmp_path, "general", [_msg(now - 7200, type="message_out")])
+    _write_log(tmp_path, "azrael_ttv", [_msg(now - 300, type="message_out")],
+               platform="twitch")
+
+    assert last_engagement_ts(tmp_path) == pytest.approx(now - 300)
+
+
+def test_les_traces_internes_ne_font_pas_une_sollicitation(tmp_path):
+    """`cognitive/` et `facts/` s'écrivent même quand personne ne lui parle : les
+    compter ferait de « maintenant » l'éternelle dernière veille, et plus aucun
+    réveil ne serait jamais détecté."""
+    now = time.time()
+    _write_log(tmp_path, "general", [_msg(now - 40000, type="message_out")])
+    _write_log(tmp_path, "brain", [_msg(now - 10, type="think")], platform="cognitive")
+    _write_log(tmp_path, "discord", [_msg(now - 5, type="fact_stored")], platform="facts")
+
+    assert last_engagement_ts(tmp_path) == pytest.approx(now - 40000)
 
 
 # ── Scoring ──────────────────────────────────────────────────────────────────

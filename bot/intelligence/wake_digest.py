@@ -71,6 +71,11 @@ AFFINITY_THRESHOLD = 0.5
 # de canal). Exclu du digest : périmètre = conversations de la communauté.
 _DM_SEGMENT = "dm"
 
+# Plateformes où Wally CONVERSE, pour la détection du sommeil (`last_engagement_ts`).
+# `cognitive/` (sa boucle de pensée) et `facts/` (l'écriture de ses souvenirs)
+# tournent sans personne en face : les compter empêcherait tout réveil.
+_CONVERSATION_PLATFORMS = ("discord", "twitch")
+
 _MIN_MESSAGES = 5      # en dessous, la nuit n'a rien à raconter
 _MAX_MESSAGES = 120    # borne le prompt de résumé
 _MAX_CONTENT = 300     # tronque chaque message
@@ -121,6 +126,12 @@ def _dates_in_window(since: float, until: float) -> set[str]:
 def read_messages(logs_root: str | Path, since: float, until: float) -> list[dict]:
     """Messages Discord perçus dans [since, until], lus depuis les logs JSONL.
 
+    Discord SEULEMENT, à la différence de `last_engagement_ts` : le contenu du
+    digest est la vie de la communauté Discord, et le scoring d'affinité
+    (`_affinity_ids`) interroge la base sur la plateforme `discord` en dur — y
+    verser des auteurs Twitch leur attribuerait l'affinité d'un homonyme d'ID.
+    Détecter le sommeil et le raconter sont deux questions distinctes.
+
     Bloquant (I/O disque) : appeler via `asyncio.to_thread`. Ne lève jamais —
     un fichier ou une ligne illisible est simplement ignoré.
     """
@@ -167,15 +178,30 @@ def read_messages(logs_root: str | Path, since: float, until: float) -> list[dic
 
 def last_engagement_ts(logs_root: str | Path) -> float | None:
     """Dernier moment où Wally a lui-même parlé (event `message_out`), d'après les
-    logs du jour le plus récent. À défaut, le dernier événement journalisé quel
-    qu'il soit. None si aucun log exploitable.
+    logs du jour le plus récent, TOUTES plateformes de conversation confondues.
+    À défaut, le dernier événement journalisé quel qu'il soit. None si aucun log
+    exploitable.
+
+    ⚠️ Ne lire que `discord/` rendait Wally sourd à ses propres soirées Twitch :
+    le 13/08 à 22:45 il s'annonçait « réveillé après 9,2 h sans sollicitation »
+    alors qu'il venait d'envoyer 89 messages dans le chat de la chaîne, dont 26
+    entre 21 h et 22 h. Le digest écrasait alors sa perception de ce qu'il venait
+    de vivre.
+
+    `cognitive/` et `facts/` restent DEHORS, et ce n'est pas un oubli : ce sont
+    ses traces internes (boucle de pensée, faits mémorisés), écrites même quand
+    personne ne lui parle. Les compter ferait de « maintenant » l'éternelle
+    dernière sollicitation, et aucun réveil ne serait plus jamais détecté.
 
     Bloquant (I/O disque) : appeler via `asyncio.to_thread`.
     """
-    root = Path(logs_root) / "discord"
-    if not root.is_dir():
-        return None
-    files = list(root.glob("*/*.jsonl"))
+    root = Path(logs_root)
+    files = [
+        f
+        for platform in _CONVERSATION_PLATFORMS
+        if (root / platform).is_dir()
+        for f in (root / platform).glob("*/*.jsonl")
+    ]
     if not files:
         return None
     latest_date = max(f.stem for f in files)
