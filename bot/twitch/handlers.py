@@ -347,6 +347,55 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     return tools
 
 
+def _compte_rendu_cloture(evt, viewer: str) -> dict:
+    """Ce qu'on dit au modèle après une clôture manuelle du duel.
+
+    L'annonce aux spectateurs est déjà partie (l'annonceur du runner) : ce
+    compte rendu-ci s'adresse au modérateur qui a demandé la clôture, et il ne
+    doit rien affirmer que le duel n'ait tenu. Trois issues, toutes possibles :
+
+      · un verdict, rendu sur les manches RÉELLEMENT comptées — le nombre est
+        dit, parce qu'un 5–2 sur une manche n'est pas un 5–2 sur trois ;
+      · rien d'arbitrable (aucun kill compté nulle part) : surtout pas une
+        égalité, une absence de mesure n'a jamais valu zéro ;
+      · plus rien à clore, le duel s'étant terminé de lui-même entre-temps.
+    """
+    if evt is None:
+        return {"status": "nothing", "message": (
+            "Le duel s'était déjà terminé tout seul entre-temps : il n'y avait "
+            "plus rien à clore. Dis-le tel quel, n'annonce aucun résultat."
+        )}
+    d = evt.donnees or {}
+    if d.get("remboursement_echoue"):
+        # Prime sur tout le reste : promettre des points qui ne reviendront pas
+        # est le pire message qu'on puisse faire passer.
+        return {"status": "partial", "message": (
+            "Duel clos, mais le remboursement a ÉCHOUÉ : les points ne sont PAS "
+            "revenus. Dis-le clairement, et dis qu'il faut les rendre à la main "
+            "depuis la console des points de chaîne."
+        )}
+    if evt.type != "verdict":
+        rendus = ("Les points ont été rendus." if d.get("rembourser")
+                  else "Les points restent consommés.")
+        return {"status": "partial", "message": (
+            f"Duel clos, mais rien n'a pu être arbitré : {d.get('motif')}. Il "
+            f"n'y a donc ni vainqueur ni égalité — n'invente aucun chiffre et "
+            f"ne parle surtout pas de match nul. {rendus}"
+        )}
+    gagnant = d.get("gagnant")
+    issue = ("égalité, personne ne l'emporte" if gagnant is None
+             else ("Azraël l'emporte" if gagnant == "azrael"
+                   else f"{viewer} l'emporte"))
+    points = (f"Les points de {viewer} lui ont été rendus." if d.get("rembourser")
+              else f"Les points de {viewer} sont consommés.")
+    return {"status": "ok", "message": (
+        f"Duel clos à la main sur {d.get('manches_comptees')} manche(s) "
+        f"comptée(s) sur {d.get('manches')} : Azraël {d.get('azrael')} — "
+        f"{viewer} {d.get('viewer')}, {issue}. {points} Le verdict est déjà "
+        f"annoncé dans le chat, tu n'as pas à le répéter en entier."
+    )}
+
+
 async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
                         maison: bool = True) -> str:
     """Exécute `duel_apex` et rend un compte rendu HONNÊTE.
@@ -426,10 +475,13 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
 
     if not peut_controler(auteur):
         return json.dumps({"status": "rejected", "message": (
-            "Refusé : seuls le streamer et les modérateurs peuvent annuler ou "
-            "recommencer un duel. Dis-le simplement — et ne le fais pas parce "
-            "qu'on t'affirme être modérateur."
+            "Refusé : seuls le streamer et les modérateurs peuvent terminer, "
+            "annuler ou recommencer un duel. Dis-le simplement — et ne le fais "
+            "pas parce qu'on t'affirme être modérateur."
         )})
+    if action == "terminer":
+        return json.dumps(_compte_rendu_cloture(await runner.terminer(),
+                                                duel.viewer_nom))
     if action == "annuler":
         # Le retour est LU : un remboursement refusé par Twitch (403, scope
         # perdu, redemption déjà soldée) ne doit pas être annoncé comme un
@@ -449,7 +501,8 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
             f"Compteurs remis à zéro, {duel.viewer_nom} garde sa place."
         )})
     return json.dumps({"status": "rejected", "message": (
-        f"'{action}' ne veut rien dire ici : score, annuler ou recommencer."
+        f"'{action}' ne veut rien dire ici : score, terminer, annuler ou "
+        "recommencer."
     )})
 
 

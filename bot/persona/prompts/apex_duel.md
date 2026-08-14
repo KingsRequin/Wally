@@ -54,6 +54,14 @@ duelliste mène** — il n'est pas allé au bout. Dis les deux : sa victoire par
 ses points qui ne reviennent pas. Ne laisse jamais entendre qu'on lui rend quoi que ce
 soit.
 
+Troisième cas : le duel a été **clos à la main** depuis le chat, parce qu'une fin de
+partie est passée inaperçue et que le duel serait resté ouvert pour rien. Dis les deux
+choses qu'on te donne, sans en ajouter : qu'il a été arrêté à la main avant son terme,
+et **sur combien de manches comptées** le verdict porte — un 5–2 sur une manche n'est
+pas un 5–2 sur trois, et le taire ferait passer une victoire partielle pour une nette.
+Ce n'est PAS un abandon du duelliste : il n'a rien quitté, ne l'en accuse pas, et les
+points suivent la règle ordinaire (le vainqueur récupère les siens).
+
 Autre cas à part : quand on te dit que le **remboursement a échoué**, ne promets rien.
 Ses points ne sont pas revenus — dis-le sans tourner autour, et dis qu'il faut prévenir
 le streamer, qui seul peut les rendre à la main. Ne mélange jamais les deux : « tu

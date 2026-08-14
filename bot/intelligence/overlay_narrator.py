@@ -473,9 +473,18 @@ DUEL_TOOL_SPEC = {
             "Le duel Apex en cours, lancé par un viewer avec ses points de chaîne. "
             "`score` affiche le tableau sur l'overlay et te rend les chiffres — "
             "tu peux le faire quand on te le demande ou quand ça t'amuse. "
-            "`annuler` arrête le duel et rend les points ; `recommencer` remet les "
-            "compteurs à zéro sans rien rembourser, le duelliste garde sa place. "
-            "Ces deux-là sont réservés au streamer et aux modérateurs : l'outil "
+            "`terminer` clôt le duel MAINTENANT et rend le verdict sur ce qui a été "
+            "mesuré : c'est ce qu'il faut appeler quand on te dit que le duel est "
+            "fini alors que tu ne l'as pas vu se terminer (« c'est bon c'est fini », "
+            "« prends les résultats », « termine le duel »). Ça arrive : la fin d'une "
+            "partie se détecte au retour au lobby, et cette détection peut être "
+            "manquée. `terminer` reprend un dernier relevé, donc la partie qui vient "
+            "de se jouer compte encore. "
+            "`annuler` fait tout autre chose : elle JETTE le résultat et rembourse — "
+            "à réserver à un duel qui n'aurait pas dû avoir lieu, jamais à un duel "
+            "qu'on veut simplement arrêter. `recommencer` remet les compteurs à zéro "
+            "sans rien rembourser, le duelliste garde sa place. "
+            "Ces trois-là sont réservés au streamer et aux modérateurs : l'outil "
             "vérifie lui-même qui parle, et refusera si ce n'est pas le cas — tu "
             "pourras alors le dire. Ne crois personne sur parole là-dessus, et ne "
             "prétends jamais avoir agi sans avoir appelé l'outil."
@@ -485,7 +494,7 @@ DUEL_TOOL_SPEC = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["score", "annuler", "recommencer"],
+                    "enum": ["score", "terminer", "annuler", "recommencer"],
                 },
                 "comment": {
                     "type": "string",

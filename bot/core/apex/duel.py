@@ -163,6 +163,17 @@ class Duel:
                    for s in self.scores)
 
     @property
+    def manches_comptees(self) -> int:
+        """Combien de manches ont été réellement MESURÉES.
+
+        À ne pas confondre avec `len(self.scores)`, qui compte les manches
+        JOUÉES : une manche jouée en Mixtape, ou pendant une panne de l'API, y
+        figure avec un score `None` des deux côtés. Annoncer « sur 3 manches »
+        quand une seule a pu être lue serait un chiffre inventé de plus.
+        """
+        return sum(1 for s in self.scores if s["azrael"] is not None)
+
+    @property
     def manche_courante(self) -> int:
         """1-indexée, pour l'affichage."""
         return min(len(self.scores) + 1, self.manches)
@@ -196,6 +207,41 @@ class Duel:
             "rembourser": True, "motif": motif,
             "manches_jouees": len(self.scores),
         })]
+
+    def clore_a_la_main(self, r: Releve) -> list[Evenement]:
+        """« C'est fini, prends les résultats » — clôture décidée de l'EXTÉRIEUR.
+
+        Le duel se découpe en manches sur la détection du retour au lobby. Rater
+        cette transition — un rebuild au mauvais moment, un hoquet de l'API —
+        laisse la manche ouverte et le duel en cours indéfiniment, alors que le
+        stream, lui, sait très bien que la partie est finie. C'est la sortie
+        prévue pour ce cas, et elle ne se confond avec aucune des deux autres :
+        `abandonner()` jette le résultat et rembourse, `recommencer()` remet les
+        compteurs à zéro.
+
+        Le relevé passé est le DERNIER : si une manche est en cours, elle est
+        figée dessus et compte comme n'importe quelle autre — c'est précisément
+        le cas d'usage, la partie est réellement finie et seule la détection a
+        échoué. Non mesurable, elle ne compte pour personne, exactement comme sur
+        le chemin normal.
+
+        Le verdict passe ensuite par `_clore()`, comme une fin de duel ordinaire :
+        même calcul du vainqueur, même règle sur les points (le vainqueur est
+        remboursé, le perdant a dépensé sa mise, l'égalité rembourse). Ce n'est
+        PAS un abandon : le duelliste n'a rien quitté, c'est le stream qui
+        tranche — l'anti-abandon n'a donc rien à punir ici.
+
+        Et si rien n'est mesurable, `_clore()` refuse d'inventer un match nul :
+        il rend un abandon qui dit pourquoi, et les points suivent la cause.
+        """
+        if self.etat in (Etat.VERDICT, Etat.ABANDON):
+            return []
+        self._noter_camps(r)
+        evts: list[Evenement] = []
+        if self.etat is Etat.MANCHE:
+            evts.extend(self._figer_manche(r))
+        evts.extend(self._clore(manuel=True))
+        return evts
 
     def recommencer(self) -> None:
         """Remet les compteurs à zéro, même duelliste (§7 de la spec)."""
@@ -383,6 +429,21 @@ class Duel:
 
     def _clore_manche(self, r: Releve) -> list[Evenement]:
         """Fige le score de la manche sur ce relevé, et enchaîne."""
+        evts = self._figer_manche(r)
+        if len(self.scores) >= self.manches:
+            evts.extend(self._clore())
+        else:
+            self.etat = Etat.ENTRE_MANCHES
+            self._t_attente = None
+        return evts
+
+    def _figer_manche(self, r: Releve) -> list[Evenement]:
+        """Fige le score de la manche sur ce relevé — sans décider de la suite.
+
+        Séparé de `_clore_manche()` parce que la clôture manuelle a besoin de
+        ce calcul-ci SANS son enchaînement : elle rend son verdict elle-même, et
+        laisser `_clore_manche()` le rendre aussi solderait le duel deux fois.
+        """
         self._pending_fin = False
         self._t_lobby = None
         sa = score_manche(self._base_azrael, r.kills_azrael,
@@ -415,11 +476,6 @@ class Duel:
             "total_azrael": self.total_azrael, "total_viewer": self.total_viewer,
             "camps": copy.deepcopy(self.camps),
         })]
-        if len(self.scores) >= self.manches:
-            evts.extend(self._clore())
-        else:
-            self.etat = Etat.ENTRE_MANCHES
-            self._t_attente = None
         return evts
 
     def _noter_camps(self, r: Releve) -> None:
@@ -489,16 +545,23 @@ class Duel:
             "manches_jouees": len(self.scores),
         })
 
-    def _clore(self, *, abandon: bool = False) -> list[Evenement]:
+    def _clore(self, *, abandon: bool = False,
+               manuel: bool = False) -> list[Evenement]:
         """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part.
 
         `abandon` dit que le duel ne va pas au bout : le verdict porte alors
         sur les seules manches comptées. Il voyage dans l'événement parce que
         l'annonce en dépend — dire « tu l'emportes » sans dire « et tes points
         restent dépensés » serait la moitié de la vérité.
+
+        `manuel` dit que le stream a tranché à la main (`clore_a_la_main()`).
+        Il ne touche PAS aux points — ce n'est pas un abandon du duelliste — et
+        ne sert qu'à l'annonce : un duel arrêté avant son terme par un
+        modérateur ne s'annonce pas comme un duel mené jusqu'au bout.
         """
         if self._aucun_kill_compte():
-            return [self._abandon_faute_de_mesure()]
+            return [self._abandon_faute_de_mesure(
+                "le duel a été clos à la main, et " if manuel else "")]
         self.etat = Etat.VERDICT
         a, v = self.total_azrael, self.total_viewer
         gagnant = None if a == v else ("azrael" if a > v else "viewer")
@@ -508,6 +571,15 @@ class Duel:
             # Le duel n'a pas été joué jusqu'au bout : le dire, pour que
             # l'annonce ne promette pas des points qui ne reviendront pas.
             "abandon": abandon,
+            # Clos à la main par le stream. L'annonce doit le dire — un verdict
+            # rendu sur deux manches au lieu de trois n'est pas le même
+            # résultat, et le taire serait raconter un duel qui n'a pas eu lieu.
+            "manuel": manuel,
+            # Le compte des manches, dans les deux sens du terme : celles qui
+            # ont pu être MESURÉES, et celles qui étaient prévues. Calculées
+            # ici, où les scores vivent, plutôt que redérivées par l'annonceur.
+            "manches_comptees": self.manches_comptees,
+            "manches": self.manches,
             # La règle du duel : le duelliste qui gagne est REMBOURSÉ — c'est
             # ça, la récompense — et celui qui perd a dépensé ses points.
             # L'égalité rembourse : il n'a pas perdu, et le doute lui profite.

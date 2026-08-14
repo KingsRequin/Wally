@@ -908,8 +908,15 @@ class DuelRunner:
         """Fait avancer la machine d'un relevé, et applique les effets."""
         await self._appliquer(duel, duel.avancer(releve))
 
-    async def _appliquer(self, duel: Duel, evts: list[Evenement]) -> None:
-        """Applique les effets d'une salve d'événements.
+    async def _appliquer(self, duel: Duel,
+                         evts: list[Evenement]) -> list[Evenement]:
+        """Applique les effets d'une salve d'événements, et la rend TELLE QU'ANNONCÉE.
+
+        La salve rendue n'est pas toujours celle reçue : un remboursement refusé
+        par Twitch y est marqué (`remboursement_echoue`). Un appelant qui veut
+        rendre compte de ce qui s'est passé — la clôture manuelle répond au
+        modérateur qui l'a demandée — doit lire celle-ci, sans quoi il
+        promettrait des points qui ne reviendront pas.
 
         Ordre STRICT : remboursement(s) → nettoyage de `duel_en_cours` →
         persistance → annonces. Si l'annonce d'un abandon levait AVANT le
@@ -954,6 +961,7 @@ class DuelRunner:
         # verdict — deux `memory.add()` en écriraient deux, dont l'une
         # contredirait l'autre.
         await self._memoriser(duel, _trace_de_fin(evts))
+        return evts
 
     async def _solder(self, duel: Duel, evt: Evenement | None) -> bool:
         """Le sort des points, appliqué UNE fois et jamais laissé en suspens.
@@ -1030,7 +1038,17 @@ class DuelRunner:
             issue = ("personne ne l'emporte, égalité" if gagnant is None
                      else ("Azraël l'emporte" if gagnant == "azrael"
                            else f"{nom} l'emporte"))
-            if d.get("abandon"):
+            if d.get("manuel"):
+                # Clos à la main par le stream : un duel interrompu, lui aussi,
+                # et la revanche ne doit pas s'appuyer sur une victoire nette
+                # qui n'a jamais été jouée en entier. Distinct de l'abandon :
+                # personne n'a quitté, c'est la détection qui a lâché.
+                fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
+                        f"points de chaîne, mais le duel a été CLOS À LA MAIN "
+                        f"depuis le chat avant son terme : sur {manches}, Azraël "
+                        f"{d.get('azrael')} — {nom} {d.get('viewer')}, {issue} sur "
+                        f"ce qui a été compté.")
+            elif d.get("abandon"):
                 # Le verdict porte sur les seules manches jouées : le dire
                 # ainsi, sinon la revanche s'appuiera sur une victoire qui n'a
                 # jamais eu lieu en entier.
@@ -1142,6 +1160,37 @@ class DuelRunner:
             "un abandon du duelliste"))
         return True
 
+    async def _sonder(self, duel: Duel, maintenant: float) -> Releve | None:
+        """Un relevé des DEUX comptes, ou `None` si l'API n'a rien d'exploitable.
+
+        EN PARALLÈLE, et c'est la cadence même du duel qui en dépend : une
+        requête `/bridge` coûte ~1 s de latence, donc deux profils sondés l'un
+        après l'autre portaient le tour à ~2 s AVANT le sommeil de `cadence_s`.
+        La cadence réelle valait le double de celle annoncée (4 s au lieu de 2),
+        et le debounce à deux relevés reportait la détection d'une transition à
+        ~8 s — pour un plafond dur mesuré à 39 s entre un retour au lobby et le
+        lancement suivant. L'API accepte 5 req/s (mesuré) et le limiteur du
+        client espace de toute façon les deux départs : deux requêtes
+        simultanées ne coûtent rien.
+        """
+        azrael, viewer = await asyncio.gather(
+            self._profil(duel.azrael_uid), self._profil(duel.viewer_uid))
+        if azrael is None or viewer is None:
+            return None
+        return Releve(
+            t=maintenant,
+            # `_num` et non `bool()` nu : cette API glisse des chaînes là où
+            # on attend un nombre, et `bool("0")` vaut `True` — ça ferait
+            # démarrer des manches qui n'ont jamais eu lieu. Même garde que
+            # `reader.py` sur le même piège.
+            azrael_in_game=bool(_num((azrael.get("realtime") or {}).get("isInGame"))),
+            viewer_in_game=bool(_num((viewer.get("realtime") or {}).get("isInGame"))),
+            kills_azrael=read_kill_trackers(azrael),
+            kills_viewer=read_kill_trackers(viewer),
+            camp_azrael=_camp(azrael),
+            camp_viewer=_camp(viewer),
+        )
+
     async def tick(self, maintenant: float) -> None:
         """Un tour de sonde. Appelé toutes les `cadence_s` pendant un duel.
 
@@ -1169,18 +1218,8 @@ class DuelRunner:
                 t=maintenant, azrael_in_game=False, viewer_in_game=False,
                 kills_azrael={}, kills_viewer={}))
             return
-        # EN PARALLÈLE, et c'est la cadence même du duel qui en dépend : une
-        # requête `/bridge` coûte ~1 s de latence, donc deux profils sondés
-        # l'un après l'autre portaient le tour à ~2 s AVANT le sommeil de
-        # `cadence_s`. La cadence réelle valait le double de celle annoncée (4 s
-        # au lieu de 2), et le debounce à deux relevés reportait la détection
-        # d'une transition à ~8 s — pour un plafond dur mesuré à 39 s entre un
-        # retour au lobby et le lancement suivant. L'API accepte 5 req/s
-        # (mesuré) et le limiteur du client espace de toute façon les deux
-        # départs : deux requêtes simultanées ne coûtent rien.
-        azrael, viewer = await asyncio.gather(
-            self._profil(duel.azrael_uid), self._profil(duel.viewer_uid))
-        if azrael is None or viewer is None:
+        releve = await self._sonder(duel, maintenant)
+        if releve is None:
             # L'API muette ou en erreur est tolérée : la machine à états ne
             # voit simplement rien passer CE tour-ci. Mais le minuteur
             # d'attente doit continuer d'avancer pendant ATTENTE_SQUAD et
@@ -1216,20 +1255,6 @@ class DuelRunner:
                 kills_azrael={}, kills_viewer={}))
             return
         self._muet_depuis = None
-
-        releve = Releve(
-            t=maintenant,
-            # `_num` et non `bool()` nu : cette API glisse des chaînes là où
-            # on attend un nombre, et `bool("0")` vaut `True` — ça ferait
-            # démarrer des manches qui n'ont jamais eu lieu. Même garde que
-            # `reader.py` sur le même piège.
-            azrael_in_game=bool(_num((azrael.get("realtime") or {}).get("isInGame"))),
-            viewer_in_game=bool(_num((viewer.get("realtime") or {}).get("isInGame"))),
-            kills_azrael=read_kill_trackers(azrael),
-            kills_viewer=read_kill_trackers(viewer),
-            camp_azrael=_camp(azrael),
-            camp_viewer=_camp(viewer),
-        )
         await self._avancer(duel, releve)
 
     # -- Contrôle (streamer et modérateurs) ---------------------------------
@@ -1253,6 +1278,57 @@ class DuelRunner:
         # précédent — et surtout aucun vainqueur ne doit être inventé.
         await self._memoriser(duel, evt)
         return rendu
+
+    async def terminer(self) -> Evenement | None:
+        """« C'est fini, prends les résultats » — clôture manuelle du duel.
+
+        La sortie prévue quand un retour au lobby est passé inaperçu : la manche
+        ne se clôt jamais, le duel reste ouvert indéfiniment, et la seule issue
+        était jusqu'ici `annuler()` — qui jette le résultat de la partie qu'on
+        vient de jouer. Ici le verdict est rendu sur ce qui a été MESURÉ, et les
+        points suivent la règle ordinaire du duel (`Duel._clore`).
+
+        Un DERNIER relevé est pris quand une manche est en cours, et seulement
+        là : c'est le seul état où il reste quelque chose à mesurer, et sonder
+        ailleurs coûterait deux requêtes pour rien — en RESOLUTION il n'y a même
+        pas d'`uid` à interroger. L'API muette ne bloque rien : la manche en
+        cours n'est alors simplement pas mesurable, comme partout ailleurs, et
+        le verdict porte sur les manches déjà comptées.
+
+        Rend l'événement qui raconte la fin — verdict ou abandon —, TEL QU'IL A
+        ÉTÉ ANNONCÉ, échec de remboursement compris : l'outil du chat en fait un
+        compte rendu au modérateur, et ne doit rien promettre que le duel n'ait
+        tenu. `None` quand il n'y avait plus rien à clore.
+        """
+        duel = self.duel_en_cours
+        if duel is None:
+            return None
+        maintenant = time.time()
+        releve = None
+        if duel.etat is Etat.MANCHE:
+            releve = await self._sonder(duel, maintenant)
+            if self.duel_en_cours is not duel:
+                # La sonde de fond a soldé ce duel PENDANT notre appel réseau
+                # (~1 s) : l'objet capturé est orphelin, ses points sont déjà
+                # arbitrés et sa fin déjà annoncée. Le clore une seconde fois
+                # rembourserait ou honorerait deux fois la même redemption.
+                logger.info("Duel Apex : clôture manuelle sans objet, le duel "
+                            "s'est terminé pendant la demande")
+                return None
+            if releve is None:
+                # Pas de silence : la manche en cours ne comptera pas, et
+                # personne ne pourra le déduire d'un log absent.
+                logger.warning(
+                    "Duel Apex : clôture manuelle sans relevé — l'API n'a rien "
+                    "rendu, la manche en cours ne peut pas être comptée")
+        if releve is None:
+            releve = Releve(t=maintenant, azrael_in_game=False,
+                            viewer_in_game=False, kills_azrael={}, kills_viewer={})
+        logger.info("Duel Apex : clôture manuelle depuis le chat (état {e}, "
+                    "{n} manche(s) déjà comptée(s))",
+                    e=duel.etat.value, n=duel.manches_comptees)
+        return _trace_de_fin(await self._appliquer(duel,
+                                                   duel.clore_a_la_main(releve)))
 
     async def recommencer(self) -> None:
         """Compteurs à zéro, même duelliste — pas de remboursement, il garde sa place."""

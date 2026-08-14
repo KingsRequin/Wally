@@ -182,6 +182,20 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         issue = ("personne ne l'emporte, c'est une égalité" if gagnant is None
                  else ("Azraël l'emporte" if gagnant == "azrael"
                        else f"{viewer} l'emporte"))
+        if d.get("manuel"):
+            # Clos à la main depuis le chat, sur ce qui avait été mesuré. Deux
+            # choses à dire et pas une : que le duel n'est pas allé à son terme
+            # normal, et sur COMBIEN de manches le verdict porte — un 5-2 sur
+            # une manche comptée n'est pas un 5-2 sur trois. Les points, eux,
+            # suivent la règle ordinaire : personne n'a quitté le duel.
+            points = (_points_rendus(d, viewer) if d.get("rembourser")
+                      else f"Les points de {viewer} sont consommés.")
+            jouees = len(d.get("scores") or [])
+            avant = " avant son terme" if jouees < int(d.get("manches") or 0) else ""
+            return (f"Duel clos à la main depuis le chat{avant}, "
+                    f"sur {d.get('manches_comptees')} manche(s) comptée(s) sur "
+                    f"{d.get('manches')} : Azraël {d.get('azrael')}, {viewer} "
+                    f"{d.get('viewer')} — {issue}. {points}")
         if d.get("abandon"):
             # Le duel s'est arrêté en route. Les DEUX faits doivent être dits,
             # sans quoi l'annonce ment par omission : le verdict tient sur les
