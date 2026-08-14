@@ -315,6 +315,94 @@ class TwitchAPI:
             logger.warning("get_users_by_ids failed: {e}", e=exc)
         return result
 
+    # ------------------------------------------------------------------
+    # Emotes
+    # ------------------------------------------------------------------
+
+    EMOTES_GLOBAL_URL = "https://api.twitch.tv/helix/chat/emotes/global"
+    EMOTES_USER_URL = "https://api.twitch.tv/helix/chat/emotes/user"
+
+    async def _get_json(self, url: str, params: dict) -> Optional[dict]:
+        """GET Helix avec le token du bot, retry une fois sur 401. None si échec.
+
+        Les six méthodes ci-dessus recopient chacune ce squelette ; les deux
+        appels d'emotes ne le recopient pas une septième fois. Rendre `None`
+        plutôt que `{}` distingue « l'API n'a pas répondu » de « elle a répondu
+        une liste vide » — un registre d'emotes ne doit surtout pas confondre
+        les deux, sinon une panne réseau efface les emotes connues.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.get(
+                        url, params=params,
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        # Un scope manquant rend AUSSI 401, et aucun
+                        # renouvellement ne le réparera : ne pas boucler dessus,
+                        # et le dire en INFO — c'est une décision d'autorisation,
+                        # pas une panne. Sans ce tri, un scope absent se lisait
+                        # « token expiré » et déclenchait un renouvellement
+                        # inutile toutes les six heures.
+                        if "scope" in (resp.text or "").lower():
+                            logger.info("Twitch {u} refusé : {m}", u=url,
+                                        m=(resp.text or "")[:200])
+                            return None
+                        if not await self._tm.refresh("bot"):
+                            return None
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning("Twitch {u} → HTTP {c}", u=url, c=resp.status_code)
+                        return None
+                    return resp.json()
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant
+            logger.warning("Twitch {u} a échoué : {e}", u=url, e=exc)
+        return None
+
+    async def get_global_emotes(self) -> Optional[list[str]]:
+        """Les emotes globales Twitch, utilisables par TOUT LE MONDE. None si échec.
+
+        Aucun scope : c'est le catalogue public. Ce sont les seules qu'un compte
+        sans abonnement puisse écrire sans risque — une emote de chaîne à
+        laquelle on n'a pas droit s'affiche en toutes lettres dans le chat.
+        """
+        data = await self._get_json(self.EMOTES_GLOBAL_URL, {})
+        if data is None:
+            return None
+        return [str(e.get("name") or "") for e in data.get("data", []) if e.get("name")]
+
+    async def get_entitled_channel_emotes(self) -> Optional[list[str]]:
+        """Les emotes DE LA CHAÎNE que le compte du bot a le droit d'écrire.
+
+        `/helix/chat/emotes?broadcaster_id=` liste les 27 emotes de la chaîne
+        mais ne dit pas lesquelles sont ouvertes à CE compte : 26 sont réservées
+        aux abonnés, une aux followers. C'est `/helix/chat/emotes/user` qui
+        répond à la question — d'où le filtre sur `owner_id`, l'endpoint rendant
+        aussi les globales et celles des autres chaînes.
+
+        Demande le scope `user:read:emotes`, que le token du bot n'a pas encore
+        (il l'obtiendra à la prochaine autorisation, cf. `_BOT_SCOPES`). Sans
+        lui : liste vide, donc aucune emote de chaîne proposée — jamais une
+        emote inventée. Le jour où le bot est abonné ET le scope accordé, les
+        `azrael74*` entrent d'elles-mêmes.
+        """
+        data = await self._get_json(
+            self.EMOTES_USER_URL,
+            {"user_id": self._bot_id, "broadcaster_id": self._broadcaster_id},
+        )
+        if data is None:
+            return None
+        return [
+            str(e.get("name") or "")
+            for e in data.get("data", [])
+            if e.get("name") and str(e.get("owner_id") or "") == str(self._broadcaster_id)
+        ]
+
     # Qualité visée pour l'overlay : la vidéo y fait 540 px de large, le 1080p
     # ne serait que du poids en plus (17 Mo pour 25 s) et un démarrage plus lent.
     _CLIP_QUALITY = "720"

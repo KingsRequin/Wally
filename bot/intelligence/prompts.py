@@ -11,6 +11,7 @@ from bot.core.apex.duel_runner import current_duel
 from bot.core.apex.watcher import current_apex_block
 from bot.core.self_trace import current_self_trace_block
 from bot.core.stream_feed import current_stream_feed_block
+from bot.core.twitch_emotes import current_emote_block
 from bot.core.voice_transcript import current_voice_transcript_block
 from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_host_metrics, cached_weather
@@ -389,6 +390,14 @@ class PromptBuilder:
         # il n'a rien fait — zéro jeton dans le cas courant.
         if self_block := current_self_trace_block():
             dynamic_parts.append(self_block)
+
+        # Les emotes du chat Twitch, et SEULEMENT sur Twitch : une emote Twitch
+        # écrite sur Discord ou dans une bulle d'overlay n'est qu'un mot bizarre.
+        # Le registre ne contient que des emotes vérifiées auprès de l'API —
+        # absent tant qu'aucune n'est sûre, donc zéro jeton et jamais d'invention.
+        if situation and str(situation.get("platform") or "").lower() == "twitch":
+            if emote_block := current_emote_block():
+                dynamic_parts.append(emote_block)
 
         # Inject directives for dominant emotions (top 2 above 0.2, tiered)
         # Priority: secondary emotions > composite pairs > atomic with fluid transitions

@@ -109,6 +109,21 @@ def isolate_self_trace():
 
 
 @pytest.fixture(autouse=True)
+def isolate_emote_registry():
+    """Vide le registre d'emotes Twitch entre deux tests.
+
+    Même famille que `isolate_self_trace` : un singleton de MODULE
+    (`bot.core.twitch_emotes._REGISTRE`). Un test qui déclare `LUL` utilisable
+    et en compte trois laisserait le bloc « Les emotes de ce chat » dans le
+    prompt du test suivant, qui n'a rien demandé.
+    """
+    from bot.core.twitch_emotes import reset_emotes
+    reset_emotes()
+    yield
+    reset_emotes()
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 

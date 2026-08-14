@@ -18,6 +18,7 @@ from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.audit_log import observe_event
 from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
+from bot.core.twitch_emotes import note_chat_emotes
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.intelligence import pending_question, thread_sense
@@ -704,6 +705,15 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         )
         _overlay_chat_tasks.add(_t)
         _t.add_done_callback(_overlay_chat_tasks.discard)
+
+    # Quelles emotes vivent sur CETTE chaîne. Rien à voir avec la vague
+    # ci-dessous, qui cherche un pic à l'écran : ici on tient un classement lent
+    # de ce que le chat emploie, pour ne proposer à Wally que des emotes qui ont
+    # cours ici ET qu'il a le droit d'écrire (`bot/core/twitch_emotes.py`).
+    # Chaîne home seulement — le vocabulaire d'un invité n'est pas celui d'ici.
+    # Hors overlay aussi : le registre sert au chat, pas à l'écran.
+    if est_chaine_home(bot, channel_name):
+        note_chat_emotes(content)
 
     # Vagues d'emotes : quand plusieurs personnes spamment la même chose, c'est
     # le chat qui réagit ensemble — ça mérite l'écran. Détection mécanique.

@@ -35,9 +35,27 @@ _TOKEN = re.compile(r"^[A-Za-z0-9_]{3,30}$")
 def _looks_like_emote(token: str) -> bool:
     """Vrai si le mot ressemble à un emote plutôt qu'à un mot français.
 
-    Un emote porte une majuscule ailleurs qu'en tête (PogChamp, azrael74HYPE) ou
-    est tout en capitales (KEKW). « Bonjour » et « ptdr » ne passent pas.
+    Deux voies, la première étant une certitude et la seconde une ressemblance :
+
+    1. **Le mot EST une emote connue**, vérifiée auprès de l'API Twitch
+       (`bot/core/twitch_emotes.py`). Sans elle, la règle de forme ci-dessous
+       ratait `Kappa` — 128 emplois en sept jours, l'emote la plus utilisée du
+       chat — ainsi que `Keepo`, `Kreygasm`, `Jebaited` et les 72 globales qui
+       n'ont de majuscule qu'en tête : une vague de `Kappa` n'a jamais pu
+       atteindre l'écran. Registre vide (API muette) : on retombe seul sur la
+       forme, comme avant.
+    2. **Le mot a la FORME d'une emote** : une majuscule ailleurs qu'en tête
+       (PogChamp, azrael74HYPE) ou tout en capitales (KEKW). C'est ce qui
+       rattrape les emotes de chaîne et de tiers, absentes du registre puisque
+       Wally n'a pas le droit de les écrire. « Bonjour » et « ptdr » ne passent
+       pas.
     """
+    # Import local : `twitch_emotes` n'a aucune raison d'être chargé pour lire
+    # ce module, et l'appel est un test d'appartenance à un `set`.
+    from bot.core.twitch_emotes import active_emote_registry
+
+    if active_emote_registry().knows(token):
+        return True
     if not _TOKEN.match(token):
         return False
     if token.isupper() and len(token) >= 3:

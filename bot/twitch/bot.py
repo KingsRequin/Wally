@@ -138,7 +138,33 @@ class WallyTwitch(commands.Bot):
             self._resolve_missing_usernames(),
             self._eventsub_watchdog(),
             self._duel_poll_loop(),
+            self._emote_refresh_loop(),
         )
+
+    async def _emote_refresh_loop(self) -> None:
+        """Tient à jour les emotes que Wally a le droit d'écrire dans le chat.
+
+        Le catalogue Twitch bouge lentement (une emote ajoutée par la chaîne, un
+        abonnement offert au bot) : six heures suffisent, et l'appel est gratuit
+        en quota. L'amorçage des compteurs ne se fait qu'une fois — il relit des
+        journaux, pas l'API.
+        """
+        from bot.core.twitch_emotes import active_emote_registry, refresh_from_api
+
+        amorce = False
+        while True:
+            await refresh_from_api(self.twitch_api)
+            if not amorce:
+                amorce = True
+                racine = getattr(getattr(self, "conv_log", None), "root", None)
+                if racine is not None:
+                    # En thread : c'est de la lecture disque, elle n'a rien à
+                    # faire dans la boucle d'événements (même règle que le reste
+                    # du projet pour les I/O bloquantes).
+                    await asyncio.to_thread(
+                        active_emote_registry().seed_from_logs, racine
+                    )
+            await asyncio.sleep(6 * 3600)
 
     async def _duel_poll_loop(self) -> None:
         """Sonde le duel Apex en cours, s'il y en a un.
