@@ -161,6 +161,21 @@
   const widgets = document.getElementById("widgets");
   let widgetTimer = null;
 
+  // Les valeurs publiées à l'apparition PRÉCÉDENTE du duel Apex, pour faire
+  // tressaillir le seul chiffre qui vient de bouger (§11 de la spec du duel).
+  //
+  // Une mémoire de module, et non un rafraîchissement en place façon sondage :
+  // le widget du duel n'est PAS `sticky`, il reparaît à chaque manche et le
+  // cycle normal des widgets l'efface entre-temps. Au moment où le score
+  // suivant arrive, il n'y a le plus souvent plus rien à l'écran à mettre à
+  // jour — un rafraîchissement en place ne verrait donc jamais la différence,
+  // là où cette mémoire la voit d'une manche à l'autre. Et c'est bien ce qu'on
+  // veut : un duel dure une heure, ses apparitions doivent garder leur entrée.
+  //
+  // Déclaré AVANT `BUILDERS`, comme le reste des `let` du fichier : un `let`
+  // lu avant sa ligne lève une TDZ, que `node --check` ne détecte pas.
+  let duelPrecedent = null;
+
   const BUILDERS = {
     // Le résultat vient de Wally, pas du hasard du navigateur : c'est ce qui lui
     // permet de commenter — et de tricher.
@@ -733,6 +748,12 @@
 
     versus(p) {
       const box = el("div", "versus");
+      // `duel` marque une comparaison qui revient : le duel Apex se rejoue en
+      // plusieurs apparitions. Une comparaison générique ne le passe pas et
+      // garde exactement le rendu d'avant.
+      const duel = p.duel === true;
+      const final = duel && p.final === true;
+      if (final) box.classList.add("final");
       if (p.label) {
         const lbl = el("div", "vs-label");
         lbl.textContent = String(p.label);
@@ -744,14 +765,28 @@
       const top = Math.max(left, right, 1);
       // Égalité parfaite : personne ne mène. `value >= Math.max(...)` marquait
       // les DEUX camps gagnants, ce qui ne veut rien dire à l'écran.
-      const lead = left === right ? null : (left > right ? 0 : 1);
+      const devant = left === right ? null : (left > right ? 0 : 1);
+      // Tant que le duel COURT, personne n'est désigné vainqueur : c'est la
+      // grammaire du sondage, dont aucune option n'est `win` avant la clôture.
+      // Allumer la couleur de victoire dès la manche 1 la consomme pour toute
+      // l'heure que dure le duel, et le verdict n'apporte plus rien à l'écran.
+      // Hors duel, une comparaison est un instantané : son meneur reste coloré.
+      const lead = (duel && !final) ? null : devant;
+      const avant = duel ? duelPrecedent : null;
+      if (duel) duelPrecedent = final ? null : [left, right];
       [[p.left_name, left], [p.right_name, right]].forEach(([name, value], i) => {
-        const row = el("div", i === lead ? "vs-row lead" : "vs-row");
+        const row = el("div", "vs-row");
+        if (i === lead) row.classList.add("lead");
+        else if (lead !== null) row.classList.add("lose");
         row.style.setProperty("--i", String(i));
         const head = el("div", "row");
-        const n = el("span", ""), v = el("span", "");
+        const n = el("span", ""), v = el("span", "count");
         n.textContent = String(name || "?");
         v.textContent = value.toLocaleString("fr-FR");
+        // Le chiffre qui vient de bouger tressaille : on voit QUI vient de
+        // faire un kill, sans relire les deux lignes. Uniquement à la hausse —
+        // un score qui baisse est un duel qui recommence, pas un exploit.
+        if (avant && value > avant[i]) v.classList.add("bump");
         head.append(n, v);
         row.appendChild(head);
         // Sous-titre optionnel (légende jouée, niveau du compte) — le duel s'en

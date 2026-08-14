@@ -63,6 +63,21 @@ def test_la_bulle_grandit_depuis_sa_queue():
     )
 
 
+def test_la_cloture_du_duel_eteint_le_perdant():
+    """La couleur de victoire ne peut pas, à elle seule, dire qu'un duel est
+    fini : le tableau colore déjà le meneur à chaque manche. Il faut donc que
+    la clôture éteigne le perdant — c'est le seul contraste que le spectateur
+    ne voit jamais en cours de duel.
+
+    Le sélecteur peut changer ; ce qui est tenu, c'est qu'une règle de clôture
+    du tableau baisse une opacité."""
+    css = _css()
+    cloture = re.findall(r"(?m)^\s*\.versus\.final[^{]*\{([^}]*)\}", css)
+    assert cloture, "aucune règle de clôture sur le tableau du duel"
+    estompe = [c for c in cloture if re.search(r"opacity:\s*0?\.\d", c)]
+    assert estompe, f"la clôture ne baisse aucune opacité : {cloture}"
+
+
 def test_aucune_barre_n_anime_sa_largeur():
     """`width` refait la mise en page à chaque image, sur le thread principal.
     `transform` est composé par le GPU : la barre continue de glisser même quand

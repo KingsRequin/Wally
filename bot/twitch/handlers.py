@@ -404,6 +404,10 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
                     left_sub=_sous_titre(camps.get("azrael")),
                     right_name=duel.viewer_nom, right_value=duel.total_viewer,
                     right_sub=_sous_titre(camps.get("viewer")),
+                    # Le duel COURT : même tableau que celui de l'annonceur,
+                    # donc même règle à l'écran — pas de couleur de victoire
+                    # avant le verdict, qui seul la donne.
+                    duel=True,
                 ) is not None
             except Exception as exc:  # noqa: BLE001 — les chiffres restent dicibles
                 logger.warning("duel_apex : tableau non affiché : {e}", e=exc)

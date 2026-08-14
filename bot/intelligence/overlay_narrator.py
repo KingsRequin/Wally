@@ -1035,6 +1035,17 @@ class OverlayNarrator:
                 sous_titre = str(extra.get(cote) or "").strip()
                 if sous_titre:
                     params[cote] = ecourter(sous_titre, 24)
+            # Marqueurs posés par le duel Apex, jamais par le modèle : ils ne
+            # sont pas dans le schéma de l'outil. `duel` dit que cette
+            # comparaison revient manche après manche — l'écran réserve alors
+            # la couleur de victoire au verdict, et fait tressaillir le chiffre
+            # qui vient de bouger. `final` est le verdict lui-même, et n'existe
+            # que sous `duel` : une comparaison générique ne peut pas se
+            # déclarer close.
+            if extra.get("duel") is True:
+                params["duel"] = True
+                if extra.get("final") is True:
+                    params["final"] = True
 
         elif widget == "uptime":
             label = self._uptime_label()

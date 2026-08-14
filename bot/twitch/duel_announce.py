@@ -414,6 +414,10 @@ class DuelAnnonceur:
                 left_sub=_sous_titre(camps.get("azrael")),
                 right_name=self._nom() or "le duelliste", right_value=droite,
                 right_sub=_sous_titre(camps.get("viewer")),
+                # Ce tableau revient manche après manche : l'écran garde la
+                # couleur de victoire pour le verdict, et fait tressaillir le
+                # seul chiffre qui a bougé depuis la dernière apparition.
+                duel=True, final=evt.type == "verdict",
             )
         except Exception as exc:  # noqa: BLE001 — l'écran n'est pas le canal principal
             logger.warning("Duel : tableau non affiché : {e}", e=exc)

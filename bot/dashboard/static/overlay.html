@@ -1212,6 +1212,31 @@
     .versus .vs-row.lead .bar span {
       background: linear-gradient(90deg, var(--win-deep), var(--win));
     }
+    /* Le chiffre qui vient de bouger tressaille : on voit QUI vient de faire un
+       kill. Même animation que le sondage. Décalé jusqu'après l'entrée de sa
+       ligne — sinon il tressaille pendant qu'elle glisse encore, et personne
+       ne le voit. */
+    .versus .count { display: inline-block; }
+    .versus .count.bump {
+      animation: count-bump .32s ease-out;
+      animation-delay: calc(var(--i, 0) * 90ms + 480ms);
+      animation-fill-mode: backwards;
+    }
+    /* Clôture du duel — le gagnant pulse, le perdant s'estompe à 45 %. C'est
+       exactement la fin du sondage, et c'est le CONTRASTE qui dit que c'est
+       fini : en cours de duel, personne n'est vert et personne n'est éteint.
+       La ligne du gagnant garde son entrée en cascade — la remplacer par la
+       seule pulsation la priverait d'arrivée, l'autre ligne glissant sans
+       elle. */
+    .versus.final .vs-row.lead {
+      animation:
+        opt-in .34s cubic-bezier(.22, 1.2, .4, 1) calc(var(--i, 0) * 90ms + 140ms) backwards,
+        win-pop .5s cubic-bezier(.22, 1.5, .4, 1) calc(var(--i, 0) * 90ms + 480ms) backwards;
+    }
+    .versus.final .vs-row.lose {
+      opacity: .45;
+      transition: opacity var(--t-slow) var(--ease);
+    }
 
     /* Compteur (uptime) — texte simple, lisible sur tout fond. */
     .counter {

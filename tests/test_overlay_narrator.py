@@ -530,6 +530,32 @@ def test_le_versus_n_affiche_pas_un_sous_titre_vide():
     assert "right_sub" not in widget["params"]
 
 
+def test_une_comparaison_generique_ne_se_declare_ni_duel_ni_close():
+    """`duel` et `final` changent le rendu à l'écran (couleur de victoire
+    réservée au verdict, chiffre qui tressaille). Une comparaison ordinaire —
+    deux joueurs, un instantané — n'a rien à voir avec une suite de manches et
+    ne doit rien montrer de nouveau."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("versus", "", label="Kills", left_name="Azraël", left_value=11,
+                  right_name="Bob", right_value=6)
+    widget = next(e for e in _evts(q) if e["type"] == "widget")
+    assert "duel" not in widget["params"]
+    assert "final" not in widget["params"]
+
+
+def test_un_modele_ne_peut_pas_declarer_une_comparaison_close():
+    """`final` n'existe que sous `duel` : sans quoi une comparaison lancée par
+    le modèle pourrait s'afficher en verdict — le gagnant qui pulse et le
+    perdant éteint — sur des chiffres qui ne tranchent rien."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("versus", "", label="Kills", left_name="Azraël", left_value=11,
+                  right_name="Bob", right_value=6, final=True)
+    widget = next(e for e in _evts(q) if e["type"] == "widget")
+    assert "final" not in widget["params"]
+
+
 def test_le_widget_poll_refuse_une_question_vide():
     n, _, _ = _narrator()
     assert n.show_widget("poll", "", options=["Oui", "Non"]) is None

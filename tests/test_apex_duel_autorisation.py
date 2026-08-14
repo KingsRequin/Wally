@@ -111,6 +111,26 @@ async def test_le_score_reste_ouvert_a_tout_le_monde(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_le_tableau_a_la_demande_dit_que_le_duel_COURT(monkeypatch):
+    """« wally, affiche le score » publie le même tableau que l'annonceur : il
+    doit donc suivre la même règle d'écran, sinon le duel s'affiche vainqueur
+    désigné à la demande et sans vainqueur au changement de manche."""
+    monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
+    bot = _bot_avec_duel()
+    narrator = MagicMock()
+    narrator.show_widget.return_value = {"widget": "versus"}
+    bot.overlay_narrator = narrator
+    payload = make_payload(content="wally le score du duel ?", author_name="bob")
+    executeur = await _executeur(bot, payload)
+
+    await executeur("duel_apex", json.dumps({"action": "score"}))
+
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["duel"] is True
+    assert kwargs.get("final") is not True, "le duel n'est pas fini"
+
+
+@pytest.mark.asyncio
 async def test_sans_duel_l_outil_le_dit_au_lieu_de_se_taire(monkeypatch):
     monkeypatch.setenv("TWITCH_BOT_NICK", "wallybot")
     bot = _bot_avec_duel()

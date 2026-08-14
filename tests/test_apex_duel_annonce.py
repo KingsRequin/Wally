@@ -273,6 +273,42 @@ async def test_le_debut_de_la_premiere_manche_affiche_le_tableau_a_zero():
     assert narrator.show_widget.called
 
 
+# ── Le verdict ne se lit pas comme un score de mi-parcours ──────────────────
+@pytest.mark.asyncio
+async def test_le_tableau_du_verdict_annonce_qu_il_est_final():
+    """Sans ce marqueur, le score final s'affiche exactement comme celui de la
+    manche 2 : mêmes barres, même couleur, et rien ne dit au spectateur qu'il
+    n'y aura pas de manche suivante."""
+    bot = _bot("7 à 4, Azraël l'emporte.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("verdict", {
+        "azrael": 7, "viewer": 4, "gagnant": "azrael", "abandon": False,
+        "scores": [{"azrael": 7, "viewer": 4}], "camps": CAMPS}))
+
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["duel"] is True
+    assert kwargs["final"] is True
+
+
+@pytest.mark.asyncio
+async def test_un_score_de_mi_parcours_ne_se_declare_pas_final():
+    """Le duel continue : rien ne doit se refermer à l'écran. C'est ce qui
+    permet au verdict, lui, de vouloir dire quelque chose."""
+    bot = _bot("4 à 2 pour Azraël.")
+    narrator = _narrateur(bot)
+    annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
+    await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
+    await annonceur(Evenement("manche_fin", {
+        "manche": 1, "sur": 3, "azrael": 4, "viewer": 2, "mesurable": True,
+        "total_azrael": 4, "total_viewer": 2, "camps": CAMPS}))
+
+    kwargs = narrator.show_widget.call_args.kwargs
+    assert kwargs["duel"] is True
+    assert kwargs["final"] is False
+
+
 @pytest.mark.asyncio
 async def test_pas_de_tableau_au_debut_d_une_manche_si_rien_n_a_ete_compte():
     """Une manche jouée sans qu'aucun kill n'ait pu être compté (Mixtape, API
