@@ -183,6 +183,24 @@ def _tranche_les_points(evts: list[Evenement]) -> Evenement | None:
     return None
 
 
+def _trace_de_fin(evts: list[Evenement]) -> Evenement | None:
+    """L'événement qui raconte la FIN du duel — un seul par salve.
+
+    Le VERDICT d'abord quand il y en a un : il porte les chiffres et le drapeau
+    `abandon`, donc il sait dire « interrompu » aussi bien que l'abandon qui le
+    précède. Sinon l'abandon, qui n'a pas de vainqueur à raconter.
+
+    L'ordre est l'inverse de `_tranche_les_points()`, et c'est voulu : là-bas
+    c'est l'anti-abandon qui doit primer sur les points ; ici c'est le récit le
+    plus complet qui doit primer, et il ne s'agit plus d'argent.
+    """
+    for type_evt in ("verdict", "abandon"):
+        for evt in evts:
+            if evt.type == type_evt:
+                return evt
+    return None
+
+
 def _echec_de_remboursement(evt: Evenement) -> Evenement:
     """Le même événement, mais qui dit que les points ne sont PAS revenus.
 
@@ -714,6 +732,10 @@ class DuelRunner:
             self.duel_en_cours = None
             await self._ranger()
             await self._annoncer_sur(evt)
+            # Après l'annonce, comme partout : la trace ne passe jamais devant
+            # les points ni devant la parole. Ce duel n'a pas eu lieu, mais
+            # l'achat, lui, a bien eu lieu.
+            await self._memoriser(duel, evt)
             return True
 
         await self._annoncer_sur(Evenement("compte_introuvable", {
@@ -851,9 +873,12 @@ class DuelRunner:
         # EN DERNIER, après la chaîne intouchable remboursement → nettoyage →
         # persistance → annonce : la trace mémoire est un bonus, elle ne prend
         # jamais le pas sur les points du viewer ni sur ce qui se dit à l'écran.
-        for evt in evts:
-            if evt.type == "verdict":
-                await self._memoriser(duel, evt)
+        #
+        # UNE trace par salve, et pas une par événement : le duelliste qui ne
+        # revient pas après une manche comptée déclenche un abandon PUIS un
+        # verdict — deux `memory.add()` en écriraient deux, dont l'une
+        # contredirait l'autre.
+        await self._memoriser(duel, _trace_de_fin(evts))
 
     async def _solder(self, duel: Duel, evt: Evenement | None) -> bool:
         """Le sort des points, appliqué UNE fois et jamais laissé en suspens.
@@ -878,17 +903,28 @@ class DuelRunner:
         await self._api.honorer_redemption(self._reward_id, duel.redemption_id)
         return False
 
-    async def _memoriser(self, duel: Duel, evt: Evenement) -> None:
+    async def _memoriser(self, duel: Duel, evt: Evenement | None) -> None:
         """Le duel laisse une trace : « tu m'avais mis 11–6 le mois dernier ».
 
         Écrit un fait lisible tel quel — par un humain comme par le journal
         quotidien, qui lit déjà la mémoire et n'a donc rien à brancher.
 
+        La trace dit ce qui s'est RÉELLEMENT passé. Deux façons de mentir
+        étaient ouvertes, et toutes deux fabriquaient de faux précédents pour
+        la revanche :
+
+          · le drapeau `abandon` du verdict était ignoré — un duelliste qui
+            mène puis quitte se retrouvait mémorisé « vainqueur » d'un duel
+            régulier, exactement ce que la règle du jeu refuse de récompenser ;
+          · une fin SANS verdict (abandon remboursé, annulation par un
+            modérateur, compte jamais résolu) ne laissait rien du tout, alors
+            que c'est une soirée où quelqu'un a bel et bien dépensé ses points.
+
         Ne fait JAMAIS échouer un duel : le verdict est déjà annoncé et les
         points déjà arbitrés quand on arrive ici. Une mémoire absente,
         indisponible ou en erreur se journalise et s'oublie.
         """
-        if self._memory is None:
+        if self._memory is None or evt is None:
             return
         if not duel.viewer_id:
             # Pas de silence : sans id, il n'y a pas de fiche où ranger ça, et
@@ -899,17 +935,38 @@ class DuelRunner:
             return
         d = evt.donnees or {}
         nom = duel.viewer_nom or "le duelliste"
-        gagnant = d.get("gagnant")
-        issue = ("personne ne l'emporte, égalité" if gagnant is None
-                 else ("Azraël l'emporte" if gagnant == "azrael" else f"{nom} l'emporte"))
         # Seules les manches MESURÉES sont comptées : annoncer « sur 3 manches »
         # quand une seule a pu être lue serait un chiffre inventé de plus.
-        comptees = sum(1 for s in (d.get("scores") or []) if s.get("azrael") is not None)
+        scores = d.get("scores") or duel.scores
+        comptees = sum(1 for s in scores if s.get("azrael") is not None)
         manches = f"{comptees} manche{'s' if comptees > 1 else ''} comptée" \
                   f"{'s' if comptees > 1 else ''}"
-        fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses points "
-                f"de chaîne : Azraël {d.get('azrael')} — {nom} {d.get('viewer')} "
-                f"sur {manches}, {issue}.")
+        if evt.type != "verdict":
+            # Aucun verdict : personne n'a gagné, et la trace ne doit surtout
+            # pas en inventer un. Elle dit qu'il y a eu un duel, et pourquoi il
+            # s'est arrêté — c'est ça, le précédent d'une revanche.
+            joue = f" {manches} avaient été jouées, mais" if comptees else ""
+            fait = (f"{nom} a acheté un duel Apex contre Azraël avec ses points de "
+                    f"chaîne, mais le duel n'est pas allé à son terme :{joue} "
+                    f"{d.get('motif') or 'le duel a été interrompu'}. Pas de "
+                    f"vainqueur.")
+        else:
+            gagnant = d.get("gagnant")
+            issue = ("personne ne l'emporte, égalité" if gagnant is None
+                     else ("Azraël l'emporte" if gagnant == "azrael"
+                           else f"{nom} l'emporte"))
+            if d.get("abandon"):
+                # Le verdict porte sur les seules manches jouées : le dire
+                # ainsi, sinon la revanche s'appuiera sur une victoire qui n'a
+                # jamais eu lieu en entier.
+                fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
+                        f"points de chaîne, mais le duel a été INTERROMPU avant la "
+                        f"fin : sur {manches}, Azraël {d.get('azrael')} — {nom} "
+                        f"{d.get('viewer')}, {issue} sur ce qui a été joué.")
+            else:
+                fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
+                        f"points de chaîne : Azraël {d.get('azrael')} — {nom} "
+                        f"{d.get('viewer')} sur {manches}, {issue}.")
         try:
             # Id BRUT, jamais préfixé : `memory.add()` construit `twitch:<id>`
             # lui-même. La forme préfixée donnerait `twitch:twitch:<id>`.
@@ -1116,6 +1173,10 @@ class DuelRunner:
         self.duel_en_cours = None
         await self._ranger()
         await self._annoncer_sur(evt)
+        # Un duel annulé par un modérateur reste un duel qui a eu lieu pour
+        # celui qui l'a payé : sans trace, la revanche n'aurait aucun
+        # précédent — et surtout aucun vainqueur ne doit être inventé.
+        await self._memoriser(duel, evt)
         return rendu
 
     async def recommencer(self) -> None:
