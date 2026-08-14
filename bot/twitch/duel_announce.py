@@ -118,8 +118,28 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
                 "être invité dans le squad d'Azraël, et la partie doit se jouer "
                 "en Battle Royale ou en Joker — la Mixtape ne compte aucun kill.")
     if evt.type == "compte_introuvable":
+        # La cause vient du runner, qui seul sait ce que l'API a répondu. Les
+        # confondre, c'est affirmer devant le stream une chose fausse sur le
+        # compte de quelqu'un — et le « aucun tracker épinglé » servait de
+        # fourre-tout, y compris quand le compte n'avait même pas été cherché.
+        etapes = d.get("etapes") or ""
+        cause = str(d.get("cause") or "")
+        if cause == "api":
+            return (f"L'API d'Apex ne répond pas en ce moment : impossible de "
+                    f"vérifier le compte de {viewer}. Rien à voir avec lui — "
+                    f"qu'il redonne son identifiant dans un moment. Pour le "
+                    f"retrouver : {etapes}").strip()
+        if cause == "sans_tracker":
+            return (f"Le compte Apex de {viewer} a bien été trouvé, mais aucun "
+                    "tracker de kills n'y est épinglé : sans ça, rien ne peut "
+                    "être compté. Qu'il en épingle un sur sa bannière en jeu, "
+                    "puis qu'il redonne son identifiant.")
+        if cause == "soi_meme":
+            return (f"{viewer} a donné le compte d'Azraël : un duel contre "
+                    "soi-même n'a pas de vainqueur, il lui faut donner le SIEN. "
+                    f"Pour le retrouver : {etapes}").strip()
         return (f"Le compte Apex de {viewer} n'a pas été retrouvé. Ce qu'il doit "
-                f"faire : {d.get('etapes') or ''}".strip())
+                f"faire : {etapes}").strip()
     if evt.type == "manche_debut":
         return f"La manche {d.get('manche')} sur {d.get('sur')} commence."
     if evt.type == "manche_fin":

@@ -7,9 +7,24 @@ D'autres sections viendront compléter ce fichier au fil des tâches suivantes �
 s'étonner qu'il ne couvre pas encore tous les types d'`Evenement`.
 
 ## compte_introuvable
-Le compte Apex n'a pas été retrouvé. Explique les étapes qu'on te donne — elles sont
+Le compte Apex n'a pas pu être validé. Explique les étapes qu'on te donne — elles sont
 exactes, ne les improvise pas — et donne le lien tel quel. Reste léger : ce n'est pas
 la faute du viewer, la recherche par pseudo de l'API rate des comptes réels.
+
+**Dis la cause qu'on te donne, et ELLE SEULE.** Elles ne se valent pas, et se tromper
+revient à affirmer devant tout le monde une chose fausse sur le compte de quelqu'un :
+
+- compte introuvable → l'API n'a pas trouvé ce compte ; l'identifiant est peut-être
+  mal recopié, ou d'une autre plateforme ;
+- API indisponible → c'est de NOTRE côté que ça coince, pas du sien. Ne dis surtout pas
+  que son compte n'existe pas ni qu'il lui manque un tracker : dis qu'on réessaie ;
+- aucun tracker de kills épinglé → là seulement, et le compte a bien été trouvé. Il
+  doit épingler un tracker de kills sur sa bannière en jeu, puis répondre à nouveau ;
+- c'est le compte d'Azraël → un duel contre soi-même n'a pas de vainqueur, qu'il donne
+  le sien.
+
+Dans tous les cas il lui reste des essais : il répond dans le chat, ce n'est pas un
+refus définitif.
 
 ## duel_ouvert
 Annonce le duel et rappelle deux choses, sans en faire une notice : le viewer doit

@@ -78,23 +78,36 @@ async def test_le_compte_d_azrael_est_refuse_et_rembourse():
 @pytest.mark.asyncio
 async def test_compte_sans_tracker_de_kills_refuse_et_rembourse():
     """Une clé présente ne prouve pas une valeur vivante, mais une absence
-    totale de tracker est éliminatoire d'emblée."""
-    runner, _, _, api = _runner(profil_viewer={"total": {"d": {"name": "BR Damage", "value": 5}}})
+    totale de tracker est éliminatoire d'emblée (§8 de la spec : refus +
+    remboursement, avec l'explication).
+
+    Le profil porte bien `realtime` : sans lui, ce test n'exerçait pas la
+    branche qu'il annonce mais celle du corps inexploitable."""
+    runner, _, _, api = _runner(profil_viewer={
+        "realtime": {}, "total": {"d": {"name": "BR Damage", "value": 5}}})
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
     api.refund_redemption.assert_awaited_once()
     assert runner.duel_en_cours is None
 
 
 @pytest.mark.asyncio
-async def test_ouvrir_refuse_si_lapi_rend_une_chaine_derreur():
+async def test_une_panne_de_lapi_ne_refuse_pas_un_identifiant_numerique():
     """`ApexClient.get` rend une CHAÎNE (pas un dict) en cas de panne réseau —
     distinct du corps `{"Error": …}` renvoyé en 200 (cf. test dédié plus bas).
-    Cette branche n'était jamais exercée."""
+
+    Ce cas était refusé sèchement, remboursé, et annoncé « aucun tracker de
+    kills n'est épinglé sur ce compte » : une affirmation fausse sur le compte
+    du viewer, prononcée devant le stream pour un hoquet de l'API. Il a droit
+    au même traitement qu'un pseudo — l'explication et ses essais."""
     runner, client, _, api = _runner()
     client.get = AsyncMock(return_value="Apex API error: HTTP 500")
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
-    api.refund_redemption.assert_awaited_once()
-    assert runner.duel_en_cours is None
+    api.refund_redemption.assert_not_awaited()
+    assert runner.duel_en_cours.etat is Etat.RESOLUTION
+    evt = runner._annoncer.await_args.args[0]
+    assert evt.type == "compte_introuvable"
+    assert evt.donnees["cause"] == "api", (
+        "la cause annoncée doit être la vraie : l'API, pas son compte")
 
 
 @pytest.mark.asyncio
@@ -265,14 +278,18 @@ async def test_profil_rejette_un_corps_sans_realtime():
 
 
 @pytest.mark.asyncio
-async def test_ouvrir_refuse_un_profil_sans_realtime():
+async def test_ouvrir_n_ouvre_pas_sur_un_profil_sans_realtime():
     """Même garde côté ouverture : un corps vide (200, ni `Error` ni
-    `realtime`) ne doit pas suffire à lancer un duel."""
+    `realtime`) ne doit pas suffire à lancer un duel. On n'en conclut rien sur
+    le compte pour autant — c'est une réponse inexploitable, pas un compte
+    inexistant : le viewer garde ses essais."""
     runner, client, _, api = _runner()
     client.get = AsyncMock(return_value={"total": {"k": {"name": "BR Kills", "value": 10}}})
     await runner.ouvrir(acheteur="bob", saisie="42", reward_id="rw", redemption_id="rd")
-    api.refund_redemption.assert_awaited_once()
-    assert runner.duel_en_cours is None
+    assert runner.duel_en_cours.etat is Etat.RESOLUTION, (
+        "un corps inexploitable ne lance pas de duel")
+    assert runner.duel_en_cours.viewer_uid == ""
+    api.refund_redemption.assert_not_awaited()
 
 
 # -- IMPORTANT 2 : ne jamais recréer sur un doute ---------------------------

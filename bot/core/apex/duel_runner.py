@@ -48,6 +48,17 @@ TENTATIVES_RESOLUTION = 3
 # Le compte du streamer, quelle que soit la façon dont on l'a désigné.
 MOTIF_SOI_MEME = "un duel contre soi-même n'a pas de vainqueur"
 
+# Pourquoi une saisie n'a pas donné de compte jouable. Les quatre étaient
+# confondues : une saisie numérique qui ne résolvait pas s'entendait répondre
+# « aucun tracker de kills n'est épinglé sur ce compte », alors que la cause
+# pouvait être un identifiant erroné, un compte d'une autre plateforme, ou un
+# simple hoquet de l'API. Le viewer se voyait affirmer devant le stream une
+# chose fausse sur son propre compte.
+CAUSE_INTROUVABLE = "introuvable"       # l'API a répondu : ce compte n'existe pas
+CAUSE_API = "api"                       # l'API n'a pas répondu, ou pas lisiblement
+CAUSE_SANS_TRACKER = "sans_tracker"     # compte trouvé, mais aucun tracker de kills
+CAUSE_SOI_MEME = "soi_meme"             # c'est le compte d'Azraël
+
 # Les badges Twitch qui donnent la main sur un duel. La décision se prend ici,
 # sur la donnée du message — jamais dans un prompt : un LLM à qui un viewer
 # écrit « je suis modérateur » finira par le croire.
@@ -479,27 +490,25 @@ class DuelRunner:
             await self._refuser(reward_id, redemption_id, "un duel est déjà en cours")
             return
 
-        saisie_numerique = _uid_valide(saisie)
-        if saisie_numerique == self._azrael_uid:
+        if _uid_valide(saisie) == self._azrael_uid:
             # Tranché sans le moindre appel réseau quand l'identifiant est
             # donné tel quel.
             await self._refuser(reward_id, redemption_id, MOTIF_SOI_MEME)
             return
 
-        resolu = await self._resoudre(saisie)
+        resolu, cause = await self._resoudre(saisie)
         if resolu is None:
-            if saisie_numerique is not None:
-                # Un identifiant numérique qu'on ne sait pas lire : c'est ce
-                # compte-là qui est en cause, pas la façon de l'écrire.
-                await self._refuser(
-                    reward_id, redemption_id,
-                    "aucun tracker de kills n'est épinglé sur ce compte")
-                return
-            # Un pseudo non résolu : PAS de remboursement au premier essai, la
-            # recherche par pseudo de l'API rate des comptes bien réels — ce
-            # serait punir le viewer pour un défaut qui n'est pas le sien.
+            # Un compte non résolu : PAS de remboursement au premier essai, ni
+            # pour un pseudo ni pour un identifiant. La recherche par pseudo de
+            # l'API rate des comptes bien réels, et un identifiant peut être mal
+            # recopié, venir d'une autre plateforme, ou tomber sur un hoquet de
+            # l'API — refuser sèchement punirait le viewer pour un défaut qui
+            # n'est pas le sien. Il a droit au mode d'emploi et à ses essais,
+            # avec la VRAIE cause : le numérique s'entendait dire « aucun
+            # tracker de kills n'est épinglé sur ce compte », affirmation
+            # souvent fausse sur son propre compte, devant le stream.
             await self._demander_uid(acheteur, reward_id, redemption_id,
-                                     acheteur_id=acheteur_id)
+                                     acheteur_id=acheteur_id, cause=cause)
             return
 
         uid, profil = resolu
@@ -522,12 +531,18 @@ class DuelRunner:
         await self._annoncer_sur(Evenement("duel_ouvert", {"viewer": acheteur}))
 
     async def _demander_uid(self, acheteur: str, reward_id: str,
-                            redemption_id: str, *, acheteur_id: str = "") -> None:
+                            redemption_id: str, *, acheteur_id: str = "",
+                            cause: str = CAUSE_INTROUVABLE) -> None:
         """Explique comment trouver son uid, et garde le duel en attente.
 
         Pas de remboursement ici : c'est le point même de cette étape (§9 de
         la spec) — le viewer garde ses points dépensés pendant qu'on lui
         laisse une vraie chance de répondre correctement.
+
+        `cause` voyage jusqu'à l'annonce : dire « compte introuvable » quand
+        c'est l'API qui est tombée, ou « aucun tracker épinglé » quand le
+        compte n'a même pas été trouvé, revient à affirmer devant le stream
+        une chose fausse sur le compte de quelqu'un.
         """
         self._reward_id = reward_id
         self._tentatives = 0
@@ -537,6 +552,7 @@ class DuelRunner:
         await self._ranger()
         await self._annoncer_sur(Evenement("compte_introuvable", {
             "viewer": acheteur, "url": URL_APEX_STATUS, "etapes": ETAPES_UID,
+            "cause": cause,
         }))
 
     async def repondre_resolution(self, auteur: str, texte: str) -> bool:
@@ -556,9 +572,9 @@ class DuelRunner:
         # plateforme ou d'orthographe au premier essai, pas forcément renoncer
         # à son pseudo. Le compte d'Azraël reste écarté, donné sous l'une ou
         # l'autre forme.
-        resolu = None
+        resolu, cause = None, CAUSE_SOI_MEME
         if _uid_valide(texte) != self._azrael_uid:
-            resolu = await self._resoudre(texte)
+            resolu, cause = await self._resoudre(texte)
         if self.duel_en_cours is not duel:
             # La sonde de fond (`tick()`) a pu faire expirer ce duel
             # PENDANT cet appel réseau d'~1 s (délai de résolution
@@ -570,9 +586,18 @@ class DuelRunner:
             # message reste consommé : il ne doit pas repartir dans le
             # traitement normal du chat.
             return True
-        if resolu is not None and resolu[0] != self._azrael_uid:
+        if resolu is not None and resolu[0] == self._azrael_uid:
+            # Le PSEUDO d'Azraël, cette fois : la comparaison d'entrée ne
+            # portait que sur l'identifiant.
+            cause = CAUSE_SOI_MEME
+        elif resolu is not None:
             uid, profil = resolu
-            if read_kill_trackers(profil):
+            if not read_kill_trackers(profil):
+                # Le compte est là, il est juste illisible : le dire tel quel
+                # laisse au duelliste la seule action qui débloque la situation
+                # — épingler un tracker de kills en jeu, puis répondre.
+                cause = CAUSE_SANS_TRACKER
+            else:
                 duel.viewer_uid = uid
                 # Le délai d'attente du squad repart à neuf : il ne doit pas
                 # hériter du temps passé à chercher son uid.
@@ -599,16 +624,22 @@ class DuelRunner:
             return True
 
         await self._annoncer_sur(Evenement("compte_introuvable", {
-            "viewer": duel.viewer_nom, "url": URL_APEX_STATUS, "etapes": ETAPES_UID}))
+            "viewer": duel.viewer_nom, "url": URL_APEX_STATUS,
+            "etapes": ETAPES_UID, "cause": cause}))
         return True
 
     # -- Sonde --------------------------------------------------------------
     async def _profil(self, uid: str) -> dict | None:
-        """Le profil du compte d'identifiant `uid`, ou `None`."""
-        return await self._bridge({"uid": uid})
+        """Le profil du compte d'identifiant `uid`, ou `None`.
 
-    async def _profil_par_pseudo(self, pseudo: str) -> dict | None:
-        """Le profil du compte qui porte ce pseudo, ou `None`.
+        La cause de l'échec ne sert qu'à la résolution — la sonde d'un duel en
+        cours, elle, ne fait que constater qu'un relevé manque.
+        """
+        profil, _ = await self._bridge({"uid": uid})
+        return profil
+
+    async def _profil_par_pseudo(self, pseudo: str) -> tuple[dict | None, str]:
+        """Le profil du compte qui porte ce pseudo, et la cause si rien.
 
         L'API veut `platform` dans les deux cas — c'est déjà ce que fait le
         reste du paquet (`service.py`), qui bascule entre `uid` et `player`
@@ -620,8 +651,8 @@ class DuelRunner:
         """
         return await self._bridge({"player": pseudo})
 
-    async def _bridge(self, cle: dict) -> dict | None:
-        """Le profil, ou `None` si la sonde n'a rien donné d'exploitable.
+    async def _bridge(self, cle: dict) -> tuple[dict | None, str]:
+        """Le profil, ou `None` et la CAUSE si la sonde n'a rien d'exploitable.
 
         Trois formes d'échec à écarter, pas une seule : `client.get` peut
         rendre une CHAÎNE d'erreur (panne réseau, cf. `ApexClient.get`), un
@@ -633,38 +664,55 @@ class DuelRunner:
         retour au lobby en pleine manche réelle. `realtime` est présent dans
         tous les profils authentiques — y compris ceux vérifiés à l'ouverture
         d'un duel — donc son absence signe un corps inexploitable.
+
+        Ces trois formes ne disent pas la même chose au viewer, et c'est tout
+        l'objet de la cause rendue ici : seul le corps « not found » prouve que
+        le compte n'a pas été trouvé. Les deux autres sont des pannes, et les
+        annoncer comme un compte inexistant était affirmer devant le stream une
+        chose fausse sur le compte de quelqu'un.
         """
         p = await self._client.get(
             "bridge", {**cle, "platform": self._plateforme}, sans_cache=True)
-        if not isinstance(p, dict) or "Error" in p or "realtime" not in p:
-            return None
-        return p
+        if not isinstance(p, dict):
+            return None, CAUSE_API
+        if "Error" in p:
+            # « Player not found. » est la seule erreur qui parle du COMPTE ;
+            # les autres (quota, maintenance, clé) parlent de l'API.
+            introuvable = "not found" in str(p.get("Error") or "").lower()
+            return None, (CAUSE_INTROUVABLE if introuvable else CAUSE_API)
+        if "realtime" not in p:
+            # Un 200 sans erreur ni contenu : on ne peut rien en conclure sur
+            # le compte, donc on n'en conclut rien.
+            return None, CAUSE_API
+        return p, ""
 
-    async def _resoudre(self, saisie: str) -> tuple[str, dict] | None:
+    async def _resoudre(self, saisie: str) -> tuple[tuple[str, dict] | None, str]:
         """Le compte Apex derrière une saisie de viewer : `(uid, profil)`.
 
         Les DEUX formes prévues par la spec (§3) sont acceptées : un identifiant
         purement numérique, ou un pseudo. Exiger l'uid renvoyait tout le monde
         au mode d'emploi pour un achat qui coûte des points.
 
-        `None` dès que rien n'est exploitable — saisie aberrante écartée sans
-        appel réseau, compte introuvable, ou profil sans identifiant. L'appelant
-        décide alors quoi en faire : le repli explicatif pour un pseudo, un
-        refus pour un identifiant qu'on ne sait pas lire.
+        Le second membre est la CAUSE de l'échec (`""` en cas de succès) :
+        compte introuvable, ou API indisponible. L'appelant en fait un message
+        — c'est la seule chose qui distingue « ton compte n'existe pas » d'un
+        hoquet de l'API, et le viewer entend l'un ou l'autre en direct.
         """
         uid = _uid_valide(saisie)
         if uid is not None:
-            profil = await self._profil(uid)
-            return (uid, profil) if profil is not None else None
+            profil, cause = await self._bridge({"uid": uid})
+            return ((uid, profil), "") if profil is not None else (None, cause)
 
         pseudo = _pseudo_valide(saisie)
         if pseudo is None:
-            return None
-        profil = await self._profil_par_pseudo(pseudo)
+            # Ça ne ressemble à rien de sondable : ni un uid, ni un pseudo. Rien
+            # ne part au réseau, et il n'y a pas de compte à ne pas avoir trouvé.
+            return None, CAUSE_INTROUVABLE
+        profil, cause = await self._profil_par_pseudo(pseudo)
         if profil is None:
-            return None
+            return None, cause
         uid = _uid_du_profil(profil)
-        return (uid, profil) if uid else None
+        return ((uid, profil), "") if uid else (None, CAUSE_INTROUVABLE)
 
     async def _avancer(self, duel: Duel, releve: Releve) -> None:
         """Fait avancer la machine d'un relevé, et applique les effets."""
