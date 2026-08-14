@@ -415,12 +415,11 @@ async def test_tick_nettoie_meme_quand_labandon_tranche_en_verdict():
 
     assert duel.etat is Etat.VERDICT
     assert runner.duel_en_cours is None, "le duel terminal doit être nettoyé, VERDICT compris"
-    # Le duelliste menait 5-2 sur la manche comptée : c'est le VERDICT qui
-    # solde, et depuis la règle du 2026-08-14 un duelliste vainqueur récupère
-    # ses points. L'abandon, lui, ne rembourse toujours pas de lui-même — il
-    # renvoie au verdict. Un seul ordre part vers Twitch, jamais deux.
-    api.refund_redemption.assert_awaited_once()
-    api.honorer_redemption.assert_not_awaited()
+    # Le duelliste menait 5-2, et il n'est pas revenu : un abandon ne rembourse
+    # pas, même celui qui mène (cf. tests/test_apex_duel_points.py). La
+    # redemption est honorée au lieu de rester en attente.
+    api.refund_redemption.assert_not_awaited()
+    api.honorer_redemption.assert_awaited_once()
     types_annonces = [c.args[0].type for c in runner._annoncer.await_args_list]
     assert "abandon" in types_annonces
     assert "verdict" in types_annonces

@@ -287,10 +287,14 @@ class Duel:
                               "kill n'avait pu être compté — rien à arbitrer"),
                     "manches_jouees": len(self.scores),
                 })]
-            # Une manche mesurée au moins : PAS de remboursement. Rembourser
-            # qui part après avoir joué encouragerait l'abandon dès qu'on perd,
-            # et l'API ne distingue pas un départ volontaire d'une coupure de
-            # stream. Le verdict porte alors sur les manches réellement jouées.
+            # Une manche mesurée au moins : PAS de remboursement, même si le
+            # duelliste MÈNE. Rembourser qui part après avoir joué
+            # encouragerait l'abandon dès qu'on perd — et depuis que le
+            # vainqueur récupère ses points, quitter en tête après la manche 1
+            # serait carrément la stratégie optimale : le verdict partiel ET
+            # les points. L'API ne distingue de toute façon pas un départ
+            # volontaire d'une coupure de stream. Le verdict porte alors sur
+            # les manches réellement jouées, et lui non plus ne rembourse pas.
             evts = [Evenement("abandon", {
                 "rembourser": False,
                 "motif": (f"le duel s'est arrêté en cours, après la manche "
@@ -298,7 +302,7 @@ class Duel:
                           f"dans le délai"),
                 "manches_jouees": len(self.scores),
             })]
-            evts.extend(self._clore())
+            evts.extend(self._clore(abandon=True))
             return evts
 
         if self.etat is Etat.MANCHE:
@@ -370,8 +374,14 @@ class Duel:
         return all((s["azrael"] or 0) == 0 and (s["viewer"] or 0) == 0
                    for s in self.scores)
 
-    def _clore(self) -> list[Evenement]:
-        """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part."""
+    def _clore(self, *, abandon: bool = False) -> list[Evenement]:
+        """Verdict, ou abandon si aucun kill n'a jamais été compté nulle part.
+
+        `abandon` dit que le duel ne va pas au bout : le verdict porte alors
+        sur les seules manches comptées. Il voyage dans l'événement parce que
+        l'annonce en dépend — dire « tu l'emportes » sans dire « et tes points
+        restent dépensés » serait la moitié de la vérité.
+        """
         if self._aucun_kill_compte():
             self.etat = Etat.ABANDON
             return [Evenement("abandon", {
@@ -385,12 +395,21 @@ class Duel:
         return [Evenement("verdict", {
             "azrael": a, "viewer": v,
             "gagnant": gagnant,
+            # Le duel n'a pas été joué jusqu'au bout : le dire, pour que
+            # l'annonce ne promette pas des points qui ne reviendront pas.
+            "abandon": abandon,
             # La règle du duel : le duelliste qui gagne est REMBOURSÉ — c'est
             # ça, la récompense — et celui qui perd a dépensé ses points.
             # L'égalité rembourse : il n'a pas perdu, et le doute lui profite.
+            #
+            # Un duel ABANDONNÉ ne rembourse jamais, même celui qui mène :
+            # sinon quitter en tête après la manche 1 devient la stratégie
+            # optimale — on garde le verdict partiel ET ses points, sans jouer
+            # la suite. L'anti-abandon prime sur la récompense au vainqueur.
+            #
             # C'est ici et nulle part ailleurs que ça se décide : le runner ne
             # fait qu'exécuter, l'annonceur ne fait que le dire.
-            "rembourser": gagnant != "azrael",
+            "rembourser": gagnant != "azrael" and not abandon,
             "scores": copy.deepcopy(self.scores),
             "camps": copy.deepcopy(self.camps),
         })]

@@ -132,6 +132,79 @@ async def test_l_egalite_rend_les_points():
     api.honorer_redemption.assert_not_awaited()
 
 
+def _abandon_apres_une_manche(runner, azrael: int, viewer: int):
+    """Le duelliste ne revient pas après une manche comptée."""
+    duel = Duel(viewer_nom="Bob", viewer_uid="42", azrael_uid="7",
+                redemption_id="rd", manches=3)
+    duel.etat = Etat.ENTRE_MANCHES
+    duel.scores = [{"azrael": azrael, "viewer": viewer}]
+    duel._t_attente = 0
+    runner.duel_en_cours = duel
+    runner._client.get = AsyncMock(return_value="Apex API error: timeout")
+    return duel
+
+
+@pytest.mark.asyncio
+async def test_abandonner_en_TETE_ne_rend_pas_les_points():
+    """L'anti-abandon prime sur la récompense au vainqueur.
+
+    Sans ça, « mener 5-2 après la manche 1 puis quitter » devient la stratégie
+    optimale : on empoche le verdict partiel ET le remboursement, sans jouer
+    les deux manches restantes. Le verdict est bien rendu — le duelliste garde
+    sa victoire sur les manches jouées — mais ses points restent dépensés.
+    """
+    runner, api = _runner()
+    duel = _abandon_apres_une_manche(runner, azrael=2, viewer=5)
+
+    await runner.tick(maintenant=16 * 60)
+
+    assert duel.etat is Etat.VERDICT
+    api.refund_redemption.assert_not_awaited()
+    api.honorer_redemption.assert_awaited_once_with("rw", "rd")
+
+    verdict = [c.args[0] for c in runner._annoncer.await_args_list
+               if c.args[0].type == "verdict"]
+    assert verdict, "le verdict doit être rendu malgré l'abandon"
+    assert verdict[0].donnees["gagnant"] == "viewer", (
+        "sa victoire sur les manches jouées lui reste acquise")
+    assert verdict[0].donnees["rembourser"] is False
+
+
+def test_le_verdict_d_un_duel_interrompu_ne_promet_aucun_remboursement():
+    """Même règle au niveau de la machine : c'est là qu'elle se décide."""
+    d = _duel(manches=3)
+    _manche(d, 0, azrael=2, viewer=5)
+    assert d.etat is Etat.ENTRE_MANCHES
+    d.avancer(Releve(t=600, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(2), kills_viewer=kills(5)))
+    evts = d.avancer(Releve(t=600 + 16 * 60, azrael_in_game=False,
+                            viewer_in_game=False,
+                            kills_azrael=kills(2), kills_viewer=kills(5)))
+
+    verdict = _verdict(evts)
+    assert verdict["gagnant"] == "viewer"
+    assert verdict["rembourser"] is False
+    assert verdict["abandon"] is True
+
+
+def test_l_abandon_a_le_dernier_mot_sur_le_verdict():
+    """Le contrat du solde, pris à part.
+
+    Aujourd'hui les deux événements disent la même chose et cette priorité ne
+    s'observe pas de l'extérieur — c'est justement pourquoi elle se teste ici.
+    Le jour où ils divergeront, c'est l'anti-abandon qui doit l'emporter, pas
+    la récompense au vainqueur.
+    """
+    from bot.core.apex.duel import Evenement
+    from bot.core.apex.duel_runner import _tranche_les_points
+
+    abandon = Evenement("abandon", {"rembourser": False})
+    verdict = Evenement("verdict", {"rembourser": True})
+    assert _tranche_les_points([abandon, verdict]) is abandon
+    assert _tranche_les_points([verdict, abandon]) is abandon
+    assert _tranche_les_points([Evenement("manche_fin", {"mesurable": True})]) is None
+
+
 @pytest.mark.asyncio
 async def test_un_duel_ne_recoit_jamais_deux_ordres_contradictoires():
     """Le duelliste qui ne revient pas après une manche comptée déclenche un
@@ -210,14 +283,16 @@ def _bot():
     return bot
 
 
-async def _annonce_du_verdict(rembourser: bool, gagnant: str | None) -> str:
+async def _annonce_du_verdict(rembourser: bool, gagnant: str | None,
+                              abandon: bool = False, viewer_kills: int = 1) -> str:
     from bot.core.apex.duel import Evenement
     bot = _bot()
     annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
     await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
     await annonceur(Evenement("verdict", {
-        "azrael": 6, "viewer": 1, "gagnant": gagnant, "rembourser": rembourser,
-        "scores": [{"azrael": 6, "viewer": 1}]}))
+        "azrael": 6, "viewer": viewer_kills, "gagnant": gagnant,
+        "rembourser": rembourser, "abandon": abandon,
+        "scores": [{"azrael": 6, "viewer": viewer_kills}]}))
     return bot.twitch_api.send_message.await_args.kwargs["text"]
 
 
@@ -237,8 +312,24 @@ async def test_le_verdict_annonce_que_les_points_sont_consommes():
 
 
 @pytest.mark.asyncio
+async def test_le_vainqueur_qui_a_ABANDONNE_entend_les_deux_faits():
+    """L'annonce ne doit pas mentir par omission : il l'emporte sur les
+    manches jouées, et ses points restent dépensés. Promettre un
+    remboursement qui ne viendra pas serait le pire des deux mondes."""
+    texte = await _annonce_du_verdict(rembourser=False, gagnant="viewer",
+                                      abandon=True, viewer_kills=9)
+    bas = texte.lower()
+    assert "bob" in bas and "9" in texte, f"sa victoire doit être dite : {texte!r}"
+    assert "dépens" in bas, f"le sort des points doit être dit : {texte!r}"
+    assert "rendus" not in bas, f"rien ne lui est rendu : {texte!r}"
+
+
+@pytest.mark.asyncio
 async def test_le_registre_dit_au_modele_quoi_faire_des_points():
     """Les chiffres et l'issue ne sont pas laissés au modèle ; le ton, si."""
     from bot.twitch.duel_announce import registre_duel
     verdict = registre_duel()["verdict"].lower()
     assert "point" in verdict
+    # Le cas de l'abandon aussi : sans lui, la persona habillerait un « il
+    # l'emporte » d'un remboursement qui n'arrivera pas.
+    assert "interrompu" in verdict

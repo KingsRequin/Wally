@@ -105,16 +105,18 @@ def _tranche_les_points(evts: list[Evenement]) -> Evenement | None:
     """L'événement qui SOLDE les points de la redemption — un seul par salve.
 
     Une salve peut en porter deux : quand le duelliste ne revient pas après une
-    manche mesurée, `avancer()` rend un `abandon` PUIS un `verdict`. C'est le
-    verdict qui tranche, parce qu'il dit qui a gagné et que depuis la règle du
-    propriétaire c'est le vainqueur qui décide du sort des points ; l'abandon,
-    lui, dit seulement que partir ne rend rien de soi-même.
+    manche mesurée, `avancer()` rend un `abandon` PUIS un `verdict`. C'est
+    l'ABANDON qui tranche, et c'est un arbitrage du propriétaire : depuis que
+    le vainqueur récupère ses points, laisser le verdict trancher ferait de
+    « mener 5-2 après la manche 1 puis quitter » la stratégie optimale — on
+    empocherait le verdict partiel ET le remboursement, sans jouer la suite.
+    Le verdict reste rendu et annoncé ; seul le sort des points lui échappe.
 
     Solder deux fois enverrait à Twitch deux ordres contradictoires sur la même
     redemption, et le second serait perdu : une redemption `FULFILLED` ne
     redevient jamais `CANCELED`.
     """
-    for type_evt in ("verdict", "abandon"):
+    for type_evt in ("abandon", "verdict"):
         for evt in evts:
             if evt.type == type_evt:
                 return evt
