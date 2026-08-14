@@ -29,6 +29,30 @@ from bot.intelligence.prompts import load_prompt
 # sociaux : de quoi ajouter les points de suspension sans dépasser.
 MAX_CHAT = 480
 
+
+def avertissement_mixtape(mode_jeu: str = "") -> str:
+    """L'avertissement collé par le CODE à l'ouverture d'un duel.
+
+    C'est la SEULE protection qui existe contre une Mixtape (§2 de la spec) :
+    une partie de Mixtape avec 10 kills annoncés n'a bougé aucun des neuf
+    trackers, et le mode de jeu n'est lisible NULLE PART dans l'API — Wally ne
+    peut donc ni le détecter, ni l'empêcher. Un duel joué en Mixtape se solde
+    par un 0-0 intégral.
+
+    D'où le même traitement que l'adresse du site : collé par le code, jamais
+    laissé au modèle. Le socle de rédaction impose « UNE phrase courte », et
+    rien ne garantissait qu'un avertissement seulement SUGGÉRÉ au modèle
+    survive à cette compression — sur la seule étape du duel où il compte.
+
+    Le mode annoncé vient de la configuration (`apex.duel.mode_jeu`) : vide, on
+    dit ce qui reste vrai sans l'inventer.
+    """
+    if mode_jeu:
+        return (f"Rappel : le duel se joue en {mode_jeu} — la Mixtape ne compte "
+                "AUCUN kill.")
+    return "Rappel : la Mixtape ne compte AUCUN kill, elle ne peut pas servir de manche."
+
+
 _SOCLE = (
     "Tu arbitres un duel Apex entre Azraël et un viewer qui a dépensé ses points "
     "de chaîne. Les chiffres te sont donnés : tu les habilles, tu ne les inventes "
@@ -114,9 +138,11 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
     viewer = nom_du_viewer(evt) or viewer_connu or "le duelliste"
 
     if evt.type == "duel_ouvert":
+        # Rien ici sur le mode de jeu : l'avertissement Mixtape est collé par
+        # le code après la phrase (`avertissement_mixtape`). Le mettre AUSSI
+        # dans le fait le ferait redire par le modèle, en double.
         return (f"{viewer} lance un duel Apex contre Azraël. Il doit maintenant "
-                "être invité dans le squad d'Azraël, et la partie doit se jouer "
-                "en Battle Royale ou en Joker — la Mixtape ne compte aucun kill.")
+                "être invité dans le squad d'Azraël.")
     if evt.type == "compte_introuvable":
         # La cause vient du runner, qui seul sait ce que l'API a répondu. Les
         # confondre, c'est affirmer devant le stream une chose fausse sur le
@@ -233,9 +259,14 @@ class DuelAnnonceur:
     appel : il naît dans le `setup_hook` du bot Discord, donc après ce câblage.
     """
 
-    def __init__(self, bot, *, channel: str) -> None:
+    def __init__(self, bot, *, channel: str, mode_jeu: str = "") -> None:
         self._bot = bot
         self._channel = channel
+        # Le mode de jeu ANNONCÉ, lu dans `config.yaml` (§14 de la spec). Il
+        # était écrit en dur ici ET dans le registre persona : deux copies qui
+        # pouvaient diverger en silence, sur la seule information capable
+        # d'empêcher un duel joué pour rien.
+        self._mode_jeu = (mode_jeu or "").strip()
         # Le nom du duelliste, retenu à l'ouverture : les événements de fin de
         # manche ne le portent pas, et à l'instant du verdict le duel a déjà
         # été effacé de `duel_en_cours` (le nettoyage précède les annonces).
@@ -263,12 +294,19 @@ class DuelAnnonceur:
             logger.warning("Duel : type d'événement sans annonce ({t})", t=evt.type)
             return
 
-        # L'adresse est collée par le CODE, jamais laissée au modèle : une URL
-        # reformulée rend le duel impossible à démarrer. Elle voyage comme un
-        # suffixe pour que la troncature morde sur la réplique et jamais sur
-        # elle — tronquer après l'avoir collée casserait ce qu'on protège.
-        suffixe = (str((evt.donnees or {}).get("url") or "")
-                   if evt.type == "compte_introuvable" else "")
+        # Ce que le CODE colle après la phrase du modèle, jamais confié à lui :
+        # l'adresse du site (une URL reformulée rend le duel impossible à
+        # démarrer) et l'avertissement Mixtape (la seule protection qui existe
+        # contre un duel joué dans un mode qui ne compte aucun kill). Les deux
+        # voyagent en SUFFIXE pour que la troncature morde sur la réplique et
+        # jamais sur eux — tronquer après les avoir collés casserait très
+        # exactement ce qu'on protège.
+        if evt.type == "compte_introuvable":
+            suffixe = str((evt.donnees or {}).get("url") or "")
+        elif evt.type == "duel_ouvert":
+            suffixe = avertissement_mixtape(self._mode_jeu)
+        else:
+            suffixe = ""
 
         ligne = await self._rediger(evt.type, fait) or fait
         await self._publier(ligne, suffixe=suffixe)
@@ -311,10 +349,15 @@ class DuelAnnonceur:
     # -- Sorties ------------------------------------------------------------
     async def _publier(self, texte: str, *, suffixe: str = "") -> None:
         plafond = MAX_CHAT - (len(suffixe) + 1 if suffixe else 0)
-        if len(texte) > plafond:
+        if plafond <= 3:
+            # Un suffixe à lui seul plus long que le message : c'est lui qu'on
+            # garde. Il porte l'adresse ou l'avertissement Mixtape, la réplique
+            # n'est que l'habillage.
+            texte = ""
+        elif len(texte) > plafond:
             texte = texte[:plafond - 3] + "..."
         if suffixe:
-            texte = f"{texte} {suffixe}"
+            texte = f"{texte} {suffixe}".strip()
         try:
             # Le retour est LU : sur Twitch, un 200 ne prouve pas la
             # publication — un refus d'AutoMod arrive dans le corps

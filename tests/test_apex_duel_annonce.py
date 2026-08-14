@@ -47,10 +47,17 @@ def _envoye(bot) -> str:
 
 @pytest.mark.asyncio
 async def test_l_annonce_part_dans_le_chat():
-    bot = _bot("Bob débarque, ça va saigner.")
+    """La réplique du modèle est bien ce qui est publié.
+
+    Sur `manche_debut` elle part telle quelle : c'est l'ouverture du duel qui
+    porte un suffixe collé par le code (l'avertissement Mixtape), testé à part.
+    """
+    bot = _bot("Ça repart, manche 2.")
     await DuelAnnonceur(bot, channel="azrael_ttv")(
-        Evenement("duel_ouvert", {"viewer": "Bob"}))
-    assert _envoye(bot) == "Bob débarque, ça va saigner."
+        Evenement("manche_debut", {"manche": 2, "sur": 3, "manches_jouees": 1,
+                                   "total_azrael": 3, "total_viewer": 1,
+                                   "total_mesurable": True}))
+    assert _envoye(bot) == "Ça repart, manche 2."
 
 
 @pytest.mark.asyncio

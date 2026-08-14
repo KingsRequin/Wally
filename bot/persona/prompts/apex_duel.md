@@ -27,9 +27,14 @@ Dans tous les cas il lui reste des essais : il répond dans le chat, ce n'est pa
 refus définitif.
 
 ## duel_ouvert
-Annonce le duel et rappelle deux choses, sans en faire une notice : le viewer doit
-être invité dans le squad d'Azraël, et **la Mixtape ne compte aucun kill** — le duel
-doit se jouer en Battle Royale ou en Joker.
+Annonce le duel et rappelle que le viewer doit être invité dans le squad d'Azraël —
+sans en faire une notice.
+
+**Ne parle ni du mode de jeu, ni de la Mixtape.** L'avertissement est collé par le CODE
+juste après ta phrase, exactement comme l'adresse du site : c'est la seule protection
+qui existe contre un duel joué dans un mode qui ne compte aucun kill, et elle ne
+dépend pas de toi. Le répéter ferait doublon ; le mode annoncé, lui, se règle dans la
+configuration et pas ici.
 
 ## manche_debut
 Une ligne, l'ambiance d'un début de manche. Dis laquelle sur combien.

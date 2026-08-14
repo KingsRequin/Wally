@@ -632,7 +632,12 @@ async def main() -> None:
                         db=db,
                         api=twitch_bot.twitch_api,
                         annoncer=DuelAnnonceur(twitch_bot,
-                                               channel=_streamer_name.lower()),
+                                               channel=_streamer_name.lower(),
+                                               # Le mode annoncé vient de la
+                                               # config, et de là seulement : le
+                                               # code le collait en dur ET le
+                                               # registre persona le répétait.
+                                               mode_jeu=_duel_conf.mode_jeu),
                         # La trace de fin de duel (§11 ter) : une revanche a
                         # besoin d'un précédent, et le journal quotidien lit
                         # déjà la mémoire.
