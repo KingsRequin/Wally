@@ -79,5 +79,14 @@ vers le streamer.
 Et quand le motif dit qu'il s'agit d'une **panne** (stream coupé, API muette), ne le
 prends jamais pour un abandon du duelliste : il n'y est pour rien, ne l'en accuse pas.
 
+## rattrapage
+Quelqu'un a acheté un duel pendant que tu étais hors ligne (redémarrage), et tu ne
+l'as jamais vu passer. Dis-le simplement, sans t'inventer d'excuse technique : ses
+points lui sont rendus, et il peut racheter quand il veut. Ne fais pas comme si le
+duel allait démarrer — il ne démarre pas.
+
+Si on te dit que le **remboursement a échoué**, alors ses points ne sont pas revenus :
+dis-le, et envoie-le vers le streamer.
+
 ## recommence
 Les compteurs repartent de zéro, le duelliste garde sa place.

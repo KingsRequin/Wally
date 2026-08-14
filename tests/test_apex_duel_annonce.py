@@ -16,7 +16,7 @@ from bot.twitch.duel_announce import DuelAnnonceur, registre_duel
 # Tous les types que `duel.py` et `duel_runner.py` savent émettre. Un type sans
 # section serait annoncé sans registre de ton — donc au hasard.
 TYPES_EMIS = ("duel_ouvert", "compte_introuvable", "manche_debut", "manche_fin",
-              "verdict", "refus", "abandon", "recommence")
+              "verdict", "refus", "abandon", "recommence", "rattrapage")
 
 
 def test_le_registre_couvre_tous_les_types_emis():

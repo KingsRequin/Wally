@@ -594,6 +594,76 @@ class TwitchAPI:
             logger.error("Redemption {s} en erreur : {e}", s=statut, e=exc)
             return False
 
+    async def redemptions_en_attente(self, reward_id: str) -> list[dict] | None:
+        """Les achats de NOTRE récompense encore en attente. `None` sur erreur.
+
+        EventSub ne rejoue pas les événements manqués : un viewer qui achète
+        pendant un rebuild — fréquents ici — voit sa mise disparaître sans
+        duel, sans remboursement et sans un mot, et sa redemption reste coincée
+        dans la file de validation du streamer. Cette liste est le seul moyen
+        de les retrouver au démarrage.
+
+        `reward_id` est passé à Twitch en paramètre (il est d'ailleurs
+        OBLIGATOIRE sur cet endpoint) : on ne voit jamais les redemptions des
+        autres récompenses de la chaîne, qui ne nous regardent pas.
+
+        `status=UNFULFILLED` : seules celles-là sont encore modifiables, donc
+        remboursables. Pagination suivie jusqu'au bout — un stream chargé peut
+        en accumuler plus d'une page — avec un plafond de tours, faute de quoi
+        un curseur qui ne bouge pas ferait tourner le démarrage en rond.
+
+        `None` et non `[]` sur erreur, comme `recompenses_gerables()` : les
+        confondre ferait conclure « aucun achat manqué » sur une simple panne.
+        """
+        if not reward_id:
+            logger.warning("Redemptions en attente : reward_id vide")
+            return None
+        tout: list[dict] = []
+        curseur = ""
+        renouvele = False
+        try:
+            async with httpx.AsyncClient() as client:
+                for _page in range(20):
+                    params = {"broadcaster_id": self._broadcaster_id,
+                              "reward_id": reward_id, "status": "UNFULFILLED",
+                              "first": "50"}
+                    if curseur:
+                        params["after"] = curseur
+                    resp = await client.get(
+                        self.REDEMPTIONS_URL, params=params,
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and not renouvele:
+                        # Une seule fois, comme partout ailleurs ici : un token
+                        # qui reste refusé après renouvellement ne le sera pas
+                        # davantage au vingtième tour.
+                        renouvele = True
+                        logger.warning(
+                            "Redemptions en attente 401 — renouvellement du token streamer")
+                        if not await self._tm.refresh("streamer"):
+                            logger.error("Renouvellement du token streamer échoué — "
+                                         "redemptions en attente abandonnées")
+                            return None
+                        continue
+                    if resp.status_code != 200:
+                        logger.error("Redemptions en attente refusées HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return tout or None
+                    corps = resp.json() or {}
+                    tout.extend(corps.get("data") or [])
+                    curseur = str((corps.get("pagination") or {}).get("cursor") or "")
+                    if not curseur:
+                        return tout
+                logger.warning(
+                    "Redemptions en attente : pagination interrompue au plafond "
+                    "({n} déjà lues)", n=len(tout))
+                return tout
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Redemptions en attente en erreur : {e}", e=exc)
+            return None
+
     async def recompenses_gerables(self) -> list[dict] | None:
         """Les récompenses que NOTRE application peut piloter. `None` sur erreur.
 

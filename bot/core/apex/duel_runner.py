@@ -392,6 +392,52 @@ class DuelRunner:
         self._reward_id = nouvel_id
         return nouvel_id
 
+    async def rattraper_les_achats_manques(self) -> int:
+        """Rembourse les achats faits pendant que le bot était arrêté.
+
+        EventSub ne rejoue RIEN : un viewer qui achète pendant un rebuild — la
+        spec dit elle-même qu'ils sont fréquents — perdait sa mise en silence.
+        Pas de duel, pas de remboursement, pas un mot, et une redemption
+        coincée dans la file de validation du streamer.
+
+        On ne rouvre PAS un duel rétroactivement : l'achat peut dater d'hier,
+        le viewer n'est peut-être plus là, et Azraël ne joue peut-être plus.
+        On rend les points, et on dit pourquoi.
+
+        Le duel repris de `bot_state`, lui, est épargné : sa redemption est
+        encore `UNFULFILLED` puisqu'elle n'est soldée qu'à la fin — la
+        rembourser ici solderait un duel en cours d'arbitrage.
+
+        Ne fait jamais échouer le démarrage : `None` (panne Twitch) est traité
+        comme une liste vide, et l'appelant enveloppe le tout.
+        """
+        if not self._reward_id:
+            return 0
+        en_attente = await self._api.redemptions_en_attente(self._reward_id)
+        if not en_attente:
+            # `None` (panne) comme `[]` (rien en attente) : dans les deux cas
+            # il n'y a rien à rembourser MAINTENANT, et surtout rien à inventer.
+            return 0
+        en_cours = (self.duel_en_cours.redemption_id
+                    if self.duel_en_cours is not None else "")
+        rattrapees = 0
+        for redemption in en_attente:
+            rid = str((redemption or {}).get("id") or "")
+            if not rid or rid == en_cours:
+                continue
+            acheteur = str((redemption or {}).get("user_name")
+                           or (redemption or {}).get("user_login") or "")
+            logger.warning(
+                "Duel Apex : achat manqué pendant une indisponibilité "
+                "(redemption {i}, {u}) — remboursement", i=rid, u=acheteur or "?")
+            donnees: dict = {"viewer": acheteur}
+            if not await self._rembourser(self._reward_id, rid,
+                                          quoi="achat manqué pendant l'arrêt du bot"):
+                donnees["remboursement_echoue"] = True
+            await self._annoncer_sur(Evenement("rattrapage", donnees))
+            rattrapees += 1
+        return rattrapees
+
     # -- Persistance --------------------------------------------------------
     async def _ranger(self) -> None:
         if self.duel_en_cours is None:
@@ -1049,11 +1095,23 @@ async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
       3. `activate()` enfin : sans lui `current_duel()` rend toujours None, et
          Wally arbitre un duel dont il est incapable de parler.
 
+    Le rattrapage des achats manqués vient APRÈS les deux premiers, et pour
+    deux raisons : il lui faut l'identifiant de la récompense, et il lui faut
+    savoir quel duel a été repris — sa redemption est encore en attente, et la
+    rembourser solderait un duel en cours d'arbitrage. Il ne peut PAS empêcher
+    le démarrage : un bot qui tourne sans rattrapage vaut mieux qu'un bot qui
+    refuse de démarrer.
+
     Rassemblé ici, et non déroulé dans `main.py`, pour que cet ordre soit
     JOUABLE en test — c'est le seul endroit où il se vérifie.
     """
     await runner.charger()
     reward_id = await runner.assurer_recompense(titre, cout, prompt)
+    try:
+        await runner.rattraper_les_achats_manques()
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
+        logger.error("Duel Apex : rattrapage des achats manqués en erreur : {e}",
+                     e=exc)
     runner.activate()
     return reward_id
 

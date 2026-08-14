@@ -188,6 +188,14 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
                       "jusqu'au bout, même si le verdict tranche sur les manches "
                       "déjà comptées.")
         return f"Le duel s'arrête : {d.get('motif')}. {rendu}"
+    if evt.type == "rattrapage":
+        # Un achat fait pendant que le bot était arrêté. Le nom vient de la
+        # redemption elle-même : cet événement ne suit aucun duel, donc le
+        # repli `viewer_connu` parlerait du duelliste précédent.
+        qui = str(d.get("viewer") or "").strip()
+        a_qui = f"{qui} a" if qui else "quelqu'un a"
+        return (f"{a_qui} acheté un duel Apex pendant que j'étais hors ligne, "
+                f"et je ne l'ai jamais vu passer. {_points_rendus(d, qui)}")
     if evt.type == "recommence":
         return (f"Les compteurs du duel repartent de zéro. {viewer} garde sa "
                 "place, il ne repaie rien.")

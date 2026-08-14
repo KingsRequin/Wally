@@ -101,3 +101,83 @@ async def test_401_avec_refresh_en_echec_rend_false(monkeypatch):
     assert await api.refund_redemption("rw", "rd") is False
     client.patch.assert_awaited_once()
     api._tm.refresh.assert_awaited_once_with("streamer")
+
+
+# ── Retrouver les achats manqués pendant un arrêt du bot ────────────────────
+# EventSub ne rejoue rien : cette liste est le seul moyen de les récupérer.
+def _api_get(reponses):
+    from bot.twitch.api import TwitchAPI
+    tm = MagicMock()
+    tm.streamer_token = "tok"
+    tm.refresh = AsyncMock(return_value=True)
+    api = TwitchAPI(tm, client_id="cid", bot_id="bid", broadcaster_id="123")
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=list(reponses))
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    return api, client
+
+
+def _page(ids, curseur=""):
+    corps = {"data": [{"id": i, "status": "UNFULFILLED"} for i in ids]}
+    if curseur:
+        corps["pagination"] = {"cursor": curseur}
+    return _resp(200, corps)
+
+
+@pytest.mark.asyncio
+async def test_les_redemptions_en_attente_ne_portent_que_notre_recompense(monkeypatch):
+    api, client = _api_get([_page(["RD1"])])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+
+    assert [r["id"] for r in await api.redemptions_en_attente("RW")] == ["RD1"]
+
+    params = client.get.call_args.kwargs["params"]
+    assert params["reward_id"] == "RW"
+    assert params["status"] == "UNFULFILLED"
+
+
+@pytest.mark.asyncio
+async def test_la_pagination_est_suivie_jusqu_au_bout(monkeypatch):
+    """Un stream chargé peut en accumuler plus d'une page : s'arrêter à la
+    première laisserait des viewers sans leurs points."""
+    api, client = _api_get([_page(["RD1"], curseur="c1"), _page(["RD2"])])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+
+    assert [r["id"] for r in await api.redemptions_en_attente("RW")] == ["RD1", "RD2"]
+    assert client.get.await_args_list[1].kwargs["params"]["after"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_une_liste_vide_est_une_liste_vide(monkeypatch):
+    api, client = _api_get([_page([])])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.redemptions_en_attente("RW") == []
+
+
+@pytest.mark.asyncio
+async def test_une_erreur_ne_se_confond_pas_avec_aucun_achat(monkeypatch):
+    """`None` et non `[]` : les confondre ferait conclure « rien à rembourser »
+    sur une simple panne, et les points ne reviendraient jamais."""
+    api, client = _api_get([_resp(403, {"error": "Forbidden"})])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.redemptions_en_attente("RW") is None
+
+
+@pytest.mark.asyncio
+async def test_un_curseur_qui_ne_bouge_pas_ne_fait_pas_tourner_le_boot_en_rond(monkeypatch):
+    api, client = _api_get([_page([f"RD{i}"], curseur="toujours") for i in range(50)])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+
+    lues = await api.redemptions_en_attente("RW")
+
+    assert client.get.await_count <= 20, "la pagination doit être bornée"
+    assert lues, "et rendre ce qu'elle a lu, pas rien"
+
+
+@pytest.mark.asyncio
+async def test_sans_reward_id_aucun_appel_ne_part(monkeypatch):
+    api, client = _api_get([_page(["RD1"])])
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    assert await api.redemptions_en_attente("") is None
+    client.get.assert_not_awaited()
