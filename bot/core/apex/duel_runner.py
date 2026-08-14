@@ -572,6 +572,61 @@ class DuelRunner:
             evt = _echec_de_remboursement(evt)
         await self._annoncer_sur(evt)
 
+    def _stream_hors_ligne(self) -> bool:
+        """Le live est vu ÉTEINT, sans ambiguïté — §8 : refus + remboursement.
+
+        TROIS réponses possibles, comme pour le garde-fou en cours de duel, et
+        la troisième compte autant : `None` (« on ne sait pas », avant le
+        premier relevé du `StreamWatcher`) n'est PAS un stream éteint. Une
+        absence de donnée n'a jamais valu zéro ici.
+
+        Pas de debounce à l'ouverture, à la différence de `_stream_coupe()` :
+        là-bas, un relevé isolé coûterait au duelliste une partie qu'il est en
+        train de jouer. Ici le duel n'a pas commencé, le refus rend les points
+        immédiatement et le viewer peut racheter — le coût d'une erreur est un
+        message, pas une manche perdue. Et l'inverse coûte cher : un duel
+        ouvert stream éteint annonce dans un chat vide, sonde un quart d'heure
+        pour rien, et refuse tous les autres acheteurs pendant ce temps.
+        """
+        if self._stream_en_ligne is None:
+            return False
+        try:
+            return self._stream_en_ligne() is False
+        except Exception as exc:  # noqa: BLE001 — un statut illisible ne refuse rien
+            logger.warning("Duel Apex : statut du live illisible à l'ouverture : {e}",
+                           e=exc)
+            return False
+
+    async def _azrael_absent_d_apex(self) -> bool:
+        """Azraël n'a pas Apex lancé — §8 : refus + remboursement.
+
+        Le critère est `isOnline`, et surtout PAS `isInGame` : entre deux
+        parties Azraël est en ligne mais hors partie, et refuser là-dessus
+        casserait le cas le plus normal qui soit — un viewer qui achète son
+        duel en voyant le stream dans un menu. `isOnline` faux veut dire que le
+        jeu n'est pas lancé du tout ; le viewer attendrait alors un quart
+        d'heure pour rien.
+
+        Deux prudences, toujours les mêmes :
+          · l'API muette ou illisible ne conclut RIEN (`profil is None`) — une
+            absence de donnée n'est pas un « non » ;
+          · la clé absente du bloc `realtime` non plus. Elle est présente dans
+            tous les profils authentiques (bloc listé exhaustivement le
+            2026-08-13), donc son absence signe un payload dégradé, pas un
+            compte hors ligne.
+
+        Reste assumé : Azraël peut lancer Apex cinq minutes plus tard. C'est
+        pour ça que le refus ne porte QUE sur le jeu non lancé, et que le
+        viewer est remboursé — il rachète quand le streamer est prêt.
+        """
+        profil, _ = await self._bridge({"uid": self._azrael_uid})
+        if profil is None:
+            return False
+        realtime = profil.get("realtime") or {}
+        if not isinstance(realtime, dict) or "isOnline" not in realtime:
+            return False
+        return not bool(_num(realtime.get("isOnline")))
+
     async def ouvrir(self, *, acheteur: str, saisie: str,
                      reward_id: str, redemption_id: str,
                      acheteur_id: str = "") -> None:
@@ -599,6 +654,15 @@ class DuelRunner:
             # sans un mot d'explication (Task 7, faute de canal d'annonce).
             # Ne JAMAIS écraser le duel en cours au passage.
             await self._refuser(reward_id, redemption_id, "un duel est déjà en cours")
+            return
+
+        if self._stream_hors_ligne():
+            # §8, jusqu'ici jamais branché : un achat stream éteint ouvrait un
+            # vrai duel, annonçait dans un chat vide, sondait un quart d'heure
+            # pour rien — et refusait tout autre acheteur pendant ce temps.
+            await self._refuser(
+                reward_id, redemption_id,
+                "le stream d'Azraël n'est pas en ligne : un duel se joue en direct")
             return
 
         if _uid_valide(saisie) == self._azrael_uid:
@@ -632,6 +696,17 @@ class DuelRunner:
             await self._refuser(
                 reward_id, redemption_id,
                 "aucun tracker de kills n'est épinglé sur ce compte")
+            return
+
+        # En DERNIER des refus, et à cet endroit précis : c'est le seul appel
+        # réseau que la saisie du viewer ne provoque pas, et le sonder plus tôt
+        # ferait partir une requête même pour une saisie aberrante — que rien
+        # ne doit envoyer à une API tierce. Le duel s'ouvre juste après.
+        if await self._azrael_absent_d_apex():
+            await self._refuser(
+                reward_id, redemption_id,
+                "Azraël n'a pas Apex lancé en ce moment : il n'y a personne à "
+                "défier")
             return
 
         self._reward_id = reward_id

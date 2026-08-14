@@ -78,9 +78,14 @@ async def test_le_pseudo_voyage_intact_et_avec_sa_plateforme():
     await runner.ouvrir(acheteur="bob", saisie="Rêveur [FR]",
                         reward_id="rw", redemption_id="rd")
 
-    params = client.get.await_args.args[1]
-    assert params["player"] == "Rêveur [FR]"
-    assert params["platform"] == "PC"
+    # La recherche par pseudo parmi les appels du tour : l'ouverture en fait
+    # d'autres (le compte d'Azraël est sondé avant de lancer le duel), et
+    # prendre « le dernier appel » les confondrait.
+    params = [c.args[1] for c in client.get.await_args_list
+              if "player" in (c.args[1] or {})]
+    assert params, "la recherche par pseudo n'a pas eu lieu"
+    assert params[0]["player"] == "Rêveur [FR]"
+    assert params[0]["platform"] == "PC"
 
 
 @pytest.mark.asyncio
