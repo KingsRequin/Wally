@@ -224,10 +224,17 @@ class RemoteStreamingSTT:
         connect=None,
         now_fn: Callable[[], float] | None = None,
         session_factory=None,
+        priority_speakers: set[str] | None = None,
     ) -> None:
         self._url = url
         self._fallback = fallback
         self._max_connections = max_connections
+        # Discord IDs qui passent devant quand les places manquent : ceux au nom
+        # de qui Wally agit (`voice.requesters` — le créateur et le streamer).
+        # Sans eux, l'attribution est au premier qui ouvre la bouche, et le
+        # 2026-08-14 le streamer a passé une heure sur le repli local pendant
+        # que deux invités se partageaient le GPU.
+        self._priority_speakers: set[str] = set(priority_speakers or ())
         self._idle_timeout = idle_timeout
         self._health_cache_s = health_cache_s
         self._open_timeout = open_timeout
@@ -321,7 +328,7 @@ class RemoteStreamingSTT:
             return  # routé batch → traité au speech_end via le segment VAD
         sess = self._sessions.get(speaker_id)
         if sess is None:
-            if not self._remote_allowed(now):
+            if not self._remote_allowed(now) and not self._ceder_une_place(speaker_id, now):
                 self._fallback_speakers.add(speaker_id)
                 return
             sess = self._session_factory(speaker_id)
@@ -369,6 +376,39 @@ class RemoteStreamingSTT:
     def _remote_allowed(self, now: float) -> bool:
         return now >= self._unreachable_until and len(self._sessions) < self._max_connections
 
+    def _ceder_une_place(self, speaker_id: str, now: float) -> bool:
+        """Libère une place pour un locuteur prioritaire. Vrai si c'est fait.
+
+        Les places du serveur distant sont comptées (VRAM), et l'attribution
+        était au premier arrivé. Le 2026-08-14, les deux places sont restées à
+        deux invités pendant qu'Azraël — le streamer, celui à qui Wally doit
+        répondre — transcrivait par lots de trente secondes sur le CPU : ses
+        demandes n'atteignaient plus personne, une heure durant.
+
+        Un invité cède, jamais un prioritaire : entre eux, rien ne les départage
+        et se déloger mutuellement ferait pire. Le délogé repart sur le repli
+        local — `speech_end_sync` le remet dans la course à l'énoncé suivant.
+        """
+        if speaker_id not in self._priority_speakers:
+            return False
+        if now < self._unreachable_until:
+            # Le serveur ne répond pas : prendre la place d'un invité ne
+            # donnerait rien à l'un et coûterait sa session à l'autre.
+            return False
+        victime = next(
+            (sid for sid in self._sessions if sid not in self._priority_speakers), None
+        )
+        if victime is None:
+            return False
+        logger.info("RemoteStreamingSTT: place cédée par {v} à {s} (prioritaire)",
+                    v=victime, s=speaker_id)
+        self._fallback_speakers.add(victime)
+        sess = self._sessions.pop(victime, None)
+        self._start_tasks.pop(victime, None)
+        if sess is not None:
+            self._detach(sess.close())
+        return True
+
     def _arm_unreachable_cache(self) -> None:
         """Arme le cache « injoignable » avec un backoff exponentiel borné.
 
@@ -401,18 +441,31 @@ class RemoteStreamingSTT:
         await sess.close()
 
     def _on_session_lost(self, speaker_id: str) -> None:
-        """Une session distante établie a perdu sa connexion (serveur tombé en cours).
+        """Une session distante établie a perdu sa connexion.
 
-        On la retire (libère le slot) et on arme le cache « injoignable » : la logique
-        existante route alors le locuteur vers le batch local (`feed_sync`/`speech_end_sync`),
-        et le distant sera retenté après `health_cache_s`."""
+        On la retire, ce qui libère la place, et le locuteur repart sur le batch
+        local (`feed_sync`/`speech_end_sync`).
+
+        Le cache « injoignable » n'est armé QUE si plus aucune session ne tient :
+        une session qui saute n'est pas un serveur mort. Le 2026-08-14, celle
+        d'Azraël est tombée trois fois pendant que le serveur répondait aux deux
+        autres locuteurs — et à chaque fois le backoff (30 → 60 → 120 s) mettait
+        TOUT LE MONDE sur le repli local, y compris ceux dont la session vivait.
+        Il suffit d'une session survivante pour savoir que le serveur est debout.
+        """
         sess = self._sessions.pop(speaker_id, None)
         if sess is None:
             return  # déjà retirée (fermeture volontaire, idle, ou double notification)
         self._start_tasks.pop(speaker_id, None)
-        self._arm_unreachable_cache()
-        logger.warning("RemoteStreamingSTT: session {s} perdue → fallback batch {t}s",
-                       s=speaker_id, t=round(self._unreachable_until - self._now()))
+        if not self._sessions:
+            self._arm_unreachable_cache()
+            logger.warning("RemoteStreamingSTT: session {s} perdue, plus aucune "
+                           "session vivante → fallback batch {t}s",
+                           s=speaker_id, t=round(self._unreachable_until - self._now()))
+        else:
+            logger.warning("RemoteStreamingSTT: session {s} perdue → repli local "
+                           "(le serveur répond encore à {n} autre(s))",
+                           s=speaker_id, n=len(self._sessions))
         self._detach(sess.close())
 
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:

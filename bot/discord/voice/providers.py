@@ -260,12 +260,21 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
     """Construit le STT streaming distant (RemoteStreamingSTT) + son fallback batch CPU local."""
     from bot.discord.voice.streaming import RemoteStreamingSTT
     fallback = _build_batch_stt(cfg.remote_stt_fallback, cfg, phrases)
+    # Les places du serveur distant sont comptées (VRAM) : elles reviennent
+    # d'abord à ceux au nom de qui Wally agit. `voice.requesters` porte déjà
+    # cette liste — le créateur et le streamer — plutôt qu'un jeu d'ID en dur.
+    prioritaires = {
+        str((r or {}).get("discord_id") or "").strip()
+        for r in (cfg.requesters or [])
+    }
+    prioritaires.discard("")
     return RemoteStreamingSTT(
         cfg.remote_stt_url,
         fallback=fallback,
         max_connections=cfg.remote_stt_max_connections,
         idle_timeout=cfg.remote_stt_idle_timeout,
         health_cache_s=cfg.remote_stt_health_cache_s,
+        priority_speakers=prioritaires,
     )
 
 
