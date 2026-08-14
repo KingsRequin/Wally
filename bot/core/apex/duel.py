@@ -535,12 +535,10 @@ class Duel:
         """
         self._pending_fin = False
         self._t_lobby = None
-        # La fenêtre d'expérience se referme avec celle des kills : la manche
-        # suivante reprendra sa référence à son propre début. La laisser
-        # traîner ferait clore la manche suivante sur l'XP de celle-ci.
-        self._base_progression = None
-        self._t_manche = None
-        self._xp_en_attente = None
+        # Rien à remettre à zéro pour la fenêtre d'expérience, à la différence
+        # des deux drapeaux ci-dessus : elle se rouvre ENTIÈREMENT au début de
+        # la manche suivante — référence et instant pris sur le relevé d'entrée
+        # en partie — qui est son unique point de départ.
         sa = score_manche(self._base_azrael, r.kills_azrael,
                           plafond=self.plafond_kills_manche)
         sv = score_manche(self._base_viewer, r.kills_viewer,
