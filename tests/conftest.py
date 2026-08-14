@@ -63,6 +63,22 @@ def isolate_secret_guard():
 
 
 @pytest.fixture(autouse=True)
+def isolate_thread_sense():
+    """Vide la mesure du fil entre deux tests.
+
+    `bot.intelligence.thread_sense` garde ses compteurs dans des dicts de
+    MODULE, comme `_relances` ou `secret_guard._SECRETS` : un test qui pousse
+    quatre répliques finies par « 😄 » dans le canal « live » laisse le tic
+    installé pour toute la suite, et le test suivant voit son propre message
+    amputé de son emoji sans avoir rien demandé.
+    """
+    from bot.intelligence.thread_sense import oublier_tout
+    oublier_tout()
+    yield
+    oublier_tout()
+
+
+@pytest.fixture(autouse=True)
 def reset_identity_after_test():
     """Réinitialise l'identité du bot après chaque test.
 

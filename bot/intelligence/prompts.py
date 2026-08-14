@@ -252,6 +252,7 @@ class PromptBuilder:
         persistent_notes: list[dict] | None = None,
         presence_context: str = "",
         user_directive: str | None = None,
+        thread_context: str = "",
     ) -> str:
         # Deux groupes pour maximiser le cache de préfixe DeepSeek :
         #   static_parts  = stable à la journée (persona, jour, directive mémoire)
@@ -489,6 +490,14 @@ class PromptBuilder:
             for note in persistent_notes:
                 lines.append(f"**{note['title']}** : {note['content']}")
             dynamic_parts.append("\n".join(lines))
+
+        # Sa place dans le fil : combien d'allers-retours d'affilée avec la même
+        # personne, quel marqueur il colle en fin de message, quelles vannes il
+        # ressert (cf. `thread_sense`). EN DERNIER, juste avant la génération :
+        # c'est la seule partie du prompt qui parle de ce qu'il vient d'écrire,
+        # elle doit être ce qu'il a le plus frais en tête.
+        if thread_context:
+            dynamic_parts.append(thread_context)
 
         return "\n".join(static_parts + dynamic_parts)
 

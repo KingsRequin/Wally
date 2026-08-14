@@ -20,6 +20,7 @@ from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
+from bot.intelligence import thread_sense
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
     _canonical_uid, _apex_account_context,
@@ -968,6 +969,14 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             active_secondaries=bot.emotion.get_secondary_emotions(),
             persistent_notes=persistent_notes or None,
             user_directive=bot.persona.user_directive("twitch", user_id, author),
+            # Sa place dans le fil : combien de fois d'affilée il a déjà répondu
+            # à CETTE personne, et ce qu'il recopie de ses propres messages. Le
+            # chat d'un live est le seul endroit où les deux se voient à l'œil
+            # nu — 38 réponses consécutives le 12/08, 36 « 😄 » sur 89 le 13.
+            thread_context=thread_sense.bloc_fil(
+                channel_name, user_id, nom_personne=author,
+                paliers=bot.persona.fil_directives,
+            ),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_msgs)
@@ -1045,6 +1054,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         # message coupé au mauvais endroit.
         reply = strip_stage_directions(reply)
 
+        # Le même marqueur ne tient pas trois messages sur quatre. Ici et pas
+        # plus tôt : c'est le texte RÉELLEMENT publié qu'on mesure ensuite.
+        reply = thread_sense.retirer_tic(channel_name, reply)
+
         if len(reply) > 480:
             reply = reply[:477] + "..."
 
@@ -1065,6 +1078,9 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             # Wally vient de parler à cette personne : sa prochaine relance ne sera
             # pas du spam, elle prolongera l'échange.
             _note_reply_sent(channel_name, user_id)
+            # Une réplique jamais partie ne creuse pas de fil et ne fait pas un
+            # tic : la mesure suit la publication, comme `append_prelude`.
+            thread_sense.note_reponse(channel_name, user_id, reply)
         _clog(
             bot, channel_name, "message_out",
             trace_id=_trace, author=self_name, content=reply, parts=1,

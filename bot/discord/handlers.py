@@ -19,6 +19,7 @@ from bot.core.llm import FALLBACK_RESPONSE
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
+from bot.intelligence import thread_sense
 from bot.intelligence.prompts import (
     assemble_memory_context,
     build_session_recall_block,
@@ -2137,6 +2138,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 available_emojis=_guild_emojis,
                 emoji_usage=_emoji_usage,
                 recent_messages=_thread,
+                thread_depth=thread_sense.profondeur(str(message.channel.id), user_id),
             )
             decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
         except Exception as e:
@@ -2502,6 +2504,13 @@ async def _respond(
             secondary_directives=bot.persona.secondary_directives,
             active_secondaries=bot.emotion.get_secondary_emotions(),
             user_directive=bot.persona.user_directive("discord", user_id),
+            # Même mesure que sur Twitch : c'est le même Wally, il doit voir sa
+            # propre insistance et ses propres tics des deux côtés.
+            thread_context=thread_sense.bloc_fil(
+                str(message.channel.id), user_id,
+                nom_personne=message.author.display_name,
+                paliers=bot.persona.fil_directives,
+            ),
         )
         prelude_block = bot.prompts.build_prelude_block(prelude)
         context_block = bot.prompts.build_context_block(context_messages)
@@ -2886,6 +2895,10 @@ async def _respond(
                 before=_mirror_before[:400], after=reply[:400],
             )
 
+        # Après le miroir : c'est le texte qui part réellement qu'on mesure, et
+        # le miroir peut lui-même recoller un marqueur en réécrivant.
+        reply = thread_sense.retirer_tic(str(message.channel.id), reply)
+
         try:
             await message.remove_reaction("🔍", bot.user)
         except Exception:
@@ -2922,6 +2935,9 @@ async def _respond(
         _speaks = getattr(bot, "_wally_recent_speaks", None)
         if _speaks is not None:
             _speaks[message.channel.id] = reply
+        # Ce qu'il vient de dire, et à qui : de quoi savoir au message suivant
+        # qu'il en est au dixième aller-retour, et qu'il finit tout pareil.
+        thread_sense.note_reponse(str(message.channel.id), user_id, reply)
         if reply_msg_id and getattr(bot, "reaction_tracker", None):
             bot.reaction_tracker.track_discord_message(reply_msg_id, reply_text=reply, channel_id=str(message.channel.id))
 

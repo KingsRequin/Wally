@@ -87,6 +87,7 @@ class ResponseGate:
         available_emojis: list[str] | None = None,
         emoji_usage: list[str] | None = None,
         recent_messages: list[dict] | None = None,
+        thread_depth: int = 0,
     ) -> GateDecision:
         """Retourne la décision de Wally pour ce message."""
         if is_ignored:
@@ -117,6 +118,14 @@ class ResponseGate:
             context_parts.append(
                 "Fil récent du canal (pour juger si une réponse a du sens dans le contexte) :\n"
                 + thread
+            )
+        # La profondeur du fil : sans elle, le dixième aller-retour d'affilée
+        # avec la même personne arrivait ici exactement comme le premier. 38 le
+        # 12/08 sur une seule chaîne — un tiers de la production du jour.
+        if thread_depth >= 2:
+            context_parts.append(
+                f"Tu as déjà répondu {thread_depth} fois d'affilée à cette personne, "
+                f"sans que personne d'autre ne t'occupe entre-temps."
             )
         context_parts.append(f"Émotion dominante : {dominant_emotion} ({dominant_value:.2f})")
         if wally_last_message:

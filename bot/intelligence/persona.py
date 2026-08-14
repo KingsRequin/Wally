@@ -62,6 +62,16 @@ class PersonaService:
         self._secondary_directives = self._parse_secondaries()
         self._user_directives = self._parse_users()
         self._event_directives = self._parse_events()
+        self._fil_directives = self._parse_fil()
+
+    def _parse_fil(self) -> dict[str, str]:
+        """Parse FIL.md en un dict {seuil d'allers-retours: directive}.
+
+        Comment Wally s'allège quand il enchaîne avec la même personne. Les clés
+        sont numériques et interprétées comme des seuils par `thread_sense` : ni
+        les seuils ni le ton ne sont dans le code.
+        """
+        return self._parse_sections("FIL.md")
 
     def _parse_events(self) -> dict[str, str]:
         """Parse EVENTS.md en un dict {type d'événement: registre}.
@@ -173,6 +183,11 @@ class PersonaService:
     def event_directives(self) -> dict[str, str]:
         """Registre de ton par type d'événement du live (overlay)."""
         return self._event_directives
+
+    @property
+    def fil_directives(self) -> dict[str, str]:
+        """Directives d'allègement par profondeur d'échange (FIL.md)."""
+        return self._fil_directives
 
     def build_prompt_block(self) -> str:
         """Retourne SOUL → IDENTITY → VOICE → EXEMPLES + le self-model dérivé."""
