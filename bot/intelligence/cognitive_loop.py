@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from bot.core.conversation_log import new_trace_id
 from bot.intelligence.identity import bot_name
 from bot.intelligence.social_rhythm import R_REF
 
@@ -365,6 +366,17 @@ class CognitiveLoop:
         if self._conv_log is not None:
             self._conv_log.log("cognitive", "brain", event_type, **fields)
 
+    def _emotion_snapshot(self) -> dict:
+        """L'humeur du moment, agrafée à la pensée. Jamais bloquant."""
+        if self._emotion is None:
+            return {}
+        try:
+            return {k: round(float(v), 3)
+                    for k, v in (self._emotion.get_state() or {}).items()}
+        except Exception as exc:  # noqa: BLE001 — une humeur illisible ne bloque rien
+            logger.debug("CognitiveLoop: humeur illisible pour le journal: {e}", e=exc)
+            return {}
+
     def _rumination_rate(self) -> float:
         """Part des dernières pensées qui ont été jetées. Fenêtre vide → 0."""
         if not self._rumination_window:
@@ -666,8 +678,18 @@ class CognitiveLoop:
             self._recent_thoughts.append(result.thought_text)
             if len(self._recent_thoughts) > 6:
                 self._recent_thoughts = self._recent_thoughts[-6:]
+            # Identité de CETTE pensée : elle voyage jusqu'aux actions qu'elle
+            # produit, et l'humeur du moment lui est agrafée. Sans elle, savoir
+            # dans quel état il pensait demandait d'aller lire une autre table,
+            # et relier un `act` à son `think` était impossible dès que le tick
+            # décidait plus d'une action.
+            thought_id = new_trace_id("think")
+            emotion_state = self._emotion_snapshot()
             if self._feed:
-                self._feed.publish({"type": "THINK", "text": result.thought_text})
+                self._feed.publish({
+                    "type": "THINK", "text": result.thought_text,
+                    "thought_id": thought_id, "emotion": emotion_state,
+                })
             if self._overlay_narrator is not None:
                 # Détaché : la condensation passe par un appel LLM, la boucle
                 # cognitive ne doit pas l'attendre. Référence forte conservée,
@@ -678,8 +700,13 @@ class CognitiveLoop:
                 self._overlay_tasks.add(task)
                 task.add_done_callback(self._overlay_tasks.discard)
             decisions = result.decisions
+            for _d in decisions:
+                _d.thought_id = thought_id
             if self._feed:
-                self._feed.publish({"type": "DECIDE", "actions": [d.action for d in decisions]})
+                self._feed.publish({
+                    "type": "DECIDE", "actions": [d.action for d in decisions],
+                    "thought_id": thought_id,
+                })
             # Routage SPEAK spontané : Wally peut viser N'IMPORTE QUEL canal
             # textuel de l'annuaire (choix proactif : un meme → #memes, etc.) OU
             # un canal récemment actif. Si le channel_id sort de ce périmètre
@@ -723,7 +750,7 @@ class CognitiveLoop:
                     # monologue. Les DM owner passent par un ACT, pas un SPEAK.
                     if not self._spontaneous_channel_speak_enabled and forced_seed is None:
                         self._log_cog(
-                            "speak_suppressed", channel=str(decision.channel_id),
+                            "speak_suppressed", thought_id=thought_id, channel=str(decision.channel_id),
                             reason="parole spontanée désactivée (config)",
                             message=(decision.message or "")[:200],
                         )
@@ -747,7 +774,7 @@ class CognitiveLoop:
                             elapsed_since_activity / 60,
                         )
                         self._log_cog(
-                            "speak_suppressed", channel=str(decision.channel_id),
+                            "speak_suppressed", thought_id=thought_id, channel=str(decision.channel_id),
                             reason="idle+silence>2h", message=(decision.message or "")[:200],
                         )
                         continue
@@ -784,7 +811,7 @@ class CognitiveLoop:
                             self._penalize_if_ignored(ch_st)
                             logger.info("CognitiveLoop: SPEAK bloqué ({} sans réponse)", unanswered)
                             self._log_cog(
-                                "speak_suppressed", channel=ch_key,
+                                "speak_suppressed", thought_id=thought_id, channel=ch_key,
                                 reason=f"{unanswered} messages sans réponse",
                                 message=(decision.message or "")[:200],
                             )
@@ -793,7 +820,7 @@ class CognitiveLoop:
                         if cooldown and since_last < cooldown:
                             logger.info("CognitiveLoop: SPEAK bloqué (cooldown {}s/{}, {} sans réponse)", int(since_last), cooldown, unanswered)
                             self._log_cog(
-                                "speak_suppressed", channel=ch_key,
+                                "speak_suppressed", thought_id=thought_id, channel=ch_key,
                                 reason=f"cooldown {int(since_last)}s/{cooldown}s ({unanswered} sans réponse)",
                                 message=(decision.message or "")[:200],
                             )
@@ -808,7 +835,7 @@ class CognitiveLoop:
                             now - last_reply,
                         )
                         self._log_cog(
-                            "speak_suppressed", channel=ch_key,
+                            "speak_suppressed", thought_id=thought_id, channel=ch_key,
                             reason=f"réponse directe il y a {int(now - last_reply)}s (anti-récap)",
                             message=(decision.message or "")[:200],
                         )
@@ -829,7 +856,7 @@ class CognitiveLoop:
                         if random.random() >= _speak_pass_probability(r):
                             logger.info("CognitiveLoop: SPEAK amorti (réceptivité {:.2f})", r)
                             self._log_cog(
-                                "speak_suppressed", channel=str(decision.channel_id),
+                                "speak_suppressed", thought_id=thought_id, channel=str(decision.channel_id),
                                 reason=f"réceptivité apprise {r:.2f}",
                                 message=(decision.message or "")[:200],
                             )
@@ -845,7 +872,7 @@ class CognitiveLoop:
                     ):
                         logger.info("CognitiveLoop: SPEAK supprimé (redite d'un message spontané récent)")
                         self._log_cog(
-                            "speak_suppressed", channel=str(decision.channel_id),
+                            "speak_suppressed", thought_id=thought_id, channel=str(decision.channel_id),
                             reason="redite d'un message spontané récent",
                             message=(decision.message or "")[:200],
                         )

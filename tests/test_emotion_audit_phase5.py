@@ -203,18 +203,55 @@ def test_larret_du_process_appelle_flush():
 
 # ── Une pensée vide n'est pas une pensée ─────────────────────────────────────
 
-def test_une_pensee_vide_est_abandonnee():
+@pytest.mark.asyncio
+async def test_une_pensee_vide_est_abandonnee():
     """`complete_with_reasoning` rend `("", "")` quand l'API tombe. L'échec était
     compté comme « ça avance », ce qui ACCÉLÈRE la cadence pendant une panne, et
-    publiait un THINK vide suivi d'une condensation LLM sur du vide."""
-    import inspect
+    publiait un THINK vide suivi d'une condensation LLM sur du vide.
+
+    Vérifié sur le COMPORTEMENT du tick — rien n'est publié, rien n'est
+    dispatché, l'overlay n'est pas sollicité — et non sur l'ordre de deux
+    lignes du source : une reformulation du code ferait tomber le second sans
+    que le défaut soit revenu.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
     from bot.intelligence.cognitive_loop import CognitiveLoop
 
-    source = inspect.getsource(CognitiveLoop)
-    garde = source.index("if not result.thought_text:")
-    publication = source.index('self._feed.publish({"type": "THINK"')
-    assert garde < publication
+    class _Attention:
+        async def build_context(self, *a, **kw):
+            return SimpleNamespace()
+
+    class _Reasoning:
+        async def reason(self, context):
+            return SimpleNamespace(thought_text="", decisions=[], thought_fact_id=None)
+
+    class _Feed:
+        def __init__(self):
+            self.events = []
+
+        def publish(self, event):
+            self.events.append(event)
+
+    class _Dispatcher:
+        def __init__(self):
+            self.dispatched = []
+
+        async def dispatch(self, decision):
+            self.dispatched.append(decision)
+
+    feed, dispatcher = _Feed(), _Dispatcher()
+    narrator = SimpleNamespace(on_thought=AsyncMock(return_value=None))
+    loop = CognitiveLoop(
+        _Attention(), _Reasoning(), dispatcher, feed=feed, overlay_narrator=narrator,
+    )
+
+    await loop._tick()
+
+    assert not [e for e in feed.events if e.get("type") == "THINK"]
+    assert dispatcher.dispatched == []
+    narrator.on_thought.assert_not_called()
 
 
 def test_la_demande_dauto_modification_garde_sa_reference():

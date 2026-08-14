@@ -68,6 +68,13 @@ def _same_desire(a: str, b: str, threshold: float = 0.5) -> bool:
 
 
 class ActionDispatcher:
+    # Défauts de CLASSE, et pas seulement d'`__init__` : plusieurs appelants
+    # (dont des tests) construisent un dispatcher par `__new__` ou n'appellent
+    # `_act` que directement. Un compteur de journal ne doit jamais faire lever
+    # l'action qu'il observe.
+    _thought_id: str | None = None
+    _act_events: int = 0
+
     def __init__(
         self,
         bot=None,
@@ -94,6 +101,13 @@ class ActionDispatcher:
         self._speak_guard = speak_guard
         self._last_focus_ts: float = 0.0
         self._last_dm_ts: float = 0.0
+        # Identité de la pensée en cours de dispatch, agrafée aux ACT qu'elle
+        # produit. `dispatch` est attendu (`await`) décision par décision par
+        # l'unique boucle cognitive : un seul dispatch est en vol à la fois.
+        self._thought_id: str | None = None
+        # Compteur d'ACT réellement publiés, pour repérer les actions décidées
+        # qui s'éteignent en silence (cf. `_publish_act`).
+        self._act_events: int = 0
         # Références fortes des tâches détachées : la boucle asyncio n'en garde
         # qu'une référence FAIBLE, donc le GC peut annuler une tâche en cours.
         # Le motif est appliqué partout ailleurs (`cognitive_loop`, `emotion`,
@@ -120,11 +134,25 @@ class ActionDispatcher:
 
     def _publish_act(self, label: str, body: str) -> None:
         """Event ACT avec snippet (≤300) + texte complet (full, ≤2000) →
-        dépliable côté site (#observability A5)."""
+        dépliable côté site (#observability A5).
+
+        Point de passage UNIQUE des ACT publiés : c'est ce qui permet de savoir,
+        à la sortie de `_act`, si l'action a laissé une trace ou s'est éteinte en
+        silence. Les branches qui publiaient leur event à la main y échappaient,
+        et c'est exactement le trou qu'on mesurait à 20 % — 66 actions décidées,
+        56 journalisées, sans qu'on sache lesquelles ni pourquoi.
+        """
+        # Compté même sans feed : ce compteur dit « l'action est allée au bout »,
+        # pas « le site l'a vue ». Sans feed, toutes les actions passaient
+        # sinon pour rejetées.
+        self._act_events += 1
         if not self._feed:
             return
         full = f"{label}{body}"
-        self._feed.publish({"type": "ACT", "detail": full[:300], "full": full[:2000]})
+        self._feed.publish({
+            "type": "ACT", "detail": full[:300], "full": full[:2000],
+            "thought_id": self._thought_id,
+        })
 
     def _note_overlay_refus(self, widget: str, extra: dict) -> None:
         """Consigne le refus d'écraser une partie en cours, pour qu'il le lise.
@@ -168,20 +196,91 @@ class ActionDispatcher:
                 return nm
         return "Wally"
 
+    # Actions que `_act` sait exécuter. Sert au DIAGNOSTIC, jamais au routage :
+    # la liste de vérité reste la chaîne de `elif`, et cette copie ne fait que
+    # distinguer « outil inconnu » de « outil connu resté silencieux ».
+    _ACTIONS_CONNUES = frozenset({
+        "show_overlay", "cancel_overlay", "create_memory", "create_goal",
+        "create_desire", "advance_goal", "fulfill_goal", "drop_desire",
+        "doubt_memory", "react", "dm", "note_to_self", "set_focus",
+        "reflect_self", "note_relation", "note_emote", "code_fix",
+    })
+
+    # Actions qui n'ont, par construction, aucun ACT à publier : leur trace vit
+    # ailleurs (event REACT/DM du feed). Les compter comme rejetées ferait du
+    # bruit permanent dans le journal.
+    _ACTIONS_SANS_TRACE_ACT = frozenset({"react", "dm"})
+
     async def dispatch(self, decision: MetaDecision) -> None:
         action = decision.action
-        if action == "THINK":
-            pass
-        elif action == "SPEAK":
-            await self._speak(decision.channel_id, decision.message)
-        elif action == "ACT":
-            await self._act(decision.act_name or "", decision.act_args)
-        elif action == "EVOLVE":
-            await self._evolve(decision.section or "", decision.change or "")
-        elif action == "SLEEP":
-            pass  # handled by CognitiveLoop
+        self._thought_id = getattr(decision, "thought_id", None)
+        try:
+            if action == "THINK":
+                pass
+            elif action == "SPEAK":
+                await self._speak(decision.channel_id, decision.message)
+            elif action == "ACT":
+                await self._dispatch_act(decision)
+            elif action == "EVOLVE":
+                await self._evolve(decision.section or "", decision.change or "")
+            elif action == "SLEEP":
+                pass  # handled by CognitiveLoop
+            else:
+                logger.warning("ActionDispatcher: action inconnue '{}'", action)
+                self._journal_act_rejected(action, {}, "action inconnue du dispatcher")
+        finally:
+            self._thought_id = None
+
+    async def _dispatch_act(self, decision: MetaDecision) -> None:
+        """Exécute un ACT et consigne ceux qui n'ont laissé AUCUNE trace.
+
+        20 % des actions décidées disparaissaient sans un mot — 66 décidées, 56
+        journalisées — et rien ne disait si c'était un refus, un outil inconnu
+        ou une branche qui s'était tue sur un argument manquant. On ne mesure
+        pas l'intention ici : on constate simplement qu'aucun ACT n'est sorti,
+        ce qui est vrai quelle qu'en soit la cause.
+        """
+        act_name = decision.act_name or ""
+        args = decision.act_args or {}
+        avant = self._act_events
+        try:
+            await self._act(act_name, args)
+        except Exception as exc:
+            self._journal_act_rejected(act_name, args, f"exception : {exc}")
+            raise
+        if self._act_events != avant or act_name in self._ACTIONS_SANS_TRACE_ACT:
+            return
+        if not act_name:
+            motif = "nom d'action absent"
+        elif act_name not in self._ACTIONS_CONNUES:
+            motif = "outil inconnu"
+        elif self._service_manquant(act_name):
+            motif = f"service indisponible ({self._service_manquant(act_name)})"
         else:
-            logger.warning("ActionDispatcher: action inconnue '{}'", action)
+            motif = "action silencieuse (argument manquant, doublon ou refus)"
+        self._journal_act_rejected(act_name, args, motif)
+
+    def _service_manquant(self, act_name: str) -> str:
+        """Le service dont dépend cette action et qui n'est pas câblé, ou ""."""
+        if act_name in ("show_overlay", "cancel_overlay") and not self._overlay_narrator:
+            return "overlay_narrator"
+        if act_name == "code_fix" and getattr(self._bot, "self_fix", None) is None:
+            return "self_fix"
+        if act_name not in ("show_overlay", "cancel_overlay", "react", "dm",
+                            "code_fix") and not self._facts:
+            return "fact_store"
+        return ""
+
+    def _journal_act_rejected(self, act_name: str, args: dict, motif: str) -> None:
+        """Consigne une action décidée qui n'a rien produit. Ne lève jamais."""
+        from bot.core.audit_log import conv_log_of, journal
+
+        logger.info("ACT {a} sans effet — {m}", a=act_name or "?", m=motif)
+        journal(
+            conv_log_of(self._bot, self._twitch_bot), "cognitive", "brain",
+            "act_rejected", thought_id=self._thought_id, act_name=act_name,
+            reason=motif, args=sorted(args or {}),
+        )
 
     async def _speak(self, channel_id: str | None, message: str | None) -> None:
         if not channel_id or not message:
@@ -550,8 +649,7 @@ class ActionDispatcher:
                 return
             await self._facts.set_status(goal_id, FactStatus.FULFILLED)
             logger.info("ACT fulfill_goal: #{} accompli", goal_id)
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"fulfill_goal #{goal_id}"})
+            self._publish_act("fulfill_goal #", str(goal_id))
 
         elif act_name == "drop_desire" and self._facts:
             # Clore un désir résolu / caduc (Phase 3). Accepte un id explicite ou
@@ -573,8 +671,7 @@ class ActionDispatcher:
             if target_id is not None:
                 await self._facts.set_status(target_id, FactStatus.ARCHIVED)
                 logger.info("ACT drop_desire: #{} archivé", target_id)
-                if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"drop_desire #{target_id}"})
+                self._publish_act("drop_desire #", str(target_id))
             else:
                 logger.warning("ACT drop_desire: aucun désir cible ({!r}/{!r})", raw_id, desc[:50])
 
@@ -596,8 +693,7 @@ class ActionDispatcher:
             if target_id is not None:
                 await self._facts.doubt(target_id)
                 logger.info("ACT doubt_memory: #{} marqué needs_review", target_id)
-                if self._feed:
-                    self._feed.publish({"type": "ACT", "detail": f"doubt_memory #{target_id}"})
+                self._publish_act("doubt_memory #", str(target_id))
             else:
                 logger.warning("ACT doubt_memory: aucune cible ({!r}/{!r})", raw_id, desc[:50])
 
@@ -742,8 +838,7 @@ class ActionDispatcher:
                 last_seen_at=now,
             ))
             logger.info("ACT note_relation: {} — {}", about, opinion[:50])
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"opinion sur {about}"})
+            self._publish_act("opinion sur ", f"{about} — {opinion}")
 
         elif act_name == "note_emote" and self._facts:
             emote = (args.get("emote") or "").strip().strip(":")
@@ -768,8 +863,7 @@ class ActionDispatcher:
                 last_seen_at=now,
             ))
             logger.info("ACT note_emote: {} → {}", emote, usage[:50])
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"emote apprise : :{emote}:"})
+            self._publish_act("emote apprise : ", f":{emote}: → {usage}")
 
         elif act_name == "code_fix":
             self_fix = getattr(self._bot, "self_fix", None) if self._bot else None
@@ -788,8 +882,7 @@ class ActionDispatcher:
             # la tâche avant sa fin, sans le moindre log.
             self._fire(self_fix.request_upgrade(UpgradeRequest(goal=goal)))
             logger.info("ACT code_fix: demande d'auto-modif — {}", goal[:60])
-            if self._feed:
-                self._feed.publish({"type": "ACT", "detail": f"auto-modif : {goal[:60]}"})
+            self._publish_act("auto-modif : ", goal)
 
         else:
             logger.info("ACT {} non implémenté Plan B — ignoré", act_name)

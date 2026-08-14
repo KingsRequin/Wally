@@ -39,6 +39,12 @@ class MetaDecision:
     section: str | None = None
     change: str | None = None
     sleep_seconds: int | None = None
+    # Identifiant de la PENSÉE qui a produit cette décision. Posé par la boucle
+    # cognitive après coup, jamais par le parseur — le texte du modèle n'en sait
+    # rien. Sans lui, `think` et `act` sont deux lignes voisines du journal sans
+    # rien qui les relie : quand un raisonnement produit trois actions, on ne
+    # sait pas laquelle vient de quel raisonnement.
+    thought_id: str | None = None
 
 
 def parse_decisions(text: str) -> list[MetaDecision]:
