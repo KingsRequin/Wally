@@ -114,6 +114,17 @@ async def test_une_api_qui_tombe_ne_vide_pas_ce_quil_savait_deja():
 
 
 @pytest.mark.asyncio
+async def test_un_catalogue_global_vide_est_une_reponse_malformee_pas_un_etat():
+    """Twitch a toujours des emotes globales. Zéro veut dire que la réponse est
+    cassée, pas que le monde a changé : on garde ce qu'on savait."""
+    registre = em.active_emote_registry()
+    registre.set_verified(["LUL"])
+    registre.note_chat("LUL")
+    await em.refresh_from_api(_FauxAPI([], None))
+    assert registre.top() == ["LUL"]
+
+
+@pytest.mark.asyncio
 async def test_une_api_qui_leve_ne_casse_pas_le_bot():
     class _Cassee:
         async def get_global_emotes(self):
@@ -186,10 +197,10 @@ def test_une_emote_mal_capitalisee_nest_pas_la_meme_chose():
 
 # ── amorçage depuis les journaux ──────────────────────────────────────────
 
-def _ecrire_journal(tmp_path, canal, evenements):
+def _ecrire_journal(tmp_path, canal, evenements, date="2026-08-13"):
     dossier = tmp_path / "twitch" / canal
     dossier.mkdir(parents=True, exist_ok=True)
-    (dossier / "2026-08-13.jsonl").write_text(
+    (dossier / f"{date}.jsonl").write_text(
         "\n".join(json.dumps(e) for e in evenements), encoding="utf-8"
     )
 
@@ -219,6 +230,22 @@ def test_lamorcage_ne_compte_pas_ses_propres_messages(tmp_path):
     registre.set_verified(["LUL", "KonCha"])
     registre.seed_from_logs(tmp_path)
     assert registre.top() == ["KonCha"]
+
+
+def test_lamorcage_regarde_les_derniers_JOURS_pas_les_derniers_fichiers(tmp_path):
+    """Un vocabulaire d'il y a six mois n'est plus celui d'aujourd'hui — et la
+    fenêtre doit couvrir tous les canaux d'une même journée, pas une journée par
+    canal."""
+    _ecrire_journal(tmp_path, "azrael_ttv",
+                    [{"type": "message_in", "content": "Kappa"}], date="2026-02-01")
+    _ecrire_journal(tmp_path, "azrael_ttv",
+                    [{"type": "message_in", "content": "LUL"}], date="2026-08-13")
+    _ecrire_journal(tmp_path, "kingsrequin",
+                    [{"type": "message_in", "content": "KonCha"}], date="2026-08-13")
+    registre = em.active_emote_registry()
+    registre.set_verified(["LUL", "KonCha", "Kappa"])
+    registre.seed_from_logs(tmp_path, days=1)
+    assert set(registre.top()) == {"LUL", "KonCha"}
 
 
 def test_un_journal_illisible_ne_casse_pas_le_demarrage(tmp_path):

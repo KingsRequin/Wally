@@ -169,7 +169,14 @@ class EmoteRegistry:
         base = Path(root) / "twitch"
         lignes = 0
         try:
-            fichiers = sorted(base.glob("*/*.jsonl"))[-max(1, days) * 8:]
+            # Le nom de fichier EST la date (`2026-08-13.jsonl`), une par canal
+            # et par jour. On retient les `days` dernières dates, tous canaux
+            # confondus — trier les CHEMINS aurait trié par canal d'abord, et
+            # « les sept derniers fichiers » aurait rendu sept jours d'un seul
+            # canal au lieu du dernier jour de sept canaux.
+            tous = list(base.glob("*/*.jsonl"))
+            recentes = sorted({c.name for c in tous})[-max(1, days):]
+            fichiers = [c for c in tous if c.name in recentes]
         except Exception as exc:  # noqa: BLE001 — un amorçage ne casse pas le boot
             logger.warning("Emotes : journaux illisibles ({e})", e=exc)
             return 0
@@ -265,7 +272,11 @@ async def refresh_from_api(api) -> None:
     """
     try:
         globales = await api.get_global_emotes()
-        if globales is None:
+        # `None` (pas de réponse) et `[]` sont traités pareil, et seulement
+        # ici : Twitch a toujours des emotes globales, un catalogue vide n'est
+        # pas un état du monde mais une réponse malformée. Le registre garde
+        # alors ce qu'il savait plutôt que de se vider sur un accident.
+        if not globales:
             _REGISTRE.set_verified(None)
             return
         chaine = await api.get_entitled_channel_emotes()
