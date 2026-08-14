@@ -261,7 +261,14 @@ async def test_le_socket_cree_faute_de_place_est_memorise(monkeypatch):
             return None
 
         def add_subscription(self, sub):
+            # Le vrai socket empile puis laisse `_wakeup_and_connect` résoudre
+            # la Future depuis une autre tâche. Un double qui ne la résout PAS
+            # laissait passer la version du code qui repartait sans attendre —
+            # celle qui a rendu Wally sourd sur Twitch le 2026-08-14.
             self.sub = sub
+            asyncio.get_running_loop().call_soon(
+                lambda: sub.created.done() or sub.created.set_result((True, None))
+            )
 
     monkeypatch.setattr(tio_ws, "Websocket", _FakeWebsocket)
     monkeypatch.setattr(EventSubWSClient, "_wally_socket_tracking_patched", False, raising=False)
@@ -272,7 +279,11 @@ async def test_le_socket_cree_faute_de_place_est_memorise(monkeypatch):
     client._http = object()
     client._sockets = []
 
-    await client._assign_subscription(object())
+    sub = tio_ws._Subscription(
+        ("channel.subscribe", 1, object), {"broadcaster_user_id": "42"}, "token"
+    )
+    await client._assign_subscription(sub)
+    assert sub.created is None, "Future laissée résolue → InvalidStateError à la reconnexion"
     # 1er socket (liste vide) + celui créé faute de place, TOUS deux suivis
     assert len(client._sockets) == len(created)
     assert len(client._sockets) == 2

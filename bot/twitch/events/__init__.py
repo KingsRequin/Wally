@@ -211,18 +211,37 @@ def _patch_socket_tracking() -> None:
     la place d'un 400 — bug Twitch connu). D'où `cheer`/`subscription_end` perdus
     à chaque démarrage, et des sockets orphelins impossibles à fermer.
 
+    Deux autres défauts du même code se payaient à la RECONNEXION, pas au
+    démarrage — `Websocket.connect()` rejoue tout son `_subscription_pool` :
+
+    1. la souscription refusée en 400 restait dans le pool du socket fautif,
+       `add_subscription` l'y ayant empilée AVANT de savoir si Twitch
+       l'acceptait. Le socket du bot rejouait donc les six souscriptions du
+       streamer à chaque reconnexion ;
+    2. la souscription posée sur le socket de secours repartait sans qu'on
+       attende `sub.created` : `_wakeup_and_connect` résolvait la Future dans
+       son coin, et plus personne ne la remettait à `None`. À la reconnexion
+       suivante, `_subscribe()` la voyait encore là et appelait `set_result`
+       une deuxième fois — `InvalidStateError`, remontée jusqu'à `pump()`, la
+       tâche meurt et le chat Twitch ne descend plus. Vécu le 2026-08-14 en
+       plein live : deux minutes de surdité complète, jusqu'au chien de garde.
+
     twitchio v2 n'est plus maintenu (le projet est en v3, API incompatible), donc
     le correctif vit ici. Idempotent.
     """
     from twitchio.ext.eventsub import EventSubWSClient
-    from twitchio.ext.eventsub.websocket import Websocket
 
     if getattr(EventSubWSClient, "_wally_socket_tracking_patched", False):
         return
 
     async def _assign_subscription(self, sub) -> None:  # noqa: ANN001
-        # Reprise fidèle de twitchio 2.10.0, à UNE ligne près : le socket créé
-        # faute de place est désormais mémorisé dans `self._sockets`.
+        # Import LOCAL, et non capturé à l'application du correctif : c'est le
+        # seul point de création de socket, donc le seul endroit où un test peut
+        # se substituer à une vraie connexion vers Twitch.
+        from twitchio.ext.eventsub.websocket import Websocket
+
+        # Reprise fidèle de twitchio 2.10.0, à trois endroits près, tous
+        # signalés ci-dessous.
         if not self._sockets:
             w = Websocket(self.client, self._http)
             await w.connect()
@@ -245,8 +264,21 @@ def _patch_socket_tracking() -> None:
             else:
                 s = Websocket(self.client, self._http)
                 await s.connect()
-                self._sockets.append(s)  # ← LA correction
+                self._sockets.append(s)  # ← CORRECTION 1 : socket mémorisé
                 s.add_subscription(sub)
+                # CORRECTION 2 : on attend le verdict et on referme `created`.
+                # Repartir tout de suite laissait une Future RÉSOLUE sur la
+                # souscription — le `set_result` de trop, à la reconnexion.
+                # Le `return` est conservé : un socket neuf ne peut pas être
+                # « occupé par un autre utilisateur », donc rien à réessayer, et
+                # boucler ici ouvrirait une WebSocket de plus à chaque tour.
+                assert sub.created is not None
+                success, status = await sub.created
+                sub.created = None
+                if not success:
+                    raise RuntimeError(
+                        f"Subscription failed on a fresh socket. Status: {status}"
+                    )
                 return
 
             assert sub.created is not None
@@ -254,9 +286,16 @@ def _patch_socket_tracking() -> None:
 
             if not success and status == 400:
                 # Socket occupé par un autre utilisateur : on en essaie un autre.
+                # CORRECTION 3 : le pool du socket refusé est purgé. Sans ça il
+                # rejouait à chaque reconnexion une souscription que Twitch lui
+                # refusera toujours.
                 if bad_sockets is None:
                     bad_sockets = set()
                 bad_sockets.add(s)
+                try:
+                    s._subscription_pool.remove(sub)
+                except ValueError:  # déjà retirée : rien à faire
+                    pass
                 sub.created = asyncio.Future()
                 continue
             elif not success and status in (401, 403):
