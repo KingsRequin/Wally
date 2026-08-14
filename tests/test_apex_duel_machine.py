@@ -87,6 +87,167 @@ def test_trois_manches_puis_verdict_sur_la_SOMME():
     assert verdict.donnees["gagnant"] == "viewer"
 
 
+def test_une_manche_ratee_ne_fausse_pas_le_verdict():
+    """LE test de la décision de mesure (§1 et §13 de la spec).
+
+    L'API est muette au relevé qui clôt la manche 2 — et à ce moment-là
+    seulement. Azraël y a pourtant fait 20 kills, que les compteurs affichent
+    dès la manche 3.
+
+    Sommer les deltas PAR MANCHE laisse ces 20 kills dehors : la manche n'a pas
+    été mesurée, elle ne compte pour personne, et le viewer l'emporte 8 à 1 sur
+    les deux manches réellement comptées. Un calcul GLOBAL — baseline au
+    lancement, relevé à la fin — les ramasserait au passage et donnerait la
+    victoire à Azraël, 21 à 8. Les deux méthodes désignent donc des vainqueurs
+    OPPOSÉS sur cette séquence : c'est ce qui rend le test capable de refuser un
+    retour en arrière.
+    """
+    d = duel_pret()
+
+    # Manche 1 — mesurée : Azraël 1, le viewer 5.
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(1), kills_viewer=kills(5)))
+    d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(1), kills_viewer=kills(5)))
+
+    # Manche 2 — Azraël y fait 20 kills, mais le relevé de fin ne rend RIEN.
+    d.avancer(Releve(t=520, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(1), kills_viewer=kills(5)))
+    d.avancer(Releve(t=522, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(1), kills_viewer=kills(5)))
+    d.avancer(Releve(t=1000, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael={}, kills_viewer={}))
+    evts = d.avancer(Releve(t=1002, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael={}, kills_viewer={}))
+    ratee = [e for e in evts if e.type == "manche_fin"][0]
+    assert ratee.donnees["mesurable"] is False
+    assert ratee.donnees["azrael"] is None and ratee.donnees["viewer"] is None
+
+    # Manche 3 — l'API répond de nouveau, et les 20 kills de la manche 2 sont
+    # là, dans les compteurs. Le viewer y prend 3 kills, Azraël aucun.
+    d.avancer(Releve(t=1040, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(21), kills_viewer=kills(5)))
+    d.avancer(Releve(t=1042, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(21), kills_viewer=kills(5)))
+    d.avancer(Releve(t=1500, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(21), kills_viewer=kills(8)))
+    evts = d.avancer(Releve(t=1502, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(21), kills_viewer=kills(8)))
+
+    assert d.etat is Etat.VERDICT
+    verdict = [e for e in evts if e.type == "verdict"][0]
+    assert verdict.donnees["azrael"] == 1
+    assert verdict.donnees["viewer"] == 8
+    assert verdict.donnees["gagnant"] == "viewer"
+
+
+def test_un_tracker_qui_ne_se_met_a_jour_qu_au_lobby_est_compte_en_entier():
+    """La mesure du 2026-08-13 : les compteurs ne bougent pas d'un pouce
+    pendant la partie, puis sautent d'un coup au relevé même du retour au
+    lobby.
+
+    C'est elle qui a permis de supprimer tout un état de la machine — la
+    stabilisation des compteurs. Sans ce test, plus rien ne l'interdit : ni de
+    figer le score sur un relevé pris EN PARTIE (les compteurs y sont gelés, le
+    duel finirait 0-0 alors que six kills ont été joués), ni d'exiger un relevé
+    de plus après le lobby pour « laisser les chiffres se poser » alors qu'ils
+    y sont déjà.
+    """
+    d = duel_pret()
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=K0))
+    assert d.etat is Etat.MANCHE
+
+    # Toute la partie : les kills sont faits, aucun compteur ne bouge.
+    for t in (100, 200, 300, 400):
+        assert d.avancer(Releve(t=t, azrael_in_game=True, viewer_in_game=True,
+                                kills_azrael=K0, kills_viewer=K0)) == []
+    assert d.etat is Etat.MANCHE, "des compteurs figés ne clôturent pas la manche"
+
+    # Retour au lobby : les compteurs sont à jour dès le premier relevé.
+    assert d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(4), kills_viewer=kills(2))) == []
+    evts = d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(4), kills_viewer=kills(2)))
+
+    fin = [e for e in evts if e.type == "manche_fin"][0]
+    assert fin.donnees["mesurable"] is True
+    assert fin.donnees["azrael"] == 4
+    assert fin.donnees["viewer"] == 2
+
+
+def test_un_tracker_epingle_en_cours_de_duel_n_emporte_pas_la_victoire():
+    """Le dégât réel du point 4 de la spec, mesuré jusqu'au verdict.
+
+    Le duelliste ré-épingle deux trackers pendant le duel : `career_kills`
+    entre les manches 1 et 2 (+7793, le saut observé en prod), puis
+    `specialEvent_kills` en pleine manche 2 (+5000). Deux protections
+    différentes doivent tenir — la baseline reprise à chaque manche absorbe le
+    premier, le plafond écarte le second — et c'est le verdict qui dit si elles
+    ont tenu : sur les kills réellement joués, Azraël gagne 5 à 4, et le
+    duelliste a dépensé ses points.
+
+    Vérifié à l'unité ailleurs (`test_apex_duel_score.py`) ; ici c'est le
+    VAINQUEUR qui est en jeu, donc l'argent.
+    """
+    d = duel_pret()
+
+    def viewer(career, special):
+        return {"career_kills": career, "specialEvent_kills": special}
+
+    # Manche 1 — Azraël 3, le duelliste 0.
+    d.avancer(Releve(t=0, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=viewer(1000, 500)))
+    d.avancer(Releve(t=2, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=K0, kills_viewer=viewer(1000, 500)))
+    d.avancer(Releve(t=480, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(3), kills_viewer=viewer(1000, 500)))
+    d.avancer(Releve(t=482, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(3), kills_viewer=viewer(1000, 500)))
+
+    # Entre les manches, il remet `career_kills` sur sa bannière : +7793 d'un
+    # coup, sans un kill joué.
+    d.avancer(Releve(t=500, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(3), kills_viewer=viewer(8793, 500)))
+
+    # Manche 2 — Azraël 1, le duelliste 2… et il épingle `specialEvent_kills`
+    # en pleine partie, cette fois : +5000 dans la fenêtre de mesure.
+    d.avancer(Releve(t=520, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(3), kills_viewer=viewer(8793, 500)))
+    d.avancer(Releve(t=522, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(3), kills_viewer=viewer(8793, 500)))
+    d.avancer(Releve(t=1000, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(4), kills_viewer=viewer(8795, 5502)))
+    evts = d.avancer(Releve(t=1002, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(4), kills_viewer=viewer(8795, 5502)))
+    manche2 = [e for e in evts if e.type == "manche_fin"][0]
+    assert manche2.donnees["viewer"] == 2, "le saut d'épinglage n'est pas un score"
+
+    # Manche 3 — Azraël 1, le duelliste 2.
+    d.avancer(Releve(t=1040, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(4), kills_viewer=viewer(8795, 5502)))
+    d.avancer(Releve(t=1042, azrael_in_game=True, viewer_in_game=True,
+                     kills_azrael=kills(4), kills_viewer=viewer(8795, 5502)))
+    d.avancer(Releve(t=1500, azrael_in_game=False, viewer_in_game=False,
+                     kills_azrael=kills(5), kills_viewer=viewer(8797, 5504)))
+    evts = d.avancer(Releve(t=1502, azrael_in_game=False, viewer_in_game=False,
+                            kills_azrael=kills(5), kills_viewer=viewer(8797, 5504)))
+
+    assert d.etat is Etat.VERDICT
+    verdict = [e for e in evts if e.type == "verdict"][0]
+    assert verdict.donnees["azrael"] == 5
+    assert verdict.donnees["viewer"] == 4
+    assert verdict.donnees["gagnant"] == "azrael"
+    assert verdict.donnees["rembourser"] is False, (
+        "le duelliste a perdu sur les kills joués : ses points sont dépensés")
+
+
 def test_la_baseline_est_reprise_a_CHAQUE_manche():
     """Un tracker épinglé entre deux manches saute de milliers. La nouvelle
     baseline doit l'absorber au lieu de le compter."""
