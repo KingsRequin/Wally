@@ -39,6 +39,10 @@ def _gate(decision, reason="parce que"):
     ("il a encore raté son saut", False),    # pas une question
     ("@KingsRequin tu viens jouer ou pas ?", False),   # déjà adressée
     ("https://klipy.com/gifs/rat-cool ?", False),      # un lien et rien d'autre
+    # La moitié des messages Discord du 13/08 sont des GIF nus. Un lien est UN
+    # jeton quoi qu'il pèse : le compter comme de la matière ferait passer
+    # « <gif> c'est quoi ça ? » pour une vraie demande.
+    ("https://tenor.com/view/cat-looking-around-gif-22814538 c'est quoi ça ?", False),
     ("", False),
 ])
 def test_ce_qui_entre_au_registre(texte, retenue):
@@ -266,6 +270,9 @@ def test_les_deux_adaptateurs_veillent(module):
     import inspect
 
     source = inspect.getsource(importlib.import_module(module))
-    assert "_veiller_questions(" in source
+    # L'APPEL, pas la définition : chercher « _veiller_questions( » tout court
+    # trouvait le `async def` et laissait passer un handler qui ne l'appelle
+    # jamais — la veille pouvait être débranchée sans qu'un test bronche.
+    assert "_fire(_veiller_questions(" in source
     assert "pending_question.noter(" in source
     assert "le_gate_veut_repondre(" in source

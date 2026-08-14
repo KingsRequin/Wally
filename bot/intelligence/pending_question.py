@@ -62,7 +62,10 @@ def ressemble_a_une_question(texte: str) -> bool:
     if _ADRESSEE.search(texte):
         return False
     sans_liens = _URL.sub(" ", texte)
-    return len(sans_liens.split()) >= _MOTS_MIN
+    # Les jetons qui portent quelque chose. Le « ? » détaché compte pour un mot
+    # dans un `split()` nu : « c'est quoi ça ? » passait alors le plancher.
+    mots = [j for j in sans_liens.split() if any(c.isalnum() for c in j)]
+    return len(mots) >= _MOTS_MIN
 
 
 def noter(canal: str, auteur: str, texte: str, charge=None) -> bool:
