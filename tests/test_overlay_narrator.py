@@ -530,6 +530,21 @@ def test_le_versus_n_affiche_pas_un_sous_titre_vide():
     assert "right_sub" not in widget["params"]
 
 
+def test_le_versus_publie_les_marqueurs_du_duel():
+    """Le filtre des paramètres doit les laisser passer, sinon tout le rendu du
+    duel à l'écran est du code mort : le tableau part sans `duel` ni `final` et
+    s'affiche comme une comparaison ordinaire — meneur déjà vert dès la manche
+    1, verdict indistinguable d'un score de mi-parcours. C'est très exactement
+    ce qui était arrivé aux sous-titres de chaque camp."""
+    n, feed, _ = _narrator()
+    q = feed.subscribe()
+    n.show_widget("versus", "", label="Duel", left_name="Azraël", left_value=5,
+                  right_name="Bob", right_value=4, duel=True, final=True)
+    widget = next(e for e in _evts(q) if e["type"] == "widget")
+    assert widget["params"]["duel"] is True
+    assert widget["params"]["final"] is True
+
+
 def test_une_comparaison_generique_ne_se_declare_ni_duel_ni_close():
     """`duel` et `final` changent le rendu à l'écran (couleur de victoire
     réservée au verdict, chiffre qui tressaille). Une comparaison ordinaire —
