@@ -9,9 +9,17 @@ import re
 import pytest
 
 from bot.core.overlay_layout import (
-    ANCRAGES, ELEMENTS, SLUGS_RESERVES,
+    ANCRAGES, CHAMPS_PROPRES, ELEMENTS, SLUGS_RESERVES,
+    ROTATEUR_DUREE_DEFAUT, ROTATEUR_DUREE_MAX, ROTATEUR_DUREE_MIN,
+    ROTATEUR_PAUSE_DEFAUT, ROTATEUR_PAUSE_MAX, ROTATEUR_PAUSE_MIN,
     fusionner, layout_par_defaut, scene_par_slug, slug_depuis_nom,
 )
+
+
+def _scene_avec(elements: dict) -> dict:
+    return fusionner({"defaut": "jeu", "scenes": [
+        {"slug": "jeu", "nom": "En jeu", "ordre": [], "elements": elements},
+    ]})["scenes"][0]["elements"]
 
 # La même regex que la route `/overlay-{slug}` (`bot/dashboard/app.py`) : un
 # slug produit ici doit systématiquement la passer, sans quoi la scène devient
@@ -204,6 +212,81 @@ def test_goal_et_uptime_ne_sont_plus_des_elements():
     `counter`. Les lister ici n'aurait aucun effet sur l'affichage."""
     assert "goal" not in ELEMENTS
     assert "uptime" not in ELEMENTS
+
+
+# ── La cadence du rotateur de memes ─────────────────────────────────────────
+#
+# Deux réglages d'un SEUL élément. Ils étaient figés dans le code de la page —
+# neuf secondes d'affichage, cinq de pause — et se réglaient par l'URL de la
+# source OBS, qui n'existe plus.
+
+
+def test_le_rotateur_part_sur_la_cadence_quil_avait_en_dur():
+    """Le rythme du live ne change pas parce qu'on a rendu ces valeurs
+    réglables : qui n'y touche pas garde exactement ce qu'il avait."""
+    assert ELEMENTS["rotator"]["duree"] == ROTATEUR_DUREE_DEFAUT == 9.0
+    assert ELEMENTS["rotator"]["pause"] == ROTATEUR_PAUSE_DEFAUT == 5.0
+
+
+def test_seul_le_rotateur_porte_la_cadence():
+    """Trente-quatre éléments × trois scènes : poser ces deux champs partout
+    écrirait deux cents valeurs que rien ne lit, et le panneau proposerait de
+    régler la « durée d'affichage » d'un dé."""
+    for cle, el in ELEMENTS.items():
+        for champ in CHAMPS_PROPRES:
+            assert (champ in el) == (cle == "rotator"), (
+                f"`{champ}` n'a rien à faire sur `{cle}`"
+            )
+
+
+def test_une_cadence_posee_sur_un_autre_element_est_ignoree():
+    """La fusion ne recopie pas ce que le JSON contient : elle remplit ce que
+    l'élément DÉCLARE. Sinon un layout écrit à la main ferait apparaître le
+    champ sur n'importe quoi, et le panneau finirait par l'afficher."""
+    elements = _scene_avec({"meme": {"duree": 3.0, "pause": 1.0}})
+    assert "duree" not in elements["meme"]
+    assert "pause" not in elements["meme"]
+
+
+def test_la_cadence_reglee_est_gardee():
+    rotator = _scene_avec({"rotator": {"duree": 3.5, "pause": 1.5}})["rotator"]
+    assert rotator["duree"] == 3.5
+    assert rotator["pause"] == 1.5
+
+
+def test_une_pause_a_zero_est_gardee():
+    """`0` est un réglage VOULU : il enchaîne les memes sans temps mort. Le
+    ramener au défaut de cinq secondes serait le bug le plus discret possible —
+    la valeur revient toute seule sans que rien ne le dise."""
+    assert _scene_avec({"rotator": {"pause": 0}})["rotator"]["pause"] == 0.0
+
+
+def test_la_cadence_hors_bornes_est_ramenee():
+    """Une durée de deux dixièmes ne laisse voir que le glitch de transition ;
+    une pause d'une heure fige la zone, et le gardien anti-gel de la boucle
+    attendrait `3 × (durée + pause) + 10 s` avant de la relancer."""
+    rotator = _scene_avec({"rotator": {"duree": 0.2, "pause": 3600}})["rotator"]
+    assert rotator["duree"] == ROTATEUR_DUREE_MIN
+    assert rotator["pause"] == ROTATEUR_PAUSE_MAX
+    haut = _scene_avec({"rotator": {"duree": 9999, "pause": -5}})["rotator"]
+    assert haut["duree"] == ROTATEUR_DUREE_MAX
+    assert haut["pause"] == ROTATEUR_PAUSE_MIN
+
+
+@pytest.mark.parametrize("brut", [
+    {},                                  # champ absent : layout d'avant
+    {"duree": None, "pause": None},      # clé PRÉSENTE à `null`
+    {"duree": "trois", "pause": "deux"},
+    {"duree": True, "pause": True},      # `bool` est un `int` en Python
+    {"duree": float("nan"), "pause": float("nan")},
+])
+def test_une_cadence_illisible_reprend_le_defaut(brut):
+    """`.get(clé, défaut)` ne couvre pas une clé présente valant `null` — le
+    piège déjà payé sur `hidden`/`locked`/`solo`. Et une cadence à `0` héritée
+    d'un `bool` ou d'un `NaN` figerait la boucle."""
+    rotator = _scene_avec({"rotator": brut})["rotator"]
+    assert rotator["duree"] == ROTATEUR_DUREE_DEFAUT
+    assert rotator["pause"] == ROTATEUR_PAUSE_DEFAUT
 
 
 def test_les_widgets_evenementiels_ont_une_place():

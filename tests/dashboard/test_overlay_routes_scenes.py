@@ -53,6 +53,21 @@ def test_les_slugs_reserves_ne_sont_pas_captes(overlay_client):
         assert "data-scene-slug" not in r.text
 
 
+def test_lancienne_source_du_rotateur_explique_son_remplacement(overlay_client):
+    """La page a perdu sa boucle : les memes s'affichaient en double tant que
+    les deux sources tournaient. La ROUTE, elle, est gardée — cette source est
+    peut-être encore dans une scène OBS, où un 404 ne montrerait qu'un
+    rectangle vide, découvert en plein live.
+    """
+    r = overlay_client.get("/overlay-rotation")
+
+    assert r.status_code == 200
+    corps = r.text[r.text.index("<body"):]
+    assert "remplacée" in corps           # lisible À L'ÉCRAN, pas en commentaire
+    assert "/overlay-&lt;scène&gt;" in corps
+    assert "/api/public/rotation" not in r.text   # plus aucune boucle
+
+
 def test_une_scene_inconnue_sert_quand_meme_une_page(overlay_client):
     """OBS peut pointer sur une scène supprimée. Écran noir interdit."""
     assert overlay_client.get("/overlay-fantome").status_code == 200

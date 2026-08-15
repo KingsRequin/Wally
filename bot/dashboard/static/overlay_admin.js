@@ -88,6 +88,24 @@ window.OverlayAdmin = (function () {
   // arrière au relâchement — on ne sait plus ce qu'on a posé.
   const POS_MIN = 0, POS_MAX = 100;
   const ECHELLE_MIN = 0.2, ECHELLE_MAX = 2.0;
+
+  // Les réglages qu'UN SEUL élément porte : clé de l'élément → champs, chacun
+  // `[clé, libellé, mini, maxi, pas, infobulle, défaut]`. Miroir de
+  // `CHAMPS_PROPRES` et des constantes `ROTATEUR_*` (bot/core/overlay_layout.py),
+  // qui restent l'autorité — le serveur borne à l'enregistrement, on évite
+  // juste de laisser saisir l'impossible.
+  //
+  // Ils ne sont montrés QUE quand leur élément est le principal de la
+  // sélection : la barre en compte déjà cinq, et « durée d'affichage » sur un
+  // dé ne veut rien dire.
+  const CHAMPS_PROPRES = {
+    rotator: [
+      ["duree", "Durée (s)", 1, 120, 0.5,
+       "Combien de temps chaque meme reste affiché. Une vidéo joue jusqu'au bout.", 9],
+      ["pause", "Pause (s)", 0, 120, 0.5,
+       "Combien de temps la zone reste vide entre deux memes. 0 les enchaîne.", 5],
+    ],
+  };
   // Une flèche vaut 0,1 % — environ deux pixels sur 1920. Avec Maj, 1 %.
   const PAS_FIN = 0.1, PAS_GROS = 1;
   // Le pas de la grille d'aimantation, en pourcentage, et sa portée en PIXELS
@@ -2650,10 +2668,16 @@ window.OverlayAdmin = (function () {
     noeuds.reglageNom = titre;
     hote.appendChild(titre);
 
-    noeuds.champs = {};
-    [["x", "X %", POS_MIN, POS_MAX, PAS_FIN], ["y", "Y %", POS_MIN, POS_MAX, PAS_FIN],
-     ["scale", "Taille", ECHELLE_MIN, ECHELLE_MAX, 0.05]].forEach(function (def) {
+    /** Un champ numérique de la barre.
+     *
+     *  `proprietaire` : la clé de l'élément qui SEUL porte ce réglage, ou
+     *  `null` pour un champ commun à tous. C'est une garde au point d'écriture,
+     *  pas seulement un affichage — un champ caché reste dans le document, et
+     *  ce qui protège vraiment est le refus d'écrire, jamais le `display`.
+     */
+    function champNumerique(def, proprietaire) {
       const bloc = creer("label", "ovl-champ");
+      if (def[5]) bloc.title = def[5];
       bloc.appendChild(creer("span", "ovl-champ-label", def[1]));
       const input = document.createElement("input");
       input.type = "number";
@@ -2661,6 +2685,7 @@ window.OverlayAdmin = (function () {
       input.max = String(def[3]);
       input.step = String(def[4]);
       input.addEventListener("input", function () {
+        if (proprietaire && etat.elementCourant !== proprietaire) return;
         const element = elementCourant();
         // Verrouillé : le champ est déjà grisé, mais un `disabled` posé au
         // rendu ne protège de rien si la valeur peut encore entrer par ici (un
@@ -2675,8 +2700,25 @@ window.OverlayAdmin = (function () {
         rendreSurface();
       });
       bloc.appendChild(input);
-      noeuds.champs[def[0]] = input;
       hote.appendChild(bloc);
+      return { bloc: bloc, input: input };
+    }
+
+    noeuds.champs = {};
+    [["x", "X %", POS_MIN, POS_MAX, PAS_FIN], ["y", "Y %", POS_MIN, POS_MAX, PAS_FIN],
+     ["scale", "Taille", ECHELLE_MIN, ECHELLE_MAX, 0.05]].forEach(function (def) {
+      noeuds.champs[def[0]] = champNumerique(def, null).input;
+    });
+
+    // Les réglages propres à un élément, à la suite des champs communs. Cachés
+    // tant que leur élément n'est pas le principal de la sélection.
+    noeuds.champsPropres = [];
+    Object.keys(CHAMPS_PROPRES).forEach(function (cle) {
+      CHAMPS_PROPRES[cle].forEach(function (def) {
+        const champ = champNumerique(def, cle);
+        noeuds.champsPropres.push({ proprietaire: cle, def: def,
+                                    bloc: champ.bloc, input: champ.input });
+      });
     });
 
     // Une question DISTINCTE de « l'élément occupe-t-il seul la scène » : on
@@ -2763,6 +2805,22 @@ window.OverlayAdmin = (function () {
       } else if (!element) {
         input.value = "";
       }
+    });
+    (noeuds.champsPropres || []).forEach(function (champ) {
+      // Le champ n'existe que pour SON élément : sur les trente-trois autres,
+      // il n'y a rien à régler et rien à montrer.
+      const sien = !!element && etat.elementCourant === champ.proprietaire;
+      champ.bloc.hidden = !sien;
+      champ.input.disabled = !sien || fige;
+      champ.input.title = fige
+        ? "Verrouillé : le cadenas de la liste le libère." : "";
+      if (!sien) { champ.input.value = ""; return; }
+      if (document.activeElement === champ.input) return;
+      // Un modèle rangé avant l'ajout du champ ne le porte pas : on montre
+      // alors le défaut, qui est ce que l'overlay applique dans ce cas.
+      const valeur = borner(element[champ.def[0]], champ.def[2], champ.def[3],
+                            champ.def[6]);
+      champ.input.value = String(Math.round(valeur * 100) / 100);
     });
     if (noeuds.wallyVisible) {
       noeuds.wallyVisible.disabled = !element;
@@ -3250,6 +3308,11 @@ window.OverlayAdmin = (function () {
     tester: tester,
     testerTous: testerTous,
     ANCRAGES: ANCRAGES,
+    // Les réglages propres à un élément, exposés pour être CONFRONTÉS au modèle
+    // Python : deux tables qui décrivent les mêmes bornes dérivent au premier
+    // ajustement, et le panneau laisserait alors saisir ce que le serveur
+    // ramène en silence.
+    CHAMPS_PROPRES: CHAMPS_PROPRES,
     // Le rangement du brouillon, exposé pour la même raison : il ne touche que
     // `localStorage`, et c'est lui qui décide si un travail non publié survit à
     // un F5 — ou s'il repart à l'antenne tout seul, ce qu'on ne veut jamais.

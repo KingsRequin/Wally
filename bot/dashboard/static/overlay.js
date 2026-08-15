@@ -1415,12 +1415,33 @@
       return Number.isFinite(v) && v >= minimum ? v : defaut;
     };
 
-    // Mêmes noms de paramètres que l'ancienne source : les réglages du
-    // propriétaire se recopient tels quels sur l'URL de la scène.
-    // `pause=0` est une valeur légitime : elle enchaîne les memes sans temps
+    // La cadence NE VIENT PLUS DE L'URL : elle est un réglage de l'élément
+    // `rotator` dans la scène (`bot/core/overlay_layout.py`), au même titre que
+    // sa position. Deux sources pour une même valeur, c'est la valeur du
+    // panneau qui écraserait celle de l'URL au premier chargement du layout —
+    // un réglage qui ne tient pas vaut moins qu'un réglage absent.
+    //
+    // Bornes et défauts recopiés du modèle : le serveur tranche, on ne fait
+    // qu'éviter d'afficher n'importe quoi si la clé manque (layout rangé avant
+    // l'ajout du champ) ou arrive abîmée.
+    const DUREE_MIN = 1, DUREE_MAX = 120, DUREE_DEFAUT = 9;
+    // `pause = 0` est une valeur légitime : elle enchaîne les memes sans temps
     // mort, le glitch de sortie de l'un touchant celui d'entrée du suivant.
-    const DUREE = nombre("duree", 9, 0.05) * 1000;
-    const PAUSE = nombre("pause", 5, 0) * 1000;
+    const PAUSE_MIN = 0, PAUSE_MAX = 120, PAUSE_DEFAUT = 5;
+    let DUREE = DUREE_DEFAUT * 1000;
+    let PAUSE = PAUSE_DEFAUT * 1000;
+
+    /** Un réglage de cadence, en millisecondes.
+     *
+     *  `typeof v === "number"` et pas `Number(v)` : `Number(null)` vaut 0, et
+     *  une clé absente passerait alors pour une pause explicite de zéro.
+     */
+    const secondes = (v, mini, maxi, defaut) => {
+      const n = (typeof v === "number" && Number.isFinite(v))
+        ? Math.max(mini, Math.min(maxi, v)) : defaut;
+      return n * 1000;
+    };
+
     const ORDRE = params.get("ordre") === "dossier" ? "dossier" : "hasard";
     const SACCADE = nombre("saccade", 33, 1);   // ms par état de glitch
     const AGRANDIR = nombre("agrandir", 2, 1);  // facteur maximum d'agrandissement
@@ -1676,8 +1697,24 @@
       appliquer(ETEINT);
     }
 
-    /** Le réglage de la scène : c'est LUI qui allume ou éteint la zone. */
+    /** Le réglage de la scène : c'est LUI qui allume ou éteint la zone, et qui
+     *  porte sa cadence.
+     *
+     *  Rappelée à chaque publication du panneau (`case "layout"`), donc la
+     *  cadence suit SANS rechargement. Le cycle en cours va au bout avec
+     *  l'ancienne valeur — son minuteur est déjà armé —, le suivant prend la
+     *  nouvelle. Couper le média affiché pour appliquer un réglage plus tôt
+     *  ferait sauter un meme à l'antenne à chaque publication, y compris quand
+     *  on ne touche qu'à la position d'un autre élément.
+     *
+     *  `el` absent (layout indisponible) : on garde la cadence précédente
+     *  plutôt que de revenir aux défauts sur un simple aléa réseau.
+     */
     function appliquerReglage(el) {
+      if (el) {
+        DUREE = secondes(el.duree, DUREE_MIN, DUREE_MAX, DUREE_DEFAUT);
+        PAUSE = secondes(el.pause, PAUSE_MIN, PAUSE_MAX, PAUSE_DEFAUT);
+      }
       if (el && !el.hidden) demarrer();
       else arreter();
     }

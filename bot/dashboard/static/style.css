@@ -4064,6 +4064,11 @@ body.is-mobile .mobile-back-btn {
   min-width: 150px;
 }
 .ovl-champ { display: flex; align-items: center; gap: 6px; }
+/* Les réglages propres à un élément (la cadence du rotateur) sont cachés par
+   `hidden` sur les trente-trois autres. Sans cette règle, la déclaration
+   `display: flex` ci-dessus l'emporte sur le `[hidden] { display: none }` du
+   navigateur et le champ reste visible partout. */
+.ovl-champ[hidden] { display: none; }
 .ovl-champ-label {
   font-size: 0.68rem;
   text-transform: uppercase;

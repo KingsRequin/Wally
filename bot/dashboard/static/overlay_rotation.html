@@ -2,318 +2,60 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Wally — rotateur de memes</title>
-<!-- ⚠️ SOURCE OBS OBSOLÈTE — remplacée par la zone `rotator` de l'overlay
-     principal (`/overlay-<scène>`), où elle se place, se dimensionne et
-     s'éteint comme les autres éléments depuis le panneau de mise en scène.
-     Le contenu de cette page a été porté dans `overlay.js`.
+<title>Wally — source OBSOLÈTE</title>
+<!-- SOURCE OBS OBSOLÈTE — le rotateur de memes est devenu la zone `rotator` de
+     l'overlay principal (`/overlay-<scène>`), où il se place, se dimensionne,
+     s'éteint ET se cadence depuis le panneau de mise en scène.
 
-     À FAIRE dans OBS : supprimer cette source, puis rendre visible l'élément
-     « Rotateur de memes » sur les scènes voulues. Tant que les deux coexistent,
-     les memes s'affichent EN DOUBLE.
+     La boucle qui vivait ici a été portée dans `overlay.js` le 2026-08-15, puis
+     retirée d'ici le 2026-08-15 : elle affichait les memes EN DOUBLE tant que
+     les deux sources coexistaient.
 
-     Gardée servie parce qu'elle est peut-être encore dans des scènes OBS. -->
+     La route reste servie exprès. Cette source est peut-être encore dans des
+     scènes OBS : un 404 y mettrait un rectangle vide sans explication, et on
+     l'apprendrait en plein live. L'avis à l'écran, lui, se lit dans OBS.
+     Cette page est jetable dès que la source aura disparu des scènes. -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: transparent; overflow: hidden;
+    background: rgba(8, 6, 5, 0.94);
     width: 100vw; height: 100vh;
     display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #f5f0ea;
+    text-align: center;
   }
-
-  /* Passe-partout sombre. La plupart des memes sont sur fond blanc : sur un
-     overlay noir, ça fait une dalle plus lumineuse que le reste de l'écran.
-     Le liseré sombre casse le contact entre ce blanc et la bordure orange. */
-  #cadre {
-    padding: 14px;
-    background: rgba(8, 6, 5, 0.94);
-    border: 3px solid #ff7a2f;
+  .avis {
+    max-width: 620px;
+    padding: 26px 30px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 122, 47, 0.55);
     border-radius: 16px;
-    box-shadow:
-      0 0 24px rgba(255, 122, 47, 0.6),
-      inset 0 0 30px rgba(0, 0, 0, 0.9),
-      0 18px 45px rgba(0, 0, 0, 0.8);
-    opacity: 0;
-    line-height: 0;
-    /* Rien ne doit dépasser des coins : sans ça, l'angle droit du média
-       réapparaît derrière l'arrondi du cadre. */
-    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   }
-
-  /* Borné en largeur ET en hauteur, jamais agrandi : c'est le cadre qui épouse
-     l'image. En unités relatives à la source OBS et non en pixels, pour
-     survivre à un redimensionnement de celle-ci. */
-  #cadre img, #cadre video {
-    display: block;
-    max-width: calc(100vw - 40px);
-    max-height: calc(100vh - 40px);
-    width: auto; height: auto;
+  h1 { font-size: 1.25rem; color: #ff7a2f; margin-bottom: 12px; }
+  p { font-size: 0.95rem; line-height: 1.55; margin-bottom: 10px; }
+  code {
+    padding: 1px 6px;
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 6px;
+    font-size: 0.9em;
   }
-
-  /* `#cadre .absent` et non `.absent` : la règle au-dessus est portée par un
-     ID (`#cadre video`), qui l'emporterait sur une simple classe. Sans ce
-     sélecteur, la balise vidéo vide restait affichée et ajoutait ses 150 px de
-     hauteur par défaut sous chaque image. */
-  #cadre .absent { display: none; }
+  .discret { color: #b9aea3; font-size: 0.85rem; margin-bottom: 0; }
 </style>
 </head>
 <body>
-<div id="cadre">
-  <img id="media" alt="">
-  <video id="video" class="absent" playsinline></video>
+<div class="avis">
+  <h1>Cette source OBS est remplacée</h1>
+  <p>Le rotateur de memes n'a plus de page à lui : c'est maintenant un élément
+     de l'overlay principal, réglable depuis le panneau de mise en scène —
+     position, taille, durée d'affichage et pause comprises.</p>
+  <p><strong>À faire dans OBS :</strong> supprimer cette source, puis pointer une
+     source navigateur sur <code>/overlay-&lt;scène&gt;</code> et rendre visible
+     l'élément « Rotateur de memes » sur les scènes voulues.</p>
+  <p class="discret">Tant que cette source reste en place, elle n'affiche plus
+     aucun meme — elle ne fait que le dire.</p>
 </div>
-
-<script src="/static/glitch.js"></script>
-<script>
-(function () {
-  const cadre = document.getElementById('cadre');
-  const params = new URLSearchParams(location.search);
-  /** Lit un réglage numérique de l'URL.
-   *
-   *  `params.has` d'abord, et non `Number(...)` seul : `Number(null)` vaut 0,
-   *  donc un paramètre ABSENT passerait pour un zéro explicite dès qu'on
-   *  autorise le zéro. Le minimum est donc porté par l'appelant, pas deviné.
-   */
-  const nombre = function (cle, defaut, minimum) {
-    if (!params.has(cle)) return defaut;
-    const v = Number(params.get(cle));
-    return Number.isFinite(v) && v >= minimum ? v : defaut;
-  };
-
-  // `pause=0` est une valeur légitime : elle enchaîne les memes sans temps
-  // mort, le glitch de sortie de l'un touchant celui d'entrée du suivant.
-  const DUREE = nombre('duree', 9, 0.05) * 1000;
-  const PAUSE = nombre('pause', 5, 0) * 1000;
-  const ORDRE = params.get('ordre') === 'dossier' ? 'dossier' : 'hasard';
-  const SACCADE = nombre('saccade', 33, 1);   // ms par état de glitch
-  const AGRANDIR = nombre('agrandir', 2, 1);  // facteur maximum d'agrandissement
-  const ETATS = 7;                          // états par rafale
-
-  // Le glitch vit dans `glitch.js` : cette source et l'overlay principal
-  // s'affichent sur le même stream, ils doivent parasiter à l'identique.
-  const G = window.WallyGlitch;
-
-  // `round 16px` : le rayon doit suivre celui du CSS, sinon l'angle droit du
-  // contenu réapparaît derrière les coins arrondis du cadre.
-  const RAYON = '16px';
-  const NET = G.net(RAYON);
-  const ETEINT = G.eteint(RAYON);
-
-  const appliquer = function (etat) { G.appliquer(cadre, etat); };
-  const rafale = function () { return G.rafale(cadre, { etats: ETATS, saccade: SACCADE }); };
-
-  let medias = [];
-  let dernier = null;
-  let rang = 0;
-  let depuisRelecture = 0;
-  let echecsDaffilee = 0;
-
-  async function charger() {
-    // Une liste vide n'écrase jamais une liste qui marchait : le bot peut être
-    // en train de redémarrer, la source doit continuer de tourner.
-    try {
-      const r = await fetch('/api/public/rotation', { cache: 'no-store' });
-      const data = await r.json();
-      if (Array.isArray(data.medias) && data.medias.length) medias = data.medias;
-    } catch (e) { /* on garde la liste précédente */ }
-  }
-
-  function tirer() {
-    if (ORDRE === 'dossier') {
-      const m = medias[rang % medias.length];
-      rang += 1;
-      return m;
-    }
-    // Deux fois le même d'affilée passerait pour un bug d'affichage.
-    const pool = medias.filter(function (m) { return m.nom !== dernier; });
-    const choix = pool.length ? pool : medias;
-    return choix[Math.floor(Math.random() * choix.length)];
-  }
-
-  function url(media) {
-    return '/api/public/meme/' + encodeURIComponent(media.nom);
-  }
-
-  /** Charge le média et attend ses dimensions AVANT de l'afficher.
-   *  Sans ça, le cadre naîtrait à la taille de l'ancien média puis grandirait
-   *  d'un coup quand le nouveau arrive : le saut de format serait visible. */
-  function precharger(media) {
-    return new Promise(function (resolve, reject) {
-      if (media.genre === 'video') {
-        const v = document.getElementById('video');
-        v.onloadedmetadata = function () { resolve({l: v.videoWidth, h: v.videoHeight}); };
-        v.onerror = function () { reject(new Error('vidéo illisible : ' + media.nom)); };
-        v.src = url(media);
-        v.load();
-        return;
-      }
-      const img = new Image();
-      img.onload = function () { resolve({l: img.naturalWidth, h: img.naturalHeight}); };
-      img.onerror = function () { reject(new Error('média illisible : ' + media.nom)); };
-      img.src = url(media);
-    });
-  }
-
-  /** Donne au média la place qu'il mérite dans la source.
-   *
-   *  Les memes du dossier vont de 260 à 2100 px de côté. Sans agrandissement,
-   *  un petit occupe un tiers de ce qu'occupe un grand et paraît perdu au
-   *  milieu ; à remplir la source coûte que coûte, il baverait (près de 3×).
-   *  D'où le plafond : on agrandit jusqu'à `AGRANDIR` fois, pas au-delà.
-   *
-   *  La réduction, elle, reste au CSS (`max-width` / `max-height`) : c'est lui
-   *  qui garde le média dans la source, quelle que soit sa taille.
-   */
-  function dimensionner(element, naturel) {
-    element.style.width = '';
-    element.style.height = '';
-    if (!naturel || !naturel.l || !naturel.h) return;
-    const facteur = Math.min(
-      (window.innerWidth - 40) / naturel.l,
-      (window.innerHeight - 40) / naturel.h,
-      AGRANDIR
-    );
-    if (facteur > 1) {
-      element.style.width = Math.round(naturel.l * facteur) + 'px';
-      element.style.height = 'auto';
-    }
-  }
-
-  /** Joue la vidéo et rend la main à la fin.
-   *
-   *  Trois façons de ne jamais rendre la main, trois parades :
-   *  - le navigateur refuse la lecture audio automatique → seconde tentative
-   *    en muet, puis abandon ;
-   *  - le fichier est tronqué et `ended` n'arrive jamais → minuteur de secours ;
-   *  - la lecture cale → le même minuteur.
-   *  Sans elles, la source resterait figée sur cette vidéo pour tout le live.
-   */
-  function jouerVideo() {
-    const v = document.getElementById('video');
-    return new Promise(function (fini) {
-      let rendu = false;
-      const rendreLaMain = function () {
-        if (rendu) return;
-        rendu = true;
-        clearTimeout(secours);
-        v.onended = null;
-        fini();
-      };
-
-      const limite = Number.isFinite(v.duration) && v.duration > 0
-        ? (v.duration + 5) * 1000
-        : 60000;
-      const secours = setTimeout(rendreLaMain, limite);
-
-      v.onended = rendreLaMain;
-      v.muted = false;
-      v.currentTime = 0;
-      v.play().catch(function () {
-        // Chrome bloque la lecture audio automatique tant qu'OBS n'a pas
-        // autorisé la source. Muet vaut mieux que rien.
-        v.muted = true;
-        v.play().catch(rendreLaMain);
-      });
-    });
-  }
-
-  async function tour() {
-    // Le bloc est éteint AVANT de changer de média : le cadre se redimensionne
-    // pendant qu'il est invisible, sinon on le verrait sauter d'un format à
-    // l'autre.
-    appliquer(ETEINT);
-
-    if (!medias.length) {
-      await charger();
-      setTimeout(tour, medias.length ? 0 : 10000);
-      return;
-    }
-
-    const media = tirer();
-    dernier = media.nom;
-
-    // Tous les N affichages, où N est la taille de la liste : un meme déposé
-    // pendant le live entre dans la rotation sans toucher à OBS.
-    depuisRelecture += 1;
-    if (depuisRelecture >= medias.length) { depuisRelecture = 0; charger(); }
-
-    let naturel;
-    try {
-      naturel = await precharger(media);
-      echecsDaffilee = 0;
-    } catch (e) {
-      echecsDaffilee += 1;
-      // Trois échecs de suite ne désignent plus des fichiers fautifs : c'est le
-      // serveur qui ne répond plus — un rebuild du bot dure une quinzaine de
-      // secondes. Continuer à écarter viderait la bibliothèque entière en
-      // quelques secondes et la page perdrait l'autonomie qui fait tout son
-      // intérêt. On patiente, la liste reste intacte.
-      if (echecsDaffilee < 3) {
-        medias = medias.filter(function (m) { return m.nom !== media.nom; });
-        setTimeout(tour, 0);
-      } else {
-        setTimeout(tour, 5000);
-      }
-      return;
-    }
-
-    const img = document.getElementById('media');
-    const video = document.getElementById('video');
-    const estVideo = media.genre === 'video';
-    img.classList.toggle('absent', estVideo);
-    video.classList.toggle('absent', !estVideo);
-    if (!estVideo) img.src = url(media);
-    dimensionner(estVideo ? video : img, naturel);
-
-    await rafale();
-    appliquer(NET);
-    signeDeVie();
-
-    const sortir = async function () {
-      await rafale();
-      appliquer(ETEINT);
-      if (estVideo) video.pause();
-      setTimeout(tour, PAUSE);
-    };
-
-    // Une vidéo dure ce qu'elle dure ; une image, le temps réglé.
-    if (estVideo) {
-      await jouerVideo();
-      sortir();
-    } else {
-      setTimeout(sortir, DUREE);
-    }
-  }
-
-  // Une source de live qui se fige ne le dit à personne : on ne s'en aperçoit
-  // qu'en revoyant le VOD. Le gardien la relance tout seul.
-  let derniereVie = Date.now();
-  let aDejaAffiche = false;
-  function signeDeVie() { derniereVie = Date.now(); aDejaAffiche = true; }
-
-  // Une vidéo longue est un signe de vie par ses `timeupdate` : sans cette
-  // condition, le gardien couperait un média de deux minutes en plein milieu.
-  document.getElementById('video').addEventListener('timeupdate', signeDeVie);
-
-  setInterval(function () {
-    // `aDejaAffiche` borne le gardien à ce qu'il sait guérir. Si le bot est
-    // arrêté quand OBS ouvre la page, il n'y a jamais eu de signe de vie :
-    // recharger afficherait une erreur de connexion dans la scène, alors qu'une
-    // source transparente qui réessaie en silence est le bon comportement.
-    // Les dix secondes de marge couvrent les cadences très courtes, où trois
-    // cycles ne font qu'une poignée de secondes.
-    // `medias.length` : quand la liste est vide, la page est déjà en train de
-    // réessayer et le serveur est probablement absent. Recharger afficherait
-    // une erreur de connexion dans la scène au lieu d'une source transparente.
-    if (aDejaAffiche && medias.length
-        && Date.now() - derniereVie > 3 * (DUREE + PAUSE) + 10000) {
-      location.reload();
-    }
-  }, 5000);
-
-  charger().then(tour);
-})();
-</script>
 </body>
 </html>

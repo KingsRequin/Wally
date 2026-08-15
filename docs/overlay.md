@@ -392,36 +392,50 @@ l'OAuth — le domaine n'est écrit en dur nulle part.
 
 ---
 
-## Le rotateur de memes — une seconde source, sans Wally
+## Le rotateur de memes — un élément de la scène, sans Wally
 
-Un overlay **indépendant** : il fait défiler en boucle les médias de
-`data/memes`, vidéos comprises. Wally n'y touche pas — il garde l'overlay
-compagnon pour les memes qu'il commente. Il remplace le widget « Asset rotator »
-de StreamElements, dont les fichiers finissaient par ne plus charger.
+Il fait défiler en boucle les médias de `data/memes`, vidéos comprises. Wally n'y
+touche pas — il garde l'overlay compagnon pour les memes qu'il commente. Il
+remplace le widget « Asset rotator » de StreamElements, dont les fichiers
+finissaient par ne plus charger.
 
-| Réglage | Valeur |
-|---|---|
-| Source | Navigateur (`Browser Source`) |
-| URL | `https://heywally.fr/overlay-rotation` |
-| Largeur × hauteur | libre — **800 × 800** est un bon compromis |
-| Fond | transparent |
-| Contrôler l'audio via OBS | **coché**, sinon les vidéos restent muettes |
+Ce fut une **source OBS à part** (`/overlay-rotation`) jusqu'au 2026-08-15. C'est
+maintenant l'élément **`rotator`** de l'overlay principal : il se place, se
+dimensionne, s'éteint et se cadence depuis le panneau de mise en scène, sur
+`/overlay-<scène>` comme tout le reste.
 
-La taille est libre : les bornes sont relatives à la source. Éviter un format
-très allongé, où les memes portrait seraient réduits au tiers pendant que les
-panoramiques rempliraient ; les memes du dossier sont surtout carrés ou portrait.
+> **Si `/overlay-rotation` est encore dans OBS**, la source n'affiche plus de
+> memes : elle sert un avis qui dit de la supprimer. La route est gardée exprès
+> quelques semaines — un 404 n'y aurait montré qu'un rectangle vide, découvert en
+> plein live.
 
-**Réglages, dans l'URL** — ils se changent dans OBS, sans rebuild :
+**Ses deux réglages propres**, dans la barre du panneau quand `rotator` est
+l'élément choisi. Ils n'apparaissent que là : personne ne règle la durée
+d'affichage d'un dé.
+
+| Réglage | Défaut | Bornes | Rôle |
+|---|---|---|---|
+| Durée (s) | `9` | 1 → 120 | secondes d'affichage d'une image (une vidéo joue jusqu'au bout) |
+| Pause (s) | `5` | 0 → 120 | secondes de vide entre deux médias ; **`0` enchaîne sans temps mort** |
+
+Les défauts sont ceux que la page avait en dur : qui n'y touche pas garde son
+rythme. Le plancher d'une seconde évite un affichage plus court que sa propre
+transition ; le plafond de deux minutes tient au gardien anti-gel de la boucle,
+qui attend `3 × (durée + pause) + 10 s` avant de relancer une zone figée — à
+120/120 il patiente déjà douze minutes.
+
+Une valeur changée depuis le panneau prend effet **au cycle suivant**, sans
+recharger la page : le meme à l'écran finit son temps, le suivant prend la
+nouvelle cadence. Le cycle en cours n'est pas coupé — sinon publier un
+déplacement de widget ferait sauter un meme à l'antenne.
+
+**Réglages restés dans l'URL** de la scène, marginaux :
 
 | Paramètre | Défaut | Rôle |
 |---|---|---|
-| `duree` | `9` | secondes d'affichage d'une image (une vidéo joue jusqu'au bout) |
-| `pause` | `5` | secondes de noir entre deux médias ; **`0` enchaîne sans temps mort** |
 | `ordre` | `hasard` | `hasard` ou `dossier` (ordre alphabétique) |
 | `saccade` | `33` | millisecondes par état de glitch |
 | `agrandir` | `2` | facteur maximum d'agrandissement des petits memes |
-
-Exemple : `/overlay-rotation?duree=12&pause=0&agrandir=1.5`
 
 **L'agrandissement** existe parce que le dossier va de 260 à 2100 px de côté :
 sans lui, un petit meme occupe le tiers de la place d'un grand et paraît perdu.
@@ -440,7 +454,7 @@ l'autre.
   fichiers fautifs : la liste est conservée intacte et la page patiente ;
 - une vidéo qui refuse de démarrer est retentée en muet, puis abandonnée ;
 - une vidéo qui ne finit pas est coupée par un minuteur de secours ;
-- la page se recharge d'elle-même si elle se fige — mais jamais quand le serveur
+- la boucle se relance d'elle-même si elle se fige — mais jamais quand le serveur
   est absent, où elle attend en silence plutôt que d'afficher une erreur.
 
 Elle **ne dépend pas du bot une fois chargée** : vérifié en coupant le conteneur

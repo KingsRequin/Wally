@@ -27,10 +27,48 @@ ANCRAGES = frozenset({
 
 # `/overlay-image` et `/overlay-rotation` existent déjà (app.py) ; `version` et
 # `health` sont des routes d'API. Une scène qui prendrait un de ces slugs les
-# masquerait.
+# masquerait. `rotation` reste réservé alors que la page ne rend plus qu'un avis
+# de remplacement : tant que la route existe, elle capte le slug.
 SLUGS_RESERVES = frozenset({"image", "rotation", "version", "health"})
 
 SCALE_MIN, SCALE_MAX = 0.2, 2.0
+
+# ── La cadence du rotateur de memes ─────────────────────────────────────────
+#
+# Les défauts REPRODUISENT les constantes de l'ancienne source OBS
+# (`overlay_rotation.html`, puis `ROTATEUR` dans `overlay.js`) : personne ne voit
+# son overlay changer de rythme parce qu'on a rendu ces deux valeurs réglables.
+#
+# Les bornes :
+#   - une durée sous 1 s n'affiche plus rien de lisible : les deux rafales de
+#     glitch qui encadrent un passage coûtent ~0,46 s (mesuré au navigateur,
+#     2 × 7 états de 33 ms), soit déjà près de la moitié du plancher ;
+#   - une pause de 0 s est LÉGITIME : elle enchaîne les memes sans temps mort,
+#     le glitch de sortie de l'un touchant celui d'entrée du suivant ;
+#   - le plafond commun de 120 s tient à deux choses. Au-delà, ce n'est plus un
+#     rotateur mais une image fixe (`!image` existe pour ça). Et surtout le
+#     gardien anti-gel de la boucle attend `3 × (durée + pause) + 10 s` avant de
+#     relancer une source figée : à 120/120, il patiente déjà douze minutes.
+ROTATEUR_DUREE_MIN, ROTATEUR_DUREE_MAX, ROTATEUR_DUREE_DEFAUT = 1.0, 120.0, 9.0
+ROTATEUR_PAUSE_MIN, ROTATEUR_PAUSE_MAX, ROTATEUR_PAUSE_DEFAUT = 0.0, 120.0, 5.0
+
+# Les réglages qui n'existent que sur CERTAINS éléments : nom → (mini, maxi).
+#
+# Pourquoi pas sur tous les éléments, ce qui serait plus simple : `ELEMENTS`
+# compte trente-quatre clés et le layout en garde une copie PAR SCÈNE. Poser
+# `duree`/`pause` partout écrirait 34 × 2 × 3 = 204 valeurs qui ne pilotent
+# rien, et surtout la barre de réglages du panneau afficherait « durée
+# d'affichage » sur un dé ou un sondage — un réglage visible qu'aucun code ne
+# lit est une promesse fausse. Le coût de la justesse est cette table et les
+# quatre lignes de fusion qui la lisent.
+#
+# C'est la PRÉSENCE de la clé dans le défaut de l'élément (`ELEMENTS`) qui dit
+# qui la porte ; cette table ne dit que ses bornes. Un seul endroit à toucher
+# pour donner la cadence à un autre élément un jour.
+CHAMPS_PROPRES: dict[str, tuple[float, float]] = {
+    "duree": (ROTATEUR_DUREE_MIN, ROTATEUR_DUREE_MAX),
+    "pause": (ROTATEUR_PAUSE_MIN, ROTATEUR_PAUSE_MAX),
+}
 
 # Doit rester égal à la borne de la route `/overlay-{slug}` (`bot/dashboard/app.py`,
 # `_SLUG_SCENE_RE`) : un slug plus long que ça y est refusé et sert la scène par
@@ -40,14 +78,19 @@ SLUG_MAX_LEN = 64
 
 def _el(x: float, y: float, anchor: str, scale: float = 1.0,
         *, solo: bool = True, hidden: bool = False,
-        wally_visible: bool | None = None) -> dict:
+        wally_visible: bool | None = None,
+        propres: dict | None = None) -> dict:
     # `wally_visible` non précisé REPRODUIT le comportement d'avant ce réglage,
     # où `solo` décidait à lui seul de l'effacement de l'avatar : un élément
     # exclusif efface Wally, un élément qui cohabite le laisse. Personne ne voit
     # son overlay changer parce qu'on a ajouté le réglage.
+    #
+    # `propres` : les réglages que CET élément est seul à porter (cf.
+    # `CHAMPS_PROPRES`). Absents partout ailleurs.
     return {"x": x, "y": y, "anchor": anchor, "scale": scale,
             "hidden": hidden, "locked": False, "solo": solo,
-            "wally_visible": (not solo) if wally_visible is None else wally_visible}
+            "wally_visible": (not solo) if wally_visible is None else wally_visible,
+            **(propres or {})}
 
 
 # Les clés SONT les `kind` employés par la page — les franciser casserait la
@@ -84,7 +127,9 @@ ELEMENTS: dict[str, dict] = {
     "avatar": _el(97.0, 80.0, "bottom-right", 0.55, solo=False),
     "bubble": _el(95.0, 62.0, "bottom-right", 0.9, solo=False),
     # Les deux ex-sources OBS
-    "rotator": _el(50.0, 45.0, "center", 1.0, solo=False),
+    "rotator": _el(50.0, 45.0, "center", 1.0, solo=False,
+                   propres={"duree": ROTATEUR_DUREE_DEFAUT,
+                            "pause": ROTATEUR_PAUSE_DEFAUT}),
     "image":   _el(50.0, 50.0, "center", 1.0),
     # Ceux qui s'installent
     "bingo":   _el(3.0, 18.0, "top-left", 0.9, solo=False),
@@ -183,7 +228,7 @@ def _fusionner_element(brut, defaut: dict) -> dict:
     anchor = brut.get("anchor")
     # `isinstance(..., str)` avant le `in` : un `anchor` en `dict`/`list` — un
     # JSON par ailleurs légal — ferait lever `in` sur un type non hashable.
-    return {
+    fusionne = {
         "x": _borner(brut.get("x"), 0.0, 100.0, defaut["x"]),
         "y": _borner(brut.get("y"), 0.0, 100.0, defaut["y"]),
         "anchor": anchor if isinstance(anchor, str) and anchor in ANCRAGES else defaut["anchor"],
@@ -200,6 +245,13 @@ def _fusionner_element(brut, defaut: dict) -> dict:
                           if brut.get("wally_visible") is not None
                           else defaut["wally_visible"]),
     }
+    # Les réglages propres à cet élément-là. Même rigueur que les autres champs
+    # numériques : `_borner` ramène dans les bornes, et rend le défaut pour ce
+    # qui n'est pas un nombre — une clé absente comme une clé présente à `null`.
+    for nom, (mini, maxi) in CHAMPS_PROPRES.items():
+        if nom in defaut:
+            fusionne[nom] = _borner(brut.get(nom), mini, maxi, defaut[nom])
+    return fusionne
 
 
 def _fusionner_scene(brut: dict) -> dict | None:

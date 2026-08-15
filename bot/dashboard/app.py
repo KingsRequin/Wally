@@ -226,15 +226,17 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     @app.get("/overlay-rotation")
     async def overlay_rotation_page():
-        """OBSOLÈTE : le rotateur de memes est une ZONE de l'overlay principal.
+        """RETIRÉE : le rotateur de memes est une ZONE de l'overlay principal.
 
-        Son contenu a été porté dans `overlay.js` (`[data-element="rotator"]`),
-        où il se place, se dimensionne et s'éteint comme les autres éléments.
-        Cette page reste servie parce qu'elle est peut-être encore dans des
-        scènes OBS — tant que les deux coexistent, les memes défilent en double.
+        Sa boucle vit dans `overlay.js` (`[data-element="rotator"]`), où elle se
+        place, se dimensionne, s'éteint ET se cadence depuis le panneau de mise
+        en scène. Elle a été supprimée d'ici : les deux sources coexistant, les
+        memes s'affichaient en double.
 
-        Elle ne dépend du bot que pour la liste des médias, demandée au
-        chargement — un rebuild ne coupe donc pas la rotation.
+        La route est GARDÉE et sert un avis de remplacement. Cette source est
+        peut-être encore dans une scène OBS : un 404 y mettrait un rectangle
+        vide sans explication, et on l'apprendrait en plein live. Elle se
+        supprimera pour de bon une fois la source retirée d'OBS.
         """
         return FileResponse(
             "bot/dashboard/static/overlay_rotation.html",

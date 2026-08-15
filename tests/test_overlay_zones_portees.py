@@ -63,6 +63,26 @@ def test_le_rotateur_cesse_dinsister_apres_trois_echecs():
     )
 
 
+def test_le_rotateur_prend_sa_cadence_du_reglage_de_la_scene():
+    """Durée d'affichage et pause étaient figées dans le code, puis lues dans
+    l'URL de la source OBS — qui n'existe plus. Elles vivent maintenant dans le
+    modèle, et `appliquerReglage` est rappelée à chaque publication du panneau :
+    c'est ce qui les fait suivre SANS recharger la page."""
+    corps = _JS[_JS.index("function appliquerReglage"):]
+    corps = corps[:corps.index("\n    }")]
+    assert "el.duree" in corps and "el.pause" in corps, (
+        "la cadence ne vient plus du réglage de la scène"
+    )
+
+
+def test_la_cadence_du_rotateur_ne_vient_plus_de_lurl():
+    """Deux sources pour une même valeur, et c'est celle du panneau qui
+    écraserait l'autre au premier chargement du layout : un réglage d'URL qui
+    ne tient pas vaut moins qu'un réglage d'URL absent."""
+    assert 'nombre("duree"' not in _JS
+    assert 'nombre("pause"' not in _JS
+
+
 def test_le_rotateur_est_coupe_par_le_reglage_de_la_scene():
     """Masqué, il ne doit ni s'afficher ni continuer à télécharger des médias
     pour personne : un `display: none` sur le conteneur ne couperait que
@@ -120,10 +140,30 @@ def test_le_flux_des_images_passe_par_la_reconnexion_commune():
 
 # ── les deux anciennes pages ────────────────────────────────────────────────
 
-def test_les_anciennes_sources_disent_ce_quelles_sont_devenues():
-    """Elles restent servies — elles sont peut-être encore dans des scènes OBS
-    — mais quelqu'un qui les ouvre doit lire quoi faire à la place."""
-    for nom in ("overlay_rotation.html", "overlay_image.html"):
-        texte = (_STATIC / nom).read_text(encoding="utf-8")
-        assert "OBSOLÈTE" in texte, f"{nom} ne dit pas qu'elle est remplacée"
-        assert "EN DOUBLE" in texte, f"{nom} ne prévient pas du doublon"
+def test_lancienne_source_de_limage_dit_ce_quelle_est_devenue():
+    """Elle reste servie — elle est peut-être encore dans une scène OBS — mais
+    quelqu'un qui l'ouvre doit lire quoi faire à la place."""
+    texte = (_STATIC / "overlay_image.html").read_text(encoding="utf-8")
+    assert "OBSOLÈTE" in texte, "la page ne dit pas qu'elle est remplacée"
+    assert "EN DOUBLE" in texte, "la page ne prévient pas du doublon"
+
+
+def test_lancienne_page_du_rotateur_ne_fait_plus_tourner_de_memes():
+    """Sa boucle est retirée, pas seulement dépréciée : tant que les deux
+    sources tournaient, les memes s'affichaient en double."""
+    texte = (_STATIC / "overlay_rotation.html").read_text(encoding="utf-8")
+    assert "/api/public/rotation" not in texte
+    assert "/api/public/meme/" not in texte
+    assert "<script" not in texte, "la page ne doit plus rien exécuter"
+
+
+def test_lancienne_page_du_rotateur_affiche_son_remplacement():
+    """À L'ÉCRAN, et pas seulement dans un commentaire HTML : cette page est
+    lue dans une source navigateur OBS, où personne ne voit le source. Un 404
+    muet y mettrait un rectangle vide, et on l'apprendrait en plein live."""
+    texte = (_STATIC / "overlay_rotation.html").read_text(encoding="utf-8")
+    corps = texte[texte.index("<body"):]
+    assert "remplacée" in corps
+    assert "/overlay-&lt;scène&gt;" in corps, (
+        "la page ne dit pas quelle URL utiliser à la place"
+    )
