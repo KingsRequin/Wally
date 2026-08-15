@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <title>Wally Image Overlay</title>
+<!-- ⚠️ SOURCE OBS OBSOLÈTE — remplacée par la zone `image` de l'overlay
+     principal (`/overlay-<scène>`), où elle se place, se dimensionne et
+     s'éteint comme les autres éléments depuis le panneau de mise en scène.
+     Le contenu de cette page a été porté dans `overlay.js`.
+
+     À FAIRE dans OBS : supprimer cette source, puis rendre visible l'élément
+     « Image de la galerie » sur les scènes voulues. Tant que les deux
+     coexistent, une image poussée par `!image` s'affiche EN DOUBLE.
+
+     Gardée servie parce qu'elle est peut-être encore dans des scènes OBS. -->
 <!-- Hébergé ici, pas sur un CDN : une source de live ne doit pas dépendre du
      réseau sortant d'OBS. Sans accès, la page perdait TOUTES ses animations. -->
 <link rel="stylesheet" href="/static/animate.min.css">

@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wally Overlay</title>
+  <!-- animate.css — les animations d'entrée et de sortie de l'image de la
+       galerie, dont le NOM vient de la configuration (`overlay_image`) : le
+       propriétaire les choisit dans le panneau. Sans cette feuille, la classe
+       `animate__fadeIn` ne désigne rien et l'image apparaîtrait sèchement.
+       Hébergée ici, pas sur un CDN : une source de live ne doit pas dépendre du
+       réseau sortant d'OBS. Déclarée AVANT le style de la page, qui doit
+       l'emporter. -->
+  <link rel="stylesheet" href="/static/animate.min.css">
   <style>
     /* Overlay OBS — destiné aux VIEWERS, jamais au streamer (il ne le voit pas
        pendant qu'il joue). Fond transparent, tout est en position fixe. */
@@ -1332,6 +1340,99 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
       font-variant-numeric: tabular-nums;
     }
+
+    /* ── Rotateur de memes ─────────────────────────────────────────────────
+       Porté de `overlay_rotation.html`, qui tenait SEUL dans sa propre source
+       OBS : ses bornes y étaient donc en `100vw`/`100vh`. Ici la zone est
+       placée comme les autres — position, ancrage, échelle —, et les bornes
+       sont en pixels du canvas de référence. Elles sont posées par `overlay.js`
+       depuis `WallyLayout.taille("rotator")`, pour qu'UN seul chiffre gouverne
+       à la fois le repère de placement et le rendu réel.
+
+       Passe-partout sombre : la plupart des memes sont sur fond blanc, et sur
+       un overlay noir ça fait une dalle plus lumineuse que le reste de l'écran.
+       Le liseré casse le contact entre ce blanc et la bordure orange. */
+    .rotateur {
+      padding: 14px;
+      background: rgba(8, 6, 5, .94);
+      border: 3px solid #ff7a2f;
+      border-radius: var(--r-lg);
+      box-shadow:
+        0 0 24px rgba(255, 122, 47, .6),
+        inset 0 0 30px rgba(0, 0, 0, .9),
+        0 18px 45px rgba(0, 0, 0, .8);
+      /* Éteint au départ : la boucle l'allume par une rafale de glitch. Une
+         source qui naît avec un cadre vide allumé se voit à l'antenne. */
+      opacity: 0;
+      line-height: 0;
+      /* Rien ne doit dépasser des coins arrondis, sinon l'angle droit du média
+         réapparaît derrière eux. Porté par le CADRE et non par
+         `[data-element]` : un `overflow` sur un conteneur de placement rogne
+         les pseudo-éléments qu'il contient — la pointe de la bulle en a fait
+         les frais pendant des semaines. */
+      overflow: hidden;
+    }
+    /* Borné en largeur ET en hauteur, jamais agrandi ici : c'est le cadre qui
+       épouse le média. L'agrandissement des petits memes est calculé en JS
+       (plafonné), la réduction reste au CSS. */
+    .rotateur img, .rotateur video {
+      display: block;
+      max-width: var(--rotateur-l, 686px);
+      max-height: var(--rotateur-h, 506px);
+      width: auto; height: auto;
+      border-radius: var(--r-sm);
+    }
+    /* `.rotateur .absent` et non `.absent` seul : la règle au-dessus vise
+       `.rotateur video`, qui l'emporterait. Sans ce poids, la balise vidéo vide
+       restait affichée et ajoutait ses 150 px de hauteur par défaut sous chaque
+       image. */
+    .rotateur .absent { display: none; }
+
+    /* ── Image de la galerie ───────────────────────────────────────────────
+       Portée de `overlay_image.html`. Même remarque que le rotateur : les
+       `88vw`/`75vh` de la page d'origine devenaient faux dès que la zone a une
+       place et une échelle à elle. */
+    .image-galerie { display: none; }
+    .image-galerie .cadre {
+      position: relative;
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, .1),
+        0 12px 40px rgba(0, 0, 0, .6),
+        0 0 80px rgba(183, 156, 255, .08);
+    }
+    .image-galerie img {
+      display: block;
+      max-width: var(--image-l, 1280px);
+      max-height: var(--image-h, 720px);
+      object-fit: contain;
+    }
+    .image-galerie .credit {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 20px 24px 16px;
+      background: linear-gradient(to top,
+        rgba(0, 0, 0, .75) 0%, rgba(0, 0, 0, .3) 60%, transparent 100%);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    /* Vide, le dégradé barrerait le bas de l'image sans rien dire. */
+    .image-galerie .credit:empty { display: none; }
+    .image-galerie .credit-label {
+      font-family: var(--display);
+      font-size: 1.8rem;
+      letter-spacing: .04em;
+      color: rgba(255, 255, 255, .7);
+    }
+    .image-galerie .credit-nom {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--who);
+      text-shadow: 0 0 20px rgba(183, 156, 255, .4);
+      letter-spacing: -.02em;
+    }
   </style>
 </head>
 <body data-side="right" data-scene-slug="">
@@ -1349,7 +1450,16 @@
     <div data-element="stats"></div>
     <div data-element="bingo"></div>
     <div data-element="talkers"></div>
-    <div data-element="rotator"></div>
+    <!-- Le rotateur de memes, jadis la source OBS `/overlay-rotation`. Le
+         contenu vit ici, la boucle dans `overlay.js` : elle ne tourne que si la
+         scène ne masque pas cet élément — un rotateur masqué ne télécharge
+         rien. -->
+    <div data-element="rotator">
+      <div class="rotateur" id="rotateur">
+        <img id="rotateur-image" alt="">
+        <video id="rotateur-video" class="absent" playsinline></video>
+      </div>
+    </div>
     <!-- Les huit panneaux d'`overlay_apex.js` : fusionnés dans `BUILDERS` par
          `Object.assign`, publiés comme n'importe quel autre widget. -->
     <div data-element="apex_servers"></div>
@@ -1379,7 +1489,16 @@
     <div data-element="clip_top"></div>
     <div data-element="clip"></div>
     <div data-element="meme"></div>
-    <div data-element="image"></div>
+    <!-- L'image de la galerie, jadis la source OBS `/overlay-image`. Poussée
+         par le bot (`!image` sur Twitch) via son propre flux SSE. -->
+    <div data-element="image">
+      <div class="image-galerie" id="image-galerie">
+        <div class="cadre">
+          <img id="image-galerie-img" alt="">
+          <div class="credit" id="image-galerie-credit"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Avatar : animation WebM en boucle, volontairement PAS liée aux émotions
          (Rive écarté, son export étant payant). `muted` est requis pour que la

@@ -44,24 +44,31 @@ _OVERLAY_FILES = (
     "overlay_layout.js",
     "overlay_apex.js",
     "glitch.js",
+    # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
+    # et non script : la page en charge une depuis que ces deux zones y ont été
+    # portées, et une ressource hors de cette liste reste dans le cache d'OBS
+    # pour toujours.
+    "animate.min.css",
     "vendor/canvas-confetti.js",
     "vendor/spin-wheel.js",
 )
 _version_cache: dict = {"stamp": None, "value": "0"}
 
-# Les `<script src="/static/….js">` de la page. Volontairement limité au JS :
-# la vidéo de l'avatar pèse lourd et n'a aucune raison d'être retéléchargée
-# parce qu'un script a bougé.
-_STATIC_SCRIPT_RE = re.compile(r'src="(/static/[^"?]+\.js)"')
+# Les `<script src="/static/….js">` et les `<link href="/static/….css">` de la
+# page. Volontairement limité au code et au style : la vidéo de l'avatar pèse
+# lourd et n'a aucune raison d'être retéléchargée parce qu'un script a bougé.
+# L'attribut est CAPTURÉ, pas réécrit : une feuille de style porte `href`, et
+# lui poser un `src` la sortirait de la page sans un mot.
+_STATIC_SCRIPT_RE = re.compile(r'(src|href)="(/static/[^"?]+\.(?:js|css))"')
 
 
 def version_static_scripts(html: str, version: str) -> str:
-    """Ajoute l'empreinte à chaque script statique de la page.
+    """Ajoute l'empreinte à chaque script et feuille de style de la page.
 
     Le HTML n'est jamais mis en cache, les scripts si : sans cette empreinte
     dans l'URL, un rechargement resservirait les anciens fichiers.
     """
-    return _STATIC_SCRIPT_RE.sub(rf'src="\1?v={version}"', html)
+    return _STATIC_SCRIPT_RE.sub(rf'\1="\2?v={version}"', html)
 
 
 def overlay_version() -> str:
@@ -264,6 +271,7 @@ async def overlay_test(request: Request) -> dict:
 
 # ── Mise en scène ────────────────────────────────────────────────────────────
 from bot.core.overlay_elements import LIBELLES              # noqa: E402
+from bot.core.overlay_feed import payload_image_galerie     # noqa: E402
 from bot.core.overlay_layout import scene_par_slug          # noqa: E402
 from bot.core.overlay_layout_store import (                 # noqa: E402
     charger_layout, enregistrer_layout,
@@ -418,14 +426,26 @@ _ECHANTILLONS: dict[str, dict] = {
 # noms-là ne ferait rien du tout côté page (`BUILDERS[kind]` est indéfini,
 # `showWidget` sort) : le ▶ resterait muet et passerait pour une panne. On dit
 # donc POURQUOI, ce qui est la seule chose utile à savoir ici.
+#
+# `rotator` et `image` en sont SORTIS : leur contenu vit désormais dans la page
+# principale, ils ont chacun leur déclencheur plus bas. Répondre « c'est une
+# source OBS à part » à quelqu'un qui vient de leur donner une place et une
+# échelle dans la mise en scène n'avait aucun sens — c'était la remarque du
+# propriétaire, et elle était juste.
 _HORS_WIDGET: dict[str, str] = {
-    "rotator": "Le rotateur de memes est une source OBS à part "
-               "(/overlay-rotation) : il tourne tout seul, hors de cette page.",
-    "image": "L'image de la galerie a sa propre source OBS (/overlay-image) : "
-             "elle ne s'affiche pas sur cette page.",
     "apex_progress": "La courbe se trace sur de vrais relevés : sans "
                      "historique, le panneau se retire de lui-même.",
 }
+
+# Ce qu'on répond quand l'élément est éteint sur la scène qu'on règle. Le
+# conteneur porte alors `display: none` : rien de ce qu'on publierait ne
+# s'afficherait, et le ▶ passerait pour cassé.
+_MASQUE = ("Cet élément est masqué sur cette scène : rien ne s'afficherait. "
+           "Rendez-le visible, puis relancez l'essai.")
+
+# La galerie peut être vide — sur une instance neuve, elle l'est toujours.
+_GALERIE_VIDE = ("Aucune image dans la galerie : il n'y a rien à projeter. "
+                 "Faites-en générer une, puis réessayez.")
 
 # Ce que dure un élément d'essai à l'écran. Plus long qu'un widget de live
 # (10 s) : on le règle en le regardant, et republier à chaque coup d'œil
@@ -486,14 +506,17 @@ async def post_overlay_preview(request: Request) -> dict:
     if feed is None:
         raise HTTPException(503, "Bus overlay indisponible")
 
+    # La scène est chargée pour TOUT essai, et plus seulement pour les repères :
+    # c'est elle qui dit si l'élément visé est masqué (voir plus bas).
+    layout = await charger_layout(_db(request))
+    scene = scene_par_slug(layout, slug)
+    if scene is None:
+        # Contrairement à la page publique, qui sert le défaut plutôt qu'un
+        # écran noir en plein live : ici c'est un appel d'administration, et
+        # une scène absente est une erreur de l'appelant.
+        raise HTTPException(404, "Scène inconnue")
+
     if data.get("tous"):
-        layout = await charger_layout(_db(request))
-        scene = scene_par_slug(layout, slug)
-        if scene is None:
-            # Contrairement à la page publique, qui sert le défaut plutôt qu'un
-            # écran noir en plein live : ici c'est un appel d'administration, et
-            # une scène absente est une erreur de l'appelant.
-            raise HTTPException(404, "Scène inconnue")
         feed.publish({"type": "ghosts", "scene": slug,
                       "elements": scene["elements"]})
         logger.info("Overlay : repères de tous les éléments sur « {s} »", s=slug)
@@ -502,6 +525,13 @@ async def post_overlay_preview(request: Request) -> dict:
     cle = str(data.get("element") or "")
     if cle not in ELEMENTS:
         raise HTTPException(400, f"Élément inconnu : {cle}")
+
+    # AVANT tout le reste, y compris l'avatar : sur un élément éteint, la page
+    # pose `display: none` sur son conteneur et rien de ce qu'on publierait ne
+    # s'afficherait. Un ▶ qui répond « affiché » pendant que l'écran ne bouge
+    # pas envoie chercher la panne ailleurs — c'est plus coûteux que le silence.
+    if (scene["elements"].get(cle) or {}).get("hidden"):
+        return {"ok": True, "affiche": False, "raison": _MASQUE}
 
     if cle == "avatar":
         # L'avatar n'est pas un widget : il est à l'écran en permanence — SAUF
@@ -518,6 +548,33 @@ async def post_overlay_preview(request: Request) -> dict:
 
     if cle in _HORS_WIDGET:
         return {"ok": True, "affiche": False, "raison": _HORS_WIDGET[cle]}
+
+    if cle == "rotator":
+        # Le rotateur tourne tout seul dès que la scène l'affiche : le ▶ ne
+        # peut donc pas « le lancer ». Ce qu'il fait est la seule chose utile
+        # quand on règle une place — passer au média SUIVANT tout de suite,
+        # sans attendre la fin du tour en cours.
+        feed.publish({"type": "rotator", "scene": slug})
+        logger.info("Overlay : rotateur relancé sur « {s} »", s=slug)
+        return {"ok": True, "affiche": True,
+                "message": "Le rotateur passe au média suivant."}
+
+    if cle == "image":
+        # L'image de la galerie ne passe pas par le bus des widgets : elle a son
+        # propre flux, celui qu'alimente le `!image` du chat. Le ▶ y pousse une
+        # vraie image — mais avec le slug de la scène, que la page filtre : on
+        # règle la scène de fin sans rien projeter sur celle du live.
+        db = _db(request)
+        cfg = request.app.state.wally.config.overlay_image
+        image = await db.get_random_gallery_image(cfg.random_filter) if db else None
+        if not image:
+            return {"ok": True, "affiche": False, "raison": _GALERIE_VIDE}
+        feed_image = getattr(request.app.state.wally, "overlay_image_feed", None)
+        if feed_image is None:
+            raise HTTPException(503, "Bus overlay indisponible")
+        feed_image.publish(payload_image_galerie(image, cfg, scene=slug))
+        logger.info("Overlay : image d'essai sur « {s} »", s=slug)
+        return {"ok": True, "affiche": True}
 
     if cle == "bubble":
         # La bulle a son propre événement — elle n'est pas un widget. Publiée

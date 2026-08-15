@@ -211,6 +211,14 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     @app.get("/overlay-image")
     async def overlay_image_page():
+        """OBSOLÈTE : l'image de la galerie est une ZONE de l'overlay principal.
+
+        Son contenu a été porté dans `overlay.js` (`[data-element="image"]`),
+        où elle se place et s'éteint comme les autres éléments. Cette page reste
+        servie parce qu'elle est peut-être encore dans des scènes OBS — les deux
+        écoutent le même flux, donc tant qu'elles coexistent l'image s'affiche
+        en double.
+        """
         return FileResponse(
             "bot/dashboard/static/overlay_image.html",
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
@@ -218,7 +226,12 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     @app.get("/overlay-rotation")
     async def overlay_rotation_page():
-        """Le rotateur de memes : une source OBS qui tourne seule.
+        """OBSOLÈTE : le rotateur de memes est une ZONE de l'overlay principal.
+
+        Son contenu a été porté dans `overlay.js` (`[data-element="rotator"]`),
+        où il se place, se dimensionne et s'éteint comme les autres éléments.
+        Cette page reste servie parce qu'elle est peut-être encore dans des
+        scènes OBS — tant que les deux coexistent, les memes défilent en double.
 
         Elle ne dépend du bot que pour la liste des médias, demandée au
         chargement — un rebuild ne coupe donc pas la rotation.

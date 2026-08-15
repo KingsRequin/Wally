@@ -122,10 +122,10 @@ LIBELLES: dict[str, dict[str, str]] = {
     "image": {
         "nom": "Image de la galerie",
         "description": "Une image générée par IA tirée au hasard dans la "
-                       "galerie du bot et affichée plein cadre avec le nom de "
-                       "son créateur, déclenchée par une commande de chat "
-                       "(`!image` par défaut) — sur une source OBS séparée du "
-                       "reste de l'overlay.",
+                       "galerie du bot, affichée avec le nom de son créateur, "
+                       "déclenchée par une commande de chat (`!image` par "
+                       "défaut). Masquée, elle ne s'affiche pas et n'est pas "
+                       "téléchargée.",
     },
     "meme": {
         "nom": "Meme de la communauté",
@@ -170,8 +170,8 @@ LIBELLES: dict[str, dict[str, str]] = {
         "nom": "Rotateur de memes",
         "description": "Un défilement en boucle, autonome et indépendant de "
                        "Wally, des images et vidéos du dossier de memes de la "
-                       "chaîne — une source OBS à part, distincte du reste de "
-                       "l'overlay.",
+                       "chaîne. Masqué, il ne défile pas et ne télécharge "
+                       "rien ; le bouton ▶ le fait passer au média suivant.",
     },
     "rps": {
         "nom": "Duel de chifoumi",

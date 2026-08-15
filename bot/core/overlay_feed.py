@@ -50,6 +50,32 @@ def _redact_params(valeur):
     return valeur
 
 
+def payload_image_galerie(image: dict, cfg, *, scene: str | None = None) -> dict:
+    """La charge utile d'une image de la galerie poussée sur l'overlay.
+
+    Écrite ici parce que TROIS chemins la construisent : `!image` sur Twitch, le
+    bouton de test des réglages d'images, et le ▶ de la mise en scène. Recopiée
+    trois fois, un champ ajouté n'aurait été posé que sur l'un d'eux — et c'est
+    exactement ce qui arrive au champ `scene` ci-dessous.
+    """
+    payload = {
+        "image_url": f"/api/public/gallery/{image['id']}/image",
+        "title": image.get("title") or "",
+        "username": image["username"],
+        "display_duration": cfg.display_duration,
+        "animation_in": cfg.animation_in,
+        "animation_out": cfg.animation_out,
+        "animation_duration": cfg.animation_duration,
+    }
+    # Un essai lancé depuis le panneau ne vise QUE la page de la scène qu'on
+    # règle. Sans ce champ, tester le placement de l'image pendant que le live
+    # tourne la ferait surgir devant les viewers. Ce que Wally pousse de
+    # lui-même n'en porte pas et s'affiche partout, comme avant.
+    if scene:
+        payload["scene"] = scene
+    return payload
+
+
 def bubble_duration(text: str) -> float:
     """Temps d'affichage d'une bulle, proportionnel à sa longueur."""
     words = len([w for w in (text or "").split() if w])

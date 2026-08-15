@@ -146,3 +146,24 @@ def test_une_version_n_est_jamais_ajoutee_deux_fois():
     html = '<script src="/static/overlay.js?v=vieux"></script>'
     out = version_static_scripts(html, "neuf")
     assert out.count("?v=") == 1
+
+
+def test_la_feuille_de_style_recoit_la_version_sans_perdre_son_attribut():
+    """La page charge `animate.min.css` depuis que l'image de la galerie y a été
+    portée : ses animations sont nommées dans la configuration. Une ressource
+    sans empreinte resterait dans le cache d'OBS pour toujours.
+
+    L'attribut est capturé et réécrit tel quel : transformer le `href` d'un
+    `<link>` en `src` sortirait la feuille de la page sans un mot.
+    """
+    from bot.dashboard.routes.overlay import version_static_scripts
+
+    html = '<link rel="stylesheet" href="/static/animate.min.css">'
+    out = version_static_scripts(html, "abc123")
+    assert out == '<link rel="stylesheet" href="/static/animate.min.css?v=abc123">'
+
+
+def test_la_feuille_de_style_compte_dans_l_empreinte():
+    from bot.dashboard.routes.overlay import _OVERLAY_FILES
+
+    assert "animate.min.css" in _OVERLAY_FILES

@@ -1099,6 +1099,10 @@
     // tout ce qui est à l'écran, et un repère oublié survivrait 30 s de plus
     // sur une page qu'on vient de vider.
     retirerFantomes();
+    // L'image de la galerie aussi : elle est à l'écran, et ce qui est à
+    // l'écran s'en va. Le rotateur, lui, reste — il est le décor de la scène,
+    // au même titre que l'avatar, pas un événement qu'on vient de montrer.
+    IMAGE.cacher();
     const boites = widgetsEnPlace();
     if (!boites.length) { clearWidgets(true); playNext(); return; }
     boites.forEach((b) => b.classList.remove("visible"));
@@ -1363,6 +1367,414 @@
     }, seconds * 1000));
   }
 
+  // ── Rotateur de memes ────────────────────────────────────────────────────
+  //
+  // Porté de `overlay_rotation.html`, qui tournait dans SA propre source OBS.
+  // Trois choses changent en venant ici, et elles sont tout l'objet du portage :
+  //
+  //   1. le média est borné par la TAILLE DE LA ZONE (canvas 1920×1080), plus
+  //      par le viewport : la zone a maintenant une place et une échelle ;
+  //   2. le réglage `hidden` de la scène coupe la boucle POUR DE BON —
+  //      téléchargements compris. Un rotateur masqué qui continue d'aspirer des
+  //      memes serait une source de trafic invisible, donc jamais remarquée ;
+  //   3. le gardien de figeage relance la BOUCLE au lieu de recharger la page :
+  //      ici, un `location.reload()` emporterait les bulles, les widgets et
+  //      l'avatar pour un rotateur coincé.
+  //
+  // Déclaré AVANT `chargerLayout()`, qui l'appelle : un `const` lu avant sa
+  // ligne de déclaration lève une TDZ, que `node --check` ne détecte pas.
+  const ROTATEUR = (() => {
+    const cadre = document.getElementById("rotateur");
+    const img = document.getElementById("rotateur-image");
+    const video = document.getElementById("rotateur-video");
+
+    const params = new URLSearchParams(location.search);
+    /** Lit un réglage numérique de l'URL.
+     *
+     *  `params.has` d'abord, et non `Number(...)` seul : `Number(null)` vaut 0,
+     *  donc un paramètre ABSENT passerait pour un zéro explicite dès qu'on
+     *  autorise le zéro. Le minimum est donc porté par l'appelant, pas deviné.
+     */
+    const nombre = (cle, defaut, minimum) => {
+      if (!params.has(cle)) return defaut;
+      const v = Number(params.get(cle));
+      return Number.isFinite(v) && v >= minimum ? v : defaut;
+    };
+
+    // Mêmes noms de paramètres que l'ancienne source : les réglages du
+    // propriétaire se recopient tels quels sur l'URL de la scène.
+    // `pause=0` est une valeur légitime : elle enchaîne les memes sans temps
+    // mort, le glitch de sortie de l'un touchant celui d'entrée du suivant.
+    const DUREE = nombre("duree", 9, 0.05) * 1000;
+    const PAUSE = nombre("pause", 5, 0) * 1000;
+    const ORDRE = params.get("ordre") === "dossier" ? "dossier" : "hasard";
+    const SACCADE = nombre("saccade", 33, 1);   // ms par état de glitch
+    const AGRANDIR = nombre("agrandir", 2, 1);  // facteur maximum d'agrandissement
+    const ETATS = 7;                            // états par rafale
+
+    // Le rayon doit suivre celui du CSS (`--r-lg`), sinon l'angle droit du
+    // contenu réapparaît derrière les coins arrondis du cadre.
+    const RAYON = "16px";
+    const NET = WallyGlitch.net(RAYON);
+    const ETEINT = WallyGlitch.eteint(RAYON);
+    const appliquer = (etat) => WallyGlitch.appliquer(cadre, etat);
+    const rafale = () => WallyGlitch.rafale(cadre, { etats: ETATS, saccade: SACCADE });
+
+    // La place du média DANS le cadre : la taille de la zone moins le
+    // passe-partout (14 px de marge + 3 px de bordure, des deux côtés).
+    const CADRE_MARGE = 34;
+    const zone = WallyLayout.taille("rotator");
+    const MEDIA_L = Math.max(80, zone[0] - CADRE_MARGE);
+    const MEDIA_H = Math.max(80, zone[1] - CADRE_MARGE);
+    cadre.style.setProperty("--rotateur-l", MEDIA_L + "px");
+    cadre.style.setProperty("--rotateur-h", MEDIA_H + "px");
+
+    let medias = [];
+    let dernier = null;
+    let rang = 0;
+    let depuisRelecture = 0;
+    let echecsDaffilee = 0;
+    // Le numéro de la boucle en cours. Arrêter ou relancer l'incrémente : la
+    // chaîne précédente le voit à son prochain point de contrôle et se retire.
+    // Sans ce compteur, un masquage puis un démarrage feraient tourner DEUX
+    // chaînes en parallèle, et les memes se chasseraient l'un l'autre.
+    let generation = 0;
+    let enMarche = false;
+    let minuteur = null;
+    let derniereVie = Date.now();
+    let aDejaAffiche = false;
+
+    function planifier(gen, ms) {
+      clearTimeout(minuteur);
+      minuteur = setTimeout(() => tour(gen), ms);
+    }
+
+    async function charger() {
+      // Une liste vide n'écrase jamais une liste qui marchait : le bot peut
+      // être en train de redémarrer, la source doit continuer de tourner.
+      try {
+        const r = await fetch("/api/public/rotation", { cache: "no-store" });
+        const data = await r.json();
+        if (Array.isArray(data.medias) && data.medias.length) medias = data.medias;
+      } catch (e) { /* on garde la liste précédente */ }
+    }
+
+    function tirer() {
+      if (ORDRE === "dossier") {
+        const m = medias[rang % medias.length];
+        rang += 1;
+        return m;
+      }
+      // Deux fois le même d'affilée passerait pour un bug d'affichage.
+      const pool = medias.filter((m) => m.nom !== dernier);
+      const choix = pool.length ? pool : medias;
+      return choix[Math.floor(Math.random() * choix.length)];
+    }
+
+    const url = (media) => "/api/public/meme/" + encodeURIComponent(media.nom);
+
+    /** Charge le média et attend ses dimensions AVANT de l'afficher.
+     *  Sans ça, le cadre naîtrait à la taille de l'ancien média puis grandirait
+     *  d'un coup quand le nouveau arrive : le saut de format serait visible. */
+    function precharger(media) {
+      return new Promise((resolve, reject) => {
+        if (media.genre === "video") {
+          video.onloadedmetadata = () => resolve({ l: video.videoWidth, h: video.videoHeight });
+          video.onerror = () => reject(new Error("vidéo illisible : " + media.nom));
+          video.src = url(media);
+          video.load();
+          return;
+        }
+        const test = new Image();
+        test.onload = () => resolve({ l: test.naturalWidth, h: test.naturalHeight });
+        test.onerror = () => reject(new Error("média illisible : " + media.nom));
+        test.src = url(media);
+      });
+    }
+
+    /** Donne au média la place qu'il mérite dans la zone.
+     *
+     *  Les memes du dossier vont de 260 à 2100 px de côté. Sans agrandissement,
+     *  un petit occupe un tiers de ce qu'occupe un grand et paraît perdu ; à
+     *  remplir la zone coûte que coûte, il baverait (près de 3×). D'où le
+     *  plafond : on agrandit jusqu'à `AGRANDIR` fois, pas au-delà.
+     *
+     *  La réduction, elle, reste au CSS (`max-width` / `max-height`).
+     */
+    function dimensionner(element, naturel) {
+      element.style.width = "";
+      element.style.height = "";
+      if (!naturel || !naturel.l || !naturel.h) return;
+      const facteur = Math.min(MEDIA_L / naturel.l, MEDIA_H / naturel.h, AGRANDIR);
+      if (facteur > 1) {
+        element.style.width = Math.round(naturel.l * facteur) + "px";
+        element.style.height = "auto";
+      }
+    }
+
+    /** Joue la vidéo et rend la main à la fin.
+     *
+     *  Trois façons de ne jamais rendre la main, trois parades :
+     *  - le navigateur refuse la lecture audio automatique → seconde tentative
+     *    en muet, puis abandon ;
+     *  - le fichier est tronqué et `ended` n'arrive jamais → minuteur de secours ;
+     *  - la lecture cale → le même minuteur.
+     *  Sans elles, la zone resterait figée sur cette vidéo pour tout le live.
+     */
+    function jouerVideo() {
+      return new Promise((fini) => {
+        let rendu = false;
+        const rendreLaMain = () => {
+          if (rendu) return;
+          rendu = true;
+          clearTimeout(secours);
+          video.onended = null;
+          fini();
+        };
+        const limite = Number.isFinite(video.duration) && video.duration > 0
+          ? (video.duration + 5) * 1000
+          : 60000;
+        const secours = setTimeout(rendreLaMain, limite);
+        video.onended = rendreLaMain;
+        video.muted = false;
+        video.currentTime = 0;
+        video.play().catch(() => {
+          // Chrome bloque la lecture audio automatique tant qu'OBS n'a pas
+          // autorisé la source. Muet vaut mieux que rien.
+          video.muted = true;
+          video.play().catch(rendreLaMain);
+        });
+      });
+    }
+
+    async function tour(gen) {
+      // Le contrôle est repris après CHAQUE attente : entre deux, la scène a pu
+      // masquer le rotateur, et une chaîne périmée qui continue afficherait un
+      // meme dans une zone que le propriétaire vient d'éteindre.
+      if (gen !== generation) return;
+      // Le bloc est éteint AVANT de changer de média : le cadre se
+      // redimensionne pendant qu'il est invisible, sinon on le verrait sauter
+      // d'un format à l'autre.
+      appliquer(ETEINT);
+
+      if (!medias.length) {
+        await charger();
+        if (gen !== generation) return;
+        planifier(gen, medias.length ? 0 : 10000);
+        return;
+      }
+
+      const media = tirer();
+      dernier = media.nom;
+
+      // Tous les N affichages, où N est la taille de la liste : un meme déposé
+      // pendant le live entre dans la rotation sans toucher à OBS.
+      depuisRelecture += 1;
+      if (depuisRelecture >= medias.length) { depuisRelecture = 0; charger(); }
+
+      let naturel;
+      try {
+        naturel = await precharger(media);
+        echecsDaffilee = 0;
+      } catch (e) {
+        echecsDaffilee += 1;
+        if (gen !== generation) return;
+        // Trois échecs de suite ne désignent plus des fichiers fautifs : c'est
+        // le serveur qui ne répond plus — un rebuild du bot dure une quinzaine
+        // de secondes. Continuer à écarter viderait la bibliothèque entière en
+        // quelques secondes et la zone perdrait l'autonomie qui fait tout son
+        // intérêt. On patiente, la liste reste intacte.
+        if (echecsDaffilee < 3) {
+          medias = medias.filter((m) => m.nom !== media.nom);
+          planifier(gen, 0);
+        } else {
+          planifier(gen, 5000);
+        }
+        return;
+      }
+      if (gen !== generation) return;
+
+      const estVideo = media.genre === "video";
+      img.classList.toggle("absent", estVideo);
+      video.classList.toggle("absent", !estVideo);
+      if (!estVideo) img.src = url(media);
+      dimensionner(estVideo ? video : img, naturel);
+
+      await rafale();
+      if (gen !== generation) return;
+      appliquer(NET);
+      signeDeVie();
+
+      const sortir = async () => {
+        if (gen !== generation) return;
+        await rafale();
+        if (gen !== generation) return;
+        appliquer(ETEINT);
+        if (estVideo) video.pause();
+        planifier(gen, PAUSE);
+      };
+
+      // Une vidéo dure ce qu'elle dure ; une image, le temps réglé.
+      // Le minuteur de sortie passe par la MÊME variable que celui du tour
+      // suivant : il n'y en a jamais qu'un en vol, donc un seul à annuler
+      // quand la zone se masque.
+      if (estVideo) {
+        await jouerVideo();
+        sortir();
+      } else {
+        clearTimeout(minuteur);
+        minuteur = setTimeout(sortir, DUREE);
+      }
+    }
+
+    function signeDeVie() { derniereVie = Date.now(); aDejaAffiche = true; }
+
+    // Une vidéo longue est un signe de vie par ses `timeupdate` : sans cette
+    // condition, le gardien couperait un média de deux minutes en plein milieu.
+    video.addEventListener("timeupdate", signeDeVie);
+
+    function demarrer() {
+      if (enMarche) return;
+      enMarche = true;
+      generation += 1;
+      const gen = generation;
+      aDejaAffiche = false;
+      derniereVie = Date.now();
+      charger().then(() => { if (gen === generation) tour(gen); });
+    }
+
+    /** Coupe la boucle et rend la zone muette — y compris le réseau.
+     *
+     *  Les `src` sont RETIRÉS, pas vidés : `src = ""` fait redemander la page
+     *  elle-même au serveur dans plusieurs navigateurs. Une vidéo en cours de
+     *  mise en tampon continue sinon de tirer sur la connexion pendant tout le
+     *  live, pour une zone que personne ne voit.
+     */
+    function arreter() {
+      generation += 1;
+      enMarche = false;
+      clearTimeout(minuteur);
+      minuteur = null;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      img.removeAttribute("src");
+      appliquer(ETEINT);
+    }
+
+    /** Le réglage de la scène : c'est LUI qui allume ou éteint la zone. */
+    function appliquerReglage(el) {
+      if (el && !el.hidden) demarrer();
+      else arreter();
+    }
+
+    /** Passe au média suivant tout de suite (le ▶ du panneau de mise en scène).
+     *  Rend `false` si la zone est éteinte : il n'y a rien à relancer, et
+     *  répondre « c'est parti » sur une zone masquée est un mensonge. */
+    function relancer() {
+      if (!enMarche) return false;
+      generation += 1;
+      const gen = generation;
+      clearTimeout(minuteur);
+      tour(gen);
+      return true;
+    }
+
+    // Une source de live qui se fige ne le dit à personne : on ne s'en aperçoit
+    // qu'en revoyant le VOD. `aDejaAffiche` borne le gardien à ce qu'il sait
+    // guérir : si le bot est arrêté quand OBS ouvre la page, il n'y a jamais eu
+    // de signe de vie, et la boucle est déjà en train de réessayer toute seule.
+    // Les dix secondes de marge couvrent les cadences très courtes, où trois
+    // cycles ne font qu'une poignée de secondes.
+    setInterval(() => {
+      if (enMarche && aDejaAffiche && medias.length
+          && Date.now() - derniereVie > 3 * (DUREE + PAUSE) + 10000) {
+        relancer();
+      }
+    }, 5000);
+
+    return { appliquerReglage, relancer };
+  })();
+
+  // ── Image de la galerie ──────────────────────────────────────────────────
+  //
+  // Portée de `overlay_image.html`. Le bot la pousse par son propre flux SSE
+  // (`!image` sur Twitch), branché plus bas avec les autres.
+  const IMAGE = (() => {
+    const boite = document.getElementById("image-galerie");
+    const img = document.getElementById("image-galerie-img");
+    const credit = document.getElementById("image-galerie-credit");
+
+    const zone = WallyLayout.taille("image");
+    boite.style.setProperty("--image-l", zone[0] + "px");
+    boite.style.setProperty("--image-h", zone[1] + "px");
+
+    // Une zone masquée ne télécharge rien : sur la scène de jeu, l'image de la
+    // galerie est souvent éteinte, et poser son `src` ferait tirer un fichier
+    // de plusieurs mégaoctets que personne ne verra.
+    let masque = false;
+    let minuteurSortie = null;
+    let minuteurFin = null;
+
+    function cacher() {
+      clearTimeout(minuteurSortie);
+      clearTimeout(minuteurFin);
+      minuteurSortie = null;
+      minuteurFin = null;
+      boite.style.display = "none";
+      boite.className = "image-galerie";
+      img.removeAttribute("src");
+      credit.replaceChildren();
+    }
+
+    function montrer(data) {
+      if (masque || !data || !data.image_url) return;
+      const animIn = data.animation_in || "fadeIn";
+      const animOut = data.animation_out || "fadeOut";
+      const duree = (Number(data.display_duration) || 15) * 1000;
+      const animS = Number(data.animation_duration) || 1;
+
+      clearTimeout(minuteurSortie);
+      clearTimeout(minuteurFin);
+
+      img.src = data.image_url;
+      credit.replaceChildren();
+      if (data.username) {
+        const label = document.createElement("span");
+        label.className = "credit-label";
+        label.textContent = "par";
+        const nom = document.createElement("span");
+        nom.className = "credit-nom";
+        // `textContent` : le pseudo vient du chat, il n'est pas du HTML.
+        nom.textContent = data.username;
+        credit.append(label, nom);
+      }
+      boite.style.display = "block";
+      boite.style.setProperty("--animate-duration", animS + "s");
+      boite.className = "image-galerie animate__animated animate__" + animIn;
+
+      minuteurSortie = setTimeout(() => {
+        boite.className = "image-galerie animate__animated animate__" + animOut;
+        // Un MINUTEUR, et non l'événement `animationend` de la page d'origine.
+        // Deux pièges d'un coup : une image chassée pendant sa sortie déclenche
+        // `animationcancel` et non `animationend`, si bien que le gestionnaire
+        // survivait et effaçait la SUIVANTE ; et si `animate.min.css` n'était
+        // pas servi, aucune animation ne se joue — `animationend` n'arriverait
+        // jamais et l'image resterait à l'écran pour le reste du live.
+        minuteurFin = setTimeout(cacher, animS * 1000 + 100);
+      }, duree);
+    }
+
+    /** Le réglage de la scène. Une image déjà à l'écran quand la zone se masque
+     *  s'en va : elle est posée dans un conteneur devenu invisible. */
+    function appliquerReglage(el) {
+      masque = !el || !!el.hidden;
+      if (masque) cacher();
+    }
+
+    return { montrer, cacher, appliquerReglage };
+  })();
+
   // ── Mise à jour automatique ──────────────────────────────────────────────
   // OBS garde sa page en mémoire des heures : sans ça, il faut penser à
   // rafraîchir la source à chaque changement. On compare une empreinte du
@@ -1416,6 +1828,11 @@
       // ferait mourir tout le rendu des widgets à la première lecture.
       reglages = data.scene.elements || {};
       WallyLayout.appliquer(data.scene.slug, data.scene);
+      // Les deux zones qui portent leur propre boucle : `display: none` sur le
+      // conteneur les cacherait, mais le rotateur continuerait de télécharger
+      // des memes pour personne. C'est le réglage qui les allume ou les éteint.
+      ROTATEUR.appliquerReglage(reglages.rotator);
+      IMAGE.appliquerReglage(reglages.image);
       // Course avec l'EventSource : `feed.recent()` peut réafficher un widget
       // AVANT que ce fetch (lecture SQLite) ne réponde. Tant que `reglages`
       // valait `{}`, ce widget a été classé solo par défaut et `widget-on` a
@@ -1436,14 +1853,19 @@
   window.addEventListener("resize", chargerLayout);
 
   // ── Flux SSE ─────────────────────────────────────────────────────────────
-  function connect(url, onMessage) {
+  // `evenement` : le nom de l'événement SSE à écouter, quand le flux en nomme
+  // un (`event: show_image`). Sans lui, `onmessage` ne voit que les messages
+  // anonymes — un flux nommé arriverait sans que rien ne le signale.
+  function connect(url, onMessage, evenement) {
     let source;
     let delay = RECONNECT_MS;
     const open = () => {
       source = new EventSource(url);
-      source.onmessage = (e) => {
+      const recevoir = (e) => {
         try { onMessage(JSON.parse(e.data)); } catch { /* keepalive ou bruit */ }
       };
+      if (evenement) source.addEventListener(evenement, recevoir);
+      else source.onmessage = recevoir;
       // Backoff : à intervalle fixe, un bot arrêté prenait 720 requêtes/heure et
       // par flux. Remis à zéro dès qu'un message arrive (donc que ça remarche).
       //
@@ -1484,15 +1906,42 @@
       // GET, qui reste la seule source de vérité.
       case "layout":   chargerLayout(); break;
       case "ghosts":   afficherFantomes(event.elements); break;
+      // Le ▶ du rotateur : il tourne déjà tout seul, alors la seule chose utile
+      // à faire est de passer au média suivant SANS attendre le tour d'après —
+      // on règle sa place en le regardant.
+      case "rotator":  ROTATEUR.relancer(); break;
     }
   });
+
+  // L'image de la galerie a son PROPRE flux : c'est le bot qui la pousse
+  // (`!image` sur Twitch), et l'ancienne source OBS `/overlay-image` l'écoute
+  // toujours. Le nom d'événement est le troisième argument.
+  //
+  // `onerror` d'un `EventSource` retombe à CHAQUE reconnexion, y compris
+  // normale : ce n'est pas une panne. La page d'origine armait un
+  // `location.reload()` de 30 s qu'elle devait désamorcer à `onopen` sous peine
+  // d'empiler les rechargements ; ici c'est `connect()` qui rouvre, avec son
+  // backoff — rien à désamorcer.
+  connect("/api/public/sse/overlay-image", (data) => {
+    // Un `scene` sur la charge utile vient d'un essai depuis le panneau : il ne
+    // concerne QUE la page de cette scène. Ce que Wally pousse en direct n'en
+    // porte pas et s'affiche partout, comme avant.
+    if (data.scene && data.scene !== sceneSlug) return;
+    IMAGE.montrer(data);
+  }, "show_image");
 
   // Aperçu local (`?preview=1`) : rendre un widget SANS passer par le flux.
   // Le flux part vers tous les clients connectés — donc vers l'OBS du streamer :
   // régler une couleur ou une animation ne doit pas s'afficher en plein live.
   // Le crochet n'existe que sous ce paramètre, et n'émet rien.
   if (new URLSearchParams(location.search).has("preview")) {
-    window.__overlayPreview = { showWidget, say, showThinking, react, kinds: () => Object.keys(BUILDERS) };
+    window.__overlayPreview = {
+      showWidget, say, showThinking, react,
+      // Les deux zones qui ne passent pas par un builder : sans elles, l'aperçu
+      // local ne pouvait rien montrer de la moitié de la page.
+      rotateur: ROTATEUR, image: IMAGE,
+      kinds: () => Object.keys(BUILDERS),
+    };
   }
 
 

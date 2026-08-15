@@ -3,12 +3,15 @@
 C'est tout l'intérêt du champ `scene` sur les événements : on règle la scène de
 fin pendant que le live tourne sur celle du jeu.
 """
+import json
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from bot.core.overlay_layout import layout_par_defaut
+from bot.core.overlay_layout_store import LAYOUT_KEY
 from bot.dashboard.routes.overlay import admin_router
 
 
@@ -20,6 +23,46 @@ class _FeedEspion:
 
     def publish(self, event):
         self.publies.append(event)
+
+
+class _StateLayout:
+    """Une base qui ne sert QUE le layout, comme `test_overlay_layout_store`."""
+
+    def __init__(self, layout=None):
+        self.rows = {}
+        if layout is not None:
+            self.rows[LAYOUT_KEY] = json.dumps(layout)
+
+    async def get_state(self, key):
+        return self.rows.get(key)
+
+    async def set_state(self, key, value):
+        self.rows[key] = value
+
+
+class _Base(_StateLayout):
+    """La même, plus la galerie : le ▶ de l'image lit les deux."""
+
+    def __init__(self, image, layout=None):
+        super().__init__(layout)
+        self.image = image
+        self.filtres = []
+
+    async def get_random_gallery_image(self, filtre):
+        self.filtres.append(filtre)
+        return self.image
+
+
+class _ConfigImage:
+    """Les réglages d'image, tels que `OverlayImageConfig` les porte."""
+    display_duration = 15
+    animation_in = "fadeIn"
+    animation_out = "fadeOut"
+    animation_duration = 1.0
+    random_filter = "all"
+
+
+_CONFIG_IMAGE = _ConfigImage()
 
 
 @pytest.fixture
@@ -91,12 +134,101 @@ def test_une_scene_inconnue_est_refusee_pour_les_fantomes(preview):
 
 
 def test_un_element_hors_widget_dit_pourquoi_plutot_que_de_se_taire(preview):
-    """`rotator` et `image` n'ont pas de builder : publier un widget de ce nom
-    ne ferait RIEN côté page, et le ▶ passerait pour cassé."""
+    """`apex_progress` n'a pas de builder : publier un widget de ce nom ne
+    ferait RIEN côté page, et le ▶ passerait pour cassé.
+
+    `rotator` et `image` étaient ici jusqu'au 2026-08-15, avec pour raison
+    « c'est une source OBS à part ». Ils ont maintenant leur déclencheur : ce
+    test EXIGEAIT le défaut, ne pas les y remettre.
+    """
     client, feed = preview
-    for cle in ("rotator", "image", "apex_progress"):
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "en-jeu", "element": "apex_progress"},
+                    headers=_AUTH)
+    assert r.status_code == 200
+    assert r.json()["affiche"] is False
+    assert r.json()["raison"]
+    assert feed.publies == []
+
+
+def test_le_play_du_rotateur_le_fait_passer_au_media_suivant(preview):
+    """Il tourne déjà tout seul : le seul geste utile est de le faire avancer
+    sous les yeux de celui qui règle sa place. Répondre « c'est une source OBS
+    à part » à quelqu'un qui vient de lui donner une position était absurde."""
+    client, feed = preview
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "fin", "element": "rotator"}, headers=_AUTH)
+    assert r.status_code == 200
+    assert r.json()["affiche"] is True
+    # Sur CETTE scène seulement, comme tout le reste du panneau.
+    assert feed.publies == [{"type": "rotator", "scene": "fin"}]
+
+
+def test_le_play_de_limage_pousse_une_vraie_image_sur_la_seule_scene(preview):
+    """L'image passe par son PROPRE flux (celui qu'alimente `!image`), pas par
+    le bus des widgets. Le slug voyage avec : sans lui, régler la scène de fin
+    projetterait une image de la galerie en plein live."""
+    client, feed = preview
+    etat = client.app.state.wally
+    etat.db = _Base({"id": "img-1", "username": "KingsRequin", "title": "Bière"})
+    etat.config.overlay_image = _CONFIG_IMAGE
+    images = _FeedEspion()
+    etat.overlay_image_feed = images
+
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "fin", "element": "image"}, headers=_AUTH)
+
+    assert r.status_code == 200
+    assert r.json()["affiche"] is True
+    assert images.publies == [{
+        "image_url": "/api/public/gallery/img-1/image",
+        "title": "Bière",
+        "username": "KingsRequin",
+        "display_duration": 15,
+        "animation_in": "fadeIn",
+        "animation_out": "fadeOut",
+        "animation_duration": 1.0,
+        "scene": "fin",
+    }]
+    # Rien sur le bus des widgets : ce serait un `kind` sans builder.
+    assert feed.publies == []
+
+
+def test_une_galerie_vide_le_dit_au_lieu_de_publier_une_image_absente(preview):
+    client, feed = preview
+    etat = client.app.state.wally
+    etat.db = _Base(None)
+    etat.config.overlay_image = _CONFIG_IMAGE
+    images = _FeedEspion()
+    etat.overlay_image_feed = images
+
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "fin", "element": "image"}, headers=_AUTH)
+
+    assert r.status_code == 200
+    assert r.json()["affiche"] is False
+    assert r.json()["raison"]
+    assert images.publies == []
+
+
+def test_un_element_masque_dans_la_scene_ne_ment_pas(preview):
+    """Le conteneur d'un élément masqué porte `display: none` : rien de ce
+    qu'on publierait ne s'afficherait. Un ▶ qui répond « affiché » pendant que
+    l'écran ne bouge pas envoie chercher la panne ailleurs.
+
+    Vaut pour TOUS les éléments, y compris l'avatar — dégager la scène ne le
+    ferait pas revenir s'il est éteint dessus.
+    """
+    client, feed = preview
+    layout = layout_par_defaut()
+    for scene in layout["scenes"]:
+        scene["elements"]["dice"]["hidden"] = True
+        scene["elements"]["avatar"]["hidden"] = True
+    client.app.state.wally.db = _StateLayout(layout)
+
+    for cle in ("dice", "avatar"):
         r = client.post("/api/admin/overlay/preview",
-                        json={"scene": "en-jeu", "element": cle}, headers=_AUTH)
+                        json={"scene": "fin", "element": cle}, headers=_AUTH)
         assert r.status_code == 200, cle
         assert r.json()["affiche"] is False, cle
         assert r.json()["raison"], cle
@@ -149,10 +281,13 @@ def test_chaque_widget_placable_a_un_echantillon(preview):
     from bot.core.overlay_layout import ELEMENTS
     from bot.dashboard.routes.overlay import _ECHANTILLONS, _HORS_WIDGET
 
-    # `bubble` et `avatar` ne sont pas des widgets : la bulle a son propre
-    # événement, l'avatar est là en permanence et son ▶ dégage la scène.
+    # Quatre éléments ne sont pas des widgets et ont chacun leur déclencheur :
+    # la bulle a son propre événement, l'avatar est là en permanence et son ▶
+    # dégage la scène, le rotateur passe au média suivant, l'image de la
+    # galerie part par le flux d'images. Aucun échantillon à leur écrire.
+    _HORS_BUILDER = ("bubble", "avatar", "rotator", "image")
     sans = [cle for cle in ELEMENTS
-            if cle not in _HORS_WIDGET and cle not in ("bubble", "avatar")
+            if cle not in _HORS_WIDGET and cle not in _HORS_BUILDER
             and not _ECHANTILLONS.get(cle)
             and cle not in ("meme", "planning")]
     assert sans == [], f"widgets sans échantillon : {sans}"

@@ -16,6 +16,7 @@ from loguru import logger
 
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
 from bot.core.llm import SUPPORTED_TEXT_PROVIDERS
+from bot.core.overlay_feed import payload_image_galerie
 
 router = APIRouter()
 
@@ -645,16 +646,10 @@ async def test_overlay_image(request: Request):
     image = await state.db.get_random_gallery_image(state.config.overlay_image.random_filter)
     if not image:
         raise HTTPException(404, "No images in gallery to test")
-    cfg = state.config.overlay_image
-    payload = {
-        "image_url": f"/api/public/gallery/{image['id']}/image",
-        "title": image.get("title") or "",
-        "username": image["username"],
-        "display_duration": cfg.display_duration,
-        "animation_in": cfg.animation_in,
-        "animation_out": cfg.animation_out,
-        "animation_duration": cfg.animation_duration,
-    }
+    # Sans `scene` : ce bouton-ci teste les RÉGLAGES d'image (durée, animation),
+    # il vise donc toutes les pages, comme un vrai `!image`. Le ▶ de la mise en
+    # scène, lui, cible une seule scène.
+    payload = payload_image_galerie(image, state.config.overlay_image)
     # Plus besoin de vider quoi que ce soit : chaque overlay connecté a sa
     # propre file, et la page remplace l'image affichée à la réception.
     state.overlay_image_feed.publish(payload)

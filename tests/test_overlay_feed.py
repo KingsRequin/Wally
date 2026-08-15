@@ -186,3 +186,52 @@ def test_une_bulle_recente_est_rejouee():
     f = OverlayFeed()
     f.say("salut le chat")
     assert len(f.recent()) == 1
+
+
+# ── la charge utile d'une image de la galerie ───────────────────────────────
+#
+# Trois chemins la construisaient à la main : `!image` sur Twitch, le bouton de
+# test des réglages d'images, et — depuis le portage de la zone dans l'overlay
+# principal — le ▶ de la mise en scène. Un champ ajouté à l'une des trois copies
+# n'aurait pas existé dans les autres.
+
+class _ConfigImage:
+    display_duration = 15
+    animation_in = "fadeIn"
+    animation_out = "fadeOut"
+    animation_duration = 1.0
+
+
+_IMAGE = {"id": "abc", "username": "KingsRequin", "title": "Bière"}
+
+
+def test_la_charge_utile_porte_tout_ce_que_la_page_lit():
+    from bot.core.overlay_feed import payload_image_galerie
+
+    assert payload_image_galerie(_IMAGE, _ConfigImage()) == {
+        "image_url": "/api/public/gallery/abc/image",
+        "title": "Bière",
+        "username": "KingsRequin",
+        "display_duration": 15,
+        "animation_in": "fadeIn",
+        "animation_out": "fadeOut",
+        "animation_duration": 1.0,
+    }
+
+
+def test_sans_scene_l_image_vise_toutes_les_pages():
+    """Un vrai `!image` s'affiche partout : la page n'écarte que ce qui porte
+    un slug ÉTRANGER au sien. Poser un slug par défaut cacherait l'image sur
+    toutes les scènes sauf une."""
+    from bot.core.overlay_feed import payload_image_galerie
+
+    assert "scene" not in payload_image_galerie(_IMAGE, _ConfigImage())
+
+
+def test_un_essai_ne_vise_que_la_scene_qu_on_regle():
+    """Sans ce champ, tester le placement de l'image pendant que le live tourne
+    la projetterait devant les viewers."""
+    from bot.core.overlay_feed import payload_image_galerie
+
+    payload = payload_image_galerie(_IMAGE, _ConfigImage(), scene="fin")
+    assert payload["scene"] == "fin"

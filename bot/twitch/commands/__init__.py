@@ -35,15 +35,10 @@ async def dispatch_command(
         if ds is not None:
             image = await bot.db.get_random_gallery_image(overlay_cfg.random_filter)
             if image:
-                img_payload = {
-                    "image_url": f"/api/public/gallery/{image['id']}/image",
-                    "title": image.get("title") or "",
-                    "username": image["username"],
-                    "display_duration": overlay_cfg.display_duration,
-                    "animation_in": overlay_cfg.animation_in,
-                    "animation_out": overlay_cfg.animation_out,
-                    "animation_duration": overlay_cfg.animation_duration,
-                }
+                from bot.core.overlay_feed import payload_image_galerie
+                # Sans `scene` : une vraie demande du chat s'affiche sur toutes
+                # les pages d'overlay, quelle que soit la scène à l'antenne.
+                img_payload = payload_image_galerie(image, overlay_cfg)
                 channel_id = f"twitch:{channel_name}"
                 _fire(_announce_overlay_image(bot, channel_name, channel_id, image, ds, img_payload))
         return True
