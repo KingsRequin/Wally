@@ -4,12 +4,19 @@ Un layout illisible ne doit JAMAIS donner un overlay vide : ce réglage se
 manipule en plein live, et le pire scénario acceptable est « mal placé ».
 Tous les tests de fusion tournent autour de ça.
 """
+import re
+
 import pytest
 
 from bot.core.overlay_layout import (
     ANCRAGES, ELEMENTS, SLUGS_RESERVES,
     fusionner, layout_par_defaut, scene_par_slug, slug_depuis_nom,
 )
+
+# La même regex que la route `/overlay-{slug}` (`bot/dashboard/app.py`) : un
+# slug produit ici doit systématiquement la passer, sans quoi la scène devient
+# inaccessible en silence dès sa création.
+_SLUG_ROUTE_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 
 
 def test_defaut_porte_les_trois_scenes():
@@ -120,6 +127,18 @@ def test_slug_depuis_nom(nom, attendu):
 def test_slug_depuis_nom_evite_les_reserves():
     for reserve in SLUGS_RESERVES:
         assert slug_depuis_nom(reserve) not in SLUGS_RESERVES
+
+
+def test_slug_depuis_nom_est_borne_pour_la_route():
+    """Un nom un peu long ne doit pas produire un slug que la route
+    `/overlay-{slug}` refuse — sinon la scène est inaccessible en silence :
+    la page répond 200 avec `data-scene-slug=""` et sert la scène par défaut.
+    """
+    nom = ("Écran de fin de stream avec le planning de la semaine et les "
+           "remerciements")
+    slug = slug_depuis_nom(nom)
+    assert _SLUG_ROUTE_RE.match(slug)
+    assert not slug.endswith("-")   # pas de trait d'union orphelin en coupant
 
 
 def test_scene_par_slug():

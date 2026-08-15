@@ -32,6 +32,11 @@ SLUGS_RESERVES = frozenset({"image", "rotation", "version", "health"})
 
 SCALE_MIN, SCALE_MAX = 0.2, 2.0
 
+# Doit rester égal à la borne de la route `/overlay-{slug}` (`bot/dashboard/app.py`,
+# `_SLUG_SCENE_RE`) : un slug plus long que ça y est refusé et sert la scène par
+# défaut en silence — data-scene-slug="" sans erreur ni log.
+SLUG_MAX_LEN = 64
+
 
 def _el(x: float, y: float, anchor: str, scale: float = 1.0,
         *, solo: bool = True, hidden: bool = False) -> dict:
@@ -254,6 +259,10 @@ def slug_depuis_nom(nom: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", sans_accent.lower()).strip("-")
     if not slug:
         slug = "scene"
+    # Coupé à la borne de la route, puis le trait d'union que la coupe peut
+    # laisser en fin de chaîne est retiré — sinon un nom un peu long produirait
+    # une scène inaccessible : la route la refuserait en silence.
+    slug = slug[:SLUG_MAX_LEN].strip("-") or "scene"
     # Réservé : suffixé plutôt que refusé — l'utilisateur a le droit d'appeler
     # une scène « image », il n'a simplement pas le droit d'en prendre l'URL.
     if slug in SLUGS_RESERVES:
