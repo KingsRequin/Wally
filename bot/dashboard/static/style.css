@@ -3628,6 +3628,12 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-el:hover { background: rgba(255, 255, 255, 0.05); }
 .ovl-el.actif { border-color: rgba(6, 182, 212, 0.5); background: rgba(6, 182, 212, 0.1); }
+/* La ligne du repère survolé sur la surface. Le pointeur est ailleurs — sur le
+   cadre —, donc `:hover` ne peut rien : c'est le panneau qui pose la classe. */
+.ovl-el.survole {
+  border-color: rgba(6, 182, 212, 0.45);
+  background: rgba(6, 182, 212, 0.08);
+}
 .ovl-el.masque .ovl-el-nom { color: var(--text-muted); text-decoration: line-through; }
 .ovl-el.glisse { opacity: 0.4; }
 .ovl-el-poignee { color: var(--text-muted); cursor: grab; font-size: 0.8rem; flex-shrink: 0; }
@@ -3814,6 +3820,33 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-rect.verrouille { cursor: default; }
 
+/* Le repère de la ligne survolée dans la liste (et l'inverse). Plus marqué que
+   l'élément choisi : c'est un état FUGACE, qu'on doit trouver du regard au
+   milieu de vingt-six repères empilés au même endroit.
+
+   `!important` sur le rang : `rendreSurface()` pose un `z-index` EN LIGNE sur
+   chaque repère (l'empilement de la scène), et rien d'écrit ici ne peut le
+   dépasser. Sans ça, le repère qu'on vient d'éclairer resterait derrière les
+   vingt-cinq autres — précisément le cas qu'on cherche à démêler. */
+.ovl-rect.survole {
+  z-index: 50 !important;
+  border-color: #06b6d4;
+  border-style: solid;
+  background: rgba(6, 182, 212, 0.16);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.5);
+}
+/* Même règle avec l'aperçu derrière, où les repères sont volontairement
+   discrets : la spécificité de `.ovl-surface.avec-apercu .ovl-rect` l'emporte
+   sinon, et le survol ne changerait rien. */
+.ovl-surface.avec-apercu .ovl-rect.survole {
+  border-color: #06b6d4;
+  border-style: solid;
+  background: rgba(6, 182, 212, 0.16);
+}
+/* Estompés, le survolé reste net : sans ça la liaison ne servirait à rien
+   dans le seul mode où on en a le plus besoin. */
+.ovl-surface.reperes-estompes .ovl-rect.survole { opacity: 1; }
+
 /* Un élément qui sortirait de la source : dit ICI, pas quand les viewers le
    découvrent. L'orange plutôt que le rouge — ce n'est pas une erreur, c'est un
    choix qu'on peut assumer (un avatar qui mord le bord, par exemple). */
@@ -3896,6 +3929,7 @@ body.is-mobile .mobile-back-btn {
   transition: opacity 0.12s ease;
 }
 .ovl-rect:hover .ovl-rect-nom,
+.ovl-rect.survole .ovl-rect-nom,
 .ovl-rect.actif .ovl-rect-nom { opacity: 1; }
 
 /* ── Les réglages, sous la surface ───────────────────────────────────── */

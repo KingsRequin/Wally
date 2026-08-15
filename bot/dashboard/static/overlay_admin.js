@@ -101,6 +101,33 @@ window.OverlayAdmin = (function () {
   let infobulle = null;   // l'unique bulle d'aide, posée sur <body>
   let apercuSlug = null;      // la scène actuellement chargée dans l'iframe
   let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
+  let survole = null;         // la clé de l'élément survolé, liste OU surface
+
+  // La scène qu'on éditait, d'une visite à l'autre. Sans elle, un F5 ramène sur
+  // la scène par défaut : le réglage qu'on venait de publier sur une AUTRE
+  // scène a alors l'air d'avoir disparu — l'élément est bien à sa place, mais
+  // on regarde une autre scène. C'est exactement ce qu'on lit comme « ça ne
+  // persiste pas ».
+  const CLE_SCENE = "wally.overlay.scene";
+
+  /** Le stockage local peut lever (mode privé, stockage refusé, quota) : une
+   *  préférence d'affichage ne doit jamais empêcher le panneau de s'ouvrir. */
+  function sceneRetenue() {
+    try {
+      return window.localStorage.getItem(CLE_SCENE);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function retenirScene(slug) {
+    if (!slug) return;
+    try {
+      window.localStorage.setItem(CLE_SCENE, slug);
+    } catch (e) {
+      // Stockage refusé : on perd la mémoire de la scène, rien d'autre.
+    }
+  }
 
   // ── Petits outils ───────────────────────────────────────────────────────
 
@@ -317,6 +344,7 @@ window.OverlayAdmin = (function () {
     const scenes = layout.scenes || [];
     const existe = scenes.some(function (s) { return s.slug === etat.slugCourant; });
     if (!existe) etat.slugCourant = layout.defaut || scenes[0].slug;
+    retenirScene(etat.slugCourant);
     const scene = sceneCourante();
     const ordre = (scene && scene.ordre) || [];
     if (!scene || !scene.elements[etat.elementCourant]) {
@@ -336,8 +364,13 @@ window.OverlayAdmin = (function () {
 
   /** Envoie tout le modèle. Le serveur renvoie ce qu'il a RANGÉ — on adopte sa
    *  réponse, pas ce qu'on lui a envoyé : les valeurs bornées apparaissent donc
-   *  immédiatement à l'écran. */
-  function publier() {
+   *  immédiatement à l'écran.
+   *
+   *  `message` remplace l'annonce générique : une opération de scène dit ce
+   *  qu'elle a fait, et elle ne le dit qu'une fois le serveur d'accord. Un
+   *  échec laisse le compteur en attente — la modification n'est pas perdue,
+   *  « Mettre à jour » la renverra. */
+  function publier(message) {
     if (!etat.layout) return Promise.resolve();
     return appeler(URL_LAYOUT, {
       method: "PUT",
@@ -349,7 +382,7 @@ window.OverlayAdmin = (function () {
       })
       .then(function (layout) {
         adopter(layout);
-        notifier("Mise en scène publiée");
+        notifier(message || "Mise en scène publiée");
       })
       .catch(function (e) {
         notifier("Publication impossible : " + (e && e.message ? e.message : "erreur"), "error");
@@ -369,6 +402,24 @@ window.OverlayAdmin = (function () {
   function marquerModifie() {
     etat.brouillon += 1;
     rendreBarrePublication();
+  }
+
+  /** Le feu vert avant une opération de STRUCTURE (renommer, dupliquer,
+   *  supprimer, définir par défaut). Ces quatre-là partent tout de suite, à la
+   *  différence d'un placement : leur résultat est une ADRESSE qu'on colle dans
+   *  OBS, et une adresse qui n'existe qu'en brouillon est un mensonge — elle
+   *  disparaît au premier F5, ce qu'on découvrait sans le moindre message.
+   *
+   *  Mais `publier()` envoie le MODÈLE ENTIER : un placement en attente
+   *  partirait à l'antenne avec l'opération. On le dit AVANT plutôt que de le
+   *  laisser découvrir en plein live. Sans brouillon — le cas courant —, aucune
+   *  question n'est posée.
+   */
+  function accordPourPublier() {
+    if (etat.brouillon === 0) return true;
+    return window.confirm(
+      etat.brouillon + " modification(s) de placement non publiée(s) partiront "
+      + "AUSSI à l'antenne avec cette opération.\n\nContinuer ?");
   }
 
   // ── La liste des scènes ─────────────────────────────────────────────────
@@ -428,6 +479,7 @@ window.OverlayAdmin = (function () {
   function choisirScene(slug) {
     if (etat.slugCourant === slug) return;
     etat.slugCourant = slug;
+    retenirScene(slug);
     const scene = sceneCourante();
     if (scene && !scene.elements[etat.elementCourant]) {
       etat.elementCourant = (scene.ordre || [])[0] || null;
@@ -492,6 +544,7 @@ window.OverlayAdmin = (function () {
   }
 
   function renommer(scene) {
+    if (!accordPourPublier()) return;
     const nom = window.prompt(
       "Nouveau nom de la scène.\n\nL'adresse ne change PAS :\n"
       + urlScene(scene.slug)
@@ -503,11 +556,14 @@ window.OverlayAdmin = (function () {
     marquerModifie();
     rendreScenes();
     // Redit APRÈS coup : l'avertissement du `prompt` est lu en diagonale, et
-    // l'adresse figée est précisément ce qui surprend.
-    notifier("Renommée « " + propre + " ». L'adresse reste " + urlScene(scene.slug) + ".");
+    // l'adresse figée est précisément ce qui surprend. Annoncé par `publier()`,
+    // donc seulement une fois le serveur d'accord : l'annoncer ici l'aurait dit
+    // aussi quand l'enregistrement échoue.
+    publier("Renommée « " + propre + " ». L'adresse reste " + urlScene(scene.slug) + ".");
   }
 
   function dupliquer(scene) {
+    if (!accordPourPublier()) return;
     const nom = window.prompt("Nom de la copie :", scene.nom + " (copie)");
     if (nom === null) return;
     const propre = nom.trim();
@@ -531,10 +587,13 @@ window.OverlayAdmin = (function () {
     etat.slugCourant = slug;
     marquerModifie();
     rendreTout();
-    notifier("Scène « " + propre + " » créée · " + urlScene(slug));
+    // L'adresse annoncée doit EXISTER : elle part dans OBS dans la minute qui
+    // suit. Elle n'est donc dite qu'une fois la scène enregistrée.
+    publier("Scène « " + propre + " » créée · " + urlScene(slug));
   }
 
   function supprimer(scene) {
+    if (!accordPourPublier()) return;
     if (!window.confirm("Supprimer « " + scene.nom + " » ? "
         + "Une source OBS pointée sur " + urlScene(scene.slug)
         + " affichera alors la scène par défaut.")) return;
@@ -544,12 +603,62 @@ window.OverlayAdmin = (function () {
     if (etat.slugCourant === scene.slug) etat.slugCourant = scenes[0].slug;
     marquerModifie();
     rendreTout();
+    publier("Scène « " + scene.nom + " » supprimée.");
   }
 
   function definirDefaut(scene) {
+    if (!accordPourPublier()) return;
     etat.layout.defaut = scene.slug;
     marquerModifie();
     rendreScenes();
+    publier("« " + scene.nom + " » est la scène par défaut.");
+  }
+
+  // ── Le survol, des deux côtés ───────────────────────────────────────────
+
+  /** Le survol relie la LISTE et la SURFACE, dans les deux sens.
+   *
+   *  Trente-quatre éléments, dont vingt-six partent exactement au même endroit :
+   *  une ligne de la liste ne disait pas LEQUEL des repères empilés elle
+   *  désigne, et un repère ne disait pas quelle ligne aller cliquer. Le survol
+   *  marque les deux à la fois — c'est le seul moyen de s'y retrouver.
+   *
+   *  Le nom, lui, reste au survol et sur l'élément choisi : posé en permanence,
+   *  il recouvrait la page qu'on est venu regarder (`.ovl-rect-nom`).
+   */
+  function survoler(cle, defilerVersLaLigne) {
+    survole = cle;
+    appliquerSurvol();
+    if (!cle || !defilerVersLaLigne || !noeuds.listeElements) return;
+    const liste = noeuds.listeElements;
+    const ligne = liste.querySelector('[data-cle="' + cle + '"]');
+    if (!ligne) return;
+    // La liste défile sur 420 px pour trente-quatre lignes : éclairer une ligne
+    // hors de vue n'éclaire personne. Le calcul à la main plutôt que
+    // `scrollIntoView` : celui-ci fait aussi défiler les conteneurs PARENTS, et
+    // la page entière sauterait sous le pointeur au milieu d'un placement.
+    // Et rien ne bouge tant que la ligne est visible.
+    const r = ligne.getBoundingClientRect();
+    const cadre = liste.getBoundingClientRect();
+    if (r.top < cadre.top) liste.scrollTop -= cadre.top - r.top;
+    else if (r.bottom > cadre.bottom) liste.scrollTop += r.bottom - cadre.bottom;
+  }
+
+  /** Repose la marque après coup. Les repères ET les lignes sont reconstruits à
+   *  chaque rendu — au moindre appui sur une flèche, par exemple : sans ce
+   *  rappel, la marque disparaîtrait sous un pointeur qui n'a pas bougé, et le
+   *  `mouseleave` du nœud détruit ne viendrait jamais la retirer de l'autre
+   *  côté. */
+  function appliquerSurvol() {
+    [noeuds.calque, noeuds.listeElements].forEach(function (hote) {
+      if (!hote) return;
+      hote.querySelectorAll(".survole").forEach(function (n) {
+        n.classList.remove("survole");
+      });
+      if (!survole) return;
+      const n = hote.querySelector('[data-cle="' + survole + '"]');
+      if (n) n.classList.add("survole");
+    });
   }
 
   // ── La liste des éléments ───────────────────────────────────────────────
@@ -570,6 +679,7 @@ window.OverlayAdmin = (function () {
     if (noeuds.compteElements) {
       noeuds.compteElements.textContent = (scene.ordre || []).length + " éléments";
     }
+    appliquerSurvol();
   }
 
   function itemElement(cle, element) {
@@ -612,6 +722,10 @@ window.OverlayAdmin = (function () {
       if (evt.target.closest && evt.target.closest(".ovl-el-actions")) return;
       selectionner(cle);
     });
+    // `mouseenter`/`mouseleave` et non `mouseover` : ceux-là ne se déclenchent
+    // pas en repassant d'un enfant à l'autre de la ligne.
+    item.addEventListener("mouseenter", function () { survoler(cle, false); });
+    item.addEventListener("mouseleave", function () { survoler(null, false); });
     brancherGlisser(item, cle);
     return item;
   }
@@ -1062,9 +1176,19 @@ window.OverlayAdmin = (function () {
         + (description(cle) ? " — " + description(cle) : "")
         + (deborde ? " — ⚠ déborde du cadre" : ""));
       rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
+      // Le sens retour : le repère éclaire sa ligne, et l'amène sous les yeux
+      // si la liste a défilé ailleurs. Pas pendant un geste — la liste
+      // sauterait sous le pointeur au milieu d'un déplacement.
+      rect.addEventListener("mouseenter", function () {
+        if (!manip) survoler(cle, true);
+      });
+      rect.addEventListener("mouseleave", function () {
+        if (!manip) survoler(null, false);
+      });
       cadre.appendChild(rect);
     });
     majPoignees(largeur, hauteur);
+    appliquerSurvol();
   }
 
   // ── Le glisser, les poignées, le clavier ────────────────────────────────
@@ -1627,6 +1751,19 @@ window.OverlayAdmin = (function () {
     conteneur.dataset.overlayAdmin = "1";
     try {
       construireSquelette(conteneur);
+      // Le filet du brouillon. Un placement non publié ne survit pas à un F5 —
+      // et rien ne le disait : on refermait l'onglet en croyant avoir posé
+      // l'élément. Le navigateur n'affiche que son message générique, mais il
+      // affiche quelque chose, et c'est tout ce qu'on lui demande.
+      window.addEventListener("beforeunload", function (evt) {
+        if (etat.brouillon === 0) return;
+        evt.preventDefault();
+        evt.returnValue = "";   // exigé par les navigateurs historiques
+      });
+      // La scène qu'on éditait avant le rechargement. Posée AVANT `charger()` :
+      // `adopter()` la garde si elle existe encore, et retombe sur la scène par
+      // défaut sinon.
+      etat.slugCourant = sceneRetenue();
     } catch (e) {
       conteneur.textContent = "Mise en scène indisponible.";
       return;
