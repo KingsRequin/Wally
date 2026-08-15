@@ -169,6 +169,68 @@ ELEMENTS: dict[str, dict] = {
     "apex_servers":  _el(50.0, 50.0, "center"),
 }
 
+# ── Les groupes d'éléments ──────────────────────────────────────────────────
+#
+# POURQUOI PAR SCÈNE, ET NON GLOBAUX AU LAYOUT.
+#
+# Un groupe global se règle une fois et s'impose aux trois scènes ; un groupe
+# par scène est plus souple et se recrée trois fois. Le modèle a tranché avant
+# nous : `elements` et `ordre` sont DÉJÀ par scène, et le commentaire de
+# `layout_par_defaut()` dit pourquoi — les scènes divergent dès le premier
+# réglage. Or TOUT ce qu'un groupe fait agit sur des données par scène : le
+# déplacer écrit des `x`/`y` de scène, le masquer et le verrouiller écrivent des
+# `hidden`/`locked` de scène, et son en-tête se lit dans une liste dont l'ordre
+# est celui de la scène. Un groupe global serait le seul objet transversal d'un
+# modèle qui n'en a aucun, et il imposerait le même découpage à une scène de fin
+# qui n'affiche que trois éléments.
+#
+# Le coût — recréer trois fois — est largement payé d'avance : les groupes
+# livrés ci-dessous partent dans les trois scènes, et « Dupliquer » recopie déjà
+# les éléments en profondeur, donc les groupes avec.
+#
+# UN ÉLÉMENT N'APPARTIENT QU'À UN SEUL GROUPE.
+#
+# Le groupe est l'unité qu'on manipule. Si `dice` était à la fois dans « Jeux de
+# hasard » et dans « Widgets du bas », déplacer le premier groupe déplacerait
+# `dice`, et le cadre englobant du second mentirait aussitôt sur ce qu'il
+# entoure ; masquer l'un puis montrer l'autre laisserait deux vérités
+# contradictoires sur le même élément ; et la liste, qui rend les membres
+# groupés sous leur en-tête, devrait afficher `dice` deux fois ou en choisir une
+# au hasard. L'exclusivité fait des groupes une PARTITION d'une partie des
+# éléments : le cadre dit vrai, la liste ne se répète pas. Elle est tenue ici,
+# au point d'écriture (`_fusionner_groupes` : le premier groupe qui réclame une
+# clé la garde), et pas seulement dans le panneau.
+#
+# Le groupe ne porte NI `hidden` NI `locked` à lui : ces deux-là vivent sur
+# l'élément, et le cadenas y bloque déjà tout. Un drapeau de groupe serait une
+# seconde autorité qui contredirait la première — un membre verrouillé dans un
+# groupe libre ne doit pas bouger, c'est la règle en place. Masquer ou
+# verrouiller un groupe, c'est le faire à chacun de ses membres.
+#
+# Les membres sont livrés dans un ordre qui ÉPOUSE `_ORDRE_DEFAUT` : les rendre
+# contigus (`_ordre_avec_groupes`) ne doit rien déplacer sur une disposition
+# déjà réglée. Mesuré sur la base de production : seul `rps` remonte de trois
+# rangs, devant `gauge` et `countdown` — trois widgets exclusifs (`solo`) qui ne
+# cohabitent jamais à l'écran. `avatar` n'est délibérément PAS groupé avec
+# `bubble` : il a été descendu à la main derrière tout le reste dans la scène de
+# jeu, et un groupe « Wally » l'aurait remonté sans que personne ne le demande.
+GROUPES_DEFAUT: list[dict] = [
+    {"id": "medias", "nom": "Médias en plein cadre",
+     "membres": ["image", "meme", "clip", "clip_top", "planning"]},
+    {"id": "hasard", "nom": "Jeux de hasard",
+     "membres": ["coinflip", "dice", "wheel", "rps"]},
+    {"id": "apex", "nom": "Tableau de bord Apex",
+     "membres": ["apex_rank", "apex_progress", "apex_status", "apex_stats",
+                 "apex_map", "apex_craft", "apex_predator", "apex_servers"]},
+    {"id": "installes", "nom": "Widgets installés",
+     "membres": ["talkers", "bingo", "stats"]},
+]
+
+# Un groupe sans nom lisible n'est pas jeté : c'est l'appartenance qui coûte à
+# composer, pas le mot. Même parti pris que `nom` sur une scène, qui retombe sur
+# son slug plutôt que de faire disparaître la scène.
+GROUPE_NOM_DEFAUT = "Groupe sans nom"
+
 # L'empilement par défaut, du plus proche au plus lointain. Wally passe devant
 # ce qu'il montre ; les widgets installés restent au fond.
 _ORDRE_DEFAUT = [
@@ -192,17 +254,31 @@ _NOMS_DEFAUT = ("Stream Starting", "En jeu", "Fin")
 _NOM_DEFAUT = "En jeu"
 
 
+def groupes_par_defaut() -> list[dict]:
+    """Les groupes livrés, en copie profonde.
+
+    Copie et non référence : chaque scène a les siens, et une liste partagée les
+    ferait tous bouger ensemble au premier renommage — exactement ce que la
+    copie des éléments évite déjà.
+    """
+    return [{"id": g["id"], "nom": g["nom"], "membres": list(g["membres"])}
+            for g in GROUPES_DEFAUT]
+
+
 def layout_par_defaut() -> dict:
     """Trois scènes, tous les éléments placés, rien de masqué.
 
     Chaque scène a sa PROPRE copie des éléments : elles divergent dès le premier
     réglage, et un dictionnaire partagé les ferait bouger ensemble.
     """
+    ordre = _ordre_avec_groupes(list(_ORDRE_DEFAUT), GROUPES_DEFAUT)
     return {
         "version": 1,
         "defaut": slug_depuis_nom(_NOM_DEFAUT),
         "scenes": [
-            {"slug": slug_depuis_nom(nom), "nom": nom, "ordre": list(_ORDRE_DEFAUT),
+            {"slug": slug_depuis_nom(nom), "nom": nom,
+             "ordre": list(ordre),
+             "groupes": groupes_par_defaut(),
              "elements": {k: dict(v) for k, v in ELEMENTS.items()}}
             for nom in _NOMS_DEFAUT
         ],
@@ -254,6 +330,94 @@ def _fusionner_element(brut, defaut: dict) -> dict:
     return fusionne
 
 
+def _fusionner_groupes(brut) -> list[dict]:
+    """Les groupes d'une scène, rangés. Jamais d'exception.
+
+    La clé ABSENTE (ou d'un type inattendu) reprend les groupes livrés : c'est
+    le cas de toute disposition rangée avant ce chantier, et la même règle que
+    partout ailleurs ici — un réglage absent reprend son défaut. Une LISTE VIDE,
+    elle, est respectée : dissoudre tous ses groupes est une décision, et les
+    voir repousser au rechargement rendrait la dissolution impossible.
+
+    Ce qui est écarté, toujours sans faire tomber le reste :
+      - un groupe qui n'est pas un dictionnaire, ou sans `id` exploitable — on
+        ne peut ni le renommer ni le dissoudre sans identité ;
+      - un `id` déjà pris, comme deux scènes de même slug ;
+      - un membre inconnu d'`ELEMENTS` : la clé est ignorée, le groupe garde
+        les autres ;
+      - un membre DÉJÀ réclamé par un groupe précédent : l'exclusivité se tient
+        ici, au point d'écriture ;
+      - un groupe qui n'a plus aucun membre au bout de ce tri : il n'y a plus
+        rien à manipuler dessous.
+    """
+    if not isinstance(brut, list):
+        return groupes_par_defaut()
+    groupes: list[dict] = []
+    ids: set[str] = set()
+    pris: set[str] = set()
+    for groupe_brut in brut:
+        if not isinstance(groupe_brut, dict):
+            continue
+        gid = groupe_brut.get("id")
+        if not isinstance(gid, str) or not gid.strip():
+            continue
+        gid = gid.strip()
+        if gid in ids:
+            continue
+        membres_bruts = groupe_brut.get("membres")
+        if not isinstance(membres_bruts, list):
+            membres_bruts = []
+        membres = []
+        for cle in membres_bruts:
+            # `isinstance(cle, str)` avant le `in` : une clé en `dict`/`list` —
+            # un JSON par ailleurs légal — ferait lever `in` sur un type non
+            # hashable.
+            if not isinstance(cle, str) or cle not in ELEMENTS or cle in pris:
+                continue
+            pris.add(cle)
+            membres.append(cle)
+        if not membres:
+            continue
+        ids.add(gid)
+        nom = groupe_brut.get("nom")
+        groupes.append({
+            "id": gid,
+            "nom": nom.strip() if isinstance(nom, str) and nom.strip()
+                   else GROUPE_NOM_DEFAUT,
+            "membres": membres,
+        })
+    return groupes
+
+
+def _ordre_avec_groupes(ordre: list[str], groupes: list[dict]) -> list[str]:
+    """Les membres d'un groupe rendus CONTIGUS, à la place du premier d'entre eux.
+
+    L'ordre de la liste EST l'empilement : c'est écrit dans le panneau et sous
+    les yeux du streamer. Une liste qui affiche quatre membres l'un sous l'autre
+    pendant que trois autres widgets s'intercalent dans l'empilement réel
+    mentirait sur la seule chose que cette liste raconte. Grouper, c'est donc
+    aussi rapprocher dans l'empilement — un effet qu'on assume et qu'on annonce.
+
+    Le groupe prend la place de son PREMIER membre, et les membres gardent leur
+    ordre relatif : la disposition déjà réglée bouge le moins possible.
+    """
+    if not groupes:
+        return ordre
+    par_cle = {cle: g["id"] for g in groupes for cle in g["membres"]}
+    sortie: list[str] = []
+    faits: set[str] = set()
+    for cle in ordre:
+        gid = par_cle.get(cle)
+        if gid is None:
+            sortie.append(cle)
+            continue
+        if gid in faits:
+            continue
+        faits.add(gid)
+        sortie.extend([c for c in ordre if par_cle.get(c) == gid])
+    return sortie
+
+
 def _fusionner_scene(brut: dict) -> dict | None:
     """Une scène valable, ou `None` si elle n'a pas de slug exploitable.
 
@@ -280,11 +444,17 @@ def _fusionner_scene(brut: dict) -> dict | None:
     # Un élément absent de `ordre` ne serait pas seulement mal empilé : il ne
     # serait pas rendu du tout. On complète toujours.
     ordre += [c for c in _ORDRE_DEFAUT if c not in ordre]
+    # Les groupes APRÈS le complètement de l'ordre : `_ordre_avec_groupes` lit
+    # `ordre` pour ranger les membres, et un membre qui n'y serait pas encore
+    # disparaîtrait de la sortie.
+    groupes = _fusionner_groupes(brut.get("groupes"))
+    ordre = _ordre_avec_groupes(ordre, groupes)
     nom = brut.get("nom")
     return {
         "slug": slug,
         "nom": nom.strip() if isinstance(nom, str) and nom.strip() else slug,
         "ordre": ordre,
+        "groupes": groupes,
         "elements": elements,
     }
 
