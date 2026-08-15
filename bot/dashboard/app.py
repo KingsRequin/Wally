@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 # qu'un correctif par route, celles à venir comprises.
 mimetypes.add_type("image/webp", ".webp")
 
+# Les `?v=…` des feuilles et des scripts du panneau admin, quelle que soit
+# l'empreinte déjà écrite dans `index.html`.
+_ASSET_VERSION_RE = re.compile(r'(src|href)="(/static/[^"?]+\.(?:js|css))\?v=[^"]*"')
+
 STATIC_DIR = Path(__file__).parent / "static"
 PUBLIC_UI_DIR = Path("public-ui")
 STARTER_DIR = STATIC_DIR / "public-starter"
@@ -172,9 +176,12 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     @app.get("/admin")
     async def admin_panel():
         html = (STATIC_DIR / "index.html").read_text()
-        html = html.replace("style.css?v=6", f"style.css?v={_asset_version}")
-        html = html.replace("app.js?v=6", f"app.js?v={_asset_version}")
-        html = html.replace("theme.css?v=6", f"theme.css?v={_asset_version}")
+        # Une expression, plutôt que trois `replace` sur un numéro écrit en
+        # dur : `index.html` était passé à `app.js?v=8` sans que ces lignes
+        # suivent, et le cache-bust du panneau ne visait plus rien depuis. Le
+        # motif attrape désormais n'importe quelle empreinte, sur n'importe
+        # quel fichier statique — les scripts ajoutés plus tard compris.
+        html = _ASSET_VERSION_RE.sub(rf'\1="\2?v={_asset_version}"', html)
         return HTMLResponse(
             html,
             headers={
