@@ -3885,7 +3885,18 @@ body.is-mobile .mobile-back-btn {
   text-overflow: ellipsis;
   overflow: hidden;
   pointer-events: none;
+  /* AU REPOS, PAS D'ÉTIQUETTE. Trente-quatre noms posés en permanence sur
+     l'aperçu — dont vingt-six empilés au même endroit — recouvraient
+     exactement ce qu'on est venu regarder : la page réelle. Le nom reste à
+     portée immédiate (survol, ou repère choisi), mais l'état de repos laisse
+     voir l'overlay.
+     `opacity` et non `display` : la boîte garde sa place, donc le repère ne
+     change pas de taille entre repos et survol. */
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
+.ovl-rect:hover .ovl-rect-nom,
+.ovl-rect.actif .ovl-rect-nom { opacity: 1; }
 
 /* ── Les réglages, sous la surface ───────────────────────────────────── */
 
