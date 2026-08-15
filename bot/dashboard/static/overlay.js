@@ -44,7 +44,12 @@
   function showBubble(node, mode) {
     clearTimeout(hideTimer);
     clearTimeout(sayTimer);
-    bubble.className = mode === "thought" ? "thought" : "speech";
+    // Par `classList` et non par `className` : la bulle porte aussi
+    // `sans-pointe`, posé par `overlay_layout.js` quand l'avatar est masqué
+    // dans la scène. Une réaffectation entière l'effacerait à la première
+    // réplique, et la pointe se remettrait à viser le vide.
+    bubble.classList.remove("visible", "speech", "thought");
+    bubble.classList.add(mode === "thought" ? "thought" : "speech");
     bubbleText.replaceChildren(node);
     // Force un reflow pour que la transition reparte même sur deux bulles
     // consécutives.
@@ -158,7 +163,33 @@
   // ── Widgets ──────────────────────────────────────────────────────────────
   // Rendus en CSS 3D plutôt qu'avec un moteur : plus léger, et composé par le
   // GPU du streamer — qui fait déjà tourner le jeu et l'encodage.
-  const widgets = document.getElementById("widgets");
+  //
+  // Chaque widget entre dans le conteneur de son `kind` (`[data-element]`), et
+  // non plus dans un `#widgets` commun : c'est ce qui lui donne sa place, son
+  // échelle et son empilement propres (`overlay_layout.js`). Les widgets EN
+  // PLACE se cherchent donc à travers tous les conteneurs — un seul est
+  // affiché à la fois, `renderWidget` retirant le précédent avant d'ajouter.
+  const WIDGET_EN_PLACE = "[data-element] > .widget:not(.leaving)";
+  const WIDGET_TOUS = "[data-element] > .widget";
+
+  /** Le conteneur d'un `kind`, créé au besoin.
+   *
+   *  Un widget dont le conteneur manque ne s'afficherait NULLE PART, sans la
+   *  moindre erreur — la panne la plus coûteuse de cet overlay. On en crée un
+   *  plutôt que de perdre la carte en silence ; la console dit lequel manque au
+   *  HTML, et un test Python le rattrape au dépôt.
+   */
+  function hoteWidget(kind) {
+    let hote = document.querySelector(`[data-element="${kind}"]`);
+    if (!hote) {
+      console.error("overlay : aucun conteneur pour le widget", kind);
+      hote = document.createElement("div");
+      hote.dataset.element = kind;
+      stage.appendChild(hote);
+    }
+    return hote;
+  }
+
   let widgetTimer = null;
 
   // Les valeurs publiées à l'apparition PRÉCÉDENTE du duel Apex, pour faire
@@ -912,9 +943,12 @@
     activeWheelBox = null;
   }
 
-  /** Le widget en place, en ignorant ceux qui finissent de sortir. */
+  /** Le widget en place, en ignorant ceux qui finissent de sortir.
+   *
+   *  Cherché à travers TOUS les conteneurs d'éléments : il n'y en a qu'un à la
+   *  fois, mais il n'est plus toujours dans le même. */
   function currentWidget() {
-    return widgets.querySelector(".widget:not(.leaving)");
+    return document.querySelector(WIDGET_EN_PLACE);
   }
 
   /** Retire UN widget et coupe ce qu'il faisait tourner. Un compte à rebours
@@ -928,7 +962,12 @@
     // suivante vient de monter pendant le recouvrement.
     if (activeWheelBox === box) disposeWheel();
     box.remove();
-    if (!widgets.firstElementChild) document.body.classList.remove("widget-on");
+    // Plus AUCUNE carte nulle part — sortantes comprises : l'avatar et la bulle
+    // reviennent. Le test portait sur le premier enfant de `#widgets`, qui n'a
+    // plus lieu d'être ; les conteneurs, eux, restent en place, vides.
+    if (!document.querySelector(WIDGET_TOUS)) {
+      document.body.classList.remove("widget-on");
+    }
   }
 
   /** Retire les widgets EN PLACE.
@@ -937,13 +976,13 @@
    *  seuls, et c'est ce qui permet à la suivante d'entrer pendant qu'ils
    *  s'en vont. `tout` force le nettoyage complet, pour une annulation. */
   function clearWidgets(tout = false) {
-    const cibles = tout
-      ? widgets.querySelectorAll(".widget")
-      : widgets.querySelectorAll(".widget:not(.leaving)");
+    const cibles = document.querySelectorAll(tout ? WIDGET_TOUS : WIDGET_EN_PLACE);
     cibles.forEach(disposeWidget);
     if (tout) {
       disposeWheel();
-      widgets.replaceChildren();
+      // Les cartes seulement. `replaceChildren()` sur les conteneurs viderait
+      // AUSSI l'avatar et la bulle, qui vivent dans les leurs.
+      document.querySelectorAll(WIDGET_TOUS).forEach((n) => n.remove());
       document.body.classList.remove("widget-on");
     }
   }
@@ -1136,7 +1175,9 @@
       const box = el("div", "widget");
       box.dataset.kind = kind;
       box.appendChild(build(params));
-      widgets.appendChild(box);
+      // Dans le conteneur de SON `kind` : c'est lui qui porte la place, la
+      // taille et l'empilement réglés pour ce widget.
+      hoteWidget(kind).appendChild(box);
       if (refresh) {
         box.classList.add("visible");   // déjà à l'écran : pas de réapparition
       } else {

@@ -112,20 +112,60 @@
       cursor: none;
     }
 
+    /* Le cadre entier, et rien d'autre. `#stage` n'impose plus AUCUN flux :
+       il ne sert qu'à masquer l'overlay d'un bloc (`.hidden`, piloté par le
+       SSE) et à donner un repère aux positions absolues des éléments. La rangée
+       flex qu'il portait est ce qu'on supprime : elle imposait une place à
+       l'avatar et à la bulle, alors que c'est le modèle qui la donne. */
     #stage {
       position: absolute;
-      left: 0;
-      bottom: 0;
-      /* Garde-fou : quoi qu'il arrive, le décor reste dans la source. */
-      max-width: 100vw;
-      max-height: 100vh;
-      display: flex;
-      align-items: flex-end;
-      gap: 10px;
-      padding: 12px;
+      inset: 0;
       transition: opacity var(--t-slow) var(--ease);
     }
     #stage.hidden { opacity: 0; }
+
+    /* ── Placement piloté par le modèle ────────────────────────────────────
+       Chaque élément est posé en absolu et reçoit ses bords, sa translation et
+       son échelle de `overlay_layout.js`. Aucune position n'est écrite ici :
+       ce fichier ne décrit plus QUE l'apparence.
+
+       `#widgets` disparaît en tant que conteneur : il imposait un flux commun
+       à dix-sept widgets, ce qui est exactement ce qu'on supprime. Chaque
+       `kind` a désormais son conteneur, et `overlay.js` y dépose sa carte. */
+    [data-element] {
+      position: absolute;
+      /* Sans lui, une largeur en pourcentage se calculerait sur le viewport
+         entier ; les widgets ont leur taille propre, ils ne s'étirent pas. */
+      width: max-content;
+      max-width: 92vw;
+      /* L'overlay est une source OBS : rien n'y est cliquable, et un clic
+         perdu sur une carte capterait le curseur du streamer. */
+      pointer-events: none;
+      /* Perspective : la pièce et le dé tournent en 3D réelle. Elle était
+         posée sur `#widgets` — sans elle ici, la pièce s'aplatit. */
+      perspective: 600px;
+    }
+
+    /* Repli avant que le modèle ne réponde : la page n'est jamais un tas
+       d'éléments empilés dans le coin. Volontairement GROSSIER — trois zones,
+       pas vingt-six réglages recopiés du Python, qui divergeraient au premier
+       ajustement. Le placement réel vient de `/api/public/overlay-layout`. */
+    [data-element] { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    [data-element="avatar"] {
+      left: auto; top: auto; right: 3%; bottom: 20%; transform: scale(.55);
+      transform-origin: right bottom;
+    }
+    [data-element="bubble"] {
+      left: auto; top: auto; right: 5%; bottom: 38%; transform: scale(.9);
+      transform-origin: right bottom;
+    }
+    [data-element="bingo"],
+    [data-element="stats"],
+    [data-element="talkers"] {
+      left: 3%; top: 18%; transform: scale(.9); transform-origin: left top;
+    }
+    [data-element="talkers"] { top: 40%; }
+    [data-element="stats"]   { top: 60%; }
 
     /* ── Avatar ─────────────────────────────────────────────────────────── */
     #avatar-slot {
@@ -169,29 +209,19 @@
     }
 
     /* ── Ancrage à droite (défaut) ──────────────────────────────────────
-       La source est posée sur le bord DROIT de l'écran : tout part donc de la
-       droite, sinon les bulles s'étalent vers l'extérieur et sortent du cadre.
-       L'avatar est retourné pour continuer de faire face au contenu.
-       `?side=left` rétablit l'ancrage à gauche. */
-    body[data-side="right"] #stage {
-      left: auto;
-      right: 0;
-      flex-direction: row-reverse;
-    }
-    /* Le miroir porte sur le SLOT, pas sur l'avatar : l'animation de réaction
-       (.reacting) écrit sur `transform` et effacerait un scaleX posé là. */
+       La source est posée sur le bord DROIT de l'écran. Les POSITIONS viennent
+       désormais du modèle : il ne reste ici que ce qui regarde vers le contenu
+       — l'avatar retourné, et l'accroche de la bulle. `?side=left` rétablit
+       l'ancrage à gauche.
+       Le miroir porte sur le SLOT, pas sur l'avatar : l'animation de réaction
+       (.reacting) écrit sur `transform` et effacerait un scaleX posé là — et
+       le slot n'est plus le nœud placé, c'est son conteneur qui l'est. */
     body[data-side="right"] #avatar-slot { transform: scaleX(-1); }
-    body[data-side="right"] #widgets { left: auto; right: 12px; }
     body[data-side="right"] .widget { justify-content: flex-end; }
 
-    /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté. */
-    body[data-side="right"] #bubble.speech::after {
-      left: auto;
-      right: 10px;
-      /* Le triangle est effilé vers la GAUCHE : retourné, il pointe vers
-         l'avatar quand celui-ci est à droite. */
-      clip-path: polygon(0 0, 100% 0, 100% 100%);
-    }
+    /* Pointes de bulle : elles visent l'avatar, donc elles changent de côté.
+       La pointe de PAROLE n'a plus de miroir : elle pivote (`--angle-pointe`),
+       ce qui couvre les quatre côtés au lieu de deux. */
     body[data-side="right"] #bubble.thought::after  { left: auto; right: 34px; }
     body[data-side="right"] #bubble.thought::before { left: auto; right: 14px; }
 
@@ -199,12 +229,14 @@
     #bubble {
       position: relative;
       /* Une box n'a plus besoin d'être étroite : c'est l'ovale qui paraissait
-         plat au-delà d'un certain rapport, pas un rectangle. La borne basse
-         suit la source OBS : 234px = avatar (200) + gap (10) + padding (24). */
+         plat au-delà d'un certain rapport, pas un rectangle. La seconde borne
+         ne vaut plus que pour une source ÉTROITE — la bulle ne partage plus sa
+         rangée avec l'avatar, elle a sa propre place. */
       max-width: min(300px, calc(100vw - 234px));
-      /* Remontée à hauteur de tête : la bulle flotte en haut de la mascotte
-         plutôt qu'à ses pieds. */
-      margin-bottom: 132px;
+      /* La marge basse de 132 px a disparu avec la rangée flex : elle remontait
+         la bulle à hauteur de tête PAR-DESSUS l'avatar, qui la poussait par le
+         bas. La bulle a maintenant sa place à elle (`bubble` y=62, l'avatar
+         y=80) ; la marge s'ajouterait à cet écart et la décrocherait. */
       /* Marges d'une box : les 36 px en Y ne servaient qu'à éloigner le texte
          d'une silhouette qui se refermait sur les côtés. */
       padding: 16px 22px;
@@ -246,11 +278,12 @@
        Il est sur un élément INTERNE, sinon le `overflow: hidden` rognerait la
        queue de la bulle, qui déborde volontairement. */
     #bubble-text {
-      /* 232 = marge basse (132) + marges hautes et basses de la bulle (72) +
-         padding du décor (12) + un peu d'air. Le compte doit couvrir TOUT ce qui
-         s'ajoute sous et autour du texte : borné à `100vh` moins la seule marge
-         basse, le sommet de la bulle sortait par le haut de la source. */
-      max-height: calc(100vh - 232px);
+      /* 120 = marges hautes et basses de la bulle (72) + la place que le modèle
+         lui laisse sous elle + un peu d'air. Le compte doit couvrir TOUT ce qui
+         s'ajoute sous et autour du texte : borné à `100vh` tout court, le
+         sommet de la bulle sortait par le haut de la source. Les 132 px de
+         marge basse en sont retirés, la marge elle-même ayant disparu. */
+      max-height: calc(100vh - 120px);
       overflow: hidden;
     }
 
@@ -263,19 +296,37 @@
 
        Le rayon de 18 px interdit d'aller jusqu'au coin exact — le bord s'y
        incurve et un liseré de fond apparaîtrait entre la boîte et la pointe.
-       Elle mord donc de 8 px dans la boîte, hauteur à laquelle le coin n'est
-       plus rentré que de 3 px : à 10 px du bord, son angle supérieur reste au
-       large. */
+       Elle mord donc dans la boîte : sa BASE est à 6 px au-dessus du bord bas,
+       à l'intérieur de l'aplat, et seule sa pointe dépasse.
+
+       Elle PIVOTE désormais autour de cette base (`--angle-pointe`, posé par
+       `overlay_layout.js`) au lieu d'être figée dans un coin par des règles
+       miroir : la bulle se place librement, une position de plus n'aurait pas
+       eu sa règle. Le coin de départ suit lui aussi l'avatar (`--x-pointe`).
+       Défauts : coin droit, pointe vers le bas — la disposition d'origine.
+
+       JAMAIS d'`overflow` sur `#bubble` : la pointe est un pseudo-élément qui
+       déborde volontairement, et elle a disparu des semaines pour ça. */
     #bubble.speech::after {
       content: "";
       position: absolute;
-      left: 10px;
-      bottom: -16px;
-      width: 30px;
-      height: 24px;
+      /* `left` porte le PIVOT : la base du triangle, pas son sommet. */
+      left: var(--x-pointe, calc(100% - 24px));
+      /* La boîte fait 22 px de haut, son centre tombe donc 6 px au-dessus du
+         bord bas de la bulle : la base reste noyée dans l'aplat. */
+      bottom: -5px;
+      width: 28px;
+      height: 22px;
       background: var(--bulle-fond);
-      clip-path: polygon(100% 0, 0 0, 0 100%);
+      /* Au repos, le triangle est effilé vers la DROITE (0°) : la rotation le
+         fait ensuite viser l'avatar, où qu'il soit. */
+      clip-path: polygon(0 0, 100% 50%, 0 100%);
+      transform-origin: 0 50%;
+      transform: rotate(var(--angle-pointe, 90deg));
     }
+    /* L'avatar masqué, la pointe viserait le vide : elle s'efface. */
+    #bubble.sans-pointe::after,
+    #bubble.sans-pointe::before { display: none; }
 
     /* Bulle de pensée : un vrai nuage de BD, pour qu'on ne la confonde JAMAIS
        avec une réplique. */
@@ -348,23 +399,10 @@
     }
 
     /* ── Widgets (pile ou face, dé, uptime…) ────────────────────────────── */
-    /* Les widgets occupent LA PLACE de l'avatar plutôt que de flotter au-dessus :
-       superposés à son emplacement, ancrés sur le même bord bas, et l'avatar
-       s'efface le temps de l'affichage. Largeur bornée à celle du slot pour ne
-       jamais empiéter sur la bulle, qui commente le widget. */
-    #widgets {
-      position: absolute;
-      left: 12px;
-      right: 12px;
-      bottom: 12px;
-      top: 12px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: flex-start;
-      pointer-events: none;
-      /* Perspective partagée : les enfants tournent en 3D réelle. */
-      perspective: 600px;
-    }
+    /* Chaque widget vit dans le conteneur de son `kind` (`[data-element]`, plus
+       haut), qui porte sa position, son échelle et sa perspective. Le conteneur
+       unique `#widgets` a disparu : c'est lui qui obligeait dix-sept widgets à
+       partager une place, un bord et un ordre. */
     /* La bulle s'efface pendant un widget : l'écran est petit, mieux vaut une
        chose lisible que deux qui se disputent la place. */
     body.widget-on #bubble { opacity: 0; transform: translateY(6px) scale(.97); }
@@ -389,13 +427,17 @@
     }
     body[data-side="right"] .widget { transform-origin: bottom right; }
     /* Le widget qui SORT quitte le flux : la suivante prend sa place tout de
-       suite, pendant qu'il finit de partir. `#widgets` est déjà positionné, et
-       `bottom: 0` le laisse exactement là où il était. */
+       suite, pendant qu'il finit de partir. Son conteneur est déjà positionné,
+       et `left/bottom: 0` le laisse exactement là où il était.
+       `width: max-content` est INDISPENSABLE depuis qu'il a son propre
+       conteneur : hors flux, il ne le dimensionne plus, le conteneur en
+       `max-content` retombe à zéro et un `width: 100%` écraserait la carte
+       pendant toute sa sortie. */
     .widget.leaving {
       position: absolute;
       left: 0;
-      right: 0;
       bottom: 0;
+      width: max-content;
     }
     .widget.visible {
       opacity: 1;
@@ -1028,9 +1070,10 @@
     }
     .planning img {
       display: block;
-      /* Les 40 px retranchés : les 12 px d'`#widgets` de chaque côté, plus les
-         8 px de padding de la carte. Mesuré sur la source réelle (526 x 296),
-         l'image fait alors 455 px de large — contre 308 à côté de l'avatar. */
+      /* Les 40 px retranchés : une marge de 12 px de chaque côté (l'ancien
+         `#widgets` la posait, le conteneur d'élément la laisse au modèle), plus
+         les 8 px de padding de la carte. Mesuré sur la source réelle
+         (526 x 296), l'image fait alors 455 px de large. */
       max-width: calc(100vw - 40px);
       max-height: calc(100vh - 40px);
       width: auto; height: auto;
@@ -1251,18 +1294,60 @@
   </style>
 </head>
 <body data-side="right">
+  <!-- Un conteneur par élément du modèle (`bot/core/overlay_layout.py`) : ils
+       ne partagent plus ni place ni bord. `overlay_layout.js` leur pose leur
+       position, leur échelle et leur empilement ; `overlay.js` dépose la carte
+       d'un widget dans le conteneur de son `kind`.
+
+       L'ORDRE du document est l'empilement de repli, avant que le modèle n'ait
+       répondu : il suit `_ORDRE_DEFAUT` à l'envers — le dernier écrit passe
+       devant. Un test Python vérifie qu'aucune clé du modèle n'y manque : un
+       conteneur absent, c'est un widget qui n'apparaît nulle part et ne dit
+       rien. -->
   <div id="stage">
+    <div data-element="stats"></div>
+    <div data-element="bingo"></div>
+    <div data-element="talkers"></div>
+    <div data-element="rotator"></div>
+    <div data-element="rps"></div>
+    <div data-element="countdown"></div>
+    <div data-element="gauge"></div>
+    <div data-element="wheel"></div>
+    <div data-element="dice"></div>
+    <div data-element="coinflip"></div>
+    <div data-element="counter"></div>
+    <div data-element="pinned"></div>
+    <div data-element="hangman"></div>
+    <div data-element="poll"></div>
+    <div data-element="versus"></div>
+    <div data-element="wave"></div>
+    <div data-element="raid"></div>
+    <div data-element="quote"></div>
+    <div data-element="prediction"></div>
+    <div data-element="planning"></div>
+    <div data-element="clip_top"></div>
+    <div data-element="clip"></div>
+    <div data-element="meme"></div>
+    <div data-element="image"></div>
+
     <!-- Avatar : animation WebM en boucle, volontairement PAS liée aux émotions
          (Rive écarté, son export étant payant). `muted` est requis pour que la
-         lecture automatique démarre sans interaction, ce qu'OBS ne fait jamais. -->
-    <div id="avatar-slot">
-      <video id="avatar" src="/static/avatar/wally.webm"
-             autoplay loop muted playsinline disablepictureinpicture></video>
-    </div>
-    <div id="bubble" class="speech"><div id="bubble-text"></div></div>
-  </div>
+         lecture automatique démarre sans interaction, ce qu'OBS ne fait jamais.
 
-  <div id="widgets"></div>
+         Le conteneur ENVELOPPE le slot au lieu de le remplacer : `#avatar-slot`
+         porte déjà un `transform` (le miroir de `data-side`) et ses enfants une
+         animation, que le `transform` du placement écraserait. Même raison pour
+         la bulle, dont le `transform` porte l'apparition. -->
+    <div data-element="avatar">
+      <div id="avatar-slot">
+        <video id="avatar" src="/static/avatar/wally.webm"
+               autoplay loop muted playsinline disablepictureinpicture></video>
+      </div>
+    </div>
+    <div data-element="bubble">
+      <div id="bubble" class="speech"><div id="bubble-text"></div></div>
+    </div>
+  </div>
 
   <!-- canvas-confetti (ISC) — servi en local, jamais depuis un CDN : l'overlay
        tourne dans OBS et ne doit dépendre d'aucun réseau tiers.
@@ -1272,6 +1357,9 @@
   <script src="/static/vendor/spin-wheel.js"></script>
   <!-- Chargé avant `overlay.js`, qui s'en sert pour la sortie des bulles. -->
   <script src="/static/glitch.js"></script>
+  <!-- Chargé avant `overlay.js`, qui y dépose ses widgets et lui demande le
+       placement. -->
+  <script src="/static/overlay_layout.js"></script>
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay.js"></script>
 </body>

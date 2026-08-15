@@ -39,6 +39,7 @@ _STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 _OVERLAY_FILES = (
     "overlay.html",
     "overlay.js",
+    "overlay_layout.js",
     "overlay_apex.js",
     "glitch.js",
     "vendor/canvas-confetti.js",
