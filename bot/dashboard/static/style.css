@@ -3681,6 +3681,11 @@ body.is-mobile .mobile-back-btn {
 .ovl-act:hover { background: rgba(255, 255, 255, 0.06); }
 .ovl-act.actif { border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.12); }
 .ovl-act.inactif { opacity: 0.4; }
+/* L'œil sous cadenas : le verrou bloque la visibilité comme la position. Grisé
+   plutôt qu'absent — un bouton qui disparaît fait douter de ce qu'on voit ; son
+   infobulle dit pourquoi et où lever le verrou. */
+.ovl-act:disabled { opacity: 0.28; cursor: not-allowed; }
+.ovl-act:disabled:hover { background: transparent; }
 
 /* ── La surface de placement ─────────────────────────────────────────── */
 
@@ -3755,10 +3760,12 @@ body.is-mobile .mobile-back-btn {
   border-color: rgba(255, 255, 255, 0.28);
 }
 .ovl-surface.avec-apercu .ovl-rect:hover { background: rgba(6, 182, 212, 0.10); }
+/* Un fond derrière le nom quand l'aperçu est là : sur une image de jeu, du
+   texte nu ne se lit pas. En pixels d'ÉCRAN — l'étiquette a défait l'échelle du
+   repère, un padding de 12 px y ferait un pavé. */
 .ovl-surface.avec-apercu .ovl-rect-nom {
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 8px;
-  padding: 2px 12px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
 }
 
 /* La bascule « Estomper les repères ». Celui qu'on règle et celui qu'on
@@ -3787,6 +3794,22 @@ body.is-mobile .mobile-back-btn {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Combien de repères portent une taille LUE dans l'aperçu. Sans ce compte, les
+   pointillés passeraient pour une coquetterie graphique au lieu de dire « je ne
+   sais pas encore ». */
+.ovl-apercu-mesures {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  background: rgba(6, 182, 212, 0.10);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 12px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .ovl-estomper {
   display: flex;
   align-items: center;
@@ -3895,6 +3918,25 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-surface.avec-apercu .ovl-rect.hors-cadre { border-color: rgba(251, 146, 60, 0.9); }
 
+/* UNE TAILLE SUPPOSÉE SE VOIT. Ce repère-là ne dit pas où est l'élément : il
+   dit un ordre de grandeur, faute d'avoir pu LIRE la vraie taille dans
+   l'aperçu — le widget n'y affiche rien. C'est le reproche exact auquel ce lot
+   répond : « la box correspond pas à la taille du widget ». Plutôt que de
+   choisir entre un chiffre faux et pas de repère du tout, on rend l'ordre de
+   grandeur EN LE DISANT — pointillé fin, et un « ≈ » devant le nom. Le ▶ de la
+   ligne affiche l'élément pour de vrai, et le repère se cale dessus tout seul.
+
+   Écrit APRÈS les états et neutralisé par eux (`:not`) : le trait qui dit ce
+   qu'on manipule (choisi, sélectionné, survolé) et celui qui alerte (hors
+   cadre, masqué) passent avant la provenance de la taille. Le « ≈ » du nom,
+   lui, reste dans tous les cas. */
+.ovl-rect.estime:not(.actif):not(.selectionne):not(.survole):not(.hors-cadre):not(.masque),
+.ovl-surface.avec-apercu
+  .ovl-rect.estime:not(.actif):not(.selectionne):not(.survole):not(.hors-cadre):not(.masque) {
+  border-style: dotted;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 /* Les quatre poignées d'angle. Hors du repère, donc jamais réduites par son
    `scale()` : sur un élément à 0,2 elles feraient deux pixels. */
 .ovl-poignee {
@@ -3959,11 +4001,31 @@ body.is-mobile .mobile-back-btn {
 .ovl-coords.visible { display: block; }
 .ovl-coords.alerte { border-color: rgba(251, 146, 60, 0.5); color: #fdba74; }
 
+/* L'étiquette d'un repère : PETITE, DANS UN COIN, JAMAIS PLUS LARGE QUE LUI.
+
+   Elle était centrée dans le repère et dimensionnée en pixels du canvas 1920 :
+   elle subissait donc le `scale()` du repère, et s'affichait d'autant plus
+   grosse que la surface est large et le widget grand. Sur un écran large,
+   « Meme de la communauté » barrait le milieu de l'aperçu — l'exact contraire
+   de ce qu'on demande à un repère, qui est de laisser voir ce qu'il repère.
+
+   Elle DÉFAIT donc l'échelle du repère (`--ovl-contre`, posée par
+   `appliquerStyle`) : 11 px à l'écran, toujours, quel que soit le zoom du
+   repère. Et elle se borne à la largeur du repère une fois cette échelle
+   défaite (`--ovl-echelle`) — sans quoi une étiquette contre-zoomée déborderait
+   de `1/e` fois sa boîte. Les replis `1` valent pour un repère pas encore
+   stylé : mieux vaut une étiquette à taille nominale qu'une étiquette absente. */
 .ovl-rect-nom {
-  /* En pixels du canvas 1920 : la mise à l'échelle le réduit d'autant. À 22 px
-     il tombait sous les 8 px à l'écran — illisible dès que l'aperçu met une
-     image derrière. */
-  font-size: 34px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scale(var(--ovl-contre, 1));
+  transform-origin: left top;
+  max-width: calc(100% * var(--ovl-echelle, 1));
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 1px 6px;
+  border-radius: 0 0 8px 0;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -4055,6 +4117,13 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-ancrage:hover { background: rgba(255, 255, 255, 0.09); }
 .ovl-ancrage.actif { background: #06b6d4; border-color: #06b6d4; }
+/* La grille d'ancrages sous cadenas : changer d'ancrage EST un déplacement
+   (x et y sont recalculés), le verrou la ferme donc au même titre que X et Y.
+   L'ancrage courant reste lisible — on doit pouvoir voir ce qu'on a verrouillé. */
+.ovl-ancrage:disabled { opacity: 0.4; cursor: not-allowed; }
+.ovl-ancrage:disabled:hover { background: rgba(255, 255, 255, 0.04); }
+.ovl-ancrage.actif:disabled { opacity: 0.55; }
+.ovl-ancrage.actif:disabled:hover { background: #06b6d4; }
 
 /* ── La barre d'outils de la sélection ───────────────────────────────── */
 

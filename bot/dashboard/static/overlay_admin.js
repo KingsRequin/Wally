@@ -52,6 +52,27 @@ window.OverlayAdmin = (function () {
     return (W && typeof W.taille === "function" && W.taille(cle)) || TAILLE_REPLI;
   }
 
+  /** L'encombrement d'un élément, MESURÉ quand c'est possible.
+   *
+   *  La table de `WallyLayout` n'était qu'une supposition, et elle se voyait :
+   *  le repère du meme occupait 570 × 430 px de la surface pour un meme qui en
+   *  faisait 200 × 220. Un repère qui ment sur la taille ment sur TOUT ce qui
+   *  en découle — l'alignement colle la mauvaise boîte au bord, la répartition
+   *  calcule de faux espaces, le détecteur de débordement se trompe.
+   *
+   *  L'aperçu est la vraie page d'overlay, de même origine : on y lit donc la
+   *  taille réelle (`mesures`, alimentée par `mesurerTout()`). Le repli reste la
+   *  table — un aperçu absent, ou un widget qui n'affiche rien, n'a pas de
+   *  taille à lire. `reelle` dit LAQUELLE des deux on rend : le repère le
+   *  montre (traits pointillés) plutôt que de faire croire à une mesure qu'on
+   *  n'a pas.
+   */
+  function tailleRendue(cle) {
+    const m = mesures[cle];
+    if (m && m[0] > 0 && m[1] > 0) return { taille: m, reelle: true };
+    return { taille: tailleElement(cle), reelle: false };
+  }
+
   // La grille de neuf cases, dans l'ordre où elle s'affiche.
   const ANCRAGES = [
     "top-left", "top-center", "top-right",
@@ -120,6 +141,21 @@ window.OverlayAdmin = (function () {
   let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
   let survole = null;         // la clé de l'élément survolé, liste OU surface
   let raccourcisPoses = false;  // l'écouteur clavier du document, posé une fois
+
+  /** Les tailles LUES dans l'aperçu : clé → [largeur, hauteur] en pixels du
+   *  canvas 1920. Une clé absente vaut « pas mesurable » — le widget n'affiche
+   *  rien —, et le repère retombe alors sur l'estimation.
+   *
+   *  Déclaré ICI, avec le reste de l'état, et pas dans la section qui le
+   *  remplit : `geometrie()` le lit trois cents lignes plus haut, et un `const`
+   *  lu avant sa ligne lève une TDZ que `node --check` ne détecte pas.
+   */
+  const mesures = {};
+  let mesureRO = null;        // ResizeObserver posé dans l'aperçu
+  let mesureMO = null;        // MutationObserver posé dans l'aperçu
+  let mesureDoc = null;       // le document écouté, pour retirer les écouteurs
+  let mesureRaf = null;       // le regroupement d'une rafale de mutations
+  let mesureRelances = [];    // les re-mesures différées (transitions, images)
 
   // La scène qu'on éditait, d'une visite à l'autre. Sans elle, un F5 ramène sur
   // la scène par défaut : le réglage qu'on venait de publier sur une AUTRE
@@ -1044,12 +1080,21 @@ window.OverlayAdmin = (function () {
     poserInfobulle(corps, description(cle));
 
     const actions = creer("div", "ovl-el-actions");
-    actions.appendChild(bouton(
+    // L'œil est GRISÉ sous cadenas, comme les champs de la barre de réglages :
+    // le verrou bloque la visibilité au même titre que la position et la
+    // taille. Grisé plutôt qu'absent — un bouton qui disparaît fait douter de
+    // ce qu'on a sous les yeux.
+    const oeil = bouton(
       element.hidden ? "🚫" : "👁",
-      element.hidden ? "Masqué dans cette scène — cliquer pour montrer"
-                     : "Visible — cliquer pour masquer dans cette scène",
+      element.locked
+        ? "Verrouillé : ni déplacé, ni redimensionné, ni masqué. Le cadenas "
+          + "ci-contre le libère."
+        : (element.hidden ? "Masqué dans cette scène — cliquer pour montrer"
+                          : "Visible — cliquer pour masquer dans cette scène"),
       element.hidden ? "actif" : "",
-      function () { element.hidden = !element.hidden; apresBascule(cle); }));
+      function () { element.hidden = !element.hidden; apresBascule(cle); });
+    oeil.disabled = !!element.locked;
+    actions.appendChild(oeil);
     actions.appendChild(bouton(
       element.locked ? "🔒" : "🔓",
       element.locked ? "Verrouillé — il ne bougera pas au glisser"
@@ -1270,7 +1315,10 @@ window.OverlayAdmin = (function () {
    */
   function geometrie(cle, element, W, H) {
     const a = ancrage(element.anchor);
-    const t = tailleElement(cle);
+    // La taille MESURÉE dans l'aperçu quand elle existe, l'estimation sinon.
+    // Tout ce qui suit en dépend : l'alignement, la répartition, le détecteur
+    // de débordement et les poignées lisent cette même boîte.
+    const t = tailleRendue(cle).taille;
     const e = borner(element.scale, ECHELLE_MIN, ECHELLE_MAX, 1) * (W / CANVAS_W);
     const largeur = t[0] * e;
     const hauteur = t[1] * e;
@@ -1582,6 +1630,9 @@ window.OverlayAdmin = (function () {
   function chargerApercu(slug) {
     if (!noeuds.apercu || !slug || apercuSlug === slug) return;
     apercuSlug = slug;
+    // Le document qu'on mesurait s'en va : garder ses tailles collerait les
+    // repères d'une scène sur une autre.
+    oublierMesures();
     noeuds.cadre.classList.remove("avec-apercu");
     montrerRetry(false);
     etatApercu("Aperçu : chargement de " + urlScene(slug) + "…");
@@ -1608,6 +1659,7 @@ window.OverlayAdmin = (function () {
     etatApercu("Aperçu de " + urlScene(apercuSlug)
       + " — la mise en scène PUBLIÉE, pas le brouillon en cours.");
     ajusterApercu();
+    brancherMesures();
   }
 
   function montrerRetry(visible) {
@@ -1619,9 +1671,14 @@ window.OverlayAdmin = (function () {
   function echecApercu() {
     clearTimeout(apercuMinuteur);
     if (!noeuds.cadre) return;
+    // Sans document à lire, il n'y a plus une seule taille mesurée : on le DIT
+    // (tous les repères repassent en pointillés) au lieu de garder à l'écran
+    // des chiffres qui ne correspondent plus à rien.
+    oublierMesures();
     noeuds.cadre.classList.remove("avec-apercu");
     montrerRetry(true);
     etatApercu("Aperçu indisponible — placement sur les rectangles nommés.");
+    rendreSurface();
   }
 
   function etatApercu(texte) {
@@ -1643,6 +1700,216 @@ window.OverlayAdmin = (function () {
     noeuds.apercu.style.transform = "scale(" + (largeur / CANVAS_W) + ")";
   }
 
+  // ── Les tailles RÉELLES, lues dans l'aperçu ─────────────────────────────
+  //
+  // Le repère disait la taille d'une TABLE ÉCRITE À LA MAIN
+  // (`WallyLayout.TAILLES`), posée quand la surface n'affichait que des
+  // rectangles nommés. Elle n'a jamais été autre chose qu'un ordre de grandeur,
+  // et l'écart se voyait : 570 × 430 px de repère pour un meme qui en faisait
+  // 200 × 220. Or l'aperçu est maintenant la VRAIE page, de même origine — la
+  // taille est là, il suffit de la lire.
+  //
+  // Trois règles :
+  //
+  //   1. On lit `offsetWidth/offsetHeight` — la taille de MISE EN PAGE — et
+  //      jamais `getBoundingClientRect()`, qui porte déjà le `scale()` du
+  //      placement. Le panneau applique le sien : le compter deux fois donnerait
+  //      un repère au carré de l'échelle.
+  //   2. On mesure les ENFANTS du conteneur, pas le conteneur : celui-ci
+  //      accueille aussi les repères de « Tout afficher » (`.ghost`), taillés
+  //      sur la table estimée. Les mesurer rendrait l'estimation déguisée en
+  //      mesure.
+  //   3. Un widget qui n'affiche rien N'A PAS de taille. On ne devine pas : la
+  //      clé reste absente, `tailleRendue()` retombe sur la table, et le repère
+  //      le dit en pointillés. Le ▶ de la ligne l'affiche pour de vrai, et la
+  //      mesure arrive d'elle-même.
+
+  /** Le document de l'aperçu, s'il porte bien la page d'overlay. */
+  function docApercu() {
+    if (!noeuds.apercu) return null;
+    try {
+      const doc = noeuds.apercu.contentDocument;
+      return (doc && doc.body && doc.body.hasAttribute("data-scene-slug")) ? doc : null;
+    } catch (e) {
+      return null;   // origine devenue étrangère : il n'y a rien à lire
+    }
+  }
+
+  /** La taille du contenu RÉELLEMENT affiché dans un conteneur, ou `null`.
+   *
+   *  `null` et pas `[0, 0]` : les deux ne veulent pas dire la même chose, et
+   *  c'est toute la question de ce lot — « je ne sais pas » ne doit jamais
+   *  s'écrire comme un chiffre.
+   */
+  function mesurerConteneur(hote, vue) {
+    let largeur = 0, hauteur = 0;
+    const enfants = hote.children || [];
+    for (let i = 0; i < enfants.length; i++) {
+      const n = enfants[i];
+      if (n.classList && n.classList.contains("ghost")) continue;
+      const l = n.offsetWidth, h = n.offsetHeight;
+      if (!l || !h) continue;   // `display: none`, ou pas encore mis en page
+      // Au repos, la bulle et le cadre du rotateur restent dans le document à
+      // `opacity: 0` : ils ont une boîte, mais personne ne les voit. Les
+      // mesurer donnerait la taille d'une bulle VIDE (ses seules marges) comme
+      // celle de l'élément.
+      const st = vue.getComputedStyle ? vue.getComputedStyle(n) : null;
+      if (st) {
+        if (st.visibility === "hidden" || st.display === "none") continue;
+        if (parseFloat(st.opacity) <= 0.01) continue;
+      }
+      // Le max et non une somme : les enfants d'un conteneur sont TOUS dans la
+      // même cellule de grille (`[data-element] > * { grid-area: pile }`), donc
+      // superposés. C'est exactement ce que `width: max-content` calcule.
+      if (l > largeur) largeur = l;
+      if (h > hauteur) hauteur = h;
+    }
+    return (largeur > 0 && hauteur > 0) ? [largeur, hauteur] : null;
+  }
+
+  /** Relit toutes les tailles, et ne redessine QUE si l'une a changé.
+   *
+   *  La comparaison n'est pas une optimisation : `mesurerTout()` est rappelée
+   *  par un `ResizeObserver`, et redessiner sans condition ferait clignoter les
+   *  trente-quatre repères à chaque frame d'une animation d'entrée.
+   */
+  function mesurerTout() {
+    const doc = docApercu();
+    const vue = noeuds.apercu && noeuds.apercu.contentWindow;
+    if (!doc || !vue) return;
+    const vues = {};
+    const hotes = doc.querySelectorAll("[data-element]");
+    for (let i = 0; i < hotes.length; i++) {
+      const cle = hotes[i].getAttribute("data-element");
+      if (!cle) continue;
+      const m = mesurerConteneur(hotes[i], vue);
+      if (m) vues[cle] = m;
+    }
+    const cles = {};
+    Object.keys(mesures).forEach(function (c) { cles[c] = true; });
+    Object.keys(vues).forEach(function (c) { cles[c] = true; });
+    let change = false;
+    Object.keys(cles).forEach(function (c) {
+      const a = mesures[c], b = vues[c];
+      if (!a !== !b) { change = true; return; }
+      if (a && b && (a[0] !== b[0] || a[1] !== b[1])) change = true;
+    });
+    if (!change) return;
+    Object.keys(mesures).forEach(function (c) { delete mesures[c]; });
+    Object.keys(vues).forEach(function (c) { mesures[c] = vues[c]; });
+    // Pendant un geste, la surface ne se reconstruit pas (le repère serait
+    // détruit sous le pointeur) : le rendu complet revient au relâchement.
+    if (!manip) rendreSurface();
+    rendreCompteMesures();
+  }
+
+  /** Regroupe une rafale de mutations en une seule mesure, puis en repasse
+   *  quelques-unes plus tard.
+   *
+   *  Les relances différées ne sont pas de la superstition : une carte qui
+   *  ENTRE le fait par une transition d'opacité, et rien n'annonce sa fin quand
+   *  elle est interrompue ; une image de meme change de taille au décodage, un
+   *  peu après son insertion. Mesurer une seule fois, à l'instant de la
+   *  mutation, laisserait le repère sur l'estimation alors que le widget est à
+   *  l'écran — le défaut qu'on corrige, en plus discret.
+   */
+  function planifierMesure() {
+    if (mesureRaf !== null) return;
+    const suivant = window.requestAnimationFrame
+      || function (f) { return setTimeout(f, 16); };
+    mesureRaf = suivant(function () {
+      mesureRaf = null;
+      mesurerTout();
+    });
+    mesureRelances.forEach(clearTimeout);
+    mesureRelances = [150, 500, 1200].map(function (ms) {
+      return setTimeout(mesurerTout, ms);
+    });
+  }
+
+  /** Branche les guetteurs sur le document de l'aperçu.
+   *
+   *  Trois sources, parce qu'aucune ne suffit seule : le `ResizeObserver` voit
+   *  une image qui se décode mais pas une bulle qui s'allume (l'opacité ne
+   *  change aucune taille) ; le `MutationObserver` voit la classe qui l'allume
+   *  mais pas le décodage ; les fins de transition rattrapent l'entre-deux.
+   */
+  function brancherMesures() {
+    detacherMesures();
+    const doc = docApercu();
+    const vue = noeuds.apercu && noeuds.apercu.contentWindow;
+    if (!doc || !vue) return;
+    mesureDoc = doc;
+    const scene = doc.getElementById("stage") || doc.body;
+    const RO = vue.ResizeObserver || window.ResizeObserver;
+    if (RO && scene) {
+      mesureRO = new RO(planifierMesure);
+      const hotes = doc.querySelectorAll("[data-element]");
+      for (let i = 0; i < hotes.length; i++) mesureRO.observe(hotes[i]);
+    }
+    const MO = vue.MutationObserver || window.MutationObserver;
+    if (MO && scene) {
+      mesureMO = new MO(planifierMesure);
+      mesureMO.observe(scene, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ["class", "style", "src"],
+      });
+    }
+    // En capture : ces événements ne remontent pas jusqu'au document.
+    doc.addEventListener("transitionend", planifierMesure, true);
+    doc.addEventListener("animationend", planifierMesure, true);
+    doc.addEventListener("load", planifierMesure, true);
+    planifierMesure();
+  }
+
+  function detacherMesures() {
+    // La mesure en attente aussi : une frame programmée avant que l'aperçu ne
+    // s'en aille relirait l'ANCIEN document et remettrait ses tailles juste
+    // après qu'on les a jetées.
+    if (mesureRaf !== null && window.cancelAnimationFrame) {
+      window.cancelAnimationFrame(mesureRaf);
+    }
+    mesureRaf = null;
+    if (mesureRO) { mesureRO.disconnect(); mesureRO = null; }
+    if (mesureMO) { mesureMO.disconnect(); mesureMO = null; }
+    if (mesureDoc) {
+      mesureDoc.removeEventListener("transitionend", planifierMesure, true);
+      mesureDoc.removeEventListener("animationend", planifierMesure, true);
+      mesureDoc.removeEventListener("load", planifierMesure, true);
+      mesureDoc = null;
+    }
+    mesureRelances.forEach(clearTimeout);
+    mesureRelances = [];
+  }
+
+  /** Coupe les guetteurs ET jette les tailles. Appelée quand le document de
+   *  l'aperçu s'en va : des chiffres qui survivent à ce qu'ils décrivaient sont
+   *  pires qu'une estimation assumée. */
+  function oublierMesures() {
+    detacherMesures();
+    Object.keys(mesures).forEach(function (c) { delete mesures[c]; });
+    rendreCompteMesures();
+  }
+
+  /** Combien de repères disent une taille LUE, et combien une taille supposée.
+   *  Sans ce compte, les pointillés se lisent comme un choix graphique. */
+  function rendreCompteMesures() {
+    if (!noeuds.apercuMesures) return;
+    const scene = sceneCourante();
+    const cles = (scene && scene.ordre) || [];
+    let lus = 0;
+    cles.forEach(function (c) { if (mesures[c]) lus += 1; });
+    noeuds.apercuMesures.textContent = lus
+      ? lus + "/" + cles.length + " mesurés"
+      : "aucune taille mesurée";
+    noeuds.apercuMesures.title = lus
+      ? "Ces repères épousent la taille RÉELLE lue dans l'aperçu. Les autres, "
+        + "en pointillés, portent une taille supposée : le ▶ de leur ligne les "
+        + "affiche pour de vrai, et le repère se cale dessus."
+      : "Aucun widget n'est affiché dans l'aperçu : tous les repères portent "
+        + "une taille supposée. Le ▶ d'une ligne l'affiche pour de vrai.";
+  }
+
   /** Pose sur un nœud le placement d'un élément. Les quatre bords sont remis à
    *  `auto` d'abord : le style ne pose que les deux du côté de l'ancrage, et
    *  l'ancien resterait accroché — l'élément tenu des deux côtés à la fois. */
@@ -1651,6 +1918,23 @@ window.OverlayAdmin = (function () {
     noeud.style.top = noeud.style.bottom = "auto";
     const style = styleApercu(element, largeur);
     Object.keys(style).forEach(function (k) { noeud.style[k] = style[k]; });
+    // L'échelle du repère, et son inverse, posées pour l'ÉTIQUETTE.
+    //
+    // Tout ce qui vit dans un repère subit son `scale()` : le nom s'affichait
+    // donc en 34 px du canvas, c'est-à-dire d'autant plus gros que la surface
+    // est large et que le widget est grand — « énorme, au milieu, par-dessus
+    // l'aperçu » sur un écran large. Il DÉFAIT cette échelle (`--ovl-contre`)
+    // et garde la même taille à l'écran, quel que soit le repère.
+    // `--ovl-echelle` sert à le borner : `100 %` de la largeur du repère, une
+    // fois l'échelle défaite, dépasserait le repère de `1/e`.
+    //
+    // Posé ICI et pas dans `rendreSurface()` : c'est le point de style unique,
+    // et le geste de redimensionnement passe par lui (`rafraichirManip`) —
+    // ailleurs, l'étiquette enflerait pendant qu'on tire une poignée.
+    const e = borner(element.scale, ECHELLE_MIN, ECHELLE_MAX, 1)
+      * ((largeur || CANVAS_W) / CANVAS_W);
+    noeud.style.setProperty("--ovl-echelle", String(e > 0 ? e : 1));
+    noeud.style.setProperty("--ovl-contre", String(e > 0 ? 1 / e : 1));
   }
 
   function rendreSurface() {
@@ -1671,11 +1955,15 @@ window.OverlayAdmin = (function () {
     ordre.forEach(function (cle, rang) {
       const element = scene.elements[cle];
       if (!element) return;
-      const taille = tailleElement(cle);
+      const mesure = tailleRendue(cle);
       const rect = creer("div", "ovl-rect");
       rect.dataset.cle = cle;
-      rect.style.width = taille[0] + "px";
-      rect.style.height = taille[1] + "px";
+      rect.style.width = mesure.taille[0] + "px";
+      rect.style.height = mesure.taille[1] + "px";
+      // Traits pointillés tant qu'on n'a pas LU la taille : le repère ne doit
+      // pas se donner l'air d'une mesure quand il ne porte qu'un ordre de
+      // grandeur. C'est le reproche exact auquel ce lot répond.
+      if (!mesure.reelle) rect.classList.add("estime");
       appliquerStyle(rect, element, largeur);
       const choisi = cle === etat.elementCourant;
       // L'ordre de la liste EST l'empilement : le premier passe devant.
@@ -1700,9 +1988,18 @@ window.OverlayAdmin = (function () {
       const deborde = largeur > 0
         && horsCadre(geometrie(cle, element, largeur, hauteur), largeur, hauteur);
       if (deborde) rect.classList.add("hors-cadre");
-      rect.appendChild(creer("span", "ovl-rect-nom", libelle(cle)));
+      rect.appendChild(creer("span", "ovl-rect-nom",
+        (mesure.reelle ? "" : "≈ ") + libelle(cle)));
+      // La taille est DITE, en pixels du canvas 1920, et sa provenance avec :
+      // « ≈ 720 × 540 supposés » se corrige d'un clic sur ▶, « 586 × 642
+      // mesurés » se croit sur parole.
+      const dimensions = mesure.taille[0] + " × " + mesure.taille[1] + " px"
+        + (mesure.reelle
+           ? " (mesurés dans l'aperçu)"
+           : " (supposés — ▶ affiche l'élément pour le mesurer)");
       poserInfobulle(rect, libelle(cle) + " · " + cle
         + (description(cle) ? " — " + description(cle) : "")
+        + " — " + dimensions
         + (deborde ? " — ⚠ déborde du cadre" : ""));
       rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
       // Le sens retour : le repère éclaire sa ligne, et l'amène sous les yeux
@@ -1718,6 +2015,7 @@ window.OverlayAdmin = (function () {
     });
     majPoignees(largeur, hauteur);
     appliquerSurvol();
+    rendreCompteMesures();
   }
 
   // ── Le glisser, les poignées, le clavier ────────────────────────────────
@@ -2161,26 +2459,62 @@ window.OverlayAdmin = (function () {
     ["Échap", "désélectionner"],
     ["Flèches", "déplacer la sélection de 0,1 % (Maj : 1 %)"],
     ["Alt (pendant le glisser)", "suspendre l'aimantation"],
-    ["Suppr", "masquer la sélection, ou la remontrer"],
+    ["Suppr", "masquer la sélection, ou la remontrer — sauf ce qui est "
+              + "verrouillé"],
     ["L", "verrouiller la sélection, ou la libérer"],
     ["C puis V", "copier les réglages d'un élément (position, ancrage, "
                  + "échelle) et les coller sur la sélection"],
     ["?", "afficher ou masquer cette liste"],
   ];
 
+  /** Le tri d'une bascule d'ensemble : ce que le cadenas laisse changer, et ce
+   *  qu'il retient. Pure, donc TESTÉE — c'est ici que se joue « le verrou
+   *  bloque tout », et une garde qui vit à l'intérieur d'une fonction qui
+   *  redessine trois listes ne se vérifie qu'à l'œil.
+   *
+   *  `locked` fait exception à lui-même : sans quoi, une fois verrouillé, plus
+   *  rien ne pourrait jamais lever le verrou.
+   */
+  function cibleBascule(scene, cles, champ) {
+    const elements = (scene && scene.elements) || {};
+    const libres = [], bloques = [];
+    (cles || []).forEach(function (c) {
+      const el = elements[c];
+      if (!el) return;
+      if (champ !== "locked" && el.locked) bloques.push(c);
+      else libres.push(c);
+    });
+    return { libres: libres, bloques: bloques };
+  }
+
   /** La bascule d'ENSEMBLE. Inverser chaque élément séparément ne convergerait
    *  jamais sur une sélection mi-visible mi-masquée : elle clignoterait d'un
-   *  appui à l'autre sans jamais être toute visible ni toute masquée. */
+   *  appui à l'autre sans jamais être toute visible ni toute masquée.
+   *
+   *  LE CADENAS BLOQUE TOUT — position, taille ET visibilité. Le raisonnement
+   *  « le verrou ne porte que sur la position » avait sa logique, mais il
+   *  laissait `Suppr` faire disparaître de l'antenne un élément qu'on avait
+   *  explicitement mis à l'abri, et c'est le geste le plus facile à faire par
+   *  mégarde de tout le panneau. Un élément verrouillé est un élément auquel on
+   *  ne touche pas sans le déverrouiller d'abord.
+   *
+   *  Le verrou LUI-MÊME fait exception, évidemment : sans quoi rien ne pourrait
+   *  plus jamais le lever.
+   */
   function basculerChamp(champ, motActif, motInactif) {
     const cles = selection();
     if (!cles.length) { notifier("Aucun élément sélectionné.", "error"); return; }
     const scene = sceneCourante();
-    const cible = cles.some(function (c) { return !scene.elements[c][champ]; });
-    cles.forEach(function (c) { scene.elements[c][champ] = cible; });
+    const tri = cibleBascule(scene, cles, champ);
+    const libres = tri.libres, bloques = tri.bloques;
+    if (!libres.length) { direLesBloques(bloques); return; }
+    const cible = libres.some(function (c) { return !scene.elements[c][champ]; });
+    libres.forEach(function (c) { scene.elements[c][champ] = cible; });
     marquerModifie();
     rendreSelection();
-    notifier(cles.length + " élément" + (cles.length > 1 ? "s " : " ")
+    notifier(libres.length + " élément" + (libres.length > 1 ? "s " : " ")
       + (cible ? motActif : motInactif) + ".");
+    direLesBloques(bloques);
   }
 
   /** C : les réglages de l'élément PRINCIPAL. Pas de duplication d'élément ici
@@ -2328,7 +2662,11 @@ window.OverlayAdmin = (function () {
       input.step = String(def[4]);
       input.addEventListener("input", function () {
         const element = elementCourant();
-        if (!element) return;
+        // Verrouillé : le champ est déjà grisé, mais un `disabled` posé au
+        // rendu ne protège de rien si la valeur peut encore entrer par ici (un
+        // navigateur qui garde le focus, un script). La garde est au POINT
+        // D'ÉCRITURE.
+        if (!element || element.locked) return;
         // Un champ vidé pour être resaisi ne vaut PAS zéro : sans ça,
         // l'élément filait dans le coin haut-gauche entre deux frappes.
         if (input.value.trim() === "") return;
@@ -2371,7 +2709,7 @@ window.OverlayAdmin = (function () {
       b.title = a;
       b.addEventListener("click", function () {
         const element = elementCourant();
-        if (!element || element.anchor === a) return;
+        if (!element || element.locked || element.anchor === a) return;
         const r = boiteCalque();
         reancrer(element, etat.elementCourant, a,
                  r ? r.width : 0, r ? r.height : 0);
@@ -2405,12 +2743,19 @@ window.OverlayAdmin = (function () {
   function rendreReglages() {
     if (!noeuds.champs) return;
     const element = elementCourant();
+    // Le cadenas bloque TOUT ce qui touche au placement : position, taille et
+    // ancrage compris. Sans ça, le verrou n'arrêtait que le glisser — on
+    // déplaçait par les champs un élément qu'on croyait à l'abri.
+    const fige = !!(element && element.locked);
     noeuds.reglageNom.textContent = element
       ? libelle(etat.elementCourant) + " · " + etat.elementCourant
+        + (fige ? " · 🔒 verrouillé" : "")
       : "Aucun élément choisi";
     ["x", "y", "scale"].forEach(function (cle) {
       const input = noeuds.champs[cle];
-      input.disabled = !element;
+      input.disabled = !element || fige;
+      input.title = fige
+        ? "Verrouillé : le cadenas de la liste le libère." : "";
       // On n'écrase pas un champ en cours de saisie : la valeur sauterait sous
       // les doigts à chaque frappe.
       if (element && document.activeElement !== input) {
@@ -2425,6 +2770,7 @@ window.OverlayAdmin = (function () {
     }
     ANCRAGES.forEach(function (a) {
       noeuds.ancrages[a].classList.toggle("actif", !!element && element.anchor === a);
+      noeuds.ancrages[a].disabled = !element || fige;
     });
     // Ici et pas dans `rendreSelection()` : la barre d'outils suit la SÉLECTION,
     // et tous les chemins qui la changent passent par les réglages.
@@ -2508,6 +2854,12 @@ window.OverlayAdmin = (function () {
     const barre = creer("div", "ovl-apercu-barre");
     noeuds.apercuEtat = creer("span", "ovl-apercu-etat", "Aperçu : en attente…");
     barre.appendChild(noeuds.apercuEtat);
+
+    // Combien de repères portent une taille LUE. Sans ce compte, les pointillés
+    // passeraient pour une coquetterie graphique au lieu de dire « je ne sais
+    // pas encore ».
+    noeuds.apercuMesures = creer("span", "ovl-apercu-mesures", "aucune taille mesurée");
+    barre.appendChild(noeuds.apercuMesures);
 
     // Sans lui, une seule coupure réseau laisse le repli en place jusqu'au
     // prochain changement de scène — et il n'y a pas toujours de seconde scène
@@ -2920,6 +3272,16 @@ window.OverlayAdmin = (function () {
     positionAlignee: positionAlignee,
     aligner: aligner,
     BORDS: BORDS,
+    // Les tailles lues dans l'aperçu, et la lecture elle-même. Exposées pour
+    // être TESTÉES : `mesurerConteneur` ne touche pas au DOM du panneau (elle
+    // reçoit l'hôte et la fenêtre), et `mesures` est l'entrée de `geometrie` —
+    // donc de l'alignement, de la répartition et du détecteur de débordement.
+    mesures: mesures,
+    mesurerConteneur: mesurerConteneur,
+    tailleRendue: tailleRendue,
+    // Le tri du cadenas : c'est lui qui dit que « verrouillé » vaut aussi pour
+    // la visibilité, et pas seulement pour la position.
+    cibleBascule: cibleBascule,
     repartitionEgale: repartitionEgale,
     repartir: repartir,
   };
