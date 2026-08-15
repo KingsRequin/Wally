@@ -635,7 +635,11 @@ window.OverlayAdmin = (function () {
     const scene = sceneCourante();
     if (!scene) return;
     const element = scene.elements[cle];
-    envoyerApercu({ scene: scene.slug, element: cle }, function () {
+    envoyerApercu({ scene: scene.slug, element: cle }, function (reponse) {
+      // Le serveur a un mot à dire : c'est le cas de l'avatar, que ▶ ne
+      // déclenche pas — il dégage la scène pour le rendre visible. Écrire le
+      // message ici l'aurait éloigné du code qui décide.
+      if (reponse && reponse.message) { notifier(reponse.message); return; }
       if (element && element.hidden) {
         // Publié quand même — mais la page le masque, et un aperçu qui ne
         // bouge pas passerait pour un bouton cassé.
@@ -690,7 +694,7 @@ window.OverlayAdmin = (function () {
           notifier(res.corps.raison || "Cet élément ne se déclenche pas.", "error");
           return;
         }
-        succes();
+        succes(res.corps);
       })
       .catch(function (e) {
         notifier("Test impossible : " + (e && e.message ? e.message : "erreur"),

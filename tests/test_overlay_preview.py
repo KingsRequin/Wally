@@ -91,16 +91,33 @@ def test_une_scene_inconnue_est_refusee_pour_les_fantomes(preview):
 
 
 def test_un_element_hors_widget_dit_pourquoi_plutot_que_de_se_taire(preview):
-    """`avatar`, `rotator` et `image` n'ont pas de builder : publier un widget
-    de ce nom ne ferait RIEN côté page, et le ▶ passerait pour cassé."""
+    """`rotator` et `image` n'ont pas de builder : publier un widget de ce nom
+    ne ferait RIEN côté page, et le ▶ passerait pour cassé."""
     client, feed = preview
-    for cle in ("avatar", "rotator", "image", "apex_progress"):
+    for cle in ("rotator", "image", "apex_progress"):
         r = client.post("/api/admin/overlay/preview",
                         json={"scene": "en-jeu", "element": cle}, headers=_AUTH)
         assert r.status_code == 200, cle
         assert r.json()["affiche"] is False, cle
         assert r.json()["raison"], cle
     assert feed.publies == []
+
+
+def test_le_play_de_lavatar_le_rend_visible_au_lieu_de_le_nier(preview):
+    """L'avatar est à l'écran en permanence — SAUF quand une carte `solo` prend
+    la scène et l'efface. Répondre « il est déjà là » à quelqu'un qui le voit
+    effacé est pire que ne rien répondre : le message contredit l'écran, et on
+    cherche la panne ailleurs. Le ▶ dégage donc la scène, ce qui le rend
+    réellement visible."""
+    client, feed = preview
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "en-jeu", "element": "avatar"}, headers=_AUTH)
+    assert r.status_code == 200
+    assert r.json()["affiche"] is True
+    assert r.json()["message"]
+    # Sur CETTE scène seulement : dégager la scène de fin qu'on prépare ne doit
+    # pas balayer l'écran du live en cours.
+    assert feed.publies == [{"type": "clear", "scene": "en-jeu"}]
 
 
 def test_la_bulle_passe_par_son_propre_evenement(preview):
@@ -132,8 +149,10 @@ def test_chaque_widget_placable_a_un_echantillon(preview):
     from bot.core.overlay_layout import ELEMENTS
     from bot.dashboard.routes.overlay import _ECHANTILLONS, _HORS_WIDGET
 
+    # `bubble` et `avatar` ne sont pas des widgets : la bulle a son propre
+    # événement, l'avatar est là en permanence et son ▶ dégage la scène.
     sans = [cle for cle in ELEMENTS
-            if cle not in _HORS_WIDGET and cle != "bubble"
+            if cle not in _HORS_WIDGET and cle not in ("bubble", "avatar")
             and not _ECHANTILLONS.get(cle)
             and cle not in ("meme", "planning")]
     assert sans == [], f"widgets sans échantillon : {sans}"

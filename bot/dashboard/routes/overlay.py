@@ -419,8 +419,6 @@ _ECHANTILLONS: dict[str, dict] = {
 # `showWidget` sort) : le ▶ resterait muet et passerait pour une panne. On dit
 # donc POURQUOI, ce qui est la seule chose utile à savoir ici.
 _HORS_WIDGET: dict[str, str] = {
-    "avatar": "L'avatar est à l'écran en permanence : il n'y a rien à "
-              "déclencher, il est déjà dans l'aperçu.",
     "rotator": "Le rotateur de memes est une source OBS à part "
                "(/overlay-rotation) : il tourne tout seul, hors de cette page.",
     "image": "L'image de la galerie a sa propre source OBS (/overlay-image) : "
@@ -504,6 +502,20 @@ async def post_overlay_preview(request: Request) -> dict:
     cle = str(data.get("element") or "")
     if cle not in ELEMENTS:
         raise HTTPException(400, f"Élément inconnu : {cle}")
+
+    if cle == "avatar":
+        # L'avatar n'est pas un widget : il est à l'écran en permanence — SAUF
+        # quand une carte `solo` prend la scène, qui l'efface le temps de son
+        # passage. Répondre « il est déjà là » à quelqu'un qui le voit effacé
+        # est pire que ne rien répondre : le message contredit l'écran, et on
+        # cherche la panne ailleurs. Le ▶ fait donc la seule chose utile pour
+        # lui — il dégage la scène, et l'avatar revient.
+        feed.publish({"type": "clear", "scene": slug})
+        logger.info("Overlay : scène « {s} » dégagée, l'avatar revient", s=slug)
+        return {"ok": True, "affiche": True,
+                "message": "Scène dégagée : l'avatar est de nouveau à l'écran. "
+                           "Les cartes et repères d'essai en cours sont retirés."}
+
     if cle in _HORS_WIDGET:
         return {"ok": True, "affiche": False, "raison": _HORS_WIDGET[cle]}
 
