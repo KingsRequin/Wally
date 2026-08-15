@@ -1454,6 +1454,71 @@ window.OverlayAdmin = (function () {
     finirOutil(bouge, bloc.bloques);
   }
 
+  // ── Répartir ────────────────────────────────────────────────────────────
+
+  /** Les nouveaux débuts (bord gauche, ou bord haut) d'un jeu de boîtes
+   *  réparties à ESPACES ÉGAUX. Pure : elle prend des boîtes, elle rend des
+   *  nombres — c'est ce qu'on teste.
+   *
+   *  Espaces égaux entre les BOÎTES, et non écarts égaux entre leurs centres :
+   *  les éléments d'une scène n'ont pas la même taille (200 px pour l'avatar,
+   *  1280 pour l'image), et des centres régulièrement espacés laisseraient des
+   *  vides visuellement inégaux — ce que l'œil voit, ce sont les blancs.
+   *
+   *  Les deux EXTRÊMES ne bougent pas : ce sont eux qui définissent la travée,
+   *  et les déplacer ferait glisser la répartition à chaque clic.
+   */
+  function repartitionEgale(boites, horizontal) {
+    const debut = function (b) { return horizontal ? b.gauche : b.haut; };
+    const fin = function (b) { return horizontal ? b.droite : b.bas; };
+    const taille = function (b) { return horizontal ? b.largeur : b.hauteur; };
+    const tri = boites.slice().sort(function (a, b) { return debut(a) - debut(b); });
+    const n = tri.length;
+    let somme = 0;
+    tri.forEach(function (b) { somme += taille(b); });
+    // L'espace peut être NÉGATIF : c'est le cas quand les éléments sont plus
+    // larges que la travée. Ils se chevauchent alors régulièrement, ce qui
+    // reste la répartition demandée — les forcer à ne pas se toucher
+    // déplacerait les extrêmes, qu'on a promis de laisser en place.
+    const espace = (fin(tri[n - 1]) - debut(tri[0]) - somme) / (n - 1);
+    let curseur = fin(tri[0]);
+    return tri.map(function (b, i) {
+      if (i === 0 || i === n - 1) return { boite: b, debut: debut(b) };
+      const d = curseur + espace;
+      curseur = d + taille(b);
+      return { boite: b, debut: d };
+    });
+  }
+
+  function repartir(horizontal) {
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    const bloc = selectionDeplacable();
+    if (bloc.membres.length < 3) {
+      notifier("Il faut au moins trois éléments libres pour les répartir.", "error");
+      direLesBloques(bloc.bloques);
+      return;
+    }
+    const boites = bloc.membres.map(function (m) {
+      const g = geometrie(m.cle, m.element, r.width, r.height);
+      g.element = m.element;
+      return g;
+    });
+    let bouge = 0;
+    repartitionEgale(boites, horizontal).forEach(function (place) {
+      const b = place.boite;
+      // On repasse du bord de la boîte au POINT D'ANCRAGE, même conversion que
+      // l'alignement : `debut + (ax − gauche)`.
+      const ancre = place.debut + (horizontal ? b.ax - b.gauche : b.ay - b.haut);
+      const cle = horizontal ? "x" : "y";
+      const v = arrondi(borner(ancre / (horizontal ? r.width : r.height) * 100,
+                               POS_MIN, POS_MAX, b.element[cle]));
+      if (v !== b.element[cle]) bouge += 1;
+      b.element[cle] = v;
+    });
+    finirOutil(bouge, bloc.bloques);
+  }
+
   /** La fin commune des outils : une seule modification pour toute l'opération,
    *  le rendu, et ce que le cadenas a retenu. Un outil qui ne change rien le
    *  DIT — muet, il passerait pour cassé. */
@@ -2359,6 +2424,15 @@ window.OverlayAdmin = (function () {
       function () { aligner("centre-v"); });
     outil(gh, "Bas", "Colle la sélection au bord BAS du cadre.", 1,
       function () { aligner("bas"); });
+
+    const gr = groupe("Répartir");
+    outil(gr, "Horizontal", "Espaces égaux entre les éléments, de gauche à "
+      + "droite. Les deux extrêmes ne bougent pas ; ceux du milieu se "
+      + "répartissent entre eux. Trois éléments libres au minimum.", 3,
+      function () { repartir(true); });
+    outil(gr, "Vertical", "Espaces égaux entre les éléments, de haut en bas. "
+      + "Les deux extrêmes ne bougent pas. Trois éléments libres au minimum.", 3,
+      function () { repartir(false); });
     return barre;
   }
 
@@ -2658,5 +2732,7 @@ window.OverlayAdmin = (function () {
     positionAlignee: positionAlignee,
     aligner: aligner,
     BORDS: BORDS,
+    repartitionEgale: repartitionEgale,
+    repartir: repartir,
   };
 })();

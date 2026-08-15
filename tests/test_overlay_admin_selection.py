@@ -200,6 +200,76 @@ def test_coller_a_droite_n_est_PAS_x_egale_100():
     assert out == "76.04 88.02 100"
 
 
+def test_la_repartition_laisse_trois_espaces_EGAUX_sur_quatre_elements():
+    """Quatre boîtes de largeurs différentes : les trois blancs entre elles
+    doivent finir identiques, et les deux extrêmes n'avoir pas bougé."""
+    out = _node("""
+      const boites = [
+        {gauche: 0,   droite: 100, largeur: 100, haut: 0, bas: 10, hauteur: 10},
+        {gauche: 130, droite: 180, largeur: 50,  haut: 0, bas: 10, hauteur: 10},
+        {gauche: 400, droite: 700, largeur: 300, haut: 0, bas: 10, hauteur: 10},
+        {gauche: 750, droite: 800, largeur: 50,  haut: 0, bas: 10, hauteur: 10},
+      ];
+      const places = OA.repartitionEgale(boites, true);
+      // Les extrêmes n'ont pas bougé.
+      proche(places[0].debut, 0);
+      proche(places[3].debut, 750);
+      // Les trois espaces sont égaux : (800 − 500) / 3 = 100.
+      const blancs = [];
+      for (let i = 1; i < places.length; i++) {
+        blancs.push(places[i].debut - (places[i - 1].debut + places[i - 1].boite.largeur));
+      }
+      blancs.forEach(function (b) { proche(b, 100, 1e-9); });
+      console.log(blancs.map(function (b) { return b.toFixed(4); }).join(" "));
+    """)
+    assert out == "100.0000 100.0000 100.0000"
+
+
+def test_la_repartition_trie_par_position_et_pas_par_ordre_de_clic():
+    """Composer la sélection dans le désordre doit rendre le même résultat :
+    sinon le geste dépend de l'ordre des clics, ce que personne ne retient."""
+    out = _node("""
+      const faire = function (l) {
+        return l.map(function (g) {
+          return {gauche: g, droite: g + 40, largeur: 40, haut: g, bas: g + 20, hauteur: 20};
+        });
+      };
+      const ordre = OA.repartitionEgale(faire([0, 100, 260, 400]), true)
+        .map(function (p) { return Math.round(p.debut); }).join(",");
+      const desordre = OA.repartitionEgale(faire([260, 0, 400, 100]), true)
+        .map(function (p) { return Math.round(p.debut); }).join(",");
+      if (ordre !== desordre) throw new Error(ordre + " != " + desordre);
+      console.log(ordre);
+    """)
+    # Quatre boîtes de 40 sur une travée de 440 : (440 − 160) / 3 = 93,33 de
+    # blanc, donc 0 · 133,33 · 266,67 · 400.
+    assert out == "0,133,267,400"
+
+
+def test_la_repartition_verticale_se_lit_sur_les_bords_haut_et_bas():
+    """Le même calcul, sur l'autre axe : c'est un seul chemin de code, et un
+    axe recopié à la main est un axe qui divergera."""
+    out = _node("""
+      const boites = [
+        {gauche: 0, droite: 10, largeur: 10, haut: 0,   bas: 60,  hauteur: 60},
+        {gauche: 0, droite: 10, largeur: 10, haut: 90,  bas: 110, hauteur: 20},
+        {gauche: 0, droite: 10, largeur: 10, haut: 200, bas: 230, hauteur: 30},
+        {gauche: 0, droite: 10, largeur: 10, haut: 250, bas: 300, hauteur: 50},
+      ];
+      const places = OA.repartitionEgale(boites, false);
+      proche(places[0].debut, 0);
+      proche(places[3].debut, 250);
+      const blancs = [];
+      for (let i = 1; i < places.length; i++) {
+        blancs.push(places[i].debut - (places[i - 1].debut + places[i - 1].boite.hauteur));
+      }
+      // (300 − 160) / 3 = 46,666…
+      blancs.forEach(function (b) { proche(b, 140 / 3, 1e-9); });
+      console.log("ok");
+    """)
+    assert out == "ok"
+
+
 def test_le_delta_est_arrondi_une_fois_pour_tous():
     """Arrondir chaque position ferait dériver les écarts d'un centième par
     geste : `depart + delta` doit rester exact quand les deux le sont."""
