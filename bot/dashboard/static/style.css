@@ -3801,6 +3801,16 @@ body.is-mobile .mobile-back-btn {
   border-color: rgba(255, 255, 255, 0.12);
   background: transparent;
   opacity: 0.45;
+  /* Un élément masqué ne capte JAMAIS le pointeur — pas même choisi dans la
+     liste. Il le captait alors qu'il ne s'affiche nulle part : masquer le
+     repère du dessus ne libérait donc pas celui du dessous, et le seul recours
+     aurait été de le déplacer d'abord — ce qu'on ne peut pas faire, puisque
+     c'est lui qui bloque. Le masquer VIENT DE le sélectionner
+     (`apresBascule`) : sans cette règle, il repasserait même au-dessus des
+     autres, l'exact contraire du geste qu'on vient de faire.
+     Un élément masqué se place quand même : aux flèches, qui visent l'élément
+     choisi sans passer par le pointeur. */
+  pointer-events: none;
 }
 .ovl-rect.verrouille { cursor: default; }
 

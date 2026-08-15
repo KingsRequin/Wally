@@ -1034,11 +1034,20 @@ window.OverlayAdmin = (function () {
       rect.style.width = taille[0] + "px";
       rect.style.height = taille[1] + "px";
       appliquerStyle(rect, element, largeur);
+      const choisi = cle === etat.elementCourant;
       // L'ordre de la liste EST l'empilement : le premier passe devant.
-      rect.style.zIndex = String(ordre.length - rang);
+      //
+      // À une exception près, et elle est décisive : LE REPÈRE CHOISI PASSE
+      // AU-DESSUS DE TOUS LES AUTRES. Vingt-six éléments partent au centre,
+      // exactement superposés ; sans ça, choisir un élément dans la liste ne
+      // servait à rien — c'est le repère du dessus qui recevait le pointeur, et
+      // on déplaçait toujours le même. La sélection ne change PAS `scene.ordre`
+      // (l'empilement réel de la page), seulement ce que la surface d'édition
+      // laisse attraper.
+      rect.style.zIndex = String(choisi ? ordre.length + 1 : ordre.length - rang);
       if (element.hidden) rect.classList.add("masque");
       if (element.locked) rect.classList.add("verrouille");
-      if (cle === etat.elementCourant) rect.classList.add("actif");
+      if (choisi) rect.classList.add("actif");
       // Un élément qui sort du cadre se voit ICI, pas quand les viewers le
       // découvrent : le repère passe en orange et l'infobulle le dit.
       const deborde = largeur > 0
