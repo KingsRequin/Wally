@@ -11,8 +11,9 @@
 //
 //   1. **Rien ne part tout seul.** Une modification reste dans le navigateur
 //      jusqu'à « Mettre à jour ». On règle la scène de fin pendant que le live
-//      tourne sans que l'écran bouge d'un pixel. La case « aperçu en direct »,
-//      la survie du brouillon et l'annulation viennent avec la tâche 8.
+//      tourne sans que l'écran bouge d'un pixel. La case « Publier au fil de
+//      l'eau » lève cette règle, et elle est DÉCOCHÉE par défaut : le cas
+//      dangereux ne doit jamais être celui qu'on obtient sans rien faire.
 //   2. **Aucune exception ne sort d'ici.** Un `throw` dans un montage casse
 //      toutes les sections suivantes du panneau — c'est un incident déjà payé
 //      ici (`buildSections`). `monter()` est synchrone et enveloppé ; le
@@ -80,9 +81,15 @@ window.OverlayAdmin = (function () {
   /** L'état du panneau.
    *
    *  `brouillon` est un COMPTEUR : le nombre de modifications non publiées.
-   *  Zéro vaut « rien en attente ». `direct` sera la case « aperçu en direct »
-   *  (tâche 8) ; décoché par défaut, parce que le cas dangereux ne doit pas
-   *  être celui qu'on obtient sans rien faire.
+   *  Zéro vaut « rien en attente ». `direct` porte la case « Publier au fil de
+   *  l'eau » ; toujours faux au chargement, et JAMAIS retenu d'une visite à
+   *  l'autre — une préférence qui survit ferait qu'on ouvre le panneau en plein
+   *  live avec la publication immédiate déjà armée, sans l'avoir demandé.
+   *
+   *  `publie` est le modèle À L'ANTENNE, sérialisé, tel que le serveur nous l'a
+   *  rendu au dernier aller-retour. Il sert deux fois : à repérer qu'un autre
+   *  onglet a publié entre-temps, et à garder un cran d'annulation.
+   *  `precedent` est ce même modèle d'AVANT la dernière publication.
    */
   const etat = {
     layout: null,
@@ -91,6 +98,8 @@ window.OverlayAdmin = (function () {
     elementCourant: null,
     brouillon: 0,
     direct: false,
+    publie: null,
+    precedent: null,
   };
 
   const noeuds = {};      // les nœuds du squelette, posés une fois
@@ -127,6 +136,70 @@ window.OverlayAdmin = (function () {
     } catch (e) {
       // Stockage refusé : on perd la mémoire de la scène, rien d'autre.
     }
+  }
+
+  // Le brouillon en attente, d'une visite à l'autre. Dans le NAVIGATEUR et
+  // jamais en base : rangé côté serveur, il serait servi aux pages d'overlay au
+  // prochain redémarrage du bot — donc publié à l'antenne sans avoir jamais été
+  // validé. C'est exactement ce que le brouillon existe pour empêcher.
+  const CLE_BROUILLON = "wally.overlay.brouillon";
+
+  function rangerBrouillon() {
+    if (!etat.layout) return;
+    try {
+      window.localStorage.setItem(CLE_BROUILLON, JSON.stringify({
+        quand: Date.now(),
+        n: etat.brouillon,
+        base: etat.publie,      // ce qui était à l'antenne quand on l'a écrit
+        scene: etat.slugCourant,
+        layout: etat.layout,
+      }));
+    } catch (e) {
+      // Stockage refusé ou plein : le brouillon reste valable à l'écran, il ne
+      // survivra simplement pas au rechargement.
+    }
+  }
+
+  function oublierBrouillon() {
+    try {
+      window.localStorage.removeItem(CLE_BROUILLON);
+    } catch (e) {
+      // Rien à défaire.
+    }
+  }
+
+  /** Le brouillon rangé, ou `null`. Un contenu tordu (quota tronqué, version
+   *  d'avant) ne doit pas empêcher le panneau de s'ouvrir : on le jette. */
+  function lireBrouillon() {
+    let brut = null;
+    try {
+      brut = window.localStorage.getItem(CLE_BROUILLON);
+    } catch (e) {
+      return null;
+    }
+    if (!brut) return null;
+    let d = null;
+    try {
+      d = JSON.parse(brut);
+    } catch (e) {
+      return null;
+    }
+    if (!d || !d.n || !d.layout || !d.layout.scenes || !d.layout.scenes.length) {
+      return null;
+    }
+    return d;
+  }
+
+  /** L'âge du brouillon, en clair. « Il y a deux heures » dit tout de suite
+   *  s'il s'agit du travail d'avant le F5 ou d'un oubli d'avant-hier. */
+  function depuis(quand) {
+    const s = Math.max(0, Math.round((Date.now() - Number(quand || 0)) / 1000));
+    if (!isFinite(s) || s < 90) return "il y a moins d'une minute";
+    const m = Math.round(s / 60);
+    if (m < 90) return "il y a " + m + " minutes";
+    const h = Math.round(m / 60);
+    if (h < 36) return "il y a " + h + " heure" + (h > 1 ? "s" : "");
+    return "il y a " + Math.round(h / 24) + " jours";
   }
 
   // ── Petits outils ───────────────────────────────────────────────────────
@@ -341,6 +414,10 @@ window.OverlayAdmin = (function () {
   function adopter(layout) {
     etat.layout = layout;
     etat.brouillon = 0;
+    etat.publie = JSON.stringify(layout);
+    // Plus rien en attente : un brouillon qui survivrait ici serait proposé au
+    // prochain chargement alors qu'il est déjà à l'antenne.
+    oublierBrouillon();
     const scenes = layout.scenes || [];
     const existe = scenes.some(function (s) { return s.slug === etat.slugCourant; });
     if (!existe) etat.slugCourant = layout.defaut || scenes[0].slug;
@@ -362,7 +439,32 @@ window.OverlayAdmin = (function () {
     notifier(message, "error");
   }
 
-  /** Envoie tout le modèle. Le serveur renvoie ce qu'il a RANGÉ — on adopte sa
+  /** Le modèle servi a-t-il bougé depuis notre dernier aller-retour ?
+   *
+   *  Deux onglets du panneau renvoient chacun le MODÈLE ENTIER tel qu'il l'a
+   *  chargé : le second efface le travail du premier sans que rien ne le dise.
+   *  Le serveur ne porte pas de numéro de révision — on relit donc juste avant
+   *  d'écrire. Une lecture qui échoue NE BLOQUE PAS la publication : on est en
+   *  direct, et un réseau capricieux ne doit pas coincer le streamer. */
+  function verifierConcurrence() {
+    if (!etat.publie) return Promise.resolve(true);
+    return appeler(URL_LAYOUT)
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (servi) {
+        if (!servi || !servi.scenes) return true;
+        // Les libellés ne voyagent qu'au GET : les laisser rendrait toute
+        // comparaison fausse.
+        delete servi.libelles;
+        if (JSON.stringify(servi) === etat.publie) return true;
+        return window.confirm(
+          "La mise en scène à l'antenne a changé depuis votre chargement — "
+          + "un autre onglet du panneau, sans doute.\n\nPublier maintenant "
+          + "écrasera ces changements.\n\nContinuer ?");
+      })
+      .catch(function () { return true; });
+  }
+
+  /** Envoie un modèle. Le serveur renvoie ce qu'il a RANGÉ — on adopte sa
    *  réponse, pas ce qu'on lui a envoyé : les valeurs bornées apparaissent donc
    *  immédiatement à l'écran.
    *
@@ -370,38 +472,125 @@ window.OverlayAdmin = (function () {
    *  qu'elle a fait, et elle ne le dit qu'une fois le serveur d'accord. Un
    *  échec laisse le compteur en attente — la modification n'est pas perdue,
    *  « Mettre à jour » la renverra. */
-  function publier(message) {
-    if (!etat.layout) return Promise.resolve();
-    return appeler(URL_LAYOUT, {
-      method: "PUT",
-      body: JSON.stringify(etat.layout),
-    })
-      .then(function (r) {
-        if (!r || !r.ok) throw new Error("le serveur a refusé");
-        return r.json();
+  function publierModele(modele, message) {
+    if (!modele) return Promise.resolve();
+    // Une publication demandée à la main solde le fil de l'eau en attente :
+    // sinon le minuteur repartirait derrière pour renvoyer la même chose.
+    annulerPublicationDifferee();
+    return verifierConcurrence().then(function (feuVert) {
+      if (!feuVert) return undefined;
+      // Ce qui est à l'antenne AVANT cet envoi : le cran d'annulation.
+      const avant = etat.publie;
+      return appeler(URL_LAYOUT, {
+        method: "PUT",
+        body: JSON.stringify(modele),
       })
-      .then(function (layout) {
-        adopter(layout);
-        notifier(message || "Mise en scène publiée");
-      })
-      .catch(function (e) {
-        notifier("Publication impossible : " + (e && e.message ? e.message : "erreur"), "error");
-      });
+        .then(function (r) {
+          if (!r || !r.ok) throw new Error("le serveur a refusé");
+          return r.json();
+        })
+        .then(function (layout) {
+          // Un envoi qui ne change rien à l'écran ne doit pas consommer le
+          // cran : on garderait un « annuler » qui ne fait rien.
+          if (avant && avant !== JSON.stringify(layout)) etat.precedent = avant;
+          if (manip) {
+            // Un glisser a COMMENCÉ pendant l'aller-retour. `adopter()`
+            // remplacerait `etat.layout` par la réponse du serveur, et
+            // `manip.element` désignerait alors un objet détaché : le
+            // mouvement en cours partirait dans le vide et sauterait en
+            // arrière au relâchement. On note ce qui est parti, on laisse le
+            // modèle sous les doigts — le geste comptera dans le brouillon
+            // suivant, et ses valeurs bornées reviendront à la publication
+            // d'après.
+            etat.publie = JSON.stringify(layout);
+            rendreBarrePublication();
+            notifier(message || "Mise en scène publiée");
+            return;
+          }
+          adopter(layout);
+          notifier(message || "Mise en scène publiée");
+        })
+        .catch(function (e) {
+          notifier("Publication impossible : " + (e && e.message ? e.message : "erreur"),
+                   "error");
+        });
+    });
   }
 
-  /** Jette le brouillon et reprend ce qui est en base. */
+  function publier(message) {
+    return publierModele(etat.layout, message);
+  }
+
+  /** Le filet : republier ce qui était à l'antenne avant la dernière
+   *  publication. UN SEUL cran — c'est de quoi ne pas rester coincé en plein
+   *  live, pas un historique. Comme `publierModele()` garde à son tour l'état
+   *  qu'on vient de remplacer, un second clic refait le chemin inverse. */
+  function annulerPublication() {
+    if (!etat.precedent) return Promise.resolve();
+    let modele = null;
+    try {
+      modele = JSON.parse(etat.precedent);
+    } catch (e) {
+      etat.precedent = null;
+      rendreBarrePublication();
+      return Promise.resolve();
+    }
+    const perte = etat.brouillon > 0
+      ? "\n\nATTENTION : vos " + etat.brouillon
+        + " modification(s) en attente seront perdues."
+      : "";
+    if (!window.confirm(
+        "Republier la mise en scène d'avant la dernière publication ?" + perte)) {
+      return Promise.resolve();
+    }
+    return publierModele(modele, "Publication précédente rétablie.");
+  }
+
+  /** Jette le brouillon et reprend ce qui est réellement à l'antenne. */
   function abandonner() {
     if (etat.brouillon > 0 &&
         !window.confirm(etat.brouillon + " modification(s) seront perdues. Continuer ?")) {
       return Promise.resolve();
     }
+    annulerPublicationDifferee();
+    oublierBrouillon();
     return charger();
+  }
+
+  // ── Le fil de l'eau ─────────────────────────────────────────────────────
+
+  // Le repos au bout duquel une modification part, case cochée. Un glisser ne
+  // compte qu'une fois (`finirManip`), mais une frappe dans un champ ou une
+  // flèche maintenue en produit une par événement : sans ce délai, un PUT par
+  // caractère tapé.
+  const DIRECT_DELAI_MS = 250;
+  let directMinuteur = null;
+
+  function annulerPublicationDifferee() {
+    if (directMinuteur) {
+      clearTimeout(directMinuteur);
+      directMinuteur = null;
+    }
+  }
+
+  function programmerPublicationDirecte() {
+    annulerPublicationDifferee();
+    directMinuteur = setTimeout(function () {
+      directMinuteur = null;
+      // Rien PENDANT le geste : `adopter()` remplace `etat.layout`, et
+      // `manip.element` pointerait alors sur un objet détaché — le glisser en
+      // cours se poursuivrait dans le vide. On attend le relâchement.
+      if (manip) { programmerPublicationDirecte(); return; }
+      if (etat.brouillon > 0) publier();
+    }, DIRECT_DELAI_MS);
   }
 
   /** À appeler après CHAQUE mutation locale du modèle. */
   function marquerModifie() {
     etat.brouillon += 1;
+    rangerBrouillon();
     rendreBarrePublication();
+    if (etat.direct) programmerPublicationDirecte();
   }
 
   /** Le feu vert avant une opération de STRUCTURE (renommer, dupliquer,
@@ -1568,10 +1757,58 @@ window.OverlayAdmin = (function () {
     const n = etat.brouillon;
     noeuds.compteur.textContent = n
       ? n + " modification" + (n > 1 ? "s" : "") + " non publiée" + (n > 1 ? "s" : "")
-      : "Rien en attente";
+      : (etat.direct ? "Publication immédiate" : "Rien en attente");
     noeuds.compteur.classList.toggle("en-attente", n > 0);
     noeuds.publier.disabled = n === 0;
     noeuds.abandonner.disabled = n === 0;
+    if (noeuds.annuler) noeuds.annuler.disabled = !etat.precedent;
+  }
+
+  // ── Le brouillon retrouvé au chargement ─────────────────────────────────
+
+  /** Proposé, JAMAIS appliqué d'office : on doit savoir qu'on reprend un
+   *  travail en cours, et pouvoir le jeter. Appliqué en silence, un brouillon
+   *  d'avant-hier partirait à l'antenne au premier « Mettre à jour » sans que
+   *  personne ait vu ce qu'il contenait. */
+  function proposerBrouillon(d) {
+    if (!d || !etat.layout || !noeuds.proposition) return;
+    const n = d.n;
+    // `base` est ce qui était à l'antenne quand le brouillon a été écrit : s'il
+    // a bougé depuis, le reprendre écrasera le travail de l'autre onglet.
+    const perime = d.base && etat.publie && d.base !== etat.publie;
+    noeuds.propositionTexte.textContent =
+      "Brouillon retrouvé : " + n + " modification" + (n > 1 ? "s" : "")
+      + " non publiée" + (n > 1 ? "s" : "") + ", " + depuis(d.quand) + "."
+      + (perime ? " ⚠ La mise en scène à l'antenne a changé depuis." : "");
+    noeuds.proposition.style.display = "";
+    noeuds.propositionReprendre.onclick = function () { reprendreBrouillon(d); };
+    noeuds.propositionJeter.onclick = function () {
+      oublierBrouillon();
+      noeuds.proposition.style.display = "none";
+      notifier("Brouillon jeté.");
+    };
+  }
+
+  /** Même résolution que `adopter()` : la scène demandée si elle existe encore,
+   *  la scène par défaut sinon. Sans ça, un brouillon dont la scène a été
+   *  supprimée entre-temps laisserait la liste sans ligne active. */
+  function reprendreBrouillon(d) {
+    etat.layout = d.layout;
+    etat.brouillon = d.n;
+    const scenes = etat.layout.scenes || [];
+    const voulu = d.scene || etat.slugCourant;
+    const existe = scenes.some(function (s) { return s.slug === voulu; });
+    etat.slugCourant = existe
+      ? voulu
+      : (etat.layout.defaut || (scenes[0] || {}).slug || null);
+    const scene = sceneCourante();
+    if (!scene || !scene.elements[etat.elementCourant]) {
+      etat.elementCourant = (scene && scene.ordre && scene.ordre[0]) || null;
+    }
+    retenirScene(etat.slugCourant);
+    noeuds.proposition.style.display = "none";
+    rendreTout();
+    notifier("Brouillon repris — rien n'est parti à l'antenne.");
   }
 
   function rendreTout() {
@@ -1729,12 +1966,41 @@ window.OverlayAdmin = (function () {
       "Glisser un repère pour le déplacer · les poignées d'angle changent sa "
       + "taille · Alt suspend l'aimantation · flèches : 0,1 % (Maj : 1 %)."));
 
+    // La proposition de reprise, au-dessus de la barre : elle ne s'affiche
+    // qu'au chargement, et seulement s'il reste un brouillon.
+    noeuds.proposition = creer("div", "ovl-brouillon");
+    noeuds.proposition.style.display = "none";
+    noeuds.propositionTexte = creer("span", "ovl-brouillon-texte", "");
+    noeuds.proposition.appendChild(noeuds.propositionTexte);
+    noeuds.propositionReprendre = creer("button", "btn btn-sm", "Reprendre");
+    noeuds.propositionReprendre.title =
+      "Remet vos modifications en attente. Rien ne part à l'antenne.";
+    noeuds.proposition.appendChild(noeuds.propositionReprendre);
+    noeuds.propositionJeter = creer("button", "btn btn-sm", "Jeter");
+    noeuds.propositionJeter.title = "Oublie le brouillon et garde ce qui est à l'antenne.";
+    noeuds.proposition.appendChild(noeuds.propositionJeter);
+    droite.appendChild(noeuds.proposition);
+
     const publication = creer("div", "ovl-publication");
     const direct = creer("label", "ovl-direct");
     const caseDirect = document.createElement("input");
     caseDirect.type = "checkbox";
-    caseDirect.disabled = true;
-    caseDirect.title = "Bientôt : publier chaque déplacement au fil de l'eau.";
+    caseDirect.checked = false;   // le cas dangereux ne s'obtient pas sans rien faire
+    caseDirect.addEventListener("change", function () {
+      // Cocher alors que des modifications attendent les envoie : `publier()`
+      // pousse le MODÈLE ENTIER, la prochaine retouche les emporterait de toute
+      // façon. On le dit avant, plutôt que de le laisser découvrir à l'antenne.
+      if (caseDirect.checked && etat.brouillon > 0
+          && !window.confirm(
+            etat.brouillon + " modification(s) attendent.\n\nPublier au fil de "
+            + "l'eau les enverra à l'antenne MAINTENANT.\n\nContinuer ?")) {
+        caseDirect.checked = false;
+        return;
+      }
+      etat.direct = caseDirect.checked;
+      if (etat.direct && etat.brouillon > 0) publier();
+      rendreBarrePublication();
+    });
     direct.appendChild(caseDirect);
     // Nommée « Publier au fil de l'eau » et non « Aperçu en direct » : depuis
     // que la surface montre la vraie page, « aperçu » désigne CE cadre. Deux
@@ -1742,7 +2008,8 @@ window.OverlayAdmin = (function () {
     // l'antenne — c'est la confusion qu'on ne peut pas se permettre ici.
     direct.appendChild(creer("span", null, "Publier au fil de l'eau"));
     direct.title = "Décoché : l'overlay à l'antenne ne bouge pas tant qu'on "
-      + "n'a pas cliqué « Mettre à jour ».";
+      + "n'a pas cliqué « Mettre à jour ». Coché : chaque déplacement part au "
+      + "relâchement — rien pendant le geste.";
     publication.appendChild(direct);
     noeuds.compteur = creer("span", "ovl-compteur", "Rien en attente");
     publication.appendChild(noeuds.compteur);
@@ -1750,8 +2017,16 @@ window.OverlayAdmin = (function () {
     noeuds.publier.addEventListener("click", function () { publier(); });
     publication.appendChild(noeuds.publier);
     noeuds.abandonner = creer("button", "btn", "Abandonner");
+    noeuds.abandonner.title = "Jette le brouillon et recharge ce qui est "
+      + "réellement à l'antenne.";
     noeuds.abandonner.addEventListener("click", function () { abandonner(); });
     publication.appendChild(noeuds.abandonner);
+    noeuds.annuler = creer("button", "btn", "Annuler la publication");
+    noeuds.annuler.title = "Republie la mise en scène d'avant la dernière "
+      + "publication. Un seul cran — de quoi ne pas rester coincé en direct.";
+    noeuds.annuler.disabled = true;
+    noeuds.annuler.addEventListener("click", function () { annulerPublication(); });
+    publication.appendChild(noeuds.annuler);
     droite.appendChild(publication);
 
     corps.appendChild(droite);
@@ -1784,6 +2059,10 @@ window.OverlayAdmin = (function () {
     // s'afficherait en double. C'est arrivé sur ce dashboard.
     if (conteneur.dataset.overlayAdmin === "1") return;
     conteneur.dataset.overlayAdmin = "1";
+    // LU AVANT `charger()` : `adopter()` oublie le brouillon rangé — c'est ce
+    // qu'on lui demande une fois la publication faite —, et le lire après
+    // n'aurait plus rien trouvé.
+    let enAttente = null;
     try {
       construireSquelette(conteneur);
       // Le filet du brouillon. Un placement non publié ne survit pas à un F5 —
@@ -1799,11 +2078,15 @@ window.OverlayAdmin = (function () {
       // `adopter()` la garde si elle existe encore, et retombe sur la scène par
       // défaut sinon.
       etat.slugCourant = sceneRetenue();
+      enAttente = lireBrouillon();
     } catch (e) {
       conteneur.textContent = "Mise en scène indisponible.";
       return;
     }
-    charger();
+    // Le brouillon est PROPOSÉ, pas appliqué : on doit savoir qu'on reprend un
+    // travail en cours. Après `charger()`, donc sur le modèle réellement à
+    // l'antenne — c'est lui qui dit si le brouillon a pris du retard.
+    charger().then(function () { proposerBrouillon(enAttente); });
   }
 
   return {
@@ -1812,7 +2095,7 @@ window.OverlayAdmin = (function () {
     marquerModifie: marquerModifie,
     publier: publier,
     abandonner: abandonner,
-    // Pour les tâches 7 (surface) et 8 (brouillon).
+    annulerPublication: annulerPublication,
     charger: charger,
     rendreTout: rendreTout,
     rendreSurface: rendreSurface,
@@ -1827,6 +2110,12 @@ window.OverlayAdmin = (function () {
     tester: tester,
     testerTous: testerTous,
     ANCRAGES: ANCRAGES,
+    // Le rangement du brouillon, exposé pour la même raison : il ne touche que
+    // `localStorage`, et c'est lui qui décide si un travail non publié survit à
+    // un F5 — ou s'il repart à l'antenne tout seul, ce qu'on ne veut jamais.
+    rangerBrouillon: rangerBrouillon,
+    lireBrouillon: lireBrouillon,
+    oublierBrouillon: oublierBrouillon,
     // La géométrie du glisser, exposée pour être TESTÉE hors navigateur : ces
     // quatre fonctions sont pures, et ce sont elles qui décident si le point
     // saisi reste sous le pointeur.

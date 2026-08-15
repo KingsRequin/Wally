@@ -4008,10 +4008,45 @@ body.is-mobile .mobile-back-btn {
 
 /* ── La barre de publication ─────────────────────────────────────────── */
 
-.ovl-direct { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); }
+.ovl-direct {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  /* La case décide de ce qui part à l'antenne : on doit voir qu'elle se clique. */
+  cursor: pointer;
+}
+.ovl-direct input { cursor: pointer; }
 .ovl-compteur { font-size: 0.75rem; color: var(--text-muted); margin-right: auto; }
 .ovl-compteur.en-attente { color: #06b6d4; }
 .ovl-publication .btn:disabled { opacity: 0.4; cursor: default; }
+
+/* La proposition de reprise du brouillon, au-dessus de la barre. Liserré cyan
+   à gauche : c'est une question posée au chargement, pas un réglage de plus —
+   elle disparaît dès qu'on y a répondu. */
+.ovl-brouillon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  /* Pas de marge : `.ovl-droite` est une colonne flex avec `gap: 12px`, elle
+     s'ajouterait au lieu de la remplacer. */
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid #06b6d4;
+  border-radius: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.ovl-brouillon-texte {
+  flex: 1;
+  min-width: 200px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
 
 /* ── L'infobulle des éléments ────────────────────────────────────────── */
 
