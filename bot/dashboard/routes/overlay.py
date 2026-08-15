@@ -257,3 +257,61 @@ async def overlay_test(request: Request) -> dict:
     else:
         raise HTTPException(400, f"type inconnu: {kind}")
     return {"ok": True, "subscribers": state.overlay_feed.subscriber_count}
+
+
+# ── Mise en scène ────────────────────────────────────────────────────────────
+from bot.core.overlay_layout import scene_par_slug          # noqa: E402
+from bot.core.overlay_layout_store import (                 # noqa: E402
+    charger_layout, enregistrer_layout,
+)
+
+
+def _db(request: Request):
+    """La base, ou None avant la connexion du bot. `charger_layout` l'accepte."""
+    return getattr(request.app.state.wally, "db", None)
+
+
+@public_router.get("/overlay-layout")
+async def get_overlay_layout(request: Request, scene: str = "") -> dict:
+    """Le layout d'une scène — ce que la page lit au démarrage.
+
+    Source de vérité, plutôt qu'un événement SSE qui pourrait ne jamais venir :
+    une page ouverte alors que le bus est muet doit quand même se placer.
+    """
+    layout = await charger_layout(_db(request))
+    slug = scene or layout["defaut"]
+    trouvee = scene_par_slug(layout, slug)
+    if trouvee is None:
+        # Scène supprimée alors qu'OBS pointe encore dessus : on sert le défaut
+        # plutôt qu'un 404 qui laisserait l'écran vide en plein live.
+        trouvee = scene_par_slug(layout, layout["defaut"]) or layout["scenes"][0]
+    return {"scene": trouvee, "defaut": layout["defaut"]}
+
+
+@admin_router.get("/overlay/layout")
+async def get_overlay_layout_admin(request: Request) -> dict:
+    """Tout le modèle — le panneau a besoin de toutes les scènes."""
+    return await charger_layout(_db(request))
+
+
+@admin_router.put("/overlay/layout")
+async def put_overlay_layout(request: Request) -> dict:
+    """Enregistre et publie. Le retour est ce qui a été RANGÉ, pas ce qui a été
+    envoyé : le panneau voit donc immédiatement les valeurs bornées."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+    layout = await enregistrer_layout(_db(request), data)
+    feed = getattr(request.app.state.wally, "overlay_feed", None)
+    if feed is not None:
+        # Un SIGNAL, pas le layout. `OverlayFeed.recent()` rejoue les dix
+        # derniers événements à chaque connexion (overlay_feed.py:105) : y
+        # pousser le modèle entier chasserait des bulles utiles du tampon, et
+        # une page qui se connecte démarrerait sur un écran vide. La page refait
+        # son GET, qui reste la seule source de vérité.
+        #
+        # `scene: None` — toutes les pages ouvertes se replacent. Chacune ne
+        # retient que la scène qui la concerne.
+        feed.publish({"type": "layout", "scene": None})
+    return layout
