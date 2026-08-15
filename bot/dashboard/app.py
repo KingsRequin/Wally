@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import re
 import shutil
 import time
 from contextlib import asynccontextmanager
+from html import escape as html_escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -218,6 +220,10 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
 
+    # Le seul slug qu'on accepte d'écrire dans la page. C'est exactement ce que
+    # `slug_depuis_nom()` produit — lettres minuscules, chiffres, traits d'union.
+    _SLUG_SCENE_RE = re.compile(r"^[a-z0-9-]{1,64}$")
+
     @app.get("/overlay-{slug}")
     async def overlay_scene(slug: str):
         """La page d'une scène.
@@ -228,13 +234,33 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         Un slug inconnu est servi quand même — OBS peut pointer sur une scène
         supprimée, et un 404 mettrait un écran noir en plein live. La page
         demandera son layout et recevra celui de la scène par défaut.
+
+        SÉCURITÉ — ce slug vient de l'URL et finit dans un attribut HTML. Écrit
+        tel quel, `/overlay-x" onload="…` refermait l'attribut et injectait du
+        JavaScript sur le domaine public, celui-là même qui sert le panneau
+        d'administration : de quoi lire son jeton. Vérifié exploitable en
+        production le 2026-08-15, corrigé dans la foulée.
+
+        Deux barrières plutôt qu'une, parce que celle qui saute est toujours
+        celle qu'on croyait seule :
+          1. le format est validé — un slug ne peut pas contenir de guillemet ;
+          2. l'échappement HTML reste appliqué, même sur un slug déjà validé.
+
+        Un slug mal formé n'est PAS refusé : la page est servie avec un slug
+        vide, donc sur la scène par défaut. La règle « jamais d'écran noir en
+        plein live » vaut aussi pour une URL malveillante — répondre 404 ne
+        protégerait personne de plus et casserait une source OBS mal saisie.
         """
         from bot.dashboard.routes.overlay import (
             overlay_version, version_static_scripts,
         )
+        propre = slug if _SLUG_SCENE_RE.match(slug) else ""
         html = (STATIC_DIR / "overlay.html").read_text()
         html = version_static_scripts(html, overlay_version())
-        html = html.replace('data-scene-slug=""', f'data-scene-slug="{slug}"')
+        html = html.replace(
+            'data-scene-slug=""',
+            f'data-scene-slug="{html_escape(propre, quote=True)}"',
+        )
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     @app.get("/setup/preview")
