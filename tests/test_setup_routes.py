@@ -1,4 +1,5 @@
 # tests/test_setup_routes.py
+import json
 import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -138,3 +139,45 @@ async def test_submit_wizard(client):
     assert data["slug"] == "cindy"
     assert not data["dry_run"]
     state.db.use_setup_invite.assert_awaited_once()
+
+
+# ── Injection JS dans la page du wizard ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_wizard_page_echappe_le_jeton_dans_le_js(client):
+    """Le jeton finit dans un contexte JavaScript (`setup.html`), pas HTML :
+    un échappement HTML ne protège pas une chaîne à guillemet simple. Un
+    jeton portant une apostrophe sortait de la chaîne et exécutait du JS —
+    pas exploitable aujourd'hui (le jeton vient de `uuid.uuid4().hex`, posé
+    sous authentification), mais c'est le même patron qui a ouvert une faille
+    réelle sur `/overlay-{slug}` le 2026-08-15. Défense en profondeur :
+    `json.dumps()` produit un littéral JS sûr par construction.
+    """
+    from urllib.parse import quote
+
+    c, state = client
+    token = "abc'};alert(1);({x:'"
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: {
+        "expires_at": time.time() + 3600, "used_at": None, "is_preview": 0,
+    }[k]
+    state.db.get_setup_invite = AsyncMock(return_value=row)
+
+    resp = await c.get("/setup/" + quote(token, safe=""))
+
+    assert resp.status_code == 200
+    # Le patron cassé : le jeton brut entre guillemets simples nus — sorti de
+    # la chaîne dès la première apostrophe qu'il contient.
+    assert f"= '{token}'" not in resp.text
+    # Le patron sûr : encodé comme littéral JS, apostrophes comprises.
+    assert json.dumps(token) in resp.text
+
+
+@pytest.mark.asyncio
+async def test_wizard_preview_reste_assigne_en_js_valide(client):
+    """Le mode preview n'a pas de vrai jeton (`__preview__`, fixe), mais doit
+    quand même rester assigné comme un littéral JS valide."""
+    c, _ = client
+    resp = await c.get("/setup/preview")
+    assert resp.status_code == 200
+    assert json.dumps("__preview__") in resp.text

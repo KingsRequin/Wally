@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 import re
 import shutil
@@ -273,7 +274,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     @app.get("/setup/preview")
     async def setup_preview_page():
         html = (STATIC_DIR / "setup.html").read_text()
-        html = html.replace("__WIZARD_TOKEN__", "__preview__").replace("__WIZARD_MODE__", "preview")
+        html = html.replace("__WIZARD_TOKEN__", json.dumps("__preview__")).replace("__WIZARD_MODE__", "preview")
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     @app.get("/setup/{token}")
@@ -289,7 +290,13 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             if row["used_at"]:
                 raise _HTTPException(status_code=409, detail="Ce lien a déjà été utilisé.")
         html = (STATIC_DIR / "setup.html").read_text()
-        html = html.replace("__WIZARD_TOKEN__", token).replace("__WIZARD_MODE__", "normal")
+        # `json.dumps()` : le jeton finit dans un contexte JS (`const WIZARD_TOKEN
+        # = …;`), pas HTML — un échappement HTML ne protège pas une chaîne JS.
+        # Même patron que la faille corrigée sur `/overlay-{slug}` le 2026-08-15 ;
+        # pas exploitable ici (jeton = `uuid.uuid4().hex`, créé sous
+        # authentification), mais c'est justement le genre de trou qui ne se
+        # voit qu'après coup.
+        html = html.replace("__WIZARD_TOKEN__", json.dumps(token)).replace("__WIZARD_MODE__", "normal")
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     # Seed public-ui/ depuis le starter kit si vide — avant le mount conditionnel
