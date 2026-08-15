@@ -1000,7 +1000,8 @@ aucun des dix-sept widgets n'a eu besoin qu'on touche à son CSS."
 **Fichiers :**
 - Modifier : `bot/dashboard/static/overlay.js` (dispatch, ligne ~1256 ; `widget-on`, ligne ~1150)
 - Modifier : `bot/dashboard/app.py` (après la route `/overlay`, ligne ~185)
-- Test : `tests/test_overlay_routes_scenes.py`
+- Modifier : `tests/dashboard/conftest.py` (fixture `overlay_client`)
+- Test : `tests/dashboard/test_overlay_routes_scenes.py`
 
 **Interfaces :**
 - Consomme : `window.WallyLayout.appliquer` (tâche 3), `GET /api/public/overlay-layout` (tâche 2).
@@ -1008,54 +1009,71 @@ aucun des dix-sept widgets n'a eu besoin qu'on touche à son CSS."
 
 - [ ] **Étape 1 : écrire les tests qui échouent**
 
+D'abord la fixture, qui manque au dépôt. Les routes de page sont déclarées par
+`create_dashboard_app`, pas par un router : on ne peut pas les tester en montant
+un `FastAPI()` à la main comme le fait le reste du projet.
+
+Ajouter à la fin de `tests/dashboard/conftest.py` :
+
 ```python
-# tests/test_overlay_routes_scenes.py
+@pytest.fixture
+def overlay_client():
+    """Un client sur l'application complète — les routes de page (`/overlay…`)
+    sont déclarées par `create_dashboard_app` et non par un router, donc un
+    `FastAPI()` monté à la main ne les porte pas.
+    """
+    from fastapi.testclient import TestClient
+    return TestClient(create_dashboard_app(_make_state()))
+```
+
+Puis le test lui-même :
+
+```python
+# tests/dashboard/test_overlay_routes_scenes.py
 """Une URL par scène, et l'ancienne qui survit.
 
 `/overlay` reste servie : c'est la source OBS déjà en place chez le streamer,
 et la casser pendant la transition mettrait un écran noir en plein live.
 """
-import pytest
-from fastapi.testclient import TestClient
-
 from bot.core.overlay_layout import SLUGS_RESERVES
 
 
-@pytest.fixture
-def client(app_dashboard):        # fixture existante du projet
-    return TestClient(app_dashboard)
+def test_overlay_sans_slug_repond_toujours(overlay_client):
+    assert overlay_client.get("/overlay").status_code == 200
 
 
-def test_overlay_sans_slug_repond_toujours(client):
-    assert client.get("/overlay").status_code == 200
-
-
-def test_chaque_scene_a_son_url(client):
+def test_chaque_scene_a_son_url(overlay_client):
     for slug in ("start", "jeu", "end"):
-        r = client.get(f"/overlay-{slug}")
+        r = overlay_client.get(f"/overlay-{slug}")
         assert r.status_code == 200
         assert "overlay_layout.js" in r.text
 
 
-def test_la_page_porte_son_slug(client):
-    assert 'data-scene-slug="jeu"' in client.get("/overlay-jeu").text
+def test_la_page_porte_son_slug(overlay_client):
+    assert 'data-scene-slug="jeu"' in overlay_client.get("/overlay-jeu").text
 
 
-def test_les_slugs_reserves_ne_sont_pas_captes(client):
-    """`/overlay-image` et `/overlay-rotation` existaient AVANT les scènes."""
+def test_les_slugs_reserves_ne_sont_pas_captes(overlay_client):
+    """`/overlay-image` et `/overlay-rotation` existaient AVANT les scènes.
+
+    Elles sont déclarées avant la route paramétrée, qui les capterait sinon.
+    """
     for reserve in ("image", "rotation"):
         assert reserve in SLUGS_RESERVES
-        assert client.get(f"/overlay-{reserve}").status_code == 200
+        r = overlay_client.get(f"/overlay-{reserve}")
+        assert r.status_code == 200
+        # La page de scène porte cet attribut ; les deux anciennes pages, non.
+        assert "data-scene-slug" not in r.text
 
 
-def test_une_scene_inconnue_sert_quand_meme_une_page(client):
+def test_une_scene_inconnue_sert_quand_meme_une_page(overlay_client):
     """OBS peut pointer sur une scène supprimée. Écran noir interdit."""
-    assert client.get("/overlay-fantome").status_code == 200
+    assert overlay_client.get("/overlay-fantome").status_code == 200
 ```
 
 - [ ] **Étape 2 : lancer, vérifier l'échec**
 
-Commande : `python -m pytest tests/test_overlay_routes_scenes.py -v`
+Commande : `python -m pytest tests/dashboard/test_overlay_routes_scenes.py -v`
 Attendu : 404 sur `/overlay-start`.
 
 - [ ] **Étape 3 : ajouter la route par scène**
@@ -1157,9 +1175,9 @@ et `reglages = data.scene.elements;` dans `chargerLayout`, comme dans
 - [ ] **Étape 6 : lancer les tests et commiter**
 
 ```bash
-python -m pytest tests/test_overlay_routes_scenes.py -v
+python -m pytest tests/dashboard/test_overlay_routes_scenes.py -v
 python -m pytest tests/ -q -x
-git add bot/dashboard/app.py bot/dashboard/static/overlay.js bot/dashboard/static/overlay.html tests/test_overlay_routes_scenes.py
+git add bot/dashboard/app.py bot/dashboard/static/overlay.js bot/dashboard/static/overlay.html tests/dashboard/conftest.py tests/dashboard/test_overlay_routes_scenes.py
 git commit -m "feat(overlay): une URL par scène, et le layout appliqué en direct
 
 La page charge son layout par un GET et se replace sur événement, sans
@@ -1444,6 +1462,10 @@ jamais validés."
 
 - [ ] **Étape 1 : écrire le test qui échoue**
 
+Patron du dépôt : un `FastAPI()` monté à la main avec `app.state.wally`
+simulé — celui de `tests/test_dashboard_emotion_api.py`. Le jeton admin des
+tests est `testtoken` (`tests/test_admin_update.py:47`).
+
 ```python
 # tests/test_overlay_preview.py
 """Le bouton Tester ne doit JAMAIS surgir sur la scène en direct.
@@ -1451,40 +1473,79 @@ jamais validés."
 C'est tout l'intérêt du champ `scene` sur les événements : on règle la scène de
 fin pendant que le live tourne sur celle du jeu.
 """
+from unittest.mock import MagicMock
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from bot.dashboard.routes.overlay import admin_router
 
-def test_la_previsualisation_cible_une_seule_scene(app_dashboard, feed_espion):
-    client = TestClient(app_dashboard)
+
+class _FeedEspion:
+    """Retient ce qui est publié. `OverlayFeed.publish` est synchrone."""
+
+    def __init__(self):
+        self.publies = []
+
+    def publish(self, event):
+        self.publies.append(event)
+
+
+@pytest.fixture
+def preview():
+    app = FastAPI()
+    app.include_router(admin_router, prefix="/api/admin")
+    feed = _FeedEspion()
+    app.state.wally = MagicMock()
+    app.state.wally.overlay_feed = feed
+    # `charger_layout` accepte `db=None` et rend les défauts : les trois
+    # scènes par défaut suffisent à ce test, pas besoin de base.
+    app.state.wally.db = None
+    app.state.wally.config.bot.dashboard_token = "testtoken"
+    return TestClient(app), feed
+
+
+_AUTH = {"Authorization": "Bearer testtoken"}
+
+
+def test_la_previsualisation_cible_une_seule_scene(preview):
+    client, feed = preview
     r = client.post("/api/admin/overlay/preview",
-                    json={"scene": "end", "element": "dice"},
-                    headers={"Authorization": "Bearer test"})
+                    json={"scene": "end", "element": "dice"}, headers=_AUTH)
     assert r.status_code == 200
-    evt = feed_espion.publies[-1]
+    evt = feed.publies[-1]
     assert evt["scene"] == "end"       # et surtout pas None
     assert evt["type"] == "widget"
     assert evt["kind"] == "dice"
+    assert evt["params"]["result"] == "4"   # l'échantillon, pas un widget vide
 
 
-def test_tout_afficher_envoie_des_fantomes_de_la_scene(app_dashboard, feed_espion):
-    client = TestClient(app_dashboard)
+def test_tout_afficher_envoie_des_fantomes_de_la_scene(preview):
+    client, feed = preview
     r = client.post("/api/admin/overlay/preview",
-                    json={"scene": "jeu", "tous": True},
-                    headers={"Authorization": "Bearer test"})
+                    json={"scene": "jeu", "tous": True}, headers=_AUTH)
     assert r.status_code == 200
-    evt = feed_espion.publies[-1]
+    evt = feed.publies[-1]
     assert evt["type"] == "ghosts"
     assert evt["scene"] == "jeu"
     assert "avatar" in evt["elements"]
 
 
-def test_un_element_inconnu_est_refuse(app_dashboard):
-    client = TestClient(app_dashboard)
+def test_un_element_inconnu_est_refuse(preview):
+    client, _ = preview
     r = client.post("/api/admin/overlay/preview",
-                    json={"scene": "jeu", "element": "licorne"},
-                    headers={"Authorization": "Bearer test"})
+                    json={"scene": "jeu", "element": "licorne"}, headers=_AUTH)
     assert r.status_code == 400
+
+
+def test_une_scene_inconnue_est_refusee_pour_les_fantomes(preview):
+    """Contrairement à la page, qui sert le défaut : ici c'est un appel admin,
+    et une scène inconnue est une erreur de l'appelant, pas un écran noir."""
+    client, _ = preview
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "fantome", "tous": True}, headers=_AUTH)
+    assert r.status_code == 404
 ```
 
 - [ ] **Étape 2 : lancer, vérifier l'échec** — 404 sur la route.
@@ -1737,13 +1798,41 @@ async def test_sans_layout_tout_est_disponible():
 
 
 @pytest.mark.asyncio
-async def test_un_widget_masque_partout_est_refuse_pas_annonce(narrateur_avec_db):
+async def test_un_widget_masque_partout_est_refuse_pas_annonce():
     """Une action différée passe à côté de l'enum : le refus doit venir de
-    l'exécution, sinon il annonce « c'est à l'écran » sans que rien ne le soit."""
-    narrateur = narrateur_avec_db(_base_avec(
-        {"start": ["dice"], "jeu": ["dice"], "end": ["dice"]}))
-    rendu = await narrateur.show_widget("dice", "regardez ça")
-    assert rendu is False
+    l'exécution, sinon il annonce « c'est à l'écran » sans que rien ne le soit.
+
+    Construction du narrateur reprise telle quelle de
+    `tests/test_overlay_etat_partie_persist.py:44`.
+    """
+    from unittest.mock import AsyncMock
+
+    from bot.core.overlay_feed import OverlayFeed
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+
+    db = _base_avec({"start": ["dice"], "jeu": ["dice"], "end": ["dice"]})
+    narrateur = OverlayNarrator(
+        OverlayFeed(), AsyncMock(), lambda: True, db=db,
+        stream_status=lambda: {"live": True, "started_at": "2026-08-15T07:00:00Z"},
+    )
+    assert await narrateur.show_widget("dice", "regardez ça") is False
+
+
+@pytest.mark.asyncio
+async def test_un_widget_visible_quelque_part_s_affiche():
+    """Le pendant du test précédent : sans lui, « rend toujours False »
+    passerait pour un correctif."""
+    from unittest.mock import AsyncMock
+
+    from bot.core.overlay_feed import OverlayFeed
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+
+    db = _base_avec({"start": ["dice"], "end": ["dice"]})   # visible en jeu
+    narrateur = OverlayNarrator(
+        OverlayFeed(), AsyncMock(), lambda: True, db=db,
+        stream_status=lambda: {"live": True, "started_at": "2026-08-15T07:00:00Z"},
+    )
+    assert await narrateur.show_widget("dice", "regardez ça") is not False
 ```
 
 - [ ] **Étape 2 : lancer, vérifier l'échec** — `ImportError` sur
