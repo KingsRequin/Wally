@@ -47,33 +47,69 @@ def test_chaque_element_du_modele_a_son_conteneur_dans_le_html():
     assert not inconnus, f"conteneurs sans élément au modèle : {sorted(inconnus)}"
 
 
-# Les objets de builders, et la profondeur d'indentation de leurs méthodes.
+# ── Les deux tests qui suivent vont par PAIRE. Ne pas en supprimer un ────────
+#
+# `test_tout_kind_rendu_par_la_page_est_placable` vérifie que tout ce que la
+# page RESTITUE est plaçable — c'est le filet qui manquait quand les huit
+# panneaux Apex sont restés hors du modèle.
+#
+# `test_les_builders_restent_dans_la_forme_que_l_extraction_sait_lire` vérifie
+# que le premier VOIT bien tout. Il n'est pas une redondance : le premier
+# repose sur une lecture du source par expression régulière, qui ne reconnaît
+# qu'une seule façon d'écrire une entrée. Un widget écrit `nom: (p) => {`,
+# `async nom(p) {` ou `nom({ x, y }) {` ne serait pas extrait — donc jamais
+# comparé à `ELEMENTS` — et le premier test resterait VERT pendant qu'un widget
+# réel serait inatteignable depuis le panneau de mise en scène. Exactement le
+# trou qu'il est censé fermer.
+#
+# Le renversement est ce qui compte : plutôt que d'espérer que l'extraction
+# voie toutes les formes, on INTERDIT celles qu'elle ne voit pas. Un
+# contributeur qui écrit un widget autrement obtient un échec explicite, avec la
+# marche à suivre, au lieu d'un silence.
+
+# Les objets de builders, et le marqueur qui ouvre chacun.
 _SOURCES_BUILDERS = (
     ("overlay.js", "const BUILDERS = {"),
     ("overlay_apex.js", "window.APEX_BUILDERS = {"),
 )
-# Une méthode d'objet : `nom(p) {`, à quatre espaces. Le corps d'un builder est
-# indenté plus profond, un `if (…) {` ne colle pas (espace avant la parenthèse).
+# La forme canonique d'une entrée : `nom(p) {`, à quatre espaces. Le corps d'un
+# builder est indenté plus profond, un `if (…) {` ne colle pas (espace avant la
+# parenthèse).
 _METHODE = re.compile(r"^ {4}([A-Za-z_]\w*)\s*\(\s*\w*\s*\)\s*\{\s*$")
+# Ce qu'on tolère d'autre à la profondeur des entrées : leur accolade fermante,
+# et les commentaires qui les présentent.
+_FERMETURE = re.compile(r"^ {4}\},?$")
+_COMMENTAIRE = re.compile(r"^ {4}(//|/\*|\*)")
+# Uniquement pour NOMMER la forme fautive dans le message d'échec. Le refus,
+# lui, ne dépend pas de cette liste : est refusé tout ce qui n'est pas canonique.
+_FORMES = (
+    ("=>", "fonction fléchée, du genre `nom: (p) => {`"),
+    ("async ", "méthode `async`"),
+    ("function", "`function` explicite"),
+    ("...", "propriété étalée (`...`)"),
+    (":", "clé suivie de deux-points"),
+)
 
 
-def _cles_builders(fichier: str, marqueur: str) -> set[str]:
-    """Les clés d'un objet de builders, lues dans le source.
+def _lignes_bloc(fichier: str, marqueur: str) -> list[str]:
+    """Les lignes d'un objet de builders, marqueur et accolade finale exclus.
 
-    Bornée au bloc : les fonctions déclarées ailleurs dans le fichier ne sont
-    pas des `kind`.
+    Bornée au bloc : ce qui est déclaré ailleurs dans le fichier n'est pas une
+    entrée de l'objet.
     """
     lignes = (_STATIC / fichier).read_text(encoding="utf-8").splitlines()
     debut = next((i for i, l in enumerate(lignes) if l.strip() == marqueur), None)
     assert debut is not None, f"`{marqueur}` introuvable dans {fichier}"
-    cles = set()
-    for ligne in lignes[debut + 1:]:
-        if ligne.rstrip() == "  };":          # fin de l'objet
-            break
-        trouve = _METHODE.match(ligne)
-        if trouve:
-            cles.add(trouve.group(1))
-    return cles
+    fin = next((i for i, l in enumerate(lignes[debut + 1:], debut + 1)
+                if l.rstrip() == "  };"), None)
+    assert fin is not None, f"fin de `{marqueur}` introuvable dans {fichier}"
+    return lignes[debut + 1:fin]
+
+
+def _cles_builders(fichier: str, marqueur: str) -> set[str]:
+    """Les clés d'un objet de builders, lues dans le source."""
+    return {m.group(1) for m in
+            (_METHODE.match(l) for l in _lignes_bloc(fichier, marqueur)) if m}
 
 
 def test_tout_kind_rendu_par_la_page_est_placable():
@@ -100,6 +136,64 @@ def test_tout_kind_rendu_par_la_page_est_placable():
         "Ils sortiraient dans un conteneur improvisé, et resteraient à jamais "
         "hors de portée du panneau de mise en scène."
     )
+
+
+def test_les_builders_restent_dans_la_forme_que_l_extraction_sait_lire():
+    """Le garde du test précédent : on interdit ce que l'extraction ne voit pas.
+
+    Une entrée écrite autrement ne serait pas extraite, donc jamais comparée à
+    `ELEMENTS` — et le contrôle d'à côté resterait vert pendant qu'un widget
+    réel serait inatteignable. Le compte des entrées ne dit rien de ce qui
+    manque : trente clés peuvent correspondre pendant qu'une trente-et-unième
+    est ignorée en silence.
+
+    Deux signaux indépendants sur les mêmes lignes :
+      1. à la profondeur des entrées, on n'accepte QUE la forme canonique
+         (plus les fermetures et les commentaires) ;
+      2. chaque entrée ouvre et ferme à cette profondeur — autant de `}` que de
+         `nom(p) {`. Une signature étalée sur plusieurs lignes, que la règle 1
+         ne verrait pas, déséquilibre ce compte.
+    """
+    for fichier, marqueur in _SOURCES_BUILDERS:
+        lignes = _lignes_bloc(fichier, marqueur)
+        assert lignes, f"bloc vide dans {fichier} : le découpage ne colle plus"
+        entrees, fermetures, suspectes = 0, 0, []
+        for numero, ligne in enumerate(lignes, 1):
+            if not ligne.strip():
+                continue
+            indentation = len(ligne) - len(ligne.lstrip())
+            # Moins indenté que les entrées : une entrée cachée là échapperait
+            # à toutes les règles qui suivent.
+            assert indentation >= 4, (
+                f"{fichier}, ligne {numero} : indentation de {indentation} "
+                f"espaces sous la profondeur des entrées — {ligne.strip()!r}"
+            )
+            if indentation != 4:
+                continue
+            if _METHODE.match(ligne):
+                entrees += 1
+            elif _FERMETURE.match(ligne):
+                fermetures += 1
+            elif not _COMMENTAIRE.match(ligne):
+                forme = next((nom for motif, nom in _FORMES if motif in ligne),
+                             "forme inconnue")
+                suspectes.append(f"ligne {numero} ({forme}) : {ligne.strip()!r}")
+
+        assert not suspectes, (
+            f"{fichier} — entrées que l'extraction des `kind` ne sait PAS lire :\n  "
+            + "\n  ".join(suspectes)
+            + "\n\nUne entrée sous cette forme n'est jamais comparée à `ELEMENTS` : "
+            "le widget serait rendu, mais impossible à placer, et aucun test ne "
+            "le dirait.\nDeux issues : réécrire l'entrée sous la forme canonique "
+            "`nom(p) {` à quatre espaces, ou élargir `_METHODE` — et ce garde "
+            "avec elle."
+        )
+        assert entrees == fermetures, (
+            f"{fichier} : {entrees} entrées lues pour {fermetures} accolades "
+            "fermantes à leur profondeur. Une entrée est écrite sous une forme "
+            "que `_METHODE` ne reconnaît pas — une signature sur plusieurs "
+            "lignes, par exemple. Voir la note en tête de fichier."
+        )
 
 
 def test_la_bulle_ne_rogne_jamais_ses_pseudo_elements():
