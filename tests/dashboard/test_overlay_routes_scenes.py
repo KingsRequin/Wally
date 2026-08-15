@@ -3,9 +3,26 @@
 `/overlay` reste servie : c'est la source OBS déjà en place chez le streamer,
 et la casser pendant la transition mettrait un écran noir en plein live.
 """
+import re
+
 import pytest
 
 from bot.core.overlay_layout import SLUGS_RESERVES
+
+_SCENE_SLUG_ATTR_RE = re.compile(r'data-scene-slug="([^"]*)"')
+
+
+def _scene_slug_attr(texte: str) -> str | None:
+    """La valeur de l'attribut `data-scene-slug`, ou `None` si la page ne le
+    porte pas (`/overlay-image`, `/overlay-rotation`, ou une charge qui n'a
+    jamais atteint cette route).
+
+    Cible l'attribut précisément : asserter sur les 61 Ko de la page entière
+    ferait casser un test de sécurité le jour où l'overlay gagne un `onload=`
+    légitime ailleurs, sans rapport avec le slug.
+    """
+    m = _SCENE_SLUG_ATTR_RE.search(texte)
+    return m.group(1) if m else None
 
 
 def test_overlay_sans_slug_repond_toujours(overlay_client):
@@ -45,9 +62,10 @@ def test_une_scene_inconnue_sert_quand_meme_une_page(overlay_client):
 
 @pytest.mark.parametrize("charge", [
     'x" onload="alert(1)',
-    'x"><script>alert(1)</script>',
+    'x"><svg onload=alert(1)>',
     "x' onmouseover='alert(1)",
     'x"><img src=x onerror=alert(1)>',
+    'x＂><svg onload=alert(1)>',   # guillemet Unicode pleine chasse (U+FF02)
 ])
 def test_un_slug_hostile_ne_sort_jamais_dans_la_page(overlay_client, charge):
     """Ce slug vient de l'URL et finit dans un attribut HTML.
@@ -58,23 +76,24 @@ def test_un_slug_hostile_ne_sort_jamais_dans_la_page(overlay_client, charge):
     2026-08-15 : la réponse contenait littéralement
     `data-scene-slug="x" onload="alert(1)"`.
 
-    On vérifie le RÉSULTAT servi, pas la façon de l'obtenir : la page ne doit
-    contenir ni la charge telle quelle, ni un attribut refermé.
+    Aucune de ces charges ne contient de barre oblique : contrairement à
+    `x"><script>alert(1)</script>`, qui fait plusieurs segments d'URL et
+    n'atteint jamais cette route (elle retombe sur la page unique, un fichier
+    statique où rien n'est réfléchi — un test dessus ne testerait rien), elles
+    arrivent bien jusqu'à `overlay_scene()`.
+
+    On vérifie le RÉSULTAT servi, pas la façon de l'obtenir — et on le vérifie
+    sur l'ATTRIBUT précisément, pas sur les 61 Ko de la page : un `onload=`
+    légitime ajouté un jour ailleurs à l'overlay ne doit pas faire casser ce
+    test sans rapport.
     """
     r = overlay_client.get(f"/overlay-{charge}")
 
     assert r.status_code == 200          # jamais d'écran noir, même ici
     assert charge not in r.text
-    assert "onload=" not in r.text
-    assert "onerror=" not in r.text
-    assert "<script>alert" not in r.text
-    # Une charge contenant une barre oblique (`</script>`) fait plusieurs
-    # segments d'URL : elle n'atteint jamais cette route et retombe sur la page
-    # unique, qui est un fichier statique — rien n'y est réfléchi. Quand c'est
-    # bien l'overlay qui répond, l'attribut doit être vide et proprement fermé,
-    # la page retombant sur la scène par défaut.
-    if "data-scene-slug" in r.text:
-        assert 'data-scene-slug=""' in r.text
+    # Aucun de ces caractères n'est valide dans un slug : l'attribut retombe
+    # vide, proprement fermé, sur la scène par défaut.
+    assert _scene_slug_attr(r.text) == ""
 
 
 def test_un_slug_legitime_passe_toujours(overlay_client):
@@ -83,3 +102,24 @@ def test_un_slug_legitime_passe_toujours(overlay_client):
         r = overlay_client.get(f"/overlay-{slug}")
         assert r.status_code == 200
         assert f'data-scene-slug="{slug}"' in r.text
+
+
+def test_une_charge_pourcent_encodee_ne_sort_pas_dans_la_page(overlay_client):
+    """La même charge que `test_un_slug_hostile_ne_sort_jamais_dans_la_page`,
+    mais tapée en pourcent-encodé dans l'URL — comme un lien copié depuis un
+    navigateur ou un champ de config OBS le ferait. Le décodage se fait avant
+    la validation, donc le résultat doit être identique : attribut vide.
+    """
+    r = overlay_client.get("/overlay-x%22%3E%3Csvg%20onload%3Dalert(1)%3E")
+
+    assert r.status_code == 200
+    assert _scene_slug_attr(r.text) == ""
+
+
+def test_un_slug_de_65_caracteres_est_rejete(overlay_client):
+    """La route n'accepte que 64 caractères — un de plus doit être refusé,
+    pas tronqué en silence."""
+    r = overlay_client.get("/overlay-" + "a" * 65)
+
+    assert r.status_code == 200
+    assert _scene_slug_attr(r.text) == ""
