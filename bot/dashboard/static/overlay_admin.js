@@ -21,7 +21,11 @@ window.OverlayAdmin = (function () {
   "use strict";
 
   const URL_LAYOUT = "/api/admin/overlay/layout";
+  const URL_APERCU = "/api/admin/overlay/preview";
   const CANVAS_W = 1920;
+  // Au-delà, on considère que l'aperçu ne viendra pas et on reste sur les
+  // rectangles nommés. Un aperçu absent ne doit jamais empêcher de placer.
+  const APERCU_DELAI_MS = 8000;
 
   // Les slugs que les routes existantes occupent déjà (`/overlay-image`,
   // `/overlay-rotation`, `/api/.../version`, `/health`). Une scène qui en
@@ -36,24 +40,16 @@ window.OverlayAdmin = (function () {
   // c'est justement le reproche auquel ce panneau répond — « apex prédateur ??
   // ». Une clé sans libellé s'affiche telle quelle plutôt que de disparaître.
 
-  // Des ordres de grandeur, en pixels du canvas 1920×1080, POUR L'APERÇU SEUL.
-  // La taille réelle d'un widget dépend de son contenu (`width: max-content`
-  // dans overlay.html) et ne peut pas se connaître d'ici. Mieux vaut des
-  // rapports plausibles que trente-quatre carrés identiques, qui donneraient
-  // une fausse idée de l'encombrement.
-  const TAILLES = {
-    avatar: [200, 200], bubble: [460, 170],
-    image: [1280, 720], meme: [720, 540], rotator: [720, 540],
-    clip: [860, 500], clip_top: [860, 500],
-    bingo: [420, 460], stats: [360, 300], talkers: [340, 260],
-    planning: [520, 380], hangman: [560, 300], poll: [480, 320],
-    wheel: [420, 420], versus: [640, 260], gauge: [520, 160],
-    counter: [320, 140], countdown: [320, 140], coinflip: [240, 240],
-    dice: [240, 240], rps: [520, 260], pinned: [480, 200],
-    prediction: [480, 300], quote: [520, 220], raid: [520, 240],
-    wave: [420, 200],
-  };
-  const TAILLE_DEFAUT = [400, 260];
+  // L'encombrement supposé de chaque élément vit dans `WallyLayout` : la page
+  // d'overlay s'en sert AUSSI (les repères de « Tout afficher »), et deux
+  // tables auraient divergé au premier widget ajouté. Le repli couvre le cas où
+  // `overlay_layout.js` n'aurait pas été servi.
+  const TAILLE_REPLI = [400, 260];
+
+  function tailleElement(cle) {
+    const W = window.WallyLayout;
+    return (W && typeof W.taille === "function" && W.taille(cle)) || TAILLE_REPLI;
+  }
 
   // La grille de neuf cases, dans l'ordre où elle s'affiche.
   const ANCRAGES = [
@@ -83,6 +79,8 @@ window.OverlayAdmin = (function () {
   let observateur = null; // ResizeObserver de la surface
   let glisse = null;      // la clé de l'élément en cours de glisser dans la liste
   let infobulle = null;   // l'unique bulle d'aide, posée sur <body>
+  let apercuSlug = null;      // la scène actuellement chargée dans l'iframe
+  let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
 
   // ── Petits outils ───────────────────────────────────────────────────────
 
@@ -584,13 +582,10 @@ window.OverlayAdmin = (function () {
                      : "Libre — cliquer pour le verrouiller",
       element.locked ? "actif" : "",
       function () { element.locked = !element.locked; apresBascule(cle); }));
-    // Le bouton reste CLIQUABLE (`aria-disabled` plutôt que `disabled`) : un
-    // bouton désactivé n'affiche pas son infobulle dans tous les navigateurs,
-    // et un bouton muet passerait pour une panne.
-    const test = bouton("▶", "Tester cet élément sur l'overlay — pas encore branché", "inactif",
-      function () { notifier("Le bouton Tester attend sa route d'aperçu.", "error"); });
-    test.setAttribute("aria-disabled", "true");
-    actions.appendChild(test);
+    actions.appendChild(bouton("▶",
+      "Afficher cet élément avec un contenu d'exemple, dans l'aperçu de CETTE "
+      + "scène — jamais sur celle qui est à l'antenne.", "",
+      function () { tester(cle); }));
     item.appendChild(actions);
 
     item.addEventListener("click", function (evt) {
@@ -606,6 +601,81 @@ window.OverlayAdmin = (function () {
     b.title = titre;
     b.addEventListener("click", function (evt) { evt.stopPropagation(); action(); });
     return b;
+  }
+
+  // ── Tester ──────────────────────────────────────────────────────────────
+
+  /** Le ▶ d'une ligne : affiche l'élément POUR DE VRAI, avec un contenu
+   *  d'exemple, sur la seule page de la scène en cours d'édition.
+   *
+   *  Le slug voyage dans le corps de la requête, et l'événement le porte
+   *  jusqu'à la page : c'est lui qui garantit qu'un dé d'essai ne surgit pas
+   *  en plein live pendant qu'on prépare la scène de fin. */
+  function tester(cle) {
+    const scene = sceneCourante();
+    if (!scene) return;
+    const element = scene.elements[cle];
+    envoyerApercu({ scene: scene.slug, element: cle }, function () {
+      if (element && element.hidden) {
+        // Publié quand même — mais la page le masque, et un aperçu qui ne
+        // bouge pas passerait pour un bouton cassé.
+        notifier(libelle(cle) + " est masqué dans cette scène : il ne "
+          + "s'affichera pas tant qu'il l'est.", "error");
+        return;
+      }
+      notifier(libelle(cle) + " affiché dans « " + scene.nom + " »"
+        + mentionApercu(scene));
+    });
+  }
+
+  /** Tous les éléments visibles d'un coup, pour juger de leur cohabitation. */
+  function testerTous() {
+    const scene = sceneCourante();
+    if (!scene) return;
+    envoyerApercu({ scene: scene.slug, tous: true }, function () {
+      notifier("Repères posés sur « " + scene.nom
+        + " » — ils s'effacent au bout de 30 s." + mentionApercu(scene));
+    });
+  }
+
+  /** Le rappel qui compte quand l'aperçu manque : sans lui, on dit « affiché »
+   *  à quelqu'un qui ne voit rien bouger.
+   *
+   *  La scène est passée en argument plutôt que relue : la réponse arrive après
+   *  coup, et `sceneCourante()` peut avoir changé — ou rendre `null` si le
+   *  modèle a été rechargé entre-temps, ce qui ferait échouer le message DE
+   *  SUCCÈS et l'afficherait en « Test impossible ». */
+  function mentionApercu(scene) {
+    if (noeuds.cadre && noeuds.cadre.classList.contains("avec-apercu")) return "";
+    return " · aperçu indisponible, ouvrez " + urlScene(scene.slug)
+      + " à côté pour le voir.";
+  }
+
+  /** L'appel commun. Le CORPS de la réponse compte autant que son statut : un
+   *  élément qui n'a pas de widget répond 200 en disant POURQUOI il ne
+   *  s'applique pas — un bouton muet passerait pour une panne. */
+  function envoyerApercu(corps, succes) {
+    appeler(URL_APERCU, { method: "POST", body: JSON.stringify(corps) })
+      .then(function (r) {
+        if (!r) throw new Error("session expirée");
+        // Le corps d'une erreur FastAPI porte `detail` : le lire donne au
+        // streamer la raison du refus plutôt qu'un code.
+        return r.json().then(
+          function (d) { return { ok: r.ok, corps: d || {} }; },
+          function () { return { ok: r.ok, corps: {} }; });
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.corps.detail || "le serveur a refusé");
+        if (res.corps.affiche === false) {
+          notifier(res.corps.raison || "Cet élément ne se déclenche pas.", "error");
+          return;
+        }
+        succes();
+      })
+      .catch(function (e) {
+        notifier("Test impossible : " + (e && e.message ? e.message : "erreur"),
+                 "error");
+      });
   }
 
   function apresBascule(cle) {
@@ -701,18 +771,92 @@ window.OverlayAdmin = (function () {
       Object.assign({}, element, { scale: voulue / facteur }));
   }
 
+  // ── L'aperçu : la vraie page, dans une iframe ───────────────────────────
+
+  /** Charge la page de la scène dans l'aperçu — et seulement quand elle change.
+   *
+   *  La garde sur `apercuSlug` n'est pas un détail : `rendreSurface()` est
+   *  rappelée à CHAQUE frappe dans les champs X/Y/Taille. Sans elle, l'iframe
+   *  se rechargerait à chaque caractère et l'aperçu clignoterait sans jamais
+   *  finir de charger.
+   */
+  function chargerApercu(slug) {
+    if (!noeuds.apercu || !slug || apercuSlug === slug) return;
+    apercuSlug = slug;
+    noeuds.cadre.classList.remove("avec-apercu");
+    montrerRetry(false);
+    etatApercu("Aperçu : chargement de " + urlScene(slug) + "…");
+    clearTimeout(apercuMinuteur);
+    apercuMinuteur = setTimeout(echecApercu, APERCU_DELAI_MS);
+    noeuds.apercu.src = urlScene(slug);
+  }
+
+  function apercuCharge() {
+    // Même origine : on peut VÉRIFIER que c'est bien la page d'overlay. Une
+    // page d'erreur du serveur déclenche `load` elle aussi — s'en contenter
+    // afficherait « aperçu en direct » sur un 404.
+    let ok = false;
+    try {
+      const doc = noeuds.apercu.contentDocument;
+      ok = !!(doc && doc.body && doc.body.hasAttribute("data-scene-slug"));
+    } catch (e) {
+      ok = false;   // origine devenue étrangère : il n'y a rien à lire
+    }
+    if (!ok) { echecApercu(); return; }
+    clearTimeout(apercuMinuteur);
+    noeuds.cadre.classList.add("avec-apercu");
+    montrerRetry(false);
+    etatApercu("Aperçu de " + urlScene(apercuSlug)
+      + " — la mise en scène PUBLIÉE, pas le brouillon en cours.");
+    ajusterApercu();
+  }
+
+  function montrerRetry(visible) {
+    if (noeuds.apercuRetry) noeuds.apercuRetry.style.display = visible ? "" : "none";
+  }
+
+  /** Le repli. On garde les rectangles nommés plutôt qu'une surface vide :
+   *  un aperçu absent ne doit pas empêcher de placer. */
+  function echecApercu() {
+    clearTimeout(apercuMinuteur);
+    if (!noeuds.cadre) return;
+    noeuds.cadre.classList.remove("avec-apercu");
+    montrerRetry(true);
+    etatApercu("Aperçu indisponible — placement sur les rectangles nommés.");
+  }
+
+  function etatApercu(texte) {
+    if (noeuds.apercuEtat) noeuds.apercuEtat.textContent = texte;
+  }
+
+  /** L'iframe fait 1920×1080 LOGIQUES, puis on la réduit par `scale()`.
+   *
+   *  Lui donner directement la taille de la surface serait le piège central :
+   *  la page calcule son facteur de canvas sur `window.innerWidth`
+   *  (`WallyLayout.facteurCanvas`), donc sur la largeur qu'on lui donne. Large
+   *  de 600 px, elle rendrait tout au tiers de sa taille — dans un cadre déjà
+   *  réduit. L'aperçu mentirait alors précisément sur ce qu'on vient y voir.
+   */
+  function ajusterApercu() {
+    if (!noeuds.apercu || !noeuds.cadre) return;
+    const largeur = noeuds.cadre.clientWidth || 0;
+    if (!largeur) return;
+    noeuds.apercu.style.transform = "scale(" + (largeur / CANVAS_W) + ")";
+  }
+
   function rendreSurface() {
-    const cadre = noeuds.cadre;
+    const cadre = noeuds.calque;
     const scene = sceneCourante();
     if (!cadre || !scene) return;
     masquerInfobulle();
+    chargerApercu(scene.slug);
     cadre.innerHTML = "";
-    const largeur = cadre.clientWidth || 0;
+    const largeur = noeuds.cadre.clientWidth || 0;
     const ordre = scene.ordre || Object.keys(scene.elements || {});
     ordre.forEach(function (cle, rang) {
       const element = scene.elements[cle];
       if (!element) return;
-      const taille = TAILLES[cle] || TAILLE_DEFAUT;
+      const taille = tailleElement(cle);
       const rect = creer("div", "ovl-rect");
       rect.dataset.cle = cle;
       rect.style.width = taille[0] + "px";
@@ -836,6 +980,47 @@ window.OverlayAdmin = (function () {
 
   // ── Le squelette ────────────────────────────────────────────────────────
 
+  /** La barre sous la surface : l'état de l'aperçu, « Tout afficher », et la
+   *  bascule qui estompe les repères pour laisser voir la page dessous. */
+  function barreApercu() {
+    const barre = creer("div", "ovl-apercu-barre");
+    noeuds.apercuEtat = creer("span", "ovl-apercu-etat", "Aperçu : en attente…");
+    barre.appendChild(noeuds.apercuEtat);
+
+    // Sans lui, une seule coupure réseau laisse le repli en place jusqu'au
+    // prochain changement de scène — et il n'y a pas toujours de seconde scène
+    // vers laquelle aller et revenir. Un bouton explicite plutôt qu'un
+    // rechargement automatique : `rendreSurface()` est rappelée à chaque
+    // frappe, une relance par frappe serait un pilonnage.
+    noeuds.apercuRetry = creer("button", "btn btn-sm", "Réessayer");
+    noeuds.apercuRetry.style.display = "none";
+    noeuds.apercuRetry.addEventListener("click", function () {
+      const slug = apercuSlug;
+      apercuSlug = null;
+      chargerApercu(slug);
+    });
+    barre.appendChild(noeuds.apercuRetry);
+
+    const tous = creer("button", "btn btn-sm", "Tout afficher");
+    tous.title = "Pose un repère nommé à la place de chaque élément visible, "
+      + "dans l'aperçu de CETTE scène seulement. Ils s'effacent au bout de 30 s.";
+    tous.addEventListener("click", function () { testerTous(); });
+    barre.appendChild(tous);
+
+    const estomper = creer("label", "ovl-estomper");
+    const caseEstomper = document.createElement("input");
+    caseEstomper.type = "checkbox";
+    caseEstomper.addEventListener("change", function () {
+      noeuds.cadre.classList.toggle("reperes-estompes", caseEstomper.checked);
+    });
+    estomper.appendChild(caseEstomper);
+    estomper.appendChild(creer("span", null, "Estomper les repères"));
+    estomper.title = "Les rectangles de placement s'effacent pour laisser voir "
+      + "l'aperçu. Celui qu'on règle, et celui qu'on survole, restent nets.";
+    barre.appendChild(estomper);
+    return barre;
+  }
+
   function construireSquelette(conteneur) {
     conteneur.classList.add("ovl-panneau");
     conteneur.innerHTML = "";
@@ -877,7 +1062,20 @@ window.OverlayAdmin = (function () {
     // À droite : la surface, ses réglages, puis la publication.
     const droite = creer("div", "ovl-droite");
     noeuds.cadre = creer("div", "ovl-surface");
+    // L'aperçu d'abord, le calque par-dessus : c'est l'ordre du DOM qui décide
+    // lequel capte le pointeur, et le glisser (lot suivant) vivra sur le calque.
+    noeuds.apercu = document.createElement("iframe");
+    noeuds.apercu.className = "ovl-apercu";
+    noeuds.apercu.title = "Aperçu de la scène en cours d'édition";
+    noeuds.apercu.setAttribute("scrolling", "no");
+    noeuds.apercu.addEventListener("load", apercuCharge);
+    noeuds.apercu.addEventListener("error", echecApercu);
+    noeuds.cadre.appendChild(noeuds.apercu);
+    noeuds.calque = creer("div", "ovl-calque");
+    noeuds.cadre.appendChild(noeuds.calque);
     droite.appendChild(noeuds.cadre);
+
+    droite.appendChild(barreApercu());
 
     const reglages = creer("div", "ovl-reglages");
     construireReglages(reglages);
@@ -890,8 +1088,13 @@ window.OverlayAdmin = (function () {
     caseDirect.disabled = true;
     caseDirect.title = "Bientôt : publier chaque déplacement au fil de l'eau.";
     direct.appendChild(caseDirect);
-    direct.appendChild(creer("span", null, "Aperçu en direct"));
-    direct.title = "Décoché : l'overlay ne bouge pas tant qu'on n'a pas publié.";
+    // Nommée « Publier au fil de l'eau » et non « Aperçu en direct » : depuis
+    // que la surface montre la vraie page, « aperçu » désigne CE cadre. Deux
+    // sens pour un mot, dans le même panneau, sur un réglage qui touche
+    // l'antenne — c'est la confusion qu'on ne peut pas se permettre ici.
+    direct.appendChild(creer("span", null, "Publier au fil de l'eau"));
+    direct.title = "Décoché : l'overlay à l'antenne ne bouge pas tant qu'on "
+      + "n'a pas cliqué « Mettre à jour ».";
     publication.appendChild(direct);
     noeuds.compteur = creer("span", "ovl-compteur", "Rien en attente");
     publication.appendChild(noeuds.compteur);
@@ -906,13 +1109,20 @@ window.OverlayAdmin = (function () {
     corps.appendChild(droite);
     conteneur.appendChild(corps);
 
-    // La taille des rectangles dépend de la largeur de la surface : sans ça,
-    // replier la barre latérale les laisserait à l'échelle d'avant.
+    // La taille des rectangles ET la réduction de l'aperçu dépendent de la
+    // largeur de la surface : sans ça, replier la barre latérale les laisserait
+    // à l'échelle d'avant.
     if (window.ResizeObserver) {
       if (observateur) observateur.disconnect();
-      observateur = new ResizeObserver(function () { rendreSurface(); });
+      observateur = new ResizeObserver(function () {
+        ajusterApercu();
+        rendreSurface();
+      });
       observateur.observe(noeuds.cadre);
     }
+    // Posée tout de suite : la surface a déjà sa largeur, et attendre le
+    // premier `load` de l'iframe l'afficherait une frame en taille réelle.
+    ajusterApercu();
   }
 
   // ── Montage ─────────────────────────────────────────────────────────────
@@ -953,7 +1163,8 @@ window.OverlayAdmin = (function () {
     urlScene: urlScene,
     libelle: libelle,
     description: description,
-    TAILLES: TAILLES,
+    tester: tester,
+    testerTous: testerTous,
     ANCRAGES: ANCRAGES,
   };
 })();

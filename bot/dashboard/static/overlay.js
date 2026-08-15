@@ -1034,11 +1034,59 @@
     clearTimeout(widgetTimer);
     hideBubble();
     showThinking(false);
+    // Les repères partent avec le reste : « enlève ce qui est affiché » vise
+    // tout ce qui est à l'écran, et un repère oublié survivrait 30 s de plus
+    // sur une page qu'on vient de vider.
+    retirerFantomes();
     const box = currentWidget();
     if (!box) { clearWidgets(true); return; }
     box.classList.remove("visible");
     // `true` : une annulation emporte AUSSI ce qui était en train de sortir.
     widgetTimer = setTimeout(() => clearWidgets(true), 300);
+  }
+
+  // ── Repères de placement ─────────────────────────────────────────────────
+  //
+  // Le « Tout afficher » du panneau de mise en scène : un rectangle nommé à la
+  // place de chaque élément NON masqué, pour juger de leur cohabitation d'un
+  // coup d'œil.
+  //
+  // Pourquoi des repères et pas les vrais widgets : ils sont `solo` pour la
+  // plupart, donc ils passent l'un APRÈS l'autre par la file d'attente. Les
+  // demander tous aurait pris cinq minutes en n'en montrant jamais qu'un.
+  //
+  // Chaque repère vit dans le conteneur de son élément : c'est donc la page
+  // elle-même qui le place, avec l'ancrage, l'échelle et l'empilement réels.
+  // Un rectangle calculé ailleurs mentirait sur ce qu'on est en train de régler.
+  const FANTOMES_MS = 30000;
+  // Déclaré AVANT les fonctions qui le lisent — un `let` lu avant sa ligne lève
+  // une TDZ, que `node --check` ne détecte pas.
+  let fantomeTimer = null;
+
+  function retirerFantomes() {
+    clearTimeout(fantomeTimer);
+    fantomeTimer = null;
+    document.querySelectorAll(".ghost").forEach((n) => n.remove());
+  }
+
+  function afficherFantomes(elements) {
+    retirerFantomes();
+    if (!elements || !window.WallyLayout) return;
+    WallyLayout.ELEMENTS.forEach((cle) => {
+      const reglage = elements[cle];
+      if (!reglage || reglage.hidden) return;
+      const hote = document.querySelector(`[data-element="${cle}"]`);
+      if (!hote) return;
+      const taille = WallyLayout.taille(cle);
+      const box = el("div", "ghost");
+      box.style.width = `${taille[0]}px`;
+      box.style.height = `${taille[1]}px`;
+      const nom = el("span", "ghost-nom");
+      nom.textContent = cle;
+      box.appendChild(nom);
+      hote.appendChild(box);
+    });
+    fantomeTimer = setTimeout(retirerFantomes, FANTOMES_MS);
   }
 
   // Les couleurs de l'overlay, pas celles de la fête foraine : les accents de
@@ -1336,6 +1384,12 @@
   });
 
   connect("/api/public/sse/overlay-feed", (event) => {
+    // Un événement qui porte un slug ne concerne QUE la page de cette scène.
+    // Sans ce filtre, régler la scène de fin depuis le panneau ferait surgir un
+    // dé d'essai en plein live sur celle du jeu — c'est exactement ce que le
+    // champ `scene` existe pour empêcher. Un événement sans slug (tout ce que
+    // Wally publie de lui-même) vise tout le monde, comme avant.
+    if (event.scene && event.scene !== sceneSlug) return;
     switch (event.type) {
       case "bubble":   say(event.text, event.mode, event.duration); break;
       case "thinking": showThinking(event.active); break;
@@ -1346,6 +1400,7 @@
       // il occuperait le tampon de rejeu au détriment des bulles. On refait le
       // GET, qui reste la seule source de vérité.
       case "layout":   chargerLayout(); break;
+      case "ghosts":   afficherFantomes(event.elements); break;
     }
   });
 

@@ -57,6 +57,36 @@ window.WallyLayout = (function () {
     "apex_map", "apex_craft", "apex_predator", "apex_servers",
   ];
 
+  // Des ordres de grandeur, en pixels du canvas 1920×1080, POUR LES REPÈRES
+  // SEULS : les rectangles de manipulation du panneau de mise en scène, et les
+  // repères que « Tout afficher » pose sur la page. La taille RÉELLE d'un
+  // widget dépend de son contenu (`width: max-content` dans overlay.html) et ne
+  // peut pas se connaître à l'avance ; mieux vaut des rapports plausibles que
+  // trente-quatre carrés identiques, qui donneraient une fausse idée de
+  // l'encombrement.
+  //
+  // Ici et pas dans `overlay_admin.js` : la page ET le panneau s'en servent, et
+  // deux tables auraient divergé au premier widget ajouté — c'est exactement le
+  // reproche auquel ce chantier répond.
+  const TAILLES = {
+    avatar: [200, 200], bubble: [460, 170],
+    image: [1280, 720], meme: [720, 540], rotator: [720, 540],
+    clip: [860, 500], clip_top: [860, 500],
+    bingo: [420, 460], stats: [360, 300], talkers: [340, 260],
+    planning: [520, 380], hangman: [560, 300], poll: [480, 320],
+    wheel: [420, 420], versus: [640, 260], gauge: [520, 160],
+    counter: [320, 140], countdown: [320, 140], coinflip: [240, 240],
+    dice: [240, 240], rps: [520, 260], pinned: [480, 200],
+    prediction: [480, 300], quote: [520, 220], raid: [520, 240],
+    wave: [420, 200],
+  };
+  const TAILLE_DEFAUT = [400, 260];
+
+  /** L'encombrement supposé d'un élément, en pixels du canvas. */
+  function taille(cle) {
+    return TAILLES[cle] || TAILLE_DEFAUT;
+  }
+
   /** Le rapport entre la source réelle et le canvas de référence.
    *  Sans lui, un scale de 1 ne rendrait pas la même taille relative sur une
    *  source en 1920 et sur une en 2560 : la disposition se déferait. */
@@ -180,6 +210,6 @@ window.WallyLayout = (function () {
 
   return {
     appliquer, placer, orienterPointe, bornerBulle, styleDepuisElement,
-    facteurCanvas, ELEMENTS, ANCRAGES,
+    facteurCanvas, taille, ELEMENTS, ANCRAGES, TAILLES, TAILLE_DEFAUT,
   };
 })();

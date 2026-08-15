@@ -3682,6 +3682,89 @@ body.is-mobile .mobile-back-btn {
   backdrop-filter: blur(10px);
 }
 
+/* L'aperçu : la VRAIE page d'overlay de la scène, chargée telle quelle.
+
+   1920×1080 LOGIQUES, puis réduite par `transform` (posée en JS). Lui donner
+   directement la largeur de la surface serait faux : la page calcule son
+   facteur de canvas sur `window.innerWidth`, donc sur la largeur qu'on lui
+   accorde — tout y serait rendu au tiers de sa taille, dans un cadre déjà
+   réduit, et l'aperçu mentirait sur ce qu'on vient précisément y vérifier. */
+.ovl-apercu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: top left;
+  border: 0;
+  background: transparent;
+  /* L'aperçu ne vole pas le pointeur au calque de manipulation, qui est le
+     seul à répondre aux clics — et qui recevra le glisser. */
+  pointer-events: none;
+}
+
+/* La page d'overlay a un fond TRANSPARENT (c'est une source OBS) : sans ce
+   fond sombre, elle se lirait sur la grille de placement. La grille, elle,
+   disparaît — l'aperçu est un meilleur repère qu'un quadrillage. */
+.ovl-surface.avec-apercu {
+  background-image: none;
+  background-color: rgba(8, 12, 18, 0.92);
+}
+
+/* Le calque de manipulation, par-dessus l'aperçu. Il porte les rectangles :
+   ce sont eux qui captent le pointeur et qui montrent où est un élément même
+   quand il n'affiche rien — un widget non déclenché est invisible en dessous. */
+.ovl-calque { position: absolute; inset: 0; }
+
+/* Avec l'aperçu, les repères se font discrets : un contour et une étiquette,
+   rien qui masque ce qu'on est venu regarder. */
+.ovl-surface.avec-apercu .ovl-rect {
+  background: transparent;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.ovl-surface.avec-apercu .ovl-rect:hover { background: rgba(6, 182, 212, 0.10); }
+.ovl-surface.avec-apercu .ovl-rect-nom {
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 8px;
+  padding: 2px 12px;
+}
+
+/* La bascule « Estomper les repères ». Celui qu'on règle et celui qu'on
+   survole restent nets : sinon on ne saurait plus ce qu'on manipule. */
+.ovl-surface.reperes-estompes .ovl-rect { opacity: 0.12; }
+.ovl-surface.reperes-estompes .ovl-rect:hover,
+.ovl-surface.reperes-estompes .ovl-rect.actif { opacity: 1; }
+
+.ovl-apercu-barre {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+.ovl-apercu-etat {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovl-estomper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
 .ovl-rect {
   position: absolute;
   display: flex;
@@ -3709,7 +3792,10 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-rect.verrouille { cursor: default; }
 .ovl-rect-nom {
-  font-size: 22px;   /* en pixels du canvas 1920 : la mise à l'échelle le réduit */
+  /* En pixels du canvas 1920 : la mise à l'échelle le réduit d'autant. À 22 px
+     il tombait sous les 8 px à l'écran — illisible dès que l'aperçu met une
+     image derrière. */
+  font-size: 34px;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;

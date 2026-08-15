@@ -12,9 +12,11 @@ import math
 import re
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
+from loguru import logger
 
 from bot.core.memes import media_type
 
@@ -324,3 +326,211 @@ async def put_overlay_layout(request: Request) -> dict:
         # retient que la scène qui la concerne.
         feed.publish({"type": "layout", "scene": None})
     return layout
+
+
+# ── Le bouton « Tester » ─────────────────────────────────────────────────────
+#
+# Un jeu de paramètres par widget, calé sur le SCHÉMA de chaque builder
+# (`overlay.js`, `overlay_apex.js`). Un widget testé sans paramètre se
+# construirait vide et ne dirait rien de son encombrement réel — or c'est
+# exactement ce qu'on cherche à voir en le plaçant.
+#
+# Les valeurs sont volontairement LONGUES là où la largeur varie (le sondage à
+# quatre options, le versus, le message épinglé) : on règle sur le pire cas,
+# pas sur le cas commode.
+_ECHANTILLONS: dict[str, dict] = {
+    "coinflip":  {"result": "heads"},
+    # `results` et pas `count` : c'est la liste que lit le builder, et un seul
+    # dé occupe 78 px là où deux en prennent le double — l'encombrement montré
+    # doit être celui qu'on aura vraiment.
+    "dice":      {"result": "4", "results": ["4", "2"]},
+    "wheel":     {"options": ["Fuse", "Bloodhound", "Rampart", "Mirage"],
+                  "result": 0},
+    "countdown": {"seconds": 60, "done": "C'est l'heure"},
+    # `gauge` porte AUSSI l'objectif de follows/subs : `_publish_goal` publie
+    # une jauge, pas un widget « goal ».
+    "gauge":     {"percent": 62, "label": "Objectif follows · 31/50"},
+    "pinned":    {"text": "Un message du chat, assez long pour occuper "
+                          "toute la largeur prévue", "author": "kassandreyunikon"},
+    # `counter` porte AUSSI l'uptime, aliasé à la publication.
+    "counter":   {"text": "12 morts en tombant"},
+    "clip":      {"title": "Le rageur Taki", "creator": "kassandreyunikon"},
+    "clip_top":  {"rows": [{"title": "Le rageur Taki", "views": 412},
+                           {"title": "Le cerveau de Rina a bug", "views": 208}]},
+    "prediction": {"bet": "Azraël finit top 5", "outcome": "wrong"},
+    "quote":     {"text": "Dans le doute, je fais exploser la maison",
+                  "author": "Azraël"},
+    "raid":      {"from": "kingsrequin", "viewers": 42},
+    "wave":      {"viewers": 120},
+    "poll":      {"question": "On enchaîne sur du classé ?",
+                  "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
+                  "seconds": 20},
+    "stats":     {"player": "Azraël",
+                  "lines": ["Rang : Platine 4", "RP : 8 756",
+                            "Kills : 102 324", "3ᵉ mondial avec Fuse"]},
+    "versus":    {"label": "Kills", "left_name": "Azraël", "left_value": 18,
+                  "right_name": "KingsRequin", "right_value": 7},
+    "bingo":     {"cells": ["Azra tombe de la map", "Kassandre parle en fight",
+                            "Un random qui ping tout", "Zéro dégât sur un fight",
+                            "Requin explique Mirage", "Fuse ulti dans le vide"],
+                  "check": 0},
+    "rps":       {"move": "pierre"},
+    "hangman":   {"word": "octane", "hint": "il court vite"},
+    # `talkers` lit `rows`, pas une liste nue : sans elles, la carte se réduit
+    # à son titre et ne dit rien de la place qu'elle prendra en direct.
+    "talkers":   {"rows": [{"name": "kassandreyunikon", "count": 128},
+                           {"name": "KingsRequin", "count": 96},
+                           {"name": "Azraël", "count": 41}]},
+    # Les huit panneaux Apex passent par `APEX_BUILDERS` et se placent comme
+    # les autres : sans échantillon, leur ▶ n'aurait affiché qu'un cadre vide.
+    "apex_rank":     {"player": "Azraël", "rank_name": "Platine", "div": "IV",
+                      "score": 8756, "top_percent": 12, "ladder_pos": 41230},
+    "apex_status":   {"player": "Azraël", "in_game": True, "state": "En partie",
+                      "legend": "Fuse", "skin": "Le Roi des Explosifs",
+                      "level": 412},
+    "apex_stats":    {"player": "Azraël",
+                      "rows": [{"label": "Kills", "value": 102324, "top_percent": 3},
+                               {"label": "Dégâts", "value": 18402993},
+                               {"label": "Parties jouées", "value": 24118}]},
+    "apex_map":      {"modes": [{"name": "Battle Royale", "map": "Storm Point",
+                                 "remaining_s": 1240},
+                                {"name": "Classé", "map": "World's Edge",
+                                 "remaining_s": 3600}]},
+    "apex_craft":    {"bundles": [{"type": "Quotidien",
+                                   "items": ["Chargeur lourd", "Crosse de fusil"]},
+                                  {"type": "Hebdomadaire",
+                                   "items": ["Viseur 2x-4x", "Bouclier de bras"]}]},
+    "apex_predator": {"rows": [{"platform": "PC", "rp": 173420},
+                               {"platform": "PS4", "rp": 141288},
+                               {"platform": "Xbox", "rp": 138904}]},
+    "apex_servers":  {"rows": [{"name": "Europe (Francfort)", "status": "en ligne",
+                                "up": True},
+                               {"name": "Tokyo", "status": "hors ligne",
+                                "up": False}]},
+    # `meme` et `planning` n'ont pas d'échantillon écrit : leur seul paramètre
+    # est une URL d'image, et une URL inventée afficherait une image cassée.
+    # `_source_image()` va chercher un vrai fichier au moment de l'appel.
+    "meme":      {},
+    "planning":  {},
+}
+
+# Ce qui ne passe pas par un builder de widget. Publier un `widget` de ces
+# noms-là ne ferait rien du tout côté page (`BUILDERS[kind]` est indéfini,
+# `showWidget` sort) : le ▶ resterait muet et passerait pour une panne. On dit
+# donc POURQUOI, ce qui est la seule chose utile à savoir ici.
+_HORS_WIDGET: dict[str, str] = {
+    "avatar": "L'avatar est à l'écran en permanence : il n'y a rien à "
+              "déclencher, il est déjà dans l'aperçu.",
+    "rotator": "Le rotateur de memes est une source OBS à part "
+               "(/overlay-rotation) : il tourne tout seul, hors de cette page.",
+    "image": "L'image de la galerie a sa propre source OBS (/overlay-image) : "
+             "elle ne s'affiche pas sur cette page.",
+    "apex_progress": "La courbe se trace sur de vrais relevés : sans "
+                     "historique, le panneau se retire de lui-même.",
+}
+
+# Ce que dure un élément d'essai à l'écran. Plus long qu'un widget de live
+# (10 s) : on le règle en le regardant, et republier à chaque coup d'œil
+# rallongerait le geste pour rien.
+_DUREE_ESSAI_S = 20.0
+
+
+def _source_image(cle: str, request: Request) -> str | None:
+    """L'URL d'image des deux widgets qui n'en portent qu'une, ou `None`.
+
+    Un `src` vide donne un `<img>` cassé, de 13 px de côté : le widget serait
+    annoncé « affiché » sans rien montrer, et le placement se ferait toujours à
+    l'aveugle — exactement le bouton muet qu'on cherche à éviter. On prend donc
+    un vrai fichier, ou on ne publie rien et on dit pourquoi.
+    """
+    if cle == "planning":
+        from bot.intelligence.overlay_narrator import PLANNING_PATH
+        # Le fichier est servi par `/static` : son chemin sur le disque s'en
+        # déduit. Absent, l'image serait cassée dans l'aperçu sans un mot.
+        nom = PLANNING_PATH.split("/static/", 1)[-1]
+        return PLANNING_PATH if (_STATIC_DIR / nom).exists() else None
+    library = getattr(request.app.state.wally, "memes", None)
+    medias = library.list() if library is not None else []
+    if not medias:
+        return None
+    return f"/api/public/meme/{quote(medias[0]['name'])}"
+
+
+# Ce qu'on répond quand l'image d'exemple manque. Nommé ici : les deux cas
+# n'ont pas la même cause, et « ça ne marche pas » n'aide personne.
+_SANS_IMAGE = {
+    "meme": "Aucun meme dans la bibliothèque de la chaîne : il n'y a rien à "
+            "afficher. Déposez-en un, puis réessayez.",
+    "planning": "L'image du planning est absente de `static/fichiers/` : "
+                "l'élément s'affichera vide tant qu'elle manque.",
+}
+
+
+@admin_router.post("/overlay/preview")
+async def post_overlay_preview(request: Request) -> dict:
+    """Affiche un élément — ou tous — sur UNE scène, pour la régler.
+
+    Le champ `scene` est le cœur de la fonction : sans lui, tester un dé
+    pendant qu'on prépare la scène de fin le ferait surgir en plein live.
+    `overlay.js` écarte tout événement qui porte un slug autre que le sien.
+    """
+    from bot.core.overlay_layout import ELEMENTS
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "JSON invalide")
+    slug = str(data.get("scene") or "")
+    if not slug:
+        raise HTTPException(400, "scene requise")
+    feed = getattr(request.app.state.wally, "overlay_feed", None)
+    if feed is None:
+        raise HTTPException(503, "Bus overlay indisponible")
+
+    if data.get("tous"):
+        layout = await charger_layout(_db(request))
+        scene = scene_par_slug(layout, slug)
+        if scene is None:
+            # Contrairement à la page publique, qui sert le défaut plutôt qu'un
+            # écran noir en plein live : ici c'est un appel d'administration, et
+            # une scène absente est une erreur de l'appelant.
+            raise HTTPException(404, "Scène inconnue")
+        feed.publish({"type": "ghosts", "scene": slug,
+                      "elements": scene["elements"]})
+        logger.info("Overlay : repères de tous les éléments sur « {s} »", s=slug)
+        return {"ok": True, "affiche": True}
+
+    cle = str(data.get("element") or "")
+    if cle not in ELEMENTS:
+        raise HTTPException(400, f"Élément inconnu : {cle}")
+    if cle in _HORS_WIDGET:
+        return {"ok": True, "affiche": False, "raison": _HORS_WIDGET[cle]}
+
+    if cle == "bubble":
+        # La bulle a son propre événement — elle n'est pas un widget. Publiée
+        # ici sans passer par `feed.say()` : celui-ci trace « tu as sorti une
+        # bulle sur ton overlay » dans la mémoire de soi, ce qui ferait
+        # commenter à Wally une réplique qu'il n'a jamais eue.
+        feed.publish({
+            "type": "bubble", "scene": slug, "mode": "speech",
+            "text": "Voilà à quoi ressemble une bulle un peu bavarde, "
+                    "posée là pour régler sa place.",
+            "duration": _DUREE_ESSAI_S,
+        })
+        logger.info("Overlay : bulle d'essai sur « {s} »", s=slug)
+        return {"ok": True, "affiche": True}
+
+    params = {**_ECHANTILLONS.get(cle, {}), "duration": _DUREE_ESSAI_S}
+    if cle in _SANS_IMAGE:
+        src = _source_image(cle, request)
+        if src is None:
+            return {"ok": True, "affiche": False, "raison": _SANS_IMAGE[cle]}
+        params["src"] = src
+    # `sticky` est retiré de force : un widget collant est REJOUÉ sans jamais
+    # périmer à chaque reconnexion (`OverlayFeed.recent`). Un pendu d'essai
+    # hanterait la scène qu'on vient de régler jusqu'au prochain vrai pendu.
+    params.pop("sticky", None)
+    feed.publish({"type": "widget", "scene": slug, "kind": cle, "params": params})
+    logger.info("Overlay : essai du widget « {k} » sur « {s} »", k=cle, s=slug)
+    return {"ok": True, "affiche": True}

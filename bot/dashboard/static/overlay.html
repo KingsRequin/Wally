@@ -181,6 +181,35 @@
     [data-element="talkers"] { top: 40%; }
     [data-element="stats"]   { top: 60%; }
 
+    /* ── Repères de placement ───────────────────────────────────────────────
+       Posés par « Tout afficher » du panneau de mise en scène, et retirés au
+       bout de 30 s. Ils ne sortent JAMAIS en direct : l'événement qui les
+       demande porte le slug de la scène qu'on est en train de régler, et toute
+       autre page l'écarte.
+
+       Volontairement PLAT — un contour et un nom : un repère qui se donnerait
+       des airs de widget ferait douter de ce qu'on regarde. */
+    .ghost {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      border: 2px dashed rgba(255, 255, 255, 0.55);
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .ghost-nom {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: rgba(255, 255, 255, 0.9);
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+      padding: 0 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* ── Avatar ─────────────────────────────────────────────────────────── */
     #avatar-slot {
       position: relative;
