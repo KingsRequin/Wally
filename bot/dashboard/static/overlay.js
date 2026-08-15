@@ -166,9 +166,10 @@
   //
   // Chaque widget entre dans le conteneur de son `kind` (`[data-element]`), et
   // non plus dans un `#widgets` commun : c'est ce qui lui donne sa place, son
-  // échelle et son empilement propres (`overlay_layout.js`). Les widgets EN
-  // PLACE se cherchent donc à travers tous les conteneurs — un seul est
-  // affiché à la fois, `renderWidget` retirant le précédent avant d'ajouter.
+  // échelle et son empilement propres (`overlay_layout.js`). PLUSIEURS widgets
+  // peuvent donc être à l'écran en même temps — c'est le sens du réglage `solo`
+  // du modèle —, et les widgets en place se cherchent à travers tous les
+  // conteneurs.
   const WIDGET_EN_PLACE = "[data-element] > .widget:not(.leaving)";
   const WIDGET_TOUS = "[data-element] > .widget";
 
@@ -190,7 +191,14 @@
     return hote;
   }
 
-  let widgetTimer = null;
+  // Un minuteur de disparition PAR `kind`, et non un minuteur unique : les
+  // widgets cohabitent, ils partent donc chacun à leur heure. Avec un seul
+  // minuteur, l'arrivée d'un widget annulait la sortie de celui d'à côté, qui
+  // restait à l'écran pour tout le reste du live.
+  const minuteurs = new Map();   // kind → id du minuteur de sortie
+  // Ce qui ne vise aucun widget en particulier : le relais vers la demande
+  // suivante, et le nettoyage différé d'une annulation.
+  let relaisTimer = null;
 
   // Les valeurs publiées à l'apparition PRÉCÉDENTE du duel Apex, pour faire
   // tressaillir le seul chiffre qui vient de bouger (§11 de la spec du duel).
@@ -943,12 +951,58 @@
     activeWheelBox = null;
   }
 
-  /** Le widget en place, en ignorant ceux qui finissent de sortir.
+  /** Les widgets en place, en ignorant ceux qui finissent de sortir. */
+  function widgetsEnPlace() {
+    return document.querySelectorAll(WIDGET_EN_PLACE);
+  }
+
+  /** Le widget en place POUR CE `kind`, s'il y en a un.
    *
-   *  Cherché à travers TOUS les conteneurs d'éléments : il n'y en a qu'un à la
-   *  fois, mais il n'est plus toujours dans le même. */
-  function currentWidget() {
-    return document.querySelector(WIDGET_EN_PLACE);
+   *  Chaque `kind` a son conteneur : il ne peut donc pas y en avoir deux, et
+   *  une nouvelle publication du même `kind` est une mise à jour (un vote de
+   *  sondage, une case de bingo cochée), pas une seconde carte. */
+  function widgetDe(kind) {
+    return document.querySelector(`[data-element="${kind}"] > .widget:not(.leaving)`);
+  }
+
+  /** Le widget SOLO en place, s'il y en a un : celui qui tient toute la scène.
+   *
+   *  C'est LUI, et rien d'autre, qui décide si l'avatar et la bulle s'effacent.
+   */
+  function soloEnPlace() {
+    const boites = widgetsEnPlace();
+    for (let i = 0; i < boites.length; i++) {
+      if (estSolo(boites[i].dataset.kind)) return boites[i];
+    }
+    return null;
+  }
+
+  /** `widget-on` est un ÉTAT DÉRIVÉ, recalculé depuis ce qui est RÉELLEMENT à
+   *  l'écran — jamais posé puis retiré au fil des événements.
+   *
+   *  C'est le seul endroit du fichier qui écrit cette classe, et c'est
+   *  volontaire : elle efface l'avatar et la bulle. Posée à l'arrivée d'un
+   *  widget et retirée « quand il n'y a plus rien nulle part », elle restait
+   *  accrochée dès qu'une carte survivait à son tour de piste — un widget
+   *  `sticky`, une sortie dont le minuteur avait été annulé par le voisin — et
+   *  Wally disparaissait sans jamais revenir. Dérivée, aucune séquence
+   *  d'événements ne peut la laisser en travers : il suffit qu'aucun widget
+   *  solo ne soit en place. */
+  function majWidgetOn() {
+    document.body.classList.toggle("widget-on", !!soloEnPlace());
+  }
+
+  /** La scène a-t-elle de la place pour ce widget MAINTENANT ?
+   *
+   *  Trois cas, et un seul fait attendre :
+   *    - c'est le sien qui est déjà là → mise à jour, toujours acceptée ;
+   *    - un widget solo tient la scène → tout le reste attend son départ ;
+   *    - un widget solo veut entrer → il attend que la scène soit vide.
+   *  Deux widgets `solo: false` s'affichent donc ensemble, chacun à sa place. */
+  function placeLibre(kind) {
+    if (widgetDe(kind)) return true;
+    if (soloEnPlace()) return false;
+    return !(estSolo(kind) && widgetsEnPlace().length > 0);
   }
 
   /** Retire UN widget et coupe ce qu'il faisait tourner. Un compte à rebours
@@ -962,12 +1016,11 @@
     // suivante vient de monter pendant le recouvrement.
     if (activeWheelBox === box) disposeWheel();
     box.remove();
-    // Plus AUCUNE carte nulle part — sortantes comprises : l'avatar et la bulle
-    // reviennent. Le test portait sur le premier enfant de `#widgets`, qui n'a
-    // plus lieu d'être ; les conteneurs, eux, restent en place, vides.
-    if (!document.querySelector(WIDGET_TOUS)) {
-      document.body.classList.remove("widget-on");
-    }
+    // Une carte de moins : l'avatar et la bulle reviennent si plus aucun widget
+    // solo ne tient la scène. Recalculé plutôt que retiré à la condition « plus
+    // rien nulle part » — une carte qui traîne ailleurs n'a aucune raison de
+    // garder l'avatar effacé si elle cohabite.
+    majWidgetOn();
   }
 
   /** Retire les widgets EN PLACE.
@@ -977,13 +1030,13 @@
    *  s'en vont. `tout` force le nettoyage complet, pour une annulation. */
   function clearWidgets(tout = false) {
     const cibles = document.querySelectorAll(tout ? WIDGET_TOUS : WIDGET_EN_PLACE);
-    cibles.forEach(disposeWidget);
+    cibles.forEach((n) => disposeWidget(n));
     if (tout) {
       disposeWheel();
       // Les cartes seulement. `replaceChildren()` sur les conteneurs viderait
       // AUSSI l'avatar et la bulle, qui vivent dans les leurs.
       document.querySelectorAll(WIDGET_TOUS).forEach((n) => n.remove());
-      document.body.classList.remove("widget-on");
+      majWidgetOn();
     }
   }
 
@@ -996,13 +1049,11 @@
   function showWidget(kind, params) {
     const build = BUILDERS[kind];
     if (!build) return;
-
-    const current = currentWidget();
-    // Même nature que le widget affiché : c'est une MISE À JOUR (un vote de
-    // sondage, une case de bingo, le verdict d'un pari), pas une nouvelle
-    // demande — l'empiler la ferait arriver après coup, sur un widget disparu.
-    const isUpdate = current && current.dataset.kind === kind;
-    if (current && !isUpdate) {
+    // La file ne sert QU'À ceux qui n'ont pas de place. Elle valait autrefois
+    // pour tout ce qui arrivait pendant qu'un widget était là, quel qu'il
+    // soit : deux cartes qui ne se gênent pas se succédaient sur une minute au
+    // lieu de s'afficher ensemble.
+    if (!placeLibre(kind)) {
       if (pending.length >= QUEUE_MAX) pending.shift();
       pending.push({ kind, params, at: Date.now() });
       return;
@@ -1013,10 +1064,18 @@
   function playNext() {
     const now = Date.now();
     while (pending.length) {
-      const next = pending.shift();
-      if (now - next.at > QUEUE_STALE_MS) continue;   // périmée : on passe
+      const next = pending[0];
+      // Périmée : un dé lancé il y a une minute n'intéresse plus personne.
+      if (now - next.at > QUEUE_STALE_MS) { pending.shift(); continue; }
+      // La scène n'est pas encore libre pour lui : il garde son tour. Le widget
+      // qui la tient rappellera `playNext()` en partant.
+      if (!placeLibre(next.kind)) return;
+      pending.shift();
       renderWidget(next.kind, next.params, BUILDERS[next.kind]);
-      return;
+      // Un solo prend toute la scène : les suivants attendent son départ. Un
+      // widget qui cohabite laisse la place — on enchaîne sur le suivant, qui
+      // s'affichera à côté plutôt que dans une minute.
+      if (estSolo(next.kind)) return;
     }
   }
 
@@ -1031,18 +1090,23 @@
   // « enlève ce qui est affiché » vise ce qu'on lit, pas seulement le widget.
   function clearAll() {
     pending.length = 0;
-    clearTimeout(widgetTimer);
+    minuteurs.forEach((id) => clearTimeout(id));
+    minuteurs.clear();
+    clearTimeout(relaisTimer);
     hideBubble();
     showThinking(false);
     // Les repères partent avec le reste : « enlève ce qui est affiché » vise
     // tout ce qui est à l'écran, et un repère oublié survivrait 30 s de plus
     // sur une page qu'on vient de vider.
     retirerFantomes();
-    const box = currentWidget();
-    if (!box) { clearWidgets(true); return; }
-    box.classList.remove("visible");
+    const boites = widgetsEnPlace();
+    if (!boites.length) { clearWidgets(true); playNext(); return; }
+    boites.forEach((b) => b.classList.remove("visible"));
     // `true` : une annulation emporte AUSSI ce qui était en train de sortir.
-    widgetTimer = setTimeout(() => clearWidgets(true), 300);
+    // `playNext()` derrière : une demande arrivée PENDANT ces 300 ms se met en
+    // file (les cartes sont encore là), et plus rien ne l'en sortait — elle
+    // patientait jusqu'au prochain widget, parfois tout le live.
+    relaisTimer = setTimeout(() => { clearWidgets(true); playNext(); }, 300);
   }
 
   // ── Repères de placement ─────────────────────────────────────────────────
@@ -1191,12 +1255,17 @@
   }
 
   function renderWidget(kind, params, build) {
-    clearTimeout(widgetTimer);
+    // Le minuteur DE CE `kind` seulement : couper celui des voisins les
+    // laisserait à l'écran indéfiniment.
+    clearTimeout(minuteurs.get(kind));
+    minuteurs.delete(kind);
 
     // Un sondage déjà affiché est mis à jour en place : le refaire apparaître à
     // chaque vote rejouerait l'animation d'entrée et clignoterait.
-    const current = currentWidget();
-    let poll = current && current.dataset.kind === "poll"
+    // `widgetDe(kind)` et non « le widget affiché » : plusieurs cartes peuvent
+    // être à l'écran, et c'est la SIENNE qu'on met à jour.
+    const current = widgetDe(kind);
+    let poll = kind === "poll" && current
       ? current.querySelector(".poll") : null;
     // …mais seulement s'il s'agit du MÊME sondage. `updatePoll` ne touche ni la
     // question ni les intitulés : un nouveau sondage lancé pendant que l'ancien
@@ -1212,15 +1281,21 @@
     // clignoter : on reconstruit sans relancer la cascade d'apparition.
     // Pas `rps` : un chifoumi est un affichage unique, deux duels de suite sont
     // deux animations. Le retenir ici privait le second de sa cascade d'entrée.
-    const refresh = current && current.dataset.kind === kind
-      && (kind === "bingo" || kind === "hangman");
+    const refresh = current && (kind === "bingo" || kind === "hangman");
+    let box;
     if (kind === "poll" && poll) {
       // Mutation en place : reconstruire relancerait la cascade d'entrée et
       // ferait repartir chaque barre de zéro à chaque vote.
       updatePoll(poll, params);
+      box = current;
     } else {
-      clearWidgets();
-      const box = el("div", "widget");
+      // Un widget SOLO prend la scène : ce qui est en place lui cède la place.
+      // Un widget qui cohabite ne retire QUE le sien — sans quoi il chasserait
+      // des cartes qui ne le gênent pas, ce que le réglage `solo: false` du
+      // modèle dit précisément de ne pas faire.
+      if (estSolo(kind)) clearWidgets();
+      else disposeWidget(current);
+      box = el("div", "widget");
       box.dataset.kind = kind;
       box.appendChild(build(params));
       // Dans le conteneur de SON `kind` : c'est lui qui porte la place, la
@@ -1233,13 +1308,12 @@
         box.classList.add("visible");
       }
     }
-    const box = currentWidget();
-    // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
-    // sa place. `widget-on` efface l'avatar et la bulle. Il ne vaut plus que
-    // pour les widgets SOLO, qui prennent toute la scène. Un widget qui
-    // cohabite a sa place à lui : Wally peut donc l'afficher ET le commenter,
-    // ce que la page rendait impossible jusqu'ici.
-    document.body.classList.toggle("widget-on", estSolo(kind));
+    // `box` est la carte qu'on vient de monter, et non « la première carte
+    // trouvée à l'écran » : avec plusieurs widgets en place, celle-ci pouvait
+    // être une VOISINE, qui héritait alors du minuteur de sortie du nouveau
+    // venu — et le nouveau venu ne partait plus jamais.
+    // `widget-on` se recalcule : c'est le seul écrivain de cette classe.
+    majWidgetOn();
 
     // Les confettis vivent HORS du builder : ils ne sont pas un élément du
     // widget mais un effet plein écran, et ils doivent partir au moment exact
@@ -1259,7 +1333,8 @@
     // et un sondage de 60 s disparaissait de l'écran à mi-parcours, les viewers
     // n'ayant plus la question sous les yeux pour voter.
     const seconds = Math.min(180, Math.max(2, Number(params.duration) || 12));
-    widgetTimer = setTimeout(() => {
+    minuteurs.set(kind, setTimeout(() => {
+      minuteurs.delete(kind);
       // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
       // fois par live là où une bulle part toutes les quelques secondes.
       // `leaving` cesse de le compter comme la carte EN PLACE : la suivante
@@ -1283,9 +1358,9 @@
       // Appelée à la fin de la rafale : la suivante entre quand la précédente
       // a fini de se parasiter. Deux cartes pleines l'une sur l'autre seraient
       // illisibles.
-      widgetTimer = setTimeout(playNext, GLITCH_MS);
+      relaisTimer = setTimeout(playNext, GLITCH_MS);
       setTimeout(() => disposeWidget(box), GLITCH_MS + 260);
-    }, seconds * 1000);
+    }, seconds * 1000));
   }
 
   // ── Mise à jour automatique ──────────────────────────────────────────────
@@ -1323,7 +1398,13 @@
   let reglages = {};
   function estSolo(kind) {
     const el = reglages[kind];
-    return el ? el.solo !== false : true;
+    if (!el) return true;
+    // Un élément MASQUÉ dans la scène n'occupe rien : il ne peut pas prétendre
+    // à la scène entière. Sans ça, tester un élément masqué effaçait l'avatar
+    // pour ne rien montrer à la place — l'écran perdait Wally et ne gagnait
+    // rien, le temps de la durée d'affichage.
+    if (el.hidden) return false;
+    return el.solo !== false;
   }
   async function chargerLayout() {
     try {
@@ -1338,10 +1419,12 @@
       // Course avec l'EventSource : `feed.recent()` peut réafficher un widget
       // AVANT que ce fetch (lecture SQLite) ne réponde. Tant que `reglages`
       // valait `{}`, ce widget a été classé solo par défaut et `widget-on` a
-      // effacé l'avatar. On réévalue maintenant sa vraie classe — sans ça,
-      // rien ne la retouchait avant le widget SUIVANT.
-      const enCours = currentWidget();
-      if (enCours) document.body.classList.toggle("widget-on", estSolo(enCours.dataset.kind));
+      // effacé l'avatar. On réévalue maintenant — sans ça, rien ne la
+      // retouchait avant le widget SUIVANT. `majWidgetOn()` relit TOUT ce qui
+      // est à l'écran : le réglage a pu changer pour plusieurs cartes à la
+      // fois, et c'est aussi ce qui rend l'avatar quand la scène n'a plus
+      // aucun widget solo.
+      majWidgetOn();
     } catch (e) {
       // Les défauts du CSS restent en place : mal placé vaut mieux que vide.
       console.warn("layout indisponible", e);

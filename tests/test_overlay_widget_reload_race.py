@@ -37,6 +37,33 @@ def test_le_widget_deja_affiche_est_reevalue_apres_larrivee_du_layout():
     widget non-solo affiché avant coup reste catalogué solo pour toute sa
     durée, et l'avatar reste effacé à tort jusqu'au widget suivant.
     """
-    bloc = _bloc_charger_layout()
-    assert "currentWidget()" in bloc
-    assert "widget-on" in bloc
+    assert "majWidgetOn()" in _bloc_charger_layout()
+
+
+def test_widget_on_est_un_etat_derive_et_non_un_evenement():
+    """`widget-on` efface l'avatar ET la bulle : posée à l'arrivée d'un widget
+    puis retirée « quand il n'y a plus rien nulle part », elle restait
+    accrochée dès qu'une carte survivait à son tour de piste, et Wally
+    disparaissait sans revenir.
+
+    L'invariant, et non la ligne : UN SEUL endroit écrit la classe, et il la
+    RECALCULE depuis ce qui est réellement à l'écran. Tant qu'il en est ainsi,
+    aucune séquence d'événements ne peut la laisser en travers.
+    """
+    src = _JS.read_text(encoding="utf-8")
+    assert src.count('classList.toggle("widget-on"') == 1
+    assert 'classList.add("widget-on")' not in src
+    assert 'classList.remove("widget-on")' not in src
+    # Et ce seul écrivain lit l'écran, pas le `kind` qu'on vient de publier.
+    i = src.index('classList.toggle("widget-on"')
+    assert "soloEnPlace()" in src[i:i + 200]
+
+
+def test_un_element_masque_ne_reclame_pas_la_scene():
+    """Un élément masqué dans la scène n'occupe rien : le traiter en `solo`
+    effaçait l'avatar pour ne rien montrer à la place — l'écran perdait Wally
+    et ne gagnait rien, le temps de la durée d'affichage."""
+    src = _JS.read_text(encoding="utf-8")
+    i = src.index("function estSolo(kind)")
+    bloc = src[i:src.index("\n  }", i)]
+    assert "el.hidden" in bloc
