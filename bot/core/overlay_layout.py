@@ -39,9 +39,15 @@ SLUG_MAX_LEN = 64
 
 
 def _el(x: float, y: float, anchor: str, scale: float = 1.0,
-        *, solo: bool = True, hidden: bool = False) -> dict:
+        *, solo: bool = True, hidden: bool = False,
+        wally_visible: bool | None = None) -> dict:
+    # `wally_visible` non précisé REPRODUIT le comportement d'avant ce réglage,
+    # où `solo` décidait à lui seul de l'effacement de l'avatar : un élément
+    # exclusif efface Wally, un élément qui cohabite le laisse. Personne ne voit
+    # son overlay changer parce qu'on a ajouté le réglage.
     return {"x": x, "y": y, "anchor": anchor, "scale": scale,
-            "hidden": hidden, "locked": False, "solo": solo}
+            "hidden": hidden, "locked": False, "solo": solo,
+            "wally_visible": (not solo) if wally_visible is None else wally_visible}
 
 
 # Les clés SONT les `kind` employés par la page — les franciser casserait la
@@ -65,6 +71,11 @@ def _el(x: float, y: float, anchor: str, scale: float = 1.0,
 #
 # `solo=True` : l'élément chasse les autres et passe par la file d'attente.
 # `solo=False` : il s'installe et laisse la place aux autres par-dessus.
+#
+# `wally_visible` répond à une TOUTE AUTRE question : l'avatar et la bulle
+# restent-ils à l'écran pendant l'affichage ? Les deux étaient confondus dans
+# `solo`, alors qu'on peut vouloir un meme qui occupe seul la scène mais garde
+# Wally à côté pour qu'il le commente. Non précisé, il vaut `not solo`.
 #
 # L'échelle de l'avatar vaut 0.55 : elle reproduit, sur un canvas de 1920, la
 # taille qu'il avait dans son ancienne source de 560 px de large.
@@ -185,6 +196,9 @@ def _fusionner_element(brut, defaut: dict) -> dict:
         "hidden": bool(brut["hidden"]) if brut.get("hidden") is not None else defaut["hidden"],
         "locked": bool(brut["locked"]) if brut.get("locked") is not None else defaut["locked"],
         "solo": bool(brut["solo"]) if brut.get("solo") is not None else defaut["solo"],
+        "wally_visible": (bool(brut["wally_visible"])
+                          if brut.get("wally_visible") is not None
+                          else defaut["wally_visible"]),
     }
 
 

@@ -3970,6 +3970,25 @@ body.is-mobile .mobile-back-btn {
 .ovl-champ input:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
 .ovl-champ input:disabled { opacity: 0.4; }
 
+/* « Wally reste visible » : une case, aussi lisible que les champs voisins. */
+.ovl-bascule {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ovl-bascule:hover { background: rgba(255, 255, 255, 0.07); }
+.ovl-bascule input { accent-color: #06b6d4; cursor: pointer; margin: 0; }
+/* Le même signal que les champs voisins quand aucun élément n'est choisi :
+   `:has()` aurait dit mieux, mais ce fichier ne s'en sert nulle part. */
+.ovl-bascule input:disabled { opacity: 0.4; cursor: default; }
+
 .ovl-ancrages {
   display: grid;
   grid-template-columns: repeat(3, 18px);

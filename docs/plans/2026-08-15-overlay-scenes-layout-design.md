@@ -102,6 +102,12 @@ par la file d'attente actuelle (les jeux, les memes, le hasard). `false` : il
 s'affiche par-dessus sans déranger personne (le bingo, les stats, l'objectif).
 Réglable par élément, arbitrage owner du 2026-08-15.
 
+**`wally_visible`** porte l'AUTRE question, longtemps confondue avec la
+première : l'avatar et la bulle restent-ils à l'écran pendant l'affichage ? Un
+meme peut vouloir la scène pour lui seul **et** garder Wally à côté pour qu'il
+le commente. Non précisé, il vaut `not solo` — le comportement d'avant le
+réglage, où `solo` décidait des deux à la fois.
+
 **`ordre`** donne l'empilement, du plus proche au plus lointain. Pas de
 `z-index` à régler à la main : on réordonne la liste.
 
@@ -287,9 +293,9 @@ C'est la leçon de « il ne savait pas qu'il affichait les bingos » : ce qu'il
 croit avoir fait doit correspondre à ce qui s'est produit.
 
 **La limite « un widget occupe tout l'espace » tombe.** L'avatar et la bulle
-n'ont plus à s'effacer : `widget-on` ne s'applique qu'aux widgets `solo`. Wally
-peut donc afficher un meme **et** le commenter, ce que `docs/overlay.md:331`
-donnait pour impossible.
+n'ont plus à s'effacer : `widget-on` ne s'applique qu'aux widgets réglés pour
+les effacer (`wally_visible: false`). Wally peut donc afficher un meme **et** le
+commenter, ce que `docs/overlay.md:331` donnait pour impossible.
 
 ---
 

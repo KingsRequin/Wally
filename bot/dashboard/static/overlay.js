@@ -967,12 +967,26 @@
 
   /** Le widget SOLO en place, s'il y en a un : celui qui tient toute la scène.
    *
-   *  C'est LUI, et rien d'autre, qui décide si l'avatar et la bulle s'effacent.
-   */
+   *  C'est LUI, et rien d'autre, qui fait patienter les suivants. L'effacement
+   *  de l'avatar est une AUTRE question — voir `masqueurEnPlace()`. */
   function soloEnPlace() {
     const boites = widgetsEnPlace();
     for (let i = 0; i < boites.length; i++) {
       if (estSolo(boites[i].dataset.kind)) return boites[i];
+    }
+    return null;
+  }
+
+  /** Le widget en place qui EFFACE WALLY, s'il y en a un.
+   *
+   *  Distinct de `soloEnPlace()` : tenir toute la scène et effacer l'avatar
+   *  sont deux questions différentes, réglées séparément (`wally_visible`). Un
+   *  meme peut occuper seul la scène tout en gardant Wally à côté pour qu'il le
+   *  commente. */
+  function masqueurEnPlace() {
+    const boites = widgetsEnPlace();
+    for (let i = 0; i < boites.length; i++) {
+      if (masqueWally(boites[i].dataset.kind)) return boites[i];
     }
     return null;
   }
@@ -987,9 +1001,9 @@
    *  `sticky`, une sortie dont le minuteur avait été annulé par le voisin — et
    *  Wally disparaissait sans jamais revenir. Dérivée, aucune séquence
    *  d'événements ne peut la laisser en travers : il suffit qu'aucun widget
-   *  solo ne soit en place. */
+   *  masquant ne soit en place. */
   function majWidgetOn() {
-    document.body.classList.toggle("widget-on", !!soloEnPlace());
+    document.body.classList.toggle("widget-on", !!masqueurEnPlace());
   }
 
   /** La scène a-t-elle de la place pour ce widget MAINTENANT ?
@@ -1817,6 +1831,24 @@
     // rien, le temps de la durée d'affichage.
     if (el.hidden) return false;
     return el.solo !== false;
+  }
+  /** Ce widget efface-t-il l'avatar et la bulle pendant son passage ?
+   *
+   *  Question SÉPARÉE de `estSolo()` depuis qu'un élément peut tenir seul la
+   *  scène tout en gardant Wally à côté. Deux replis, tous deux sur l'ancien
+   *  comportement : un `kind` inconnu efface (prudence), et un réglage servi
+   *  SANS le champ — un layout rangé avant l'ajout de ce champ — retombe sur
+   *  `solo`, qui décidait à lui seul de l'effacement. */
+  function masqueWally(kind) {
+    const el = reglages[kind];
+    if (!el) return true;
+    // Masqué dans la scène : il n'occupe rien, donc il n'efface rien. Sans ça,
+    // tester un élément masqué faisait perdre Wally sans rien montrer.
+    if (el.hidden) return false;
+    if (el.wally_visible === undefined || el.wally_visible === null) {
+      return el.solo !== false;
+    }
+    return !el.wally_visible;
   }
   async function chargerLayout() {
     try {

@@ -1474,6 +1474,26 @@ window.OverlayAdmin = (function () {
       hote.appendChild(bloc);
     });
 
+    // Une question DISTINCTE de « l'élément occupe-t-il seul la scène » : on
+    // peut vouloir un meme qui chasse les autres widgets mais garde Wally à
+    // côté, pour qu'il le commente. Une case par élément, comme le reste de
+    // cette barre : elle porte le réglage de l'élément choisi.
+    const bascule = creer("label", "ovl-bascule");
+    bascule.title = "Décoché, cet élément efface l'avatar et la bulle le temps "
+      + "de son affichage. Coché, Wally reste à l'écran à côté de lui.";
+    const coche = document.createElement("input");
+    coche.type = "checkbox";
+    coche.addEventListener("change", function () {
+      const element = elementCourant();
+      if (!element) return;
+      element.wally_visible = coche.checked;
+      marquerModifie();
+    });
+    bascule.appendChild(coche);
+    bascule.appendChild(creer("span", "ovl-bascule-label", "Wally reste visible"));
+    noeuds.wallyVisible = coche;
+    hote.appendChild(bascule);
+
     const grille = creer("div", "ovl-ancrages");
     grille.title = "Le point de l'élément que la position repère. En changer ne "
       + "déplace pas l'élément : x et y sont recalculés pour qu'il reste où il est.";
@@ -1504,6 +1524,17 @@ window.OverlayAdmin = (function () {
     return scene.elements[etat.elementCourant] || null;
   }
 
+  /** Ce que l'overlay fait AUJOURD'HUI de cet élément — même repli que
+   *  `masqueWally()` dans `overlay.js`. Un modèle rangé avant l'ajout du champ
+   *  ne le porte pas : c'était alors `solo` qui décidait de l'effacement, et la
+   *  case doit montrer le comportement réel, pas un défaut inventé. */
+  function gardeWally(element) {
+    if (element.wally_visible === undefined || element.wally_visible === null) {
+      return element.solo === false;
+    }
+    return !!element.wally_visible;
+  }
+
   function rendreReglages() {
     if (!noeuds.champs) return;
     const element = elementCourant();
@@ -1521,6 +1552,10 @@ window.OverlayAdmin = (function () {
         input.value = "";
       }
     });
+    if (noeuds.wallyVisible) {
+      noeuds.wallyVisible.disabled = !element;
+      noeuds.wallyVisible.checked = !!element && gardeWally(element);
+    }
     ANCRAGES.forEach(function (a) {
       noeuds.ancrages[a].classList.toggle("actif", !!element && element.anchor === a);
     });

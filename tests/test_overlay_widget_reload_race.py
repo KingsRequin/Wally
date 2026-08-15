@@ -54,9 +54,12 @@ def test_widget_on_est_un_etat_derive_et_non_un_evenement():
     assert src.count('classList.toggle("widget-on"') == 1
     assert 'classList.add("widget-on")' not in src
     assert 'classList.remove("widget-on")' not in src
-    # Et ce seul écrivain lit l'écran, pas le `kind` qu'on vient de publier.
+    # Et ce seul écrivain lit l'ÉCRAN, pas le `kind` qu'on vient de publier :
+    # `…EnPlace()` parcourt les widgets réellement montés. Le réglage consulté a
+    # changé (`solo` → `wally_visible`, cf. test_overlay_wally_visible.py) ;
+    # l'invariant testé ici, lui, ne dépend pas duquel des deux il s'agit.
     i = src.index('classList.toggle("widget-on"')
-    assert "soloEnPlace()" in src[i:i + 200]
+    assert "EnPlace()" in src[i:i + 200]
 
 
 def test_un_element_masque_ne_reclame_pas_la_scene():
