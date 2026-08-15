@@ -4102,6 +4102,55 @@ body.is-mobile .mobile-back-btn {
 /* Grisé et non caché : un bouton qui apparaît et disparaît au gré de la
    sélection fait sauter la barre sous le pointeur, et on clique à côté. */
 .ovl-outil:disabled { opacity: 0.35; cursor: default; }
+/* Le « ? » ne porte pas sur la sélection : il reste à droite, et il reste
+   cliquable quand tout le reste est grisé — c'est justement quand on ne sait
+   pas quoi faire qu'on le cherche. */
+.ovl-outil-aide {
+  margin-left: auto;
+  width: 24px;
+  padding: 4px 0;
+  font-weight: 600;
+}
+.ovl-outil-aide.actif {
+  background: rgba(6, 182, 212, 0.18);
+  border-color: rgba(6, 182, 212, 0.5);
+  color: #06b6d4;
+}
+
+/* La liste des raccourcis, dépliée sous la barre d'outils. Un raccourci que
+   personne ne connaît n'existe pas. */
+.ovl-raccourcis {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid #06b6d4;
+  border-radius: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.ovl-raccourcis-titre {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+/* Deux colonnes : la touche, puis ce qu'elle fait. `grid` et non `float` — un
+   `dl` flotté se décale dès qu'une description passe sur deux lignes. */
+.ovl-raccourcis-liste {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px 14px;
+  margin: 0;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+.ovl-raccourcis-liste dt {
+  color: #06b6d4;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+.ovl-raccourcis-liste dd { margin: 0; color: var(--text-secondary); }
 
 /* ── La barre de publication ─────────────────────────────────────────── */
 

@@ -103,6 +103,7 @@ window.OverlayAdmin = (function () {
     elementCourant: null,
     selection: [],       // les clés retenues, l'élément principal compris
     ancreSelection: null,  // le point de départ d'un Maj+clic
+    presse: null,          // les réglages copiés par C, collés par V
     brouillon: 0,
     direct: false,
     publie: null,
@@ -118,6 +119,7 @@ window.OverlayAdmin = (function () {
   let apercuSlug = null;      // la scène actuellement chargée dans l'iframe
   let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
   let survole = null;         // la clé de l'élément survolé, liste OU surface
+  let raccourcisPoses = false;  // l'écouteur clavier du document, posé une fois
 
   // La scène qu'on éditait, d'une visite à l'autre. Sans elle, un F5 ramène sur
   // la scène par défaut : le réglage qu'on venait de publier sur une AUTRE
@@ -2143,6 +2145,170 @@ window.OverlayAdmin = (function () {
     noeuds.coords.classList.add("visible");
   }
 
+  // ── Les raccourcis ──────────────────────────────────────────────────────
+  //
+  // « Un raccourci que personne ne connaît n'existe pas » : la liste est
+  // AFFICHÉE, pas seulement écrite ici. Elle vit dans une seule table, qui sert
+  // à la fois de documentation et de rappel à l'écran — deux listes auraient
+  // divergé au premier raccourci ajouté.
+
+  const RACCOURCIS = [
+    ["Clic", "choisir un élément"],
+    ["Ctrl + clic", "l'ajouter à la sélection, ou l'en retirer"],
+    ["Maj + clic", "sélectionner toute la plage depuis le dernier clic simple"],
+    ["Glisser sur le fond", "rectangle de sélection ; Ctrl pour ajouter"],
+    ["Ctrl + A", "tout ce qui est visible et non verrouillé"],
+    ["Échap", "désélectionner"],
+    ["Flèches", "déplacer la sélection de 0,1 % (Maj : 1 %)"],
+    ["Alt (pendant le glisser)", "suspendre l'aimantation"],
+    ["Suppr", "masquer la sélection, ou la remontrer"],
+    ["L", "verrouiller la sélection, ou la libérer"],
+    ["C puis V", "copier les réglages d'un élément (position, ancrage, "
+                 + "échelle) et les coller sur la sélection"],
+    ["?", "afficher ou masquer cette liste"],
+  ];
+
+  /** La bascule d'ENSEMBLE. Inverser chaque élément séparément ne convergerait
+   *  jamais sur une sélection mi-visible mi-masquée : elle clignoterait d'un
+   *  appui à l'autre sans jamais être toute visible ni toute masquée. */
+  function basculerChamp(champ, motActif, motInactif) {
+    const cles = selection();
+    if (!cles.length) { notifier("Aucun élément sélectionné.", "error"); return; }
+    const scene = sceneCourante();
+    const cible = cles.some(function (c) { return !scene.elements[c][champ]; });
+    cles.forEach(function (c) { scene.elements[c][champ] = cible; });
+    marquerModifie();
+    rendreSelection();
+    notifier(cles.length + " élément" + (cles.length > 1 ? "s " : " ")
+      + (cible ? motActif : motInactif) + ".");
+  }
+
+  /** C : les réglages de l'élément PRINCIPAL. Pas de duplication d'élément ici
+   *  — la scène a une liste fermée de trente-quatre clés —, mais recopier un
+   *  placement d'un widget à l'autre est le geste qu'on refait le plus. */
+  function copierReglages() {
+    const element = elementCourant();
+    if (!element) { notifier("Aucun élément choisi : rien à copier.", "error"); return; }
+    etat.presse = {
+      x: element.x, y: element.y,
+      anchor: element.anchor,
+      scale: element.scale,
+    };
+    notifier("Réglages de " + libelle(etat.elementCourant)
+      + " copiés — V les colle sur la sélection.");
+  }
+
+  /** V : le même placement pour toute la sélection. L'ancrage voyage AVEC la
+   *  position : les deux ne veulent rien dire l'un sans l'autre, et coller un
+   *  x/y sur un ancrage différent poserait l'élément ailleurs. */
+  function collerReglages() {
+    if (!etat.presse) {
+      notifier("Rien à coller : copiez d'abord un élément avec C.", "error");
+      return;
+    }
+    const bloc = selectionDeplacable();
+    if (!bloc.membres.length) {
+      direLesBloques(bloc.bloques);
+      if (!bloc.bloques.length) notifier("Aucun élément sélectionné.", "error");
+      return;
+    }
+    const p = etat.presse;
+    let bouge = 0;
+    bloc.membres.forEach(function (m) {
+      const x = arrondi(borner(p.x, POS_MIN, POS_MAX, m.element.x));
+      const y = arrondi(borner(p.y, POS_MIN, POS_MAX, m.element.y));
+      const e = borner(p.scale, ECHELLE_MIN, ECHELLE_MAX, m.element.scale);
+      if (m.element.x !== x || m.element.y !== y || m.element.scale !== e
+          || m.element.anchor !== p.anchor) {
+        bouge += 1;
+      }
+      m.element.x = x;
+      m.element.y = y;
+      m.element.scale = e;
+      m.element.anchor = p.anchor;
+    });
+    finirOutil(bouge, bloc.bloques);
+  }
+
+  function dansUnChamp(noeud) {
+    if (!noeud || !noeud.tagName) return false;
+    if (noeud.isContentEditable) return true;
+    const t = noeud.tagName.toUpperCase();
+    return t === "INPUT" || t === "TEXTAREA" || t === "SELECT";
+  }
+
+  /** Le panneau est-il SOUS LES YEUX ? Le dashboard garde tous ses onglets dans
+   *  le document et n'en montre qu'un : sans cette garde, `Suppr` masquerait des
+   *  éléments d'overlay pendant qu'on lit les logs dans un autre onglet. */
+  function panneauVisible() {
+    const c = noeuds.cadre;
+    return !!(c && c.isConnected && c.offsetParent !== null);
+  }
+
+  /** Les raccourcis, posés sur le DOCUMENT — la liste des éléments et les
+   *  boutons de la barre d'outils prennent le focus tout autant que la surface,
+   *  et un raccourci qui ne marche qu'à un endroit ne se retient pas.
+   *
+   *  JAMAIS dans un champ de saisie : un « l » tapé dans le nom d'une scène
+   *  verrouillerait la sélection au lieu de s'écrire. */
+  function toucheGlobale(evt) {
+    if (!panneauVisible() || dansUnChamp(evt.target)) return;
+    if (evt.altKey) return;   // Alt appartient au glisser
+    if (evt.ctrlKey || evt.metaKey) {
+      if (evt.key === "a" || evt.key === "A") {
+        evt.preventDefault();
+        toutSelectionner();
+      }
+      return;   // les autres Ctrl+… restent au navigateur (copier, recharger…)
+    }
+    if (TOUCHES[evt.key]) {
+      // Le calque a son propre écouteur, posé pour l'accessibilité au clavier :
+      // le laisser faire évite de traiter la même touche deux fois.
+      if (evt.target === noeuds.calque) return;
+      toucheSurface(evt);
+      return;
+    }
+    switch (evt.key) {
+      case "Escape": viderSelection(); break;
+      case "Delete":
+        evt.preventDefault();
+        basculerChamp("hidden", "masqués", "remontrés");
+        break;
+      case "l": case "L":
+        basculerChamp("locked", "verrouillés", "libérés");
+        break;
+      case "c": case "C": copierReglages(); break;
+      case "v": case "V": collerReglages(); break;
+      case "?": evt.preventDefault(); basculerAide(); break;
+      default: return;
+    }
+  }
+
+  function basculerAide(force) {
+    if (!noeuds.raccourcis) return;
+    const ouvert = force === undefined
+      ? noeuds.raccourcis.style.display === "none"
+      : !!force;
+    noeuds.raccourcis.style.display = ouvert ? "" : "none";
+    if (noeuds.boutonAide) {
+      noeuds.boutonAide.classList.toggle("actif", ouvert);
+      noeuds.boutonAide.setAttribute("aria-expanded", ouvert ? "true" : "false");
+    }
+  }
+
+  function blocRaccourcis() {
+    const bloc = creer("div", "ovl-raccourcis");
+    bloc.style.display = "none";
+    bloc.appendChild(creer("div", "ovl-raccourcis-titre", "Raccourcis"));
+    const liste = creer("dl", "ovl-raccourcis-liste");
+    RACCOURCIS.forEach(function (r) {
+      liste.appendChild(creer("dt", null, r[0]));
+      liste.appendChild(creer("dd", null, r[1]));
+    });
+    bloc.appendChild(liste);
+    return bloc;
+  }
+
   // ── La barre de réglages ────────────────────────────────────────────────
 
   function construireReglages(hote) {
@@ -2433,6 +2599,15 @@ window.OverlayAdmin = (function () {
     outil(gr, "Vertical", "Espaces égaux entre les éléments, de haut en bas. "
       + "Les deux extrêmes ne bougent pas. Trois éléments libres au minimum.", 3,
       function () { repartir(false); });
+
+    // Le « ? » à droite, hors des groupes : il ne porte pas sur la sélection,
+    // et il reste cliquable quand tout le reste est grisé — c'est justement
+    // quand on ne sait pas quoi faire qu'on le cherche.
+    noeuds.boutonAide = creer("button", "ovl-outil ovl-outil-aide", "?");
+    noeuds.boutonAide.title = "Les raccourcis clavier de ce panneau (touche ?)";
+    noeuds.boutonAide.setAttribute("aria-expanded", "false");
+    noeuds.boutonAide.addEventListener("click", function () { basculerAide(); });
+    barre.appendChild(noeuds.boutonAide);
     return barre;
   }
 
@@ -2551,15 +2726,21 @@ window.OverlayAdmin = (function () {
 
     droite.appendChild(barreApercu());
     droite.appendChild(barreOutils());
+    noeuds.raccourcis = blocRaccourcis();
+    droite.appendChild(noeuds.raccourcis);
 
     const reglages = creer("div", "ovl-reglages");
     construireReglages(reglages);
     droite.appendChild(reglages);
     // Les raccourcis sont écrits : Alt et Maj ne se devinent pas, et personne
-    // ne cherche une poignée qu'il ne sait pas là.
+    // ne cherche une poignée qu'il ne sait pas là. La ligne dit l'essentiel et
+    // renvoie au « ? » pour le reste — treize raccourcis en une phrase ne se
+    // lisent pas.
     droite.appendChild(creer("div", "ovl-aide",
       "Glisser un repère pour le déplacer · les poignées d'angle changent sa "
-      + "taille · Alt suspend l'aimantation · flèches : 0,1 % (Maj : 1 %)."));
+      + "taille · Alt suspend l'aimantation · flèches : 0,1 % (Maj : 1 %) · "
+      + "Ctrl+clic et glisser sur le fond pour choisir plusieurs éléments · "
+      + "« ? » pour tous les raccourcis."));
 
     // La proposition de reprise, au-dessus de la barre : elle ne s'affiche
     // qu'au chargement, et seulement s'il reste un brouillon.
@@ -2637,6 +2818,13 @@ window.OverlayAdmin = (function () {
         rendreSurface();
       });
       observateur.observe(noeuds.cadre);
+    }
+    // Les raccourcis vivent sur le DOCUMENT, une seule fois. `monter()` garde
+    // déjà contre un second montage, mais un drapeau explicite coûte moins
+    // qu'un doublon d'écouteur qui masquerait deux fois la sélection.
+    if (!raccourcisPoses) {
+      document.addEventListener("keydown", toucheGlobale);
+      raccourcisPoses = true;
     }
     // Posée tout de suite : la surface a déjà sa largeur, et attendre le
     // premier `load` de l'iframe l'afficherait une frame en taille réelle.
