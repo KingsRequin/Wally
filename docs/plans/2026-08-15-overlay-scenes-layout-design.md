@@ -131,9 +131,14 @@ la disposition existante, et un JSON tronqué laisserait un overlay vide.
 
 ## Les éléments positionnables
 
-Les clés des widgets sont **exactement** les `kind` que le code emploie déjà
-(`BUILDERS[kind]`, `overlay.js:958`) : les inventer en français casserait la
-correspondance. Les quatre clés nouvelles suivent la même langue.
+Les clés des widgets sont **exactement** celles de `BUILDERS` (`overlay.js:179`) —
+ce que la page **restitue** — et non l'enum de l'outil `show_overlay`, qui dit ce
+que Wally peut **demander**. Les deux listes ne coïncident pas, et c'est un piège
+coûteux : `goal` est publié en `gauge` (`overlay_narrator.py:2088`), `uptime` en
+`counter` (ligne 1555), et six widgets bel et bien rendus ne figurent dans aucun
+enum. Une clé absente est un widget sans conteneur, donc **invisible sans la
+moindre erreur** ; une clé en trop n'est qu'un réglage sans effet. L'asymétrie
+tranche : on suit `BUILDERS`.
 
 | Clé | Ce que c'est | `solo` par défaut |
 |---|---|---|
@@ -141,8 +146,13 @@ correspondance. Les quatre clés nouvelles suivent la même langue.
 | `bubble` | sa bulle de BD | non |
 | `rotator` | le rotateur de memes (ex-source OBS) | non |
 | `image` | l'image plein cadre (ex-source OBS) | oui |
-| `bingo` · `stats` · `goal` · `uptime` · `talkers` | les widgets qui s'installent | non |
-| `meme` · `versus` · `poll` · `hangman` · `pinned` · `counter` · `coinflip` · `dice` · `wheel` · `gauge` · `countdown` · `rps` | ceux qui passent | oui |
+| `bingo` · `stats` · `talkers` | les widgets qui s'installent | non |
+| `meme` · `clip` · `planning` · `prediction` · `quote` · `raid` · `wave` · `versus` · `poll` · `hangman` · `pinned` · `counter` · `coinflip` · `dice` · `wheel` · `gauge` · `countdown` · `rps` | ceux qui passent | oui |
+
+`gauge` porte donc **aussi** l'objectif de follows/subs, et `counter` **aussi**
+l'uptime : les masquer masque les deux à la fois. C'est explicite plutôt que
+subi — une table d'alias fait la correspondance côté outil (§ *Ce que ça change
+pour Wally*).
 
 ### La bulle
 

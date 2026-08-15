@@ -820,10 +820,19 @@ window.WallyLayout = (function () {
 
   // Les clés du modèle (bot/core/overlay_layout.py). Un test Python vérifie que
   // les deux listes ne divergent pas.
+  //
+  // Elles suivent `BUILDERS` — ce que la page RESTITUE — et non l'enum de
+  // l'outil `show_overlay`, qui dit ce que le bot peut DEMANDER. Les deux
+  // listes ne coïncident pas : `goal` est publié en `gauge`, `uptime` en
+  // `counter`, et six widgets rendus (`clip`, `planning`, `prediction`,
+  // `quote`, `raid`, `wave`) ne figurent dans aucun enum. Une clé absente est
+  // un widget sans conteneur, donc invisible ; une clé en trop n'est qu'un
+  // réglage sans effet. L'asymétrie tranche.
   const ELEMENTS = [
     "avatar", "bubble", "rotator", "image",
-    "bingo", "stats", "goal", "uptime", "talkers",
-    "meme", "versus", "poll", "hangman", "pinned", "counter",
+    "bingo", "stats", "talkers",
+    "meme", "clip", "planning", "prediction", "quote", "raid", "wave",
+    "versus", "poll", "hangman", "pinned", "counter",
     "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
   ];
 
@@ -1567,11 +1576,20 @@ _ECHANTILLONS: dict[str, dict] = {
     "wheel":     {"options": ["Fuse", "Bloodhound", "Rampart", "Mirage"],
                   "result": 0},
     "countdown": {"seconds": 60, "done": "C'est l'heure"},
-    "gauge":     {"percent": 62, "label": "Objectif kills"},
+    # `gauge` porte AUSSI l'objectif de follows/subs : `_publish_goal`
+    # (overlay_narrator.py:2088) publie une jauge, pas un widget « goal ».
+    "gauge":     {"percent": 62, "label": "Objectif follows · 31/50"},
     "pinned":    {"text": "Un message du chat, assez long pour occuper "
                           "toute la largeur prévue", "author": "kassandreyunikon"},
-    "uptime":    {},
+    # `counter` porte AUSSI l'uptime, aliasé à la publication (ligne 1555).
     "counter":   {"text": "12 morts en tombant"},
+    "clip":      {"title": "Le rageur Taki", "creator": "kassandreyunikon"},
+    "planning":  {},
+    "prediction": {"bet": "Azraël finit top 5", "outcome": "wrong"},
+    "quote":     {"text": "Dans le doute, je fais exploser la maison",
+                  "author": "Azraël"},
+    "raid":      {"from": "kingsrequin", "viewers": 42},
+    "wave":      {"viewers": 120},
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},
@@ -1855,6 +1873,37 @@ async def widgets_disponibles(db) -> set[str]:
         cle for cle in ELEMENTS
         if any(not scene["elements"][cle]["hidden"] for scene in layout["scenes"])
     }
+```
+
+**Deux alias à traiter.** L'enum de l'outil nomme `goal` et `uptime`, mais la
+page ne connaît ni l'un ni l'autre : `_publish_goal` (ligne 2088) publie un
+`gauge`, et `uptime` est aliasé en `counter` (ligne 1555). Le modèle suit la
+page, donc il n'a pas ces deux clés — masquer `gauge` masque du même coup
+l'objectif, et masquer `counter` masque l'uptime. La correspondance est
+explicite :
+
+```python
+# Ce que l'outil nomme → ce que la page rend. Sans cette table, `goal` serait
+# introuvable dans le modèle et l'enum le proposerait toujours, même jauge
+# masquée partout.
+_ALIAS_RENDU = {"goal": "gauge", "uptime": "counter"}
+
+
+def _cle_de_rendu(kind: str) -> str:
+    return _ALIAS_RENDU.get(kind, kind)
+```
+
+à appliquer des deux côtés — au filtrage de l'enum et au refus d'exécution.
+Ajouter le test correspondant :
+
+```python
+@pytest.mark.asyncio
+async def test_masquer_la_jauge_retire_aussi_l_objectif():
+    """`goal` est publié en `gauge` : le modèle ne connaît que la seconde."""
+    db = _base_avec({"start": ["gauge"], "jeu": ["gauge"], "end": ["gauge"]})
+    dispo = await widgets_disponibles(db)
+    assert "gauge" not in dispo
+    assert "goal" not in dispo
 ```
 
 L'enum de `_WIDGETS` (ligne ~254) est filtré par cet ensemble au moment de bâtir
