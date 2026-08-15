@@ -76,7 +76,16 @@ window.WallyLayout = (function () {
     return {
       [a.h]: h + "%",
       [a.v]: v + "%",
-      transform: `translate(${a.tx}, ${a.ty}) scale(${echelle})`,
+      // `scale` AVANT `translate`, et pas l'inverse : les pourcentages d'un
+      // `translate` se mesurent toujours sur la taille NON transformée. Écrit
+      // `translate(-50%) scale(s)`, le décalage valait la moitié de la taille
+      // à l'échelle 1 alors que l'élément en occupait `s` fois moins — un
+      // widget centré à 50 % atterrissait à 30 % de large, décalé de
+      // `largeur × (1 − s) / 2`. Dans cet ordre, le décalage subit la même
+      // échelle que l'élément et le point d'ancrage tombe juste.
+      // Invisible tant que `scale` valait 1 ET la source 1920 de large ;
+      // relevé sur la surface du panneau de mise en scène, qui est étroite.
+      transform: `scale(${echelle}) translate(${a.tx}, ${a.ty})`,
       transformOrigin: `${a.h === "right" ? "right" : "left"} ${a.v === "bottom" ? "bottom" : "top"}`,
     };
   }
