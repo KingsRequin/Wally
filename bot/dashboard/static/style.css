@@ -3627,7 +3627,22 @@ body.is-mobile .mobile-back-btn {
   cursor: pointer;
 }
 .ovl-el:hover { background: rgba(255, 255, 255, 0.05); }
+/* Un membre du bloc, qui n'est PAS celui dont la barre montre les réglages.
+   Le liseré cyan à gauche le dit sans lui donner l'allure de l'élément
+   principal : la sélection doit se lire d'un coup d'œil, et « lequel des cinq
+   la barre règle-t-elle » ne doit jamais rester en suspens.
+   `:not(.actif)` plutôt qu'un ordre de déclaration : la règle de l'actif est
+   plus bas, et deux styles qui se disputent la même ligne finissent toujours
+   par se croiser à la faveur d'un ajout. */
+.ovl-el.selectionne:not(.actif) {
+  border-color: rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.06);
+  box-shadow: inset 3px 0 0 rgba(6, 182, 212, 0.65);
+}
 .ovl-el.actif { border-color: rgba(6, 182, 212, 0.5); background: rgba(6, 182, 212, 0.1); }
+/* L'élément principal d'un bloc de plusieurs : le liseré le rattache à ses
+   voisins, la bordure pleine dit que c'est lui que règlent les champs. */
+.ovl-el.actif.selectionne { box-shadow: inset 3px 0 0 #06b6d4; }
 /* La ligne du repère survolé sur la surface. Le pointeur est ailleurs — sur le
    cadre —, donc `:hover` ne peut rien : c'est le panneau qui pose la classe. */
 .ovl-el.survole {
@@ -3802,6 +3817,29 @@ body.is-mobile .mobile-back-btn {
   background: rgba(6, 182, 212, 0.16);
   box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.35);
 }
+/* Un membre du bloc, sur la surface. Traits interrompus et non pleins : c'est
+   la différence qui distingue « dans la sélection » de « celui que règlent les
+   champs », lequel garde le trait plein de `.actif`. Les deux partagent le
+   cyan — ils appartiennent au même geste. */
+.ovl-rect.selectionne:not(.actif) {
+  border-color: rgba(6, 182, 212, 0.85);
+  border-style: dashed;
+  background: rgba(6, 182, 212, 0.10);
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25);
+}
+/* Avec l'aperçu derrière, les repères sont volontairement discrets : sans
+   cette reprise, la spécificité de `.ovl-surface.avec-apercu .ovl-rect`
+   effacerait la marque là où on en a le plus besoin. */
+.ovl-surface.avec-apercu .ovl-rect.selectionne:not(.actif) {
+  border-color: rgba(6, 182, 212, 0.85);
+  border-style: dashed;
+  background: rgba(6, 182, 212, 0.10);
+}
+.ovl-surface.reperes-estompes .ovl-rect.selectionne { opacity: 1; }
+/* Le nom reste lisible sur tout le bloc : savoir QUI est dedans est la seule
+   question que pose une sélection multiple. */
+.ovl-rect.selectionne .ovl-rect-nom { opacity: 1; }
+
 .ovl-rect.masque {
   border-style: dashed;
   border-color: rgba(255, 255, 255, 0.12);
@@ -3884,6 +3922,18 @@ body.is-mobile .mobile-back-btn {
   z-index: 55;
   pointer-events: none;
 }
+/* Le rectangle de sélection, tracé sur le fond. `pointer-events: none` : posé
+   dans le calque, il passerait sinon sous le pointeur et volerait au calque les
+   `pointermove` du geste qui le dessine. */
+.ovl-bande {
+  position: absolute;
+  border: 1px dashed rgba(6, 182, 212, 0.9);
+  background: rgba(6, 182, 212, 0.10);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 58;
+}
+
 .ovl-guide.vertical { top: 0; bottom: 0; width: 1px; margin-left: -0.5px; }
 .ovl-guide.horizontal { left: 0; right: 0; height: 1px; margin-top: -0.5px; }
 

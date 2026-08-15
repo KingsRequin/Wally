@@ -95,7 +95,14 @@ window.OverlayAdmin = (function () {
     layout: null,
     libelles: {},   // clé → {nom, description}, servi par le GET du layout
     slugCourant: null,
+    // `elementCourant` est le PRINCIPAL de la sélection : celui dont la barre de
+    // réglages montre les valeurs, celui qui porte les poignées, et celui qu'on
+    // suit du pointeur quand on déplace un bloc. Il est TOUJOURS dans
+    // `selection` tant qu'il n'est pas nul — les deux se posent ensemble
+    // (`poserPrincipal`, `selectionner`), jamais l'un sans l'autre.
     elementCourant: null,
+    selection: [],       // les clés retenues, l'élément principal compris
+    ancreSelection: null,  // le point de départ d'un Maj+clic
     brouillon: 0,
     direct: false,
     publie: null,
@@ -343,6 +350,149 @@ window.OverlayAdmin = (function () {
     return scenes[0] || null;
   }
 
+  // ── La sélection ────────────────────────────────────────────────────────
+  //
+  // Trente-quatre éléments sur trois scènes, réglés un par un : le panneau
+  // demandait un aller-retour liste → surface → réglages par élément. La
+  // sélection multiple est le socle de tout ce qui suit (aligner, répartir,
+  // coller des réglages) — sans elle, chaque outil ne saurait agir que sur un.
+  //
+  // L'ORDRE DE LA SÉLECTION EST CELUI DE LA SCÈNE, jamais celui des clics :
+  // un alignement ou une répartition doit rendre le même résultat quel que soit
+  // l'ordre dans lequel on a composé la sélection.
+
+  function estSelectionne(cle) {
+    return etat.selection.indexOf(cle) >= 0;
+  }
+
+  /** Les clés retenues qui existent vraiment dans la scène affichée. */
+  function selection() {
+    const scene = sceneCourante();
+    if (!scene) return [];
+    return (scene.ordre || []).filter(function (cle) {
+      return estSelectionne(cle) && !!scene.elements[cle];
+    });
+  }
+
+  /** Écarte ce qui n'existe plus et rétablit l'invariant : le principal est
+   *  toujours dans la sélection, et une sélection vide n'a pas de principal.
+   *  Sans ce ménage, une clé fantôme (scène rechargée, brouillon d'une version
+   *  d'avant) resterait dans les outils, qui agiraient sur un élément absent
+   *  de l'écran. */
+  function nettoyerSelection() {
+    const scene = sceneCourante();
+    const elements = (scene && scene.elements) || {};
+    etat.selection = etat.selection.filter(function (cle) { return !!elements[cle]; });
+    if (etat.elementCourant && !elements[etat.elementCourant]) etat.elementCourant = null;
+    if (!etat.elementCourant) {
+      etat.selection = [];
+    } else if (!estSelectionne(etat.elementCourant)) {
+      etat.selection.push(etat.elementCourant);
+    }
+    if (etat.ancreSelection && !elements[etat.ancreSelection]) {
+      etat.ancreSelection = etat.elementCourant;
+    }
+  }
+
+  /** Fait de `cle` le principal SANS défaire la sélection s'il en fait déjà
+   *  partie : cliquer un membre du bloc pour l'attraper ne doit pas dissoudre
+   *  le bloc qu'on vient de composer. */
+  function poserPrincipal(cle) {
+    etat.elementCourant = cle || null;
+    if (!cle) { etat.selection = []; etat.ancreSelection = null; return; }
+    if (!estSelectionne(cle)) {
+      etat.selection = [cle];
+      etat.ancreSelection = cle;
+    }
+  }
+
+  function rendreSelection() {
+    rendreElements();
+    rendreSurface();
+    rendreReglages();
+  }
+
+  /** Ctrl+clic : entrer ou sortir de la sélection. */
+  function basculerSelection(cle) {
+    const i = etat.selection.indexOf(cle);
+    if (i >= 0) {
+      etat.selection.splice(i, 1);
+      if (etat.elementCourant === cle) {
+        etat.elementCourant = etat.selection[etat.selection.length - 1] || null;
+      }
+    } else {
+      etat.selection.push(cle);
+      etat.elementCourant = cle;
+    }
+    etat.ancreSelection = cle;
+    rendreSelection();
+  }
+
+  /** Maj+clic : la plage entre l'ancre et la ligne cliquée, dans l'ordre de la
+   *  liste. L'ancre NE BOUGE PAS — deux Maj+clic successifs élargissent depuis
+   *  le même point de départ, au lieu de ramper d'un cran. */
+  function etendreSelection(cle) {
+    const scene = sceneCourante();
+    const ordre = (scene && scene.ordre) || [];
+    const fin = ordre.indexOf(cle);
+    if (fin < 0) return;
+    const depart = ordre.indexOf(etat.ancreSelection);
+    if (depart < 0) { selectionner(cle); return; }
+    etat.selection = ordre.slice(Math.min(depart, fin), Math.max(depart, fin) + 1);
+    etat.elementCourant = cle;
+    rendreSelection();
+  }
+
+  /** Ctrl+A : tout ce qui est visible ET libre. Prendre les masqués et les
+   *  verrouillés remplirait la sélection d'éléments qu'aucun outil ne peut
+   *  bouger — le compteur annoncerait trente-quatre pour six déplacements. */
+  function toutSelectionner() {
+    const scene = sceneCourante();
+    if (!scene) return;
+    etat.selection = (scene.ordre || []).filter(function (cle) {
+      const el = scene.elements[cle];
+      return !!el && !el.hidden && !el.locked;
+    });
+    etat.elementCourant = etat.selection[etat.selection.length - 1] || null;
+    etat.ancreSelection = etat.elementCourant;
+    rendreSelection();
+    notifier(etat.selection.length + " élément(s) sélectionné(s).");
+  }
+
+  function viderSelection() {
+    if (!etat.selection.length && !etat.elementCourant) return;
+    etat.selection = [];
+    etat.elementCourant = null;
+    etat.ancreSelection = null;
+    rendreSelection();
+  }
+
+  /** La sélection triée en deux : ce qu'un outil peut déplacer, et ce que le
+   *  cadenas retient. Les verrouillés sont RENDUS, pas jetés — un élément qui
+   *  ne suit pas doit être NOMMÉ, sinon on croit l'outil cassé. */
+  function selectionDeplacable() {
+    const scene = sceneCourante();
+    const membres = [];
+    const bloques = [];
+    if (!scene) return { membres: membres, bloques: bloques };
+    selection().forEach(function (cle) {
+      const el = scene.elements[cle];
+      if (!el) return;
+      if (el.locked) { bloques.push(cle); return; }
+      membres.push({ cle: cle, element: el, depart: { x: el.x, y: el.y } });
+    });
+    return { membres: membres, bloques: bloques };
+  }
+
+  /** Dit ce que le cadenas a retenu. Le silence était l'autre option : elle
+   *  laisse croire que l'outil n'a rien fait. */
+  function direLesBloques(bloques) {
+    if (!bloques || !bloques.length) return;
+    notifier(bloques.length + " élément(s) verrouillé(s) n'ont pas bougé : "
+      + bloques.map(libelle).join(", ")
+      + " — le cadenas de la liste les libère.", "error");
+  }
+
   function borner(valeur, mini, maxi, defaut) {
     const n = Number(valeur);
     if (!isFinite(n)) return defaut;
@@ -427,6 +577,7 @@ window.OverlayAdmin = (function () {
     if (!scene || !scene.elements[etat.elementCourant]) {
       etat.elementCourant = ordre[0] || null;
     }
+    nettoyerSelection();
     rendreTout();
   }
 
@@ -673,6 +824,7 @@ window.OverlayAdmin = (function () {
     if (scene && !scene.elements[etat.elementCourant]) {
       etat.elementCourant = (scene.ordre || [])[0] || null;
     }
+    nettoyerSelection();
     rendreTout();
   }
 
@@ -876,6 +1028,7 @@ window.OverlayAdmin = (function () {
     item.dataset.cle = cle;
     item.draggable = true;
     if (cle === etat.elementCourant) item.classList.add("actif");
+    if (estSelectionne(cle)) item.classList.add("selectionne");
     if (element.hidden) item.classList.add("masque");
     if (element.locked) item.classList.add("verrouille");
 
@@ -909,6 +1062,14 @@ window.OverlayAdmin = (function () {
 
     item.addEventListener("click", function (evt) {
       if (evt.target.closest && evt.target.closest(".ovl-el-actions")) return;
+      if (evt.ctrlKey || evt.metaKey) { basculerSelection(cle); return; }
+      if (evt.shiftKey) {
+        // Sans ça, le navigateur sélectionne le TEXTE des lignes traversées :
+        // la liste passe en surbrillance bleue et on ne voit plus la nôtre.
+        evt.preventDefault();
+        etendreSelection(cle);
+        return;
+      }
       selectionner(cle);
     });
     // `mouseenter`/`mouseleave` et non `mouseover` : ceux-là ne se déclenchent
@@ -1006,18 +1167,19 @@ window.OverlayAdmin = (function () {
   }
 
   function apresBascule(cle) {
-    etat.elementCourant = cle;
+    // `poserPrincipal` et non une affectation nue : basculer l'œil ou le
+    // cadenas d'un membre du bloc ne doit pas dissoudre le bloc.
+    poserPrincipal(cle);
     marquerModifie();
-    rendreElements();
-    rendreSurface();
-    rendreReglages();
+    rendreSelection();
   }
 
+  /** Le clic simple : la sélection se réduit à ce seul élément. */
   function selectionner(cle) {
-    etat.elementCourant = cle;
-    rendreElements();
-    rendreSurface();
-    rendreReglages();
+    etat.selection = cle ? [cle] : [];
+    etat.elementCourant = cle || null;
+    etat.ancreSelection = cle || null;
+    rendreSelection();
   }
 
   /** Le réordonnancement à la souris. L'ordre de la LISTE est l'empilement :
@@ -1171,6 +1333,35 @@ window.OverlayAdmin = (function () {
   /** Deux décimales. Au-delà on écrirait du bruit de virgule flottante dans un
    *  modèle qui part au serveur : 0,1 ajouté dix fois vaut 0,9999999999999999. */
   function arrondi(v) { return Math.round(v * 100) / 100; }
+
+  /** Le déplacement d'un BLOC, réduit à ce que tous ses membres supportent.
+   *
+   *  C'est le cœur du glisser à plusieurs. Borner chaque élément séparément
+   *  serait le réflexe — et il déforme la sélection SANS RETOUR : le premier
+   *  arrivé au bord s'arrête pendant que les autres continuent, et les écarts
+   *  qu'on tenait à conserver sont perdus. On borne donc le DÉCALAGE COMMUN,
+   *  une fois pour tous : le bloc s'arrête entier quand son premier membre
+   *  touche le bord.
+   *
+   *  Le décalage est arrondi ICI et pas membre par membre : deux décimales
+   *  posées sur chaque position feraient dériver les écarts d'un centième à
+   *  chaque geste, et `depart + delta` reste exact quand les deux le sont.
+   */
+  function bornerDelta(groupe, dx, dy) {
+    let minX = -Infinity, maxX = Infinity, minY = -Infinity, maxY = Infinity;
+    groupe.forEach(function (m) {
+      const x = borner(m.depart.x, POS_MIN, POS_MAX, 50);
+      const y = borner(m.depart.y, POS_MIN, POS_MAX, 50);
+      minX = Math.max(minX, POS_MIN - x);
+      maxX = Math.min(maxX, POS_MAX - x);
+      minY = Math.max(minY, POS_MIN - y);
+      maxY = Math.min(maxY, POS_MAX - y);
+    });
+    return {
+      x: arrondi(Math.min(Math.max(isFinite(dx) ? dx : 0, minX), maxX)),
+      y: arrondi(Math.min(Math.max(isFinite(dy) ? dy : 0, minY), maxY)),
+    };
+  }
 
   /** Change l'ancrage SANS déplacer l'élément à l'écran.
    *
@@ -1351,10 +1542,14 @@ window.OverlayAdmin = (function () {
       // on déplaçait toujours le même. La sélection ne change PAS `scene.ordre`
       // (l'empilement réel de la page), seulement ce que la surface d'édition
       // laisse attraper.
-      rect.style.zIndex = String(choisi ? ordre.length + 1 : ordre.length - rang);
+      // Les membres du bloc montent eux aussi, juste sous le principal : sans
+      // ça, sélectionner trois repères empilés au centre n'en montrerait qu'un.
+      rect.style.zIndex = String(choisi ? ordre.length + 2
+        : (estSelectionne(cle) ? ordre.length + 1 : ordre.length - rang));
       if (element.hidden) rect.classList.add("masque");
       if (element.locked) rect.classList.add("verrouille");
       if (choisi) rect.classList.add("actif");
+      if (estSelectionne(cle)) rect.classList.add("selectionne");
       // Un élément qui sort du cadre se voit ICI, pas quand les viewers le
       // découvrent : le repère passe en orange et l'infobulle le dit.
       const deborde = largeur > 0
@@ -1390,10 +1585,25 @@ window.OverlayAdmin = (function () {
     const scene = sceneCourante();
     const element = scene && scene.elements[cle];
     if (!element) return;
-    if (etat.elementCourant !== cle) selectionner(cle);
     // Le calque porte le focus clavier : il survit aux rendus, contrairement
     // aux repères, reconstruits à chaque changement.
     if (noeuds.calque.focus) noeuds.calque.focus({ preventScroll: true });
+    // Ctrl et Maj COMPOSENT la sélection : aucun glisser ne part de là. Le
+    // `stopPropagation` empêche le fond d'y voir le début d'un rectangle.
+    if (evt.ctrlKey || evt.metaKey) {
+      evt.preventDefault(); evt.stopPropagation();
+      basculerSelection(cle);
+      return;
+    }
+    if (evt.shiftKey) {
+      evt.preventDefault(); evt.stopPropagation();
+      etendreSelection(cle);
+      return;
+    }
+    // Un repère DÉJÀ dans la sélection la conserve : c'est le bloc entier qu'on
+    // attrape. Un repère hors sélection la remplace, comme un clic simple.
+    if (!estSelectionne(cle)) selectionner(cle);
+    else if (etat.elementCourant !== cle) { poserPrincipal(cle); rendreSelection(); }
     if (element.locked) {
       notifier(libelle(cle) + " est verrouillé : le cadenas de la liste le libère.",
                "error");
@@ -1415,6 +1625,18 @@ window.OverlayAdmin = (function () {
       depart: { x: element.x, y: element.y, scale: element.scale },
       lignes: null,
     };
+    // Le bloc qui suivra le pointeur. Le principal en fait partie, avec un
+    // écart nul : un seul chemin de calcul pour un élément comme pour douze.
+    const bloc = selectionDeplacable();
+    manip.groupe = bloc.membres.map(function (m) {
+      return {
+        cle: m.cle, element: m.element, depart: m.depart,
+        noeud: noeuds.calque.querySelector('[data-cle="' + m.cle + '"]'),
+      };
+    });
+    // Dit AU DÉBUT du geste, pas après : découvrir au relâchement que trois
+    // éléments sur cinq n'ont pas suivi, c'est refaire le placement.
+    direLesBloques(bloc.bloques);
     capturer(evt);
   }
 
@@ -1455,6 +1677,113 @@ window.OverlayAdmin = (function () {
     capturer(evt);
   }
 
+  // ── Le rectangle de sélection ───────────────────────────────────────────
+  //
+  // Tracé sur le FOND, jamais sur un repère : le fond est le seul endroit du
+  // calque qui ne serve à rien d'autre, et un glisser parti d'un repère est
+  // déjà un déplacement. Ctrl (ou Maj) maintenu ajoute à la sélection au lieu
+  // de la remplacer.
+
+  function saisirFond(evt) {
+    // `evt.target` et pas `currentTarget` : un repère laisse remonter son
+    // `pointerdown` quand il refuse le geste (élément verrouillé), et le fond
+    // ouvrirait alors un rectangle sous le doigt.
+    if (manip || evt.target !== noeuds.calque) return;
+    if (evt.pointerType === "mouse" && evt.button !== 0) return;
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    if (noeuds.calque.focus) noeuds.calque.focus({ preventScroll: true });
+    const p = {
+      x: ((evt.clientX - r.left) / r.width) * 100,
+      y: ((evt.clientY - r.top) / r.height) * 100,
+    };
+    manip = {
+      mode: "bande",
+      pointeur: evt.pointerId,
+      depart: p,
+      courant: p,
+      ajout: !!(evt.ctrlKey || evt.metaKey || evt.shiftKey),
+      base: etat.selection.slice(),
+    };
+    montrerBande(r);
+    capturer(evt);
+  }
+
+  /** La bande en pixels du calque — la même référence que `geometrie()`, sans
+   *  quoi le rectangle qu'on voit et les repères qu'il prend divergeraient. */
+  function boiteBande(m, r) {
+    return {
+      gauche: Math.min(m.depart.x, m.courant.x) / 100 * r.width,
+      droite: Math.max(m.depart.x, m.courant.x) / 100 * r.width,
+      haut: Math.min(m.depart.y, m.courant.y) / 100 * r.height,
+      bas: Math.max(m.depart.y, m.courant.y) / 100 * r.height,
+    };
+  }
+
+  /** Tous les repères que la bande TOUCHE — pas seulement ceux qu'elle
+   *  contient. Exiger l'inclusion complète rendrait `image` (1280×720 sur
+   *  1920) insélectionnable sans balayer toute la surface. */
+  function reperesDansBande(m, r) {
+    const scene = sceneCourante();
+    if (!scene) return [];
+    const b = boiteBande(m, r);
+    return (scene.ordre || []).filter(function (cle) {
+      const el = scene.elements[cle];
+      if (!el) return false;
+      const g = geometrie(cle, el, r.width, r.height);
+      return g.droite >= b.gauche && g.gauche <= b.droite
+          && g.bas >= b.haut && g.haut <= b.bas;
+    });
+  }
+
+  /** Le rectangle vit DANS le calque : celui-ci porte les pourcentages, et la
+   *  surface a une bordure d'un pixel qui décalerait tout. Il est vidé au
+   *  premier rendu complet, ce qui le fait disparaître — mais `rendreSurface()`
+   *  ne redessine rien pendant un geste, donc il survit au sien. */
+  function montrerBande(r) {
+    if (!noeuds.calque) return;
+    if (!noeuds.bande) noeuds.bande = creer("div", "ovl-bande");
+    if (noeuds.bande.parentNode !== noeuds.calque) noeuds.calque.appendChild(noeuds.bande);
+    const b = boiteBande(manip, r);
+    noeuds.bande.style.left = b.gauche + "px";
+    noeuds.bande.style.top = b.haut + "px";
+    noeuds.bande.style.width = (b.droite - b.gauche) + "px";
+    noeuds.bande.style.height = (b.bas - b.haut) + "px";
+  }
+
+  function retirerBande() {
+    if (noeuds.bande && noeuds.bande.parentNode) {
+      noeuds.bande.parentNode.removeChild(noeuds.bande);
+    }
+  }
+
+  /** Ce que la bande prendrait si on relâchait maintenant. Posé sur les nœuds
+   *  eux-mêmes : `rendreSurface()` ne peut rien redessiner pendant le geste. */
+  function marquerBande(r) {
+    const dedans = {};
+    if (manip.ajout) manip.base.forEach(function (c) { dedans[c] = true; });
+    reperesDansBande(manip, r).forEach(function (c) { dedans[c] = true; });
+    noeuds.calque.querySelectorAll("[data-cle]").forEach(function (n) {
+      n.classList.toggle("selectionne", !!dedans[n.dataset.cle]);
+    });
+  }
+
+  function finirBande(fini) {
+    retirerBande();
+    const r = boiteCalque();
+    const touches = r ? reperesDansBande(fini, r) : [];
+    // Un clic sur le fond, sans rien attraper : c'est la façon la plus directe
+    // de tout désélectionner.
+    if (!touches.length && !fini.ajout) { viderSelection(); return; }
+    const cles = fini.ajout ? fini.base.slice() : [];
+    touches.forEach(function (c) { if (cles.indexOf(c) < 0) cles.push(c); });
+    etat.selection = cles;
+    etat.elementCourant = cles[cles.length - 1] || null;
+    etat.ancreSelection = etat.elementCourant;
+    nettoyerSelection();
+    rendreSelection();
+  }
+
   function capturer(evt) {
     // La capture va sur le CALQUE, jamais sur le repère : celui-ci est
     // reconstruit à chaque rendu, et une capture posée sur un nœud sorti du
@@ -1476,6 +1805,15 @@ window.OverlayAdmin = (function () {
     if (!manip || evt.pointerId !== manip.pointeur) return;
     const r = boiteCalque();
     if (!r || !r.width || !r.height) return;
+    if (manip.mode === "bande") {
+      manip.courant = {
+        x: ((evt.clientX - r.left) / r.width) * 100,
+        y: ((evt.clientY - r.top) / r.height) * 100,
+      };
+      montrerBande(r);
+      marquerBande(r);
+      return;
+    }
     if (manip.mode === "position") {
       // Alt SUSPEND l'aimantation : on la veut par défaut, et relâchée sans
       // aller décocher une case ailleurs.
@@ -1483,13 +1821,28 @@ window.OverlayAdmin = (function () {
       const p = positionDepuisPointeur(evt, r, manip.decalage);
       const ax = aimanter(p.x, (AIMANT_PX / r.width) * 100, actif);
       const ay = aimanter(p.y, (AIMANT_PX / r.height) * 100, actif);
-      manip.element.x = arrondi(ax.valeur);
-      manip.element.y = arrondi(ay.valeur);
+      deplacerBloc(ax.valeur, ay.valeur);
       manip.lignes = { x: ax.ligne, y: ay.ligne };
     } else {
       manip.element.scale = arrondi(echelleDepuisPointeur(evt, r));
     }
     rafraichirManip();
+  }
+
+  /** Pose le point d'ancrage du repère attrapé en (x, y) — et emmène le reste
+   *  du bloc du même mouvement, écarts conservés. */
+  function deplacerBloc(x, y) {
+    const groupe = manip.groupe || [];
+    if (groupe.length <= 1) {
+      manip.element.x = arrondi(x);
+      manip.element.y = arrondi(y);
+      return;
+    }
+    const d = bornerDelta(groupe, x - manip.depart.x, y - manip.depart.y);
+    groupe.forEach(function (m) {
+      m.element.x = arrondi(m.depart.x + d.x);
+      m.element.y = arrondi(m.depart.y + d.y);
+    });
   }
 
   /** L'échelle que demande le pointeur, bornée à la saisie. */
@@ -1532,9 +1885,13 @@ window.OverlayAdmin = (function () {
     noeuds.cadre.classList.remove("en-manip");
     montrerGuides(null);
     montrerCoords(null);
+    if (fini.mode === "bande") { finirBande(fini); return; }
     // UNE modification pour tout le geste : en compter une par `pointermove`
     // afficherait « 340 modifications non publiées » pour un déplacement.
-    if (fini.element.x !== fini.depart.x || fini.element.y !== fini.depart.y
+    const bouge = (fini.groupe || []).some(function (m) {
+      return m.element.x !== m.depart.x || m.element.y !== m.depart.y;
+    });
+    if (bouge || fini.element.x !== fini.depart.x || fini.element.y !== fini.depart.y
         || fini.element.scale !== fini.depart.scale) {
       marquerModifie();
     }
@@ -1547,21 +1904,25 @@ window.OverlayAdmin = (function () {
   function toucheSurface(evt) {
     const sens = TOUCHES[evt.key];
     if (!sens || manip) return;
-    const element = elementCourant();
-    if (!element) return;
+    if (!selection().length) return;
     evt.preventDefault();   // sinon la page défile sous la surface
-    if (element.locked) {
+    const bloc = selectionDeplacable();
+    if (!bloc.membres.length) {
       // Au premier appui seulement : la répétition du clavier en ferait une
       // pluie de messages.
-      if (!evt.repeat) {
-        notifier(libelle(etat.elementCourant)
-          + " est verrouillé : le cadenas de la liste le libère.", "error");
-      }
+      if (!evt.repeat) direLesBloques(bloc.bloques);
       return;
     }
     const pas = evt.shiftKey ? PAS_GROS : PAS_FIN;
-    element.x = arrondi(borner(element.x + sens[0] * pas, POS_MIN, POS_MAX, element.x));
-    element.y = arrondi(borner(element.y + sens[1] * pas, POS_MIN, POS_MAX, element.y));
+    // Le même décalage commun qu'au glisser : les flèches déplacent le bloc
+    // sans jamais en changer la forme.
+    const d = bornerDelta(bloc.membres, sens[0] * pas, sens[1] * pas);
+    if (d.x === 0 && d.y === 0) return;   // le bloc touche déjà le bord
+    bloc.membres.forEach(function (m) {
+      m.element.x = arrondi(m.depart.x + d.x);
+      m.element.y = arrondi(m.depart.y + d.y);
+    });
+    if (!evt.repeat) direLesBloques(bloc.bloques);
     marquerModifie();
     rendreSurface();
     rendreReglages();
@@ -1574,10 +1935,18 @@ window.OverlayAdmin = (function () {
     const r = boiteCalque();
     if (!r || !r.width || !r.height) return;
     const g = geometrie(manip.cle, manip.element, r.width, r.height);
-    if (manip.noeud) {
-      appliquerStyle(manip.noeud, manip.element, r.width);
-      manip.noeud.classList.toggle("hors-cadre", horsCadre(g, r.width, r.height));
-    }
+    // Tout le bloc suit à l'écran, pas seulement le repère attrapé : sinon on
+    // déplace douze éléments en n'en voyant bouger qu'un, et on découvre le
+    // résultat au relâchement.
+    const suivis = (manip.groupe && manip.groupe.length)
+      ? manip.groupe
+      : [{ cle: manip.cle, element: manip.element, noeud: manip.noeud }];
+    suivis.forEach(function (m) {
+      if (!m.noeud) return;
+      appliquerStyle(m.noeud, m.element, r.width);
+      m.noeud.classList.toggle("hors-cadre",
+        horsCadre(geometrie(m.cle, m.element, r.width, r.height), r.width, r.height));
+    });
     placerPoignees(g);
     montrerGuides(manip.lignes);
     montrerCoords(g, r.width, r.height);
@@ -1919,8 +2288,10 @@ window.OverlayAdmin = (function () {
     // reçoit la capture du pointeur.
     noeuds.calque.tabIndex = 0;
     noeuds.calque.setAttribute("aria-label",
-      "Surface de placement — flèches pour déplacer l'élément choisi, "
-      + "Maj pour un pas de 1 %, Alt pour suspendre l'aimantation");
+      "Surface de placement — flèches pour déplacer la sélection, "
+      + "Maj pour un pas de 1 %, Alt pour suspendre l'aimantation, "
+      + "glisser sur le fond pour sélectionner plusieurs éléments");
+    noeuds.calque.addEventListener("pointerdown", saisirFond);
     noeuds.calque.addEventListener("pointermove", bougerManip);
     noeuds.calque.addEventListener("pointerup", finirManip);
     noeuds.calque.addEventListener("pointercancel", finirManip);
@@ -2101,6 +2472,11 @@ window.OverlayAdmin = (function () {
     rendreSurface: rendreSurface,
     rendreReglages: rendreReglages,
     selectionner: selectionner,
+    selection: selection,
+    basculerSelection: basculerSelection,
+    etendreSelection: etendreSelection,
+    toutSelectionner: toutSelectionner,
+    viderSelection: viderSelection,
     sceneCourante: sceneCourante,
     elementCourant: elementCourant,
     slugDepuisNom: slugDepuisNom,
@@ -2124,5 +2500,8 @@ window.OverlayAdmin = (function () {
     positionDepuisPointeur: positionDepuisPointeur,
     aimanter: aimanter,
     reancrer: reancrer,
+    // Le décalage commun d'un bloc : c'est LUI qui garantit que les écarts
+    // entre les éléments sélectionnés survivent au déplacement.
+    bornerDelta: bornerDelta,
   };
 })();
