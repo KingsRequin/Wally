@@ -262,7 +262,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         from bot.dashboard.routes.overlay import (
             overlay_version, version_static_scripts,
         )
-        propre = slug if _SLUG_SCENE_RE.match(slug) else ""
+        propre = slug if _SLUG_SCENE_RE.fullmatch(slug) else ""
         html = (STATIC_DIR / "overlay.html").read_text()
         html = version_static_scripts(html, overlay_version())
         html = html.replace(

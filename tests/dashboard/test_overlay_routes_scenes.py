@@ -123,3 +123,17 @@ def test_un_slug_de_65_caracteres_est_rejete(overlay_client):
 
     assert r.status_code == 200
     assert _scene_slug_attr(r.text) == ""
+
+
+def test_un_saut_de_ligne_final_ne_passe_pas_la_validation(overlay_client):
+    """`$` accepte un saut de ligne final en Python — `abc\\n` passait la
+    validation de `_SLUG_SCENE_RE` alors que le docstring de la route affirme
+    le format vérifié. Inoffensif dans un attribut entre guillemets, mais le
+    format n'était pas ce qu'il prétendait être.
+    """
+    r = overlay_client.get("/overlay-abc%0A")
+
+    assert r.status_code == 200
+    valeur = _scene_slug_attr(r.text)
+    assert valeur == ""
+    assert "\n" not in (valeur or "")

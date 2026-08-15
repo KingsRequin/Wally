@@ -777,7 +777,7 @@ async def list_prompts(request: Request) -> dict:
 async def save_persona_file(filename: str, request: Request) -> dict:
     from pathlib import Path
     import re
-    if not re.match(r'^[A-Z_]+\.md$', filename):
+    if not re.fullmatch(r'[A-Z_]+\.md', filename):
         raise HTTPException(status_code=400, detail="Nom de fichier invalide")
     body = await request.json()
     content = body.get("content", "")
@@ -797,7 +797,7 @@ async def save_persona_file(filename: str, request: Request) -> dict:
 async def save_system_prompt(filename: str, request: Request) -> dict:
     from pathlib import Path
     import re
-    if not re.match(r'^[\w_-]+\.md$', filename):
+    if not re.fullmatch(r'[\w_-]+\.md', filename):
         raise HTTPException(status_code=400, detail="Nom de fichier invalide")
     body = await request.json()
     content = body.get("content", "")
