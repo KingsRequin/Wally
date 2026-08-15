@@ -218,6 +218,25 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
 
+    @app.get("/overlay-{slug}")
+    async def overlay_scene(slug: str):
+        """La page d'une scène.
+
+        Déclarée APRÈS `/overlay-image` et `/overlay-rotation` : FastAPI retient
+        la première route qui filtre, et celle-ci les capterait toutes les deux.
+
+        Un slug inconnu est servi quand même — OBS peut pointer sur une scène
+        supprimée, et un 404 mettrait un écran noir en plein live. La page
+        demandera son layout et recevra celui de la scène par défaut.
+        """
+        from bot.dashboard.routes.overlay import (
+            overlay_version, version_static_scripts,
+        )
+        html = (STATIC_DIR / "overlay.html").read_text()
+        html = version_static_scripts(html, overlay_version())
+        html = html.replace('data-scene-slug=""', f'data-scene-slug="{slug}"')
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
     @app.get("/setup/preview")
     async def setup_preview_page():
         html = (STATIC_DIR / "setup.html").read_text()

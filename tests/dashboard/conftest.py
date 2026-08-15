@@ -93,3 +93,13 @@ async def async_client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         c.app = app
         yield c
+
+
+@pytest.fixture
+def overlay_client():
+    """Un client sur l'application complète — les routes de page (`/overlay…`)
+    sont déclarées par `create_dashboard_app` et non par un router, donc un
+    `FastAPI()` monté à la main ne les porte pas.
+    """
+    from fastapi.testclient import TestClient
+    return TestClient(create_dashboard_app(_make_state()))

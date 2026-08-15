@@ -1187,8 +1187,11 @@
     }
     const box = currentWidget();
     // Après clearWidgets(), qui la retire : l'avatar s'efface, le widget prend
-    // sa place.
-    document.body.classList.add("widget-on");
+    // sa place. `widget-on` efface l'avatar et la bulle. Il ne vaut plus que
+    // pour les widgets SOLO, qui prennent toute la scène. Un widget qui
+    // cohabite a sa place à lui : Wally peut donc l'afficher ET le commenter,
+    // ce que la page rendait impossible jusqu'ici.
+    document.body.classList.toggle("widget-on", estSolo(kind));
 
     // Les confettis vivent HORS du builder : ils ne sont pas un élément du
     // widget mais un effet plein écran, et ils doivent partir au moment exact
@@ -1262,6 +1265,36 @@
   checkVersion();
   setInterval(checkVersion, VERSION_POLL_MS);
 
+  // ── Layout des scènes ────────────────────────────────────────────────────
+  // Le layout est chargé par un GET, pas attendu du bus : une page ouverte
+  // alors que le bus est muet doit quand même se placer.
+  const sceneSlug = document.body.dataset.sceneSlug || "";
+  // Le modèle est la source : un widget dont on ignore le réglage est traité
+  // comme solo, l'ancien comportement — jamais deux widgets superposés par
+  // accident.
+  let reglages = {};
+  function estSolo(kind) {
+    const el = reglages[kind];
+    return el ? el.solo !== false : true;
+  }
+  async function chargerLayout() {
+    try {
+      const r = await fetch(
+        "/api/public/overlay-layout?scene=" + encodeURIComponent(sceneSlug),
+        { cache: "no-store" });
+      const data = await r.json();
+      reglages = data.scene.elements;
+      WallyLayout.appliquer(data.scene.slug, data.scene);
+    } catch (e) {
+      // Les défauts du CSS restent en place : mal placé vaut mieux que vide.
+      console.warn("layout indisponible", e);
+    }
+  }
+  chargerLayout();
+  // La source peut être redimensionnée dans OBS après coup : le facteur de
+  // canvas change, les échelles doivent suivre.
+  window.addEventListener("resize", chargerLayout);
+
   // ── Flux SSE ─────────────────────────────────────────────────────────────
   function connect(url, onMessage) {
     let source;
@@ -1300,6 +1333,10 @@
       case "react":    react(); break;
       case "widget":   showWidget(event.kind, event.params || {}); break;
       case "clear":    clearAll(); break;
+      // L'événement est un simple SIGNAL : le layout n'y voyage pas, sans quoi
+      // il occuperait le tampon de rejeu au détriment des bulles. On refait le
+      // GET, qui reste la seule source de vérité.
+      case "layout":   chargerLayout(); break;
     }
   });
 
