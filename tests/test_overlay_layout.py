@@ -126,3 +126,59 @@ def test_scene_par_slug():
     layout = layout_par_defaut()
     assert scene_par_slug(layout, "start")["nom"] == "Stream Starting"
     assert scene_par_slug(layout, "inexistante") is None
+
+
+@pytest.mark.parametrize("brut", [
+    # `anchor` en `dict` : `anchor if anchor in ANCRAGES` teste l'appartenance
+    # d'un type non hashable.
+    {"defaut": "jeu", "scenes": [
+        {"slug": "jeu", "elements": {"meme": {"anchor": {}}}}]},
+    # Un élément d'`ordre` en `dict` : `c in ELEMENTS`, même piège.
+    {"defaut": "jeu", "scenes": [
+        {"slug": "jeu", "ordre": [{}], "elements": {}}]},
+    # `defaut` en `dict` : `defaut not in vus` (un `set`), même piège.
+    {"defaut": {}, "scenes": [{"slug": "jeu", "elements": {}}]},
+])
+def test_une_valeur_non_hashable_ne_fait_pas_lever_fusionner(brut):
+    """`anchor`, un élément d'`ordre` ou `defaut` peuvent arriver en `dict`/
+    `list` depuis un JSON par ailleurs parfaitement légal. `in` sur un type
+    non hashable lève un `TypeError` — sur le chemin qui sert la page en
+    plein live. Une exception non rattrapée est pire qu'un layout mal formé :
+    ce module doit rendre quelque chose d'affichable, jamais planter."""
+    layout = fusionner(brut)
+    scene = layout["scenes"][0]
+    assert layout["defaut"] == "jeu"
+    assert set(scene["elements"]) == set(ELEMENTS)
+    for el in scene["elements"].values():
+        assert el["anchor"] in ANCRAGES
+    assert set(scene["ordre"]) == set(ELEMENTS)
+
+
+def test_un_booleen_present_a_null_reprend_son_defaut():
+    """`.get(clé, défaut)` ne protège pas une clé PRÉSENTE valant `null` : le
+    piège que le commentaire de `_fusionner_element` nomme déjà pour les
+    champs numériques, mais qui touchait encore `hidden`/`locked`/`solo` —
+    `bool(None)` vaut `False`, quel que soit le défaut de l'élément."""
+    brut = {"defaut": "jeu", "scenes": [
+        {"slug": "jeu", "elements": {"meme": {"solo": None}}},
+    ]}
+    meme = fusionner(brut)["scenes"][0]["elements"]["meme"]
+    assert meme["solo"] == ELEMENTS["meme"]["solo"]  # True : reste au défaut
+
+
+def test_goal_et_uptime_ne_sont_plus_des_elements():
+    """`goal` et `uptime` ne sont jamais rendus sous ce nom : `_publish_goal`
+    (overlay_narrator.py) publie un `gauge`, et `uptime` est aliasé en
+    `counter`. Les lister ici n'aurait aucun effet sur l'affichage."""
+    assert "goal" not in ELEMENTS
+    assert "uptime" not in ELEMENTS
+
+
+def test_les_widgets_evenementiels_ont_une_place():
+    """Ces `kind` de `BUILDERS` (overlay.js) sont publiés directement par le
+    serveur — jamais par l'outil `show_overlay`, dont l'enum ne les liste pas.
+    Absents d'`ELEMENTS`, ils resteraient sans conteneur le jour où `#widgets`
+    se scinde par clé, et disparaîtraient de l'overlay sans lever d'erreur."""
+    for kind in ("clip", "clip_top", "planning", "prediction", "quote",
+                 "raid", "wave"):
+        assert kind in ELEMENTS

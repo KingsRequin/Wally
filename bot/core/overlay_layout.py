@@ -41,6 +41,13 @@ def _el(x: float, y: float, anchor: str, scale: float = 1.0,
 
 # Les clés SONT les `kind` employés par `BUILDERS` (overlay.js) — les franciser
 # casserait la correspondance et imposerait une table de traduction pour rien.
+# La liste suit `BUILDERS`, PAS l'enum de l'outil `show_overlay` : une clé
+# absente ici est un widget qui perd son conteneur (et disparaît de l'overlay
+# SANS lever d'erreur) le jour où `#widgets` se scinde par clé ; une clé en
+# trop n'est qu'un réglage inutile. `goal` et `uptime` sont dans l'enum de
+# l'outil mais ne sont jamais rendus sous ce nom : `_publish_goal`
+# (overlay_narrator.py) publie un `gauge`, `uptime` est aliasé en `counter` —
+# les lister ici n'aurait donc aucun effet.
 #
 # `solo=True` : l'élément chasse les autres et passe par la file d'attente.
 # `solo=False` : il s'installe et laisse la place aux autres par-dessus.
@@ -57,30 +64,37 @@ ELEMENTS: dict[str, dict] = {
     # Ceux qui s'installent
     "bingo":   _el(3.0, 18.0, "top-left", 0.9, solo=False),
     "stats":   _el(3.0, 60.0, "top-left", 0.9, solo=False),
-    "goal":    _el(50.0, 4.0, "top-center", 0.9, solo=False),
-    "uptime":  _el(97.0, 4.0, "top-right", 0.8, solo=False),
     "talkers": _el(3.0, 40.0, "top-left", 0.9, solo=False),
     # Ceux qui passent
-    "meme":      _el(50.0, 50.0, "center"),
-    "versus":    _el(50.0, 50.0, "center"),
-    "poll":      _el(50.0, 50.0, "center"),
-    "hangman":   _el(50.0, 50.0, "center"),
-    "pinned":    _el(50.0, 50.0, "center"),
-    "counter":   _el(50.0, 50.0, "center"),
-    "coinflip":  _el(50.0, 50.0, "center"),
-    "dice":      _el(50.0, 50.0, "center"),
-    "wheel":     _el(50.0, 50.0, "center"),
-    "gauge":     _el(50.0, 50.0, "center"),
-    "countdown": _el(50.0, 50.0, "center"),
-    "rps":       _el(50.0, 50.0, "center"),
+    "meme":       _el(50.0, 50.0, "center"),
+    "clip":       _el(50.0, 50.0, "center"),
+    "clip_top":   _el(50.0, 50.0, "center"),
+    "planning":   _el(50.0, 50.0, "center"),
+    "prediction": _el(50.0, 50.0, "center"),
+    "quote":      _el(50.0, 50.0, "center"),
+    "raid":       _el(50.0, 50.0, "center"),
+    "wave":       _el(50.0, 50.0, "center"),
+    "versus":     _el(50.0, 50.0, "center"),
+    "poll":       _el(50.0, 50.0, "center"),
+    "hangman":    _el(50.0, 50.0, "center"),
+    "pinned":     _el(50.0, 50.0, "center"),
+    "counter":    _el(50.0, 50.0, "center"),
+    "coinflip":   _el(50.0, 50.0, "center"),
+    "dice":       _el(50.0, 50.0, "center"),
+    "wheel":      _el(50.0, 50.0, "center"),
+    "gauge":      _el(50.0, 50.0, "center"),
+    "countdown":  _el(50.0, 50.0, "center"),
+    "rps":        _el(50.0, 50.0, "center"),
 }
 
 # L'empilement par défaut, du plus proche au plus lointain. Wally passe devant
 # ce qu'il montre ; les widgets installés restent au fond.
 _ORDRE_DEFAUT = [
-    "bubble", "avatar", "image", "meme", "versus", "poll", "hangman",
+    "bubble", "avatar", "image", "meme",
+    "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
+    "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
-    "rps", "rotator", "goal", "uptime", "talkers", "bingo", "stats",
+    "rps", "rotator", "talkers", "bingo", "stats",
 ]
 
 _SCENES_DEFAUT = (("start", "Stream Starting"), ("jeu", "En jeu"), ("end", "Fin"))
@@ -120,17 +134,21 @@ def _fusionner_element(brut, defaut: dict) -> dict:
     if not isinstance(brut, dict):
         return dict(defaut)
     anchor = brut.get("anchor")
+    # `isinstance(..., str)` avant le `in` : un `anchor` en `dict`/`list` — un
+    # JSON par ailleurs légal — ferait lever `in` sur un type non hashable.
     return {
         "x": _borner(brut.get("x"), 0.0, 100.0, defaut["x"]),
         "y": _borner(brut.get("y"), 0.0, 100.0, defaut["y"]),
-        "anchor": anchor if anchor in ANCRAGES else defaut["anchor"],
+        "anchor": anchor if isinstance(anchor, str) and anchor in ANCRAGES else defaut["anchor"],
         "scale": _borner(brut.get("scale"), SCALE_MIN, SCALE_MAX, defaut["scale"]),
         # `bool()` franc : l'admin envoie des booléens, mais un JSON écrit à la
-        # main peut porter "oui" ou 1, et un `.get(clé, défaut)` ne couvre pas
-        # une clé présente à `null` — piège déjà payé sur ce projet.
-        "hidden": bool(brut.get("hidden", defaut["hidden"])),
-        "locked": bool(brut.get("locked", defaut["locked"])),
-        "solo": bool(brut.get("solo", defaut["solo"])),
+        # main peut porter "oui" ou 1. Une clé présente à `null` reprend le
+        # défaut — `.get(clé, défaut)` ne le fait PAS : la clé est présente,
+        # sa valeur `None` est retournée telle quelle, et `bool(None)` vaut
+        # toujours `False` quel que soit le défaut de l'élément.
+        "hidden": bool(brut["hidden"]) if brut.get("hidden") is not None else defaut["hidden"],
+        "locked": bool(brut["locked"]) if brut.get("locked") is not None else defaut["locked"],
+        "solo": bool(brut["solo"]) if brut.get("solo") is not None else defaut["solo"],
     }
 
 
@@ -152,7 +170,11 @@ def _fusionner_scene(brut: dict) -> dict | None:
         for cle, defaut in ELEMENTS.items()
     }
     ordre_brut = brut.get("ordre")
-    ordre = [c for c in ordre_brut if c in ELEMENTS] if isinstance(ordre_brut, list) else []
+    # `isinstance(c, str)` avant le `in` : un élément d'`ordre` en `dict`/
+    # `list` — un JSON par ailleurs légal — ferait lever `in ELEMENTS` sur un
+    # type non hashable.
+    ordre = ([c for c in ordre_brut if isinstance(c, str) and c in ELEMENTS]
+              if isinstance(ordre_brut, list) else [])
     # Un élément absent de `ordre` ne serait pas seulement mal empilé : il ne
     # serait pas rendu du tout. On complète toujours.
     ordre += [c for c in _ORDRE_DEFAUT if c not in ordre]
@@ -189,7 +211,9 @@ def fusionner(brut) -> dict:
     if not scenes:
         return layout_par_defaut()
     defaut = brut.get("defaut")
-    if defaut not in vus:
+    # `isinstance(defaut, str)` avant le `in` : un `defaut` en `dict`/`list` —
+    # un JSON par ailleurs légal — ferait lever `in` sur un `set` de chaînes.
+    if not isinstance(defaut, str) or defaut not in vus:
         defaut = scenes[0]["slug"]
     return {"version": 1, "defaut": defaut, "scenes": scenes}
 
