@@ -134,6 +134,18 @@
        `kind` a désormais son conteneur, et `overlay.js` y dépose sa carte. */
     [data-element] {
       position: absolute;
+      /* Une grille à UNE cellule, où tous les enfants se superposent. C'est ce
+         qui permet à la carte qui SORT et à celle qui ENTRE de partager la
+         place sans que l'une quitte le flux.
+
+         Le `position: absolute` qui servait à ça sur `.leaving` ne tient plus
+         depuis que chaque widget a son conteneur : hors flux, la carte ne le
+         dimensionne plus, il retombe à 0×0, et le `translate(-50%, -50%)` de
+         l'ancrage ne translate alors plus de rien — la carte se téléportait
+         (+w/2 à droite, −h/2 vers le haut en `center` ; toute sa largeur hors
+         cadre en `bottom-right`) pendant toute son animation de sortie. */
+      display: grid;
+      grid-template-areas: "pile";
       /* Sans lui, une largeur en pourcentage se calculerait sur le viewport
          entier ; les widgets ont leur taille propre, ils ne s'étirent pas. */
       width: max-content;
@@ -145,6 +157,8 @@
          posée sur `#widgets` — sans elle ici, la pièce s'aplatit. */
       perspective: 600px;
     }
+    /* Tous dans LA cellule : c'est ce qui les superpose. */
+    [data-element] > * { grid-area: pile; }
 
     /* Repli avant que le modèle ne réponde : la page n'est jamais un tas
        d'éléments empilés dans le coin. Volontairement GROSSIER — trois zones,
@@ -278,12 +292,18 @@
        Il est sur un élément INTERNE, sinon le `overflow: hidden` rognerait la
        queue de la bulle, qui déborde volontairement. */
     #bubble-text {
-      /* 120 = marges hautes et basses de la bulle (72) + la place que le modèle
-         lui laisse sous elle + un peu d'air. Le compte doit couvrir TOUT ce qui
-         s'ajoute sous et autour du texte : borné à `100vh` tout court, le
-         sommet de la bulle sortait par le haut de la source. Les 132 px de
-         marge basse en sont retirés, la marge elle-même ayant disparu. */
-      max-height: calc(100vh - 120px);
+      /* `--bulle-place` est la hauteur de mise en page réellement disponible,
+         calculée par `overlay_layout.js` depuis l'ancrage, la position et
+         l'échelle de la bulle — aucun nombre écrit ici ne pourrait être juste,
+         les trois étant réglables. On en retire les 32 px de marges hautes et
+         basses de la bulle (`padding: 16px 22px`, juste au-dessus) : la borne
+         porte sur le TEXTE, pas sur la boîte.
+
+         Le repli de 50vh vaut avant que le modèle n'ait répondu, et il
+         SOUS-promet exprès : une réplique coupée trop tôt se voit et se règle,
+         une bulle qui sort par le haut de la source ne se voit pas. C'est
+         l'inverse du garde-fou d'avant, qui autorisait plus que ce qui tient. */
+      max-height: calc(var(--bulle-place, 50vh) - 32px);
       overflow: hidden;
     }
 
@@ -426,19 +446,11 @@
       transition: opacity var(--t-out) var(--ease-in), transform var(--t-out) var(--ease-in);
     }
     body[data-side="right"] .widget { transform-origin: bottom right; }
-    /* Le widget qui SORT quitte le flux : la suivante prend sa place tout de
-       suite, pendant qu'il finit de partir. Son conteneur est déjà positionné,
-       et `left/bottom: 0` le laisse exactement là où il était.
-       `width: max-content` est INDISPENSABLE depuis qu'il a son propre
-       conteneur : hors flux, il ne le dimensionne plus, le conteneur en
-       `max-content` retombe à zéro et un `width: 100%` écraserait la carte
-       pendant toute sa sortie. */
-    .widget.leaving {
-      position: absolute;
-      left: 0;
-      bottom: 0;
-      width: max-content;
-    }
+    /* `.leaving` n'a plus AUCUNE règle de mise en page : la superposition est
+       portée par la grille à une cellule du conteneur (plus haut). La carte qui
+       sort reste donc dans le flux, à sa place exacte, pendant que la suivante
+       entre par-dessus. La classe garde son seul rôle : dire au JS de ne plus
+       la compter comme la carte en place (`WIDGET_EN_PLACE`). */
     .widget.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
@@ -1309,6 +1321,16 @@
     <div data-element="bingo"></div>
     <div data-element="talkers"></div>
     <div data-element="rotator"></div>
+    <!-- Les huit panneaux d'`overlay_apex.js` : fusionnés dans `BUILDERS` par
+         `Object.assign`, publiés comme n'importe quel autre widget. -->
+    <div data-element="apex_servers"></div>
+    <div data-element="apex_predator"></div>
+    <div data-element="apex_craft"></div>
+    <div data-element="apex_map"></div>
+    <div data-element="apex_stats"></div>
+    <div data-element="apex_status"></div>
+    <div data-element="apex_progress"></div>
+    <div data-element="apex_rank"></div>
     <div data-element="rps"></div>
     <div data-element="countdown"></div>
     <div data-element="gauge"></div>

@@ -36,19 +36,25 @@ window.WallyLayout = (function () {
   // Les clés du modèle (bot/core/overlay_layout.py). Un test Python vérifie que
   // les deux listes ne divergent pas, et qu'un conteneur existe pour chacune.
   //
-  // Elles suivent `BUILDERS` — ce que la page RESTITUE — et non l'enum de
-  // l'outil `show_overlay`, qui dit ce que le bot peut DEMANDER. Les deux
-  // listes ne coïncident pas : `goal` est publié en `gauge`, `uptime` en
-  // `counter`, et six widgets rendus (`clip`, `planning`, `prediction`,
-  // `quote`, `raid`, `wave`) ne figurent dans aucun enum. Une clé absente est
-  // un widget sans conteneur, donc invisible ; une clé en trop n'est qu'un
-  // réglage sans effet. L'asymétrie tranche.
+  // Elles suivent `BUILDERS` **∪ `APEX_BUILDERS`** — ce que la page RESTITUE —
+  // et non l'enum de l'outil `show_overlay`, qui dit ce que le bot peut
+  // DEMANDER. Les DEUX objets de builders comptent : `overlay.js` les fusionne
+  // par `Object.assign`, et ne lire que le premier a fait manquer les huit
+  // panneaux `apex_*` d'`overlay_apex.js`, pourtant publiés en vrai.
+  // Les listes ne coïncident pas avec l'enum : `goal` est publié en `gauge`,
+  // `uptime` en `counter`, et six widgets rendus (`clip`, `planning`,
+  // `prediction`, `quote`, `raid`, `wave`) ne figurent dans aucun enum.
+  // Une clé absente est un widget qu'on ne peut PAS placer (`appliquer()`
+  // n'itère que sur cette liste) ; une clé en trop n'est qu'un réglage sans
+  // effet. L'asymétrie tranche.
   const ELEMENTS = [
     "avatar", "bubble", "rotator", "image",
     "bingo", "stats", "talkers",
     "meme", "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
     "versus", "poll", "hangman", "pinned", "counter",
     "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
+    "apex_rank", "apex_progress", "apex_status", "apex_stats",
+    "apex_map", "apex_craft", "apex_predator", "apex_servers",
   ];
 
   /** Le rapport entre la source réelle et le canvas de référence.
@@ -118,6 +124,34 @@ window.WallyLayout = (function () {
       "--x-pointe", avatar.x >= el.x ? "calc(100% - 24px)" : "24px");
   }
 
+  /** Borne le texte de la bulle à la place RÉELLEMENT disponible au-dessus
+   *  (ou au-dessous) d'elle.
+   *
+   *  Aucune valeur statique ne peut être juste : la place dépend de l'ancrage
+   *  — la bulle grandit vers le haut, vers le bas, ou des deux côtés —, de la
+   *  position réglée, et de l'échelle, le rendu valant la hauteur de mise en
+   *  page MULTIPLIÉE par elle. Une borne en dur promettait plus que ce qui
+   *  tient : la réplique était rognée par le HAUT, hors du cadre, au lieu
+   *  d'être coupée par le bas. C'est le piège « borner une hauteur sans
+   *  compter les marges », déjà payé ici.
+   *
+   *  Le repli du CSS sous-promet volontairement : couper trop tôt se voit et
+   *  se règle, déborder hors de la source ne se voit pas.
+   */
+  function bornerBulle(el) {
+    const bulle = document.getElementById("bubble");
+    if (!bulle || !el) return;
+    const a = ANCRAGES[el.anchor] || ANCRAGES["center"];
+    // Le sens de croissance suit l'ancrage, en pourcentage de la hauteur.
+    let dispo;
+    if (a.ty === "-50%") dispo = 2 * Math.min(el.y, 100 - el.y);  // des deux côtés
+    else if (a.v === "bottom") dispo = el.y;                      // vers le haut
+    else dispo = 100 - el.y;                                      // vers le bas
+    const echelle = (el.scale || 1) * facteurCanvas() || 1;
+    const place = (dispo / 100) * (window.innerHeight || 1080) / echelle;
+    bulle.style.setProperty("--bulle-place", Math.max(0, place).toFixed(0) + "px");
+  }
+
   /** Place tous les éléments d'une scène, et pose l'empilement. */
   function appliquer(slug, scene) {
     if (!scene || !scene.elements) return;
@@ -131,11 +165,12 @@ window.WallyLayout = (function () {
       noeud.style.zIndex = String(rang < 0 ? 1 : ordre.length - rang);
     });
     orienterPointe(scene);
+    bornerBulle(scene.elements.bubble);
     document.body.dataset.scene = slug || "";
   }
 
   return {
-    appliquer, placer, orienterPointe, styleDepuisElement, facteurCanvas,
-    ELEMENTS, ANCRAGES,
+    appliquer, placer, orienterPointe, bornerBulle, styleDepuisElement,
+    facteurCanvas, ELEMENTS, ANCRAGES,
   };
 })();

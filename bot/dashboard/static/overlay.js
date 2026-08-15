@@ -1211,12 +1211,13 @@
     widgetTimer = setTimeout(() => {
       // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
       // fois par live là où une bulle part toutes les quelques secondes.
-      // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
-      // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
-      // lisent comme deux événements ; avec, comme un seul mouvement.
-      // `leaving` le sort du flux : la suivante peut commencer à entrer pendant
-      // qu'il finit de partir. Sans recouvrement, deux widgets à la suite
-      // lisent comme deux événements ; avec, comme un seul mouvement.
+      // `leaving` cesse de le compter comme la carte EN PLACE : la suivante
+      // peut commencer à entrer pendant qu'il finit de partir. Sans
+      // recouvrement, deux widgets à la suite lisent comme deux événements ;
+      // avec, comme un seul mouvement.
+      // La superposition est portée par la grille du conteneur, pas par un
+      // `position: absolute` : hors flux, la carte ne dimensionnait plus son
+      // conteneur et se téléportait le temps de sa sortie.
       box.classList.add("leaving");
       // Une carte est plus large qu'une bulle : elle encaisse un décalage plus
       // franc sans sortir du cadre.

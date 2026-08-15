@@ -39,15 +39,24 @@ def _el(x: float, y: float, anchor: str, scale: float = 1.0,
             "hidden": hidden, "locked": False, "solo": solo}
 
 
-# Les clés SONT les `kind` employés par `BUILDERS` (overlay.js) — les franciser
-# casserait la correspondance et imposerait une table de traduction pour rien.
-# La liste suit `BUILDERS`, PAS l'enum de l'outil `show_overlay` : une clé
-# absente ici est un widget qui perd son conteneur (et disparaît de l'overlay
-# SANS lever d'erreur) le jour où `#widgets` se scinde par clé ; une clé en
-# trop n'est qu'un réglage inutile. `goal` et `uptime` sont dans l'enum de
-# l'outil mais ne sont jamais rendus sous ce nom : `_publish_goal`
-# (overlay_narrator.py) publie un `gauge`, `uptime` est aliasé en `counter` —
-# les lister ici n'aurait donc aucun effet.
+# Les clés SONT les `kind` employés par la page — les franciser casserait la
+# correspondance et imposerait une table de traduction pour rien.
+#
+# La liste suit `BUILDERS` **∪ `APEX_BUILDERS`**, PAS l'enum de l'outil
+# `show_overlay`. Les deux objets comptent : `overlay.js` les FUSIONNE
+# (`Object.assign(BUILDERS, window.APEX_BUILDERS || {})`), et les huit panneaux
+# `apex_*` sont publiés pour de vrai (`bot/core/apex/service.py` rend
+# `{"kind": f"apex_{panel}"}`). Ne lire que `BUILDERS` les a fait manquer une
+# première fois : le commentaire disait vrai en apparence et désignait la
+# moitié de l'univers. `tests/test_overlay_layout_css.py` compare désormais
+# l'UNION des deux objets à cette liste.
+#
+# Une clé absente ici n'est pas seulement mal placée : `appliquer()` n'itérant
+# que sur `ELEMENTS`, elle reste hors de portée du panneau de mise en scène,
+# à jamais. Une clé en trop n'est qu'un réglage inutile — l'asymétrie tranche.
+# `goal` et `uptime` sont dans l'enum de l'outil mais ne sont jamais rendus
+# sous ce nom : `_publish_goal` (overlay_narrator.py) publie un `gauge`,
+# `uptime` est aliasé en `counter` — les lister ici n'aurait aucun effet.
 #
 # `solo=True` : l'élément chasse les autres et passe par la file d'attente.
 # `solo=False` : il s'installe et laisse la place aux autres par-dessus.
@@ -85,6 +94,18 @@ ELEMENTS: dict[str, dict] = {
     "gauge":      _el(50.0, 50.0, "center"),
     "countdown":  _el(50.0, 50.0, "center"),
     "rps":        _el(50.0, 50.0, "center"),
+    # Les panneaux Apex (`overlay_apex.js`) : ils passent comme les autres, et
+    # partent donc du même endroit. Avant ce chantier, TOUS les widgets
+    # occupaient la place de l'avatar ; aucun n'a de position propre à
+    # préserver, le streamer les réglera depuis le panneau.
+    "apex_rank":     _el(50.0, 50.0, "center"),
+    "apex_progress": _el(50.0, 50.0, "center"),
+    "apex_status":   _el(50.0, 50.0, "center"),
+    "apex_stats":    _el(50.0, 50.0, "center"),
+    "apex_map":      _el(50.0, 50.0, "center"),
+    "apex_craft":    _el(50.0, 50.0, "center"),
+    "apex_predator": _el(50.0, 50.0, "center"),
+    "apex_servers":  _el(50.0, 50.0, "center"),
 }
 
 # L'empilement par défaut, du plus proche au plus lointain. Wally passe devant
@@ -94,7 +115,10 @@ _ORDRE_DEFAUT = [
     "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
-    "rps", "rotator", "talkers", "bingo", "stats",
+    "rps",
+    "apex_rank", "apex_progress", "apex_status", "apex_stats",
+    "apex_map", "apex_craft", "apex_predator", "apex_servers",
+    "rotator", "talkers", "bingo", "stats",
 ]
 
 _SCENES_DEFAUT = (("start", "Stream Starting"), ("jeu", "En jeu"), ("end", "Fin"))
