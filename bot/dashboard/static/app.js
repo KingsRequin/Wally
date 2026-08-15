@@ -3829,6 +3829,13 @@ async function _renderSystemeOverlay(panel) {
   refreshOverlayForceLive();
   refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+
+  // La mise en scène vit dans overlay_admin.js : app.js fait déjà 5679 lignes,
+  // et ce panneau en pèse plusieurs centaines à lui seul.
+  const scene = document.createElement('div');
+  scene.className = 'overlay-section';
+  panel.appendChild(scene);
+  if (window.OverlayAdmin) OverlayAdmin.monter(scene);
 }
 
 // La télémétrie de rendu (fps, pire frame, GPU) était POSTÉE six fois par minute

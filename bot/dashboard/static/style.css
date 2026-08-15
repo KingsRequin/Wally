@@ -3411,3 +3411,330 @@ body.is-mobile .mobile-back-btn {
   border-style: dashed;
   color: var(--text-secondary);
 }
+
+/* ── Overlay · mise en scène (overlay_admin.js) ────────────────────────────
+   Verre dépoli comme le reste du panneau : fonds à 3–5 % de blanc, bordures à
+   8 %, rayons de 12 à 16 px, ombres douces, cyan #06b6d4 pour l'état actif.
+   Aucune bordure épaisse, aucune ombre décalée, aucun angle droit. */
+
+/* Le conteneur porte AUSSI `.overlay-section`, la carte maison du panneau —
+   d'où le fond et la marge. Ce que celle-ci impose à TOUS ses `label`
+   (160 px de large, en gras) n'a rien à faire sur nos champs. */
+.ovl-panneau label { min-width: 0; font-weight: 400; }
+
+.ovl-entete { margin-bottom: 12px; }
+.ovl-entete-sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px; }
+
+.ovl-corps {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .ovl-corps { grid-template-columns: 1fr; }
+}
+
+.ovl-colonne { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.ovl-bloc {
+  /* `backdrop-filter` crée un contexte d'empilement : sans rang explicite, le
+     bloc des éléments — plus bas dans le DOM — peignait PAR-DESSUS le menu ⋮
+     des scènes, quel que soit le `z-index` de celui-ci. Le menu s'ouvrait
+     bien, on ne le voyait qu'à moitié. */
+  position: relative;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 12px;
+}
+.ovl-bloc-titre {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+/* Le seul bloc qui déploie un menu par-dessus son voisin. */
+.ovl-bloc-scenes { z-index: 2; }
+.ovl-bloc-compte { font-size: 0.68rem; color: var(--text-muted); }
+.ovl-aide { font-size: 0.68rem; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+.ovl-vide { padding: 10px; font-size: 0.78rem; color: var(--text-secondary); list-style: none; }
+
+/* ── La liste des scènes ─────────────────────────────────────────────── */
+
+.ovl-scenes { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ovl-scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ovl-scene:hover { background: rgba(255, 255, 255, 0.05); }
+.ovl-scene.actif {
+  border-color: rgba(6, 182, 212, 0.5);
+  background: rgba(6, 182, 212, 0.1);
+}
+.ovl-scene-corps { flex: 1; min-width: 0; cursor: pointer; }
+.ovl-scene-nom {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ovl-scene-slug {
+  display: block;
+  font-size: 0.66rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ovl-badge {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #06b6d4;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+.ovl-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ovl-menu-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
+
+.ovl-menu {
+  position: absolute;
+  top: 100%;
+  right: 6px;
+  z-index: 30;
+  min-width: 190px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Presque opaque, à la différence des blocs : c'est un menu POSÉ sur du
+     texte, et à 0,92 on lisait la liste au travers. */
+  background: rgba(22, 27, 34, 0.98);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.ovl-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+.ovl-menu-item:hover { background: rgba(6, 182, 212, 0.12); }
+.ovl-menu-item.inactif { color: var(--text-muted); }
+.ovl-menu-note {
+  font-size: 0.66rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+  padding: 7px 9px 2px;
+}
+
+/* ── La liste des éléments ───────────────────────────────────────────── */
+
+.ovl-elements {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.ovl-el {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+.ovl-el:hover { background: rgba(255, 255, 255, 0.05); }
+.ovl-el.actif { border-color: rgba(6, 182, 212, 0.5); background: rgba(6, 182, 212, 0.1); }
+.ovl-el.masque .ovl-el-nom { color: var(--text-muted); text-decoration: line-through; }
+.ovl-el.glisse { opacity: 0.4; }
+.ovl-el-poignee { color: var(--text-muted); cursor: grab; font-size: 0.8rem; flex-shrink: 0; }
+.ovl-el-corps { flex: 1; min-width: 0; }
+.ovl-el-nom {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ovl-el-cle {
+  display: block;
+  font-size: 0.62rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+}
+.ovl-el-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.ovl-act {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  line-height: 1;
+  padding: 4px 5px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.ovl-act:hover { background: rgba(255, 255, 255, 0.06); }
+.ovl-act.actif { border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.12); }
+.ovl-act.inactif { opacity: 0.4; }
+
+/* ── La surface de placement ─────────────────────────────────────────── */
+
+.ovl-droite { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.ovl-surface {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  /* La grille de 10 % : le repère de placement, pas une décoration. */
+  background-color: rgba(255, 255, 255, 0.03);
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 10% 10%;
+  backdrop-filter: blur(10px);
+}
+
+.ovl-rect {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  cursor: pointer;
+  overflow: hidden;
+}
+.ovl-rect:hover { background: rgba(255, 255, 255, 0.09); }
+.ovl-rect.actif {
+  border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.16);
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.35);
+}
+.ovl-rect.masque {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: transparent;
+  opacity: 0.45;
+}
+.ovl-rect.verrouille { cursor: default; }
+.ovl-rect-nom {
+  font-size: 22px;   /* en pixels du canvas 1920 : la mise à l'échelle le réduit */
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── Les réglages, sous la surface ───────────────────────────────────── */
+
+.ovl-reglages, .ovl-publication {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.ovl-reglages-nom {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  min-width: 150px;
+}
+.ovl-champ { display: flex; align-items: center; gap: 6px; }
+.ovl-champ-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.ovl-champ input {
+  width: 76px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+.ovl-champ input:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
+.ovl-champ input:disabled { opacity: 0.4; }
+
+.ovl-ancrages {
+  display: grid;
+  grid-template-columns: repeat(3, 18px);
+  grid-auto-rows: 18px;
+  gap: 3px;
+  margin-left: auto;
+}
+.ovl-ancrage {
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  padding: 0;
+}
+.ovl-ancrage:hover { background: rgba(255, 255, 255, 0.09); }
+.ovl-ancrage.actif { background: #06b6d4; border-color: #06b6d4; }
+
+/* ── La barre de publication ─────────────────────────────────────────── */
+
+.ovl-direct { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); }
+.ovl-compteur { font-size: 0.75rem; color: var(--text-muted); margin-right: auto; }
+.ovl-compteur.en-attente { color: #06b6d4; }
+.ovl-publication .btn:disabled { opacity: 0.4; cursor: default; }
