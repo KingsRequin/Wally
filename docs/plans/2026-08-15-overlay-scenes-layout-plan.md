@@ -831,7 +831,7 @@ window.WallyLayout = (function () {
   const ELEMENTS = [
     "avatar", "bubble", "rotator", "image",
     "bingo", "stats", "talkers",
-    "meme", "clip", "planning", "prediction", "quote", "raid", "wave",
+    "meme", "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
     "versus", "poll", "hangman", "pinned", "counter",
     "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
   ];
@@ -1584,6 +1584,8 @@ _ECHANTILLONS: dict[str, dict] = {
     # `counter` porte AUSSI l'uptime, aliasé à la publication (ligne 1555).
     "counter":   {"text": "12 morts en tombant"},
     "clip":      {"title": "Le rageur Taki", "creator": "kassandreyunikon"},
+    "clip_top":  {"rows": [{"title": "Le rageur Taki", "views": 412},
+                           {"title": "Le cerveau de Rina a bug", "views": 208}]},
     "planning":  {},
     "prediction": {"bet": "Azraël finit top 5", "outcome": "wrong"},
     "quote":     {"text": "Dans le doute, je fais exploser la maison",
