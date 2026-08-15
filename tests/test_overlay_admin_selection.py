@@ -114,6 +114,92 @@ def test_les_ecarts_survivent_exactement_a_un_deplacement_borne():
     assert out == "ok"
 
 
+def test_les_six_alignements_collent_la_boite_au_bord_pour_les_NEUF_ancrages():
+    """Le piège de la tâche, vérifié là où il se cache.
+
+    Pour chaque ancrage et chaque bord, on aligne puis on RELIT la boîte rendue
+    par `geometrie()` : elle doit toucher le bord visé au pixel, et tenir
+    entièrement dans le cadre. Un `x = 100` pour « à droite » ferait sortir
+    six ancrages sur neuf, ce que ce test attrape en une passe.
+    """
+    out = _node("""
+      const CAS = {
+        "gauche":   function (g) { proche(g.gauche, 0, 0.05); },
+        "droite":   function (g) { proche(g.droite, W, 0.05); },
+        "centre-h": function (g) { proche((g.gauche + g.droite) / 2, W / 2, 0.05); },
+        "haut":     function (g) { proche(g.haut, 0, 0.05); },
+        "bas":      function (g) { proche(g.bas, H, 0.05); },
+        "centre-v": function (g) { proche((g.haut + g.bas) / 2, H / 2, 0.05); },
+      };
+      const HORIZONTAL = {gauche: 1, droite: 1, "centre-h": 1};
+      OA.BORDS.forEach(function (bord) {
+        ANCRAGES.forEach(function (a) {
+          // `bubble` (460×170) et `avatar` (200×200) : deux formes, et une
+          // échelle qui n'est pas 1 — le décalage d'ancrage la porte.
+          [["bubble", 0.9], ["avatar", 1], ["stats", 1.4]].forEach(function (d) {
+            const e = el({anchor: a, scale: d[1], x: 37, y: 21});
+            const p = OA.positionAlignee(d[0], e, bord, W, H);
+            e.x = p.x; e.y = p.y;
+            const g = OA.geometrie(d[0], e, W, H);
+            CAS[bord](g);
+            // Sur l'AXE ALIGNÉ seulement : coller à gauche ne peut rien
+            // promettre de la hauteur, et l'élément de départ déborde
+            // volontairement en y (`stats` à 1,4 fait 39 % de haut, posé à 21).
+            const dedans = HORIZONTAL[bord]
+              ? (g.gauche >= -0.05 && g.droite <= W + 0.05)
+              : (g.haut >= -0.05 && g.bas <= H + 0.05);
+            if (!dedans) throw new Error(bord + " / " + a + " / " + d[0] + " : hors cadre");
+          });
+        });
+      });
+      console.log("ok");
+    """)
+    assert out == "ok"
+
+
+def test_l_alignement_ne_touche_QUE_l_axe_demande():
+    """Coller à gauche ne doit pas remonter l'élément d'un pixel : on aligne
+    souvent deux fois de suite, et un axe qui bouge tout seul défait le geste
+    précédent."""
+    out = _node("""
+      ANCRAGES.forEach(function (a) {
+        const e = el({anchor: a, x: 42.5, y: 63.25, scale: 0.8});
+        ["gauche", "droite", "centre-h"].forEach(function (bord) {
+          proche(OA.positionAlignee("bingo", e, bord, W, H).y, e.y);
+        });
+        ["haut", "bas", "centre-v"].forEach(function (bord) {
+          proche(OA.positionAlignee("bingo", e, bord, W, H).x, e.x);
+        });
+      });
+      console.log("ok");
+    """)
+    assert out == "ok"
+
+
+def test_coller_a_droite_n_est_PAS_x_egale_100():
+    """La preuve par l'absurde, écrite noir sur blanc.
+
+    Sur un `top-left`, « à droite » vaut 100 MOINS la largeur de l'élément ;
+    sur un `bottom-right`, il vaut bien 100 ; sur un `center`, l'entre-deux.
+    Trois valeurs différentes pour un même bouton — c'est exactement ce qu'un
+    `x = 100` en dur aurait manqué.
+    """
+    out = _node("""
+      const bubble = OA.geometrie("bubble", el({scale: 1}), W, H);
+      const part = bubble.largeur / W * 100;     // la largeur, en % du cadre
+      const gauche = OA.positionAlignee("bubble", el({anchor: "top-left"}), "droite", W, H);
+      const centre = OA.positionAlignee("bubble", el({anchor: "center"}), "droite", W, H);
+      const bas = OA.positionAlignee("bubble", el({anchor: "bottom-right"}), "droite", W, H);
+      proche(gauche.x, 100 - part, 0.01);
+      proche(centre.x, 100 - part / 2, 0.01);
+      proche(bas.x, 100, 0.01);
+      if (!(gauche.x < centre.x && centre.x < bas.x)) throw new Error("ordre");
+      console.log([gauche.x, centre.x, bas.x].join(" "));
+    """)
+    # 460 px de large sur un canvas de 1920 : 23,96 % du cadre.
+    assert out == "76.04 88.02 100"
+
+
 def test_le_delta_est_arrondi_une_fois_pour_tous():
     """Arrondir chaque position ferait dériver les écarts d'un centième par
     geste : `depart + delta` doit rester exact quand les deux le sont."""

@@ -4056,6 +4056,53 @@ body.is-mobile .mobile-back-btn {
 .ovl-ancrage:hover { background: rgba(255, 255, 255, 0.09); }
 .ovl-ancrage.actif { background: #06b6d4; border-color: #06b6d4; }
 
+/* ── La barre d'outils de la sélection ───────────────────────────────── */
+
+.ovl-outils {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.ovl-outils-compte {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 132px;
+}
+/* Le compte passe au cyan dès qu'il y a de quoi agir : c'est le seul repère
+   qui dit sur QUOI le bouton qu'on s'apprête à cliquer va tomber. */
+.ovl-outils-compte.actif { color: #06b6d4; }
+.ovl-outils-groupe { display: flex; align-items: center; gap: 4px; }
+.ovl-outils-titre {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.ovl-outil {
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ovl-outil:hover:not(:disabled) {
+  background: rgba(6, 182, 212, 0.14);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+/* Grisé et non caché : un bouton qui apparaît et disparaît au gré de la
+   sélection fait sauter la barre sous le pointeur, et on clique à côté. */
+.ovl-outil:disabled { opacity: 0.35; cursor: default; }
+
 /* ── La barre de publication ─────────────────────────────────────────── */
 
 .ovl-direct {

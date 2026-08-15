@@ -1389,6 +1389,84 @@ window.OverlayAdmin = (function () {
     element.y = arrondi(borner(ay / H * 100, POS_MIN, POS_MAX, element.y));
   }
 
+  // ── Aligner ─────────────────────────────────────────────────────────────
+  //
+  // LE PIÈGE DE CE PANNEAU, et il est entier ici : `x` ne désigne PAS le bord
+  // gauche de l'élément, mais son POINT D'ANCRAGE. « Coller à droite » n'est
+  // donc pas `x = 100` — posé sur un élément ancré `top-left`, ce serait son
+  // coin gauche qu'on plaquerait sur le bord droit, et l'élément sortirait
+  // ENTIÈREMENT du cadre. Sur un `bottom-right`, la même valeur tombe juste ;
+  // sur un `center`, elle laisse dépasser la moitié.
+  //
+  // La réponse tient en deux lignes et vient de `geometrie()`, l'inverse exact
+  // de `styleDepuisElement` : l'écart entre le point d'ancrage et le bord de la
+  // boîte RENDUE — `g.ax − g.gauche` — vaut 0, une demi-largeur ou une largeur
+  // selon la famille d'ancrage, et il porte DÉJÀ l'échelle. Il n'y a donc pas
+  // neuf cas à écrire, ni de table à tenir à jour quand un ancrage s'ajoute :
+  // on colle la BOÎTE au bord, puis on relit où tombe l'ancrage.
+
+  const BORDS = ["gauche", "centre-h", "droite", "haut", "centre-v", "bas"];
+
+  /** La position qui colle la boîte de `element` au bord demandé.
+   *
+   *  Le résultat est borné à 0–100 comme partout ailleurs. Un élément PLUS
+   *  LARGE que le cadre ne peut pas être collé à gauche sans que son point
+   *  d'ancrage sorte des bornes : il est alors ramené dedans, donc pas
+   *  parfaitement collé — le repère orange « déborde du cadre » le disait déjà
+   *  avant l'alignement, et le dira encore après.
+   */
+  function positionAlignee(cle, element, bord, W, H) {
+    const g = geometrie(cle, element, W, H);
+    const dx = g.ax - g.gauche;   // 0, largeur/2 ou largeur, échelle comprise
+    const dy = g.ay - g.haut;
+    let ax = g.ax, ay = g.ay;
+    if (bord === "gauche") ax = dx;
+    else if (bord === "droite") ax = W - g.largeur + dx;
+    else if (bord === "centre-h") ax = (W - g.largeur) / 2 + dx;
+    else if (bord === "haut") ay = dy;
+    else if (bord === "bas") ay = H - g.hauteur + dy;
+    else if (bord === "centre-v") ay = (H - g.hauteur) / 2 + dy;
+    return {
+      x: arrondi(borner(ax / W * 100, POS_MIN, POS_MAX, element.x)),
+      y: arrondi(borner(ay / H * 100, POS_MIN, POS_MAX, element.y)),
+    };
+  }
+
+  /** Colle CHAQUE élément de la sélection au bord demandé — jamais les uns sur
+   *  les autres. C'est le comportement de tous les éditeurs, et le seul qui ait
+   *  un sens : empiler trois widgets au même endroit n'aligne rien. */
+  function aligner(bord) {
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    const bloc = selectionDeplacable();
+    if (!bloc.membres.length) {
+      direLesBloques(bloc.bloques);
+      if (!bloc.bloques.length) notifier("Aucun élément sélectionné.", "error");
+      return;
+    }
+    let bouge = 0;
+    bloc.membres.forEach(function (m) {
+      const p = positionAlignee(m.cle, m.element, bord, r.width, r.height);
+      if (p.x !== m.element.x || p.y !== m.element.y) bouge += 1;
+      m.element.x = p.x;
+      m.element.y = p.y;
+    });
+    finirOutil(bouge, bloc.bloques);
+  }
+
+  /** La fin commune des outils : une seule modification pour toute l'opération,
+   *  le rendu, et ce que le cadenas a retenu. Un outil qui ne change rien le
+   *  DIT — muet, il passerait pour cassé. */
+  function finirOutil(bouge, bloques) {
+    if (bouge > 0) marquerModifie();
+    rendreSurface();
+    rendreReglages();
+    direLesBloques(bloques);
+    if (!bouge && !(bloques && bloques.length)) {
+      notifier("Rien à changer : c'était déjà en place.");
+    }
+  }
+
   // ── La surface de placement ─────────────────────────────────────────────
 
   /** La boîte du CALQUE — la référence commune du pointeur, des repères et des
@@ -2117,6 +2195,9 @@ window.OverlayAdmin = (function () {
     ANCRAGES.forEach(function (a) {
       noeuds.ancrages[a].classList.toggle("actif", !!element && element.anchor === a);
     });
+    // Ici et pas dans `rendreSelection()` : la barre d'outils suit la SÉLECTION,
+    // et tous les chemins qui la changent passent par les réglages.
+    rendreOutils();
   }
 
   // ── La barre de publication ─────────────────────────────────────────────
@@ -2231,6 +2312,74 @@ window.OverlayAdmin = (function () {
     return barre;
   }
 
+  /** La barre d'outils de la sélection : ce qu'on peut faire à PLUSIEURS
+   *  éléments d'un coup. Elle porte aussi le compte — sans lui, on ne sait pas
+   *  sur quoi le bouton qu'on s'apprête à cliquer va tomber.
+   *
+   *  Des libellés écrits, pas des pictogrammes : ⇤ ⇥ ⤒ manquent à la plupart
+   *  des polices système et sortent en carré vide, comme le 📋 déjà remplacé
+   *  ici par un tracé SVG. Six mots tiennent sur une ligne.
+   */
+  function barreOutils() {
+    const barre = creer("div", "ovl-outils");
+    noeuds.compteSelection = creer("span", "ovl-outils-compte", "Aucune sélection");
+    barre.appendChild(noeuds.compteSelection);
+    noeuds.outils = [];
+
+    function groupe(titre) {
+      const g = creer("div", "ovl-outils-groupe");
+      g.appendChild(creer("span", "ovl-outils-titre", titre));
+      barre.appendChild(g);
+      return g;
+    }
+
+    function outil(hote, texte, titre, mini, action) {
+      const b = creer("button", "ovl-outil", texte);
+      b.title = titre;
+      b.addEventListener("click", function () { action(); });
+      hote.appendChild(b);
+      // `mini` : le nombre d'éléments sélectionnés en dessous duquel l'outil
+      // n'a pas de sens. Grisé plutôt qu'absent — un bouton qui apparaît et
+      // disparaît fait sauter la barre sous le pointeur.
+      noeuds.outils.push({ noeud: b, mini: mini });
+      return b;
+    }
+
+    const gh = groupe("Aligner");
+    outil(gh, "Gauche", "Colle la sélection au bord GAUCHE du cadre. Tient "
+      + "compte de l'ancrage et de la taille rendue : un élément ancré à droite "
+      + "ne sort pas du cadre.", 1, function () { aligner("gauche"); });
+    outil(gh, "Centre", "Centre horizontalement dans le cadre.", 1,
+      function () { aligner("centre-h"); });
+    outil(gh, "Droite", "Colle la sélection au bord DROIT du cadre.", 1,
+      function () { aligner("droite"); });
+    outil(gh, "Haut", "Colle la sélection au bord HAUT du cadre.", 1,
+      function () { aligner("haut"); });
+    outil(gh, "Milieu", "Centre verticalement dans le cadre.", 1,
+      function () { aligner("centre-v"); });
+    outil(gh, "Bas", "Colle la sélection au bord BAS du cadre.", 1,
+      function () { aligner("bas"); });
+    return barre;
+  }
+
+  /** L'état de la barre d'outils : le compte, et ce qui est utilisable. */
+  function rendreOutils() {
+    if (!noeuds.compteSelection) return;
+    const bloc = selectionDeplacable();
+    const n = bloc.membres.length + bloc.bloques.length;
+    noeuds.compteSelection.textContent = n
+      ? n + " élément" + (n > 1 ? "s" : "") + " sélectionné" + (n > 1 ? "s" : "")
+        + (bloc.bloques.length ? " · " + bloc.bloques.length + " verrouillé"
+           + (bloc.bloques.length > 1 ? "s" : "") : "")
+      : "Aucune sélection";
+    noeuds.compteSelection.classList.toggle("actif", n > 0);
+    (noeuds.outils || []).forEach(function (o) {
+      // Sur le nombre de DÉPLAÇABLES : deux éléments dont un verrouillé ne font
+      // pas une répartition à trois.
+      o.noeud.disabled = bloc.membres.length < o.mini;
+    });
+  }
+
   function construireSquelette(conteneur) {
     conteneur.classList.add("ovl-panneau");
     conteneur.innerHTML = "";
@@ -2327,6 +2476,7 @@ window.OverlayAdmin = (function () {
     droite.appendChild(noeuds.cadre);
 
     droite.appendChild(barreApercu());
+    droite.appendChild(barreOutils());
 
     const reglages = creer("div", "ovl-reglages");
     construireReglages(reglages);
@@ -2503,5 +2653,10 @@ window.OverlayAdmin = (function () {
     // Le décalage commun d'un bloc : c'est LUI qui garantit que les écarts
     // entre les éléments sélectionnés survivent au déplacement.
     bornerDelta: bornerDelta,
+    // L'alignement, exposé pour la même raison : c'est un calcul pur, et c'est
+    // là que se loge le piège de l'ancrage.
+    positionAlignee: positionAlignee,
+    aligner: aligner,
+    BORDS: BORDS,
   };
 })();
