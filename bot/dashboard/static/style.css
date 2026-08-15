@@ -3713,8 +3713,18 @@ body.is-mobile .mobile-back-btn {
 
 /* Le calque de manipulation, par-dessus l'aperçu. Il porte les rectangles :
    ce sont eux qui captent le pointeur et qui montrent où est un élément même
-   quand il n'affiche rien — un widget non déclenché est invisible en dessous. */
-.ovl-calque { position: absolute; inset: 0; }
+   quand il n'affiche rien — un widget non déclenché est invisible en dessous.
+
+   `touch-action: none` : sans lui, un glisser au doigt fait défiler la page au
+   lieu de déplacer le repère, et le geste n'arrive jamais jusqu'ici. */
+.ovl-calque { position: absolute; inset: 0; touch-action: none; }
+.ovl-calque:focus { outline: none; }
+/* Le liseré ne paraît qu'au clavier : au pointeur, le repère actif dit déjà ce
+   qu'on manipule, et un cadre cyan permanent ferait doublon. */
+.ovl-calque:focus-visible {
+  outline: 2px solid rgba(6, 182, 212, 0.5);
+  outline-offset: -2px;
+}
 
 /* Avec l'aperçu, les repères se font discrets : un contour et une étiquette,
    rien qui masque ce qu'on est venu regarder. */
@@ -3775,9 +3785,11 @@ body.is-mobile .mobile-back-btn {
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
-  cursor: pointer;
+  cursor: grab;
   overflow: hidden;
+  touch-action: none;
 }
+.ovl-surface.en-manip .ovl-rect { cursor: grabbing; }
 .ovl-rect:hover { background: rgba(255, 255, 255, 0.09); }
 .ovl-rect.actif {
   border-color: #06b6d4;
@@ -3791,6 +3803,69 @@ body.is-mobile .mobile-back-btn {
   opacity: 0.45;
 }
 .ovl-rect.verrouille { cursor: default; }
+
+/* Un élément qui sortirait de la source : dit ICI, pas quand les viewers le
+   découvrent. L'orange plutôt que le rouge — ce n'est pas une erreur, c'est un
+   choix qu'on peut assumer (un avatar qui mord le bord, par exemple). */
+.ovl-rect.hors-cadre {
+  border-color: rgba(251, 146, 60, 0.9);
+  border-style: dashed;
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.3);
+}
+.ovl-surface.avec-apercu .ovl-rect.hors-cadre { border-color: rgba(251, 146, 60, 0.9); }
+
+/* Les quatre poignées d'angle. Hors du repère, donc jamais réduites par son
+   `scale()` : sur un élément à 0,2 elles feraient deux pixels. */
+.ovl-poignee {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 4px;
+  background: rgba(6, 182, 212, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 60;
+  touch-action: none;
+}
+.ovl-poignee:hover { background: #06b6d4; }
+.ovl-poignee-nw, .ovl-poignee-se { cursor: nwse-resize; }
+.ovl-poignee-ne, .ovl-poignee-sw { cursor: nesw-resize; }
+
+/* Les lignes d'aimantation, le temps du geste. Sans elles, une valeur qui
+   refuse d'avancer passe pour un blocage. */
+.ovl-guide {
+  position: absolute;
+  background: #06b6d4;
+  opacity: 0.7;
+  z-index: 55;
+  pointer-events: none;
+}
+.ovl-guide.vertical { top: 0; bottom: 0; width: 1px; margin-left: -0.5px; }
+.ovl-guide.horizontal { left: 0; right: 0; height: 1px; margin-top: -0.5px; }
+
+/* Les coordonnées en cours de geste. */
+.ovl-coords {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: none;
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 70;
+}
+.ovl-coords.visible { display: block; }
+.ovl-coords.alerte { border-color: rgba(251, 146, 60, 0.5); color: #fdba74; }
+
 .ovl-rect-nom {
   /* En pixels du canvas 1920 : la mise à l'échelle le réduit d'autant. À 22 px
      il tombait sous les 8 px à l'écran — illisible dès que l'aperçu met une

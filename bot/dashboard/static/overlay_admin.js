@@ -58,6 +58,25 @@ window.OverlayAdmin = (function () {
     "bottom-left", "bottom-center", "bottom-right",
   ];
 
+  // ── Les bornes et les pas de la manipulation ────────────────────────────
+  //
+  // Les mêmes bornes que le modèle (`bot/core/overlay_layout.py`). Elles sont
+  // appliquées À LA SAISIE et pas seulement à l'enregistrement : sinon le
+  // repère continue de suivre le pointeur hors du cadre, puis revient en
+  // arrière au relâchement — on ne sait plus ce qu'on a posé.
+  const POS_MIN = 0, POS_MAX = 100;
+  const ECHELLE_MIN = 0.2, ECHELLE_MAX = 2.0;
+  // Une flèche vaut 0,1 % — environ deux pixels sur 1920. Avec Maj, 1 %.
+  const PAS_FIN = 0.1, PAS_GROS = 1;
+  // Le pas de la grille d'aimantation, en pourcentage, et sa portée en PIXELS
+  // d'écran : exprimée en pourcentage, elle accrocherait deux fois plus fort
+  // sur une surface deux fois plus petite.
+  const GRILLE = 10, AIMANT_PX = 8;
+  const COINS = ["nw", "ne", "sw", "se"];
+  const TOUCHES = {
+    ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+  };
+
   /** L'état du panneau.
    *
    *  `brouillon` est un COMPTEUR : le nombre de modifications non publiées.
@@ -76,6 +95,7 @@ window.OverlayAdmin = (function () {
 
   const noeuds = {};      // les nœuds du squelette, posés une fois
   let menuOuvert = null;  // le menu ⋮ déployé, s'il y en a un
+  let manip = null;       // la manipulation en cours sur la surface, ou null
   let observateur = null; // ResizeObserver de la surface
   let glisse = null;      // la clé de l'élément en cours de glisser dans la liste
   let infobulle = null;   // l'unique bulle d'aide, posée sur <body>
@@ -742,7 +762,143 @@ window.OverlayAdmin = (function () {
     rendreSurface();
   }
 
+  // ── La géométrie : l'inverse exact de `styleDepuisElement` ──────────────
+
+  /** L'ancrage d'un élément, tel que `WallyLayout` le définit.
+   *
+   *  Le repli reproduit `center`, exactement comme celui de `styleApercu()`
+   *  quand le module de placement manque : les deux doivent raconter la même
+   *  chose, sinon le rectangle affiché et le calcul du glisser divergeraient.
+   */
+  function ancrage(nom) {
+    const W = window.WallyLayout;
+    const table = (W && W.ANCRAGES) || null;
+    return (table && (table[nom] || table["center"]))
+      || { h: "left", v: "top", tx: "-50%", ty: "-50%" };
+  }
+
+  /** La géométrie RENDUE d'un élément sur la surface, en pixels de celle-ci.
+   *
+   *  C'est l'INVERSE EXACT de `WallyLayout.styleDepuisElement` ; les deux se
+   *  lisent ensemble. Deux propriétés en sortent, et tout le glisser repose
+   *  dessus :
+   *
+   *  1. Le point d'ancrage (`ax`, `ay`) est, pour les NEUF ancrages, à `x %` du
+   *     bord GAUCHE et `y %` du bord HAUT. Un ancrage à droite pose
+   *     `right: (100 − x) %` : son bord droit retombe donc à `x %` depuis la
+   *     gauche. Le glisser est le même pour les neuf — on suit ce point.
+   *  2. Ce point est AUSSI le point fixe de l'échelle : `transform-origin` est
+   *     posé sur le bord mesuré, et le `translate` subit la même échelle que
+   *     l'élément (`scale()` PUIS `translate()`). Redimensionner ne déplace
+   *     donc jamais l'ancrage, et x/y restent valables pendant tout le geste.
+   *
+   *  Le `translate` se mesurant sur la taille NON transformée, le décalage vaut
+   *  `échelle × taille / 2` et non `taille / 2`. C'est le défaut qui posait un
+   *  élément centré et réduit à 39 % au lieu de 50 : le reproduire ici mettrait
+   *  les poignées à côté de leur rectangle.
+   */
+  function geometrie(cle, element, W, H) {
+    const a = ancrage(element.anchor);
+    const t = tailleElement(cle);
+    const e = borner(element.scale, ECHELLE_MIN, ECHELLE_MAX, 1) * (W / CANVAS_W);
+    const largeur = t[0] * e;
+    const hauteur = t[1] * e;
+    const ax = borner(element.x, POS_MIN, POS_MAX, 50) / 100 * W;
+    const ay = borner(element.y, POS_MIN, POS_MAX, 50) / 100 * H;
+    const gauche = a.h === "right" ? ax - largeur
+      : (a.tx === "-50%" ? ax - largeur / 2 : ax);
+    const haut = a.v === "bottom" ? ay - hauteur
+      : (a.ty === "-50%" ? ay - hauteur / 2 : ay);
+    return {
+      ax: ax, ay: ay, echelle: e, largeur: largeur, hauteur: hauteur,
+      gauche: gauche, haut: haut, droite: gauche + largeur, bas: haut + hauteur,
+    };
+  }
+
+  /** L'élément déborde-t-il de la source ? Un pixel de tolérance : un élément
+   *  posé pile sur le bord ne doit pas clignoter au gré des arrondis. */
+  function horsCadre(g, W, H) {
+    return g.gauche < -1 || g.haut < -1 || g.droite > W + 1 || g.bas > H + 1;
+  }
+
+  /** Le pointeur en pourcentage de la surface, MOINS le décalage pris à la
+   *  saisie — c'est lui qui garde sous le pointeur le point exact qu'on a
+   *  attrapé, quel que soit l'ancrage. Sans lui, un élément ancré
+   *  `bottom-right` saute de sa largeur entière au premier pixel.
+   *
+   *  Le rectangle attendu est celui du CALQUE, pas de la surface : celle-ci
+   *  porte une bordure d'un pixel, et les repères se placent dans sa boîte de
+   *  padding. Deux pixels d'erreur systématique, précisément ceux qu'on ne
+   *  veut pas.
+   */
+  function positionDepuisPointeur(evt, r, decalage) {
+    const d = decalage || { x: 0, y: 0 };
+    return {
+      x: borner(((evt.clientX - r.left) / r.width) * 100 - d.x, POS_MIN, POS_MAX, 0),
+      y: borner(((evt.clientY - r.top) / r.height) * 100 - d.y, POS_MIN, POS_MAX, 0),
+    };
+  }
+
+  /** L'aimantation d'UNE coordonnée : la grille de 10 %, plus les bords et le
+   *  centre de l'écran — les positions qu'on vise vraiment.
+   *
+   *  Rend aussi la ligne à afficher : une valeur qui refuse d'avancer sans
+   *  qu'on voie pourquoi passe pour un blocage.
+   */
+  function aimanter(valeur, tolerance, actif) {
+    if (!actif) return { valeur: valeur, ligne: null };
+    // Les bords et le centre EN PREMIER : à distance égale ils l'emportent sur
+    // la graduation de la grille, la comparaison étant stricte.
+    const cibles = [0, 50, 100];
+    for (let g = 0; g <= 100; g += GRILLE) cibles.push(g);
+    let cible = null;
+    let ecart = tolerance;
+    for (let i = 0; i < cibles.length; i++) {
+      const d = Math.abs(valeur - cibles[i]);
+      if (d < ecart) { ecart = d; cible = cibles[i]; }
+    }
+    return cible === null ? { valeur: valeur, ligne: null }
+                          : { valeur: cible, ligne: cible };
+  }
+
+  /** Deux décimales. Au-delà on écrirait du bruit de virgule flottante dans un
+   *  modèle qui part au serveur : 0,1 ajouté dix fois vaut 0,9999999999999999. */
+  function arrondi(v) { return Math.round(v * 100) / 100; }
+
+  /** Change l'ancrage SANS déplacer l'élément à l'écran.
+   *
+   *  L'ancrage dit quel POINT de l'élément la position repère : le changer en
+   *  laissant x/y ferait sauter l'élément d'une demi-largeur, voire d'une
+   *  largeur entière. On garde donc la boîte rendue et on relit dedans la
+   *  position du NOUVEAU point d'ancrage. Sans ça, changer d'ancrage est un
+   *  déplacement subi, et plus personne n'ose y toucher.
+   *
+   *  Reste un cas où l'élément bouge quand même : un point d'ancrage qui
+   *  tomberait hors de 0–100 est ramené dans les bornes du modèle. Il n'y
+   *  arrive que si l'élément débordait DÉJÀ du cadre, ce que le repère signale.
+   */
+  function reancrer(element, cle, nom, W, H) {
+    const a = ancrage(nom);
+    // Surface pas encore mesurée : il n'y a pas de position à conserver.
+    if (!W || !H) { element.anchor = nom; return; }
+    const g = geometrie(cle, element, W, H);
+    const ax = a.h === "right" ? g.droite
+      : (a.tx === "-50%" ? (g.gauche + g.droite) / 2 : g.gauche);
+    const ay = a.v === "bottom" ? g.bas
+      : (a.ty === "-50%" ? (g.haut + g.bas) / 2 : g.haut);
+    element.anchor = nom;
+    element.x = arrondi(borner(ax / W * 100, POS_MIN, POS_MAX, element.x));
+    element.y = arrondi(borner(ay / H * 100, POS_MIN, POS_MAX, element.y));
+  }
+
   // ── La surface de placement ─────────────────────────────────────────────
+
+  /** La boîte du CALQUE — la référence commune du pointeur, des repères et des
+   *  poignées. Prise sur le calque et pas sur la surface : lui seul couvre
+   *  exactement la zone où les pourcentages s'appliquent. */
+  function boiteCalque() {
+    return noeuds.calque ? noeuds.calque.getBoundingClientRect() : null;
+  }
 
   /** Le style d'un rectangle d'aperçu, dans le repère de la surface.
    *
@@ -844,14 +1000,30 @@ window.OverlayAdmin = (function () {
     noeuds.apercu.style.transform = "scale(" + (largeur / CANVAS_W) + ")";
   }
 
+  /** Pose sur un nœud le placement d'un élément. Les quatre bords sont remis à
+   *  `auto` d'abord : le style ne pose que les deux du côté de l'ancrage, et
+   *  l'ancien resterait accroché — l'élément tenu des deux côtés à la fois. */
+  function appliquerStyle(noeud, element, largeur) {
+    noeud.style.left = noeud.style.right = "auto";
+    noeud.style.top = noeud.style.bottom = "auto";
+    const style = styleApercu(element, largeur);
+    Object.keys(style).forEach(function (k) { noeud.style[k] = style[k]; });
+  }
+
   function rendreSurface() {
     const cadre = noeuds.calque;
     const scene = sceneCourante();
     if (!cadre || !scene) return;
+    // Pendant un geste, on ne reconstruit RIEN : le repère manipulé serait
+    // détruit sous le pointeur. Le geste met à jour le nœud lui-même
+    // (`rafraichirManip`), et le rendu complet revient au relâchement.
+    if (manip) return;
     masquerInfobulle();
     chargerApercu(scene.slug);
     cadre.innerHTML = "";
-    const largeur = noeuds.cadre.clientWidth || 0;
+    const boite = boiteCalque();
+    const largeur = boite ? boite.width : 0;
+    const hauteur = boite ? boite.height : 0;
     const ordre = scene.ordre || Object.keys(scene.elements || {});
     ordre.forEach(function (cle, rang) {
       const element = scene.elements[cle];
@@ -861,19 +1033,276 @@ window.OverlayAdmin = (function () {
       rect.dataset.cle = cle;
       rect.style.width = taille[0] + "px";
       rect.style.height = taille[1] + "px";
-      const style = styleApercu(element, largeur);
-      Object.keys(style).forEach(function (k) { rect.style[k] = style[k]; });
+      appliquerStyle(rect, element, largeur);
       // L'ordre de la liste EST l'empilement : le premier passe devant.
       rect.style.zIndex = String(ordre.length - rang);
       if (element.hidden) rect.classList.add("masque");
       if (element.locked) rect.classList.add("verrouille");
       if (cle === etat.elementCourant) rect.classList.add("actif");
+      // Un élément qui sort du cadre se voit ICI, pas quand les viewers le
+      // découvrent : le repère passe en orange et l'infobulle le dit.
+      const deborde = largeur > 0
+        && horsCadre(geometrie(cle, element, largeur, hauteur), largeur, hauteur);
+      if (deborde) rect.classList.add("hors-cadre");
       rect.appendChild(creer("span", "ovl-rect-nom", libelle(cle)));
       poserInfobulle(rect, libelle(cle) + " · " + cle
-        + (description(cle) ? " — " + description(cle) : ""));
-      rect.addEventListener("click", function () { selectionner(cle); });
+        + (description(cle) ? " — " + description(cle) : "")
+        + (deborde ? " — ⚠ déborde du cadre" : ""));
+      rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
       cadre.appendChild(rect);
     });
+    majPoignees(largeur, hauteur);
+  }
+
+  // ── Le glisser, les poignées, le clavier ────────────────────────────────
+
+  /** La saisie d'un repère. On sélectionne d'abord — ce qui REDESSINE la
+   *  surface —, puis on repart du nœud neuf : celui qui a reçu l'événement
+   *  vient d'être remplacé. */
+  function saisirRepere(evt, cle) {
+    if (manip || (evt.pointerType === "mouse" && evt.button !== 0)) return;
+    const scene = sceneCourante();
+    const element = scene && scene.elements[cle];
+    if (!element) return;
+    if (etat.elementCourant !== cle) selectionner(cle);
+    // Le calque porte le focus clavier : il survit aux rendus, contrairement
+    // aux repères, reconstruits à chaque changement.
+    if (noeuds.calque.focus) noeuds.calque.focus({ preventScroll: true });
+    if (element.locked) {
+      notifier(libelle(cle) + " est verrouillé : le cadenas de la liste le libère.",
+               "error");
+      return;
+    }
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    const p = positionDepuisPointeur(evt, r, null);
+    manip = {
+      mode: "position",
+      cle: cle,
+      element: element,
+      noeud: noeuds.calque.querySelector('[data-cle="' + cle + '"]'),
+      pointeur: evt.pointerId,
+      // Le décalage entre le pointeur et le point d'ancrage, gardé tout le
+      // geste : c'est LUI qui garde sous le doigt le point qu'on a attrapé.
+      decalage: { x: p.x - borner(element.x, POS_MIN, POS_MAX, 50),
+                  y: p.y - borner(element.y, POS_MIN, POS_MAX, 50) },
+      depart: { x: element.x, y: element.y, scale: element.scale },
+      lignes: null,
+    };
+    capturer(evt);
+  }
+
+  /** La saisie d'une poignée d'angle. Elle agit sur `scale` — le modèle ne
+   *  connaît pas de largeur —, donc l'élément grandit depuis son ancrage. */
+  function saisirPoignee(evt, coin) {
+    if (manip || (evt.pointerType === "mouse" && evt.button !== 0)) return;
+    const cle = etat.elementCourant;
+    const element = elementCourant();
+    if (!element || element.locked) return;
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    const g = geometrie(cle, element, r.width, r.height);
+    const poignee = { x: coin.indexOf("w") >= 0 ? g.gauche : g.droite,
+                      y: coin.charAt(0) === "n" ? g.haut : g.bas };
+    const centre = { x: (g.gauche + g.droite) / 2, y: (g.haut + g.bas) / 2 };
+    const rayon = Math.sqrt(Math.pow(poignee.x - centre.x, 2)
+                          + Math.pow(poignee.y - centre.y, 2)) || 1;
+    manip = {
+      mode: "echelle",
+      cle: cle,
+      element: element,
+      noeud: noeuds.calque.querySelector('[data-cle="' + cle + '"]'),
+      pointeur: evt.pointerId,
+      ancre: { x: g.ax, y: g.ay },
+      // Le bras qui va de l'ancrage à la poignée : c'est ce vecteur que
+      // l'échelle allonge, et sur lequel on projette le pointeur.
+      bras: { x: poignee.x - g.ax, y: poignee.y - g.ay },
+      // Le repli quand ce bras est nul : la direction qui s'éloigne du centre.
+      sortant: { x: (poignee.x - centre.x) / rayon,
+                 y: (poignee.y - centre.y) / rayon },
+      rayon: rayon,
+      origine: { x: evt.clientX, y: evt.clientY },
+      depart: { x: element.x, y: element.y,
+                scale: borner(element.scale, ECHELLE_MIN, ECHELLE_MAX, 1) },
+      lignes: null,
+    };
+    capturer(evt);
+  }
+
+  function capturer(evt) {
+    // La capture va sur le CALQUE, jamais sur le repère : celui-ci est
+    // reconstruit à chaque rendu, et une capture posée sur un nœud sorti du
+    // document est perdue en silence. `pointermove` sur `document` aurait le
+    // défaut inverse — le pointeur sort du cadre pendant un geste rapide et
+    // l'on perd la fin du mouvement, le repère restant collé.
+    try {
+      noeuds.calque.setPointerCapture(evt.pointerId);
+    } catch (e) {
+      // Capture refusée (pointeur déjà relâché) : les écouteurs du calque
+      // suffisent tant que le pointeur reste dessus.
+    }
+    noeuds.cadre.classList.add("en-manip");
+    evt.preventDefault();
+    evt.stopPropagation();
+  }
+
+  function bougerManip(evt) {
+    if (!manip || evt.pointerId !== manip.pointeur) return;
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    if (manip.mode === "position") {
+      // Alt SUSPEND l'aimantation : on la veut par défaut, et relâchée sans
+      // aller décocher une case ailleurs.
+      const actif = !evt.altKey;
+      const p = positionDepuisPointeur(evt, r, manip.decalage);
+      const ax = aimanter(p.x, (AIMANT_PX / r.width) * 100, actif);
+      const ay = aimanter(p.y, (AIMANT_PX / r.height) * 100, actif);
+      manip.element.x = arrondi(ax.valeur);
+      manip.element.y = arrondi(ay.valeur);
+      manip.lignes = { x: ax.ligne, y: ay.ligne };
+    } else {
+      manip.element.scale = arrondi(echelleDepuisPointeur(evt, r));
+    }
+    rafraichirManip();
+  }
+
+  /** L'échelle que demande le pointeur, bornée à la saisie. */
+  function echelleDepuisPointeur(evt, r) {
+    const d = { x: evt.clientX - r.left - manip.ancre.x,
+                y: evt.clientY - r.top - manip.ancre.y };
+    const n2 = manip.bras.x * manip.bras.x + manip.bras.y * manip.bras.y;
+    let e;
+    if (n2 > 1) {
+      // La poignée suit le pointeur d'aussi près qu'elle le peut : projection
+      // du pointeur sur le bras. Exacte quand le pointeur reste sur la
+      // diagonale — une poignée ne peut pas suivre un mouvement qui la quitte.
+      e = manip.depart.scale * (d.x * manip.bras.x + d.y * manip.bras.y) / n2;
+    } else {
+      // Bras nul : la poignée est POSÉE sur le point d'ancrage — le coin
+      // nord-ouest d'un élément ancré `top-left`, et ses trois symétriques.
+      // Elle ne bouge pas d'un pixel quelle que soit l'échelle, il n'y a donc
+      // rien à suivre. On lit alors l'éloignement du centre : s'en écarter
+      // agrandit, s'en rapprocher réduit.
+      const dep = { x: evt.clientX - manip.origine.x,
+                    y: evt.clientY - manip.origine.y };
+      e = manip.depart.scale
+        * (1 + (dep.x * manip.sortant.x + dep.y * manip.sortant.y) / manip.rayon);
+    }
+    return borner(e, ECHELLE_MIN, ECHELLE_MAX, manip.depart.scale);
+  }
+
+  function finirManip(evt) {
+    if (!manip || (evt && evt.pointerId !== manip.pointeur)) return;
+    const fini = manip;
+    manip = null;
+    try {
+      if (noeuds.calque.hasPointerCapture
+          && noeuds.calque.hasPointerCapture(fini.pointeur)) {
+        noeuds.calque.releasePointerCapture(fini.pointeur);
+      }
+    } catch (e) {
+      // Capture déjà rendue par le navigateur : il n'y a rien à défaire.
+    }
+    noeuds.cadre.classList.remove("en-manip");
+    montrerGuides(null);
+    montrerCoords(null);
+    // UNE modification pour tout le geste : en compter une par `pointermove`
+    // afficherait « 340 modifications non publiées » pour un déplacement.
+    if (fini.element.x !== fini.depart.x || fini.element.y !== fini.depart.y
+        || fini.element.scale !== fini.depart.scale) {
+      marquerModifie();
+    }
+    rendreSurface();
+    rendreReglages();
+  }
+
+  /** Les flèches, sur le calque : de quoi ajuster au pixel sans se battre avec
+   *  la souris. Le pas fin vaut deux pixels sur une source 1920. */
+  function toucheSurface(evt) {
+    const sens = TOUCHES[evt.key];
+    if (!sens || manip) return;
+    const element = elementCourant();
+    if (!element) return;
+    evt.preventDefault();   // sinon la page défile sous la surface
+    if (element.locked) {
+      // Au premier appui seulement : la répétition du clavier en ferait une
+      // pluie de messages.
+      if (!evt.repeat) {
+        notifier(libelle(etat.elementCourant)
+          + " est verrouillé : le cadenas de la liste le libère.", "error");
+      }
+      return;
+    }
+    const pas = evt.shiftKey ? PAS_GROS : PAS_FIN;
+    element.x = arrondi(borner(element.x + sens[0] * pas, POS_MIN, POS_MAX, element.x));
+    element.y = arrondi(borner(element.y + sens[1] * pas, POS_MIN, POS_MAX, element.y));
+    marquerModifie();
+    rendreSurface();
+    rendreReglages();
+  }
+
+  /** Le retour visuel pendant le geste : le repère lui-même, ses poignées, les
+   *  lignes d'aimantation et les coordonnées en cours. */
+  function rafraichirManip() {
+    if (!manip) return;
+    const r = boiteCalque();
+    if (!r || !r.width || !r.height) return;
+    const g = geometrie(manip.cle, manip.element, r.width, r.height);
+    if (manip.noeud) {
+      appliquerStyle(manip.noeud, manip.element, r.width);
+      manip.noeud.classList.toggle("hors-cadre", horsCadre(g, r.width, r.height));
+    }
+    placerPoignees(g);
+    montrerGuides(manip.lignes);
+    montrerCoords(g, r.width, r.height);
+    rendreReglages();   // les champs X/Y/Taille suivent le geste
+  }
+
+  function majPoignees(W, H) {
+    const element = elementCourant();
+    // Un élément verrouillé n'a ni poignées ni glisser : il ne doit pas être
+    // manipulable par mégarde, c'est tout l'objet du cadenas.
+    if (!element || element.locked || !W || !H) { placerPoignees(null); return; }
+    placerPoignees(geometrie(etat.elementCourant, element, W, H));
+  }
+
+  /** Les quatre poignées d'angle, posées sur la SURFACE et non dans le repère :
+   *  celui-ci porte un `scale()`, qui rendrait les poignées minuscules sur un
+   *  élément réduit — justement celui qu'on veut agrandir. */
+  function placerPoignees(g) {
+    if (!noeuds.poignees) return;
+    COINS.forEach(function (coin) {
+      const n = noeuds.poignees[coin];
+      if (!g) { n.style.display = "none"; return; }
+      n.style.display = "";
+      n.style.left = (coin.indexOf("w") >= 0 ? g.gauche : g.droite) + "px";
+      n.style.top = (coin.charAt(0) === "n" ? g.haut : g.bas) + "px";
+    });
+  }
+
+  function montrerGuides(lignes) {
+    if (!noeuds.guideV || !noeuds.guideH) return;
+    const x = lignes ? lignes.x : null;
+    const y = lignes ? lignes.y : null;
+    noeuds.guideV.style.display = x === null || x === undefined ? "none" : "";
+    if (x !== null && x !== undefined) noeuds.guideV.style.left = x + "%";
+    noeuds.guideH.style.display = y === null || y === undefined ? "none" : "";
+    if (y !== null && y !== undefined) noeuds.guideH.style.top = y + "%";
+  }
+
+  /** Les coordonnées en cours. Sans elles, on déplace à l'estime et on
+   *  découvre le chiffre après coup. */
+  function montrerCoords(g, W, H) {
+    if (!noeuds.coords) return;
+    if (!g || !manip) { noeuds.coords.classList.remove("visible"); return; }
+    const el = manip.element;
+    const deborde = horsCadre(g, W, H);
+    noeuds.coords.textContent =
+      "X " + arrondi(el.x).toFixed(2) + " %  ·  Y " + arrondi(el.y).toFixed(2) + " %"
+      + "  ·  taille " + arrondi(borner(el.scale, ECHELLE_MIN, ECHELLE_MAX, 1)).toFixed(2)
+      + (deborde ? "  ·  ⚠ déborde du cadre" : "");
+    noeuds.coords.classList.toggle("alerte", deborde);
+    noeuds.coords.classList.add("visible");
   }
 
   // ── La barre de réglages ────────────────────────────────────────────────
@@ -884,8 +1313,8 @@ window.OverlayAdmin = (function () {
     hote.appendChild(titre);
 
     noeuds.champs = {};
-    [["x", "X %", 0, 100, 0.1], ["y", "Y %", 0, 100, 0.1],
-     ["scale", "Taille", 0.2, 2, 0.05]].forEach(function (def) {
+    [["x", "X %", POS_MIN, POS_MAX, PAS_FIN], ["y", "Y %", POS_MIN, POS_MAX, PAS_FIN],
+     ["scale", "Taille", ECHELLE_MIN, ECHELLE_MAX, 0.05]].forEach(function (def) {
       const bloc = creer("label", "ovl-champ");
       bloc.appendChild(creer("span", "ovl-champ-label", def[1]));
       const input = document.createElement("input");
@@ -909,7 +1338,8 @@ window.OverlayAdmin = (function () {
     });
 
     const grille = creer("div", "ovl-ancrages");
-    grille.title = "Le point de l'élément que la position repère.";
+    grille.title = "Le point de l'élément que la position repère. En changer ne "
+      + "déplace pas l'élément : x et y sont recalculés pour qu'il reste où il est.";
     noeuds.ancrages = {};
     ANCRAGES.forEach(function (a) {
       const b = creer("button", "ovl-ancrage");
@@ -917,8 +1347,10 @@ window.OverlayAdmin = (function () {
       b.title = a;
       b.addEventListener("click", function () {
         const element = elementCourant();
-        if (!element) return;
-        element.anchor = a;
+        if (!element || element.anchor === a) return;
+        const r = boiteCalque();
+        reancrer(element, etat.elementCourant, a,
+                 r ? r.width : 0, r ? r.height : 0);
         marquerModifie();
         rendreReglages();
         rendreSurface();
@@ -1072,7 +1504,46 @@ window.OverlayAdmin = (function () {
     noeuds.apercu.addEventListener("error", echecApercu);
     noeuds.cadre.appendChild(noeuds.apercu);
     noeuds.calque = creer("div", "ovl-calque");
+    // Le calque porte le focus clavier, et non les repères : ceux-ci sont
+    // reconstruits à chaque rendu, et le focus serait perdu à la première
+    // flèche. Il porte aussi les écouteurs du geste, parce que c'est LUI qui
+    // reçoit la capture du pointeur.
+    noeuds.calque.tabIndex = 0;
+    noeuds.calque.setAttribute("aria-label",
+      "Surface de placement — flèches pour déplacer l'élément choisi, "
+      + "Maj pour un pas de 1 %, Alt pour suspendre l'aimantation");
+    noeuds.calque.addEventListener("pointermove", bougerManip);
+    noeuds.calque.addEventListener("pointerup", finirManip);
+    noeuds.calque.addEventListener("pointercancel", finirManip);
+    // Le filet : une capture perdue sans `pointerup` — relâchement hors de la
+    // fenêtre du navigateur, onglet qui passe en arrière-plan — laisserait
+    // `manip` posé, et la surface cesserait de se redessiner. Un panneau figé
+    // sans le moindre message. `finirManip` ayant déjà vidé `manip` avant de
+    // rendre la capture, la voie normale n'y repasse pas deux fois.
+    noeuds.calque.addEventListener("lostpointercapture", finirManip);
+    noeuds.calque.addEventListener("keydown", toucheSurface);
     noeuds.cadre.appendChild(noeuds.calque);
+
+    // Poignées, lignes d'aimantation et coordonnées vivent HORS du calque :
+    // celui-ci est vidé à chaque rendu, et elles doivent survivre au geste.
+    noeuds.poignees = {};
+    COINS.forEach(function (coin) {
+      const p = creer("div", "ovl-poignee ovl-poignee-" + coin);
+      p.style.display = "none";
+      p.title = "Redimensionner — le point d'ancrage ne bouge pas";
+      p.addEventListener("pointerdown", function (evt) { saisirPoignee(evt, coin); });
+      noeuds.poignees[coin] = p;
+      noeuds.cadre.appendChild(p);
+    });
+    noeuds.guideV = creer("div", "ovl-guide vertical");
+    noeuds.guideH = creer("div", "ovl-guide horizontal");
+    noeuds.guideV.style.display = "none";
+    noeuds.guideH.style.display = "none";
+    noeuds.cadre.appendChild(noeuds.guideV);
+    noeuds.cadre.appendChild(noeuds.guideH);
+    noeuds.coords = creer("div", "ovl-coords");
+    noeuds.cadre.appendChild(noeuds.coords);
+
     droite.appendChild(noeuds.cadre);
 
     droite.appendChild(barreApercu());
@@ -1080,6 +1551,11 @@ window.OverlayAdmin = (function () {
     const reglages = creer("div", "ovl-reglages");
     construireReglages(reglages);
     droite.appendChild(reglages);
+    // Les raccourcis sont écrits : Alt et Maj ne se devinent pas, et personne
+    // ne cherche une poignée qu'il ne sait pas là.
+    droite.appendChild(creer("div", "ovl-aide",
+      "Glisser un repère pour le déplacer · les poignées d'angle changent sa "
+      + "taille · Alt suspend l'aimantation · flèches : 0,1 % (Maj : 1 %)."));
 
     const publication = creer("div", "ovl-publication");
     const direct = creer("label", "ovl-direct");
@@ -1166,5 +1642,13 @@ window.OverlayAdmin = (function () {
     tester: tester,
     testerTous: testerTous,
     ANCRAGES: ANCRAGES,
+    // La géométrie du glisser, exposée pour être TESTÉE hors navigateur : ces
+    // quatre fonctions sont pures, et ce sont elles qui décident si le point
+    // saisi reste sous le pointeur.
+    geometrie: geometrie,
+    horsCadre: horsCadre,
+    positionDepuisPointeur: positionDepuisPointeur,
+    aimanter: aimanter,
+    reancrer: reancrer,
   };
 })();
