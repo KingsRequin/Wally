@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=9">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -36,6 +36,10 @@
       <a class="sidebar-item" data-tab="admin-prompts" onclick="showTab('admin-prompts')" href="javascript:void(0)" aria-label="Prompts">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         <span>Prompts</span>
+      </a>
+      <a class="sidebar-item" data-tab="admin-scene" onclick="showTab('admin-scene')" href="javascript:void(0)" aria-label="Mise en scène">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8M12 17v4"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h4v5h-4z"/></svg>
+        <span>Mise en scène</span>
       </a>
       <a class="sidebar-item" data-tab="admin-systeme" onclick="showTab('admin-systeme')" href="javascript:void(0)" aria-label="Système">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
@@ -96,6 +100,9 @@
     <!-- ADMIN PROMPTS TAB -->
     <div class="tab-content" id="tab-admin-prompts"></div>
 
+    <!-- ADMIN MISE EN SCENE TAB (overlay_admin.js le remplit entièrement) -->
+    <div class="tab-content" id="tab-admin-scene"></div>
+
     <!-- ADMIN SYSTEME TAB (Logs · Twitch · Overlay · Instances) -->
     <div class="tab-content" id="tab-admin-systeme"></div>
 
@@ -123,10 +130,10 @@
 <!-- Toast Container -->
 <div id="toast-container" aria-live="assertive"></div>
 
-<script src="/static/app.js?v=9"></script>
+<script src="/static/app.js?v=10"></script>
 <!-- La mise en scène de l'overlay. `overlay_layout.js` d'abord : il porte les
      neuf ancrages, dont `overlay_admin.js` se sert pour placer ses rectangles. -->
 <script src="/static/overlay_layout.js?v=1"></script>
-<script src="/static/overlay_admin.js?v=1"></script>
+<script src="/static/overlay_admin.js?v=5"></script>
 </body>
 </html>

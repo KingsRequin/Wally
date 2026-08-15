@@ -261,6 +261,7 @@ async def overlay_test(request: Request) -> dict:
 
 
 # ── Mise en scène ────────────────────────────────────────────────────────────
+from bot.core.overlay_elements import LIBELLES              # noqa: E402
 from bot.core.overlay_layout import scene_par_slug          # noqa: E402
 from bot.core.overlay_layout_store import (                 # noqa: E402
     charger_layout, enregistrer_layout,
@@ -291,8 +292,15 @@ async def get_overlay_layout(request: Request, scene: str = "") -> dict:
 
 @admin_router.get("/overlay/layout")
 async def get_overlay_layout_admin(request: Request) -> dict:
-    """Tout le modèle — le panneau a besoin de toutes les scènes."""
-    return await charger_layout(_db(request))
+    """Tout le modèle, plus les libellés lisibles des éléments.
+
+    Les libellés voyagent AVEC le layout au lieu d'avoir leur route : le panneau
+    fait déjà cet appel au chargement, et un second aller-retour pour trente-
+    quatre chaînes constantes ne se justifie pas. Le PUT, lui, ne les renvoie
+    pas — le panneau garde ceux du chargement plutôt que de les réclamer.
+    """
+    layout = await charger_layout(_db(request))
+    return {**layout, "libelles": LIBELLES}
 
 
 @admin_router.put("/overlay/layout")

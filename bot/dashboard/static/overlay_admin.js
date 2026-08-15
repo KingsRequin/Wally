@@ -30,26 +30,11 @@ window.OverlayAdmin = (function () {
   // proposer l'impossible.
   const SLUGS_RESERVES = ["image", "rotation", "version", "health"];
 
-  // Les clés SONT celles du modèle (`BUILDERS` ∪ `APEX_BUILDERS`) : elles ne se
-  // traduisent pas, elles s'affichent. Le libellé n'est là que pour le lecteur
-  // humain ; la clé reste montrée à côté, c'est elle qu'on retrouve dans les
-  // logs et dans OBS. Une clé sans libellé s'affiche telle quelle — la liste
-  // vient du serveur, pas d'ici, donc un widget ajouté demain apparaîtra quand
-  // même.
-  const LIBELLES = {
-    avatar: "Wally", bubble: "Sa bulle", rotator: "Rotateur de memes",
-    image: "Image plein cadre", bingo: "Bingo", stats: "Stats du live",
-    talkers: "Bavards", meme: "Meme", clip: "Clip", clip_top: "Top clip",
-    planning: "Planning", prediction: "Prédiction", quote: "Citation",
-    raid: "Raid", wave: "Vague d'audience", versus: "Duel", poll: "Sondage",
-    hangman: "Pendu", pinned: "Message épinglé", counter: "Compteur · uptime",
-    coinflip: "Pile ou face", dice: "Dé", wheel: "Roue",
-    gauge: "Jauge · objectif", countdown: "Compte à rebours", rps: "Chifoumi",
-    apex_rank: "Apex · rang", apex_progress: "Apex · progression",
-    apex_status: "Apex · statut", apex_stats: "Apex · stats",
-    apex_map: "Apex · carte", apex_craft: "Apex · craft",
-    apex_predator: "Apex · prédateur", apex_servers: "Apex · serveurs",
-  };
+  // Les libellés lisibles NE SONT PAS écrits ici : ils viennent du serveur, avec
+  // le layout (`bot/core/overlay_elements.py`, joint à la réponse du GET). Une
+  // seconde table ici aurait dérivé de la première au premier widget ajouté, et
+  // c'est justement le reproche auquel ce panneau répond — « apex prédateur ??
+  // ». Une clé sans libellé s'affiche telle quelle plutôt que de disparaître.
 
   // Des ordres de grandeur, en pixels du canvas 1920×1080, POUR L'APERÇU SEUL.
   // La taille réelle d'un widget dépend de son contenu (`width: max-content`
@@ -86,6 +71,7 @@ window.OverlayAdmin = (function () {
    */
   const etat = {
     layout: null,
+    libelles: {},   // clé → {nom, description}, servi par le GET du layout
     slugCourant: null,
     elementCourant: null,
     brouillon: 0,
@@ -96,6 +82,7 @@ window.OverlayAdmin = (function () {
   let menuOuvert = null;  // le menu ⋮ déployé, s'il y en a un
   let observateur = null; // ResizeObserver de la surface
   let glisse = null;      // la clé de l'élément en cours de glisser dans la liste
+  let infobulle = null;   // l'unique bulle d'aide, posée sur <body>
 
   // ── Petits outils ───────────────────────────────────────────────────────
 
@@ -106,11 +93,128 @@ window.OverlayAdmin = (function () {
     return n;
   }
 
+  /** L'icône « copier », en SVG comme celles de la barre latérale.
+   *
+   *  Ni emoji ni glyphe Unicode : 📋 sort en carré vide dans un navigateur sans
+   *  police emoji couleur — constaté à l'écran ici même —, et ⧉ manque à
+   *  presque toutes les polices système. Un tracé ne dépend d'aucune police.
+   *  `createElementNS` est obligatoire — `createElement("svg")` fabrique un
+   *  élément HTML inconnu, qui ne dessine rien. */
+  function iconeCopie() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "13");
+    svg.setAttribute("height", "13");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    [
+      "M9 9h10v12H9z",                       // la feuille de devant
+      "M15 5H5v12h2",                        // celle de derrière
+    ].forEach(function (d) {
+      const p = document.createElementNS(NS, "path");
+      p.setAttribute("d", d);
+      svg.appendChild(p);
+    });
+    return svg;
+  }
+
   function notifier(msg, type) {
     if (typeof window.toast === "function") window.toast(msg, type || "success");
   }
 
-  function libelle(cle) { return LIBELLES[cle] || cle; }
+  function libelle(cle) {
+    const l = etat.libelles[cle];
+    return (l && l.nom) || cle;
+  }
+
+  function description(cle) {
+    const l = etat.libelles[cle];
+    return (l && l.description) || "";
+  }
+
+  /** L'adresse à coller dans OBS. Le domaine se DÉDUIT de la page courante :
+   *  écrit en dur, il aurait renvoyé sur heywally.fr un dashboard ouvert par
+   *  son IP locale — donc une source OBS pointée hors du réseau. */
+  function urlScene(slug) {
+    return window.location.origin + "/overlay-" + slug;
+  }
+
+  /** Copie, y compris hors contexte sécurisé. `navigator.clipboard` est
+   *  INDÉFINI en http sur une IP locale : y appeler `.writeText` lève une
+   *  TypeError synchrone qu'aucun `.catch()` n'attrape — d'où le test avant. */
+  function copier(texte) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(texte)
+        .then(function () { notifier("Adresse copiée"); })
+        .catch(function () { copierAncienneMethode(texte); });
+      return;
+    }
+    copierAncienneMethode(texte);
+  }
+
+  function copierAncienneMethode(texte) {
+    const zone = document.createElement("textarea");
+    zone.value = texte;
+    zone.setAttribute("readonly", "");
+    zone.style.position = "fixed";
+    zone.style.opacity = "0";
+    document.body.appendChild(zone);
+    zone.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(zone);
+    notifier(ok ? "Adresse copiée" : "Copie refusée — sélectionnez l'adresse à la main",
+             ok ? "success" : "error");
+  }
+
+  // ── L'infobulle ─────────────────────────────────────────────────────────
+
+  /** Une vraie bulle, pas l'attribut `title` : celui-ci met deux secondes à
+   *  venir et s'affiche en noir sur blanc système, illisible sur ce fond.
+   *
+   *  Posée sur `<body>` en `position: fixed` : la liste des éléments est en
+   *  `overflow-y: auto`, une bulle placée dedans y serait rognée. */
+  function poserInfobulle(hote, texte) {
+    if (!texte) return;
+    hote.addEventListener("mouseenter", function () { montrerInfobulle(hote, texte); });
+    hote.addEventListener("mouseleave", masquerInfobulle);
+  }
+
+  function montrerInfobulle(hote, texte) {
+    if (!infobulle) {
+      infobulle = creer("div", "ovl-infobulle");
+      infobulle.setAttribute("role", "tooltip");
+      document.body.appendChild(infobulle);
+      // En CAPTURE : `scroll` ne remonte pas, et il y a trois conteneurs qui
+      // défilent ici (la page, la liste des éléments, la colonne). Un seul
+      // écouteur les couvre tous. Sinon la bulle, posée en `fixed`, reste
+      // accrochée là où elle est née pendant que sa cible s'en va.
+      document.addEventListener("scroll", masquerInfobulle, true);
+    }
+    infobulle.textContent = texte;
+    infobulle.classList.add("visible");
+    // Mesurée APRÈS avoir reçu son texte, sinon la bulle se place sur la
+    // largeur de la précédente et déborde de l'écran une fois sur deux.
+    const cible = hote.getBoundingClientRect();
+    const bulle = infobulle.getBoundingClientRect();
+    let gauche = cible.right + 10;
+    if (gauche + bulle.width > window.innerWidth - 8) {
+      gauche = Math.max(8, cible.left - bulle.width - 10);
+    }
+    let haut = cible.top + cible.height / 2 - bulle.height / 2;
+    haut = Math.max(8, Math.min(haut, window.innerHeight - bulle.height - 8));
+    infobulle.style.left = gauche + "px";
+    infobulle.style.top = haut + "px";
+  }
+
+  function masquerInfobulle() {
+    if (infobulle) infobulle.classList.remove("visible");
+  }
 
   function sceneCourante() {
     if (!etat.layout) return null;
@@ -172,6 +276,14 @@ window.OverlayAdmin = (function () {
         if (!layout || !layout.scenes || !layout.scenes.length) {
           echouer("Mise en scène illisible");
           return;
+        }
+        // Les libellés sortent du modèle avant tout le reste : `publier()`
+        // renvoie `etat.layout` tel quel au serveur, et le PUT ne les rend pas.
+        // Les laisser dedans les ferait donc disparaître à la première
+        // publication — tous les noms redeviendraient des clés techniques.
+        if (layout.libelles) {
+          etat.libelles = layout.libelles;
+          delete layout.libelles;
         }
         adopter(layout);
       })
@@ -247,18 +359,32 @@ window.OverlayAdmin = (function () {
     const liste = noeuds.listeScenes;
     if (!liste || !etat.layout) return;
     fermerMenu();
+    // Même raison que dans `rendreElements()` : le nœud survolé disparaît, son
+    // `mouseleave` ne partira jamais.
+    masquerInfobulle();
     liste.innerHTML = "";
     (etat.layout.scenes || []).forEach(function (scene) {
       const item = creer("li", "ovl-scene");
       if (scene.slug === etat.slugCourant) item.classList.add("actif");
       const corps = creer("div", "ovl-scene-corps");
       corps.appendChild(creer("span", "ovl-scene-nom", scene.nom));
-      const url = creer("span", "ovl-scene-slug", "/overlay-" + scene.slug);
-      corps.appendChild(url);
-      item.appendChild(corps);
       if (scene.slug === etat.layout.defaut) {
-        item.appendChild(creer("span", "ovl-badge", "défaut"));
+        corps.appendChild(creer("span", "ovl-badge", "défaut"));
       }
+      item.appendChild(corps);
+      const adresse = urlScene(scene.slug);
+
+      const copie = creer("button", "ovl-copie");
+      copie.appendChild(iconeCopie());
+      copie.setAttribute("aria-label", "Copier l'adresse de « " + scene.nom + " »");
+      copie.addEventListener("click", function (evt) {
+        evt.stopPropagation();
+        copier(adresse);
+      });
+      poserInfobulle(copie, "Copier " + adresse + " — l'adresse à coller dans "
+        + "une source navigateur OBS.");
+      item.appendChild(copie);
+
       const bouton = creer("button", "ovl-menu-btn", "⋮");
       bouton.title = "Renommer, dupliquer, supprimer…";
       bouton.addEventListener("click", function (evt) {
@@ -267,6 +393,15 @@ window.OverlayAdmin = (function () {
         ouvrirMenu(item, scene);
       });
       item.appendChild(bouton);
+
+      // L'adresse ENTIÈRE, pas le seul chemin : c'est elle qu'on colle dans
+      // OBS, et la déduire de tête est exactement ce qu'on reprochait. Sur sa
+      // propre ligne, sous les boutons : la colonne fait 280 px et une adresse
+      // en fait 250, chaque pixel volé au bouton se paie en caractères perdus.
+      const url = creer("span", "ovl-scene-url", adresse);
+      poserInfobulle(url, adresse);
+      item.appendChild(url);
+
       corps.addEventListener("click", function () { choisirScene(scene.slug); });
       liste.appendChild(item);
     });
@@ -326,7 +461,7 @@ window.OverlayAdmin = (function () {
     // le streamer qui pointe ses sources OBS, et il découvrirait une URL morte
     // en plein direct, écran noir.
     menu.appendChild(creer("div", "ovl-menu-note",
-      "Renommer ne touche jamais à l'adresse /overlay-" + scene.slug + " : "
+      "Renommer ne touche jamais à l'adresse " + urlScene(scene.slug) + " : "
       + "la source OBS continue de fonctionner."));
 
     item.appendChild(menu);
@@ -340,14 +475,18 @@ window.OverlayAdmin = (function () {
 
   function renommer(scene) {
     const nom = window.prompt(
-      "Nouveau nom de la scène.\n\nL'adresse /overlay-" + scene.slug
-      + " ne change PAS : vos sources OBS restent valables.", scene.nom);
+      "Nouveau nom de la scène.\n\nL'adresse ne change PAS :\n"
+      + urlScene(scene.slug)
+      + "\n\nC'est voulu — vos sources OBS restent valables.", scene.nom);
     if (nom === null) return;
     const propre = nom.trim();
     if (!propre) { notifier("Un nom vide n'a rien à afficher.", "error"); return; }
     scene.nom = propre;
     marquerModifie();
     rendreScenes();
+    // Redit APRÈS coup : l'avertissement du `prompt` est lu en diagonale, et
+    // l'adresse figée est précisément ce qui surprend.
+    notifier("Renommée « " + propre + " ». L'adresse reste " + urlScene(scene.slug) + ".");
   }
 
   function dupliquer(scene) {
@@ -374,12 +513,12 @@ window.OverlayAdmin = (function () {
     etat.slugCourant = slug;
     marquerModifie();
     rendreTout();
-    notifier("Scène « " + propre + " » créée · /overlay-" + slug);
+    notifier("Scène « " + propre + " » créée · " + urlScene(slug));
   }
 
   function supprimer(scene) {
     if (!window.confirm("Supprimer « " + scene.nom + " » ? "
-        + "Une source OBS pointée sur /overlay-" + scene.slug
+        + "Une source OBS pointée sur " + urlScene(scene.slug)
         + " affichera alors la scène par défaut.")) return;
     const scenes = etat.layout.scenes;
     scenes.splice(scenes.indexOf(scene), 1);
@@ -401,6 +540,9 @@ window.OverlayAdmin = (function () {
     const liste = noeuds.listeElements;
     const scene = sceneCourante();
     if (!liste || !scene) return;
+    // Le nœud survolé va disparaître : son `mouseleave` ne partira jamais, et
+    // la bulle resterait plantée à l'écran.
+    masquerInfobulle();
     liste.innerHTML = "";
     (scene.ordre || []).forEach(function (cle) {
       const element = scene.elements[cle];
@@ -422,9 +564,12 @@ window.OverlayAdmin = (function () {
 
     item.appendChild(creer("span", "ovl-el-poignee", "⠿"));
     const corps = creer("div", "ovl-el-corps");
+    // Le nom lisible passe devant ; la clé technique reste sous les yeux, en
+    // petit — c'est elle qui apparaît dans les logs et dans le JSON exporté.
     corps.appendChild(creer("span", "ovl-el-nom", libelle(cle)));
     corps.appendChild(creer("span", "ovl-el-cle", cle));
     item.appendChild(corps);
+    poserInfobulle(corps, description(cle));
 
     const actions = creer("div", "ovl-el-actions");
     actions.appendChild(bouton(
@@ -560,6 +705,7 @@ window.OverlayAdmin = (function () {
     const cadre = noeuds.cadre;
     const scene = sceneCourante();
     if (!cadre || !scene) return;
+    masquerInfobulle();
     cadre.innerHTML = "";
     const largeur = cadre.clientWidth || 0;
     const ordre = scene.ordre || Object.keys(scene.elements || {});
@@ -579,6 +725,8 @@ window.OverlayAdmin = (function () {
       if (element.locked) rect.classList.add("verrouille");
       if (cle === etat.elementCourant) rect.classList.add("actif");
       rect.appendChild(creer("span", "ovl-rect-nom", libelle(cle)));
+      poserInfobulle(rect, libelle(cle) + " · " + cle
+        + (description(cle) ? " — " + description(cle) : ""));
       rect.addEventListener("click", function () { selectionner(cle); });
       cadre.appendChild(rect);
     });
@@ -802,6 +950,9 @@ window.OverlayAdmin = (function () {
     sceneCourante: sceneCourante,
     elementCourant: elementCourant,
     slugDepuisNom: slugDepuisNom,
+    urlScene: urlScene,
+    libelle: libelle,
+    description: description,
     TAILLES: TAILLES,
     ANCRAGES: ANCRAGES,
   };

@@ -328,6 +328,7 @@ function showTab(tabId) {
   if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   if (tabId === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
+  if (tabId === 'admin-scene') renderSceneTab();
   if (tabId === 'admin-overlay') loadOverlayTab();
   if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollLinksBadge();
@@ -3829,13 +3830,29 @@ async function _renderSystemeOverlay(panel) {
   refreshOverlayForceLive();
   refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+}
 
-  // La mise en scène vit dans overlay_admin.js : app.js fait déjà 5679 lignes,
-  // et ce panneau en pèse plusieurs centaines à lui seul.
-  const scene = document.createElement('div');
-  scene.className = 'overlay-section';
-  panel.appendChild(scene);
-  if (window.OverlayAdmin) OverlayAdmin.monter(scene);
+// ── Mise en scène (onglet dédié) ─────────────────────────────────────────────
+
+// Le panneau lui-même vit dans `overlay_admin.js` : app.js fait déjà près de
+// 5700 lignes, et celui-ci en pèse plusieurs centaines à lui seul.
+//
+// Il a d'abord été une section ajoutée au bas de Système → Overlay, qu'il
+// fallait dérouler pour atteindre. Un onglet de premier niveau, et un seul
+// chemin : deux entrées vers le même écran, et c'est toujours celle qui traîne
+// qu'on ouvre.
+//
+// Aucune garde ici : `OverlayAdmin.monter()` porte la sienne, posée sur le
+// conteneur AVANT toute promesse. On lui passe donc le panneau de l'onglet tel
+// quel — créer un sous-div à chaque appel en empilerait un par visite.
+function renderSceneTab() {
+  const el = document.getElementById('tab-admin-scene');
+  if (!el) return;
+  if (!window.OverlayAdmin) {
+    el.textContent = 'Mise en scène indisponible : overlay_admin.js n\'est pas chargé.';
+    return;
+  }
+  OverlayAdmin.monter(el);
 }
 
 // La télémétrie de rendu (fps, pire frame, GPU) était POSTÉE six fois par minute
@@ -3964,18 +3981,32 @@ async function toggleOverlayImage() {
 function copyOverlayUrl(elId) {
   const el = document.getElementById(elId);
   if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(function() {
-    toast('URL copiée !', 'success');
-  }).catch(function() {
-    // Fallback for HTTP contexts
-    const ta = document.createElement('textarea');
-    ta.value = el.textContent;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    toast('URL copiée !', 'success');
-  });
+  // `navigator.clipboard` est INDÉFINI hors contexte sécurisé — c'est-à-dire
+  // dès qu'on ouvre le dashboard en http sur l'IP locale. `.writeText` y levait
+  // une TypeError SYNCHRONE, qu'aucun `.catch()` ne rattrape : le repli en
+  // dessous n'a jamais tourné et le bouton ne faisait rien du tout.
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(el.textContent)
+      .then(function() { toast('URL copiée !', 'success'); })
+      .catch(function() { _copyFallback(el.textContent); });
+    return;
+  }
+  _copyFallback(el.textContent);
+}
+
+function _copyFallback(texte) {
+  const ta = document.createElement('textarea');
+  ta.value = texte;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  document.body.removeChild(ta);
+  toast(ok ? 'URL copiée !' : 'Copie refusée — sélectionnez l\'URL à la main',
+        ok ? 'success' : 'error');
 }
 
 async function loadOverlayConfigInPanel(container) {

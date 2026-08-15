@@ -84,6 +84,22 @@ def test_get_admin_layout_rend_le_modele_entier():
     assert {s["slug"] for s in data["scenes"]} == {"stream-starting", "en-jeu", "fin"}
 
 
+def test_get_admin_layout_joint_les_libelles_lisibles():
+    """Les noms français des éléments voyagent AVEC le layout : le panneau fait
+    déjà cet appel au chargement, et un second aller-retour pour trente-quatre
+    chaînes constantes ne se justifie pas. Sans eux, le streamer relit
+    « apex_predator » au lieu de « Seuil Prédateur »."""
+    client = _client(_State())
+    r = client.get("/api/admin/overlay/layout")
+    assert r.status_code == 200
+    libelles = r.json()["libelles"]
+    assert libelles["apex_predator"]["nom"] == "Seuil Prédateur"
+    assert libelles["apex_predator"]["description"].strip()
+    # Tout élément réglable doit être nommable, sinon la liste affiche des clés.
+    manquants = set(layout_par_defaut()["scenes"][0]["elements"]) - set(libelles)
+    assert not manquants, f"sans libellé : {sorted(manquants)}"
+
+
 # ── route admin : écriture ──
 
 def test_put_borne_la_position_avant_de_ranger():
