@@ -1283,8 +1283,17 @@
         "/api/public/overlay-layout?scene=" + encodeURIComponent(sceneSlug),
         { cache: "no-store" });
       const data = await r.json();
-      reglages = data.scene.elements;
+      // `|| {}` : une scène sans `elements` laisserait `reglages` indéfini et
+      // ferait mourir tout le rendu des widgets à la première lecture.
+      reglages = data.scene.elements || {};
       WallyLayout.appliquer(data.scene.slug, data.scene);
+      // Course avec l'EventSource : `feed.recent()` peut réafficher un widget
+      // AVANT que ce fetch (lecture SQLite) ne réponde. Tant que `reglages`
+      // valait `{}`, ce widget a été classé solo par défaut et `widget-on` a
+      // effacé l'avatar. On réévalue maintenant sa vraie classe — sans ça,
+      // rien ne la retouchait avant le widget SUIVANT.
+      const enCours = currentWidget();
+      if (enCours) document.body.classList.toggle("widget-on", estSolo(enCours.dataset.kind));
     } catch (e) {
       // Les défauts du CSS restent en place : mal placé vaut mieux que vide.
       console.warn("layout indisponible", e);
