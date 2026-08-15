@@ -126,7 +126,14 @@ _ORDRE_DEFAUT = [
     "rotator", "talkers", "bingo", "stats",
 ]
 
-_SCENES_DEFAUT = (("start", "Stream Starting"), ("jeu", "En jeu"), ("end", "Fin"))
+# Les trois scènes livrées, par leur NOM seul : le slug en DÉRIVE
+# (`slug_depuis_nom`), il n'est pas écrit à côté. Une paire écrite à la main a
+# donné « Stream Starting » → `start` : incohérent avec ce que produit la
+# création d'une scène depuis le panneau, et surtout indevinable quand on
+# cherche l'URL à taper dans OBS. Un seul chemin vers un slug, ici comme
+# ailleurs.
+_NOMS_DEFAUT = ("Stream Starting", "En jeu", "Fin")
+_NOM_DEFAUT = "En jeu"
 
 
 def layout_par_defaut() -> dict:
@@ -137,11 +144,11 @@ def layout_par_defaut() -> dict:
     """
     return {
         "version": 1,
-        "defaut": "jeu",
+        "defaut": slug_depuis_nom(_NOM_DEFAUT),
         "scenes": [
-            {"slug": slug, "nom": nom, "ordre": list(_ORDRE_DEFAUT),
+            {"slug": slug_depuis_nom(nom), "nom": nom, "ordre": list(_ORDRE_DEFAUT),
              "elements": {k: dict(v) for k, v in ELEMENTS.items()}}
-            for slug, nom in _SCENES_DEFAUT
+            for nom in _NOMS_DEFAUT
         ],
     }
 

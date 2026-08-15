@@ -30,7 +30,7 @@ def test_overlay_sans_slug_repond_toujours(overlay_client):
 
 
 def test_chaque_scene_a_son_url(overlay_client):
-    for slug in ("start", "jeu", "end"):
+    for slug in ("stream-starting", "en-jeu", "fin"):
         r = overlay_client.get(f"/overlay-{slug}")
         assert r.status_code == 200
         assert "overlay_layout.js" in r.text
@@ -98,7 +98,7 @@ def test_un_slug_hostile_ne_sort_jamais_dans_la_page(overlay_client, charge):
 
 def test_un_slug_legitime_passe_toujours(overlay_client):
     """Le garde-fou ne doit pas manger les slugs valables."""
-    for slug in ("start", "jeu", "end", "fin-de-stream", "scene-2"):
+    for slug in ("stream-starting", "en-jeu", "fin", "fin-de-stream", "scene-2"):
         r = overlay_client.get(f"/overlay-{slug}")
         assert r.status_code == 200
         assert f'data-scene-slug="{slug}"' in r.text

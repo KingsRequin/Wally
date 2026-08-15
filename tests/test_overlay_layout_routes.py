@@ -46,15 +46,15 @@ def test_get_layout_sans_scene_rend_la_scene_par_defaut():
     r = client.get("/api/public/overlay-layout")
     assert r.status_code == 200
     data = r.json()
-    assert data["defaut"] == "jeu"
-    assert data["scene"]["slug"] == "jeu"
+    assert data["defaut"] == "en-jeu"
+    assert data["scene"]["slug"] == "en-jeu"
 
 
 def test_get_layout_avec_une_scene_precise():
     client = _client(_State())
-    r = client.get("/api/public/overlay-layout", params={"scene": "start"})
+    r = client.get("/api/public/overlay-layout", params={"scene": "stream-starting"})
     assert r.status_code == 200
-    assert r.json()["scene"]["slug"] == "start"
+    assert r.json()["scene"]["slug"] == "stream-starting"
 
 
 def test_scene_inexistante_sert_le_defaut_jamais_un_404():
@@ -63,7 +63,7 @@ def test_scene_inexistante_sert_le_defaut_jamais_un_404():
     client = _client(_State())
     r = client.get("/api/public/overlay-layout", params={"scene": "fantome"})
     assert r.status_code == 200
-    assert r.json()["scene"]["slug"] == "jeu"
+    assert r.json()["scene"]["slug"] == "en-jeu"
 
 
 def test_get_layout_repond_meme_sans_base_connectee():
@@ -71,7 +71,7 @@ def test_get_layout_repond_meme_sans_base_connectee():
     client = _client(None)
     r = client.get("/api/public/overlay-layout")
     assert r.status_code == 200
-    assert r.json()["scene"]["slug"] == "jeu"
+    assert r.json()["scene"]["slug"] == "en-jeu"
 
 
 # ── route admin : lecture ──
@@ -81,7 +81,7 @@ def test_get_admin_layout_rend_le_modele_entier():
     r = client.get("/api/admin/overlay/layout")
     assert r.status_code == 200
     data = r.json()
-    assert {s["slug"] for s in data["scenes"]} == {"start", "jeu", "end"}
+    assert {s["slug"] for s in data["scenes"]} == {"stream-starting", "en-jeu", "fin"}
 
 
 # ── route admin : écriture ──

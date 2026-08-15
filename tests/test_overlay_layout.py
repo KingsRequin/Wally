@@ -21,8 +21,21 @@ _SLUG_ROUTE_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 
 def test_defaut_porte_les_trois_scenes():
     layout = layout_par_defaut()
-    assert [s["slug"] for s in layout["scenes"]] == ["start", "jeu", "end"]
-    assert layout["defaut"] == "jeu"
+    # Le slug DÉRIVE du nom, il n'est pas écrit à côté : une paire posée à la
+    # main avait donné « Stream Starting » → `start`, indevinable quand on
+    # cherche l'URL à taper dans OBS.
+    assert [s["slug"] for s in layout["scenes"]] == [
+        "stream-starting", "en-jeu", "fin"]
+    assert [s["nom"] for s in layout["scenes"]] == [
+        "Stream Starting", "En jeu", "Fin"]
+    assert layout["defaut"] == "en-jeu"
+
+
+def test_le_slug_de_chaque_scene_livree_derive_bien_de_son_nom():
+    """Le lien entre les deux ne doit pas pouvoir se défaire en silence : c'est
+    ce qui rend l'URL prévisible depuis le nom affiché dans le panneau."""
+    for scene in layout_par_defaut()["scenes"]:
+        assert scene["slug"] == slug_depuis_nom(scene["nom"])
 
 
 def test_defaut_place_chaque_element_de_chaque_scene():
@@ -143,7 +156,7 @@ def test_slug_depuis_nom_est_borne_pour_la_route():
 
 def test_scene_par_slug():
     layout = layout_par_defaut()
-    assert scene_par_slug(layout, "start")["nom"] == "Stream Starting"
+    assert scene_par_slug(layout, "stream-starting")["nom"] == "Stream Starting"
     assert scene_par_slug(layout, "inexistante") is None
 
 
