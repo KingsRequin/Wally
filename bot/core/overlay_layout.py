@@ -285,6 +285,62 @@ def layout_par_defaut() -> dict:
     }
 
 
+# ── La boîte des widgets à média ────────────────────────────────────────────
+#
+# Un widget de TEXTE se dimensionne par son contenu et sa taille ne se connaît
+# pas à l'avance ; la table du JS (`WallyLayout.TAILLES`) n'en donne qu'un ordre
+# de grandeur. Un widget à MÉDIA, lui, affiche une image de dimensions
+# arbitraires : sa boîte est IMPOSÉE, et elle se CALCULE depuis le dossier.
+#
+# La règle, dans les mots de l'owner : « prends la plus grande image en hauteur
+# et la plus grande en largeur, et ça définit la box ». Sur les tailles
+# affichées, pas sur les fichiers — le dossier monte à 2100 × 2100, plus grand
+# que le canvas.
+#
+# L'intérêt de la calculer plutôt que de l'écrire : elle ne réserve que ce que
+# le dossier peut atteindre. Aujourd'hui il contient un portrait à 0,45 et un
+# paysage à 1,89, donc les deux axes saturent et la boîte est carrée. Qu'ils
+# disparaissent et elle s'aplatit d'elle-même, sans que personne n'y retouche.
+
+# Ce que le cadre ajoute autour de l'image, en pixels : padding et bordure, des
+# deux côtés. Ces valeurs décrivent `overlay.html` — c'est le genre de doublon
+# qui a créé le défaut d'origine, donc un test les CONFRONTE au CSS
+# (`tests/test_overlay_taille_widgets_media.py`).
+PASSE_PARTOUT_MEDIA = {"rotator": 34, "meme": 18}
+
+# Le rotateur grossit les petits memes pour qu'ils ne paraissent pas perdus
+# (`AGRANDIR` dans overlay.js). La carte `meme`, elle, ne fait que réduire.
+AGRANDISSEMENT_MEDIA = {"rotator": 2.0, "meme": 1.0}
+
+# LE seul réglage de goût de tout ce calcul : la place qu'on accepte de laisser
+# prendre à un meme sur le canvas 1920 × 1080, passe-partout compris. Tout le
+# reste en découle.
+BOITE_MEDIA_MAX = 400
+
+
+def tailles_media(library) -> dict[str, list[int]]:
+    """Les boîtes des widgets à média, mesurées sur le dossier de memes.
+
+    Rend un dictionnaire vide si rien n'est mesurable : la page et le panneau
+    gardent alors la table du JS. Un dossier vide ne doit pas donner une boîte
+    nulle — ce serait un repère d'un pixel au milieu de la scène.
+    """
+    if library is None:
+        return {}
+    out: dict[str, list[int]] = {}
+    for cle, marge in PASSE_PARTOUT_MEDIA.items():
+        try:
+            env = library.enveloppe_rendue(BOITE_MEDIA_MAX - marge,
+                                           AGRANDISSEMENT_MEDIA[cle])
+        # Bibliothèque d'un autre type, dossier illisible, Pillow absent : la
+        # boîte calculée est un CONFORT, jamais une condition d'affichage.
+        except Exception:
+            continue
+        if env:
+            out[cle] = [env[0] + marge, env[1] + marge]
+    return out
+
+
 def _borner(valeur, mini: float, maxi: float, defaut: float) -> float:
     """Ramène dans les bornes. Ce qui n'est pas un nombre reprend le défaut —
     `bool` est exclu explicitement : `True` est un `int` en Python et passerait

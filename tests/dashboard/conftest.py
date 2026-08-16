@@ -103,3 +103,16 @@ def overlay_client():
     """
     from fastapi.testclient import TestClient
     return TestClient(create_dashboard_app(_make_state()))
+
+
+@pytest.fixture
+def overlay_client_avec():
+    """Le même, avec des services remplacés — un dossier de memes contrôlé, par
+    exemple. Une fabrique et non un client tout fait : ce qu'on veut faire varier
+    se décide DANS le test, et l'état se construit une fois par cas."""
+    from fastapi.testclient import TestClient
+
+    def fabrique(**overrides):
+        return TestClient(create_dashboard_app(_make_state(**overrides)))
+
+    return fabrique

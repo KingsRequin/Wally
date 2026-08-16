@@ -98,9 +98,30 @@ window.WallyLayout = (function () {
   };
   const TAILLE_DEFAUT = [400, 260];
 
-  /** L'encombrement supposé d'un élément, en pixels du canvas. */
+  // Les boîtes MESURÉES par le serveur sur le dossier de memes. Elles arrivent
+  // avec le layout (`tailles`) et l'emportent sur la table : celle-ci n'est plus
+  // qu'un repli, pour la frame qui précède la réponse et pour le cas où le
+  // dossier n'est pas mesurable.
+  const MESUREES = {};
+
+  /** Pose les boîtes calculées côté serveur. Ignore tout ce qui n'est pas un
+   *  couple de nombres positifs : une valeur tordue rendrait des repères d'un
+   *  pixel, ce qui est pire que l'ordre de grandeur qu'elle remplace. */
+  function poserTailles(tailles) {
+    if (!tailles || typeof tailles !== "object") return;
+    Object.keys(tailles).forEach(function (cle) {
+      const t = tailles[cle];
+      if (!Array.isArray(t) || t.length !== 2) return;
+      const l = Number(t[0]), h = Number(t[1]);
+      if (!(l > 0) || !(h > 0)) return;
+      MESUREES[cle] = [l, h];
+    });
+  }
+
+  /** L'encombrement d'un élément, en pixels du canvas : mesuré si le serveur a
+   *  su le dire, supposé sinon. */
   function taille(cle) {
-    return TAILLES[cle] || TAILLE_DEFAUT;
+    return MESUREES[cle] || TAILLES[cle] || TAILLE_DEFAUT;
   }
 
   /** Le rapport entre la source réelle et le canvas de référence.
@@ -226,6 +247,7 @@ window.WallyLayout = (function () {
 
   return {
     appliquer, placer, orienterPointe, bornerBulle, styleDepuisElement,
-    facteurCanvas, taille, ELEMENTS, ANCRAGES, TAILLES, TAILLE_DEFAUT,
+    facteurCanvas, taille, poserTailles,
+    ELEMENTS, ANCRAGES, TAILLES, TAILLE_DEFAUT,
   };
 })();

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import random
 import unicodedata
+from math import ceil
 from pathlib import Path
 
 from loguru import logger
@@ -173,6 +174,59 @@ class MemeLibrary:
             genre = "video" if _MEDIA_TYPES[suffix].startswith("video/") else "image"
             out.append({"name": path.name, "genre": genre})
         return out
+
+    def enveloppe_rendue(self, media_max: int,
+                         agrandir: float = 1.0) -> tuple[int, int] | None:
+        """La place que les memes peuvent occuper à l'écran, au maximum.
+
+        LA RÈGLE, dans les mots de l'owner : « prends la plus grande image en
+        hauteur et la plus grande en largeur, et ça définit la box ». Appliquée
+        aux FICHIERS elle est inapplicable — le dossier monte à 2100 × 2100,
+        plus grand que le canvas. Appliquée aux tailles AFFICHÉES, elle est
+        exacte : chaque meme est réduit pour tenir dans `media_max`, et
+        l'enveloppe de ces tailles-là est la boîte qu'il faut réserver.
+
+        Elle ne réserve donc que ce que le dossier peut vraiment atteindre. Un
+        dossier sans portrait rendrait une boîte plus basse que large, sans que
+        personne n'ait à retoucher un chiffre — c'est tout l'intérêt de la
+        calculer plutôt que de l'écrire.
+
+        `agrandir` : les petits memes sont grossis jusqu'à ce facteur pour ne pas
+        paraître perdus (le rotateur le fait, à 2×). Il compte dans l'enveloppe,
+        sinon la boîte serait trop étroite pour eux.
+
+        Rend `None` si rien n'est mesurable — l'appelant garde alors sa table.
+        Les vidéos ne le sont pas sans décodeur : elles ne comptent pas ici, et
+        c'est sans danger, la boîte les borne à leur tour (`max-width: 100%`).
+        """
+        if media_max <= 0:
+            return None
+        try:
+            from PIL import Image
+        except ImportError:      # pragma: no cover - Pillow est une dépendance
+            return None
+        largeur = hauteur = 0.0
+        for entree in self.list_medias():
+            if entree.get("genre") != "image":
+                continue
+            chemin = self._dir / str(entree["name"])
+            try:
+                with Image.open(chemin) as im:
+                    l, h = im.size
+            # Fichier tronqué, format exotique, disparu pendant le ménage : un
+            # meme illisible ne doit pas priver les autres de leur boîte.
+            except Exception:
+                continue
+            if l <= 0 or h <= 0:
+                continue
+            facteur = min(media_max / l, media_max / h, agrandir)
+            largeur = max(largeur, l * facteur)
+            hauteur = max(hauteur, h * facteur)
+        if largeur <= 0 or hauteur <= 0:
+            return None
+        # Arrondi au SUPÉRIEUR : un pixel de moins que le contenu, et le meme le
+        # plus large déborderait de la boîte censée le contenir.
+        return (min(media_max, ceil(largeur)), min(media_max, ceil(hauteur)))
 
     def pick(self, hint: str = "") -> dict | None:
         """Choisit un meme. `hint` privilégie ceux dont la description colle.

@@ -889,6 +889,14 @@ window.OverlayAdmin = (function () {
           etat.libelles = layout.libelles;
           delete layout.libelles;
         }
+        // Les boîtes des widgets à média, mesurées par le serveur sur le dossier
+        // de memes. Même traitement que les libellés, et pour la même raison :
+        // elles voyagent avec le GET, le PUT ne les rend pas, et les laisser
+        // dans le modèle les enverrait à l'antenne comme un réglage de scène.
+        if (layout.tailles) {
+          if (window.WallyLayout) WallyLayout.poserTailles(layout.tailles);
+          delete layout.tailles;
+        }
         adopter(layout);
       })
       .catch(function (e) {

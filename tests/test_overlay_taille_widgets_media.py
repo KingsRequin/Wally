@@ -115,6 +115,44 @@ def test_aucune_dimension_du_media_nest_ecrite_en_dur():
                 f"chose")
 
 
+def test_le_passe_partout_de_python_est_celui_du_css():
+    """Le calcul serveur ajoute le passe-partout à l'enveloppe du média pour
+    obtenir la boîte. S'il ne vaut pas ce que le CSS applique, la boîte annoncée
+    et la boîte rendue diffèrent d'autant — le défaut d'origine, en plus discret.
+
+    Le CSS l'exprime en `padding` + `border`, des deux côtés ; Python en un seul
+    nombre par widget. Les deux sont confrontés ici parce que personne ne les
+    rapprocherait jamais autrement.
+    """
+    from bot.core.overlay_layout import PASSE_PARTOUT_MEDIA
+
+    for cle, selecteur, _ in MEDIA:
+        corps = _bloc(selecteur)
+        pad = re.search(r"\bpadding\s*:\s*(\d+)px", corps)
+        assert pad, f"{selecteur} : padding introuvable"
+        bord = re.search(r"\bborder\s*:\s*(\d+)px", corps)
+        # `border` peut être absent (aucune bordure) : il vaut alors 0.
+        epaisseur = int(bord.group(1)) if bord else 0
+        attendu = 2 * (int(pad.group(1)) + epaisseur)
+        assert PASSE_PARTOUT_MEDIA[cle] == attendu, (
+            f"{cle} : Python dit {PASSE_PARTOUT_MEDIA[cle]} px de passe-partout, "
+            f"le CSS en applique {attendu} ({pad.group(1)} de padding + "
+            f"{epaisseur} de bordure, des deux côtés)")
+
+
+def test_le_repli_du_js_ne_depasse_pas_la_boite_acceptee():
+    """La table du JS sert de repli avant que la mesure du serveur n'arrive. Un
+    repli plus grand que ce qu'on accepte d'afficher ferait sauter la boîte de
+    sa taille à une autre sous les yeux, à chaque ouverture de page."""
+    from bot.core.overlay_layout import BOITE_MEDIA_MAX
+
+    t = _tailles()
+    for cle, _, _ in MEDIA:
+        assert max(t[cle]) <= BOITE_MEDIA_MAX, (
+            f"{cle} : repli {t[cle]} au-delà de la boîte acceptée "
+            f"({BOITE_MEDIA_MAX})")
+
+
 def test_le_js_pose_les_variables_depuis_la_table():
     """Le maillon qui relie les deux : si le JS cessait de poser la variable, le
     CSS retomberait sur son repli et la scène ne pourrait plus rien changer."""

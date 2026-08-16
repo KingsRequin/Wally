@@ -1466,11 +1466,23 @@
     // (14 px de marge + 3 px de bordure, des deux côtés). Le cadre porte la
     // taille de la zone et ne bouge plus ; c'est le média qui s'y range.
     const CADRE_MARGE = 34;
-    const zone = WallyLayout.taille("rotator");
-    const MEDIA_L = Math.max(80, zone[0] - CADRE_MARGE);
-    const MEDIA_H = Math.max(80, zone[1] - CADRE_MARGE);
-    cadre.style.setProperty("--rotateur-zone-l", zone[0] + "px");
-    cadre.style.setProperty("--rotateur-zone-h", zone[1] + "px");
+    let MEDIA_L = 80, MEDIA_H = 80;
+
+    /** Relit la boîte dans la table et la pose sur le cadre.
+     *
+     *  Rappelée quand le layout arrive : la boîte est MESURÉE par le serveur sur
+     *  le dossier de memes, donc elle n'est pas connue au chargement du script.
+     *  Figée à la construction, elle serait restée sur le repli de la table, et
+     *  ajouter un meme d'un format inédit n'aurait plus rien changé.
+     */
+    function poserZone() {
+      const zone = WallyLayout.taille("rotator");
+      MEDIA_L = Math.max(80, zone[0] - CADRE_MARGE);
+      MEDIA_H = Math.max(80, zone[1] - CADRE_MARGE);
+      cadre.style.setProperty("--rotateur-zone-l", zone[0] + "px");
+      cadre.style.setProperty("--rotateur-zone-h", zone[1] + "px");
+    }
+    poserZone();
 
     let medias = [];
     let dernier = null;
@@ -1719,6 +1731,9 @@
      *  plutôt que de revenir aux défauts sur un simple aléa réseau.
      */
     function appliquerReglage(el) {
+      // La boîte d'abord : elle vient d'être mesurée par le serveur, et le
+      // média affiché doit se ranger dans la nouvelle avant le tour suivant.
+      poserZone();
       if (el) {
         DUREE = secondes(el.duree, DUREE_MIN, DUREE_MAX, DUREE_DEFAUT);
         PAUSE = secondes(el.pause, PAUSE_MIN, PAUSE_MAX, PAUSE_DEFAUT);
@@ -1904,6 +1919,10 @@
       // `|| {}` : une scène sans `elements` laisserait `reglages` indéfini et
       // ferait mourir tout le rendu des widgets à la première lecture.
       reglages = data.scene.elements || {};
+      // AVANT `appliquer` : les boîtes mesurées sur le dossier de memes doivent
+      // être en place quand les zones se placent, sinon la première frame se
+      // dessine sur le repli de la table et saute ensuite.
+      WallyLayout.poserTailles(data.tailles);
       WallyLayout.appliquer(data.scene.slug, data.scene);
       // Les deux zones qui portent leur propre boucle : `display: none` sur le
       // conteneur les cacherait, mais le rotateur continuerait de télécharger

@@ -272,7 +272,9 @@ async def overlay_test(request: Request) -> dict:
 # ── Mise en scène ────────────────────────────────────────────────────────────
 from bot.core.overlay_elements import LIBELLES              # noqa: E402
 from bot.core.overlay_feed import payload_image_galerie     # noqa: E402
-from bot.core.overlay_layout import layout_par_defaut, scene_par_slug  # noqa: E402
+from bot.core.overlay_layout import (                       # noqa: E402
+    layout_par_defaut, scene_par_slug, tailles_media,
+)
 from bot.core.overlay_layout_store import (                 # noqa: E402
     charger_layout, enregistrer_layout,
 )
@@ -281,6 +283,30 @@ from bot.core.overlay_layout_store import (                 # noqa: E402
 def _db(request: Request):
     """La base, ou None avant la connexion du bot. `charger_layout` l'accepte."""
     return getattr(request.app.state.wally, "db", None)
+
+
+# La boîte des widgets à média se mesure sur le DOSSIER : sans cache, chaque
+# ouverture de page relirait l'en-tête des cent vingt et un fichiers. Le repère
+# est la signature du dossier — l'owner y dépose des memes quand il veut, et
+# redémarrer le bot pour qu'une boîte se réajuste serait absurde.
+_tailles_cache: dict = {"signature": None, "value": {}}
+
+
+def _tailles_media(request: Request) -> dict:
+    library = getattr(request.app.state.wally, "memes", None)
+    if library is None:
+        return {}
+    try:
+        dossier = Path(library.directory)
+        signature = (dossier.stat().st_mtime_ns,
+                     sum(1 for _ in dossier.iterdir()))
+    # Dossier absent ou illisible : on recalcule à chaque fois plutôt que de
+    # servir un cache qu'on ne saurait plus invalider.
+    except OSError:
+        return tailles_media(library)
+    if signature != _tailles_cache["signature"]:
+        _tailles_cache.update(signature=signature, value=tailles_media(library))
+    return _tailles_cache["value"]
 
 
 @public_router.get("/overlay-layout")
@@ -297,7 +323,11 @@ async def get_overlay_layout(request: Request, scene: str = "") -> dict:
         # Scène supprimée alors qu'OBS pointe encore dessus : on sert le défaut
         # plutôt qu'un 404 qui laisserait l'écran vide en plein live.
         trouvee = scene_par_slug(layout, layout["defaut"]) or layout["scenes"][0]
-    return {"scene": trouvee, "defaut": layout["defaut"]}
+    # Les boîtes des widgets à média voyagent avec la scène, comme les libellés
+    # côté panneau : la page fait déjà cet appel, et la valeur dépend du dossier
+    # de memes — donc du serveur, qui seul peut la mesurer.
+    return {"scene": trouvee, "defaut": layout["defaut"],
+            "tailles": _tailles_media(request)}
 
 
 @admin_router.get("/overlay/layout")
@@ -318,7 +348,7 @@ async def get_overlay_layout_admin(request: Request, defauts: bool = False) -> d
     par le même code, et que le panneau sait déjà le lire.
     """
     layout = layout_par_defaut() if defauts else await charger_layout(_db(request))
-    return {**layout, "libelles": LIBELLES}
+    return {**layout, "libelles": LIBELLES, "tailles": _tailles_media(request)}
 
 
 @admin_router.put("/overlay/layout")
