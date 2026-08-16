@@ -3684,13 +3684,24 @@ body.is-mobile .mobile-back-btn {
   border-color: rgba(6, 182, 212, 0.45);
   background: rgba(6, 182, 212, 0.06);
 }
+/* Deux rangs, comme l'adresse d'une scène : le NOM d'abord, sur toute la
+   largeur, les trois boutons dessous. Sur un seul rang, la colonne de 280 px
+   laissait 110 px au nom — « Tableau de bord Apex » sortait en « TABLEAU… »,
+   et un groupe qu'on ne peut pas lire ne se reconnaît pas. */
 .ovl-groupe-entete {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  row-gap: 2px;
   gap: 6px;
   padding: 4px 4px 4px 2px;
   border-radius: 10px;
   cursor: pointer;
+}
+.ovl-groupe-actions {
+  flex-basis: 100%;
+  align-items: center;
+  justify-content: flex-end;
 }
 .ovl-groupe-entete:hover { background: rgba(255, 255, 255, 0.04); }
 .ovl-groupe-chevron {
@@ -3717,7 +3728,14 @@ body.is-mobile .mobile-back-btn {
   text-overflow: ellipsis;
 }
 .ovl-groupe.selectionne .ovl-groupe-nom { color: #06b6d4; }
-.ovl-groupe-compte { font-size: 0.62rem; color: var(--text-muted); flex-shrink: 0; }
+/* Poussé à gauche de son rang : les boutons restent alignés sur ceux des
+   lignes d'éléments, le compte occupe le vide. */
+.ovl-groupe-compte {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  margin-right: auto;
+  padding-left: 4px;
+}
 .ovl-groupe-membres {
   list-style: none;
   display: flex;
@@ -3737,7 +3755,17 @@ body.is-mobile .mobile-back-btn {
 
 /* Le menu d'un groupe, posé sur `<body>` : la liste des éléments est en
    `overflow-y: auto` et l'aurait rogné. */
-.ovl-menu.ovl-menu-flottant { position: fixed; top: 0; left: 0; right: auto; }
+/* Posé sur `<body>`, un menu « au plus juste » se mesure sur la FENÊTRE et non
+   sur la colonne de 280 px : sa note d'explication tenait alors sur une seule
+   ligne de 605 px, en travers de la surface de placement. La largeur est donc
+   bornée à la main — mesuré au navigateur. */
+.ovl-menu.ovl-menu-flottant {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  max-width: 260px;
+}
 .ovl-act {
   background: transparent;
   border: 1px solid transparent;

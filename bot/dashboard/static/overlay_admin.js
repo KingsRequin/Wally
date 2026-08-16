@@ -1419,8 +1419,6 @@ window.OverlayAdmin = (function () {
 
     const corps = creer("div", "ovl-groupe-corps");
     corps.appendChild(creer("span", "ovl-groupe-nom", groupe.nom));
-    corps.appendChild(creer("span", "ovl-groupe-compte",
-      membres.length + " élément" + (membres.length > 1 ? "s" : "")));
     corps.addEventListener("click", function () { selectionnerGroupe(groupe); });
     poserInfobulle(corps, "Sélectionner le groupe entier — c'est-à-dire ses "
       + membres.length + " membres : " + membres.map(libelle).join(", ")
@@ -1437,7 +1435,13 @@ window.OverlayAdmin = (function () {
     const tousVerrous = membres.length > 0 && membres.every(function (c) {
       return scene.elements[c].locked;
     });
-    const actions = creer("div", "ovl-el-actions");
+    // Le compte voyage avec les boutons, sur le second rang de l'en-tête : le
+    // NOM garde alors toute la largeur de la colonne. « Tableau de bord Apex »
+    // sortait en « TABLEAU… », et un groupe qu'on ne peut pas lire ne se
+    // reconnaît pas.
+    const actions = creer("div", "ovl-el-actions ovl-groupe-actions");
+    actions.appendChild(creer("span", "ovl-groupe-compte",
+      membres.length + " élément" + (membres.length > 1 ? "s" : "")));
     actions.appendChild(bouton(tousMasques ? "🚫" : "👁",
       tousMasques ? "Tous masqués — cliquer pour tout remontrer"
                   : "Masquer tout le groupe dans cette scène. Un membre "
