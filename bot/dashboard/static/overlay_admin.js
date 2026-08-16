@@ -143,6 +143,13 @@ window.OverlayAdmin = (function () {
     selection: [],       // les clés retenues, l'élément principal compris
     ancreSelection: null,  // le point de départ d'un Maj+clic
     presse: null,          // les réglages copiés par C, collés par V
+    // Les en-têtes de groupe repliés, par `slug/id`. DANS LE NAVIGATEUR ET PAS
+    // DANS LE MODÈLE : plier une liste est un confort de lecture, pas une
+    // décision de mise en scène. Rangé dans le modèle, ce serait une
+    // modification de plus au compteur — donc quelque chose à publier — et un
+    // pli fait ici changerait l'antenne. La contrepartie assumée : un F5
+    // rouvre tous les groupes.
+    replies: {},
     brouillon: 0,
     direct: false,
     publie: null,
@@ -151,6 +158,7 @@ window.OverlayAdmin = (function () {
 
   const noeuds = {};      // les nœuds du squelette, posés une fois
   let menuOuvert = null;  // le menu ⋮ déployé, s'il y en a un
+  let menuHote = null;    // le bouton qui l'a ouvert — il le referme lui-même
   let manip = null;       // la manipulation en cours sur la surface, ou null
   let observateur = null; // ResizeObserver de la surface
   let glisse = null;      // la clé de l'élément en cours de glisser dans la liste
@@ -404,6 +412,272 @@ window.OverlayAdmin = (function () {
       if (scenes[i].slug === etat.slugCourant) return scenes[i];
     }
     return scenes[0] || null;
+  }
+
+  // ── Les groupes ─────────────────────────────────────────────────────────
+  //
+  // Le modèle est côté serveur (`bot/core/overlay_layout.py`, section « Les
+  // groupes d'éléments ») et c'est lui qui tranche. Ici on tient les mêmes
+  // règles AVANT l'envoi, pour ne jamais afficher un état que le serveur
+  // rangerait autrement :
+  //
+  //   - un élément n'appartient qu'à UN groupe (`retirerDesGroupes` passe avant
+  //     toute adhésion) ;
+  //   - un groupe vidé de son dernier membre disparaît — il n'y a plus rien à
+  //     manipuler dessous ;
+  //   - les membres d'un groupe se suivent dans l'empilement (`ordreGroupe`),
+  //     parce que l'ordre de la liste EST l'empilement et qu'une liste qui les
+  //     montre l'un sous l'autre pendant que trois widgets s'intercalent
+  //     mentirait sur la seule chose qu'elle raconte.
+  //
+  // SÉLECTIONNER UN GROUPE, C'EST SÉLECTIONNER SES MEMBRES. Rien d'autre. Tout
+  // ce qui existait déjà — glisser, flèches, aligner, répartir, coller des
+  // réglages, décalage commun borné — s'applique alors sans une ligne de plus,
+  // et le cadenas continue de retenir individuellement ce qu'il retenait.
+
+  function groupesScene() {
+    const scene = sceneCourante();
+    return (scene && Array.isArray(scene.groupes)) ? scene.groupes : [];
+  }
+
+  /** Le groupe qui contient `cle`, ou `null`. */
+  function groupeDe(cle) {
+    const groupes = groupesScene();
+    for (let i = 0; i < groupes.length; i++) {
+      if ((groupes[i].membres || []).indexOf(cle) >= 0) return groupes[i];
+    }
+    return null;
+  }
+
+  /** Les membres qui existent VRAIMENT dans la scène, dans l'ordre de celle-ci.
+   *  Une clé fantôme — modèle d'une version d'avant, widget retiré du code —
+   *  ne doit ni s'afficher ni compter dans « 3 éléments ». */
+  function membresPresents(groupe) {
+    const scene = sceneCourante();
+    if (!scene) return [];
+    const membres = groupe.membres || [];
+    return (scene.ordre || []).filter(function (cle) {
+      return membres.indexOf(cle) >= 0 && !!scene.elements[cle];
+    });
+  }
+
+  /** Les membres d'un groupe rendus CONTIGUS, à la place du premier d'entre
+   *  eux. Miroir exact de `_ordre_avec_groupes()` (Python) : les deux se lisent
+   *  ensemble, et c'est le serveur qui fait foi. Pure, donc testée. */
+  function ordreGroupe(ordre, groupes) {
+    if (!groupes || !groupes.length) return (ordre || []).slice();
+    const parCle = {};
+    groupes.forEach(function (g) {
+      (g.membres || []).forEach(function (cle) { parCle[cle] = g.id; });
+    });
+    const sortie = [], faits = {};
+    (ordre || []).forEach(function (cle) {
+      const gid = parCle[cle];
+      if (gid === undefined) { sortie.push(cle); return; }
+      if (faits[gid]) return;
+      faits[gid] = true;
+      (ordre || []).forEach(function (c) {
+        if (parCle[c] === gid) sortie.push(c);
+      });
+    });
+    return sortie;
+  }
+
+  /** Range l'empilement de la scène après un changement de groupe. Rend `true`
+   *  s'il a bougé — l'appelant compte UNE modification pour toute l'opération,
+   *  jamais une par effet de bord. */
+  function normaliserOrdre(scene) {
+    const avant = scene.ordre || [];
+    const apres = ordreGroupe(avant, scene.groupes || []);
+    const identique = apres.length === avant.length
+      && apres.every(function (c, i) { return avant[i] === c; });
+    if (identique) return false;
+    scene.ordre = apres;
+    return true;
+  }
+
+  /** Sort ces clés de tous les groupes — c'est LA garde de l'exclusivité, et
+   *  elle est au point d'écriture : toute adhésion passe par ici d'abord.
+   *  Un groupe vidé de son dernier membre s'en va avec.
+   *
+   *  Rend les noms des groupes dissous, pour qu'on le dise. */
+  function retirerDesGroupes(scene, cles) {
+    const perdus = [];
+    scene.groupes = (scene.groupes || []).filter(function (g) {
+      g.membres = (g.membres || []).filter(function (c) {
+        return cles.indexOf(c) < 0;
+      });
+      if (g.membres.length) return true;
+      perdus.push(g.nom);
+      return false;
+    });
+    return perdus;
+  }
+
+  /** Un identifiant stable, lisible dans le JSON, unique DANS LA SCÈNE. Le nom
+   *  ne peut pas servir de clé : on le renomme, et deux groupes ont le droit de
+   *  porter le même mot. */
+  function idGroupeUnique(scene, nom) {
+    const base = slugDepuisNom(nom);
+    const pris = {};
+    (scene.groupes || []).forEach(function (g) { pris[g.id] = true; });
+    if (!pris[base]) return base;
+    let n = 2;
+    while (pris[base + "-" + n]) n += 1;
+    return base + "-" + n;
+  }
+
+  function cleRepli(id) {
+    return etat.slugCourant + "/" + id;
+  }
+
+  function estReplie(id) {
+    return !!etat.replies[cleRepli(id)];
+  }
+
+  function basculerRepli(id) {
+    const cle = cleRepli(id);
+    if (etat.replies[cle]) delete etat.replies[cle];
+    else etat.replies[cle] = true;
+    rendreElements();
+  }
+
+  // ── Ce qu'on fait à un groupe ───────────────────────────────────────────
+
+  /** Le groupe naît de la SÉLECTION : c'est le geste qu'on vient de faire, et
+   *  il n'y a pas d'autre façon de désigner sept widgets d'un coup.
+   *
+   *  Deux membres au minimum : un groupe d'un seul élément est un élément, avec
+   *  un en-tête en plus et rien à manipuler ensemble. */
+  function creerGroupe() {
+    const scene = sceneCourante();
+    const cles = selection();
+    if (!scene) return;
+    if (cles.length < 2) {
+      notifier("Choisissez au moins deux éléments — Ctrl+clic, ou un glisser "
+        + "sur le fond de la surface — puis regroupez-les.", "error");
+      return;
+    }
+    const nom = window.prompt(
+      "Nom du groupe (" + cles.length + " éléments) :\n\n"
+      + cles.map(libelle).join(", "), "Nouveau groupe");
+    if (nom === null) return;
+    const propre = nom.trim();
+    if (!propre) { notifier("Un nom vide n'a rien à afficher.", "error"); return; }
+    const perdus = retirerDesGroupes(scene, cles);
+    scene.groupes.push({
+      id: idGroupeUnique(scene, propre),
+      nom: propre,
+      membres: cles.slice(),
+    });
+    normaliserOrdre(scene);
+    marquerModifie();
+    rendreTout();
+    notifier("Groupe « " + propre + " » créé : " + cles.length + " éléments."
+      + (perdus.length ? " Dissous au passage : " + perdus.join(", ") + "." : "")
+      + " Rien n'est parti à l'antenne.");
+  }
+
+  function renommerGroupe(groupe) {
+    const nom = window.prompt("Nouveau nom du groupe :", groupe.nom);
+    if (nom === null) return;
+    const propre = nom.trim();
+    if (!propre) { notifier("Un nom vide n'a rien à afficher.", "error"); return; }
+    if (propre === groupe.nom) return;
+    groupe.nom = propre;
+    marquerModifie();
+    rendreElements();
+    rendreSurface();
+  }
+
+  /** Dissoudre ne touche à RIEN d'autre : les éléments gardent leur place, leur
+   *  masquage et leur verrou. On défait l'en-tête, pas le travail. */
+  function dissoudreGroupe(groupe) {
+    const scene = sceneCourante();
+    if (!scene) return;
+    scene.groupes = (scene.groupes || []).filter(function (g) {
+      return g !== groupe;
+    });
+    marquerModifie();
+    rendreTout();
+    notifier("Groupe « " + groupe.nom + " » dissous — les éléments n'ont pas bougé.");
+  }
+
+  function ajouterAuGroupe(groupe) {
+    const scene = sceneCourante();
+    const cles = selection().filter(function (c) {
+      return (groupe.membres || []).indexOf(c) < 0;
+    });
+    if (!scene) return;
+    if (!cles.length) {
+      notifier("Sélectionnez d'abord les éléments à ajouter — ceux qui sont "
+        + "déjà dans « " + groupe.nom + " » ne comptent pas.", "error");
+      return;
+    }
+    const perdus = retirerDesGroupes(scene, cles);
+    // `retirerDesGroupes` a pu faire disparaître CE groupe-ci s'il ne contenait
+    // que des éléments qu'on lui reprend — impossible ici, puisqu'on a écarté
+    // ses propres membres, mais la garde coûte une ligne et évite de ressusciter
+    // un groupe dissous.
+    if ((scene.groupes || []).indexOf(groupe) < 0) scene.groupes.push(groupe);
+    groupe.membres = (groupe.membres || []).concat(cles);
+    normaliserOrdre(scene);
+    marquerModifie();
+    rendreTout();
+    notifier(cles.length + " élément(s) ajouté(s) à « " + groupe.nom + " »."
+      + (perdus.length ? " Dissous au passage : " + perdus.join(", ") + "." : ""));
+  }
+
+  function retirerDuGroupe(cle) {
+    const scene = sceneCourante();
+    const groupe = groupeDe(cle);
+    if (!scene || !groupe) return;
+    const nom = groupe.nom;
+    const perdus = retirerDesGroupes(scene, [cle]);
+    marquerModifie();
+    rendreTout();
+    notifier(libelle(cle) + " ne fait plus partie de « " + nom + " »."
+      + (perdus.length ? " Le groupe, vidé, a été dissous." : ""));
+  }
+
+  /** Dissout TOUS les groupes que la sélection touche. Le pendant de
+   *  « Grouper » : après un clic sur un en-tête, la sélection est justement le
+   *  groupe entier. */
+  function degrouperSelection() {
+    const scene = sceneCourante();
+    const cles = selection();
+    if (!scene) return;
+    const vises = [];
+    cles.forEach(function (cle) {
+      const g = groupeDe(cle);
+      if (g && vises.indexOf(g) < 0) vises.push(g);
+    });
+    if (!vises.length) {
+      notifier(cles.length
+        ? "La sélection n'appartient à aucun groupe."
+        : "Aucun élément sélectionné.", "error");
+      return;
+    }
+    scene.groupes = (scene.groupes || []).filter(function (g) {
+      return vises.indexOf(g) < 0;
+    });
+    marquerModifie();
+    rendreTout();
+    notifier(vises.length + " groupe(s) dissous : "
+      + vises.map(function (g) { return g.nom; }).join(", ")
+      + " — les éléments n'ont pas bougé.");
+  }
+
+  /** Un clic sur l'en-tête : la sélection devient exactement les membres.
+   *  Le principal est le DERNIER, comme après un rectangle de sélection — c'est
+   *  lui dont la barre montre les réglages. */
+  function selectionnerGroupe(groupe) {
+    const membres = membresPresents(groupe);
+    if (!membres.length) return;
+    etat.selection = membres.slice();
+    etat.elementCourant = membres[membres.length - 1];
+    etat.ancreSelection = etat.elementCourant;
+    rendreSelection();
   }
 
   // ── La sélection ────────────────────────────────────────────────────────
@@ -855,7 +1129,7 @@ window.OverlayAdmin = (function () {
       bouton.addEventListener("click", function (evt) {
         evt.stopPropagation();
         if (menuOuvert && menuOuvert.parentNode === item) { fermerMenu(); return; }
-        ouvrirMenu(item, scene);
+        ouvrirMenu(item, scene, bouton);
       });
       item.appendChild(bouton);
 
@@ -887,11 +1161,21 @@ window.OverlayAdmin = (function () {
   function fermerMenu() {
     if (menuOuvert && menuOuvert.parentNode) menuOuvert.parentNode.removeChild(menuOuvert);
     menuOuvert = null;
+    menuHote = null;
     document.removeEventListener("pointerdown", fermerAuClicDehors, true);
+    // Posé par le menu FLOTTANT d'un groupe seulement (`ouvrirMenuGroupe`), mais
+    // retiré ici sans condition : un écouteur de défilement en capture qui
+    // survit à son menu ferme celui du voisin au premier coup de molette.
+    document.removeEventListener("scroll", fermerMenu, true);
   }
 
   function fermerAuClicDehors(evt) {
     if (menuOuvert && menuOuvert.contains(evt.target)) return;
+    // Le bouton qui a OUVERT le menu ne le referme pas ici : son propre `click`
+    // s'en charge, et il bascule. Sans cette exception, le `pointerdown`
+    // fermait d'abord — le `click` retrouvait alors `menuOuvert` à `null` et
+    // rouvrait aussitôt. Le menu ne se refermait jamais par son bouton.
+    if (menuHote && menuHote.contains(evt.target)) return;
     fermerMenu();
   }
 
@@ -907,7 +1191,9 @@ window.OverlayAdmin = (function () {
     return b;
   }
 
-  function ouvrirMenu(item, scene) {
+  /** `hote` : le bouton ⋮ qui ouvre ce menu. Passé plutôt que relu — le nom
+   *  `bouton` désigne ICI la fabrique de boutons du module, pas le nœud. */
+  function ouvrirMenu(item, scene, hote) {
     fermerMenu();
     const menu = creer("div", "ovl-menu");
     const seule = (etat.layout.scenes || []).length <= 1;
@@ -933,6 +1219,7 @@ window.OverlayAdmin = (function () {
 
     item.appendChild(menu);
     menuOuvert = menu;
+    menuHote = hote;
     // En phase de capture, et posé au tour suivant : sinon le clic qui vient
     // d'ouvrir le menu le referme aussitôt.
     setTimeout(function () {
@@ -1029,7 +1316,10 @@ window.OverlayAdmin = (function () {
     if (!cle || !defilerVersLaLigne || !noeuds.listeElements) return;
     const liste = noeuds.listeElements;
     const ligne = liste.querySelector('[data-cle="' + cle + '"]');
-    if (!ligne) return;
+    // `offsetParent` nul : la ligne est dans un groupe REPLIÉ, donc en
+    // `display: none`. Son rectangle vaut zéro partout, et le calcul ci-dessous
+    // ferait sauter la liste en haut sans que rien ne s'éclaire.
+    if (!ligne || !ligne.offsetParent) return;
     // La liste défile sur 420 px pour trente-quatre lignes : éclairer une ligne
     // hors de vue n'éclaire personne. Le calcul à la main plutôt que
     // `scrollIntoView` : celui-ci fait aussi défiler les conteneurs PARENTS, et
@@ -1068,15 +1358,173 @@ window.OverlayAdmin = (function () {
     // la bulle resterait plantée à l'écran.
     masquerInfobulle();
     liste.innerHTML = "";
+    // Un groupe s'affiche à la place de son PREMIER membre, et emporte les
+    // autres avec lui — même règle que l'empilement (`ordreGroupe`), qui est
+    // normalisé à chaque changement de groupe. Cette forme-ci reste juste même
+    // si l'ordre ne l'était pas encore : la liste ne montre jamais deux
+    // en-têtes du même nom.
+    const parCle = {};
+    groupesScene().forEach(function (g) {
+      (g.membres || []).forEach(function (cle) { parCle[cle] = g; });
+    });
+    const faits = {};
+    let groupes = 0;
     (scene.ordre || []).forEach(function (cle) {
       const element = scene.elements[cle];
       if (!element) return;   // une clé d'ordre sans élément : on l'ignore
-      liste.appendChild(itemElement(cle, element));
+      const groupe = parCle[cle];
+      if (!groupe) { liste.appendChild(itemElement(cle, element)); return; }
+      if (faits[groupe.id]) return;
+      faits[groupe.id] = true;
+      groupes += 1;
+      liste.appendChild(itemGroupe(groupe));
     });
     if (noeuds.compteElements) {
-      noeuds.compteElements.textContent = (scene.ordre || []).length + " éléments";
+      noeuds.compteElements.textContent = (scene.ordre || []).length + " éléments"
+        + (groupes ? " · " + groupes + " groupe" + (groupes > 1 ? "s" : "") : "");
     }
     appliquerSurvol();
+  }
+
+  /** Une ligne de groupe : l'en-tête pliable, puis les membres.
+   *
+   *  Les membres restent DANS LE DOCUMENT quand l'en-tête est replié — c'est le
+   *  CSS qui les cache. Les retirer les ferait disparaître de
+   *  `appliquerOrdreDepuisDom()`, qui lit la liste pour en tirer l'empilement :
+   *  un seul glisser, et les membres de tous les groupes repliés seraient
+   *  repoussés à la fin de la scène.
+   */
+  function itemGroupe(groupe) {
+    const scene = sceneCourante();
+    const membres = membresPresents(groupe);
+    const item = creer("li", "ovl-groupe");
+    item.dataset.groupe = groupe.id;
+    item.draggable = true;
+    const replie = estReplie(groupe.id);
+    if (replie) item.classList.add("replie");
+    // Tous membres sélectionnés = le groupe est « celui qu'on manipule ». Une
+    // sélection partielle ne le dit pas : ce serait la promesse d'un geste qui
+    // ne toucherait qu'une partie du bloc.
+    const entier = membres.length > 0 && membres.every(estSelectionne);
+    if (entier) item.classList.add("selectionne");
+
+    const entete = creer("div", "ovl-groupe-entete");
+    const chevron = bouton(replie ? "▸" : "▾",
+      replie ? "Déplier — montrer les " + membres.length + " membres"
+             : "Replier — l'en-tête reste, les membres se cachent",
+      "", function () { basculerRepli(groupe.id); });
+    chevron.classList.add("ovl-groupe-chevron");
+    chevron.setAttribute("aria-expanded", replie ? "false" : "true");
+    entete.appendChild(chevron);
+
+    const corps = creer("div", "ovl-groupe-corps");
+    corps.appendChild(creer("span", "ovl-groupe-nom", groupe.nom));
+    corps.appendChild(creer("span", "ovl-groupe-compte",
+      membres.length + " élément" + (membres.length > 1 ? "s" : "")));
+    corps.addEventListener("click", function () { selectionnerGroupe(groupe); });
+    poserInfobulle(corps, "Sélectionner le groupe entier — c'est-à-dire ses "
+      + membres.length + " membres : " + membres.map(libelle).join(", ")
+      + ". Tout ce qui vaut pour une sélection vaut alors pour eux — les "
+      + "déplacer d'un bloc, les aligner, les répartir.");
+    entete.appendChild(corps);
+
+    // L'œil et le cadenas du groupe agissent sur les MEMBRES : un groupe n'a pas
+    // d'état à lui. Ils montrent l'état d'ensemble — masqué quand tous le sont.
+    const cles = membres.slice();
+    const tousMasques = membres.length > 0 && membres.every(function (c) {
+      return scene.elements[c].hidden;
+    });
+    const tousVerrous = membres.length > 0 && membres.every(function (c) {
+      return scene.elements[c].locked;
+    });
+    const actions = creer("div", "ovl-el-actions");
+    actions.appendChild(bouton(tousMasques ? "🚫" : "👁",
+      tousMasques ? "Tous masqués — cliquer pour tout remontrer"
+                  : "Masquer tout le groupe dans cette scène. Un membre "
+                    + "verrouillé ne bougera pas, et ce sera dit.",
+      tousMasques ? "actif" : "",
+      function () {
+        basculerChamp("hidden", "masqués", "remontrés", cles);
+      }));
+    actions.appendChild(bouton(tousVerrous ? "🔒" : "🔓",
+      tousVerrous ? "Tous verrouillés — cliquer pour tout libérer"
+                  : "Verrouiller tout le groupe : ni déplacé, ni "
+                    + "redimensionné, ni masqué.",
+      tousVerrous ? "actif" : "",
+      function () {
+        basculerChamp("locked", "verrouillés", "libérés", cles);
+      }));
+    // `boutonMenu` se cite lui-même : la fonction n'est appelée qu'au clic,
+    // longtemps après l'affectation du `const`.
+    const boutonMenu = bouton("⋮", "Renommer, ajouter la sélection, dissoudre…",
+      "", function () { ouvrirMenuGroupe(boutonMenu, groupe); });
+    actions.appendChild(boutonMenu);
+    entete.appendChild(actions);
+    item.appendChild(entete);
+
+    const liste = creer("ul", "ovl-groupe-membres");
+    membres.forEach(function (cle) {
+      liste.appendChild(itemElement(cle, scene.elements[cle]));
+    });
+    item.appendChild(liste);
+    brancherGlisser(item, groupe.id);
+    return item;
+  }
+
+  /** Le menu d'un groupe, posé sur `<body>` en `position: fixed`.
+   *
+   *  Pas dans la liste : celle-ci est en `overflow-y: auto` sur 420 px, et un
+   *  menu né dedans y serait rogné — c'est exactement pour ça que l'infobulle
+   *  vit déjà sur `<body>`. Il se ferme au défilement plutôt que de suivre : un
+   *  menu accroché à un bouton parti ailleurs est pire qu'un menu fermé.
+   */
+  function ouvrirMenuGroupe(hote, groupe) {
+    if (menuOuvert && menuOuvert.dataset.groupe === groupe.id) { fermerMenu(); return; }
+    fermerMenu();
+    const menu = creer("div", "ovl-menu ovl-menu-flottant");
+    menu.dataset.groupe = groupe.id;
+    const membres = membresPresents(groupe);
+    const aAjouter = selection().filter(function (c) {
+      return (groupe.membres || []).indexOf(c) < 0;
+    }).length;
+
+    actionMenu(menu, "Sélectionner les " + membres.length + " membres", true,
+      function () { selectionnerGroupe(groupe); });
+    actionMenu(menu, "Renommer", true, function () { renommerGroupe(groupe); });
+    actionMenu(menu, aAjouter
+      ? "Ajouter la sélection (" + aAjouter + ")"
+      : "Ajouter la sélection", aAjouter > 0, function () {
+        if (!aAjouter) {
+          notifier("Sélectionnez d'abord des éléments hors de « "
+            + groupe.nom + " ».", "error");
+          return;
+        }
+        ajouterAuGroupe(groupe);
+      });
+    actionMenu(menu, "Dissoudre le groupe", true, function () {
+      dissoudreGroupe(groupe);
+    });
+    menu.appendChild(creer("div", "ovl-menu-note",
+      "Dissoudre ne déplace rien et n'efface rien : les éléments gardent leur "
+      + "place, leur masquage et leur cadenas."));
+
+    document.body.appendChild(menu);
+    menuOuvert = menu;
+    menuHote = hote;
+    const r = hote.getBoundingClientRect();
+    const m = menu.getBoundingClientRect();
+    let gauche = r.right - m.width;
+    gauche = Math.max(8, Math.min(gauche, window.innerWidth - m.width - 8));
+    let haut = r.bottom + 4;
+    if (haut + m.height > window.innerHeight - 8) {
+      haut = Math.max(8, r.top - m.height - 4);
+    }
+    menu.style.left = gauche + "px";
+    menu.style.top = haut + "px";
+    setTimeout(function () {
+      document.addEventListener("pointerdown", fermerAuClicDehors, true);
+      document.addEventListener("scroll", fermerMenu, true);
+    }, 0);
   }
 
   function itemElement(cle, element) {
@@ -1123,6 +1571,16 @@ window.OverlayAdmin = (function () {
       "Afficher cet élément avec un contenu d'exemple, dans l'aperçu de CETTE "
       + "scène — jamais sur celle qui est à l'antenne.", "",
       function () { tester(cle); }));
+    // Le retrait n'apparaît QUE sur un membre : un quatrième bouton sur les
+    // trente-quatre lignes, dont vingt n'en ont que faire, encombrerait une
+    // colonne de 280 px pour rien.
+    const sien = groupeDe(cle);
+    if (sien) {
+      actions.appendChild(bouton("⊖",
+        "Retirer de « " + sien.nom + " » — l'élément ne bouge pas, il cesse "
+        + "seulement de suivre le groupe.", "",
+        function () { retirerDuGroupe(cle); }));
+    }
     item.appendChild(actions);
 
     item.addEventListener("click", function (evt) {
@@ -1248,37 +1706,54 @@ window.OverlayAdmin = (function () {
   }
 
   /** Le réordonnancement à la souris. L'ordre de la LISTE est l'empilement :
-   *  ce qui est en haut passe devant. */
-  function brancherGlisser(item, cle) {
+   *  ce qui est en haut passe devant.
+   *
+   *  `glisse` porte le NŒUD tiré, et non plus une clé d'élément : depuis les
+   *  groupes, ce nœud est tantôt une ligne, tantôt un en-tête et ses membres
+   *  d'un bloc.
+   *
+   *  ON NE RÉORDONNE QU'ENTRE VOISINS DE MÊME LISTE. Un membre glissé hors de
+   *  son groupe reviendrait à sa place au rendu suivant — le groupe le
+   *  rassemble —, et le geste passerait pour cassé. Sortir d'un groupe se fait
+   *  au ⊖ de la ligne, qui le dit.
+   */
+  function brancherGlisser(item, etiquette) {
     item.addEventListener("dragstart", function (evt) {
-      glisse = cle;
+      glisse = item;
       item.classList.add("glisse");
       if (evt.dataTransfer) {
         evt.dataTransfer.effectAllowed = "move";
         // Firefox n'amorce pas le glisser sans donnée transportée.
-        try { evt.dataTransfer.setData("text/plain", cle); } catch (e) { /* ignoré */ }
+        try { evt.dataTransfer.setData("text/plain", etiquette); } catch (e) { /* ignoré */ }
       }
+      // Sans quoi le groupe qui contient la ligne partirait AUSSI : les deux
+      // nœuds sont branchés, et l'événement remonte.
+      evt.stopPropagation();
     });
-    item.addEventListener("dragend", function () {
+    item.addEventListener("dragend", function (evt) {
       item.classList.remove("glisse");
       glisse = null;
+      evt.stopPropagation();
       appliquerOrdreDepuisDom();
     });
     item.addEventListener("dragover", function (evt) {
-      if (!glisse || glisse === cle) return;
+      if (!glisse || glisse === item) return;
+      // Listes différentes : on laisse REMONTER plutôt que d'avaler. Un groupe
+      // tiré au-dessus d'un membre d'un autre groupe doit se ranger avant ou
+      // après CE groupe-là, et c'est l'en-tête parent qui sait le faire.
+      if (glisse.parentNode !== item.parentNode) return;
       evt.preventDefault();
-      const porte = noeuds.listeElements.querySelector('[data-cle="' + glisse + '"]');
-      if (!porte) return;
+      evt.stopPropagation();
       const r = item.getBoundingClientRect();
       const avant = evt.clientY < r.top + r.height / 2;
-      noeuds.listeElements.insertBefore(porte, avant ? item : item.nextSibling);
+      item.parentNode.insertBefore(glisse, avant ? item : item.nextSibling);
     });
   }
 
   function appliquerOrdreDepuisDom() {
     const scene = sceneCourante();
     if (!scene || !noeuds.listeElements) return;
-    const ordre = [];
+    let ordre = [];
     noeuds.listeElements.querySelectorAll("[data-cle]").forEach(function (n) {
       ordre.push(n.dataset.cle);
     });
@@ -1288,6 +1763,10 @@ window.OverlayAdmin = (function () {
     Object.keys(scene.elements || {}).forEach(function (cle) {
       if (ordre.indexOf(cle) < 0) ordre.push(cle);
     });
+    // Le complètement ci-dessus ajoute EN FIN de liste : un membre de groupe qui
+    // aurait manqué à la liste s'y retrouverait détaché des siens. Le
+    // regroupement est refait, et il ne coûte rien quand il n'y a rien à faire.
+    ordre = ordreGroupe(ordre, scene.groupes || []);
     const identique = ordre.length === (scene.ordre || []).length
       && ordre.every(function (c, i) { return scene.ordre[i] === c; });
     if (identique) return;
@@ -2032,8 +2511,63 @@ window.OverlayAdmin = (function () {
       cadre.appendChild(rect);
     });
     majPoignees(largeur, hauteur);
+    placerCadresGroupes(largeur, hauteur);
     appliquerSurvol();
     rendreCompteMesures();
+  }
+
+  /** L'enveloppe d'un jeu de boîtes rendues. Pure — c'est elle qu'on teste. */
+  function boiteEnglobante(boites) {
+    if (!boites || !boites.length) return null;
+    let gauche = Infinity, haut = Infinity, droite = -Infinity, bas = -Infinity;
+    boites.forEach(function (g) {
+      gauche = Math.min(gauche, g.gauche);
+      haut = Math.min(haut, g.haut);
+      droite = Math.max(droite, g.droite);
+      bas = Math.max(bas, g.bas);
+    });
+    return { gauche: gauche, haut: haut, droite: droite, bas: bas,
+             largeur: droite - gauche, hauteur: bas - haut };
+  }
+
+  /** Le cadre englobant des groupes ENTIÈREMENT sélectionnés.
+   *
+   *  Vingt-six repères partent au même endroit : « qu'est-ce que je manipule »
+   *  est la question de tout ce panneau. Un trait autour des membres y répond
+   *  d'un coup d'œil, là où le liseré des lignes demande de compter.
+   *
+   *  Entièrement sélectionné, et pas « au moins un membre » : un cadre autour de
+   *  huit widgets dont trois seulement suivraient le prochain geste promettrait
+   *  ce qu'il ne tient pas.
+   *
+   *  Les cadres vivent HORS du calque, comme les poignées : celui-ci est vidé à
+   *  chaque rendu, et le cadre doit suivre le bloc PENDANT le geste
+   *  (`rafraichirManip`), quand plus rien n'est reconstruit.
+   */
+  function placerCadresGroupes(W, H) {
+    if (!noeuds.cadre) return;
+    (noeuds.cadresGroupes || []).forEach(function (n) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
+    noeuds.cadresGroupes = [];
+    const scene = sceneCourante();
+    if (!scene || !W || !H) return;
+    groupesScene().forEach(function (groupe) {
+      const membres = membresPresents(groupe);
+      if (!membres.length || !membres.every(estSelectionne)) return;
+      const boite = boiteEnglobante(membres.map(function (cle) {
+        return geometrie(cle, scene.elements[cle], W, H);
+      }));
+      if (!boite) return;
+      const noeud = creer("div", "ovl-cadre-groupe");
+      noeud.style.left = boite.gauche + "px";
+      noeud.style.top = boite.haut + "px";
+      noeud.style.width = boite.largeur + "px";
+      noeud.style.height = boite.hauteur + "px";
+      noeud.appendChild(creer("span", "ovl-cadre-groupe-nom", groupe.nom));
+      noeuds.cadre.appendChild(noeud);
+      noeuds.cadresGroupes.push(noeud);
+    });
   }
 
   // ── Le glisser, les poignées, le clavier ────────────────────────────────
@@ -2409,6 +2943,9 @@ window.OverlayAdmin = (function () {
         horsCadre(geometrie(m.cle, m.element, r.width, r.height), r.width, r.height));
     });
     placerPoignees(g);
+    // Le cadre du groupe suit le bloc pendant le geste : figé, il resterait
+    // derrière les membres qu'on vient de déplacer.
+    placerCadresGroupes(r.width, r.height);
     montrerGuides(manip.lignes);
     montrerCoords(g, r.width, r.height);
     rendreReglages();   // les champs X/Y/Taille suivent le geste
@@ -2480,6 +3017,8 @@ window.OverlayAdmin = (function () {
     ["Suppr", "masquer la sélection, ou la remontrer — sauf ce qui est "
               + "verrouillé"],
     ["L", "verrouiller la sélection, ou la libérer"],
+    ["G", "réunir la sélection en groupe (deux éléments au minimum)"],
+    ["Maj + G", "dissoudre les groupes de la sélection"],
     ["C puis V", "copier les réglages d'un élément (position, ancrage, "
                  + "échelle) et les coller sur la sélection"],
     ["?", "afficher ou masquer cette liste"],
@@ -2519,8 +3058,13 @@ window.OverlayAdmin = (function () {
    *  Le verrou LUI-MÊME fait exception, évidemment : sans quoi rien ne pourrait
    *  plus jamais le lever.
    */
-  function basculerChamp(champ, motActif, motInactif) {
-    const cles = selection();
+  function basculerChamp(champ, motActif, motInactif, surCes) {
+    // `surCes` : les clés visées, quand ce n'est pas la sélection — c'est le cas
+    // de l'œil et du cadenas d'un en-tête de groupe. Un groupe n'a PAS de
+    // `hidden` ni de `locked` à lui : le masquer, c'est masquer ses membres.
+    // Deux autorités sur la même question se contrediraient au premier membre
+    // masqué à la main.
+    const cles = surCes || selection();
     if (!cles.length) { notifier("Aucun élément sélectionné.", "error"); return; }
     const scene = sceneCourante();
     const tri = cibleBascule(scene, cles, champ);
@@ -2629,6 +3173,10 @@ window.OverlayAdmin = (function () {
       case "l": case "L":
         basculerChamp("locked", "verrouillés", "libérés");
         break;
+      // La majuscule EST la touche avec Maj : `evt.key` vaut "G" quand Maj est
+      // tenue, "g" sinon. Deux gestes voisins pour deux gestes inverses.
+      case "g": creerGroupe(); break;
+      case "G": degrouperSelection(); break;
       case "c": case "C": copierReglages(); break;
       case "v": case "V": collerReglages(); break;
       case "?": evt.preventDefault(); basculerAide(); break;
@@ -3001,6 +3549,15 @@ window.OverlayAdmin = (function () {
     outil(gh, "Bas", "Colle la sélection au bord BAS du cadre.", 1,
       function () { aligner("bas"); });
 
+    const gg = groupe("Grouper");
+    outil(gg, "Grouper", "Réunit la sélection sous un en-tête pliable : elle se "
+      + "déplace, se masque et se verrouille alors d'un seul geste. Deux "
+      + "éléments au minimum ; un élément n'appartient qu'à un groupe.", 2,
+      function () { creerGroupe(); });
+    outil(gg, "Dégrouper", "Dissout les groupes dont la sélection fait partie. "
+      + "Rien ne bouge, rien n'est effacé : seuls les en-têtes disparaissent.", 1,
+      function () { degrouperSelection(); });
+
     const gr = groupe("Répartir");
     outil(gr, "Horizontal", "Espaces égaux entre les éléments, de gauche à "
       + "droite. Les deux extrêmes ne bougent pas ; ceux du milieu se "
@@ -3347,5 +3904,22 @@ window.OverlayAdmin = (function () {
     cibleBascule: cibleBascule,
     repartitionEgale: repartitionEgale,
     repartir: repartir,
+    // Les groupes. `ordreGroupe` est le miroir de `_ordre_avec_groupes()`
+    // (Python) : deux calculs qui doivent rendre le MÊME empilement, sans quoi
+    // la liste et l'antenne racontent deux histoires. `boiteEnglobante` est le
+    // cadre qu'on voit sur la surface. Les deux sont pures.
+    ordreGroupe: ordreGroupe,
+    boiteEnglobante: boiteEnglobante,
+    groupesScene: groupesScene,
+    groupeDe: groupeDe,
+    membresPresents: membresPresents,
+    retirerDesGroupes: retirerDesGroupes,
+    normaliserOrdre: normaliserOrdre,
+    creerGroupe: creerGroupe,
+    dissoudreGroupe: dissoudreGroupe,
+    degrouperSelection: degrouperSelection,
+    selectionnerGroupe: selectionnerGroupe,
+    retirerDuGroupe: retirerDuGroupe,
+    ajouterAuGroupe: ajouterAuGroupe,
   };
 })();

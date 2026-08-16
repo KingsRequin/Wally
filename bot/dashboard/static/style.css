@@ -3668,6 +3668,76 @@ body.is-mobile .mobile-back-btn {
   color: var(--text-muted);
 }
 .ovl-el-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
+/* ── Les groupes d'éléments ──────────────────────────────────────────────
+   Un groupe est un bloc de la même liste : même verre, même rayon, un ton
+   au-dessus pour qu'on voie qu'il contient. */
+
+.ovl-groupe {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 2px;
+}
+.ovl-groupe.selectionne {
+  border-color: rgba(6, 182, 212, 0.45);
+  background: rgba(6, 182, 212, 0.06);
+}
+.ovl-groupe-entete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 2px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ovl-groupe-entete:hover { background: rgba(255, 255, 255, 0.04); }
+.ovl-groupe-chevron {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  padding: 4px 3px;
+}
+.ovl-groupe-corps {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+}
+.ovl-groupe-nom {
+  min-width: 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ovl-groupe.selectionne .ovl-groupe-nom { color: #06b6d4; }
+.ovl-groupe-compte { font-size: 0.62rem; color: var(--text-muted); flex-shrink: 0; }
+.ovl-groupe-membres {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Le décrochement qui dit « ceux-ci sont dedans ». Le trait vertical le
+     redit sans dépendre de la seule marge, illisible sur une liste dense. */
+  margin: 2px 0 2px 10px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ovl-groupe.selectionne .ovl-groupe-membres { border-left-color: rgba(6, 182, 212, 0.35); }
+/* Replié : les membres restent DANS LE DOCUMENT — c'est de là que sort
+   l'empilement (`appliquerOrdreDepuisDom`) — mais ils ne s'affichent plus. */
+.ovl-groupe.replie .ovl-groupe-membres { display: none; }
+.ovl-groupe.glisse { opacity: 0.4; }
+
+/* Le menu d'un groupe, posé sur `<body>` : la liste des éléments est en
+   `overflow-y: auto` et l'aurait rogné. */
+.ovl-menu.ovl-menu-flottant { position: fixed; top: 0; left: 0; right: auto; }
 .ovl-act {
   background: transparent;
   border: 1px solid transparent;
@@ -3967,6 +4037,32 @@ body.is-mobile .mobile-back-btn {
 /* Le rectangle de sélection, tracé sur le fond. `pointer-events: none` : posé
    dans le calque, il passerait sinon sous le pointeur et volerait au calque les
    `pointermove` du geste qui le dessine. */
+/* Le cadre englobant d'un groupe entièrement sélectionné. DISCRET : il dit ce
+   qu'on manipule, il ne doit pas devenir le sujet du cadre. Trait fin, cyan
+   assourdi, aucun fond — vingt-six repères se superposent déjà là-dessous.
+   `pointer-events: none` : il couvre les repères qu'il entoure, et les avaler
+   rendrait le groupe insaisissable. */
+.ovl-cadre-groupe {
+  position: absolute;
+  border: 1px dashed rgba(6, 182, 212, 0.45);
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 56;
+}
+.ovl-cadre-groupe-nom {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 0 6px;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #06b6d4;
+  background: rgba(13, 17, 23, 0.85);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 .ovl-bande {
   position: absolute;
   border: 1px dashed rgba(6, 182, 212, 0.9);
