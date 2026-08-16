@@ -3130,6 +3130,148 @@ window.OverlayAdmin = (function () {
     finirOutil(bouge, bloc.bloques);
   }
 
+  // ── Propager d'une scène aux autres ─────────────────────────────────────
+  //
+  // Trente-quatre éléments × trois scènes = cent deux réglages. Poser un widget
+  // puis refaire le geste sur chaque scène est le travail que ce panneau existe
+  // pour éviter — et c'est le seul endroit où la répétition est MÉCANIQUE : la
+  // place d'un élément ne dépend pas de la scène, sa VISIBILITÉ si.
+  //
+  // D'où le partage : le PLACEMENT se propage (position, ancrage, échelle), la
+  // visibilité NON. C'est elle qui distingue les trois habillages — le bingo
+  // masqué au démarrage, visible en jeu (docs/plans/2026-08-15…, « Le modèle » :
+  // « `hidden` est par scène. C'est lui qui fait tout le travail des trois
+  // habillages »). L'emporter par défaut effacerait en un clic le seul réglage
+  // qui donne un sens aux scènes. La case la fait voyager quand on le DEMANDE.
+  //
+  // Ne partent pas non plus, et c'est délibéré : `solo` et `wally_visible` (des
+  // règles d'affichage, pas un placement), l'ORDRE et les GROUPES (une scène de
+  // fin n'a pas le découpage d'une scène de jeu). Le libellé du bouton dit ce
+  // qui part, la confirmation le redit.
+  const CHAMPS_PROPAGES = ["x", "y", "anchor", "scale"];
+
+  /** Les scènes autres que celle qu'on édite. */
+  function autresScenes() {
+    const scenes = (etat.layout && etat.layout.scenes) || [];
+    return scenes.filter(function (s) { return s.slug !== etat.slugCourant; });
+  }
+
+  /** Ce qu'une propagation ÉCRIRAIT, scène de destination par scène de
+   *  destination. Séparée de l'écriture, et pure : c'est elle qui alimente la
+   *  demande de confirmation, et annoncer « 12 éléments dans 2 scènes » suppose
+   *  de les avoir comptés pour de vrai — pas d'avoir multiplié deux longueurs.
+   *
+   *  Un élément déjà identique ne compte PAS : « 12 réglages écrasés » sur une
+   *  scène qu'on vient de propager serait faux, et un chiffre faux dans une
+   *  demande de confirmation vaut moins que pas de chiffre du tout.
+   *
+   *  Un élément verrouillé dans la scène de DESTINATION est mis de côté, pas
+   *  écrit : le cadenas retient ici comme partout ailleurs dans ce panneau, et
+   *  une propagation est justement le geste le plus facile à lancer sur trop
+   *  d'éléments à la fois.
+   */
+  function planPropagation(source, cles, champs) {
+    const plan = [];
+    autresScenes().forEach(function (cible) {
+      const ecrits = [], bloques = [];
+      (cles || []).forEach(function (cle) {
+        const de = (source.elements || {})[cle];
+        const vers = (cible.elements || {})[cle];
+        if (!de || !vers) return;
+        if (vers.locked) { bloques.push(cle); return; }
+        const change = champs.some(function (c) { return vers[c] !== de[c]; });
+        if (change) ecrits.push(cle);
+      });
+      plan.push({ scene: cible, ecrits: ecrits, bloques: bloques });
+    });
+    return plan;
+  }
+
+  /** Applique un plan. Rend le nombre d'éléments réellement écrits. */
+  function appliquerPropagation(source, plan, champs) {
+    let ecrits = 0;
+    plan.forEach(function (p) {
+      p.ecrits.forEach(function (cle) {
+        const de = source.elements[cle], vers = p.scene.elements[cle];
+        champs.forEach(function (c) { vers[c] = de[c]; });
+        ecrits += 1;
+      });
+    });
+    return ecrits;
+  }
+
+  /** Le geste : recopier le placement de `cles` vers TOUTES les autres scènes.
+   *
+   *  `quoi` sert au message — « la sélection » ou « la scène entière » —, le
+   *  calcul est le même : une scène entière n'est qu'une sélection de
+   *  trente-quatre clés.
+   *
+   *  Une propagation silencieuse qui écrase un réglage fait à la main est
+   *  exactement ce qu'on ne pardonne pas : la confirmation dit COMBIEN
+   *  d'éléments et DANS QUELLES scènes, nommément.
+   */
+  function propager(cles, quoi) {
+    const source = sceneCourante();
+    if (!source || !etat.layout) return;
+    const autres = autresScenes();
+    if (!autres.length) {
+      notifier("Il n'y a qu'une scène : il n'y a nulle part où propager.", "error");
+      return;
+    }
+    if (!cles.length) { notifier("Aucun élément sélectionné.", "error"); return; }
+    const avecVis = !!(noeuds.propagerVisibilite && noeuds.propagerVisibilite.checked);
+    const champs = avecVis ? CHAMPS_PROPAGES.concat(["hidden"]) : CHAMPS_PROPAGES;
+    const plan = planPropagation(source, cles, champs);
+    let total = 0, bloques = 0;
+    plan.forEach(function (p) { total += p.ecrits.length; bloques += p.bloques.length; });
+    if (!total) {
+      notifier(bloques
+        ? "Rien à propager : les " + bloques + " élément(s) concerné(s) sont "
+          + "verrouillés dans les autres scènes."
+        : "Rien à propager : " + quoi + " est déjà à la même place partout.",
+        bloques ? "error" : "success");
+      return;
+    }
+    const detail = plan.filter(function (p) { return p.ecrits.length; })
+      .map(function (p) {
+        return "  · « " + p.scene.nom + " » : " + p.ecrits.length + " élément(s) — "
+          + p.ecrits.map(libelle).join(", ");
+      }).join("\n");
+    if (!window.confirm(
+        "Copier le placement (position, ancrage, échelle"
+        + (avecVis ? ", VISIBILITÉ" : "") + ") de « " + source.nom
+        + " » vers les autres scènes ?\n\n"
+        + total + " réglage(s) seront ÉCRASÉS :\n" + detail + "\n\n"
+        + (avecVis
+           ? "⚠ La visibilité part AUSSI : ce qui est masqué ici le sera là-bas.\n"
+             + "C'est elle qui distingue vos scènes — décochez la case pour la "
+             + "laisser intacte."
+           : "La visibilité propre à chaque scène n'est PAS touchée.")
+        + (bloques ? "\n\n" + bloques + " élément(s) verrouillé(s) dans les scènes "
+                     + "de destination ne bougeront pas." : "")
+        + "\n\nComme tout le reste ici, la modification passe par le brouillon.")) {
+      return;
+    }
+    const ecrits = appliquerPropagation(source, plan, champs);
+    // UNE modification pour toute l'opération : en compter une par élément
+    // afficherait « 68 modifications non publiées » pour un seul clic.
+    marquerModifie();
+    rendreTout();
+    notifier(ecrits + " réglage(s) propagé(s) depuis « " + source.nom + " » vers "
+      + plan.filter(function (p) { return p.ecrits.length; }).length + " scène(s)"
+      + (avecVis ? ", visibilité comprise" : ", visibilité inchangée") + "."
+      + (bloques ? " " + bloques + " verrouillé(s) n'ont pas bougé." : ""));
+  }
+
+  /** Toutes les clés de la scène — la propagation « scène entière ». Prises
+   *  dans `ordre` : c'est la liste qui fait foi, et elle est complétée par le
+   *  serveur à chaque enregistrement. */
+  function clesScene() {
+    const scene = sceneCourante();
+    if (!scene) return [];
+    return (scene.ordre || []).filter(function (c) { return !!scene.elements[c]; });
+  }
+
   function dansUnChamp(noeud) {
     if (!noeud || !noeud.tagName) return false;
     if (noeud.isContentEditable) return true;
@@ -3571,6 +3713,33 @@ window.OverlayAdmin = (function () {
       + "Les deux extrêmes ne bougent pas. Trois éléments libres au minimum.", 3,
       function () { repartir(false); });
 
+    // Le plus gros gain de temps du panneau : trente-quatre éléments × trois
+    // scènes se règlent une fois, pas trois.
+    const gp = groupe("Propager");
+    outil(gp, "Sélection → autres scènes",
+      "Copie la position, l'ancrage et l'échelle des éléments sélectionnés vers "
+      + "TOUTES les autres scènes. La visibilité ne part que si la case ci-contre "
+      + "est cochée. Une confirmation dit combien d'éléments et dans quelles "
+      + "scènes avant d'écrire quoi que ce soit.", 1,
+      function () { propager(selection(), "la sélection"); });
+    outil(gp, "Scène → autres scènes",
+      "Le même geste sur les trente-quatre éléments de cette scène d'un coup. "
+      + "Ni l'ordre d'empilement, ni les groupes ne partent : une scène de fin "
+      + "n'a pas le découpage d'une scène de jeu.", 0,
+      function () { propager(clesScene(), "cette scène"); });
+    const vis = creer("label", "ovl-propager-vis");
+    noeuds.propagerVisibilite = document.createElement("input");
+    noeuds.propagerVisibilite.type = "checkbox";
+    vis.appendChild(noeuds.propagerVisibilite);
+    vis.appendChild(creer("span", null, "avec la visibilité"));
+    // DÉCOCHÉE, et le titre dit pourquoi : `hidden` est ce qui distingue les
+    // trois habillages. L'emporter par défaut effacerait d'un clic le seul
+    // réglage qui donne un sens aux scènes.
+    vis.title = "Décoché (le défaut) : ce qui est masqué dans une scène le reste, "
+      + "c'est justement ce qui distingue vos scènes — le bingo masqué au "
+      + "démarrage, visible en jeu. Coché : le masquage part avec le placement.";
+    gp.appendChild(vis);
+
     // Le « ? » à droite, hors des groupes : il ne porte pas sur la sélection,
     // et il reste cliquable quand tout le reste est grisé — c'est justement
     // quand on ne sait pas quoi faire qu'on le cherche.
@@ -3908,6 +4077,17 @@ window.OverlayAdmin = (function () {
     cibleBascule: cibleBascule,
     repartitionEgale: repartitionEgale,
     repartir: repartir,
+    // La propagation d'une scène aux autres. `planPropagation` est pure et
+    // décide de TOUT : ce qui est écrasé, ce que le cadenas retient, et le
+    // chiffre annoncé dans la confirmation. C'est elle qu'on teste — un
+    // décompte faux dans une demande de confirmation est pire que pas de
+    // chiffre du tout.
+    CHAMPS_PROPAGES: CHAMPS_PROPAGES,
+    autresScenes: autresScenes,
+    planPropagation: planPropagation,
+    appliquerPropagation: appliquerPropagation,
+    propager: propager,
+    clesScene: clesScene,
     // Les groupes. `ordreGroupe` est le miroir de `_ordre_avec_groupes()`
     // (Python) : deux calculs qui doivent rendre le MÊME empilement, sans quoi
     // la liste et l'antenne racontent deux histoires. `boiteEnglobante` est le

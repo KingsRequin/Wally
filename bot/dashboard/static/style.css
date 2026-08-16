@@ -4300,6 +4300,20 @@ body.is-mobile .mobile-back-btn {
 /* Grisé et non caché : un bouton qui apparaît et disparaît au gré de la
    sélection fait sauter la barre sous le pointeur, et on clique à côté. */
 .ovl-outil:disabled { opacity: 0.35; cursor: default; }
+/* La case « avec la visibilité » de la propagation. Dans le groupe et non à
+   côté : c'est un modificateur des deux boutons qui la précèdent, pas un
+   réglage de plus — la lire ailleurs qu'entre eux ne dirait pas sur quoi elle
+   porte. */
+.ovl-propager-vis {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ovl-propager-vis input { cursor: pointer; }
 /* Le « ? » ne porte pas sur la sélection : il reste à droite, et il reste
    cliquable quand tout le reste est grisé — c'est justement quand on ne sait
    pas quoi faire qu'on le cherche. */
