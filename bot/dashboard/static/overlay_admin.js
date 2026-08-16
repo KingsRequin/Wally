@@ -2110,6 +2110,21 @@ window.OverlayAdmin = (function () {
    */
   function styleApercu(element, largeurCadre) {
     const W = window.WallyLayout;
+    const voulue = (element.scale || 1) * (largeurCadre / CANVAS_W);
+    if (!W || typeof W.styleDepuisElement !== "function") {
+      // Repli : la surface reste lisible même si le module de placement manque.
+      // Une surface vide passerait pour une panne du serveur.
+      return {
+        left: element.x + "%", top: element.y + "%",
+        transform: "translate(-50%, -50%) scale(" + voulue + ")",
+        transformOrigin: "left top",
+      };
+    }
+    const facteur = W.facteurCanvas() || 1;
+    return W.styleDepuisElement(
+      Object.assign({}, element, { scale: voulue / facteur }));
+  }
+
   // ── Les chevauchements ──────────────────────────────────────────────────
   //
   // Deux éléments qui peuvent être à l'écran EN MÊME TEMPS et qui se recouvrent
@@ -2243,21 +2258,6 @@ window.OverlayAdmin = (function () {
            + "affichent rien. Le ▶ de leur ligne les affiche, et la mesure "
            + "arrive d'elle-même."
          : "");
-  }
-
-    const voulue = (element.scale || 1) * (largeurCadre / CANVAS_W);
-    if (!W || typeof W.styleDepuisElement !== "function") {
-      // Repli : la surface reste lisible même si le module de placement manque.
-      // Une surface vide passerait pour une panne du serveur.
-      return {
-        left: element.x + "%", top: element.y + "%",
-        transform: "translate(-50%, -50%) scale(" + voulue + ")",
-        transformOrigin: "left top",
-      };
-    }
-    const facteur = W.facteurCanvas() || 1;
-    return W.styleDepuisElement(
-      Object.assign({}, element, { scale: voulue / facteur }));
   }
 
   // ── L'aperçu : la vraie page, dans une iframe ───────────────────────────
@@ -2594,6 +2594,11 @@ window.OverlayAdmin = (function () {
     const largeur = boite ? boite.width : 0;
     const hauteur = boite ? boite.height : 0;
     const ordre = scene.ordre || Object.keys(scene.elements || {});
+    // Calculé AVANT la boucle : la marque orange et l'infobulle de chaque repère
+    // en dépendent, et il faut connaître tous les voisins pour juger d'un seul.
+    const chevauchent = analyserChevauchements(scene, largeur, hauteur);
+    const enChevauchement = {};
+    chevauchent.cles.forEach(function (c) { enChevauchement[c] = true; });
     ordre.forEach(function (cle, rang) {
       const element = scene.elements[cle];
       if (!element) return;
@@ -2630,6 +2635,10 @@ window.OverlayAdmin = (function () {
       const deborde = largeur > 0
         && horsCadre(geometrie(cle, element, largeur, hauteur), largeur, hauteur);
       if (deborde) rect.classList.add("hors-cadre");
+      // Deux éléments qui cohabitent et se recouvrent : illisibles en direct.
+      // Signalé ici, avant que les viewers le découvrent.
+      const recouvre = !!enChevauchement[cle];
+      if (recouvre) rect.classList.add("chevauche");
       rect.appendChild(creer("span", "ovl-rect-nom",
         (mesure.reelle ? "" : "≈ ") + libelle(cle)));
       // La taille est DITE, en pixels du canvas 1920, et sa provenance avec :
@@ -2661,6 +2670,9 @@ window.OverlayAdmin = (function () {
     placerCadresGroupes(largeur, hauteur);
     appliquerSurvol();
     rendreCompteMesures();
+    // La barre d'état seulement : les classes sont déjà posées par la boucle
+    // ci-dessus, à partir de la MÊME analyse.
+    direChevauchements(chevauchent);
   }
 
   /** L'enveloppe d'un jeu de boîtes rendues. Pure — c'est elle qu'on teste. */
@@ -2859,11 +2871,6 @@ window.OverlayAdmin = (function () {
       droite: Math.max(m.depart.x, m.courant.x) / 100 * r.width,
       haut: Math.min(m.depart.y, m.courant.y) / 100 * r.height,
       bas: Math.max(m.depart.y, m.courant.y) / 100 * r.height,
-    // Calculé AVANT la boucle : la marque orange et l'infobulle de chaque repère
-    // en dépendent, et il faut connaître tous les voisins pour juger d'un seul.
-    const chevauchent = analyserChevauchements(scene, largeur, hauteur);
-    const enChevauchement = {};
-    chevauchent.cles.forEach(function (c) { enChevauchement[c] = true; });
     };
   }
 
@@ -2900,10 +2907,6 @@ window.OverlayAdmin = (function () {
 
   function retirerBande() {
     if (noeuds.bande && noeuds.bande.parentNode) {
-      // Deux éléments qui cohabitent et se recouvrent : illisibles en direct.
-      // Signalé ici, avant que les viewers le découvrent.
-      const recouvre = !!enChevauchement[cle];
-      if (recouvre) rect.classList.add("chevauche");
       noeuds.bande.parentNode.removeChild(noeuds.bande);
     }
   }
@@ -2933,9 +2936,6 @@ window.OverlayAdmin = (function () {
     etat.ancreSelection = etat.elementCourant;
     nettoyerSelection();
     rendreSelection();
-    // La barre d'état seulement : les classes sont déjà posées par la boucle
-    // ci-dessus, à partir de la MÊME analyse.
-    direChevauchements(chevauchent);
   }
 
   function capturer(evt) {
@@ -4448,8 +4448,6 @@ window.OverlayAdmin = (function () {
     selectionnerGroupe: selectionnerGroupe,
     retirerDuGroupe: retirerDuGroupe,
     ajouterAuGroupe: ajouterAuGroupe,
-  };
-})();
     // Le détecteur de chevauchement. Pur, et c'est là que se joue le seul
     // arbitrage qui compte : on ne compare que ce qui COHABITE, et jamais sur
     // une taille supposée — une fausse alerte apprend à ne plus regarder
@@ -4459,3 +4457,5 @@ window.OverlayAdmin = (function () {
     surfaceCommune: surfaceCommune,
     analyserChevauchements: analyserChevauchements,
     texteChevauchements: texteChevauchements,
+  };
+})();
