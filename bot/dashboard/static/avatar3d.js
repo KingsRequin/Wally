@@ -46,6 +46,13 @@ precision highp float;
 uniform vec2  uTaille;
 uniform float uTemps;
 
+/* « Assez loin pour ne jamais gagner un min ». Toute la scène tient dans une
+   dizaine d'unités, donc 10 000 suffisent — et surtout, PAS 1e9 : ce genre de
+   constante ne survit qu'en haute précision, et si un pilote retombe en
+   précision moyenne (maximum ≈ 65 000) elle devient l'infini, puis un NaN à la
+   première soustraction. C'est un classique du clignotement sur GPU intégré. */
+const float LOIN = 1.0e4;
+
 /* ─────────────────────────────────────────────────── primitives exactes ── */
 
 float smin(float a, float b, float k) {
@@ -55,7 +62,12 @@ float smin(float a, float b, float k) {
 
 float sdEllipsoide(vec3 p, vec3 r) {
   float k0 = length(p / r);
-  float k1 = length(p / (r * r));
+  /* 🚨 Au CENTRE exact de l'ellipsoïde, k0 et k1 valent zéro : la formule rend
+     0/0, donc NaN. Le cas n'est pas théorique — traversee() sonde le champ à
+     l'INTÉRIEUR du corps, et un de ses points peut tomber sur un centre (celui
+     d'un œil, notamment, qui est petit). Le NaN remonte ensuite par les min et
+     les smin et noircit le pixel. */
+  float k1 = max(length(p / (r * r)), 1e-7);
   return k0 * (k0 - 1.0) / k1;
 }
 
@@ -70,7 +82,7 @@ float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
    faire. Formulation exacte d'Inigo Quilez. */
 float sdConeRond(vec3 p, vec3 a, vec3 b, float r1, float r2) {
   vec3 ba = b - a;
-  float l2 = max(dot(ba, ba), 1e-9);
+  float l2 = max(dot(ba, ba), 1e-6);
   float rr = r1 - r2;
   float a2 = l2 - rr * rr;
 
@@ -161,7 +173,7 @@ float langue(vec3 p, float az, vec3 B, vec3 M, vec3 T, float r0, float aplat,
   q.z = B.z + (q.z - B.z) / aplat;
 
   vec3 p0 = B;
-  float d = 1e9;
+  float d = LOIN;
   for (int i = 1; i <= 4; i++) {
     float u = float(i) * 0.25;
     vec3 p1 = bezier(B, m, t, u);
@@ -198,7 +210,7 @@ float detache(vec3 p, vec3 base, float derive, float montee, float r0,
               float periode, float decalage) {
   float u = fract(uTemps / periode + decalage);
   float r = r0 * (1.0 - u) * smoothstep(0.0, 0.16, u);
-  if (r < 0.006) return 1e9;
+  if (r < 0.006) return LOIN;
 
   vec3 c = base + vec3(derive * u + 0.04 * sin(uTemps * 1.9 + decalage * 11.0),
                        montee * pow(u, 0.72), 0.0);
@@ -291,9 +303,14 @@ vec3 normale(vec3 p) {
   /* Gradient par tétraèdre : quatre évaluations au lieu des six d'une
      différence centrée sur les trois axes. */
   const vec2 e = vec2(1.0, -1.0) * 0.0018;
-  return normalize(
-      e.xyy * carte(p + e.xyy).x + e.yyx * carte(p + e.yyx).x
-    + e.yxy * carte(p + e.yxy).x + e.xxx * carte(p + e.xxx).x);
+  vec3 g = e.xyy * carte(p + e.xyy).x + e.yyx * carte(p + e.yyx).x
+         + e.yxy * carte(p + e.yxy).x + e.xxx * carte(p + e.xxx).x;
+  /* 🚨 normalize(vec3(0)) rend NaN. Le gradient s'annule là où le champ est
+     plat — au point de rencontre exact de deux formes fondues, ou dans une
+     zone que la borne d'optimisation d'une langue rend constante. Un seul
+     pixel suffit à faire une étincelle noire qui saute d'une image à l'autre. */
+  float l = length(g);
+  return l > 1e-8 ? g / l : vec3(0.0, 1.0, 0.0);
 }
 
 /* Ombre douce en une seule marche : la pénombre se déduit de la distance au
@@ -364,7 +381,11 @@ vec3 aces(vec3 x) {
 }
 
 void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uTaille) / uTaille.y;
+  /* Ceinture ET bretelles : le filtre côté JavaScript empêche déjà d'envoyer
+     une taille nulle, mais le shader ne doit JAMAIS pouvoir diviser par zéro —
+     un uniforme non encore écrit vaut zéro à la première image. */
+  vec2 taille = max(uTaille, vec2(1.0));
+  vec2 uv = (gl_FragCoord.xy - 0.5 * taille) / taille.y;
 
   vec3 ro = vec3(0.0, 0.10, 3.55);
   vec3 rd = normalize(vec3(uv * 0.62, -1.0));
@@ -456,6 +477,15 @@ void main() {
 
   col = aces(col);
   col = pow(col, vec3(1.0 / 2.2));
+
+  /* Filet de sortie. Si une valeur non finie a malgré tout traversé, on sort
+     TRANSPARENT et non noir : sur un overlay, un trou invisible passe inaperçu
+     là où un rectangle noir se voit de toute la chaîne. Le test s'écrit en
+     « pas ≥ 0 » parce qu'une comparaison avec un NaN est toujours fausse. */
+  if (!(col.r >= 0.0) || !(col.g >= 0.0) || !(col.b >= 0.0)) {
+    gl_FragColor = vec4(0.0);
+    return;
+  }
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -500,6 +530,11 @@ export function creerWally(canvas, surPanne) {
   let anim = 0;
   let coutImage = 0;
   let precedente = 0;
+  /* Compté et AFFICHÉ, pas seulement corrigé : le défaut ne se reproduit pas
+     sur la machine de développement. Si le clignotement persiste malgré le
+     filtre, ce compteur dira si la cause est bien là — ou s'il faut chercher
+     ailleurs. Un correctif qu'on ne peut pas confirmer n'est qu'une hypothèse. */
+  let mesuresNulles = 0;
 
   /* 🚨 Un contexte WebGL peut être perdu à tout moment sans que rien ne lève :
      pilote qui redémarre, veille, mémoire vidéo réclamée par le jeu. Le canevas
@@ -533,6 +568,14 @@ export function creerWally(canvas, surPanne) {
   }
 
   function redimensionner(largeur, hauteur) {
+    /* 🚨 Un ResizeObserver se déclenche AUSSI avec une taille nulle : onglet
+       masqué, élément en display:none, source redimensionnée dans OBS. Sans ce
+       filtre, uTaille tombe à zéro, la division qui donne la direction du rayon
+       produit des NaN — et un NaN ment sur la comparaison d'arrêt de la marche.
+       Selon le pilote, elle répond « touché », le shader ombre du vide, et
+       clamp(NaN) sort NOIR OPAQUE sur tout le cadre. C'est l'explication du
+       clignotement : une image sur deux part d'une mesure vide. */
+    if (!(largeur > 0) || !(hauteur > 0)) { mesuresNulles++; return; }
     renderer.setSize(largeur, hauteur, false);
     const d = renderer.getPixelRatio();
     uniforms.uTaille.value.set(largeur * d, hauteur * d);
@@ -542,8 +585,9 @@ export function creerWally(canvas, surPanne) {
   return {
     redimensionner,
     /** Intervalle moyen entre deux images, en millisecondes — donc le coût
-     *  réel, dessin compris. 16,7 ms = 60 images par seconde. */
-    mesures: () => ({ ms: coutImage }),
+     *  réel, dessin compris. 16,7 ms = 60 images par seconde. `nulles` compte
+     *  les redimensionnements à taille vide interceptés. */
+    mesures: () => ({ ms: coutImage, nulles: mesuresNulles }),
     arreter() {
       cancelAnimationFrame(anim);
       materiau.dispose();

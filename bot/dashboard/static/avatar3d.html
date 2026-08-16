@@ -156,9 +156,12 @@
          d'un jeu. Autant le lire ici plutôt que de le supposer. */
       const mesures = document.getElementById("mesures");
       setInterval(() => {
-        const ms = wally.mesures().ms;
+        const { ms, nulles } = wally.mesures();
         const ips = ms > 0 ? Math.round(1000 / ms) : 0;
-        mesures.textContent = `${ms.toFixed(1)} ms/image · ${ips} images/s`;
+        /* Les redimensionnements vides ne sont affichés QUE s'il y en a : un
+           compteur à zéro en permanence finit par ne plus être lu. */
+        mesures.textContent = `${ms.toFixed(1)} ms/image · ${ips} images/s`
+          + (nulles ? ` · ${nulles} mesure(s) vide(s) interceptée(s)` : "");
       }, 500);
     } catch (e) {
       /* La maquette DIT ce qui a échoué — c'est sa raison d'être — mais elle
