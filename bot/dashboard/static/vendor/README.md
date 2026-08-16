@@ -58,29 +58,16 @@ dépend de three.js aujourd'hui** : l'overlay sert toujours `avatar/wally.webm`.
 ⚠️ `THREE.Clock` est déprécié depuis r185 — utiliser `performance.now()` ou
 `THREE.Timer`.
 
-## MarchingCubes (addon three.js 0.185.1)
+### Addon `MarchingCubes` — retiré le 2026-08-16
 
-- Source : <https://unpkg.com/three@0.185.1/examples/jsm/objects/MarchingCubes.js>
-- Licence : MIT — celle de three.js, voir `LICENSE-three.txt`
-- sha256 amont : `fe9c6ace2c079bf540befd164ce492de98c820d8b86a722b1060833d42ad9c80`
-- sha256 local : `f22973b54d1476a9d5e423a3e58ec33f03d2a720cf371f8efc9cd6ecbdee8a8a`
+Il a été vendorisé puis **supprimé** : `avatar3d.js` ne polygonise plus rien, la
+flamme est tracée au rayon depuis une fonction de distance. Si un besoin de
+métaballes revient un jour, deux pièges avaient été relevés à l'usage :
+`addBall()` attend du **0..1** alors que le maillage sort en **−1 à 1**, et la
+portée de fusion vaut `rayon × √((isolation + soustrait) / soustrait)` — avec le
+`soustrait = 12` des exemples officiels elle atteint 2,7 rayons, et toutes les
+formes se soudent en une patate.
 
-**Seule modification** — l'import, qui pointe sur le three local :
-
-```
--} from 'three';
-+} from './three.module.min.js';
-```
-
-C'est la seule façon de charger un addon `three/addons/…` sans bundler ni
-import map. Refaire ce `sed` à chaque mise à jour de three.
-
-Utilisé par `avatar3d.js` : le corps de Wally est une union de métaballes
-polygonisée à chaque image. Deux pièges relevés à l'usage :
-
-- `addBall(x, y, z, force, soustrait)` attend des coordonnées dans **0..1**, mais
-  le maillage produit va de **−1 à 1**. Tout ce qu'on pose dessus doit donc être
-  converti (`× 2 − 1`).
-- La portée de fusion d'une boule vaut `rayon × √((isolation + soustrait) / soustrait)`.
-  Avec le `soustrait = 12` des exemples officiels, elle atteint 2,7 rayons et
-  toutes les formes se soudent en une patate. `avatar3d.js` utilise 45.
+Pour le récupérer : `curl https://unpkg.com/three@0.185.1/examples/jsm/objects/MarchingCubes.js`
+puis remplacer `from 'three'` par `from './three.module.min.js'` — seule façon de
+charger un addon `three/addons/…` sans bundler ni import map.

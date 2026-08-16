@@ -130,27 +130,44 @@
     const canvas = document.getElementById("canvas-wally");
     const erreur = document.getElementById("erreur");
 
+    /* Repli : le rendu 3D n'est pas garanti (pilote, WebGL absent, contexte
+       perdu). Sur l'overlay ce sera obligatoire — un trou noir en plein live
+       est pire que pas d'avatar. La maquette le fait déjà, pour éprouver le
+       chemin de secours autant que le chemin nominal. */
+    function replier(raison) {
+      const cadre = canvas.parentElement;
+      if (cadre.querySelector("video")) return;
+      canvas.remove();
+      const video = document.createElement("video");
+      Object.assign(video, { src: "/static/avatar/wally.webm", autoplay: true, loop: true, muted: true, playsInline: true });
+      cadre.appendChild(video);
+      console.warn("Repli sur wally.webm :", raison);
+    }
+
     try {
-      const wally = creerWally(canvas);
+      const wally = creerWally(canvas, replier);
       const cadre = canvas.parentElement;
       const ajuster = () => wally.redimensionner(cadre.clientWidth, cadre.clientHeight);
       new ResizeObserver(ajuster).observe(cadre);
       ajuster();
 
-      /* La surface est repolygonisée en JS à chaque image : c'est le poste qui
-         décidera si l'avatar tient dans OBS à côté d'un jeu. Autant le lire ici
-         plutôt que de le supposer. */
+      /* La flamme est tracée au rayon, donc son coût est proportionnel aux
+         PIXELS : c'est le poste qui décidera si l'avatar tient dans OBS à côté
+         d'un jeu. Autant le lire ici plutôt que de le supposer. */
       const mesures = document.getElementById("mesures");
       setInterval(() => {
-        const m = wally.mesures();
-        mesures.textContent = `${m.ms.toFixed(1)} ms/image · ${m.triangles} triangles`;
+        const ms = wally.mesures().ms;
+        const ips = ms > 0 ? Math.round(1000 / ms) : 0;
+        mesures.textContent = `${ms.toFixed(1)} ms/image · ${ips} images/s`;
       }, 500);
     } catch (e) {
-      /* Une page de maquette qui reste blanche ne dit rien. Sur l'overlay, le
-         même échec devra retomber sur `wally.webm` — pas afficher un message. */
+      /* La maquette DIT ce qui a échoué — c'est sa raison d'être — mais elle
+         replie quand même sur la vidéo : un cadre vide ne prouve rien, et le
+         chemin de secours doit être éprouvé ici avant de l'être en live. */
       erreur.style.display = "block";
       erreur.textContent = "Rendu 3D indisponible : " + e.message;
       console.error(e);
+      replier(e.message);
     }
 
     const choisirFond = (nom) => {

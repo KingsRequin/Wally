@@ -5,518 +5,548 @@
  *
  * ── La méthode, et pourquoi celle-là ──────────────────────────────────────
  *
- * Wally n'est PAS une goutte : c'est un feu, avec des langues charnues qui
- * montent, se courbent et retombent. Trois méthodes ont été essayées avant
- * celle-ci, et chacune a échoué pour une raison STRUCTURELLE, pas de réglage :
+ * Wally est un feu : des langues charnues qui montent, se courbent, s'effilent.
+ * Quatre méthodes à MAILLAGE ont été essayées, et chacune a échoué pour une
+ * raison structurelle — pas un réglage :
  *
  *  1. Profil de révolution (`LatheGeometry`) → une goutte. Une silhouette
  *     convexe reste une goutte quoi qu'on l'effile.
- *  2. Une boule + des langues en maillages séparés qui s'y enfoncent → les deux
+ *  2. Boule + langues en maillages séparés qui s'y enfoncent → les deux
  *     s'INTERSECTENT au lieu de fusionner : « perruque sur citrouille ».
- *  3. Une icosphère déplacée par un champ radial R(direction) → un rayon parti
- *     du centre ne peut décrire qu'un CÔNE, jamais un doigt : « cristal ».
+ *  3. Icosphère déplacée par un champ radial R(direction) → un rayon parti du
+ *     centre ne décrit qu'un CÔNE, jamais un doigt : « cristal ».
+ *  4. Métaballes polygonisées (marching cubes) → l'union est enfin continue,
+ *     mais un champ de métaballes ARRONDIT tout : aucune pointe nette. Et la
+ *     surface est reconstruite sur une grille, donc les extrémités fines
+ *     partent en bouillie dès que le détail passe sous le pas de la grille.
  *
- * Ce qui est en place : des MÉTABALLES fondues par marching cubes. Le corps est
- * une grosse boule, chaque langue une CHAÎNE de boules décroissantes le long
- * d'une courbe. Le champ de potentiel s'additionne, donc l'union est lisse et
- * continue par nature — il n'y a aucune jonction à cacher, et une chaîne de
- * boules décrit un doigt courbé, ce qu'aucune des trois méthodes ne savait
- * faire.
+ * Ici : PLUS DE MAILLAGE DU TOUT. La flamme est une fonction de distance
+ * signée (SDF), tracée au rayon dans le fragment shader. Conséquences directes
+ * sur les deux défauts qui restaient :
  *
- * Le rendu est LISSE et non facetté : le low poly était une contrainte qu'on
- * s'était donnée au départ, pas une exigence, et les flammes 3D visées sont
- * douces. `MarchingCubes` sort ses normales du gradient du champ, donc le lissé
- * ne coûte rien de plus.
+ *  - une langue est une courbe de Bézier balayée par une section qui s'effile
+ *    jusqu'à un VRAI point : la finesse est celle du pixel, plus celle d'une
+ *    maille. Plus de bouillie, plus de rectangles ;
+ *  - ombres douces, occlusion ambiante et translucidité se lisent directement
+ *    dans le champ de distance. C'est ce qui sépare un rendu de studio d'un
+ *    rendu « jeu de navigateur », et ici ça ne coûte qu'un rayon de plus.
  *
- * Tout est en chiffres — longueur des langues, largeur, courbure, teinte — donc
- * tout se branchera un jour sur les cinq émotions.
+ * Tout est en chiffres — courbe, largeur, effilement, teinte — donc tout se
+ * branchera un jour sur les cinq émotions.
+ *
+ * Références de technique : Inigo Quilez, « Raymarching Distance Fields » et
+ * « Soft shadows in raymarched SDFs » (iquilezles.org). Les primitives
+ * `sdRoundCone` / `sdEllipsoid` viennent de sa liste, elles sont exactes.
  */
 import * as THREE from "/static/vendor/three.module.min.js";
-import { MarchingCubes } from "/static/vendor/MarchingCubes.js";
 
-/* ------------------------------------------------------------------ palette */
+const FRAGMENT = /* glsl */ `
+precision highp float;
 
-/* Rampe de température. L'orange de Wally (#FE7249, relevé sur `wally.webm`)
-   est placé au niveau du VISAGE : c'est là qu'on reconnaît le personnage, le
-   reste du dégradé n'est que du feu autour. */
-const RAMPE = [
-  [0.00, 0xa8280f],
-  [0.16, 0xd53d1c],
-  [0.32, 0xfe7249],
-  [0.50, 0xff8a33],
-  [0.66, 0xffa528],
-  [0.83, 0xffc040],
-  [1.00, 0xffe479],
-];
-/* Bornes verticales du dégradé, dans le repère du maillage (qui va de −1 à 1). */
-const COL_BAS = -0.92;
-const COL_HAUT = 0.94;
+uniform vec2  uTaille;
+uniform float uTemps;
 
-/* Rampe précalculée. Les couleurs sont réécrites à chaque image — la forme
-   bouge, le dégradé doit rester accroché à la hauteur RÉELLE — et une table
-   d'indices coûte une multiplication là où `Color.lerp` coûterait deux
-   conversions d'espace colorimétrique par sommet. */
-const PALIERS = 96;
-const LUT = new Float32Array(PALIERS * 3);
-{
-  const a = new THREE.Color(), b = new THREE.Color(), c = new THREE.Color();
-  for (let i = 0; i < PALIERS; i++) {
-    const t = i / (PALIERS - 1);
-    let k = 1;
-    while (k < RAMPE.length - 1 && t > RAMPE[k][0]) k++;
-    const [t0, c0] = RAMPE[k - 1], [t1, c1] = RAMPE[k];
-    a.setHex(c0);
-    b.setHex(c1);
-    c.copy(a).lerp(b, (t - t0) / (t1 - t0));
-    LUT[i * 3] = c.r;
-    LUT[i * 3 + 1] = c.g;
-    LUT[i * 3 + 2] = c.b;
+/* ─────────────────────────────────────────────────── primitives exactes ── */
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float sdEllipsoide(vec3 p, vec3 r) {
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / k1;
+}
+
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+
+/* Cône à bouts ronds. C'est LA primitive de la flamme : en passant r2 = 0, il
+   se termine sur un point exact — ce qu'aucun maillage ni métaballe ne sait
+   faire. Formulation exacte d'Inigo Quilez. */
+float sdConeRond(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a;
+  float l2 = max(dot(ba, ba), 1e-9);
+  float rr = r1 - r2;
+  float a2 = l2 - rr * rr;
+
+  /* 🚨 Cône DÉGÉNÉRÉ : quand l'écart des rayons dépasse la longueur, une boule
+     avale l'autre et a2 passe sous zéro — sqrt() rend alors NaN. Le NaN
+     contamine tout le champ par les min/smin, la comparaison de la marche
+     devient imprévisible, et l'image ENTIÈRE vire au noir opaque.
+     Constaté en prod à t ≈ 3,4 s : le cycle de vie raccourcissait une langue
+     sous son propre rayon de base. Un cas de bord de trois images sur cent,
+     mais total quand il arrive. Ici la forme est exactement une boule, donc on
+     la renvoie telle quelle plutôt que de rafistoler la racine. */
+  if (a2 <= 0.0) return length(p - (rr > 0.0 ? a : b)) - max(r1, r2);
+
+  float il2 = 1.0 / l2;
+  vec3 pa = p - a;
+  float y = dot(pa, ba);
+  float z = y - l2;
+  vec3 xv = pa * l2 - ba * y;
+  float x2 = dot(xv, xv);
+  float y2 = y * y * l2;
+  float z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+
+vec3 bezier(vec3 a, vec3 b, vec3 c, float t) {
+  float u = 1.0 - t;
+  return u * u * a + 2.0 * u * t * b + t * t * c;
+}
+
+/* ────────────────────────────────────────────────────────── la flamme ── */
+
+/* Une langue de feu.
+ *
+ * 🚨 Deux erreurs font une PIEUVRE plutôt qu'un feu, et il a fallu les deux
+ * pour s'en sortir : une langue qui s'ÉCARTE de l'axe en montant est un
+ * tentacule (une flamme monte), et une langue à section RONDE est un tentacule
+ * même droite (une vraie langue est une lame, large de face et mince de
+ * profil). D'où le repère tourné puis aplati, et une trajectoire qui reste à
+ * distance constante de l'axe.
+ *
+ * az place la langue autour de l'axe — donc aussi en PROFONDEUR. C'est leur
+ * chevauchement, et non leur écartement, qui donne son volume au feu. */
+float langue(vec3 p, float az, vec3 B, vec3 M, vec3 T, float r0, float aplat,
+             float phase, float vitesse, float periode, float decalage) {
+  float c = cos(-az), s = sin(-az);
+  vec3 q = vec3(c * p.x - s * p.z, p.y, s * p.x + c * p.z);
+
+  /* 🚨 LA VIE DE LA LANGUE. Sans ce cycle, une langue ne fait que se balancer :
+     elle garde la même longueur pour toujours et le feu se lit comme un objet
+     qui vibre. Une vraie langue NAÎT, s'allonge, tient, puis se rétracte et
+     cède la place. C'est ce cycle — et non l'agitation de la pointe — qui fait
+     qu'on lit « feu ».
+     Le facteur de vie multiplie AUSSI la montée : au raccord du cycle (u → 1)
+     la vie vaut 0, donc rien ne saute quand le compteur repasse à zéro. */
+  float u = fract(uTemps / periode + decalage);
+  float vie = smoothstep(0.0, 0.20, u) * (1.0 - smoothstep(0.60, 1.0, u));
+  /* Le plancher n'est pas décoratif : sous ~0,55 la langue devient plus courte
+     que son propre rayon de base, et ses segments dégénèrent. On garde donc de
+     la marge en plus du garde-fou de sdConeRond — une ceinture ET des
+     bretelles, parce que le symptôme est une image entièrement noire. */
+  float allonge = 0.55 + 0.45 * vie;
+
+  /* Le milieu balance, la pointe fouette deux fois plus, et les deux sinus ne
+     sont pas harmoniques — une seule fréquence donnerait un battement qu'on
+     repère au bout de trois secondes. */
+  float sw  = sin(uTemps * vitesse + phase);
+  float sw2 = sin(uTemps * vitesse * 1.63 + phase * 1.7);
+  vec3 m = mix(B, M, allonge) + vec3(0.055 * sw, 0.020 * sw2, 0.0);
+  vec3 t = mix(B, T, allonge)
+         + vec3(0.130 * sw2, 0.075 * sw + 0.13 * u * vie, 0.0);
+
+  /* Borne : la langue tient dans cette capsule, donc la distance à la capsule
+     MINORE la distance à la langue — c'est ce qui rend le raccourci licite
+     pour le tracé de rayon. Sans lui, les quatre cônes seraient évalués pour
+     chaque pixel du cadre, même vide. */
+  /* 🚨 Le seuil doit dépasser le rayon de fusion (smin) le plus large, sinon le
+     raccourci renvoie une distance MINORÉE juste assez près pour peser dans le
+     smin : le corps se met à bomber là où la borne s'active, avec une arête
+     franche au seuil. Vu à l'écran, en travers de la joue. */
+  float db = sdCapsule(q, B, t, r0 + 0.16);
+  if (db > 0.30) return db;
+
+  /* Lame : on écrase la PROFONDEUR autour du plan de la langue, pas la
+     trajectoire — sinon la courbe se déplacerait avec l'aplatissement. */
+  q.z = B.z + (q.z - B.z) / aplat;
+
+  vec3 p0 = B;
+  float d = 1e9;
+  for (int i = 1; i <= 4; i++) {
+    float u = float(i) * 0.25;
+    vec3 p1 = bezier(B, m, t, u);
+    /* Onde qui REMONTE la langue : la phase décroît avec u, donc une crête
+       part de la base et file vers la pointe. Avec un plus elle descendrait —
+       un feu qui coule vers le bas se remarque tout de suite, même sans savoir
+       dire pourquoi. C'est ce terme qui donne le mouvement d'ascension ; le
+       balancement ci-dessus ne fait que remuer la langue en bloc. */
+    p1.x += 0.050 * u * sin(uTemps * 3.6 - u * 6.0 + phase);
+    /* Le rayon tombe à ZÉRO au dernier point : la pointe est un point, pas une
+       calotte. L'exposant < 1 fait tenir la matière sur les deux tiers de la
+       course avant de s'effiler d'un coup — c'est cette rupture, et non la
+       finesse de la pointe, qui donne le coup de fouet. */
+    float ra = r0 * pow(1.0 - (u - 0.25), 0.62);
+    float rb = r0 * pow(1.0 - u, 0.62);
+    d = min(d, sdConeRond(q, p0, p1, ra, rb));
+    p0 = p1;
   }
+  return d * aplat;
 }
 
-/* ------------------------------------------------------------------- champ */
+/* Un morceau de flamme qui se détache.
+ *
+ * Il NAÎT à l'intérieur du feu, monte en ralentissant, rétrécit, et s'éteint.
+ * La séparation n'est pas jouée : elle arrive toute seule, parce que le fondu
+ * (smin) qui le rattache au corps cesse d'agir dès qu'il s'en éloigne. C'est
+ * ce qui manque le plus à une flamme qui ne fait que s'agiter — sans rien qui
+ * s'en échappe, elle reste un objet, jamais une combustion.
+ *
+ * Disparaître demande de RETIRER la primitive : un cône dont les deux rayons
+ * tombent à zéro dégénère en segment, et un segment se dessine encore — un
+ * cheveu qui reste à l'écran. D'où la sortie franche sous un rayon sub-pixel. */
+float detache(vec3 p, vec3 base, float derive, float montee, float r0,
+              float periode, float decalage) {
+  float u = fract(uTemps / periode + decalage);
+  float r = r0 * (1.0 - u) * smoothstep(0.0, 0.16, u);
+  if (r < 0.006) return 1e9;
 
-/* `MarchingCubes` attend ses boules en coordonnées 0..1 et rend un maillage
-   dans −1..1. Tout le modèle est donc écrit en 0..1, `y` vers le haut. */
-
-/* Le champ d'une boule vaut `force / d² − SOUSTRAIT`, et la surface est là où
-   la somme atteint ISOLATION. D'où, pour une boule seule :
-   rayon de surface = √(force / (ISOLATION + SOUSTRAIT)).
-   On raisonne donc en RAYONS (ce qui se voit) et `force()` fait la conversion —
-   régler une « force » à l'aveugle serait ingérable. */
-/* `SOUSTRAIT` règle la PORTÉE de fusion : une boule influence le champ jusqu'à
-   rayon × √((ISOLATION + SOUSTRAIT) / SOUSTRAIT). À 15, la portée valait 2,5
-   rayons et toutes les langues se soudaient en un seul bloc ; à 45 elle tombe à
-   1,7, assez pour fondre les jonctions sans effacer les creux. C'est LE réglage
-   qui décide si l'on voit un feu ou une patate. */
-const ISOLATION = 80;
-const SOUSTRAIT = 45;
-const force = (rayon) => rayon * rayon * (ISOLATION + SOUSTRAIT);
-
-/* Le corps. Deux boules plutôt qu'une : une seule donne une bille, deux
-   décalées donnent une masse d'œuf, plus lourde du bas. */
-const CORPS = [
-  { x: 0.5, y: 0.230, z: 0.5, rayon: 0.225 },
-  { x: 0.5, y: 0.345, z: 0.5, rayon: 0.190 },
-];
-
-/* Les langues. `rb`/`yb` = où la chaîne commence (DANS le corps : une langue
-   qui démarre à la surface montre sa première boule et se lit comme une corne),
-   `rt`/`yt` = où elle finit. `cambrure` la fait bomber latéralement — sans elle
-   la chaîne est un segment, donc une pique. `boules` : plus il y en a, plus la
-   langue est lisse ; moins il y en a, plus elle est bosselée.
-   Hauteurs et largeurs délibérément inégales : un feu régulier lit « couronne ». */
-const LANGUES = [
-  { az: -0.35, rb: 0.050, yb: 0.38, rt: 0.17, yt: 0.96, cambrure:  0.060, r0: 0.092, r1: 0.014, boules: 13, pulse: 0.62, phase: 0.0 },
-  { az:  0.85, rb: 0.090, yb: 0.36, rt: 0.26, yt: 0.84, cambrure: -0.050, r0: 0.080, r1: 0.013, boules: 11, pulse: 0.83, phase: 1.7 },
-  { az: -1.60, rb: 0.120, yb: 0.34, rt: 0.31, yt: 0.80, cambrure:  0.045, r0: 0.072, r1: 0.012, boules: 10, pulse: 0.71, phase: 3.1 },
-  { az:  2.20, rb: 0.120, yb: 0.32, rt: 0.29, yt: 0.76, cambrure: -0.038, r0: 0.064, r1: 0.011, boules: 9, pulse: 0.94, phase: 4.4 },
-  { az:  3.00, rb: 0.060, yb: 0.38, rt: 0.19, yt: 0.90, cambrure:  0.040, r0: 0.076, r1: 0.013, boules: 12, pulse: 0.55, phase: 5.2 },
-  { az:  0.32, rb: 0.045, yb: 0.42, rt: 0.14, yt: 0.79, cambrure: -0.035, r0: 0.060, r1: 0.011, boules: 10, pulse: 1.07, phase: 2.4 },
-];
-
-/* Les boules du corps ne bougent pas : leur liste est figée une fois pour
-   toutes et sert aussi à poser le visage. */
-const BOULES_CORPS = CORPS.map((b) => ({ ...b, f: force(b.rayon) }));
-
-/* Tampon des boules de langues, réécrit à chaque image. Un tableau réutilisé
-   plutôt qu'un `map()` par image : la boucle tourne 60 fois par seconde. */
-const BOULES_LANGUES = [];
-for (const l of LANGUES) {
-  for (let i = 0; i < l.boules; i++) BOULES_LANGUES.push({ x: 0, y: 0, z: 0, f: 0 });
+  vec3 c = base + vec3(derive * u + 0.04 * sin(uTemps * 1.9 + decalage * 11.0),
+                       montee * pow(u, 0.72), 0.0);
+  /* Une goutte pointue vers le haut, comme la flamme dont elle vient. */
+  return sdConeRond(p, c, c + vec3(0.0, r * 3.0, 0.0), r, 0.0);
 }
 
-/** Replace toutes les boules de langues pour l'instant `t`. */
-function pousser(t) {
-  let n = 0;
-  for (const l of LANGUES) {
-    /* Deux sinus non harmoniques : une seule fréquence donnerait un battement
-       régulier, donc une boucle qu'on repère au bout de trois secondes. */
-    const vie = 1
-      + 0.13 * Math.sin(t * l.pulse * 2.4 + l.phase)
-      + 0.06 * Math.sin(t * l.pulse * 5.1 + l.phase * 2.3);
-    /* L'ondulation REMONTE la langue : la phase décroît avec `v`, donc la vague
-       voyage vers la pointe. Avec un plus elle descendrait — et un feu qui
-       coule vers le bas se remarque immédiatement, sans savoir dire pourquoi. */
-    const sin = Math.sin(l.az), cos = Math.cos(l.az);
+/* Matériaux : 1 = feu, 2 = trait du visage, 3 = reflet de l'œil. */
+vec2 plusProche(vec2 a, vec2 b) { return a.x < b.x ? a : b; }
 
-    for (let i = 0; i < l.boules; i++) {
-      const v = i / (l.boules - 1);
-      /* Le rayon s'écarte de l'axe en accélérant : la langue part droite et ne
-         se couche qu'en fin de course, ce qui lui donne son crochet. */
-      const r = l.rb + (l.rt - l.rb) * Math.pow(v, 1.7);
-      const y = l.yb + (l.yt - l.yb) * v * vie;
-      /* Cambrure fixe + ondulation vivante, toutes deux tangentielles. */
-      const tang = l.cambrure * Math.sin(Math.PI * v)
-        + 0.035 * v * v * Math.sin(t * 2.4 - v * 3.6 + l.phase);
+/* Le corps : deux ellipsoïdes fondus, plus lourd du bas. Une seule sphère se
+   lit « tête » ; deux masses décalées donnent un œuf qui se referme vers le
+   haut, d'où les langues sortent en prolongement au lieu d'y être plantées. */
+float corps(vec3 p) {
+  float bas  = sdEllipsoide(p - vec3(0.0, -0.40, 0.0), vec3(0.62, 0.56, 0.60));
+  float haut = sdEllipsoide(p - vec3(0.0,  0.02, 0.0), vec3(0.50, 0.46, 0.48));
+  return smin(bas, haut, 0.26);
+}
 
-      const b = BOULES_LANGUES[n++];
-      b.x = 0.5 + sin * r + cos * tang;
-      b.y = y;
-      b.z = 0.5 + cos * r - sin * tang;
-      /* La racine carrée sur (1 − v) fait tenir la largeur sur les deux tiers de
-         la course avant de l'effiler d'un coup. Une décroissance en `v` — même
-         adoucie — amincissait la langue dès le départ : on obtenait une antenne
-         au lieu d'une flamme. C'est cette rupture, et pas la finesse de la
-         pointe, qui donne le coup de fouet. */
-      b.f = force(l.r1 + (l.r0 - l.r1) * Math.sqrt(1 - v));
-    }
+float feu(vec3 p) {
+  /* Flux ascendant. Une déformation du REPÈRE, dont la phase décroît avec la
+     hauteur : tout ce qui est décrit ensuite se met à défiler vers le haut, y
+     compris la masse du corps. C'est le mouvement de fond ; sans lui, seules
+     les pointes remuent et le feu a l'air posé.
+     Elle démarre au-dessus du visage — un front qui ondule n'est pas une
+     flamme, c'est un défaut. */
+  float k = smoothstep(0.05, 0.75, p.y);
+  vec3 w = p;
+  w.x += 0.034 * k * sin(p.y * 4.0 - uTemps * 3.1);
+  w.z += 0.024 * k * cos(p.y * 3.4 - uTemps * 2.5);
+
+  float d = corps(w);
+
+  /* Cinq langues, délibérément inégales en hauteur, en largeur et en cadence,
+     et surtout aux cycles de vie DÉPHASÉS : si elles poussaient ensemble, le
+     feu entier respirerait comme un poumon. Le smin les fait naître DU corps —
+     un min les y collerait avec une arête visible. */
+  d = smin(d, langue(w,  0.10, vec3(0.0, -0.05, 0.12), vec3(0.05, 0.48, 0.12), vec3(-0.07, 1.06, 0.12), 0.225, 0.40, 0.0, 1.30, 3.30, 0.00), 0.15);
+  d = smin(d, langue(w, -1.00, vec3(0.0, -0.15, 0.36), vec3(0.09, 0.30, 0.36), vec3( 0.17, 0.80, 0.36), 0.190, 0.38, 1.7, 1.62, 2.60, 0.37), 0.13);
+  d = smin(d, langue(w,  1.25, vec3(0.0, -0.15, 0.36), vec3(-0.08, 0.27, 0.36), vec3(-0.16, 0.70, 0.36), 0.175, 0.38, 3.1, 1.44, 2.90, 0.71), 0.13);
+  d = smin(d, langue(w,  2.60, vec3(0.0, -0.08, 0.20), vec3(0.07, 0.40, 0.20), vec3( 0.14, 0.92, 0.20), 0.185, 0.38, 5.2, 1.18, 3.70, 0.19), 0.13);
+  d = smin(d, langue(w, -2.15, vec3(0.0, -0.20, 0.34), vec3(-0.07, 0.18, 0.34), vec3(-0.13, 0.55, 0.34), 0.155, 0.36, 4.4, 1.86, 2.30, 0.55), 0.12);
+
+  /* Les morceaux qui s'échappent. Sur le repère NON déformé : ils ont quitté
+     le flux, ils ne doivent plus le suivre. */
+  d = smin(d, detache(p, vec3( 0.06, 0.62, 0.10), -0.10, 0.62, 0.085, 2.70, 0.00), 0.06);
+  d = smin(d, detache(p, vec3(-0.20, 0.46, 0.22),  0.13, 0.78, 0.062, 3.40, 0.42), 0.05);
+  d = smin(d, detache(p, vec3( 0.24, 0.38, 0.14),  0.09, 0.55, 0.048, 2.20, 0.78), 0.05);
+  return d;
+}
+
+/* Le visage. En union FRANCHE (min) et non fondue : un trait qui se fond
+   dans la joue n'est plus un trait. */
+vec2 visage(vec3 p) {
+  vec3 ps = vec3(abs(p.x), p.y, p.z);          // symétrie : un œil pour deux
+
+  /* 🚨 Les profondeurs (z) suivent la surface RÉELLE du corps, qui recule
+     fortement quand on monte et quand on s'écarte du milieu. Posées à une
+     profondeur unique, les extrémités des sourcils et les coins de la bouche
+     passent SOUS la peau et disparaissent — c'est ce qui les avait effacés. */
+  float oeil = sdEllipsoide(ps - vec3(0.235, -0.11, 0.440), vec3(0.125, 0.142, 0.125));
+  vec2 d = vec2(oeil, 2.0);
+
+  /* Reflet en blanc pur, décalé vers le haut à l'intérieur du globe : c'est lui
+     qui fait qu'un œil REGARDE au lieu d'être un trou. */
+  float reflet = length(ps - vec3(0.195, -0.052, 0.535)) - 0.038;
+  d = plusProche(d, vec2(reflet, 3.0));
+
+  /* Sourcil : deux capsules en chevron, extrémité extérieure relevée. C'est ce
+     seul angle qui, plus tard, portera l'essentiel de l'émotion. */
+  float s1 = sdCapsule(ps, vec3(0.115, 0.135, 0.425), vec3(0.265, 0.165, 0.378), 0.035);
+  float s2 = sdCapsule(ps, vec3(0.265, 0.165, 0.378), vec3(0.400, 0.130, 0.278), 0.032);
+  d = plusProche(d, vec2(min(s1, s2), 2.0));
+
+  /* Bouche : trois capsules qui dessinent un sourire. Un tore serait plus
+     élégant mais s'enfoncerait par les bouts sur une surface bombée. */
+  float b1 = sdCapsule(p, vec3(-0.185, -0.395, 0.545), vec3(-0.075, -0.465, 0.570), 0.033);
+  float b2 = sdCapsule(p, vec3(-0.075, -0.465, 0.570), vec3( 0.075, -0.465, 0.570), 0.033);
+  float b3 = sdCapsule(p, vec3( 0.075, -0.465, 0.570), vec3( 0.185, -0.395, 0.545), 0.033);
+  d = plusProche(d, vec2(min(min(b1, b2), b3), 2.0));
+
+  return d;
+}
+
+vec2 carte(vec3 p) {
+  return plusProche(vec2(feu(p), 1.0), visage(p));
+}
+
+vec3 normale(vec3 p) {
+  /* Gradient par tétraèdre : quatre évaluations au lieu des six d'une
+     différence centrée sur les trois axes. */
+  const vec2 e = vec2(1.0, -1.0) * 0.0018;
+  return normalize(
+      e.xyy * carte(p + e.xyy).x + e.yyx * carte(p + e.yyx).x
+    + e.yxy * carte(p + e.yxy).x + e.xxx * carte(p + e.xxx).x);
+}
+
+/* Ombre douce en une seule marche : la pénombre se déduit de la distance au
+   plus proche obstacle rencontrée en chemin. C'est l'astuce qui donne des
+   ombres de studio pour le prix d'un rayon. */
+float ombre(vec3 p, vec3 l) {
+  float res = 1.0;
+  float t = 0.03;
+  /* 16 pas et non 24 : au-delà, on paie une pénombre que personne ne distingue
+     sur un avatar de 200 px. Ombre, occlusion, traversée et normale coûtent
+     chacune une évaluation COMPLÈTE du champ par pixel touché — c'est là que
+     part le budget, pas dans la marche principale. */
+  for (int i = 0; i < 16; i++) {
+    float h = carte(p + l * t).x;
+    res = min(res, 10.0 * h / t);
+    t += clamp(h, 0.02, 0.20);
+    if (res < 0.005 || t > 2.5) break;
   }
+  return clamp(res, 0.0, 1.0);
 }
 
-/** Valeur du champ en un point, pour les boules données. Sert à POSER le visage
- *  sur la vraie surface : la deviner reviendrait à la voir dériver au premier
- *  réglage de rayon. */
-function champ(x, y, z, boules) {
-  let s = 0;
-  for (let i = 0; i < boules.length; i++) {
-    const b = boules[i];
-    const dx = x - b.x, dy = y - b.y, dz = z - b.z;
-    const val = b.f / (0.000001 + dx * dx + dy * dy + dz * dz) - SOUSTRAIT;
-    if (val > 0) s += val;
+/* Occlusion ambiante : on compare la distance réelle à la distance parcourue
+   le long de la normale. Dans un creux, la surface reste proche — donc sombre.
+   C'est ce qui creuse les interstices entre les langues. */
+float occlusion(vec3 p, vec3 n) {
+  float occ = 0.0, poids = 1.0;
+  for (int i = 0; i < 4; i++) {
+    float h = 0.02 + 0.13 * float(i);
+    occ += (h - carte(p + n * h).x) * poids;
+    poids *= 0.72;
   }
-  return s;
+  return clamp(1.0 - 2.2 * occ, 0.0, 1.0);
 }
 
-/* Surface de référence pour poser le visage : le corps ET les langues figées à
-   l'instant 0. Le corps seul ne suffit pas — les langues gonflent la surface
-   autour d'elles, et un œil placé sur le corps nu se retrouve SOUS la peau.
-   Figée, et non recalculée : sinon le sourcil bondirait à chaque battement. */
-const BOULES_REPOS = [];
-function figerLeRepos() {
-  pousser(0);
-  BOULES_REPOS.length = 0;
-  BOULES_REPOS.push(...BOULES_CORPS, ...BOULES_LANGUES.map((b) => ({ ...b })));
-}
-
-/** Distance du centre du corps à sa surface, dans une direction unitaire.
- *  Dichotomie : le champ décroît en 1/d², il n'y a pas de forme fermée. */
-const CENTRE = [0.5, 0.30, 0.5];
-function surfaceCorps(dx, dy, dz) {
-  let bas = 0.0, haut = 0.6;
-  for (let i = 0; i < 24; i++) {
-    const m = (bas + haut) / 2;
-    if (champ(CENTRE[0] + dx * m, CENTRE[1] + dy * m, CENTRE[2] + dz * m, BOULES_REPOS) > ISOLATION) {
-      bas = m;
-    } else {
-      haut = m;
-    }
+/* Translucidité : on sonde le champ SOUS la surface, dans la direction de la
+   lumière. Là où la matière est mince — les pointes — la lumière traverse et
+   la flamme s'allume par l'intérieur. Sans ça, une flamme n'est qu'un objet
+   orange ; c'est ce terme qui la rend incandescente. */
+float traversee(vec3 p, vec3 n, vec3 l) {
+  float acc = 0.0;
+  for (int i = 1; i <= 3; i++) {
+    float h = 0.075 * float(i);
+    acc += max(0.0, -carte(p - n * 0.01 + l * h).x);
   }
-  return (bas + haut) / 2;
+  return clamp(1.0 - acc * 4.2, 0.0, 1.0);
 }
 
-/* ------------------------------------------------------------------- visage */
-
-/* Un noir chaud plutôt qu'un noir pur : sous une lumière rasante, le noir pur
-   s'aplatit et les yeux se décollent du visage. */
-const TRAIT = 0x2a0f06;
-
-/* Le visage, en directions (azimut, élévation) : le champ ne sait répondre qu'à
-   une direction. Élévations négatives = sous l'équateur du corps. */
-const AZ_OEIL = 0.36;
-const EL_OEIL = 0.02;
-const EL_SOURCIL = 0.44;
-const EL_BOUCHE = -0.44;
-
-/* Le maillage sortant de `MarchingCubes` va de −1 à 1 quand le modèle est écrit
-   en 0..1 : tout ce qui est posé dessus doit donc être exprimé au DOUBLE. */
-const ECHELLE = 2;
-
-const _p = new THREE.Vector3();
-
-/** Pose un élément SUR la surface du corps, tourné vers l'extérieur. */
-function poser(obj, azimut, elevation, avance = 0) {
-  const ce = Math.cos(elevation);
-  const dx = Math.sin(azimut) * ce, dy = Math.sin(elevation), dz = Math.cos(azimut) * ce;
-  const r = surfaceCorps(dx, dy, dz) + avance;
-  _p.set(
-    (CENTRE[0] + dx * r) * ECHELLE - 1,
-    (CENTRE[1] + dy * r) * ECHELLE - 1,
-    (CENTRE[2] + dz * r) * ECHELLE - 1,
-  );
-  obj.position.copy(_p);
-  /* `lookAt` oriente le +z de l'objet vers la cible ; les traits du visage sont
-     dessinés face à +z. On vise donc loin DEVANT, le long de la normale. */
-  obj.lookAt(_p.x + dx, _p.y + dy, _p.z + dz);
+/* Rampe de température, en LINÉAIRE (la conversion sRGB se fait en sortie).
+   L'orange de Wally (#FE7249, relevé sur wally.webm) tombe au niveau du
+   VISAGE : c'est là qu'on reconnaît le personnage, le reste n'est que du feu
+   autour. */
+vec3 couleurFeu(float y) {
+  float t = clamp((y + 1.05) / 2.50, 0.0, 1.0);
+  vec3 c = mix(vec3(0.29, 0.014, 0.003), vec3(0.59, 0.042, 0.007), smoothstep(0.00, 0.18, t));
+  c = mix(c, vec3(0.99, 0.166, 0.066), smoothstep(0.16, 0.38, t));
+  c = mix(c, vec3(1.00, 0.263, 0.033), smoothstep(0.45, 0.62, t));
+  c = mix(c, vec3(1.00, 0.381, 0.019), smoothstep(0.62, 0.74, t));
+  c = mix(c, vec3(1.00, 0.545, 0.050), smoothstep(0.76, 0.88, t));
+  c = mix(c, vec3(1.00, 0.744, 0.191), smoothstep(0.90, 1.00, t));
+  return c;
 }
 
-/* Tailles exprimées par rapport au rayon du corps (~0.42 après fusion des deux
-   boules, en unités de maillage) : ainsi le visage garde ses proportions si on
-   regrossit le corps. */
-const R_CORPS = 0.52;
-
-function creerOeil() {
-  const oeil = new THREE.Group();
-  const globe = new THREE.Mesh(
-    new THREE.SphereGeometry(R_CORPS * 0.20, 14, 10),
-    new THREE.MeshStandardMaterial({ color: TRAIT, roughness: 0.32 }),
-  );
-  globe.scale.y = 1.12;
-  oeil.add(globe);
-  /* Reflet en `MeshBasicMaterial` : il doit rester blanc franc quelle que soit
-     l'orientation. Une lumière le ferait griser dès que Wally se détourne. */
-  const reflet = new THREE.Mesh(
-    new THREE.SphereGeometry(R_CORPS * 0.056, 10, 8),
-    new THREE.MeshBasicMaterial({ color: 0xffffff }),
-  );
-  reflet.position.set(-R_CORPS * 0.060, R_CORPS * 0.068, R_CORPS * 0.13);
-  oeil.add(reflet);
-  return oeil;
+/* ACES, version compacte de Krzysztof Narkowicz. Sans tone mapping, tout ce
+   qui dépasse 1 est écrêté à plat et les zones éclairées virent au blanc mat —
+   la signature la plus reconnaissable d'un rendu bâclé. */
+vec3 aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
-function creerVisage() {
-  const visage = new THREE.Group();
-  const matTrait = new THREE.MeshStandardMaterial({ color: TRAIT, roughness: 0.4 });
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uTaille) / uTaille.y;
 
-  const oeilG = creerOeil(), oeilD = creerOeil();
-  poser(oeilG, -AZ_OEIL, EL_OEIL, -0.02);
-  poser(oeilD, AZ_OEIL, EL_OEIL, -0.02);
+  vec3 ro = vec3(0.0, 0.10, 3.55);
+  vec3 rd = normalize(vec3(uv * 0.62, -1.0));
 
-  /* Sourcils en arc, pas en barre : le dessin d'origine les a courbés, et une
-     boîte droite donnait deux accents circonflexes flottants. L'arc part de +x,
-     donc `π/2 − arc/2` le recentre vers le haut. */
-  const ARC = 1.15;
-  const geomSourcil = new THREE.TorusGeometry(R_CORPS * 0.30, R_CORPS * 0.058, 6, 12, ARC);
-  const sourcilG = new THREE.Mesh(geomSourcil, matTrait);
-  const sourcilD = new THREE.Mesh(geomSourcil, matTrait);
-  /* Avance POSITIVE : sur une surface convexe, les extrémités d'un arc
-     s'enfoncent bien plus que son milieu. À fleur de peau, le sourcil
-     disparaît par les bouts. */
-  poser(sourcilG, -AZ_OEIL, EL_SOURCIL, 0.05);
-  poser(sourcilD, AZ_OEIL, EL_SOURCIL, 0.05);
-  /* `rotateZ` APRÈS `lookAt`, dans le repère local : `rotation.z = …` écraserait
-     l'orientation que `poser` vient d'établir. Extrémités extérieures relevées,
-     l'air ouvert et neutre du dessin actuel — c'est ce seul angle qui, plus
-     tard, portera l'essentiel de l'émotion. */
-  sourcilG.rotateZ(Math.PI / 2 - ARC / 2 + 0.16);
-  sourcilD.rotateZ(Math.PI / 2 - ARC / 2 - 0.16);
+  /* Sphère englobante : la flamme tient dedans, donc un rayon qui la manque
+     n'a rien à marcher. Sur un avatar détouré, c'est la majorité du cadre. */
+  const vec3 centre = vec3(0.0, 0.10, 0.0);
+  const float RAYON = 1.55;
+  vec3 oc = ro - centre;
+  float b = dot(oc, rd);
+  float disc = b * b - (dot(oc, oc) - RAYON * RAYON);
+  if (disc < 0.0) { gl_FragColor = vec4(0.0); return; }
+  float racine = sqrt(disc);
 
-  /* Demi-tore ouvert vers le haut = sourire. Le demi-tour parce qu'un arc de
-     tore part de +x et couvre le demi-cercle SUPÉRIEUR — soit une moue. */
-  const bouche = new THREE.Mesh(
-    new THREE.TorusGeometry(R_CORPS * 0.26, R_CORPS * 0.052, 8, 18, Math.PI),
-    matTrait,
-  );
-  poser(bouche, 0, EL_BOUCHE, 0.01);
-  bouche.rotateZ(Math.PI);
+  float t = max(-b - racine, 0.0);
+  float tMax = -b + racine;
 
-  visage.add(oeilG, oeilD, sourcilG, sourcilD, bouche);
-  return { visage, yeux: [oeilG, oeilD] };
+  /* L'anticrénelage vient de la DENSITÉ de pixels, pas d'un calcul de
+     couverture : le canevas est rendu au double et réduit par le navigateur,
+     soit quatre échantillons par pixel affiché. Un bord en escalier se verrait
+     immédiatement sur un fond de jeu — c'est vérifié à l'écran, sur damier. */
+  float mat = 0.0;
+  for (int i = 0; i < 64; i++) {
+    vec3 p = ro + rd * t;
+    vec2 h = carte(p);
+    if (h.x < 0.0009) { mat = h.y; break; }
+    /* Pas volontairement raccourci : la déformation du repère qui fait monter
+       le flux rend la distance légèrement SURESTIMÉE par endroits, et un pas
+       trop long traverserait la surface — on verrait des trous scintillants
+       dans la flamme. 15 % de marge coûtent moins qu'un artefact. */
+    t += h.x * 0.85;
+    if (t > tMax) break;
+  }
+
+  if (mat < 0.5) { gl_FragColor = vec4(0.0); return; }
+
+  vec3 p = ro + rd * t;
+  vec3 n = normale(p);
+
+  vec3 lum = normalize(vec3(0.55, 0.85, 0.62));
+  float sh = ombre(p + n * 0.012, lum);
+  float ao = occlusion(p, n);
+
+  /* Ciel chaud / sol sombre. Un dégradé selon la normale remplace une carte
+     d'environnement : la lumière arrive de partout, ce qui suffit à sortir du
+     rendu « deux projecteurs » qui trahit le temps réel bâclé. */
+  vec3 ciel = mix(vec3(0.10, 0.045, 0.035), vec3(0.62, 0.50, 0.42), 0.5 + 0.5 * n.y);
+
+  vec3 albedo;
+  vec3 emis = vec3(0.0);
+  float rugosite;
+
+  if (mat > 2.5) {
+    albedo = vec3(0.95);                 // reflet de l'œil
+    rugosite = 0.10;
+    emis = vec3(0.35);
+  } else if (mat > 1.5) {
+    albedo = vec3(0.020, 0.008, 0.004);  // trait, un noir CHAUD
+    rugosite = 0.24;
+  } else {
+    albedo = couleurFeu(p.y);
+    rugosite = 0.40;
+    /* 🚨 La flamme s'allume là où elle est MINCE — les pointes — pas là où elle
+       est épaisse. traversee() vaut 1 quand la lumière passe, donc l'émission
+       suit sa valeur ; la prendre à l'envers allumait tout le ventre et lavait
+       la couleur en un jaune plat. */
+    float trav = traversee(p, n, lum);
+    emis = couleurFeu(p.y + 0.35) * (0.05 + 0.34 * trav);
+  }
+
+  /* 🚨 Exposition volontairement basse. Un orange saturé (rouge ≈ 1, vert ≈ 0.17)
+     multiplié par plus de 1 sature d'abord le ROUGE : le vert et le bleu
+     continuent alors seuls de monter, et la teinte glisse vers le saumon pâle.
+     Le délavage d'un rendu trop éclairé n'est pas une affaire de goût, c'est
+     cette asymétrie-là. */
+  float diff = max(dot(n, lum), 0.0);
+  vec3 col = albedo * (ciel * ao * 0.55 + vec3(1.0, 0.93, 0.82) * diff * sh * 0.88);
+
+  vec3 hv = normalize(lum - rd);
+  float spec = pow(max(dot(n, hv), 0.0), mix(90.0, 14.0, rugosite));
+  col += vec3(1.0, 0.95, 0.88) * spec * sh * (1.0 - rugosite) * 0.40;
+
+  /* Liseré de Fresnel : c'est lui qui détache Wally d'un fond de jeu clair.
+     Sans lui, un overlay disparaît dès que la scène derrière est lumineuse. */
+  float fre = pow(1.0 - max(dot(n, -rd), 0.0), 3.5);
+  col += vec3(1.0, 0.52, 0.20) * fre * 0.30 * ao;
+
+  col += emis;
+
+  col = aces(col);
+  col = pow(col, vec3(1.0 / 2.2));
+  gl_FragColor = vec4(col, 1.0);
 }
+`;
 
-/* ------------------------------------------------------------------ braises */
-
-/* Étincelles détachées. Elles montent, s'éteignent, repartent : c'est le seul
-   élément qui dit que le feu PRODUIT quelque chose au lieu de juste bouger.
-   Hors métaballes exprès — fondues dans le champ, elles feraient des bourgeons
-   collés à la flamme au lieu de s'en détacher. */
-const BRAISES = [
-  { x:  0.50, z:  0.14, y: 0.30, portee: 0.55, duree: 2.6, decalage: 0.0, taille: 0.055 },
-  { x: -0.56, z:  0.06, y: 0.10, portee: 0.65, duree: 3.3, decalage: 1.4, taille: 0.042 },
-  { x:  0.22, z: -0.24, y: 0.55, portee: 0.45, duree: 2.9, decalage: 2.2, taille: 0.034 },
-];
-
-function creerBraise(taille) {
-  /* Un tétraèdre étiré : quatre facettes, une pointe franche. À cette taille,
-     rien de plus détaillé ne serait lisible. */
-  const geom = new THREE.TetrahedronGeometry(taille, 0);
-  geom.scale(0.8, 2.1, 0.8);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xffd463,
-    emissive: 0xff9a2e,
-    emissiveIntensity: 0.7,
-    roughness: 0.5,
-    flatShading: true,
-    transparent: true,
-  });
-  return new THREE.Mesh(geom, mat);
-}
-
-/* ---------------------------------------------------------------- éclairage */
-
-function eclairer(scene) {
-  /* Le dégradé étant déjà dans les sommets, la lumière n'a plus à colorer quoi
-     que ce soit : elle ne sert qu'à donner le volume. D'où une ambiance forte
-     et des projecteurs modérés — l'inverse écraserait la rampe vers le blanc. */
-  scene.add(new THREE.HemisphereLight(0xfff0e0, 0x3a1508, 1.5));
-
-  const cle = new THREE.DirectionalLight(0xffffff, 1.25);
-  cle.position.set(2.5, 3.2, 4.5);
-  scene.add(cle);
-
-  /* Contre-jour chaud : c'est lui qui détache Wally d'un fond de jeu clair —
-     sans liseré, un overlay disparaît dès que la scène derrière est lumineuse. */
-  const contre = new THREE.DirectionalLight(0xffb070, 0.9);
-  contre.position.set(-3.0, 1.4, -2.6);
-  scene.add(contre);
-
-  const bouche = new THREE.DirectionalLight(0x86a6ff, 0.3);
-  bouche.position.set(-2.2, -1.0, 1.8);
-  scene.add(bouche);
-}
-
-/* ------------------------------------------------------------------ montage */
-
-/* Résolution de la grille. Elle fixe la finesse de la surface — trop bas, les
-   pointes deviennent des moignons ; trop haut, le coût est CUBIQUE et la
-   polygonisation JS mange l'image. 48 tient les 60 fps même en rendu logiciel. */
-const RESOLUTION = 48;
+const VERTEX = /* glsl */ `
+void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
 
 /**
  * Monte Wally dans un canvas et lance sa boucle d'animation.
- * Retourne `{ redimensionner, arreter }`.
+ * Retourne `{ redimensionner, mesures, arreter }`.
  */
-export function creerWally(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+export function creerWally(canvas, surPanne) {
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
   renderer.setClearAlpha(0);
+  /* Le tracé de rayon coûte au PIXEL : doubler la densité quadruple le travail.
+     Deux suffisent pour un bord propre, au-delà c'est payé pour rien. */
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
-  /* Cadrage serré, comme l'avatar actuel : dans un slot de 200 px sur l'overlay,
-     tout l'air laissé autour est du personnage en moins. */
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-  camera.position.set(0, 0.02, 4.3);
-  camera.lookAt(0, 0.0, 0);
-  eclairer(scene);
+  /* Aucune caméra 3D : la caméra vit dans le shader (origine + direction du
+     rayon). Celle-ci ne sert qu'à couvrir l'écran d'un rectangle. */
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const matFeu = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    /* Rendu LISSE, pas facetté : les références visées sont des flammes 3D
-       douces et satinées. Le low poly était une contrainte qu'on s'était
-       imposée, pas une demande — et `MarchingCubes` calcule déjà des normales
-       interpolées, donc c'est gratuit. */
-    roughness: 0.42,
-    metalness: 0.0,
-    /* Une flamme émet. Très peu — juste de quoi empêcher la face à l'ombre de
-       virer au brun sale. */
-    emissive: 0xff6a2a,
-    emissiveIntensity: 0.15,
+  const uniforms = {
+    uTaille: { value: new THREE.Vector2(1, 1) },
+    uTemps: { value: 0 },
+  };
+  const materiau = new THREE.ShaderMaterial({
+    vertexShader: VERTEX,
+    fragmentShader: FRAGMENT,
+    uniforms,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
   });
-
-  /* `enableColors` sert seulement à faire EXISTER l'attribut de couleur : les
-     teintes par boule de la classe se somment sans être normalisées et virent
-     au blanc là où deux boules se recouvrent. On les réécrit nous-mêmes par la
-     hauteur, après chaque polygonisation. */
-  const feu = new MarchingCubes(RESOLUTION, matFeu, false, true, 40000);
-  feu.isolation = ISOLATION;
-
-  /* Le champ doit être dans son état de repos AVANT de poser le visage : sans
-     ça, `poser()` interrogerait des langues de longueur nulle et les yeux
-     s'enfonceraient dans le corps dès la première image. */
-  figerLeRepos();
-  const { visage, yeux } = creerVisage();
-  /* Le visage est enfant du FEU : il suit ainsi la respiration, sinon il
-     s'enfonce dans la surface à chaque cycle. */
-  feu.add(visage);
-
-  const wally = new THREE.Group();
-  const braises = BRAISES.map((b) => creerBraise(b.taille));
-  wally.add(feu, ...braises);
-  scene.add(wally);
+  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), materiau));
 
   /* `performance.now()` plutôt que `THREE.Clock`, déprécié en r185. Une horloge
      de trois lignes ne mérite pas une dépendance de plus. */
   const depart = performance.now();
-  let prochainClignement = 2.0;
-  let debutClignement = -1;
   let anim = 0;
-
-  /* Aucun `computeVertexNormals()` : `MarchingCubes` sort déjà ses normales, et
-     mieux que nous — il les prend dans le GRADIENT du champ, donc lisses par
-     construction, là où un calcul par facette ne verrait que la maille. */
-
-  function sculpter(t) {
-    pousser(t);
-    feu.reset();
-    for (const b of BOULES_CORPS) feu.addBall(b.x, b.y, b.z, b.f, SOUSTRAIT);
-    for (const b of BOULES_LANGUES) feu.addBall(b.x, b.y, b.z, b.f, SOUSTRAIT);
-    feu.update();
-
-    /* Le dégradé est accroché à la hauteur RÉELLE, pas à une boule : une langue
-       qui pousse doit voir sa pointe virer au jaune en montant. */
-    const pos = feu.geometry.attributes.position.array;
-    const col = feu.geometry.attributes.color.array;
-    const echelle = (PALIERS - 1) / (COL_HAUT - COL_BAS);
-    for (let i = 0; i < feu.count; i++) {
-      let k = Math.round((pos[i * 3 + 1] - COL_BAS) * echelle);
-      k = k < 0 ? 0 : k > PALIERS - 1 ? PALIERS - 1 : k;
-      col[i * 3] = LUT[k * 3];
-      col[i * 3 + 1] = LUT[k * 3 + 1];
-      col[i * 3 + 2] = LUT[k * 3 + 2];
-    }
-    feu.geometry.attributes.color.needsUpdate = true;
-  }
-
-  function animerBraises(t) {
-    braises.forEach((braise, i) => {
-      const b = BRAISES[i];
-      const p = ((t + b.decalage) % b.duree) / b.duree;
-      braise.position.set(b.x + Math.sin(t * 1.9 + i) * 0.05, b.y + b.portee * p, b.z);
-      /* Naître et mourir en fondu : une étincelle qui apparaît d'un coup se lit
-         comme un défaut d'affichage. */
-      braise.material.opacity = Math.sin(p * Math.PI);
-      braise.scale.setScalar(1 - 0.35 * p);
-      braise.rotation.z = Math.sin(t * 2.2 + i) * 0.30;
-    });
-  }
-
-  function cligner(t) {
-    if (debutClignement < 0 && t >= prochainClignement) debutClignement = t;
-    if (debutClignement < 0) return;
-
-    const DUREE = 0.15;
-    const p = (t - debutClignement) / DUREE;
-    if (p >= 1) {
-      debutClignement = -1;
-      /* Intervalle irrégulier : un clignement métronomique se remarque
-         immédiatement et trahit la boucle. */
-      prochainClignement = t + 2.4 + Math.random() * 3.6;
-      yeux.forEach((o) => (o.scale.y = 1));
-      return;
-    }
-    const fermeture = Math.sin(p * Math.PI);
-    yeux.forEach((o) => (o.scale.y = 1 - 0.92 * fermeture));
-  }
-
-  /* Coût réel d'une image, en moyenne glissante. La polygonisation tourne en JS
-     sur le fil principal : c'est le seul chiffre qui dise si l'avatar tiendra
-     dans OBS à côté d'un jeu. Mesuré, pas supposé. */
   let coutImage = 0;
+  let precedente = 0;
+
+  /* 🚨 Un contexte WebGL peut être perdu à tout moment sans que rien ne lève :
+     pilote qui redémarre, veille, mémoire vidéo réclamée par le jeu. Le canevas
+     reste alors là, FIGÉ OU NOIR — et un trou noir en plein live est pire que
+     pas d'avatar du tout. `preventDefault()` autorise une restauration, mais on
+     ne l'attend pas : on prévient tout de suite pour retomber sur la vidéo.
+     Le cas est réel, il s'est présenté pendant la mise au point. */
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    cancelAnimationFrame(anim);
+    if (surPanne) surPanne("contexte WebGL perdu");
+  });
 
   function boucle() {
     anim = requestAnimationFrame(boucle);
-    const t = (performance.now() - depart) / 1000;
-    const avant = performance.now();
-
-    sculpter(t);
-    animerBraises(t);
-    cligner(t);
-
-    /* Respiration : le volume se conserve à peu près (ce qui monte se resserre),
-       sinon Wally « gonfle » au lieu de respirer. */
-    const souffle = Math.sin(t * 1.5);
-    feu.scale.set(1 - souffle * 0.018, 1 + souffle * 0.028, 1 - souffle * 0.018);
-
-    wally.position.y = Math.sin(t * 1.5) * 0.02;
-    wally.rotation.z = Math.sin(t * 0.85) * 0.018;
-
+    const maintenant = performance.now();
+    uniforms.uTemps.value = (maintenant - depart) / 1000;
     renderer.render(scene, camera);
-    coutImage = coutImage * 0.9 + (performance.now() - avant) * 0.1;
+
+    /* 🚨 On mesure l'INTERVALLE entre deux images, pas la durée de l'appel de
+       rendu. Le tracé de rayon se fait entièrement sur le GPU : `render()`
+       ne fait qu'empiler des commandes et revient en quelques microsecondes —
+       le chronométrer affichait « 0,0 ms », un chiffre rassurant et faux.
+       L'intervalle, lui, inclut l'attente de la présentation, donc le dessin.
+       La première image est écartée : elle porte la compilation du shader. */
+    if (precedente > 0) {
+      const dt = maintenant - precedente;
+      coutImage = coutImage > 0 ? coutImage * 0.9 + dt * 0.1 : dt;
+    }
+    precedente = maintenant;
   }
 
   function redimensionner(largeur, hauteur) {
     renderer.setSize(largeur, hauteur, false);
-    camera.aspect = largeur / hauteur;
-    camera.updateProjectionMatrix();
+    const d = renderer.getPixelRatio();
+    uniforms.uTaille.value.set(largeur * d, hauteur * d);
   }
 
   boucle();
   return {
     redimensionner,
-    /** Coût d'une image en millisecondes, et nombre de triangles rendus. */
-    mesures: () => ({ ms: coutImage, triangles: Math.round(feu.count / 3) }),
+    /** Intervalle moyen entre deux images, en millisecondes — donc le coût
+     *  réel, dessin compris. 16,7 ms = 60 images par seconde. */
+    mesures: () => ({ ms: coutImage }),
     arreter() {
       cancelAnimationFrame(anim);
+      materiau.dispose();
       renderer.dispose();
     },
   };
