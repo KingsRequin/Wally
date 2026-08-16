@@ -115,6 +115,50 @@ vec3 bezier(vec3 a, vec3 b, vec3 c, float t) {
   return u * u * a + 2.0 * u * t * b + t * t * c;
 }
 
+float dot2(vec3 v) { return dot(v, v); }
+
+/* Distance EXACTE à une courbe de Bézier quadratique, et l'abscisse du point
+   le plus proche (pour faire varier l'épaisseur le long du trait). Formulation
+   d'Inigo Quilez — résolution de la cubique par Cardan.
+   Les traits du visage passent par là : des capsules mises bout à bout font
+   des segments, et des segments se VOIENT — sourcils et bouche sortaient
+   « carrés », dixit l'owner. Un trait dessiné est une courbe. */
+vec2 sdBezier(vec3 pos, vec3 A, vec3 B, vec3 C) {
+  vec3 a = B - A;
+  vec3 b = A - 2.0 * B + C;
+  vec3 c = a * 2.0;
+  vec3 d = A - pos;
+  /* Garde anti-NaN : b s'annule si le point de contrôle est exactement le
+     milieu des extrémités — la courbe est alors une droite et kk explose. */
+  float kk = 1.0 / max(dot(b, b), 1e-7);
+  float kx = kk * dot(a, b);
+  float ky = kk * (2.0 * dot(a, a) + dot(d, b)) / 3.0;
+  float kz = kk * dot(d, a);
+  float res = 0.0, t = 0.0;
+  float p = ky - kx * kx;
+  float q = kx * (2.0 * kx * kx - 3.0 * ky) + kz;
+  float h = q * q + 4.0 * p * p * p;
+  if (h >= 0.0) {
+    h = sqrt(h);
+    vec2 x = (vec2(h, -h) - q) / 2.0;
+    vec2 uv = sign(x) * pow(abs(x), vec2(1.0 / 3.0));
+    t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
+    res = dot2(d + (c + b * t) * t);
+  } else {
+    float z = sqrt(-p);
+    /* acos borné : l'argument peut déborder de [−1, 1] d'un epsilon d'arrondi,
+       et acos(1.0000001) rend NaN — la leçon a déjà coûté un écran noir. */
+    float v = acos(clamp(q / (p * z * 2.0), -1.0, 1.0)) / 3.0;
+    float m = cos(v);
+    float n = sin(v) * 1.732050808;
+    vec3 tv = clamp(vec3(m + m, -n - m, n - m) * z - kx, 0.0, 1.0);
+    float d1 = dot2(d + (c + b * tv.x) * tv.x);
+    float d2 = dot2(d + (c + b * tv.y) * tv.y);
+    if (d1 < d2) { res = d1; t = tv.x; } else { res = d2; t = tv.y; }
+  }
+  return vec2(sqrt(res), t);
+}
+
 /* ────────────────────────────────────────────────────────── la flamme ── */
 
 /* Une langue de feu.
@@ -225,8 +269,10 @@ vec2 plusProche(vec2 a, vec2 b) { return a.x < b.x ? a : b; }
    lit « tête » ; deux masses décalées donnent un œuf qui se referme vers le
    haut, d'où les langues sortent en prolongement au lieu d'y être plantées. */
 float corps(vec3 p) {
-  float bas  = sdEllipsoide(p - vec3(0.0, -0.40, 0.0), vec3(0.62, 0.56, 0.60));
-  float haut = sdEllipsoide(p - vec3(0.0,  0.02, 0.0), vec3(0.50, 0.46, 0.48));
+  /* Plus LARGE que haut : la rondeur du corps vient d'ici. Le rayon z du bas
+     reste à 0.60 — le gonfler enterre la bouche, qui affleure la surface. */
+  float bas  = sdEllipsoide(p - vec3(0.0, -0.40, 0.0), vec3(0.67, 0.54, 0.60));
+  float haut = sdEllipsoide(p - vec3(0.0,  0.00, 0.0), vec3(0.55, 0.44, 0.48));
   return smin(bas, haut, 0.26);
 }
 
@@ -248,17 +294,20 @@ float feu(vec3 p) {
      et surtout aux cycles de vie DÉPHASÉS : si elles poussaient ensemble, le
      feu entier respirerait comme un poumon. Le smin les fait naître DU corps —
      un min les y collerait avec une arête visible. */
-  d = smin(d, langue(w,  0.10, vec3(0.0, -0.05, 0.12), vec3(0.05, 0.48, 0.12), vec3(-0.07, 1.06, 0.12), 0.225, 0.40, 0.0, 1.30, 3.30, 0.00), 0.15);
-  d = smin(d, langue(w, -1.00, vec3(0.0, -0.15, 0.36), vec3(0.09, 0.30, 0.36), vec3( 0.17, 0.80, 0.36), 0.190, 0.38, 1.7, 1.62, 2.60, 0.37), 0.13);
-  d = smin(d, langue(w,  1.25, vec3(0.0, -0.15, 0.36), vec3(-0.08, 0.27, 0.36), vec3(-0.16, 0.70, 0.36), 0.175, 0.38, 3.1, 1.44, 2.90, 0.71), 0.13);
-  d = smin(d, langue(w,  2.60, vec3(0.0, -0.08, 0.20), vec3(0.07, 0.40, 0.20), vec3( 0.14, 0.92, 0.20), 0.185, 0.38, 5.2, 1.18, 3.70, 0.19), 0.13);
-  d = smin(d, langue(w, -2.15, vec3(0.0, -0.20, 0.34), vec3(-0.07, 0.18, 0.34), vec3(-0.13, 0.55, 0.34), 0.155, 0.36, 4.4, 1.86, 2.30, 0.55), 0.12);
+  /* Hauteurs volontairement contenues et bases élargies : une flamme trop
+     étirée se lit « poire ». La rondeur vient du rapport largeur/hauteur, pas
+     du nombre de langues. */
+  d = smin(d, langue(w,  0.10, vec3(0.0, -0.05, 0.12), vec3(0.05, 0.40, 0.12), vec3(-0.07, 0.86, 0.12), 0.240, 0.42, 0.0, 1.30, 3.30, 0.00), 0.15);
+  d = smin(d, langue(w, -1.00, vec3(0.0, -0.15, 0.36), vec3(0.09, 0.26, 0.36), vec3( 0.17, 0.66, 0.36), 0.205, 0.40, 1.7, 1.62, 2.60, 0.37), 0.13);
+  d = smin(d, langue(w,  1.25, vec3(0.0, -0.15, 0.36), vec3(-0.08, 0.23, 0.36), vec3(-0.16, 0.58, 0.36), 0.190, 0.40, 3.1, 1.44, 2.90, 0.71), 0.13);
+  d = smin(d, langue(w,  2.60, vec3(0.0, -0.08, 0.20), vec3(0.07, 0.34, 0.20), vec3( 0.14, 0.76, 0.20), 0.200, 0.40, 5.2, 1.18, 3.70, 0.19), 0.13);
+  d = smin(d, langue(w, -2.15, vec3(0.0, -0.20, 0.34), vec3(-0.07, 0.16, 0.34), vec3(-0.13, 0.46, 0.34), 0.170, 0.38, 4.4, 1.86, 2.30, 0.55), 0.12);
 
   /* Les morceaux qui s'échappent. Sur le repère NON déformé : ils ont quitté
      le flux, ils ne doivent plus le suivre. */
-  d = smin(d, detache(p, vec3( 0.06, 0.62, 0.10), -0.10, 0.62, 0.085, 2.70, 0.00), 0.06);
-  d = smin(d, detache(p, vec3(-0.20, 0.46, 0.22),  0.13, 0.78, 0.062, 3.40, 0.42), 0.05);
-  d = smin(d, detache(p, vec3( 0.24, 0.38, 0.14),  0.09, 0.55, 0.048, 2.20, 0.78), 0.05);
+  d = smin(d, detache(p, vec3( 0.06, 0.54, 0.10), -0.10, 0.50, 0.085, 2.70, 0.00), 0.06);
+  d = smin(d, detache(p, vec3(-0.20, 0.40, 0.22),  0.13, 0.62, 0.062, 3.40, 0.42), 0.05);
+  d = smin(d, detache(p, vec3( 0.24, 0.33, 0.14),  0.09, 0.45, 0.048, 2.20, 0.78), 0.05);
   return d;
 }
 
@@ -340,26 +389,31 @@ vec2 visage(vec3 p) {
   float reflet = length(ps - cp - vec3(-0.018, 0.020 * gClign, 0.034)) - 0.019 * min(gClign, 1.0);
   d = plusProche(d, vec2(reflet, 3.0));
 
-  /* Sourcils : fins, détachés, HAUT au-dessus des yeux. Ils suivent le regard
-     vers le haut (lever les yeux hausse les sourcils, personne ne fait l'un
-     sans l'autre) — l'extrémité extérieure bouge plus que l'intérieure, et
-     c'est ce seul angle qui, plus tard, portera l'essentiel de l'émotion. */
+  /* Sourcil : UNE courbe de Bézier en arche, épaisse à la racine et qui
+     s'affine vers la tempe — un coup de pinceau, pas une charpente. Il suit le
+     regard vers le haut (lever les yeux hausse les sourcils, personne ne fait
+     l'un sans l'autre), l'extrémité extérieure plus que l'intérieure ; c'est
+     cette courbure qui, plus tard, portera l'essentiel de l'émotion. */
   float hy = gHausse;
-  float s1 = sdCapsule(ps, vec3(0.080, 0.150 + hy * 0.7, 0.470), vec3(0.215, 0.195 + hy, 0.415), 0.026);
-  float s2 = sdCapsule(ps, vec3(0.215, 0.195 + hy, 0.415), vec3(0.345, 0.160 + hy * 1.4, 0.340), 0.024);
-  d = plusProche(d, vec2(min(s1, s2), 2.0));
+  vec2 sb = sdBezier(ps,
+    vec3(0.075, 0.150 + hy * 0.7, 0.470),
+    vec3(0.215, 0.225 + hy,       0.408),
+    vec3(0.350, 0.150 + hy * 1.4, 0.330));
+  d = plusProche(d, vec2(sb.x - mix(0.031, 0.016, sb.y * sb.y), 2.0));
 
-  /* Bouche : un sourire en trait FIN — l'épaisseur du trait est ce qui sépare
-     un sourire dessiné d'un boudin collé. Les coins respirent lentement.
-     Trois capsules plutôt qu'un tore, qui s'enfoncerait par les bouts sur une
-     surface bombée. 🚨 Les profondeurs suivent la surface RÉELLE du corps, qui
-     recule vite dès qu'on s'écarte du milieu : posés à profondeur unique, les
-     coins passent SOUS la peau et disparaissent. */
+  /* Bouche : une seule Bézier d'un coin à l'autre — le creux du sourire vient
+     du point de contrôle, bas et en avant. Trait plein au centre, affiné aux
+     coins, qui respirent lentement.
+     🚨 Les profondeurs suivent la surface RÉELLE du corps, qui recule vite dès
+     qu'on s'écarte du milieu : posée à profondeur unique, la courbe passe SOUS
+     la peau — au centre ou aux coins, selon le réglage. */
   float cb = 0.020 * sin(uTemps * 0.53 + 2.0);
-  float b1 = sdCapsule(p, vec3(-0.195, -0.360 + cb, 0.558), vec3(-0.080, -0.442, 0.585), 0.028);
-  float b2 = sdCapsule(p, vec3(-0.080, -0.442, 0.585), vec3( 0.080, -0.442, 0.585), 0.028);
-  float b3 = sdCapsule(p, vec3( 0.080, -0.442, 0.585), vec3( 0.195, -0.360 + cb, 0.558), 0.028);
-  d = plusProche(d, vec2(min(min(b1, b2), b3), 2.0));
+  vec2 bb = sdBezier(p,
+    vec3(-0.195, -0.310 + cb, 0.560),
+    vec3( 0.000, -0.462,      0.616),
+    vec3( 0.195, -0.310 + cb, 0.560));
+  float plein = sin(3.14159265 * bb.y);
+  d = plusProche(d, vec2(bb.x - mix(0.018, 0.033, plein), 2.0));
 
   return d;
 }
@@ -463,7 +517,7 @@ void main() {
   gRegard = saccade(uTemps);
   gHausse = 0.7 * max(gRegard.y, 0.0) + 0.012 * sin(uTemps * 0.61);
 
-  vec3 ro = vec3(0.0, 0.10, 3.55);
+  vec3 ro = vec3(0.0, 0.02, 3.40);
   vec3 rd = normalize(vec3(uv * 0.62, -1.0));
 
   /* Sphère englobante : la flamme tient dedans, donc un rayon qui la manque
