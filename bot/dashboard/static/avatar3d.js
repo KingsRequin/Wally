@@ -218,7 +218,7 @@ float detache(vec3 p, vec3 base, float derive, float montee, float r0,
   return sdConeRond(p, c, c + vec3(0.0, r * 3.0, 0.0), r, 0.0);
 }
 
-/* Matériaux : 1 = feu, 2 = trait du visage, 3 = reflet de l'œil. */
+/* Matériaux : 1 = feu, 2 = trait du visage, 3 = reflet de l'œil, 4 = sclère. */
 vec2 plusProche(vec2 a, vec2 b) { return a.x < b.x ? a : b; }
 
 /* Le corps : deux ellipsoïdes fondus, plus lourd du bas. Une seule sphère se
@@ -262,42 +262,103 @@ float feu(vec3 p) {
   return d;
 }
 
-/* Le visage. En union FRANCHE (min) et non fondue : un trait qui se fond
-   dans la joue n'est plus un trait. */
+/* ── la vie du visage ──────────────────────────────────────────────────────
+ *
+ * Calculée UNE fois par pixel, au début de main(), et lue partout ensuite :
+ * visage() est appelée à chaque pas de la marche, y recalculer clignement et
+ * regard multiplierait des transcendantes pour rien. */
+float gClign;   // 1 = yeux ouverts, ~0.1 = paupières fermées
+vec2  gRegard;  // où se posent les pupilles
+float gHausse;  // haussement des sourcils
+
+float hachage(float n) { return fract(sin(n) * 43758.5453); }
+
+/* Clignement à intervalle IRRÉGULIER : l'instant du clin est tiré au sort dans
+   chaque cycle. Un clignement métronomique se remarque en dix secondes et
+   trahit la boucle — même leçon que les langues. */
+float clignement(float t) {
+  const float P = 3.4;
+  float n = floor(t / P);
+  float debut = (0.30 + 0.55 * hachage(n * 127.1)) * P;
+  float ph = (t - n * P - debut) / 0.13;
+  float ferme = (ph > 0.0 && ph < 1.0) ? sin(ph * 3.14159265) : 0.0;
+  return 1.0 - 0.90 * ferme;
+}
+
+/* Le regard fonctionne par SACCADES, comme un vrai : il se pose quelque part,
+   tient, puis saute ailleurs d'un coup. Un balayage continu donnerait des yeux
+   de somnambule — c'est la tenue du regard, pas son mouvement, qui rend le
+   personnage attentif. */
+vec2 saccade(float t) {
+  const float P = 2.1;
+  float n = floor(t / P);
+  vec2 a = vec2(hachage(n * 91.7), hachage(n * 45.3)) - 0.5;
+  vec2 b = vec2(hachage((n + 1.0) * 91.7), hachage((n + 1.0) * 45.3)) - 0.5;
+  return mix(a, b, smoothstep(0.86, 0.97, fract(t / P))) * vec2(0.095, 0.045);
+}
+
+/* Le visage, façon cartoon : sclère BLANCHE qui bombe hors du corps, pupille
+   qui regarde, sourcils fins et DÉTACHÉS posés haut — c'est l'écart entre le
+   sourcil et l'œil qui fait le dessin animé, pas la forme du sourcil.
+   En union FRANCHE (min) et non fondue : un trait qui se fond dans la joue
+   n'est plus un trait. */
 vec2 visage(vec3 p) {
-  /* Borne du visage : huit primitives pour une zone qui n'occupe qu'un coin du
+  /* Borne du visage : dix primitives pour une zone qui n'occupe qu'un coin du
      volume. Les évaluer partout revenait à payer le visage sur chaque pas de
      chaque rayon. La distance à la sphère englobante MINORE la vraie, donc le
      raccourci reste licite pour la marche ; le matériau renvoyé n'a aucune
      importance ici, on est encore à plus de 6 cm de toute surface. */
-  float db = length(p - vec3(0.0, -0.16, 0.40)) - 0.55;
+  float db = length(p - vec3(0.0, -0.14, 0.40)) - 0.60;
   if (db > 0.06) return vec2(db, 1.0);
 
   vec3 ps = vec3(abs(p.x), p.y, p.z);          // symétrie : un œil pour deux
+  float sx = p.x >= 0.0 ? 1.0 : -1.0;
 
-  /* 🚨 Les profondeurs (z) suivent la surface RÉELLE du corps, qui recule
-     fortement quand on monte et quand on s'écarte du milieu. Posées à une
-     profondeur unique, les extrémités des sourcils et les coins de la bouche
-     passent SOUS la peau et disparaissent — c'est ce qui les avait effacés. */
-  float oeil = sdEllipsoide(ps - vec3(0.235, -0.11, 0.440), vec3(0.125, 0.142, 0.125));
-  vec2 d = vec2(oeil, 2.0);
+  /* L'œil : la sclère déborde du corps — le globe qui BOMBE est ce qui sépare
+     un visage cartoon d'un visage peint sur la surface. Le clignement écrase
+     son rayon vertical en fente : réduire le rayon plutôt que déformer le
+     point garde la distance exacte. */
+  /* Le centre est posé assez EN AVANT pour que presque toute la largeur du
+     globe émerge : à 0.400, seule une calotte sortait et les yeux se lisaient
+     comme deux taches blanches — vérifié à l'écran. */
+  vec3 ce = vec3(0.205, -0.075, 0.430);
+  float sclere = sdEllipsoide(ps - ce, vec3(0.135, 0.165 * gClign, 0.115));
+  vec2 d = vec2(sclere, 4.0);
 
-  /* Reflet en blanc pur, décalé vers le haut à l'intérieur du globe : c'est lui
-     qui fait qu'un œil REGARDE au lieu d'être un trou. */
-  float reflet = length(ps - vec3(0.195, -0.052, 0.535)) - 0.038;
+  /* 🚨 La pupille suit le regard — mais dans un repère MIROIR, le décalage
+     horizontal doit être re-signé par œil, sinon un regard de côté fait
+     loucher : un œil vers la tempe, l'autre vers le nez. */
+  /* Décalage frontal MODESTE : la pupille doit rester posée SUR le globe. Plus
+     loin, elle en décolle et flotte devant l'œil comme un grain de raisin. */
+  vec3 cp = ce + vec3(sx * gRegard.x, gRegard.y * gClign, 0.095);
+  float pupille = sdEllipsoide(ps - cp, vec3(0.047, 0.058 * gClign, 0.040));
+  d = plusProche(d, vec2(pupille, 2.0));
+
+  /* Reflet en blanc pur sur la pupille : c'est lui qui fait qu'un œil REGARDE
+     au lieu d'être un point noir. Son rayon suit le clignement, sans quoi il
+     flotterait devant la fente pendant le clin. */
+  float reflet = length(ps - cp - vec3(-0.018, 0.020 * gClign, 0.034)) - 0.019 * min(gClign, 1.0);
   d = plusProche(d, vec2(reflet, 3.0));
 
-  /* Sourcil : deux capsules en chevron, extrémité extérieure relevée. C'est ce
-     seul angle qui, plus tard, portera l'essentiel de l'émotion. */
-  float s1 = sdCapsule(ps, vec3(0.115, 0.135, 0.425), vec3(0.265, 0.165, 0.378), 0.035);
-  float s2 = sdCapsule(ps, vec3(0.265, 0.165, 0.378), vec3(0.400, 0.130, 0.278), 0.032);
+  /* Sourcils : fins, détachés, HAUT au-dessus des yeux. Ils suivent le regard
+     vers le haut (lever les yeux hausse les sourcils, personne ne fait l'un
+     sans l'autre) — l'extrémité extérieure bouge plus que l'intérieure, et
+     c'est ce seul angle qui, plus tard, portera l'essentiel de l'émotion. */
+  float hy = gHausse;
+  float s1 = sdCapsule(ps, vec3(0.080, 0.150 + hy * 0.7, 0.470), vec3(0.215, 0.195 + hy, 0.415), 0.026);
+  float s2 = sdCapsule(ps, vec3(0.215, 0.195 + hy, 0.415), vec3(0.345, 0.160 + hy * 1.4, 0.340), 0.024);
   d = plusProche(d, vec2(min(s1, s2), 2.0));
 
-  /* Bouche : trois capsules qui dessinent un sourire. Un tore serait plus
-     élégant mais s'enfoncerait par les bouts sur une surface bombée. */
-  float b1 = sdCapsule(p, vec3(-0.185, -0.395, 0.545), vec3(-0.075, -0.465, 0.570), 0.033);
-  float b2 = sdCapsule(p, vec3(-0.075, -0.465, 0.570), vec3( 0.075, -0.465, 0.570), 0.033);
-  float b3 = sdCapsule(p, vec3( 0.075, -0.465, 0.570), vec3( 0.185, -0.395, 0.545), 0.033);
+  /* Bouche : un sourire en trait FIN — l'épaisseur du trait est ce qui sépare
+     un sourire dessiné d'un boudin collé. Les coins respirent lentement.
+     Trois capsules plutôt qu'un tore, qui s'enfoncerait par les bouts sur une
+     surface bombée. 🚨 Les profondeurs suivent la surface RÉELLE du corps, qui
+     recule vite dès qu'on s'écarte du milieu : posés à profondeur unique, les
+     coins passent SOUS la peau et disparaissent. */
+  float cb = 0.020 * sin(uTemps * 0.53 + 2.0);
+  float b1 = sdCapsule(p, vec3(-0.195, -0.360 + cb, 0.558), vec3(-0.080, -0.442, 0.585), 0.028);
+  float b2 = sdCapsule(p, vec3(-0.080, -0.442, 0.585), vec3( 0.080, -0.442, 0.585), 0.028);
+  float b3 = sdCapsule(p, vec3( 0.080, -0.442, 0.585), vec3( 0.195, -0.360 + cb, 0.558), 0.028);
   d = plusProche(d, vec2(min(min(b1, b2), b3), 2.0));
 
   return d;
@@ -396,6 +457,12 @@ void main() {
   vec2 taille = max(uTaille, vec2(1.0));
   vec2 uv = (gl_FragCoord.xy - 0.5 * taille) / taille.y;
 
+  /* La vie du visage, calculée une fois pour tout le pixel. Le haussement des
+     sourcils est accroché au regard : lever les yeux lève les sourcils. */
+  gClign = clignement(uTemps);
+  gRegard = saccade(uTemps);
+  gHausse = 0.7 * max(gRegard.y, 0.0) + 0.012 * sin(uTemps * 0.61);
+
   vec3 ro = vec3(0.0, 0.10, 3.55);
   vec3 rd = normalize(vec3(uv * 0.62, -1.0));
 
@@ -438,9 +505,17 @@ void main() {
   float diff = max(dot(n, lum), 0.0);
   /* Une surface qui TOURNE LE DOS à la lumière est déjà noire : y lancer un
      rayon d'ombre, c'est payer douze évaluations du champ pour multiplier zéro
-     par un. Sur une silhouette convexe, ça retire la moitié des pixels. */
-  float sh = diff > 0.0 ? ombre(p + n * 0.012, lum) : 1.0;
-  float ao = occlusion(p, n);
+     par un. Sur une silhouette convexe, ça retire la moitié des pixels.
+     🚨 Et AUCUNE ombre ni occlusion sur le visage (mat ≥ 2) : la sclère BOMBE
+     hors du corps, donc un rayon d'ombre qui la quitte RASE la surface du feu
+     juste derrière et conclut « à l'ombre » — les yeux sortaient gris-brun,
+     vérifié à l'écran. Le visage est trop petit pour qu'une ombre y manque, et
+     c'est autant d'évaluations du champ économisées. */
+  float sh = 1.0, ao = 1.0;
+  if (mat < 1.5) {
+    sh = diff > 0.0 ? ombre(p + n * 0.012, lum) : 1.0;
+    ao = occlusion(p, n);
+  }
 
   /* Ciel chaud / sol sombre. Un dégradé selon la normale remplace une carte
      d'environnement : la lumière arrive de partout, ce qui suffit à sortir du
@@ -451,7 +526,14 @@ void main() {
   vec3 emis = vec3(0.0);
   float rugosite;
 
-  if (mat > 2.5) {
+  if (mat > 3.5) {
+    /* Sclère : un blanc cartoon reste BLANC, même à l'ombre — d'où la part
+       émissive. Un blanc purement diffus prendrait l'orange ambiant et les
+       yeux vireraient au beurre. */
+    albedo = vec3(0.86);
+    rugosite = 0.32;
+    emis = vec3(0.16);
+  } else if (mat > 2.5) {
     albedo = vec3(0.95);                 // reflet de l'œil
     rugosite = 0.10;
     emis = vec3(0.35);
