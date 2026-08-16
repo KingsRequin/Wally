@@ -914,6 +914,9 @@ window.OverlayAdmin = (function () {
       etat.elementCourant = ordre[0] || null;
     }
     nettoyerSelection();
+    // La pile repart d'ici : ce qu'on vient d'adopter EST ce qui est à
+    // l'antenne, et « annuler » vers un état d'avant n'aurait plus de sens.
+    reinitialiserHistoire();
     rendreTout();
   }
 
@@ -1072,12 +1075,300 @@ window.OverlayAdmin = (function () {
     }, DIRECT_DELAI_MS);
   }
 
-  /** À appeler après CHAQUE mutation locale du modèle. */
-  function marquerModifie() {
-    etat.brouillon += 1;
+  // ── Annuler et refaire les gestes d'édition ─────────────────────────────
+  //
+  // À NE PAS CONFONDRE avec « Annuler la publication », juste en dessous : ce
+  // cran-là porte sur ce qui est à l'ANTENNE et repasse par le serveur.
+  // Celui-ci défait des gestes du BROUILLON, sans rien envoyer.
+  //
+  // CHAQUE PAS GARDE LE MODÈLE ENTIER. Ce n'est pas un éditeur de texte : un
+  // seul geste touche ici des dizaines d'éléments à la fois (aligner, répartir,
+  // grouper, coller), et un journal de deltas coûterait plus cher à tenir juste
+  // qu'une copie de quelques kilo-octets. D'où la borne — vingt pas, au-delà le
+  // plus ancien sort par le haut.
+  const HISTOIRE_PAS = 20;
+  // Deux appels de MÊME SOURCE à moins d'une demi-seconde sont un seul geste :
+  // taper « 12.5 » dans un champ émet quatre `input`, et quatre pas videraient
+  // le cinquième de l'historique sur une seule frappe.
+  const HISTOIRE_FUSION_MS = 500;
+
+  const histoire = {
+    pile: [],      // les instantanés, du plus ancien au plus récent
+    index: 0,      // celui qui est à l'écran
+    source: null,  // ce qui a produit le dernier pas, pour fusionner une frappe
+    quand: 0,
+    // Les modifications déjà comptées quand la pile a commencé. Un brouillon
+    // repris en porte, et un pas sorti par le haut de la pile reste une
+    // modification non publiée même s'il n'est plus annulable : sans ce report,
+    // le compteur retomberait à vingt après soixante gestes.
+    base: 0,
+  };
+
+  function instantane() {
+    return etat.layout ? JSON.parse(JSON.stringify(etat.layout)) : null;
+  }
+
+  /** Repart d'une pile neuve sur ce qui est à l'écran — ce que font `adopter()`
+   *  et la reprise d'un brouillon. Annuler vers un modèle sans rapport avec ce
+   *  qui est à l'antenne serait pire que de ne pas pouvoir annuler du tout. */
+  function reinitialiserHistoire() {
+    const debut = instantane();
+    histoire.pile = debut ? [debut] : [];
+    histoire.index = 0;
+    histoire.source = null;
+    histoire.quand = 0;
+    histoire.base = etat.brouillon;
+    majBoutonsHistoire();
+  }
+
+  /** Un pas de plus — ou la suite du précédent, si c'est la même frappe. */
+  function pousserHistoire(source) {
+    const courant = instantane();
+    // Pas de modèle, ou pile jamais posée : il n'y a pas de point de départ vers
+    // lequel revenir. Le compteur retombe alors sur son propre incrément.
+    if (!courant || !histoire.pile.length) return;
+    const maintenant = Date.now();
+    const fusionne = source != null && source === histoire.source
+      && histoire.index > 0
+      && maintenant - histoire.quand < HISTOIRE_FUSION_MS;
+    histoire.source = source;
+    histoire.quand = maintenant;
+    if (fusionne) { histoire.pile[histoire.index] = courant; return; }
+    // Repartir dans une autre direction après une annulation efface ce qui était
+    // refaisable : la règle de tous les éditeurs. Sans elle, un Ctrl+Y mènerait
+    // vers un état qui n'a jamais suivi celui-ci.
+    histoire.pile.length = histoire.index + 1;
+    histoire.pile.push(courant);
+    histoire.index += 1;
+    while (histoire.pile.length > HISTOIRE_PAS + 1) {
+      histoire.pile.shift();
+      histoire.index -= 1;
+      histoire.base += 1;
+    }
+  }
+
+  /** Le compteur DÉRIVE de l'historique : sans ça, dix annulations ramèneraient
+   *  la disposition de départ en affichant « 10 modifications non publiées ». */
+  function compterModifications() {
+    return histoire.pile.length ? histoire.base + histoire.index
+                                : etat.brouillon + 1;
+  }
+
+  function appliquerHistoire() {
+    const pas = histoire.pile[histoire.index];
+    if (!pas) return;
+    etat.layout = JSON.parse(JSON.stringify(pas));
+    // La scène ou l'élément regardés peuvent ne plus exister dans le pas repris
+    // — une scène supprimée, un groupe dissous. Même résolution que `adopter()`,
+    // sans quoi la liste resterait sur une ligne active sans modèle derrière.
+    const scenes = etat.layout.scenes || [];
+    const existe = scenes.some(function (s) { return s.slug === etat.slugCourant; });
+    if (!existe) {
+      etat.slugCourant = etat.layout.defaut || (scenes[0] || {}).slug || null;
+    }
+    const scene = sceneCourante();
+    if (!scene || !scene.elements[etat.elementCourant]) {
+      etat.elementCourant = (scene && scene.ordre && scene.ordre[0]) || null;
+    }
+    nettoyerSelection();
+    etat.brouillon = histoire.base + histoire.index;
+    // Le geste suivant ne fusionne pas avec celui d'avant l'annulation : ils
+    // sont séparés par un aller-retour dans l'historique.
+    histoire.source = null;
+    rangerBrouillon();
+    rendreTout();
+  }
+
+  function annulerHistoire() {
+    if (histoire.index <= 0) return false;
+    histoire.index -= 1;
+    appliquerHistoire();
+    return true;
+  }
+
+  function refaireHistoire() {
+    if (histoire.index >= histoire.pile.length - 1) return false;
+    histoire.index += 1;
+    appliquerHistoire();
+    return true;
+  }
+
+  /** Ce qui reste de part et d'autre. Dit à chaque fois : un historique dont on
+   *  ne voit pas le fond se tape à l'aveugle, et on finit par appuyer trois fois
+   *  de trop « au cas où ». */
+  function croquisHistoire() {
+    return histoire.index + " à annuler, "
+      + Math.max(0, histoire.pile.length - 1 - histoire.index) + " à refaire.";
+  }
+
+  /** Un raccourci qui ne répond RIEN quand il n'y a plus rien à faire se lit
+   *  comme un panneau figé — on retape, plus fort. */
+  function direDefait(fait) {
+    notifier(fait ? "Geste annulé. " + croquisHistoire()
+                  : "Rien de plus à annuler : on est au début du brouillon.");
+  }
+
+  function direRefait(fait) {
+    notifier(fait ? "Geste refait. " + croquisHistoire()
+                  : "Rien à refaire : on est au dernier geste.");
+  }
+
+  function majBoutonsHistoire() {
+    if (noeuds.defaire) noeuds.defaire.disabled = histoire.index <= 0;
+    if (noeuds.refaire) {
+      noeuds.refaire.disabled = histoire.index >= histoire.pile.length - 1;
+    }
+  }
+
+  /** À appeler après CHAQUE mutation locale du modèle.
+   *
+   *  `source` nomme le geste, pour l'historique : deux appels rapprochés de même
+   *  source ne comptent que pour un pas. Les appelants qui ne la passent pas
+   *  valent chacun un pas — c'est le bon défaut, un geste anonyme est un geste
+   *  distinct.
+   */
+  function marquerModifie(source) {
+    pousserHistoire(source);
+    etat.brouillon = compterModifications();
     rangerBrouillon();
     rendreBarrePublication();
     if (etat.direct) programmerPublicationDirecte();
+  }
+
+  // ── Exporter et importer la mise en scène ──────────────────────────────
+  //
+  // LE FORMAT D'ÉCHANGE EST LE MODÈLE : ce que rend le GET, ce qu'accepte le
+  // PUT. Un format à part aurait dérivé au premier champ ajouté, et un fichier
+  // de la semaine dernière serait revenu amputé sans que rien ne le dise.
+  //
+  // LE PIÈGE EST CÔTÉ SERVEUR, ET IL NE LÈVE RIEN. `fusionner()` rend la
+  // livraison par défaut sur toute entrée qui n'a pas de `scenes` exploitable
+  // (bot/core/overlay_layout.py). C'est le bon comportement pour lui — un JSON
+  // tronqué en base ne doit jamais donner un overlay vide en plein live —, mais
+  // il veut dire qu'un fichier tordu envoyé d'ici écraserait TOUTE la mise en
+  // scène par les défauts, en silence et à l'antenne. D'où le refus AVANT
+  // l'envoi : ce n'est pas une revalidation du serveur, c'est la garde contre
+  // son repli.
+
+  /** `null` si c'est une mise en scène, la raison du refus sinon. */
+  function refusImport(donnees) {
+    if (!donnees || typeof donnees !== "object" || Array.isArray(donnees)) {
+      return "ce fichier ne décrit pas une mise en scène.";
+    }
+    const scenes = donnees.scenes;
+    if (!Array.isArray(scenes) || !scenes.length) {
+      return "aucune scène là-dedans.";
+    }
+    const muettes = scenes.filter(function (s) {
+      return !s || typeof s !== "object" || typeof s.slug !== "string"
+        || !s.slug.trim();
+    }).length;
+    if (muettes) {
+      return muettes + " scène(s) sans identifiant — fichier tronqué, ou "
+        + "produit par autre chose que ce panneau.";
+    }
+    return null;
+  }
+
+  /** « Celui d'avant le live de samedi » : sans date, deux exports ne se
+   *  distinguent pas. Deux chiffres partout — un `2026-8-3` ne se trie pas. */
+  function nomExport() {
+    const d = new Date();
+    const deux = function (n) { return (n < 10 ? "0" : "") + n; };
+    return "wally-mise-en-scene-" + d.getFullYear() + "-"
+      + deux(d.getMonth() + 1) + "-" + deux(d.getDate()) + ".json";
+  }
+
+  /** Le fichier part du NAVIGATEUR et non du serveur : c'est ce qu'on a SOUS
+   *  LES YEUX qu'on veut garder, brouillon compris. Passer par un GET
+   *  exporterait l'antenne — l'inverse de ce qu'on demande quand on exporte
+   *  avant de tenter quelque chose. */
+  function exporter() {
+    if (!etat.layout) {
+      notifier("Rien à exporter : la mise en scène n'est pas chargée.", "error");
+      return;
+    }
+    let url = null;
+    try {
+      url = URL.createObjectURL(new Blob(
+        [JSON.stringify(etat.layout, null, 2)], { type: "application/json" }));
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = nomExport();
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+    } catch (e) {
+      notifier("Export impossible : " + e.message, "error");
+      return;
+    }
+    // Révoquée plus tard : tout de suite, certains navigateurs coupent le
+    // téléchargement qu'ils viennent à peine de commencer.
+    if (url) window.setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    notifier(etat.brouillon > 0
+      ? "Exporté tel qu'à l'écran — les " + etat.brouillon
+        + " modification(s) non publiée(s) sont dedans."
+      : "Mise en scène exportée.");
+  }
+
+  /** Ce qu'un fichier ne garantit pas, et dont le panneau a besoin pour se
+   *  dessiner sans exception : trois champs par scène. Le serveur borne et
+   *  complète le reste à la publication — mais il ne le fera qu'à ce
+   *  moment-là, et d'ici là c'est nous qui rendons la scène. */
+  function normaliserImport(donnees) {
+    (donnees.scenes || []).forEach(function (s) {
+      if (!s.elements || typeof s.elements !== "object") s.elements = {};
+      if (!Array.isArray(s.ordre)) s.ordre = Object.keys(s.elements);
+      if (!Array.isArray(s.groupes)) s.groupes = [];
+      if (typeof s.nom !== "string" || !s.nom) s.nom = s.slug;
+    });
+    return donnees;
+  }
+
+  function importer(fichier) {
+    if (!fichier) return;
+    const lecteur = new FileReader();
+    lecteur.onerror = function () {
+      notifier("Fichier illisible.", "error");
+    };
+    lecteur.onload = function () {
+      let donnees = null;
+      try {
+        donnees = JSON.parse(String(lecteur.result));
+      } catch (e) {
+        notifier("Import refusé : ce n'est pas du JSON valide.", "error");
+        return;
+      }
+      const refus = refusImport(donnees);
+      if (refus) { notifier("Import refusé : " + refus, "error"); return; }
+      const n = donnees.scenes.length;
+      if (!window.confirm(
+            "Remplacer la mise en scène par « " + fichier.name + " » ?\n\n"
+            + n + " scène(s) y sont décrites.\n\nRien ne part à l'antenne : "
+            + "comme tout le reste ici, l'import passe par le brouillon, et "
+            + "Ctrl+Z le défait.")) {
+        return;
+      }
+      etat.layout = normaliserImport(donnees);
+      // Même résolution que `adopter()` : la scène regardée n'existe
+      // probablement plus dans le fichier qui arrive.
+      const scenes = etat.layout.scenes;
+      const existe = scenes.some(function (s) { return s.slug === etat.slugCourant; });
+      if (!existe) etat.slugCourant = etat.layout.defaut || scenes[0].slug;
+      const scene = sceneCourante();
+      if (!scene || !scene.elements[etat.elementCourant]) {
+        etat.elementCourant = (scene && scene.ordre && scene.ordre[0]) || null;
+      }
+      retenirScene(etat.slugCourant);
+      nettoyerSelection();
+      // Un pas d'historique à lui : un import se défait comme un geste, et
+      // c'est bien le moins pour l'opération qui remplace TOUT.
+      marquerModifie("import");
+      rendreTout();
+      notifier(n + " scène(s) importée(s) — « Mettre à jour » pour les envoyer "
+        + "à l'antenne.");
+    };
+    lecteur.readAsText(fichier);
   }
 
   /** Le feu vert avant une opération de STRUCTURE (renommer, dupliquer,
@@ -3077,7 +3368,11 @@ window.OverlayAdmin = (function () {
       m.element.y = arrondi(m.depart.y + d.y);
     });
     if (!evt.repeat) direLesBloques(bloc.bloques);
-    marquerModifie();
+    // Une flèche MAINTENUE se répète : sans source commune, deux secondes
+    // d'ajustement videraient les vingt pas de l'historique. Toutes directions
+    // confondues — aller-retour gauche/droite pour caler un élément est UN
+    // geste, et une demi-seconde d'arrêt le clôt.
+    marquerModifie("fleches");
     rendreSurface();
     rendreReglages();
   }
@@ -3180,6 +3475,10 @@ window.OverlayAdmin = (function () {
     ["Maj + G", "dissoudre les groupes de la sélection"],
     ["C puis V", "copier les réglages d'un élément (position, ancrage, "
                  + "échelle) et les coller sur la sélection"],
+    ["Ctrl + Z", "annuler le dernier geste du brouillon (vingt pas) — sans "
+                 + "rapport avec « Annuler la publication », qui touche à "
+                 + "l'antenne"],
+    ["Ctrl + Y", "refaire le geste annulé (Ctrl + Maj + Z aussi)"],
     ["?", "afficher ou masquer cette liste"],
   ];
 
@@ -3613,6 +3912,25 @@ window.OverlayAdmin = (function () {
       if (evt.key === "a" || evt.key === "A") {
         evt.preventDefault();
         toutSelectionner();
+        return;
+      }
+      // Ctrl+Z / Ctrl+Y sur le BROUILLON. Hors d'un champ de saisie seulement —
+      // la garde est en tête de fonction : dans un champ, Ctrl+Z appartient au
+      // texte qu'on est en train de taper, et le lui prendre serait pire que de
+      // ne pas avoir d'historique du tout.
+      //
+      // Maj+Z refait aussi : c'est la convention de la moitié des éditeurs, et
+      // Ctrl+Y n'existe pas sous macOS.
+      if (evt.key === "z" || evt.key === "Z") {
+        evt.preventDefault();
+        if (evt.shiftKey) direRefait(refaireHistoire());
+        else direDefait(annulerHistoire());
+        return;
+      }
+      if (evt.key === "y" || evt.key === "Y") {
+        evt.preventDefault();
+        direRefait(refaireHistoire());
+        return;
       }
       return;   // les autres Ctrl+… restent au navigateur (copier, recharger…)
     }
@@ -3703,7 +4021,10 @@ window.OverlayAdmin = (function () {
         // l'élément filait dans le coin haut-gauche entre deux frappes.
         if (input.value.trim() === "") return;
         element[def[0]] = borner(input.value, def[2], def[3], element[def[0]]);
-        marquerModifie();
+        // La source nomme LE champ et L'élément : taper « 12.5 » est un geste,
+        // mais passer au champ voisin — ou au même champ d'un autre élément —
+        // en est un autre, et doit rester annulable à part.
+        marquerModifie("champ:" + def[0] + ":" + (etat.elementCourant || ""));
         rendreSurface();
       });
       bloc.appendChild(input);
@@ -3854,6 +4175,7 @@ window.OverlayAdmin = (function () {
     noeuds.publier.disabled = n === 0;
     noeuds.abandonner.disabled = n === 0;
     if (noeuds.annuler) noeuds.annuler.disabled = !etat.precedent;
+    majBoutonsHistoire();
   }
 
   // ── Le brouillon retrouvé au chargement ─────────────────────────────────
@@ -3899,6 +4221,10 @@ window.OverlayAdmin = (function () {
     }
     retenirScene(etat.slugCourant);
     noeuds.proposition.style.display = "none";
+    // Les gestes qui ont produit ce brouillon appartiennent à une autre visite :
+    // la pile repart d'ici, en gardant leur COMPTE (`base`) — ils sont toujours
+    // en attente de publication, ils ne sont simplement plus annulables.
+    reinitialiserHistoire();
     rendreTout();
     notifier("Brouillon repris — rien n'est parti à l'antenne.");
   }
@@ -3925,6 +4251,12 @@ window.OverlayAdmin = (function () {
     // pas encore ».
     noeuds.apercuMesures = creer("span", "ovl-apercu-mesures", "aucune taille mesurée");
     barre.appendChild(noeuds.apercuMesures);
+
+    // Les chevauchements entre éléments qui peuvent être à l'écran en même
+    // temps. À côté du compte des mesures, parce que les deux se lisent
+    // ensemble : un chevauchement « indéterminé » l'est faute de mesure.
+    noeuds.chevauchements = creer("span", "ovl-chevauchements", "aucun chevauchement");
+    barre.appendChild(noeuds.chevauchements);
 
     // Sans lui, une seule coupure réseau laisse le repli en place jusqu'au
     // prochain changement de scène — et il n'y a pas toujours de seconde scène
@@ -4223,12 +4555,6 @@ window.OverlayAdmin = (function () {
     noeuds.propositionJeter.title = "Oublie le brouillon et garde ce qui est à l'antenne.";
     noeuds.proposition.appendChild(noeuds.propositionJeter);
     droite.appendChild(noeuds.proposition);
-    // Les chevauchements entre éléments qui peuvent être à l'écran en même
-    // temps. À côté du compte des mesures, parce que les deux se lisent
-    // ensemble : un chevauchement « indéterminé » l'est faute de mesure.
-    noeuds.chevauchements = creer("span", "ovl-chevauchements", "aucun chevauchement");
-    barre.appendChild(noeuds.chevauchements);
-
 
     const publication = creer("div", "ovl-publication");
     const direct = creer("label", "ovl-direct");
@@ -4260,6 +4586,28 @@ window.OverlayAdmin = (function () {
       + "n'a pas cliqué « Mettre à jour ». Coché : chaque déplacement part au "
       + "relâchement — rien pendant le geste.";
     publication.appendChild(direct);
+    // Défaire / refaire, à GAUCHE du compteur : ils portent sur les gestes qui
+    // l'ont fait monter, pas sur ce qui est à l'antenne. « Annuler la
+    // publication », qui lui touche à l'antenne, reste à l'autre bout de la
+    // barre — deux « annuler » côte à côte auraient été le meilleur moyen de
+    // cliquer sur le mauvais un soir de live.
+    noeuds.defaire = creer("button", "btn ovl-histoire", "↶");
+    noeuds.defaire.title = "Annuler le dernier geste du brouillon (Ctrl + Z). "
+      + "N'envoie rien : le brouillon seul recule.";
+    noeuds.defaire.setAttribute("aria-label", "Annuler le dernier geste");
+    noeuds.defaire.disabled = true;
+    noeuds.defaire.addEventListener("click", function () {
+      direDefait(annulerHistoire());
+    });
+    publication.appendChild(noeuds.defaire);
+    noeuds.refaire = creer("button", "btn ovl-histoire", "↷");
+    noeuds.refaire.title = "Refaire le geste annulé (Ctrl + Y).";
+    noeuds.refaire.setAttribute("aria-label", "Refaire le geste annulé");
+    noeuds.refaire.disabled = true;
+    noeuds.refaire.addEventListener("click", function () {
+      direRefait(refaireHistoire());
+    });
+    publication.appendChild(noeuds.refaire);
     noeuds.compteur = creer("span", "ovl-compteur", "Rien en attente");
     publication.appendChild(noeuds.compteur);
     noeuds.publier = creer("button", "btn btn-success", "Mettre à jour");
@@ -4276,6 +4624,32 @@ window.OverlayAdmin = (function () {
     noeuds.annuler.disabled = true;
     noeuds.annuler.addEventListener("click", function () { annulerPublication(); });
     publication.appendChild(noeuds.annuler);
+
+    // Le fichier : sauver une mise en scène avant d'en tenter une autre, et la
+    // reprendre. L'input reste dans le document, invisible — un `click()` sur un
+    // input détaché n'ouvre le sélecteur nulle part.
+    const fichier = document.createElement("input");
+    fichier.type = "file";
+    fichier.accept = "application/json,.json";
+    fichier.style.display = "none";
+    fichier.addEventListener("change", function () {
+      importer(fichier.files && fichier.files[0]);
+      // Vidé APRÈS : sans ça, réimporter deux fois le même fichier n'émettrait
+      // pas de second `change`, et le bouton semblerait mort.
+      fichier.value = "";
+    });
+    publication.appendChild(fichier);
+    const exportBtn = creer("button", "btn", "Exporter");
+    exportBtn.title = "Enregistre la mise en scène AFFICHÉE (brouillon compris) "
+      + "dans un fichier JSON daté.";
+    exportBtn.addEventListener("click", exporter);
+    publication.appendChild(exportBtn);
+    const importBtn = creer("button", "btn", "Importer");
+    importBtn.title = "Remplace la mise en scène par le contenu d'un fichier "
+      + "exporté. Passe par le brouillon — rien ne part à l'antenne sans "
+      + "« Mettre à jour ».";
+    importBtn.addEventListener("click", function () { fichier.click(); });
+    publication.appendChild(importBtn);
     droite.appendChild(publication);
 
     corps.appendChild(droite);
@@ -4336,6 +4710,10 @@ window.OverlayAdmin = (function () {
       etat.slugCourant = sceneRetenue();
       enAttente = lireBrouillon();
     } catch (e) {
+      // DIT, pas seulement affiché : « Mise en scène indisponible » sans la
+      // moindre trace laisse le panneau muet sur SA propre panne, et il n'y a
+      // alors plus rien à quoi se raccrocher pour la corriger.
+      if (window.console) console.error("Panneau de mise en scène :", e);
       conteneur.textContent = "Mise en scène indisponible.";
       return;
     }
@@ -4448,6 +4826,19 @@ window.OverlayAdmin = (function () {
     selectionnerGroupe: selectionnerGroupe,
     retirerDuGroupe: retirerDuGroupe,
     ajouterAuGroupe: ajouterAuGroupe,
+    // L'historique du brouillon. Exposé pour être TESTÉ hors navigateur : c'est
+    // de l'état pur, et ce qu'on veut vérifier — dix annulations ramènent au
+    // départ, une frappe ne vaut qu'un pas — ne se voit pas à l'œil.
+    HISTOIRE_PAS: HISTOIRE_PAS,
+    histoire: histoire,
+    reinitialiserHistoire: reinitialiserHistoire,
+    annulerHistoire: annulerHistoire,
+    refaireHistoire: refaireHistoire,
+    // Le tri d'un fichier importé. Exposé pour être TESTÉ : c'est la garde
+    // contre le repli silencieux du serveur, et ce qu'elle REFUSE ne se voit
+    // qu'en la confrontant à des fichiers tordus.
+    refusImport: refusImport,
+    nomExport: nomExport,
     // Le détecteur de chevauchement. Pur, et c'est là que se joue le seul
     // arbitrage qui compte : on ne compare que ce qui COHABITE, et jamais sur
     // une taille supposée — une fausse alerte apprend à ne plus regarder

@@ -4422,6 +4422,17 @@ body.is-mobile .mobile-back-btn {
 .ovl-compteur { font-size: 0.75rem; color: var(--text-muted); margin-right: auto; }
 .ovl-compteur.en-attente { color: #06b6d4; }
 .ovl-publication .btn:disabled { opacity: 0.4; cursor: default; }
+/* Défaire / refaire : un seul glyphe, donc un bouton à sa taille. À la largeur
+   d'un bouton de texte, ils tiraient l'œil autant que « Mettre à jour » — alors
+   qu'ils ne touchent qu'au brouillon. La paire reste collée : ce sont deux sens
+   du même geste. */
+.ovl-histoire {
+  padding: 6px 10px;
+  font-size: 1rem;
+  line-height: 1;
+  min-width: 0;
+}
+.ovl-histoire + .ovl-histoire { margin-left: -6px; }
 
 /* La proposition de reprise du brouillon, au-dessus de la barre. Liserré cyan
    à gauche : c'est une question posée au chargement, pas un réglage de plus —
