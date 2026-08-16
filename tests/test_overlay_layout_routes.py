@@ -100,6 +100,44 @@ def test_get_admin_layout_joint_les_libelles_lisibles():
     assert not manquants, f"sans libellé : {sorted(manquants)}"
 
 
+def test_get_admin_layout_defauts_sert_la_livraison_sans_rien_ecrire():
+    """« Réinitialiser » lit les valeurs d'origine ICI, et nulle part ailleurs.
+
+    Deux tables de défauts — une en Python, une dans le navigateur — auraient
+    divergé à la première évolution du modèle, et « remettre à l'origine »
+    aurait rendu une position qui n'est plus celle d'origine. La route les sert
+    donc, et elle ne touche pas à ce qui est rangé.
+    """
+    db = _State()
+    # Une mise en scène déjà réglée, en base : c'est elle que le GET normal rend.
+    range_ = layout_par_defaut()
+    range_["scenes"][0]["elements"]["bingo"]["x"] = 12.5
+    db.rows[LAYOUT_KEY] = json.dumps(range_)
+    client = _client(db)
+
+    servi = client.get("/api/admin/overlay/layout", params={"defauts": 1})
+    assert servi.status_code == 200
+    origine = layout_par_defaut()["scenes"][0]["elements"]["bingo"]
+    assert servi.json()["scenes"][0]["elements"]["bingo"] == origine
+    # Les libellés voyagent aussi : le panneau lit la réponse avec le même code.
+    assert servi.json()["libelles"]["bingo"]["nom"]
+
+    # Rien n'a bougé en base, et le GET normal rend toujours le réglé.
+    assert json.loads(db.rows[LAYOUT_KEY])["scenes"][0]["elements"]["bingo"]["x"] == 12.5
+    normal = client.get("/api/admin/overlay/layout")
+    assert normal.json()["scenes"][0]["elements"]["bingo"]["x"] == 12.5
+
+
+def test_get_admin_layout_sans_defauts_rend_ce_qui_est_range():
+    """Le paramètre absent ne change RIEN : c'est le chemin de tous les jours."""
+    db = _State()
+    range_ = layout_par_defaut()
+    range_["scenes"][0]["elements"]["avatar"]["scale"] = 1.4
+    db.rows[LAYOUT_KEY] = json.dumps(range_)
+    r = _client(db).get("/api/admin/overlay/layout", params={"defauts": 0})
+    assert r.json()["scenes"][0]["elements"]["avatar"]["scale"] == 1.4
+
+
 # ── route admin : écriture ──
 
 def test_put_borne_la_position_avant_de_ranger():

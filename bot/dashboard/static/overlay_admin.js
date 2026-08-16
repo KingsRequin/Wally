@@ -133,6 +133,12 @@ window.OverlayAdmin = (function () {
   const etat = {
     layout: null,
     libelles: {},   // clé → {nom, description}, servi par le GET du layout
+    // La mise en scène D'ORIGINE, servie par le même GET (`?defauts=1`) et mise
+    // en cache pour la visite. JAMAIS écrite ici : `ELEMENTS` bouge à chaque
+    // widget ajouté, et une seconde table dans le navigateur aurait divergé de
+    // la première — « Réinitialiser » aurait alors rendu une position d'origine
+    // qui n'en est plus une. `null` tant qu'on n'a pas eu besoin d'elle.
+    defauts: null,
     slugCourant: null,
     // `elementCourant` est le PRINCIPAL de la sélection : celui dont la barre de
     // réglages montre les valeurs, celui qui porte les poignées, et celui qu'on
@@ -3263,6 +3269,160 @@ window.OverlayAdmin = (function () {
       + (bloques ? " " + bloques + " verrouillé(s) n'ont pas bougé." : ""));
   }
 
+  // ── Réinitialiser ───────────────────────────────────────────────────────
+  //
+  // LES DÉFAUTS VIENNENT DU SERVEUR, JAMAIS D'UNE COPIE ÉCRITE ICI.
+  //
+  // C'est la même règle que les libellés (voir en tête de fichier) et pour la
+  // même raison : `ELEMENTS` (bot/core/overlay_layout.py) bouge à chaque widget
+  // ajouté, et une seconde table dans le navigateur aurait divergé de la
+  // première à la première évolution du modèle. « Réinitialiser » rendrait alors
+  // un élément à une position d'origine QUI N'EST PLUS celle d'origine — le pire
+  // des deux mondes, puisqu'on aurait cru revenir à un état connu.
+  //
+  // Un seul appel, mis en cache pour la durée de la visite : ce sont des
+  // constantes, elles ne changent pas d'un clic à l'autre.
+
+  /** Les défauts servis, ou une promesse qui les rapporte. */
+  function chargerDefauts() {
+    if (etat.defauts) return Promise.resolve(etat.defauts);
+    return appeler(URL_LAYOUT + "?defauts=1")
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (layout) {
+        if (!layout || !layout.scenes || !layout.scenes.length) return null;
+        etat.defauts = layout;
+        return layout;
+      })
+      .catch(function () { return null; });
+  }
+
+  /** Les éléments d'origine. Toutes les scènes livrées portent la MÊME copie
+   *  d'`ELEMENTS` (`layout_par_defaut`) : on prend celle qui porte le slug
+   *  courant si elle existe, la première sinon — une scène créée à la main n'a
+   *  évidemment pas de scène d'origine à son nom. */
+  function elementsDefaut(defauts, slug) {
+    const scenes = defauts.scenes || [];
+    let scene = null;
+    for (let i = 0; i < scenes.length; i++) {
+      if (scenes[i].slug === slug) { scene = scenes[i]; break; }
+    }
+    return ((scene || scenes[0]) || {}).elements || {};
+  }
+
+  /** Ce qu'une remise à zéro CHANGERAIT, et ce que le cadenas retient. Pure,
+   *  et séparée de l'écriture pour la même raison que `planPropagation` : la
+   *  confirmation annonce un chiffre, il doit être compté. */
+  function planReinitialisation(scene, cles, origine) {
+    const change = [], bloques = [];
+    (cles || []).forEach(function (cle) {
+      const el = (scene.elements || {})[cle];
+      const def = origine[cle];
+      if (!el || !def) return;
+      if (el.locked) { bloques.push(cle); return; }
+      const different = Object.keys(def).some(function (c) {
+        return el[c] !== def[c];
+      });
+      if (different) change.push(cle);
+    });
+    return { change: change, bloques: bloques };
+  }
+
+  /** Remet des éléments à leur valeur d'origine. TOUS leurs champs, pas
+   *  seulement le placement : « ses valeurs d'origine » veut dire l'élément tel
+   *  qu'il est livré — position, ancrage, échelle, visibilité, exclusivité, et
+   *  la cadence du rotateur pour celui qui la porte. Un reset qui laisserait
+   *  `hidden` derrière ne serait pas un reset.
+   *
+   *  `locked` n'est jamais réécrit : il est la garde, et une garde qu'une
+   *  opération peut lever n'en est pas une. Les verrouillés sont écartés avant. */
+  function appliquerReinitialisation(scene, cles, origine) {
+    cles.forEach(function (cle) {
+      const el = scene.elements[cle], def = origine[cle];
+      Object.keys(def).forEach(function (c) {
+        if (c !== "locked") el[c] = def[c];
+      });
+    });
+  }
+
+  /** Le geste. `cles` : la sélection, ou toute la scène. */
+  function reinitialiser(cles, quoi, aussiLaStructure) {
+    const scene = sceneCourante();
+    if (!scene) return;
+    if (!cles.length) { notifier("Aucun élément sélectionné.", "error"); return; }
+    chargerDefauts().then(function (defauts) {
+      if (!defauts) {
+        notifier("Valeurs d'origine indisponibles : le serveur n'a pas répondu. "
+          + "Rien n'a été touché.", "error");
+        return;
+      }
+      // `sceneCourante()` est RELUE : l'appel réseau a pu passer pendant qu'on
+      // changeait de scène, et remettre à zéro une scène qu'on ne regarde plus
+      // est exactement le genre de chose qu'on ne voit qu'après coup.
+      const courante = sceneCourante();
+      if (!courante || courante.slug !== scene.slug) {
+        notifier("La scène a changé pendant le chargement des valeurs "
+          + "d'origine : rien n'a été touché.", "error");
+        return;
+      }
+      const origine = elementsDefaut(defauts, courante.slug);
+      const plan = planReinitialisation(courante, cles, origine);
+      const brute = defautsStructure(defauts, courante.slug);
+      // L'empilement et les groupes ne repartent QUE sur « toute la scène » :
+      // remettre l'ordre d'origine parce qu'on a réinitialisé un dé serait un
+      // effet de bord qu'on découvre après coup.
+      const structure = !!aussiLaStructure && (
+        (courante.ordre || []).join(",") !== brute.ordre.join(",")
+        || JSON.stringify(courante.groupes || []) !== JSON.stringify(brute.groupes));
+      if (!plan.change.length && !structure) {
+        if (plan.bloques.length) direLesBloques(plan.bloques);
+        else notifier("Rien à réinitialiser : " + quoi + " est déjà d'origine.");
+        return;
+      }
+      if (!window.confirm(
+          "Remettre " + quoi + " à ses valeurs d'origine dans « " + courante.nom
+          + " » ?\n\n" + plan.change.length + " élément(s) reviendront à leur "
+          + "place, leur ancrage, leur échelle et leur visibilité de livraison :\n"
+          + (plan.change.length
+             ? "  " + plan.change.map(libelle).join(", ")
+             : "  (aucun)")
+          + (structure ? "\n\nL'empilement et les groupes de la scène repartent "
+                         + "eux aussi de la livraison." : "")
+          + (plan.bloques.length
+             ? "\n\n" + plan.bloques.length + " élément(s) verrouillé(s) ne "
+               + "bougeront pas : " + plan.bloques.map(libelle).join(", ") + "."
+             : "")
+          + "\n\nComme tout le reste ici, la modification passe par le brouillon.")) {
+        return;
+      }
+      appliquerReinitialisation(courante, plan.change, origine);
+      if (structure) {
+        // Copie PROFONDE : les défauts sont gardés en cache pour toute la
+        // visite, et une référence partagée ferait suivre la scène à chaque
+        // regroupement fait ensuite.
+        courante.ordre = brute.ordre.slice();
+        courante.groupes = JSON.parse(JSON.stringify(brute.groupes));
+      }
+      nettoyerSelection();
+      marquerModifie();
+      rendreTout();
+      notifier(plan.change.length + " élément(s) remis à leur valeur d'origine"
+        + (structure ? ", empilement et groupes compris" : "") + "."
+        + (plan.bloques.length ? " " + plan.bloques.length
+           + " verrouillé(s) n'ont pas bougé." : ""));
+    });
+  }
+
+  /** L'empilement et les groupes d'origine d'une scène. */
+  function defautsStructure(defauts, slug) {
+    const scenes = defauts.scenes || [];
+    let scene = null;
+    for (let i = 0; i < scenes.length; i++) {
+      if (scenes[i].slug === slug) { scene = scenes[i]; break; }
+    }
+    scene = scene || scenes[0] || {};
+    return { ordre: scene.ordre || [], groupes: scene.groupes || [] };
+  }
+
   /** Toutes les clés de la scène — la propagation « scène entière ». Prises
    *  dans `ordre` : c'est la liste qui fait foi, et elle est complétée par le
    *  serveur à chaque enregistrement. */
@@ -3740,6 +3900,20 @@ window.OverlayAdmin = (function () {
       + "démarrage, visible en jeu. Coché : le masquage part avec le placement.";
     gp.appendChild(vis);
 
+    // Le filet du placement : revenir à ce qui était livré. Les valeurs viennent
+    // du SERVEUR (`?defauts=1`), jamais d'une copie écrite ici.
+    const gz = groupe("Réinitialiser");
+    outil(gz, "Sélection",
+      "Remet les éléments sélectionnés à leurs valeurs d'origine — position, "
+      + "ancrage, échelle et visibilité de livraison. Les valeurs viennent du "
+      + "serveur, pas d'une copie du navigateur.", 1,
+      function () { reinitialiser(selection(), "la sélection", false); });
+    outil(gz, "Toute la scène",
+      "Remet les trente-quatre éléments de cette scène à leurs valeurs "
+      + "d'origine, empilement et groupes compris. Les autres scènes ne sont "
+      + "pas touchées.", 0,
+      function () { reinitialiser(clesScene(), "toute la scène", true); });
+
     // Le « ? » à droite, hors des groupes : il ne porte pas sur la sélection,
     // et il reste cliquable quand tout le reste est grisé — c'est justement
     // quand on ne sait pas quoi faire qu'on le cherche.
@@ -4088,6 +4262,16 @@ window.OverlayAdmin = (function () {
     appliquerPropagation: appliquerPropagation,
     propager: propager,
     clesScene: clesScene,
+    // La remise à zéro. `planReinitialisation` est pure et décide de tout : ce
+    // qui revient à l'origine, ce que le cadenas retient, et le chiffre annoncé.
+    // `elementsDefaut` dit d'où sortent les valeurs — du SERVEUR, jamais d'une
+    // table écrite ici.
+    chargerDefauts: chargerDefauts,
+    elementsDefaut: elementsDefaut,
+    defautsStructure: defautsStructure,
+    planReinitialisation: planReinitialisation,
+    appliquerReinitialisation: appliquerReinitialisation,
+    reinitialiser: reinitialiser,
     // Les groupes. `ordreGroupe` est le miroir de `_ordre_avec_groupes()`
     // (Python) : deux calculs qui doivent rendre le MÊME empilement, sans quoi
     // la liste et l'antenne racontent deux histoires. `boiteEnglobante` est le
