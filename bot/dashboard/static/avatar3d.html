@@ -156,11 +156,13 @@
          d'un jeu. Autant le lire ici plutôt que de le supposer. */
       const mesures = document.getElementById("mesures");
       setInterval(() => {
-        const { ms, nulles } = wally.mesures();
+        const { ms, densite, nulles } = wally.mesures();
         const ips = ms > 0 ? Math.round(1000 / ms) : 0;
-        /* Les redimensionnements vides ne sont affichés QUE s'il y en a : un
-           compteur à zéro en permanence finit par ne plus être lu. */
-        mesures.textContent = `${ms.toFixed(1)} ms/image · ${ips} images/s`
+        /* La densité est affichée parce qu'elle s'ajuste toute seule : sans
+           elle, un « 60 images/s » ne dit pas s'il est obtenu à pleine finesse
+           ou en ayant dégradé. Les redimensionnements vides n'apparaissent QUE
+           s'il y en a — un compteur à zéro en permanence n'est plus lu. */
+        mesures.textContent = `${ms.toFixed(1)} ms/image · ${ips} images/s · densité ×${densite.toFixed(2)}`
           + (nulles ? ` · ${nulles} mesure(s) vide(s) interceptée(s)` : "");
       }, 500);
     } catch (e) {

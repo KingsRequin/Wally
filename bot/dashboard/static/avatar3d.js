@@ -265,6 +265,14 @@ float feu(vec3 p) {
 /* Le visage. En union FRANCHE (min) et non fondue : un trait qui se fond
    dans la joue n'est plus un trait. */
 vec2 visage(vec3 p) {
+  /* Borne du visage : huit primitives pour une zone qui n'occupe qu'un coin du
+     volume. Les évaluer partout revenait à payer le visage sur chaque pas de
+     chaque rayon. La distance à la sphère englobante MINORE la vraie, donc le
+     raccourci reste licite pour la marche ; le matériau renvoyé n'a aucune
+     importance ici, on est encore à plus de 6 cm de toute surface. */
+  float db = length(p - vec3(0.0, -0.16, 0.40)) - 0.55;
+  if (db > 0.06) return vec2(db, 1.0);
+
   vec3 ps = vec3(abs(p.x), p.y, p.z);          // symétrie : un œil pour deux
 
   /* 🚨 Les profondeurs (z) suivent la surface RÉELLE du corps, qui recule
@@ -319,12 +327,13 @@ vec3 normale(vec3 p) {
 float ombre(vec3 p, vec3 l) {
   float res = 1.0;
   float t = 0.03;
-  /* 16 pas et non 24 : au-delà, on paie une pénombre que personne ne distingue
-     sur un avatar de 200 px. Ombre, occlusion, traversée et normale coûtent
-     chacune une évaluation COMPLÈTE du champ par pixel touché — c'est là que
-     part le budget, pas dans la marche principale. */
-  for (int i = 0; i < 16; i++) {
-    float h = carte(p + l * t).x;
+  /* 12 pas, et sur le champ du FEU SEUL — pas du visage. Ce sont les langues
+     qui portent l'ombre utile ; les yeux et les sourcils, déjà noirs, n'en
+     projettent aucune qu'on distingue. Ombre, occlusion, traversée et normale
+     coûtent chacune une évaluation complète du champ PAR PIXEL TOUCHÉ : c'est
+     là que part le budget, pas dans la marche principale. */
+  for (int i = 0; i < 12; i++) {
+    float h = feu(p + l * t);
     res = min(res, 10.0 * h / t);
     t += clamp(h, 0.02, 0.20);
     if (res < 0.005 || t > 2.5) break;
@@ -353,7 +362,7 @@ float traversee(vec3 p, vec3 n, vec3 l) {
   float acc = 0.0;
   for (int i = 1; i <= 3; i++) {
     float h = 0.075 * float(i);
-    acc += max(0.0, -carte(p - n * 0.01 + l * h).x);
+    acc += max(0.0, -feu(p - n * 0.01 + l * h));
   }
   return clamp(1.0 - acc * 4.2, 0.0, 1.0);
 }
@@ -404,11 +413,11 @@ void main() {
   float tMax = -b + racine;
 
   /* L'anticrénelage vient de la DENSITÉ de pixels, pas d'un calcul de
-     couverture : le canevas est rendu au double et réduit par le navigateur,
-     soit quatre échantillons par pixel affiché. Un bord en escalier se verrait
-     immédiatement sur un fond de jeu — c'est vérifié à l'écran, sur damier. */
+     couverture : le canevas est rendu plus grand que sa taille d'affichage et
+     réduit par le navigateur. La densité est ajustée en continu selon les
+     images par seconde mesurées — voir la boucle côté JavaScript. */
   float mat = 0.0;
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < 52; i++) {
     vec3 p = ro + rd * t;
     vec2 h = carte(p);
     if (h.x < 0.0009) { mat = h.y; break; }
@@ -426,7 +435,11 @@ void main() {
   vec3 n = normale(p);
 
   vec3 lum = normalize(vec3(0.55, 0.85, 0.62));
-  float sh = ombre(p + n * 0.012, lum);
+  float diff = max(dot(n, lum), 0.0);
+  /* Une surface qui TOURNE LE DOS à la lumière est déjà noire : y lancer un
+     rayon d'ombre, c'est payer douze évaluations du champ pour multiplier zéro
+     par un. Sur une silhouette convexe, ça retire la moitié des pixels. */
+  float sh = diff > 0.0 ? ombre(p + n * 0.012, lum) : 1.0;
   float ao = occlusion(p, n);
 
   /* Ciel chaud / sol sombre. Un dégradé selon la normale remplace une carte
@@ -452,7 +465,12 @@ void main() {
        est épaisse. traversee() vaut 1 quand la lumière passe, donc l'émission
        suit sa valeur ; la prendre à l'envers allumait tout le ventre et lavait
        la couleur en un jaune plat. */
-    float trav = traversee(p, n, lum);
+    /* La translucidité ne se voit que sur la moitié haute, là où la matière
+       est mince. En bas, le ventre est opaque : on économise trois évaluations
+       du champ plutôt que de calculer un résultat qui vaudra zéro. Le fondu
+       évite la ligne de démarcation qu'un simple seuil laisserait. */
+    float chaud = smoothstep(-0.05, 0.30, p.y);
+    float trav = chaud > 0.004 ? traversee(p, n, lum) * chaud : 0.0;
     emis = couleurFeu(p.y + 0.35) * (0.05 + 0.34 * trav);
   }
 
@@ -461,7 +479,6 @@ void main() {
      continuent alors seuls de monter, et la teinte glisse vers le saumon pâle.
      Le délavage d'un rendu trop éclairé n'est pas une affaire de goût, c'est
      cette asymétrie-là. */
-  float diff = max(dot(n, lum), 0.0);
   vec3 col = albedo * (ciel * ao * 0.55 + vec3(1.0, 0.93, 0.82) * diff * sh * 0.88);
 
   vec3 hv = normalize(lum - rd);
@@ -501,9 +518,25 @@ void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }
 export function creerWally(canvas, surPanne) {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
   renderer.setClearAlpha(0);
-  /* Le tracé de rayon coûte au PIXEL : doubler la densité quadruple le travail.
-     Deux suffisent pour un bord propre, au-delà c'est payé pour rien. */
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  /* 🚨 Le tracé de rayon coûte au PIXEL, et au carré de la densité : passer de
+     1 à 2 quadruple le travail. C'était le premier poste de dépense, et une
+     densité fixe est un pari sur la machine — or l'overlay tourne chez le
+     streamer, à côté d'un jeu qui prend déjà le GPU.
+     Elle s'ajuste donc toute seule, entre 0,6 et la densité de l'écran, d'après
+     les images par seconde RÉELLEMENT mesurées : nette sur une machine qui
+     suit, dégradée plutôt que saccadée sur une machine chargée. */
+  const RATIO_MIN = 0.6;
+  const ratioMax = Math.min(window.devicePixelRatio || 1, 2);
+  let ratio = ratioMax;
+  let largeurCSS = 0, hauteurCSS = 0;
+
+  function appliquerTaille() {
+    if (!(largeurCSS > 0) || !(hauteurCSS > 0)) return;
+    renderer.setPixelRatio(ratio);
+    renderer.setSize(largeurCSS, hauteurCSS, false);
+    uniforms.uTaille.value.set(largeurCSS * ratio, hauteurCSS * ratio);
+  }
 
   const scene = new THREE.Scene();
   /* Aucune caméra 3D : la caméra vit dans le shader (origine + direction du
@@ -535,6 +568,7 @@ export function creerWally(canvas, surPanne) {
      filtre, ce compteur dira si la cause est bien là — ou s'il faut chercher
      ailleurs. Un correctif qu'on ne peut pas confirmer n'est qu'une hypothèse. */
   let mesuresNulles = 0;
+  let imagesDepuisReglage = 0;
 
   /* 🚨 Un contexte WebGL peut être perdu à tout moment sans que rien ne lève :
      pilote qui redémarre, veille, mémoire vidéo réclamée par le jeu. Le canevas
@@ -565,6 +599,26 @@ export function creerWally(canvas, surPanne) {
       coutImage = coutImage > 0 ? coutImage * 0.9 + dt * 0.1 : dt;
     }
     precedente = maintenant;
+
+    /* Ajustement de la densité, une fois toutes les 45 images : assez rare pour
+       que la moyenne glissante ait le temps de se refaire entre deux décisions,
+       sinon la densité oscille au lieu de converger. Les deux seuils sont
+       volontairement écartés (22 ms ≈ 45 im/s, 11 ms ≈ 90 im/s) — une bande
+       morte entre eux, sans quoi on monte et redescend à chaque mesure. */
+    if (++imagesDepuisReglage >= 45 && coutImage > 0) {
+      imagesDepuisReglage = 0;
+      let vise = ratio;
+      if (coutImage > 22 && ratio > RATIO_MIN) vise = Math.max(RATIO_MIN, ratio * 0.8);
+      else if (coutImage < 11 && ratio < ratioMax) vise = Math.min(ratioMax, ratio * 1.15);
+      if (vise !== ratio) {
+        ratio = vise;
+        appliquerTaille();
+        /* La mesure repart de zéro : garder l'ancienne moyenne ferait juger la
+           nouvelle densité sur le coût de l'ancienne. */
+        coutImage = 0;
+        precedente = 0;
+      }
+    }
   }
 
   function redimensionner(largeur, hauteur) {
@@ -576,18 +630,19 @@ export function creerWally(canvas, surPanne) {
        clamp(NaN) sort NOIR OPAQUE sur tout le cadre. C'est l'explication du
        clignotement : une image sur deux part d'une mesure vide. */
     if (!(largeur > 0) || !(hauteur > 0)) { mesuresNulles++; return; }
-    renderer.setSize(largeur, hauteur, false);
-    const d = renderer.getPixelRatio();
-    uniforms.uTaille.value.set(largeur * d, hauteur * d);
+    largeurCSS = largeur;
+    hauteurCSS = hauteur;
+    appliquerTaille();
   }
 
   boucle();
   return {
     redimensionner,
     /** Intervalle moyen entre deux images, en millisecondes — donc le coût
-     *  réel, dessin compris. 16,7 ms = 60 images par seconde. `nulles` compte
+     *  réel, dessin compris. 16,7 ms = 60 images par seconde. `densite` est la
+     *  densité de pixels retenue par l'ajustement automatique, `nulles` compte
      *  les redimensionnements à taille vide interceptés. */
-    mesures: () => ({ ms: coutImage, nulles: mesuresNulles }),
+    mesures: () => ({ ms: coutImage, densite: ratio, nulles: mesuresNulles }),
     arreter() {
       cancelAnimationFrame(anim);
       materiau.dispose();
