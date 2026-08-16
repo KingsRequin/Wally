@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wally low poly 3D — maquette</title>
+  <title>Wally 3D — maquette</title>
   <style>
     :root {
       --damier: 22px;
@@ -95,7 +95,7 @@
   </style>
 </head>
 <body data-fond="damier">
-  <h1>Wally low poly 3D — maquette</h1>
+  <h1>Wally 3D — maquette</h1>
   <p class="sous">
     Rien n'est remplacé : l'avatar de gauche est la maquette 3D, celui de droite
     est la vidéo actuellement diffusée sur l'overlay. Le damier montre le détourage.
@@ -107,6 +107,7 @@
     <div class="vignette">
       <div class="cadre"><canvas id="canvas-wally"></canvas></div>
       <span class="etiquette">maquette 3D — temps réel</span>
+      <span class="etiquette" id="mesures">…</span>
     </div>
     <div class="vignette">
       <div class="cadre">
@@ -135,6 +136,15 @@
       const ajuster = () => wally.redimensionner(cadre.clientWidth, cadre.clientHeight);
       new ResizeObserver(ajuster).observe(cadre);
       ajuster();
+
+      /* La surface est repolygonisée en JS à chaque image : c'est le poste qui
+         décidera si l'avatar tient dans OBS à côté d'un jeu. Autant le lire ici
+         plutôt que de le supposer. */
+      const mesures = document.getElementById("mesures");
+      setInterval(() => {
+        const m = wally.mesures();
+        mesures.textContent = `${m.ms.toFixed(1)} ms/image · ${m.triangles} triangles`;
+      }, 500);
     } catch (e) {
       /* Une page de maquette qui reste blanche ne dit rien. Sur l'overlay, le
          même échec devra retomber sur `wally.webm` — pas afficher un message. */
@@ -143,12 +153,22 @@
       console.error(e);
     }
 
+    const choisirFond = (nom) => {
+      document.body.dataset.fond = nom;
+      document.querySelectorAll(".controles button").forEach((b) =>
+        b.setAttribute("aria-pressed", String(b.dataset.fond === nom)));
+    };
+
     for (const bouton of document.querySelectorAll(".controles button")) {
-      bouton.addEventListener("click", () => {
-        document.body.dataset.fond = bouton.dataset.fond;
-        document.querySelectorAll(".controles button").forEach((b) =>
-          b.setAttribute("aria-pressed", String(b === bouton)));
-      });
+      bouton.addEventListener("click", () => choisirFond(bouton.dataset.fond));
+    }
+
+    /* `?fond=clair` : un fond se choisit aussi par l'URL, sinon la page n'est
+       vérifiable qu'à la main — or c'est sur fond CLAIR qu'un halo de détourage
+       se voit, et c'est le cas qui compte pour une source OBS. */
+    const voulu = new URLSearchParams(location.search).get("fond");
+    if (voulu && document.querySelector(`.controles button[data-fond="${CSS.escape(voulu)}"]`)) {
+      choisirFond(voulu);
     }
   </script>
 </body>
