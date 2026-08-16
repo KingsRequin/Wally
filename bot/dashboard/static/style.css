@@ -3908,6 +3908,29 @@ body.is-mobile .mobile-back-btn {
   cursor: help;
 }
 
+/* Les chevauchements, à côté du compte des mesures : les deux se lisent
+   ensemble — un chevauchement « indéterminé » l'est faute de taille lue. Neutre
+   tant qu'il n'y a rien à signaler, orange quand il y a. */
+.ovl-chevauchements {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  white-space: nowrap;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+.ovl-chevauchements.alerte {
+  color: rgb(251, 146, 60);
+  background: rgba(251, 146, 60, 0.10);
+  border-color: rgba(251, 146, 60, 0.35);
+}
+
 .ovl-estomper {
   display: flex;
   align-items: center;
@@ -4015,6 +4038,26 @@ body.is-mobile .mobile-back-btn {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.3);
 }
 .ovl-surface.avec-apercu .ovl-rect.hors-cadre { border-color: rgba(251, 146, 60, 0.9); }
+
+/* Deux éléments qui peuvent être à l'écran EN MÊME TEMPS et qui se recouvrent :
+   illisible en direct. Le même orange que « hors cadre » — c'est la même
+   famille d'avertissement, un choix discutable et pas une erreur —, mais un
+   trait PLEIN et un fond teinté : les deux se distinguent d'un coup d'œil, et
+   l'infobulle du repère dit lequel des deux (ou les deux).
+
+   Écrit après `hors-cadre` : quand un repère porte les deux, c'est le
+   chevauchement qu'on voit, parce que c'est lui qui concerne un VOISIN et qu'on
+   le cherche du regard sur deux repères à la fois. */
+.ovl-rect.chevauche,
+.ovl-surface.avec-apercu .ovl-rect.chevauche {
+  border-color: rgba(251, 146, 60, 0.95);
+  border-style: solid;
+  background: rgba(251, 146, 60, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(251, 146, 60, 0.35);
+}
+/* Estompés, un chevauchement reste visible : c'est le seul mode où on regarde
+   vraiment la cohabitation, l'aperçu derrière. */
+.ovl-surface.reperes-estompes .ovl-rect.chevauche { opacity: 0.65; }
 
 /* UNE TAILLE SUPPOSÉE SE VOIT. Ce repère-là ne dit pas où est l'élément : il
    dit un ordre de grandeur, faute d'avoir pu LIRE la vraie taille dans

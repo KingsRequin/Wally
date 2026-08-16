@@ -34,3 +34,26 @@ sans module ni bundler.
 ⚠️ `Wheel.remove()` est obligatoire quand le widget disparaît — la boucle
 d'animation survit au retrait du canvas du DOM. Voir `disposeWheel()` dans
 `overlay.js`.
+
+## three.js 0.185.1
+
+- Source : <https://unpkg.com/three@0.185.1/build/three.module.min.js>
+  et <https://unpkg.com/three@0.185.1/build/three.core.min.js>
+- Dépôt : <https://github.com/mrdoob/three.js>
+- Licence : MIT — voir `LICENSE-three.txt`
+- sha256 : `86bcee248b64f44bcfc23c331ae74619061957d59cab040171dcb6fb5900beb6`
+  (`three.module.min.js`), `05b2609338c76cd65daf74f3ac515bc9a5045e1b3b33edc07d8c9bd55250fa90`
+  (`three.core.min.js`)
+
+**Les deux fichiers vont ensemble** : `three.module.min.js` importe
+`./three.core.min.js` en relatif. Séparer les deux casse le chargement.
+
+Build **ESM** — contrairement aux deux autres, il se charge par
+`import ... from "/static/vendor/three.module.min.js"` dans un
+`<script type="module">`.
+
+Utilisé par `avatar3d.js` (maquette d'avatar 3D). **Rien en production ne
+dépend de three.js aujourd'hui** : l'overlay sert toujours `avatar/wally.webm`.
+
+⚠️ `THREE.Clock` est déprécié depuis r185 — utiliser `performance.now()` ou
+`THREE.Timer`.

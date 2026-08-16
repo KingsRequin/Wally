@@ -2110,6 +2110,141 @@ window.OverlayAdmin = (function () {
    */
   function styleApercu(element, largeurCadre) {
     const W = window.WallyLayout;
+  // ── Les chevauchements ──────────────────────────────────────────────────
+  //
+  // Deux éléments qui peuvent être à l'écran EN MÊME TEMPS et qui se recouvrent
+  // deviennent illisibles en direct. Dit ici, dans le panneau, plutôt que
+  // découvert par les viewers.
+  //
+  // QUI COMPARER. Seulement ce qui COHABITE : `solo: false`. Un élément
+  // exclusif chasse les autres et passe par la file d'attente
+  // (`docs/plans/2026-08-15…`, « Le modèle ») — deux exclusifs superposés ne
+  // sont JAMAIS à l'écran ensemble, et les signaler ferait crier vingt-six
+  // repères qui partent tous au centre. Un élément masqué dans la scène n'est
+  // pas à l'écran non plus.
+  //
+  // AVEC QUELLE TAILLE. Celle qui est MESURÉE dans l'aperçu, jamais
+  // l'estimation. Un chevauchement annoncé sur une taille supposée est une
+  // fausse alerte, et une fausse alerte apprend à ne plus regarder l'alerte. Un
+  // élément dont la taille n'a pas pu être lue est donc dit INDÉTERMINÉ — pas
+  // « sans chevauchement », ce qui serait une affirmation qu'on n'a pas les
+  // moyens de faire. Le ▶ de sa ligne l'affiche, et la mesure arrive.
+  //
+  // À PARTIR DE QUAND. Une intersection qui vaut moins de 15 % de la plus
+  // petite des deux boîtes est un coin qui se touche : deux cartes posées côte
+  // à côte se mordent de quelques pixels sans que rien ne devienne illisible.
+  // Le seuil est en PART de la plus petite boîte et non en pixels : l'image
+  // fait 1280 × 720, un dé 78 × 78, et une valeur absolue voudrait dire deux
+  // choses opposées sur les deux.
+  const CHEVAUCHEMENT_MIN = 0.15;
+
+  /** Cet élément peut-il être à l'écran en même temps qu'un autre ? */
+  function cohabite(element) {
+    return !!element && !element.hidden && element.solo === false;
+  }
+
+  /** L'aire de l'intersection de deux boîtes rendues, 0 si elles ne se
+   *  touchent pas. */
+  function surfaceCommune(a, b) {
+    const l = Math.min(a.droite, b.droite) - Math.max(a.gauche, b.gauche);
+    const h = Math.min(a.bas, b.bas) - Math.max(a.haut, b.haut);
+    return (l > 0 && h > 0) ? l * h : 0;
+  }
+
+  /** Les chevauchements de la scène. Pure au sens qui compte : elle ne lit que
+   *  la scène, la taille de la surface et les tailles mesurées.
+   *
+   *  Rend trois choses, et la troisième est la plus importante :
+   *    - `paires`  : les couples qui se recouvrent VRAIMENT (deux tailles lues) ;
+   *    - `cles`    : les éléments concernés, pour la bordure orange ;
+   *    - `indetermines` : les éléments qui cohabitent mais dont la taille n'a
+   *      pas pu être lue. Ni « rien à signaler » ni une alerte : on ne sait pas,
+   *      et on le dit.
+   */
+  function analyserChevauchements(scene, W, H) {
+    const vide = { paires: [], cles: [], indetermines: [] };
+    if (!scene || !W || !H) return vide;
+    const boites = [], indetermines = [];
+    (scene.ordre || []).forEach(function (cle) {
+      const el = scene.elements[cle];
+      if (!cohabite(el)) return;
+      const m = tailleRendue(cle);
+      if (!m.reelle) { indetermines.push(cle); return; }
+      boites.push({ cle: cle, g: geometrie(cle, el, W, H) });
+    });
+    const paires = [], marques = {};
+    for (let i = 0; i < boites.length; i++) {
+      for (let j = i + 1; j < boites.length; j++) {
+        const a = boites[i], b = boites[j];
+        const commune = surfaceCommune(a.g, b.g);
+        if (commune <= 0) continue;
+        const aireMin = Math.min(a.g.largeur * a.g.hauteur,
+                                 b.g.largeur * b.g.hauteur);
+        if (aireMin <= 0 || commune / aireMin < CHEVAUCHEMENT_MIN) continue;
+        paires.push([a.cle, b.cle]);
+        marques[a.cle] = true;
+        marques[b.cle] = true;
+      }
+    }
+    return { paires: paires, cles: Object.keys(marques),
+             indetermines: indetermines };
+  }
+
+  /** Ce que la barre d'état affiche. Séparée du calcul : c'est une phrase, et
+   *  elle doit dire les trois cas — un chevauchement, aucun, et « je ne sais
+   *  pas pour ceux-là ». */
+  function texteChevauchements(analyse) {
+    const parts = [];
+    if (analyse.paires.length) {
+      parts.push("⚠ " + analyse.paires.length + " chevauchement"
+        + (analyse.paires.length > 1 ? "s" : "") + " : "
+        + analyse.paires.slice(0, 3).map(function (p) {
+            return libelle(p[0]) + " ↔ " + libelle(p[1]);
+          }).join(", ")
+        + (analyse.paires.length > 3 ? "…" : ""));
+    } else {
+      parts.push("aucun chevauchement");
+    }
+    if (analyse.indetermines.length) {
+      parts.push(analyse.indetermines.length + " indéterminé"
+        + (analyse.indetermines.length > 1 ? "s" : ""));
+    }
+    return parts.join(" · ");
+  }
+
+  /** Pose la marque orange sur les repères concernés et écrit la barre d'état.
+   *  Appelée au rendu complet ET pendant le geste, où plus rien n'est
+   *  reconstruit : un chevauchement qu'on ne voit qu'au relâchement fait refaire
+   *  le placement. */
+  function direChevauchements(analyse) {
+    if (noeuds.calque) {
+      const marques = {};
+      analyse.cles.forEach(function (c) { marques[c] = true; });
+      noeuds.calque.querySelectorAll("[data-cle]").forEach(function (n) {
+        n.classList.toggle("chevauche", !!marques[n.dataset.cle]);
+      });
+    }
+    if (!noeuds.chevauchements) return;
+    noeuds.chevauchements.textContent = texteChevauchements(analyse);
+    noeuds.chevauchements.classList.toggle("alerte", analyse.paires.length > 0);
+    noeuds.chevauchements.title = (analyse.paires.length
+        ? "Ces éléments cohabitent (ils peuvent être à l'écran en même temps) "
+          + "et se recouvrent d'au moins 15 % de la plus petite des deux "
+          + "boîtes :\n" + analyse.paires.map(function (p) {
+              return "  · " + libelle(p[0]) + " ↔ " + libelle(p[1]);
+            }).join("\n")
+        : "Aucun recouvrement entre les éléments qui peuvent être à l'écran en "
+          + "même temps. Les éléments exclusifs ne sont pas comparés : ils ne "
+          + "s'affichent jamais ensemble.")
+      + (analyse.indetermines.length
+         ? "\n\nIndéterminé pour " + analyse.indetermines.length + " élément(s) : "
+           + analyse.indetermines.map(libelle).join(", ")
+           + ".\nLeur taille n'a pas pu être lue dans l'aperçu — ils n'y "
+           + "affichent rien. Le ▶ de leur ligne les affiche, et la mesure "
+           + "arrive d'elle-même."
+         : "");
+  }
+
     const voulue = (element.scale || 1) * (largeurCadre / CANVAS_W);
     if (!W || typeof W.styleDepuisElement !== "function") {
       // Repli : la surface reste lisible même si le module de placement manque.
@@ -2507,7 +2642,9 @@ window.OverlayAdmin = (function () {
       poserInfobulle(rect, libelle(cle) + " · " + cle
         + (description(cle) ? " — " + description(cle) : "")
         + " — " + dimensions
-        + (deborde ? " — ⚠ déborde du cadre" : ""));
+        + (deborde ? " — ⚠ déborde du cadre" : "")
+        + (recouvre ? " — ⚠ chevauche un élément qui peut être à l'écran en "
+                      + "même temps" : ""));
       rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
       // Le sens retour : le repère éclaire sa ligne, et l'amène sous les yeux
       // si la liste a défilé ailleurs. Pas pendant un geste — la liste
@@ -2722,6 +2859,11 @@ window.OverlayAdmin = (function () {
       droite: Math.max(m.depart.x, m.courant.x) / 100 * r.width,
       haut: Math.min(m.depart.y, m.courant.y) / 100 * r.height,
       bas: Math.max(m.depart.y, m.courant.y) / 100 * r.height,
+    // Calculé AVANT la boucle : la marque orange et l'infobulle de chaque repère
+    // en dépendent, et il faut connaître tous les voisins pour juger d'un seul.
+    const chevauchent = analyserChevauchements(scene, largeur, hauteur);
+    const enChevauchement = {};
+    chevauchent.cles.forEach(function (c) { enChevauchement[c] = true; });
     };
   }
 
@@ -2758,6 +2900,10 @@ window.OverlayAdmin = (function () {
 
   function retirerBande() {
     if (noeuds.bande && noeuds.bande.parentNode) {
+      // Deux éléments qui cohabitent et se recouvrent : illisibles en direct.
+      // Signalé ici, avant que les viewers le découvrent.
+      const recouvre = !!enChevauchement[cle];
+      if (recouvre) rect.classList.add("chevauche");
       noeuds.bande.parentNode.removeChild(noeuds.bande);
     }
   }
@@ -2787,6 +2933,9 @@ window.OverlayAdmin = (function () {
     etat.ancreSelection = etat.elementCourant;
     nettoyerSelection();
     rendreSelection();
+    // La barre d'état seulement : les classes sont déjà posées par la boucle
+    // ci-dessus, à partir de la MÊME analyse.
+    direChevauchements(chevauchent);
   }
 
   function capturer(evt) {
@@ -3221,6 +3370,10 @@ window.OverlayAdmin = (function () {
     if (!source || !etat.layout) return;
     const autres = autresScenes();
     if (!autres.length) {
+    // Les chevauchements aussi : découvrir au relâchement qu'on vient de poser
+    // le bingo sur les stats fait refaire le placement. Le calcul ne porte que
+    // sur ce qui cohabite — six éléments par défaut, pas trente-quatre.
+    direChevauchements(analyserChevauchements(sceneCourante(), r.width, r.height));
       notifier("Il n'y a qu'une scène : il n'y a nulle part où propager.", "error");
       return;
     }
@@ -4070,6 +4223,12 @@ window.OverlayAdmin = (function () {
     noeuds.propositionJeter.title = "Oublie le brouillon et garde ce qui est à l'antenne.";
     noeuds.proposition.appendChild(noeuds.propositionJeter);
     droite.appendChild(noeuds.proposition);
+    // Les chevauchements entre éléments qui peuvent être à l'écran en même
+    // temps. À côté du compte des mesures, parce que les deux se lisent
+    // ensemble : un chevauchement « indéterminé » l'est faute de mesure.
+    noeuds.chevauchements = creer("span", "ovl-chevauchements", "aucun chevauchement");
+    barre.appendChild(noeuds.chevauchements);
+
 
     const publication = creer("div", "ovl-publication");
     const direct = creer("label", "ovl-direct");
@@ -4291,3 +4450,12 @@ window.OverlayAdmin = (function () {
     ajouterAuGroupe: ajouterAuGroupe,
   };
 })();
+    // Le détecteur de chevauchement. Pur, et c'est là que se joue le seul
+    // arbitrage qui compte : on ne compare que ce qui COHABITE, et jamais sur
+    // une taille supposée — une fausse alerte apprend à ne plus regarder
+    // l'alerte.
+    CHEVAUCHEMENT_MIN: CHEVAUCHEMENT_MIN,
+    cohabite: cohabite,
+    surfaceCommune: surfaceCommune,
+    analyserChevauchements: analyserChevauchements,
+    texteChevauchements: texteChevauchements,
