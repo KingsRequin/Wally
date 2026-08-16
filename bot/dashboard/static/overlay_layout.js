@@ -57,20 +57,36 @@ window.WallyLayout = (function () {
     "apex_map", "apex_craft", "apex_predator", "apex_servers",
   ];
 
-  // Des ordres de grandeur, en pixels du canvas 1920×1080, POUR LES REPÈRES
-  // SEULS : les rectangles de manipulation du panneau de mise en scène, et les
-  // repères que « Tout afficher » pose sur la page. La taille RÉELLE d'un
-  // widget dépend de son contenu (`width: max-content` dans overlay.html) et ne
-  // peut pas se connaître à l'avance ; mieux vaut des rapports plausibles que
-  // trente-quatre carrés identiques, qui donneraient une fausse idée de
-  // l'encombrement.
+  // Les tailles, en pixels du canvas 1920×1080. Elles servent aux rectangles de
+  // manipulation du panneau de mise en scène et aux repères que « Tout
+  // afficher » pose sur la page.
+  //
+  // DEUX NATURES, et la différence compte :
+  //
+  //   · Un widget de TEXTE se dimensionne par son contenu (`width: max-content`)
+  //     et sa taille ne peut pas se connaître à l'avance : « 3 votes » et « 47
+  //     votes » ne font pas la même largeur. Sa valeur ici est un ordre de
+  //     grandeur — mieux qu'un carré unique pour trente-quatre widgets, qui
+  //     donnerait une fausse idée de l'encombrement.
+  //
+  //   · Un widget à MÉDIA (`meme`, `rotator`) affiche une image dont les
+  //     dimensions sont arbitraires : le dossier va de 260 à 2100 px de côté,
+  //     30 % en portrait. Laisser le cadre épouser le média donnait un
+  //     encombrement qui changeait à chaque rotation, donc AUCUN repère juste :
+  //     on plaçait sur un rectangle que le rendu n'atteignait jamais. Pour
+  //     ceux-là, la valeur ci-dessous est IMPOSÉE — c'est la boîte, le média se
+  //     range dedans (réduit, ou agrandi au plus ×2). Elle est carrée parce que
+  //     les memes le sont : rapport médian 1,07 sur les 121 du dossier.
+  //     L'échelle de la scène s'applique par-dessus, comme pour tout le reste.
   //
   // Ici et pas dans `overlay_admin.js` : la page ET le panneau s'en servent, et
   // deux tables auraient divergé au premier widget ajouté — c'est exactement le
-  // reproche auquel ce chantier répond.
+  // reproche auquel ce chantier répond. Une valeur imposée qui serait recopiée
+  // en dur dans `overlay.html` rouvrirait la même plaie : le CSS lit ce chiffre,
+  // il ne le redit pas.
   const TAILLES = {
     avatar: [200, 200], bubble: [460, 170],
-    image: [1280, 720], meme: [720, 540], rotator: [720, 540],
+    image: [1280, 720], meme: [400, 400], rotator: [400, 400],
     clip: [860, 500], clip_top: [860, 500],
     bingo: [420, 460], stats: [360, 300], talkers: [340, 260],
     planning: [520, 380], hangman: [560, 300], poll: [480, 320],

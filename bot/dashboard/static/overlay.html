@@ -1082,8 +1082,19 @@
     /* Meme de la communauté — l'image seule, sans légende : sa description est
        le contexte que Wally lit pour le commenter, pas un texte à afficher.
        Bornée en hauteur : une image verticale sortirait du cadre. */
+    /* Même boîte imposée que le rotateur, et pour la même raison. Ici l'écart
+       était pire : le repère du panneau annonçait 720 × 540 pendant que le CSS
+       bornait à 380 × 260 — deux chiffres écrits à deux endroits, qui ne se
+       parlaient pas. Le rectangle qu'on manipulait faisait trois fois et demie
+       la surface du meme qui s'affichait. Les dimensions viennent maintenant de
+       `WallyLayout.taille("meme")`, posées par `overlay.js`. */
     .meme {
-      max-width: 100%;
+      width: var(--meme-zone-l, 400px);
+      height: var(--meme-zone-h, 400px);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       padding: 8px;
       background: var(--glass);
       border: 1px solid var(--line);
@@ -1091,9 +1102,10 @@
     }
     .meme img {
       display: block;
-      max-width: 380px;
-      max-height: 260px;
+      max-width: 100%;
+      max-height: 100%;
       width: auto; height: auto;
+      object-fit: contain;
       border-radius: var(--r-sm);
     }
 
@@ -1353,6 +1365,21 @@
        un overlay noir ça fait une dalle plus lumineuse que le reste de l'écran.
        Le liseré casse le contact entre ce blanc et la bordure orange. */
     .rotateur {
+      /* LA BOÎTE EST IMPOSÉE, elle n'épouse plus le média. Auparavant le cadre
+         prenait la taille du meme affiché : l'encombrement changeait à chaque
+         rotation, et le repère du panneau — qui doit bien annoncer UN rectangle
+         — ne pouvait qu'avoir tort. Les dimensions viennent de
+         `WallyLayout.taille("rotator")`, posées par `overlay.js` : le repère et
+         le rendu lisent le même chiffre.
+         Le prix, assumé : un meme très allongé ou très haut laisse du
+         passe-partout sur les côtés. C'est le fond sombre déjà là, et le cadre
+         cesse de sauter d'une taille à l'autre toutes les quelques secondes. */
+      width: var(--rotateur-zone-l, 400px);
+      height: var(--rotateur-zone-h, 400px);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       padding: 14px;
       background: rgba(8, 6, 5, .94);
       border: 3px solid #ff7a2f;
@@ -1372,14 +1399,18 @@
          les frais pendant des semaines. */
       overflow: hidden;
     }
-    /* Borné en largeur ET en hauteur, jamais agrandi ici : c'est le cadre qui
-       épouse le média. L'agrandissement des petits memes est calculé en JS
-       (plafonné), la réduction reste au CSS. */
+    /* Le média se range dans la boîte : `100 %` de l'espace intérieur, que le
+       `box-sizing` a déjà amputé du passe-partout et de la bordure. Un seul
+       chiffre gouverne donc les deux, et il n'y a plus de `686px` écrit ici qui
+       puisse dériver de la table.
+       L'agrandissement des petits memes reste calculé en JS (plafonné à ×2) —
+       les étirer à la boîte coûte que coûte les ferait baver. */
     .rotateur img, .rotateur video {
       display: block;
-      max-width: var(--rotateur-l, 686px);
-      max-height: var(--rotateur-h, 506px);
+      max-width: 100%;
+      max-height: 100%;
       width: auto; height: auto;
+      object-fit: contain;
       border-radius: var(--r-sm);
     }
     /* `.rotateur .absent` et non `.absent` seul : la règle au-dessus vise

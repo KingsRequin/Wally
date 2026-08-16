@@ -692,6 +692,13 @@
       // L'image seule, sans légende : la description d'un meme sert à Wally
       // pour le commenter, elle n'est pas destinée aux spectateurs.
       const box = el("div", "meme");
+      // La boîte vient de la table, jamais du CSS : c'est le chiffre que le
+      // repère du panneau affiche, et il ne doit exister qu'à un endroit.
+      const zone = window.WallyLayout && WallyLayout.taille("meme");
+      if (zone) {
+        box.style.setProperty("--meme-zone-l", zone[0] + "px");
+        box.style.setProperty("--meme-zone-h", zone[1] + "px");
+      }
       const img = document.createElement("img");
       img.src = String(p.src || "");
       img.alt = "";
@@ -1455,14 +1462,15 @@
     const appliquer = (etat) => WallyGlitch.appliquer(cadre, etat);
     const rafale = () => WallyGlitch.rafale(cadre, { etats: ETATS, saccade: SACCADE });
 
-    // La place du média DANS le cadre : la taille de la zone moins le
-    // passe-partout (14 px de marge + 3 px de bordure, des deux côtés).
+    // La boîte, puis la place du média DEDANS : la zone moins le passe-partout
+    // (14 px de marge + 3 px de bordure, des deux côtés). Le cadre porte la
+    // taille de la zone et ne bouge plus ; c'est le média qui s'y range.
     const CADRE_MARGE = 34;
     const zone = WallyLayout.taille("rotator");
     const MEDIA_L = Math.max(80, zone[0] - CADRE_MARGE);
     const MEDIA_H = Math.max(80, zone[1] - CADRE_MARGE);
-    cadre.style.setProperty("--rotateur-l", MEDIA_L + "px");
-    cadre.style.setProperty("--rotateur-h", MEDIA_H + "px");
+    cadre.style.setProperty("--rotateur-zone-l", zone[0] + "px");
+    cadre.style.setProperty("--rotateur-zone-h", zone[1] + "px");
 
     let medias = [];
     let dernier = null;

@@ -25,6 +25,14 @@ LIT. Ce fichier vérifie les trois maillons :
 Plus la règle du cadenas (`cibleBascule`) : verrouillé vaut aussi pour la
 visibilité, et `Suppr` ne masque plus un élément mis à l'abri.
 
+DEPUIS : lire la taille ne suffisait pas pour les widgets à MÉDIA. Un meme n'a
+pas de taille propre — le dossier va de 260 à 2100 px de côté —, donc le cadre
+en prenait une nouvelle à chaque rotation et aucun repère fixe ne pouvait être
+juste. Leur boîte est maintenant IMPOSÉE par la table
+(`test_overlay_taille_widgets_media.py`) : pour eux, la mesure et la table
+disent enfin la même chose. Les chiffres cités ici restent ceux du défaut
+d'époque, gardés parce qu'ils disent d'où l'on vient.
+
 Ces tests échouent sur le code d'avant : `mesurerConteneur`, `tailleRendue` et
 `cibleBascule` n'existaient pas, et `geometrie` ne lisait que la table.
 """
@@ -63,6 +71,11 @@ function hote(enfants) { return {children: enfants}; }
 const VUE = {getComputedStyle: function (n) { return n._style; }};
 function mesurer(enfants) { return OA.mesurerConteneur(hote(enfants), VUE); }
 function poser(cle, l, h) { OA.mesures[cle] = [l, h]; }
+// La table est LUE, jamais recopiée ici : ces tests portent sur le mécanisme
+// (la mesure l'emporte, la table est le repli), pas sur la valeur du jour. Un
+// test qui duplique une constante de prod se casse au premier réglage légitime
+// et fait passer un changement voulu pour une régression.
+function table(cle) { return window.WallyLayout.taille(cle); }
 function oublier() {
   Object.keys(OA.mesures).forEach(function (c) { delete OA.mesures[c]; });
 }
@@ -156,26 +169,30 @@ def test_taille_rendue_dit_dou_vient_le_chiffre():
     corrige."""
     assert _node("""
       oublier();
+      const T = table("meme");
       const sans = OA.tailleRendue("meme");
       poser("meme", 191, 278);
       const avec = OA.tailleRendue("meme");
       oublier();
-      console.log(JSON.stringify([sans.taille, sans.reelle,
-                                  avec.taille, avec.reelle]));
-    """) == '[[720,540],false,[191,278],true]'
+      console.log(JSON.stringify([
+        sans.taille[0] === T[0] && sans.taille[1] === T[1], sans.reelle,
+        avec.taille, avec.reelle]));
+    """) == '[true,false,[191,278],true]'
 
 
 def test_la_geometrie_suit_la_mesure():
-    """Le meme réel fait 191 × 278, la table en annonçait 720 × 540 : le repère
-    passait de 2,8 à 3,8 fois trop grand sur chaque côté."""
+    """Sans mesure, la géométrie vaut la table ; avec, elle vaut le contenu. Sur
+    le meme de l'époque — 191 × 278 lus contre 720 × 540 supposés — le repère
+    était de 2,8 à 3,8 fois trop grand sur chaque côté."""
     assert _node("""
       oublier();
-      const table = OA.geometrie("meme", el({}), W, H);
+      const T = table("meme");
+      const suppose = OA.geometrie("meme", el({}), W, H);
       poser("meme", 191, 278);
       const vrai = OA.geometrie("meme", el({}), W, H);
       oublier();
-      proche(table.largeur, 720); proche(table.hauteur, 540);
-      proche(vrai.largeur, 191);  proche(vrai.hauteur, 278);
+      proche(suppose.largeur, T[0]); proche(suppose.hauteur, T[1]);
+      proche(vrai.largeur, 191);     proche(vrai.hauteur, 278);
       console.log("ok");
     """) == "ok"
 
@@ -188,7 +205,7 @@ def test_une_mesure_nulle_ne_remplace_pas_la_table():
       OA.mesures.meme = [0, 0];
       const g = OA.geometrie("meme", el({}), W, H);
       oublier();
-      proche(g.largeur, 720);
+      proche(g.largeur, table("meme")[0]);
       console.log("ok");
     """) == "ok"
 
@@ -214,18 +231,28 @@ def test_aligner_a_droite_colle_le_bord_mesure():
     """) == "ok"
 
 
-def test_aligner_a_droite_avec_la_table_ratait_le_bord():
-    """Le même geste sur le code d'avant, rejoué : la boîte supposée touchait le
-    bord, le contenu réel restait 264 px en deçà. C'est ce que le streamer
-    voyait — « la box giga grande comparé à la taille des memes »."""
+def test_aligner_sur_une_boite_supposee_laisse_le_contenu_en_deca():
+    """Le geste d'alignement colle au bord la boîte qu'on lui donne : si elle est
+    plus large que le contenu, le contenu s'arrête en deçà de la moitié de
+    l'écart. C'est ce que le streamer voyait — « la box giga grande comparé à la
+    taille des memes » : 720 supposés contre 191 mesurés laissaient 264 px de
+    vide contre le bord.
+
+    Écrit en fonction de la table et non de ses valeurs : depuis que la boîte des
+    widgets à média est IMPOSÉE, la table ne ment plus pour eux — mais la
+    propriété reste vraie de tout widget qui se dimensionne par son contenu.
+    """
     assert _node("""
       oublier();                       // pas de mesure : on est sur la table
+      const T = table("meme");
       const e = el({});
       const p = OA.positionAlignee("meme", e, "droite", W, H);
-      proche(p.x, 81.25, 0.01);
-      // Là où le contenu RÉEL (191 px) se serait arrêté avec ce x :
-      const reste = W - (p.x / 100 * W + 191 / 2);
-      proche(reste, 264.5, 1);
+      // Le x qui pose le bord droit de la boîte SUPPOSÉE sur le cadre.
+      proche(p.x, 100 - (T[0] / 2) / W * 100, 0.01);
+      // Un contenu réel plus étroit s'arrête d'une demi-différence avant.
+      const reelle = 191;
+      const reste = W - (p.x / 100 * W + reelle / 2);
+      proche(reste, (T[0] - reelle) / 2, 1);
       console.log("ok");
     """) == "ok"
 
@@ -237,11 +264,11 @@ def test_le_debordement_se_voit_avec_la_vraie_taille():
     assert _node("""
       oublier();
       const e = el({x: 80});
-      const table = OA.geometrie("planning", e, W, H);
+      const suppose = OA.geometrie("planning", e, W, H);
       poser("planning", 1298, 738);
       const vrai = OA.geometrie("planning", e, W, H);
       oublier();
-      if (OA.horsCadre(table, W, H)) throw new Error("la table croyait tenir : c'est le défaut");
+      if (OA.horsCadre(suppose, W, H)) throw new Error("la table croyait tenir : c'est le défaut");
       if (!OA.horsCadre(vrai, W, H)) throw new Error("le débordement réel doit être vu");
       console.log("ok");
     """) == "ok"
