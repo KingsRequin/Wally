@@ -354,7 +354,15 @@ class RemoteStreamingSTT:
         # décalage, Wally « réagit » à une phrase que tout le monde a oubliée.
         # Pour un compagnon, la fraîcheur prime sur l'exhaustivité.
         if self._pending_fallback >= _MAX_PENDING_FALLBACK:
-            logger.debug("STT local saturé — énoncé abandonné (file pleine)")
+            # En INFO et non en DEBUG : c'est une PAROLE JETÉE. Le niveau debug
+            # n'est pas servi en production, donc cet abandon n'existait nulle
+            # part — et c'est exactement ce qu'on cherche quand quelqu'un dit
+            # « il s'est arrêté de répondre alors qu'on parlait ».
+            logger.info(
+                "voice: énoncé de {s} ABANDONNÉ — STT local saturé "
+                "({n} en attente, {d:.1f} s d'audio jetées)",
+                s=speaker_id, n=self._pending_fallback, d=len(segment) / 32000,
+            )
             return
         self._pending_fallback += 1
         self._detach(self._fallback_transcribe(speaker_id, segment))
@@ -479,6 +487,21 @@ class RemoteStreamingSTT:
             stt_ms = (self._now() - t0) * 1000
             if text and self.on_final is not None:
                 await self.on_final(speaker_id, text, stt_ms)
+            elif not text:
+                # UN ÉNONCÉ QUI NE REND RIEN DISPARAISSAIT SANS UNE LIGNE.
+                # C'est la panne la plus coûteuse de ce chemin : quelqu'un parle,
+                # le VAD local a bien découpé sa phrase, le modèle la rend vide
+                # (son filtre Silero la classe « non-parole »), et Wally reste
+                # muet — vu de l'extérieur, il « ignore » son interlocuteur. Sans
+                # cette ligne, ni les logs ni le journal vocal n'en gardent la
+                # moindre trace. La DURÉE du segment est ce qui tranche : deux
+                # secondes de vraie parole rejetées ne veulent pas dire la même
+                # chose qu'un souffle de 200 ms.
+                logger.info(
+                    "voice: énoncé de {s} rendu VIDE par le STT local "
+                    "({d:.1f} s d'audio, {ms:.0f} ms de calcul)",
+                    s=speaker_id, d=len(segment) / 32000, ms=stt_ms,
+                )
         finally:
             # Sans ce décrément garanti, une seule exception bloquerait la file
             # pour de bon et Wally deviendrait sourd.

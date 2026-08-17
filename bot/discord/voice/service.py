@@ -903,13 +903,40 @@ class VoiceService:
             return
         await self._dispatch_transcript(user, text, stt_ms)
 
+    # Un relevé par minute : assez pour reconstituer une soirée sans noyer le
+    # journal. Un salon vraiment silencieux ne dit rien du tout (voir plus bas).
+    _POULS_INTERVALLE_S = 60.0
+
     async def _silence_watch(self, sink, interval: float = 0.15) -> None:
         """Clôt à l'horloge l'énoncé d'un locuteur qui s'est tu (Discord coupe le silence →
-        le VAD local ne se déclenche jamais). Sans ça, le `final` distant ne part jamais."""
+        le VAD local ne se déclenche jamais). Sans ça, le `final` distant ne part jamais.
+
+        Porte aussi le POULS DE L'ÉCOUTE. « Wally n'entend rien » recouvrait
+        trois pannes que rien ne distinguait : Discord ne descend aucun audio,
+        le VAD ne referme jamais d'énoncé, ou le modèle rend du vide. Les deux
+        premières ne laissaient aucune trace — ni log, ni journal vocal. Ce
+        relevé les sépare en une ligne.
+        """
+        loop = asyncio.get_running_loop()
+        prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
         try:
             while self._vc is not None:
                 await asyncio.sleep(interval)
                 sink.flush_idle()
+                if loop.time() < prochain_pouls:
+                    continue
+                prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
+                frames, enonces = sink.pouls()
+                # Rien reçu ET rien produit : personne ne parlait. On se tait —
+                # une ligne par minute de silence, toute la nuit, ferait de ce
+                # relevé un bruit qu'on apprend à ne plus lire.
+                if not frames and not enonces:
+                    continue
+                logger.info(
+                    "voice: pouls — {f} frames reçues ({s:.0f} s d'audio), "
+                    "{e} énoncé(s) clos",
+                    f=frames, s=frames * 0.02, e=enonces,
+                )
         except asyncio.CancelledError:
             pass
         except Exception as e:  # noqa: BLE001

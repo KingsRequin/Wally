@@ -49,6 +49,20 @@ class WallyAudioSink(voice_recv.AudioSink):
         self._last_frame_ts: dict[int, float] = {}  # monotonic du dernier frame reçu par locuteur
         self._users: dict[int, object] = {}         # id → membre (pour émettre depuis flush_idle)
         self._lock = threading.Lock()               # write() (thread audio) vs flush_idle() (boucle)
+        # Le pouls de l'écoute. Sans lui, « Wally n'entend rien » couvre trois
+        # pannes que rien ne distingue : aucun audio ne descend de Discord, le
+        # VAD ne referme jamais d'énoncé, ou le modèle rend du vide. Les deux
+        # premières ne laissaient AUCUNE trace — c'est ce silence-là qui coûte
+        # une heure de live à chaque fois.
+        self._frames_recues = 0
+        self._segments_emis = 0
+
+    def pouls(self) -> tuple[int, int]:
+        """(frames reçues, énoncés clos) depuis le dernier appel, puis remise à zéro."""
+        with self._lock:
+            valeurs = (self._frames_recues, self._segments_emis)
+            self._frames_recues = self._segments_emis = 0
+        return valeurs
 
     def wants_opus(self) -> bool:
         """Retourne False : on veut du PCM décodé (pas Opus)."""
@@ -77,10 +91,12 @@ class WallyAudioSink(voice_recv.AudioSink):
                 while len(buf) >= FRAME_BYTES:
                     frame = bytes(buf[:FRAME_BYTES])
                     del buf[:FRAME_BYTES]
+                    self._frames_recues += 1
                     if streaming:
                         self._loop.call_soon_threadsafe(self._on_frame, user, frame)
                     out = seg.feed(frame)
                     if out:
+                        self._segments_emis += 1
                         self._emit_segment(user, out)
         except Exception as e:  # noqa: BLE001
             logger.warning("WallyAudioSink.write a échoué: {e}", e=e)
@@ -96,6 +112,11 @@ class WallyAudioSink(voice_recv.AudioSink):
                     continue
                 out = seg.flush()
                 if out:
+                    # Compté ici aussi : la PLUPART des énoncés se ferment par
+                    # ce chemin, Discord coupant le silence qui les clôturerait.
+                    # Ne compter que ceux du VAD aurait montré « 0 énoncé » sur
+                    # une écoute qui marche.
+                    self._segments_emis += 1
                     self._emit_segment(self._users.get(uid), out)
                 self._last_frame_ts.pop(uid, None)  # ne re-flush pas tant qu'aucune frame ne revient
 
