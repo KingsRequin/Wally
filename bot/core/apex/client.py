@@ -128,6 +128,12 @@ class ApexClient:
         resp.raise_for_status()
         return resp.json()
 
+    # Déclaré ici plutôt que déduit du premier `self._http = client` : le
+    # champ vaut aussi `None` (avant la première requête, et après `aclose()`),
+    # et sans cette ligne le type inféré était `AsyncClient` — la remise à None
+    # de `aclose()` passait alors pour une erreur.
+    _http: httpx.AsyncClient | None = None
+
     def _http_client(self) -> httpx.AsyncClient:
         client = getattr(self, "_http", None)
         if client is None or client.is_closed:

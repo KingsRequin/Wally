@@ -29,7 +29,7 @@ from collections import deque
 from urllib.parse import quote
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -1537,9 +1537,11 @@ class OverlayNarrator:
             # que `result`, ce widget refusait toute demande formulée
             # naturellement : vu en live le 2026-08-07, deux appels, deux refus.
             # `poll` accepte déjà les deux, c'est le motif qu'on reprend.
+            brut = extra.get("seconds")
+            if brut is None:
+                brut = result
             try:
-                seconds = int(extra.get("seconds") if extra.get("seconds") is not None
-                              else result)
+                seconds = int(brut)
             except (TypeError, ValueError):
                 return None
             seconds = max(1, min(600, seconds))
@@ -1553,9 +1555,11 @@ class OverlayNarrator:
         elif widget == "gauge":
             # Même classe de défaut que le compte à rebours : « percent » est le
             # mot que le modèle lit dans la description, il le renvoie tel quel.
+            brut = extra.get("percent")
+            if brut is None:
+                brut = result
             try:
-                percent = float(extra.get("percent") if extra.get("percent") is not None
-                                else result)
+                percent = float(brut)
             except (TypeError, ValueError):
                 return None
             params = {"percent": max(0.0, min(100.0, percent)),
@@ -1596,7 +1600,11 @@ class OverlayNarrator:
             if not self.open_goal(str(extra.get("label") or comment or ""),
                                   extra.get("target"), str(extra.get("kind") or "")):
                 return None
-            return {"widget": "goal", **self._goal}
+            # `open_goal` vraie ⇒ l'objectif est posé. Relu dans une variable
+            # plutôt que déréférencé : l'attribut est `Optional`, et c'est le
+            # genre de garantie qui saute au premier refactor.
+            ouvert = self._goal or {}
+            return {"widget": "goal", **ouvert}
 
         elif widget == "hangman":
             mot = str(extra.get("word") or "")
@@ -1657,7 +1665,10 @@ class OverlayNarrator:
             if cells:
                 if not self.start_bingo(cells):
                     return None
-                return {"widget": "bingo", "cells": self._bingo["cells"]}
+                # Les cases telles que la grille les a RANGÉES (tronquées,
+                # nettoyées), pas celles qu'on lui a passées.
+                ouverte = self._bingo or {}
+                return {"widget": "bingo", "cells": ouverte.get("cells") or cells}
             if extra.get("check") is not None:
                 checked = self.check_bingo(extra.get("check"))
                 if checked is None:
@@ -1677,11 +1688,14 @@ class OverlayNarrator:
                       "lines": lines[:4]}
 
         elif widget == "versus":
-            try:
-                left_value = float(extra.get("left_value"))
-                right_value = float(extra.get("right_value"))
-            except (TypeError, ValueError):
+            gauche, droite = extra.get("left_value"), extra.get("right_value")
+            if gauche is None or droite is None:
                 return None      # sans chiffres, il n'y a rien à comparer
+            try:
+                left_value = float(gauche)
+                right_value = float(droite)
+            except (TypeError, ValueError):
+                return None
             left_name = str(extra.get("left_name") or "").strip()[:14]
             right_name = str(extra.get("right_name") or "").strip()[:14]
             if not left_name or not right_name:
@@ -2010,7 +2024,12 @@ class OverlayNarrator:
         Le masque et les lettres ratées sont déjà à l'écran : les donner ne
         révèle rien que le chat ne voie.
         """
-        game = self._hangman
+        # Même patron que `_bingo_context` : l'attribut est `Optional`, et un
+        # appelant qui oublierait la garde aurait droit à un `TypeError` en
+        # plein prompt plutôt qu'à un bloc vide.
+        game = self._hangman or {}
+        if not game:
+            return ""
         mask = " ".join(
             (c.upper() if (not c.isalpha() or c in game["found"]) else "_")
             for c in game["word"]
@@ -2216,20 +2235,26 @@ class OverlayNarrator:
     # Ce qu'un objectif peut compter, et le nom qu'on lui donne à l'écran.
     _GOAL_KINDS = {"follow": "follows", "sub": "abonnements", "bits": "bits"}
 
-    def open_goal(self, label: str, target: int, kind: str) -> bool:
-        """Ouvre un objectif alimenté par les vrais événements du live."""
+    def open_goal(self, label: str, target: Any, kind: str) -> bool:
+        """Ouvre un objectif alimenté par les vrais événements du live.
+
+        `target` est déclaré `Any` parce que c'est la vérité : il arrive du
+        modèle, par `extra.get("target")`, et vaut aussi bien `"50"` que `None`.
+        La conversion et son échec sont traités ici — l'annoter `int` promettait
+        un contrôle que personne n'exerce, et l'appel était rouge au type-check.
+        """
         kind = (kind or "").strip().lower()
         try:
-            target = int(target)
+            vise = int(target)
         except (TypeError, ValueError):
             return False
-        if kind not in self._GOAL_KINDS or target < 1 or not self._live():
+        if kind not in self._GOAL_KINDS or vise < 1 or not self._live():
             return False
         self._goal = {"label": ecourter(label or "", 40) or self._GOAL_KINDS[kind],
-                      "target": min(target, 100000), "kind": kind, "count": 0}
+                      "target": min(vise, 100000), "kind": kind, "count": 0}
         self._publish_goal()
         logger.info("Overlay: objectif « {l} » — {n} {k}",
-                    l=self._goal["label"], n=target, k=kind)
+                    l=self._goal["label"], n=vise, k=kind)
         self._planifier_flush()
         return True
 
@@ -2754,8 +2779,10 @@ class OverlayNarrator:
             tally[index] += 1
         total = sum(tally)
         best = max(range(len(tally)), key=lambda i: tally[i]) if total else None
-        # Égalité en tête : il n'y a pas de gagnant à désigner.
-        tied = total > 0 and tally.count(tally[best]) > 1
+        # Égalité en tête : il n'y a pas de gagnant à désigner. La condition
+        # porte sur `best` et non sur `total` — les deux disent la même chose
+        # (pas de vote, pas de tête), mais celle-ci le dit là où on s'en sert.
+        tied = best is not None and tally.count(tally[best]) > 1
         result = {
             "question": poll["question"],
             "options": list(poll["options"]),
