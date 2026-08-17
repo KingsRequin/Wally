@@ -57,6 +57,11 @@ services:
       - ./public-ui:/app/public-ui:ro
       - ./.env:/app/.env
       - ./bot/dashboard/static:/app/bot/dashboard/static:ro
+      # Le cache des modèles STT (faster-whisper les tire de HuggingFace). Sans
+      # ce volume, il vit dans la couche du conteneur : chaque rebuild le jette,
+      # et le premier énoncé du vocal attend un téléchargement de 145 Mo. On le
+      # rebuild plusieurs fois par soirée.
+      - ./data/hf-cache:/home/wally/.cache/huggingface
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/stacks/wally-instances:/opt/stacks/wally-instances
       - /usr/bin/docker:/usr/bin/docker:ro
