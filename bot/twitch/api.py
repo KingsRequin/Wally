@@ -805,6 +805,54 @@ class TwitchAPI:
             logger.error("Liste des récompenses en erreur : {e}", e=exc)
             return None
 
+    async def inventaire_recompenses(self) -> tuple[int, int] | None:
+        """`(total, désactivées)` sur TOUTE la chaîne. `None` si illisible.
+
+        Sans `only_manageable_rewards`, donc les récompenses posées à la main ou
+        par un autre outil comptent aussi — c'est ce périmètre-là, et pas le
+        nôtre, que Twitch plafonne à 50.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    self.REWARDS_URL,
+                    params={"broadcaster_id": self._broadcaster_id},
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    logger.warning("Inventaire des récompenses refusé HTTP {c}",
+                                   c=resp.status_code)
+                    return None
+                data = (resp.json() or {}).get("data") or []
+                return len(data), sum(1 for r in data if not r.get("is_enabled"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Inventaire des récompenses en erreur : {e}", e=exc)
+            return None
+
+    async def _diagnostic_plafond(self, titre: str) -> str:
+        """Pourquoi la chaîne est pleine, avec son décompte mesuré.
+
+        Le premier message se contentait d'annoncer « PLAFOND de 50 » : l'owner
+        en comptait 33 dans son tableau de bord et en a conclu à une panne du
+        bot. Les deux chiffres étaient justes — Twitch compte les récompenses
+        **désactivées** dans les 50, et le tableau de bord ne les montre pas.
+        Un chiffre asséné sans sa mesure se fait contredire par un autre chiffre.
+        """
+        geste = ("Il faut en SUPPRIMER une dans le tableau de bord Twitch "
+                 "(la désactiver ne libère aucune place), puis redémarrer — "
+                 "rien à corriger côté bot.")
+        inventaire = await self.inventaire_recompenses()
+        if inventaire is None:
+            return (f"Récompense « {titre} » impossible : la chaîne est à son PLAFOND "
+                    f"de 50 récompenses de points de chaîne. {geste}")
+        total, eteintes = inventaire
+        return (f"Récompense « {titre} » impossible : la chaîne est à son PLAFOND "
+                f"de 50 récompenses de points de chaîne ({total} en tout, dont "
+                f"{eteintes} DÉSACTIVÉES — elles comptent, et le tableau de bord "
+                f"ne les affiche pas par défaut). {geste}")
+
     async def creer_recompense(self, titre: str, cout: int, prompt: str) -> str | None:
         """Crée la récompense de points de chaîne, et rend son ID.
 
@@ -861,11 +909,7 @@ class TwitchAPI:
                         # chiffre ni le geste : sans cette traduction, on relit
                         # le code du bot en cherchant une panne qui n'existe pas.
                         if "TOO_MANY_REWARDS" in resp.text:
-                            logger.error(
-                                "Récompense « {t} » impossible : la chaîne est à son "
-                                "PLAFOND de 50 récompenses de points de chaîne. Il faut "
-                                "en supprimer une dans le tableau de bord Twitch, puis "
-                                "redémarrer — rien à corriger côté bot.", t=titre)
+                            logger.error(await self._diagnostic_plafond(titre))
                             return None
                         logger.error("Création de récompense refusée HTTP {c} : {t}",
                                      c=resp.status_code, t=resp.text[:200])
