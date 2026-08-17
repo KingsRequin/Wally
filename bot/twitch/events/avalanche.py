@@ -1,6 +1,7 @@
 """Avalanche de memes achetée aux points de chaîne.
 
-Une pluie de memes de la communauté submerge l'écran une demi-minute. Cher
+Une pluie submerge l'écran jusqu'à ce que TOUT le dossier de memes soit passé
+(~40 s pour 134 memes) — long et couvrant, c'est le but demandé. Cher
 (50 000 points par défaut), donc le remboursement est la moitié sérieuse de ce
 module : chaque chemin où l'avalanche ne tombe pas rend les points ET le dit.
 
@@ -23,8 +24,8 @@ CLE_RECOMPENSE = "overlay:avalanche_reward_id"
 
 TITRE = "Avalanche de memes"
 COUT = 50000
-PROMPT = ("Une pluie de tous les memes de la communauté submerge l'écran "
-          "pendant 30 secondes. Rien à écrire, ça part tout seul.")
+PROMPT = ("Une pluie submerge l'écran jusqu'à ce que TOUS les memes de la "
+          "communauté soient passés. Rien à écrire, ça part tout seul.")
 
 
 def _narrateur(bot):

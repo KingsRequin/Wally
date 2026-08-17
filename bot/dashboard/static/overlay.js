@@ -882,7 +882,8 @@
     },
 
     // Avalanche de memes — 50 000 points de chaîne. Une pluie DENSE qui prend
-    // l'écran seule pendant une demi-minute.
+    // l'écran seule le temps que TOUT le dossier soit passé (~40 s pour 134
+    // memes) : c'est long et ça masque le jeu, c'est le but.
     //
     // Les médias sont tirés de la liste du rotateur (`/api/public/rotation`),
     // déjà chargée par la page : les redemander ici doublerait l'appel et,
@@ -901,16 +902,18 @@
         // fantôme. Le narrateur refuse déjà en amont, ceci est le filet.
         return box;
       }
-      // Densité : ~4 memes par seconde. À 30 s, cela fait 120 chutes pour un
-      // stock de 134 — l'avalanche puise donc dans presque tout le dossier
-      // sans qu'aucun ne repasse deux fois de suite.
-      const PAR_SECONDE = 4;
-      const total = Math.round(duree * PAR_SECONDE);
+      // TOUT le dossier passe, une fois chacun, dans un ordre mêlé — c'est la
+      // demande de l'owner, et c'est ce que le tirage au sort d'origine ne
+      // faisait pas : avec remise, ~40 % du stock ne sortait jamais.
+      // La cadence se déduit de la fenêtre annoncée par le serveur, qui l'a
+      // lui-même dimensionnée sur le dossier (`AVALANCHE_PAR_SECONDE`).
+      const stock = window.WallyAvalanche.ordre(medias);
+      const pas = window.WallyAvalanche.cadence(stock.length, duree);
       let lances = 0;
       const timer = setInterval(() => {
-        if (lances >= total || !box.isConnected) { clearInterval(timer); return; }
+        if (lances >= stock.length || !box.isConnected) { clearInterval(timer); return; }
+        const media = stock[lances];
         lances += 1;
-        const media = medias[Math.floor(Math.random() * medias.length)];
         const flocon = el("div", "flocon");
         // Tailles mêlées : un mur de vignettes identiques ne fait pas une
         // avalanche, il fait une grille.
@@ -937,7 +940,7 @@
         }
         flocon.addEventListener("animationend", () => flocon.remove());
         box.appendChild(flocon);
-      }, 1000 / PAR_SECONDE);
+      }, pas);
       // Coupé avec la carte : `disposeWidget` vide les `data-interval`, et sans
       // ça l'avalanche continuerait de semer des memes dans un nœud détaché.
       box.dataset.interval = String(timer);

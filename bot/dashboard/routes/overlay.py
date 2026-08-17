@@ -43,6 +43,7 @@ _OVERLAY_FILES = (
     "overlay.js",
     "overlay_layout.js",
     "overlay_apex.js",
+    "overlay_avalanche.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
     # et non script : la page en charge une depuis que ces deux zones y ont été

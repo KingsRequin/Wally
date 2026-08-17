@@ -26,6 +26,7 @@ import re
 import time
 import unicodedata
 from collections import deque
+from math import ceil
 from urllib.parse import quote
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -2477,10 +2478,41 @@ class OverlayNarrator:
         self._feed.widget("wave", emote=str(emote)[:30], duration=6)
         return True
 
-    # Ce que dure une avalanche, en secondes. Trente : c'est ce qui a été
-    # arbitré avec l'owner — assez long pour valoir 50 000 points, assez court
-    # pour qu'on retrouve son jeu.
+    # Cadence de lâcher, en memes par seconde — choisie par l'owner : « les drop
+    # genre 3 par seconde, pas tous les lâcher en même temps ». C'est elle qui
+    # donne sa DURÉE à l'avalanche : le stock commande, pas le chrono. Une
+    # constante de 30 s plafonnait le spectacle à 120 chutes — ajouter des memes
+    # au dossier n'en faisait pas passer un de plus.
+    AVALANCHE_PAR_SECONDE = 3
+    # Ce que met le dernier meme à traverser l'écran. Le lâcher n'est pas
+    # l'arrivée : sans cette marge, la fin de l'avalanche s'évapore en plein vol.
+    AVALANCHE_CHUTE_S = 5
+    # Filet, pas cible : le jour où le dossier passe à 5 000 memes, c'est la
+    # densité qui monte côté client, pas l'écran qui reste confisqué une heure.
+    AVALANCHE_MAX_S = 120
+    # Repli quand le stock est illisible — l'ancienne durée fixe.
     AVALANCHE_S = 30
+
+    def _duree_avalanche(self) -> int | None:
+        """Le temps qu'il faut pour faire passer TOUT le dossier.
+
+        `None` quand le dossier est vide : il n'y a rien à faire tomber, et
+        l'appelant rembourse. La bibliothèque peut aussi lever (dossier démonté
+        en plein live) — le doute profite alors au viewer qui a PAYÉ : on retombe
+        sur la durée par défaut plutôt que de lui prendre ses points.
+        """
+        library = self._memes
+        if library is None:
+            return self.AVALANCHE_S
+        try:
+            stock = len(library.list_medias())
+        except Exception as exc:  # noqa: BLE001 — on lance quand même
+            logger.warning("Avalanche : stock illisible ({e}) — durée par défaut", e=exc)
+            return self.AVALANCHE_S
+        if stock <= 0:
+            return None
+        return min(self.AVALANCHE_MAX_S,
+                   ceil(stock / self.AVALANCHE_PAR_SECONDE) + self.AVALANCHE_CHUTE_S)
 
     def show_meme_storm(self, seconds: int | None = None) -> bool:
         """Fait tomber une pluie de memes sur tout l'écran. Vrai si c'est parti.
@@ -2490,12 +2522,19 @@ class OverlayNarrator:
         La refuser au motif qu'un compteur est passé il y a dix secondes serait
         lui prendre ses points pour rien.
 
-        Le seul refus possible est l'écran éteint : hors live, il n'y a rien à
-        submerger — et l'appelant rembourse.
+        Deux refus, et l'appelant rembourse dans les deux cas : l'écran éteint
+        (rien à submerger) et le dossier vide (rien à faire tomber). Le second
+        manquait — 50 000 points pouvaient acheter un écran vide.
+
+        `seconds` reste prioritaire : c'est le chemin des essais depuis le
+        panneau, il ne doit pas être écrasé par le calcul.
         """
         if not self._live():
             return False
-        duree = int(seconds or self.AVALANCHE_S)
+        duree = int(seconds) if seconds else self._duree_avalanche()
+        if not duree:
+            logger.warning("Avalanche demandée avec un dossier de memes VIDE — refus")
+            return False
         self._last_event_at = time.monotonic()
         self._feed.widget("meme_storm", seconds=duree, duration=duree + 2)
         logger.info("Overlay : avalanche de memes ({d} s)", d=duree)

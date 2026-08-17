@@ -526,7 +526,12 @@
     }
     .meme-storm .flocon {
       position: absolute;
-      top: -40%;                     /* part hors champ, au-dessus */
+      /* Entièrement hors champ, au-dessus, QUELLE QUE SOIT sa hauteur : le bas
+         du meme est calé sur le bord haut de la scène. Un `top` négatif fixe
+         (-40%) était une distance, pas une position relative à soi — les memes
+         hauts naissaient donc déjà à l'écran, et on les voyait apparaître en
+         cours de chute. */
+      bottom: 100%;
       will-change: transform;        /* la chute est la seule chose qui bouge */
       animation: meme-chute linear forwards;
       filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
@@ -541,9 +546,16 @@
     /* Une seule animation pour la chute ET la rotation : deux animations
        concurrentes sur `transform` se remplacent au lieu de se composer, et le
        meme tombait sans tourner. */
+    /* La distance se mesure sur le VIEWPORT, jamais en pourcentage seul : dans
+       `translateY()`, un % se rapporte à la hauteur de L'ÉLÉMENT. `160%` sur une
+       vignette de 200 px la déplaçait de 320 px — partie de -432 px sur un écran
+       de 1080, elle mourait au premier tiers, en plein vol. Et les grandes
+       vignettes tombaient plus loin que les petites.
+       100vh pour traverser la scène, + 100% pour repartir de son perchoir et en
+       ressortir ENTIÈREMENT avant d'être retirée. */
     @keyframes meme-chute {
       from { transform: translateY(0) rotate(var(--depart, 0deg)); }
-      to   { transform: translateY(160%) rotate(var(--arrivee, 0deg)); }
+      to   { transform: translateY(calc(100vh + 100%)) rotate(var(--arrivee, 0deg)); }
     }
 
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
@@ -1615,6 +1627,7 @@
        placement. -->
   <script src="/static/overlay_layout.js"></script>
   <script src="/static/overlay_apex.js"></script>
+  <script src="/static/overlay_avalanche.js"></script>
   <script src="/static/overlay.js"></script>
 </body>
 </html>

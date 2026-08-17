@@ -167,3 +167,24 @@ def test_la_feuille_de_style_compte_dans_l_empreinte():
     from bot.dashboard.routes.overlay import _OVERLAY_FILES
 
     assert "animate.min.css" in _OVERLAY_FILES
+
+
+def test_AUCUN_script_de_la_page_n_echappe_a_l_empreinte():
+    """La garde qui manquait : la liste et la page sont deux endroits, et c'est
+    leur ÉCART qui fait mal. Un script chargé par `overlay.html` mais absent de
+    `_OVERLAY_FILES` ne change jamais la version — OBS garde donc son ancienne
+    copie pour toujours, et le correctif « déployé » ne l'atteint pas.
+
+    Constaté à l'ajout de `overlay_avalanche.js`, où trois endroits devaient
+    bouger ensemble.
+    """
+    import re
+    from pathlib import Path
+
+    from bot.dashboard.routes.overlay import _OVERLAY_FILES
+
+    html = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+            / "overlay.html").read_text(encoding="utf-8")
+    charges = set(re.findall(r'(?:src|href)="/static/([^"?]+\.(?:js|css))"', html))
+    oublies = sorted(charges - set(_OVERLAY_FILES))
+    assert not oublies, f"chargés par la page mais hors de l'empreinte : {oublies}"
