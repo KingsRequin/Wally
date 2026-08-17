@@ -112,8 +112,8 @@ from bot.intelligence.overlay_narrator import (
     CANCEL_TARGETS,
     CANCEL_TOOL_SPEC as _OVERLAY_CANCEL_TOOL,
     LAST_CLIP_TOOL_SPEC as _LAST_CLIP_TOOL,
-    OVERLAY_TOOL_SPEC as _OVERLAY_TOOL,
     planning_url,
+    spec_overlay_pour as _spec_overlay_pour,
 )
 
 
@@ -1352,7 +1352,11 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # Overlay : seulement s'il est branché — un outil mort ferait promettre
     # un affichage qui n'arriverait jamais.
     if _overlay_narrator(bot) is not None:
-        tools.append(_OVERLAY_TOOL)
+        # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
+        # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
+        # et annonce « c'est à l'écran » devant un écran où rien n'apparaît. Le
+        # même appel rafraîchit le cache dont se sert le refus d'exécution.
+        tools.append(await _spec_overlay_pour(_overlay_narrator(bot)))
         tools.append(_OVERLAY_CANCEL_TOOL)
         tools.append(_LAST_CLIP_TOOL)
         if getattr(bot, "apex_api", None) is not None:

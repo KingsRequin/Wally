@@ -18,6 +18,7 @@ format), pas par une troncature qui couperait au milieu d'une idée.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import random
@@ -227,7 +228,113 @@ _CONDENSE_SYSTEM = load_prompt(
 )
 
 
-OVERLAY_TOOL_SPEC = {
+# ── Ce qu'aucune scène n'affiche ────────────────────────────────────────────
+#
+# Un widget masqué sur TOUTES les scènes ne doit ni être proposé à Wally, ni le
+# laisser annoncer « c'est à l'écran » s'il le demande quand même : c'est la
+# leçon de « il ne savait pas qu'il affichait les bingos », dans l'autre sens.
+#
+# Masqué sur une SEULE scène, il reste utilisable — Wally ignore laquelle est à
+# l'antenne, et c'est la page qui filtre.
+
+# Ce que l'outil nomme → ce que la page rend. Sans cette table, `goal` serait
+# introuvable dans le modèle et l'enum le proposerait toujours, jauge masquée
+# partout : `_publish_goal` publie un `gauge`, et `uptime` est rendu en
+# `counter`. Le modèle suit la PAGE, pas les noms d'outils.
+_ALIAS_RENDU = {"goal": "gauge", "uptime": "counter"}
+
+
+def _cle_de_rendu(kind: str) -> str:
+    return _ALIAS_RENDU.get(kind, kind)
+
+
+async def widgets_disponibles(db) -> frozenset:
+    """Les widgets affichables sur AU MOINS une scène.
+
+    Rend TOUT ce que l'outil connaît quand la question n'a pas de réponse — pas
+    de base, layout illisible, scène sans la clé. Ne pas savoir ne vaut pas
+    interdire : une garde qui se referme sur son propre silence priverait le
+    live de tout l'overlay pour une lecture SQLite ratée.
+    """
+    connus = frozenset(OverlayNarrator._WIDGETS)
+    if db is None:
+        return connus
+    try:
+        from bot.core.overlay_layout_store import charger_layout
+        layout = await charger_layout(db)
+        scenes = layout.get("scenes") or []
+    except Exception as exc:      # lecture ratée, modèle inattendu
+        logger.warning("Overlay : widgets disponibles illisibles ({e}) — "
+                       "aucun n'est retiré", e=exc)
+        return connus
+    if not scenes:
+        return connus
+
+    def visible(cle: str) -> bool:
+        rendu = _cle_de_rendu(cle)
+        vu = False
+        for scene in scenes:
+            el = (scene.get("elements") or {}).get(rendu)
+            # Clé absente du modèle (widget hors mise en scène, comme le
+            # planning) : rien ne le masque, il reste disponible.
+            if el is None:
+                return True
+            vu = True
+            if not el.get("hidden"):
+                return True
+        return not vu
+
+    return frozenset(cle for cle in connus if visible(cle))
+
+
+async def spec_overlay_filtree(db) -> dict:
+    """La définition de `show_overlay`, privée des widgets qu'aucune scène
+    n'affiche."""
+    return spec_overlay_depuis(await widgets_disponibles(db))
+
+
+async def spec_overlay_pour(narrateur) -> dict:
+    """La spec à jour si on sait la calculer, la spec ENTIÈRE sinon.
+
+    Le filtrage est un CONFORT : il retire ce qu'aucune scène n'affiche. Le
+    laisser lever priverait Wally de tous ses outils d'un coup — l'exception
+    remonterait dans `build_chat_tools`, qui en construit vingt autres, et le
+    chat n'aurait plus ni mémoire, ni notes, ni Apex pour une lecture SQLite
+    manquée. C'est la même règle que dans `widgets_disponibles` : ne pas savoir
+    ne vaut pas interdire.
+    """
+    try:
+        return await narrateur.spec_outil()
+    except Exception as exc:
+        logger.warning("Overlay : enum non filtré ({e}) — spec entière servie",
+                       e=exc)
+        return OVERLAY_TOOL_SPEC
+
+
+def spec_overlay_depuis(dispo) -> dict:
+    """La spec filtrée par un ensemble DÉJÀ lu — le chemin des adaptateurs, qui
+    rafraîchissent le cache du refus dans le même aller-retour.
+
+    Rend une COPIE : la spec d'origine est importée au niveau module par les
+    deux plateformes, et la muter ferait disparaître un widget pour tout le
+    monde jusqu'au prochain redémarrage.
+    """
+    enum = OVERLAY_TOOL_SPEC["function"]["parameters"]["properties"]["widget"]["enum"]
+    garde = [w for w in enum if w in dispo]
+    # Tout masqué : on rend la spec entière plutôt qu'un enum vide, que les
+    # fournisseurs refusent — un outil invalide ferait échouer TOUS les appels,
+    # y compris ceux qui n'ont rien à voir avec l'overlay.
+    if not garde or garde == list(enum):
+        return OVERLAY_TOOL_SPEC
+    spec = copy.deepcopy(OVERLAY_TOOL_SPEC)
+    spec["function"]["parameters"]["properties"]["widget"]["enum"] = garde
+    return spec
+
+
+# Annotée `dict` : sans elle, mypy infère un type de valeur commun à toutes les
+# clés (`Collection[str]`) et refuse d'indexer la structure imbriquée — que le
+# filtrage de l'enum parcourt.
+OVERLAY_TOOL_SPEC: dict = {
     "type": "function",
     "function": {
         "name": "show_overlay",
@@ -1298,6 +1405,55 @@ class OverlayNarrator:
         w for w in _WIDGETS if w not in ("quote", "prediction", "clip", "wave")
     )
 
+    # Les widgets qu'au moins une scène affiche. `None` tant qu'on ne les a pas
+    # lus, et c'est un état à part entière : ne pas savoir ne vaut pas
+    # interdire. Un ensemble vide, lui, dirait « aucun » — d'où le `is None`.
+    _widgets_dispo: Optional[frozenset] = None
+    _widgets_dispo_ts: float = 0.0
+    # Le modèle ne change qu'au « Mettre à jour » du panneau, geste rare et
+    # délibéré. Une minute de retard sur le refus d'exécution est le prix d'un
+    # `show_widget` SYNCHRONE, appelé depuis des chemins qui ne peuvent pas
+    # attendre une lecture SQLite. L'enum, lui, est filtré à chaud.
+    _WIDGETS_DISPO_TTL_S = 60.0
+
+    async def rafraichir_widgets_disponibles(self) -> frozenset:
+        """Relit ce qu'au moins une scène affiche. Appelée là où l'on est déjà
+        en asynchrone — la construction des outils, avant chaque décision."""
+        self._widgets_dispo = await widgets_disponibles(self._db)
+        self._widgets_dispo_ts = time.monotonic()
+        return self._widgets_dispo
+
+    async def spec_outil(self) -> dict:
+        """La définition de `show_overlay` à jour, et le cache du refus avec :
+        UN seul aller-retour en base pour les deux, au moment où Wally s'apprête
+        à décider. Sans ce point commun, l'enum et le refus se liraient
+        séparément et pourraient se contredire."""
+        return spec_overlay_depuis(await self.rafraichir_widgets_disponibles())
+
+    def _widget_affichable(self, widget: str) -> bool:
+        connus = self._widgets_dispo
+        if connus is None:
+            # Jamais lu : on ne refuse rien, et on programme la lecture pour la
+            # prochaine fois. Sans boucle en cours (test, script), tant pis —
+            # l'appel suivant réessaiera.
+            self._programmer_relecture_widgets()
+            return True
+        if time.monotonic() - self._widgets_dispo_ts > self._WIDGETS_DISPO_TTL_S:
+            self._programmer_relecture_widgets()
+        return widget in connus
+
+    def _programmer_relecture_widgets(self) -> None:
+        try:
+            asyncio.get_running_loop().create_task(
+                self.rafraichir_widgets_disponibles())
+        # Aucune boucle asyncio en cours : on est dans un test ou un script, pas
+        # en train de servir un live. Le silence est le bon choix ici — il n'y a
+        # rien d'urgent à relire, et l'appel suivant réessaiera.
+        except RuntimeError:
+            pass
+        except Exception as exc:   # pragma: no cover - filet
+            logger.debug("Overlay : relecture des widgets impossible ({e})", e=exc)
+
     def show_widget(
         self, widget: str, comment: str = "", result=None, **extra
     ) -> Optional[dict]:
@@ -1310,6 +1466,15 @@ class OverlayNarrator:
         """
         widget = (widget or "").strip()
         if widget not in self._DIRECT_WIDGETS or not self._live():
+            return None
+
+        # Masqué sur TOUTES les scènes : on refuse ICI et pas seulement dans
+        # l'enum. Une action différée — un rappel programmé, une initiative
+        # cognitive — ne repasse pas par la construction des outils, et
+        # annoncerait « c'est à l'écran » devant un écran où rien n'apparaît.
+        if not self._widget_affichable(widget):
+            logger.info("Overlay: '{w}' refusé — masqué sur toutes les scènes",
+                        w=widget)
             return None
 
         # Une partie qui DURE ne s'écrase pas en silence. Le garde est ici, au
