@@ -198,7 +198,59 @@ def test_une_boite_mesuree_par_le_serveur_n_est_pas_une_supposition():
     """) == "[false,true,[380,420]]"
 
 
-# ── 3. Les échantillons viennent du serveur, jamais d'une table en JS ───────
+# ── 3. Ce que le GET joint au modèle ────────────────────────────────────────
+
+def test_la_publication_ne_pose_aucune_question_sans_raison():
+    """La garde de concurrence relit le modèle avant de publier et demande
+    confirmation s'il a bougé. Elle comparait un modèle NU (le nôtre) à un
+    modèle ACCOMPAGNÉ (celui du GET) : les deux ne pouvaient jamais être égaux,
+    donc la question tombait à CHAQUE publication. En publication au fil de
+    l'eau — un envoi par modification — le navigateur finit par proposer de
+    bloquer les boîtes de dialogue de la page, et l'éditeur devient
+    inutilisable en direct. C'est le reproche de l'owner, mot pour mot : « à
+    chaque modification si on publie le navigateur demande une autorisation
+    JavaScript ».
+    """
+    assert _node("""
+      const nu = {scenes: [{slug: "en-jeu"}], defaut: "en-jeu", version: 3};
+      const accompagne = Object.assign({}, nu, {
+        libelles: {a: 1}, tailles: {meme: [400, 400]}, echantillons: {dice: {}},
+      });
+      const propre = OA.retirerHorsModele(accompagne);
+      console.log(JSON.stringify(propre) === JSON.stringify(nu));
+    """) == "true"
+
+
+def test_le_panneau_ecarte_exactement_ce_que_la_route_ajoute():
+    """Le garde-fou contre la récidive. La liste des clés d'accompagnement vit
+    en DEUX endroits par nature — le serveur les ajoute, le navigateur les
+    retire — et c'est précisément là qu'elles ont divergé : `tailles` a été
+    servie sans être retirée de la comparaison. Ce test les confronte, pour que
+    le prochain ajout casse ici et pas en plein live."""
+    from unittest.mock import MagicMock
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bot.core.overlay_layout import layout_par_defaut
+    from bot.dashboard.routes.overlay import admin_router
+
+    app = FastAPI()
+    app.include_router(admin_router, prefix="/api/admin")
+    app.state.wally = MagicMock()
+    app.state.wally.db = None
+    servi = TestClient(app).get("/api/admin/overlay/layout").json()
+    ajoutees = set(servi) - set(layout_par_defaut())
+
+    src = (_STATIC / "overlay_admin.js").read_text(encoding="utf-8")
+    declaree = src.split("const HORS_MODELE = [", 1)[1].split("]", 1)[0]
+    retirees = {m.strip().strip('"\'') for m in declaree.split(",") if m.strip()}
+    assert ajoutees == retirees, (
+        f"la route ajoute {sorted(ajoutees)}, le panneau retire {sorted(retirees)} — "
+        "l'écart fait poser une question de concurrence à chaque publication")
+
+
+# ── 4. Les échantillons viennent du serveur, jamais d'une table en JS ───────
 
 def test_le_layout_admin_sert_les_echantillons():
     """Ils voyagent avec le layout, comme les libellés et les boîtes de médias :

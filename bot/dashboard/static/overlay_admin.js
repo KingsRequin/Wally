@@ -967,6 +967,28 @@ window.OverlayAdmin = (function () {
     return window.apiFetch(url, options);
   }
 
+  /** Ce que le GET ajoute AUTOUR du modèle, et que le PUT ne rend pas.
+   *
+   *  Une seule liste, parce qu'il en fallait DEUX pour que ça marche — celle du
+   *  chargement (qui les retire du modèle) et celle de la comparaison de
+   *  concurrence (qui doit les ignorer) — et qu'elles ont divergé : `tailles`
+   *  n'a jamais été ajoutée à la seconde. Résultat, le modèle servi ne pouvait
+   *  plus JAMAIS être égal au nôtre, et chaque publication ouvrait un
+   *  « la mise en scène a changé, continuer ? » qui n'avait aucun fondement.
+   *  En publication au fil de l'eau, c'est un dialogue par modification : le
+   *  navigateur propose alors de bloquer les boîtes de dialogue de la page, et
+   *  l'éditeur devient inutilisable en direct. Un test Python confronte cette
+   *  liste à ce que la route ajoute réellement.
+   */
+  const HORS_MODELE = ["libelles", "tailles", "echantillons"];
+
+  /** Le modèle SEUL, sans ce que le GET lui a joint. Modifie l'objet reçu. */
+  function retirerHorsModele(objet) {
+    if (!objet) return objet;
+    HORS_MODELE.forEach(function (cle) { delete objet[cle]; });
+    return objet;
+  }
+
   function charger() {
     return appeler(URL_LAYOUT)
       .then(function (r) { return r && r.ok ? r.json() : null; })
@@ -975,33 +997,21 @@ window.OverlayAdmin = (function () {
           echouer("Mise en scène illisible");
           return;
         }
-        // Les libellés sortent du modèle avant tout le reste : `publier()`
-        // renvoie `etat.layout` tel quel au serveur, et le PUT ne les rend pas.
-        // Les laisser dedans les ferait donc disparaître à la première
-        // publication — tous les noms redeviendraient des clés techniques.
-        if (layout.libelles) {
-          etat.libelles = layout.libelles;
-          delete layout.libelles;
+        // Trois tables voyagent AVEC le modèle, sans en faire partie : les
+        // libellés lisibles des éléments, les boîtes des widgets à média
+        // (mesurées par le serveur sur le dossier — le navigateur n'y a pas
+        // accès) et les échantillons du ▶, dont le banc de mesure se sert.
+        // Chacune est ici plutôt que recopiée en JavaScript, pour la même
+        // raison : deux tables divergent au premier widget ajouté.
+        if (layout.libelles) etat.libelles = layout.libelles;
+        if (layout.tailles && window.WallyLayout) {
+          WallyLayout.poserTailles(layout.tailles);
         }
-        // Les boîtes des widgets à média, mesurées par le serveur sur le dossier
-        // de memes. Même traitement que les libellés, et pour la même raison :
-        // elles voyagent avec le GET, le PUT ne les rend pas, et les laisser
-        // dans le modèle les enverrait à l'antenne comme un réglage de scène.
-        if (layout.tailles) {
-          if (window.WallyLayout) WallyLayout.poserTailles(layout.tailles);
-          delete layout.tailles;
-        }
-        // Les paramètres d'essai de chaque widget — ceux du ▶ — voyagent par le
-        // même GET, et pour la même raison que les deux tables ci-dessus : le
-        // banc de mesure en a besoin, et une seconde table écrite en JavaScript
-        // aurait divergé de celle de prod au premier widget ajouté. Retirés du
-        // modèle avant `adopter()`, sinon le PUT les renverrait à l'antenne
-        // comme un réglage de scène.
-        if (layout.echantillons) {
-          etat.echantillons = layout.echantillons;
-          delete layout.echantillons;
-        }
-        adopter(layout);
+        if (layout.echantillons) etat.echantillons = layout.echantillons;
+        // Elles sortent du modèle avant tout le reste : `publier()` renvoie
+        // `etat.layout` tel quel au serveur, et le PUT ne les rend pas. Les y
+        // laisser les enverrait à l'antenne comme un réglage de scène.
+        adopter(retirerHorsModele(layout));
         // L'aperçu peut avoir fini de charger AVANT cette réponse : il a alors
         // sauté son banc faute d'échantillons. On repasse.
         lancerBanc();
@@ -1057,10 +1067,10 @@ window.OverlayAdmin = (function () {
       .then(function (r) { return r && r.ok ? r.json() : null; })
       .then(function (servi) {
         if (!servi || !servi.scenes) return true;
-        // Les libellés ne voyagent qu'au GET : les laisser rendrait toute
-        // comparaison fausse.
-        delete servi.libelles;
-        if (JSON.stringify(servi) === etat.publie) return true;
+        // Ce que le GET joint au modèle ne fait pas partie de la comparaison :
+        // `etat.publie` ne le porte pas, et l'y laisser rendait les deux
+        // TOUJOURS différents — donc la question TOUJOURS posée.
+        if (JSON.stringify(retirerHorsModele(servi)) === etat.publie) return true;
         return window.confirm(
           "La mise en scène à l'antenne a changé depuis votre chargement — "
           + "un autre onglet du panneau, sans doute.\n\nPublier maintenant "
@@ -5138,6 +5148,11 @@ window.OverlayAdmin = (function () {
     // tout ça ne se voit à l'œil sur une capture d'écran.
     fusionnerMesures: fusionnerMesures,
     mesurerBanc: mesurerBanc,
+    // Ce que le GET joint au modèle. Exposé pour être TESTÉ : c'est l'écart
+    // entre cette liste et ce que la route ajoute qui faisait poser une
+    // question de concurrence à chaque publication.
+    HORS_MODELE: HORS_MODELE,
+    retirerHorsModele: retirerHorsModele,
     tailleRendue: tailleRendue,
     // Le tri du cadenas : c'est lui qui dit que « verrouillé » vaut aussi pour
     // la visibilité, et pas seulement pour la position.
