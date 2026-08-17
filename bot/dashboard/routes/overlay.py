@@ -359,7 +359,13 @@ async def get_overlay_layout_admin(request: Request, defauts: bool = False) -> d
     par le même code, et que le panneau sait déjà le lire.
     """
     layout = layout_par_defaut() if defauts else await charger_layout(_db(request))
-    return {**layout, "libelles": LIBELLES, "tailles": _tailles_media(request)}
+    # Les échantillons du ▶ voyagent aussi : le panneau s'en sert pour son BANC
+    # DE MESURE, qui monte chaque widget dans l'aperçu — sans rien publier — afin
+    # que son cadre soit juste SANS qu'on ait eu à lancer l'élément. Servis d'ici
+    # plutôt que recopiés en JavaScript, pour la raison de toujours : deux tables
+    # divergent au premier widget ajouté.
+    return {**layout, "libelles": LIBELLES, "tailles": _tailles_media(request),
+            "echantillons": _ECHANTILLONS}
 
 
 @admin_router.put("/overlay/layout")

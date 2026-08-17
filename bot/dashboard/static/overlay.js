@@ -1178,6 +1178,105 @@
     fantomeTimer = setTimeout(retirerFantomes, FANTOMES_MS);
   }
 
+  // ── Banc de mesure ────────────────────────────────────────────────────────
+  //
+  // Le panneau de mise en scène dessine un cadre par élément. Tant qu'un widget
+  // n'a jamais paru, il n'a AUCUNE taille à lire : le cadre portait alors une
+  // valeur de table, et ne devenait juste qu'au premier ▶ — « certaines box ne
+  // se mettent à jour que au lancement de l'élément ».
+  //
+  // Le ▶ ne pouvait pas servir de mesure automatique : il passe par le serveur,
+  // qui PUBLIE sur le bus. Mesurer les vingt-sept widgets à l'ouverture du
+  // panneau les aurait fait défiler EN DIRECT devant les viewers dès qu'on
+  // règle la scène du live. Ce banc, lui, ne parle à personne : il monte chaque
+  // widget ici, lit sa boîte, et le retire dans la même tâche JavaScript — rien
+  // d'autre ne s'exécute entre les deux, donc aucune carte de banc ne peut être
+  // prise pour un widget en place.
+  //
+  // Trois précautions :
+  //
+  //   · dans le conteneur RÉEL du widget : le CSS qui le dimensionne y est
+  //     contextuel (grille à une cellule, `width: max-content`, règles par
+  //     `kind`). Mesuré dans un coin neutre, il n'a pas la même boîte.
+  //   · sans la classe `visible`, et sous `visibility: hidden` : la carte est
+  //     mise en page, donc mesurable, mais personne ne la voit — ni ici, ni sur
+  //     la source OBS si cette page est celle du live.
+  //   · `offsetWidth/offsetHeight`, jamais `getBoundingClientRect()`, qui porte
+  //     déjà le `scale()` du placement : le panneau applique le sien, et le
+  //     compter deux fois donnerait un repère au carré de l'échelle.
+  //
+  // Ce que le banc N'INCLUT PAS, et pourquoi :
+  //
+  //   · `meme`, `rotator`, `image` — leur boîte est IMPOSÉE, mesurée par le
+  //     serveur sur le dossier. Le banc monterait UNE image et rendrait un
+  //     cadre qui change à chaque rotation, ce qu'on a précisément supprimé.
+  //   · `planning` — sa taille est celle de l'image qu'on lui donne.
+  //   · `clip` — la table porte volontairement l'état LECTURE (540 × 363), le
+  //     plus encombrant ; l'échantillon ne monte que la carte d'annonce
+  //     (300 × 81), et un repère trop petit laisserait la vidéo recouvrir ses
+  //     voisins. Son builder arme en plus une iframe Twitch en différé.
+  //   · `apex_progress` — la courbe SE RETIRE quand elle n'a pas de relevés
+  //     (`_HORS_WIDGET`, routes/overlay.py, le dit déjà pour le ▶). Mesuré à
+  //     vide, le banc l'a relevé à 560 × 22 : un trait plat, alors qu'en live
+  //     le panneau porte une courbe. Un cadre mesuré sur un widget qui se
+  //     dérobe est plus faux que l'ordre de grandeur qu'il remplacerait.
+  const BANC_HORS = {
+    meme: true, rotator: true, image: true, planning: true, clip: true,
+    apex_progress: true,
+  };
+
+  /** Retire une carte de banc, minuteurs compris.
+   *
+   *  Le compte à rebours arme un `setInterval` DÈS SA CONSTRUCTION
+   *  (`node.dataset.interval`) : oublié ici, il tournerait dix fois par seconde
+   *  jusqu'à la fin de la page, sur la machine qui encode le live.
+   */
+  function retirerBanc(box) {
+    box.querySelectorAll("[data-interval]").forEach((n) => {
+      clearInterval(Number(n.dataset.interval));
+    });
+    if (box.dataset.interval) clearInterval(Number(box.dataset.interval));
+    box.remove();
+  }
+
+  /** Monte chaque widget hors vue et rend sa boîte, en pixels de mise en page.
+   *
+   *  `echantillons` vient du serveur (`_ECHANTILLONS`, routes/overlay.py) : les
+   *  mêmes paramètres que le ▶. Un widget construit sans eux serait vide et ne
+   *  dirait rien de son encombrement — un sondage sans option n'a pas la
+   *  largeur d'un sondage.
+   */
+  function mesurerEchantillons(echantillons) {
+    const ech = echantillons || {};
+    const vues = {};
+    Object.keys(BUILDERS).forEach((kind) => {
+      if (BANC_HORS[kind]) return;
+      let box = null;
+      try {
+        box = el("div", "widget banc");
+        box.dataset.kind = kind;
+        box.appendChild(BUILDERS[kind](Object.assign({}, ech[kind] || {})));
+        hoteWidget(kind).appendChild(box);
+        const l = box.offsetWidth, h = box.offsetHeight;
+        // Un widget qui ne rend rien N'A PAS de taille : la clé reste absente
+        // plutôt que de valoir zéro. « Je ne sais pas » ne s'écrit pas en
+        // chiffres — c'est toute la règle de ce mécanisme.
+        if (l > 0 && h > 0) vues[kind] = [l, h];
+      } catch (e) {
+        // Un builder qui refuse son échantillon ne doit pas emporter les
+        // vingt-six autres : le panneau garde son estimation pour celui-là.
+        console.warn("overlay : banc de mesure impossible pour", kind, e);
+      } finally {
+        if (box) retirerBanc(box);
+      }
+    });
+    return vues;
+  }
+
+  // La seule chose que cette page expose au panneau de mise en scène, qui
+  // l'ouvre en `iframe` de même origine.
+  window.WallyBanc = { mesurer: mesurerEchantillons };
+
   // Les couleurs de l'overlay, pas celles de la fête foraine : les accents de
   // la palette, plus un blanc qui accroche l'œil sur une image de jeu.
   // Lus au premier raid, pas au chargement : le CSS est prêt bien avant.

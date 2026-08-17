@@ -146,6 +146,18 @@ window.WallyLayout = (function () {
     return MESUREES[cle] || TAILLES[cle] || TAILLE_DEFAUT;
   }
 
+  /** Cette taille a-t-elle été MESURÉE, ou seulement supposée ?
+   *
+   *  Le panneau de mise en scène marque d'un pointillé les repères qui portent
+   *  une estimation. Sans cette question, les widgets à média — dont la boîte
+   *  est mesurée par le SERVEUR sur le dossier, ce que le navigateur ne peut
+   *  pas faire — s'affichaient en pointillés comme des suppositions, et le
+   *  compte annonçait moins de mesures qu'il n'y en avait vraiment.
+   */
+  function estMesuree(cle) {
+    return !!MESUREES[cle];
+  }
+
   /** Le rapport entre la source réelle et le canvas de référence.
    *  Sans lui, un scale de 1 ne rendrait pas la même taille relative sur une
    *  source en 1920 et sur une en 2560 : la disposition se déferait. */
@@ -269,7 +281,7 @@ window.WallyLayout = (function () {
 
   return {
     appliquer, placer, orienterPointe, bornerBulle, styleDepuisElement,
-    facteurCanvas, taille, poserTailles,
+    facteurCanvas, taille, poserTailles, estMesuree,
     ELEMENTS, ANCRAGES, TAILLES, TAILLE_DEFAUT,
   };
 })();

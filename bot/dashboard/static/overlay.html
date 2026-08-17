@@ -493,6 +493,19 @@
       transform: translateY(0) scale(1);
       transition: opacity var(--t-base) var(--ease), transform var(--t-slow) var(--ease-pop);
     }
+    /* La carte du BANC DE MESURE (`WallyBanc`, overlay.js) : montée puis
+       retirée dans la même tâche JavaScript, le temps de lire sa boîte pour le
+       panneau de mise en scène. `visibility: hidden` et pas `display: none` —
+       il faut qu'elle soit MISE EN PAGE pour être mesurable, et invisible pour
+       ne rien projeter si cette page est celle du live. L'animation d'entrée
+       est coupée : elle ne changerait pas la mise en page, mais rien ne doit
+       tourner pour une carte que personne ne verra. */
+    .widget.banc {
+      visibility: hidden;
+      transition: none;
+      animation: none;
+    }
+    .widget.banc * { animation: none !important; transition: none !important; }
 
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
     /* `animation: none` d'abord : une animation en cours l'emporte sur une

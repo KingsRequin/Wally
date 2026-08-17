@@ -70,7 +70,13 @@ window.OverlayAdmin = (function () {
   function tailleRendue(cle) {
     const m = mesures[cle];
     if (m && m[0] > 0 && m[1] > 0) return { taille: m, reelle: true };
-    return { taille: tailleElement(cle), reelle: false };
+    // Les widgets à média (`meme`, `rotator`, `image`) ne sont mesurables QUE
+    // par le serveur, sur le dossier : le navigateur n'y a pas accès. Leur
+    // boîte est donc une vraie mesure, et l'annoncer en pointillés comme une
+    // supposition faisait mentir le repère dans l'autre sens.
+    const W = window.WallyLayout;
+    const servie = !!(W && typeof W.estMesuree === "function" && W.estMesuree(cle));
+    return { taille: tailleElement(cle), reelle: servie };
   }
 
   // La grille de neuf cases, dans l'ordre où elle s'affiche.
@@ -139,6 +145,10 @@ window.OverlayAdmin = (function () {
     // la première — « Réinitialiser » aurait alors rendu une position d'origine
     // qui n'en est plus une. `null` tant qu'on n'a pas eu besoin d'elle.
     defauts: null,
+    // Les paramètres d'essai de chaque widget (`_ECHANTILLONS`, côté serveur),
+    // servis par le même GET. Ils alimentent le banc de mesure, qui monte
+    // chaque widget dans l'aperçu pour en lire la taille sans le déclencher.
+    echantillons: null,
     slugCourant: null,
     // `elementCourant` est le PRINCIPAL de la sélection : celui dont la barre de
     // réglages montre les valeurs, celui qui porte les poignées, et celui qu'on
@@ -981,7 +991,20 @@ window.OverlayAdmin = (function () {
           if (window.WallyLayout) WallyLayout.poserTailles(layout.tailles);
           delete layout.tailles;
         }
+        // Les paramètres d'essai de chaque widget — ceux du ▶ — voyagent par le
+        // même GET, et pour la même raison que les deux tables ci-dessus : le
+        // banc de mesure en a besoin, et une seconde table écrite en JavaScript
+        // aurait divergé de celle de prod au premier widget ajouté. Retirés du
+        // modèle avant `adopter()`, sinon le PUT les renverrait à l'antenne
+        // comme un réglage de scène.
+        if (layout.echantillons) {
+          etat.echantillons = layout.echantillons;
+          delete layout.echantillons;
+        }
         adopter(layout);
+        // L'aperçu peut avoir fini de charger AVANT cette réponse : il a alors
+        // sauté son banc faute d'échantillons. On repasse.
+        lancerBanc();
       })
       .catch(function (e) {
         echouer("Mise en scène : " + (e && e.message ? e.message : "erreur"));
@@ -2792,12 +2815,41 @@ window.OverlayAdmin = (function () {
     return (largeur > 0 && hauteur > 0) ? [largeur, hauteur] : null;
   }
 
-  /** Relit toutes les tailles, et ne redessine QUE si l'une a changé.
+  /** Range des tailles lues, et dit si l'une a bougé.
    *
-   *  La comparaison n'est pas une optimisation : `mesurerTout()` est rappelée
-   *  par un `ResizeObserver`, et redessiner sans condition ferait clignoter les
+   *  Une mesure est ACQUISE : elle survit à la disparition du widget, et ne se
+   *  remplace que par une autre mesure. Le dictionnaire était auparavant VIDÉ à
+   *  chaque passe avant d'y remettre ce qui était visible — le cadre se calait
+   *  le temps de l'affichage, puis retombait sur l'estimation dès que le widget
+   *  s'en allait. C'est le « perdu après coup » de l'owner : on voyait le repère
+   *  devenir juste, puis mentir à nouveau.
+   *
+   *  Ce qui reste peut vieillir — un sondage à cinq options est plus large qu'à
+   *  deux — mais la lecture suivante l'écrase, et une taille d'hier reste
+   *  infiniment plus proche que la table.
+   *
+   *  Le retour n'est pas une optimisation : `mesurerTout()` est rappelée par un
+   *  `ResizeObserver`, et redessiner sans condition ferait clignoter les
    *  trente-quatre repères à chaque frame d'une animation d'entrée.
    */
+  function fusionnerMesures(vues) {
+    let change = false;
+    Object.keys(vues || {}).forEach(function (cle) {
+      const t = vues[cle];
+      if (!Array.isArray(t) || t.length !== 2) return;
+      const l = Number(t[0]), h = Number(t[1]);
+      // Un zéro, un négatif ou un non-nombre poserait un repère d'un pixel au
+      // milieu de la scène — pire que l'ordre de grandeur qu'il remplace.
+      if (!(l > 0) || !(h > 0)) return;
+      const a = mesures[cle];
+      if (a && a[0] === l && a[1] === h) return;
+      mesures[cle] = [l, h];
+      change = true;
+    });
+    return change;
+  }
+
+  /** Relit toutes les tailles de ce qui est À L'ÉCRAN dans l'aperçu. */
   function mesurerTout() {
     const doc = docApercu();
     const vue = noeuds.apercu && noeuds.apercu.contentWindow;
@@ -2810,22 +2862,45 @@ window.OverlayAdmin = (function () {
       const m = mesurerConteneur(hotes[i], vue);
       if (m) vues[cle] = m;
     }
-    const cles = {};
-    Object.keys(mesures).forEach(function (c) { cles[c] = true; });
-    Object.keys(vues).forEach(function (c) { cles[c] = true; });
-    let change = false;
-    Object.keys(cles).forEach(function (c) {
-      const a = mesures[c], b = vues[c];
-      if (!a !== !b) { change = true; return; }
-      if (a && b && (a[0] !== b[0] || a[1] !== b[1])) change = true;
-    });
-    if (!change) return;
-    Object.keys(mesures).forEach(function (c) { delete mesures[c]; });
-    Object.keys(vues).forEach(function (c) { mesures[c] = vues[c]; });
+    if (!fusionnerMesures(vues)) return;
     // Pendant un geste, la surface ne se reconstruit pas (le repère serait
     // détruit sous le pointeur) : le rendu complet revient au relâchement.
     if (!manip) rendreSurface();
     rendreCompteMesures();
+  }
+
+  /** Fait mesurer à l'aperçu les widgets que RIEN n'affiche.
+   *
+   *  Sans ça, une taille n'existe que pendant que son widget est à l'écran — et
+   *  au chargement du panneau, aucun ne l'est : vingt-sept cadres sur
+   *  trente-quatre portaient une valeur de table et ne devenaient justes qu'au
+   *  premier ▶. C'est le défaut d'origine, mot pour mot : « certaines box ne se
+   *  mettent à jour que au lancement de l'élément ».
+   *
+   *  Le ▶ ne pouvait pas servir de mesure automatique : il passe par le serveur
+   *  et PUBLIE sur le bus (`POST /overlay/preview`). Mesurer les vingt-sept
+   *  widgets à l'ouverture aurait donc défilé en direct devant les viewers dès
+   *  qu'on règle la scène du live. Le banc, lui, construit tout dans la page
+   *  d'aperçu, sans un seul appel au serveur (`WallyBanc`, overlay.js).
+   *
+   *  Ce qui est déjà mesuré n'est PAS retouché : le banc monte un échantillon
+   *  (quatre options de sondage, deux dés), l'écran porte les vraies données.
+   */
+  function mesurerBanc(vue, echantillons) {
+    const banc = vue && vue.WallyBanc;
+    if (!banc || typeof banc.mesurer !== "function") return false;
+    let vues = null;
+    try {
+      vues = banc.mesurer(echantillons || etat.echantillons || {});
+    } catch (e) {
+      // Un banc qui casse laisse le panneau sur ses estimations, comme avant.
+      return false;
+    }
+    const neufs = {};
+    Object.keys(vues || {}).forEach(function (c) {
+      if (!mesures[c]) neufs[c] = vues[c];
+    });
+    return fusionnerMesures(neufs);
   }
 
   /** Regroupe une rafale de mutations en une seule mesure, puis en repasse
@@ -2885,6 +2960,19 @@ window.OverlayAdmin = (function () {
     doc.addEventListener("animationend", planifierMesure, true);
     doc.addEventListener("load", planifierMesure, true);
     planifierMesure();
+    lancerBanc();
+  }
+
+  /** Fait mesurer à l'aperçu tout ce qu'il n'affiche pas, et redessine. */
+  function lancerBanc() {
+    // Sans échantillons, le banc monterait des widgets vides et rendrait des
+    // tailles fausses — un sondage sans option n'a pas la largeur d'un sondage.
+    // Le GET du layout repassera ici quand il aura répondu.
+    if (!etat.echantillons) return;
+    if (!docApercu()) return;
+    if (!mesurerBanc(noeuds.apercu.contentWindow)) return;
+    if (!manip) rendreSurface();
+    rendreCompteMesures();
   }
 
   function detacherMesures() {
@@ -2922,17 +3010,22 @@ window.OverlayAdmin = (function () {
     if (!noeuds.apercuMesures) return;
     const scene = sceneCourante();
     const cles = (scene && scene.ordre) || [];
+    // Le MÊME critère que le pointillé (`tailleRendue().reelle`), et non la
+    // seule présence dans `mesures` : les boîtes mesurées par le serveur sur le
+    // dossier de memes comptaient sinon comme des suppositions, et le chiffre
+    // annonçait moins de mesures qu'il n'y en avait.
     let lus = 0;
-    cles.forEach(function (c) { if (mesures[c]) lus += 1; });
+    cles.forEach(function (c) { if (tailleRendue(c).reelle) lus += 1; });
     noeuds.apercuMesures.textContent = lus
       ? lus + "/" + cles.length + " mesurés"
       : "aucune taille mesurée";
     noeuds.apercuMesures.title = lus
-      ? "Ces repères épousent la taille RÉELLE lue dans l'aperçu. Les autres, "
-        + "en pointillés, portent une taille supposée : le ▶ de leur ligne les "
-        + "affiche pour de vrai, et le repère se cale dessus."
-      : "Aucun widget n'est affiché dans l'aperçu : tous les repères portent "
-        + "une taille supposée. Le ▶ d'une ligne l'affiche pour de vrai.";
+      ? "Ces repères épousent la taille RÉELLE : lue dans l'aperçu, ou mesurée "
+        + "par le serveur pour les widgets à image. Les autres, en pointillés, "
+        + "portent une taille supposée — le ▶ de leur ligne les affiche pour de "
+        + "vrai, et le repère se cale dessus."
+      : "Aucune taille n'a pu être lue : tous les repères portent une taille "
+        + "supposée. Le ▶ d'une ligne l'affiche pour de vrai.";
   }
 
   /** Pose sur un nœud le placement d'un élément. Les quatre bords sont remis à
@@ -5040,6 +5133,11 @@ window.OverlayAdmin = (function () {
     // donc de l'alignement, de la répartition et du détecteur de débordement.
     mesures: mesures,
     mesurerConteneur: mesurerConteneur,
+    // La rétention et le banc, exposés pour la même raison : ce sont eux qui
+    // décident qu'un cadre est juste SANS qu'on ait lancé l'élément, et rien de
+    // tout ça ne se voit à l'œil sur une capture d'écran.
+    fusionnerMesures: fusionnerMesures,
+    mesurerBanc: mesurerBanc,
     tailleRendue: tailleRendue,
     // Le tri du cadenas : c'est lui qui dit que « verrouillé » vaut aussi pour
     // la visibilité, et pas seulement pour la position.
