@@ -855,6 +855,18 @@ class TwitchAPI:
                         )
                         return None
                     if resp.status_code not in (200, 201):
+                        # Le plafond de Twitch est de 50 récompenses PAR CHAÎNE,
+                        # toutes applications confondues. Le code brut
+                        # (`CREATE_CUSTOM_REWARD_TOO_MANY_REWARDS`) ne dit ni le
+                        # chiffre ni le geste : sans cette traduction, on relit
+                        # le code du bot en cherchant une panne qui n'existe pas.
+                        if "TOO_MANY_REWARDS" in resp.text:
+                            logger.error(
+                                "Récompense « {t} » impossible : la chaîne est à son "
+                                "PLAFOND de 50 récompenses de points de chaîne. Il faut "
+                                "en supprimer une dans le tableau de bord Twitch, puis "
+                                "redémarrer — rien à corriger côté bot.", t=titre)
+                            return None
                         logger.error("Création de récompense refusée HTTP {c} : {t}",
                                      c=resp.status_code, t=resp.text[:200])
                         return None
