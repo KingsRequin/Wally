@@ -146,6 +146,14 @@ ELEMENTS: dict[str, dict] = {
     "quote":      _el(50.0, 50.0, "center"),
     "raid":       _el(50.0, 50.0, "center"),
     "wave":       _el(50.0, 50.0, "center"),
+    # L'avalanche occupe TOUT l'écran, donc elle s'ancre au COIN et non au
+    # centre : centrée, sa carte de 100vw part de la moitié de l'écran et se
+    # rattrape par un `translate` — mesuré au navigateur, elle finissait décalée
+    # de 77 px, deux memes débordant à droite. Au coin, il n'y a rien à
+    # rattraper. Elle reste réglable comme le reste (un overlay qui fait
+    # exception à sa propre grammaire ne se règle plus), mais son défaut est
+    # celui qui couvre l'écran pile.
+    "meme_storm": _el(0.0, 0.0, "top-left"),
     "versus":     _el(50.0, 50.0, "center"),
     "poll":       _el(50.0, 50.0, "center"),
     "hangman":    _el(50.0, 50.0, "center"),
@@ -238,6 +246,7 @@ GROUPE_NOM_DEFAUT = "Groupe sans nom"
 _ORDRE_DEFAUT = [
     "bubble", "avatar", "image", "meme",
     "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
+    "meme_storm",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
     "rps",

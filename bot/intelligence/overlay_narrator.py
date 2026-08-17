@@ -2477,6 +2477,30 @@ class OverlayNarrator:
         self._feed.widget("wave", emote=str(emote)[:30], duration=6)
         return True
 
+    # Ce que dure une avalanche, en secondes. Trente : c'est ce qui a été
+    # arbitré avec l'owner — assez long pour valoir 50 000 points, assez court
+    # pour qu'on retrouve son jeu.
+    AVALANCHE_S = 30
+
+    def show_meme_storm(self, seconds: int | None = None) -> bool:
+        """Fait tomber une pluie de memes sur tout l'écran. Vrai si c'est parti.
+
+        Achetée aux points de chaîne, donc affranchie du budget de réactions
+        (`_may_react`) qui rationne les gags spontanés : ici quelqu'un a PAYÉ.
+        La refuser au motif qu'un compteur est passé il y a dix secondes serait
+        lui prendre ses points pour rien.
+
+        Le seul refus possible est l'écran éteint : hors live, il n'y a rien à
+        submerger — et l'appelant rembourse.
+        """
+        if not self._live():
+            return False
+        duree = int(seconds or self.AVALANCHE_S)
+        self._last_event_at = time.monotonic()
+        self._feed.widget("meme_storm", seconds=duree, duration=duree + 2)
+        logger.info("Overlay : avalanche de memes ({d} s)", d=duree)
+        return True
+
     def show_counter(self, text: str) -> bool:
         """Montre un compteur qui vient de monter, si le budget le permet.
 

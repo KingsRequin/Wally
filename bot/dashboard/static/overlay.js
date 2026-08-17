@@ -881,6 +881,69 @@
       return box;
     },
 
+    // Avalanche de memes — 50 000 points de chaîne. Une pluie DENSE qui prend
+    // l'écran seule pendant une demi-minute.
+    //
+    // Les médias sont tirés de la liste du rotateur (`/api/public/rotation`),
+    // déjà chargée par la page : les redemander ici doublerait l'appel et,
+    // surtout, ferait diverger les deux stocks au premier meme ajouté.
+    //
+    // Chaque flocon naît hors champ, tombe en ligne droite et meurt à
+    // l'arrivée. Aucun n'est retiré à la main : `animationend` les enlève,
+    // sinon 200 nœuds resteraient empilés dans le DOM après le passage — sur
+    // la machine qui encode le live.
+    meme_storm(p) {
+      const box = el("div", "meme-storm");
+      const medias = (window.WallyRotationMedias || []).slice();
+      const duree = Math.max(3, Math.min(120, Number(p.seconds) || 30));
+      if (!medias.length) {
+        // Rien à faire tomber : on rend une boîte vide plutôt qu'un cadre
+        // fantôme. Le narrateur refuse déjà en amont, ceci est le filet.
+        return box;
+      }
+      // Densité : ~4 memes par seconde. À 30 s, cela fait 120 chutes pour un
+      // stock de 134 — l'avalanche puise donc dans presque tout le dossier
+      // sans qu'aucun ne repasse deux fois de suite.
+      const PAR_SECONDE = 4;
+      const total = Math.round(duree * PAR_SECONDE);
+      let lances = 0;
+      const timer = setInterval(() => {
+        if (lances >= total || !box.isConnected) { clearInterval(timer); return; }
+        lances += 1;
+        const media = medias[Math.floor(Math.random() * medias.length)];
+        const flocon = el("div", "flocon");
+        // Tailles mêlées : un mur de vignettes identiques ne fait pas une
+        // avalanche, il fait une grille.
+        const largeur = 140 + Math.floor(Math.random() * 220);
+        flocon.style.width = largeur + "px";
+        // Le tirage tient compte de la LARGEUR du meme : à 92 % avec 360 px de
+        // large, il sortait du cadre par la droite. `overflow: hidden` le
+        // coupait proprement, mais un meme entier vaut mieux qu'un meme rogné.
+        const large = (largeur / (window.innerWidth || 1920)) * 100;
+        flocon.style.left = (Math.random() * Math.max(0, 100 - large)) + "%";
+        flocon.style.animationDuration = (2.6 + Math.random() * 2.4) + "s";
+        flocon.style.setProperty("--depart", (Math.random() * 40 - 20).toFixed(1) + "deg");
+        flocon.style.setProperty("--arrivee", (Math.random() * 220 - 110).toFixed(1) + "deg");
+        const src = "/api/public/meme/" + encodeURIComponent(media.nom);
+        if (media.genre === "video") {
+          const v = document.createElement("video");
+          v.src = src; v.muted = true; v.autoplay = true; v.loop = true;
+          v.playsInline = true;
+          flocon.appendChild(v);
+        } else {
+          const i = document.createElement("img");
+          i.src = src; i.alt = "";
+          flocon.appendChild(i);
+        }
+        flocon.addEventListener("animationend", () => flocon.remove());
+        box.appendChild(flocon);
+      }, 1000 / PAR_SECONDE);
+      // Coupé avec la carte : `disposeWidget` vide les `data-interval`, et sans
+      // ça l'avalanche continuerait de semer des memes dans un nœud détaché.
+      box.dataset.interval = String(timer);
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");
@@ -1609,7 +1672,13 @@
       try {
         const r = await fetch("/api/public/rotation", { cache: "no-store" });
         const data = await r.json();
-        if (Array.isArray(data.medias) && data.medias.length) medias = data.medias;
+        if (Array.isArray(data.medias) && data.medias.length) {
+          medias = data.medias;
+          // Partagée avec l'avalanche de memes, qui puise dans le MÊME stock.
+          // Une seconde source aurait divergé au premier meme ajouté — et
+          // l'avalanche est justement l'endroit où l'on veut tout le dossier.
+          window.WallyRotationMedias = medias;
+        }
       } catch (e) { /* on garde la liste précédente */ }
     }
 
@@ -1838,7 +1907,13 @@
         PAUSE = secondes(el.pause, PAUSE_MIN, PAUSE_MAX, PAUSE_DEFAUT);
       }
       if (el && !el.hidden) demarrer();
-      else arreter();
+      else {
+        arreter();
+        // La zone est éteinte, mais l'AVALANCHE puise dans la même liste et
+        // peut être achetée à tout moment. Sans ce chargement, un rotateur
+        // masqué la laissait sans un seul meme à faire tomber.
+        if (!(window.WallyRotationMedias || []).length) charger();
+      }
     }
 
     /** Passe au média suivant tout de suite (le ▶ du panneau de mise en scène).
@@ -1866,7 +1941,7 @@
       }
     }, 5000);
 
-    return { appliquerReglage, relancer };
+    return { appliquerReglage, relancer, charger };
   })();
 
   // ── Image de la galerie ──────────────────────────────────────────────────

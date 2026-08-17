@@ -507,6 +507,45 @@
     }
     .widget.banc * { animation: none !important; transition: none !important; }
 
+    /* ── Avalanche de memes ────────────────────────────────────────────────
+       Achetée 50 000 points de chaîne : une pluie dense qui submerge l'écran
+       une demi-minute, puis s'en va.
+
+       La carte OCCUPE le canvas par sa TAILLE — jamais par un `position:
+       fixed`. C'est le piège qui a rendu le planning invisible tout un stream :
+       `.widget` porte un `transform` (son animation d'entrée), et un ancêtre
+       transformé devient le bloc conteneur de tout `fixed` descendant. Le
+       `fixed` n'aurait donc pas visé la source OBS mais la carte elle-même.
+       Un test du dépôt l'interdit, et il m'a arrêté ici même. */
+    .meme-storm {
+      position: relative;      /* le repère des flocons, et rien d'autre */
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .meme-storm .flocon {
+      position: absolute;
+      top: -40%;                     /* part hors champ, au-dessus */
+      will-change: transform;        /* la chute est la seule chose qui bouge */
+      animation: meme-chute linear forwards;
+      filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+    }
+    .meme-storm .flocon img,
+    .meme-storm .flocon video {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 10px;
+    }
+    /* Une seule animation pour la chute ET la rotation : deux animations
+       concurrentes sur `transform` se remplacent au lieu de se composer, et le
+       meme tombait sans tourner. */
+    @keyframes meme-chute {
+      from { transform: translateY(0) rotate(var(--depart, 0deg)); }
+      to   { transform: translateY(160%) rotate(var(--arrivee, 0deg)); }
+    }
+
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
     /* `animation: none` d'abord : une animation en cours l'emporte sur une
        transition, l'avatar serait resté figé au lieu de céder la place. */
@@ -1526,6 +1565,7 @@
     <div data-element="poll"></div>
     <div data-element="versus"></div>
     <div data-element="wave"></div>
+    <div data-element="meme_storm"></div>
     <div data-element="raid"></div>
     <div data-element="quote"></div>
     <div data-element="prediction"></div>
