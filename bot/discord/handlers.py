@@ -1661,10 +1661,12 @@ async def _rss_ancre_connaissance(bot) -> str:
         return ""
     if not ts:
         return ""
-    age = _rss_age({"published_ts": ts}).strip().strip("()")
-    quand = age.replace("paru ", "") if age else "à une date inconnue"
+    # `_rss_age` rend « paru il y a 6 jours » : on garde la formule telle quelle
+    # et on l'enchaîne avec « est ». La découper pour reconstruire une phrase
+    # donnait « date de il y a 6 jours ».
+    age = _rss_age({"published_ts": ts}).strip().strip("()") or "de date inconnue"
     return (
-        f"IMPORTANT — le patch note le plus RÉCENT que tu connaisses date de {quand}. "
+        f"IMPORTANT — le patch note le plus RÉCENT que tu connaisses est {age}. "
         "Ta connaissance s'arrête là, et elle est à jour jusque-là. Donc si on te "
         "demande un changement récent sur une arme ou une légende et que rien "
         "ci-dessous n'en parle dans un patch récent, la réponse est qu'il n'y a EU "

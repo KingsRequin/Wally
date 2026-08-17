@@ -98,3 +98,22 @@ async def test_une_base_qui_ne_sait_pas_dater_ne_bloque_pas_la_reponse():
     bloc = await _rss_knowledge_context(bot, "le wingman a eu un nerf ?")
 
     assert bloc and "Overclocked Midseason" in bloc
+
+
+@pytest.mark.parametrize("jours,attendu", [
+    (0, "est paru aujourd'hui"),
+    (1, "est paru hier"),
+    (6, "est paru il y a 6 jours"),
+    (75, "est paru il y a 2 mois"),
+])
+@pytest.mark.asyncio
+async def test_l_ancre_se_lit_en_francais(jours, attendu):
+    """La phrase est LUE par un modèle qui la restitue ensuite à l'oral. Une
+    première version découpait « paru il y a 6 jours » pour la recomposer, et
+    produisait « date de il y a 6 jours »."""
+    bot = _bot([_article("Overclocked Midseason", 56)],
+               dernier_ts=time.time() - jours * 86400)
+
+    bloc = await _rss_knowledge_context(bot, "le wingman a eu un nerf ?")
+
+    assert attendu in bloc
