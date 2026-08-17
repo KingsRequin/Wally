@@ -87,6 +87,16 @@ class VadSegmenter:
         self._silence_run = 0
         self._in_speech = False
 
+    @property
+    def en_parole(self) -> bool:
+        """Le locuteur est-il en train de parler, au sens du VAD ?
+
+        Reste vrai pendant le court silence qui suit un mot (jusqu'à
+        `_SILENCE_FRAMES_TO_CUT`), sans quoi le relais vers le STT distant se
+        couperait entre deux syllabes.
+        """
+        return self._in_speech
+
     def feed(self, frame: bytes) -> bytes | None:
         """Alimente une frame de 20 ms (FRAME_BYTES). Retourne un segment clos, sinon None."""
         if len(frame) != FRAME_BYTES:

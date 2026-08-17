@@ -31,7 +31,23 @@ def _stereo_48k(n_frames_16k: int) -> bytes:
     return audioop.tostereo(mono, 2, 1, 1)
 
 
-async def test_streaming_emet_chaque_frame_via_on_frame():
+class _SegParlant:
+    """Segmenter qui entend de la parole partout — webrtcvad, lui, refuse une
+    onde constante, et ces tests portent sur le RELAIS, pas sur le VAD."""
+
+    def __init__(self, *a):
+        self.en_parole = True
+
+    def feed(self, frame):
+        return None
+
+
+async def test_streaming_emet_les_frames_parlees_via_on_frame(monkeypatch):
+    """Ce test exigeait « CHAQUE frame », y compris le silence — c'était le
+    défaut : le sink relayait tout au serveur distant, qui avalait cent quatre
+    secondes de silence entre deux prises de parole et saturait. Il porte
+    maintenant sur ce qui compte : la parole passe."""
+    monkeypatch.setattr(sink_mod, "VadSegmenter", _SegParlant)
     loop = asyncio.get_running_loop()
     frames = []
     sink = WallyAudioSink(
@@ -46,6 +62,22 @@ async def test_streaming_emet_chaque_frame_via_on_frame():
     assert all(uid == 7 and len(f) == FRAME_BYTES for uid, f in frames)
 
 
+async def test_le_silence_ne_part_pas_au_serveur_distant():
+    """Le vrai VAD sur une onde constante : ce n'est pas de la parole, et rien
+    ne doit partir. C'est ce qui noyait le serveur GPU."""
+    loop = asyncio.get_running_loop()
+    frames = []
+    sink = WallyAudioSink(
+        service=None, aggressiveness=2, on_segment=None, loop=loop,
+        on_frame=lambda user, frame: frames.append((user.id, frame)),
+        on_speech_end=lambda user, seg: None,
+    )
+    sink.write(_User(7), _VoiceData(_stereo_48k(50)))
+    await asyncio.sleep(0)
+
+    assert frames == []
+
+
 async def test_streaming_route_le_segment_vad_vers_on_speech_end(monkeypatch):
     loop = asyncio.get_running_loop()
     ends = []
@@ -53,6 +85,7 @@ async def test_streaming_route_le_segment_vad_vers_on_speech_end(monkeypatch):
     class _FakeSeg:
         def __init__(self, *a):
             self._n = 0
+            self.en_parole = True
 
         def feed(self, frame):
             self._n += 1

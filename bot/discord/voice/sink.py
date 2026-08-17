@@ -6,7 +6,16 @@ import time
 from discord.ext import voice_recv
 from loguru import logger
 
+from collections import deque
+
 from bot.discord.voice.audio import FRAME_BYTES, VadSegmenter, to_stt_format
+
+# Ce qu'on garde sous le coude avant que le VAD ne reconnaisse la parole, en
+# frames de 20 ms. Le VAD ne décide qu'APRÈS coup : sans ce rattrapage, l'attaque
+# du mot partirait à la poubelle avec le silence qui la précède — « Wally »
+# devient « ally ». 300 ms couvre la latence de décision de webrtcvad avec de la
+# marge, pour 9,6 ko par locuteur.
+_PREROLL_FRAMES = 15
 
 
 class WallyAudioSink(voice_recv.AudioSink):
@@ -60,6 +69,34 @@ class WallyAudioSink(voice_recv.AudioSink):
         # le premier relevé a montré 61 fois le temps réel en audio, ce qui ne
         # peut PAS venir du nombre de personnes présentes.
         self._frames_par_locuteur: dict[int, int] = {}
+        # Le relais vers le STT distant, par locuteur : ce qu'on retient avant
+        # l'attaque, et si l'on est en train de relayer.
+        self._preroll: dict[int, deque] = {}
+        self._relaye: dict[int, bool] = {}
+
+    def _frames_a_relayer(self, uid: int, frame: bytes, en_parole: bool) -> tuple:
+        """Ce qui part au STT distant pour cette frame — souvent rien.
+
+        Le sink relayait TOUTES les frames, sans jamais demander son avis au VAD
+        qu'il interroge pourtant juste après. Discord ne coupe le silence que si
+        l'émetteur le fait : un micro ouvert sur un ventilateur, et le flux ne
+        s'arrête jamais. Le serveur distant avalait ainsi cent quatre secondes
+        d'audio intégralement silencieuses entre deux prises de parole, sa file
+        montait à 167, il cessait de répondre aux pings, et la session mourait
+        sur `keepalive ping timeout` — la boucle de « crash ».
+        """
+        anneau = self._preroll.setdefault(uid, deque(maxlen=_PREROLL_FRAMES))
+        if not en_parole:
+            self._relaye[uid] = False
+            anneau.append(frame)
+            return ()
+        if self._relaye.get(uid):
+            return (frame,)
+        # Début de parole : on rattrape l'attaque du mot avec ce qui précède.
+        self._relaye[uid] = True
+        debut = tuple(anneau)
+        anneau.clear()
+        return debut + (frame,)
 
     def pouls(self) -> tuple[int, int, dict[int, int]]:
         """(frames reçues, énoncés clos, frames par locuteur) puis remise à zéro."""
@@ -100,9 +137,15 @@ class WallyAudioSink(voice_recv.AudioSink):
                     self._frames_recues += 1
                     self._frames_par_locuteur[user.id] = (
                         self._frames_par_locuteur.get(user.id, 0) + 1)
-                    if streaming:
-                        self._loop.call_soon_threadsafe(self._on_frame, user, frame)
+                    # Le VAD juge D'ABORD : c'est son verdict qui décide de ce
+                    # qui part au serveur distant. L'ordre était inverse, et le
+                    # silence partait avec le reste.
                     out = seg.feed(frame)
+                    if streaming:
+                        for relayee in self._frames_a_relayer(
+                                user.id, frame, seg.en_parole):
+                            self._loop.call_soon_threadsafe(
+                                self._on_frame, user, relayee)
                     if out:
                         self._segments_emis += 1
                         self._emit_segment(user, out)
@@ -146,3 +189,5 @@ class WallyAudioSink(voice_recv.AudioSink):
             self._frame_buf.clear()
             self._last_frame_ts.clear()
             self._users.clear()
+            self._preroll.clear()
+            self._relaye.clear()
