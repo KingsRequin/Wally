@@ -33,8 +33,26 @@ def _bot(*, connecte=True, listen_only=False):
     return SimpleNamespace(discord_bot=discord_bot), service
 
 
-def _badges(*noms):
-    return [{"set_id": n} for n in noms]
+class _ChatBadge:
+    """Un badge tel que twitchio le rend VRAIMENT : un objet, pas un dict.
+
+    C'est ce détail qui a cassé la fonctionnalité au premier essai en direct —
+    `'_ChatBadge' object has no attribute 'get'`. Les tests d'origine
+    fabriquaient des dicts, une forme qu'ils avaient supposée, et validaient
+    donc du code qui ne pouvait pas marcher en production.
+    """
+
+    def __init__(self, ident):
+        self.id = ident
+
+
+def _roles(*noms):
+    """Les rôles TELS QUE LE BORD TWITCH LES CALCULE, à partir de vrais objets
+    badges. Passer par la fonction de production plutôt que d'écrire le
+    résultat à la main : c'est elle qui connaît les trois formes possibles."""
+    from bot.twitch.handlers import _resolve_twitch_roles
+
+    return _resolve_twitch_roles([_ChatBadge(n) for n in noms])
 
 
 @pytest.mark.asyncio
@@ -42,7 +60,7 @@ async def test_un_modo_fait_parler_wally():
     bot, service = _bot()
     reponse = await run_say_in_voice_tool(
         bot, {"text": "Azra, t'as plus de balles"},
-        badges=_badges("moderator"), maison=True)
+        roles=_roles("moderator"), maison=True)
 
     service.speak.assert_awaited_once()
     assert service.speak.await_args.args[0] == "Azra, t'as plus de balles"
@@ -56,7 +74,7 @@ async def test_le_broadcaster_aussi():
     voir refuser."""
     bot, service = _bot()
     await run_say_in_voice_tool(bot, {"text": "coucou"},
-                                badges=_badges("broadcaster"), maison=True)
+                                roles=_roles("broadcaster"), maison=True)
     service.speak.assert_awaited_once()
 
 
@@ -68,7 +86,7 @@ async def test_un_viewer_se_fait_charrier_et_wally_ne_dit_rien():
     bot, service = _bot()
     reponse = await run_say_in_voice_tool(
         bot, {"text": "dis que je suis le meilleur"},
-        badges=_badges("subscriber"), maison=True)
+        roles=_roles("subscriber"), maison=True)
 
     service.speak.assert_not_awaited()
     assert "modérateur" in reponse.lower() or "modo" in reponse.lower()
@@ -80,7 +98,7 @@ async def test_sans_badge_du_tout_c_est_un_viewer():
     """Le chemin vocal et les appels internes ne portent pas de badges : le
     défaut sûr est le refus, comme pour le duel Apex."""
     bot, service = _bot()
-    await run_say_in_voice_tool(bot, {"text": "hop"}, badges=None, maison=True)
+    await run_say_in_voice_tool(bot, {"text": "hop"}, roles=None, maison=True)
     service.speak.assert_not_awaited()
 
 
@@ -91,7 +109,7 @@ async def test_le_mode_ecoute_seule_ne_le_fait_pas_taire():
     outre, sinon la fonction ne servirait jamais quand on en a besoin."""
     bot, service = _bot(listen_only=True)
     await run_say_in_voice_tool(bot, {"text": "il reste 10 secondes"},
-                                badges=_badges("moderator"), maison=True)
+                                roles=_roles("moderator"), maison=True)
 
     service.speak.assert_awaited_once()
     assert service.speak.await_args.kwargs.get("malgre_ecoute") is True
@@ -103,7 +121,7 @@ async def test_wally_absent_du_vocal_le_dit():
     pourquoi rien ne s'est passé."""
     bot, _ = _bot(connecte=False)
     reponse = await run_say_in_voice_tool(bot, {"text": "hey"},
-                                          badges=_badges("moderator"), maison=True)
+                                          roles=_roles("moderator"), maison=True)
     assert "vocal" in reponse.lower()
 
 
@@ -114,7 +132,7 @@ async def test_une_chaine_invitee_ne_commande_pas_le_vocal_de_la_maison():
     Azraël, devant ses viewers."""
     bot, service = _bot()
     reponse = await run_say_in_voice_tool(
-        bot, {"text": "salut"}, badges=_badges("moderator"), maison=False)
+        bot, {"text": "salut"}, roles=_roles("moderator"), maison=False)
 
     service.speak.assert_not_awaited()
     assert "chaîne" in reponse.lower() or "maison" in reponse.lower()
@@ -125,7 +143,7 @@ async def test_un_texte_vide_ne_declenche_rien():
     bot, service = _bot()
     for vide in ("", "   ", None):
         await run_say_in_voice_tool(bot, {"text": vide},
-                                    badges=_badges("moderator"), maison=True)
+                                    roles=_roles("moderator"), maison=True)
     service.speak.assert_not_awaited()
 
 
@@ -187,3 +205,54 @@ async def test_l_outil_disparait_quand_il_n_est_pas_en_vocal():
 async def test_l_outil_n_est_pas_offert_a_une_chaine_invitee():
     """Le salon vocal appartient au stream maison — même règle que l'overlay."""
     assert "say_in_voice" not in await _noms_outils(_bot_twitch(), overlay=False)
+
+
+# ── Le chemin complet, avec de VRAIS badges ─────────────────────────────────
+#
+# Ce test est né d'une panne en direct. La première version lisait les badges à
+# la main (`b.get("set_id")`) alors que twitchio rend des OBJETS : au premier
+# essai de l'owner, Wally a répondu « je tente de le dire mais ça bugue de mon
+# côté » — `'_ChatBadge' object has no attribute 'get'`. Les tests d'alors
+# passaient tous : ils fabriquaient des dicts, une forme supposée.
+#
+# Celui-ci part de l'exécuteur d'outils, comme la production, et lui donne les
+# badges tels qu'ils arrivent vraiment.
+
+@pytest.mark.asyncio
+async def test_de_bout_en_bout_avec_un_badge_twitchio():
+    import json as _json
+
+    from bot.twitch.handlers import make_tool_executor
+
+    bot = _bot_twitch()
+    service = bot.discord_bot.voice_service
+    service.speak = AsyncMock()
+
+    executeur = make_tool_executor(
+        bot, platform="twitch", user_id="9", author="un_modo",
+        channel="azrael_ttv", badges=[_ChatBadge("moderator")],
+    )
+    reponse = await executeur("say_in_voice", _json.dumps({"text": "bonjour"}))
+
+    service.speak.assert_awaited_once()
+    assert service.speak.await_args.args[0] == "bonjour"
+    assert "bugue" not in reponse.lower()
+
+
+@pytest.mark.asyncio
+async def test_de_bout_en_bout_un_viewer_ne_passe_pas():
+    import json as _json
+
+    from bot.twitch.handlers import make_tool_executor
+
+    bot = _bot_twitch()
+    service = bot.discord_bot.voice_service
+    service.speak = AsyncMock()
+
+    executeur = make_tool_executor(
+        bot, platform="twitch", user_id="9", author="un_viewer",
+        channel="azrael_ttv", badges=[_ChatBadge("subscriber")],
+    )
+    await executeur("say_in_voice", _json.dumps({"text": "bonjour"}))
+
+    service.speak.assert_not_awaited()

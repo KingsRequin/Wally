@@ -71,20 +71,26 @@ SAY_IN_VOICE_TOOL = {
     },
 }
 
-# Les badges Twitch qui donnent ce droit. Le broadcaster ne porte PAS le badge
-# `moderator` — l'oublier aurait refusé la fonction à la seule personne qui ne
-# peut pas se la voir refuser.
-_BADGES_AUTORISES = {"moderator", "broadcaster"}
+# Les RÔLES qui donnent ce droit, dans le vocabulaire de `_resolve_twitch_roles`
+# — où le broadcaster est « admin » et non « moderator ». L'oublier aurait
+# refusé la fonction à la seule personne qui ne peut pas se la voir refuser.
+_ROLES_AUTORISES = {"moderator", "admin"}
 
 
-async def run_say_in_voice_tool(bot, args: dict, *, badges=None,
+async def run_say_in_voice_tool(bot, args: dict, *, roles=None,
                                 maison: bool = True) -> str:
     """Fait dire `text` à Wally dans le salon vocal. Rend ce que le modèle lira.
 
-    Les badges viennent de l'APPELANT, jamais du modèle : c'est ce qui empêche
-    un viewer de se faire passer pour un modérateur en le prétendant dans son
-    message. Absents (chemin vocal, appel interne), la personne est traitée
-    comme un viewer ordinaire — le refus est le défaut sûr, comme pour le duel.
+    `roles` vient de l'APPELANT — `_resolve_twitch_roles()` sur les badges du
+    message réel —, jamais du modèle : c'est ce qui empêche un viewer de se
+    faire passer pour un modérateur en le prétendant dans son message. Absents
+    (chemin vocal, appel interne), la personne est traitée comme un viewer
+    ordinaire — le refus est le défaut sûr, comme pour le duel.
+
+    Des RÔLES et non des badges bruts : un badge twitchio est un objet (`.id`),
+    l'EventSub en rend un dict (`set_id`), et lire une seule de ces formes a
+    déjà cassé ici — `'_ChatBadge' object has no attribute 'get'`, en direct, au
+    premier essai. La normalisation appartient au bord Twitch, qui la fait déjà.
     """
     texte = str((args or {}).get("text") or "").strip()
     if not texte:
@@ -95,8 +101,7 @@ async def run_say_in_voice_tool(bot, args: dict, *, badges=None,
     if not maison:
         return ("Refusé : le salon vocal appartient à la chaîne maison, on ne le "
                 "commande pas depuis une chaîne invitée. Dis-le simplement.")
-    noms = {str((b or {}).get("set_id") or "") for b in (badges or [])}
-    if not (noms & _BADGES_AUTORISES):
+    if not (set(roles or ()) & _ROLES_AUTORISES):
         # Le refus DIT quoi en faire : sans consigne, Wally répondrait par un
         # « non » plat, alors que l'owner veut qu'il charrie la personne.
         return ("Refusé : cette personne n'est ni modérateur ni le streamer, "

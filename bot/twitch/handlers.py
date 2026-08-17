@@ -570,10 +570,13 @@ def make_tool_executor(
         if name == "show_planning":
             return run_planning_tool(bot, args, overlay=overlay)
         if name == "say_in_voice":
-            # `badges` vient du message Twitch, jamais du modèle : c'est lui qui
-            # décide si la personne a le droit de faire parler Wally.
+            # Les rôles viennent du message Twitch, jamais du modèle : ce sont
+            # eux qui décident si la personne a le droit de faire parler Wally.
+            # `_resolve_twitch_roles` normalise les trois formes qu'un badge peut
+            # prendre — les lire à la main a cassé ici même, en direct.
             return await run_say_in_voice_tool(
-                bot, args, badges=badges, maison=overlay)
+                bot, args, roles=_resolve_twitch_roles(badges or []),
+                maison=overlay)
         if name == "show_overlay":
             return run_overlay_tool(bot, args, requester=author)
         if name == "cancel_overlay":
