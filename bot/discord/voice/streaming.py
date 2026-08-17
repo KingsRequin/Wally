@@ -22,6 +22,21 @@ from typing import Awaitable, Callable
 import websockets
 from loguru import logger
 
+def _rms(pcm16: bytes) -> int:
+    """Niveau sonore moyen d'un segment PCM 16 bits, ou -1 si illisible.
+
+    Sert au RELEVÉ qui doit dire ce qui sépare le bruit de la parole sur ce
+    salon-là : le repli local rend 27 % de ses énoncés vides, et les écarter en
+    amont demande un critère mesuré. `audioop` est déjà la dépendance du
+    rééchantillonnage (`voice/audio.py`), rien de neuf n'entre ici.
+    """
+    try:
+        import audioop
+        return audioop.rms(pcm16, 2)
+    except Exception:  # noqa: BLE001 — un relevé ne casse jamais une transcription
+        return -1
+
+
 _FLUSH = object()  # sentinelle « force la fin de l'énoncé » dans la file d'envoi
 _PREBUF_MAX = 250  # ~5 s de frames de 20 ms bufferisées avant `ready` (borne mémoire)
 _BACKOFF_MAX_MULT = 4  # plafond du backoff injoignable = health_cache_s × 4 (ex. 30s → 120s max)
@@ -486,6 +501,14 @@ class RemoteStreamingSTT:
                 text = ""
             stt_ms = (self._now() - t0) * 1000
             if text and self.on_final is not None:
+                # Le niveau sonore du segment est journalisé DES DEUX CÔTÉS —
+                # ici et sur les énoncés vides — parce qu'on cherche ce qui les
+                # sépare. 27 % des énoncés du repli local ne rendent rien et
+                # brûlent le CPU pendant lequel la vraie parole est jetée ; pour
+                # les écarter en amont il faut un critère MESURÉ, pas un seuil
+                # inventé. Cette ligne est le relevé qui le fournira.
+                logger.info("voice: énoncé transcrit ({d:.1f} s, rms {r})",
+                            d=len(segment) / 32000, r=_rms(segment))
                 await self.on_final(speaker_id, text, stt_ms)
             elif not text:
                 # UN ÉNONCÉ QUI NE REND RIEN DISPARAISSAIT SANS UNE LIGNE.
@@ -499,8 +522,9 @@ class RemoteStreamingSTT:
                 # chose qu'un souffle de 200 ms.
                 logger.info(
                     "voice: énoncé de {s} rendu VIDE par le STT local "
-                    "({d:.1f} s d'audio, {ms:.0f} ms de calcul)",
-                    s=speaker_id, d=len(segment) / 32000, ms=stt_ms,
+                    "({d:.1f} s d'audio, rms {r}, {ms:.0f} ms de calcul)",
+                    s=speaker_id, d=len(segment) / 32000, r=_rms(segment),
+                    ms=stt_ms,
                 )
         finally:
             # Sans ce décrément garanti, une seule exception bloquerait la file
