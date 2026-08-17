@@ -109,6 +109,27 @@ async def _est_notre_recompense(bot, reward_id: str) -> bool:
     return bool(attendu) and str(reward_id) == attendu
 
 
+async def _est_l_avalanche(bot, reward_id: str) -> bool:
+    """La récompense « Avalanche de memes », reconnue par son ID persisté.
+
+    Même principe que pour le duel, et pour la même raison : Twitch ne laisse
+    rembourser qu'à l'application qui a CRÉÉ la récompense, donc son ID est
+    découvert à l'exécution. Un ID vide DÉSACTIVE l'avalanche — sans ce garde,
+    n'importe quelle récompense de la chaîne la déclencherait.
+    """
+    from bot.twitch.events.avalanche import CLE_RECOMPENSE
+
+    db = getattr(bot, "db", None)
+    if db is None:
+        return False
+    try:
+        attendu = str(await db.get_state(CLE_RECOMPENSE) or "")
+    except Exception as exc:  # noqa: BLE001 — un filtrage ne casse jamais l'événement
+        logger.debug("Avalanche : ID persisté illisible : {e}", e=exc)
+        return False
+    return bool(attendu) and str(reward_id) == attendu
+
+
 async def handle_redemption(bot: "WallyTwitch", event) -> None:
     """Point d'entrée EventSub. N'échoue jamais vers l'appelant."""
     reward_id = ""
@@ -116,6 +137,18 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
     acheteur = ""
     try:
         reward_id = str(getattr(getattr(event, "reward", None), "id", ""))
+        # L'avalanche AVANT le duel : deux récompenses distinctes arrivent par
+        # le même événement, et chacune doit reconnaître la sienne.
+        if await _est_l_avalanche(bot, reward_id):
+            from bot.twitch.events.avalanche import lancer_avalanche
+
+            await lancer_avalanche(
+                bot,
+                acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
+                reward_id=reward_id,
+                redemption_id=str(getattr(event, "id", "")),
+            )
+            return
         if not await _est_notre_recompense(bot, reward_id):
             return
 

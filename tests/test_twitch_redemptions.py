@@ -14,7 +14,16 @@ def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     bot.duel_runner._reward_id = reward_id
     bot.duel_runner.duel_en_cours = duel_en_cours
     bot.duel_runner.ouvrir = AsyncMock()
-    bot.db.get_state = AsyncMock(return_value=persisted_reward_id)
+    # La base répond SELON LA CLÉ, comme la vraie. Un faux qui rend la même
+    # valeur pour toutes faisait reconnaître le duel comme une avalanche de
+    # memes — deux récompenses coexistent désormais sur la chaîne, et c'est
+    # justement leur clé qui les distingue.
+    from bot.twitch.events.avalanche import CLE_RECOMPENSE as CLE_AVALANCHE
+
+    async def _get_state(cle):
+        return None if cle == CLE_AVALANCHE else persisted_reward_id
+
+    bot.db.get_state = AsyncMock(side_effect=_get_state)
     return bot
 
 

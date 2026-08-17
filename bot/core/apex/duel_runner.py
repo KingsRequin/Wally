@@ -465,31 +465,22 @@ class DuelRunner:
         jamais on ne la recrée — une récompense recréée perd son historique, et
         une récompense créée hors de notre application est irremboursable.
         """
-        connu = await self._db.get_state(CLE_RECOMPENSE)
-        if connu:
-            gerables = await self._api.recompenses_gerables()
-            if gerables is None:
-                logger.warning(
-                    "Liste des récompenses gérables indisponible — on garde l'ID connu {i}",
-                    i=connu)
-                self._reward_id = connu
-                return connu
-            actuelle = next((r for r in gerables if r.get("id") == connu), None)
-            if actuelle is not None:
-                self._reward_id = connu
-                # Une mise à jour ratée ne coûte que le libellé : le duel reste
-                # jouable et remboursable sur la récompense existante.
-                await self._api.maj_recompense(connu, titre, cout, prompt,
-                                               actuelle=actuelle)
-                return connu
-            logger.warning("Récompense de duel {i} introuvable côté Twitch — on recrée", i=connu)
-        nouvel_id = await self._api.creer_recompense(titre, cout, prompt)
-        if not nouvel_id:
-            logger.error("Récompense de duel impossible à créer — duel indisponible")
-            return ""
-        await self._db.set_state(CLE_RECOMPENSE, nouvel_id)
-        self._reward_id = nouvel_id
-        return nouvel_id
+        # La mécanique est partagée avec l'avalanche de memes
+        # (`bot/twitch/recompenses.py`) : ses garanties — ne jamais recréer sur
+        # un doute, mettre à jour plutôt que recréer — sont trop subtiles pour
+        # vivre en deux exemplaires.
+        from bot.twitch.recompenses import assurer_recompense as _assurer
+
+        reward_id = await _assurer(
+            self._api, self._db, cle_etat=CLE_RECOMPENSE,
+            titre=titre, cout=cout, prompt=prompt, libelle="de duel Apex",
+        )
+        # `_reward_id` est posé DANS TOUS LES CAS où l'on a un identifiant, y
+        # compris celui qu'on a gardé faute de pouvoir vérifier : c'est lui que
+        # lit le remboursement.
+        if reward_id:
+            self._reward_id = reward_id
+        return reward_id
 
     async def rattraper_les_achats_manques(self) -> int:
         """Rembourse les achats faits pendant que le bot était arrêté.
