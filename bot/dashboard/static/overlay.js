@@ -909,9 +909,14 @@
       // lui-même dimensionnée sur le dossier (`AVALANCHE_PAR_SECONDE`).
       const stock = window.WallyAvalanche.ordre(medias);
       const pas = window.WallyAvalanche.cadence(stock.length, duree);
+      // On cesse de lâcher une chute entière AVANT le retrait de la carte,
+      // sinon les derniers memes s'évaporent en plein vol avec elle.
+      const fenetre = window.WallyAvalanche.fenetreMs(duree);
+      const depart = performance.now();
       let lances = 0;
       const timer = setInterval(() => {
-        if (lances >= stock.length || !box.isConnected) { clearInterval(timer); return; }
+        if (lances >= stock.length || !box.isConnected
+            || performance.now() - depart > fenetre) { clearInterval(timer); return; }
         const media = stock[lances];
         lances += 1;
         const flocon = el("div", "flocon");

@@ -118,6 +118,22 @@ def test_hors_live_rien_ne_part():
     assert _widget(n) is None
 
 
+def test_l_essai_du_panneau_montre_une_chute_ENTIERE():
+    """Le ▶ règle la position de l'élément : il doit donc laisser voir un meme
+    arriver en bas. À cinq secondes, la carte se retirait avant la première
+    arrivée — on ne voyait que des memes qui s'évaporent en plein vol, et c'est
+    ce chemin-là que l'owner essayait.
+    """
+    from bot.dashboard.routes.overlay import _ECHANTILLONS
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+
+    essai = _ECHANTILLONS["meme_storm"]["seconds"]
+    lachers = essai - OverlayNarrator.AVALANCHE_CHUTE_S
+    assert lachers >= 5, (
+        f"{essai} s d'essai ne laissent que {lachers} s de lâchers : trop court "
+        f"pour juger de la pluie")
+
+
 @pytest.mark.parametrize("nb", [1, 2, 3])
 def test_un_tout_petit_stock_reste_visible(nb):
     """Trois memes ne font pas une avalanche d'une seconde : le temps de chute

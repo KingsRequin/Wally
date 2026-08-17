@@ -51,9 +51,21 @@
    */
   function cadence(nb, dureeS) {
     const combien = Math.max(1, Number(nb) || 0);
-    const fenetre = Math.max(0, (Number(dureeS) || 0) - CHUTE_S);
-    return Math.max(PAS_MIN_MS, (fenetre * 1000) / combien);
+    return Math.max(PAS_MIN_MS, fenetreMs(dureeS) / combien);
   }
 
-  window.WallyAvalanche = { ordre, cadence, CHUTE_S, PAS_MIN_MS };
+  /* Jusqu'à quand on LÂCHE, en millisecondes depuis le début.
+   *
+   * Le lâcher s'arrête avant la carte, d'une chute entière : un meme lancé à la
+   * dernière seconde s'évapore en plein vol quand le widget se retire — « les
+   * memes disparaissent avant la fin de la chute » (owner). Compter les memes
+   * ne suffit pas : dès que le plafond de débit s'applique (fenêtre plus courte
+   * que le stock), le nombre de lâchers dépasse la fenêtre, et c'est le temps
+   * qui doit trancher.
+   */
+  function fenetreMs(dureeS) {
+    return Math.max(0, (Number(dureeS) || 0) - CHUTE_S) * 1000;
+  }
+
+  window.WallyAvalanche = { ordre, cadence, fenetreMs, CHUTE_S, PAS_MIN_MS };
 })();

@@ -113,6 +113,21 @@ def test_une_fenetre_trop_COURTE_ne_declenche_pas_de_rafale():
     """) == "true"
 
 
+def test_le_lacher_s_arrete_une_CHUTE_avant_le_retrait_de_la_carte():
+    """« Les memes disparaissent avant la fin de la chute » (owner).
+
+    Compter les memes ne suffit pas : dès que le plafond de débit s'applique, le
+    nombre de lâchers dépasse la fenêtre et les derniers partent alors que la
+    carte s'en va — ils s'évaporent en plein vol. C'est le TEMPS qui tranche.
+    """
+    assert _node("""
+      const cas = [[50, 45], [12, 7], [5, 0], [3, 0]];
+      const ok = cas.map(([duree, attendu]) =>
+        Math.round(A.fenetreMs(duree) / 1000) === attendu);
+      console.log(JSON.stringify(ok));
+    """) == "[true,true,true,true]"
+
+
 def test_la_cadence_ne_tombe_jamais_a_zero():
     """`setInterval(0)` sature la boucle d'événements de la machine qui ENCODE
     le live. Un plancher, même sur une fenêtre absurde."""

@@ -426,9 +426,12 @@ _ECHANTILLONS: dict[str, dict] = {
                   "author": "Azraël"},
     "raid":      {"from": "kingsrequin", "viewers": 42},
     "wave":      {"viewers": 120},
-    # Cinq secondes pour l'essai : le ▶ sert à régler, pas à subir la demi-minute
-    # que dure l'avalanche achetée.
-    "meme_storm": {"seconds": 5},
+    # Le ▶ sert à régler, pas à subir les cinquante secondes que dure
+    # l'avalanche achetée — mais il lui faut de quoi montrer une chute ENTIÈRE.
+    # À cinq secondes, la carte se retirait avant que le premier meme ait touché
+    # le bas : on ne voyait que des memes qui s'évaporent en plein vol.
+    # Douze : sept secondes de lâchers, la dernière chute finit à douze.
+    "meme_storm": {"seconds": 12},
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},
