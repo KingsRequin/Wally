@@ -33,6 +33,7 @@ from bot.discord.handlers import (
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
 )
+from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
@@ -332,6 +333,14 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # pas un affichage. L'overlay maison, lui, reste protégé — `run_planning_tool`
     # reçoit le même drapeau que les autres widgets.
     tools.append(PLANNING_TOOL_SPEC)
+    # Faire parler Wally à voix haute dans le vocal, sur demande d'un modérateur.
+    # Offert seulement s'il est DANS un salon : le proposer alors qu'il n'y est
+    # pas mène au cul-de-sac déjà payé sur Apex — un refus qui nomme un outil
+    # dont on ne peut rien faire. Il n'est PAS conditionné aux badges : la garde
+    # est à l'exécution, et c'est ce qui permet de charrier celui qui essaie.
+    _vs = getattr(getattr(bot, "discord_bot", None), "voice_service", None)
+    if overlay and _vs is not None and getattr(_vs, "is_connected", False):
+        tools.append(SAY_IN_VOICE_TOOL)
     if overlay and _overlay_narrator(bot) is not None:
         # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
         # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
@@ -560,6 +569,11 @@ def make_tool_executor(
             return await run_tally_tool(bot, name, args)
         if name == "show_planning":
             return run_planning_tool(bot, args, overlay=overlay)
+        if name == "say_in_voice":
+            # `badges` vient du message Twitch, jamais du modèle : c'est lui qui
+            # décide si la personne a le droit de faire parler Wally.
+            return await run_say_in_voice_tool(
+                bot, args, badges=badges, maison=overlay)
         if name == "show_overlay":
             return run_overlay_tool(bot, args, requester=author)
         if name == "cancel_overlay":

@@ -34,6 +34,91 @@ VOICE_TOOLS = [
 ]
 
 
+# ── Faire dire quelque chose à Wally, à voix haute ──────────────────────────
+#
+# Demandé depuis le CHAT TWITCH, par un modérateur ou le streamer : « wally dis
+# à Azra qu'il a plus de balles ». Wally le dit dans le salon vocal.
+#
+# Il REFORMULE plutôt que de répéter : c'est lui qui parle, avec sa voix et son
+# caractère, pas un haut-parleur. Le modèle écrit donc `text` à sa sauce — la
+# description ci-dessous le lui dit, et c'est le seul endroit où ça se joue.
+SAY_IN_VOICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "say_in_voice",
+        "description": (
+            "Quand un MODÉRATEUR ou le streamer te demande depuis le chat de "
+            "dire quelque chose à voix haute dans le salon vocal — par exemple "
+            "« wally dis à Azra qu'il a plus de balles », « préviens-les que le "
+            "raid arrive ». Tu le dis DANS LE VOCAL, avec tes mots à toi : "
+            "reformule, ne récite pas. N'appelle cet outil que si on te demande "
+            "de PARLER en vocal ; pour répondre dans le chat, réponds "
+            "normalement."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": (
+                        "Ce que tu vas dire à voix haute, formulé par toi. "
+                        "Court : on est en plein live."
+                    ),
+                },
+            },
+            "required": ["text"],
+        },
+    },
+}
+
+# Les badges Twitch qui donnent ce droit. Le broadcaster ne porte PAS le badge
+# `moderator` — l'oublier aurait refusé la fonction à la seule personne qui ne
+# peut pas se la voir refuser.
+_BADGES_AUTORISES = {"moderator", "broadcaster"}
+
+
+async def run_say_in_voice_tool(bot, args: dict, *, badges=None,
+                                maison: bool = True) -> str:
+    """Fait dire `text` à Wally dans le salon vocal. Rend ce que le modèle lira.
+
+    Les badges viennent de l'APPELANT, jamais du modèle : c'est ce qui empêche
+    un viewer de se faire passer pour un modérateur en le prétendant dans son
+    message. Absents (chemin vocal, appel interne), la personne est traitée
+    comme un viewer ordinaire — le refus est le défaut sûr, comme pour le duel.
+    """
+    texte = str((args or {}).get("text") or "").strip()
+    if not texte:
+        return "Refusé : aucun texte à dire."
+    # Même garde que l'overlay : le salon vocal appartient au stream maison. Sans
+    # elle, un modérateur d'une chaîne INVITÉE ferait parler Wally chez Azraël,
+    # devant ses viewers.
+    if not maison:
+        return ("Refusé : le salon vocal appartient à la chaîne maison, on ne le "
+                "commande pas depuis une chaîne invitée. Dis-le simplement.")
+    noms = {str((b or {}).get("set_id") or "") for b in (badges or [])}
+    if not (noms & _BADGES_AUTORISES):
+        # Le refus DIT quoi en faire : sans consigne, Wally répondrait par un
+        # « non » plat, alors que l'owner veut qu'il charrie la personne.
+        return ("Refusé : cette personne n'est ni modérateur ni le streamer, "
+                "elle n'a pas le droit de te faire parler en vocal. Moque-toi "
+                "gentiment d'elle dans le chat, en une phrase.")
+    service = getattr(getattr(bot, "discord_bot", None), "voice_service", None)
+    if service is None or not getattr(service, "is_connected", False):
+        return ("Impossible : tu n'es pas dans un salon vocal en ce moment. "
+                "Dis-le à la personne.")
+    try:
+        # `malgre_ecoute` : pendant un live, Wally est en écoute seule et
+        # `speak()` refuse de parler pour ne pas couvrir le streamer. C'est
+        # justement le moment où cette fonction sert, et la demande est
+        # explicite — donc elle passe. Aucun autre chemin de parole ne le fait.
+        await service.speak(texte, malgre_ecoute=True)
+    except Exception as e:  # noqa: BLE001 — une panne du vocal ne casse pas le chat
+        logger.warning("say_in_voice a échoué: {e}", e=e)
+        return "Impossible : la parole n'est pas sortie. Dis-le à la personne."
+    logger.info("voice: dit à voix haute sur demande d'un modo — « {t} »", t=texte[:80])
+    return f"C'est dit à voix haute dans le vocal : « {texte} ». Confirme-le en une phrase."
+
+
 async def build_voice_tools(bot) -> list[dict]:
     """Liste des outils proposés en vocal, selon ce qui est disponible."""
     tools = list(VOICE_TOOLS)

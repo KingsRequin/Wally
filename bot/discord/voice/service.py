@@ -562,13 +562,20 @@ class VoiceService:
     # Parole (TTS → playback)
     # ------------------------------------------------------------------
 
-    async def speak(self, text: str) -> None:
-        """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus)."""
+    async def speak(self, text: str, *, malgre_ecoute: bool = False) -> None:
+        """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus).
+
+        `malgre_ecoute` outrepasse le mode écoute seule. Un SEUL chemin s'en
+        sert : un modérateur qui demande explicitement, depuis le chat, que
+        Wally dise quelque chose à voix haute (`say_in_voice`). Le mode écoute
+        existe pour qu'il ne prenne jamais la parole de lui-même pendant un
+        live — pas pour qu'il refuse celle qu'on lui demande.
+        """
         if not text or self._vc is None:
             return
         # Dire le mot d'un pendu en cours le gâcherait autant que l'écrire.
         text = redact(text)
-        if self.listen_only:
+        if self.listen_only and not malgre_ecoute:
             # Garde en profondeur : en mode écoute, parler couvrirait le streamer
             # et serait réinjecté dans son micro.
             logger.debug("voice: parole refusée (mode écoute)")

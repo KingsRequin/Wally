@@ -40,6 +40,11 @@ _TWITCH_SEULEMENT: dict[str, str] = {
     # modérateur du message Twitch. Un salon Discord n'en porte pas : offrir
     # l'outil là-bas ne donnerait qu'un refus systématique.
     "duel_apex": "l'autorisation vient du badge de modérateur Twitch",
+    # Faire parler Wally à voix haute pendant un live est un pouvoir de
+    # modérateur, et l'autorisation se lit sur le badge du message Twitch. Un
+    # salon Discord n'en porte pas : l'offrir là-bas ne rendrait qu'un refus
+    # systématique. Décision de l'owner le 2026-08-17 — « chat Twitch ».
+    "say_in_voice": "l'autorisation vient du badge de modérateur Twitch",
 }
 
 
