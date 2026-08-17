@@ -129,6 +129,26 @@ class RSSMixin:
         )
         return [dict(r) for r in rows]
 
+    async def rss_dernier_knowledge_ts(self) -> float | None:
+        """Quand date le patch note le plus récent CONNU, ou None.
+
+        C'est l'ancre de sa connaissance, et elle manquait. Sans elle, « rien
+        n'a changé depuis » est indémontrable : Wally ne sait pas s'il n'a rien
+        vu parce qu'il n'y a rien eu, ou parce que sa base s'arrête là. Il
+        présentait donc le dernier changement qu'il connaissait comme le
+        dernier survenu — un patch de deux mois annoncé « récent ».
+
+        Sans borne d'âge, volontairement : l'ancre doit dire la vérité même
+        quand le jeu n'a rien publié depuis longtemps. C'est justement ce
+        silence-là qui est la réponse.
+        """
+        row = await self.fetch_one(
+            "SELECT MAX(COALESCE(published_ts, fetched_at)) AS ts "
+            "FROM rss_articles WHERE role = 'knowledge'"
+        )
+        ts = (dict(row).get("ts") if row else None)
+        return float(ts) if ts else None
+
     async def rss_derniere_synthese(self, *, max_age_seconds: float) -> dict | None:
         """La section de SYNTHÈSE de patch la plus récente, ou None.
 

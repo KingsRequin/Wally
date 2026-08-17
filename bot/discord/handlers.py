@@ -1642,6 +1642,39 @@ def _rss_age(article: dict) -> str:
     return f"(paru il y a {mois} mois) " if mois > 1 else "(paru il y a 1 mois) "
 
 
+async def _rss_ancre_connaissance(bot) -> str:
+    """« Jusqu'où va ce que je sais », et le droit de répondre « rien ».
+
+    Deux phrases, et chacune corrige une moitié du défaut. La première borne sa
+    connaissance dans le temps : sans elle, une absence d'information ne se
+    distingue pas d'un bord de base. La seconde autorise la conclusion négative,
+    qui ne va pas de soi — devant des extraits qui parlent du sujet demandé, un
+    modèle parle du sujet demandé, même s'ils datent de deux mois.
+    """
+    lecteur = getattr(getattr(bot, "db", None), "rss_dernier_knowledge_ts", None)
+    if lecteur is None:
+        return ""
+    try:
+        ts = await lecteur()
+    except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
+        logger.warning("rss_knowledge: ancre indisponible: {}", e)
+        return ""
+    if not ts:
+        return ""
+    age = _rss_age({"published_ts": ts}).strip().strip("()")
+    quand = age.replace("paru ", "") if age else "à une date inconnue"
+    return (
+        f"IMPORTANT — le patch note le plus RÉCENT que tu connaisses date de {quand}. "
+        "Ta connaissance s'arrête là, et elle est à jour jusque-là. Donc si on te "
+        "demande un changement récent sur une arme ou une légende et que rien "
+        "ci-dessous n'en parle dans un patch récent, la réponse est qu'il n'y a EU "
+        "AUCUN changement depuis — dis-le franchement, en précisant de quand date le "
+        "dernier que tu connaisses sur ce sujet. Ne présente jamais un vieux patch "
+        "comme une nouveauté : « ça remonte à telle date, et depuis, rien » est une "
+        "bonne réponse."
+    )
+
+
 async def _rss_knowledge_context(bot, text: str) -> str | None:
     """Recall RSS « knowledge » : si le message parle d'un sujet couvert par un
     flux knowledge (ex. Apex, le jeu du serveur), remonte les articles récents
@@ -1679,6 +1712,16 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
         "la phrase concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. N'invente "
         "jamais d'URL ni de numéro :"
     ]
+    # L'ANCRE de sa connaissance, et l'autorisation de conclure à l'absence.
+    #
+    # Sans elles : « le Wingman a eu un buff ? » lui tendait deux extraits vieux
+    # de deux mois, et il répondait « oui, récemment, c'est encore d'actualité ».
+    # Il n'avait aucun moyen de savoir si le silence venait du jeu ou du bord de
+    # sa base — et rien ne lui disait qu'« il ne s'est rien passé » est une
+    # réponse recevable. Un modèle à qui l'on tend trois extraits sur le Wingman
+    # répond sur le Wingman.
+    if ancre := await _rss_ancre_connaissance(bot):
+        lines.append(ancre)
     for i, a in enumerate(articles, start=1):
         sup = _RSS_SUPERSCRIPTS[i]
         url = a.get("link") or ""
