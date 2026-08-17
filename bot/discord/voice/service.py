@@ -926,17 +926,31 @@ class VoiceService:
                 if loop.time() < prochain_pouls:
                     continue
                 prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
-                frames, enonces = sink.pouls()
+                frames, enonces, par_locuteur = sink.pouls()
                 # Rien reçu ET rien produit : personne ne parlait. On se tait —
                 # une ligne par minute de silence, toute la nuit, ferait de ce
                 # relevé un bruit qu'on apprend à ne plus lire.
                 if not frames and not enonces:
                     continue
+                # Le DÉTAIL par locuteur, parce que le total ne dit pas d'où
+                # vient le flot : un premier relevé a montré soixante et une
+                # fois le temps réel en audio reçu, ce qu'aucun nombre de
+                # personnes présentes ne peut expliquer.
+                top = sorted(par_locuteur.items(), key=lambda kv: -kv[1])[:4]
+                detail = ", ".join(
+                    f"{self._nom_locuteur(uid)} {n * 0.02:.0f} s" for uid, n in top)
                 logger.info(
-                    "voice: pouls — {f} frames reçues ({s:.0f} s d'audio), "
-                    "{e} énoncé(s) clos",
-                    f=frames, s=frames * 0.02, e=enonces,
+                    "voice: pouls — {f} frames reçues ({s:.0f} s d'audio pour "
+                    "{d:.0f} s écoulées), {e} énoncé(s) clos, {n} locuteur(s) — {det}",
+                    f=frames, s=frames * 0.02, d=self._POULS_INTERVALLE_S,
+                    e=enonces, n=len(par_locuteur), det=detail or "aucun",
                 )
+
+    def _nom_locuteur(self, uid: int) -> str:
+        """Le nom lisible d'un locuteur du pouls, ou son identifiant à défaut."""
+        membre = self._stream_users.get(str(uid))
+        nom = getattr(membre, "display_name", None) if membre is not None else None
+        return nom or str(uid)
         except asyncio.CancelledError:
             pass
         except Exception as e:  # noqa: BLE001

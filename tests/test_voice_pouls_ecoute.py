@@ -22,13 +22,15 @@ def _sink():
     s._lock = threading.Lock()
     s._frames_recues = 0
     s._segments_emis = 0
+    s._frames_par_locuteur = {}
     return s
 
 
 def test_le_pouls_compte_ce_qui_entre_et_ce_qui_sort():
     s = _sink()
     s._frames_recues, s._segments_emis = 150, 2
-    assert s.pouls() == (150, 2)
+    s._frames_par_locuteur = {7: 150}
+    assert s.pouls() == (150, 2, {7: 150})
 
 
 def test_le_pouls_repart_de_zero_a_chaque_releve():
@@ -36,8 +38,9 @@ def test_le_pouls_repart_de_zero_a_chaque_releve():
     écoute morte depuis dix minutes afficherait encore les frames du début."""
     s = _sink()
     s._frames_recues, s._segments_emis = 150, 2
+    s._frames_par_locuteur = {7: 150}
     s.pouls()
-    assert s.pouls() == (0, 0)
+    assert s.pouls() == (0, 0, {})
 
 
 def test_de_l_audio_sans_aucun_enonce_se_voit():
@@ -45,4 +48,5 @@ def test_de_l_audio_sans_aucun_enonce_se_voit():
     qu'on ne pouvait pas distinguer d'un salon vide."""
     s = _sink()
     s._frames_recues = 3000          # une minute d'audio
-    assert s.pouls() == (3000, 0)
+    s._frames_par_locuteur = {7: 3000}
+    assert s.pouls() == (3000, 0, {7: 3000})

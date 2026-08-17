@@ -56,12 +56,18 @@ class WallyAudioSink(voice_recv.AudioSink):
         # une heure de live à chaque fois.
         self._frames_recues = 0
         self._segments_emis = 0
+        # PAR LOCUTEUR, parce que le total seul ne dit pas d'où vient le flot :
+        # le premier relevé a montré 61 fois le temps réel en audio, ce qui ne
+        # peut PAS venir du nombre de personnes présentes.
+        self._frames_par_locuteur: dict[int, int] = {}
 
-    def pouls(self) -> tuple[int, int]:
-        """(frames reçues, énoncés clos) depuis le dernier appel, puis remise à zéro."""
+    def pouls(self) -> tuple[int, int, dict[int, int]]:
+        """(frames reçues, énoncés clos, frames par locuteur) puis remise à zéro."""
         with self._lock:
-            valeurs = (self._frames_recues, self._segments_emis)
+            valeurs = (self._frames_recues, self._segments_emis,
+                       dict(self._frames_par_locuteur))
             self._frames_recues = self._segments_emis = 0
+            self._frames_par_locuteur.clear()
         return valeurs
 
     def wants_opus(self) -> bool:
@@ -92,6 +98,8 @@ class WallyAudioSink(voice_recv.AudioSink):
                     frame = bytes(buf[:FRAME_BYTES])
                     del buf[:FRAME_BYTES]
                     self._frames_recues += 1
+                    self._frames_par_locuteur[user.id] = (
+                        self._frames_par_locuteur.get(user.id, 0) + 1)
                     if streaming:
                         self._loop.call_soon_threadsafe(self._on_frame, user, frame)
                     out = seg.feed(frame)
