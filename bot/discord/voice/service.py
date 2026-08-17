@@ -946,15 +946,16 @@ class VoiceService:
                     e=enonces, n=len(par_locuteur), det=detail or "aucun",
                 )
 
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voice _silence_watch a échoué: {e}", e=e)
+
     def _nom_locuteur(self, uid: int) -> str:
         """Le nom lisible d'un locuteur du pouls, ou son identifiant à défaut."""
         membre = self._stream_users.get(str(uid))
         nom = getattr(membre, "display_name", None) if membre is not None else None
         return nom or str(uid)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:  # noqa: BLE001
-            logger.warning("voice _silence_watch a échoué: {e}", e=e)
 
     # ------------------------------------------------------------------
     # Watchdog auto-leave
