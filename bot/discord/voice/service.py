@@ -34,6 +34,26 @@ from bot.discord.voice.sink import WallyAudioSink
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
 
 
+def verdict_ecoute(enonces: int, transcriptions: int,
+                   deja_signale: bool) -> str | None:
+    """Ce que dit le pouls de l'écoute : « sourd », « retabli », ou rien.
+
+    La signature d'un STT mort est nette : des énoncés se referment — donc des
+    gens parlent et le VAD les découpe — mais AUCUN ne ressort transcrit.
+
+    Un salon SILENCIEUX n'est pas une panne : sans énoncé, il n'y a rien à
+    transcrire, et se couper le micro annoncerait un défaut qui n'existe pas.
+    Le silence ne rétablit pas non plus — il ne prouve rien dans un sens ni dans
+    l'autre. C'est la même règle des deux côtés : on ne conclut que sur une
+    preuve.
+    """
+    if not enonces:
+        return None
+    if transcriptions:
+        return "retabli" if deja_signale else None
+    return None if deja_signale else "sourd"
+
+
 def _member_label(member) -> str:
     """Libellé d'un locuteur : 'pseudo affiché (@username)'.
 
@@ -135,6 +155,11 @@ class VoiceService:
         # dans le micro duquel il serait réinjecté. Sa réaction passe par
         # l'overlay, que les viewers voient et que le streamer ne voit pas.
         self.listen_only: bool = False
+        # Le pouls de l'écoute : transcriptions abouties depuis le dernier
+        # relevé, et l'état déjà signalé (pour ne pas re-couper le micro toutes
+        # les minutes).
+        self._transcriptions_abouties: int = 0
+        self._surdite_signalee: bool = False
         # Congé posé quand on le fait sortir d'un vocal d'écoute à la main :
         # le veilleur ne doit pas le ramener trente secondes plus tard.
         self.listen_optout: bool = False
@@ -735,6 +760,10 @@ class VoiceService:
         text = (text or "").strip()
         if not text:
             return
+        # Une transcription ABOUTIE. C'est ce compte, confronté aux énoncés que
+        # le VAD referme, qui distingue « personne ne parle » de « je n'entends
+        # plus rien » — et qui décide de couper le micro pour le signaler.
+        self._transcriptions_abouties += 1
         self._last_speech_ts = asyncio.get_running_loop().time()
         if self.is_speaking:
             # Garde-fou anti-auto-coupure : une vraie commande d'arrêt est brève.
@@ -914,6 +943,32 @@ class VoiceService:
     # journal. Un salon vraiment silencieux ne dit rien du tout (voir plus bas).
     _POULS_INTERVALLE_S = 60.0
 
+    async def _signaler_ecoute(self, enonces: int, transcriptions: int) -> None:
+        """Coupe le micro quand Wally n'entend plus, le rend quand ça revient.
+
+        Le micro EST le signal : c'est ce que l'owner regarde, pas un log. Le
+        geste existait déjà pour le démarrage — muet tant que le modèle chauffe
+        — et il veut dire la même chose ici : « je n'entends pas ».
+        """
+        from bot.discord.voice import readiness
+
+        verdict = verdict_ecoute(enonces, transcriptions,
+                                 deja_signale=self._surdite_signalee)
+        if verdict is None:
+            return
+        if verdict == "sourd":
+            self._surdite_signalee = True
+            logger.warning(
+                "voice: SOURD — {e} énoncé(s) découpés, aucun transcrit. Micro "
+                "coupé pour que ça se voie.", e=enonces,
+            )
+            await readiness.set_muted(self._vc, True)
+            return
+        self._surdite_signalee = False
+        logger.info("voice: l'écoute est revenue ({t} transcription(s)) — micro rendu",
+                    t=transcriptions)
+        await readiness.set_muted(self._vc, False)
+
     async def _silence_watch(self, sink, interval: float = 0.15) -> None:
         """Clôt à l'horloge l'énoncé d'un locuteur qui s'est tu (Discord coupe le silence →
         le VAD local ne se déclenche jamais). Sans ça, le `final` distant ne part jamais.
@@ -934,6 +989,11 @@ class VoiceService:
                     continue
                 prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
                 frames, enonces, par_locuteur = sink.pouls()
+                transcriptions = self._transcriptions_abouties
+                self._transcriptions_abouties = 0
+                # Des énoncés découpés mais aucun transcrit : Wally est sourd, et
+                # ça doit SE VOIR — il se coupe le micro.
+                await self._signaler_ecoute(enonces, transcriptions)
                 # Rien reçu ET rien produit : personne ne parlait. On se tait —
                 # une ligne par minute de silence, toute la nuit, ferait de ce
                 # relevé un bruit qu'on apprend à ne plus lire.
@@ -948,9 +1008,11 @@ class VoiceService:
                     f"{self._nom_locuteur(uid)} {n * 0.02:.0f} s" for uid, n in top)
                 logger.info(
                     "voice: pouls — {f} frames reçues ({s:.0f} s d'audio pour "
-                    "{d:.0f} s écoulées), {e} énoncé(s) clos, {n} locuteur(s) — {det}",
+                    "{d:.0f} s écoulées), {e} énoncé(s) clos, {t} transcrit(s), "
+                    "{n} locuteur(s) — {det}",
                     f=frames, s=frames * 0.02, d=self._POULS_INTERVALLE_S,
-                    e=enonces, n=len(par_locuteur), det=detail or "aucun",
+                    e=enonces, t=transcriptions, n=len(par_locuteur),
+                    det=detail or "aucun",
                 )
 
         except asyncio.CancelledError:

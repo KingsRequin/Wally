@@ -23,12 +23,17 @@ class VoiceCog(commands.Cog):
         # qui levait à nouveau. Aucun `tree.error` n'est enregistré dans le
         # projet — l'utilisateur voyait « L'application n'a pas répondu » alors
         # que Wally arrivait bel et bien. `/ecoute`, juste à côté, defer déjà.
-        await interaction.response.defer()
+        #
+        # `ephemeral` DÈS LE DEFER : sans lui, le « réfléchit… » s'affiche à tout
+        # le salon et la réponse privée arrive derrière. On croirait avoir masqué
+        # la réponse alors qu'on n'en a masqué que la moitié.
+        await interaction.response.defer(ephemeral=True)
         try:
             await self.bot.voice_service.join(
                 voice.channel, inviter=getattr(interaction.user, "display_name", None)
             )
-            await interaction.followup.send(f"J'arrive dans **{voice.channel.name}** 🎙️")
+            await interaction.followup.send(
+                f"J'arrive dans **{voice.channel.name}** 🎙️", ephemeral=True)
         except Exception as e:  # noqa: BLE001
             logger.warning("/join a échoué: {e}", e=e)
             await interaction.followup.send("Impossible de rejoindre le vocal.", ephemeral=True)
@@ -72,7 +77,7 @@ class VoiceCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         try:
             await service.join(channel, listen_only=True)
         except Exception as e:  # noqa: BLE001
@@ -83,7 +88,8 @@ class VoiceCog(commands.Cog):
             return
         await interaction.followup.send(
             f"J'écoute **{channel.name}** 👂 — je ne parlerai pas ici, "
-            "je réagis sur l'overlay."
+            "je réagis sur l'overlay.",
+            ephemeral=True,
         )
 
     @app_commands.command(name="leave", description="Wally quitte le salon vocal")
