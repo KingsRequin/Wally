@@ -64,10 +64,21 @@ window.WallyLayout = (function () {
   // DEUX NATURES, et la différence compte :
   //
   //   · Un widget de TEXTE se dimensionne par son contenu (`width: max-content`)
-  //     et sa taille ne peut pas se connaître à l'avance : « 3 votes » et « 47
-  //     votes » ne font pas la même largeur. Sa valeur ici est un ordre de
-  //     grandeur — mieux qu'un carré unique pour trente-quatre widgets, qui
-  //     donnerait une fausse idée de l'encombrement.
+  //     et sa taille exacte ne peut pas se connaître à l'avance : « 3 votes » et
+  //     « 47 votes » ne font pas la même largeur. Sa valeur ici est donc un
+  //     REPLI, le temps que l'aperçu la mesure pour de bon (`tailleRendue`).
+  //     Mais un repli se MESURE aussi : celles-ci ont été relevées le
+  //     2026-08-17 en affichant chaque widget avec l'échantillon officiel du
+  //     bouton ▶ (`_ECHANTILLONS`, routes/overlay.py) et en lisant sa boîte,
+  //     ramenée au canvas. Les valeurs d'avant étaient écrites au jugé et
+  //     TOUTES trop grandes, de deux à trois fois : le dé annonçait 240 × 240
+  //     pour 170 × 78, la jauge 520 × 160 pour 230 × 39. C'est le reproche
+  //     d'origine — « les box correspondent pas vraiment à la taille du
+  //     widget ». Refaire la mesure après un changement de style est le bon
+  //     réflexe ; l'inventer ne l'est jamais.
+  //     Trois exceptions, laissées telles quelles faute d'une mesure fiable :
+  //     `avatar` et `bubble` (hors du chemin `showWidget`) et `planning` (son
+  //     image dépend de celle qu'on lui donne).
   //
   //   · Un widget à MÉDIA (`meme`, `rotator`) affiche une image dont les
   //     dimensions sont arbitraires : le dossier va de 260 à 2100 px de côté,
@@ -85,16 +96,27 @@ window.WallyLayout = (function () {
   // en dur dans `overlay.html` rouvrirait la même plaie : le CSS lit ce chiffre,
   // il ne le redit pas.
   const TAILLES = {
-    avatar: [200, 200], bubble: [460, 170],
-    image: [1280, 720], meme: [400, 400], rotator: [400, 400],
-    clip: [860, 500], clip_top: [860, 500],
-    bingo: [420, 460], stats: [360, 300], talkers: [340, 260],
-    planning: [520, 380], hangman: [560, 300], poll: [480, 320],
-    wheel: [420, 420], versus: [640, 260], gauge: [520, 160],
-    counter: [320, 140], countdown: [320, 140], coinflip: [240, 240],
-    dice: [240, 240], rps: [520, 260], pinned: [480, 200],
-    prediction: [480, 300], quote: [520, 220], raid: [520, 240],
-    wave: [420, 200],
+    // Non mesurés — voir l'exception ci-dessus.
+    avatar: [200, 200], bubble: [460, 170], planning: [520, 380],
+    // Calculés par le serveur sur les dossiers (memes, galerie) : ces valeurs
+    // ne sont que le repli de la frame qui précède sa réponse.
+    image: [720, 720], meme: [400, 400], rotator: [400, 400],
+    // `clip` porte l'état LECTURE (540 × 363), pas la carte d'annonce
+    // (300 × 81) : c'est le plus encombrant des deux, et un repère trop petit
+    // laisserait la vidéo recouvrir ce qui l'entoure.
+    clip: [540, 363], clip_top: [320, 118],
+    bingo: [420, 144], stats: [260, 126], talkers: [260, 113],
+    hangman: [400, 130], poll: [260, 192],
+    wheel: [220, 220], versus: [260, 118], gauge: [230, 39],
+    counter: [275, 51], countdown: [220, 220], coinflip: [90, 90],
+    dice: [170, 78], rps: [320, 137], pinned: [290, 74],
+    prediction: [280, 61], quote: [300, 92], raid: [256, 100],
+    wave: [180, 39],
+    // Les panneaux Apex tombaient sur le défaut (400 × 260) faute d'entrée :
+    // ils annonçaient donc une boîte une fois et demie trop large.
+    apex_rank: [260, 133], apex_status: [260, 129], apex_stats: [260, 106],
+    apex_map: [260, 86], apex_craft: [260, 118], apex_predator: [260, 106],
+    apex_servers: [260, 86],
   };
   const TAILLE_DEFAUT = [400, 260];
 

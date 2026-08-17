@@ -17,10 +17,17 @@ from bot.dashboard.routes import overlay as routes_overlay
 
 
 @pytest.fixture(autouse=True)
-def _cache_neuf():
-    """Le cache des boîtes vit au niveau du module : sans ce ménage, un test
-    servirait la mesure du dossier d'un autre."""
+def _isole(tmp_path_factory, monkeypatch):
+    """Deux isolations, et la seconde a déjà mordu ce projet.
+
+    Le cache des boîtes vit au niveau du module : sans ménage, un test servirait
+    la mesure du dossier d'un autre. Et la galerie est lue dans `data/gallery`
+    — le dossier de PRODUCTION : un test qui s'y appuie change de résultat le
+    jour où Wally génère une image, et personne ne comprend pourquoi.
+    """
     routes_overlay._tailles_cache.update(signature=None, value={})
+    monkeypatch.setattr(routes_overlay, "_DOSSIER_GALERIE",
+                        tmp_path_factory.mktemp("galerie-vide"))
     yield
     routes_overlay._tailles_cache.update(signature=None, value={})
 
@@ -37,7 +44,7 @@ def test_la_page_recoit_la_boite_mesuree(tmp_path, overlay_client_avec):
     client = overlay_client_avec(memes=_dossier(tmp_path, [(600, 400), (900, 500)]))
     tailles = client.get("/api/public/overlay-layout").json()["tailles"]
     marge = PASSE_PARTOUT_MEDIA["meme"]
-    media = BOITE_MEDIA_MAX - marge          # la place nette, hors passe-partout
+    media = BOITE_MEDIA_MAX["meme"] - marge   # la place nette, hors passe-partout
     # La LARGEUR sature : les deux sont plus larges que hauts. La HAUTEUR vient
     # du moins allongé des deux (1,5) — c'est lui qui monte le plus haut une fois
     # ramené à la largeur. La prendre sur le plus allongé (1,8) donnerait une
@@ -58,7 +65,7 @@ def test_le_panneau_recoit_la_meme_boite_que_la_page(tmp_path, overlay_client_av
     assert page == panneau
     # Les deux extrêmes saturent les deux axes : boîte carrée, et c'est un
     # résultat du dossier, pas une hypothèse.
-    assert page["meme"][0] == page["meme"][1] == BOITE_MEDIA_MAX
+    assert page["meme"][0] == page["meme"][1] == BOITE_MEDIA_MAX["meme"]
 
 
 def test_sans_bibliotheque_la_page_se_sert_quand_meme(overlay_client_avec):
@@ -66,7 +73,9 @@ def test_sans_bibliotheque_la_page_se_sert_quand_meme(overlay_client_avec):
     l'overlay de son layout en plein live — la table du JS prend le relais."""
     r = overlay_client_avec(memes=None).get("/api/public/overlay-layout")
     assert r.status_code == 200
-    assert r.json()["tailles"] == {}
+    # `image` peut rester : il se mesure sur la galerie, pas sur les memes.
+    assert "meme" not in r.json()["tailles"]
+    assert "rotator" not in r.json()["tailles"]
     assert r.json()["scene"]["elements"]
 
 
@@ -75,7 +84,7 @@ def test_un_dossier_vide_ne_donne_pas_une_boite_nulle(tmp_path, overlay_client_a
     l'estimation qu'il remplace."""
     tailles = overlay_client_avec(memes=MemeLibrary(tmp_path)).get(
         "/api/public/overlay-layout").json()["tailles"]
-    assert tailles == {}
+    assert tailles == {}, "ni memes ni galerie mesurables : aucune boîte"
 
 
 def test_la_boite_suit_lajout_dun_meme(tmp_path, overlay_client_avec):
@@ -89,3 +98,44 @@ def test_la_boite_suit_lajout_dun_meme(tmp_path, overlay_client_avec):
     Image.new("RGB", (300, 900), (0, 0, 0)).save(tmp_path / "portrait.png")
     apres = client.get("/api/public/overlay-layout").json()["tailles"]["meme"]
     assert apres[1] > avant[1], f"boîte figée : {avant} -> {apres}"
+
+
+def test_limage_de_galerie_se_mesure_sur_la_galerie(tmp_path, overlay_client_avec,
+                                                    monkeypatch):
+    """`image` ne lit PAS le dossier de memes : ses images sont générées, toutes
+    carrées aujourd'hui, et leur prêter l'enveloppe des memes annoncerait un
+    cadre que rien n'y remplit jamais.
+
+    Le cadre d'origine, `1280 × 720`, était écrit à la main : paysage pour un
+    contenu carré, et large de 78 % de plus que ce que le CSS laisse passer.
+    """
+    galerie = tmp_path / "galerie"
+    galerie.mkdir()
+    for i in range(3):
+        Image.new("RGB", (1024, 1024), (30, 30, 30)).save(galerie / f"g{i}.png")
+    monkeypatch.setattr(routes_overlay, "_DOSSIER_GALERIE", galerie)
+    routes_overlay._tailles_cache.update(signature=None, value={})
+
+    memes = tmp_path / "memes"
+    memes.mkdir()
+    client = overlay_client_avec(memes=_dossier(memes, [(600, 400)]))
+    tailles = client.get("/api/public/overlay-layout").json()["tailles"]
+    # Carrées : la boîte l'est aussi, et vaut le plafond qu'on leur laisse.
+    assert tailles["image"][0] == tailles["image"][1] == BOITE_MEDIA_MAX["image"]
+    # Et elle ne suit pas les memes, qui sont d'un tout autre format.
+    assert tailles["image"] != tailles.get("meme")
+
+
+def test_une_galerie_paysage_donne_une_boite_paysage(tmp_path, overlay_client_avec,
+                                                     monkeypatch):
+    """La preuve que c'est mesuré et non figé : change le contenu, la boîte
+    suit."""
+    galerie = tmp_path / "galerie"
+    galerie.mkdir()
+    Image.new("RGB", (1600, 900), (30, 30, 30)).save(galerie / "large.png")
+    monkeypatch.setattr(routes_overlay, "_DOSSIER_GALERIE", galerie)
+    routes_overlay._tailles_cache.update(signature=None, value={})
+
+    tailles = overlay_client_avec(memes=None).get(
+        "/api/public/overlay-layout").json()["tailles"]
+    assert tailles["image"][1] < tailles["image"][0], tailles["image"]

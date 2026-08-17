@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from bot.core.memes import enveloppe_images
+
 # Les neuf points d'ancrage. La position désigne CE point de l'élément, et le
 # contenu grandit vers l'intérieur du cadre. Sans ancrage, un élément posé à
 # droite sortirait de l'écran dès que son contenu s'élargit, et une bulle de dix
@@ -306,32 +308,58 @@ def layout_par_defaut() -> dict:
 # deux côtés. Ces valeurs décrivent `overlay.html` — c'est le genre de doublon
 # qui a créé le défaut d'origine, donc un test les CONFRONTE au CSS
 # (`tests/test_overlay_taille_widgets_media.py`).
-PASSE_PARTOUT_MEDIA = {"rotator": 34, "meme": 18}
+PASSE_PARTOUT_MEDIA = {"rotator": 34, "meme": 18, "image": 0}
 
 # Le rotateur grossit les petits memes pour qu'ils ne paraissent pas perdus
-# (`AGRANDIR` dans overlay.js). La carte `meme`, elle, ne fait que réduire.
-AGRANDISSEMENT_MEDIA = {"rotator": 2.0, "meme": 1.0}
+# (`AGRANDIR` dans overlay.js). La carte `meme` et l'image de galerie, elles, ne
+# font que réduire.
+AGRANDISSEMENT_MEDIA = {"rotator": 2.0, "meme": 1.0, "image": 1.0}
 
-# LE seul réglage de goût de tout ce calcul : la place qu'on accepte de laisser
-# prendre à un meme sur le canvas 1920 × 1080, passe-partout compris. Tout le
-# reste en découle.
-BOITE_MEDIA_MAX = 400
+# Le dossier où chaque widget à média prend ses images. `image` lit la galerie
+# et non les memes : ses images sont générées, toutes carrées aujourd'hui
+# (1024 × 1024), et lui prêter l'enveloppe des memes annoncerait un cadre que
+# rien n'y remplit jamais.
+DOSSIER_MEDIA = {"rotator": "memes", "meme": "memes", "image": "gallery"}
+
+# LES seuls réglages de goût de tout ce calcul : la place qu'on accepte de
+# laisser prendre à chaque média sur le canvas 1920 × 1080, passe-partout
+# compris. Tout le reste se mesure.
+#
+# Ce sont des PLAFONDS, pas des cadres : le cadre, lui, est l'enveloppe de ce
+# que le dossier atteint vraiment, et il peut rester bien en dessous. La galerie
+# garde 720 — le `max-height` que le CSS lui applique déjà —, parce que corriger
+# son CADRE ne doit pas changer son RENDU : ses images sont réduites à 720 de
+# haut depuis toujours, et la table en annonçait 1280 de large.
+BOITE_MEDIA_MAX = {"rotator": 400, "meme": 400, "image": 720}
 
 
-def tailles_media(library) -> dict[str, list[int]]:
-    """Les boîtes des widgets à média, mesurées sur le dossier de memes.
+def tailles_media(library, dossiers=None) -> dict[str, list[int]]:
+    """Les boîtes des widgets à média, mesurées sur leurs images.
+
+    `dossiers` : la racine de chaque dossier connu (`memes`, `gallery`). La
+    bibliothèque de memes sait déjà trier les siens — extensions, poids, vidéos
+    écartées ; la galerie n'a pas d'équivalent, on lit son dossier.
 
     Rend un dictionnaire vide si rien n'est mesurable : la page et le panneau
     gardent alors la table du JS. Un dossier vide ne doit pas donner une boîte
     nulle — ce serait un repère d'un pixel au milieu de la scène.
     """
-    if library is None:
-        return {}
+    dossiers = dossiers or {}
     out: dict[str, list[int]] = {}
     for cle, marge in PASSE_PARTOUT_MEDIA.items():
+        media_max = BOITE_MEDIA_MAX[cle] - marge
         try:
-            env = library.enveloppe_rendue(BOITE_MEDIA_MAX - marge,
-                                           AGRANDISSEMENT_MEDIA[cle])
+            if DOSSIER_MEDIA[cle] == "memes":
+                if library is None:
+                    continue
+                env = library.enveloppe_rendue(media_max,
+                                               AGRANDISSEMENT_MEDIA[cle])
+            else:
+                racine = dossiers.get(DOSSIER_MEDIA[cle])
+                if racine is None:
+                    continue
+                env = enveloppe_images(_images_du_dossier(racine), media_max,
+                                       AGRANDISSEMENT_MEDIA[cle])
         # Bibliothèque d'un autre type, dossier illisible, Pillow absent : la
         # boîte calculée est un CONFORT, jamais une condition d'affichage.
         except Exception:
@@ -339,6 +367,17 @@ def tailles_media(library) -> dict[str, list[int]]:
         if env:
             out[cle] = [env[0] + marge, env[1] + marge]
     return out
+
+
+def _images_du_dossier(racine) -> list:
+    """Les fichiers d'un dossier, à plat. Ce qui n'est pas une image sera écarté
+    par la lecture elle-même — inutile de dupliquer ici une liste d'extensions
+    qui divergerait de celle des memes."""
+    from pathlib import Path
+    try:
+        return [c for c in Path(racine).iterdir() if c.is_file()]
+    except OSError:
+        return []
 
 
 def _borner(valeur, mini: float, maxi: float, defaut: float) -> float:

@@ -148,9 +148,9 @@ def test_le_repli_du_js_ne_depasse_pas_la_boite_acceptee():
 
     t = _tailles()
     for cle, _, _ in MEDIA:
-        assert max(t[cle]) <= BOITE_MEDIA_MAX, (
+        assert max(t[cle]) <= BOITE_MEDIA_MAX[cle], (
             f"{cle} : repli {t[cle]} au-delà de la boîte acceptée "
-            f"({BOITE_MEDIA_MAX})")
+            f"({BOITE_MEDIA_MAX[cle]})")
 
 
 def test_le_js_pose_les_variables_depuis_la_table():

@@ -126,9 +126,11 @@ def test_un_element_centre_et_reduit_est_bien_centre():
       const g = OA.geometrie("image", el({x: 50, y: 50, anchor: "center", scale: s}), W, H);
       proche((g.gauche + g.droite) / 2, W / 2);
       proche((g.haut + g.bas) / 2, H / 2);
-      // La taille rendue suit l'échelle : 1280 px de canvas sur une surface
-      // de 800 px de large, multipliés par s.
-      proche(g.largeur, 1280 * s * (W / 1920), 1e-9);
+      // La taille rendue suit l'échelle. La largeur de référence est LUE dans
+      // la table et non recopiée ici : elle se mesure sur le contenu réel et a
+      // déjà changé une fois (1280 écrits au jugé, 720 mesurés). Un test qui la
+      // duplique fait passer un relevé légitime pour une régression.
+      proche(g.largeur, window.WallyLayout.taille("image")[0] * s * (W / 1920), 1e-9);
     });
     console.log("ok");
     """)

@@ -292,20 +292,31 @@ def _db(request: Request):
 _tailles_cache: dict = {"signature": None, "value": {}}
 
 
+# La galerie, pour la boîte de l'élément `image`. Ses images sont générées et
+# rangées ici par `gallery.py` ; elles ne passent par aucune bibliothèque qui
+# saurait les décrire, contrairement aux memes.
+_DOSSIER_GALERIE = Path("data/gallery")
+
+
 def _tailles_media(request: Request) -> dict:
     library = getattr(request.app.state.wally, "memes", None)
-    if library is None:
-        return {}
+    dossiers = {"gallery": _DOSSIER_GALERIE}
+
+    def _signature(dossier: Path) -> tuple:
+        return (dossier.stat().st_mtime_ns, sum(1 for _ in dossier.iterdir()))
+
     try:
-        dossier = Path(library.directory)
-        signature = (dossier.stat().st_mtime_ns,
-                     sum(1 for _ in dossier.iterdir()))
+        parts = [_signature(_DOSSIER_GALERIE)]
+        if library is not None:
+            parts.append(_signature(Path(library.directory)))
+        signature = tuple(parts)
     # Dossier absent ou illisible : on recalcule à chaque fois plutôt que de
     # servir un cache qu'on ne saurait plus invalider.
     except OSError:
-        return tailles_media(library)
+        return tailles_media(library, dossiers)
     if signature != _tailles_cache["signature"]:
-        _tailles_cache.update(signature=signature, value=tailles_media(library))
+        _tailles_cache.update(signature=signature,
+                              value=tailles_media(library, dossiers))
     return _tailles_cache["value"]
 
 
