@@ -182,6 +182,8 @@ window.OverlayAdmin = (function () {
   let apercuSlug = null;      // la scène actuellement chargée dans l'iframe
   let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
   let survole = null;         // la clé de l'élément survolé, liste OU surface
+  let survoleOrigine = null;  // « liste » ou « surface » — le survol est à SENS
+                              // UNIQUE : la liste éclaire l'aperçu, pas l'inverse
   let raccourcisPoses = false;  // l'écouteur clavier du document, posé une fois
 
   /** Les tailles LUES dans l'aperçu : clé → [largeur, hauteur] en pixels du
@@ -1720,37 +1722,34 @@ window.OverlayAdmin = (function () {
     publier("« " + scene.nom + " » est la scène par défaut.");
   }
 
-  // ── Le survol, des deux côtés ───────────────────────────────────────────
+  // ── Le survol, dans UN SEUL sens ────────────────────────────────────────
 
-  /** Le survol relie la LISTE et la SURFACE, dans les deux sens.
+  /** Quels côtés portent la marque, selon d'où vient le survol.
    *
-   *  Trente-quatre éléments, dont vingt-six partent exactement au même endroit :
-   *  une ligne de la liste ne disait pas LEQUEL des repères empilés elle
-   *  désigne, et un repère ne disait pas quelle ligne aller cliquer. Le survol
-   *  marque les deux à la fois — c'est le seul moyen de s'y retrouver.
+   *  SENS UNIQUE, et c'est la correction : la liste éclaire l'aperçu, l'aperçu
+   *  n'éclaire pas la liste.
    *
-   *  Le nom, lui, reste au survol et sur l'élément choisi : posé en permanence,
-   *  il recouvrait la page qu'on est venu regarder (`.ovl-rect-nom`).
+   *  Le lien était symétrique. Trente-quatre éléments, dont vingt-six partent
+   *  au même endroit : une ligne ne dit pas LEQUEL des repères empilés elle
+   *  désigne, et cette question-là se pose vraiment — c'est le sens qu'on
+   *  garde. L'autre répondait à une question que le repère pose déjà lui-même,
+   *  puisqu'il porte son nom au survol : il éclairait la ligne ET faisait
+   *  défiler la liste jusqu'à elle. La liste sautait donc à chaque va-et-vient
+   *  du pointeur au-dessus de la scène, ce qui se lit comme une sélection qu'on
+   *  n'a pas demandée. Reproche de l'owner, mot pour mot : « survoler un
+   *  élément dans la visualisation le sélectionne dans la liste ».
+   *
+   *  Une origine inconnue vaut « liste » : le repli est le comportement
+   *  complet, jamais celui qui efface la marque sans le dire.
    */
-  function survoler(cle, defilerVersLaLigne) {
+  function cotesDuSurvol(origine, calque, liste) {
+    return origine === "surface" ? [calque] : [calque, liste];
+  }
+
+  function survoler(cle, origine) {
     survole = cle;
+    survoleOrigine = cle ? origine : null;
     appliquerSurvol();
-    if (!cle || !defilerVersLaLigne || !noeuds.listeElements) return;
-    const liste = noeuds.listeElements;
-    const ligne = liste.querySelector('[data-cle="' + cle + '"]');
-    // `offsetParent` nul : la ligne est dans un groupe REPLIÉ, donc en
-    // `display: none`. Son rectangle vaut zéro partout, et le calcul ci-dessous
-    // ferait sauter la liste en haut sans que rien ne s'éclaire.
-    if (!ligne || !ligne.offsetParent) return;
-    // La liste défile sur 420 px pour trente-quatre lignes : éclairer une ligne
-    // hors de vue n'éclaire personne. Le calcul à la main plutôt que
-    // `scrollIntoView` : celui-ci fait aussi défiler les conteneurs PARENTS, et
-    // la page entière sauterait sous le pointeur au milieu d'un placement.
-    // Et rien ne bouge tant que la ligne est visible.
-    const r = ligne.getBoundingClientRect();
-    const cadre = liste.getBoundingClientRect();
-    if (r.top < cadre.top) liste.scrollTop -= cadre.top - r.top;
-    else if (r.bottom > cadre.bottom) liste.scrollTop += r.bottom - cadre.bottom;
   }
 
   /** Repose la marque après coup. Les repères ET les lignes sont reconstruits à
@@ -1759,15 +1758,22 @@ window.OverlayAdmin = (function () {
    *  `mouseleave` du nœud détruit ne viendrait jamais la retirer de l'autre
    *  côté. */
   function appliquerSurvol() {
+    // Les DEUX côtés sont nettoyés à chaque passe, quelle que soit l'origine :
+    // sinon la marque posée depuis la liste resterait allumée quand le pointeur
+    // passe ensuite sur la surface.
     [noeuds.calque, noeuds.listeElements].forEach(function (hote) {
       if (!hote) return;
       hote.querySelectorAll(".survole").forEach(function (n) {
         n.classList.remove("survole");
       });
-      if (!survole) return;
-      const n = hote.querySelector('[data-cle="' + survole + '"]');
-      if (n) n.classList.add("survole");
     });
+    if (!survole) return;
+    cotesDuSurvol(survoleOrigine, noeuds.calque, noeuds.listeElements)
+      .forEach(function (hote) {
+        if (!hote) return;
+        const n = hote.querySelector('[data-cle="' + survole + '"]');
+        if (n) n.classList.add("survole");
+      });
   }
 
   // ── La liste des éléments ───────────────────────────────────────────────
@@ -2023,8 +2029,8 @@ window.OverlayAdmin = (function () {
     });
     // `mouseenter`/`mouseleave` et non `mouseover` : ceux-là ne se déclenchent
     // pas en repassant d'un enfant à l'autre de la ligne.
-    item.addEventListener("mouseenter", function () { survoler(cle, false); });
-    item.addEventListener("mouseleave", function () { survoler(null, false); });
+    item.addEventListener("mouseenter", function () { survoler(cle, "liste"); });
+    item.addEventListener("mouseleave", function () { survoler(null, "liste"); });
     brancherGlisser(item, cle);
     return item;
   }
@@ -3141,14 +3147,15 @@ window.OverlayAdmin = (function () {
         + (recouvre ? " — ⚠ chevauche un élément qui peut être à l'écran en "
                       + "même temps" : ""));
       rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
-      // Le sens retour : le repère éclaire sa ligne, et l'amène sous les yeux
-      // si la liste a défilé ailleurs. Pas pendant un geste — la liste
-      // sauterait sous le pointeur au milieu d'un déplacement.
+      // Le repère s'éclaire LUI-MÊME, et rien d'autre : il porte déjà son nom
+      // au survol, et éclairer sa ligne — pire, amener la liste jusqu'à elle —
+      // se lisait comme une sélection déclenchée par un simple passage du
+      // pointeur au-dessus de la scène.
       rect.addEventListener("mouseenter", function () {
-        if (!manip) survoler(cle, true);
+        if (!manip) survoler(cle, "surface");
       });
       rect.addEventListener("mouseleave", function () {
-        if (!manip) survoler(null, false);
+        if (!manip) survoler(null, "surface");
       });
       cadre.appendChild(rect);
     });
@@ -5153,6 +5160,9 @@ window.OverlayAdmin = (function () {
     // question de concurrence à chaque publication.
     HORS_MODELE: HORS_MODELE,
     retirerHorsModele: retirerHorsModele,
+    // Le sens du survol. Exposé pour être TESTÉ : c'est une règle d'un mot
+    // (« surface »), et elle ne se voit sur aucune capture d'écran.
+    cotesDuSurvol: cotesDuSurvol,
     tailleRendue: tailleRendue,
     // Le tri du cadenas : c'est lui qui dit que « verrouillé » vaut aussi pour
     // la visibilité, et pas seulement pour la position.
