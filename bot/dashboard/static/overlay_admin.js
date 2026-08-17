@@ -245,6 +245,90 @@ window.OverlayAdmin = (function () {
     }
   }
 
+  // ── La capture de stream en fond ────────────────────────────────────────
+  //
+  // On place par rapport au décor RÉEL — le cadre du chat, la zone de jeu —
+  // plutôt que dans le vide. C'est une aide au travail : elle vit dans le
+  // NAVIGATEUR, ne va pas en base, et ne part JAMAIS vers l'overlay. Elle ne
+  // touche pas au modèle, donc elle ne compte pas comme une modification.
+  //
+  // Elle est réduite et recompressée avant d'être rangée, et c'est une GARDE,
+  // pas une optimisation : le brouillon non publié vit dans le même
+  // `localStorage` — cinq mégaoctets en tout —, et une capture 1920 × 1080 en
+  // PNG en pèse plusieurs à elle seule. Perdre un travail en cours au profit
+  // d'une image de décor serait le pire échange possible. Si le quota se ferme
+  // quand même, c'est le FOND qu'on abandonne, et on le dit.
+  const CLE_FOND = "wally:overlay:fond";
+  // La surface ne dépasse jamais cette largeur à l'écran : ranger du 1920 ne
+  // donnerait pas un pixel de plus à voir, pour cinq fois le poids.
+  const FOND_LARGEUR_MAX = 960;
+  const FOND_QUALITE = 0.72;
+  // En dessous, le fond est invisible et le curseur passe pour cassé.
+  const FOND_OPACITE_MIN = 20;
+  const FOND_OPACITE_DEFAUT = 55;
+
+  function bornerOpaciteFond(valeur) {
+    const n = Number(valeur);
+    if (!isFinite(n)) return FOND_OPACITE_DEFAUT;
+    return Math.max(FOND_OPACITE_MIN, Math.min(100, Math.round(n)));
+  }
+
+  /** Ce qu'on accepte de poser en `src`. Une dataURL d'image RASTER, produite
+   *  par notre propre canvas — rien d'autre. Le SVG est écarté avec le reste :
+   *  ses scripts ne s'exécutent pas dans une `<img>`, mais la reconnaissance ne
+   *  s'appuie pas sur cette subtilité, elle liste ce qu'elle sait sûr. */
+  function estImageRangeable(valeur) {
+    return typeof valeur === "string"
+      && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(valeur);
+  }
+
+  /** Range le fond. Rend `false` si le stockage a refusé — un fond qui ne
+   *  survit pas au rechargement sans que rien ne l'annonce se lit comme un bug
+   *  du bouton. */
+  function rangerFond(image, opacite) {
+    if (!estImageRangeable(image)) return false;
+    try {
+      window.localStorage.setItem(CLE_FOND, JSON.stringify({
+        image: image,
+        opacite: bornerOpaciteFond(opacite),
+      }));
+      return true;
+    } catch (e) {
+      // Quota plein, stockage refusé. On ne touche à RIEN d'autre : le
+      // brouillon déjà rangé doit survivre à l'échec de cette image.
+      return false;
+    }
+  }
+
+  /** Le fond rangé, ou `null`. Tout ce qui n'est pas une image reconnue est
+   *  jeté sans bruit : le panneau se règle en plein live, une préférence
+   *  d'affichage illisible ne doit jamais l'empêcher de s'ouvrir. */
+  function lireFond() {
+    let brut = null;
+    try {
+      brut = window.localStorage.getItem(CLE_FOND);
+    } catch (e) {
+      return null;
+    }
+    if (!brut) return null;
+    let d = null;
+    try {
+      d = JSON.parse(brut);
+    } catch (e) {
+      return null;
+    }
+    if (!d || !estImageRangeable(d.image)) return null;
+    return { image: d.image, opacite: bornerOpaciteFond(d.opacite) };
+  }
+
+  function oublierFond() {
+    try {
+      window.localStorage.removeItem(CLE_FOND);
+    } catch (e) {
+      // Rien à défaire.
+    }
+  }
+
   /** Le brouillon rangé, ou `null`. Un contenu tordu (quota tronqué, version
    *  d'avant) ne doit pas empêcher le panneau de s'ouvrir : on le jette. */
   function lireBrouillon() {
@@ -4249,6 +4333,94 @@ window.OverlayAdmin = (function () {
 
   /** La barre sous la surface : l'état de l'aperçu, « Tout afficher », et la
    *  bascule qui estompe les repères pour laisser voir la page dessous. */
+  /** Prépare la capture : réduite, recompressée, et RASTERISÉE au passage.
+   *
+   *  Le canvas est ce qui rend l'opération sûre autant que légère — ce qui en
+   *  sort est une image matricielle produite par nous, quelle que soit l'entrée.
+   *  Un SVG déposé ici en ressort aplati, sans rien de ce qu'il contenait.
+   */
+  function preparerFond(fichier, fini) {
+    const lecteur = new FileReader();
+    lecteur.onerror = function () { notifier("Image illisible.", "error"); };
+    lecteur.onload = function () {
+      const img = new Image();
+      img.onerror = function () {
+        notifier("Ce fichier n'est pas une image affichable.", "error");
+      };
+      img.onload = function () {
+        const large = img.naturalWidth || 0, haut = img.naturalHeight || 0;
+        if (!large || !haut) {
+          notifier("Image sans dimensions.", "error");
+          return;
+        }
+        const facteur = Math.min(1, FOND_LARGEUR_MAX / large);
+        const toile = document.createElement("canvas");
+        toile.width = Math.max(1, Math.round(large * facteur));
+        toile.height = Math.max(1, Math.round(haut * facteur));
+        let url = "";
+        try {
+          toile.getContext("2d").drawImage(img, 0, 0, toile.width, toile.height);
+          url = toile.toDataURL("image/webp", FOND_QUALITE);
+          // Un navigateur sans WebP rend un PNG SANS le dire : celui-ci pèse
+          // plusieurs fois plus lourd, et c'est le quota partagé avec le
+          // brouillon qui le paierait. On repasse alors en JPEG.
+          if (url.indexOf("data:image/webp") !== 0) {
+            url = toile.toDataURL("image/jpeg", FOND_QUALITE);
+          }
+        } catch (e) {
+          notifier("Image impossible à préparer : " + e.message, "error");
+          return;
+        }
+        // Le ratio : les repères se placent en POURCENTAGES du canvas 16/9. Une
+        // capture d'un autre format est étirée pour que x % de l'image tombe
+        // sur x % de la scène — c'est ce qui garde le placement juste, au prix
+        // d'une légère déformation qu'on annonce plutôt que de la laisser
+        // découvrir.
+        const ratio = large / haut;
+        if (Math.abs(ratio - 16 / 9) > 0.05) {
+          notifier("Capture en " + large + " × " + haut + " : elle sera étirée "
+            + "au 16/9 de la scène pour que les repères tombent juste.", "error");
+        }
+        fini(url);
+      };
+      img.src = String(lecteur.result);
+    };
+    lecteur.readAsDataURL(fichier);
+  }
+
+  /** Pose la capture derrière l'aperçu. En PREMIER dans la surface : c'est
+   *  l'ordre du DOM qui décide de l'empilement, et l'aperçu — une iframe au
+   *  fond transparent — doit rester lisible par-dessus. */
+  function appliquerFond(image, opacite) {
+    if (!noeuds.cadre || !estImageRangeable(image)) return;
+    if (!noeuds.fond) {
+      noeuds.fond = document.createElement("img");
+      noeuds.fond.className = "ovl-fond";
+      noeuds.fond.alt = "";
+      noeuds.cadre.insertBefore(noeuds.fond, noeuds.cadre.firstChild);
+    }
+    noeuds.fond.src = image;
+    noeuds.fond.style.opacity = String(bornerOpaciteFond(opacite) / 100);
+    if (noeuds.fondOpacite) noeuds.fondOpacite.value = String(bornerOpaciteFond(opacite));
+    majControlesFond(true);
+  }
+
+  function retirerFondAffiche() {
+    if (noeuds.fond && noeuds.fond.parentNode) {
+      noeuds.fond.parentNode.removeChild(noeuds.fond);
+    }
+    noeuds.fond = null;
+    oublierFond();
+    majControlesFond(false);
+    notifier("Capture de fond retirée.");
+  }
+
+  function majControlesFond(present) {
+    [noeuds.fondOpacite, noeuds.fondRetirer, noeuds.fondLabel].forEach(function (n) {
+      if (n) n.style.display = present ? "" : "none";
+    });
+  }
+
   function barreApercu() {
     const barre = creer("div", "ovl-apercu-barre");
     noeuds.apercuEtat = creer("span", "ovl-apercu-etat", "Aperçu : en attente…");
@@ -4297,6 +4469,73 @@ window.OverlayAdmin = (function () {
     estomper.title = "Les rectangles de placement s'effacent pour laisser voir "
       + "l'aperçu. Celui qu'on règle, et celui qu'on survole, restent nets.";
     barre.appendChild(estomper);
+
+    // La capture de stream en fond : on place par rapport au décor réel — le
+    // cadre du chat, la zone de jeu — plutôt que dans le vide.
+    const fichierFond = document.createElement("input");
+    fichierFond.type = "file";
+    fichierFond.accept = "image/*";
+    fichierFond.style.display = "none";
+    fichierFond.addEventListener("change", function () {
+      const f = fichierFond.files && fichierFond.files[0];
+      // Vidé APRÈS : sans ça, redéposer la même capture n'émettrait pas de
+      // second `change` et le bouton semblerait mort.
+      if (f) {
+        preparerFond(f, function (url) {
+          const opacite = noeuds.fondOpacite
+            ? bornerOpaciteFond(noeuds.fondOpacite.value) : FOND_OPACITE_DEFAUT;
+          appliquerFond(url, opacite);
+          const range = rangerFond(url, opacite);
+          notifier(range
+            ? "Capture posée en fond — elle ne part pas à l'antenne."
+            : "Capture posée, mais le stockage du navigateur est plein : elle "
+              + "ne survivra pas au rechargement. Le brouillon, lui, est intact.",
+            range ? "success" : "error");
+        });
+      }
+      fichierFond.value = "";
+    });
+    barre.appendChild(fichierFond);
+
+    const boutonFond = creer("button", "btn btn-sm", "Fond…");
+    boutonFond.title = "Affiche une capture de ton stream derrière la surface, "
+      + "pour placer par rapport au décor réel. Reste dans CE navigateur : "
+      + "jamais en base, jamais à l'antenne.";
+    boutonFond.addEventListener("click", function () { fichierFond.click(); });
+    barre.appendChild(boutonFond);
+
+    noeuds.fondLabel = creer("label", "ovl-fond-reglage");
+    noeuds.fondLabel.appendChild(creer("span", null, "Fond"));
+    noeuds.fondOpacite = document.createElement("input");
+    noeuds.fondOpacite.type = "range";
+    noeuds.fondOpacite.min = String(FOND_OPACITE_MIN);
+    noeuds.fondOpacite.max = "100";
+    noeuds.fondOpacite.step = "5";
+    noeuds.fondOpacite.value = String(FOND_OPACITE_DEFAUT);
+    noeuds.fondOpacite.title = "Opacité de la capture. Trop nette, elle couvre "
+      + "les repères ; trop pâle, elle ne sert plus à rien.";
+    // `input` pour voir, `change` pour ranger : ranger à chaque pixel du
+    // curseur réécrirait deux cents kilo-octets par mouvement.
+    noeuds.fondOpacite.addEventListener("input", function () {
+      if (noeuds.fond) {
+        noeuds.fond.style.opacity =
+          String(bornerOpaciteFond(noeuds.fondOpacite.value) / 100);
+      }
+    });
+    noeuds.fondOpacite.addEventListener("change", function () {
+      if (noeuds.fond) {
+        rangerFond(noeuds.fond.src, noeuds.fondOpacite.value);
+      }
+    });
+    noeuds.fondLabel.appendChild(noeuds.fondOpacite);
+    barre.appendChild(noeuds.fondLabel);
+
+    noeuds.fondRetirer = creer("button", "btn btn-sm", "Retirer");
+    noeuds.fondRetirer.title = "Enlève la capture de fond.";
+    noeuds.fondRetirer.addEventListener("click", retirerFondAffiche);
+    barre.appendChild(noeuds.fondRetirer);
+    majControlesFond(false);
+
     return barre;
   }
 
@@ -4681,6 +4920,10 @@ window.OverlayAdmin = (function () {
       document.addEventListener("keydown", toucheGlobale);
       raccourcisPoses = true;
     }
+    // La capture de fond d'une visite précédente. Reposée ici et pas au premier
+    // rendu : elle ne dépend d'aucune scène, et la surface existe déjà.
+    const fondRange = lireFond();
+    if (fondRange) appliquerFond(fondRange.image, fondRange.opacite);
     // Posée tout de suite : la surface a déjà sa largeur, et attendre le
     // premier `load` de l'iframe l'afficherait une frame en taille réelle.
     ajusterApercu();
@@ -4768,6 +5011,13 @@ window.OverlayAdmin = (function () {
     rangerBrouillon: rangerBrouillon,
     lireBrouillon: lireBrouillon,
     oublierBrouillon: oublierBrouillon,
+    // La capture en fond : même raison, plus une garde à elle. C'est ce qui
+    // décide qu'une image de décor ne chasse pas un travail non publié du
+    // stockage, et que seule une image reconnue repart en `src`.
+    rangerFond: rangerFond,
+    lireFond: lireFond,
+    oublierFond: oublierFond,
+    bornerOpaciteFond: bornerOpaciteFond,
     // La géométrie du glisser, exposée pour être TESTÉE hors navigateur : ces
     // quatre fonctions sont pures, et ce sont elles qui décident si le point
     // saisi reste sous le pointeur.

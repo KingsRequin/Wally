@@ -3841,6 +3841,31 @@ body.is-mobile .mobile-back-btn {
 
    `touch-action: none` : sans lui, un glisser au doigt fait défiler la page au
    lieu de déplacer le repère, et le geste n'arrive jamais jusqu'ici. */
+/* La capture de stream en fond : le décor par rapport auquel on place. Sous
+   l'aperçu (première dans le DOM), et hors de portée du pointeur — le calque
+   est le seul à répondre aux clics.
+   `object-fit: fill` et non `cover` : les repères se placent en POURCENTAGES du
+   canvas. Étirée, une capture d'un autre format garde x % de l'image sur x % de
+   la scène ; rognée, elle décalerait tout ce sur quoi on s'aligne. */
+.ovl-fond {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+/* Le curseur d'opacité, à côté de son bouton. */
+.ovl-fond-reglage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+.ovl-fond-reglage input[type="range"] { width: 90px; accent-color: #06b6d4; }
+
 .ovl-calque { position: absolute; inset: 0; touch-action: none; }
 .ovl-calque:focus { outline: none; }
 /* Le liseré ne paraît qu'au clavier : au pointeur, le repère actif dit déjà ce
