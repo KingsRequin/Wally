@@ -92,8 +92,14 @@ async def test_persona_parity_in_voice_prompt():
 
 @pytest.mark.asyncio
 async def test_group_history_consigned_before_reply():
-    """La parole entendue est consignée dans le fil de groupe AVANT la réponse ;
-    la réponse de Wally n'est ajoutée qu'APRÈS speak()."""
+    """Le fil suit l'ORDRE de la conversation, pas celui du haut-parleur.
+
+    Ce test exigeait l'inverse — « la réponse de Wally n'est ajoutée qu'APRÈS
+    speak() » — et figeait donc le défaut : `speak()` dure toute la synthèse et
+    la lecture, et l'interlocuteur qui répond pendant ce temps (le cas NORMAL)
+    se rangeait AVANT la question qu'il répondait. Wally recevait un fil où sa
+    propre question tombe après la réponse, et ne pouvait plus relier les deux.
+    """
     bot = _bot()
     service = MagicMock()
     snap_at_speak: list = []
@@ -108,9 +114,12 @@ async def test_group_history_consigned_before_reply():
 
     await handle_transcript(bot, service, "42", "Alice (@alice)", "wally ?")
 
-    # Au moment de speak() : la parole de l'utilisateur est déjà dans le fil, mais pas la réponse.
-    assert snap_at_speak == [{"role": "user", "content": "Alice (@alice): wally ?"}]
-    # Après : user + assistant.
+    # Au moment de speak(), TOUT est déjà au fil dans l'ordre où ça s'est dit :
+    # c'est ce qui range correctement une réponse arrivée pendant la lecture.
+    assert snap_at_speak == [
+        {"role": "user", "content": "Alice (@alice): wally ?"},
+        {"role": "assistant", "content": "salut à tous"},
+    ]
     assert len(service.history) == 2
     assert service.history[-1] == {"role": "assistant", "content": "salut à tous"}
 

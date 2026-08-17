@@ -355,6 +355,24 @@ def _remember_line(service, *, role: str, speaker: str, text: str) -> None:
         logger.warning("VoiceTranscript: réplique non consignée: {e}", e=e)
 
 
+async def _consigner_reponse(service, text: str) -> None:
+    """Consigne la réplique de Wally AU FIL, puis la dit à voix haute.
+
+    Dans cet ordre, et c'est tout le correctif. La parole ENTENDUE est consignée
+    à l'instant où le STT la rend, tandis que la réplique ne l'était qu'après
+    `speak()` — donc après la synthèse Azure ET la lecture audio, plusieurs
+    secondes. Or répondre à Wally pendant qu'il parle est le cas NORMAL d'une
+    conversation : sa question s'insérait alors APRÈS la réponse qu'elle venait
+    de provoquer, et il ne pouvait plus relier les deux.
+
+    C'est le moment où la réplique est DÉCIDÉE qui la situe dans la
+    conversation, pas la fin de sa lecture. Une panne de TTS ne troue donc pas
+    le fil : il a bien dit ça, même si personne ne l'a entendu.
+    """
+    _remember_line(service, role="assistant", speaker=_SELF_LABEL, text=text)
+    await service.speak(text)
+
+
 def _voice_publish(bot, service, type_: str, persist: bool = True, **fields) -> None:
     """Publie un événement de debug vocal sur le feed (live SSE + historique). Jamais bloquant.
 
@@ -589,10 +607,12 @@ async def _respond_once_inner(
                        text=transcript, reason="réponse vide")
         return
 
-    await service.speak(text)
+    # Consignée AVANT d'être prononcée : `speak()` dure toute la lecture, et
+    # l'interlocuteur qui répond pendant ce temps passait devant la question
+    # qu'il était en train de répondre.
+    await _consigner_reponse(service, text)
     # Suivi/debug : la réponse de Wally + latence depuis la décision (gate + génération + TTS).
     _voice_publish(bot, service, "reply", speaker=wally_name, text=text, gen_ms=_gen_ms())
-    _remember_line(service, role="assistant", speaker=_SELF_LABEL, text=text)
 
     try:
         if getattr(bot, "cognitive_loop", None) is not None:
