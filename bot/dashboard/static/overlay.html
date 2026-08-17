@@ -558,6 +558,106 @@
       to   { transform: translateY(calc(100vh + 100%)) rotate(var(--arrivee, 0deg)); }
     }
 
+    /* ── Spam de popups « virus » ─────────────────────────────────────────
+       Variante de l'avalanche, à comparer avec elle. Rien ne tombe : les
+       fenêtres s'ouvrent de plus en plus vite et RESTENT, jusqu'à l'écran bleu.
+       Même parti pris que l'avalanche : `position: fixed` est INTERDIT ici —
+       `.widget` porte un `transform`, qui devient le bloc conteneur de tout
+       `fixed` descendant. La carte occupe donc le canvas par sa TAILLE. */
+    .virus-popup {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .virus-popup .vwin {
+      position: absolute;
+      background: #d4d0c8;                /* le gris des vieilles fenêtres */
+      border: 2px outset #f0f0f0;
+      box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.55);
+      font-family: "Tahoma", "Segoe UI", sans-serif;
+      /* Elles s'ouvrent d'un coup sec, comme un vrai popup : une entrée douce
+         ferait « animation », pas « intrusion ». */
+      animation: vwin-pop 120ms ease-out;
+    }
+    @keyframes vwin-pop {
+      from { transform: scale(0.86); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .virus-popup .vwin-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 3px 6px;
+      background: linear-gradient(180deg, #0a246a, #3a6ea5);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .virus-popup .vwin-title {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .virus-popup .vwin-btns { letter-spacing: 2px; flex: none; }
+    .virus-popup .vwin-body { padding: 12px; color: #000; font-size: 14px; }
+    .virus-popup .vwin-msg { display: flex; align-items: center; gap: 10px; }
+    .virus-popup .vwin-icon { font-size: 26px; flex: none; }
+    .virus-popup .vwin-text { line-height: 1.35; }
+    .virus-popup .vwin-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .virus-popup .vwin-btn {
+      min-width: 74px;
+      padding: 3px 10px;
+      text-align: center;
+      background: #d4d0c8;
+      border: 2px outset #f0f0f0;
+      font-size: 13px;
+    }
+    /* Fenêtre à meme : l'image EST le contenu, le cadre se fait oublier.
+       `max-height` n'est pas cosmétique : la hauteur d'un meme dépend de SON
+       ratio, que le placement ne connaît pas au moment de tirer la position.
+       Sans borne, un meme très haut sortait par le bas — mesuré, quatre
+       fenêtres sur soixante-six. Bornée, la fenêtre rétrécit au lieu de
+       déborder. */
+    .virus-popup .vwin-meme .vwin-body { padding: 4px; text-align: center; }
+    .virus-popup .vwin-meme img,
+    .virus-popup .vwin-meme video {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      max-height: 30vh;
+      width: auto;
+      height: auto;
+    }
+
+    /* L'écran bleu qui clôt le spectacle. Au-dessus de TOUTES les fenêtres —
+       leur `z-index` monte avec le rang, le sien est hors d'atteinte. */
+    .virus-popup .virus-bsod {
+      position: absolute;
+      inset: 0;
+      z-index: 999;
+      background: #0078d7;
+      color: #fff;
+      font-family: "Segoe UI", "Tahoma", sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 12vw;
+      gap: 18px;
+      animation: bsod-in 220ms ease-out;
+    }
+    @keyframes bsod-in { from { opacity: 0; } to { opacity: 1; } }
+    .virus-popup .bsod-face { font-size: 96px; line-height: 1; }
+    .virus-popup .bsod-text { font-size: 34px; line-height: 1.3; max-width: 70%; }
+    .virus-popup .bsod-sub { font-size: 22px; opacity: 0.9; }
+
     /* L'avatar plonge légèrement en cédant la place, et remonte au retour. */
     /* `animation: none` d'abord : une animation en cours l'emporte sur une
        transition, l'avatar serait resté figé au lieu de céder la place. */
@@ -1578,6 +1678,7 @@
     <div data-element="versus"></div>
     <div data-element="wave"></div>
     <div data-element="meme_storm"></div>
+    <div data-element="virus_popup"></div>
     <div data-element="raid"></div>
     <div data-element="quote"></div>
     <div data-element="prediction"></div>
@@ -1628,6 +1729,7 @@
   <script src="/static/overlay_layout.js"></script>
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay_avalanche.js"></script>
+  <script src="/static/overlay_virus.js"></script>
   <script src="/static/overlay.js"></script>
 </body>
 </html>

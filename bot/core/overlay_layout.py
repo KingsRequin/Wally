@@ -154,6 +154,9 @@ ELEMENTS: dict[str, dict] = {
     # exception à sa propre grammaire ne se règle plus), mais son défaut est
     # celui qui couvre l'écran pile.
     "meme_storm": _el(0.0, 0.0, "top-left"),
+    # Même raison que l'avalanche : sa carte couvre le canvas entier, elle part
+    # donc du coin, où il n'y a rien à rattraper.
+    "virus_popup": _el(0.0, 0.0, "top-left"),
     "versus":     _el(50.0, 50.0, "center"),
     "poll":       _el(50.0, 50.0, "center"),
     "hangman":    _el(50.0, 50.0, "center"),
@@ -246,7 +249,7 @@ GROUPE_NOM_DEFAUT = "Groupe sans nom"
 _ORDRE_DEFAUT = [
     "bubble", "avatar", "image", "meme",
     "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
-    "meme_storm",
+    "meme_storm", "virus_popup",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
     "rps",

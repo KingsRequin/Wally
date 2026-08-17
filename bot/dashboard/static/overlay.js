@@ -952,6 +952,38 @@
       return box;
     },
 
+    // Spam de popups « virus » — variante de l'avalanche, montée pour être
+    // comparée à elle. Ici rien ne tombe : les fenêtres s'ouvrent de plus en
+    // plus vite et RESTENT, jusqu'à l'écran bleu qui recouvre tout.
+    //
+    // Elles ne sont donc jamais retirées une à une : c'est le retrait de la
+    // carte qui nettoie, en un seul geste. Le plafond (`WallyVirus.PLAFOND`)
+    // est ce qui protège la machine qui encode le live.
+    virus_popup(p) {
+      const box = el("div", "virus-popup");
+      const duree = Math.max(3, Math.min(120, Number(p.seconds) || 23));
+      const medias = (window.WallyRotationMedias || []).slice();
+      const plan = window.WallyVirus.fenetres(window.WallyVirus.rythme(duree), medias);
+      const timers = [];
+      plan.forEach((f, i) => {
+        timers.push(setTimeout(() => {
+          if (!box.isConnected) return;
+          box.appendChild(fenetreVirus(f, i));
+        }, f.t));
+      });
+      // L'écran bleu arrive à la fin du spam, pas à la fin de la carte : elle
+      // reste ensuite le temps qu'on le lise.
+      timers.push(setTimeout(() => {
+        if (!box.isConnected) return;
+        box.appendChild(ecranBleu());
+      }, duree * 1000));
+      // `disposeWidget` ne vide que `data-interval` : sans ce ménage, les
+      // rendez-vous en attente continueraient d'ouvrir des fenêtres dans un
+      // nœud détaché après le départ de la carte.
+      box.dataset.timeouts = timers.join(",");
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");
@@ -978,6 +1010,88 @@
     const n = el("div", className);
     n.textContent = label;
     return n;
+  }
+
+  /* Une fenêtre du spam « virus » : barre de titre, corps, boutons.
+   *
+   * Le texte passe par `textContent` et jamais par `innerHTML` : les titres de
+   * fenêtre à meme portent des NOMS DE FICHIERS venus du dossier de la
+   * communauté, donc du texte qu'on ne contrôle pas.
+   */
+  function fenetreVirus(f, rang) {
+    const win = el("div", "vwin" + (f.genre === "meme" ? " vwin-meme" : ""));
+    const barre = el("div", "vwin-bar");
+    const titre = el("span", "vwin-title");
+    titre.textContent = f.titre || "";
+    const boutons = el("span", "vwin-btns");
+    boutons.textContent = "_ □ ✕";
+    barre.append(titre, boutons);
+    const corps = el("div", "vwin-body");
+    if (f.genre === "meme") {
+      const src = "/api/public/meme/" + encodeURIComponent(f.media.nom);
+      if (f.media.genre === "video") {
+        const v = document.createElement("video");
+        v.src = src; v.muted = true; v.autoplay = true; v.loop = true;
+        v.playsInline = true;
+        corps.appendChild(v);
+      } else {
+        const i = document.createElement("img");
+        i.src = src; i.alt = "";
+        corps.appendChild(i);
+      }
+    } else {
+      const ligne = el("div", "vwin-msg");
+      const icone = el("span", "vwin-icon");
+      icone.textContent = "⛔";
+      const texte = el("span", "vwin-text");
+      texte.textContent = f.message || "";
+      ligne.append(icone, texte);
+      const pied = el("div", "vwin-actions");
+      ["OK", "Annuler"].forEach((mot) => {
+        const b = el("span", "vwin-btn");
+        b.textContent = mot;
+        pied.appendChild(b);
+      });
+      corps.append(ligne, pied);
+    }
+    win.append(barre, corps);
+    // Taille tirée ici, position ensuite : `place()` a besoin de la taille pour
+    // garder la fenêtre ENTIÈREMENT dans le cadre.
+    //
+    // La hauteur retenue est celle du PIRE cas, pas une estimation : celle d'un
+    // meme dépend de son ratio, inconnu tant que l'image n'est pas chargée, et
+    // celle d'une alerte de la longueur de son texte. On place donc sur la
+    // borne haute (le `max-height` du CSS pour l'image, deux lignes pour le
+    // texte) — sous-estimer faisait sortir quatre fenêtres sur soixante-six.
+    const cadreH = window.innerHeight || 1080;
+    const largeur = (f.genre === "meme" ? 220 : 300) + Math.floor(Math.random() * 160);
+    const hauteur = f.genre === "meme"
+      ? Math.min(largeur, cadreH * 0.30) + 46   // image bornée + barre + marges
+      : 210;                                    // titre + deux lignes + boutons
+    win.style.width = largeur + "px";
+    const p = window.WallyVirus.place(largeur, hauteur,
+                                      window.innerWidth || 1920,
+                                      window.innerHeight || 1080);
+    win.style.left = p.x + "px";
+    win.style.top = p.y + "px";
+    // Chaque nouvelle passe DEVANT les précédentes : c'est l'empilement qui
+    // raconte la submersion.
+    win.style.zIndex = String(10 + rang);
+    return win;
+  }
+
+  /* L'écran bleu final. Il recouvre tout : c'est lui qui clôt le spectacle,
+   * et il doit rester lisible quelques secondes avant le retrait de la carte. */
+  function ecranBleu() {
+    const bsod = el("div", "virus-bsod");
+    const smiley = el("div", "bsod-face");
+    smiley.textContent = ":(";
+    const texte = el("div", "bsod-text");
+    texte.textContent = "Ton PC a rencontré un problème et doit redémarrer.";
+    const sous = el("div", "bsod-sub");
+    sous.textContent = "Nous redémarrons pour toi. 0 % terminé";
+    bsod.append(smiley, texte, sous);
+    return bsod;
   }
 
   function updatePoll(box, p) {
@@ -1103,6 +1217,14 @@
     if (!box) return;
     box.querySelectorAll("[data-interval]").forEach((n) => {
       clearInterval(Number(n.dataset.interval));
+    });
+    // Les rendez-vous en attente, eux, ne sont pas des intervalles : le spam de
+    // popups en pose un par fenêtre à venir. Sans ce ménage, ils continueraient
+    // d'ouvrir des fenêtres dans un nœud détaché après le départ de la carte.
+    box.querySelectorAll("[data-timeouts]").forEach((n) => {
+      String(n.dataset.timeouts).split(",").forEach((id) => {
+        if (id) clearTimeout(Number(id));
+      });
     });
     // Uniquement SA roue : une carte sortante ne doit pas emporter celle que la
     // suivante vient de monter pendant le recouvrement.

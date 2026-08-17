@@ -203,6 +203,13 @@ LIBELLES: dict[str, dict[str, str]] = {
                        "l'écran pendant une demi-minute, achetée aux points "
                        "de chaîne. Elle prend l'écran seule.",
     },
+    "virus_popup": {
+        "nom": "Spam de popups virus",
+        "description": "De fausses fenêtres système et des memes en pièce "
+                       "jointe s'ouvrent de plus en plus vite et s'empilent "
+                       "jusqu'à saturer l'écran, puis un écran bleu nettoie "
+                       "tout. Variante de l'avalanche — il prend l'écran seul.",
+    },
     "wave": {
         "nom": "Vague d'emotes",
         "description": "L'emote affichée en grand quand au moins quatre "

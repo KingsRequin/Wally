@@ -2540,6 +2540,33 @@ class OverlayNarrator:
         logger.info("Overlay : avalanche de memes ({d} s)", d=duree)
         return True
 
+    # Le spam de popups « virus » — variante de l'avalanche, montée pour que
+    # l'owner tranche entre les deux en les voyant tourner. Durée fixe et non
+    # dérivée du dossier : ici les fausses alertes portent le spectacle, les
+    # memes ne font que l'habiller.
+    VIRUS_S = 23
+    # L'écran bleu final, qui recouvre tout avant le retrait de la carte.
+    VIRUS_BSOD_S = 2
+
+    def show_virus_popups(self, seconds: int | None = None) -> bool:
+        """Fait spammer l'écran de fausses fenêtres système. Vrai si c'est parti.
+
+        Elles s'ouvrent de plus en plus vite et s'empilent sans disparaître,
+        puis un écran bleu recouvre tout et nettoie.
+
+        Un seul refus : l'écran éteint. Un dossier de memes vide n'en est PAS un
+        — contrairement à l'avalanche, les alertes se suffisent, et refuser
+        priverait d'un effet qui marche.
+        """
+        if not self._live():
+            return False
+        duree = int(seconds) if seconds else self.VIRUS_S
+        self._last_event_at = time.monotonic()
+        self._feed.widget("virus_popup", seconds=duree,
+                          duration=duree + self.VIRUS_BSOD_S + 1)
+        logger.info("Overlay : spam de popups virus ({d} s)", d=duree)
+        return True
+
     def show_counter(self, text: str) -> bool:
         """Montre un compteur qui vient de monter, si le budget le permet.
 

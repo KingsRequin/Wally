@@ -44,6 +44,7 @@ _OVERLAY_FILES = (
     "overlay_layout.js",
     "overlay_apex.js",
     "overlay_avalanche.js",
+    "overlay_virus.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
     # et non script : la page en charge une depuis que ces deux zones y ont été
@@ -432,6 +433,9 @@ _ECHANTILLONS: dict[str, dict] = {
     # le bas : on ne voyait que des memes qui s'évaporent en plein vol.
     # Douze : sept secondes de lâchers, la dernière chute finit à douze.
     "meme_storm": {"seconds": 12},
+    # Le spam monte en régime : trop court, on ne voit ni l'accélération ni
+    # l'écran bleu, c'est-à-dire ni l'un ni l'autre des deux effets à juger.
+    "virus_popup": {"seconds": 14},
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},

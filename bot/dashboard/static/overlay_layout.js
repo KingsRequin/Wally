@@ -51,7 +51,7 @@ window.WallyLayout = (function () {
     "avatar", "bubble", "rotator", "image",
     "bingo", "stats", "talkers",
     "meme", "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
-    "meme_storm",
+    "meme_storm", "virus_popup",
     "versus", "poll", "hangman", "pinned", "counter",
     "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
     "apex_rank", "apex_progress", "apex_status", "apex_stats",
@@ -116,6 +116,7 @@ window.WallyLayout = (function () {
     // L'avalanche couvre le canvas entier : sa boîte n'est pas une supposition,
     // c'est sa définition.
     meme_storm: [1920, 1080],
+    virus_popup: [1920, 1080],
     // Les panneaux Apex tombaient sur le défaut (400 × 260) faute d'entrée :
     // ils annonçaient donc une boîte une fois et demie trop large.
     apex_rank: [260, 133], apex_status: [260, 129], apex_stats: [260, 106],
