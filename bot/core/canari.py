@@ -18,7 +18,9 @@ bruyamment, c'est tout — c'est précisément ce qui manquait.
 """
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from pathlib import Path
 
 import aiosqlite
@@ -173,6 +175,7 @@ async def verifier_invariants(
         racine = Path(__file__).resolve().parents[2]
     chemin: str = db_path or os.getenv("DB_PATH") or "data/wally.db"
 
+    depart = time.monotonic()
     alertes: list[str] = []
     alertes += _verifier_prompts(racine)
     alertes += _verifier_identite(config)
@@ -180,15 +183,44 @@ async def verifier_invariants(
     if Path(chemin).exists():
         alertes += await _verifier_index(chemin)
         alertes += await _verifier_formats_de_date(chemin)
+    # La durée est journalisée parce qu'elle a menti : mesurée à 0,4 s sur
+    # l'hôte, la passe tenait 9 à 14 s dans le conteneur, de façon
+    # intermittente — sans qu'aucune ligne ne le dise. Un canari qui ne se
+    # chronomètre pas est exactement le genre de silence qu'il combat.
+    duree = time.monotonic() - depart
 
     if alertes:
         logger.warning(
-            "🐤 Canari : {n} invariant(s) rompu(s) au démarrage — "
+            "🐤 Canari ({d:.1f} s) : {n} invariant(s) rompu(s) au démarrage — "
             "le bot tourne, mais quelque chose ne fonctionnera pas comme prévu :",
-            n=len(alertes),
+            n=len(alertes), d=duree,
         )
         for a in alertes:
             logger.warning("🐤   · {a}", a=a)
     else:
-        logger.info("🐤 Canari : tous les invariants de démarrage sont tenus")
+        logger.info("🐤 Canari ({d:.1f} s) : tous les invariants de démarrage "
+                    "sont tenus", d=duree)
     return alertes
+
+
+def lancer_canari(config, db_path: str | None = None) -> asyncio.Task:
+    """Passe les invariants en revue SANS retenir le démarrage.
+
+    Le module dit de lui-même « on ne bloque JAMAIS le démarrage » : c'était
+    vrai pour les exceptions, faux pour le temps. `await`é en plein chemin de
+    boot, il a tenu la production 9 à 14 secondes de plus à chaque rebuild — et
+    le port HTTP n'ouvre qu'ensuite, donc le site rendait une page d'erreur
+    pendant tout ce temps. Rien ici n'est un préalable : le canari ne CORRIGE
+    rien, il journalise. Il a donc sa place à côté du démarrage, pas dedans.
+
+    L'exception est rattrapée ICI et pas laissée à la tâche : une exception non
+    rattrapée dans une tâche asyncio ne remonte qu'au ramasse-miettes, plus
+    tard, sous une forme que personne ne relie au canari.
+    """
+    async def _passer() -> None:
+        try:
+            await verifier_invariants(config, db_path)
+        except Exception as exc:  # noqa: BLE001 — un canari ne fait jamais échouer le boot
+            logger.warning("🐤 Canari de démarrage indisponible : {e}", e=exc)
+
+    return asyncio.create_task(_passer(), name="canari-demarrage")

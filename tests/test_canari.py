@@ -186,9 +186,76 @@ def test_le_rattrapage_liste_toujours_la_video_muette(tmp_path):
 
 
 def test_le_canari_est_bien_branche_au_demarrage():
+    """Branché — et LANCÉ, pas attendu.
+
+    Ce test recopiait l'appel exact (`verifier_invariants(config, _db_path)`),
+    ce qui figeait la forme BLOQUANTE : le jour où l'on a mesuré que cet `await`
+    retenait la production quatorze secondes, le test défendait le défaut. Il
+    porte maintenant sur la propriété — le boot le lance et ne l'attend pas —,
+    la seule chose qui compte ici.
+    """
     import inspect
 
     from bot import bootstrap
 
     src = inspect.getsource(bootstrap.build_core_services)
-    assert "verifier_invariants(config, _db_path)" in src
+    assert "lancer_canari(config, _db_path)" in src, "le canari n'est plus branché"
+    assert "await verifier_invariants" not in src, (
+        "le canari est de nouveau attendu : il retiendrait l'ouverture du port")
+
+
+# ── Le canari ne retient pas le démarrage ───────────────────────────────────
+#
+# Mesuré en production le 2026-08-17 : entre « ReactionTracker initialized » et
+# la ligne du canari, le boot restait bloqué 9 à 14 secondes — de façon
+# intermittente (0 s sur deux boots, 14 s sur trois autres). Or le port 8080
+# n'ouvre qu'APRÈS, si bien que le site répondait une page d'erreur pendant tout
+# ce temps à chaque rebuild.
+#
+# Le module dit pourtant de lui-même, en toutes lettres : « on ne bloque JAMAIS
+# le démarrage ». C'était vrai pour les exceptions, faux pour le temps.
+
+@pytest.mark.asyncio
+async def test_le_canari_ne_retarde_pas_le_demarrage(monkeypatch, tmp_path):
+    """Un canari LENT ne doit pas retenir le boot d'une seule seconde.
+
+    C'est la propriété qui manquait : `test_le_canari_ne_bloque_jamais_le_demarrage`
+    ne vérifie que l'absence d'exception, et un `await` de quatorze secondes ne
+    lève rien du tout.
+    """
+    import asyncio
+
+    from bot.core import canari as mod
+
+    async def _interminable(*args, **kwargs):
+        await asyncio.sleep(30)
+        return []
+
+    monkeypatch.setattr(mod, "verifier_invariants", _interminable)
+
+    boucle = asyncio.get_running_loop()
+    depart = boucle.time()
+    tache = mod.lancer_canari(_config(), str(tmp_path / "sans_importance.db"))
+    ecoule = boucle.time() - depart
+
+    assert ecoule < 0.5, f"le démarrage a attendu {ecoule:.1f} s"
+    assert not tache.done()               # il tourne bien, en arrière-plan
+    tache.cancel()
+
+
+@pytest.mark.asyncio
+async def test_un_canari_qui_explose_ne_remonte_pas_dans_le_boot(monkeypatch, tmp_path):
+    """Lancé en tâche de fond, il ne doit pas non plus mourir en silence : une
+    exception non rattrapée dans une tâche asyncio ne se voit qu'au garbage
+    collector, des minutes plus tard, sous une forme illisible."""
+    import asyncio
+
+    from bot.core import canari as mod
+
+    async def _explose(*args, **kwargs):
+        raise RuntimeError("disque en carton")
+
+    monkeypatch.setattr(mod, "verifier_invariants", _explose)
+    tache = mod.lancer_canari(_config(), str(tmp_path / "sans_importance.db"))
+    await tache                            # ne relève pas : c'est le contrat
+    assert tache.done() and tache.exception() is None

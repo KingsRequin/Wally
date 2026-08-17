@@ -241,11 +241,14 @@ async def build_core_services(config: "Config", db: "Database") -> CoreServices:
     # un bot qui tourne avec un index manquant vaut mieux qu'un bot qui refuse
     # de démarrer. C'est le LOG qui compte : c'est lui qui manquait à chaque
     # fois pendant les audits.
-    from bot.core.canari import verifier_invariants
-    try:
-        await verifier_invariants(config, _db_path)
-    except Exception as exc:  # noqa: BLE001 — un canari ne fait jamais échouer le boot
-        logger.warning("Canari de démarrage indisponible : {e}", e=exc)
+    #
+    # LANCÉ, pas attendu. `await`é ici, il retenait le boot 9 à 14 secondes de
+    # façon intermittente (mesuré en prod le 2026-08-17) — et le port HTTP
+    # n'ouvre qu'une fois tout ce bloc terminé, donc le site rendait une page
+    # d'erreur pendant tout ce temps à chaque rebuild. Rien de ce qu'il regarde
+    # n'est un préalable : il journalise, il ne corrige pas.
+    from bot.core.canari import lancer_canari
+    lancer_canari(config, _db_path)
 
     return CoreServices(
         config=config,
