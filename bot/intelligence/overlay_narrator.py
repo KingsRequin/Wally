@@ -2578,6 +2578,28 @@ class OverlayNarrator:
         logger.info("Overlay : morceau affiché — {a} — {t}", a=artiste, t=titre)
         return True
 
+    def show_apex_kills(self, *, partie, total: int, parties: int) -> bool:
+        """Le bilan d'une partie : ses kills, et le cumul du live. Vrai si parti.
+
+        Refusé quand `partie` vaut `None` — une partie illisible (trackers
+        dépinglés, Mixtape) ne donne pas « 0 kill » à l'écran, elle ne donne
+        rien. Un zéro inventé est un mensonge, pas une valeur par défaut ; c'est
+        la leçon du 2026-08-13, où 39 kills sont devenus 0 en direct.
+
+        Un vrai zéro, lui, s'affiche : mourir sans tuer est une partie mesurée,
+        et c'est même ce que le chat commentera le plus.
+        """
+        if not isinstance(partie, int) or isinstance(partie, bool) or partie < 0:
+            return False
+        if not self._live():
+            return False
+        self._last_event_at = time.monotonic()
+        self._feed.widget("apex_kills", kills=int(partie), total=max(0, int(total)),
+                          games=max(0, int(parties)))
+        logger.info("Overlay : bilan de partie — {k} kill(s), {t} sur le live",
+                    k=partie, t=total)
+        return True
+
     def show_counter(self, text: str) -> bool:
         """Montre un compteur qui vient de monter, si le budget le permet.
 

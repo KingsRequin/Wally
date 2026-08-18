@@ -51,7 +51,7 @@ window.WallyLayout = (function () {
     "avatar", "bubble", "rotator", "image",
     "bingo", "stats", "talkers",
     "meme", "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
-    "virus_popup", "music_now",
+    "virus_popup", "music_now", "apex_kills",
     "versus", "poll", "hangman", "pinned", "counter",
     "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
     "apex_rank", "apex_progress", "apex_status", "apex_stats",
@@ -117,6 +117,8 @@ window.WallyLayout = (function () {
     // (« Numb » / « Linkin Park »), pas écrite au jugé : c'est la discipline du
     // dépôt, et mon estimation était deux fois et demie trop large.
     music_now: [125, 60],
+    // Mesurée au banc avec l'échantillon du ▶, pas estimée.
+    apex_kills: [198, 62],
     // Le spam couvre le canvas entier : sa boîte n'est pas une supposition,
     // c'est sa définition.
     virus_popup: [1920, 1080],

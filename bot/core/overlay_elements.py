@@ -133,6 +133,13 @@ LIBELLES: dict[str, dict[str, str]] = {
                        "au hasard ou sur un thème demandé, que Wally peut "
                        "commenter.",
     },
+    "apex_kills": {
+        "nom": "Kills de la partie",
+        "description": "Le bilan affiché à la fin de chaque partie d'Apex : "
+                       "les kills de la game qui vient de se terminer, et le "
+                       "cumul depuis le début du live. Une partie dont les "
+                       "compteurs sont illisibles n'affiche rien.",
+    },
     "music_now": {
         "nom": "Musique en cours",
         "description": "Le morceau qu'écoute le streamer, affiché quand "

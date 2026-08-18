@@ -140,6 +140,9 @@ ELEMENTS: dict[str, dict] = {
     # Une étiquette de titre n'est pas un spectacle : elle s'installe en bas à
     # gauche et laisse Wally à l'écran.
     "music_now": _el(3.0, 92.0, "bottom-left", 0.9, solo=False),
+    # Un bilan chiffré s'installe le temps qu'on le lise, pendant que la partie
+    # suivante commence : il ne chasse personne.
+    "apex_kills": _el(97.0, 18.0, "top-right", 0.9, solo=False),
     # Ceux qui passent
     "meme":       _el(50.0, 50.0, "center"),
     "clip":       _el(50.0, 50.0, "center"),
@@ -248,7 +251,7 @@ GROUPE_NOM_DEFAUT = "Groupe sans nom"
 _ORDRE_DEFAUT = [
     "bubble", "avatar", "image", "meme",
     "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
-    "virus_popup", "music_now",
+    "virus_popup", "music_now", "apex_kills",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
     "rps",

@@ -100,6 +100,20 @@ async def _run_discord(
 _AU_DEMARRAGE: dict = {}
 
 
+def _afficher_bilan_partie(discord_bot, bilan: dict) -> None:
+    """Pousse le bilan d'une partie Apex sur l'overlay, si un écran écoute.
+
+    Silencieux quand le narrateur n'est pas là (Discord pas encore connecté) :
+    une partie non affichée n'est pas une panne, et lever ici casserait la sonde.
+    """
+    narrateur = getattr(discord_bot, "overlay_narrator", None)
+    if narrateur is None:
+        return
+    narrateur.show_apex_kills(partie=bilan.get("partie"),
+                              total=bilan.get("total") or 0,
+                              parties=bilan.get("parties") or 0)
+
+
 async def main() -> None:
     setup_logging()
     logger.info("Wally starting...")
@@ -595,6 +609,10 @@ async def main() -> None:
                 live_id=lambda: str(twitch_bot._stream_info.get("started_at") or ""),
                 db=db,
                 history=apex_history,
+                # Le bilan de fin de partie part TOUT SEUL à l'écran (choix de
+                # l'owner). Le narrateur est résolu au moment de l'appel : il
+                # naît dans le setup_hook de Discord, donc APRÈS ce watcher.
+                on_partie=lambda bilan: _afficher_bilan_partie(discord_bot, bilan),
             )
             apex_watcher.activate()
             _apex_task = asyncio.create_task(apex_watcher.run())

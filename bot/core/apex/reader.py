@@ -75,6 +75,11 @@ class PlayerProfile:
     # Les mêmes notions, mais par légende — `{"Fuse": {"kills": ...}}`. Une
     # légende sans tracker épinglé est absente, jamais à zéro.
     legend_stats: dict[str, dict[str, StatValue]] = field(default_factory=dict)
+    # Les compteurs de kills BRUTS, tels que `read_kill_trackers` les rend.
+    # Portés ici parce que `stats` ne convient PAS pour mesurer une partie :
+    # il retient le premier alias connu, qui peut être un tracker dépinglé —
+    # donc figé — et le compteur resterait immobile quoi qu'il arrive en jeu.
+    kill_trackers: dict[str, int] = field(default_factory=dict)
 
 
 def _num(value: Any) -> float | None:
@@ -309,6 +314,7 @@ def read_profile(payload: Any) -> PlayerProfile | None:
         skin=_read_skin(payload),
         stats=_read_stats(payload),
         legend_stats=_read_legend_stats(payload),
+        kill_trackers=read_kill_trackers(payload),
     )
 
 

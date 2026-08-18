@@ -18,6 +18,7 @@ from collections.abc import Callable
 
 from loguru import logger
 
+from bot.core.apex.kills_live import KillsDuLive
 from bot.core.apex.reader import PlayerProfile
 
 # Le point de départ du live, rangé en base : un rebuild d'image en pleine
@@ -61,10 +62,17 @@ class ApexWatcher:
         live_id: Callable[[], str] | None = None,
         history=None,
         idle_interval_s: float = POLL_INTERVAL_IDLE_S,
+        on_partie: Callable[[dict], None] | None = None,
     ) -> None:
         self._service = service
         self._account = account
         self._is_live = is_live
+        # Appelé à la fin de chaque partie, avec son bilan. Un rappel plutôt
+        # qu'une référence au narrateur : le watcher naît AVANT lui, et
+        # l'affichage n'a pas à faire partie de ce que sonde ce module.
+        self._on_partie = on_partie
+        self._kills: KillsDuLive | None = None
+        self._kills_live_id = ""
         # Historique des totaux (`ApexHistory`), alimenté à CHAQUE passage —
         # y compris hors live : « ce mois-ci » compterait faux si les parties
         # jouées sans streamer manquaient à l'appel.
@@ -86,6 +94,17 @@ class ApexWatcher:
         self._profile: PlayerProfile | None = None
         self._baseline: dict[str, int] = {}
         self._baseline_loaded = False
+
+    def _suivi_kills(self) -> KillsDuLive:
+        """Le suivi partie par partie, créé à la demande.
+
+        Rangé ici parce que c'est le watcher qui voit les transitions
+        `in_game` — personne d'autre ne sonde le profil à la cadence du live.
+        """
+        if getattr(self, "_kills", None) is None:
+            self._kills = KillsDuLive()
+            self._kills_live_id = ""
+        return self._kills
 
     def activate(self) -> None:
         """S'enregistre comme source globale, lisible par `prompts.py`."""
@@ -132,6 +151,24 @@ class ApexWatcher:
             return
 
         self._profile = profile
+
+        # Les kills partie par partie. Le live courant sert de remise à zéro :
+        # le cumul d'un soir ne doit pas traîner jusqu'au lendemain, ni un
+        # redémarrage recoller deux sessions.
+        suivi = self._suivi_kills()
+        live_courant = self._live_courant()
+        premier = getattr(self, "_kills_live_id", "") != live_courant
+        if premier:
+            suivi.nouveau_live()
+            self._kills_live_id = live_courant
+        bilan = suivi.relever(in_game=profile.in_game,
+                              trackers=profile.kill_trackers, premier=premier)
+        if bilan is not None and self._on_partie is not None:
+            try:
+                self._on_partie(bilan)
+            except Exception as exc:  # noqa: BLE001 — l'affichage ne casse pas la sonde
+                logger.warning("Apex watcher: bilan de partie non annoncé: {e}", e=exc)
+
         if not self._baseline and not self._baseline_loaded:
             # Un live peut avoir commencé avant ce process : on reprend le point
             # de départ rangé en base plutôt que d'en inventer un nouveau.

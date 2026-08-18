@@ -517,6 +517,27 @@
        transformé devient le bloc conteneur de tout `fixed` descendant. Le
        `fixed` n'aurait donc pas visé la source OBS mais la carte elle-même.
        Un test du dépôt l'interdit, et il m'a arrêté ici même. */
+    /* Bilan de fin de partie Apex. Le chiffre porte l'information : il est gros,
+       le reste est du contexte. */
+    .apex-kills {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      color: #e6edf3;
+    }
+    .apex-kills .ak-chiffre {
+      font-size: 40px; font-weight: 800; line-height: 1;
+      color: #06b6d4; font-variant-numeric: tabular-nums;
+    }
+    .apex-kills .ak-quoi { font-size: 15px; font-weight: 600; }
+    .apex-kills .ak-cumul { font-size: 12px; opacity: .6; margin-top: 3px; }
+
     /* Musique en cours — une étiquette, pas un spectacle : elle s'installe et
        laisse la scène aux autres. */
     .music-now {
@@ -1698,6 +1719,7 @@
     <div data-element="wave"></div>
     <div data-element="virus_popup"></div>
     <div data-element="music_now"></div>
+    <div data-element="apex_kills"></div>
     <div data-element="raid"></div>
     <div data-element="quote"></div>
     <div data-element="prediction"></div>

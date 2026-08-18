@@ -429,6 +429,7 @@ _ECHANTILLONS: dict[str, dict] = {
     # `virus_popup` n'a PAS d'échantillon de durée : elle est posée plus bas à
     # partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un vrai achat. Une
     # constante d'essai en montrait la moitié.
+    "apex_kills": {"kills": 4, "total": 27, "games": 6},
     "music_now": {"title": "Numb", "artist": "Linkin Park", "playing": True},
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],

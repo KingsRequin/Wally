@@ -920,6 +920,26 @@
       return box;
     },
 
+    // Bilan de fin de partie Apex : les kills de la game, et le cumul du live.
+    // Il COHABITE — il s'installe le temps qu'on le lise pendant que la partie
+    // suivante commence.
+    apex_kills(p) {
+      const box = el("div", "apex-kills");
+      const chiffre = el("div", "ak-chiffre");
+      chiffre.textContent = String(Number(p.kills) || 0);
+      const droite = el("div", "ak-droite");
+      const quoi = el("div", "ak-quoi");
+      // Le pluriel se lit de loin : « 1 kill » et « 1 kills » n'ont pas le même
+      // niveau de soin apparent, et c'est vu par tout le chat.
+      quoi.textContent = (Number(p.kills) === 1 ? "kill" : "kills") + " cette game";
+      const cumul = el("div", "ak-cumul");
+      const parties = Number(p.games) || 0;
+      cumul.textContent = `${Number(p.total) || 0} sur le live · ${parties} partie${parties > 1 ? "s" : ""}`;
+      droite.append(quoi, cumul);
+      box.append(chiffre, droite);
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");
