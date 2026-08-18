@@ -40,6 +40,12 @@ _TWITCH_SEULEMENT: dict[str, str] = {
     # modérateur du message Twitch. Un salon Discord n'en porte pas : offrir
     # l'outil là-bas ne donnerait qu'un refus systématique.
     "duel_apex": "l'autorisation vient du badge de modérateur Twitch",
+    # Un pari engage les POINTS DE CHAÎNE des viewers Twitch, et son
+    # autorisation se lit sur le badge du message. Contrairement à la musique,
+    # dont la moitié « dire ce qui passe » a du sens partout, ouvrir un pari
+    # n'a aucune part lisible depuis Discord : l'offrir là-bas ne rendrait
+    # qu'un refus systématique.
+    "open_prediction": "engage les points de chaîne, autorisation par badge Twitch",
     # Faire parler Wally à voix haute pendant un live est un pouvoir de
     # modérateur, et l'autorisation se lit sur le badge du message Twitch. Un
     # salon Discord n'en porte pas : l'offrir là-bas ne rendrait qu'un refus

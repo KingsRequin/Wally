@@ -114,6 +114,21 @@ def _afficher_bilan_partie(discord_bot, bilan: dict) -> None:
                               parties=bilan.get("parties") or 0)
 
 
+def _solder_pari_sur_partie(twitch_bot, bilan: dict) -> None:
+    """Résout le pari en cours avec le bilan de la partie (§13).
+
+    Lancé en tâche de fond : la sonde Apex est synchrone à cet endroit, et
+    l'attendre retarderait le relevé suivant. Une prédiction sans pari ouvert ne
+    fait rien du tout.
+    """
+    suivi = getattr(twitch_bot, "prediction_kills", None)
+    if suivi is None or suivi.en_cours is None:
+        return
+    tache = asyncio.create_task(suivi.sur_bilan(twitch_bot, bilan))
+    _stream_voice_tasks.add(tache)
+    tache.add_done_callback(_stream_voice_tasks.discard)
+
+
 async def main() -> None:
     setup_logging()
     logger.info("Wally starting...")
@@ -612,7 +627,11 @@ async def main() -> None:
                 # Le bilan de fin de partie part TOUT SEUL à l'écran (choix de
                 # l'owner). Le narrateur est résolu au moment de l'appel : il
                 # naît dans le setup_hook de Discord, donc APRÈS ce watcher.
-                on_partie=lambda bilan: _afficher_bilan_partie(discord_bot, bilan),
+                on_partie=lambda bilan: (
+                    _afficher_bilan_partie(discord_bot, bilan),
+                    # Le même bilan solde le pari en cours, s'il y en a un.
+                    _solder_pari_sur_partie(twitch_bot, bilan),
+                ),
             )
             apex_watcher.activate()
             _apex_task = asyncio.create_task(apex_watcher.run())

@@ -24,7 +24,12 @@ _BOT_SCOPES        = ("user:read:chat user:write:chat user:bot moderator:read:fo
 # Vérifié le 2026-08-13 via /oauth2/validate : le token en service ne porte rien
 # d'autre que ce que ce code demande — contrôle à refaire avant toute évolution.
 _STREAMER_SCOPES   = ("channel:read:subscriptions bits:read "
-                      "channel:read:redemptions channel:manage:redemptions")
+                      "channel:read:redemptions channel:manage:redemptions "
+                      "channel:manage:predictions")
+# `channel:manage:predictions` (2026-08-18, §13) : le token EN SERVICE ne le
+# porte pas — vérifié sur /oauth2/validate, il n'avait que les quatre premiers.
+# Il faut refaire l'autorisation du compte streamer depuis le dashboard pour
+# qu'il prenne effet, sans quoi toute prédiction rend 401.
 
 _pending_states: dict[str, dict] = {}   # state_key -> {account, expires_at}
 _status_cache:   dict[str, dict] = {}   # token_prefix -> {info, cached_at}

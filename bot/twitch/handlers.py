@@ -34,6 +34,7 @@ from bot.discord.handlers import (
     _QUOTE_TOOL, run_quote_tool,
 )
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
+from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
 
 if TYPE_CHECKING:
@@ -348,6 +349,12 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # et c'est là aussi qu'un viewer qui essaie se fait charrier.
     if getattr(bot, "music", None) is not None:
         tools.append(MUSIC_TOOL)
+    # Les paris sur les kills : offerts seulement quand l'API Twitch est là et
+    # qu'on est sur la chaîne maison — un pari engage de vrais points, et il se
+    # résout sur les parties d'Azraël. Pas conditionné aux badges : la garde est
+    # à l'exécution, c'est elle qui permet de charrier celui qui essaie.
+    if overlay and getattr(bot, "twitch_api", None) is not None:
+        tools.append(PREDICTION_TOOL)
     if overlay and _overlay_narrator(bot) is not None:
         # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
         # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
@@ -582,6 +589,10 @@ def make_tool_executor(
             # `_resolve_twitch_roles` normalise les trois formes qu'un badge peut
             # prendre — les lire à la main a cassé ici même, en direct.
             return await run_say_in_voice_tool(
+                bot, args, roles=_resolve_twitch_roles(badges or []),
+                maison=overlay)
+        if name == "open_prediction":
+            return await run_prediction_tool(
                 bot, args, roles=_resolve_twitch_roles(badges or []),
                 maison=overlay)
         if name == "music_control":

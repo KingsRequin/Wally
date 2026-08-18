@@ -116,6 +116,7 @@ class TwitchAPI:
     USERS_URL = "https://api.twitch.tv/helix/users"
     REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
     REWARDS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards"
+    PREDICTIONS_URL = "https://api.twitch.tv/helix/predictions"
 
     def __init__(
         self,
@@ -925,6 +926,98 @@ class TwitchAPI:
             logger.error("Création de récompense en erreur : {e}", e=exc)
             return None
 
+    # ── Prédictions (§13) ───────────────────────────────────────────────────
+
+    async def creer_prediction(self, titre: str, choix: list[str],
+                               fenetre_s: int) -> dict | None:
+        """Ouvre une prédiction. Rend son id ET l'id de chaque choix.
+
+        Les identifiants des choix DOIVENT remonter : c'est avec eux qu'on
+        résout, et les libellés ne suffisent pas — deux choix peuvent se
+        ressembler, et Twitch n'accepte que l'id.
+        """
+        propres = [str(c).strip()[:_PRED_CHOIX_MAX]
+                   for c in (choix or []) if str(c).strip()][:_PRED_CHOIX_MAX_N]
+        if len(propres) < _PRED_CHOIX_MIN_N:
+            logger.error("Prédiction refusée : il faut au moins {n} choix, reçu {r}",
+                         n=_PRED_CHOIX_MIN_N, r=len(propres))
+            return None
+        corps = {
+            "broadcaster_id": self._broadcaster_id,
+            "title": str(titre or "").strip()[:_PRED_TITRE_MAX],
+            "outcomes": [{"title": c} for c in propres],
+            "prediction_window": max(_PRED_FENETRE_MIN,
+                                     min(_PRED_FENETRE_MAX, int(fenetre_s or 0))),
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self.PREDICTIONS_URL, json=corps,
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+                if resp.status_code not in (200, 201):
+                    _prediction_sans_scope(self, "création", resp)
+                    return None
+                data = (resp.json() or {}).get("data") or []
+                if not data:
+                    logger.error("Prédiction créée mais réponse vide")
+                    return None
+                pred = data[0]
+                logger.info("Prédiction ouverte : « {t} » ({n} choix, {f} s)",
+                            t=corps["title"], n=len(propres), f=corps["prediction_window"])
+                return {"id": str(pred.get("id") or ""),
+                        "title": str(pred.get("title") or ""),
+                        "outcomes": [{"id": str(o.get("id") or ""),
+                                      "title": str(o.get("title") or "")}
+                                     for o in (pred.get("outcomes") or [])]}
+        except Exception as exc:  # noqa: BLE001 — une panne d'API ne casse pas le chat
+            logger.error("Prédiction en erreur : {e}", e=exc)
+            return None
+
+    async def resoudre_prediction(self, prediction_id: str,
+                                  choix_gagnant_id: str) -> bool:
+        """Désigne le gagnant. Faux si Twitch a refusé.
+
+        Faux et non « None optimiste » : l'appelant annoncerait un verdict qui
+        n'a pas eu lieu, alors que les points des viewers sont toujours en jeu.
+        """
+        return await self._patch_prediction(
+            prediction_id, {"status": "RESOLVED",
+                            "winning_outcome_id": str(choix_gagnant_id or "")},
+            "résolution")
+
+    async def annuler_prediction(self, prediction_id: str) -> bool:
+        """Annule et REMBOURSE tout le monde.
+
+        La seule issue honnête quand le résultat n'est pas mesurable : résoudre
+        au hasard punirait des gens qui avaient raison.
+        """
+        return await self._patch_prediction(prediction_id, {"status": "CANCELED"},
+                                            "annulation")
+
+    async def _patch_prediction(self, prediction_id: str, champs: dict,
+                                action: str) -> bool:
+        corps = {"broadcaster_id": self._broadcaster_id,
+                 "id": str(prediction_id or ""), **champs}
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.patch(
+                    self.PREDICTIONS_URL, json=corps,
+                    headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                             "Client-Id": self._client_id},
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    _prediction_sans_scope(self, action, resp)
+                    return False
+                logger.info("Prédiction {a} : {i}", a=action, i=prediction_id)
+                return True
+        except Exception as exc:  # noqa: BLE001 — une panne d'API ne casse pas le chat
+            logger.error("Prédiction ({a}) en erreur : {e}", a=action, e=exc)
+            return False
+
     async def maj_recompense(self, reward_id: str, titre: str, cout: int,
                              prompt: str, *, actuelle: dict | None = None) -> bool:
         """Aligne une récompense EXISTANTE sur le libellé voulu (PATCH).
@@ -1064,3 +1157,38 @@ class TwitchAPI:
         except Exception as exc:
             logger.warning("Failed to fetch Twitch stream status: {e}", e=exc)
             return _UNKNOWN_STREAM.copy()
+
+
+# ── Prédictions Twitch (§13) ────────────────────────────────────────────────
+#
+# Les bornes de l'API, qu'on ne devine pas : titre 45 caractères, 2 à 10 choix
+# de 25 caractères, fenêtre de pari de 30 s à 30 min. Les dépasser rend un 400
+# qui ne dit pas lequel des trois est en cause.
+_PRED_TITRE_MAX = 45
+_PRED_CHOIX_MAX = 25
+_PRED_CHOIX_MIN_N, _PRED_CHOIX_MAX_N = 2, 10
+_PRED_FENETRE_MIN, _PRED_FENETRE_MAX = 30, 1800
+
+# Ce qu'il faut avoir autorisé pour piloter les prédictions. Le token en service
+# ne le portait pas (vérifié le 2026-08-18 sur /oauth2/validate) : il faut
+# refaire l'autorisation du compte STREAMER depuis le dashboard.
+_SCOPE_PREDICTIONS = "channel:manage:predictions"
+
+
+def _prediction_sans_scope(api_self, action: str, reponse) -> None:
+    """Journalise un refus de prédiction en NOMMANT le geste à faire.
+
+    Un « 401 » sec envoie chercher la panne dans le code du bot, où il n'y a
+    rien à trouver. Même leçon que le plafond des récompenses de points de
+    chaîne, dont le code brut ne disait ni le chiffre ni le geste.
+    """
+    texte = (getattr(reponse, "text", "") or "")[:200]
+    if reponse.status_code in (401, 403):
+        logger.error(
+            "Prédiction ({a}) refusée : le compte streamer n'a pas autorisé "
+            "« {s} ». Il faut REFAIRE l'autorisation Twitch du streamer depuis "
+            "le dashboard — rien à corriger côté bot. Réponse : {t}",
+            a=action, s=_SCOPE_PREDICTIONS, t=texte)
+    else:
+        logger.error("Prédiction ({a}) refusée HTTP {c} : {t}",
+                     a=action, c=reponse.status_code, t=texte)
