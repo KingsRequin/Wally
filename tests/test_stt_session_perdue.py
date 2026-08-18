@@ -5,9 +5,18 @@ serveur est injoignable, l'énoncé partait dans une session qui n'aboutirait
 jamais, et `_open_and_watch` la retirait sans transcrire ce qu'elle contenait :
 5 à 35 s d'attente, puis une parole perdue.
 """
+import array
 from unittest.mock import MagicMock
 
 from bot.discord.voice.streaming import RemoteStreamingSTT
+
+# Un énoncé plausible — 1 s à rms 500. Ces tests portaient un marqueur
+# symbolique (`b"audio"`, soit 0,0 s) ; depuis que le repli local écarte ce qui
+# est trop court pour être de la parole, un tel marqueur n'atteint plus le
+# moteur, et `test_la_file_locale_est_bornee` passait pour la MAUVAISE raison :
+# il vérifiait que rien n'est transcrit, ce que le plancher rendait vrai sans
+# que la borne de file soit pour autant testée.
+_ENONCE = array.array("h", [500] * 16000).tobytes()
 
 
 def _manager():
@@ -33,10 +42,10 @@ def test_une_session_non_prete_ne_capte_pas_l_enonce(monkeypatch):
     sess.ready = False               # ouverture en cours, ou vouée à l'échec
     mgr._sessions["u1"] = sess
 
-    mgr.speech_end_sync("u1", b"audio")
+    mgr.speech_end_sync("u1", _ENONCE)
 
     sess.enqueue_flush.assert_not_called()
-    assert mgr._transcribed == [("u1", b"audio")], "l'énoncé doit partir en local"
+    assert mgr._transcribed == [("u1", _ENONCE)], "l'énoncé doit partir en local"
 
 
 def test_une_session_prete_recoit_bien_le_flush(monkeypatch):
@@ -48,7 +57,7 @@ def test_une_session_prete_recoit_bien_le_flush(monkeypatch):
     sess.ready = True
     mgr._sessions["u1"] = sess
 
-    mgr.speech_end_sync("u1", b"audio")
+    mgr.speech_end_sync("u1", _ENONCE)
 
     sess.enqueue_flush.assert_called_once()
     assert mgr._transcribed == [], "pas de double transcription"
@@ -59,8 +68,8 @@ def test_sans_session_l_enonce_part_en_local(monkeypatch):
     monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
-    mgr.speech_end_sync("u1", b"audio")
-    assert mgr._transcribed == [("u1", b"audio")]
+    mgr.speech_end_sync("u1", _ENONCE)
+    assert mgr._transcribed == [("u1", _ENONCE)]
 
 
 def test_la_file_locale_est_bornee(monkeypatch):
@@ -71,7 +80,7 @@ def test_la_file_locale_est_bornee(monkeypatch):
 
     mgr = _manager()
     mgr._pending_fallback = mod._MAX_PENDING_FALLBACK
-    mgr.speech_end_sync("u1", b"audio")
+    mgr.speech_end_sync("u1", _ENONCE)
     assert mgr._transcribed == [], "l'énoncé de trop doit être abandonné, pas empilé"
 
 
@@ -80,6 +89,6 @@ def test_un_enonce_passe_quand_la_file_respire(monkeypatch):
     monkeypatch.setattr(mod.asyncio, "create_task", lambda coro: MagicMock())
 
     mgr = _manager()
-    mgr.speech_end_sync("u1", b"audio")
-    assert mgr._transcribed == [("u1", b"audio")]
+    mgr.speech_end_sync("u1", _ENONCE)
+    assert mgr._transcribed == [("u1", _ENONCE)]
     assert mgr._pending_fallback == 1

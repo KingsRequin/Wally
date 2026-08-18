@@ -21,6 +21,7 @@ POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue
 # streaming TTS peut durer. C'est un filet contre le blocage définitif, pas un
 # budget de style.
 _SPEAK_TIMEOUT_S = 120.0
+from bot.discord.voice.audio import est_sous_le_plancher
 from bot.discord.voice.brain import (
     _is_stop_request,
     _voice_publish,
@@ -744,6 +745,14 @@ class VoiceService:
     async def _on_segment(self, user, pcm16k_mono: bytes) -> None:
         """Transcrit un segment de parole (STT batch) et appelle le cerveau."""
         try:
+            # Même plancher que sur le chemin streaming : ni le moteur ni le
+            # quota ne travaillent pour du souffle. Poser la porte d'un seul
+            # côté l'aurait laissée ouverte dès que la config bascule en batch.
+            ecarter, duree, niveau = est_sous_le_plancher(pcm16k_mono)
+            if ecarter:
+                logger.info("voice: énoncé écarté avant le STT — sous le plancher "
+                            "({d:.1f} s, rms {r})", d=duree, r=niveau)
+                return
             self.quota.add_stt_seconds(len(pcm16k_mono) / 32000)  # 16 kHz mono 16-bit = 32000 o/s
             _t0 = asyncio.get_running_loop().time()
             text = await self._stt.transcribe(pcm16k_mono)

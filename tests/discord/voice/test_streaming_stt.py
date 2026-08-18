@@ -4,6 +4,7 @@ Un faux serveur WebSocket (websockets.serve) imite le contrat RealtimeSTT docume
 dans docs/voice/REMOTE_STT_API.md : handshake `ready`, audio binaire 16 kHz, contrôle
 `flush`, messages `partial`/`final`, rejet `error`+close 1013 quand le serveur est plein.
 """
+import array
 import asyncio
 import json
 import socket
@@ -193,6 +194,19 @@ def _make_provider(url, fallback=None, **kw):
     return prov
 
 
+def _enonce(secondes: float = 1.0, amplitude: int = 500) -> bytes:
+    """Un segment de parole plausible, tel que le VAD en referme.
+
+    Les tests passaient auparavant UNE frame de 20 ms à `speech_end_sync`, ce
+    que le VAD ne produit jamais : il ajoute 300 ms de silence de queue avant de
+    clore un énoncé, donc le plus court fait ~0,32 s. Depuis que le repli local
+    écarte ce qui est trop court ou trop faible pour être de la parole
+    (`est_sous_le_plancher`), ce raccourci faisait échouer des tests qui ne
+    parlent pourtant que d'aiguillage distant/local.
+    """
+    return array.array("h", [amplitude] * int(16000 * secondes)).tobytes()
+
+
 async def test_provider_une_session_par_locuteur(server):
     prov = _make_provider(server.url)
     prov.feed_sync("A", b"\x00" * 640)
@@ -212,7 +226,7 @@ async def test_provider_final_distant_remonte_on_final(server):
     prov.on_final = on_final
     prov.feed_sync("A", b"\x01" * 640)
     await _wait_until(lambda: server.live_connections == 1)
-    prov.speech_end_sync("A", b"\x01" * 640)  # remote → flush
+    prov.speech_end_sync("A", _enonce())  # remote → flush
     await _wait_until(lambda: len(finals) == 1)
     await prov.close_all()
     assert finals[0] == ("A", "salut wally")
@@ -224,7 +238,7 @@ async def test_provider_partial_distant_remonte_on_partial(server):
     prov.on_partial = lambda sid, text: partials.append((sid, text))
     prov.feed_sync("A", b"\x01" * 640)
     await _wait_until(lambda: server.live_connections == 1)
-    prov.speech_end_sync("A", b"\x01" * 640)
+    prov.speech_end_sync("A", _enonce())
     await _wait_until(lambda: ("A", "salut") in partials)
     await prov.close_all()
     assert ("A", "sa") in partials
@@ -244,7 +258,7 @@ async def test_provider_limite_locale_bascule_en_fallback(server):
     prov.feed_sync("A", b"\x01" * 640)             # prend l'unique slot distant
     await _wait_until(lambda: server.live_connections == 1)
     prov.feed_sync("B", b"\x02" * 640)             # plus de slot → fallback
-    prov.speech_end_sync("B", b"\x02" * 640)       # batch transcrit le segment VAD
+    prov.speech_end_sync("B", _enonce())           # batch transcrit le segment VAD
 
     await _wait_until(lambda: len(finals) == 1)
     await prov.close_all()
@@ -266,7 +280,7 @@ async def test_provider_injoignable_bascule_et_cache(server):
 
     prov.feed_sync("A", b"\x01" * 640)
     await _wait_until(lambda: prov._unreachable_until > 0, timeout=3.0)
-    prov.speech_end_sync("A", b"\x01" * 640)
+    prov.speech_end_sync("A", _enonce())
     await _wait_until(lambda: len(finals) == 1)
     await prov.close_all()
 
@@ -297,7 +311,7 @@ async def test_provider_session_perdue_en_cours_bascule_en_fallback(server):
     assert prov._unreachable_until > 0
 
     # L'énoncé suivant est transcrit par le batch CPU local.
-    prov.speech_end_sync("A", b"\x01" * 640)
+    prov.speech_end_sync("A", _enonce())
     await _wait_until(lambda: len(finals) == 1)
     await prov.close_all()
     assert finals[0] == ("A", "repli local")

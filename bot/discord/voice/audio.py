@@ -26,6 +26,50 @@ def to_stt_format(pcm48k_stereo: bytes) -> bytes:
     return converted
 
 
+# Le plancher sous lequel un segment n'est pas de la parole. Le VAD tranche
+# frame par frame et se laisse prendre par un souffle, un clavier, un
+# ventilateur : 35 % des énoncés qu'il referme reviennent VIDES du moteur, qui
+# les a pourtant payés — et pendant ce calcul la vraie parole s'entasse, puis se
+# fait jeter (`_MAX_PENDING_FALLBACK`). On perdait donc de la parole pour avoir
+# transcrit du bruit.
+#
+# Les deux valeurs sont MESURÉES, pas choisies. Sur les 4 698 énoncés du repli
+# local relevés dans `/app/logs/2026-08-*/app.log`, ce plancher écarte 68 % des
+# 1 661 vides sans toucher UN SEUL des 3 037 énoncés réellement transcrits. Il
+# est posé SOUS les deux bords de la distribution vécue — le plus faible énoncé
+# transcrit est à rms 100, le plus court à 0,4 s — et non dessus : cette marge
+# paie un micro plus faible ou un locuteur plus loin, pour un point de charge.
+# À re-mesurer si les micros du salon changent ; les logs le permettent.
+_RMS_PLANCHER = 80
+_DUREE_PLANCHER_S = 0.3
+_OCTETS_PAR_SECONDE = SAMPLE_RATE * 2  # 16 kHz mono 16-bit
+
+
+def rms(pcm16: bytes) -> int:
+    """Niveau sonore moyen d'un segment PCM 16 bits, ou -1 si illisible."""
+    try:
+        return audioop.rms(pcm16, 2)
+    except Exception:  # noqa: BLE001 — une mesure ne casse jamais une transcription
+        return -1
+
+
+def est_sous_le_plancher(segment: bytes) -> tuple[bool, float, int]:
+    """(à écarter, durée en secondes, rms) pour un segment clos par le VAD.
+
+    Rend toujours la durée et le niveau, même quand le segment passe :
+    l'appelant les journalise, et c'est ce relevé qui permettra de re-mesurer le
+    plancher plus tard.
+
+    Une mesure IMPOSSIBLE (`rms` = -1) laisse passer. Le doute profite au
+    locuteur : rater du bruit ne coûte qu'un calcul, rater une phrase rend Wally
+    muet devant quelqu'un qui lui parle.
+    """
+    duree = len(segment) / _OCTETS_PAR_SECONDE
+    niveau = rms(segment)
+    trop_faible = 0 <= niveau < _RMS_PLANCHER
+    return (duree < _DUREE_PLANCHER_S or trop_faible), duree, niveau
+
+
 class StreamingPCMSource(discord.AudioSource):
     """Source audio Discord alimentée en continu — joue le TTS au fil de la synthèse.
 

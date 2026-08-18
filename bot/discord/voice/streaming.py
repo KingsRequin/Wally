@@ -22,20 +22,7 @@ from typing import Awaitable, Callable
 import websockets
 from loguru import logger
 
-def _rms(pcm16: bytes) -> int:
-    """Niveau sonore moyen d'un segment PCM 16 bits, ou -1 si illisible.
-
-    Sert au RELEVÉ qui doit dire ce qui sépare le bruit de la parole sur ce
-    salon-là : le repli local rend 27 % de ses énoncés vides, et les écarter en
-    amont demande un critère mesuré. `audioop` est déjà la dépendance du
-    rééchantillonnage (`voice/audio.py`), rien de neuf n'entre ici.
-    """
-    try:
-        import audioop
-        return audioop.rms(pcm16, 2)
-    except Exception:  # noqa: BLE001 — un relevé ne casse jamais une transcription
-        return -1
-
+from bot.discord.voice.audio import est_sous_le_plancher, rms
 
 _FLUSH = object()  # sentinelle « force la fin de l'énoncé » dans la file d'envoi
 _PREBUF_MAX = 250  # ~5 s de frames de 20 ms bufferisées avant `ready` (borne mémoire)
@@ -364,6 +351,16 @@ class RemoteStreamingSTT:
             return
         # Pas de session distante (fallback ou ouverture échouée) → transcription batch du segment.
         self._fallback_speakers.discard(speaker_id)  # réessaiera le distant au prochain énoncé
+        # Le moteur local ne travaille pas pour du souffle : un tiers de ce que
+        # le VAD lui donne revient VIDE, et pendant ce calcul la vraie parole
+        # s'entasse puis se fait jeter juste en dessous.
+        ecarter, duree, niveau = est_sous_le_plancher(segment)
+        if ecarter:
+            logger.info(
+                "voice: énoncé de {s} écarté avant le STT — sous le plancher "
+                "({d:.1f} s, rms {r})", s=speaker_id, d=duree, r=niveau,
+            )
+            return
         # File saturée : on ABANDONNE l'énoncé plutôt que de l'empiler. Mesuré en
         # live à trois locuteurs, la file montait à 35 s de retard — à ce
         # décalage, Wally « réagit » à une phrase que tout le monde a oubliée.
@@ -502,13 +499,13 @@ class RemoteStreamingSTT:
             stt_ms = (self._now() - t0) * 1000
             if text and self.on_final is not None:
                 # Le niveau sonore du segment est journalisé DES DEUX CÔTÉS —
-                # ici et sur les énoncés vides — parce qu'on cherche ce qui les
-                # sépare. 27 % des énoncés du repli local ne rendent rien et
-                # brûlent le CPU pendant lequel la vraie parole est jetée ; pour
-                # les écarter en amont il faut un critère MESURÉ, pas un seuil
-                # inventé. Cette ligne est le relevé qui le fournira.
+                # ici et sur les énoncés vides — parce que c'est ce qui les
+                # sépare. Ce relevé a servi : il a donné le plancher de
+                # `est_sous_le_plancher`, qui écarte désormais en amont 68 % des
+                # énoncés que le moteur rendait vides. On le garde pour pouvoir
+                # RE-mesurer — d'autres micros, d'autres bords.
                 logger.info("voice: énoncé transcrit ({d:.1f} s, rms {r})",
-                            d=len(segment) / 32000, r=_rms(segment))
+                            d=len(segment) / 32000, r=rms(segment))
                 await self.on_final(speaker_id, text, stt_ms)
             elif not text:
                 # UN ÉNONCÉ QUI NE REND RIEN DISPARAISSAIT SANS UNE LIGNE.
@@ -523,7 +520,7 @@ class RemoteStreamingSTT:
                 logger.info(
                     "voice: énoncé de {s} rendu VIDE par le STT local "
                     "({d:.1f} s d'audio, rms {r}, {ms:.0f} ms de calcul)",
-                    s=speaker_id, d=len(segment) / 32000, r=_rms(segment),
+                    s=speaker_id, d=len(segment) / 32000, r=rms(segment),
                     ms=stt_ms,
                 )
         finally:
