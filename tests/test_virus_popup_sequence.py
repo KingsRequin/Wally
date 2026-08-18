@@ -77,14 +77,42 @@ def test_le_spam_tient_dans_sa_FENETRE():
     """) == "[true,true,true]"
 
 
-def test_le_nombre_de_fenetres_est_PLAFONNE():
-    """Elles ne disparaissent jamais : chacune reste un nœud vivant, avec son
-    image, sur la machine qui ENCODE le live. Une durée absurde ne doit pas en
-    empiler mille."""
+def test_TOUT_le_dossier_passe_sur_la_duree_que_le_serveur_annonce():
+    """« Y a pas tous les memes si ? » (owner) — non : 42 sur 134 au premier
+    essai. Le plafond bornait le SPECTACLE au lieu de borner le DOM.
+
+    Le serveur dimensionne la fenêtre sur le stock (`_duree_virus`), le client
+    doit y faire tenir toutes ses ouvertures. La formule vit des deux côtés :
+    c'est leur ACCORD que ce test surveille, pas son écriture.
+    """
     assert _node("""
-      const cas = [V.rythme(23).length, V.rythme(120).length, V.rythme(600).length];
-      console.log(JSON.stringify(cas.map(n => n <= V.PLAFOND)));
-    """) == "[true,true,true]"
+      const memes = 134;
+      const total = Math.ceil(memes / (1 - V.PART_ALERTES));
+      const duree = V.dureePour(total);
+      const stock = [];
+      for (let i = 0; i < memes; i++) stock.push({nom: "m" + i, genre: "image"});
+      const f = V.fenetres(V.rythme(duree), stock);
+      const passes = new Set(f.filter(x => x.genre === "meme").map(x => x.media.nom));
+      console.log(JSON.stringify([f.length >= total, passes.size === memes]));
+    """) == "[true,true]"
+
+
+def test_le_nombre_de_fenetres_VIVANTES_est_plafonne_pas_le_spectacle():
+    """Chaque fenêtre reste un nœud avec son image, sur la machine qui ENCODE le
+    live : c'est le DOM qu'il faut borner. Le rendu ferme donc les plus
+    anciennes — ce qui n'empêche plus le dossier entier de défiler."""
+    assert _node("""
+      console.log(JSON.stringify([V.PLAFOND_VIVANTES > 20, V.PLAFOND_VIVANTES <= 120]));
+    """) == "[true,true]"
+
+
+def test_une_duree_absurde_ne_fait_pas_boucler_a_l_infini():
+    """Filet : `rythme()` n'est plus borné par un compte de fenêtres, seulement
+    par le temps. Une durée délirante ne doit pas figer la page du live."""
+    assert _node("""
+      const t = V.rythme(100000);
+      console.log(JSON.stringify(t.length <= V.GARDE_FOU));
+    """) == "true"
 
 
 def test_une_duree_minuscule_ne_leve_pas():
@@ -156,7 +184,58 @@ def test_les_alertes_ne_se_repetent_pas_a_la_suite():
     """) == "true"
 
 
-# ── 3. Où elles s'ouvrent ───────────────────────────────────────────────────
+def test_le_repertoire_de_blagues_est_LARGE():
+    """« Ajoute des phrases drôles random » (owner). Sur un spam de deux cents
+    fenêtres, une douzaine de textes se répète seize fois : on lit deux fois la
+    même et le gag meurt."""
+    assert _node("""
+      console.log(JSON.stringify(V.NB_ALERTES >= 28));
+    """) == "true"
+
+
+def test_sur_un_LONG_spam_les_textes_ne_tournent_pas_en_rond():
+    """La variété se mesure sur ce qui est réellement affiché, pas sur la taille
+    du répertoire : un tirage qui repioche mal ne vaut pas mieux qu'une liste
+    courte."""
+    assert _node("""
+      const f = V.fenetres(V.rythme(V.dureePour(200)), []);
+      const distincts = new Set(f.map(x => x.message)).size;
+      console.log(JSON.stringify([f.length > 100, distincts >= 25]));
+    """) == "[true,true]"
+
+
+# ── 3. L'écran bleu ─────────────────────────────────────────────────────────
+
+def test_l_ecran_bleu_dit_quelque_chose_de_DROLE_et_qui_change():
+    """« Même sur le BSOD mets un truc drôle » (owner). Un message figé, revu
+    au troisième achat, ne fait plus rire personne : il se tire au sort comme le
+    reste."""
+    assert _node("""
+      const vus = new Set();
+      let complet = true;
+      for (let i = 0; i < 40; i++) {
+        const b = V.bsod();
+        if (!b.titre || !b.message || !b.code) complet = false;
+        vus.add(b.message);
+      }
+      console.log(JSON.stringify([complet, vus.size >= 4]));
+    """) == "[true,true]"
+
+
+def test_l_ecran_bleu_porte_un_CODE_d_erreur_a_la_windows():
+    """C'est le détail qui fait reconnaître l'écran : sans code en majuscules,
+    on lit un message d'erreur générique, pas un BSOD."""
+    assert _node("""
+      const ok = [];
+      for (let i = 0; i < 20; i++) {
+        const c = V.bsod().code;
+        ok.push(/^[A-Z0-9_]{6,}$/.test(c));
+      }
+      console.log(JSON.stringify(ok.every(Boolean)));
+    """) == "true"
+
+
+# ── 4. Où elles s'ouvrent ───────────────────────────────────────────────────
 
 def test_une_fenetre_s_ouvre_ENTIEREMENT_dans_le_cadre():
     """Une popup à moitié hors champ ressemble à un bug de rendu, pas à un gag.

@@ -895,92 +895,41 @@
     // la machine qui encode le live.
     meme_storm(p) {
       const box = el("div", "meme-storm");
-      const medias = (window.WallyRotationMedias || []).slice();
-      const duree = Math.max(3, Math.min(120, Number(p.seconds) || 30));
-      if (!medias.length) {
-        // Rien à faire tomber : on rend une boîte vide plutôt qu'un cadre
-        // fantôme. Le narrateur refuse déjà en amont, ceci est le filet.
-        return box;
-      }
-      // TOUT le dossier passe, une fois chacun, dans un ordre mêlé — c'est la
-      // demande de l'owner, et c'est ce que le tirage au sort d'origine ne
-      // faisait pas : avec remise, ~40 % du stock ne sortait jamais.
-      // La cadence se déduit de la fenêtre annoncée par le serveur, qui l'a
-      // lui-même dimensionnée sur le dossier (`AVALANCHE_PAR_SECONDE`).
-      const stock = window.WallyAvalanche.ordre(medias);
-      const pas = window.WallyAvalanche.cadence(stock.length, duree);
-      // On cesse de lâcher une chute entière AVANT le retrait de la carte,
-      // sinon les derniers memes s'évaporent en plein vol avec elle.
-      const fenetre = window.WallyAvalanche.fenetreMs(duree);
-      const depart = performance.now();
-      let lances = 0;
-      const timer = setInterval(() => {
-        if (lances >= stock.length || !box.isConnected
-            || performance.now() - depart > fenetre) { clearInterval(timer); return; }
-        const media = stock[lances];
-        lances += 1;
-        const flocon = el("div", "flocon");
-        // Tailles mêlées : un mur de vignettes identiques ne fait pas une
-        // avalanche, il fait une grille.
-        const largeur = 140 + Math.floor(Math.random() * 220);
-        flocon.style.width = largeur + "px";
-        // Le tirage tient compte de la LARGEUR du meme : à 92 % avec 360 px de
-        // large, il sortait du cadre par la droite. `overflow: hidden` le
-        // coupait proprement, mais un meme entier vaut mieux qu'un meme rogné.
-        const large = (largeur / (window.innerWidth || 1920)) * 100;
-        flocon.style.left = (Math.random() * Math.max(0, 100 - large)) + "%";
-        flocon.style.animationDuration = (2.6 + Math.random() * 2.4) + "s";
-        flocon.style.setProperty("--depart", (Math.random() * 40 - 20).toFixed(1) + "deg");
-        flocon.style.setProperty("--arrivee", (Math.random() * 220 - 110).toFixed(1) + "deg");
-        const src = "/api/public/meme/" + encodeURIComponent(media.nom);
-        if (media.genre === "video") {
-          const v = document.createElement("video");
-          v.src = src; v.muted = true; v.autoplay = true; v.loop = true;
-          v.playsInline = true;
-          flocon.appendChild(v);
-        } else {
-          const i = document.createElement("img");
-          i.src = src; i.alt = "";
-          flocon.appendChild(i);
-        }
-        flocon.addEventListener("animationend", () => flocon.remove());
-        box.appendChild(flocon);
-      }, pas);
-      // Coupé avec la carte : `disposeWidget` vide les `data-interval`, et sans
-      // ça l'avalanche continuerait de semer des memes dans un nœud détaché.
-      box.dataset.interval = String(timer);
+      // Le stock est relu ICI : le serveur a dimensionné la fenêtre sur le
+      // dossier tel qu'il est à l'instant de l'achat, la page doit partir du
+      // même. Sans ça elle travaille sur la liste de son chargement, et un meme
+      // déposé pendant le live manque à l'appel.
+      stockFrais((medias) => {
+        if (!box.isConnected || !medias.length) return;
+        // Sans durée imposée (le ▶ du panneau), c'est le dossier qui la donne :
+        // rien ne dit mieux que lui combien de temps il faut pour le montrer
+        // en entier.
+        const duree = Math.max(3, Math.min(300,
+          Number(p.seconds) || window.WallyAvalanche.dureePour(medias.length)));
+        lancerAvalanche(box, medias, duree);
+      });
       return box;
     },
+
 
     // Spam de popups « virus » — variante de l'avalanche, montée pour être
     // comparée à elle. Ici rien ne tombe : les fenêtres s'ouvrent de plus en
     // plus vite et RESTENT, jusqu'à l'écran bleu qui recouvre tout.
     //
-    // Elles ne sont donc jamais retirées une à une : c'est le retrait de la
-    // carte qui nettoie, en un seul geste. Le plafond (`WallyVirus.PLAFOND`)
-    // est ce qui protège la machine qui encode le live.
+    // Elles ne sont pas retirées une à une : au-delà du plafond, la PLUS
+    // ANCIENNE se ferme — c'est le DOM qu'on borne, pas le spectacle, sinon le
+    // dossier s'arrête au tiers.
     virus_popup(p) {
       const box = el("div", "virus-popup");
-      const duree = Math.max(3, Math.min(120, Number(p.seconds) || 23));
-      const medias = (window.WallyRotationMedias || []).slice();
-      const plan = window.WallyVirus.fenetres(window.WallyVirus.rythme(duree), medias);
-      const timers = [];
-      plan.forEach((f, i) => {
-        timers.push(setTimeout(() => {
-          if (!box.isConnected) return;
-          box.appendChild(fenetreVirus(f, i));
-        }, f.t));
-      });
-      // L'écran bleu arrive à la fin du spam, pas à la fin de la carte : elle
-      // reste ensuite le temps qu'on le lise.
-      timers.push(setTimeout(() => {
+      // Stock relu avant de bâtir le plan : c'est lui qui décide combien de
+      // fenêtres s'ouvrent, et le serveur a dimensionné la carte sur le dossier
+      // tel qu'il est à cet instant.
+      stockFrais((medias) => {
         if (!box.isConnected) return;
-        box.appendChild(ecranBleu());
-      }, duree * 1000));
-      // `disposeWidget` ne vide que `data-interval` : sans ce ménage, les
-      // rendez-vous en attente continueraient d'ouvrir des fenêtres dans un
-      // nœud détaché après le départ de la carte.
-      box.dataset.timeouts = timers.join(",");
+        const duree = Math.max(3, Math.min(300,
+          Number(p.seconds) || window.WallyVirus.dureeSelonStock(medias.length)));
+        lancerSpamVirus(box, medias, duree);
+      });
       return box;
     },
 
@@ -1010,6 +959,112 @@
     const n = el("div", className);
     n.textContent = label;
     return n;
+  }
+
+  /* Le dossier de memes, relu AVANT de lancer un spectacle qui le veut entier.
+   *
+   * « De nouveaux memes sont souvent ajoutés » (owner) : sans relecture, les
+   * deux spectacles travaillent sur la liste chargée à l'ouverture de la page,
+   * et un meme déposé pendant le live n'entre qu'au bout d'un cycle complet de
+   * rotation. Le serveur, lui, relit le dossier à chaque déclenchement — c'est
+   * son décompte qui fixe la durée, les deux doivent donc voir la même chose.
+   *
+   * Le rappel est TOUJOURS appelé, même si la relecture échoue : le réseau ne
+   * doit pas décider s'il y a un spectacle ou non. On repart alors sur la
+   * dernière liste connue.
+   */
+  function stockFrais(suite) {
+    const rendre = () => suite((window.WallyRotationMedias || []).slice());
+    const relire = window.WallyRotationRelire;
+    if (typeof relire !== "function") { rendre(); return; }
+    try {
+      const p = relire();
+      if (p && typeof p.then === "function") p.then(rendre, rendre);
+      else rendre();
+    } catch (e) { rendre(); }
+  }
+
+  /* Fait tomber TOUT le dossier sur la boîte reçue.
+   *
+   * Sortie du builder pour que le stock puisse être relu AVANT de démarrer :
+   * un builder rend son nœud tout de suite, la liste fraîche arrive après.
+   */
+  function lancerAvalanche(box, medias, duree) {
+    // TOUT le dossier passe, une fois chacun, dans un ordre mêlé — c'est la
+    // demande de l'owner, et c'est ce que le tirage au sort d'origine ne
+    // faisait pas : avec remise, ~40 % du stock ne sortait jamais.
+    // La cadence se déduit de la fenêtre annoncée par le serveur, qui l'a
+    // lui-même dimensionnée sur le dossier (`AVALANCHE_PAR_SECONDE`).
+    const stock = window.WallyAvalanche.ordre(medias);
+    const pas = window.WallyAvalanche.cadence(stock.length, duree);
+    // On cesse de lâcher une chute entière AVANT le retrait de la carte,
+    // sinon les derniers memes s'évaporent en plein vol avec elle.
+    const fenetre = window.WallyAvalanche.fenetreMs(duree);
+    const depart = performance.now();
+    let lances = 0;
+    const timer = setInterval(() => {
+      if (lances >= stock.length || !box.isConnected
+          || performance.now() - depart > fenetre) { clearInterval(timer); return; }
+      const media = stock[lances];
+      lances += 1;
+      const flocon = el("div", "flocon");
+      // Tailles mêlées : un mur de vignettes identiques ne fait pas une
+      // avalanche, il fait une grille.
+      const largeur = 140 + Math.floor(Math.random() * 220);
+      flocon.style.width = largeur + "px";
+      // Le tirage tient compte de la LARGEUR du meme : à 92 % avec 360 px de
+      // large, il sortait du cadre par la droite. `overflow: hidden` le
+      // coupait proprement, mais un meme entier vaut mieux qu'un meme rogné.
+      const large = (largeur / (window.innerWidth || 1920)) * 100;
+      flocon.style.left = (Math.random() * Math.max(0, 100 - large)) + "%";
+      flocon.style.animationDuration = (2.6 + Math.random() * 2.4) + "s";
+      flocon.style.setProperty("--depart", (Math.random() * 40 - 20).toFixed(1) + "deg");
+      flocon.style.setProperty("--arrivee", (Math.random() * 220 - 110).toFixed(1) + "deg");
+      const src = "/api/public/meme/" + encodeURIComponent(media.nom);
+      if (media.genre === "video") {
+        const v = document.createElement("video");
+        v.src = src; v.muted = true; v.autoplay = true; v.loop = true;
+        v.playsInline = true;
+        flocon.appendChild(v);
+      } else {
+        const i = document.createElement("img");
+        i.src = src; i.alt = "";
+        flocon.appendChild(i);
+      }
+      flocon.addEventListener("animationend", () => flocon.remove());
+      box.appendChild(flocon);
+    }, pas);
+    // Coupé avec la carte : `disposeWidget` vide les `data-interval`, et sans
+    // ça l'avalanche continuerait de semer des memes dans un nœud détaché.
+    box.dataset.interval = String(timer);
+  }
+
+  /* Ouvre les fenêtres du spam sur la boîte reçue, de plus en plus vite, puis
+   * l'écran bleu. Sortie du builder pour la même raison que l'avalanche : le
+   * stock est relu avant de commencer. */
+  function lancerSpamVirus(box, medias, duree) {
+    const plan = window.WallyVirus.fenetres(window.WallyVirus.rythme(duree), medias);
+    const timers = [];
+    plan.forEach((f, i) => {
+      timers.push(setTimeout(() => {
+        if (!box.isConnected) return;
+        box.appendChild(fenetreVirus(f, i));
+        const vivantes = box.querySelectorAll(".vwin");
+        for (let k = 0; k < vivantes.length - window.WallyVirus.PLAFOND_VIVANTES; k++) {
+          vivantes[k].remove();
+        }
+      }, f.t));
+    });
+    // L'écran bleu arrive à la fin du spam, pas à la fin de la carte : elle
+    // reste ensuite le temps qu'on le lise.
+    timers.push(setTimeout(() => {
+      if (!box.isConnected) return;
+      box.appendChild(ecranBleu());
+    }, duree * 1000));
+    // `disposeWidget` ne vide que `data-interval` : sans ce ménage, les
+    // rendez-vous en attente continueraient d'ouvrir des fenêtres dans un nœud
+    // détaché après le départ de la carte.
+    box.dataset.timeouts = timers.join(",");
   }
 
   /* Une fenêtre du spam « virus » : barre de titre, corps, boutons.
@@ -1083,14 +1138,17 @@
   /* L'écran bleu final. Il recouvre tout : c'est lui qui clôt le spectacle,
    * et il doit rester lisible quelques secondes avant le retrait de la carte. */
   function ecranBleu() {
+    const mot = window.WallyVirus.bsod();
     const bsod = el("div", "virus-bsod");
     const smiley = el("div", "bsod-face");
     smiley.textContent = ":(";
     const texte = el("div", "bsod-text");
-    texte.textContent = "Ton PC a rencontré un problème et doit redémarrer.";
+    texte.textContent = mot.titre;
     const sous = el("div", "bsod-sub");
-    sous.textContent = "Nous redémarrons pour toi. 0 % terminé";
-    bsod.append(smiley, texte, sous);
+    sous.textContent = mot.message;
+    const code = el("div", "bsod-code");
+    code.textContent = "Code d'arrêt : " + mot.code;
+    bsod.append(smiley, texte, sous, code);
     return bsod;
   }
 
@@ -1811,6 +1869,14 @@
         }
       } catch (e) { /* on garde la liste précédente */ }
     }
+
+    // Relecture À LA DEMANDE, pour les deux spectacles qui veulent le dossier
+    // ENTIER (avalanche, spam de popups). Sans elle, ils travaillaient sur la
+    // liste chargée à l'ouverture de la page : un meme déposé pendant le live
+    // n'entrait qu'au bout d'un cycle complet de rotation — or « de nouveaux
+    // memes sont souvent ajoutés » (owner), et c'est la durée même du
+    // spectacle qui en dépend.
+    window.WallyRotationRelire = charger;
 
     function tirer() {
       if (ORDRE === "dossier") {

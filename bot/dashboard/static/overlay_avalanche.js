@@ -67,5 +67,17 @@
     return Math.max(0, (Number(dureeS) || 0) - CHUTE_S) * 1000;
   }
 
-  window.WallyAvalanche = { ordre, cadence, fenetreMs, CHUTE_S, PAS_MIN_MS };
+  // Ce que le serveur calcule de son côté (`AVALANCHE_PAR_SECONDE`), pour que
+  // la page sache dimensionner un essai — le ▶ du panneau n'annonce aucune
+  // durée, puisque rien ne dit mieux que le dossier combien de temps il faut
+  // pour le montrer en entier.
+  const PAR_SECONDE = 3;
+
+  function dureePour(combien) {
+    const n = Math.max(1, Number(combien) || 0);
+    return Math.ceil(n / PAR_SECONDE) + CHUTE_S;
+  }
+
+  window.WallyAvalanche = { ordre, cadence, fenetreMs, dureePour,
+                            CHUTE_S, PAS_MIN_MS, PAR_SECONDE };
 })();

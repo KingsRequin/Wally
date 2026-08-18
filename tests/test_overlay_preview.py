@@ -286,11 +286,38 @@ def test_chaque_widget_placable_a_un_echantillon(preview):
     # dégage la scène, le rotateur passe au média suivant, l'image de la
     # galerie part par le flux d'images. Aucun échantillon à leur écrire.
     _HORS_BUILDER = ("bubble", "avatar", "rotator", "image")
+    # Les deux spectacles plein écran reçoivent bien des paramètres — mais
+    # calculés sur le dossier de memes au moment du ▶ (`_SPECTACLES_ENTIERS`),
+    # pas écrits dans la table. Une constante d'essai n'en montrait qu'un bout :
+    # 58 memes sur 135, mesurés dans le navigateur. Le test qui suit vérifie
+    # qu'ils ne partent pas nus pour autant.
+    from bot.dashboard.routes.overlay import _SPECTACLES_ENTIERS
     sans = [cle for cle in ELEMENTS
             if cle not in _HORS_WIDGET and cle not in _HORS_BUILDER
             and not _ECHANTILLONS.get(cle)
+            and cle not in _SPECTACLES_ENTIERS
             and cle not in ("meme", "planning")]
     assert sans == [], f"widgets sans échantillon : {sans}"
+
+
+def test_les_spectacles_plein_ecran_partent_avec_LEUR_duree(preview):
+    """Elle vient du dossier, par le narrateur : leur ▶ ne règle aucune
+    position (la carte couvre l'écran), il ne sert qu'à juger l'effet — donc il
+    doit le montrer en entier, comme un vrai achat."""
+    client, feed = preview
+    narrateur = client.app.state.wally.discord_bot.overlay_narrator
+    narrateur._duree_avalanche.return_value = 50
+    narrateur._duree_virus.return_value = 30
+
+    for cle, attendu in (("meme_storm", 50), ("virus_popup", 30)):
+        r = client.post("/api/admin/overlay/preview",
+                        json={"scene": "fin", "element": cle}, headers=_AUTH)
+        assert r.status_code == 200
+        params = feed.publies[-1]["params"]
+        assert params["seconds"] == attendu, cle
+        # La carte doit survivre au spectacle : c'est ce qui coupait le spam au
+        # bout des vingt secondes de l'essai.
+        assert params["duration"] > attendu, cle
 
 
 def test_meme_et_planning_recoivent_une_vraie_image(preview):

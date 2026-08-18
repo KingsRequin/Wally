@@ -2541,18 +2541,60 @@ class OverlayNarrator:
         return True
 
     # Le spam de popups « virus » — variante de l'avalanche, montée pour que
-    # l'owner tranche entre les deux en les voyant tourner. Durée fixe et non
-    # dérivée du dossier : ici les fausses alertes portent le spectacle, les
-    # memes ne font que l'habiller.
+    # l'owner tranche entre les deux en les voyant tourner.
+    #
+    # Ces quatre nombres SONT ceux d'`overlay_virus.js` : le client génère les
+    # ouvertures, le serveur dimensionne la carte qui doit toutes les contenir.
+    # Deux écritures d'un même calcul, dont l'accord est tenu par un test plutôt
+    # que par la discipline (`test_le_dossier_ENTIER_tient_dans_la_fenetre`).
+    VIRUS_DEBUT_MS = 1000     # entre deux ouvertures, au démarrage
+    VIRUS_FIN_MS = 100        # … et une fois en régime
+    VIRUS_CRANS = 24          # ouvertures pour passer de l'un à l'autre
+    VIRUS_PART_ALERTES = 0.4  # le reste va aux memes
+    # Repli quand le dossier est illisible, et plancher : un spam de trois
+    # secondes n'aurait le temps ni de monter en régime ni de faire rire.
     VIRUS_S = 23
+    # Filet : le jour où le dossier passe à 5 000 memes, on ne confisque pas
+    # l'écran vingt minutes.
+    VIRUS_MAX_S = 180
     # L'écran bleu final, qui recouvre tout avant le retrait de la carte.
     VIRUS_BSOD_S = 2
+
+    def _duree_virus(self) -> int:
+        """Le temps qu'il faut pour ouvrir une fenêtre par meme, alertes
+        comprises.
+
+        « Y a pas tous les memes si ? » puis « on peut le faire durer plus
+        longtemps si il faut afficher les autres memes » (owner) : une durée
+        fixe plafonnait le dossier au tiers. C'est donc le stock qui commande.
+        """
+        library = self._memes
+        stock = 0
+        if library is not None:
+            try:
+                stock = len(library.list_medias())
+            except Exception as exc:  # noqa: BLE001 — on lance quand même
+                logger.warning("Spam virus : stock illisible ({e}) — durée par défaut",
+                               e=exc)
+                return self.VIRUS_S
+        if stock <= 0:
+            return self.VIRUS_S
+        fenetres = ceil(stock / (1 - self.VIRUS_PART_ALERTES))
+        # La montée en régime, puis le plateau — même progression que le client.
+        raison = (self.VIRUS_FIN_MS / self.VIRUS_DEBUT_MS) ** (1 / (self.VIRUS_CRANS - 1))
+        total_ms = 0.0
+        pas = float(self.VIRUS_DEBUT_MS)
+        for _ in range(fenetres - 1):
+            total_ms += pas
+            pas = max(self.VIRUS_FIN_MS, pas * raison)
+        return max(self.VIRUS_S,
+                   min(self.VIRUS_MAX_S, ceil(total_ms / 1000)))
 
     def show_virus_popups(self, seconds: int | None = None) -> bool:
         """Fait spammer l'écran de fausses fenêtres système. Vrai si c'est parti.
 
-        Elles s'ouvrent de plus en plus vite et s'empilent sans disparaître,
-        puis un écran bleu recouvre tout et nettoie.
+        Elles s'ouvrent de plus en plus vite, s'empilent — les plus anciennes se
+        referment quand l'écran est saturé — puis un écran bleu recouvre tout.
 
         Un seul refus : l'écran éteint. Un dossier de memes vide n'en est PAS un
         — contrairement à l'avalanche, les alertes se suffisent, et refuser
@@ -2560,7 +2602,7 @@ class OverlayNarrator:
         """
         if not self._live():
             return False
-        duree = int(seconds) if seconds else self.VIRUS_S
+        duree = int(seconds) if seconds else self._duree_virus()
         self._last_event_at = time.monotonic()
         self._feed.widget("virus_popup", seconds=duree,
                           duration=duree + self.VIRUS_BSOD_S + 1)

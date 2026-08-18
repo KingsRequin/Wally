@@ -41,6 +41,29 @@ def test_le_spam_part_et_porte_sa_duree():
     assert appel.kwargs["seconds"] > 0
 
 
+def test_la_duree_derive_du_STOCK_pour_que_TOUS_les_memes_passent():
+    """« Y a pas tous les memes si ? » puis « on peut le faire durer plus
+    longtemps si il faut afficher les autres memes, c'est pas un souci »
+    (owner). Une durée fixe plafonnait le dossier à un tiers."""
+    court, long = _narrateur(20), _narrateur(134)
+    court.show_virus_popups()
+    long.show_virus_popups()
+    assert _widget(long).kwargs["seconds"] > _widget(court).kwargs["seconds"]
+
+
+def test_le_dossier_ENTIER_tient_dans_la_fenetre_annoncee():
+    """Le calcul du serveur et celui du client sont deux écritures de la même
+    règle : c'est leur accord qu'il faut tenir. Ici le côté serveur — assez de
+    temps pour ouvrir une fenêtre par meme, alertes comprises."""
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+    n = _narrateur(134)
+    n.show_virus_popups()
+    secondes = _widget(n).kwargs["seconds"]
+    fenetres = 134 / (1 - OverlayNarrator.VIRUS_PART_ALERTES)
+    # Au plus dense, le rythme ouvre une fenêtre tous les `VIRUS_FIN_MS`.
+    assert secondes >= fenetres * OverlayNarrator.VIRUS_FIN_MS / 1000
+
+
 def test_la_carte_reste_le_temps_de_l_ECRAN_BLEU():
     """Le final choisi par l'owner : l'écran bleu recouvre tout, puis la carte
     se retire. Si elle part à la fin du spam, on ne le voit jamais."""
@@ -106,11 +129,35 @@ def test_le_panneau_peut_le_PLACER():
     assert '"virus_popup"' in js
 
 
-def test_le_bouton_d_essai_lui_donne_de_quoi_MONTER_EN_REGIME():
-    """Le ▶ sert à régler : trop court, on ne voit ni l'accélération ni l'écran
-    bleu — exactement le défaut qu'a eu l'avalanche à cinq secondes."""
-    from bot.dashboard.routes.overlay import _ECHANTILLONS
-    assert _ECHANTILLONS["virus_popup"]["seconds"] >= 10
+def test_l_essai_dure_le_temps_du_SPECTACLE_et_non_vingt_secondes():
+    """Le ▶ posait vingt secondes à tout le monde : le spam en demande trente
+    pour montrer les 135 memes, et on en voyait 58 — mesuré dans le navigateur,
+    puis conclu à tort que le dossier ne passait pas.
+
+    Ces deux widgets prennent l'écran ENTIER : il n'y a aucune position à y
+    régler, l'essai ne sert qu'à juger l'effet. Sa durée vient donc du dossier,
+    par le narrateur, seule source de ce calcul.
+    """
+    from bot.dashboard.routes.overlay import (
+        _DUREE_ESSAI_S, _ECHANTILLONS, _SPECTACLES_ENTIERS,
+    )
+    assert "virus_popup" in _SPECTACLES_ENTIERS
+    assert "meme_storm" in _SPECTACLES_ENTIERS
+    # Et surtout : plus de durée en dur dans l'échantillon, qui l'emporterait.
+    assert "seconds" not in _ECHANTILLONS.get("virus_popup", {})
+    assert "seconds" not in _ECHANTILLONS.get("meme_storm", {})
+
+    n = _narrateur(134)
+    assert _SPECTACLES_ENTIERS["virus_popup"](n) > _DUREE_ESSAI_S
+    assert _SPECTACLES_ENTIERS["meme_storm"](n) > _DUREE_ESSAI_S
+
+
+def test_un_essai_AVANT_la_connexion_de_discord_ne_plante_pas():
+    """Le narrateur naît avec le bot Discord. Régler sa scène pendant que le bot
+    démarre doit rester possible — on retombe sur la durée d'essai ordinaire."""
+    from bot.dashboard.routes.overlay import _SPECTACLES_ENTIERS
+    assert _SPECTACLES_ENTIERS["virus_popup"](None) in (None, 0, False)
+    assert _SPECTACLES_ENTIERS["meme_storm"](None) in (None, 0, False)
 
 
 def test_son_script_compte_dans_l_empreinte_de_version():

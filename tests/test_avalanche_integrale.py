@@ -118,20 +118,18 @@ def test_hors_live_rien_ne_part():
     assert _widget(n) is None
 
 
-def test_l_essai_du_panneau_montre_une_chute_ENTIERE():
-    """Le ▶ règle la position de l'élément : il doit donc laisser voir un meme
-    arriver en bas. À cinq secondes, la carte se retirait avant la première
-    arrivée — on ne voyait que des memes qui s'évaporent en plein vol, et c'est
-    ce chemin-là que l'owner essayait.
+def test_l_essai_du_panneau_montre_l_avalanche_ENTIERE():
+    """Le ▶ ne règle aucune position ici — la carte couvre l'écran. Il ne sert
+    qu'à juger l'effet, et une constante d'essai en montrait un bout : d'abord
+    cinq secondes (aucune arrivée en bas), puis vingt (un tiers du dossier).
+    La durée vient donc du dossier, comme pour un vrai achat.
     """
-    from bot.dashboard.routes.overlay import _ECHANTILLONS
-    from bot.intelligence.overlay_narrator import OverlayNarrator
+    from bot.dashboard.routes.overlay import _DUREE_ESSAI_S, _SPECTACLES_ENTIERS
 
-    essai = _ECHANTILLONS["meme_storm"]["seconds"]
-    lachers = essai - OverlayNarrator.AVALANCHE_CHUTE_S
-    assert lachers >= 5, (
-        f"{essai} s d'essai ne laissent que {lachers} s de lâchers : trop court "
-        f"pour juger de la pluie")
+    n = _narrateur(134)
+    essai = _SPECTACLES_ENTIERS["meme_storm"](n)
+    assert essai == n._duree_avalanche()
+    assert essai > _DUREE_ESSAI_S
 
 
 @pytest.mark.parametrize("nb", [1, 2, 3])

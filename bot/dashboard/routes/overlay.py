@@ -427,15 +427,9 @@ _ECHANTILLONS: dict[str, dict] = {
                   "author": "Azraël"},
     "raid":      {"from": "kingsrequin", "viewers": 42},
     "wave":      {"viewers": 120},
-    # Le ▶ sert à régler, pas à subir les cinquante secondes que dure
-    # l'avalanche achetée — mais il lui faut de quoi montrer une chute ENTIÈRE.
-    # À cinq secondes, la carte se retirait avant que le premier meme ait touché
-    # le bas : on ne voyait que des memes qui s'évaporent en plein vol.
-    # Douze : sept secondes de lâchers, la dernière chute finit à douze.
-    "meme_storm": {"seconds": 12},
-    # Le spam monte en régime : trop court, on ne voit ni l'accélération ni
-    # l'écran bleu, c'est-à-dire ni l'un ni l'autre des deux effets à juger.
-    "virus_popup": {"seconds": 14},
+    # `meme_storm` et `virus_popup` n'ont PAS d'échantillon de durée : elle est
+    # posée plus bas à partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un
+    # vrai achat. Une constante d'essai en montrait la moitié.
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},
@@ -517,6 +511,29 @@ _GALERIE_VIDE = ("Aucune image dans la galerie : il n'y a rien à projeter. "
 # (10 s) : on le règle en le regardant, et republier à chaque coup d'œil
 # rallongerait le geste pour rien.
 _DUREE_ESSAI_S = 20.0
+
+# De quoi lire l'écran bleu et laisser retomber les dernières chutes après la
+# fin du spectacle.
+_MARGE_SPECTACLE_S = 3
+
+# Les widgets qui prennent l'écran ENTIER et durent le temps de montrer tout le
+# dossier de memes. Leur durée n'est pas un réglage d'essai : c'est le stock qui
+# la donne, et le narrateur en est la seule source.
+_SPECTACLES_ENTIERS = {
+    "meme_storm": lambda n: n and n._duree_avalanche(),
+    "virus_popup": lambda n: n and n._duree_virus(),
+}
+
+
+def _narrateur_muet(request: Request):
+    """Le narrateur s'il est là, `None` sinon — sans lever.
+
+    Un essai de mise en scène doit marcher même avant la connexion de Discord :
+    on retombe alors sur la durée d'essai ordinaire.
+    """
+    return getattr(
+        getattr(request.app.state.wally, "discord_bot", None), "overlay_narrator", None
+    )
 
 
 def _source_image(cle: str, request: Request) -> str | None:
@@ -657,6 +674,16 @@ async def post_overlay_preview(request: Request) -> dict:
         return {"ok": True, "affiche": True}
 
     params = {**_ECHANTILLONS.get(cle, {}), "duration": _DUREE_ESSAI_S}
+    # Les deux spectacles plein écran portent leur PROPRE durée, dérivée du
+    # dossier de memes. Les couper aux vingt secondes de l'essai en montrait la
+    # moitié — 58 memes sur 135, mesurés — et faisait conclure à tort que le
+    # dossier ne passait pas en entier. Ces éléments n'ont d'ailleurs aucune
+    # position à régler : le ▶ n'y sert qu'à JUGER l'effet.
+    if cle in _SPECTACLES_ENTIERS:
+        secondes = _SPECTACLES_ENTIERS[cle](_narrateur_muet(request))
+        if secondes:
+            params["seconds"] = secondes
+            params["duration"] = secondes + _MARGE_SPECTACLE_S
     if cle in _SANS_IMAGE:
         src = _source_image(cle, request)
         if src is None:
