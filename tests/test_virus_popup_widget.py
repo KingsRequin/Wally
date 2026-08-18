@@ -142,14 +142,11 @@ def test_l_essai_dure_le_temps_du_SPECTACLE_et_non_vingt_secondes():
         _DUREE_ESSAI_S, _ECHANTILLONS, _SPECTACLES_ENTIERS,
     )
     assert "virus_popup" in _SPECTACLES_ENTIERS
-    assert "meme_storm" in _SPECTACLES_ENTIERS
     # Et surtout : plus de durée en dur dans l'échantillon, qui l'emporterait.
     assert "seconds" not in _ECHANTILLONS.get("virus_popup", {})
-    assert "seconds" not in _ECHANTILLONS.get("meme_storm", {})
 
     n = _narrateur(134)
     assert _SPECTACLES_ENTIERS["virus_popup"](n) > _DUREE_ESSAI_S
-    assert _SPECTACLES_ENTIERS["meme_storm"](n) > _DUREE_ESSAI_S
 
 
 def test_un_essai_AVANT_la_connexion_de_discord_ne_plante_pas():
@@ -157,7 +154,6 @@ def test_un_essai_AVANT_la_connexion_de_discord_ne_plante_pas():
     démarre doit rester possible — on retombe sur la durée d'essai ordinaire."""
     from bot.dashboard.routes.overlay import _SPECTACLES_ENTIERS
     assert _SPECTACLES_ENTIERS["virus_popup"](None) in (None, 0, False)
-    assert _SPECTACLES_ENTIERS["meme_storm"](None) in (None, 0, False)
 
 
 def test_son_script_compte_dans_l_empreinte_de_version():

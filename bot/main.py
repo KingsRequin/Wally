@@ -698,27 +698,27 @@ async def main() -> None:
                 _raison = "aucune section apex dans config.yaml"
             logger.info("Duel Apex non armé : {r}", r=_raison)
 
-        # Avalanche de memes : une seconde récompense de points de chaîne, sans
+        # Attaque de virus : une seconde récompense de points de chaîne, sans
         # rapport avec Apex — elle ne dépend que de l'overlay et du dossier de
         # memes, donc elle vit HORS du bloc ci-dessus (qui est conditionné à
         # l'API Apex). Armée ici pour la même raison que le duel : Twitch ne
         # laisse rembourser qu'à l'application qui a CRÉÉ la récompense.
         try:
-            from bot.twitch.events.avalanche import (
-                CLE_RECOMPENSE as _CLE_AVALANCHE, COUT as _COUT_AVALANCHE,
-                PROMPT as _PROMPT_AVALANCHE, TITRE as _TITRE_AVALANCHE,
+            from bot.twitch.events.virus_popups import (
+                CLE_RECOMPENSE as _CLE_VIRUS, COUT as _COUT_VIRUS,
+                PROMPT as _PROMPT_VIRUS, TITRE as _TITRE_VIRUS,
             )
             from bot.twitch.recompenses import assurer_recompense
 
-            _avalanche_id = await assurer_recompense(
-                twitch_api, db, cle_etat=_CLE_AVALANCHE,
-                titre=_TITRE_AVALANCHE, cout=_COUT_AVALANCHE,
-                prompt=_PROMPT_AVALANCHE, libelle="avalanche de memes",
+            _virus_id = await assurer_recompense(
+                twitch_api, db, cle_etat=_CLE_VIRUS,
+                titre=_TITRE_VIRUS, cout=_COUT_VIRUS,
+                prompt=_PROMPT_VIRUS, libelle="attaque de virus",
             )
-            logger.info("Avalanche de memes armée (récompense {r})",
-                        r=_avalanche_id or "INDISPONIBLE")
+            logger.info("Attaque de virus armée (récompense {r})",
+                        r=_virus_id or "INDISPONIBLE")
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Avalanche de memes non armée : {e}", e=exc)
+            logger.error("Attaque de virus non armée : {e}", e=exc)
 
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())

@@ -43,7 +43,6 @@ _OVERLAY_FILES = (
     "overlay.js",
     "overlay_layout.js",
     "overlay_apex.js",
-    "overlay_avalanche.js",
     "overlay_virus.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
@@ -427,9 +426,9 @@ _ECHANTILLONS: dict[str, dict] = {
                   "author": "Azraël"},
     "raid":      {"from": "kingsrequin", "viewers": 42},
     "wave":      {"viewers": 120},
-    # `meme_storm` et `virus_popup` n'ont PAS d'échantillon de durée : elle est
-    # posée plus bas à partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un
-    # vrai achat. Une constante d'essai en montrait la moitié.
+    # `virus_popup` n'a PAS d'échantillon de durée : elle est posée plus bas à
+    # partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un vrai achat. Une
+    # constante d'essai en montrait la moitié.
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},
@@ -518,9 +517,9 @@ _MARGE_SPECTACLE_S = 3
 
 # Les widgets qui prennent l'écran ENTIER et durent le temps de montrer tout le
 # dossier de memes. Leur durée n'est pas un réglage d'essai : c'est le stock qui
-# la donne, et le narrateur en est la seule source.
+# la donne, et le narrateur en est la seule source. (L'avalanche de memes y
+# figurait aussi jusqu'au 2026-08-18 ; l'owner a tranché entre les deux.)
 _SPECTACLES_ENTIERS = {
-    "meme_storm": lambda n: n and n._duree_avalanche(),
     "virus_popup": lambda n: n and n._duree_virus(),
 }
 
@@ -674,11 +673,11 @@ async def post_overlay_preview(request: Request) -> dict:
         return {"ok": True, "affiche": True}
 
     params = {**_ECHANTILLONS.get(cle, {}), "duration": _DUREE_ESSAI_S}
-    # Les deux spectacles plein écran portent leur PROPRE durée, dérivée du
-    # dossier de memes. Les couper aux vingt secondes de l'essai en montrait la
-    # moitié — 58 memes sur 135, mesurés — et faisait conclure à tort que le
-    # dossier ne passait pas en entier. Ces éléments n'ont d'ailleurs aucune
-    # position à régler : le ▶ n'y sert qu'à JUGER l'effet.
+    # Le spectacle plein écran porte sa PROPRE durée, dérivée du dossier de
+    # memes. Le couper aux vingt secondes de l'essai en montrait la moitié —
+    # 58 memes sur 135, mesurés — et faisait conclure à tort que le dossier ne
+    # passait pas en entier. Cet élément n'a d'ailleurs aucune position à
+    # régler : le ▶ n'y sert qu'à JUGER l'effet.
     if cle in _SPECTACLES_ENTIERS:
         secondes = _SPECTACLES_ENTIERS[cle](_narrateur_muet(request))
         if secondes:

@@ -1,14 +1,14 @@
 """Le spam de popups : ça commence doucement et ça ACCÉLÈRE.
 
-Demande de l'owner (2026-08-17), en essai à côté de l'avalanche de memes :
-« popup de virus qui spam et qui se superpose, ça commence doucement et ça
-accélère ». Deux gabarits mêlés — fausses alertes et fenêtres à meme — qui
+Demande de l'owner (2026-08-17), d'abord montée en essai à côté de l'avalanche
+de memes — puis retenue contre elle le 2026-08-18 : « popup de virus qui spam et
+qui se superpose, ça commence doucement et ça accélère ». Deux gabarits mêlés — fausses alertes et fenêtres à meme — qui
 s'empilent sans jamais disparaître : c'est l'accumulation qui fait le gag, pas le
 mouvement.
 
 Le séquencement vit dans `overlay_virus.js`, hors du DOM, pour être EXÉCUTÉ ici
-plutôt que relu au grep — même parti pris que `overlay_avalanche.js`, et pour la
-même raison : un test qui cherche un bout de code fige l'écriture du jour.
+plutôt que relu au grep : un test qui cherche un bout de code fige l'écriture du
+jour et laisse passer le défaut suivant.
 """
 import json
 import subprocess
@@ -21,10 +21,8 @@ _STATIC = Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
 _PRELUDE = """
 global.window = global;
 require(%s);
-require(%s);
 const V = window.WallyVirus;
-""" % (json.dumps(str(_STATIC / "overlay_avalanche.js")),
-       json.dumps(str(_STATIC / "overlay_virus.js")))
+""" % json.dumps(str(_STATIC / "overlay_virus.js"))
 
 _SANS_NODE = subprocess.run(["which", "node"], capture_output=True).returncode != 0
 pytestmark = pytest.mark.skipif(_SANS_NODE, reason="node absent")

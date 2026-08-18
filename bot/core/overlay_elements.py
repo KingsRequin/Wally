@@ -197,12 +197,6 @@ LIBELLES: dict[str, dict[str, str]] = {
                        "chiffrée avec des barres proportionnelles — sert aussi "
                        "à suivre un duel Apex manche après manche.",
     },
-    "meme_storm": {
-        "nom": "Avalanche de memes",
-        "description": "Une pluie de memes de la communauté qui submerge "
-                       "l'écran pendant une demi-minute, achetée aux points "
-                       "de chaîne. Elle prend l'écran seule.",
-    },
     "virus_popup": {
         "nom": "Spam de popups virus",
         "description": "De fausses fenêtres système et des memes en pièce "

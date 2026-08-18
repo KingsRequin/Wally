@@ -881,37 +881,6 @@
       return box;
     },
 
-    // Avalanche de memes — 50 000 points de chaîne. Une pluie DENSE qui prend
-    // l'écran seule le temps que TOUT le dossier soit passé (~40 s pour 134
-    // memes) : c'est long et ça masque le jeu, c'est le but.
-    //
-    // Les médias sont tirés de la liste du rotateur (`/api/public/rotation`),
-    // déjà chargée par la page : les redemander ici doublerait l'appel et,
-    // surtout, ferait diverger les deux stocks au premier meme ajouté.
-    //
-    // Chaque flocon naît hors champ, tombe en ligne droite et meurt à
-    // l'arrivée. Aucun n'est retiré à la main : `animationend` les enlève,
-    // sinon 200 nœuds resteraient empilés dans le DOM après le passage — sur
-    // la machine qui encode le live.
-    meme_storm(p) {
-      const box = el("div", "meme-storm");
-      // Le stock est relu ICI : le serveur a dimensionné la fenêtre sur le
-      // dossier tel qu'il est à l'instant de l'achat, la page doit partir du
-      // même. Sans ça elle travaille sur la liste de son chargement, et un meme
-      // déposé pendant le live manque à l'appel.
-      stockFrais((medias) => {
-        if (!box.isConnected || !medias.length) return;
-        // Sans durée imposée (le ▶ du panneau), c'est le dossier qui la donne :
-        // rien ne dit mieux que lui combien de temps il faut pour le montrer
-        // en entier.
-        const duree = Math.max(3, Math.min(300,
-          Number(p.seconds) || window.WallyAvalanche.dureePour(medias.length)));
-        lancerAvalanche(box, medias, duree);
-      });
-      return box;
-    },
-
-
     // Spam de popups « virus » — variante de l'avalanche, montée pour être
     // comparée à elle. Ici rien ne tombe : les fenêtres s'ouvrent de plus en
     // plus vite et RESTENT, jusqu'à l'écran bleu qui recouvre tout.
@@ -982,61 +951,6 @@
       if (p && typeof p.then === "function") p.then(rendre, rendre);
       else rendre();
     } catch (e) { rendre(); }
-  }
-
-  /* Fait tomber TOUT le dossier sur la boîte reçue.
-   *
-   * Sortie du builder pour que le stock puisse être relu AVANT de démarrer :
-   * un builder rend son nœud tout de suite, la liste fraîche arrive après.
-   */
-  function lancerAvalanche(box, medias, duree) {
-    // TOUT le dossier passe, une fois chacun, dans un ordre mêlé — c'est la
-    // demande de l'owner, et c'est ce que le tirage au sort d'origine ne
-    // faisait pas : avec remise, ~40 % du stock ne sortait jamais.
-    // La cadence se déduit de la fenêtre annoncée par le serveur, qui l'a
-    // lui-même dimensionnée sur le dossier (`AVALANCHE_PAR_SECONDE`).
-    const stock = window.WallyAvalanche.ordre(medias);
-    const pas = window.WallyAvalanche.cadence(stock.length, duree);
-    // On cesse de lâcher une chute entière AVANT le retrait de la carte,
-    // sinon les derniers memes s'évaporent en plein vol avec elle.
-    const fenetre = window.WallyAvalanche.fenetreMs(duree);
-    const depart = performance.now();
-    let lances = 0;
-    const timer = setInterval(() => {
-      if (lances >= stock.length || !box.isConnected
-          || performance.now() - depart > fenetre) { clearInterval(timer); return; }
-      const media = stock[lances];
-      lances += 1;
-      const flocon = el("div", "flocon");
-      // Tailles mêlées : un mur de vignettes identiques ne fait pas une
-      // avalanche, il fait une grille.
-      const largeur = 140 + Math.floor(Math.random() * 220);
-      flocon.style.width = largeur + "px";
-      // Le tirage tient compte de la LARGEUR du meme : à 92 % avec 360 px de
-      // large, il sortait du cadre par la droite. `overflow: hidden` le
-      // coupait proprement, mais un meme entier vaut mieux qu'un meme rogné.
-      const large = (largeur / (window.innerWidth || 1920)) * 100;
-      flocon.style.left = (Math.random() * Math.max(0, 100 - large)) + "%";
-      flocon.style.animationDuration = (2.6 + Math.random() * 2.4) + "s";
-      flocon.style.setProperty("--depart", (Math.random() * 40 - 20).toFixed(1) + "deg");
-      flocon.style.setProperty("--arrivee", (Math.random() * 220 - 110).toFixed(1) + "deg");
-      const src = "/api/public/meme/" + encodeURIComponent(media.nom);
-      if (media.genre === "video") {
-        const v = document.createElement("video");
-        v.src = src; v.muted = true; v.autoplay = true; v.loop = true;
-        v.playsInline = true;
-        flocon.appendChild(v);
-      } else {
-        const i = document.createElement("img");
-        i.src = src; i.alt = "";
-        flocon.appendChild(i);
-      }
-      flocon.addEventListener("animationend", () => flocon.remove());
-      box.appendChild(flocon);
-    }, pas);
-    // Coupé avec la carte : `disposeWidget` vide les `data-interval`, et sans
-    // ça l'avalanche continuerait de semer des memes dans un nœud détaché.
-    box.dataset.interval = String(timer);
   }
 
   /* Ouvre les fenêtres du spam sur la boîte reçue, de plus en plus vite, puis

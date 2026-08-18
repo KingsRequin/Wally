@@ -300,24 +300,22 @@ def test_chaque_widget_placable_a_un_echantillon(preview):
     assert sans == [], f"widgets sans échantillon : {sans}"
 
 
-def test_les_spectacles_plein_ecran_partent_avec_LEUR_duree(preview):
-    """Elle vient du dossier, par le narrateur : leur ▶ ne règle aucune
-    position (la carte couvre l'écran), il ne sert qu'à juger l'effet — donc il
-    doit le montrer en entier, comme un vrai achat."""
+def test_le_spectacle_plein_ecran_part_avec_SA_duree(preview):
+    """Elle vient du dossier, par le narrateur : son ▶ ne règle aucune position
+    (la carte couvre l'écran), il ne sert qu'à juger l'effet — donc il doit le
+    montrer en entier, comme un vrai achat."""
     client, feed = preview
     narrateur = client.app.state.wally.discord_bot.overlay_narrator
-    narrateur._duree_avalanche.return_value = 50
     narrateur._duree_virus.return_value = 30
 
-    for cle, attendu in (("meme_storm", 50), ("virus_popup", 30)):
-        r = client.post("/api/admin/overlay/preview",
-                        json={"scene": "fin", "element": cle}, headers=_AUTH)
-        assert r.status_code == 200
-        params = feed.publies[-1]["params"]
-        assert params["seconds"] == attendu, cle
-        # La carte doit survivre au spectacle : c'est ce qui coupait le spam au
-        # bout des vingt secondes de l'essai.
-        assert params["duration"] > attendu, cle
+    r = client.post("/api/admin/overlay/preview",
+                    json={"scene": "fin", "element": "virus_popup"}, headers=_AUTH)
+    assert r.status_code == 200
+    params = feed.publies[-1]["params"]
+    assert params["seconds"] == 30
+    # La carte doit survivre au spectacle : c'est ce qui coupait le spam au bout
+    # des vingt secondes de l'essai.
+    assert params["duration"] > 30
 
 
 def test_meme_et_planning_recoivent_une_vraie_image(preview):

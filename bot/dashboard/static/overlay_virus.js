@@ -6,9 +6,9 @@
  * l'accumulation qui fait le gag, pas le mouvement. L'avalanche de memes, elle,
  * fait tomber ; les deux coexistent le temps que l'owner choisisse.
  *
- * Chargé APRÈS `overlay_avalanche.js`, dont il réutilise le mélange sans remise
- * (`WallyAvalanche.ordre`) : deux tirages maison auraient divergé au premier
- * correctif.
+ * L'avalanche de memes, sa rivale, a été retirée le 2026-08-18 : l'owner a
+ * tranché entre les deux après les avoir vues tourner. Le mélange sans remise
+ * qu'elle portait vit désormais ici.
  */
 (() => {
   "use strict";
@@ -145,16 +145,31 @@
     return Math.ceil(t / 1000);
   }
 
+  /* Le stock dans un ordre mêlé, en entier, une fois chacun.
+   *
+   * Copie d'abord : la liste vient du rotateur (`window.WallyRotationMedias`),
+   * qui s'en sert pour son propre défilé. La mélanger en place mêlerait aussi
+   * le sien. Et un tirage AVEC remise n'épuise pas un stock — sur 134 médias,
+   * il en laisse environ 40 % au vestiaire pendant que d'autres repassent trois
+   * fois. Un stock se PARCOURT.
+   */
+  function ordre(medias) {
+    const stock = Array.isArray(medias) ? medias.slice() : [];
+    for (let i = stock.length - 1; i > 0; i--) {          // Fisher-Yates
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = stock[i]; stock[i] = stock[j]; stock[j] = t;
+    }
+    return stock;
+  }
+
   /* Ce qui s'ouvre à chaque instant : une alerte ou un meme.
    *
-   * Les memes sont tirés sans remise (`WallyAvalanche.ordre`) et le tirage
-   * bascule sur les alertes dès que le stock est épuisé — ou vide dès le début,
-   * auquel cas ce spectacle marche quand même, contrairement à l'avalanche.
+   * Les memes sont tirés sans remise et le tirage bascule sur les alertes dès
+   * que le stock est épuisé — ou vide dès le début, auquel cas ce spectacle
+   * marche quand même : les fausses alertes se suffisent.
    */
   function fenetres(instants, medias) {
-    const stock = (window.WallyAvalanche
-      ? window.WallyAvalanche.ordre(medias)
-      : (Array.isArray(medias) ? medias.slice() : []));
+    const stock = ordre(medias);
     const plan = instants || [];
     let prochainMeme = 0;
     let derniereAlerte = -1;
@@ -261,7 +276,7 @@
     return { titre: b[0], message: b[1], code: b[2] };
   }
 
-  window.WallyVirus = { rythme, dureePour, dureeSelonStock, fenetres,
+  window.WallyVirus = { rythme, dureePour, dureeSelonStock, fenetres, ordre,
                         semeur, bsod,
                         PLAFOND_VIVANTES, GARDE_FOU, PART_ALERTES,
                         DEBUT_MS, FIN_MS, NB_ALERTES: ALERTES.length };
