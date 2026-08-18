@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot/ ./bot/
 COPY scripts/ ./scripts/
+# L'extension musique : servie en .zip par le bot, pour installation chez Azraël.
+COPY extension-musique/ ./extension-musique/
 # Lu par `bot/dashboard/routes/roadmap.py` (`parents[3]` → /app). Absent de
 # l'image, l'endpoint répondait 200 avec zéro section depuis toujours. Le
 # `.dockerignore` n'y suffisait pas : rien ne copiait le fichier.

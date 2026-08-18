@@ -157,6 +157,9 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(music.router, prefix="/api/music")
+    # Le .zip de l'extension : public, aucun secret dedans (le jeton est saisi
+    # par Azraël dans sa fenêtre de réglages), et un test le vérifie.
+    app.include_router(music.public_router, prefix="/api/public")
 
     # Chat routes (public — JWT auth handled internally)
     app.include_router(chat_auth.router, prefix="/api/chat")

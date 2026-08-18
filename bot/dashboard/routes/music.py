@@ -12,12 +12,20 @@ JWT dans chaque route.
 """
 from __future__ import annotations
 
+import io
 import secrets
+import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 from loguru import logger
 
 router = APIRouter()
+public_router = APIRouter()
+
+# Le dossier de l'extension, tel qu'il est copié dans l'image (cf. Dockerfile).
+_EXTENSION_DIR = Path(__file__).resolve().parents[3] / "extension-musique"
 
 # L'extension s'exécute dans l'onglet YouTube : c'est de cette origine que la
 # requête part. Fermée à tout le reste — un CORS ouvert laisserait n'importe
@@ -85,3 +93,35 @@ async def beat(request: Request) -> dict:
         logger.error("Musique : battement en erreur : {e}", e=exc)
         return {"ordres": []}
     return {"ordres": ordres}
+
+
+@public_router.get("/extension-musique.zip")
+async def telecharger_extension() -> Response:
+    """L'extension à installer chez Azraël, empaquetée à la volée.
+
+    Publique par nécessité : Azraël n'a pas de compte sur ce dashboard et n'a pas
+    accès au dépôt. Sans danger, et c'est une PROPRIÉTÉ à tenir — l'extension ne
+    contient aucun secret, le jeton étant saisi par lui dans sa fenêtre de
+    réglages. Un test le vérifie fichier par fichier.
+
+    Construite à chaque appel plutôt que déposée une fois : un zip figé se
+    périme à la première correction, et on enverrait alors une vieille version
+    sans le savoir.
+    """
+    if not _EXTENSION_DIR.is_dir():
+        raise HTTPException(404, "Extension introuvable sur ce déploiement")
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as zf:
+        for chemin in sorted(_EXTENSION_DIR.iterdir()):
+            # Fichiers du dossier seulement : pas de récursion, il n'y a pas de
+            # sous-dossier, et une descente aveugle emporterait un jour ce que
+            # quelqu'un y aura déposé.
+            if chemin.is_file() and not chemin.name.startswith("."):
+                zf.write(chemin, chemin.name)
+    logger.info("Extension musique téléchargée ({o} octets)", o=tampon.tell())
+    return Response(
+        content=tampon.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition":
+                 'attachment; filename="wally-musique.zip"'},
+    )
