@@ -100,3 +100,30 @@ async def test_recompenses_gerables_rend_None_sur_erreur_jamais_liste_vide(monke
     api, client = _api(_resp(500, {"message": "Internal Server Error"}))
     monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
     assert await api.recompenses_gerables() is None
+
+
+# ── le champ de texte n'est PAS imposé ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_une_recompense_peut_se_passer_du_champ_de_TEXTE(monkeypatch):
+    """`is_user_input_required` est OPTIONNEL côté Twitch (défaut `false`), et
+    on peut évidemment créer une récompense sans champ de saisie — c'est ce que
+    fait n'importe qui depuis le tableau de bord.
+
+    Il était posé à `True` en dur ici, hérité du duel qui attend un uid : toute
+    récompense héritait donc d'un champ inutile, et l'attaque de memes devait
+    écrire « rien à écrire » dans son invite pour s'en excuser.
+    """
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.creer_recompense("Sans saisie", 100, "p", saisie_requise=False)
+    assert client.post.call_args.kwargs["json"]["is_user_input_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_le_champ_de_texte_reste_disponible_pour_qui_en_a_besoin(monkeypatch):
+    """Le duel y attend un uid, « forcer une humeur » l'émotion voulue."""
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.creer_recompense("Avec saisie", 100, "p", saisie_requise=True)
+    assert client.post.call_args.kwargs["json"]["is_user_input_required"] is True

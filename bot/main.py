@@ -752,19 +752,21 @@ async def main() -> None:
         try:
             from bot.twitch.events.virus_popups import (
                 CLE_RECOMPENSE as _CLE_VIRUS, COUT as _COUT_VIRUS,
-                PROMPT as _PROMPT_VIRUS, TITRE as _TITRE_VIRUS,
+                PROMPT as _PROMPT_VIRUS, SAISIE_REQUISE as _SAISIE_VIRUS,
+                TITRE as _TITRE_VIRUS,
             )
             from bot.twitch.recompenses import assurer_recompense
 
             _virus_id = await assurer_recompense(
                 twitch_api, db, cle_etat=_CLE_VIRUS,
                 titre=_TITRE_VIRUS, cout=_COUT_VIRUS,
-                prompt=_PROMPT_VIRUS, libelle="attaque de virus",
+                prompt=_PROMPT_VIRUS, libelle="attaque de meme",
+                saisie_requise=_SAISIE_VIRUS,
             )
-            logger.info("Attaque de virus armée (récompense {r})",
+            logger.info("Attaque de meme armée (récompense {r})",
                         r=_virus_id or "INDISPONIBLE")
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Attaque de virus non armée : {e}", e=exc)
+            logger.error("Attaque de meme non armée : {e}", e=exc)
 
         # Forcer une humeur (§14) : DEUX récompenses, une par intensité — le
         # coût est fixe par récompense côté Twitch, il en faut donc une pour

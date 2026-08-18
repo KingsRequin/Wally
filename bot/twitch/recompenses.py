@@ -25,7 +25,7 @@ from loguru import logger
 
 async def assurer_recompense(
     api: Any, db: Any, *, cle_etat: str, titre: str, cout: int, prompt: str,
-    libelle: str = "récompense",
+    libelle: str = "récompense", saisie_requise: bool = True,
 ) -> str:
     """L'identifiant de notre récompense, créée si besoin. `""` si impossible.
 
@@ -45,11 +45,13 @@ async def assurer_recompense(
         if actuelle is not None:
             # Une mise à jour ratée ne coûte que le libellé : la récompense
             # reste achetable et remboursable.
-            await api.maj_recompense(connu, titre, cout, prompt, actuelle=actuelle)
+            await api.maj_recompense(connu, titre, cout, prompt, actuelle=actuelle,
+                                     saisie_requise=saisie_requise)
             return str(connu)
         logger.warning("Récompense {l} {i} introuvable côté Twitch — on recrée",
                        l=libelle, i=connu)
-    nouvel_id = await api.creer_recompense(titre, cout, prompt)
+    nouvel_id = await api.creer_recompense(titre, cout, prompt,
+                                           saisie_requise=saisie_requise)
     if not nouvel_id:
         logger.error("Récompense {l} impossible à créer — fonction indisponible",
                      l=libelle)

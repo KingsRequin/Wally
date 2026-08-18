@@ -204,3 +204,35 @@ async def test_une_liste_indisponible_ne_declenche_aucune_ecriture():
     assert await runner.assurer_recompense(TITRE, COUT, PROMPT) == "RW1"
     api.maj_recompense.assert_not_awaited()
     api.creer_recompense.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_le_champ_de_saisie_se_met_a_jour_LUI_AUSSI(monkeypatch):
+    """Sinon changer `SAISIE_REQUISE` sur une récompense DÉJÀ créée ne ferait
+    rien — silencieusement. La mise à jour ne portait que le titre, le coût et
+    l'invite, et la divergence n'aurait sauté aux yeux de personne : la
+    récompense continue de marcher, avec son champ de trop.
+    """
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.maj_recompense("RW42", "Titre", 100, "invite",
+                             actuelle={"title": "Titre", "cost": 100,
+                                       "prompt": "invite",
+                                       "is_user_input_required": True},
+                             saisie_requise=False)
+    corps = client.patch.call_args.kwargs["json"]
+    assert corps["is_user_input_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_rien_n_est_envoye_quand_TOUT_concorde_saisie_comprise(monkeypatch):
+    """L'autre moitié : un PATCH par démarrage, pour rien, sur une récompense
+    déjà conforme — c'est ce que ce fichier existe pour éviter."""
+    api, client = _api(_resp(200, {"data": [{"id": "RW42"}]}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: client)
+    await api.maj_recompense("RW42", "Titre", 100, "invite",
+                             actuelle={"title": "Titre", "cost": 100,
+                                       "prompt": "invite",
+                                       "is_user_input_required": False},
+                             saisie_requise=False)
+    client.patch.assert_not_awaited()

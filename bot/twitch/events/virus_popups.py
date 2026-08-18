@@ -28,10 +28,15 @@ if TYPE_CHECKING:
 # mauvais effet.
 CLE_RECOMPENSE = "overlay:virus_popup_reward_id"
 
-TITRE = "Attaque de virus"
+TITRE = "Attaque de meme"
 COUT = 50000
 PROMPT = ("L'écran se fait submerger de fausses fenêtres de virus et de memes, "
-          "de plus en plus vite, jusqu'à l'écran bleu. Rien à écrire.")
+          "de plus en plus vite, jusqu'à un blue screen.")
+
+# Aucun champ de saisie : il n'y a rien à écrire, et `is_user_input_required`
+# est optionnel côté Twitch — il était posé à `True` en dur pour tout le monde,
+# héritage du duel qui attend un uid.
+SAISIE_REQUISE = False
 
 
 def _narrateur(bot):

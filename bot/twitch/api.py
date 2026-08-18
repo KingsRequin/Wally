@@ -854,7 +854,8 @@ class TwitchAPI:
                 f"{eteintes} DÉSACTIVÉES — elles comptent, et le tableau de bord "
                 f"ne les affiche pas par défaut). {geste}")
 
-    async def creer_recompense(self, titre: str, cout: int, prompt: str) -> str | None:
+    async def creer_recompense(self, titre: str, cout: int, prompt: str, *,
+                               saisie_requise: bool = True) -> str | None:
         """Crée la récompense de points de chaîne, et rend son ID.
 
         C'est Wally qui doit la créer : Twitch réserve la mise à jour d'une
@@ -868,10 +869,15 @@ class TwitchAPI:
         """
         corps = {
             **_corps_recompense(titre, cout, prompt),
-            # Toujours vrai : le duel y attend un uid, « forcer une humeur »
-            # l'émotion voulue. Les récompenses qui n'en ont pas besoin le
-            # disent dans leur invite (« rien à écrire »).
-            "is_user_input_required": True,
+            # `is_user_input_required` est OPTIONNEL côté Twitch (défaut
+            # `false`) : il était posé à `True` en dur ici, hérité du duel qui
+            # attend un uid. Toute récompense héritait donc d'un champ de saisie
+            # inutile, et devait s'en excuser dans son invite.
+            #
+            # Le défaut reste `True` : les deux appelants historiques (duel,
+            # humeur) en dépendent, et un défaut à `False` les aurait cassés en
+            # silence.
+            "is_user_input_required": bool(saisie_requise),
             "is_enabled": True,
             # JAMAIS True : une redemption qui saute la file est aussitôt
             # FULFILLED, et seul un statut UNFULFILLED peut être mis à jour.
@@ -1022,7 +1028,8 @@ class TwitchAPI:
             return False
 
     async def maj_recompense(self, reward_id: str, titre: str, cout: int,
-                             prompt: str, *, actuelle: dict | None = None) -> bool:
+                             prompt: str, *, actuelle: dict | None = None,
+                             saisie_requise: bool = True) -> bool:
         """Aligne une récompense EXISTANTE sur le libellé voulu (PATCH).
 
         Sans elle, éditer `apex.duel` dans `config.yaml` ne changeait rien :
@@ -1048,7 +1055,13 @@ class TwitchAPI:
         try:
             # DANS le `try` : un coût illisible en configuration ne doit pas
             # remonter jusqu'au démarrage du bot pour un simple libellé.
-            corps = _corps_recompense(titre, cout, prompt)
+            # Le champ de saisie voyage AVEC le reste : sans lui, changer
+            # `saisie_requise` sur une récompense déjà créée ne ferait rien, et
+            # silencieusement — elle continuerait de marcher avec son champ de
+            # trop. Hors de `_corps_recompense`, que la création remplit déjà de
+            # son côté.
+            corps = {**_corps_recompense(titre, cout, prompt),
+                     "is_user_input_required": bool(saisie_requise)}
             if actuelle is not None:
                 ecarts = {c: v for c, v in corps.items()
                           if c in actuelle and actuelle[c] != v}
