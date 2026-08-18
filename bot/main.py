@@ -167,6 +167,10 @@ async def main() -> None:
     apex_api         = svc.apex_api
     rss_feed         = svc.rss_feed
     shared_scheduler = svc.shared_scheduler
+    # La musique d'Azraël (§10). Créé ici, au même endroit que les autres
+    # services partagés : la route de l'extension le nourrit, l'outil du chat
+    # Twitch le lit — deux instances auraient divergé au premier battement.
+    music_service    = MusicService()
 
     from bot.intelligence.actions import ActionDefinition
 
@@ -314,6 +318,10 @@ async def main() -> None:
         # Repéré par `_demarrer()` : un arrêt avant `await gathered` doit tout de
         # même rendre les transports WebSocket à Twitch.
         _AU_DEMARRAGE["twitch"] = twitch_bot
+        # La route de l'extension le NOURRIT, l'outil du chat le LIT : une
+        # seconde instance aurait divergé au premier battement, et Wally aurait
+        # répondu « je ne sais pas » à côté d'un service plein.
+        twitch_bot.music = music_service
         twitch_bot.fact_extractor = fact_extractor
         twitch_bot.web_search = web_search
         twitch_bot.scrape = scrape
@@ -945,7 +953,7 @@ async def main() -> None:
         # Construit ici, partagé par la route de l'extension (qui le nourrit) et
         # par l'outil du chat Twitch (qui le lit). Deux instances auraient
         # divergé au premier battement.
-        music=MusicService(),
+        music=music_service,
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

@@ -16,6 +16,7 @@ from loguru import logger
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.core.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
@@ -1349,6 +1350,13 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # affichage. Le conditionner à l'overlay priverait Wally de réponse hors
     # live — le moment où on demande justement quand est le prochain stream.
     tools.append(PLANNING_TOOL_SPEC)
+    # La musique d'Azraël : ici pour la LECTURE seule (« c'est quoi la
+    # musique ? »), que le §10 veut ouverte à tout le monde. Le pilotage exige
+    # un badge de modérateur Twitch, qu'un salon Discord ne porte pas —
+    # `pilotable=False` à l'exécution le dit et ORIENTE vers le chat du live,
+    # au lieu de charrier quelqu'un qui n'a rien tenté de louche.
+    if getattr(bot, "music", None) is not None:
+        tools.append(MUSIC_TOOL)
     # Overlay : seulement s'il est branché — un outil mort ferait promettre
     # un affichage qui n'arriverait jamais.
     if _overlay_narrator(bot) is not None:
@@ -2735,6 +2743,9 @@ async def _respond(
                 return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
+            if name == "music_control":
+                return await run_music_tool(bot, args, roles=None,
+                                            pilotable=False)
             if name == "show_planning":
                 return run_planning_tool(bot, args)
             if name == "show_overlay":

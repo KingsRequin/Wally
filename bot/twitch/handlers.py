@@ -33,6 +33,7 @@ from bot.discord.handlers import (
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
 )
+from bot.core.music_tool import MUSIC_TOOL, run_music_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
 
 if TYPE_CHECKING:
@@ -341,6 +342,12 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     _vs = getattr(getattr(bot, "discord_bot", None), "voice_service", None)
     if overlay and _vs is not None and getattr(_vs, "is_connected", False):
         tools.append(SAY_IN_VOICE_TOOL)
+    # La musique d'Azraël. Proposée partout, chaîne invitée comprise : « c'est
+    # quoi la musique ? » est une LECTURE, ouverte à tous, et un invité a le
+    # droit de la poser. C'est le pilotage que la garde d'exécution réserve —
+    # et c'est là aussi qu'un viewer qui essaie se fait charrier.
+    if getattr(bot, "music", None) is not None:
+        tools.append(MUSIC_TOOL)
     if overlay and _overlay_narrator(bot) is not None:
         # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
         # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
@@ -575,6 +582,13 @@ def make_tool_executor(
             # `_resolve_twitch_roles` normalise les trois formes qu'un badge peut
             # prendre — les lire à la main a cassé ici même, en direct.
             return await run_say_in_voice_tool(
+                bot, args, roles=_resolve_twitch_roles(badges or []),
+                maison=overlay)
+        if name == "music_control":
+            # Mêmes rôles que `say_in_voice`, et pour la même raison : lus sur
+            # les badges du message réel, sinon il suffirait d'écrire « je suis
+            # modo » pour changer la musique du live.
+            return await run_music_tool(
                 bot, args, roles=_resolve_twitch_roles(badges or []),
                 maison=overlay)
         if name == "show_overlay":
