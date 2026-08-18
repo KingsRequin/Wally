@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -129,7 +130,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -142,6 +143,20 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(journal.public_router, prefix="/api/public")
     app.include_router(cognitive.public_router, prefix="/api/public")
     app.include_router(overlay.public_router, prefix="/api/public")
+
+    # Extension musique (§10) : appelée depuis l'onglet YouTube d'Azraël, donc
+    # depuis un NAVIGATEUR TIERS et une autre origine. Deux conséquences, et il
+    # faut les deux pour que ça marche :
+    #   · le CORS, sans quoi le navigateur jette la réponse — restreint aux
+    #     origines YouTube, jamais `*` : cette route commande un lecteur ;
+    #   · son propre jeton, validé dans la route (cf. `_PUBLIC_PREFIXES`).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(music.ORIGINES),
+        allow_methods=["POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+    app.include_router(music.router, prefix="/api/music")
 
     # Chat routes (public — JWT auth handled internally)
     app.include_router(chat_auth.router, prefix="/api/chat")

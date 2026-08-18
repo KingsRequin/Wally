@@ -190,9 +190,32 @@ def test_toute_section_de_config_est_ecrite_par_save(tmp_path):
         "mood", "fatigue", "habituation", "emotional_memory",
         "circadian", "spontaneous", "secondaries",
     }
+    # `music` ne vient pas du FICHIER mais de l'environnement : son seul champ
+    # est un secret (`MUSIC_EXTENSION_TOKEN`). L'écrire ici en ferait une
+    # seconde source de vérité, qui divergerait de `.env` au premier changement
+    # — et un secret n'a rien à faire dans un fichier qu'on recopie. Le test
+    # suivant interdit d'y glisser un réglage ordinaire en douce.
+    hors_fichier = {"music"}
     attendus = {
         f.name for f in fields(config)
-        if not f.name.startswith("_") and f.name not in dans_emotions
+        if not f.name.startswith("_")
+        and f.name not in dans_emotions and f.name not in hors_fichier
     }
     manquants = attendus - set(on_disk)
     assert not manquants, f"sections perdues par save() : {sorted(manquants)}"
+
+
+def test_la_section_music_ne_contient_QUE_du_secret_venu_de_l_env():
+    """Contrepartie de son exemption ci-dessus.
+
+    `music` échappe à `save()` parce qu'elle est dérivée de l'environnement. Y
+    ajouter un jour un réglage ordinaire (une durée, un libellé) le rendrait
+    silencieusement non persistant : réglé dans le panneau, disparu au
+    redémarrage, sans le moindre message. Ce test force à trancher à ce
+    moment-là plutôt qu'à le découvrir en direct.
+    """
+    from dataclasses import fields
+
+    from bot.config import MusicConfig
+
+    assert {f.name for f in fields(MusicConfig)} == {"extension_token"}

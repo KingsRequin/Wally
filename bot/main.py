@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from bot.core.llm.base import FALLBACK_RESPONSE
+from bot.core.music import MusicService
 
 load_dotenv()
 
@@ -941,6 +942,10 @@ async def main() -> None:
         update_checker=update_checker,
         cognitive_feed=getattr(discord_bot, "cognitive_feed", None),
         apex=apex_api,
+        # Construit ici, partagé par la route de l'extension (qui le nourrit) et
+        # par l'outil du chat Twitch (qui le lit). Deux instances auraient
+        # divergé au premier battement.
+        music=MusicService(),
     )
 
     dashboard_state.overlay_visible = config.web_chat.overlay_visible

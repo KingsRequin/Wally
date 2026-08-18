@@ -327,6 +327,18 @@ class ApexConfig:
 
 
 @dataclass
+class MusicConfig:
+    """Le lien avec l'extension qui suit la musique d'Azraël (§10).
+
+    Le jeton est un SECRET : il vient de l'environnement, jamais de
+    `config.yaml`, qui est versionné. Vide, la route se ferme — elle est
+    publiée sur internet, et un défaut qui l'ouvrirait serait pire que la
+    fonction elle-même.
+    """
+    extension_token: str = ""
+
+
+@dataclass
 class TavilyConfig:
     monthly_limit: int = 200
     # Délai minimal entre deux recherches web déclenchées par la cognition
@@ -444,6 +456,7 @@ class Config:
     twitch_events: dict[str, TwitchEventConfig]
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
     apex: ApexConfig = field(default_factory=ApexConfig)
+    music: MusicConfig = field(default_factory=MusicConfig)
     firecrawl: FirecrawlConfig = field(default_factory=FirecrawlConfig)
     rss: RSSFeedsConfig = field(default_factory=RSSFeedsConfig)
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
@@ -616,6 +629,9 @@ class Config:
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
+                music=MusicConfig(
+                    extension_token=__import__("os").getenv(
+                        "MUSIC_EXTENSION_TOKEN", "")),
                 apex=ApexConfig(**apex_raw, duel=DuelConfig(**duel_raw)),
                 firecrawl=FirecrawlConfig(**firecrawl_raw),
                 rss=rss_cfg,

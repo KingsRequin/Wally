@@ -67,6 +67,10 @@ class AppState:
     # panneau admin exige de le VÉRIFIER auprès de l'API, et en construire un
     # deuxième ici perdrait le cache et laisserait un client HTTP ouvert.
     apex: object = None
+    # Ce qui passe chez Azraël, et la file d'ordres qui attend son extension.
+    # Ici et non dans un adaptateur : la route HTTP le nourrit, l'outil du chat
+    # Twitch le lit — deux instances auraient divergé au premier battement.
+    music: object = None
     # Exposés pour les routes publiques observability (but courant, mémoire,
     # historique du flux) — propagés depuis le bot Discord au boot (cf. bot.py).
     fact_store: object = None

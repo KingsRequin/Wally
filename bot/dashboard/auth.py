@@ -32,6 +32,10 @@ _PUBLIC_PREFIXES = (
     "/api/public/",   # site public
     "/api/chat/",     # chat web : JWT Discord validé dans chaque route
     "/api/setup/",    # assistant de première installation, jeton dans l'URL
+    "/api/music/",    # extension musique : jeton PROPRE validé dans la route —
+                      # lui donner le Bearer admin reviendrait à confier la
+                      # mémoire, les logs et les DM à une extension installée
+                      # sur la machine de quelqu'un d'autre.
 )
 
 # Un redirect de navigateur venu de Twitch : aucun en-tête possible, et la route
