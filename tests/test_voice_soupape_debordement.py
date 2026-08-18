@@ -141,3 +141,30 @@ def test_le_plancher_s_applique_avant_la_soupape():
     p._pending_fallback = _MAX_PENDING_FALLBACK
     p.speech_end_sync("azrael", array.array("h", [30] * 6400).tobytes())  # 0,4 s, rms 30
     assert lances == []
+
+
+def test_une_reponse_non_json_dit_ce_qu_elle_etait():
+    """Vu en prod le soir même : « Expecting value: line 1 column 1 » remontait
+    par l'attrape-tout, et l'énoncé était perdu sans qu'on sache pourquoi. Une
+    passerelle qui rend du HTML, un 429 et un corps vide sont trois pannes
+    différentes — le statut et l'extrait du corps les séparent."""
+    from bot.discord.voice.providers import OneMinSTT
+
+    class _Rep:
+        status_code = 502
+        text = "<html>Bad Gateway</html>"
+
+        def json(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    messages = []
+    from loguru import logger
+
+    sink = logger.add(lambda m: messages.append(m), level="WARNING")
+    try:
+        assert OneMinSTT._corps(_Rep(), "upload") == {}
+    finally:
+        logger.remove(sink)
+
+    trace = "".join(messages)
+    assert "502" in trace and "Bad Gateway" in trace and "upload" in trace

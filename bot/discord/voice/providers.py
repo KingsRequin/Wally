@@ -219,6 +219,23 @@ class OneMinSTT:
             w.writeframes(pcm16k_mono)
         return tampon.getvalue()
 
+    @staticmethod
+    def _corps(rep, etape: str) -> dict:
+        """Le JSON de la réponse, ou {} — en DISANT ce qui est arrivé à la place.
+
+        Vu en production dès la première soirée : « Expecting value: line 1
+        column 1 » remontait par l'attrape-tout, donc on savait qu'un énoncé
+        était perdu sans savoir pourquoi. Une passerelle qui répond du HTML, un
+        429, un corps vide : ce sont trois pannes différentes et un seul
+        message. Le statut et l'extrait du corps les séparent.
+        """
+        try:
+            return rep.json()
+        except Exception:  # noqa: BLE001
+            logger.warning("OneMinSTT: {e} — réponse non-JSON (HTTP {c}) : {t}",
+                           e=etape, c=rep.status_code, t=(rep.text or "")[:160])
+            return {}
+
     async def transcribe(self, pcm16k_mono: bytes) -> str:
         import httpx
 
@@ -228,10 +245,8 @@ class OneMinSTT:
                     f"{self._BASE}/assets", headers={"API-KEY": self._key},
                     files={"asset": ("enonce.wav", self._wav(pcm16k_mono), "audio/wav")},
                 )
-                chemin = (envoi.json().get("fileContent") or {}).get("path")
+                chemin = (self._corps(envoi, "upload").get("fileContent") or {}).get("path")
                 if not chemin:
-                    logger.warning("OneMinSTT: upload sans chemin ({c}) — {t}",
-                                   c=envoi.status_code, t=envoi.text[:120])
                     return ""
                 rep = await client.post(
                     f"{self._BASE}/features",
@@ -240,7 +255,7 @@ class OneMinSTT:
                           "promptObject": {"audioUrl": chemin, "response_format": "text",
                                            "language": self._lang}},
                 )
-            corps = rep.json()
+            corps = self._corps(rep, "transcription")
             if "errorCode" in corps:
                 # Le refus arrive en HTTP 200 avec le motif dans le CORPS : sans
                 # cette lecture, un quota épuisé passerait pour un énoncé vide.
