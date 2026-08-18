@@ -135,19 +135,26 @@ def _world_ranks(payload: dict) -> dict[str, tuple[int | None, float | None]]:
 def _read_stats(payload: dict) -> dict[str, StatValue]:
     """Les notions connues, telles que ce joueur les publie.
 
-    Plusieurs trackers peuvent porter le MÊME libellé et se compléter : Azraël a
-    « BR Kills » deux fois, `specialEvent_kills` = 92 182 et `kills` = 10 142.
-    Ils s'ADDITIONNENT — la preuve est dans ses propres données, la somme de ses
-    « BR Kills » par légende vaut exactement 102 324, soit les deux réunis.
+    Plusieurs trackers peuvent porter le MÊME libellé : Azraël a « BR Kills »
+    deux fois, `specialEvent_kills` = 92 182 et `kills` = 10 142. On garde le
+    PLUS HAUT — ils comptent la même chose, chacun n'accumulant que tant qu'il
+    est épinglé, si bien que le badge retiré reste gelé à sa dernière valeur.
 
-    On gardait le premier rencontré et on jetait l'autre : Wally annonçait
-    « 92 182 kills » à qui en avait plus de cent mille, avec un aplomb parfait.
-    Une valeur amputée de 10 % ne se voit pas — elle est juste fausse.
+    On les additionnait, sur la foi d'un contrôle qui ne contrôlait rien : « la
+    somme par légende vaut la somme globale ». Les deux membres appliquaient la
+    même addition, et l'API construit `total` en sommant les légendes clé par
+    clé — l'égalité était vraie par construction. Vérifié le 2026-08-18 sur les
+    deux comptes : la somme des `kills` par légende vaut EXACTEMENT le `kills`
+    global, et pareil pour `specialEvent_kills`. Deux séries complètes et
+    parallèles, pas deux moitiés.
+
+    Ce qui a crevé l'abcès : sous Crypto, IronAnanas publie `kills` = 11 117 et
+    `specialEvent_kills` = 11 117. Wally lui annonçait 22 234 kills.
     """
     total = payload.get("total") or {}
     if not isinstance(total, dict):
         return {}
-    # index libellé → (libellé d'origine, somme des trackers de ce libellé)
+    # index libellé → (libellé d'origine, plus haut tracker de ce libellé)
     by_label: dict[str, tuple[str, int]] = {}
     for entry in total.values():
         if not isinstance(entry, dict):
@@ -158,8 +165,8 @@ def _read_stats(payload: dict) -> dict[str, StatValue]:
             continue
         cle = str(label).lower()
         precedent = by_label.get(cle)
-        cumul = int(value) + (precedent[1] if precedent else 0)
-        by_label[cle] = (str(label), cumul)
+        if precedent is None or int(value) > precedent[1]:
+            by_label[cle] = (str(label), int(value))
 
     ranks = _world_ranks(payload)
     stats: dict[str, StatValue] = {}
@@ -190,10 +197,11 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
       annonçait déjà « 92 182 kills, 3ᵉ mondial » au lieu de « pas de rang ».
     · Deux entrées peuvent porter le MÊME libellé sous une même légende :
       Rampart chez Azraël a « BR Kills » deux fois, `kills` = 982 et
-      `specialEvent_kills` = 2285. Ce ne sont pas des doublons mais deux
-      compteurs qui s'ADDITIONNENT, comme au niveau global — la somme de tous
-      ses « BR Kills » par légende vaut exactement son total, 102 324. Le rang
-      mondial retenu est celui du tracker DOMINANT : un classement porte sur un
+      `specialEvent_kills` = 2285. On garde le PLUS HAUT, comme au niveau
+      global : deux badges du même compteur, dont celui qui n'est plus épinglé
+      reste gelé. Les additionner donnait des chiffres inventés — 22 234 kills
+      avec Crypto à IronAnanas, qui en publie 11 117 sur ses deux badges.
+      Le rang mondial suit le tracker retenu : un classement porte sur un
       compteur, jamais sur une somme.
     · Un bloc de légende peut ne pas être un dict, et `data` peut ne pas être une
       liste. L'API ne garantit aucune forme.
@@ -210,8 +218,8 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
         if not isinstance(entrees, list):
             continue
 
-        # libellé → (libellé, cumul, rangMondial, top%, rangPlateforme,
-        #            top% plateforme, valeur du tracker dominant)
+        # libellé → (libellé, valeur, rangMondial, top%, rangPlateforme,
+        #            top% plateforme)
         par_libelle: dict[str, tuple] = {}
         for entree in entrees:
             if not isinstance(entree, dict):
@@ -231,17 +239,11 @@ def _read_legend_stats(payload: dict) -> dict[str, dict[str, StatValue]]:
                 _num(plateforme.get("topPercent")),
             )
             ancien = par_libelle.get(cle)
-            if ancien is None:
-                par_libelle[cle] = (str(libelle), int(valeur), *rangs, int(valeur))
-                continue
-            # Valeurs cumulées ; rangs empruntés au tracker dominant, dont on
-            # garde la valeur à part pour savoir lequel domine.
-            domine = int(valeur) > ancien[6]
-            par_libelle[cle] = (
-                ancien[0], ancien[1] + int(valeur),
-                *(rangs if domine else ancien[2:6]),
-                max(int(valeur), ancien[6]),
-            )
+            # Le plus haut l'emporte, rangs compris : valeur et classement
+            # viennent du même tracker, sinon on marierait le compteur de l'un
+            # au rang de l'autre.
+            if ancien is None or int(valeur) > ancien[1]:
+                par_libelle[cle] = (str(libelle), int(valeur), *rangs)
 
         notions: dict[str, StatValue] = {}
         for notion, alias_possibles in STAT_ALIASES.items():

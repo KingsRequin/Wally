@@ -1,24 +1,23 @@
-"""Deux trackers d'un même libellé s'additionnent, et les légendes ont leurs chiffres.
+"""Les légendes ont leurs chiffres, et deux trackers d'un libellé n'en font qu'un.
 
-Signalé le 2026-08-10 par le propriétaire : Wally annonçait « 92 182 kills » pour
-Azraël, qui en a plus de cent mille — et refusait de donner ses kills par
-légende, en affirmant que l'API ne les fournissait pas.
+Signalé le 2026-08-10 par le propriétaire : Wally refusait de donner les kills
+par légende d'Azraël, en affirmant que l'API ne les fournissait pas.
+`legends.all.<Légende>.data` n'était jamais lu ; la description de l'outil
+annonçait même « CE QUE CETTE API NE DONNE PAS : […] classement par légende ».
+Wally en concluait, logiquement, qu'il n'y avait pas accès. Or tout est là, avec
+les rangs mondiaux — c'est l'objet de ce fichier.
 
-Deux défauts, une même racine : on jetait des données que l'API donnait.
+La même passe avait cru corriger un second défaut, et en a créé un : `total`
+porte DEUX trackers « BR Kills » chez Azraël (`specialEvent_kills` = 92 182 et
+`kills` = 10 142), et on s'est mis à les ADDITIONNER. Le contrôle qui validait
+l'addition — « la somme par légende vaut la somme globale » — appliquait la même
+addition des deux côtés, sur un `total` que l'API construit justement en sommant
+les légendes clé par clé. Vrai par construction, donc muet.
 
-  1. `total` porte DEUX trackers nommés « BR Kills » chez Azraël,
-     `specialEvent_kills` = 92 182 et `kills` = 10 142. Le lecteur gardait le
-     premier rencontré (`setdefault`) et ignorait l'autre. Ce ne sont pas des
-     doublons : leur somme, 102 324, vaut EXACTEMENT la somme de ses « BR Kills »
-     par légende. Idem pour « BR Damage ». Une valeur amputée de 10 % ne se voit
-     pas — elle est juste fausse, annoncée avec le même aplomb.
+Corrigé le 2026-08-18 : on garde le plus haut. Le récit complet et la preuve qui
+tranche sont dans test_apex_trackers_meme_libelle.py.
 
-  2. `legends.all.<Légende>.data` n'était jamais lu. La description de l'outil
-     annonçait même « CE QUE CETTE API NE DONNE PAS : […] classement par
-     légende » — Wally en concluait, logiquement, qu'il n'avait pas accès aux
-     kills par légende. Or ils sont là, avec leur rang mondial.
-
-Les fixtures sont des captures réelles des deux comptes (2026-08-08).
+Les fixtures sont des captures réelles des comptes (2026-08-08).
 """
 import json
 from pathlib import Path
@@ -44,20 +43,13 @@ def kingsrequin():
     return _profil("bridge_kingsrequin.json")
 
 
-# ───────────────────────── le total amputé ─────────────────────────
-def test_les_trackers_du_meme_libelle_sadditionnent(azrael):
-    """92 182 + 10 142. Garder le premier annonçait 10 % de moins."""
-    assert azrael.stats["kills"].value == 102_324
-    assert azrael.stats["damage"].value == 30_286_591
-
-
-def test_le_total_egale_la_somme_par_legende(azrael):
-    """Le contrôle qui prouve que la somme est la bonne lecture, pas une
-    heuristique : les deux chemins de calcul tombent sur le même nombre."""
-    par_legende = sum(
-        st["kills"].value for st in azrael.legend_stats.values() if "kills" in st
-    )
-    assert par_legende == azrael.stats["kills"].value == 102_324
+# ───────────────────────── le total ─────────────────────────
+def test_le_plus_haut_tracker_du_libelle_gagne(azrael):
+    """92 182 et 10 142 sont deux badges du même compteur, pas deux moitiés.
+    Le second est gelé depuis qu'il a quitté son emplacement."""
+    assert azrael.stats["kills"].value == 92_182
+    # Idem « BR Damage » : 29 917 822 et 368 769, jamais leur somme.
+    assert azrael.stats["damage"].value == 29_917_822
 
 
 def test_un_compte_sans_doublon_reste_inchange(kingsrequin):
@@ -73,9 +65,9 @@ def test_les_kills_par_legende_sont_lus(azrael):
     assert azrael.legend_stats["Fuse"]["wins"].value == 3_136
 
 
-def test_une_legende_a_deux_compteurs_les_additionne(azrael):
-    """Rampart : `kills` = 982 et `specialEvent_kills` = 2 285."""
-    assert azrael.legend_stats["Rampart"]["kills"].value == 3_267
+def test_une_legende_a_deux_compteurs_garde_le_plus_haut(azrael):
+    """Rampart : `kills` = 982 et `specialEvent_kills` = 2 285. Pas 3 267."""
+    assert azrael.legend_stats["Rampart"]["kills"].value == 2_285
 
 
 def test_le_rang_mondial_vient_du_tracker_dominant(azrael):
