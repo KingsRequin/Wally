@@ -227,9 +227,19 @@ class RemoteStreamingSTT:
         now_fn: Callable[[], float] | None = None,
         session_factory=None,
         priority_speakers: set[str] | None = None,
+        overflow=None,
+        overflow_max_inflight: int = 8,
     ) -> None:
         self._url = url
         self._fallback = fallback
+        # La soupape : ce que le local n'a pas le temps de transcrire ne se jette
+        # plus, il part là. Mesuré le 2026-08-18 — à trois locuteurs, le local
+        # met 6,3 s pour trois énoncés (file séquentielle) et finit par en
+        # abandonner ; cette voie-là en met 3,5 pour les mêmes trois, en
+        # parallèle. Absente (None), le comportement d'avant revient : on jette.
+        self._overflow = overflow
+        self._overflow_max_inflight = max(1, int(overflow_max_inflight or 1))
+        self._overflow_inflight = 0
         self._max_connections = max_connections
         # Discord IDs qui passent devant quand les places manquent : ceux au nom
         # de qui Wally agit (`voice.requesters` — le créateur et le streamer).
@@ -366,6 +376,8 @@ class RemoteStreamingSTT:
         # décalage, Wally « réagit » à une phrase que tout le monde a oubliée.
         # Pour un compagnon, la fraîcheur prime sur l'exhaustivité.
         if self._pending_fallback >= _MAX_PENDING_FALLBACK:
+            if self._deborder(speaker_id, segment):
+                return
             # En INFO et non en DEBUG : c'est une PAROLE JETÉE. Le niveau debug
             # n'est pas servi en production, donc cet abandon n'existait nulle
             # part — et c'est exactement ce qu'on cherche quand quelqu'un dit
@@ -488,6 +500,47 @@ class RemoteStreamingSTT:
                            s=speaker_id, n=len(self._sessions))
         self._detach(sess.close())
 
+    def _deborder(self, speaker_id: str, segment: bytes) -> bool:
+        """Confie l'énoncé à la soupape distante. Faux si elle ne peut pas le prendre.
+
+        Rendre Faux fait retomber l'appelant sur l'abandon journalisé : on ne
+        remplace jamais une parole perdue par un silence sans trace.
+        """
+        if self._overflow is None:
+            return False
+        if self._overflow_inflight >= self._overflow_max_inflight:
+            logger.info("voice: soupape saturée ({n} en vol) — énoncé de {s} non repris",
+                        n=self._overflow_inflight, s=speaker_id)
+            return False
+        self._overflow_inflight += 1
+        self._detach(self._overflow_transcribe(speaker_id, segment))
+        return True
+
+    async def _overflow_transcribe(self, speaker_id: str, segment: bytes) -> None:
+        """Transcrit à distance ce que le local n'aurait pas eu le temps de faire."""
+        t0 = self._now()
+        try:
+            texte = await self._overflow.transcribe(segment)
+            stt_ms = (self._now() - t0) * 1000
+            if texte and self.on_final is not None:
+                logger.info(
+                    "voice: énoncé de {s} RATTRAPÉ par la soupape "
+                    "({d:.1f} s d'audio, {ms:.0f} ms)",
+                    s=speaker_id, d=len(segment) / 32000, ms=stt_ms,
+                )
+                await self.on_final(speaker_id, texte, stt_ms)
+            elif not texte:
+                # Même exigence que sur le chemin local : un énoncé qui ne rend
+                # rien laisse une trace, sinon la soupape aurait l'air de marcher
+                # alors qu'elle avale la parole en silence.
+                logger.info(
+                    "voice: énoncé de {s} rendu VIDE par la soupape "
+                    "({d:.1f} s d'audio, {ms:.0f} ms)",
+                    s=speaker_id, d=len(segment) / 32000, ms=stt_ms,
+                )
+        finally:
+            self._overflow_inflight = max(0, self._overflow_inflight - 1)
+
     async def _fallback_transcribe(self, speaker_id: str, segment: bytes) -> None:
         t0 = self._now()
         try:
@@ -575,6 +628,10 @@ class RemoteStreamingSTT:
             task.cancel()
         self._detached.clear()
         self._pending_fallback = 0
+        # Les tâches de la soupape viennent d'être annulées : sans cette remise
+        # à zéro, leur `finally` ne s'exécute pas et le compteur resterait haut
+        # d'une session vocale à l'autre, jusqu'à fermer la soupape pour de bon.
+        self._overflow_inflight = 0
         # Le backoff « injoignable » (`_unreachable_until`,
         # `_consecutive_unreachable`) survit VOLONTAIREMENT : `close_all()` est
         # appelé à chaque `leave()`, et l'effacer ferait re-tenter un serveur

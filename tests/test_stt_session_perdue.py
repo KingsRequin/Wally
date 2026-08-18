@@ -27,6 +27,13 @@ def _manager():
     # Références fortes des tâches détachées : sans elles la boucle asyncio ne
     # retient qu'une référence faible, et un énoncé peut être collecté en vol.
     mgr._detached = set()
+    # Pas de soupape de débordement ici : ce fichier teste l'aiguillage LOCAL et
+    # sa borne de file. Le rattrapage distant a ses propres tests
+    # (`test_voice_soupape_debordement.py`), et le mélanger ici masquerait
+    # justement l'abandon que `test_la_file_locale_est_bornee` doit voir.
+    mgr._overflow = None
+    mgr._overflow_max_inflight = 8
+    mgr._overflow_inflight = 0
     mgr._transcribed = []
     # On observe l'aiguillage, pas la transcription elle-même.
     mgr._fallback_transcribe = lambda sid, seg: mgr._transcribed.append((sid, seg))

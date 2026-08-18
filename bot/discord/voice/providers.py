@@ -7,6 +7,7 @@ import azure.cognitiveservices.speech as speechsdk
 from loguru import logger
 
 from bot.config import VoiceConfig
+from bot.discord.voice.audio import SAMPLE_RATE
 
 
 class SpeechToText(Protocol):
@@ -171,6 +172,90 @@ class FasterWhisperSTT:
             return ""
 
 
+class OneMinSTT:
+    """STT distant Qwen3-ASR-Flash, via l'abonnement 1min.ai de l'owner.
+
+    Sert de SOUPAPE, pas de moteur : le `small` local est plus rapide tant qu'une
+    seule personne parle (1,2-2,1 s contre 2,4-3,5 s ici, upload compris). Mais
+    il transcrit un énoncé à la fois, donc à trois locuteurs sa file le fait
+    passer à 5-6 s et il finit par JETER de la parole. Cette API n'a pas de
+    file : mesurée à 3,5 s pour trois énoncés simultanés, contre 6,3 s en local.
+
+    Elle reprend donc ce qui serait perdu. Le quota le permet sans y penser :
+    ~3,5 crédits pour un énoncé de 2 s, sur un million par mois.
+
+    Deux limites à connaître, mesurées le 2026-08-18 :
+    - Le modèle ignore « Wally » et écrit « Wall-E » (que `address_match`
+      rattrape) ou « ou ali » (qu'elle ne rattrape pas). 1min.ai n'expose PAS le
+      paramètre de contexte de Qwen — 14 emplacements essayés, sortie identique
+      au caractère près. Le biais de vocabulaire n'existe donc que côté local.
+    - En revanche il rend un bien meilleur français : « Elle est où la balle »
+      là où le local écrit « Elle est tout la balle ».
+    """
+
+    _BASE = "https://api.1min.ai/api"
+
+    def __init__(self, api_key: str, model: str = "qwen3-asr-flash",
+                 language: str = "fr-FR", timeout: float = 20.0) -> None:
+        self._key = api_key
+        self._model = model
+        self._lang = (language or "fr").split("-")[0]
+        # Serré volontairement : cette voie ne sert qu'à rattraper de la parole
+        # en retard. Une transcription qui arrive après 20 s ne rattrape plus
+        # rien, elle encombre — mieux vaut la lâcher et le dire.
+        self._timeout = timeout
+
+    @staticmethod
+    def _wav(pcm16k_mono: bytes) -> bytes:
+        """L'API veut un fichier audio ; le pipeline ne manipule que du PCM nu."""
+        import io
+        import wave
+
+        tampon = io.BytesIO()
+        with wave.open(tampon, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(SAMPLE_RATE)
+            w.writeframes(pcm16k_mono)
+        return tampon.getvalue()
+
+    async def transcribe(self, pcm16k_mono: bytes) -> str:
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                envoi = await client.post(
+                    f"{self._BASE}/assets", headers={"API-KEY": self._key},
+                    files={"asset": ("enonce.wav", self._wav(pcm16k_mono), "audio/wav")},
+                )
+                chemin = (envoi.json().get("fileContent") or {}).get("path")
+                if not chemin:
+                    logger.warning("OneMinSTT: upload sans chemin ({c}) — {t}",
+                                   c=envoi.status_code, t=envoi.text[:120])
+                    return ""
+                rep = await client.post(
+                    f"{self._BASE}/features",
+                    headers={"API-KEY": self._key, "Content-Type": "application/json"},
+                    json={"type": "SPEECH_TO_TEXT", "model": self._model,
+                          "promptObject": {"audioUrl": chemin, "response_format": "text",
+                                           "language": self._lang}},
+                )
+            corps = rep.json()
+            if "errorCode" in corps:
+                # Le refus arrive en HTTP 200 avec le motif dans le CORPS : sans
+                # cette lecture, un quota épuisé passerait pour un énoncé vide.
+                logger.warning("OneMinSTT: refus {c} — {m}", c=corps.get("errorCode"),
+                               m=str(corps.get("message"))[:140])
+                return ""
+            res = ((corps.get("aiRecord") or {}).get("aiRecordDetail") or {}).get("resultObject")
+            if isinstance(res, list):
+                res = " ".join(str(x) for x in res)
+            return (res or "").strip()
+        except Exception as e:  # noqa: BLE001 — une soupape ne casse jamais l'écoute
+            logger.warning("OneMinSTT.transcribe a échoué: {e}", e=e)
+            return ""
+
+
 class AzureTTS:
     """TTS Azure Neural. Sortie : PCM 48 kHz mono 16-bit (prêt pour Discord)."""
 
@@ -274,6 +359,29 @@ def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToTex
     return _build_batch_stt(cfg.stt_provider, cfg, phrases)
 
 
+def build_overflow_stt(cfg: VoiceConfig) -> SpeechToText | None:
+    """La soupape de débordement, ou None si elle n'est pas configurée.
+
+    Rend None sans bruit quand le provider n'est pas demandé, mais LOGUE quand
+    il l'est sans clé : une soupape qu'on croit posée et qui ne l'est pas se
+    voit seulement le jour où la parole disparaît, c'est-à-dire trop tard.
+    """
+    provider = (cfg.overflow_stt_provider or "").lower()
+    if not provider:
+        return None
+    if provider not in ("1min", "1min.ai", "onemin"):
+        logger.warning("voice: provider de débordement inconnu « {p} » — ignoré", p=provider)
+        return None
+    cle = os.environ.get("ONEMIN_API_KEY", "")
+    if not cle:
+        logger.warning("voice: débordement « {p} » demandé mais ONEMIN_API_KEY manque "
+                       "— la parole en trop continuera d'être JETÉE", p=provider)
+        return None
+    logger.info("voice: soupape de débordement active ({m})", m=cfg.overflow_stt_model)
+    return OneMinSTT(api_key=cle, model=cfg.overflow_stt_model,
+                     language=cfg.language, timeout=cfg.overflow_stt_timeout_s)
+
+
 def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
     """Construit le STT streaming distant (RemoteStreamingSTT) + son fallback batch CPU local."""
     from bot.discord.voice.streaming import RemoteStreamingSTT
@@ -293,6 +401,8 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
         idle_timeout=cfg.remote_stt_idle_timeout,
         health_cache_s=cfg.remote_stt_health_cache_s,
         priority_speakers=prioritaires,
+        overflow=build_overflow_stt(cfg),
+        overflow_max_inflight=cfg.overflow_stt_max_inflight,
     )
 
 

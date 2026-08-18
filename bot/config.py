@@ -143,6 +143,18 @@ class VoiceConfig:
     remote_stt_idle_timeout: float = 30.0  # ferme une session inactive (libère un slot serveur)
     remote_stt_health_cache_s: float = 30.0  # durée du cache « serveur injoignable » avant retry
     remote_stt_fallback: str = "faster_whisper"  # provider batch CPU si le distant est indispo
+    # Soupape de DÉBORDEMENT. Le moteur local transcrit un énoncé à la fois :
+    # à trois locuteurs sa file monte à 5-6 s, puis il jette de la parole
+    # (« énoncé ABANDONNÉ — STT local saturé »). Ce provider-là reprend
+    # exactement ce qui serait perdu, et rien d'autre — il est plus lent qu'un
+    # local libre, mais bien plus rapide qu'un local saturé.
+    # "" = aucun (on jette comme avant) ; "1min" = Qwen3-ASR-Flash via 1min.ai.
+    overflow_stt_provider: str = ""
+    overflow_stt_model: str = "qwen3-asr-flash"
+    overflow_stt_timeout_s: float = 20.0
+    # Plafond d'appels en vol. Le réseau n'a pas la file du CPU, mais une rafale
+    # sans borne brûlerait le quota sur un salon qui déraille.
+    overflow_stt_max_inflight: int = 8
     # Qui peut lui DEMANDER quelque chose à voix haute. Chaque entrée porte les
     # deux identités : le `discord_id` reconnaît celui qui parle (le vocal est un
     # salon Discord), le `twitch_login` sert à le mentionner dans la réponse.
