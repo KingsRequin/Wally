@@ -20,13 +20,15 @@
   const FIN_MS = 100;
 
   // Combien de fenêtres restent OUVERTES en même temps. Au-delà, le rendu ferme
-  // la plus ancienne : chacune est un nœud vivant avec son image, sur la
-  // machine qui ENCODE le live.
+  // la plus ancienne.
   //
-  // C'est le DOM que ce nombre borne — pas le spectacle. La première version
-  // s'en servait pour arrêter les ouvertures, et le dossier s'arrêtait donc à
-  // 42 memes sur 134 : « y a pas tous les memes si ? » (owner).
-  const PLAFOND_VIVANTES = 80;
+  // « Elles doivent toutes s'empiler » (owner) : à 80, les deux tiers se
+  // refermaient en cours de route — un arbitrage de perf pris sans lui, chaque
+  // fenêtre étant un nœud vivant avec son image sur la machine qui ENCODE le
+  // live. Le filet est donc remonté AU-DESSUS de ce que le dossier produit :
+  // 134 memes ouvrent 224 fenêtres, il en faudrait plus de 240 dans le dossier
+  // pour qu'une seule se referme. À rearbitrer si le dossier double.
+  const PLAFOND_VIVANTES = 420;
 
   // Garde-fou de boucle, pas un réglage : `rythme()` n'est plus borné que par
   // le temps, et une durée délirante ne doit pas figer la page du live.
@@ -186,18 +188,58 @@
     return nom.length > 28 ? nom.slice(0, 27) + "…" : nom;
   }
 
-  /* Où s'ouvre une fenêtre, en pixels, entièrement dans le cadre.
+  // La grille du semeur. Assez fine pour que l'écran se remplisse par petites
+  // touches, assez grossière pour qu'une popup tienne dans sa cellule.
+  const COLONNES = 5;
+  const LIGNES = 4;
+
+  /* Un semeur pour un spectacle : il répartit les fenêtres sur TOUT l'écran.
    *
-   * Le tirage tient compte de sa TAILLE : sans ça, une popup large sort par la
-   * droite et ressemble à un bug de rendu — le piège déjà corrigé sur
-   * l'avalanche. Plus grande que le cadre, elle part du coin plutôt que d'une
-   * position négative tirée au hasard.
+   * « Elles se stackent beaucoup vers le centre on dirait » (owner) — et c'est
+   * géométrique, pas une impression. Un coin tiré uniformément dans
+   * `[0, cadre - taille]` met le CENTRE de la fenêtre dans un rectangle rétréci
+   * de sa demi-taille : une popup de 370 px de haut sur un écran de 1080 ne
+   * peut jamais avoir son centre au-dessus de 185 px ni sous 895. Les bords se
+   * dégarnissent, le milieu double.
+   *
+   * On parcourt donc une grille de cellules dans un ordre mêlé, remêlé à chaque
+   * tour : chaque zone reçoit sa fenêtre avant qu'aucune n'en reçoive deux, et
+   * deux popups de suite ne se collent plus l'une sur l'autre.
    */
-  function place(largeur, hauteur, cadreL, cadreH) {
-    const libreX = Math.max(0, (Number(cadreL) || 0) - (Number(largeur) || 0));
-    const libreY = Math.max(0, (Number(cadreH) || 0) - (Number(hauteur) || 0));
-    return { x: Math.round(Math.random() * libreX),
-             y: Math.round(Math.random() * libreY) };
+  function semeur(cadreL, cadreH) {
+    const L = Number(cadreL) || 1920;
+    const H = Number(cadreH) || 1080;
+    let cellules = [];
+    let rang = 0;
+
+    function remelanger() {
+      cellules = [];
+      for (let c = 0; c < COLONNES; c++) {
+        for (let l = 0; l < LIGNES; l++) cellules.push([c, l]);
+      }
+      for (let i = cellules.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = cellules[i]; cellules[i] = cellules[j]; cellules[j] = t;
+      }
+      rang = 0;
+    }
+
+    return {
+      place(largeur, hauteur) {
+        if (rang >= cellules.length) remelanger();
+        const [c, l] = cellules[rang++];
+        // La grille découpe l'espace des positions ADMISSIBLES, pas l'écran :
+        // le coin d'une fenêtre haute ne peut pas descendre plus bas que
+        // `H - hauteur`. Découper l'écran et rabattre ensuite ce qui dépasse
+        // entassait les grandes fenêtres vers le haut — mesuré, 16 % des
+        // centres dans le tiers haut contre 6 % dans le tiers bas. Ici il n'y a
+        // plus rien à rabattre : chaque cellule est atteignable telle quelle.
+        const libreX = Math.max(0, L - (Number(largeur) || 0));
+        const libreY = Math.max(0, H - (Number(hauteur) || 0));
+        return { x: Math.round((c + Math.random()) * libreX / COLONNES),
+                 y: Math.round((l + Math.random()) * libreY / LIGNES) };
+      },
+    };
   }
 
   /* La durée qu'il faut pour montrer `nbMemes` memes, alertes comprises.
@@ -219,7 +261,8 @@
     return { titre: b[0], message: b[1], code: b[2] };
   }
 
-  window.WallyVirus = { rythme, dureePour, dureeSelonStock, fenetres, place, bsod,
+  window.WallyVirus = { rythme, dureePour, dureeSelonStock, fenetres,
+                        semeur, bsod,
                         PLAFOND_VIVANTES, GARDE_FOU, PART_ALERTES,
                         DEBUT_MS, FIN_MS, NB_ALERTES: ALERTES.length };
 })();

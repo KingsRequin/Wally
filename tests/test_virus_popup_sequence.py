@@ -97,12 +97,22 @@ def test_TOUT_le_dossier_passe_sur_la_duree_que_le_serveur_annonce():
     """) == "[true,true]"
 
 
-def test_le_nombre_de_fenetres_VIVANTES_est_plafonne_pas_le_spectacle():
-    """Chaque fenêtre reste un nœud avec son image, sur la machine qui ENCODE le
-    live : c'est le DOM qu'il faut borner. Le rendu ferme donc les plus
-    anciennes — ce qui n'empêche plus le dossier entier de défiler."""
+def test_AUCUNE_fenetre_ne_se_ferme_pour_un_dossier_de_taille_reelle():
+    """« Elles doivent toutes s'empiler » (owner). Le plafond de 80 en fermait
+    les deux tiers en cours de route : c'était un arbitrage de perf pris sans
+    lui — chaque fenêtre reste un nœud vivant avec son image, sur la machine qui
+    ENCODE le live.
+
+    Il reste un filet, mais placé au-dessus de ce que le dossier peut produire :
+    134 memes ouvrent 224 fenêtres, et il en faudrait plus de 240 dans le
+    dossier pour qu'une seule se referme.
+    """
     assert _node("""
-      console.log(JSON.stringify([V.PLAFOND_VIVANTES > 20, V.PLAFOND_VIVANTES <= 120]));
+      const pourStock = (n) => Math.ceil(n / (1 - V.PART_ALERTES));
+      console.log(JSON.stringify([
+        V.PLAFOND_VIVANTES > pourStock(134),
+        V.PLAFOND_VIVANTES > pourStock(240),
+      ]));
     """) == "[true,true]"
 
 
@@ -237,25 +247,92 @@ def test_l_ecran_bleu_porte_un_CODE_d_erreur_a_la_windows():
 
 # ── 4. Où elles s'ouvrent ───────────────────────────────────────────────────
 
-def test_une_fenetre_s_ouvre_ENTIEREMENT_dans_le_cadre():
-    """Une popup à moitié hors champ ressemble à un bug de rendu, pas à un gag.
-    Le tirage tient compte de sa taille — le piège déjà corrigé sur l'avalanche,
-    où un meme large sortait par la droite.
+def test_les_fenetres_couvrent_TOUT_l_ecran_et_pas_seulement_le_milieu():
+    """« Elles se stackent beaucoup vers le centre on dirait » (owner) — et
+    c'est géométrique, pas une impression : un coin tiré uniformément dans
+    `[0, cadre - taille]` met le CENTRE de la fenêtre dans un rectangle rétréci
+    de sa demi-taille. Une popup de 370 px de haut sur un écran de 1080 ne peut
+    alors jamais avoir son centre au-dessus de 185 px ni en dessous de 895.
+
+    Le semeur tire donc dans une GRILLE de cellules parcourues en ordre mêlé :
+    chaque zone reçoit son tour avant qu'aucune n'en reçoive deux.
     """
     assert _node("""
+      const semeur = V.semeur(1920, 1080);
+      const quadrants = [0, 0, 0, 0];
+      for (let i = 0; i < 240; i++) {
+        const l = 300 + Math.floor(Math.random() * 160);
+        const h = 210;
+        const p = semeur.place(l, h);
+        const cx = p.x + l / 2, cy = p.y + h / 2;
+        quadrants[(cy < 540 ? 0 : 2) + (cx < 960 ? 0 : 1)] += 1;
+      }
+      // Chaque quart de l'écran reçoit sa part : l'idéal est 25 %, on tolère
+      // large — c'est l'entassement au milieu qu'on chasse, pas l'irrégularité.
+      console.log(JSON.stringify(quadrants.every(n => n >= 240 * 0.17)));
+    """) == "true"
+
+
+def test_le_semeur_garde_TOUTES_les_fenetres_dans_le_cadre():
+    """La répartition ne doit pas rouvrir le défaut qu'on vient de fermer : une
+    popup à moitié hors champ ressemble à un bug de rendu."""
+    assert _node("""
+      const semeur = V.semeur(1920, 1080);
       const ok = [];
-      for (let i = 0; i < 200; i++) {
-        const p = V.place(320, 180, 1920, 1080);
-        ok.push(p.x >= 0 && p.y >= 0 && p.x + 320 <= 1920 && p.y + 180 <= 1080);
+      for (let i = 0; i < 300; i++) {
+        const l = 220 + Math.floor(Math.random() * 240);
+        const h = 150 + Math.floor(Math.random() * 220);
+        const p = semeur.place(l, h);
+        ok.push(p.x >= 0 && p.y >= 0 && p.x + l <= 1920 && p.y + h <= 1080);
       }
       console.log(JSON.stringify(ok.every(Boolean)));
     """) == "true"
 
 
+def test_deux_fenetres_de_SUITE_ne_se_posent_pas_au_meme_endroit():
+    """Le cœur de l'effet « ça se répand » : sans ordre imposé, un tirage
+    indépendant colle régulièrement deux popups l'une sur l'autre, et l'écran se
+    remplit par paquets."""
+    assert _node("""
+      const semeur = V.semeur(1920, 1080);
+      let colles = 0;
+      let prec = null;
+      for (let i = 0; i < 120; i++) {
+        const p = semeur.place(320, 210);
+        if (prec && Math.abs(p.x - prec.x) < 60 && Math.abs(p.y - prec.y) < 60) colles++;
+        prec = p;
+      }
+      console.log(JSON.stringify(colles <= 6));
+    """) == "true"
+
+
+def test_une_GRANDE_fenetre_peut_aussi_se_poser_tout_en_BAS():
+    """Le biais qui restait après la première correction : en découpant l'écran
+    puis en rabattant ce qui dépasse, les fenêtres hautes remontaient toutes —
+    mesuré, 16 % des centres dans le tiers haut contre 6 % dans le tiers bas.
+
+    La grille découpe donc l'espace des positions ADMISSIBLES : le bas du cadre
+    reste atteignable pour une popup de 370 px de haut comme pour une petite.
+    """
+    assert _node("""
+      const semeur = V.semeur(1920, 1080);
+      let basse = 0, haute = 0;
+      for (let i = 0; i < 200; i++) {
+        const p = semeur.place(320, 370);
+        if (p.y > (1080 - 370) * 0.75) basse++;
+        if (p.y < (1080 - 370) * 0.25) haute++;
+      }
+      // Les deux extrémités sont servies, à peu près autant l'une que l'autre.
+      console.log(JSON.stringify([basse > 30, haute > 30]));
+    """) == "[true,true]"
+
+
 def test_une_fenetre_plus_GRANDE_que_le_cadre_est_ramenee_au_coin():
     """Cas limite d'une source OBS minuscule : mieux vaut une fenêtre qui
-    déborde depuis le coin qu'une position négative aléatoire."""
+    déborde depuis le coin qu'une position négative, quelle que soit la cellule
+    que le semeur lui avait réservée."""
     assert _node("""
-      const p = V.place(2000, 1200, 1920, 1080);
+      const semeur = V.semeur(1920, 1080);
+      const p = semeur.place(2000, 1200);
       console.log(JSON.stringify([p.x, p.y]));
     """) == "[0,0]"

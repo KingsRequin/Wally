@@ -1044,11 +1044,17 @@
    * stock est relu avant de commencer. */
   function lancerSpamVirus(box, medias, duree) {
     const plan = window.WallyVirus.fenetres(window.WallyVirus.rythme(duree), medias);
+    // Un semeur par spectacle : il garde le fil des cellules déjà servies, et
+    // c'est ce qui répartit les fenêtres sur tout l'écran au lieu du milieu.
+    const semeur = window.WallyVirus.semeur(window.innerWidth || 1920,
+                                            window.innerHeight || 1080);
     const timers = [];
     plan.forEach((f, i) => {
       timers.push(setTimeout(() => {
         if (!box.isConnected) return;
-        box.appendChild(fenetreVirus(f, i));
+        box.appendChild(fenetreVirus(f, i, semeur));
+        // Elles restent TOUTES : le plafond n'est plus qu'un filet, posé
+        // au-dessus de ce que le dossier peut produire.
         const vivantes = box.querySelectorAll(".vwin");
         for (let k = 0; k < vivantes.length - window.WallyVirus.PLAFOND_VIVANTES; k++) {
           vivantes[k].remove();
@@ -1073,7 +1079,7 @@
    * fenêtre à meme portent des NOMS DE FICHIERS venus du dossier de la
    * communauté, donc du texte qu'on ne contrôle pas.
    */
-  function fenetreVirus(f, rang) {
+  function fenetreVirus(f, rang, semeur) {
     const win = el("div", "vwin" + (f.genre === "meme" ? " vwin-meme" : ""));
     const barre = el("div", "vwin-bar");
     const titre = el("span", "vwin-title");
@@ -1113,20 +1119,20 @@
     // Taille tirée ici, position ensuite : `place()` a besoin de la taille pour
     // garder la fenêtre ENTIÈREMENT dans le cadre.
     //
-    // La hauteur retenue est celle du PIRE cas, pas une estimation : celle d'un
-    // meme dépend de son ratio, inconnu tant que l'image n'est pas chargée, et
-    // celle d'une alerte de la longueur de son texte. On place donc sur la
-    // borne haute (le `max-height` du CSS pour l'image, deux lignes pour le
-    // texte) — sous-estimer faisait sortir quatre fenêtres sur soixante-six.
+    // La hauteur est IMPOSÉE, pas estimée. Celle d'un meme dépend sinon de son
+    // ratio — inconnu tant que l'image n'est pas chargée — et on ne peut alors
+    // que majorer : les fenêtres s'arrêtaient donc plus haut que le calcul ne
+    // le croyait, et le bas de l'écran restait dégarni (couverture mesurée à
+    // 40 % en bas contre 94 % au centre). Fixée ici, elle est exacte, et
+    // l'image s'y adapte (`object-fit: contain`).
     const cadreH = window.innerHeight || 1080;
     const largeur = (f.genre === "meme" ? 220 : 300) + Math.floor(Math.random() * 160);
     const hauteur = f.genre === "meme"
-      ? Math.min(largeur, cadreH * 0.30) + 46   // image bornée + barre + marges
+      ? Math.round(Math.min(largeur, cadreH * 0.30) + 46)
       : 210;                                    // titre + deux lignes + boutons
     win.style.width = largeur + "px";
-    const p = window.WallyVirus.place(largeur, hauteur,
-                                      window.innerWidth || 1920,
-                                      window.innerHeight || 1080);
+    win.style.height = hauteur + "px";
+    const p = semeur.place(largeur, hauteur);
     win.style.left = p.x + "px";
     win.style.top = p.y + "px";
     // Chaque nouvelle passe DEVANT les précédentes : c'est l'empilement qui

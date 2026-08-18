@@ -167,11 +167,17 @@ def test_son_script_compte_dans_l_empreinte_de_version():
     assert "overlay_virus.js" in _OVERLAY_FILES
 
 
-def test_la_hauteur_d_une_fenetre_a_meme_est_BORNEE():
-    """La position est tirée AVANT que l'image soit chargée : sa hauteur réelle
-    dépend de son ratio, que personne ne connaît à ce moment-là. Sans borne, un
-    meme très haut sort par le bas — mesuré dans le navigateur, quatre fenêtres
-    sur soixante-six. Bornée, la fenêtre rétrécit au lieu de déborder.
+def test_c_est_la_FENETRE_qui_impose_sa_taille_a_l_image():
+    """La position est tirée AVANT que l'image soit chargée : si c'est l'image
+    qui dicte la hauteur, celle-ci reste inconnue au moment de choisir la place.
+
+    Deux défauts en sont venus, dans cet ordre : des fenêtres qui sortaient par
+    le bas (4 sur 66), puis — une fois majorée pour éviter ça — un bas d'écran
+    dégarni, la fenêtre s'arrêtant plus haut que le calcul ne le croyait
+    (couverture mesurée à 40 % en bas contre 94 % au centre).
+
+    `object-fit: contain` renverse la dépendance : la fenêtre a la taille qu'on
+    lui donne, l'image s'y loge.
     """
     import re
     from pathlib import Path
@@ -180,7 +186,12 @@ def test_la_hauteur_d_une_fenetre_a_meme_est_BORNEE():
             / "overlay.html").read_text(encoding="utf-8")
     bloc = re.search(r"\.virus-popup \.vwin-meme img[^{]*\{([^}]*)\}", html, re.S)
     assert bloc, "le style de l'image d'une fenêtre à meme a disparu"
-    assert re.search(r"max-height:\s*\d+vh", bloc.group(1)), bloc.group(1)
+    assert "object-fit: contain" in bloc.group(1), bloc.group(1)
+
+    js = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+          / "overlay.js").read_text(encoding="utf-8")
+    assert "win.style.height" in js, (
+        "sans hauteur posée sur la fenêtre, `object-fit` n'a rien à remplir")
 
 
 @pytest.mark.parametrize("marqueur", ["virus-popup", "virus-bsod"])

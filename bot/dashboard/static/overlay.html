@@ -573,6 +573,13 @@
     }
     .virus-popup .vwin {
       position: absolute;
+      /* En colonne, avec un corps élastique : la hauteur de la fenêtre est
+         posée en pixels par le rendu, et c'est ce qui la rend EXACTE — sans
+         quoi elle dépend du ratio de l'image, inconnu au moment de choisir la
+         position, et le bas de l'écran reste dégarni. */
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       background: #d4d0c8;                /* le gris des vieilles fenêtres */
       border: 2px outset #f0f0f0;
       box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.55);
@@ -602,7 +609,14 @@
       text-overflow: ellipsis;
     }
     .virus-popup .vwin-btns { letter-spacing: 2px; flex: none; }
-    .virus-popup .vwin-body { padding: 12px; color: #000; font-size: 14px; }
+    .virus-popup .vwin-bar { flex: none; }
+    .virus-popup .vwin-body {
+      flex: 1;
+      min-height: 0;                      /* sinon le contenu impose sa taille */
+      padding: 12px;
+      color: #000;
+      font-size: 14px;
+    }
     .virus-popup .vwin-msg { display: flex; align-items: center; gap: 10px; }
     .virus-popup .vwin-icon { font-size: 26px; flex: none; }
     .virus-popup .vwin-text { line-height: 1.35; }
@@ -630,11 +644,11 @@
     .virus-popup .vwin-meme img,
     .virus-popup .vwin-meme video {
       display: block;
-      margin: 0 auto;
-      max-width: 100%;
-      max-height: 30vh;
-      width: auto;
-      height: auto;
+      width: 100%;
+      height: 100%;
+      /* L'image s'adapte à la fenêtre, et non l'inverse : c'est ce qui rend la
+         hauteur connue AVANT le chargement, donc le placement juste. */
+      object-fit: contain;
     }
 
     /* L'écran bleu qui clôt le spectacle. Au-dessus de TOUTES les fenêtres —
