@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Wally — musique du live",
+  "version": "1.0.0",
+  "description": "Dit à Wally ce qui passe sur YouTube, et laisse les modos piloter la lecture depuis le chat Twitch.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://heywally.fr/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Wally — musique du live"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*", "https://music.youtube.com/*"],
+      "js": ["lib.js", "pont.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.youtube.com/*", "https://music.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

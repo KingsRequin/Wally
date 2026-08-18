@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Même grammaire que le dashboard : fond sombre, verre dépoli, accent cyan. */
+    body {
+      width: 300px; margin: 0; padding: 16px;
+      background: #11151c; color: #e6edf3;
+      font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px;
+    }
+    h1 { font-size: 15px; margin: 0 0 14px; font-weight: 600; }
+    label { display: block; margin: 12px 0 5px; opacity: .75; font-size: 12px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      background: rgba(255,255,255,.04); color: #e6edf3;
+      border: 1px solid rgba(255,255,255,.08); border-radius: 10px;
+      font-size: 13px;
+    }
+    input:focus { outline: none; border-color: #06b6d4; }
+    .bascule { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; }
+    .bascule input { width: 18px; height: 18px; accent-color: #06b6d4; }
+    .bascule strong { font-weight: 600; }
+    .aide { font-size: 11px; opacity: .55; line-height: 1.45; margin-top: 6px; }
+    button {
+      width: 100%; margin-top: 16px; padding: 9px;
+      background: #06b6d4; color: #06131a; border: 0; border-radius: 10px;
+      font-weight: 700; font-size: 13px; cursor: pointer;
+    }
+    #etat {
+      margin-top: 12px; padding: 9px 11px; border-radius: 10px;
+      background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+      font-size: 12px; min-height: 17px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Wally — musique du live</h1>
+
+  <div class="bascule">
+    <input type="checkbox" id="actif">
+    <strong>Partager ce que j'écoute</strong>
+  </div>
+  <div class="aide">
+    Éteint, <b>rien n'est envoyé</b> — ni titre, ni adresse. L'extension voit
+    tout ce que tu ouvres sur YouTube, pas seulement ta musique : c'est cet
+    interrupteur qui décide, à la source.
+  </div>
+
+  <label for="url">Adresse du bot</label>
+  <input type="text" id="url" placeholder="https://heywally.fr" spellcheck="false">
+
+  <label for="jeton">Jeton</label>
+  <input type="password" id="jeton" placeholder="donné par KingsRequin" spellcheck="false">
+
+  <button id="enregistrer">Enregistrer</button>
+  <div id="etat"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

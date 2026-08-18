@@ -243,3 +243,46 @@ async def test_une_recherche_vide_ne_part_pas():
     resultat = await svc.commander("play_query", query="   ")
     assert resultat["ok"] is False
     assert _battre(svc) == []
+
+
+# ── quel onglet obéit ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_un_onglet_qui_NE_JOUE_PAS_ne_prend_pas_le_suivant():
+    """Azraël peut avoir trois onglets YouTube ouverts. « Suivante » ne veut
+    rien dire pour ceux qui dorment — et comme un ordre n'est remis qu'une
+    fois, le laisser partir vers le mauvais onglet le perdrait pour tout le
+    monde. Il reste donc en file jusqu'à ce que le bon batte."""
+    svc = _service()
+    asyncio.create_task(svc.commander("next"))
+    await asyncio.sleep(0)
+
+    assert _battre(svc, joue=False) == []      # l'onglet en pause passe son tour
+    ordres = _battre(svc, joue=True)           # celui qui joue le prend
+    assert [o["action"] for o in ordres] == ["next"]
+
+
+@pytest.mark.asyncio
+async def test_ce_qui_REVEILLE_part_meme_vers_un_onglet_a_l_arret():
+    """`play` et `play_query` s'adressent justement à un lecteur arrêté :
+    exiger qu'il joue déjà les rendrait impossibles à exécuter."""
+    for action in ("play", "play_query"):
+        svc = _service()
+        asyncio.create_task(svc.commander(action, query="une chanson"))
+        await asyncio.sleep(0)
+        assert [o["action"] for o in _battre(svc, joue=False)] == [action]
+
+
+@pytest.mark.asyncio
+async def test_un_ordre_garde_en_file_finit_quand_meme_par_PERIMER():
+    """Sinon un « suivante » demandé alors que tout est en pause attendrait
+    indéfiniment le premier onglet qui joue, et sauterait un morceau une heure
+    plus tard."""
+    from bot.core.music import MusicService
+    h = _Horloge()
+    svc = _service(h)
+    asyncio.create_task(svc.commander("next"))
+    await asyncio.sleep(0)
+    _battre(svc, joue=False)
+    h.avance(MusicService.ORDRE_TTL_S + 1)
+    assert _battre(svc, joue=True) == []

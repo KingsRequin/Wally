@@ -28,6 +28,10 @@ from loguru import logger
 # vient d'un modèle de langage, et un prompt n'est pas une barrière.
 ACTIONS = frozenset({"play", "pause", "next", "prev", "play_query"})
 
+# Celles qui s'adressent à un lecteur À L'ARRÊT : elles peuvent donc partir vers
+# un onglet qui ne joue pas, contrairement aux autres (cf. `_servir`).
+_REVEILLENT = frozenset({"play", "play_query"})
+
 # Le titre et l'artiste viennent d'une page web — entrée non fiable — et
 # finissent dans le chat Twitch et sur l'overlay.
 _MAX_TEXTE = 200
@@ -83,24 +87,38 @@ class MusicService:
             "joue": bool(joue),
         }
         self._vu_a = self._maintenant()
-        return self._servir()
+        return self._servir(joue=bool(joue))
 
-    def _servir(self) -> list[dict]:
+    def _servir(self, *, joue: bool = True) -> list[dict]:
         """Les ordres encore valables, retirés de la file.
 
-        Retirés, donc remis UNE fois : deux onglets qui battent, ou un battement
-        rejoué, ne doivent pas faire sauter deux morceaux.
+        Retirés, donc remis UNE fois : deux onglets qui battent ne doivent pas
+        faire sauter deux morceaux.
+
+        `joue` est ce qui décide QUEL onglet obéit. Azraël peut avoir trois
+        onglets YouTube ouverts ; « suivante » ne veut rien dire pour ceux qui
+        dorment. Le filtre est ICI et non dans l'extension : là-bas, l'onglet
+        qui reçoit l'ordre l'a déjà retiré de la file, et l'ignorer le perdrait
+        pour tout le monde. En file, il attend simplement le bon onglet.
+
+        Les deux actions qui RÉVEILLENT (`play`, `play_query`) font exception :
+        elles s'adressent justement à un lecteur à l'arrêt.
         """
         maintenant = self._maintenant()
         sortis: list[dict] = []
+        gardes: list[dict] = []
         while self._file:
             ordre = self._file.popleft()
             if maintenant - ordre["ne_a"] > self.ORDRE_TTL_S:
                 self._resoudre(ordre["id"], {"ok": False,
                                              "raison": "ordre périmé, le lecteur n'a pas répondu à temps"})
                 continue
+            if not joue and ordre["action"] not in _REVEILLENT:
+                gardes.append(ordre)
+                continue
             sortis.append({"id": ordre["id"], "action": ordre["action"],
                            "query": ordre["query"]})
+        self._file.extend(gardes)
         return sortis
 
     def _accuser(self, accuse: dict) -> None:

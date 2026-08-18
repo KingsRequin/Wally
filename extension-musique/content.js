@@ -1,0 +1,101 @@
+/* Le battement : ce qui passe part vers Wally, les ordres en reviennent.
+ *
+ * S'exécute dans le monde isolé de l'extension — c'est lui qui a le droit de
+ * parler au réseau et au stockage, que `pont.js` (monde de la page) n'a pas.
+ * Les deux se passent les messages par `window.postMessage`.
+ *
+ * Un seul canal dans les deux sens : la réponse au battement porte les ordres
+ * en attente. Le flux SSE envisagé d'abord aurait demandé des tickets à usage
+ * unique (`EventSource` ne porte pas d'en-tête), une route de flux et sa
+ * reconnexion, pour gagner une seconde sur une action que Wally met déjà plus
+ * longtemps à décider.
+ */
+(() => {
+  "use strict";
+
+  const MARQUE = "wally-musique";
+  const PERIODE_MS = 2000;
+  // Le bot considère l'extension muette au-delà de 45 s : on bat bien plus
+  // souvent, pour qu'un hoquet réseau ne le fasse pas conclure au silence.
+
+  let reglages = { url: "", jeton: "", actif: false };
+  let dernierEtat = null;
+  const accusesEnAttente = [];
+
+  // ── Réglages, posés par la fenêtre de l'extension ────────────────────────
+
+  function relireReglages() {
+    chrome.storage.local.get(["url", "jeton", "actif"], (r) => {
+      reglages = {
+        url: String(r.url || "").replace(/\/+$/, ""),
+        jeton: String(r.jeton || ""),
+        // L'interrupteur commande l'ENVOI : éteint, rien ne part. L'extension
+        // voit tout ce qui est ouvert sur YouTube, pas seulement la musique —
+        // la confidentialité se joue ici, à la source, pas chez celui qui
+        // reçoit.
+        actif: r.actif === true,
+      };
+    });
+  }
+  relireReglages();
+  chrome.storage.onChanged.addListener(relireReglages);
+
+  // ── Le fil avec le pont ──────────────────────────────────────────────────
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    const msg = event.data;
+    if (!msg || msg.marque !== MARQUE || msg.pour !== "content") return;
+
+    if (msg.type === "etat") { dernierEtat = msg.etat; return; }
+    if (msg.type === "accuse") {
+      accusesEnAttente.push({ id: msg.id, ok: !!msg.ok,
+                              titre: msg.titre || "", raison: msg.raison || "" });
+    }
+  });
+
+  const demanderAuPont = (charge) =>
+    window.postMessage({ marque: MARQUE, pour: "pont", ...charge }, "*");
+
+  // ── Le battement ─────────────────────────────────────────────────────────
+
+  async function battre() {
+    demanderAuPont({ type: "lire" });          // l'état arrivera par message
+    if (!reglages.actif || !reglages.url || !reglages.jeton) return;
+
+    // Sur une page sans lecteur, on bat quand même : le bot doit savoir que
+    // l'extension est VIVANTE, sinon il conclut au silence et se tait.
+    const etat = dernierEtat || {};
+    const corps = {
+      actif: true,
+      joue: !!etat.joue,
+      titre: etat.titre || "",
+      artiste: etat.artiste || "",
+      url: etat.url || location.href,
+      accuses: accusesEnAttente.splice(0, accusesEnAttente.length),
+    };
+
+    let reponse;
+    try {
+      reponse = await fetch(reglages.url + "/api/music/beat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json",
+                   "Authorization": "Bearer " + reglages.jeton },
+        body: JSON.stringify(corps),
+      });
+    } catch (e) {
+      return;   // le bot redémarre, le réseau tousse : on réessaiera dans 2 s
+    }
+    if (!reponse.ok) return;
+
+    let data;
+    try { data = await reponse.json(); } catch (e) { return; }
+    // Quel onglet obéit se décide côté BOT, à partir du `joue` envoyé
+    // ci-dessus : un ordre reçu ici a déjà quitté la file, l'ignorer le
+    // perdrait pour tout le monde. Ici, on exécute.
+    (data.ordres || []).forEach((ordre) => demanderAuPont({ type: "ordre", ordre }));
+  }
+
+  setInterval(battre, PERIODE_MS);
+  battre();
+})();

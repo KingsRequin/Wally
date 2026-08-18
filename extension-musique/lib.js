@@ -1,0 +1,94 @@
+/* Ce que l'extension sait dire de la musique — le texte, et rien d'autre.
+ *
+ * Séparé du reste pour être EXÉCUTÉ par les tests (sous node) plutôt que relu :
+ * même parti pris que `overlay_virus.js` côté overlay. Tout ce qui touche au DOM
+ * de YouTube vit dans `pont.js`, et se vérifie dans un navigateur.
+ *
+ * Le problème que ce fichier résout, relevé sur la vraie page avant d'écrire une
+ * ligne : `navigator.mediaSession` donne l'artiste proprement séparé, mais le
+ * titre reste celui de la VIDÉO —
+ *   « Numb (Official Music Video) [4K UPGRADE] – Linkin Park »
+ * Annoncé tel quel dans le chat Twitch, c'est illisible.
+ */
+(() => {
+  "use strict";
+
+  // Il finit dans un message Twitch (plafonné) et sur l'overlay.
+  const MAX = 200;
+
+  // Ce qui est de la DÉCORATION DE MISE EN LIGNE, pas du titre. Volontairement
+  // étroit : « (feat. X) », « (Remix) », « (Live à Bercy) » font partie du
+  // morceau — les manger désignerait une autre chanson.
+  const DECOR = /\b(official|officiel|officielle|video|vidéo|audio|lyrics?|paroles|hd|hq|4k|8k|1080p|720p|remaster(ed)?|mv|m\/v|visuali[sz]er|clip|full album stream)\b/i;
+
+  const texte = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+
+  /* Le titre débarrassé de ce qui n'est pas lui.
+   *
+   * Ne rend JAMAIS une chaîne vide : un nettoyage trop zélé — un titre qui
+   * n'est que le nom de l'artiste, ou que des mentions de production — laisserait
+   * Wally annoncer « ça joue : » suivi de rien. Dans le doute, le brut.
+   */
+  function nettoyerTitre(titre, artiste) {
+    const brut = texte(titre).trim();
+    if (!brut) return "";
+    let out = brut;
+
+    // 1. Les parenthèses et crochets de mise en ligne, eux seuls.
+    out = out.replace(/[([][^()[\]]*[)\]]/g, (bloc) => (DECOR.test(bloc) ? " " : bloc));
+
+    // 2. L'artiste, s'il est déjà dit par ailleurs. YouTube l'écrit devant ou
+    //    derrière, avec un tiret court, long, ou un demi-cadratin.
+    const nom = texte(artiste).trim();
+    if (nom) {
+      const echappe = nom.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp(`^\\s*${echappe}\\s*[-–—]\\s*`, "i"), "");
+      out = out.replace(new RegExp(`\\s*[-–—]\\s*${echappe}\\s*$`, "i"), "");
+    }
+
+    out = out.replace(/\s{2,}/g, " ").trim();
+    // Un tiret resté orphelin d'un bout à l'autre du ménage.
+    out = out.replace(/^\s*[-–—]\s*|\s*[-–—]\s*$/g, "").trim();
+
+    return (out || brut).slice(0, MAX);
+  }
+
+  /* La phrase que Wally dira. Sans artiste connu, le titre seul — « — Numb »
+   * aurait l'air cassé. */
+  function pourAnnonce(titre, artiste) {
+    const t = texte(titre).trim();
+    const a = texte(artiste).trim();
+    return a ? `${a} — ${t}` : t;
+  }
+
+  /* Ce qu'on envoie au bot, ou `null` s'il n'y a pas de morceau.
+   *
+   * `null` sur une page sans lecteur (accueil, recherche) : inventer un titre
+   * serait pire que se taire. Et l'état de lecture vient de `video.paused`, pas
+   * de `playbackState` — mesuré sur la vraie page, celui-ci annonçait « paused »
+   * sur une vidéo qui tournait.
+   */
+  function etatLecteur(lu) {
+    const src = lu || {};
+    if (src.sansVideo) return null;
+
+    const meta = src.metadata || null;
+    const artiste = texte(meta && meta.artist).trim();
+    let titre = texte(meta && meta.title).trim();
+    if (!titre) {
+      // mediaSession n'est remplie qu'une fois la lecture lancée : avant, il
+      // reste le titre du document, qu'il faut débarrasser de son suffixe.
+      titre = texte(src.titreDocument).replace(/\s*-\s*YouTube\s*$/i, "").trim();
+    }
+    if (!titre) return null;
+
+    return {
+      titre: nettoyerTitre(titre, artiste),
+      artiste: artiste.slice(0, MAX),
+      url: texte(src.url).slice(0, 500),
+      joue: !src.videoEnPause,
+    };
+  }
+
+  window.WallyMusiqueLib = { nettoyerTitre, pourAnnonce, etatLecteur, MAX };
+})();
