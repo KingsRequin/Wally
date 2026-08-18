@@ -173,13 +173,29 @@ Les kills de KingsRequin sont dans `career_kills` (« Career Kills »), ceux d'A
 → **Chercher une NOTION par ses libellés connus, jamais par une clé supposée.** Ce qu'on
 ne trouve pas reste introuvé : « 0 kill » serait un mensonge, pas une valeur par défaut.
 
-### 3.2 Plusieurs trackers portent le même libellé et s'ADDITIONNENT
+### 3.2 🚨 Plusieurs trackers portent le même libellé — garder le PLUS HAUT
 
 Azraël a « BR Kills » deux fois dans `total` : `specialEvent_kills` = 92 182 et
-`kills` = 10 142. Leur somme vaut exactement la somme de ses « BR Kills » par légende.
-Garder le premier (un `setdefault`) amputait le total de 10 %.
+`kills` = 10 142. Ce sont deux badges du MÊME compteur, pas deux moitiés : chacun
+n'accumule que tant qu'il est épinglé (3.3), donc celui qui a quitté la bannière reste
+gelé plus bas. **On retient le plus haut, rangs compris** — un classement porte sur un
+compteur, jamais sur une somme.
 
-**Vaut pour un TOTAL CARRIÈRE uniquement** — voir 3.4 pour l'inverse.
+**Cette section a affirmé le contraire du 2026-08-10 au 2026-08-18**, et le code
+additionnait. La preuve invoquée — « leur somme vaut la somme des « BR Kills » par
+légende » — ne prouvait rien : l'API construit `total` en sommant les légendes clé par
+clé, donc l'égalité est vraie par construction, quelle que soit la règle appliquée des
+deux côtés. Vérifié sur deux comptes le 2026-08-18 : la somme des `kills` par légende
+vaut EXACTEMENT le `kills` global, idem pour `specialEvent_kills`. Deux séries
+complètes et parallèles.
+
+Ce qui a tranché : sous Crypto, IronAnanas publie `kills` = 11 117 **et**
+`specialEvent_kills` = 11 117. Wally lui a annoncé 22 234 kills en direct, puis a
+maintenu son chiffre quand l'intéressé le corrigeait.
+
+La section 3.4 disait déjà, depuis le 2026-08-13, que tous ces trackers bougent du
+**même** montant — donc qu'ils comptent la même chose. Les deux sections se
+contredisaient dans le même document ; celle qui pilotait le code était la fausse.
 
 ### 3.3 🚨 Un tracker non épinglé porte une valeur GELÉE
 
@@ -201,9 +217,9 @@ Mesuré sur deux parties réelles : 4 kills → `+4` sur `career_kills`, sur
 `specialEvent_kills`, **et** sur leurs équivalents par légende. Idem avec 2 kills → `+4`
 partout devient `+2` partout.
 
-**Les sommer donnerait 16 kills au lieu de 4.** C'est le piège exactement symétrique de
-3.2 : la règle d'addition vaut pour un total carrière, **jamais** pour une différence
-entre deux relevés.
+**Les sommer donnerait 16 kills au lieu de 4.** Même raison qu'en 3.2, dont c'est le
+corollaire et non l'inverse : ces trackers comptent tous la même chose, on ne les
+additionne ni en niveau, ni en différence.
 
 → Pour un delta : prendre le **maximum**, jamais la somme. Et suivre **tous** les
 trackers, puisqu'on ignore lequel le joueur a épinglé (3.3).
