@@ -236,16 +236,38 @@ class OneMinSTT:
                            e=etape, c=rep.status_code, t=(rep.text or "")[:160])
             return {}
 
+    async def _televerser(self, client, wav: bytes) -> str:
+        """Le chemin de l'asset, ou "". Réessaie une fois — l'échec est ALÉATOIRE.
+
+        Mesuré le 2026-08-18 en rafale, sur un fichier identique et valide :
+        environ un upload sur six repart en « The file may be corrupt. Please
+        upload another », sans rapport avec la durée ni la taille. C'est un
+        défaut de leur côté, et il coûtait un énoncé à chaque fois — sept en une
+        soirée. Un second essai suffit à le ramener au négligeable ; au-delà, ce
+        ne serait plus un aléa mais une panne, et insister ferait attendre une
+        parole que personne n'écoutera plus.
+        """
+        for essai in (1, 2):
+            rep = await client.post(
+                f"{self._BASE}/assets", headers={"API-KEY": self._key},
+                files={"asset": ("enonce.wav", wav, "audio/wav")},
+            )
+            chemin = (self._corps(rep, "upload").get("fileContent") or {}).get("path")
+            if chemin:
+                if essai > 1:
+                    logger.info("OneMinSTT: upload repassé au 2e essai")
+                return chemin
+            if essai == 1:
+                logger.info("OneMinSTT: upload refusé (HTTP {c}) — second essai",
+                            c=rep.status_code)
+        return ""
+
     async def transcribe(self, pcm16k_mono: bytes) -> str:
         import httpx
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                envoi = await client.post(
-                    f"{self._BASE}/assets", headers={"API-KEY": self._key},
-                    files={"asset": ("enonce.wav", self._wav(pcm16k_mono), "audio/wav")},
-                )
-                chemin = (self._corps(envoi, "upload").get("fileContent") or {}).get("path")
+                chemin = await self._televerser(client, self._wav(pcm16k_mono))
                 if not chemin:
                     return ""
                 rep = await client.post(

@@ -168,3 +168,61 @@ def test_une_reponse_non_json_dit_ce_qu_elle_etait():
 
     trace = "".join(messages)
     assert "502" in trace and "Bad Gateway" in trace and "upload" in trace
+
+
+def test_un_upload_refuse_au_hasard_est_reessaye():
+    """Mesuré en rafale sur un fichier identique et valide : ~1 upload sur 6
+    repart en « The file may be corrupt », sans rapport avec la durée. Sept
+    énoncés perdus en une soirée pour un aléa serveur."""
+    import asyncio
+
+    from bot.discord.voice.providers import OneMinSTT
+
+    class _Rep:
+        def __init__(self, ok):
+            self.status_code = 200 if ok else 400
+            self._corps = ({"fileContent": {"path": "audios/ok.wav"}} if ok
+                           else {"errorCode": "UNKNOWN_ERROR",
+                                 "message": "The file may be corrupt."})
+
+        def json(self):
+            return self._corps
+
+    class _Client:
+        def __init__(self, suite):
+            self.suite = list(suite)
+            self.appels = 0
+
+        async def post(self, *a, **kw):
+            self.appels += 1
+            return _Rep(self.suite.pop(0))
+
+    stt = OneMinSTT(api_key="k")
+    client = _Client([False, True])          # refus puis succès
+    assert asyncio.run(stt._televerser(client, b"wav")) == "audios/ok.wav"
+    assert client.appels == 2
+
+
+def test_on_n_insiste_pas_au_dela_du_second_essai():
+    """Deux refus d'affilée, ce n'est plus un aléa : c'est une panne. Insister
+    ferait attendre une parole que plus personne n'écoutera."""
+    import asyncio
+
+    from bot.discord.voice.providers import OneMinSTT
+
+    class _Rep:
+        status_code = 400
+
+        def json(self):
+            return {"errorCode": "UNKNOWN_ERROR"}
+
+    class _Client:
+        appels = 0
+
+        async def post(self, *a, **kw):
+            _Client.appels += 1
+            return _Rep()
+
+    client = _Client()
+    assert asyncio.run(OneMinSTT(api_key="k")._televerser(client, b"wav")) == ""
+    assert client.appels == 2
