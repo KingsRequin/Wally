@@ -54,9 +54,16 @@ pas :
 
 ## Pour les curieux
 
-- `lib.js` — le nettoyage des titres. YouTube annonce
-  `Numb (Official Music Video) [4K UPGRADE] – Linkin Park` ; le chat reçoit
-  `Linkin Park — Numb`. Couvert par des tests (`tests/test_musique_extension_lib.py`).
+- `lib.js` — d'où vient le titre, dans cet ordre :
+  1. **la fiche musicale de YouTube** (sous la vidéo : `Numb` · `Linkin Park` ·
+     `Meteora`), sa source de vérité — pas besoin de YouTube Music, elle est là
+     sur YouTube ordinaire, et sur un album entier elle suit même le morceau en
+     cours pendant que le titre de la vidéo ne bouge pas ;
+  2. sinon `mediaSession`, nettoyé : YouTube annonce
+     `Numb (Official Music Video) [4K UPGRADE] – Linkin Park`, le chat reçoit
+     `Linkin Park — Numb` ;
+  3. sinon le titre de l'onglet.
+  Couvert par des tests (`tests/test_musique_extension_lib.py`).
 - `pont.js` — lit le lecteur et applique les ordres. Il tourne dans le monde de
   la page, seul endroit d'où `navigator.mediaSession` est visible.
 - `content.js` — le battement vers le bot. Lui seul a le droit de parler au

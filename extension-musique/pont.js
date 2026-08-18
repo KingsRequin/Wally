@@ -19,11 +19,42 @@
 
   const video = () => document.querySelector("video");
 
+  /* La fiche musicale que YouTube pose sous la vidéo, quand il reconnaît le
+   * morceau : « Numb » · « Linkin Park » · « Meteora (Bonus Edition) ».
+   *
+   * C'est la source la plus propre disponible — celle du catalogue, pas le
+   * titre tapé par l'uploadeur — et elle existe sur YouTube ORDINAIRE : Azraël
+   * n'a donc pas à passer sur YouTube Music pour que le chat lise un titre
+   * correct. Relevée sur la vraie page avant d'écrire ces sélecteurs.
+   *
+   * Absente pour tout ce que YouTube ne reconnaît pas (mix, reprise, gameplay),
+   * et c'est normal : `lib.js` retombe alors sur le nettoyage du titre.
+   */
+  function ficheMusicale() {
+    const titre = document.querySelector(".ytVideoAttributeViewModelTitle");
+    if (!titre) return null;
+    // L'artiste est le premier texte qui suit le titre dans la même carte. Pris
+    // par position et non par classe : celle-ci n'en portait aucune, et une
+    // classe inventée serait fausse dès le prochain remaniement de YouTube.
+    const carte = titre.closest("ytd-horizontal-card-list-renderer") || titre.parentElement;
+    const feuilles = carte
+      ? [...carte.querySelectorAll("*")].filter(
+          (n) => !n.children.length && (n.innerText || "").trim())
+      : [];
+    const rang = feuilles.indexOf(titre);
+    const suivant = rang >= 0 ? feuilles[rang + 1] : null;
+    return {
+      titre: (titre.innerText || "").trim(),
+      artiste: suivant ? (suivant.innerText || "").trim() : "",
+    };
+  }
+
   /* Ce que le lecteur dit de lui-même, à cet instant. */
   function lire() {
     const v = video();
     const media = navigator.mediaSession || {};
     return L.etatLecteur({
+      fiche: ficheMusicale(),
       metadata: media.metadata || null,
       titreDocument: document.title,
       videoEnPause: !v || v.paused,

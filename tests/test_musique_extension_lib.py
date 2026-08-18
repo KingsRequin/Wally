@@ -187,3 +187,69 @@ def test_une_page_SANS_lecteur_ne_pretend_rien():
                                   videoEnPause: true, sansVideo: true});
       console.log(JSON.stringify(etat));
     """) == "null"
+
+
+# ── la fiche musicale de YouTube ────────────────────────────────────────────
+
+def test_la_FICHE_musicale_l_emporte_sur_le_titre_de_la_video():
+    """Relevé sur la vraie page : sous la vidéo, YouTube affiche sa propre fiche
+    — « Numb » · « Linkin Park » · « Meteora (Bonus Edition) ». C'est SA source
+    de vérité, tirée du catalogue musical, pas le titre que l'uploadeur a tapé.
+
+    Elle rend le nettoyage par motifs inutile quand elle est là : plus rien à
+    deviner, plus de « (Official Music Video) » à retirer à la main.
+
+    Le cas choisi DISCRIMINE : sur un album entier, le titre de la vidéo ne
+    bouge jamais, alors que la fiche suit le morceau en cours. Aucun nettoyage
+    ne peut deviner « Numb » à partir de « Meteora (Full Album) » — seule la
+    fiche le sait.
+    """
+    assert _node("""
+      const etat = L.etatLecteur({
+        fiche: {titre: "Numb", artiste: "Linkin Park"},
+        metadata: {title: "Meteora (Full Album)", artist: "LinkinParkVEVO"},
+        videoEnPause: false,
+      });
+      console.log(JSON.stringify([etat.titre, etat.artiste]));
+    """) == '["Numb","Linkin Park"]'
+
+
+def test_sans_fiche_on_retombe_sur_le_NETTOYAGE():
+    """Elle n'existe que pour les morceaux RECONNUS par YouTube. Un mix d'une
+    heure, une reprise amateur, un gameplay : pas de fiche, et le nettoyage
+    reprend son rôle."""
+    assert _node("""
+      const etat = L.etatLecteur({
+        fiche: null,
+        metadata: {title: "Numb (Official Music Video) – Linkin Park",
+                   artist: "Linkin Park"},
+        videoEnPause: false,
+      });
+      console.log(etat.titre);
+    """) == "Numb"
+
+
+def test_une_fiche_INCOMPLETE_est_completee_par_le_reste():
+    """Le DOM de YouTube change sans prévenir : un champ peut manquer demain.
+    Ce qui manque se reprend ailleurs plutôt que de tout jeter."""
+    assert _node("""
+      const etat = L.etatLecteur({
+        fiche: {titre: "Numb", artiste: ""},
+        metadata: {title: "Meteora (Full Album)", artist: "Linkin Park"},
+        videoEnPause: false,
+      });
+      console.log(JSON.stringify([etat.titre, etat.artiste]));
+    """) == '["Numb","Linkin Park"]'
+
+
+def test_une_fiche_VIDE_ne_fait_pas_taire_le_lecteur():
+    """Le pire des cas : la fiche existe dans le DOM mais ses champs sont vides
+    (chargement en cours). Elle ne doit pas effacer ce qu'on savait."""
+    assert _node("""
+      const etat = L.etatLecteur({
+        fiche: {titre: "   ", artiste: ""},
+        metadata: {title: "Une chanson", artist: "Quelqu'un"},
+        videoEnPause: false,
+      });
+      console.log(JSON.stringify([etat.titre, etat.artiste]));
+    """) == '["Une chanson","Quelqu\'un"]'

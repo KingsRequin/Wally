@@ -73,8 +73,33 @@
     if (src.sansVideo) return null;
 
     const meta = src.metadata || null;
-    const artiste = texte(meta && meta.artist).trim();
+    let artiste = texte(meta && meta.artist).trim();
     let titre = texte(meta && meta.title).trim();
+
+    // La FICHE musicale de YouTube l'emporte : c'est sa source de vérité,
+    // tirée du catalogue, là où le reste n'est que le titre tapé par
+    // l'uploadeur. Sur un album entier, elle suit même le morceau en cours
+    // pendant que le titre de la vidéo, lui, ne bouge jamais — aucun nettoyage
+    // ne peut deviner ça.
+    //
+    // Champ par champ, et non tout ou rien : le DOM de YouTube change sans
+    // prévenir, et ce qui manque se reprend ailleurs plutôt que de tout jeter.
+    const fiche = src.fiche || null;
+    const ficheTitre = texte(fiche && fiche.titre).trim();
+    const ficheArtiste = texte(fiche && fiche.artiste).trim();
+    if (ficheTitre) titre = ficheTitre;
+    if (ficheArtiste) artiste = ficheArtiste;
+    if (ficheTitre) {
+      // Déjà propre : le nettoyage n'a plus rien à retirer, et pourrait mordre
+      // sur un vrai titre (« Numb (Live) » est un autre morceau).
+      return {
+        titre: ficheTitre.slice(0, MAX),
+        artiste: artiste.slice(0, MAX),
+        url: texte(src.url).slice(0, 500),
+        joue: !src.videoEnPause,
+      };
+    }
+
     if (!titre) {
       // mediaSession n'est remplie qu'une fois la lecture lancée : avant, il
       // reste le titre du document, qu'il faut débarrasser de son suffixe.
