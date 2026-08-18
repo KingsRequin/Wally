@@ -80,15 +80,32 @@ class FasterWhisperSTT:
         phrases: list[str] | None = None,
         cpu_threads: int = 0,
         parallel: int = 1,
+        hotwords: str | None = None,
     ) -> None:
         self._model_size = model_size
         self._lang = (language or "fr").split("-")[0]  # "fr-FR" → "fr"
         self._device = device
         self._compute_type = compute_type
         self._cpu_threads = cpu_threads  # 0 = auto (CTranslate2 choisit)
-        # On NE biaise PAS le décodage vers le nom : un initial_prompt avec « Wally »
-        # fait halluciner « Wally wally » sur le bruit (ventilateur). Le VAD filtre suffit.
+        # `initial_prompt` reste ÉTEINT : avec « Wally » dedans, le modèle
+        # hallucinait « Wally wally » sur le bruit du ventilateur.
         self._initial_prompt = None
+        # `hotwords` emprunte pourtant le MÊME emplacement du prompt (après
+        # `sot_prev`, cf. `TranscriptionOptions.get_prompt` de faster-whisper) —
+        # ce n'est pas un mécanisme plus sage, et le rallumer sur la foi de son
+        # nom aurait ramené le défaut ci-dessus. Il a donc fallu le mesurer.
+        #
+        # `scripts/bench_stt.py`, sur les phrases d'appel RÉELLEMENT ratées en
+        # live : 4/8 entendues sans, **8/8 avec**. Zéro faux déclenchement sur
+        # les 8 contrôles (« wall jump », « on my way », « un walk », « Well »),
+        # zéro bavardage sur 6 non-paroles franchissant le plancher, débit
+        # inchangé (2,1× le temps réel). Le nom SEUL suffit — le jargon en plus
+        # n'ajoute rien de mesurable, donc il n'entre pas.
+        #
+        # Ce qui a changé depuis l'hallucination : `vad_filter` Silero, et le
+        # plancher qui écarte le souffle avant le moteur. Si le bavardage
+        # revenait, ce paramètre est le premier à éteindre.
+        self._hotwords = hotwords or (", ".join(p for p in (phrases or []) if p) or None)
         self._model = None  # chargé à la demande
         # Nombre de transcriptions menées de front. Mesuré en live à trois
         # locuteurs : le calcul ne coûte que ~2 s par énoncé, mais l'attente en
@@ -143,6 +160,7 @@ class FasterWhisperSTT:
             segments, _info = model.transcribe(
                 audio, language=self._lang, beam_size=1,
                 initial_prompt=self._initial_prompt,
+                hotwords=self._hotwords,
                 vad_filter=True,
                 condition_on_previous_text=False,
             )
