@@ -40,19 +40,21 @@ class _State:
 
 def test_le_defaut_reproduit_lancien_comportement_pour_chaque_element():
     """Avant ce réglage, c'était `solo` qui effaçait l'avatar. Le défaut doit
-    donc valoir `not solo` — sur les 35 éléments, sans exception : un seul écart
+    donc valoir `not solo` — sur les 36 éléments, sans exception : un seul écart
     et le streamer découvre un overlay différent sans avoir rien touché.
 
     Le compte est volontairement figé : c'est un CLIQUET. Ajouter un élément
     doit obliger à passer ici et à se demander s'il efface Wally ou non — la
     question qu'on oublie précisément quand on ajoute un widget.
 
-    Repassé à 35 le 2026-08-18 : `virus_popup` (spam de popups) sature l'écran
-    et efface donc Wally ; `meme_storm` (l'avalanche de memes), montée en
-    parallèle pour comparaison, a été retirée — l'owner a tranché entre les
-    deux après les avoir vues tourner.
+    36 depuis le 2026-08-18, et les deux derniers ajouts ont reçu des réponses
+    OPPOSÉES à la question, ce qui est exactement le rôle de ce cliquet :
+    `virus_popup` (spam de popups) sature l'écran et efface Wally ; `music_now`
+    (le morceau en cours) n'est qu'une étiquette, il cohabite et le laisse.
+    (`meme_storm`, l'avalanche de memes, a été retirée le même jour au profit du
+    spam.)
     """
-    assert len(ELEMENTS) == 35
+    assert len(ELEMENTS) == 36
     for cle, el in ELEMENTS.items():
         assert el["wally_visible"] is (not el["solo"]), cle
 

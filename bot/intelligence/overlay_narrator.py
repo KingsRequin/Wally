@@ -2547,6 +2547,37 @@ class OverlayNarrator:
         logger.info("Overlay : spam de popups virus ({d} s)", d=duree)
         return True
 
+    # Ce qui est déjà à l'écran, pour ne pas faire clignoter la même étiquette
+    # quand cinq personnes demandent le titre en dix secondes.
+    _dernier_morceau = ""
+
+    def show_music(self, titre: str, artiste: str, *, joue: bool = True) -> bool:
+        """Affiche le morceau en cours. Vrai s'il est parti à l'écran.
+
+        Il COHABITE : une étiquette de titre n'est pas un spectacle, elle
+        n'efface ni l'avatar ni la bulle — contrairement à l'avalanche ou au
+        spam de popups, qui prennent la scène.
+
+        Refusé deux fois : hors live (rien à afficher) et sur le MÊME morceau
+        que la dernière fois. Ce second refus ne rationne que l'AFFICHAGE — Wally
+        répond quand même dans le chat à chacun de ceux qui demandent.
+        """
+        titre = str(titre or "").strip()[:80]
+        if not titre:
+            return False          # une carte vide est pire que pas de carte
+        if not self._live():
+            return False
+        artiste = str(artiste or "").strip()[:80]
+        signature = f"{artiste}\u241f{titre}"
+        if signature == self._dernier_morceau:
+            return False
+        self._dernier_morceau = signature
+        self._last_event_at = time.monotonic()
+        self._feed.widget("music_now", title=titre, artist=artiste,
+                          playing=bool(joue))
+        logger.info("Overlay : morceau affiché — {a} — {t}", a=artiste, t=titre)
+        return True
+
     def show_counter(self, text: str) -> bool:
         """Montre un compteur qui vient de monter, si le budget le permet.
 

@@ -590,7 +590,11 @@ def make_tool_executor(
             # modo » pour changer la musique du live.
             return await run_music_tool(
                 bot, args, roles=_resolve_twitch_roles(badges or []),
-                maison=overlay)
+                maison=overlay,
+                # L'overlay appartient au live maison : une demande venue d'une
+                # chaîne invitée obtient sa réponse, pas un affichage chez
+                # Azraël.
+                narrateur=_overlay_narrator(bot) if overlay else None)
         if name == "show_overlay":
             return run_overlay_tool(bot, args, requester=author)
         if name == "cancel_overlay":

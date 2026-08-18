@@ -133,6 +133,12 @@ LIBELLES: dict[str, dict[str, str]] = {
                        "au hasard ou sur un thème demandé, que Wally peut "
                        "commenter.",
     },
+    "music_now": {
+        "nom": "Musique en cours",
+        "description": "Le morceau qu'écoute le streamer, affiché quand "
+                       "quelqu'un demande dans le chat ce qui passe. Il "
+                       "cohabite : Wally reste à l'écran à côté.",
+    },
     "pinned": {
         "nom": "Message épinglé",
         "description": "Un message du chat mis en avant à l'écran, avec le "

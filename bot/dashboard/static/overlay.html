@@ -517,6 +517,45 @@
        transformé devient le bloc conteneur de tout `fixed` descendant. Le
        `fixed` n'aurait donc pas visé la source OBS mais la carte elle-même.
        Un test du dépôt l'interdit, et il m'a arrêté ici même. */
+    /* Musique en cours — une étiquette, pas un spectacle : elle s'installe et
+       laisse la scène aux autres. */
+    .music-now {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 420px;
+      padding: 10px 16px 10px 13px;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      color: #e6edf3;
+    }
+    /* L'équaliseur : trois barres qui dansent tant que ça joue, figées en
+       pause. L'état est dans le MOUVEMENT, pas dans un mot de plus. */
+    .music-now .music-note { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
+    .music-now .music-note i {
+      display: block; width: 4px; height: 6px;
+      background: #06b6d4; border-radius: 2px;
+    }
+    .music-now.joue .music-note i { animation: music-danse 900ms ease-in-out infinite; }
+    .music-now.joue .music-note i:nth-child(2) { animation-delay: 150ms; }
+    .music-now.joue .music-note i:nth-child(3) { animation-delay: 300ms; }
+    @keyframes music-danse {
+      0%, 100% { height: 6px; }
+      50%      { height: 20px; }
+    }
+    .music-now .music-texte { min-width: 0; }
+    .music-now .music-titre {
+      font-size: 17px; font-weight: 700; line-height: 1.2;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .music-now .music-artiste {
+      font-size: 13px; opacity: .65; margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
     /* ── Spam de popups « virus » ─────────────────────────────────────────
        Variante de l'avalanche, à comparer avec elle. Rien ne tombe : les
        fenêtres s'ouvrent de plus en plus vite et RESTENT, jusqu'à l'écran bleu.
@@ -1658,6 +1697,7 @@
     <div data-element="versus"></div>
     <div data-element="wave"></div>
     <div data-element="virus_popup"></div>
+    <div data-element="music_now"></div>
     <div data-element="raid"></div>
     <div data-element="quote"></div>
     <div data-element="prediction"></div>

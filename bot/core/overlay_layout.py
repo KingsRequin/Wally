@@ -137,6 +137,9 @@ ELEMENTS: dict[str, dict] = {
     "bingo":   _el(3.0, 18.0, "top-left", 0.9, solo=False),
     "stats":   _el(3.0, 60.0, "top-left", 0.9, solo=False),
     "talkers": _el(3.0, 40.0, "top-left", 0.9, solo=False),
+    # Une étiquette de titre n'est pas un spectacle : elle s'installe en bas à
+    # gauche et laisse Wally à l'écran.
+    "music_now": _el(3.0, 92.0, "bottom-left", 0.9, solo=False),
     # Ceux qui passent
     "meme":       _el(50.0, 50.0, "center"),
     "clip":       _el(50.0, 50.0, "center"),
@@ -245,7 +248,7 @@ GROUPE_NOM_DEFAUT = "Groupe sans nom"
 _ORDRE_DEFAUT = [
     "bubble", "avatar", "image", "meme",
     "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
-    "virus_popup",
+    "virus_popup", "music_now",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
     "rps",

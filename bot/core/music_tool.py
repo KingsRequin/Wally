@@ -80,8 +80,8 @@ def _dire_ce_qui_passe(etat: dict | None) -> str:
     return f"Ça joue : « {morceau} ». Dis-le en une phrase, à ta sauce."
 
 
-async def run_music_tool(bot, args: dict, *, roles=None,
-                         maison: bool = True, pilotable: bool = True) -> str:
+async def run_music_tool(bot, args: dict, *, roles=None, maison: bool = True,
+                         pilotable: bool = True, narrateur=None) -> str:
     """Lit ou pilote la musique. Rend ce que le modèle lira.
 
     Ne ment jamais sur le résultat : `commander()` attend l'accusé de
@@ -101,7 +101,19 @@ async def run_music_tool(bot, args: dict, *, roles=None,
                 "bot. Dis-le à la personne.")
 
     if action == _LECTURE:
-        return _dire_ce_qui_passe(service.etat())
+        etat = service.etat()
+        # « Wally le DIT et l'AFFICHE » (§10). L'écran ne conditionne jamais la
+        # réponse : un bus overlay en panne, une chaîne invitée ou un salon
+        # Discord n'ont pas d'affichage, et la personne obtient son titre quand
+        # même.
+        if etat and narrateur is not None:
+            try:
+                narrateur.show_music(etat.get("titre") or "",
+                                     etat.get("artiste") or "",
+                                     joue=bool(etat.get("joue")))
+            except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
+                logger.warning("Musique : affichage impossible : {e}", e=exc)
+        return _dire_ce_qui_passe(etat)
 
     if action not in ACTIONS:
         return (f"Refusé : tu ne connais pas l'action « {action or '(vide)'} ». "

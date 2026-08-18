@@ -902,6 +902,24 @@
       return box;
     },
 
+    // Le morceau en cours, affiché quand quelqu'un demande dans le chat ce qui
+    // passe. Il COHABITE : pas de `widget-on`, Wally reste à l'écran à côté.
+    music_now(p) {
+      const box = el("div", "music-now" + (p.playing ? " joue" : ""));
+      const note = el("div", "music-note");
+      // Trois barres qui dansent : un équaliseur dit « ça joue » sans un mot,
+      // et se fige quand c'est en pause — l'information est dans le mouvement.
+      note.append(el("i", ""), el("i", ""), el("i", ""));
+      const texte = el("div", "music-texte");
+      const titre = el("div", "music-titre");
+      titre.textContent = String(p.title || "");
+      const artiste = el("div", "music-artiste");
+      artiste.textContent = String(p.artist || "");
+      texte.append(titre, artiste);
+      box.append(note, texte);
+      return box;
+    },
+
     pinned(p) {
       const box = el("div", "pinned");
       const who = el("div", "who");
