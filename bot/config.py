@@ -151,6 +151,11 @@ class VoiceConfig:
     # "" = aucun (on jette comme avant) ; "1min" = Qwen3-ASR-Flash via 1min.ai.
     overflow_stt_provider: str = ""
     overflow_stt_model: str = "qwen3-asr-flash"
+    # Voix de Qwen3-TTS-Flash quand `tts_provider: 1min`. La langue n'est pas un
+    # réglage à part : elle est dérivée de `language` et TOUJOURS forcée, le mode
+    # « Auto » du modèle se trompant sur les répliques courtes ou anglicisées.
+    onemin_tts_voice: str = "Arthur"
+    onemin_tts_model: str = "qwen3-tts-flash"
     overflow_stt_timeout_s: float = 20.0
     # Plafond d'appels en vol. Le réseau n'a pas la file du CPU, mais une rafale
     # sans borne brûlerait le quota sur un salon qui déraille.

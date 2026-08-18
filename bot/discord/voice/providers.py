@@ -256,6 +256,140 @@ class OneMinSTT:
             return ""
 
 
+class OneMinTTS:
+    """TTS Qwen3-TTS-Flash via 1min.ai. Sortie : PCM 48 kHz mono 16-bit.
+
+    Choisi pour sa VOIX (« Arthur »), pas pour sa vitesse. Azure streame — le
+    premier son sort en 0,3 s et Wally parle pendant que la suite se synthétise.
+    Ici l'API rend un fichier complet : mesuré à 3,2 s pour une réplique courte,
+    4,0 s pour une longue. Sur un salon vocal, ce délai s'ajoute au STT et au
+    LLM avant que quiconque entende quoi que ce soit.
+
+    D'où le découpage par phrases de `synthesize_stream` : on synthétise la
+    première, on la joue, et les suivantes se préparent pendant qu'elle passe.
+    Le premier son arrive alors au bout de la PREMIÈRE phrase et non de tout le
+    texte — c'est le seul levier disponible, l'API n'ayant pas de streaming.
+
+    Deux renoncements assumés par rapport à Azure :
+    - Pas de style émotionnel : `resolve_style` module la voix Azure selon
+      l'émotion dominante (`mstts:express-as`), Qwen n'a pas d'équivalent. Le
+      style reçu est donc IGNORÉ, pas silencieusement mal appliqué.
+    - `language_type` est forcé (« French » par défaut) : en « Auto », le modèle
+      se trompe de langue sur des répliques courtes ou mêlées d'anglais — c'est
+      le constat de l'owner, et le jargon Apex rend le cas fréquent.
+    """
+
+    _BASE = "https://api.1min.ai/api"
+    _ASSETS = "https://asset.1min.ai"
+    _MAX_CHARS = 600  # limite dure de l'API, par appel
+
+    # Langue Discord/persona → valeur attendue par l'API (liste close côté 1min.ai).
+    _LANGUES = {
+        "fr": "French", "en": "English", "es": "Spanish", "de": "German",
+        "it": "Italian", "pt": "Portuguese", "ru": "Russian", "ja": "Japanese",
+        "ko": "Korean", "zh": "Chinese",
+    }
+
+    def __init__(self, api_key: str, voice: str = "Arthur", model: str = "qwen3-tts-flash",
+                 language: str = "fr-FR", timeout: float = 60.0, secours=None) -> None:
+        self._key = api_key
+        self._voice = voice
+        self._model = model
+        self._langue = self._LANGUES.get((language or "fr").split("-")[0].lower(), "French")
+        self._timeout = timeout
+        # Filet : si l'API ne rend RIEN, Azure prend la réplique. Muet est le
+        # pire symptôme de ce bot — il se croit en train de parler, personne ne
+        # l'entend, et on cherche ailleurs pendant une heure. Une voix
+        # inattendue, elle, s'entend immédiatement.
+        self._secours = secours
+
+    def _decouper(self, texte: str) -> list[str]:
+        """Découpe en phrases jouables, sans jamais dépasser la limite de l'API.
+
+        Le découpage sert la LATENCE : chaque morceau rendu est un morceau que
+        Wally peut déjà dire. On ne coupe donc pas au milieu d'un mot, et on
+        regroupe les phrases courtes — une réplique hachée en cinq appels
+        coûterait plus d'attente qu'elle n'en fait gagner.
+        """
+        import re
+
+        morceaux: list[str] = []
+        courant = ""
+        for phrase in re.split(r"(?<=[.!?…])\s+", (texte or "").strip()):
+            if not phrase:
+                continue
+            # Une phrase seule plus longue que la limite : on la coupe aux espaces.
+            while len(phrase) > self._MAX_CHARS:
+                coupe = phrase.rfind(" ", 0, self._MAX_CHARS)
+                coupe = coupe if coupe > 0 else self._MAX_CHARS
+                morceaux.append(phrase[:coupe].strip())
+                phrase = phrase[coupe:].strip()
+            if not courant:
+                courant = phrase
+            elif len(courant) + 1 + len(phrase) <= self._MAX_CHARS and len(courant) < 90:
+                courant = f"{courant} {phrase}"   # trop court pour valoir un appel
+            else:
+                morceaux.append(courant)
+                courant = phrase
+        if courant:
+            morceaux.append(courant)
+        return morceaux
+
+    async def _un_morceau(self, client, texte: str) -> bytes:
+        """PCM 48 kHz mono d'un morceau, ou b'' — l'appelant continue sans lui."""
+        import audioop
+
+        rep = await client.post(
+            f"{self._BASE}/features",
+            headers={"API-KEY": self._key, "Content-Type": "application/json"},
+            json={"type": "TEXT_TO_SPEECH", "model": self._model,
+                  "promptObject": {"text": texte, "voice": self._voice,
+                                   "language_type": self._langue}},
+        )
+        corps = rep.json()
+        if "errorCode" in corps:
+            logger.warning("OneMinTTS: refus {c} — {m}", c=corps.get("errorCode"),
+                           m=str(corps.get("message"))[:140])
+            return b""
+        res = ((corps.get("aiRecord") or {}).get("aiRecordDetail") or {}).get("resultObject")
+        chemin = (res[0] if isinstance(res, list) and res else res) or ""
+        if not chemin:
+            logger.warning("OneMinTTS: réponse sans audio — Wally resterait muet")
+            return b""
+        audio = await client.get(f"{self._ASSETS}/{chemin}")
+        brut = audio.content
+        # L'en-tête WAV rendu par l'API MENT sur la taille des données (44 739 s
+        # annoncées pour 5 s réelles) : on saute les 44 octets d'en-tête et on
+        # lit le reste tel quel, plutôt que de faire confiance au `wave` parsé.
+        pcm24k = brut[44:] if brut[:4] == b"RIFF" else brut
+        converti, _ = audioop.ratecv(pcm24k, 2, 1, 24000, 48000, None)
+        return converti
+
+    async def synthesize(self, text: str, style: str | None = None) -> bytes:
+        morceaux = []
+        await self.synthesize_stream(text, style, morceaux.append)
+        return b"".join(morceaux)
+
+    async def synthesize_stream(self, text: str, style: str | None, on_chunk) -> None:
+        import httpx
+
+        produit = 0
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                for morceau in self._decouper(text):
+                    pcm = await self._un_morceau(client, morceau)
+                    if pcm:
+                        produit += len(pcm)
+                        on_chunk(pcm)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("OneMinTTS.synthesize_stream a échoué: {e}", e=e)
+        if produit or self._secours is None or not (text or "").strip():
+            return
+        # Rien n'est sorti alors qu'il y avait quelque chose à dire.
+        logger.warning("OneMinTTS muet — repli sur la voix de secours")
+        await self._secours.synthesize_stream(text, style, on_chunk)
+
+
 class AzureTTS:
     """TTS Azure Neural. Sortie : PCM 48 kHz mono 16-bit (prêt pour Discord)."""
 
@@ -407,5 +541,25 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
 
 
 def build_tts(cfg: VoiceConfig) -> TextToSpeech:
+    provider = (cfg.tts_provider or "azure").lower()
+    if provider in ("1min", "1min.ai", "onemin", "qwen"):
+        cle = os.environ.get("ONEMIN_API_KEY", "")
+        if cle:
+            logger.info("voice: TTS {m} — voix {v}, langue forcée",
+                        m=cfg.onemin_tts_model, v=cfg.onemin_tts_voice)
+            secours = None
+            try:
+                azure_key, azure_region = _azure_creds()
+                secours = AzureTTS(key=azure_key, region=azure_region, voice=cfg.azure_voice)
+            except Exception as e:  # noqa: BLE001 — sans Azure, on part sans filet, en le disant
+                logger.warning("voice: pas de voix de secours ({e})", e=e)
+            return OneMinTTS(api_key=cle, voice=cfg.onemin_tts_voice,
+                             model=cfg.onemin_tts_model, language=cfg.language,
+                             secours=secours)
+        # On ne laisse PAS Wally muet pour une clé manquante : Azure reprend, et
+        # le dit. Une voix inattendue s'entend ; un silence, on l'attribue à
+        # autre chose pendant une heure.
+        logger.warning("voice: TTS « {p} » demandé mais ONEMIN_API_KEY manque — repli sur Azure",
+                       p=provider)
     key, region = _azure_creds()
     return AzureTTS(key=key, region=region, voice=cfg.azure_voice)
