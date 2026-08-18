@@ -16,12 +16,16 @@ def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     bot.duel_runner.ouvrir = AsyncMock()
     # La base répond SELON LA CLÉ, comme la vraie. Un faux qui rend la même
     # valeur pour toutes faisait reconnaître le duel comme une attaque de virus
-    # — deux récompenses coexistent sur la chaîne, et c'est justement leur clé
-    # qui les distingue.
-    from bot.twitch.events.virus_popups import CLE_RECOMPENSE as CLE_VIRUS
+    # — QUATRE récompenses coexistent maintenant sur la chaîne (duel, virus, et
+    # les deux humeurs), et c'est justement leur clé qui les distingue.
+    #
+    # Écrit en LISTE BLANCHE : la clé du duel, et rien d'autre. Une liste noire
+    # aurait laissé passer la récompense suivante, et le duel se serait fait
+    # reconnaître comme elle — ce qui est arrivé deux fois ici.
+    from bot.core.apex.duel_runner import CLE_RECOMPENSE as CLE_DUEL
 
     async def _get_state(cle):
-        return None if cle == CLE_VIRUS else persisted_reward_id
+        return persisted_reward_id if cle == CLE_DUEL else None
 
     bot.db.get_state = AsyncMock(side_effect=_get_state)
     return bot

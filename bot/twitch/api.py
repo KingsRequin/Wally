@@ -868,7 +868,10 @@ class TwitchAPI:
         """
         corps = {
             **_corps_recompense(titre, cout, prompt),
-            "is_user_input_required": True,        # le viewer colle son pseudo ou son uid
+            # Toujours vrai : le duel y attend un uid, « forcer une humeur »
+            # l'émotion voulue. Les récompenses qui n'en ont pas besoin le
+            # disent dans leur invite (« rien à écrire »).
+            "is_user_input_required": True,
             "is_enabled": True,
             # JAMAIS True : une redemption qui saute la file est aussitôt
             # FULFILLED, et seul un statut UNFULFILLED peut être mis à jour.

@@ -130,6 +130,28 @@ async def _est_le_spam_virus(bot, reward_id: str) -> bool:
     return bool(attendu) and str(reward_id) == attendu
 
 
+async def _est_une_humeur(bot, reward_id: str) -> float | None:
+    """L'intensité voulue si c'est une de NOS deux récompenses d'humeur.
+
+    `None` sinon — et un ID vide DÉSACTIVE, comme partout ailleurs : sans ce
+    garde, n'importe quelle récompense de la chaîne forcerait une humeur.
+    """
+    from bot.twitch.events.humeur import CLE_100, CLE_50
+
+    db = getattr(bot, "db", None)
+    if db is None or not reward_id:
+        return None
+    for cle, intensite in ((CLE_50, 0.5), (CLE_100, 1.0)):
+        try:
+            attendu = str(await db.get_state(cle) or "")
+        except Exception as exc:  # noqa: BLE001 — un filtrage ne casse pas l'événement
+            logger.debug("Humeur : ID persisté illisible : {e}", e=exc)
+            continue
+        if attendu and str(reward_id) == attendu:
+            return intensite
+    return None
+
+
 async def handle_redemption(bot: "WallyTwitch", event) -> None:
     """Point d'entrée EventSub. N'échoue jamais vers l'appelant."""
     reward_id = ""
@@ -139,6 +161,20 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
         reward_id = str(getattr(getattr(event, "reward", None), "id", ""))
         # Le spam AVANT le duel : deux récompenses distinctes arrivent par
         # le même événement, et chacune doit reconnaître la sienne.
+        intensite = await _est_une_humeur(bot, reward_id)
+        if intensite is not None:
+            from bot.twitch.events.humeur import forcer_humeur
+
+            await forcer_humeur(
+                bot,
+                acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
+                # Le texte saisi par le viewer : c'est lui qui dit l'émotion.
+                texte=str(getattr(event, "user_input", "") or ""),
+                intensite=intensite,
+                reward_id=reward_id,
+                redemption_id=str(getattr(event, "id", "")),
+            )
+            return
         if await _est_le_spam_virus(bot, reward_id):
             from bot.twitch.events.virus_popups import lancer_spam_virus
 

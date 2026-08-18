@@ -766,6 +766,30 @@ async def main() -> None:
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
             logger.error("Attaque de virus non armée : {e}", e=exc)
 
+        # Forcer une humeur (§14) : DEUX récompenses, une par intensité — le
+        # coût est fixe par récompense côté Twitch, il en faut donc une pour
+        # 50 % et une pour 100 %. Chacune avec sa clé : partagées, l'une
+        # deviendrait irremboursable et l'autre appliquerait la mauvaise valeur.
+        try:
+            from bot.twitch.events.humeur import (
+                CLE_50 as _CLE_H50, CLE_100 as _CLE_H100,
+                COUT_50 as _COUT_H50, COUT_100 as _COUT_H100,
+                PROMPT as _PROMPT_H,
+                TITRE_50 as _TITRE_H50, TITRE_100 as _TITRE_H100,
+            )
+            from bot.twitch.recompenses import assurer_recompense
+
+            for _cle, _titre, _cout in ((_CLE_H50, _TITRE_H50, _COUT_H50),
+                                        (_CLE_H100, _TITRE_H100, _COUT_H100)):
+                _id = await assurer_recompense(
+                    twitch_api, db, cle_etat=_cle, titre=_titre, cout=_cout,
+                    prompt=_PROMPT_H, libelle=f"humeur {_cout} pts",
+                )
+                logger.info("Humeur {c} pts armée (récompense {r})",
+                            c=_cout, r=_id or "INDISPONIBLE")
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
+            logger.error("Récompenses d'humeur non armées : {e}", e=exc)
+
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())
         _stream_voice_tasks.add(_watch_task)
