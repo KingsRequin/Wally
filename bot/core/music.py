@@ -76,18 +76,44 @@ class MusicService:
             # elle ne laisse rien ici : la confidentialité se joue à
             # l'écriture, pas à la lecture — un consommateur branché plus tard
             # trouverait sinon le titre d'une vidéo privée.
+            if self._etat is not None:
+                logger.info("Musique : partage coupé côté extension")
             self._etat = None
             self._vu_a = 0.0
             return self._servir()
 
-        self._etat = {
+        nouveau = {
             "titre": str(titre or "")[:_MAX_TEXTE],
             "artiste": str(artiste or "")[:_MAX_TEXTE],
             "url": str(url or "")[:500],
             "joue": bool(joue),
         }
+        self._journaliser(nouveau)
+        self._etat = nouveau
         self._vu_a = self._maintenant()
         return self._servir(joue=bool(joue))
+
+    def _journaliser(self, nouveau: dict) -> None:
+        """Ce qui CHANGE, et rien d'autre.
+
+        Un battement toutes les deux secondes ne peut pas entrer dans les logs.
+        Mais sans aucune trace, rien ne dit si l'extension parle : la question
+        s'est posée en direct le 2026-08-19 — « ça marche pas » — sans qu'aucun
+        log ne puisse y répondre, ni côté serveur ni côté chat. On note donc les
+        trois transitions qui informent : le contact pris (ou repris après un
+        silence), et le morceau qui change.
+        """
+        muet = self._etat is None or self._maintenant() - self._vu_a > self.PERIME_S
+        morceau = f"{nouveau['artiste']} — {nouveau['titre']}".strip(" —")
+        if muet:
+            logger.info("Musique : l'extension parle — {m}",
+                        m=morceau or "aucun lecteur sur cette page")
+            return
+        avant = self._etat or {}
+        if (avant.get("titre"), avant.get("artiste")) != (nouveau["titre"],
+                                                          nouveau["artiste"]):
+            logger.info("Musique : morceau — {m}",
+                        m=morceau or "aucun lecteur sur cette page")
 
     def _servir(self, *, joue: bool = True) -> list[dict]:
         """Les ordres encore valables, retirés de la file.
@@ -146,6 +172,12 @@ class MusicService:
         if self._etat is None:
             return None
         if self._maintenant() - self._vu_a > self.PERIME_S:
+            return None
+        if not self._etat.get("titre"):
+            # L'extension bat aussi sur une page SANS lecteur — accueil,
+            # recherche, liste de lecture — pour se dire vivante. Un état sans
+            # titre ne dit donc rien de ce qui passe : c'est « je ne sais pas »,
+            # pas « en pause sur «  » ».
             return None
         return dict(self._etat)
 

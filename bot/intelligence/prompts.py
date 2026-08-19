@@ -191,9 +191,17 @@ PRELUDE_HEADER = (
 )
 
 
+# Porte du palier haut. Elle était à 0.7/0.75 : mesuré sur 30 jours de
+# production, elle ne s'ouvrait que 6,8 h par MOIS toutes émotions confondues
+# hors ennui (joie 5,1 h, colère 50 min, curiosité 35 min, tristesse 10 min).
+# Les états relevés en présence de gens culminent vers 0.5–0.6, pas 0.9 : les
+# directives extrêmes existaient donc pour ~1 % du temps de vie du bot.
+SEUIL_HAUT = 0.6
+
+
 def _get_tier(value: float) -> str | None:
     """Retourne le palier émotionnel pour une valeur donnée."""
-    if value >= 0.7:
+    if value >= SEUIL_HAUT:
         return "high"
     if value >= 0.4:
         return "mid"
@@ -206,7 +214,7 @@ def _get_tier_fluid(value: float) -> tuple[str, float] | None:
     """Return tier with blend factor for fluid transitions.
 
     Returns (tier, 1.0) for pure tiers, ("low_mid", blend) or ("mid_high", blend)
-    for transition zones (+/-0.05 around boundaries 0.4 and 0.7).
+    for transition zones (+/-0.05 around boundaries 0.4 and SEUIL_HAUT).
     Returns None if below 0.2.
     """
     if value < 0.2:
@@ -217,14 +225,14 @@ def _get_tier_fluid(value: float) -> tuple[str, float] | None:
         if blend >= 1.0:
             return ("mid", 1.0)
         return ("low_mid", blend)
-    # Transition zone around 0.7 (mid/high boundary)
-    if 0.65 <= value < 0.75:
-        blend = (value - 0.65) / 0.1
+    # Transition zone around SEUIL_HAUT (mid/high boundary)
+    if SEUIL_HAUT - 0.05 <= value < SEUIL_HAUT + 0.05:
+        blend = (value - (SEUIL_HAUT - 0.05)) / 0.1
         if blend >= 1.0:
             return ("high", 1.0)
         return ("mid_high", blend)
     # Pure tiers
-    if value >= 0.75:
+    if value >= SEUIL_HAUT + 0.05:
         return ("high", 1.0)
     if value >= 0.45:
         return ("mid", 1.0)

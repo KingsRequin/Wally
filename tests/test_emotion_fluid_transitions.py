@@ -1,6 +1,13 @@
-"""Tests for fluid directive transitions and secondary emotion injection."""
+"""Tests for fluid directive transitions and secondary emotion injection.
+
+Les valeurs sont dérivées de `SEUIL_HAUT` plutôt qu'écrites en dur : ces tests
+vérifient le MÉCANISME de transition (zone mixte de ±0.05 autour d'une
+frontière), pas l'emplacement de la frontière. Écrits en dur (0.55 « mid »,
+0.68 « mid_high »), ils rougissaient dès qu'on déplaçait le palier haut — un
+recalibrage mesuré ressemblait alors à une régression.
+"""
 import pytest
-from bot.intelligence.prompts import _get_tier_fluid, PromptBuilder
+from bot.intelligence.prompts import SEUIL_HAUT, _get_tier_fluid, PromptBuilder
 
 
 def test_tier_below_threshold_returns_none():
@@ -13,7 +20,7 @@ def test_tier_low_pure():
 
 
 def test_tier_mid_pure():
-    result = _get_tier_fluid(0.55)
+    result = _get_tier_fluid(SEUIL_HAUT - 0.1)
     assert result == ("mid", 1.0)
 
 
@@ -31,7 +38,7 @@ def test_tier_transition_low_to_mid():
 
 
 def test_tier_transition_mid_to_high():
-    result = _get_tier_fluid(0.68)
+    result = _get_tier_fluid(SEUIL_HAUT - 0.02)
     assert result is not None
     tier, blend = result
     assert tier == "mid_high"

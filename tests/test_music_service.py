@@ -124,6 +124,17 @@ def test_une_video_en_PAUSE_reste_connue_mais_dite_en_pause():
     assert etat["joue"] is False
 
 
+def test_une_page_youtube_SANS_lecteur_n_est_pas_un_morceau():
+    """L'extension bat même sur une page sans vidéo — la page d'accueil, une
+    recherche — pour dire qu'elle est VIVANTE. Ce battement-là n'apprend rien
+    sur ce qui passe : sans titre, on ne sait pas, et « je ne sais pas » n'est
+    pas « en pause sur «  » ». Sans cette garde, le chat annonce un morceau vide
+    et l'overlay reçoit une carte sans texte."""
+    svc = _service()
+    _battre(svc, joue=False, titre="", artiste="")
+    assert svc.etat() is None
+
+
 def test_les_champs_sont_bornes_en_longueur():
     """Le titre vient d'une page web : c'est une entrée non fiable, et il finit
     dans le chat Twitch et sur l'overlay."""

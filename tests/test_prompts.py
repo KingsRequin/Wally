@@ -225,7 +225,10 @@ def test_missing_tiered_key_silently_skipped():
 
 
 def test_get_tier_returns_correct_level():
-    from bot.intelligence.prompts import _get_tier
+    """Ordre et bornes des paliers. Le haut est dérivé de `SEUIL_HAUT`, qui bouge
+    avec les mesures de production — le figer ici ferait passer un recalibrage
+    volontaire pour une régression."""
+    from bot.intelligence.prompts import SEUIL_HAUT, _get_tier
     assert _get_tier(0.0) is None
     assert _get_tier(0.1) is None
     assert _get_tier(0.19) is None
@@ -234,8 +237,8 @@ def test_get_tier_returns_correct_level():
     assert _get_tier(0.39) == "low"
     assert _get_tier(0.4) == "mid"
     assert _get_tier(0.5) == "mid"
-    assert _get_tier(0.69) == "mid"
-    assert _get_tier(0.7) == "high"
+    assert _get_tier(SEUIL_HAUT - 0.01) == "mid"
+    assert _get_tier(SEUIL_HAUT) == "high"
     assert _get_tier(0.8) == "high"
     assert _get_tier(1.0) == "high"
 
