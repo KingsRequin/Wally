@@ -148,9 +148,9 @@ class VoiceConfig:
     # (« énoncé ABANDONNÉ — STT local saturé »). Ce provider-là reprend
     # exactement ce qui serait perdu, et rien d'autre — il est plus lent qu'un
     # local libre, mais bien plus rapide qu'un local saturé.
-    # "" = aucun (on jette comme avant) ; "groq" = Whisper large v3 turbo.
+    # "" = aucun (on jette comme avant) ; "xai" = Grok STT. Pas de nom de
+    # modèle à régler : l'endpoint `/v1/stt` de xAI n'en prend pas.
     overflow_stt_provider: str = ""
-    overflow_stt_model: str = "whisper-large-v3-turbo"
     overflow_stt_timeout_s: float = 20.0
     # Plafond d'appels en vol. Le réseau n'a pas la file du CPU, mais une rafale
     # sans borne brûlerait le quota sur un salon qui déraille.

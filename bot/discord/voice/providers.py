@@ -195,37 +195,55 @@ class FasterWhisperSTT:
             return ""
 
 
-class GroqSTT:
-    """STT distant Whisper large v3 turbo, chez Groq. SOUPAPE, pas moteur.
+class XaiSTT:
+    """STT distant Grok, chez xAI. SOUPAPE, pas moteur.
 
     Le `small` local transcrit un énoncé à la fois : à trois locuteurs sa file
     monte à 5-6 s et il finit par JETER de la parole. Cette voie reprend ce qui
-    serait perdu — 119 énoncés en 28 min de live le 2026-08-19, le PC GPU de
-    l'owner étant éteint. Elle ne sert à rien quand ce PC tourne.
+    serait perdu — 141 énoncés en 36 min de live le 2026-08-19, le PC GPU de
+    l'owner étant éteint, soit 19,6 % de l'audio entendu. Elle ne sert à rien
+    quand ce PC tourne.
 
-    Choisie après une soirée sur Qwen3-ASR-Flash via 1min.ai, abandonné parce
-    qu'il HALLUCINAIT dans une autre langue sur les énoncés courts : 15 lignes
-    de chinois et de japonais dans un salon francophone, `language` envoyé et
-    ignoré. Ici l'API est compatible OpenAI, la langue est réellement imposée,
-    et un seul appel remplace les deux du précédent (upload puis transcription,
-    dont un refus aléatoire sur six).
+    Retenue contre Qwen3-ASR-Flash (1min.ai) et Whisper turbo (Groq), sur trois
+    mesures faites le 2026-08-19 avec un énoncé de synthèse de 3,3 s :
 
-    Coût : 0,04 $/h d'audio, **facturé par tranche de 10 s minimum**. Nos
-    énoncés font 1,8 s en moyenne, donc on paie ~5,7× la durée réelle — soit
-    ~1,70 $/mois à soixante heures de vocal, GPU éteint tout du long.
+    - **le nom passe.** `keyterm` biaise réellement la reconnaissance, jusqu'à
+      cent termes. 1min.ai n'expose AUCUN équivalent (14 emplacements essayés,
+      sortie identique au caractère près) et écrivait « Wall-E » ou « ou ali ».
+    - **812 ms**, contre 3,5 s mesurées chez 1min.ai. Une soupape qui rattrape
+      de la parole en retard ne vaut que par sa vitesse.
+    - **elle se tait sur le vide.** Un silence et un souffle rendent tous deux
+      la chaîne vide. C'est le défaut qui a disqualifié 1min.ai : il rendait du
+      chinois et du japonais sur les énoncés courts d'un salon francophone
+      (15 lignes en 28 min), `language` envoyé et ignoré.
+
+    Coût : 0,10 $/h d'audio, facturé à la durée réelle — l'API rend `duration`.
+    Soit ~0,75 $/mois à soixante heures de vocal, GPU éteint tout du long. Groq
+    affichait 0,04 $/h mais facture 10 s minimum par requête, or nos énoncés
+    font 1,8 s : 0,23 $/h effectif, pour un service moins bon.
     """
 
-    _URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+    _URL = "https://api.x.ai/v1/stt"
 
-    def __init__(self, api_key: str, model: str = "whisper-large-v3-turbo",
-                 language: str = "fr-FR", timeout: float = 20.0) -> None:
+    # Plafonds de l'API : cent termes de biais, cinquante caractères chacun.
+    _MAX_KEYTERMS = 100
+    _MAX_KEYTERM_LEN = 50
+
+    def __init__(self, api_key: str, language: str = "fr-FR",
+                 timeout: float = 20.0, phrases: list[str] | None = None) -> None:
         self._key = api_key
-        self._model = model
         self._lang = (language or "fr").split("-")[0]
         # Serré volontairement : cette voie ne sert qu'à rattraper de la parole
         # en retard. Une transcription qui arrive après 20 s ne rattrape plus
         # rien, elle encombre — mieux vaut la lâcher et le dire.
         self._timeout = timeout
+        # Le nom de Wally et ses surnoms. Le moteur local les reçoit déjà en
+        # `hotwords` ; sans eux ici, un énoncé rattrapé perdait justement le mot
+        # qui décide si Wally est interpellé.
+        self.keyterms = [
+            p.strip()[:self._MAX_KEYTERM_LEN]
+            for p in (phrases or []) if p and p.strip()
+        ][:self._MAX_KEYTERMS]
 
     @staticmethod
     def _wav(pcm16k_mono: bytes) -> bytes:
@@ -241,6 +259,16 @@ class GroqSTT:
             w.writeframes(pcm16k_mono)
         return tampon.getvalue()
 
+    def _champs(self) -> list[tuple[str, tuple[None, str]]]:
+        """Les champs du multipart, hors fichier.
+
+        Une LISTE et non un dict : `keyterm` se répète autant de fois qu'il y a
+        de termes, ce qu'un dict écraserait au dernier.
+        """
+        champs = [("language", (None, self._lang)), ("format", (None, "true"))]
+        champs += [("keyterm", (None, k)) for k in self.keyterms]
+        return champs
+
     async def _transcrire(self, client, wav: bytes) -> str:
         """Le texte, ou "" — en DISANT toujours ce qui est arrivé à la place.
 
@@ -254,9 +282,7 @@ class GroqSTT:
             rep = await client.post(
                 self._URL,
                 headers={"Authorization": f"Bearer {self._key}"},
-                files={"file": ("enonce.wav", wav, "audio/wav")},
-                data={"model": self._model, "language": self._lang,
-                      "response_format": "json", "temperature": "0"},
+                files=[("file", ("enonce.wav", wav, "audio/wav")), *self._champs()],
             )
             statut = getattr(rep, "status_code", 0)
             try:
@@ -264,18 +290,18 @@ class GroqSTT:
             except Exception:  # noqa: BLE001 — une passerelle en vrac répond du HTML
                 corps = None
             if corps is None:
-                logger.warning("GroqSTT: réponse non-JSON (HTTP {c}) : {t}",
+                logger.warning("XaiSTT: réponse non-JSON (HTTP {c}) : {t}",
                                c=statut, t=(getattr(rep, "text", "") or "")[:160])
             elif statut < 400:
                 return str(corps.get("text") or "").strip()
             else:
-                motif = ((corps.get("error") or {}).get("message")
-                         if isinstance(corps.get("error"), dict) else corps.get("error"))
-                logger.warning("GroqSTT: refus HTTP {c} — {m}", c=statut, m=str(motif)[:140])
+                erreur = corps.get("error")
+                motif = erreur.get("message") if isinstance(erreur, dict) else erreur
+                logger.warning("XaiSTT: refus HTTP {c} — {m}", c=statut, m=str(motif)[:140])
             if statut < 500:
                 return ""       # refus franc : insister ne le changera pas
             if essai == 1:
-                logger.info("GroqSTT: HTTP {c} — second essai", c=statut)
+                logger.info("XaiSTT: HTTP {c} — second essai", c=statut)
         return ""
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
@@ -285,7 +311,7 @@ class GroqSTT:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 return await self._transcrire(client, self._wav(pcm16k_mono))
         except Exception as e:  # noqa: BLE001 — une soupape ne casse jamais l'écoute
-            logger.warning("GroqSTT.transcribe a échoué: {e}", e=e)
+            logger.warning("XaiSTT.transcribe a échoué: {e}", e=e)
             return ""
 
 
@@ -411,27 +437,34 @@ def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToTex
     return _build_batch_stt(cfg.stt_provider, cfg, phrases)
 
 
-def build_overflow_stt(cfg: VoiceConfig) -> SpeechToText | None:
+def build_overflow_stt(cfg: VoiceConfig,
+                       phrases: list[str] | None = None) -> SpeechToText | None:
     """La soupape de débordement, ou None si elle n'est pas configurée.
 
     Rend None sans bruit quand le provider n'est pas demandé, mais LOGUE quand
     il l'est sans clé : une soupape qu'on croit posée et qui ne l'est pas se
     voit seulement le jour où la parole disparaît, c'est-à-dire trop tard.
+
+    `phrases` porte le nom de Wally et ses surnoms, comme pour le moteur local :
+    un énoncé rattrapé sans eux perdrait justement le mot qui décide si Wally
+    est interpellé.
     """
     provider = (cfg.overflow_stt_provider or "").lower()
     if not provider:
         return None
-    if provider != "groq":
+    if provider != "xai":
         logger.warning("voice: provider de débordement inconnu « {p} » — ignoré", p=provider)
         return None
-    cle = os.environ.get("GROQ_API_KEY", "")
+    cle = os.environ.get("XAI_API_KEY", "")
     if not cle:
-        logger.warning("voice: débordement « {p} » demandé mais GROQ_API_KEY manque "
+        logger.warning("voice: débordement « {p} » demandé mais XAI_API_KEY manque "
                        "— la parole en trop continuera d'être JETÉE", p=provider)
         return None
-    logger.info("voice: soupape de débordement active ({m})", m=cfg.overflow_stt_model)
-    return GroqSTT(api_key=cle, model=cfg.overflow_stt_model,
-                   language=cfg.language, timeout=cfg.overflow_stt_timeout_s)
+    soupape = XaiSTT(api_key=cle, language=cfg.language,
+                     timeout=cfg.overflow_stt_timeout_s, phrases=phrases)
+    logger.info("voice: soupape de débordement active (xai, {n} terme(s) de biais)",
+                n=len(soupape.keyterms))
+    return soupape
 
 
 def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
@@ -453,7 +486,7 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
         idle_timeout=cfg.remote_stt_idle_timeout,
         health_cache_s=cfg.remote_stt_health_cache_s,
         priority_speakers=prioritaires,
-        overflow=build_overflow_stt(cfg),
+        overflow=build_overflow_stt(cfg, phrases=phrases),
         overflow_max_inflight=cfg.overflow_stt_max_inflight,
     )
 

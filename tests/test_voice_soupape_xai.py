@@ -1,4 +1,4 @@
-"""La soupape de débordement passe chez Groq (Whisper large v3 turbo).
+"""La soupape de débordement passe chez xAI (Grok STT).
 
 1min.ai a été abandonné le 2026-08-19, après une soirée d'observation :
 
@@ -11,10 +11,14 @@
 - il demandait DEUX appels (upload d'asset, puis transcription), dont un
   refusait au hasard un fichier valide sur six.
 
-Groq répond en un seul appel compatible OpenAI, force réellement la langue, et
-coûte ~1,70 $/mois au rythme mesuré. Ces tests verrouillent ce qui a mordu :
-la langue est imposée, un 5xx est réessayé UNE fois, un 4xx ne l'est jamais, et
-aucun échec ne part en silence.
+xAI répond en un seul appel REST, en 812 ms mesurées, force réellement la
+langue, rend la chaîne vide sur un silence — et surtout accepte `keyterm`, le
+biais de vocabulaire qu'aucun des deux autres candidats n'exposait : le nom
+« Wally » ressort correctement au lieu de « Wall-E » ou « ou ali ».
+
+Ces tests verrouillent ce qui a mordu : la langue est imposée, le nom part en
+biais, un 5xx est réessayé UNE fois, un 4xx ne l'est jamais, et aucun échec ne
+part en silence.
 """
 import asyncio
 
@@ -33,6 +37,21 @@ class _Rep:
         return self._corps
 
 
+class _ClientVide:
+    """Client qui n'a qu'un rôle : capturer l'appel qu'on lui fait."""
+
+    def attrape(self, stt):
+        self.appel = None
+
+        async def post(url, **kw):
+            self.appel = kw
+            return _Rep(200, {"text": ""})
+
+        client = type("C", (), {"post": staticmethod(post)})()
+        asyncio.run(stt._transcrire(client, b"wav"))
+        return self.appel
+
+
 class _Client:
     """Faux client httpx : sert la suite de réponses qu'on lui donne."""
 
@@ -46,9 +65,14 @@ class _Client:
 
 
 def _stt(**kw):
-    from bot.discord.voice.providers import GroqSTT
+    from bot.discord.voice.providers import XaiSTT
 
-    return GroqSTT(api_key="clé-bidon", **kw)
+    return XaiSTT(api_key="clé-bidon", **kw)
+
+
+def _champs(appel) -> list[tuple[str, str]]:
+    """Les champs du multipart hors fichier, sous forme (nom, valeur)."""
+    return [(nom, val[1]) for nom, val in appel["files"] if nom != "file"]
 
 
 def test_le_texte_transcrit_est_rendu():
@@ -62,7 +86,36 @@ def test_la_langue_est_IMPOSEE_dans_la_requete():
     en chinois. La langue ne doit pas être une suggestion."""
     client = _Client([_Rep(200, {"text": "ok"})])
     asyncio.run(_stt(language="fr-FR")._transcrire(client, b"wav"))
-    assert client.appels[0]["data"]["language"] == "fr"
+    assert ("language", "fr") in _champs(client.appels[0])
+
+
+def test_le_nom_de_wally_part_en_BIAIS():
+    """Le moteur local reçoit déjà ces mots en `hotwords`. Sans eux ici, un
+    énoncé rattrapé perdait le mot qui décide si Wally est interpellé."""
+    client = _Client([_Rep(200, {"text": "ok"})])
+    asyncio.run(_stt(phrases=["Wally", "Wallou"])._transcrire(client, b"wav"))
+    assert ("keyterm", "Wally") in _champs(client.appels[0])
+    assert ("keyterm", "Wallou") in _champs(client.appels[0])
+
+
+def test_chaque_terme_de_biais_a_son_propre_champ():
+    """`keyterm` se répète dans le multipart. Rangé dans un dict, seul le
+    dernier terme serait parti — et le nom de Wally aurait pu être celui-là."""
+    stt = _stt(phrases=["Wally", "Wallou", "Wall"])
+    assert [v for n, v in _champs(_ClientVide().attrape(stt))] .count("Wally") == 1
+    assert sum(1 for n, _ in _champs(_ClientVide().attrape(stt)) if n == "keyterm") == 3
+
+
+def test_les_plafonds_de_l_api_sont_respectes():
+    """Cent termes, cinquante caractères chacun : au-delà, l'API refuse tout
+    l'appel — et on perdrait l'énoncé pour un surnom de trop."""
+    stt = _stt(phrases=["x" * 80] + [f"surnom{i}" for i in range(200)])
+    assert len(stt.keyterms) == 100
+    assert all(len(k) <= 50 for k in stt.keyterms)
+
+
+def test_un_surnom_vide_n_entre_pas():
+    assert _stt(phrases=["Wally", "", "   ", None]).keyterms == ["Wally"]
 
 
 def test_un_5xx_est_reessaye_une_fois():
@@ -111,9 +164,9 @@ def test_un_wav_valide_est_bien_ce_qui_part():
     import io
     import wave
 
-    from bot.discord.voice.providers import GroqSTT
+    from bot.discord.voice.providers import XaiSTT
 
-    wav = GroqSTT._wav(b"\x00\x01" * 16000)
+    wav = XaiSTT._wav(b"\x00\x01" * 16000)
     with wave.open(io.BytesIO(wav)) as w:
         assert w.getnchannels() == 1
         assert w.getsampwidth() == 2

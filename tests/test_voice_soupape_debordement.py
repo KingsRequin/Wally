@@ -2,7 +2,7 @@
 
 Ces tests portent sur le PIPELINE : qui part à la soupape, et ce qu'il advient
 de ce qu'elle ne peut pas prendre. Le fournisseur lui-même est couvert par
-`test_voice_soupape_groq.py`.
+`test_voice_soupape_xai.py`.
 
 Le moteur local traite un énoncé à la fois. Mesuré le 2026-08-18 sur trois
 locuteurs simultanés — le cas normal d'un live :
