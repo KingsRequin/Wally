@@ -99,17 +99,99 @@ def mood_to_style(emotion_state: dict[str, float] | None) -> str | None:
 
 
 # Tags de ton que Wally peut placer en tête de phrase → style Azure.
-_TAG_STYLE = {
-    "murmure": "whispering", "chuchote": "whispering", "chuchotement": "whispering",
-    "crie": "shouting", "crier": "shouting", "hurle": "shouting",
-    "doux": "softvoice", "doucement": "softvoice", "calme": "softvoice",
-    "joyeux": "joyful", "content": "joyful", "heureux": "joyful",
+#
+# L'ORDRE compte : c'est celui dans lequel `available_tags()` retient un
+# représentant par son réellement distinct. Les mots les plus naturels d'abord,
+# pour qu'une voix pauvre en styles garde les meilleurs.
+_CANONICAL_TAGS = {
+    "murmure": "whispering",
+    "doux": "softvoice",
+    "joyeux": "joyful",
+    "content": "happy",
     "triste": "sad",
-    "enerve": "angry", "énervé": "angry", "colere": "angry", "colère": "angry", "fache": "angry",
-    "excite": "excited", "excité": "excited",
+    "énervé": "angry",
+    "excité": "excited",
+    "crie": "shouting",
     "surpris": "surprised",
-    "peur": "fearful", "apeure": "fearful", "apeuré": "fearful",
+    "peur": "fearful",
+    "déterminé": "determined",
+    "espoir": "hopeful",
+    "soulagé": "relieved",
+    "regret": "regretful",
+    "gêné": "embarrassed",
+    "jaloux": "jealous",
+    "dégoûté": "disgusted",
+    "confus": "confused",
 }
+
+# Table de LECTURE : les tags canoniques ci-dessus plus leurs variantes. Wally
+# écrit sans accent une fois sur deux, et un tag non reconnu part en silence.
+_TAG_STYLE = {
+    **_CANONICAL_TAGS,
+    "chuchote": "whispering", "chuchotement": "whispering",
+    "crier": "shouting", "hurle": "shouting",
+    "doucement": "softvoice", "calme": "softvoice",
+    "heureux": "happy",
+    "enerve": "angry", "colere": "angry", "colère": "angry", "fache": "angry",
+    "excite": "excited",
+    "apeure": "fearful", "apeuré": "fearful",
+    "determine": "determined",
+    "soulage": "relieved",
+    "regrette": "regretful", "regrets": "regretful",
+    "gene": "embarrassed", "embarrasse": "embarrassed", "embarrassé": "embarrassed",
+    "degoute": "disgusted", "degoûté": "disgusted", "dégoute": "disgusted",
+    "perdu": "confused",
+}
+
+
+def available_tags(voice: str | None) -> list[str]:
+    """Tons que cette voix rend RÉELLEMENT, un mot par son distinct.
+
+    Dérivé de la voix montée plutôt qu'écrit dans le prompt : proposer à Wally
+    un ton que sa voix ignore lui fait écrire un tag sans effet, et lui cacher
+    ceux qui existent laisse la moitié du mécanisme inutilisée. Deux tags qui
+    retomberaient sur le même `express-as` (chez une voix pauvre en styles)
+    seraient une nuance imaginaire : on n'en garde qu'un.
+    """
+    vus: set[str] = set()
+    tags: list[str] = []
+    for tag, style in _CANONICAL_TAGS.items():
+        rendu = adapt_style(style, voice)
+        if rendu is None or rendu in vus:
+            continue
+        vus.add(rendu)
+        tags.append(tag)
+    return tags
+
+
+# Émotion secondaire (deux émotions au-dessus du seuil) → style Azure. Plus
+# spécifique que la dominante seule, donc prioritaire — même arbitrage que les
+# composites côté texte. Exprimé dans le vocabulaire riche des voix MAI ;
+# `adapt_style()` le ramène à la voix réellement configurée.
+_SECONDARY_STYLE = {
+    "anxiety": "fearful",
+    "contempt": "disgusted",
+    "frustration": "angry",
+    "nostalgia": "regretful",
+    "pride": "determined",
+    "wonder": "surprised",
+}
+
+
+def secondary_to_style(secondaries: list[tuple[str, float]] | None) -> str | None:
+    """Style de la secondaire la plus intense, ou None si aucune n'est active.
+
+    `EmotionEngine.get_secondary_emotions()` rend déjà la liste triée par
+    intensité et filtrée par les seuils de `config.yaml` : on suit cet ordre.
+    """
+    if not isinstance(secondaries, (list, tuple)):
+        return None  # même garde que `mood_to_style` : un état inattendu ≠ une panne de voix
+    for entree in secondaries:
+        nom = entree[0] if isinstance(entree, (list, tuple)) and entree else entree
+        if style := _SECONDARY_STYLE.get(nom if isinstance(nom, str) else ""):
+            return style
+    return None
+
 
 _TAG_RE = re.compile(r"^\s*[\[(]\s*([a-zà-ÿ]+)\s*[\])]\s*", re.IGNORECASE)
 
@@ -157,15 +239,25 @@ def _strip_brackets(text: str) -> str:
 
 
 def resolve_style(
-    text: str, emotion_state: dict[str, float] | None, voice: str | None = None
+    text: str,
+    emotion_state: dict[str, float] | None,
+    voice: str | None = None,
+    secondaries: list[tuple[str, float]] | None = None,
 ) -> tuple[str | None, str]:
-    """Style final + texte à dire : le tag explicite de Wally prime sur l'humeur.
+    """Style final + texte à dire, par ordre de précision décroissante.
+
+    1. le tag explicite de Wally — c'est lui qui décide de son ton ;
+    2. son émotion secondaire la plus intense — deux émotions au-dessus du
+       seuil en disent plus que la dominante seule ;
+    3. son émotion dominante.
 
     `voice` ramène le style aux capacités réelles de la voix configurée. Omis,
     le style sort tel quel — les appels historiques restent valides.
     """
     tag_style, clean = parse_style_tag(text)
-    style = tag_style if tag_style is not None else mood_to_style(emotion_state)
+    style = tag_style
+    if style is None:
+        style = secondary_to_style(secondaries) or mood_to_style(emotion_state)
     if voice is not None:
         style = adapt_style(style, voice)
     return style, _strip_unspeakable(_strip_brackets(clean))

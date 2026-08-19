@@ -616,15 +616,31 @@ class VoiceService:
         async with self._speak_lock:
             await self._speak_locked(text)
 
+    @property
+    def style_voice(self) -> str:
+        """Voix dont les tons s'entendront, "" si le moteur monté n'en porte pas.
+
+        Demandée au TTS et non à la config : `azure_voice` reste renseignée même
+        quand le provider 1min est monté, et proposer alors des tons à Wally
+        serait une promesse creuse — le tag partirait sans jamais rien changer.
+        """
+        return getattr(self._tts, "style_voice", "")
+
     async def _speak_locked(self, text: str) -> None:
-        # Style de voix : tag explicite de Wally ([murmure]…) sinon son humeur du moment.
+        # Style de voix : tag explicite de Wally ([murmure]…), sinon son émotion
+        # secondaire du moment, sinon son humeur dominante.
         try:
             emotion_state = self._bot.emotion.get_state()
         except Exception:  # noqa: BLE001
             emotion_state = None
+        try:
+            secondaries = self._bot.emotion.get_secondary_emotions()
+        except Exception:  # noqa: BLE001
+            secondaries = None
         # La voix courante décide des styles disponibles : un `express-as`
         # inconnu fait échouer la synthèse, et Azure ne le signale pas.
-        style, text = resolve_style(text, emotion_state, voice=self._cfg.azure_voice)
+        style, text = resolve_style(text, emotion_state, voice=self.style_voice,
+                                    secondaries=secondaries)
         if not text:
             return
         self.quota.add_tts_chars(len(text))

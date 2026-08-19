@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from loguru import logger
 
 from bot.core.voice_transcript import active_voice_transcript
+from bot.discord.voice.style import available_tags
 
 
 def _history_to_context(history: list[dict], bot_name: str = "") -> list[dict]:
@@ -135,7 +136,7 @@ def _should_respond_voice(transcript: str, history: list[dict], named: bool) -> 
     recent = history[:-1][-2:]  # deux tours avant la parole courante
     return any(m.get("role") == "assistant" for m in recent)
 
-_VOICE_TARGET_NOTICE = (
+_VOICE_CONTEXT_NOTICE = (
     "CONTEXTE : tu es actuellement connecté dans un salon VOCAL Discord et tu parles à voix "
     "haute. Tu ENTENDS les gens parler (transcription) et tu leur réponds ORALEMENT — ce n'est "
     "pas du texte écrit. C'est une conversation de GROUPE : plusieurs personnes peuvent parler, "
@@ -144,16 +145,51 @@ _VOICE_TARGET_NOTICE = (
     "discussion, tiens compte de ce que se disent les gens entre eux, et interviens naturellement — "
     "tu n'as pas à répondre à chaque phrase ni à chaque personne séparément. "
     "Réponds en une à deux phrases courtes, naturelles à l'oral, sans "
-    "formatage, sans markdown, sans emoji. Réponds UNIQUEMENT avec ton propre texte.\n"
-    "TON DE VOIX : par défaut ta voix suit ton humeur. Tu peux choisir un ton précis UNIQUEMENT "
-    "en plaçant UN SEUL mot-tag entre crochets au TOUT DÉBUT de ta phrase, parmi exactement : "
-    "[murmure], [crie], [doux], [joyeux], [triste], [énervé], [excité], [surpris]. "
-    "Exemple correct : '[murmure] approche, j'ai un secret'. "
-    "RÈGLES STRICTES sur les crochets : un seul mot-tag, au tout début, rien d'autre. N'entoure "
-    "JAMAIS une phrase entière de crochets, n'écris JAMAIS de didascalie entre crochets "
-    "(pas de [rire], [soupir], etc.), et n'utilise pas de crochets ailleurs. La plupart du temps, "
-    "parle simplement, sans aucun tag."
+    "formatage, sans markdown, sans emoji. Réponds UNIQUEMENT avec ton propre texte."
 )
+
+# Les crochets ne servent QU'aux tons. Sans cette interdiction, il écrit des
+# didascalies ([rire], [soupir]) : elles sont retirées avant la synthèse, donc
+# c'est de la réplique perdue — il croit avoir soupiré, personne n'entend rien.
+_NO_BRACKETS = (
+    "N'entoure JAMAIS une phrase entière de crochets, n'écris JAMAIS de didascalie entre "
+    "crochets (pas de [rire], [soupir], etc.), et n'utilise pas de crochets ailleurs."
+)
+
+
+def _tone_notice(voice: str) -> str:
+    """Consigne de ton, dérivée des styles que la voix montée rend RÉELLEMENT.
+
+    Écrite en dur, la liste mentait des deux côtés : elle proposait huit tons à
+    une voix MAI qui en porte dix-huit, et les mêmes huit à Qwen qui n'en porte
+    aucun. Un ton promis mais non rendu part en tag inutile ; un ton rendu mais
+    absent de la liste laisse la moitié du mécanisme d'émotion sans utilisateur.
+    """
+    tags = available_tags(voice)
+    if not tags:
+        return f"TON DE VOIX : ta voix ne porte pas de ton particulier. {_NO_BRACKETS}"
+    liste = ", ".join(f"[{tag}]" for tag in tags)
+    return (
+        "TON DE VOIX : par défaut ta voix suit ton humeur. Tu peux choisir un ton précis "
+        "UNIQUEMENT en plaçant UN SEUL mot-tag entre crochets au TOUT DÉBUT de ta phrase, "
+        f"parmi exactement : {liste}. "
+        f"Exemple correct : '[{tags[0]}] viens voir ça'. "
+        "RÈGLES STRICTES sur les crochets : un seul mot-tag, au tout début, rien d'autre. "
+        f"{_NO_BRACKETS} La plupart du temps, parle simplement, sans aucun tag."
+    )
+
+
+def _style_voice(bot) -> str:
+    """Voix vocale réellement montée, "" si le vocal n'est pas là.
+
+    Demandée au service plutôt qu'à la config : c'est le TTS construit qui sait
+    s'il porte des tons, pas `cfg.azure_voice` qui reste renseignée même sous
+    un provider qui les ignore.
+    """
+    service = getattr(bot, "voice_service", None) or getattr(
+        getattr(bot, "discord_bot", None), "voice_service", None)
+    return getattr(service, "style_voice", "") or ""
+
 
 def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
                   present_label: str = "", channel_name: str = "", activity_label: str = "",
@@ -172,7 +208,7 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
         active_secondaries=bot.emotion.get_secondary_emotions(),
         user_directive=user_directive,
     )
-    system_prompt = f"{system_prompt}\n\n{_VOICE_TARGET_NOTICE}"
+    system_prompt = f"{system_prompt}\n\n{_VOICE_CONTEXT_NOTICE}\n{_tone_notice(_style_voice(bot))}"
     if channel_name:
         system_prompt += f"\n\nTu es dans le salon vocal « {channel_name} »."
     if present_label:

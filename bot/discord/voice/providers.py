@@ -10,12 +10,36 @@ from bot.config import VoiceConfig
 from bot.discord.voice.audio import SAMPLE_RATE
 
 
+# Namespace du `mstts:express-as`. En **http**, pas https : c'est un identifiant
+# XML, pas une URL — Azure compare la chaîne exacte. Avec `https://`, le serveur
+# ne reconnaît pas l'élément, l'IGNORE en silence et rend la phrase à plat.
+# Mesuré le 2026-08-18 sur `fr-FR-Marc:MAI-Voice-2-Flash`, même texte :
+#   https + style joyful → 31 200 octets, soit l'octet près le rendu SANS style
+#   http  + style joyful → 29 280 octets ; http + softvoice → 59 040 octets
+# Autrement dit, tout le système d'émotion vocal ne changeait rien à ce qui
+# sortait, sans une seule ligne de log pour le dire.
+_MSTTS_NS = "http://www.w3.org/2001/mstts"
+
+
+# Voix de repli quand la voix configurée ne rend rien. Neurale standard, donc
+# couverte par les 500 k caractères gratuits du F0, et l'une des deux seules
+# voix fr-FR hors MAI à porter des styles (`cheerful`, `excited`, `sad`,
+# `whispering`) — un repli sans émotion du tout s'entendrait comme une panne.
+_SECOURS_NEURAL = "fr-FR-HenriNeural"
+
+
 class SpeechToText(Protocol):
     async def transcribe(self, pcm16k_mono: bytes) -> str: ...
 
 
 class TextToSpeech(Protocol):
     async def synthesize(self, text: str, style: str | None = None) -> bytes: ...
+
+    # Voix dont les styles `express-as` s'entendront réellement, ou "" si ce
+    # moteur n'en porte aucun. C'est elle, et non `cfg.azure_voice`, qui décide
+    # des tons proposés à Wally : avec le TTS 1min monté, la voix Azure figure
+    # toujours en config sans que personne ne l'entende jamais.
+    style_voice: str
 
 
 def _azure_creds() -> tuple[str, str]:
@@ -320,6 +344,11 @@ class OneMinTTS:
     _ASSETS = "https://asset.1min.ai"
     _MAX_CHARS = 600  # limite dure de l'API, par appel
 
+    # Aucun `express-as` chez Qwen : rien à proposer comme ton. La chaîne vide
+    # (et non `None`) dit « voix inconnue » à `supported_styles()`, qui rend
+    # l'ensemble vide — un style inventé rendrait la synthèse muette ailleurs.
+    style_voice = ""
+
     # Langue Discord/persona → valeur attendue par l'API (liste close côté 1min.ai).
     _LANGUES = {
         "fr": "French", "en": "English", "es": "Spanish", "de": "German",
@@ -430,16 +459,51 @@ class OneMinTTS:
 class AzureTTS:
     """TTS Azure Neural. Sortie : PCM 48 kHz mono 16-bit (prêt pour Discord)."""
 
-    def __init__(self, key: str, region: str, voice: str) -> None:
+    def __init__(self, key: str, region: str, voice: str,
+                 secours: "AzureTTS | None" = None) -> None:
         self._key, self._region, self._voice = key, region, voice
+        # Voix de repli quand celle-ci ne rend RIEN. Sert au cas MAI : la
+        # ressource est en SKU F0, où Azure ne facture pas mais BLOQUE une fois
+        # le quota atteint — et les voix MAI, comptées en tokens, ne sont pas
+        # couvertes par les 500 k caractères du neural standard. Le 2026-08-07,
+        # ce mutisme a coûté une soirée : il entendait, décidait, générait sa
+        # réplique, jouait son bip, et aucun son ne sortait.
+        self._secours = secours
+
+    @property
+    def style_voice(self) -> str:
+        """La voix qui parle vraiment — c'est elle qui décide des tons offerts."""
+        return self._voice
 
     async def synthesize(self, text: str, style: str | None = None) -> bytes:
-        return await asyncio.to_thread(self._synthesize_sync, text, style)
+        morceaux: list[bytes] = []
+        await self.synthesize_stream(text, style, morceaux.append)
+        return b"".join(morceaux)
 
     async def synthesize_stream(self, text: str, style: str | None, on_chunk) -> None:
         """Synthèse en streaming : `on_chunk(pcm48k_mono)` est appelé au fil de l'audio produit,
         ce qui permet de commencer à jouer dès le premier chunk (latence perçue minimale)."""
-        await asyncio.to_thread(self._stream_sync, text, style, on_chunk)
+        produit = 0
+
+        def compter(pcm: bytes) -> None:
+            nonlocal produit
+            produit += len(pcm)
+            on_chunk(pcm)
+
+        await asyncio.to_thread(self._stream_sync, text, style, compter)
+        if produit or self._secours is None or not (text or "").strip():
+            return
+        # Le style DOIT être ramené aux capacités de la voix de secours : Henri
+        # ne connaît ni `softvoice` ni `angry`, et un `express-as` inconnu fait
+        # échouer la synthèse — le repli serait muet à son tour, pour la même
+        # raison que celle qu'il est censé rattraper.
+        from bot.discord.voice.style import adapt_style
+
+        style_repli = adapt_style(style, getattr(self._secours, "_voice", None))
+        logger.warning("AzureTTS: {v} n'a rien rendu — repli sur {s} (style {a} → {b})",
+                       v=self._voice, s=getattr(self._secours, "_voice", "?"),
+                       a=style, b=style_repli)
+        await self._secours.synthesize_stream(text, style_repli, on_chunk)
 
     def _stream_sync(self, text: str, style: str | None, on_chunk) -> None:
         try:
@@ -488,25 +552,9 @@ class AzureTTS:
             inner = f'<mstts:express-as style={quoteattr(style)}>{inner}</mstts:express-as>'
         return (
             '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-            'xmlns:mstts="https://www.w3.org/2001/mstts" '
+            f'xmlns:mstts="{_MSTTS_NS}" '
             f'xml:lang="{lang}"><voice name={quoteattr(self._voice)}>{inner}</voice></speak>'
         )
-
-    def _synthesize_sync(self, text: str, style: str | None = None) -> bytes:
-        try:
-            speech_cfg = speechsdk.SpeechConfig(subscription=self._key, region=self._region)
-            speech_cfg.set_speech_synthesis_output_format(
-                speechsdk.SpeechSynthesisOutputFormat.Raw48Khz16BitMonoPcm
-            )
-            synth = speechsdk.SpeechSynthesizer(speech_config=speech_cfg, audio_config=None)
-            result = synth.speak_ssml_async(self._build_ssml(text, style)).get()
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                return result.audio_data
-            logger.warning("AzureTTS: synthèse non complétée ({r})", r=result.reason)
-            return b""
-        except Exception as e:  # noqa: BLE001
-            logger.warning("AzureTTS.synthesize a échoué: {e}", e=e)
-            return b""
 
 
 def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None) -> SpeechToText:
@@ -599,4 +647,21 @@ def build_tts(cfg: VoiceConfig) -> TextToSpeech:
         logger.warning("voice: TTS « {p} » demandé mais ONEMIN_API_KEY manque — repli sur Azure",
                        p=provider)
     key, region = _azure_creds()
-    return AzureTTS(key=key, region=region, voice=cfg.azure_voice)
+    # Les voix MAI ne sont pas couvertes par les 500 k caractères gratuits du
+    # SKU F0 (elles se comptent en tokens) : le jour où le quota tombe, Azure
+    # bloque et Wally devient muet. On lui adosse donc une voix neurale
+    # standard, elle couverte — mieux vaut une voix moins expressive que pas de
+    # voix du tout. Rien à adosser si la voix principale EST déjà la standard.
+    secours = None
+    if ":MAI-Voice-" in (cfg.azure_voice or "") and _SECOURS_NEURAL != cfg.azure_voice:
+        secours = AzureTTS(key=key, region=region, voice=_SECOURS_NEURAL)
+    # Le chemin 1min annonce sa voix au boot, celui-ci se taisait : au premier
+    # doute sur ce qu'on entend, il n'y avait rien à relire dans les logs. Les
+    # styles disponibles y figurent parce qu'ils DÉPENDENT de la voix — une
+    # voix sans style rendrait le système d'émotion inerte, sans rien casser.
+    from bot.discord.voice.style import supported_styles
+
+    logger.info("voice: TTS Azure — voix {v}, {n} styles émotionnels{s}",
+                v=cfg.azure_voice, n=len(supported_styles(cfg.azure_voice)),
+                s=f", secours {secours._voice}" if secours is not None else "")
+    return AzureTTS(key=key, region=region, voice=cfg.azure_voice, secours=secours)
