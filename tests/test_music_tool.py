@@ -220,6 +220,22 @@ def test_le_bot_twitch_et_le_dashboard_partagent_LA_MEME_instance():
     assert len(re.findall(r"MusicService\(\)", source)) == 1
 
 
+def test_le_morceau_qui_change_est_BRANCHE_sur_l_overlay():
+    """Sans ce câblage, le service annonce dans le vide : l'écran ne montrerait
+    le morceau que sur demande dans le chat, et le changement de titre passerait
+    inaperçu — c'est précisément ce qui manquait au premier essai en réel."""
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "bot" / "main.py").read_text(encoding="utf-8")
+    assert "music_service.ecouter_les_morceaux(" in source
+    bloc = re.search(r"def _morceau_a_l_ecran\(.{0,600}", source, re.S).group(0)
+    assert "show_music" in bloc
+    # Le narrateur est relu à chaque annonce : capturé au câblage, il vaudrait
+    # `None` pour toujours — il naît avec la connexion Discord.
+    assert 'getattr(discord_bot, "overlay_narrator", None)' in bloc
+
+
 # ── Discord : la lecture oui, le pilotage non ───────────────────────────────
 
 @pytest.mark.asyncio

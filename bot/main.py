@@ -218,6 +218,22 @@ async def main() -> None:
     discord_bot.conv_log = conv_log
     fact_extractor.conv_log = conv_log
 
+    # Le morceau d'Azraël qui change s'affiche sans qu'on le demande (arbitré
+    # avec l'owner le 2026-08-19) — en plus du chemin « c'est quoi la
+    # musique ? », qui garde ses propres règles. Le narrateur est relu À CHAQUE
+    # ANNONCE et non capturé ici : il naît avec la connexion Discord, bien après
+    # ce câblage. Les refus (hors live, même morceau qu'à l'écran) sont les
+    # siens, on ne les redouble pas.
+    def _morceau_a_l_ecran(morceau: dict) -> None:
+        narrateur = getattr(discord_bot, "overlay_narrator", None)
+        if narrateur is None:
+            return
+        narrateur.show_music(morceau.get("titre") or "",
+                             morceau.get("artiste") or "",
+                             joue=bool(morceau.get("joue")))
+
+    music_service.ecouter_les_morceaux(_morceau_a_l_ecran)
+
     # Compteurs à la demande : partagés par les deux plateformes, et alimentés
     # par ce que Wally entend en vocal comme par le chat.
     from bot.core.tally import TallyService

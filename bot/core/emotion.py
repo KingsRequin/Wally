@@ -673,11 +673,26 @@ class EmotionEngine:
         return [e for e in EMOTIONS if self._state.get(e, 0.0) >= threshold]
 
     def get_secondary_emotions(self) -> list[tuple[str, float]]:
-        """Return active secondary emotions as (name, intensity) sorted by intensity desc."""
+        """Secondaires actives, en (nom, intensité), la plus saillante en tête.
+
+        Le tri se fait par intensité PUIS par exigence, et ce second critère
+        n'est pas cosmétique : `prompts.py` retient la première et s'arrête.
+
+        Deux secondaires peuvent porter le même couple d'émotions — `pride`
+        (joy+curiosity, 0.4) et `wonder` (curiosity+joy, 0.5), `frustration` et
+        `contempt` (anger+boredom). Comme l'intensité vaut `min(a, b)`, elle est
+        alors IDENTIQUE des deux côtés : un tri par intensité seule ne les
+        départage pas et laisse gagner l'ordre d'insertion, c'est-à-dire la
+        version la moins exigeante. Mesuré sur 30 jours, `wonder` était éligible
+        15 fois et n'est jamais sortie une seule.
+
+        À intensité égale, la règle qui demande le plus passe donc devant —
+        comme une règle précise l'emporte sur une règle générale.
+        """
         secondaries = getattr(self._config, "secondaries", None)
         if not secondaries or not isinstance(secondaries, dict):
             return []
-        result = []
+        classees: list[tuple[str, float, float]] = []
         for name, defn in secondaries.items():
             val_a = self._state.get(defn.a, 0.0)
             val_b = self._state.get(defn.b, 0.0)
@@ -685,13 +700,14 @@ class EmotionEngine:
             if isinstance(threshold, list):
                 if val_a < threshold[0] or val_b < threshold[1]:
                     continue
+                exigence = max(threshold)
             else:
                 if val_a < threshold or val_b < threshold:
                     continue
-            intensity = min(val_a, val_b)
-            result.append((name, intensity))
-        result.sort(key=lambda x: x[1], reverse=True)
-        return result
+                exigence = threshold
+            classees.append((name, min(val_a, val_b), exigence))
+        classees.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        return [(nom, intensite) for nom, intensite, _ in classees]
 
     def set_openai_client(self, client) -> None:
         """Injection du client LLM secondaire pour l'analyse émotionnelle."""

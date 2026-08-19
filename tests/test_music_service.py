@@ -135,6 +135,73 @@ def test_une_page_youtube_SANS_lecteur_n_est_pas_un_morceau():
     assert svc.etat() is None
 
 
+# ── Le morceau qui change s'annonce tout seul ───────────────────────────────
+#
+# Arbitré avec l'owner le 2026-08-19 : pas de bandeau permanent, mais l'écran
+# suit les morceaux d'Azraël sans qu'on ait à les demander. Le service ne
+# connaît pas l'overlay — il appelle un rappel, et c'est `main.py` qui y branche
+# le narrateur. Ce module ne parle ni au réseau ni à l'écran, c'est ce qui le
+# rend testable sur des dictionnaires nus.
+
+def _service_ecoute(horloge=None):
+    from bot.core.music import MusicService
+    vus = []
+    svc = MusicService(horloge=horloge or _Horloge(), on_morceau=vus.append)
+    return svc, vus
+
+
+def test_un_nouveau_morceau_est_ANNONCE_sans_qu_on_demande():
+    svc, vus = _service_ecoute()
+    _battre(svc, titre="Numb", artiste="Linkin Park")
+    assert [(m["titre"], m["artiste"]) for m in vus] == [("Numb", "Linkin Park")]
+
+
+def test_le_MEME_morceau_ne_s_annonce_pas_a_chaque_battement():
+    """Le battement passe toutes les deux secondes : sans cette garde, l'écran
+    reçoit trente annonces par minute pour un seul morceau."""
+    svc, vus = _service_ecoute()
+    for _ in range(5):
+        _battre(svc, titre="Numb", artiste="Linkin Park")
+    assert len(vus) == 1
+
+
+def test_changer_de_morceau_l_annonce_a_nouveau():
+    svc, vus = _service_ecoute()
+    _battre(svc, titre="Numb", artiste="Linkin Park")
+    _battre(svc, titre="In The End", artiste="Linkin Park")
+    assert [m["titre"] for m in vus] == ["Numb", "In The End"]
+
+
+def test_une_MISE_EN_PAUSE_n_annonce_rien():
+    """Mettre en pause n'est pas un nouveau morceau. Et une vidéo à l'arrêt n'a
+    rien à faire à l'écran de son propre chef — on ne l'affiche que si quelqu'un
+    le demande dans le chat."""
+    svc, vus = _service_ecoute()
+    _battre(svc, titre="Numb", artiste="Linkin Park")
+    _battre(svc, titre="Numb", artiste="Linkin Park", joue=False)
+    assert len(vus) == 1
+
+
+def test_une_page_SANS_lecteur_n_annonce_rien():
+    """L'extension bat aussi sur la page d'accueil, pour se dire vivante."""
+    svc, vus = _service_ecoute()
+    _battre(svc, titre="", artiste="")
+    assert vus == []
+
+
+def test_un_rappel_qui_CASSE_ne_fait_pas_tomber_le_battement():
+    """L'écran est un consommateur parmi d'autres : un bus overlay en panne ne
+    doit ni perdre l'état ni rendre un 500 à l'extension."""
+    from bot.core.music import MusicService
+
+    def casse(_morceau):
+        raise RuntimeError("bus overlay mort")
+
+    svc = MusicService(horloge=_Horloge(), on_morceau=casse)
+    _battre(svc, titre="Numb", artiste="Linkin Park")
+    assert svc.etat()["titre"] == "Numb"
+
+
 def test_les_champs_sont_bornes_en_longueur():
     """Le titre vient d'une page web : c'est une entrée non fiable, et il finit
     dans le chat Twitch et sur l'overlay."""

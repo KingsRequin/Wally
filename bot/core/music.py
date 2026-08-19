@@ -55,13 +55,29 @@ class MusicService:
     # défiler trente morceaux au retour de l'extension.
     MAX_ORDRES = 5
 
-    def __init__(self, horloge: Callable[[], float] | None = None) -> None:
+    def __init__(self, horloge: Callable[[], float] | None = None,
+                 on_morceau: Callable[[dict], None] | None = None) -> None:
         self._maintenant = horloge or time.monotonic
+        # Prévenu quand Azraël CHANGE de morceau, jamais à chaque battement.
+        # Un rappel plutôt qu'un narrateur : ce module ne connaît ni l'écran ni
+        # le réseau, et c'est ce qui le garde testable sur des dictionnaires
+        # nus. `main.py` y branche l'overlay.
+        self._on_morceau = on_morceau
         self._etat: dict | None = None
         self._vu_a: float = 0.0
         self._file: deque[dict] = deque(maxlen=self.MAX_ORDRES)
         # Les ordres partis, en attente de leur accusé.
         self._attentes: dict[str, asyncio.Future] = {}
+
+    def ecouter_les_morceaux(self, rappel: Callable[[dict], None] | None) -> None:
+        """Branche (ou débranche) le rappel des changements de morceau.
+
+        Existe pour le câblage TARDIF : l'overlay naît avec la connexion
+        Discord, longtemps après ce service, et le construire plus tard
+        donnerait deux instances — la panne silencieuse que ce module évite
+        depuis le début.
+        """
+        self._on_morceau = rappel
 
     # ── côté extension ──────────────────────────────────────────────────────
 
@@ -88,32 +104,46 @@ class MusicService:
             "url": str(url or "")[:500],
             "joue": bool(joue),
         }
-        self._journaliser(nouveau)
+        self._signaler(nouveau)
         self._etat = nouveau
         self._vu_a = self._maintenant()
         return self._servir(joue=bool(joue))
 
-    def _journaliser(self, nouveau: dict) -> None:
-        """Ce qui CHANGE, et rien d'autre.
+    def _signaler(self, nouveau: dict) -> None:
+        """Ce qui CHANGE, et rien d'autre : les logs, puis l'écran.
 
         Un battement toutes les deux secondes ne peut pas entrer dans les logs.
         Mais sans aucune trace, rien ne dit si l'extension parle : la question
         s'est posée en direct le 2026-08-19 — « ça marche pas » — sans qu'aucun
         log ne puisse y répondre, ni côté serveur ni côté chat. On note donc les
-        trois transitions qui informent : le contact pris (ou repris après un
+        transitions qui informent : le contact pris (ou repris après un
         silence), et le morceau qui change.
+
+        Le rappel suit la même règle, et c'est ce qui le rend supportable à
+        l'écran : trente battements par minute, une seule annonce par morceau.
         """
         muet = self._etat is None or self._maintenant() - self._vu_a > self.PERIME_S
-        morceau = f"{nouveau['artiste']} — {nouveau['titre']}".strip(" —")
-        if muet:
-            logger.info("Musique : l'extension parle — {m}",
-                        m=morceau or "aucun lecteur sur cette page")
-            return
         avant = self._etat or {}
-        if (avant.get("titre"), avant.get("artiste")) != (nouveau["titre"],
-                                                          nouveau["artiste"]):
-            logger.info("Musique : morceau — {m}",
-                        m=morceau or "aucun lecteur sur cette page")
+        change = muet or (avant.get("titre"), avant.get("artiste")) != (
+            nouveau["titre"], nouveau["artiste"])
+        if not change:
+            return
+
+        morceau = f"{nouveau['artiste']} — {nouveau['titre']}".strip(" —")
+        logger.info("Musique : {q} — {m}",
+                    q="l'extension parle" if muet else "morceau",
+                    m=morceau or "aucun lecteur sur cette page")
+
+        # Une page sans lecteur n'est pas un morceau, et une vidéo à l'arrêt n'a
+        # rien à faire à l'écran DE SON PROPRE CHEF : mettre en pause n'est pas
+        # un geste à annoncer. Demandée dans le chat, elle s'affiche quand même
+        # — c'est l'autre chemin, et il garde ses propres règles.
+        if not self._on_morceau or not nouveau["titre"] or not nouveau["joue"]:
+            return
+        try:
+            self._on_morceau(dict(nouveau))
+        except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
+            logger.warning("Musique : annonce à l'écran impossible : {e}", e=exc)
 
     def _servir(self, *, joue: bool = True) -> list[dict]:
         """Les ordres encore valables, retirés de la file.

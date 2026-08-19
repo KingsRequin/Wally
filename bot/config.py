@@ -276,9 +276,12 @@ class SpontaneousConfig:
 
 @dataclass
 class SecondaryEmotionDef:
+    # 0.4 et pas moins : `prompts.py` n'injecte une secondaire qu'à partir de
+    # cette intensité, donc un seuil en dessous n'a aucun effet — il laissait
+    # seulement croire qu'on pouvait rendre l'émotion plus sensible en le baissant.
     a: str = ""
     b: str = ""
-    threshold: float | list[float] = 0.3
+    threshold: float | list[float] = 0.4
 
 
 @dataclass
@@ -533,10 +536,10 @@ class Config:
     response_gate: dict = field(default_factory=dict)
     cognitive_loop: dict = field(default_factory=dict)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
-        "frustration": SecondaryEmotionDef(a="anger", b="boredom", threshold=0.3),
-        "nostalgia": SecondaryEmotionDef(a="joy", b="sadness", threshold=0.3),
+        "frustration": SecondaryEmotionDef(a="anger", b="boredom", threshold=0.4),
+        "nostalgia": SecondaryEmotionDef(a="joy", b="sadness", threshold=0.4),
         "pride": SecondaryEmotionDef(a="joy", b="curiosity", threshold=0.4),
-        "anxiety": SecondaryEmotionDef(a="sadness", b="curiosity", threshold=0.3),
+        "anxiety": SecondaryEmotionDef(a="sadness", b="curiosity", threshold=0.4),
         "contempt": SecondaryEmotionDef(a="anger", b="boredom", threshold=[0.4, 0.5]),
         "wonder": SecondaryEmotionDef(a="curiosity", b="joy", threshold=0.5),
     })
