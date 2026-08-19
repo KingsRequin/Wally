@@ -73,14 +73,22 @@
               + "pas dans les onglets déjà ouverts.";
             return;
           }
-          if (!rep.actif) { zone.textContent = "Partage éteint : rien ne part de cet onglet."; return; }
-          if (rep.dernierOk) {
+          if (!rep.actif) {
+            zone.textContent = "Partage éteint : rien ne part de cet onglet.";
+          } else if (rep.dernierOk) {
             const secondes = Math.round((Date.now() - rep.dernierOk) / 1000);
             zone.textContent = "✓ Cet onglet parle à Wally (dernier envoi il y a "
               + secondes + " s)" + (rep.titre ? " — " + rep.titre : "") + ".";
           } else {
             zone.textContent = "⚠️ Cet onglet essaie mais n'y arrive pas : "
               + (rep.erreur || "aucun envoi encore abouti") + ".";
+          }
+          // Elle ne se met pas à jour toute seule : c'est ce message, et la
+          // pastille sur l'icône, qui remplacent le Web Store.
+          if (rep.majVersion) {
+            $("maj").textContent = "⬆️ Version " + rep.majVersion
+              + " disponible (tu as la " + rep.maVersion + ") — retélécharge "
+              + "l'extension, puis Actualiser dans chrome://extensions.";
           }
         });
     });

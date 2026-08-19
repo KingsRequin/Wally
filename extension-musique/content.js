@@ -25,7 +25,12 @@
   // Un onglet YouTube ouvert AVANT l'installation n'a pas ce script et se tait
   // pour toujours — sans ce rapport, rien ne le disait, et l'essai du bouton
   // « Enregistrer » réussissait quand même (il part de l'extension, pas d'ici).
-  const rapport = { dernierOk: 0, erreur: "" };
+  const rapport = { dernierOk: 0, erreur: "", majVersion: "" };
+
+  // La version installée, telle que Chrome la connaît. Comparée à celle que le
+  // bot sert : une extension chargée depuis un dossier ne se met jamais à jour
+  // seule, et rien ne le disait.
+  const MA_VERSION = chrome.runtime.getManifest().version;
 
   // ── Réglages, posés par la fenêtre de l'extension ────────────────────────
 
@@ -67,9 +72,34 @@
   chrome.runtime.onMessage.addListener((msg, _expediteur, repondre) => {
     if (!msg || msg.marque !== MARQUE || msg.type !== "diagnostic") return;
     repondre({ dernierOk: rapport.dernierOk, erreur: rapport.erreur,
-               actif: reglages.actif,
+               actif: reglages.actif, maVersion: MA_VERSION,
+               majVersion: rapport.majVersion,
                titre: (dernierEtat && dernierEtat.titre) || "" });
   });
+
+  /* La pastille sur l'icône, posée par `fond.js` — seul à pouvoir le faire.
+   *
+   * Envoyée seulement quand l'état CHANGE : le battement passe toutes les deux
+   * secondes, et trois onglets YouTube ouverts en feraient quatre-vingt-dix
+   * messages par minute pour une pastille qui ne bouge pas.
+   */
+  function signalerMiseAJour(servie) {
+    const lib = window.WallyMusiqueLib;
+    const enRetard = !!lib && lib.versionPlusRecente(servie, MA_VERSION);
+    const version = enRetard ? String(servie) : "";
+    if (version === rapport.majVersion) return;
+    rapport.majVersion = version;
+    // Le `catch` n'est pas décoratif : sans callback, `sendMessage` rend une
+    // promesse, et elle est REJETÉE quand le service worker n'est pas encore
+    // réveillé ou que l'extension se recharge. Une promesse rejetée sans
+    // preneur remplit la console de la page d'erreurs rouges — sur le YouTube
+    // d'Azraël, pas sur le nôtre.
+    try {
+      const envoi = chrome.runtime.sendMessage({ marque: MARQUE, type: "maj",
+                                                 disponible: enRetard, version });
+      if (envoi && envoi.catch) envoi.catch(() => {});
+    } catch (e) { /* extension en cours de rechargement */ }
+  }
 
   async function battre() {
     demanderAuPont({ type: "lire" });          // l'état arrivera par message
@@ -114,6 +144,7 @@
 
     let data;
     try { data = await reponse.json(); } catch (e) { return; }
+    signalerMiseAJour(data.version || "");
     // Quel onglet obéit se décide côté BOT, à partir du `joue` envoyé
     // ci-dessus : un ordre reçu ici a déjà quitté la file, l'ignorer le
     // perdrait pour tout le monde. Ici, on exécute.

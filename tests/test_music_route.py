@@ -142,3 +142,35 @@ def test_le_service_est_bien_partage_par_l_etat():
     divergé au premier battement."""
     from bot.dashboard.state import AppState
     assert "music" in AppState.__annotations__
+
+
+# ── la version servie ───────────────────────────────────────────────────────
+#
+# Une extension chargée depuis un dossier ne se met JAMAIS à jour seule : seul
+# le Web Store le fait. Le bot annonce donc la version qu'il sert, l'extension
+# la compare à la sienne, et le dit dans sa fenêtre + par une pastille sur son
+# icône. Sans ça, Azraël garde une version corrigée depuis des semaines sans
+# jamais l'apprendre — c'est ce qui s'est produit le 2026-08-19.
+
+def test_le_battement_annonce_la_version_servie(client):
+    import json
+    from pathlib import Path
+
+    manifeste = json.loads(
+        (Path(__file__).resolve().parents[1] / "extension-musique" /
+         "manifest.json").read_text(encoding="utf-8"))
+    r = client.post("/api/music/beat", json=_BEAT, headers=_AUTH)
+    assert r.json()["version"] == manifeste["version"]
+
+
+def test_la_version_est_LUE_dans_le_manifest_pas_recopiee():
+    """Deux sources de vérité pour un numéro de version, et c'est la copie
+    qu'on oublie de bouger — l'avertissement se tairait pile quand il sert."""
+    import inspect
+
+    from bot.dashboard.routes import music
+
+    source = inspect.getsource(music._version_servie)
+    assert "manifest.json" in source
+
+

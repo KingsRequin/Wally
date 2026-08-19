@@ -37,9 +37,21 @@ def _zip(client):
 
 def test_le_zip_contient_l_extension_complete(client):
     """Un manifeste sans ses scripts donne une extension qui refuse de se
-    charger, avec un message que personne ne sait lire."""
+    charger, avec un message que personne ne sait lire.
+
+    Comparé au DOSSIER et non à une liste écrite ici : une liste figée laisse
+    passer précisément le cas qu'elle vise — le fichier ajouté qu'on oublie
+    d'emporter. `fond.js`, ajouté le 2026-08-19 pour la pastille de mise à
+    jour, est déclaré dans le manifeste : absent du zip, Chrome refuse
+    l'extension entière."""
+    from pathlib import Path
+
     noms = set(_zip(client).namelist())
-    assert {"manifest.json", "lib.js", "pont.js", "content.js",
+    dossier = Path(__file__).resolve().parents[1] / "extension-musique"
+    attendus = {f.name for f in dossier.iterdir()
+                if f.is_file() and not f.name.startswith(".")}
+    assert noms == attendus
+    assert {"manifest.json", "lib.js", "pont.js", "content.js", "fond.js",
             "popup.html", "popup.js", "README.md"} <= noms
 
 

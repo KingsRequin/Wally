@@ -54,6 +54,21 @@ ne sait pas, l'onglet YouTube est-il **ouvert avec une vidéo** ? Une page
 d'accueil ou une recherche ne dit rien de ce qui passe, et une vidéo en pause
 depuis plus de 45 secondes n'est plus « ce qui passe ».
 
+## Mettre à jour
+
+Elle **ne se met pas à jour toute seule** : chargée depuis un dossier, seul le
+Chrome Web Store ferait ça, et elle n'y est pas.
+
+Le bot dit quelle version il sert. Quand une plus récente existe :
+
+- une **pastille orange** apparaît sur l'icône de l'extension, dans la barre de
+  Chrome — visible sans rien ouvrir ;
+- la fenêtre dit laquelle, et quoi faire.
+
+La mise à jour, alors : retélécharger `extension-musique.zip`, remplacer le
+contenu du dossier, puis **Actualiser** l'extension dans `chrome://extensions`.
+La pastille s'éteint au battement suivant.
+
 ## Ce qui se passe si
 
 - **Le bot redémarre** — l'extension réessaie toutes les deux secondes, il n'y a
@@ -79,3 +94,5 @@ depuis plus de 45 secondes n'est plus « ce qui passe ».
   la page, seul endroit d'où `navigator.mediaSession` est visible.
 - `content.js` — le battement vers le bot. Lui seul a le droit de parler au
   réseau.
+- `fond.js` — la pastille sur l'icône, et rien d'autre : `chrome.action` n'est
+  joignable ni depuis la page YouTube ni depuis le monde de la page.

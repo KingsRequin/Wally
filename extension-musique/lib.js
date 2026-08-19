@@ -115,5 +115,32 @@
     };
   }
 
-  window.WallyMusiqueLib = { nettoyerTitre, pourAnnonce, etatLecteur, MAX };
+  /* La version servie par le bot est-elle plus récente que celle installée ?
+   *
+   * Une extension chargée depuis un dossier ne se met JAMAIS à jour seule —
+   * seul le Web Store le fait. Sans cette comparaison, Azraël garderait une
+   * version corrigée depuis des semaines sans le savoir : c'est exactement ce
+   * qui vient de se produire.
+   *
+   * Comparaison NOMBRE PAR NOMBRE, jamais par `!==` ni par ordre alphabétique :
+   * `1.10.0` vient après `1.9.0`, et une version plus VIEILLE côté bot (un
+   * retour arrière, un déploiement en retard) ne doit pas réclamer une mise à
+   * jour. Tout ce qui n'est pas lisible ne réclame rien : un avertissement à
+   * tort, et il ne le croira plus.
+   */
+  function versionPlusRecente(servie, installee) {
+    const decouper = (v) => texte(v).trim().split(".").map((n) => parseInt(n, 10));
+    const a = decouper(servie);
+    const b = decouper(installee);
+    if (!a.length || a.some(isNaN) || !b.length || b.some(isNaN)) return false;
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] || 0;
+      const y = b[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return false;
+  }
+
+  window.WallyMusiqueLib = { nettoyerTitre, pourAnnonce, etatLecteur,
+                             versionPlusRecente, MAX };
 })();

@@ -253,3 +253,38 @@ def test_une_fiche_VIDE_ne_fait_pas_taire_le_lecteur():
       });
       console.log(JSON.stringify([etat.titre, etat.artiste]));
     """) == '["Une chanson","Quelqu\'un"]'
+
+
+# ── la version servie par le bot ────────────────────────────────────────────
+#
+# Une extension chargée depuis un dossier ne se met jamais à jour seule. Le bot
+# annonce donc la version qu'il sert, et la fenêtre le dit. Reste à ne pas le
+# dire à tort : un avertissement qui se trompe, et Azraël ne le croira plus.
+
+def test_une_version_plus_recente_est_signalee():
+    assert _node('console.log(L.versionPlusRecente("1.2.0", "1.1.0"));') == "true"
+
+
+def test_la_MEME_version_ne_reclame_rien():
+    assert _node('console.log(L.versionPlusRecente("1.1.0", "1.1.0"));') == "false"
+
+
+def test_une_version_plus_VIEILLE_cote_bot_ne_reclame_rien():
+    """Un retour arrière ou un déploiement en retard ne doit pas faire
+    redescendre Azraël d'une version."""
+    assert _node('console.log(L.versionPlusRecente("1.0.0", "1.1.0"));') == "false"
+
+
+def test_la_comparaison_est_NUMERIQUE_pas_alphabetique():
+    """Le piège classique : « 1.10.0 » < « 1.9.0 » en ordre alphabétique, alors
+    qu'il vient après. Sans ce test, la garde se tairait pile au moment où elle
+    servirait."""
+    assert _node('console.log(L.versionPlusRecente("1.10.0", "1.9.0"));') == "true"
+    assert _node('console.log(L.versionPlusRecente("1.9.0", "1.10.0"));') == "false"
+
+
+def test_une_version_ILLISIBLE_ne_reclame_rien():
+    """Le bot peut répondre sans version (vieille image), ou avec n'importe
+    quoi. Dans le doute, on se tait — un faux avertissement use la confiance."""
+    for cas in ['"", "1.1.0"', '"pouet", "1.1.0"', '"1.2.0", ""', 'null, "1.1.0"']:
+        assert _node(f'console.log(L.versionPlusRecente({cas}));') == "false"

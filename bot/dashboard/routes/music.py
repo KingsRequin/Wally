@@ -13,8 +13,10 @@ JWT dans chaque route.
 from __future__ import annotations
 
 import io
+import json
 import secrets
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -33,6 +35,27 @@ _EXTENSION_DIR = Path(__file__).resolve().parents[3] / "extension-musique"
 ORIGINES = ("https://www.youtube.com", "https://music.youtube.com")
 
 _MAX_ACCUSES = 10
+
+
+@lru_cache(maxsize=1)
+def _version_servie() -> str:
+    """La version de l'extension que ce déploiement distribue.
+
+    Lue dans le manifest plutôt que recopiée ici : deux sources de vérité pour
+    un numéro de version, et c'est la copie qu'on oublie de bouger — la garde
+    se tairait pile au moment où elle sert.
+
+    Retenue une fois pour la vie du process, et c'est exact : le dossier de
+    l'extension est COPIÉ dans l'image (`Dockerfile`), pas monté — il ne peut
+    pas changer sans redémarrage. Sans ce cache, chaque battement (toutes les
+    deux secondes, par onglet) relirait le fichier.
+    """
+    try:
+        manifeste = json.loads((_EXTENSION_DIR / "manifest.json")
+                               .read_text(encoding="utf-8"))
+        return str(manifeste.get("version") or "")
+    except Exception:  # noqa: BLE001 — pas de version = pas d'avertissement
+        return ""
 
 
 def _service(request: Request):
@@ -91,8 +114,11 @@ async def beat(request: Request) -> dict:
         )
     except Exception as exc:  # noqa: BLE001 — l'extension ne doit jamais voir un 500
         logger.error("Musique : battement en erreur : {e}", e=exc)
-        return {"ordres": []}
-    return {"ordres": ordres}
+        return {"ordres": [], "version": _version_servie()}
+    # La version voyage avec le battement : c'est le seul canal que l'extension
+    # a déjà, et une extension chargée depuis un dossier ne se met jamais à jour
+    # seule. Elle compare, et le dit dans sa fenêtre.
+    return {"ordres": ordres, "version": _version_servie()}
 
 
 @public_router.get("/extension-musique.zip")
