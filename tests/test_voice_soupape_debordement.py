@@ -1,5 +1,9 @@
 """Ce que le STT local n'a pas le temps de transcrire ne se jette plus.
 
+Ces tests portent sur le PIPELINE : qui part à la soupape, et ce qu'il advient
+de ce qu'elle ne peut pas prendre. Le fournisseur lui-même est couvert par
+`test_voice_soupape_groq.py`.
+
 Le moteur local traite un énoncé à la fois. Mesuré le 2026-08-18 sur trois
 locuteurs simultanés — le cas normal d'un live :
 
@@ -142,87 +146,3 @@ def test_le_plancher_s_applique_avant_la_soupape():
     p.speech_end_sync("azrael", array.array("h", [30] * 6400).tobytes())  # 0,4 s, rms 30
     assert lances == []
 
-
-def test_une_reponse_non_json_dit_ce_qu_elle_etait():
-    """Vu en prod le soir même : « Expecting value: line 1 column 1 » remontait
-    par l'attrape-tout, et l'énoncé était perdu sans qu'on sache pourquoi. Une
-    passerelle qui rend du HTML, un 429 et un corps vide sont trois pannes
-    différentes — le statut et l'extrait du corps les séparent."""
-    from bot.discord.voice.providers import OneMinSTT
-
-    class _Rep:
-        status_code = 502
-        text = "<html>Bad Gateway</html>"
-
-        def json(self):
-            raise ValueError("Expecting value: line 1 column 1 (char 0)")
-
-    messages = []
-    from loguru import logger
-
-    sink = logger.add(lambda m: messages.append(m), level="WARNING")
-    try:
-        assert OneMinSTT._corps(_Rep(), "upload") == {}
-    finally:
-        logger.remove(sink)
-
-    trace = "".join(messages)
-    assert "502" in trace and "Bad Gateway" in trace and "upload" in trace
-
-
-def test_un_upload_refuse_au_hasard_est_reessaye():
-    """Mesuré en rafale sur un fichier identique et valide : ~1 upload sur 6
-    repart en « The file may be corrupt », sans rapport avec la durée. Sept
-    énoncés perdus en une soirée pour un aléa serveur."""
-    import asyncio
-
-    from bot.discord.voice.providers import OneMinSTT
-
-    class _Rep:
-        def __init__(self, ok):
-            self.status_code = 200 if ok else 400
-            self._corps = ({"fileContent": {"path": "audios/ok.wav"}} if ok
-                           else {"errorCode": "UNKNOWN_ERROR",
-                                 "message": "The file may be corrupt."})
-
-        def json(self):
-            return self._corps
-
-    class _Client:
-        def __init__(self, suite):
-            self.suite = list(suite)
-            self.appels = 0
-
-        async def post(self, *a, **kw):
-            self.appels += 1
-            return _Rep(self.suite.pop(0))
-
-    stt = OneMinSTT(api_key="k")
-    client = _Client([False, True])          # refus puis succès
-    assert asyncio.run(stt._televerser(client, b"wav")) == "audios/ok.wav"
-    assert client.appels == 2
-
-
-def test_on_n_insiste_pas_au_dela_du_second_essai():
-    """Deux refus d'affilée, ce n'est plus un aléa : c'est une panne. Insister
-    ferait attendre une parole que plus personne n'écoutera."""
-    import asyncio
-
-    from bot.discord.voice.providers import OneMinSTT
-
-    class _Rep:
-        status_code = 400
-
-        def json(self):
-            return {"errorCode": "UNKNOWN_ERROR"}
-
-    class _Client:
-        appels = 0
-
-        async def post(self, *a, **kw):
-            _Client.appels += 1
-            return _Rep()
-
-    client = _Client()
-    assert asyncio.run(OneMinSTT(api_key="k")._televerser(client, b"wav")) == ""
-    assert client.appels == 2

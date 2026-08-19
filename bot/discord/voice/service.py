@@ -621,8 +621,9 @@ class VoiceService:
         """Voix dont les tons s'entendront, "" si le moteur monté n'en porte pas.
 
         Demandée au TTS et non à la config : `azure_voice` reste renseignée même
-        quand le provider 1min est monté, et proposer alors des tons à Wally
-        serait une promesse creuse — le tag partirait sans jamais rien changer.
+        quand la voix montée est celle de secours, et proposer alors des tons
+        qu'elle ne porte pas serait une promesse creuse — le tag partirait sans
+        jamais rien changer.
         """
         return getattr(self._tts, "style_voice", "")
 

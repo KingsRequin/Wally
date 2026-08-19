@@ -9,7 +9,7 @@ que par l'émotion DOMINANTE parmi cinq. Résultat : `determined`, `hopeful`,
 Deux mécanismes ferment l'écart, sans rien écrire en dur côté prompt :
 
 1. La liste des tons proposés est DÉRIVÉE de la voix réellement montée. Elle
-   vaut 18 sur MAI, 4 sur une voix neurale standard, et zéro sur Qwen — qui
+   vaut 18 sur MAI, 4 sur une voix neurale standard, et zéro sur une voix qui
    n'a pas d'`express-as` du tout. Promettre à Wally un ton que sa voix ne
    rend pas, c'est lui faire écrire un tag sans effet ; le lui cacher quand il
    existe, c'est le mécanisme qui tourne à vide.
@@ -27,7 +27,7 @@ from bot.discord.voice.style import (
 
 _MARC = "fr-FR-Marc:MAI-Voice-2-Flash"
 _HENRI = "fr-FR-HenriNeural"
-_MUETTE_DE_STYLE = ""  # ce que rend un TTS sans express-as (Qwen)
+_MUETTE_DE_STYLE = ""  # ce que rend un TTS sans express-as
 
 _CALME = {"anger": 0.0, "joy": 0.0, "sadness": 0.0, "curiosity": 0.0, "boredom": 0.0}
 
@@ -56,7 +56,8 @@ def test_une_voix_standard_ne_propose_que_ce_quelle_rend():
 
 
 def test_une_voix_sans_style_ne_propose_aucun_ton():
-    """Qwen n'a pas d'`express-as`. Proposer un ton serait une promesse creuse :
+    """Un moteur sans `express-as` ne rend aucun ton. En proposer un serait une
+    promesse creuse :
     le tag partirait, ne changerait rien, et resterait invisible dans les logs."""
     assert available_tags(_MUETTE_DE_STYLE) == []
     assert available_tags(None) == []
@@ -147,7 +148,7 @@ def test_une_secondaire_est_ramenee_aux_capacites_de_la_voix():
 
 def test_une_voix_sans_style_ne_recoit_jamais_dexpress_as():
     """Le tag est quand même RETIRÉ du texte : non lu à voix haute, jamais
-    envoyé comme style. C'est le cas Qwen, où un style serait ignoré — mais un
+    envoyé comme style. C'est le cas d'un moteur sans styles, où il serait ignoré — mais un
     provider tiers pourrait, lui, échouer dessus."""
     style, texte = resolve_style("[murmure] approche", {**_CALME, "anger": 0.9},
                                  voice=_MUETTE_DE_STYLE, secondaries=[("pride", 0.9)])

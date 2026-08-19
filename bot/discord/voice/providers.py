@@ -37,8 +37,7 @@ class TextToSpeech(Protocol):
 
     # Voix dont les styles `express-as` s'entendront réellement, ou "" si ce
     # moteur n'en porte aucun. C'est elle, et non `cfg.azure_voice`, qui décide
-    # des tons proposés à Wally : avec le TTS 1min monté, la voix Azure figure
-    # toujours en config sans que personne ne l'entende jamais.
+    # des tons proposés à Wally.
     style_voice: str
 
 
@@ -196,30 +195,29 @@ class FasterWhisperSTT:
             return ""
 
 
-class OneMinSTT:
-    """STT distant Qwen3-ASR-Flash, via l'abonnement 1min.ai de l'owner.
+class GroqSTT:
+    """STT distant Whisper large v3 turbo, chez Groq. SOUPAPE, pas moteur.
 
-    Sert de SOUPAPE, pas de moteur : le `small` local est plus rapide tant qu'une
-    seule personne parle (1,2-2,1 s contre 2,4-3,5 s ici, upload compris). Mais
-    il transcrit un énoncé à la fois, donc à trois locuteurs sa file le fait
-    passer à 5-6 s et il finit par JETER de la parole. Cette API n'a pas de
-    file : mesurée à 3,5 s pour trois énoncés simultanés, contre 6,3 s en local.
+    Le `small` local transcrit un énoncé à la fois : à trois locuteurs sa file
+    monte à 5-6 s et il finit par JETER de la parole. Cette voie reprend ce qui
+    serait perdu — 119 énoncés en 28 min de live le 2026-08-19, le PC GPU de
+    l'owner étant éteint. Elle ne sert à rien quand ce PC tourne.
 
-    Elle reprend donc ce qui serait perdu. Le quota le permet sans y penser :
-    ~3,5 crédits pour un énoncé de 2 s, sur un million par mois.
+    Choisie après une soirée sur Qwen3-ASR-Flash via 1min.ai, abandonné parce
+    qu'il HALLUCINAIT dans une autre langue sur les énoncés courts : 15 lignes
+    de chinois et de japonais dans un salon francophone, `language` envoyé et
+    ignoré. Ici l'API est compatible OpenAI, la langue est réellement imposée,
+    et un seul appel remplace les deux du précédent (upload puis transcription,
+    dont un refus aléatoire sur six).
 
-    Deux limites à connaître, mesurées le 2026-08-18 :
-    - Le modèle ignore « Wally » et écrit « Wall-E » (que `address_match`
-      rattrape) ou « ou ali » (qu'elle ne rattrape pas). 1min.ai n'expose PAS le
-      paramètre de contexte de Qwen — 14 emplacements essayés, sortie identique
-      au caractère près. Le biais de vocabulaire n'existe donc que côté local.
-    - En revanche il rend un bien meilleur français : « Elle est où la balle »
-      là où le local écrit « Elle est tout la balle ».
+    Coût : 0,04 $/h d'audio, **facturé par tranche de 10 s minimum**. Nos
+    énoncés font 1,8 s en moyenne, donc on paie ~5,7× la durée réelle — soit
+    ~1,70 $/mois à soixante heures de vocal, GPU éteint tout du long.
     """
 
-    _BASE = "https://api.1min.ai/api"
+    _URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
-    def __init__(self, api_key: str, model: str = "qwen3-asr-flash",
+    def __init__(self, api_key: str, model: str = "whisper-large-v3-turbo",
                  language: str = "fr-FR", timeout: float = 20.0) -> None:
         self._key = api_key
         self._model = model
@@ -243,47 +241,41 @@ class OneMinSTT:
             w.writeframes(pcm16k_mono)
         return tampon.getvalue()
 
-    @staticmethod
-    def _corps(rep, etape: str) -> dict:
-        """Le JSON de la réponse, ou {} — en DISANT ce qui est arrivé à la place.
+    async def _transcrire(self, client, wav: bytes) -> str:
+        """Le texte, ou "" — en DISANT toujours ce qui est arrivé à la place.
 
-        Vu en production dès la première soirée : « Expecting value: line 1
-        column 1 » remontait par l'attrape-tout, donc on savait qu'un énoncé
-        était perdu sans savoir pourquoi. Une passerelle qui répond du HTML, un
-        429, un corps vide : ce sont trois pannes différentes et un seul
-        message. Le statut et l'extrait du corps les séparent.
-        """
-        try:
-            return rep.json()
-        except Exception:  # noqa: BLE001
-            logger.warning("OneMinSTT: {e} — réponse non-JSON (HTTP {c}) : {t}",
-                           e=etape, c=rep.status_code, t=(rep.text or "")[:160])
-            return {}
-
-    async def _televerser(self, client, wav: bytes) -> str:
-        """Le chemin de l'asset, ou "". Réessaie une fois — l'échec est ALÉATOIRE.
-
-        Mesuré le 2026-08-18 en rafale, sur un fichier identique et valide :
-        environ un upload sur six repart en « The file may be corrupt. Please
-        upload another », sans rapport avec la durée ni la taille. C'est un
-        défaut de leur côté, et il coûtait un énoncé à chaque fois — sept en une
-        soirée. Un second essai suffit à le ramener au négligeable ; au-delà, ce
-        ne serait plus un aléa mais une panne, et insister ferait attendre une
-        parole que personne n'écoutera plus.
+        Un 5xx est réessayé UNE fois : la passerelle du fournisseur précédent
+        rendait cinq 502 en 28 min, chacun coûtant un énoncé faute de seconde
+        chance. Un 4xx ne l'est jamais — une clé invalide ou un fichier refusé
+        ne se répare pas en insistant, et on paierait une seconde attente pour
+        le même refus.
         """
         for essai in (1, 2):
             rep = await client.post(
-                f"{self._BASE}/assets", headers={"API-KEY": self._key},
-                files={"asset": ("enonce.wav", wav, "audio/wav")},
+                self._URL,
+                headers={"Authorization": f"Bearer {self._key}"},
+                files={"file": ("enonce.wav", wav, "audio/wav")},
+                data={"model": self._model, "language": self._lang,
+                      "response_format": "json", "temperature": "0"},
             )
-            chemin = (self._corps(rep, "upload").get("fileContent") or {}).get("path")
-            if chemin:
-                if essai > 1:
-                    logger.info("OneMinSTT: upload repassé au 2e essai")
-                return chemin
+            statut = getattr(rep, "status_code", 0)
+            try:
+                corps = rep.json()
+            except Exception:  # noqa: BLE001 — une passerelle en vrac répond du HTML
+                corps = None
+            if corps is None:
+                logger.warning("GroqSTT: réponse non-JSON (HTTP {c}) : {t}",
+                               c=statut, t=(getattr(rep, "text", "") or "")[:160])
+            elif statut < 400:
+                return str(corps.get("text") or "").strip()
+            else:
+                motif = ((corps.get("error") or {}).get("message")
+                         if isinstance(corps.get("error"), dict) else corps.get("error"))
+                logger.warning("GroqSTT: refus HTTP {c} — {m}", c=statut, m=str(motif)[:140])
+            if statut < 500:
+                return ""       # refus franc : insister ne le changera pas
             if essai == 1:
-                logger.info("OneMinSTT: upload refusé (HTTP {c}) — second essai",
-                            c=rep.status_code)
+                logger.info("GroqSTT: HTTP {c} — second essai", c=statut)
         return ""
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
@@ -291,169 +283,10 @@ class OneMinSTT:
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                chemin = await self._televerser(client, self._wav(pcm16k_mono))
-                if not chemin:
-                    return ""
-                rep = await client.post(
-                    f"{self._BASE}/features",
-                    headers={"API-KEY": self._key, "Content-Type": "application/json"},
-                    json={"type": "SPEECH_TO_TEXT", "model": self._model,
-                          "promptObject": {"audioUrl": chemin, "response_format": "text",
-                                           "language": self._lang}},
-                )
-            corps = self._corps(rep, "transcription")
-            if "errorCode" in corps:
-                # Le refus arrive en HTTP 200 avec le motif dans le CORPS : sans
-                # cette lecture, un quota épuisé passerait pour un énoncé vide.
-                logger.warning("OneMinSTT: refus {c} — {m}", c=corps.get("errorCode"),
-                               m=str(corps.get("message"))[:140])
-                return ""
-            res = ((corps.get("aiRecord") or {}).get("aiRecordDetail") or {}).get("resultObject")
-            if isinstance(res, list):
-                res = " ".join(str(x) for x in res)
-            return (res or "").strip()
+                return await self._transcrire(client, self._wav(pcm16k_mono))
         except Exception as e:  # noqa: BLE001 — une soupape ne casse jamais l'écoute
-            logger.warning("OneMinSTT.transcribe a échoué: {e}", e=e)
+            logger.warning("GroqSTT.transcribe a échoué: {e}", e=e)
             return ""
-
-
-class OneMinTTS:
-    """TTS Qwen3-TTS-Flash via 1min.ai. Sortie : PCM 48 kHz mono 16-bit.
-
-    Choisi pour sa VOIX (« Arthur »), pas pour sa vitesse. Azure streame — le
-    premier son sort en 0,3 s et Wally parle pendant que la suite se synthétise.
-    Ici l'API rend un fichier complet : mesuré à 3,2 s pour une réplique courte,
-    4,0 s pour une longue. Sur un salon vocal, ce délai s'ajoute au STT et au
-    LLM avant que quiconque entende quoi que ce soit.
-
-    D'où le découpage par phrases de `synthesize_stream` : on synthétise la
-    première, on la joue, et les suivantes se préparent pendant qu'elle passe.
-    Le premier son arrive alors au bout de la PREMIÈRE phrase et non de tout le
-    texte — c'est le seul levier disponible, l'API n'ayant pas de streaming.
-
-    Deux renoncements assumés par rapport à Azure :
-    - Pas de style émotionnel : `resolve_style` module la voix Azure selon
-      l'émotion dominante (`mstts:express-as`), Qwen n'a pas d'équivalent. Le
-      style reçu est donc IGNORÉ, pas silencieusement mal appliqué.
-    - `language_type` est forcé (« French » par défaut) : en « Auto », le modèle
-      se trompe de langue sur des répliques courtes ou mêlées d'anglais — c'est
-      le constat de l'owner, et le jargon Apex rend le cas fréquent.
-    """
-
-    _BASE = "https://api.1min.ai/api"
-    _ASSETS = "https://asset.1min.ai"
-    _MAX_CHARS = 600  # limite dure de l'API, par appel
-
-    # Aucun `express-as` chez Qwen : rien à proposer comme ton. La chaîne vide
-    # (et non `None`) dit « voix inconnue » à `supported_styles()`, qui rend
-    # l'ensemble vide — un style inventé rendrait la synthèse muette ailleurs.
-    style_voice = ""
-
-    # Langue Discord/persona → valeur attendue par l'API (liste close côté 1min.ai).
-    _LANGUES = {
-        "fr": "French", "en": "English", "es": "Spanish", "de": "German",
-        "it": "Italian", "pt": "Portuguese", "ru": "Russian", "ja": "Japanese",
-        "ko": "Korean", "zh": "Chinese",
-    }
-
-    def __init__(self, api_key: str, voice: str = "Arthur", model: str = "qwen3-tts-flash",
-                 language: str = "fr-FR", timeout: float = 60.0, secours=None) -> None:
-        self._key = api_key
-        self._voice = voice
-        self._model = model
-        self._langue = self._LANGUES.get((language or "fr").split("-")[0].lower(), "French")
-        self._timeout = timeout
-        # Filet : si l'API ne rend RIEN, Azure prend la réplique. Muet est le
-        # pire symptôme de ce bot — il se croit en train de parler, personne ne
-        # l'entend, et on cherche ailleurs pendant une heure. Une voix
-        # inattendue, elle, s'entend immédiatement.
-        self._secours = secours
-
-    def _decouper(self, texte: str) -> list[str]:
-        """Découpe en phrases jouables, sans jamais dépasser la limite de l'API.
-
-        Le découpage sert la LATENCE : chaque morceau rendu est un morceau que
-        Wally peut déjà dire. On ne coupe donc pas au milieu d'un mot, et on
-        regroupe les phrases courtes — une réplique hachée en cinq appels
-        coûterait plus d'attente qu'elle n'en fait gagner.
-        """
-        import re
-
-        morceaux: list[str] = []
-        courant = ""
-        for phrase in re.split(r"(?<=[.!?…])\s+", (texte or "").strip()):
-            if not phrase:
-                continue
-            # Une phrase seule plus longue que la limite : on la coupe aux espaces.
-            while len(phrase) > self._MAX_CHARS:
-                coupe = phrase.rfind(" ", 0, self._MAX_CHARS)
-                coupe = coupe if coupe > 0 else self._MAX_CHARS
-                morceaux.append(phrase[:coupe].strip())
-                phrase = phrase[coupe:].strip()
-            if not courant:
-                courant = phrase
-            elif len(courant) + 1 + len(phrase) <= self._MAX_CHARS and len(courant) < 90:
-                courant = f"{courant} {phrase}"   # trop court pour valoir un appel
-            else:
-                morceaux.append(courant)
-                courant = phrase
-        if courant:
-            morceaux.append(courant)
-        return morceaux
-
-    async def _un_morceau(self, client, texte: str) -> bytes:
-        """PCM 48 kHz mono d'un morceau, ou b'' — l'appelant continue sans lui."""
-        import audioop
-
-        rep = await client.post(
-            f"{self._BASE}/features",
-            headers={"API-KEY": self._key, "Content-Type": "application/json"},
-            json={"type": "TEXT_TO_SPEECH", "model": self._model,
-                  "promptObject": {"text": texte, "voice": self._voice,
-                                   "language_type": self._langue}},
-        )
-        corps = rep.json()
-        if "errorCode" in corps:
-            logger.warning("OneMinTTS: refus {c} — {m}", c=corps.get("errorCode"),
-                           m=str(corps.get("message"))[:140])
-            return b""
-        res = ((corps.get("aiRecord") or {}).get("aiRecordDetail") or {}).get("resultObject")
-        chemin = (res[0] if isinstance(res, list) and res else res) or ""
-        if not chemin:
-            logger.warning("OneMinTTS: réponse sans audio — Wally resterait muet")
-            return b""
-        audio = await client.get(f"{self._ASSETS}/{chemin}")
-        brut = audio.content
-        # L'en-tête WAV rendu par l'API MENT sur la taille des données (44 739 s
-        # annoncées pour 5 s réelles) : on saute les 44 octets d'en-tête et on
-        # lit le reste tel quel, plutôt que de faire confiance au `wave` parsé.
-        pcm24k = brut[44:] if brut[:4] == b"RIFF" else brut
-        converti, _ = audioop.ratecv(pcm24k, 2, 1, 24000, 48000, None)
-        return converti
-
-    async def synthesize(self, text: str, style: str | None = None) -> bytes:
-        morceaux = []
-        await self.synthesize_stream(text, style, morceaux.append)
-        return b"".join(morceaux)
-
-    async def synthesize_stream(self, text: str, style: str | None, on_chunk) -> None:
-        import httpx
-
-        produit = 0
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                for morceau in self._decouper(text):
-                    pcm = await self._un_morceau(client, morceau)
-                    if pcm:
-                        produit += len(pcm)
-                        on_chunk(pcm)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("OneMinTTS.synthesize_stream a échoué: {e}", e=e)
-        if produit or self._secours is None or not (text or "").strip():
-            return
-        # Rien n'est sorti alors qu'il y avait quelque chose à dire.
-        logger.warning("OneMinTTS muet — repli sur la voix de secours")
-        await self._secours.synthesize_stream(text, style, on_chunk)
 
 
 class AzureTTS:
@@ -588,17 +421,17 @@ def build_overflow_stt(cfg: VoiceConfig) -> SpeechToText | None:
     provider = (cfg.overflow_stt_provider or "").lower()
     if not provider:
         return None
-    if provider not in ("1min", "1min.ai", "onemin"):
+    if provider != "groq":
         logger.warning("voice: provider de débordement inconnu « {p} » — ignoré", p=provider)
         return None
-    cle = os.environ.get("ONEMIN_API_KEY", "")
+    cle = os.environ.get("GROQ_API_KEY", "")
     if not cle:
-        logger.warning("voice: débordement « {p} » demandé mais ONEMIN_API_KEY manque "
+        logger.warning("voice: débordement « {p} » demandé mais GROQ_API_KEY manque "
                        "— la parole en trop continuera d'être JETÉE", p=provider)
         return None
     logger.info("voice: soupape de débordement active ({m})", m=cfg.overflow_stt_model)
-    return OneMinSTT(api_key=cle, model=cfg.overflow_stt_model,
-                     language=cfg.language, timeout=cfg.overflow_stt_timeout_s)
+    return GroqSTT(api_key=cle, model=cfg.overflow_stt_model,
+                   language=cfg.language, timeout=cfg.overflow_stt_timeout_s)
 
 
 def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
@@ -627,25 +460,11 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
 
 def build_tts(cfg: VoiceConfig) -> TextToSpeech:
     provider = (cfg.tts_provider or "azure").lower()
-    if provider in ("1min", "1min.ai", "onemin", "qwen"):
-        cle = os.environ.get("ONEMIN_API_KEY", "")
-        if cle:
-            logger.info("voice: TTS {m} — voix {v}, langue forcée",
-                        m=cfg.onemin_tts_model, v=cfg.onemin_tts_voice)
-            secours = None
-            try:
-                azure_key, azure_region = _azure_creds()
-                secours = AzureTTS(key=azure_key, region=azure_region, voice=cfg.azure_voice)
-            except Exception as e:  # noqa: BLE001 — sans Azure, on part sans filet, en le disant
-                logger.warning("voice: pas de voix de secours ({e})", e=e)
-            return OneMinTTS(api_key=cle, voice=cfg.onemin_tts_voice,
-                             model=cfg.onemin_tts_model, language=cfg.language,
-                             secours=secours)
-        # On ne laisse PAS Wally muet pour une clé manquante : Azure reprend, et
-        # le dit. Une voix inattendue s'entend ; un silence, on l'attribue à
-        # autre chose pendant une heure.
-        logger.warning("voice: TTS « {p} » demandé mais ONEMIN_API_KEY manque — repli sur Azure",
-                       p=provider)
+    if provider != "azure":
+        # Azure est le seul moteur de synthèse. On ne laisse PAS Wally muet pour
+        # une valeur de config inconnue : une voix inattendue s'entend tout de
+        # suite ; un silence, on l'attribue à autre chose pendant une heure.
+        logger.warning("voice: TTS « {p} » inconnu — repli sur Azure", p=provider)
     key, region = _azure_creds()
     # Les voix MAI ne sont pas couvertes par les 500 k caractères gratuits du
     # SKU F0 (elles se comptent en tokens) : le jour où le quota tombe, Azure
@@ -655,8 +474,8 @@ def build_tts(cfg: VoiceConfig) -> TextToSpeech:
     secours = None
     if ":MAI-Voice-" in (cfg.azure_voice or "") and _SECOURS_NEURAL != cfg.azure_voice:
         secours = AzureTTS(key=key, region=region, voice=_SECOURS_NEURAL)
-    # Le chemin 1min annonce sa voix au boot, celui-ci se taisait : au premier
-    # doute sur ce qu'on entend, il n'y avait rien à relire dans les logs. Les
+    # La voix est annoncée au boot : au premier doute sur ce qu'on entend, il
+    # faut pouvoir la relire dans les logs. Les
     # styles disponibles y figurent parce qu'ils DÉPENDENT de la voix — une
     # voix sans style rendrait le système d'émotion inerte, sans rien casser.
     from bot.discord.voice.style import supported_styles

@@ -161,8 +161,8 @@ def _tone_notice(voice: str) -> str:
     """Consigne de ton, dérivée des styles que la voix montée rend RÉELLEMENT.
 
     Écrite en dur, la liste mentait des deux côtés : elle proposait huit tons à
-    une voix MAI qui en porte dix-huit, et les mêmes huit à Qwen qui n'en porte
-    aucun. Un ton promis mais non rendu part en tag inutile ; un ton rendu mais
+    une voix MAI qui en porte dix-huit, et les mêmes huit à une voix qui n'en
+    porte aucun. Un ton promis mais non rendu part en tag inutile ; un ton rendu mais
     absent de la liste laisse la moitié du mécanisme d'émotion sans utilisateur.
     """
     tags = available_tags(voice)
