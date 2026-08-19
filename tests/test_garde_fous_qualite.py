@@ -122,3 +122,37 @@ def test_aucun_test_ne_fige_une_ligne_de_code_source():
         "ces tests figent une ligne d'implémentation et verrouilleront le "
         f"prochain correctif : {interdits}"
     )
+
+
+def test_le_design_du_dashboard_ne_deborde_pas_sur_l_overlay():
+    """Deux widgets ont porté le verre du DASHBOARD sur l'overlay.
+
+    « Il y a pas de fond, c'est pas visible » (owner, 2026-08-19) sur le bilan
+    de kills : `rgba(255, 255, 255, 0.04)`, du blanc à 4 %, avec l'accent cyan
+    `#06b6d4`. Ces valeurs sont justes sur une page d'admin, qui a toujours un
+    fond sombre derrière elle ; par-dessus une capture de jeu elles ne posent
+    rien. L'overlay a sa propre charte dans `:root` — `--glass`, `--line`, et un
+    accent par INTENTION (`--win`, `--info`, `--gold`…).
+
+    La signature du défaut est le copier-coller : ces marqueurs n'existent que
+    dans le design system du dashboard. Les couleurs en dur restent permises
+    ailleurs dans la page (l'écran bleu, les fausses fenêtres, le glitch ont
+    leur propre matière).
+    """
+    page = (_RACINE / "bot" / "dashboard" / "static" / "overlay.html").read_text(
+        encoding="utf-8")
+    marqueurs = {
+        "#06b6d4": "l'accent cyan du dashboard — l'overlay a un accent par "
+                   "intention (--win, --info, --gold, --wally, --who)",
+        "rgba(255, 255, 255, 0.04)": "le verre du dashboard : invisible sur une "
+                                     "capture de jeu, utiliser var(--glass)",
+        "backdrop-filter: blur(10px)": "le flou du dashboard ; celui de "
+                                       "l'overlay est var(--bulle-flou), et il "
+                                       "coûte cher sur la machine qui encode",
+    }
+    trouves = [f"{m} ({pourquoi})" for m, pourquoi in marqueurs.items()
+               if m in page]
+    assert not trouves, (
+        "le design system du dashboard a débordé sur l'overlay : "
+        + " · ".join(trouves)
+    )

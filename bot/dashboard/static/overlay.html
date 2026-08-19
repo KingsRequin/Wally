@@ -518,25 +518,33 @@
        `fixed` n'aurait donc pas visé la source OBS mais la carte elle-même.
        Un test du dépôt l'interdit, et il m'a arrêté ici même. */
     /* Bilan de fin de partie Apex. Le chiffre porte l'information : il est gros,
-       le reste est du contexte. */
+       le reste est du contexte.
+
+       « Il y a pas de fond, c'est pas visible » (owner, 2026-08-19) : cette
+       carte portait le verre du DASHBOARD — du blanc à 4 % — copié tel quel
+       d'une page qui a toujours un fond sombre derrière elle. Par-dessus une
+       image de jeu, ça ne pose rien. Les widgets de l'overlay tiennent leur
+       lisibilité de `--glass`, un verre SOMBRE presque opaque, et d'une ombre
+       portée sur le texte. */
     .apex-kills {
       display: flex;
       align-items: center;
       gap: 14px;
       padding: 10px 18px;
-      background: rgba(255, 255, 255, 0.04);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 14px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      color: #e6edf3;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
+    /* `--win` et non un cyan à soi : la charte donne un accent par INTENTION,
+       et des kills sont une réussite — le même vert que « en tête » ailleurs. */
     .apex-kills .ak-chiffre {
       font-size: 40px; font-weight: 800; line-height: 1;
-      color: #06b6d4; font-variant-numeric: tabular-nums;
+      color: var(--win); font-variant-numeric: tabular-nums;
     }
     .apex-kills .ak-quoi { font-size: 15px; font-weight: 600; }
-    .apex-kills .ak-cumul { font-size: 12px; opacity: .6; margin-top: 3px; }
+    .apex-kills .ak-cumul { font-size: 12px; color: var(--dim); margin-top: 3px; }
 
     /* Musique en cours — une étiquette, pas un spectacle : elle s'installe et
        laisse la scène aux autres. */
@@ -546,19 +554,20 @@
       gap: 12px;
       max-width: 420px;
       padding: 10px 16px 10px 13px;
-      background: rgba(255, 255, 255, 0.04);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 14px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      color: #e6edf3;
+      /* Même correction que la carte de kills, même cause : le verre du
+         dashboard s'était invité sur l'overlay. */
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     }
     /* L'équaliseur : trois barres qui dansent tant que ça joue, figées en
        pause. L'état est dans le MOUVEMENT, pas dans un mot de plus. */
     .music-now .music-note { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
     .music-now .music-note i {
       display: block; width: 4px; height: 6px;
-      background: #06b6d4; border-radius: 2px;
+      background: var(--info); border-radius: 2px;
     }
     .music-now.joue .music-note i { animation: music-danse 900ms ease-in-out infinite; }
     .music-now.joue .music-note i:nth-child(2) { animation-delay: 150ms; }
