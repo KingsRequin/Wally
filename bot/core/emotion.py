@@ -322,6 +322,11 @@ class EmotionEngine:
         self._mood: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         # Fatigue: refractory period after peaks
         self._fatigue: dict[str, float] = {e: 0.0 for e in EMOTIONS}
+        # Retombée : pic atteint depuis le début de l'épisode en cours, par
+        # émotion. Remis à zéro quand l'émotion repasse sous `reset_below` —
+        # sans quoi une seule vraie colère justifierait des retombées jusqu'au
+        # prochain redémarrage.
+        self._peak_since_calm: dict[str, float] = {e: 0.0 for e in EMOTIONS}
         # Per-user emotional memory (affinity)
         self._user_affinity: dict[tuple[str, str], dict] = {}
         # Habituation tracker
@@ -967,15 +972,20 @@ class EmotionEngine:
         delta_t = now - self._last_decay
         if delta_t <= 0:
             return
+        pertes: dict[str, float] = {}
         for emotion in EMOTIONS:
             if emotion == "boredom":
                 continue  # boredom géré séparément ci-dessous
             cfg = self._config.emotions.get(emotion)
             if not cfg or self._state[emotion] <= 0:
                 continue
+            avant = self._state[emotion]
+            if avant > self._peak_since_calm[emotion]:
+                self._peak_since_calm[emotion] = avant
             lam = cfg.decay_lambda
-            decayed = self._state[emotion] * math.exp(-lam * (delta_t / 3600.0))
+            decayed = avant * math.exp(-lam * (delta_t / 3600.0))
             self._state[emotion] = 0.0 if decayed < DECAY_FLOOR else decayed
+            pertes[emotion] = avant - self._state[emotion]
         # Boredom monte quand personne n'interagit (inversement au decay des autres)
         idle_hours = (now - self._last_interaction) / 3600.0
         boredom_cfg = self._config.emotions.get("boredom")
@@ -984,11 +994,56 @@ class EmotionEngine:
         if boredom_target > self._state["boredom"]:
             self._state["boredom"] = boredom_target
         self._last_decay = now
+        self._apply_aftermath(pertes)
         self._decay_user_affinity(delta_t / 86400.0)
         self._apply_competition()
         self._recover_fatigue(delta_t / 3600.0)
         self._update_mood(delta_t / 3600.0)
         self._maybe_spontaneous_event()
+
+    def _apply_aftermath(self, pertes: dict[str, float]) -> None:
+        """Le contrecoup : la décrue d'une émotion en nourrit une autre.
+
+        Une vraie colère ne s'évapore pas, elle laisse un goût amer. Mesuré sur
+        30 jours de production, la tristesse ne dominait que 0.3 % du temps et
+        n'avait produit aucun pic : le monde de Wally comptait onze sources de
+        joie, deux de colère et aucune de tristesse. Le contrecoup est la
+        première — et il est un MÉCANISME, pas une humeur écrite en dur : les
+        couples et les coefficients vivent dans `config.yaml`.
+
+        Deux garde-fous portent tout le sens :
+
+        - Seule la décrue par DECAY compte. La suppression fait elle aussi
+          tomber la colère (`apply_delta("joy")` l'érode de 0.8×) ; convertir
+          cette baisse-là rendrait Wally triste chaque fois qu'on le déride,
+          exactement l'inverse du mécanisme voulu. D'où le passage par `pertes`,
+          rempli dans la seule boucle de decay.
+        - Sous `min_peak`, rien. Un agacement de dix secondes qui retombe ne
+          doit pas laisser de traîne mélancolique.
+
+        La retombée passe par `apply_delta` et non par une écriture directe :
+        elle subit ainsi l'inertie et la suppression comme n'importe quelle
+        émotion — une tristesse qui naît alors que la joie est haute est
+        amortie, et elle érode cette joie en retour.
+        """
+        cfg = getattr(self._config, "aftermath", None)
+        if not cfg or not getattr(cfg, "enabled", False):
+            return
+        regles = getattr(cfg, "rules", None)
+        if not regles:
+            return
+        for regle in regles.values():
+            perte = pertes.get(regle.source, 0.0)
+            if perte <= 0:
+                continue
+            if self._peak_since_calm.get(regle.source, 0.0) < regle.min_peak:
+                continue
+            self.apply_delta(regle.target, perte * regle.ratio)
+        # Réarmement APRÈS conversion : inverser l'ordre perdrait la dernière
+        # tranche, celle qui fait passer la source sous le seuil.
+        for regle in regles.values():
+            if self._state.get(regle.source, 0.0) < regle.reset_below:
+                self._peak_since_calm[regle.source] = 0.0
 
     def _decay_user_affinity(self, delta_jours: float) -> None:
         """Fait s'estomper l'affinité par personne. `A(t) = A₀ × e^(−λ × Δjours)`.

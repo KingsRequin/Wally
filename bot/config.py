@@ -282,6 +282,31 @@ class SecondaryEmotionDef:
 
 
 @dataclass
+class AftermathRule:
+    """La décrue d'une émotion en nourrit une autre — le contrecoup.
+
+    `ratio` : part de la baisse convertie. Il doit MORDRE : mesuré en simulation,
+    0.4 plafonne la tristesse à 0.18, sous le seuil d'injection des directives
+    (0.2), et le mécanisme reste invisible en prompt.
+    `min_peak` : sous ce pic, aucune retombée — râler deux secondes n'est pas une
+    crise. `reset_below` : en dessous, l'épisode est clos et le pic se réarme.
+    """
+    source: str = ""
+    target: str = ""
+    ratio: float = 0.7
+    min_peak: float = 0.5
+    reset_below: float = 0.1
+
+
+@dataclass
+class AftermathConfig:
+    enabled: bool = True
+    rules: dict[str, AftermathRule] = field(default_factory=lambda: {
+        "amertume": AftermathRule(source="anger", target="sadness"),
+    })
+
+
+@dataclass
 class TwitchEventConfig:
     active: bool
     message: str
@@ -487,6 +512,7 @@ class Config:
     emotional_memory: EmotionalMemoryConfig = field(default_factory=EmotionalMemoryConfig)
     circadian: CircadianConfig = field(default_factory=CircadianConfig)
     spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
+    aftermath: AftermathConfig = field(default_factory=AftermathConfig)
     response_gate: dict = field(default_factory=dict)
     cognitive_loop: dict = field(default_factory=dict)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
@@ -538,7 +564,7 @@ class Config:
         with open(path) as f:
             raw = yaml.safe_load(f)
         try:
-            _ORGANIC_KEYS = {"mood", "fatigue", "habituation", "memory", "circadian", "spontaneous", "secondaries"}
+            _ORGANIC_KEYS = {"mood", "fatigue", "habituation", "memory", "circadian", "spontaneous", "secondaries", "aftermath"}
             emotions = {
                 k: EmotionDecayConfig(**v)
                 for k, v in raw.get("emotions", {}).items()
@@ -619,6 +645,19 @@ class Config:
                 }
             else:
                 secondaries_cfg = None  # use default_factory
+            # Aftermath (retombée : la décrue d'une émotion en nourrit une autre)
+            after_raw = emo_raw.get("aftermath", {})
+            if after_raw:
+                after_rules = {
+                    name: AftermathRule(**rdata)
+                    for name, rdata in after_raw.get("rules", {}).items()
+                }
+                after_kwargs = {k: v for k, v in after_raw.items() if k != "rules"}
+                if after_rules:
+                    after_kwargs["rules"] = after_rules
+                aftermath_cfg = AftermathConfig(**after_kwargs)
+            else:
+                aftermath_cfg = AftermathConfig()
             response_gate_cfg = raw.get("response_gate", {})
             cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
@@ -663,6 +702,7 @@ class Config:
                 emotional_memory=emotional_memory_cfg,
                 circadian=circadian_cfg,
                 spontaneous=spontaneous_cfg,
+                aftermath=aftermath_cfg,
                 response_gate=response_gate_cfg,
                 cognitive_loop=cognitive_loop_cfg,
                 **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
@@ -709,6 +749,7 @@ class Config:
         emotions_data["circadian"] = asdict(self.circadian)
         emotions_data["spontaneous"] = asdict(self.spontaneous)
         emotions_data["secondaries"] = {k: asdict(v) for k, v in self.secondaries.items()}
+        emotions_data["aftermath"] = asdict(self.aftermath)
         data["emotions"] = emotions_data
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
