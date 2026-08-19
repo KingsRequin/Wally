@@ -23,6 +23,7 @@ def _manager():
     mgr = RemoteStreamingSTT.__new__(RemoteStreamingSTT)
     mgr._sessions = {}
     mgr._fallback_speakers = set()
+    mgr._priority_speakers = set()   # aucun prioritaire : l'aiguillage par profil n'est pas le sujet ici
     mgr._pending_fallback = 0
     # Références fortes des tâches détachées : sans elles la boucle asyncio ne
     # retient qu'une référence faible, et un énoncé peut être collecté en vol.

@@ -34,6 +34,7 @@ async def test_un_pipeline_ferme_ne_rouvre_plus_de_session():
     p._now = lambda: 0.0
     p._last_activity = {}
     p._fallback_speakers = set()
+    p._priority_speakers = set()   # aucun prioritaire : l'aiguillage par profil n'est pas le sujet ici
     p._sessions = {}
 
     p.feed_sync("A", b"\x00" * 640)          # ne doit rien tenter

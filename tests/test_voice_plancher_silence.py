@@ -98,6 +98,7 @@ def _pipeline(monkeypatch):
     p = RemoteStreamingSTT.__new__(RemoteStreamingSTT)
     p._sessions = {}
     p._fallback_speakers = set()
+    p._priority_speakers = set()   # aucun prioritaire : l'aiguillage par profil n'est pas le sujet ici
     p._pending_fallback = 0
     p._detached = set()
     p._ferme = False

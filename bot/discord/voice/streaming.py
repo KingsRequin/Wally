@@ -340,6 +340,9 @@ class RemoteStreamingSTT:
             return  # routé batch → traité au speech_end via le segment VAD
         sess = self._sessions.get(speaker_id)
         if sess is None:
+            if not self._gpu_est_son_premier_choix(speaker_id):
+                self._fallback_speakers.add(speaker_id)
+                return
             if not self._remote_allowed(now) and not self._ceder_une_place(speaker_id, now):
                 self._fallback_speakers.add(speaker_id)
                 return
@@ -370,6 +373,15 @@ class RemoteStreamingSTT:
                 "voice: énoncé de {s} écarté avant le STT — sous le plancher "
                 "({d:.1f} s, rms {r})", s=speaker_id, d=duree, r=niveau,
             )
+            return
+        # Un prioritaire privé de GPU ne descend pas sur le local : il y a déjà
+        # passé une heure le 2026-08-14, ses phrases revenant en « Biri birip »
+        # et « Sous-titrage ST\' 501 » — ses demandes n\'atteignaient plus
+        # personne. xAI d\'abord, donc, et le local seulement si elle ne peut
+        # pas prendre (pas de clé, ou plafond d\'appels en vol atteint) : un
+        # texte approximatif vaut mieux qu\'un silence.
+        if (speaker_id in self._priority_speakers
+                and self._deborder(speaker_id, segment, "prioritaire sans GPU")):
             return
         # File saturée : on ABANDONNE l'énoncé plutôt que de l'empiler. Mesuré en
         # live à trois locuteurs, la file montait à 35 s de retard — à ce
@@ -404,6 +416,30 @@ class RemoteStreamingSTT:
         task = asyncio.create_task(coro)
         self._detached.add(task)
         task.add_done_callback(self._detached.discard)
+
+    def _gpu_est_son_premier_choix(self, speaker_id: str) -> bool:
+        """Ce locuteur doit-il tenter le GPU avant le local ?
+
+        Le GPU ne tient que DEUX locuteurs, et c\'est le seul moteur qui rende
+        un français fiable. Ses places vont donc à ceux à qui Wally doit
+        répondre ; les autres passent par le local, et ne montent qu\'une fois
+        celui-ci débordé.
+
+        Avant, tout le monde ouvrait une session au premier qui parlait : les
+        deux places finissaient chez des invités, et le streamer devait les
+        déloger (`_ceder_une_place`). Le défaut était traité en aval au lieu de
+        l\'être à la source.
+
+        Sans liste de prioritaires, rien à protéger : le comportement d\'origine
+        s\'applique, sinon le GPU resterait inutilisé sur une installation qui
+        n\'a pas renseigné `voice.requesters`.
+        """
+        if not self._priority_speakers or speaker_id in self._priority_speakers:
+            return True
+        # Seuil non choisi : c\'est déjà celui à partir duquel le local jette
+        # de la parole. Monter sur le GPU à ce moment précis, c\'est utiliser
+        # une place libre plutôt que de perdre un énoncé.
+        return self._pending_fallback >= _MAX_PENDING_FALLBACK
 
     def _remote_allowed(self, now: float) -> bool:
         return now >= self._unreachable_until and len(self._sessions) < self._max_connections
@@ -500,11 +536,17 @@ class RemoteStreamingSTT:
                            s=speaker_id, n=len(self._sessions))
         self._detach(sess.close())
 
-    def _deborder(self, speaker_id: str, segment: bytes) -> bool:
+    def _deborder(self, speaker_id: str, segment: bytes, motif: str = "débordement") -> bool:
         """Confie l'énoncé à la soupape distante. Faux si elle ne peut pas le prendre.
 
-        Rendre Faux fait retomber l'appelant sur l'abandon journalisé : on ne
-        remplace jamais une parole perdue par un silence sans trace.
+        Rendre Faux fait retomber l'appelant sur l'abandon journalisé (pour un
+        invité) ou sur le local (pour un prioritaire) : on ne remplace jamais
+        une parole perdue par un silence sans trace.
+
+        `motif` sépare les deux raisons d'y recourir, car elles ne se corrigent
+        pas pareil : un DÉBORDEMENT dit que la machine ne suit plus, un
+        PRIORITAIRE SANS GPU dit que le PC d'Azraël est éteint. Sans cette
+        distinction, on paie des énoncés sans savoir pourquoi.
         """
         if self._overflow is None:
             return False
@@ -513,10 +555,11 @@ class RemoteStreamingSTT:
                         n=self._overflow_inflight, s=speaker_id)
             return False
         self._overflow_inflight += 1
-        self._detach(self._overflow_transcribe(speaker_id, segment))
+        self._detach(self._overflow_transcribe(speaker_id, segment, motif))
         return True
 
-    async def _overflow_transcribe(self, speaker_id: str, segment: bytes) -> None:
+    async def _overflow_transcribe(self, speaker_id: str, segment: bytes,
+                                   motif: str = "débordement") -> None:
         """Transcrit à distance ce que le local n'aurait pas eu le temps de faire."""
         t0 = self._now()
         try:
@@ -524,9 +567,9 @@ class RemoteStreamingSTT:
             stt_ms = (self._now() - t0) * 1000
             if texte and self.on_final is not None:
                 logger.info(
-                    "voice: énoncé de {s} RATTRAPÉ par la soupape "
+                    "voice: énoncé de {s} RATTRAPÉ par la soupape — {r} "
                     "({d:.1f} s d'audio, {ms:.0f} ms)",
-                    s=speaker_id, d=len(segment) / 32000, ms=stt_ms,
+                    s=speaker_id, r=motif, d=len(segment) / 32000, ms=stt_ms,
                 )
                 await self.on_final(speaker_id, texte, stt_ms)
             elif not texte:
