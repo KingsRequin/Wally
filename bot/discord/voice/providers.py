@@ -240,10 +240,19 @@ class XaiSTT:
         # Le nom de Wally et ses surnoms. Le moteur local les reçoit déjà en
         # `hotwords` ; sans eux ici, un énoncé rattrapé perdait justement le mot
         # qui décide si Wally est interpellé.
-        self.keyterms = [
-            p.strip()[:self._MAX_KEYTERM_LEN]
-            for p in (phrases or []) if p and p.strip()
-        ][:self._MAX_KEYTERMS]
+        # Dédupliqués sans tenir compte de la casse : `trigger_names` porte
+        # « wally » à côté du `name` « Wally », et deux fois le même mot
+        # occupait deux des cent places pour rien.
+        vus: set[str] = set()
+        self.keyterms = []
+        for terme in (phrases or []):
+            terme = (terme or "").strip()[:self._MAX_KEYTERM_LEN]
+            if not terme or terme.lower() in vus:
+                continue
+            vus.add(terme.lower())
+            self.keyterms.append(terme)
+            if len(self.keyterms) == self._MAX_KEYTERMS:
+                break
 
     @staticmethod
     def _wav(pcm16k_mono: bytes) -> bytes:

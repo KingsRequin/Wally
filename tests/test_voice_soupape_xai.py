@@ -193,3 +193,9 @@ def test_une_soupape_qui_tombe_ne_casse_jamais_l_ecoute(monkeypatch, bruit):
 
     monkeypatch.setattr(httpx, "AsyncClient", _Explose)
     assert asyncio.run(_stt().transcribe(b"\x00" * 3200)) == ""
+
+
+def test_le_meme_mot_a_deux_casses_ne_prend_qu_une_place():
+    """`trigger_names` porte « wally » à côté du `name` « Wally » : monté tel
+    quel, le même mot occupait deux des cent places de biais."""
+    assert _stt(phrases=["Wally", "wally", "WALLY", "Wallou"]).keyterms == ["Wally", "Wallou"]
