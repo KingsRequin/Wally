@@ -996,6 +996,11 @@
    * stock est relu avant de commencer. */
   function lancerSpamVirus(box, medias, duree) {
     const plan = window.WallyVirus.fenetres(window.WallyVirus.rythme(duree), medias);
+    // Les sons sont relus ici pour la même raison que le stock de memes : le
+    // dossier est bind-monté, l'owner y dépose un ding pendant le live, et la
+    // page ne doit pas rester sur l'inventaire de son ouverture. Ce qui est
+    // déjà décodé n'est pas retéléchargé — l'appel est donc sans frais.
+    if (window.WallySons) window.WallySons.charger();
     // Un semeur par spectacle : il garde le fil des cellules déjà servies, et
     // c'est ce qui répartit les fenêtres sur tout l'écran au lieu du milieu.
     const semeur = window.WallyVirus.semeur(window.innerWidth || 1920,
@@ -1005,6 +1010,9 @@
       timers.push(setTimeout(() => {
         if (!box.isConnected) return;
         box.appendChild(fenetreVirus(f, i, semeur));
+        // Le ding accompagne l'OUVERTURE, pas la construction du nœud : c'est
+        // ici qu'on sait que la fenêtre entre réellement à l'écran.
+        if (window.WallySons) window.WallySons.popup();
         // Elles restent TOUTES : le plafond n'est plus qu'un filet, posé
         // au-dessus de ce que le dossier peut produire.
         const vivantes = box.querySelectorAll(".vwin");
@@ -1017,6 +1025,10 @@
     // reste ensuite le temps qu'on le lise.
     timers.push(setTimeout(() => {
       if (!box.isConnected) return;
+      // Tout se tait d'un coup, un battement de silence, puis l'impact grave.
+      // C'est la coupure qui fait la fin — un son de plus par-dessus le chaos
+      // ne s'entendrait pas comme une fin.
+      if (window.WallySons) window.WallySons.bsod();
       box.appendChild(ecranBleu());
     }, duree * 1000));
     // `disposeWidget` ne vide que `data-interval` : sans ce ménage, les

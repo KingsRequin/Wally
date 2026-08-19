@@ -33,6 +33,11 @@ def _make_meme_library():
     return MemeLibrary("data/memes")
 
 
+def _make_sound_library():
+    from bot.core.sons import SoundLibrary
+    return SoundLibrary("data/sons")
+
+
 def _make_overlay_feed():
     from bot.core.overlay_feed import OverlayFeed
     return OverlayFeed()
@@ -98,6 +103,9 @@ class AppState:
     # Bibliothèque de memes déposés à la main dans data/memes/ (bind-monté :
     # l'owner y ajoute des images sans redémarrer).
     memes: object = field(default_factory=lambda: _make_meme_library())
+    # Les sons joués par l'overlay (data/sons/popup, data/sons/bsod), même
+    # dossier bind-monté : l'owner en ajoute ou en retire sans redémarrer.
+    sons: object = field(default_factory=lambda: _make_sound_library())
     # Dernière télémétrie de rendu envoyée par l'overlay (fps, pire frame, GPU).
     overlay_health: Optional[dict] = None
     _response_times: deque = field(default_factory=lambda: deque(maxlen=50))

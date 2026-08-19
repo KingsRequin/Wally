@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from loguru import logger
 
 from bot.core.memes import media_type
+from bot.core.sons import media_type as son_media_type
 
 public_router = APIRouter()
 admin_router = APIRouter()
@@ -44,6 +45,7 @@ _OVERLAY_FILES = (
     "overlay_layout.js",
     "overlay_apex.js",
     "overlay_virus.js",
+    "overlay_sons.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
     # et non script : la page en charge une depuis que ces deux zones y ont été
@@ -120,6 +122,36 @@ async def get_meme(name: str, request: Request):
     return FileResponse(
         path,
         media_type=media_type(path),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@public_router.get("/sons")
+async def get_sons(request: Request) -> dict:
+    """Ce qu'il y a dans le dossier des sons, par genre.
+
+    Publique parce que l'overlay tourne dans OBS sans session. Ne lève jamais :
+    un spectacle muet reste un spectacle, et la page ne saurait pas distinguer
+    une panne d'un dossier vide — elle s'acharnerait sur la première.
+    """
+    library = getattr(request.app.state.wally, "sons", None)
+    if library is None:
+        return {"sons": {}}
+    return {"sons": library.inventaire()}
+
+
+@public_router.get("/son/{genre}/{name}")
+async def get_son(genre: str, name: str, request: Request):
+    """Sert un son du dossier. `resolve` refuse tout ce qui en sortirait."""
+    library = getattr(request.app.state.wally, "sons", None)
+    if library is None:
+        raise HTTPException(404, "Aucune bibliothèque de sons")
+    path = library.resolve(genre, name)
+    if path is None:
+        raise HTTPException(404, "Son introuvable")
+    return FileResponse(
+        path,
+        media_type=son_media_type(path),
         headers={"Cache-Control": "public, max-age=3600"},
     )
 
