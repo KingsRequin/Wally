@@ -31,17 +31,28 @@ et laisse les modérateurs piloter la lecture depuis le chat Twitch.
 6. Cliquer **Enregistrer** : le bouton essaie vraiment la connexion et affiche
    `C'est branché ✓`, ou dit ce qui cloche.
 
-Puis ouvrir une vidéo YouTube. Rien à faire de plus.
+Puis ouvrir une vidéo YouTube — et **recharger les onglets YouTube déjà
+ouverts** (F5) : Chrome n'installe l'extension que dans les pages chargées
+ensuite. Un onglet ouvert avant l'installation se tait pour toujours.
 
 ## Vérifier que ça marche
 
-Dans le chat Twitch, demander à Wally ce qui passe. S'il répond qu'il ne sait
-pas :
+Ouvrir la fenêtre de l'extension **depuis l'onglet YouTube** : la dernière ligne
+dit ce que fait cet onglet-là.
 
-- l'interrupteur est-il allumé ?
-- l'onglet YouTube est-il **ouvert et en lecture** ? Une vidéo en pause depuis
-  plus de 45 secondes n'est plus « ce qui passe » ;
-- le bouton **Enregistrer** dit-il `C'est branché ✓` ?
+- `✓ Cet onglet parle à Wally (dernier envoi il y a 2 s)` — c'est bon.
+- `⚠️ Cet onglet n'envoie rien` — recharger la page (F5).
+- `⚠️ Cet onglet essaie mais n'y arrive pas` — l'adresse ou le jeton.
+
+Attention : `C'est branché ✓` du bouton **Enregistrer** ne dit que la moitié.
+Cet essai-là part de l'extension, qui a le droit d'appeler le bot de partout ;
+le vrai battement, lui, part de la page YouTube. Les deux chemins sont
+distincts, et le premier peut réussir pendant que le second n'existe pas.
+
+Ensuite, dans le chat Twitch, demander à Wally ce qui passe. S'il répond qu'il
+ne sait pas, l'onglet YouTube est-il **ouvert avec une vidéo** ? Une page
+d'accueil ou une recherche ne dit rien de ce qui passe, et une vidéo en pause
+depuis plus de 45 secondes n'est plus « ce qui passe ».
 
 ## Ce qui se passe si
 

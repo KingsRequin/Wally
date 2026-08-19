@@ -21,6 +21,11 @@
   let reglages = { url: "", jeton: "", actif: false };
   let dernierEtat = null;
   const accusesEnAttente = [];
+  // Ce que la fenêtre de réglages viendra demander : cet onglet-ci parle-t-il ?
+  // Un onglet YouTube ouvert AVANT l'installation n'a pas ce script et se tait
+  // pour toujours — sans ce rapport, rien ne le disait, et l'essai du bouton
+  // « Enregistrer » réussissait quand même (il part de l'extension, pas d'ici).
+  const rapport = { dernierOk: 0, erreur: "" };
 
   // ── Réglages, posés par la fenêtre de l'extension ────────────────────────
 
@@ -59,9 +64,20 @@
 
   // ── Le battement ─────────────────────────────────────────────────────────
 
+  chrome.runtime.onMessage.addListener((msg, _expediteur, repondre) => {
+    if (!msg || msg.marque !== MARQUE || msg.type !== "diagnostic") return;
+    repondre({ dernierOk: rapport.dernierOk, erreur: rapport.erreur,
+               actif: reglages.actif,
+               titre: (dernierEtat && dernierEtat.titre) || "" });
+  });
+
   async function battre() {
     demanderAuPont({ type: "lire" });          // l'état arrivera par message
-    if (!reglages.actif || !reglages.url || !reglages.jeton) return;
+    if (!reglages.actif || !reglages.url || !reglages.jeton) {
+      rapport.erreur = reglages.actif ? "adresse ou jeton manquant"
+                                      : "partage éteint";
+      return;
+    }
 
     // Sur une page sans lecteur, on bat quand même : le bot doit savoir que
     // l'extension est VIVANTE, sinon il conclut au silence et se tait.
@@ -84,9 +100,17 @@
         body: JSON.stringify(corps),
       });
     } catch (e) {
-      return;   // le bot redémarre, le réseau tousse : on réessaiera dans 2 s
+      // Le bot redémarre, le réseau tousse : on réessaiera dans 2 s. Mais on
+      // le NOTE — c'est ce que la fenêtre montrera au lieu d'un silence.
+      rapport.erreur = "bot injoignable";
+      return;
     }
-    if (!reponse.ok) return;
+    if (!reponse.ok) {
+      rapport.erreur = "le bot a répondu " + reponse.status;
+      return;
+    }
+    rapport.dernierOk = Date.now();
+    rapport.erreur = "";
 
     let data;
     try { data = await reponse.json(); } catch (e) { return; }

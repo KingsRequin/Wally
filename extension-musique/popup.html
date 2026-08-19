@@ -55,6 +55,13 @@
 
   <button id="enregistrer">Enregistrer</button>
   <div id="etat"></div>
+  <!-- Ce que fait VRAIMENT l'onglet ouvert derrière cette fenêtre. Le bouton
+       ci-dessus ne prouve que la porte du bot : il part de l'extension, qui a
+       le droit d'appeler heywally.fr sans rien demander à personne. Le
+       battement, lui, part de la page YouTube — un onglet ouvert avant
+       l'installation n'a pas le script, et se taisait sans que rien ne le
+       dise. -->
+  <div id="onglet" class="aide"></div>
 
   <script src="popup.js"></script>
 </body>
