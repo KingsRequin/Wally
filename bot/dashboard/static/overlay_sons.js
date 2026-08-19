@@ -32,7 +32,11 @@
 
   // Six dings superposés à plein volume saturent la sortie, et OBS enregistre
   // la saturation telle quelle. Le mur de bruit reste un mur ; il ne crache pas.
-  const VOLUME = 0.8;
+  //
+  // Descendu de 0,8 à 0,64 le 2026-08-19 : « il est un poil fort » (owner),
+  // écouté sur le live. Le réglage fin reste celui du mixer OBS — ceci n'est
+  // que le point de départ pour qui pose la source sans y toucher.
+  const VOLUME = 0.64;
 
   const GENRES = ["popup", "bsod"];
 
