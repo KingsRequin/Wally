@@ -68,7 +68,8 @@ IDLE_WEB_SEARCH_QUOTA_RESERVE = 0.8
 # sont des constantes de réactivité (cf. facteurs de suppression d'emotion.py),
 # pas des seuils comportementaux appris (ça, c'est le rôle de SocialRhythm).
 SOCIAL_FEEDBACK_JOY = 0.1     # on lui répond → bouffée de joie
-SOCIAL_IGNORED_ANGER = 0.05  # ignoré malgré l'insistance → agacement (une fois)
+# Le pendant négatif (ignoré malgré l'insistance) a rejoint `emotions.world_events`
+# dans la config : le silence n'agace pas seulement, il blesse aussi.
 
 _WS_RE = re.compile(r"\s+")
 
@@ -320,17 +321,23 @@ class CognitiveLoop:
 
     def _penalize_if_ignored(self, st: dict) -> None:
         """Feedback émotionnel négatif (#A6) : un canal qui ignore les relances de
-        Wally pique sa colère — UNE seule fois par épisode (le drapeau `penalized`
+        Wally le pique — UNE seule fois par épisode (le drapeau `penalized`
         évite l'accumulation à chaque tick ; il est remis à zéro quand on lui
-        répond enfin, cf. notify_activity)."""
+        répond enfin, cf. notify_activity).
+
+        Passe par `world_event` : être ignoré ne fait pas QUE mettre en colère,
+        ça blesse aussi. La part de tristesse est volontairement trop faible pour
+        franchir seule le seuil d'injection — un silence isolé dans un salon calme
+        ne doit pas suffire, mais une série, si.
+        """
         if st.get("penalized"):
             return
         st["penalized"] = True
         if self._emotion is not None:
             try:
-                self._emotion.apply_delta("anger", SOCIAL_IGNORED_ANGER)
+                self._emotion.world_event("ignored")
             except Exception as e:  # noqa: BLE001 — jamais bloquant
-                logger.warning("apply_delta(anger) social feedback: {}", e)
+                logger.warning("world_event(ignored) social feedback: {}", e)
 
     def notify_reply(self, channel_id, content: str | None = None,
                      author: str | None = None) -> None:

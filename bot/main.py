@@ -376,6 +376,12 @@ async def main() -> None:
         from bot.core.stream_watcher import StreamWatcher
 
         def _on_stream_transition(old: dict, new: dict) -> None:
+            # AVANT le garde ci-dessous : la fin du live le touche même sans
+            # salon « chambre » configuré. C'est la leçon déjà tirée pour
+            # `_on_stream_voice`, qui a dû être séparé pour la même raison.
+            if bool(old.get("live")) and not bool(new.get("live")):
+                emotion.world_event("stream_ended", platform="twitch")
+
             loop = getattr(discord_bot, "cognitive_loop", None)
             bedroom = config.bot.bedroom_channel_id
             if loop is None or not bedroom:

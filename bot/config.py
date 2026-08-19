@@ -307,6 +307,18 @@ class AftermathConfig:
 
 
 @dataclass
+class WorldEvent:
+    """Ce qui arrive à Wally dans le monde, et ce que ça lui fait.
+
+    Les sources de joie étaient éparpillées en `apply_delta` codés en dur dans
+    les handlers (onze au total) ; la tristesse, elle, n'en avait aucune. Les
+    intensités vivent ici pour qu'ajouter un déclencheur soit un fait de
+    configuration, pas une modification de sous-système.
+    """
+    effects: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
 class TwitchEventConfig:
     active: bool
     message: str
@@ -513,6 +525,11 @@ class Config:
     circadian: CircadianConfig = field(default_factory=CircadianConfig)
     spontaneous: SpontaneousConfig = field(default_factory=SpontaneousConfig)
     aftermath: AftermathConfig = field(default_factory=AftermathConfig)
+    world_events: dict[str, WorldEvent] = field(default_factory=lambda: {
+        "stream_ended": WorldEvent(effects={"sadness": 0.35}),
+        "left_alone_in_voice": WorldEvent(effects={"sadness": 0.3, "boredom": 0.1}),
+        "ignored": WorldEvent(effects={"sadness": 0.15, "anger": 0.05}),
+    })
     response_gate: dict = field(default_factory=dict)
     cognitive_loop: dict = field(default_factory=dict)
     secondaries: dict[str, SecondaryEmotionDef] = field(default_factory=lambda: {
@@ -564,7 +581,7 @@ class Config:
         with open(path) as f:
             raw = yaml.safe_load(f)
         try:
-            _ORGANIC_KEYS = {"mood", "fatigue", "habituation", "memory", "circadian", "spontaneous", "secondaries", "aftermath"}
+            _ORGANIC_KEYS = {"mood", "fatigue", "habituation", "memory", "circadian", "spontaneous", "secondaries", "aftermath", "world_events"}
             emotions = {
                 k: EmotionDecayConfig(**v)
                 for k, v in raw.get("emotions", {}).items()
@@ -658,6 +675,14 @@ class Config:
                 aftermath_cfg = AftermathConfig(**after_kwargs)
             else:
                 aftermath_cfg = AftermathConfig()
+            # World events (ce que le monde fait à Wally)
+            world_raw = emo_raw.get("world_events", {})
+            if world_raw:
+                world_events_cfg = {
+                    name: WorldEvent(**edata) for name, edata in world_raw.items()
+                }
+            else:
+                world_events_cfg = None  # use default_factory
             response_gate_cfg = raw.get("response_gate", {})
             cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
@@ -706,6 +731,7 @@ class Config:
                 response_gate=response_gate_cfg,
                 cognitive_loop=cognitive_loop_cfg,
                 **({"secondaries": secondaries_cfg} if secondaries_cfg is not None else {}),
+                **({"world_events": world_events_cfg} if world_events_cfg is not None else {}),
             )
         except (KeyError, TypeError) as e:
             raise ValueError(
@@ -750,6 +776,7 @@ class Config:
         emotions_data["spontaneous"] = asdict(self.spontaneous)
         emotions_data["secondaries"] = {k: asdict(v) for k, v in self.secondaries.items()}
         emotions_data["aftermath"] = asdict(self.aftermath)
+        emotions_data["world_events"] = {k: asdict(v) for k, v in self.world_events.items()}
         data["emotions"] = emotions_data
         with open(self._path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)

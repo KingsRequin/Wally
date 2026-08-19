@@ -599,6 +599,61 @@ class EmotionEngine:
         self._dirty = True
         self._schedule_save()
 
+    def world_event(self, nom: str, trigger_user: str = "", platform: str = "") -> None:
+        """Ce que le monde fait à Wally — point d'entrée unique des déclencheurs.
+
+        Le mécanisme est ici, les intensités dans `config.yaml`
+        (`emotions.world_events`). Ce n'est pas de la décoration : mesuré sur
+        30 jours, le code portait onze `apply_delta("joy")` codés en dur dans
+        autant de handlers (follow, sub, bits, raid, réaction, on lui répond…),
+        trois pour la curiosité, deux pour la colère — et **aucun** pour la
+        tristesse. Un déséquilibre pareil ne se voit pas quand chaque source
+        vit chez elle ; il saute aux yeux dans une liste unique.
+
+        Passe par `apply_delta`, donc subit inertie et suppression comme le
+        reste : une tristesse qui tombe sur une grosse joie est amortie et érode
+        cette joie, au lieu de coexister avec elle.
+
+        Silencieux sur un nom inconnu : retirer un déclencheur de la config ne
+        doit jamais casser le sous-système qui l'appelle.
+        """
+        events = getattr(self._config, "world_events", None)
+        if not events:
+            return
+        event = events.get(nom)
+        if event is None:
+            return
+        effects = getattr(event, "effects", None) or {}
+        avant = self.get_state()
+        for emotion, delta in effects.items():
+            if emotion in self._state and delta:
+                self.apply_delta(emotion, delta)
+        apres = self.get_state()
+        logger.info(
+            "Événement du monde « {n} » : {d}",
+            n=nom,
+            d=", ".join(
+                f"{e} {avant[e]:.2f}→{apres[e]:.2f}"
+                for e in effects if e in self._state and abs(apres[e] - avant[e]) > 0.001
+            ) or "aucun effet",
+        )
+        # Les pics de tristesse n'apparaissaient nulle part dans `emotion_peaks`
+        # (61 pics de colère, 54 de joie, 0 de tristesse) : sans ce log, on ne
+        # saurait pas davantage mesurer l'effet du correctif que le défaut.
+        for emotion, delta in effects.items():
+            if delta > 0 and emotion in self._state:
+                try:
+                    self._fire(self._maybe_log_peak(
+                        emotion, avant.get(emotion, 0.0), apres.get(emotion, 0.0),
+                        trigger_user=trigger_user, trigger_message=f"[monde] {nom}",
+                        platform=platform,
+                    ))
+                # Appelé hors boucle asyncio : l'émotion est déjà appliquée, seule
+                # la trace manque. Un confort d'observabilité n'a pas à faire
+                # échouer un événement du monde.
+                except RuntimeError:
+                    pass
+
     def set_emotion(self, emotion: str, value: float) -> None:
         if emotion in self._state:
             old = self._state[emotion]

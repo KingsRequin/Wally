@@ -112,15 +112,21 @@ def test_response_resets_ignored_penalty_flag():
     assert loop._spontaneous["1"]["penalized"] is False
 
 
-def test_ignored_penalizes_anger_once():
-    """Être ignoré (≥3 sans réponse) pique la colère — une seule fois par épisode (#A6)."""
-    from bot.intelligence.cognitive_loop import SOCIAL_IGNORED_ANGER
+def test_ignored_penalizes_once():
+    """Être ignoré (≥3 sans réponse) le pique — une seule fois par épisode (#A6).
+
+    L'assertion portait sur l'appel exact `apply_delta("anger", SOCIAL_IGNORED_ANGER)`.
+    Elle verrouillait l'implémentation, pas le comportement : faire passer le
+    silence par `world_event` — pour qu'il blesse autant qu'il agace — la faisait
+    rougir alors que la propriété visée (piquer une fois, jamais deux) était
+    intacte. On teste donc le nombre de pénalités et le drapeau d'épisode.
+    """
     loop, *_ = _make_loop()
     loop._emotion = MagicMock()
     st = {"last_ts": 0.0, "unanswered": 3}
     loop._penalize_if_ignored(st)
     loop._penalize_if_ignored(st)  # second appel : pas de double pénalité
-    loop._emotion.apply_delta.assert_called_once_with("anger", SOCIAL_IGNORED_ANGER)
+    loop._emotion.world_event.assert_called_once_with("ignored")
     assert st["penalized"] is True
 
 

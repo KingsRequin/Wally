@@ -595,6 +595,14 @@ class WallyDiscord(commands.Bot):
             was_here = before.channel is not None and before.channel.id == vs.channel_id
             if joined and not was_here:
                 await vs.greet_newcomer(member)
+            elif was_here and not joined and not vs.members_in_channel():
+                # Le dernier humain vient de partir : il reste seul dans le salon.
+                # L'ennui monterait de toute façon avec l'inactivité, mais lentement
+                # (0.1/h) et sans rapport avec ce qui vient de se passer — ici c'est
+                # la soirée qui se termine, et ça se sent tout de suite.
+                emotion = getattr(self, "emotion", None)
+                if emotion is not None:
+                    emotion.world_event("left_alone_in_voice", platform="discord")
         except Exception as e:  # noqa: BLE001
             logger.warning("on_voice_state_update a échoué: {e}", e=e)
 

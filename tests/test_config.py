@@ -188,7 +188,7 @@ def test_toute_section_de_config_est_ecrite_par_save(tmp_path):
     # Sous-sections rangées DANS `emotions:` plutôt qu'à la racine.
     dans_emotions = {
         "mood", "fatigue", "habituation", "emotional_memory",
-        "circadian", "spontaneous", "secondaries", "aftermath",
+        "circadian", "spontaneous", "secondaries", "aftermath", "world_events",
     }
     # `music` ne vient pas du FICHIER mais de l'environnement : son seul champ
     # est un secret (`MUSIC_EXTENSION_TOKEN`). L'écrire ici en ferait une
