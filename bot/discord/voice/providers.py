@@ -230,7 +230,8 @@ class XaiSTT:
     _MAX_KEYTERM_LEN = 50
 
     def __init__(self, api_key: str, language: str = "fr-FR",
-                 timeout: float = 20.0, phrases: list[str] | None = None) -> None:
+                 timeout: float = 20.0, phrases: list[str] | None = None,
+                 extra_terms=None, db=None, usd_per_hour: float = 0.0) -> None:
         self._key = api_key
         self._lang = (language or "fr").split("-")[0]
         # Serré volontairement : cette voie ne sert qu'à rattraper de la parole
@@ -243,16 +244,56 @@ class XaiSTT:
         # Dédupliqués sans tenir compte de la casse : `trigger_names` porte
         # « wally » à côté du `name` « Wally », et deux fois le même mot
         # occupait deux des cent places pour rien.
-        vus: set[str] = set()
-        self.keyterms = []
-        for terme in (phrases or []):
-            terme = (terme or "").strip()[:self._MAX_KEYTERM_LEN]
+        self.keyterms = self._normaliser(phrases)
+        # Les noms des gens présents dans le salon. Une SOURCE et non une liste :
+        # le provider est construit une fois au démarrage, alors qu'ils entrent
+        # et sortent toute la soirée. Relue à chaque énoncé.
+        self._extra_terms = extra_terms
+        # Ce qu'on dépense, écrit plutôt qu'estimé. Le tarif vient de la config :
+        # celui de DeepSeek a doublé du jour au lendemain, et on ne redéploie pas
+        # une image pour un changement de prix.
+        self._db = db
+        self._usd_per_hour = float(usd_per_hour or 0.0)
+
+    @classmethod
+    def _normaliser(cls, termes, deja: set[str] | None = None,
+                    place: int | None = None) -> list[str]:
+        """Nettoie, tronque et déduplique sans tenir compte de la casse.
+
+        `trigger_names` porte « wally » à côté du `name` « Wally », et un
+        pseudo peut valoir l'un des deux : le même mot occuperait deux des cent
+        places pour rien.
+        """
+        vus = deja if deja is not None else set()
+        place = cls._MAX_KEYTERMS if place is None else place
+        gardes: list[str] = []
+        for terme in (termes or []):
+            terme = (terme or "").strip()[:cls._MAX_KEYTERM_LEN]
             if not terme or terme.lower() in vus:
                 continue
             vus.add(terme.lower())
-            self.keyterms.append(terme)
-            if len(self.keyterms) == self._MAX_KEYTERMS:
+            gardes.append(terme)
+            if len(gardes) >= place:
                 break
+        return gardes
+
+    def _tous_les_termes(self) -> list[str]:
+        """Le nom de Wally d'abord, les présents ensuite.
+
+        L'ordre n'est pas cosmétique : c'est son nom qui décide s'il est
+        interpellé, et un salon très peuplé ne doit pas pouvoir l'évincer des
+        cent places.
+        """
+        if self._extra_terms is None:
+            return self.keyterms
+        try:
+            presents = self._extra_terms()
+        except Exception as exc:  # noqa: BLE001 — un biais optionnel ne coûte pas un énoncé
+            logger.debug("XaiSTT: présents illisibles, biais réduit au nom : {e}", e=exc)
+            return self.keyterms
+        deja = {k.lower() for k in self.keyterms}
+        reste = self._MAX_KEYTERMS - len(self.keyterms)
+        return self.keyterms + self._normaliser(presents, deja, reste)
 
     @staticmethod
     def _wav(pcm16k_mono: bytes) -> bytes:
@@ -275,7 +316,7 @@ class XaiSTT:
         de termes, ce qu'un dict écraserait au dernier.
         """
         champs = [("language", (None, self._lang)), ("format", (None, "true"))]
-        champs += [("keyterm", (None, k)) for k in self.keyterms]
+        champs += [("keyterm", (None, k)) for k in self._tous_les_termes()]
         return champs
 
     async def _transcrire(self, client, wav: bytes) -> str:
@@ -302,6 +343,7 @@ class XaiSTT:
                 logger.warning("XaiSTT: réponse non-JSON (HTTP {c}) : {t}",
                                c=statut, t=(getattr(rep, "text", "") or "")[:160])
             elif statut < 400:
+                await self._facturer(corps.get("duration"))
                 return str(corps.get("text") or "").strip()
             else:
                 erreur = corps.get("error")
@@ -312,6 +354,25 @@ class XaiSTT:
             if essai == 1:
                 logger.info("XaiSTT: HTTP {c} — second essai", c=statut)
         return ""
+
+    async def _facturer(self, duree) -> None:
+        """Inscrit la dépense de CET appel. Jamais bloquant.
+
+        Appelé sur toute réponse acceptée, y compris quand le texte revient
+        vide : le fournisseur a traité l'audio et le facture, et c'est
+        précisément la dépense qu'on veut voir grossir si le moteur déraille.
+        Sans `duration`, on n'invente pas de montant.
+        """
+        if self._db is None or not self._usd_per_hour or not duree:
+            return
+        try:
+            await self._db.log_cost(
+                model="xai-stt", input_tokens=0, output_tokens=0,
+                cost_usd=float(duree) * self._usd_per_hour / 3600,
+                purpose="voice_stt_overflow",
+            )
+        except Exception as exc:  # noqa: BLE001 — écrire la dépense est un confort
+            logger.debug("XaiSTT: dépense non enregistrée : {e}", e=exc)
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
         import httpx
@@ -446,8 +507,8 @@ def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToTex
     return _build_batch_stt(cfg.stt_provider, cfg, phrases)
 
 
-def build_overflow_stt(cfg: VoiceConfig,
-                       phrases: list[str] | None = None) -> SpeechToText | None:
+def build_overflow_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
+                       extra_terms=None, db=None) -> SpeechToText | None:
     """La soupape de débordement, ou None si elle n'est pas configurée.
 
     Rend None sans bruit quand le provider n'est pas demandé, mais LOGUE quand
@@ -470,13 +531,16 @@ def build_overflow_stt(cfg: VoiceConfig,
                        "— la parole en trop continuera d'être JETÉE", p=provider)
         return None
     soupape = XaiSTT(api_key=cle, language=cfg.language,
-                     timeout=cfg.overflow_stt_timeout_s, phrases=phrases)
+                     timeout=cfg.overflow_stt_timeout_s, phrases=phrases,
+                     extra_terms=extra_terms, db=db,
+                     usd_per_hour=cfg.overflow_stt_usd_per_hour)
     logger.info("voice: soupape de débordement active (xai, {n} terme(s) de biais)",
                 n=len(soupape.keyterms))
     return soupape
 
 
-def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
+def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
+                        extra_terms=None, db=None):
     """Construit le STT streaming distant (RemoteStreamingSTT) + son fallback batch CPU local."""
     from bot.discord.voice.streaming import RemoteStreamingSTT
     fallback = _build_batch_stt(cfg.remote_stt_fallback, cfg, phrases)
@@ -495,7 +559,7 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None):
         idle_timeout=cfg.remote_stt_idle_timeout,
         health_cache_s=cfg.remote_stt_health_cache_s,
         priority_speakers=prioritaires,
-        overflow=build_overflow_stt(cfg, phrases=phrases),
+        overflow=build_overflow_stt(cfg, phrases=phrases, extra_terms=extra_terms, db=db),
         overflow_max_inflight=cfg.overflow_stt_max_inflight,
     )
 

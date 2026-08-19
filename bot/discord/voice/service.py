@@ -184,11 +184,39 @@ class VoiceService:
     def channel_name(self) -> str:
         return getattr(self._channel, "name", "") if self._channel else ""
 
+    def noms_des_presents(self) -> list[str]:
+        """Les noms des gens dans le salon, pour biaiser le STT distant.
+
+        Pseudo affiché ET nom d'utilisateur : on s'appelle indifféremment par
+        l'un ou l'autre en vocal. Ce sont des noms propres inventés qu'aucun
+        modèle ne devine — et ceux qui portent le sens quand on se parle à
+        plusieurs (« Azraël, à gauche ! » ne veut rien dire si le pseudo sort
+        en « as râler »).
+
+        Volontairement sans le jargon du jeu : sur le moteur local, mesuré le
+        2026-08-18, le nom SEUL faisait tout le gain et le jargon n'ajoutait
+        rien. Rien ne dit que ce soit pareil ici, mais rien ne dit l'inverse —
+        et un banc tranchera mieux qu'une intuition.
+        """
+        if not self._channel:
+            return []
+        noms: list[str] = []
+        for m in self._channel.members:
+            if getattr(m, "bot", False):
+                continue
+            for attr in ("display_name", "name"):
+                if valeur := getattr(m, attr, None):
+                    noms.append(str(valeur))
+        return noms
+
     def _build_stt_pipeline(self, cfg: VoiceConfig, phrases: list[str]) -> None:
         """Construit le pipeline STT : streaming distant (remote_stream) ou batch."""
         provider = (cfg.stt_provider or "").lower()
         if provider in ("remote_stream", "remote-stream", "remote"):
-            self._streaming = build_streaming_stt(cfg, phrases=phrases)
+            self._streaming = build_streaming_stt(
+                cfg, phrases=phrases, extra_terms=self.noms_des_presents,
+                db=getattr(self._bot, "db", None),
+            )
             self._streaming.on_partial = self._on_stream_partial
             self._streaming.on_final = self._on_stream_final
             self._stt = None

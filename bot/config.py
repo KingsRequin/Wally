@@ -152,6 +152,11 @@ class VoiceConfig:
     # modèle à régler : l'endpoint `/v1/stt` de xAI n'en prend pas.
     overflow_stt_provider: str = ""
     overflow_stt_timeout_s: float = 20.0
+    # Tarif du fournisseur, en dollars par heure d'audio — sert à INSCRIRE la
+    # dépense dans `cost_log` plutôt qu'à l'estimer à la main. En config parce
+    # qu'un prix change sans qu'on redéploie : celui de DeepSeek a doublé du
+    # jour au lendemain le 2026-08-16. 0 = on ne facture rien.
+    overflow_stt_usd_per_hour: float = 0.0
     # Plafond d'appels en vol. Le réseau n'a pas la file du CPU, mais une rafale
     # sans borne brûlerait le quota sur un salon qui déraille.
     overflow_stt_max_inflight: int = 8
