@@ -69,23 +69,27 @@ def test_real_emotions_file_loads_15_directives_including_anger_low():
     assert ps.emotion_directives["anger_low"].strip()
 
 
-def test_les_trois_paliers_de_colere_sont_substantiels():
+def test_les_paliers_hauts_sont_substantiels():
     """Une directive de deux mots ne dirige rien.
 
-    `anger_high` valait « Furax. Insultes familières OK. » — cinq mots, là où les
-    composites en font quatre lignes avec des formulations types. Un palier vidé ou
+    `anger_high` valait « Furax. Insultes familières OK. » — cinq mots ; `joy_high`
+    « Rare. Tu rayonnes malgré toi. » ; `sadness_high` « Silencieux, monosyllabique. »
+    Là où les composites en font quatre lignes avec des formulations types. Un palier
     réduit à une étiquette laisse le LLM inventer son propre registre, et c'est
-    exactement ce qui rendait la colère tiède.
+    exactement ce qui rendait ces états tièdes en prod.
+
+    On mesure la substance et l'escalade, jamais la formulation : ce fichier est
+    bind-monté et éditable depuis l'onglet Prompts.
     """
     ps = PersonaService(persona_dir="bot/persona")
-    for palier in ("anger_low", "anger_mid", "anger_high"):
-        directive = ps.emotion_directives.get(palier, "")
-        assert len(directive) > 120, (
-            f"{palier} ne fait que {len(directive)} caractères — trop court pour "
-            "diriger un comportement"
+    for emotion in ("anger", "joy", "sadness", "curiosity", "boredom"):
+        haut = ps.emotion_directives.get(f"{emotion}_high", "")
+        assert len(haut) > 300, (
+            f"{emotion}_high ne fait que {len(haut)} caractères — un état extrême "
+            "tient en plus de deux lignes, sinon le LLM comble le vide tout seul"
         )
-    # L'escalade doit être lisible : plus on monte, plus la consigne est fournie.
-    assert (
-        len(ps.emotion_directives["anger_high"])
-        > len(ps.emotion_directives["anger_low"])
-    )
+        # L'escalade doit être lisible : plus on monte, plus la consigne est fournie.
+        paliers = [len(ps.emotion_directives.get(f"{emotion}_{t}", "")) for t in ("low", "mid", "high")]
+        assert paliers[0] < paliers[1] < paliers[2], (
+            f"{emotion} : escalade cassée entre low/mid/high ({paliers})"
+        )
