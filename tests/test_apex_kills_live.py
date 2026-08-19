@@ -55,7 +55,7 @@ def test_une_partie_donne_ses_kills_apres_l_attente():
     h.avance(30)
     # Sorti de partie : on ne fige PAS encore, l'API publie après coup.
     assert s.relever(in_game=False, trackers=_tk(4)) is None
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     bilan = s.relever(in_game=False, trackers=_tk(4))
     assert bilan is not None
     assert bilan["partie"] == 4
@@ -73,7 +73,7 @@ def test_les_kills_publies_EN_RETARD_sont_pris():
     s.relever(in_game=False, trackers=_tk(0))     # rien encore publié
     h.avance(60)
     s.relever(in_game=False, trackers=_tk(7))     # l'API rattrape
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S)
     assert s.relever(in_game=False, trackers=_tk(7))["partie"] == 7
 
 
@@ -84,7 +84,7 @@ def test_le_bilan_n_est_rendu_QU_UNE_fois():
     s = _suivi(h)
     s.relever(in_game=True, trackers=_tk(0))
     s.relever(in_game=False, trackers=_tk(3))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     assert s.relever(in_game=False, trackers=_tk(3)) is not None
     assert s.relever(in_game=False, trackers=_tk(3)) is None
 
@@ -98,7 +98,7 @@ def test_une_partie_commencee_AVANT_qu_on_regarde_n_est_pas_mesuree():
     # Le premier relevé le voit DÉJÀ en partie : aucune base.
     s.relever(in_game=True, trackers=_tk(50), premier=True)
     s.relever(in_game=False, trackers=_tk(55))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     bilan = s.relever(in_game=False, trackers=_tk(55))
     # Un bilan « non mesurable » plutôt que rien : l'appelant sait qu'une partie
     # s'est terminée, et qu'il n'y a rien de juste à en dire. Ce qui compte est
@@ -127,7 +127,7 @@ def test_une_partie_ILLISIBLE_est_signalee_mais_ne_compte_pas():
     # bougent pas : c'est le cas que `score_manche` refuse de trancher.
     partiels = {k: v for k, v in _tk(0).items() if k != "career_kills"}
     s.relever(in_game=False, trackers=partiels)
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     bilan = s.relever(in_game=False, trackers=partiels)
     assert bilan is not None
     assert bilan["partie"] is None                # illisible, pas « zéro »
@@ -144,7 +144,7 @@ def test_une_partie_SANS_KILL_mais_lisible_compte_bel_et_bien():
     s = _suivi(h)
     s.relever(in_game=True, trackers=_tk(0))
     s.relever(in_game=False, trackers=_tk(0))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     bilan = s.relever(in_game=False, trackers=_tk(0))
     assert bilan["partie"] == 0
     assert bilan["parties"] == 1
@@ -158,7 +158,7 @@ def test_un_bond_INVRAISEMBLABLE_ne_passe_pas():
     s = _suivi(h)
     s.relever(in_game=True, trackers=_tk(0))
     s.relever(in_game=False, trackers=_tk(9000))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     assert s.relever(in_game=False, trackers=_tk(9000))["partie"] is None
 
 
@@ -170,7 +170,7 @@ def test_les_trackers_ne_sont_JAMAIS_additionnes():
     s = _suivi(h)
     s.relever(in_game=True, trackers=_tk(0))
     s.relever(in_game=False, trackers=_tk(4))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     assert s.relever(in_game=False, trackers=_tk(4))["partie"] == 4
 
 
@@ -183,7 +183,7 @@ def test_le_cumul_additionne_les_parties_MESUREES():
     for depart, arrivee in ((0, 3), (3, 8), (8, 10)):
         s.relever(in_game=True, trackers=_tk(depart))
         s.relever(in_game=False, trackers=_tk(arrivee))
-        h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+        h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
         bilan = s.relever(in_game=False, trackers=_tk(arrivee))
     assert bilan["total"] == 3 + 5 + 2
     assert bilan["parties"] == 3
@@ -196,13 +196,13 @@ def test_un_NOUVEAU_live_repart_de_zero():
     s = _suivi(h)
     s.relever(in_game=True, trackers=_tk(0))
     s.relever(in_game=False, trackers=_tk(6))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     assert s.relever(in_game=False, trackers=_tk(6))["total"] == 6
 
     s.nouveau_live()
     s.relever(in_game=True, trackers=_tk(6))
     s.relever(in_game=False, trackers=_tk(8))
-    h.avance(KillsDuLive.ATTENTE_APRES_PARTIE_S + 1)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
     bilan = s.relever(in_game=False, trackers=_tk(8))
     assert bilan["total"] == 2 and bilan["parties"] == 1
 
@@ -218,6 +218,151 @@ def test_une_partie_qui_ENCHAINE_pendant_l_attente_est_quand_meme_figee():
     h.avance(10)                                   # bien avant la fin de l'attente
     bilan = s.relever(in_game=True, trackers=_tk(5))
     assert bilan is not None and bilan["partie"] == 5
+
+
+# ── quand le bilan tombe ────────────────────────────────────────────────────
+
+def test_le_bilan_tombe_DES_QUE_les_compteurs_se_sont_tus():
+    """Le défaut vu en direct le 2026-08-19 : le bilan n'arrivait pas au retour
+    au lobby mais au lancement de la partie SUIVANTE.
+
+    Mesuré dans l'historique de la soirée : l'API avait déjà publié les kills au
+    tick où la sortie est détectée (21:57:14 → bilan 21:58:47, trois fois de
+    suite exactement 93 s plus tard). L'attente fixe de 90 s était donc perdue,
+    et le matchmaking la battait — d'où l'affichage en pleine partie suivante.
+
+    Ce qu'on attend n'est pas un délai, c'est que les compteurs ARRÊTENT de
+    bouger : un relevé identique au précédent, et un mouvement constaté.
+    """
+    from bot.core.apex.kills_live import KillsDuLive
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0))
+    h.avance(600)
+    # Retour au lobby : l'API a déjà publié les kills, comme en vrai.
+    assert s.relever(in_game=False, trackers=_tk(5)) is None
+    sortie = h.t
+    h.avance(30)                                   # un seul tour de sonde
+    bilan = s.relever(in_game=False, trackers=_tk(5))
+    assert bilan is not None, "le bilan attend encore alors que rien ne bouge"
+    assert bilan["partie"] == 5
+    assert h.t - sortie < KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S
+
+
+def test_une_publication_ETALEE_ne_fige_pas_trop_tot():
+    """L'autre moitié, et c'est elle qui interdit de figer à la sortie sèche :
+    le 2026-08-19 à 22:37, le RP est arrivé au tick 22:37:04 et les kills au
+    suivant, 31 s plus tard. Figer sur le premier mouvement aurait annoncé
+    « 0 kill » à une partie qui en comptait 4."""
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0), rp=9000)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(0), rp=9000)   # sortie, rien publié
+    h.avance(30)
+    # Le RP bouge en premier : ça bouge encore, on ne fige pas.
+    assert s.relever(in_game=False, trackers=_tk(0), rp=9042) is None
+    h.avance(30)
+    bilan = s.relever(in_game=False, trackers=_tk(4), rp=9042)
+    assert bilan is None, "figé alors que les kills venaient juste d'arriver"
+    h.avance(30)
+    bilan = s.relever(in_game=False, trackers=_tk(4), rp=9042)
+    assert bilan["partie"] == 4 and bilan["rp"] == 42
+
+
+def test_sans_le_moindre_mouvement_le_PLAFOND_tranche():
+    """Une partie sans kill et sans classé ne fait bouger aucun compteur : la
+    stabilité y est vraie dès le premier tour, et ne prouve rien. Le délai reste
+    le filet — c'est le seul cas où l'on attend encore."""
+    from bot.core.apex.kills_live import KillsDuLive
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0))
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(0))
+    h.avance(30)
+    assert s.relever(in_game=False, trackers=_tk(0)) is None
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S)
+    assert s.relever(in_game=False, trackers=_tk(0))["partie"] == 0
+
+
+# ── les points de rang ──────────────────────────────────────────────────────
+
+def test_le_RP_GAGNE_accompagne_le_bilan():
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0), rp=9000)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(3), rp=9087)
+    h.avance(30)
+    assert s.relever(in_game=False, trackers=_tk(3), rp=9087)["rp"] == 87
+
+
+def test_le_RP_PERDU_est_rendu_NEGATIF():
+    """Une partie classée ratée coûte des points, et c'est ce qui se commente le
+    mieux en direct."""
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0), rp=9000)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(0), rp=8965)
+    h.avance(30)
+    assert s.relever(in_game=False, trackers=_tk(0), rp=8965)["rp"] == -35
+
+
+def test_un_RP_IMMOBILE_ne_dit_RIEN():
+    """Demande de l'owner : « si les points ne bougent pas, ne rien afficher —
+    ça veut dire qu'il ne fait pas de rank ». Un zéro affiché ferait croire à
+    une partie classée blanche, ce qui n'existe pas."""
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0), rp=9000)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(4), rp=9000)
+    h.avance(30)
+    assert s.relever(in_game=False, trackers=_tk(4), rp=9000)["rp"] is None
+
+
+def test_un_compte_SANS_RANG_ne_dit_rien_non_plus():
+    """`rp=None` — le compte n'a pas de rang, ou l'API ne l'a pas donné. Un
+    absent ne se lit pas comme un zéro."""
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0))
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(4))
+    h.avance(30)
+    assert s.relever(in_game=False, trackers=_tk(4))["rp"] is None
+
+
+def test_une_partie_commencee_AVANT_qu_on_regarde_ne_chiffre_pas_son_RP():
+    """Même règle que pour les kills : sans point de départ, le RP du live entier
+    passerait pour celui d'une seule partie.
+
+    Sans base, il n'y a rien à guetter non plus — aucun mouvement ne peut être
+    constaté — donc c'est le plafond qui tranche, et il faut l'attendre."""
+    from bot.core.apex.kills_live import KillsDuLive
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(50), rp=9000, premier=True)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(55), rp=9100)
+    h.avance(KillsDuLive.ATTENTE_MAX_APRES_PARTIE_S + 1)
+    assert s.relever(in_game=False, trackers=_tk(55), rp=9100)["rp"] is None
+
+
+def test_un_SAUT_de_RP_invraisemblable_est_ecarte():
+    """Un changement de saison remet le RP à plat : le delta n'est plus le
+    résultat d'une partie. Même prudence que le plafond des kills."""
+    h = _Horloge()
+    s = _suivi(h)
+    s.relever(in_game=True, trackers=_tk(0), rp=9000)
+    h.avance(600)
+    s.relever(in_game=False, trackers=_tk(2), rp=1000)
+    h.avance(30)
+    bilan = s.relever(in_game=False, trackers=_tk(2), rp=1000)
+    assert bilan["rp"] is None
+    assert bilan["partie"] == 2          # les kills, eux, restent mesurés
 
 
 # ── les entrées tordues ─────────────────────────────────────────────────────

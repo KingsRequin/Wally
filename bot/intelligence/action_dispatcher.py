@@ -155,7 +155,12 @@ class ActionDispatcher:
         })
 
     def _note_overlay_refus(self, widget: str, extra: dict) -> None:
-        """Consigne le refus d'écraser une partie en cours, pour qu'il le lise.
+        """Consigne le refus opposé à une initiative, pour qu'il le lise.
+
+        Deux refus possibles, et ils ne se disent pas pareil : une partie du
+        même type tourne déjà, ou personne n'a demandé celle-ci. Le second est
+        le seul que cette voie puisse rencontrer sur un overlay vierge — c'est
+        lui qui ferme les ouvertures spontanées de bingo.
 
         `notify=False` : perception PASSIVE, comme le reste du flux du stream.
         Un refus ne doit surtout pas réveiller la cadence — ce serait rendre
@@ -163,14 +168,14 @@ class ActionDispatcher:
         """
         narrator = self._overlay_narrator
         try:
-            occupe = narrator.game_already_running(widget, **extra)
+            occupe = (narrator.game_already_running(widget, **extra)
+                      or narrator.refus_faute_de_demande(widget, **extra))
         except Exception as exc:  # noqa: BLE001 — un diagnostic ne casse pas un tick
             logger.warning("ACT show_overlay: état de l'overlay illisible: {e}", e=exc)
             return
         if not occupe:
             return
-        logger.info("ACT show_overlay: {w} refusé — une partie du même type "
-                    "tourne déjà", w=widget)
+        logger.info("ACT show_overlay: {w} refusé — {m}", w=widget, m=occupe[:70])
         try:
             from bot.core.stream_feed import active_stream_feed
 
@@ -570,6 +575,11 @@ class ActionDispatcher:
             # du chifoumi vient toujours de l'appelant — sur ce chemin il n'y en
             # a pas, et le modèle ne doit pas pouvoir en désigner un.
             extra.pop("opponent", None)
+            # Même règle pour la demande : `show_widget` n'ouvre un jeu qui dure
+            # que si un humain l'a réclamé, et ce chemin est précisément celui
+            # où personne ne l'a fait. Retiré des arguments du modèle, sinon il
+            # lui suffirait de l'écrire pour lever la garde.
+            extra.pop("sollicite", None)
             shown = self._overlay_narrator.show_widget(
                 widget, comment, result=args.get("result"), **extra
             )

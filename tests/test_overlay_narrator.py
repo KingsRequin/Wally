@@ -527,7 +527,7 @@ def test_le_widget_poll_est_route_vers_le_sondage():
     q = feed.subscribe()
     assert n.show_widget(
         "poll", "", question="vous aimez le chocolat ?",
-        options=["Oui", "Non"], seconds=30,
+        options=["Oui", "Non"], seconds=30, sollicite=True,
     ) is not None
     events = _evts(q)
     widget = next(e for e in events if e["type"] == "widget")
@@ -824,20 +824,20 @@ def test_la_comparaison_est_affichee():
 def test_le_bingo_s_ouvre_avec_ses_cases():
     n, feed, _ = _narrator()
     q = feed.subscribe()
-    assert n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"]) is not None
+    assert n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True) is not None
     ev = [e for e in _evts(q) if e["type"] == "widget"][0]
     assert ev["params"]["done"] == [False, False]
 
 
 def test_le_bingo_refuse_une_grille_d_une_case():
     n, _, _ = _narrator()
-    assert n.show_widget("bingo", "", cells=["seule"]) is None
+    assert n.show_widget("bingo", "", cells=["seule"], sollicite=True) is None
 
 
 def test_le_bingo_est_plafonne_a_neuf_cases():
     """Trois colonnes : au-delà, la grille déborde du cadre."""
     n, _, _ = _narrator()
-    out = n.show_widget("bingo", "", cells=[f"case {i}" for i in range(20)])
+    out = n.show_widget("bingo", "", cells=[f"case {i}" for i in range(20)], sollicite=True)
     assert len(out["cells"]) == 9
 
 

@@ -38,10 +38,10 @@ def _narrateur():
 
 def test_un_second_bingo_ne_remplace_pas_le_premier():
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"], sollicite=True)
     n.check_bingo("le ping")
 
-    assert n.show_widget("bingo", "", cells=["autre chose", "et encore"]) is None
+    assert n.show_widget("bingo", "", cells=["autre chose", "et encore"], sollicite=True) is None
     assert len(n._bingo["cells"]) == 3, "la grille en cours a été écrasée"
     assert n._bingo["done"][0] is True, "la case cochée a été perdue"
 
@@ -49,30 +49,30 @@ def test_un_second_bingo_ne_remplace_pas_le_premier():
 def test_un_second_sondage_ne_remplace_pas_le_premier():
     n = _narrateur()
     n.show_widget("poll", "", question="chocolat ou vanille ?",
-                  options=["chocolat", "vanille"], seconds=30)
+                  options=["chocolat", "vanille"], seconds=30, sollicite=True)
 
     assert n.show_widget("poll", "", question="et le café ?",
-                         options=["oui", "non"]) is None
+                         options=["oui", "non"], sollicite=True) is None
     assert n._poll["question"] == "chocolat ou vanille ?"
 
 
 def test_un_second_pendu_ne_remplace_pas_le_premier():
     n = _narrateur()
-    n.show_widget("hangman", "", word="octane", hint="une légende")
+    n.show_widget("hangman", "", word="octane", hint="une légende", sollicite=True)
     n._count_hangman("kingsrequin", "o")
     trouvees = set(n._hangman["found"])
 
-    assert n.show_widget("hangman", "", word="valkyrie") is None
+    assert n.show_widget("hangman", "", word="valkyrie", sollicite=True) is None
     assert n._hangman["word"] == "octane"
     assert n._hangman["found"] == trouvees
 
 
 def test_un_second_objectif_ne_remplace_pas_le_premier():
     n = _narrateur()
-    n.show_widget("goal", "", label="50 follows", target=50, kind="follow")
+    n.show_widget("goal", "", label="50 follows", target=50, kind="follow", sollicite=True)
     n.record_goal_event("follow")
 
-    assert n.show_widget("goal", "", label="10 subs", target=10, kind="sub") is None
+    assert n.show_widget("goal", "", label="10 subs", target=10, kind="sub", sollicite=True) is None
     assert n._goal["label"] == "50 follows"
     assert n._goal["count"] == 1
 
@@ -82,21 +82,21 @@ def test_un_second_objectif_ne_remplace_pas_le_premier():
 def test_cocher_une_case_reste_possible():
     """Le geste normal d'un bingo en cours. Le brider viderait le widget."""
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
 
     assert n.show_widget("bingo", "", check="le ping") is not None
 
 
 def test_remontrer_la_grille_reste_possible():
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
 
     assert n.show_widget("bingo", "") is not None
 
 
 def test_remontrer_le_pendu_reste_possible():
     n = _narrateur()
-    n.show_widget("hangman", "", word="octane", hint="une légende")
+    n.show_widget("hangman", "", word="octane", hint="une légende", sollicite=True)
 
     assert n.show_widget("hangman", "on en est là") is not None
 
@@ -104,10 +104,10 @@ def test_remontrer_le_pendu_reste_possible():
 def test_une_partie_annulee_libere_la_place():
     """C'est la sortie qu'on lui indique : elle doit vraiment marcher."""
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
     n.cancel("bingo")
 
-    assert n.show_widget("bingo", "", cells=["autre chose", "et encore"]) is not None
+    assert n.show_widget("bingo", "", cells=["autre chose", "et encore"], sollicite=True) is not None
     assert n._bingo["cells"] == ["autre chose", "et encore"]
 
 
@@ -137,7 +137,7 @@ def _bot(narrateur):
 
 def test_l_outil_dit_ce_qui_tourne_et_comment_recommencer():
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"], sollicite=True)
     n.check_bingo("le ping")
 
     out = json.loads(run_overlay_tool(
@@ -152,7 +152,7 @@ def test_le_refus_ne_passe_pas_pour_une_donnee_manquante():
     """« widget inconnu ou données manquantes » est un diagnostic FAUX ici :
     il envoie Wally corriger ses arguments, donc réessayer."""
     n = _narrateur()
-    n.show_widget("poll", "", question="chocolat ?", options=["oui", "non"])
+    n.show_widget("poll", "", question="chocolat ?", options=["oui", "non"], sollicite=True)
 
     out = json.loads(run_overlay_tool(
         _bot(n), {"widget": "poll", "question": "café ?", "options": ["a", "b"]}))
@@ -164,7 +164,7 @@ def test_le_refus_ne_passe_pas_pour_une_donnee_manquante():
 def test_le_pendu_refuse_sans_reveler_le_mot():
     """Le message peut voyager loin : il ne doit rien apprendre au chat."""
     n = _narrateur()
-    n.show_widget("hangman", "", word="octane", hint="une légende")
+    n.show_widget("hangman", "", word="octane", hint="une légende", sollicite=True)
 
     message = json.loads(run_overlay_tool(
         _bot(n), {"widget": "hangman", "word": "valkyrie"}))["message"]
@@ -177,7 +177,7 @@ def test_hors_live_le_refus_reste_celui_du_live():
     """Une partie qui traîne après la fin du stream ne doit pas masquer la vraie
     raison : personne ne regarde."""
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
     n._live = lambda: False
     n.is_active = lambda: False
 
@@ -203,7 +203,7 @@ def _dispatcher(narrateur):
 async def test_l_initiative_cognitive_n_ecrase_pas_la_partie():
     """La voie par laquelle les trois bingos du 2026-08-13 ont été ouverts."""
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage", "il chute"], sollicite=True)
 
     await _dispatcher(n)._act("show_overlay", {
         "widget": "bingo", "comment": "le live est lancé, je remplis le bingo",
@@ -222,7 +222,7 @@ async def test_le_refus_cognitif_remonte_au_flux_du_stream(monkeypatch):
     feed = StreamFeed()
     monkeypatch.setattr("bot.core.stream_feed._active", feed)
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
 
     await _dispatcher(n)._act("show_overlay", {
         "widget": "bingo", "cells": ["a", "b", "c"],
@@ -244,7 +244,7 @@ async def test_le_refus_cognitif_ne_reveille_pas_la_cadence(monkeypatch):
     feed.set_observer(observateur)
     monkeypatch.setattr("bot.core.stream_feed._active", feed)
     n = _narrateur()
-    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"])
+    n.show_widget("bingo", "", cells=["il blâme le ping", "il rage"], sollicite=True)
 
     await _dispatcher(n)._act("show_overlay", {
         "widget": "bingo", "cells": ["a", "b", "c"],

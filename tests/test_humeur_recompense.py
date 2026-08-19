@@ -232,6 +232,55 @@ async def test_une_recompense_NON_CREEE_ne_capture_rien():
     assert await _est_une_humeur(bot, "n-importe-quoi") is None
 
 
+class _EventFidele:
+    """Un achat tel que twitchio le donne VRAIMENT.
+
+    `__slots__` est ce qui compte : le vrai objet
+    (`CustomRewardRedemptionAddUpdateData`) en a, donc lire un attribut qui
+    n'existe pas n'y rend jamais un `MagicMock` complaisant. Le champ de saisie
+    s'y appelle `input` — le handler lisait `user_input`, qui est le nom du
+    champ dans le JSON de Twitch, pas celui de l'objet. Résultat en direct le
+    2026-08-19 : trois achats, trois « n'est pas une humeur que je connais »
+    devant un champ pourtant rempli, et 3 000 points rendus pour rien.
+    """
+
+    __slots__ = ("id", "user", "input", "reward")
+
+    def __init__(self, reward_id: str, texte: str) -> None:
+        self.id = "RD1"
+        self.user = MagicMock(name="bob")
+        self.user.name = "bob"
+        self.input = texte
+        self.reward = MagicMock()
+        self.reward.id = reward_id
+
+
+@pytest.mark.asyncio
+async def test_le_texte_du_viewer_arrive_JUSQU_A_l_humeur():
+    """Le bout en bout qui manquait : les tests appelaient `forcer_humeur` avec
+    un texte déjà en main, donc aucun ne voyait par quel attribut il arrive."""
+    from bot.twitch.events.humeur import CLE_50
+    from bot.twitch.events.redemptions import handle_redemption
+
+    bot = _bot()
+    bot.db.get_state = AsyncMock(side_effect=lambda cle: "reward-50" if cle == CLE_50 else "")
+
+    await handle_redemption(bot, _EventFidele("reward-50", "colère"))
+
+    bot.emotion.set_emotion.assert_called_once_with("anger", 0.5)
+    bot.twitch_api.refund_redemption.assert_not_awaited()
+
+
+def test_le_champ_de_saisie_porte_le_nom_que_twitchio_lui_donne():
+    """La source de vérité est la lib, pas notre mémoire. Un renommage chez
+    twitchio (v3 change toute l'API) doit casser ICI, pas en direct."""
+    from twitchio.ext.eventsub.models import CustomRewardRedemptionAddUpdateData
+
+    champs = set(CustomRewardRedemptionAddUpdateData.__slots__)
+    assert "input" in champs
+    assert "user_input" not in champs
+
+
 def test_les_deux_recompenses_sont_ARMEES_au_demarrage():
     """Sans ça, tout le module dormirait : rien ne créerait les récompenses, et
     aucun achat n'arriverait jamais."""

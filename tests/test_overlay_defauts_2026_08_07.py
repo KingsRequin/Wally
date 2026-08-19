@@ -83,7 +83,7 @@ def test_le_pendu_se_lance_par_show_widget():
     deux essais restants. Voir `tests/test_hangman.py` pour le détail."""
     n, feed = _n()
     q = feed.subscribe()
-    out = n.show_widget("hangman", "à vous", word="chaussette", hint="ça se perd")
+    out = n.show_widget("hangman", "à vous", word="chaussette", hint="ça se perd", sollicite=True)
     assert out is not None and out["widget"] == "hangman"
     assert _events(q, "widget")[-1]["params"]["hint"] == ""
 

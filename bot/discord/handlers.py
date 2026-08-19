@@ -541,9 +541,14 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
              if k not in ("widget", "comment", "result") and v is not None}
     if widget == "rps":
         extra["opponent"] = _display_only(requester)
+    extra.pop("sollicite", None)   # le drapeau vient d'ici, jamais du modèle
     try:
         shown = narrator.show_widget(
-            widget, str(args.get("comment") or ""), result=args.get("result"), **extra
+            widget, str(args.get("comment") or ""), result=args.get("result"),
+            # Quelqu'un a PARLÉ à Wally pour en arriver là : c'est exactement ce
+            # que veut dire ce drapeau, et c'est ce qui autorise l'ouverture
+            # d'un bingo, d'un sondage, d'un pendu ou d'un objectif.
+            sollicite=True, **extra
         )
     except Exception as exc:  # noqa: BLE001 — un widget raté ne casse pas la réponse
         logger.warning("show_overlay a échoué : {e}", e=exc)

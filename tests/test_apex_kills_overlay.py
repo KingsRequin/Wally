@@ -64,6 +64,39 @@ def test_des_valeurs_TORDUES_ne_partent_pas_a_l_ecran():
     assert n.show_apex_kills(partie="beaucoup", total=27, parties=6) is False
 
 
+# ── les points de rang ──────────────────────────────────────────────────────
+
+def test_le_RP_GAGNE_part_avec_le_bilan():
+    n = _narrateur()
+    assert n.show_apex_kills(partie=4, total=27, parties=6, rp=87) is True
+    assert _widget(n).kwargs["rp"] == 87
+
+
+def test_le_RP_PERDU_part_en_negatif():
+    n = _narrateur()
+    n.show_apex_kills(partie=0, total=27, parties=6, rp=-35)
+    assert _widget(n).kwargs["rp"] == -35
+
+
+def test_un_RP_qui_n_a_pas_BOUGE_ne_s_affiche_pas():
+    """Demande de l'owner : pas de rank, rien à montrer. Un « 0 RP » à l'écran
+    ferait croire à une partie classée qui n'a rien rapporté — ça n'existe pas.
+    """
+    n = _narrateur()
+    n.show_apex_kills(partie=4, total=27, parties=6, rp=0)
+    assert _widget(n).kwargs["rp"] is None
+    n.show_apex_kills(partie=4, total=27, parties=6)
+    assert _widget(n).kwargs["rp"] is None
+
+
+def test_la_page_sait_dessiner_le_RP():
+    from pathlib import Path
+
+    statique = Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+    assert "ak-rp" in (statique / "overlay.js").read_text(encoding="utf-8")
+    assert "ak-rp" in (statique / "overlay.html").read_text(encoding="utf-8")
+
+
 # ── le câblage ──────────────────────────────────────────────────────────────
 
 def test_l_element_est_declare_et_placable():

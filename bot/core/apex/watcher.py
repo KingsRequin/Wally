@@ -161,8 +161,14 @@ class ApexWatcher:
         if premier:
             suivi.nouveau_live()
             self._kills_live_id = live_courant
+        # Le RP part avec les trackers : le mode d'une partie n'existe NULLE
+        # PART dans l'API, donc un RP qui bouge est le seul signal exploitable
+        # qu'elle était classée. Absent plutôt qu'à zéro quand le compte n'a pas
+        # de rang — un zéro se lirait comme une partie classée blanche.
         bilan = suivi.relever(in_game=profile.in_game,
-                              trackers=profile.kill_trackers, premier=premier)
+                              trackers=profile.kill_trackers,
+                              rp=profile.rank.score if profile.rank else None,
+                              premier=premier)
         if bilan is not None and self._on_partie is not None:
             try:
                 self._on_partie(bilan)

@@ -32,7 +32,11 @@ def test_le_widget_est_affiche():
     bot, narrator = _bot()
     out = json.loads(run_overlay_tool(bot, {"widget": "coinflip", "comment": "allez"}))
     assert out["status"] == "ok"
-    narrator.show_widget.assert_called_once_with("coinflip", "allez", result=None)
+    # `sollicite=True` : cet outil n'est appelé que parce que quelqu'un a parlé
+    # à Wally. C'est ce qui distingue une demande d'une initiative, et ce qui
+    # autorise l'ouverture des jeux qui durent.
+    narrator.show_widget.assert_called_once_with("coinflip", "allez", result=None,
+                                                 sollicite=True)
 
 
 def test_hors_live_le_refus_est_explicite():

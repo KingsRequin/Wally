@@ -169,7 +169,12 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
                 bot,
                 acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
                 # Le texte saisi par le viewer : c'est lui qui dit l'émotion.
-                texte=str(getattr(event, "user_input", "") or ""),
+                # `input`, comme le duel plus bas — c'est le nom de l'ATTRIBUT
+                # chez twitchio. `user_input` est celui du champ dans le JSON
+                # de Twitch, et il ne survit pas au modèle : le lire rendait
+                # toujours "", donc « n'est pas une humeur que je connais »
+                # devant un champ rempli, et les points rendus pour rien.
+                texte=str(getattr(event, "input", "") or ""),
                 intensite=intensite,
                 reward_id=reward_id,
                 redemption_id=str(getattr(event, "id", "")),

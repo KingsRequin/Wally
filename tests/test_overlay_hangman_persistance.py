@@ -55,7 +55,7 @@ def test_le_redemander_sans_partie_ne_montre_rien():
 
 def test_un_mot_fourni_lance_bien_une_nouvelle_partie():
     n = _narrateur()
-    assert n.show_widget("hangman", "allez", word="octane") is not None
+    assert n.show_widget("hangman", "allez", word="octane", sollicite=True) is not None
     assert n._hangman["word"] == "octane"
 
 

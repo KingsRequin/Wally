@@ -111,7 +111,8 @@ def _afficher_bilan_partie(discord_bot, bilan: dict) -> None:
         return
     narrateur.show_apex_kills(partie=bilan.get("partie"),
                               total=bilan.get("total") or 0,
-                              parties=bilan.get("parties") or 0)
+                              parties=bilan.get("parties") or 0,
+                              rp=bilan.get("rp"))
 
 
 def _solder_pari_sur_partie(twitch_bot, bilan: dict) -> None:

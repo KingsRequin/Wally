@@ -71,6 +71,33 @@ def _vocal_diffuse() -> bool:
         return False
 
 
+def ouverture_de_partie(widget: str, **extra) -> str | None:
+    """Le nom de la partie que cet appel OUVRIRAIT, ou None.
+
+    Quatre widgets durent : le bingo, le sondage, le pendu, l'objectif. Les
+    autres ne font que passer. Mais un même widget ouvre OU continue — c'est
+    l'argument qui tranche : sans `cells`, un appel au bingo coche une case ou
+    remontre la grille ; sans `word`, le pendu remontre la sienne.
+
+    Source de vérité UNIQUE des deux règles qui pèsent sur ces parties : « on
+    n'en ouvre pas une par-dessus une autre » (`game_already_running`) et « on
+    n'en ouvre pas une que personne n'a demandée » (`refus_faute_de_demande`).
+    Deux listes finiraient par diverger, et le jour où l'une oublie un widget,
+    c'est un bingo de plus à l'écran.
+    """
+    widget = (widget or "").strip()
+    if widget == "bingo":
+        cases = [c for c in (extra.get("cells") or []) if str(c).strip()]
+        return "bingo" if cases else None
+    if widget == "poll":
+        return "sondage"
+    if widget == "hangman":
+        return "pendu" if str(extra.get("word") or "").strip() else None
+    if widget == "goal":
+        return "objectif"
+    return None
+
+
 def planning_url() -> str:
     """URL publique du planning, pour le chat.
 
@@ -1456,7 +1483,8 @@ class OverlayNarrator:
             logger.debug("Overlay : relecture des widgets impossible ({e})", e=exc)
 
     def show_widget(
-        self, widget: str, comment: str = "", result=None, **extra
+        self, widget: str, comment: str = "", result=None, *,
+        sollicite: bool = False, **extra
     ) -> Optional[dict]:
         """Affiche un widget décidé par Wally, avec son commentaire.
 
@@ -1464,6 +1492,12 @@ class OverlayNarrator:
         SACHE ce qui s'affiche : « lance un dé » doit pouvoir répondre le
         résultat, pas « c'est à l'écran ». None si le widget est inconnu, hors
         live, ou si les données manquent : rien n'est alors publié.
+
+        `sollicite` dit qu'un HUMAIN a demandé ce qui s'affiche. Il ne concerne
+        que les quatre jeux qui durent, et son défaut est `False` : un chemin
+        d'appel qu'on oublierait de marquer refusera d'en ouvrir un, au lieu de
+        rouvrir le bingo du 2026-08-19. Il vient de l'appelant, JAMAIS du
+        modèle.
         """
         widget = (widget or "").strip()
         if widget not in self._DIRECT_WIDGETS or not self._live():
@@ -1488,6 +1522,15 @@ class OverlayNarrator:
         if occupe is not None:
             logger.info("Overlay: '{w}' refusé — une partie du même type tourne déjà",
                         w=widget)
+            return None
+
+        # Et une partie qui dure ne s'ouvre pas toute seule. Même endroit, même
+        # raison : c'est le seul point que TOUS les chemins traversent. Wally
+        # garde l'initiative sur tout ce qui passe — un meme, un dé, une roue —
+        # et sur la conduite de la partie une fois ouverte : cocher, remontrer,
+        # annuler. Il n'a plus celle de la commencer.
+        if not sollicite and ouverture_de_partie(widget, **extra) is not None:
+            logger.info("Overlay: '{w}' refusé — personne ne l'a demandé", w=widget)
             return None
 
         params: dict = {}
@@ -2079,12 +2122,13 @@ class OverlayNarrator:
         POURQUOI rien n'a bougé.
         """
         widget = (widget or "").strip()
+        # Ce qui ne commence pas une partie n'en écrase aucune : une coche, un
+        # rappel de grille, un dé. `ouverture_de_partie` porte ce critère pour
+        # tout le module.
+        if ouverture_de_partie(widget, **extra) is None:
+            return None
 
         if widget == "bingo":
-            # Sans `cells`, l'appel ne rouvre rien : c'est une coche ou un rappel
-            # de grille, les deux gestes normaux d'un bingo en cours.
-            if not [c for c in (extra.get("cells") or []) if str(c).strip()]:
-                return None
             if not self._bingo:
                 return None
             done = sum(1 for d in self._bingo["done"] if d)
@@ -2111,9 +2155,6 @@ class OverlayNarrator:
             )
 
         if widget == "hangman":
-            # Sans `word`, l'appel remontre la partie en cours : rien à refuser.
-            if not str(extra.get("word") or "").strip():
-                return None
             game = self._hangman
             if not game:
                 return None
@@ -2143,6 +2184,38 @@ class OverlayNarrator:
             )
 
         return None
+
+    def refus_faute_de_demande(self, widget: str, **extra) -> Optional[str]:
+        """Pourquoi ce jeu ne s'est pas ouvert : personne ne l'avait demandé.
+
+        Le pendant de `game_already_running`, et pour la même raison : un refus
+        muet se rejoue. Celui-ci nomme la règle ET donne la sortie — proposer
+        d'abord, lancer si on lui dit oui. C'est ce qui garde l'envie de faire
+        vivre le stream sans imposer une partie à personne.
+
+        Prédicat PUR : il ne publie rien et ne change rien. Il ne dit pas si la
+        partie a été refusée — l'appelant le sait — mais ce qu'il y avait à en
+        dire si elle l'a été.
+
+        Muet quand le refus vient d'AILLEURS (hors live, widget masqué sur
+        toutes les scènes) : un motif plausible mais faux se retient et se
+        rejoue, alors qu'un silence laisse au moins la question ouverte.
+        """
+        partie = ouverture_de_partie(widget, **extra)
+        if partie is None:
+            return None
+        if not self._live() or not self._widget_affichable(widget):
+            return None
+        return (
+            f"Rien affiché : un {partie} ne s'ouvre que si quelqu'un le demande. "
+            "C'est une partie qui dure et qui occupe l'écran du live — la "
+            "lancer sans qu'on l'ait réclamée, c'est décider à la place du "
+            "streamer et de son chat. Propose-le plutôt : dis dans le chat que "
+            f"tu as un {partie} sous le coude, et lance-le si on te dit oui. "
+            "Tout le reste — un meme, un dé, la roue, un message épinglé — "
+            "s'affiche quand tu veux, et tu peux toujours cocher, remontrer ou "
+            "annuler une partie déjà ouverte."
+        )
 
     def show_prediction(self, bet: str, *, outcome: str = "",
                         right: int = 0, total: int = 0) -> bool:
@@ -2578,7 +2651,8 @@ class OverlayNarrator:
         logger.info("Overlay : morceau affiché — {a} — {t}", a=artiste, t=titre)
         return True
 
-    def show_apex_kills(self, *, partie, total: int, parties: int) -> bool:
+    def show_apex_kills(self, *, partie, total: int, parties: int,
+                        rp: int | None = None) -> bool:
         """Le bilan d'une partie : ses kills, et le cumul du live. Vrai si parti.
 
         Refusé quand `partie` vaut `None` — une partie illisible (trackers
@@ -2588,16 +2662,22 @@ class OverlayNarrator:
 
         Un vrai zéro, lui, s'affiche : mourir sans tuer est une partie mesurée,
         et c'est même ce que le chat commentera le plus.
+
+        `rp` est le gain (ou la perte) de points de rang, et il n'est rendu QUE
+        s'il a bougé : un RP immobile veut dire « pas de classé », pas « zéro
+        point » — l'afficher inventerait une partie classée blanche.
         """
         if not isinstance(partie, int) or isinstance(partie, bool) or partie < 0:
             return False
         if not self._live():
             return False
         self._last_event_at = time.monotonic()
+        gagnes = rp if isinstance(rp, int) and not isinstance(rp, bool) and rp else None
         self._feed.widget("apex_kills", kills=int(partie), total=max(0, int(total)),
-                          games=max(0, int(parties)))
-        logger.info("Overlay : bilan de partie — {k} kill(s), {t} sur le live",
-                    k=partie, t=total)
+                          games=max(0, int(parties)), rp=gagnes)
+        logger.info("Overlay : bilan de partie — {k} kill(s), {t} sur le live{r}",
+                    k=partie, t=total,
+                    r=f", {gagnes:+d} RP" if gagnes is not None else "")
         return True
 
     def show_counter(self, text: str) -> bool:

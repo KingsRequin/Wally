@@ -937,6 +937,16 @@
       cumul.textContent = `${Number(p.total) || 0} sur le live · ${parties} partie${parties > 1 ? "s" : ""}`;
       droite.append(quoi, cumul);
       box.append(chiffre, droite);
+      // Les points de rang, SEULEMENT s'ils ont bougé : le serveur n'envoie
+      // rien quand la partie n'était pas classée, et un « 0 RP » à l'écran
+      // inventerait une partie classée blanche. Le signe porte la couleur —
+      // vert on monte, rouge on descend, sans un mot de plus.
+      const rp = Number(p.rp);
+      if (Number.isFinite(rp) && rp !== 0) {
+        const pastille = el("div", "ak-rp" + (rp > 0 ? " gagne" : " perd"));
+        pastille.textContent = `${rp > 0 ? "+" : "−"}${Math.abs(rp)} RP`;
+        box.append(pastille);
+      }
       return box;
     },
 

@@ -545,6 +545,18 @@
     }
     .apex-kills .ak-quoi { font-size: 15px; font-weight: 600; }
     .apex-kills .ak-cumul { font-size: 12px; color: var(--dim); margin-top: 3px; }
+    /* Les points de rang, à part : ils ne sont là qu'une partie sur deux, et
+       les coller au cumul ferait sauter la carte d'une largeur à l'autre sans
+       qu'on comprenne pourquoi. Détachée par un trait, la pastille se lit comme
+       un ajout, pas comme une colonne qui manque le reste du temps. */
+    .apex-kills .ak-rp {
+      padding-left: 14px;
+      border-left: 1px solid var(--line);
+      font-size: 19px; font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .apex-kills .ak-rp.gagne { color: var(--win); }
+    .apex-kills .ak-rp.perd { color: var(--lose); }
 
     /* Musique en cours — une étiquette, pas un spectacle : elle s'installe et
        laisse la scène aux autres. */
