@@ -32,18 +32,37 @@ async def test_azure_stt_empty_on_nomatch():
 
 @pytest.mark.asyncio
 async def test_azure_tts_returns_audio_bytes():
+    """Le chemin nominal : le flux rend des octets, et le SSML porte voix + style.
+
+    Réécrit le 2026-08-19. Ce test mockait `speak_ssml_async` — le chemin batch,
+    disparu au passage en streaming. `read_data` n'étant plus stubbé, il rendait
+    un MagicMock : jamais `== 0`, donc la boucle de `_stream_sync` ne sortait
+    jamais et empilait un chunk par tour. 10 Go pris, CT100 (14 Go) et son swap
+    saturés, hôte Proxmox à 201 de load — DNS du réseau et bots compris. Un mock
+    laissé non stubbé ne fait pas échouer un test : il le fait tourner sans fin.
+
+    Le CONTENU ne peut pas être asserté ici : `read_data` remplit le buffer par
+    la couche native — `bytes(3840)` est bien l'idiome des exemples Azure, pas
+    une erreur — ce qu'un MagicMock Python ne sait pas simuler. On vérifie donc
+    la quantité livrée, et surtout que la boucle SORT.
+    """
     with patch("bot.discord.voice.providers.speechsdk") as sdk:
         synth = MagicMock()
-        result = MagicMock()
-        result.reason = sdk.ResultReason.SynthesizingAudioCompleted
-        result.audio_data = b"PCMDATA"
-        synth.speak_ssml_async.return_value.get.return_value = result
+        synth.start_speaking_ssml_async.return_value.get.return_value = MagicMock()
         sdk.SpeechSynthesizer.return_value = synth
+        stream = MagicMock()
+        # 7 octets au premier tour, puis fin de flux. Une LISTE et non un
+        # `return_value` : si la boucle demandait un tour de trop, le test
+        # lèverait StopIteration au lieu de partir à l'infini.
+        stream.read_data.side_effect = [7, 0]
+        sdk.AudioDataStream.return_value = stream
+
         tts = AzureTTS(key="k", region="r", voice="fr-FR-Marc:MAI-Voice-2")
         audio = await tts.synthesize("salut", style="whispering")
-        assert audio == b"PCMDATA"
+
+        assert len(audio) == 7
         # le SSML envoyé contient bien la voix et le style
-        ssml = synth.speak_ssml_async.call_args.args[0]
+        ssml = synth.start_speaking_ssml_async.call_args.args[0]
         assert "fr-FR-Marc:MAI-Voice-2" in ssml
         assert 'style="whispering"' in ssml
 

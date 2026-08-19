@@ -134,3 +134,35 @@ def reset_identity_after_test():
     identity._NAME = "Wally"
     identity._CREATOR = "KingsRequin"
     identity._OWNER = ""
+
+
+def pytest_configure(config):
+    """Plafonne la mémoire de la suite — un test qui fuit ne doit pas tuer la machine.
+
+    Vécu le 2026-08-19 : `test_azure_tts_returns_audio_bytes` remplaçait tout
+    `speechsdk` par un MagicMock. La boucle `while True: n = stream.read_data(...)`
+    de `AzureTTS._stream_sync` recevait alors un MagicMock — jamais `== 0`, donc
+    jamais de sortie — et empilait un chunk par tour. Le process a pris 10 Go,
+    saturé CT100 (14 Go) et son swap, et mis l`hôte Proxmox à 201 de load : DNS
+    du réseau et bots compris. Pire, la session qui lançait la suite la relançait
+    après chaque OOM-kill du noyau.
+
+    La suite entière tient dans 509 Mo de RSS pour 1,18 Go d`espace d`adressage ;
+    3 Go laissent 2,5× de marge. Au-delà, Python lève MemoryError et le test
+    tombe — au lieu que le noyau tue la machine. `RLIMIT_AS` et pas `RLIMIT_DATA`
+    parce que seul le premier couvre aussi les mmap.
+
+    Réglable par WALLY_TESTS_MEM_MAX_MB ; 0 désactive le plafond.
+    """
+    import os
+    import resource
+
+    plafond_mo = int(os.environ.get("WALLY_TESTS_MEM_MAX_MB", "3072"))
+    if plafond_mo <= 0:
+        return
+    plafond = plafond_mo * 1024 * 1024
+    souple, dur = resource.getrlimit(resource.RLIMIT_AS)
+    # Ne jamais RELEVER un plafond déjà posé par l`appelant (cgroup, ulimit).
+    if dur != resource.RLIM_INFINITY and dur < plafond:
+        return
+    resource.setrlimit(resource.RLIMIT_AS, (plafond, dur))
