@@ -410,23 +410,23 @@ async def main() -> None:
             async def _go() -> None:
                 try:
                     if went_live:
-                        from bot.discord.voice.channel_memory import resolve_voice_channel_id
+                        from bot.discord.voice.channel_memory import resolve_voice_channel
 
-                        channel_id = await resolve_voice_channel_id(
-                            db, config.bot.stream_voice_channel_id
+                        # Le salon est VÉRIFIÉ présent : celui retenu la veille
+                        # peut avoir été supprimé (salon vocal éphémère), auquel
+                        # cas on retombe sur celui de la config.
+                        channel = await resolve_voice_channel(
+                            discord_bot, db, config.bot.stream_voice_channel_id
                         )
                         # Le vocal de CE salon part désormais dans le live : il
                         # cesse d'être privé, on peut le remettre au prompt.
                         # Ouvert avant le retour anticipé ci-dessous — Wally est
                         # souvent déjà dans le salon quand le live démarre.
-                        voice_transcript.open_broadcast(channel_id)
+                        voice_transcript.open_broadcast(channel.id if channel else None)
                         if vs.is_connected:
                             return          # déjà en vocal : on ne le déplace pas
-                        if not channel_id:
-                            return
-                        channel = discord_bot.get_channel(channel_id)
                         if channel is None:
-                            logger.warning("voice: salon de stream {c} introuvable", c=channel_id)
+                            logger.warning("voice: aucun salon de stream joignable")
                             return
                         await vs.join(channel, listen_only=True, only_if_free=True)
                     elif ended:
@@ -520,23 +520,23 @@ async def main() -> None:
                         # la captation ouverte sur un vocal redevenu privé.
                         voice_transcript.close_broadcast()
                         continue
-                    from bot.discord.voice.channel_memory import resolve_voice_channel_id
+                    from bot.discord.voice.channel_memory import resolve_voice_channel
 
-                    channel_id = await resolve_voice_channel_id(
-                        db, config.bot.stream_voice_channel_id
-                    )
                     # Résolu AVANT le test de connexion : après un redémarrage en
                     # plein stream, aucune transition n'a eu lieu, donc personne
                     # n'a ouvert la captation — et Wally est peut-être déjà dans
                     # le salon, auquel cas les deux tests suivants sortent d'ici.
-                    voice_transcript.open_broadcast(channel_id)
+                    # La résolution VÉRIFIE que le salon existe encore : un salon
+                    # éphémère retenu la veille laissait ce veilleur passer son
+                    # tour en silence, tout le live durant.
+                    channel = await resolve_voice_channel(
+                        discord_bot, db, config.bot.stream_voice_channel_id
+                    )
+                    voice_transcript.open_broadcast(channel.id if channel else None)
                     if vs.is_connected or vs.listen_optout:
                         continue
-                    if not channel_id:
-                        continue
-                    channel = discord_bot.get_channel(channel_id)
                     if channel is None:
-                        continue        # cache Discord pas encore prêt : au tour suivant
+                        continue        # rien de joignable : déjà signalé par la résolution
                     logger.info("voice: live en cours sans Wally → retour en écoute")
                     await vs.join(channel, listen_only=True, only_if_free=True)
                 except Exception as e:  # noqa: BLE001 — jamais bloquant

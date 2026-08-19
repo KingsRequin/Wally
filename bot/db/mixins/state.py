@@ -32,3 +32,8 @@ class StateMixin:
     async def get_state(self, key: str) -> str | None:
         row = await self.fetch_one("SELECT value FROM bot_state WHERE key = ?", (key,))
         return row["value"] if row else None
+
+    async def delete_state(self, key: str) -> None:
+        """Efface une clé. `set_state(key, None)` ne le fait PAS : il range la
+        chaîne « None », que `get_state` rend ensuite comme une vraie valeur."""
+        await self.execute("DELETE FROM bot_state WHERE key = ?", (key,))
