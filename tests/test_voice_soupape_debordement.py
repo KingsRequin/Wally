@@ -147,3 +147,35 @@ def test_le_plancher_s_applique_avant_la_soupape():
     p.speech_end_sync("azrael", array.array("h", [30] * 6400).tobytes())  # 0,4 s, rms 30
     assert lances == []
 
+
+
+def test_un_fragment_court_mais_audible_ne_consomme_pas_de_place_payante():
+    """Le plancher local (0,3 s) laisse passer ce que le moteur local sait
+    rendre — mesuré, son plus court énoncé transcrit tient en 0,4 s. La soupape
+    PAYANTE, elle, rend du vide sur ces durées : 40 succès sur 6 297 appels
+    sous 0,5 s (logs d'août). Ces fragments occupaient les places et affamaient
+    les énoncés de 2–5 s, qui réussissaient à 77 %.
+
+    On vérifie donc le CONTRAT, pas le seuil : un fragment audible mais trop
+    court n'atteint jamais le fournisseur et ne prend aucune place en vol."""
+    soupape = _Soupape()
+    p, lances = _pipeline(overflow=soupape)
+
+    # 0,4 s à rms 500 : au-dessus du plancher local, sous celui de la soupape.
+    fragment = array.array("h", [500] * 6400).tobytes()
+    assert p._deborder("azrael", fragment) is False
+    assert soupape.recus == []
+    assert p._overflow_inflight == 0
+    assert lances == []
+
+
+def test_un_enonce_assez_long_passe_toujours_a_la_soupape():
+    """Garde-fou du garde-fou : le plancher de la soupape ne doit pas se
+    refermer sur ce qu'elle transcrit correctement. Sans ce test, monter la
+    constante par mégarde couperait le chemin sans qu'aucun test ne bronche."""
+    soupape = _Soupape()
+    p, lances = _pipeline(overflow=soupape)
+
+    assert p._deborder("azrael", _ENONCE) is True   # 1 s
+    assert p._overflow_inflight == 1
+    assert len(lances) == 1

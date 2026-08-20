@@ -32,6 +32,45 @@ _BACKOFF_MAX_MULT = 4  # plafond du backoff injoignable = health_cache_s × 4 (e
 # ~4 s de retard sur ce CPU ; au-delà, la réaction arrive hors sujet.
 _MAX_PENDING_FALLBACK = 2
 
+# Durée d'audio en dessous de laquelle la soupape PAYANTE ne vaut pas d'être
+# engagée. Un tel fragment part quand même en local, qui est gratuit — on ne
+# jette rien, on cesse seulement de payer une place rare pour du vide.
+#
+# MESURÉ, pas choisi (logs d'août, 14 537 appels à la soupape) :
+#
+#     durée      part des appels   texte rendu
+#     < 0,5 s          43 %           0,6 %     ← 40 succès sur 6 297 appels
+#     0,5–1 s          37 %           2,0 %
+#     1–2 s            13 %          15,3 %
+#     2–5 s           2,5 %          77,2 %
+#     5–15 s          0,3 %         100,0 %
+#
+# Ce n'est PAS le rate limit qui tue les fragments courts : le soir du
+# 2026-08-19, sous 429 massif, les segments de 2–5 s passaient encore à 76,5 %
+# et ceux de 5–15 s à 100 %. Un fragment de 0,4 s ne contient simplement rien
+# à transcrire, et le fournisseur facture la réponse vide.
+#
+# Le coût réel n'est pas l'argent (0,61 $ sur 8 487 appels) mais les PLACES :
+# 68 314 « soupape saturée » ce soir-là, 13 716 énoncés perdus pour 958
+# rattrapés. Les fragments affamaient les énoncés qui, eux, marchaient.
+#
+# ⚠️ On s'arrête à 0,5 s parce que c'est là que la mesure est SÛRE. La bande
+# 0,5–1 s reste trouble (1,9 % sous orage, mais 22 % sur 27 appels hors orage —
+# trop peu pour trancher). La ligne « fragment trop court » ci-dessous porte la
+# durée : c'est elle qui permettra de re-mesurer et, peut-être, de monter.
+#
+# DISTINCT de `_DUREE_PLANCHER_S` (0,3 s, `audio.py`), qui garde son propre
+# seuil : deux chemins, deux économies, deux planchers.
+#
+# Objection examinée avant de poser cette garde : un PRIORITAIRE privé de GPU
+# est censé aller à la soupape AVANT le local, parce que le local lui rendait
+# « Biri birip » le 2026-08-14. Refuser son fragment ici le renvoie donc au
+# local. Vérifié dans les logs plutôt que supposé — sur les segments de moins
+# de 0,5 s, le moteur local rend **4 textes sur 21 956, soit 0,0 %** : il ne
+# rend pas du charabia, il ne rend RIEN. On échange donc un appel payant qui
+# rend vide contre un calcul local qui rend vide, en récupérant la place.
+_DUREE_MIN_SOUPAPE_S = 0.5
+
 
 class RemoteSTTSession:
     """Une connexion WebSocket vers le serveur STT distant, pour un seul locuteur."""
@@ -549,6 +588,16 @@ class RemoteStreamingSTT:
         distinction, on paie des énoncés sans savoir pourquoi.
         """
         if self._overflow is None:
+            return False
+        duree = len(segment) / 32000
+        if duree < _DUREE_MIN_SOUPAPE_S:
+            # Journalisé avec sa durée : c'est cette ligne qui rend le seuil
+            # re-mesurable. Sans elle, on ne saurait jamais ce qu'on écarte.
+            logger.info(
+                "voice: fragment de {s} trop court pour la soupape "
+                "({d:.1f} s < {m:.1f} s) — place non consommée",
+                s=speaker_id, d=duree, m=_DUREE_MIN_SOUPAPE_S,
+            )
             return False
         if self._overflow_inflight >= self._overflow_max_inflight:
             logger.info("voice: soupape saturée ({n} en vol) — énoncé de {s} non repris",
