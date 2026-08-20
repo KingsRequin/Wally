@@ -19,6 +19,25 @@ if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
 
+# Espacement entre deux créations de souscription EventSub, en secondes.
+#
+# Il valait 1,5 s, posé après le 429 du 2026-08-05. Compté dans les logs le
+# 2026-08-20 : **14 souscriptions différées sur 458 démarrages EventSub en
+# août, dont 12 le seul 2026-08-05** — et zéro depuis le 12 août, soit ~446
+# démarrages d'affilée sans un refus. Le garde-fou payait donc ~15 s à chaque
+# boot (10 souscriptions × 1,5 s) pour un incident dont la cause était
+# ailleurs : Twitch renvoie un 429 À TORT à la place d'un 400 quand la limite
+# de transports WebSocket est atteinte (bug reconnu, `twitchdev/issues#958`),
+# ce que corrigent déjà `_patch_socket_tracking()` et le nettoyage des
+# souscriptions mortes en amont.
+#
+# On garde un espacement, mais court : assez pour ne pas partir en rafale
+# franche, assez petit pour que le chat Twitch revienne en quelques secondes.
+# ⚠️ Le détecteur de régression est la ligne « EventSub subscription
+# deferred » : si elle réapparaît, c'est ICI qu'il faut remonter.
+_ESPACEMENT_SOUSCRIPTIONS = 0.3
+
+
 async def start_eventsub_client(bot: "WallyTwitch") -> None:
     """Create an EventSub WebSocket client and subscribe to channel events.
 
@@ -96,13 +115,19 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
         # Des FABRIQUES, pas des coroutines : une coroutine ne s'await qu'une fois,
         # or les échecs 429 sont retentés plus tard (cf. _retry_failed_subscriptions).
         subscriptions: list[tuple[str, object]] = [
+            # `chat` EN PREMIER : c'est la seule dont l'absence rende Wally
+            # littéralement SOURD sur la chaîne home (le chat n'arrive que par
+            # EventSub). Troisième, elle n'était vivante qu'une dizaine de
+            # secondes après le début de la mise en place. Et le commentaire
+            # ci-dessous le dit : quand le 429 frappe, il frappe par POSITION —
+            # la première place est donc aussi la mieux protégée.
+            ("chat", lambda: _subscribe_chat(client, broadcaster_id, bot_id, bot_token)),
             ("follow", lambda: client.subscribe_channel_follows_v2(
                 broadcaster=broadcaster_id, moderator=bot_id, token=bot_token
             )),
             ("raid", lambda: client.subscribe_channel_raid(
                 token=bot_token, to_broadcaster=broadcaster_id
             )),
-            ("chat", lambda: _subscribe_chat(client, broadcaster_id, bot_id, bot_token)),
         ]
 
         if streamer_token:
@@ -143,7 +168,11 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             )
 
         failed: list[tuple[str, object]] = []
-        for name, make_sub in subscriptions:
+        for rang, (name, make_sub) in enumerate(subscriptions):
+            # ENTRE deux créations, jamais après la dernière : le sommeil final
+            # ne protégeait rien et retardait le boot d'autant.
+            if rang:
+                await asyncio.sleep(_ESPACEMENT_SOUSCRIPTIONS)
             try:
                 await make_sub()
                 logger.info("EventSub subscribed: {sub}", sub=name)
@@ -156,7 +185,6 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                     "EventSub subscription deferred [{sub}]: {e}", sub=name, e=exc
                 )
                 failed.append((name, make_sub))
-            await asyncio.sleep(1.5)  # avoid 429 rate-limit on rapid subscription bursts
 
         # Chaînes invitées : chat seulement
         for guest_name in bot.config.twitch.guest_channels:
