@@ -874,6 +874,18 @@ class OverlayNarrator:
             pendu = {"word": jeu["word"], "display": jeu["display"],
                      "hint": jeu["hint"], "found": sorted(jeu["found"]),
                      "missed": list(jeu["missed"])}
+        sondage = None
+        if self._poll:
+            sondage = {
+                "question": self._poll["question"],
+                "options": list(self._poll["options"]),
+                "votes": dict(self._poll["votes"]),
+                # Le temps qui RESTE, jamais l'échéance : `ends_at` est un
+                # `time.monotonic()`, qui repart de zéro dans le process suivant.
+                # Rangé tel quel, un sondage de 60 s se serait cru terminé depuis
+                # une éternité — ou pas encore commencé.
+                "restant": max(0.0, self._poll["ends_at"] - time.monotonic()),
+            }
         return {
             "stream_key": self._stream_key(),
             # Repli quand le live n'est pas identifiable : au démarrage, le
@@ -884,6 +896,13 @@ class OverlayNarrator:
             "bingo": bingo,
             "hangman": pendu,
             "goal": dict(self._goal) if self._goal else None,
+            "poll": sondage,
+            "last_poll": dict(self._last_poll) if self._last_poll else None,
+            # Le podium et les saluts : ni l'un ni l'autre n'est un « jeu », mais
+            # tous deux se voient à l'écran. Cinq rebuilds dans une soirée, c'est
+            # cinq fois « tiens, revoilà machin ! » à la même personne.
+            "talkers": dict(self._talkers),
+            "greeted": sorted(self._greeted),
         }
 
     def _meme_session(self, data: dict) -> bool:
@@ -982,6 +1001,52 @@ class OverlayNarrator:
         if isinstance(goal, dict) and goal.get("label"):
             self._goal = dict(goal)
             repris.append("objectif")
+
+        dernier = data.get("last_poll")
+        if isinstance(dernier, dict) and dernier.get("question"):
+            # Repris AVANT le sondage en cours : si celui-ci a expiré pendant la
+            # coupure, sa clôture écrasera cette valeur par la sienne, qui est
+            # plus récente. L'ordre inverse aurait rendu l'ancien résultat à
+            # « alors, ça a donné quoi ? ».
+            self._last_poll = dict(dernier)
+
+        sondage = data.get("poll")
+        if isinstance(sondage, dict) and len(sondage.get("options") or []) >= 2:
+            restant = sondage.get("restant")
+            restant = float(restant) if isinstance(restant, (int, float)) else 0.0
+            self._poll = {
+                "question": str(sondage.get("question") or ""),
+                "options": [str(o) for o in sondage["options"]],
+                # Les votes déjà exprimés : sans eux, les viewers revoteraient
+                # sans le savoir, et le dépouillement ne compterait que la fin.
+                "votes": {str(k): int(v) for k, v in
+                          (sondage.get("votes") or {}).items()
+                          if isinstance(v, int) and not isinstance(v, bool)
+                          and 0 <= v < len(sondage["options"])},
+                "ends_at": time.monotonic() + max(0.0, restant),
+            }
+            if restant <= 0:
+                # Il s'est terminé pendant la coupure. On le DÉPOUILLE plutôt
+                # que de le laisser à l'écran sans gagnant : c'est la clôture
+                # qui donne le résultat, et sans elle Wally n'a rien à répondre.
+                self.close_poll()
+                repris.append("sondage clos")
+            else:
+                # La clôture planifiée vit dans une tâche asyncio, morte avec le
+                # process. Sans réarmement, le dépouillement n'arrivait JAMAIS.
+                self._publish_poll(int(restant))
+                self._schedule_poll_close(int(restant))
+                repris.append(f"sondage ({int(restant)} s)")
+
+        talkers = data.get("talkers")
+        if isinstance(talkers, dict):
+            self._talkers = {str(k): int(v) for k, v in talkers.items()
+                             if isinstance(v, int) and not isinstance(v, bool)}
+        greeted = data.get("greeted")
+        if isinstance(greeted, list):
+            self._greeted = {str(g) for g in greeted}
+            if self._greeted:
+                repris.append(f"{len(self._greeted)} salut(s) déjà faits")
 
         if not repris:
             return
@@ -1869,6 +1934,9 @@ class OverlayNarrator:
         if key in self._greeted or not self._may_react():
             return
         self._greeted.add(key)
+        # Une fois par personne et par live : l'écriture est rare, et l'oublier
+        # coûte un « tiens, revoilà machin ! » de plus à chaque rebuild.
+        self._planifier_flush()
 
         if days is None:
             kind = f"{author} débarque pour la première fois"
@@ -2981,6 +3049,9 @@ class OverlayNarrator:
         # jamais annoncer de gagnant, et Wally ne saurait pas quoi répondre si on
         # lui demande le résultat.
         self._schedule_poll_close(seconds)
+        # Rangé tout de suite : un sondage dure jusqu'à deux minutes, et un
+        # rebuild tombe volontiers pile dedans.
+        self._planifier_flush()
         return True
 
     def _schedule_poll_close(self, seconds: int) -> None:
@@ -3051,6 +3122,9 @@ class OverlayNarrator:
             except Exception as exc:  # noqa: BLE001 — jamais bloquant
                 logger.debug("Overlay: résultat du sondage non consigné: {e}", e=exc)
         logger.info("Overlay: sondage clos — {r}", r=self.poll_result_line())
+        # Le résultat est ce que Wally répondra à « ça a donné quoi ? » : il doit
+        # survivre au rebuild autant que le sondage lui-même.
+        self._planifier_flush()
         return result
 
     def poll_result_line(self) -> str:
@@ -3115,6 +3189,7 @@ class OverlayNarrator:
         poll["votes"][voter] = index
         self._publish_poll(max(1, int(poll["ends_at"] - time.monotonic())))
         logger.info("Sondage : vote vocal de {a} → {n}", a=author, n=index + 1)
+        self._planifier_flush()
         return True
 
     def _count_vote(self, author: str, text: str) -> None:
@@ -3136,6 +3211,10 @@ class OverlayNarrator:
             return  # déjà ce vote : rien de neuf à publier
         poll["votes"][voter] = index          # un changement d'avis remplace
         self._publish_poll(max(1, int(poll["ends_at"] - time.monotonic())))
+        # Un vote perdu est un viewer qui a voté pour rien. L'écriture est bornée
+        # par le sondage lui-même (deux minutes au plus), pas par le débit du
+        # chat — les messages qui ne sont pas un vote sortent bien avant ici.
+        self._planifier_flush()
 
     def _publish_poll(self, seconds_left: int) -> None:
         poll = self._poll
