@@ -89,8 +89,14 @@ class ApexClient:
             logger.error("Apex {ep} HTTP {code}", ep=endpoint, code=exc.response.status_code)
             return f"Apex API error (HTTP {exc.response.status_code})"
         except Exception as exc:
-            logger.error("Apex {ep} error: {e}", ep=endpoint, e=exc)
-            return f"Apex API error: {exc}"
+            # `{e!r}` et non `{e}` : une panne réseau lève des exceptions dont
+            # le message est VIDE (`ConnectError('')`, `ReadTimeout('')`). La
+            # ligne se terminait donc sur « Apex bridge error: » et rien —
+            # 215 fois en août, dont 205 sur la seule journée du 20. On
+            # journalisait fidèlement l'absence d'information. Le `repr` porte
+            # le TYPE, qui est ici toute la donnée utile.
+            logger.error("Apex {ep} error: {e!r}", ep=endpoint, e=exc)
+            return f"Apex API error: {exc!r}"
 
         if not sans_cache:
             ttl = self._ttl.get(endpoint, _FALLBACK_TTL)

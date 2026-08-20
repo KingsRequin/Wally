@@ -1171,7 +1171,11 @@ class TwitchAPI:
                         "started_at": s.get("started_at"),
                     }
         except Exception as exc:
-            logger.warning("Failed to fetch Twitch stream status: {e}", e=exc)
+            # `{e!r}` : sans lui, un timeout réseau (message vide) rendait
+            # « Failed to fetch Twitch stream status: » suivi de rien —
+            # 117 fois en août. Le type est la seule donnée qui distingue une
+            # coupure réseau d'un refus d'API.
+            logger.warning("Failed to fetch Twitch stream status: {e!r}", e=exc)
             return _UNKNOWN_STREAM.copy()
 
 

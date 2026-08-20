@@ -96,7 +96,10 @@ class RSSFeedService:
                 try:
                     total_new += await self._poll_feed(client, feed)
                 except Exception as exc:  # flux pourri / réseau : on log et on continue
-                    logger.warning("Flux RSS '{n}' en échec : {e}", n=feed.name, e=exc)
+                    # `{e!r}` : un flux injoignable lève une exception au
+                    # message vide, et la ligne s'arrêtait sur « en échec : ».
+                    # Le type sépare le flux mort du flux mal formé.
+                    logger.warning("Flux RSS '{n}' en échec : {e!r}", n=feed.name, e=exc)
         if total_new:
             logger.info("RSS : {n} nouveaux articles ingérés", n=total_new)
         return total_new

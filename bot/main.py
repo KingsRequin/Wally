@@ -461,7 +461,7 @@ async def main() -> None:
                             # vocale en cours ne doit pas être coupée.
                             await vs.leave()
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("voice: auto-join/leave du stream a échoué: {e}", e=e)
+                    logger.warning("voice: auto-join/leave du stream a échoué: {e!r}", e=e)
 
             if went_live or ended:
                 # Référence forte : une tâche détachée peut être ramassée par le
@@ -563,7 +563,7 @@ async def main() -> None:
                     logger.info("voice: live en cours sans Wally → retour en écoute")
                     await vs.join(channel, listen_only=True, only_if_free=True)
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("voice: veilleur de stream en erreur: {e}", e=e)
+                    logger.warning("voice: veilleur de stream en erreur: {e!r}", e=e)
 
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
