@@ -215,7 +215,7 @@ async def importer_medias(
     return bilan
 
 
-async def _depot_actif(bot) -> int | None:
+def _depot_actif(bot) -> int | None:
     """L'id du salon « boîte aux lettres », ou None si le dépôt est coupé."""
     return getattr(getattr(bot.config, "discord", None), "meme_channel_id", None)
 
@@ -225,6 +225,7 @@ class MemeMasseCog(commands.Cog):
 
     def __init__(self, bot) -> None:
         self.bot = bot
+        self._depot_annonce = False
 
     async def _decrire(self, url: str, suffixe: str) -> str:
         return await decrire_image(self.bot, url, suffixe)
@@ -325,31 +326,28 @@ class MemeMasseCog(commands.Cog):
 
     # ── Boîte aux lettres ─────────────────────────────────────────────────────
 
-    @app_commands.command(
-        name="depot-memes",
-        description="Désigne le salon dont les images entrent seules dans la banque (admin)",
-    )
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.describe(salon="Le salon de dépôt. Vide : coupe le dépôt automatique.")
-    async def depot(
-        self, interaction: discord.Interaction, salon: discord.TextChannel | None = None
-    ) -> None:
-        self.bot.config.discord.meme_channel_id = getattr(salon, "id", None)
-        # Immédiatement : un réglage qui ne survit pas au prochain rebuild est un
-        # réglage qu'on croit avoir posé.
-        self.bot.config.save()
+    @commands.Cog.listener("on_ready")
+    async def annoncer_le_depot(self) -> None:
+        """Dit une fois si la boîte aux lettres est armée, et sur quel salon.
+
+        `on_ready` retombe à chaque reconnexion : sans le drapeau, la ligne
+        reviendrait à chaque coupure réseau et ne voudrait plus rien dire.
+        """
+        if self._depot_annonce:
+            return
+        self._depot_annonce = True
+        salon_id = _depot_actif(self.bot)
+        if salon_id is None:
+            logger.info("Dépôt automatique de memes : coupé (aucun salon configuré)")
+            return
+        salon = self.bot.get_channel(salon_id)
         if salon is None:
-            logger.info("Dépôt automatique de memes coupé")
-            await interaction.response.send_message(
-                content="Dépôt automatique coupé.", ephemeral=True
+            logger.warning(
+                "Dépôt automatique de memes : salon {s} INTROUVABLE — rien n'y sera rangé",
+                s=salon_id,
             )
             return
-        logger.info("Dépôt automatique de memes posé sur {s}", s=salon.id)
-        await interaction.response.send_message(
-            content=(f"Les images postées dans {salon.mention} entreront seules dans la "
-                     f"banque. ✅ rangé · 🔁 déjà en banque · ⚠️ écarté."),
-            ephemeral=True,
-        )
+        logger.info("Dépôt automatique de memes armé sur #{s}", s=salon.name)
 
     @commands.Cog.listener("on_message")
     async def au_fil_de_l_eau(self, message) -> None:
@@ -359,7 +357,7 @@ class MemeMasseCog(commands.Cog):
         salon, pièce jointe comprise — sans cette garde, chaque meme rangé en
         déclencherait un autre.
         """
-        salon_depot = await _depot_actif(self.bot)
+        salon_depot = _depot_actif(self.bot)
         if salon_depot is None or getattr(message.channel, "id", None) != salon_depot:
             return
         if getattr(message.author, "id", None) == self.bot.user.id:

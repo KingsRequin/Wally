@@ -215,7 +215,7 @@ bot/
 │   ├── commands/                # /wally ask, memory, status, mood, journal,
 │   │                            #   persona, imagine, meme, scan, test, voice, setup/
 │   │                            #   meme_cmd (« Ranger ce meme », clic droit) +
-│   │                            #   meme_masse (/importer-memes · /depot-memes)
+│   │                            #   meme_masse (/importer-memes + boîte aux lettres)
 │   ├── events/                  # members.py · reactions.py · typing.py
 │   ├── voice/                   # Vocal : service, brain, audio, sink, streaming (STT),
 │   │                            #   providers (Azure TTS), quota, style, tools,

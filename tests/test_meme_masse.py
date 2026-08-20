@@ -215,7 +215,6 @@ def _bot(salon_depot=None):
     bot.vision.available = True
     bot.vision.analyze = AsyncMock(return_value="un chat qui boude")
     bot.config.discord.meme_channel_id = salon_depot
-    bot.config.save = MagicMock()
     return bot
 
 
@@ -275,7 +274,6 @@ async def test_un_salon_illisible_le_dit_au_lieu_d_echouer(tmp_path, monkeypatch
 async def test_la_commande_est_reservee_a_la_gestion_du_serveur():
     cog = meme_masse.MemeMasseCog(_bot())
     assert cog.importer.default_permissions.manage_guild
-    assert cog.depot.default_permissions.manage_guild
 
 
 # ── Boîte aux lettres ─────────────────────────────────────────────────────────
@@ -340,27 +338,42 @@ async def test_wally_ne_range_pas_ses_propres_annonces(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == []
 
 
-async def test_designer_le_salon_de_depot_ecrit_la_config(tmp_path):
-    bot = _bot()
-    cog = meme_masse.MemeMasseCog(bot)
-    salon = _salon([])
-    salon.id = 555
-    interaction = _interaction()
+async def test_le_depot_arme_se_dit_une_seule_fois_au_boot():
+    """`on_ready` retombe à chaque reconnexion — l'annonce, elle, ne doit pas."""
+    from loguru import logger
 
-    await cog.depot.callback(cog, interaction, salon=salon)
-
-    assert bot.config.discord.meme_channel_id == 555
-    assert bot.config.save.call_count == 1
-
-
-async def test_le_depot_se_coupe_sans_salon(tmp_path):
     bot = _bot(salon_depot=555)
+    salon = MagicMock()
+    salon.name = "depot-memes"  # `name=` est réservé par MagicMock
+    bot.get_channel.return_value = salon
     cog = meme_masse.MemeMasseCog(bot)
+    lignes: list[str] = []
+    sink = logger.add(lambda m: lignes.append(str(m)), level="INFO")
+    try:
+        await cog.annoncer_le_depot()
+        await cog.annoncer_le_depot()
+    finally:
+        logger.remove(sink)
 
-    await cog.depot.callback(cog, _interaction(), salon=None)
+    assert bot.get_channel.call_count == 1
+    assert sum("armé" in l for l in lignes) == 1
 
-    assert bot.config.discord.meme_channel_id is None
-    assert bot.config.save.call_count == 1
+
+async def test_un_salon_de_depot_introuvable_est_dit_fort():
+    """Sans la commande, un id périmé dans le config ne se voit QUE dans les logs."""
+    from loguru import logger
+
+    bot = _bot(salon_depot=555)
+    bot.get_channel.return_value = None
+    cog = meme_masse.MemeMasseCog(bot)
+    lignes: list[str] = []
+    sink = logger.add(lambda m: lignes.append(str(m)), level="WARNING")
+    try:
+        await cog.annoncer_le_depot()
+    finally:
+        logger.remove(sink)
+
+    assert any("INTROUVABLE" in l for l in lignes)
 
 
 async def test_la_commande_refuse_le_message_prive(tmp_path, monkeypatch):
