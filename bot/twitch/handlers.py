@@ -756,7 +756,19 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Incrémentation du compteur de messages pour les visites actives
     active_visits = getattr(bot, "_active_visits", {})
     if channel_name in active_visits:
-        active_visits[channel_name]["msg_count"] += 1
+        visite = active_visits[channel_name]
+        visite["msg_count"] += 1
+        # Écrit AUSSI en base, sans refermer la visite : le compte n'y était
+        # posé qu'à la clôture, c'est-à-dire à l'endroit même qui n'arrive pas
+        # quand le process meurt. Une visite reprise après un rebuild repartait
+        # donc de zéro et son résumé oubliait tout ce qui précédait. Un UPDATE
+        # par message d'une chaîne INVITÉE : le volume est sans commune mesure
+        # avec l'appel LLM que ce même message déclenche.
+        try:
+            await bot.db.bump_twitch_visit_messages(
+                visite["visit_id"], visite["msg_count"])
+        except Exception as exc:  # noqa: BLE001 — un compteur n'arrête pas une réponse
+            logger.debug("Visite {c} : compte non écrit : {e!r}", c=channel_name, e=exc)
 
     # Dispatch commandes ! (overlay, !mood, !code, …)
     if await dispatch_command(bot, payload, content, author, channel_name):

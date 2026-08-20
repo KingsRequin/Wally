@@ -32,6 +32,46 @@ if TYPE_CHECKING:
     from bot.intelligence.persona import PersonaService
 
 
+async def reprendre_visites(db, chaines_invitees) -> dict[str, dict]:
+    """Les visites laissées ouvertes par le process précédent, par chaîne.
+
+    Le lien chaîne → `visit_id` vivait en RAM. Après un rebuild, la ligne
+    `twitch_visits` restait ouverte pour toujours : jamais finalisée, donc
+    jamais résumée par le LLM, donc absente du journal du jour. Rien de neuf
+    n'est rangé ici — la table portait déjà tout —, il manquait la RELECTURE.
+
+    Seules les chaînes ENCORE dans la config sont reprises : une visite d'une
+    chaîne qu'on a quittée entre-temps ne nous regarde plus, et la reprendre
+    ferait croire à une visite en cours qui n'existe pas.
+
+    Ne lève jamais : un démarrage ne se joue pas sur un historique.
+    """
+    if db is None:
+        return {}
+    voulues = {str(c).lower() for c in (chaines_invitees or [])}
+    if not voulues:
+        return {}
+    try:
+        ouvertes = await db.visites_ouvertes()
+    except Exception as exc:  # noqa: BLE001 — un historique illisible n'empêche pas de démarrer
+        logger.warning("Visites ouvertes illisibles : {e!r}", e=exc)
+        return {}
+    reprises: dict[str, dict] = {}
+    for ligne in ouvertes or []:
+        nom = str((ligne or {}).get("channel") or "").lower()
+        if nom not in voulues:
+            continue
+        reprises[nom] = {
+            "visit_id": ligne.get("id"),
+            "msg_count": int(ligne.get("msg_count") or 0),
+            "joined_at": float(ligne.get("joined_at") or 0.0),
+        }
+    if reprises:
+        logger.info("Visites reprises du process précédent : {c}",
+                    c=", ".join(sorted(reprises)))
+    return reprises
+
+
 class WallyTwitch(commands.Bot):
     def __init__(
         self,
@@ -254,6 +294,16 @@ class WallyTwitch(commands.Bot):
                 )
             except Exception as exc:
                 logger.warning("IRC: failed to join guest channels: {e}", e=exc)
+        # Les visites laissées ouvertes par le process précédent. Reprises ici et
+        # pas au `__init__` : c'est le premier moment où la config des chaînes
+        # invitées est celle qui vaut, et où la base est ouverte.
+        #
+        # Elles ne sont PAS écrasées si une visite a déjà été ouverte entre-temps
+        # (`add_guest_channel` pendant le démarrage) : la plus récente fait foi,
+        # sinon on refermerait la neuve avec l'identifiant de l'ancienne.
+        for nom, info in (await reprendre_visites(
+                self.db, self.config.twitch.guest_channels)).items():
+            self._active_visits.setdefault(nom, info)
 
     async def _token_refresh_loop(self) -> None:
         # Refresh tokens every 3h (Twitch user tokens expire after 4h).

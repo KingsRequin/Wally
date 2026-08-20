@@ -40,6 +40,31 @@ class SocialMixin:
         await self._conn.commit()
         return cursor.lastrowid
 
+    async def visites_ouvertes(self) -> list[dict]:
+        """Les visites jamais refermées (`left_at IS NULL`).
+
+        Elles n'étaient relues nulle part : le lien chaîne → `visit_id` vivait
+        en RAM, donc un redémarrage laissait la ligne ouverte POUR TOUJOURS —
+        jamais résumée, jamais reprise dans le journal du jour.
+        """
+        return [dict(r) for r in await self.fetch_all(
+            "SELECT id, channel, joined_at, msg_count FROM twitch_visits "
+            "WHERE left_at IS NULL ORDER BY joined_at"
+        )]
+
+    async def bump_twitch_visit_messages(self, visit_id: int, msg_count: int) -> None:
+        """Écrit le compte de messages SANS refermer la visite.
+
+        Le compte n'était écrit qu'à la clôture — c'est-à-dire précisément à
+        l'endroit qui n'arrive pas quand le process meurt. Une visite reprise
+        repartait donc de zéro et son résumé oubliait tout ce qui la précédait.
+        """
+        await self._conn.execute(
+            "UPDATE twitch_visits SET msg_count = ? WHERE id = ?",
+            (int(msg_count), int(visit_id)),
+        )
+        await self._conn.commit()
+
     async def end_twitch_visit(
         self,
         visit_id: int,
