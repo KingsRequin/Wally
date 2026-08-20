@@ -64,6 +64,22 @@ def _salon(messages):
 # ── La fenêtre temporelle ─────────────────────────────────────────────────────
 
 
+def test_la_periode_sans_borne_dit_tout_l_historique():
+    fin = datetime(2026, 8, 20, 20, 30, tzinfo=timezone.utc)
+    assert meme_masse.periode_lisible(None, fin) == (
+        "tout l'historique, jusqu'au 20/08/2026 à 22h30"
+    )
+
+
+def test_la_periode_bornee_est_rendue_en_heure_de_paris():
+    """L'hôte est en UTC : rendre la borne en naïf décalerait le rapport de 2 h."""
+    debut = datetime(2026, 8, 13, 6, 0, tzinfo=timezone.utc)
+    fin = datetime(2026, 8, 20, 20, 30, tzinfo=timezone.utc)
+    assert meme_masse.periode_lisible(debut, fin) == (
+        "du 13/08/2026 à 08h00 au 20/08/2026 à 22h30"
+    )
+
+
 def test_une_fenetre_en_jours_remonte_dans_le_passe():
     apres = meme_masse.fenetre("7j")
     assert apres is not None
@@ -176,6 +192,33 @@ async def test_les_memes_annonces_par_wally_ne_sont_pas_reranges(tmp_path, monke
     assert decrire.await_count == 0
 
 
+async def test_un_message_a_plusieurs_medias_les_range_tous(tmp_path, monkeypatch, decrire):
+    """Un message porte jusqu'à dix pièces jointes — n'en prendre qu'une en
+    laisserait neuf dans le salon sans que rien ne le signale."""
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    salon = _salon([_message("https://cdn/a.png", "https://cdn/b.png", "https://cdn/c.png")])
+
+    bilan = await meme_masse.importer_salon(
+        salon, apres=None, limite=100, dossier=tmp_path, decrire=decrire, moi=7,
+    )
+
+    assert len(bilan.ranges) == 3
+
+
+async def test_wally_est_ecarte_meme_quand_il_poste_plusieurs_medias(tmp_path, monkeypatch,
+                                                                     decrire):
+    """La garde porte sur le MESSAGE, pas sur sa première pièce jointe."""
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    salon = _salon([_message("https://cdn/x.png", "https://cdn/y.png", bot=True)])
+
+    bilan = await meme_masse.importer_salon(
+        salon, apres=None, limite=100, dossier=tmp_path, decrire=decrire, moi=7,
+    )
+
+    assert bilan.ranges == []
+    assert decrire.await_count == 0
+
+
 async def test_le_rapport_nomme_ce_qui_a_ete_ecarte(tmp_path, monkeypatch, decrire):
     monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(return_value=_png()))
     bilan = await meme_masse.importer_salon(
@@ -253,9 +296,44 @@ async def test_la_commande_rend_le_rapport_du_ratissage(tmp_path, monkeypatch):
 
     await cog.importer.callback(cog, interaction, depuis="tout")
 
-    rapport = interaction.followup.send.call_args.kwargs["content"]
-    assert "2 rangés" in rapport
+    embed = salon.send.call_args.kwargs["embed"]
+    assert "`meme1.webp` `meme2.webp`" in embed.description
     assert sorted(p.name for p in tmp_path.glob("*.webp")) == ["meme1.webp", "meme2.webp"]
+
+
+async def test_le_rapport_final_est_public_et_porte_les_comptes(tmp_path, monkeypatch):
+    """Éphémère, le rapport disparaissait avec l'onglet : plus personne ne
+    pouvait dire d'où sortaient les nouveaux memes de l'overlay."""
+    monkeypatch.setattr(meme_masse, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    salon = _salon([_message("https://cdn/a.png"), _message("https://cdn/a.png")])
+    salon.permissions_for = MagicMock(return_value=MagicMock(read_message_history=True))
+    interaction = _interaction(salon)
+    cog = meme_masse.MemeMasseCog(_bot())
+
+    await cog.importer.callback(cog, interaction, depuis="tout")
+
+    # Le rapport part par le salon : un followup d'interaction déférée en
+    # éphémère peut hériter du flag et n'être vu que de l'admin.
+    assert interaction.followup.send.await_count == 0
+    champs = {c.name: c.value for c in salon.send.call_args.kwargs["embed"].fields}
+    assert champs["Rangés"] == "1"
+    assert champs["Doublons"] == "1"
+    assert "tout l'historique" in champs["Période"]
+
+
+async def test_la_progression_ephemere_se_clot(tmp_path, monkeypatch):
+    """Sans ça, l'admin garde « Rangement en cours… » sous les yeux pour toujours."""
+    monkeypatch.setattr(meme_masse, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    salon = _salon([_message("https://cdn/a.png")])
+    salon.permissions_for = MagicMock(return_value=MagicMock(read_message_history=True))
+    interaction = _interaction(salon)
+    cog = meme_masse.MemeMasseCog(_bot())
+
+    await cog.importer.callback(cog, interaction, depuis="tout")
+
+    assert interaction.edit_original_response.call_args.kwargs["content"] == "Ratissage terminé."
 
 
 async def test_un_salon_illisible_le_dit_au_lieu_d_echouer(tmp_path, monkeypatch):

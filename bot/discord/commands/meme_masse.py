@@ -3,7 +3,9 @@
 
 Le chemin unitaire (`meme_cmd`) montre un aperçu et attend un clic. À trois
 cents images, cet aperçu n'a plus de sens : ici on décrit et on range d'un
-trait, et c'est le RAPPORT qui rend des comptes.
+trait, et c'est le RAPPORT qui rend des comptes — un embed PUBLIC posté dans le
+salon, parce que la banque ainsi gonflée est celle que tout le monde verra
+défiler sur l'overlay.
 
 Deux invariants tiennent tout le module :
 
@@ -220,6 +222,67 @@ def _depot_actif(bot) -> int | None:
     return getattr(getattr(bot.config, "discord", None), "meme_channel_id", None)
 
 
+# Discord borne l'embed : 4096 caractères de description, 1024 par champ, 6000
+# au total. Deux cents memes rangés dépassent la description à eux seuls.
+_MAX_DESCRIPTION = 3900
+
+
+def periode_lisible(apres: datetime | None, jusqu_a: datetime) -> str:
+    """La fenêtre réellement ratissée, en heure de Paris.
+
+    Rendre le `depuis` tel qu'il a été tapé (« 7j ») laisse le lecteur calculer
+    lui-même sur quoi on vient de tirer — et l'hôte étant en UTC, il
+    calculerait faux de deux heures.
+    """
+    fin = jusqu_a.astimezone(PARIS)
+    if apres is None:
+        return f"tout l'historique, jusqu'au {fin:%d/%m/%Y à %Hh%M}"
+    return f"du {apres.astimezone(PARIS):%d/%m/%Y à %Hh%M} au {fin:%d/%m/%Y à %Hh%M}"
+
+
+def rapport_embed(cible, bilan: meme_import.Bilan, *, apres: datetime | None,
+                  fin: datetime, duree: float) -> discord.Embed:
+    """Le compte rendu d'un ratissage, destiné au SALON et pas à l'admin seul.
+
+    Public par choix : ranger trois cents memes change la banque que tout le
+    monde voit défiler sur l'overlay. Un rapport éphémère disparaît avec
+    l'onglet, et plus personne ne peut dire d'où sortent les nouveaux memes.
+
+    Les refus restent NOMMÉS ici comme dans `Bilan.texte()` — un compte seul
+    laisse chercher dans le dossier ce qui manque.
+    """
+    embed = discord.Embed(
+        title="Memes rangés",
+        colour=discord.Colour.green() if bilan.ranges else discord.Colour.greyple(),
+    )
+    embed.add_field(name="Salon ratissé", value=getattr(cible, "mention", "?"), inline=True)
+    # Un ratissage de trois cents memes se compte en minutes : « 214 s » oblige
+    # le lecteur à diviser.
+    lisible = f"{duree:.0f} s" if duree < 90 else f"{duree / 60:.0f} min"
+    embed.add_field(name="Durée", value=lisible, inline=True)
+    embed.add_field(name="Période", value=periode_lisible(apres, fin), inline=False)
+    embed.add_field(name="Rangés", value=str(len(bilan.ranges)), inline=True)
+    embed.add_field(name="Doublons", value=str(len(bilan.doublons)), inline=True)
+    # Zéro écarté est une bonne nouvelle qui n'a pas besoin d'une case ; un
+    # écarté, lui, doit se voir sans qu'on aille lire les logs.
+    if bilan.refus:
+        embed.add_field(name="Écartés", value=str(len(bilan.refus)), inline=True)
+    if bilan.muets:
+        embed.add_field(name="Sans description", value=str(bilan.muets), inline=True)
+
+    lignes: list[str] = []
+    if bilan.ranges:
+        lignes.append(" ".join(f"`{n}`" for n in bilan.ranges))
+    lignes += [f"· {r}" for r in bilan.refus[:3]]
+    if len(bilan.refus) > 3:
+        lignes.append(f"· … et {len(bilan.refus) - 3} autre(s)")
+    if bilan.interrompu:
+        lignes.append("_Limite atteinte : relance la commande pour la suite._")
+    if lignes:
+        embed.description = "\n".join(lignes)[:_MAX_DESCRIPTION]
+    return embed
+
+
 class MemeMasseCog(commands.Cog):
     """Les deux chemins d'import sans aperçu : le rattrapage et le fil de l'eau."""
 
@@ -311,17 +374,37 @@ class MemeMasseCog(commands.Cog):
             )
             return
 
-        duree = (datetime.now(timezone.utc) - depart).total_seconds()
+        fin = datetime.now(timezone.utc)
+        duree = (fin - depart).total_seconds()
         logger.info(
             "Ratissage de {s} terminé en {d:.0f} s : {n} rangé(s), {dbl} doublon(s), "
             "{r} refus", s=cible.id, d=duree, n=len(bilan.ranges),
             dbl=len(bilan.doublons), r=len(bilan.refus),
         )
-        rapport = f"Ratissage de {cible.mention} ({depuis}) — {bilan.texte()}"
+        # La barre de progression est éphémère et resterait figée sur
+        # « Rangement en cours… » : elle doit se clore, le rapport est ailleurs.
+        if not muet:
+            try:
+                await interaction.edit_original_response(content="Ratissage terminé.")
+            except Exception as e:  # noqa: BLE001 — l'interaction a pu expirer
+                logger.info("Fin de progression non éditable : {e!r}", e=e)
+
+        # Envoyé par le SALON et non par `followup.send(ephemeral=False)` : le
+        # premier followup d'une interaction déférée en éphémère hérite de ce
+        # flag, et le rapport « public » serait resté invisible pour tout le
+        # monde sauf l'admin, sans la moindre erreur pour le dire.
+        embed = rapport_embed(cible, bilan, apres=apres, fin=fin, duree=duree)
+        # Là où la commande a été tapée, sauf si ce n'est pas un salon qui sait
+        # écrire (racine de forum, catégorie) — auquel cas le salon ratissé, qui
+        # a déjà passé la garde plus haut, fait un destinataire valable.
+        ou = interaction.channel
+        if not isinstance(ou, (discord.TextChannel, discord.Thread)):
+            ou = cible
         try:
-            await interaction.followup.send(content=rapport[:_MAX_CONTENU], ephemeral=True)
-        except Exception as e:  # noqa: BLE001 — au-delà de 15 min, plus personne n'écoute
-            logger.warning("Rapport de ratissage non remis, envoi en DM : {e!r}", e=e)
+            await ou.send(embed=embed)
+        except Exception as e:  # noqa: BLE001 — salon fermé en écriture, ou supprimé
+            logger.warning("Rapport de ratissage non remis au salon, envoi en DM : {e!r}", e=e)
+            rapport = f"Ratissage de {cible.mention} ({depuis}) — {bilan.texte()}"
             await _en_message_prive(interaction.user, rapport[:_MAX_CONTENU])
 
     # ── Boîte aux lettres ─────────────────────────────────────────────────────
