@@ -966,7 +966,7 @@ class TwitchAPI:
                     data = (resp.json() or {}).get("data") or []
                     rid = (data[0] or {}).get("id") if data else None
                     if rid:
-                        logger.info("Récompense de duel créée : {t} ({i})",
+                        logger.info("Récompense créée : {t} ({i})",
                                     t=corps["title"], i=rid)
                     return rid
                 return None
@@ -1111,7 +1111,7 @@ class TwitchAPI:
                           if c in actuelle and actuelle[c] != v}
                 if not ecarts:
                     return True
-                logger.info("Récompense de duel {i} à réaligner : {e}",
+                logger.info("Récompense {i} à réaligner : {e}",
                             i=reward_id, e=", ".join(sorted(ecarts)))
             async with httpx.AsyncClient() as client:
                 for attempt in range(2):
@@ -1158,7 +1158,7 @@ class TwitchAPI:
                             "Mise à jour de récompense non appliquée — toujours "
                             "différent : {r}", r=", ".join(sorted(restants)) or "corps vide")
                         return False
-                    logger.info("Récompense de duel mise à jour : {t} ({i})",
+                    logger.info("Récompense mise à jour : {t} ({i})",
                                 t=corps["title"], i=reward_id)
                     return True
                 return False
