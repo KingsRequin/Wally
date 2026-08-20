@@ -173,6 +173,7 @@ window.OverlayAdmin = (function () {
   };
 
   const noeuds = {};      // les nœuds du squelette, posés une fois
+  const reperes = {};     // les rectangles de la surface, par clé d'élément
   let menuOuvert = null;  // le menu ⋮ déployé, s'il y en a un
   let menuHote = null;    // le bouton qui l'a ouvert — il le referme lui-même
   let manip = null;       // la manipulation en cours sur la surface, ou null
@@ -183,6 +184,7 @@ window.OverlayAdmin = (function () {
   let apercuMinuteur = null;  // le délai au bout duquel on bascule sur le repli
   let survole = null;         // la clé de l'élément survolé, liste OU surface
   let survoleOrigine = null;  // « liste » ou « surface » — le survol est à SENS
+  let survoleMarques = [];    // les nœuds portant la marque, pour la retirer
                               // UNIQUE : la liste éclaire l'aperçu, pas l'inverse
   let raccourcisPoses = false;  // l'écouteur clavier du document, posé une fois
 
@@ -198,8 +200,29 @@ window.OverlayAdmin = (function () {
   let mesureRO = null;        // ResizeObserver posé dans l'aperçu
   let mesureMO = null;        // MutationObserver posé dans l'aperçu
   let mesureDoc = null;       // le document écouté, pour retirer les écouteurs
-  let mesureRaf = null;       // le regroupement d'une rafale de mutations
-  let mesureRelances = [];    // les re-mesures différées (transitions, images)
+  let mesureMinuteur = null;  // le regroupement d'une rafale de mutations
+  let mesureAccalmie = null;  // la re-mesure après la DERNIÈRE mutation
+  let mesureDerniere = 0;     // quand la dernière passe est partie
+  let mesureEnRetard = false; // une mesure demandée pendant un geste
+
+  // Une passe de mesure lit `offsetWidth` et `getComputedStyle` sur tous les
+  // enfants des trente-sept conteneurs de l'aperçu : un recalcul de style et un
+  // reflow forcés dans l'iframe, sur le thread de la page admin. Branchée telle
+  // quelle sur un `MutationObserver` et un `ResizeObserver`, elle s'exécutait à
+  // LA CADENCE DES ANIMATIONS de l'overlay — soixante fois par seconde tant
+  // qu'un widget vivait à l'écran, chacune pouvant reconstruire les
+  // trente-sept repères. C'est la cause première du panneau à une image par
+  // seconde, et elle ne se voit nulle part : rien ne clignote, tout rame.
+  //
+  // Mesuré avant correction, avec UN SEUL widget factice qui mutait à chaque
+  // frame dans un aperçu par ailleurs vide : 180 appels à `getComputedStyle`
+  // par seconde. En direct, l'aperçu porte des dizaines de widgets animés.
+  const MESURE_PERIODE_MS = 250;
+  // La passe de rattrapage, après la DERNIÈRE mutation. Elle remplace les trois
+  // relances (150, 500 et 1200 ms) reprogrammées à CHAQUE rafale : ce qu'elles
+  // rattrapaient — une transition qui s'achève, une image qui se décode — se
+  // produit à l'accalmie, jamais au milieu du flot.
+  const MESURE_ACCALMIE_MS = 600;
 
   // La scène qu'on éditait, d'une visite à l'autre. Sans elle, un F5 ramène sur
   // la scène par défaut : le réglage qu'on venait de publier sur une AUTRE
@@ -471,8 +494,17 @@ window.OverlayAdmin = (function () {
    *  Posée sur `<body>` en `position: fixed` : la liste des éléments est en
    *  `overflow-y: auto`, une bulle placée dedans y serait rognée. */
   function poserInfobulle(hote, texte) {
-    if (!texte) return;
-    hote.addEventListener("mouseenter", function () { montrerInfobulle(hote, texte); });
+    // Le texte vit SUR le nœud et les écouteurs le relisent à chaque survol.
+    // Capturé dans une closure comme avant, le mettre à jour imposait de
+    // rebrancher un couple d'écouteurs — donc de jeter le nœud et d'en refaire
+    // un. C'est en partie ce qui obligeait la surface à se reconstruire en
+    // entier au moindre changement.
+    hote._bulle = texte || "";
+    if (hote._bulleBranchee) return;
+    hote._bulleBranchee = true;
+    hote.addEventListener("mouseenter", function () {
+      if (hote._bulle) montrerInfobulle(hote, hote._bulle);
+    });
     hote.addEventListener("mouseleave", masquerInfobulle);
   }
 
@@ -1756,32 +1788,109 @@ window.OverlayAdmin = (function () {
    *  chaque rendu — au moindre appui sur une flèche, par exemple : sans ce
    *  rappel, la marque disparaîtrait sous un pointeur qui n'a pas bougé, et le
    *  `mouseleave` du nœud détruit ne viendrait jamais la retirer de l'autre
-   *  côté. */
+   *  côté.
+   *
+   *  DEUX classes et non une : `survole` marque, `survole-liste` REMONTE le
+   *  repère au-dessus des autres. Le rang n'a de sens que pour un survol venu
+   *  de la LISTE — retrouver du regard, au milieu de vingt-six repères empilés,
+   *  celui que désigne la ligne. Venu de la SURFACE, il se retournait contre
+   *  celui qui le posait : le repère traversé passait devant celui qu'on venait
+   *  de choisir dans la liste, le pointeur ne le quittait donc plus (il est
+   *  maintenant dessus), et l'élément visé devenait impossible à attraper.
+   *  Sur la surface, le repère qui reçoit le pointeur est DÉJÀ celui du dessus :
+   *  il n'a rien à gagner à monter.
+   */
   function appliquerSurvol() {
-    // Les DEUX côtés sont nettoyés à chaque passe, quelle que soit l'origine :
-    // sinon la marque posée depuis la liste resterait allumée quand le pointeur
-    // passe ensuite sur la surface.
-    [noeuds.calque, noeuds.listeElements].forEach(function (hote) {
-      if (!hote) return;
-      hote.querySelectorAll(".survole").forEach(function (n) {
-        n.classList.remove("survole");
-      });
+    // Les nœuds marqués sont GARDÉS, plutôt que rebalayés : cette fonction est
+    // sur le chemin du pointeur (chaque entrée et chaque sortie de repère), et
+    // deux `querySelectorAll` sur la liste ET la surface à chaque mouvement,
+    // c'est un balayage complet du panneau par déplacement de souris.
+    survoleMarques.forEach(function (n) {
+      n.classList.remove("survole");
+      n.classList.remove("survole-liste");
     });
+    survoleMarques = [];
     if (!survole) return;
     cotesDuSurvol(survoleOrigine, noeuds.calque, noeuds.listeElements)
       .forEach(function (hote) {
-        if (!hote) return;
+        if (!hote || !hote.querySelector) return;
         const n = hote.querySelector('[data-cle="' + survole + '"]');
-        if (n) n.classList.add("survole");
+        if (!n) return;
+        n.classList.add("survole");
+        if (survoleOrigine !== "surface") n.classList.add("survole-liste");
+        survoleMarques.push(n);
       });
   }
 
   // ── La liste des éléments ───────────────────────────────────────────────
 
+  // La signature de tout ce que la LISTE montre — la sélection exceptée.
+  //
+  // `rendreElements()` repartait d'un `innerHTML = ""` : trente-sept lignes,
+  // leurs quatre boutons, leurs infobulles et leur glisser jetés et refaits —
+  // environ quatre cents nœuds et deux cent cinquante écouteurs — à chaque
+  // clic, alors que dans l'immense majorité des cas seule la SÉLECTION avait
+  // bougé, c'est-à-dire deux classes par ligne. La signature départage les deux.
+  //
+  // Elle doit couvrir TOUT ce que la liste affiche, sans quoi un changement
+  // passerait inaperçu : un œil qui ne se ferme pas, un groupe qui garde son
+  // ancien nom. D'où le détail — c'est le prix de la garde, et il est payé une
+  // fois par rendu, pas quatre cents.
+  let listeSignature = null;
+
+  function signatureListe(scene) {
+    const parCle = {};
+    const groupes = groupesScene();
+    groupes.forEach(function (g) {
+      (g.membres || []).forEach(function (cle) { parCle[cle] = g.id; });
+    });
+    const els = (scene.ordre || []).map(function (cle) {
+      const el = scene.elements[cle];
+      if (!el) return cle + "\u0001absent";
+      return [cle, libelle(cle), description(cle), el.hidden ? 1 : 0,
+              el.locked ? 1 : 0, parCle[cle] || ""].join("\u0001");
+    });
+    const gs = groupes.map(function (g) {
+      return [g.id, g.nom, estReplie(g.id) ? 1 : 0,
+              membresPresents(g).join(",")].join("\u0001");
+    });
+    return scene.slug + "\u0002" + els.join("\u0002")
+      + "\u0003" + gs.join("\u0002");
+  }
+
+  /** La sélection posée sur les lignes DÉJÀ là : deux classes par élément, une
+   *  par en-tête de groupe. Le seul chemin quand la liste n'a pas changé. */
+  function appliquerSelectionListe() {
+    const liste = noeuds.listeElements;
+    if (!liste || !liste.querySelectorAll) return;
+    liste.querySelectorAll(".ovl-el[data-cle]").forEach(function (n) {
+      const cle = n.dataset.cle;
+      n.classList.toggle("actif", cle === etat.elementCourant);
+      n.classList.toggle("selectionne", estSelectionne(cle));
+    });
+    const parId = {};
+    groupesScene().forEach(function (g) { parId[g.id] = g; });
+    liste.querySelectorAll(".ovl-groupe[data-groupe]").forEach(function (n) {
+      const g = parId[n.dataset.groupe];
+      const membres = g ? membresPresents(g) : [];
+      // Tous membres sélectionnés, jamais une partie : même règle qu'à la
+      // construction (`itemGroupe`), et pour la même raison.
+      n.classList.toggle("selectionne",
+        membres.length > 0 && membres.every(estSelectionne));
+    });
+  }
+
   function rendreElements() {
     const liste = noeuds.listeElements;
     const scene = sceneCourante();
     if (!liste || !scene) return;
+    const sig = signatureListe(scene);
+    if (sig === listeSignature && liste.firstChild) {
+      appliquerSelectionListe();
+      appliquerSurvol();
+      return;
+    }
+    listeSignature = sig;
     // Le nœud survolé va disparaître : son `mouseleave` ne partira jamais, et
     // la bulle resterait plantée à l'écran.
     masquerInfobulle();
@@ -2919,28 +3028,38 @@ window.OverlayAdmin = (function () {
     return fusionnerMesures(neufs);
   }
 
-  /** Regroupe une rafale de mutations en une seule mesure, puis en repasse
-   *  quelques-unes plus tard.
+  /** Regroupe une rafale de mutations en une mesure par quart de seconde, plus
+   *  une de rattrapage à l'accalmie.
    *
-   *  Les relances différées ne sont pas de la superstition : une carte qui
-   *  ENTRE le fait par une transition d'opacité, et rien n'annonce sa fin quand
-   *  elle est interrompue ; une image de meme change de taille au décodage, un
-   *  peu après son insertion. Mesurer une seule fois, à l'instant de la
-   *  mutation, laisserait le repère sur l'estimation alors que le widget est à
-   *  l'écran — le défaut qu'on corrige, en plus discret.
+   *  La relance différée n'est pas de la superstition : une carte qui ENTRE le
+   *  fait par une transition d'opacité, et rien n'annonce sa fin quand elle est
+   *  interrompue ; une image de meme change de taille au décodage, un peu après
+   *  son insertion. Mesurer une seule fois, à l'instant de la mutation,
+   *  laisserait le repère sur l'estimation alors que le widget est à l'écran.
+   *  Mais ce rattrapage a sa place à la FIN du flot, pas dedans.
    */
   function planifierMesure() {
-    if (mesureRaf !== null) return;
-    const suivant = window.requestAnimationFrame
-      || function (f) { return setTimeout(f, 16); };
-    mesureRaf = suivant(function () {
-      mesureRaf = null;
-      mesurerTout();
-    });
-    mesureRelances.forEach(clearTimeout);
-    mesureRelances = [150, 500, 1200].map(function (ms) {
-      return setTimeout(mesurerTout, ms);
-    });
+    // Pendant un geste, on ne mesure rien. La surface ne se reconstruit pas de
+    // toute façon (le repère serait détruit sous le pointeur) : la passe ne
+    // ferait que voler du temps au seul moment où la fluidité se voit. Elle est
+    // reprise au relâchement, et `mesureEnRetard` s'en souvient.
+    if (manip) { mesureEnRetard = true; return; }
+    clearTimeout(mesureAccalmie);
+    mesureAccalmie = setTimeout(mesurerMaintenant, MESURE_ACCALMIE_MS);
+    if (mesureMinuteur !== null) return;
+    const reste = Math.max(0, MESURE_PERIODE_MS - (Date.now() - mesureDerniere));
+    mesureMinuteur = setTimeout(mesurerMaintenant, reste);
+  }
+
+  /** La passe elle-même, et le seul endroit qui touche aux minuteurs. */
+  function mesurerMaintenant() {
+    clearTimeout(mesureMinuteur);
+    clearTimeout(mesureAccalmie);
+    mesureMinuteur = null;
+    mesureAccalmie = null;
+    mesureEnRetard = false;
+    mesureDerniere = Date.now();
+    mesurerTout();
   }
 
   /** Branche les guetteurs sur le document de l'aperçu.
@@ -2992,13 +3111,14 @@ window.OverlayAdmin = (function () {
   }
 
   function detacherMesures() {
-    // La mesure en attente aussi : une frame programmée avant que l'aperçu ne
+    // La mesure en attente aussi : une passe programmée avant que l'aperçu ne
     // s'en aille relirait l'ANCIEN document et remettrait ses tailles juste
     // après qu'on les a jetées.
-    if (mesureRaf !== null && window.cancelAnimationFrame) {
-      window.cancelAnimationFrame(mesureRaf);
-    }
-    mesureRaf = null;
+    clearTimeout(mesureMinuteur);
+    clearTimeout(mesureAccalmie);
+    mesureMinuteur = null;
+    mesureAccalmie = null;
+    mesureEnRetard = false;
     if (mesureRO) { mesureRO.disconnect(); mesureRO = null; }
     if (mesureMO) { mesureMO.disconnect(); mesureMO = null; }
     if (mesureDoc) {
@@ -3007,8 +3127,6 @@ window.OverlayAdmin = (function () {
       mesureDoc.removeEventListener("load", planifierMesure, true);
       mesureDoc = null;
     }
-    mesureRelances.forEach(clearTimeout);
-    mesureRelances = [];
   }
 
   /** Coupe les guetteurs ET jette les tailles. Appelée quand le document de
@@ -3071,17 +3189,54 @@ window.OverlayAdmin = (function () {
     noeud.style.setProperty("--ovl-contre", String(e > 0 ? 1 / e : 1));
   }
 
+  /** Le squelette d'un repère : ce qui ne change JAMAIS d'un rendu à l'autre.
+   *
+   *  Séparé du rendu parce que c'est là que se trouvait le prix : cinq
+   *  écouteurs et deux nœuds par repère, jetés et refaits pour trente-sept
+   *  éléments à chaque clic, chaque frappe dans un champ, chaque flèche et
+   *  chaque taille relue dans l'aperçu.
+   */
+  function creerRepere(cle) {
+    const rect = creer("div", "ovl-rect");
+    rect.dataset.cle = cle;
+    rect._nom = creer("span", "ovl-rect-nom");
+    rect.appendChild(rect._nom);
+    rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
+    // Le repère s'éclaire LUI-MÊME, et rien d'autre : il porte déjà son nom
+    // au survol, et éclairer sa ligne — pire, amener la liste jusqu'à elle —
+    // se lisait comme une sélection déclenchée par un simple passage du
+    // pointeur au-dessus de la scène.
+    rect.addEventListener("mouseenter", function () {
+      if (!manip) survoler(cle, "surface");
+    });
+    rect.addEventListener("mouseleave", function () {
+      if (!manip) survoler(null, "surface");
+    });
+    return rect;
+  }
+
+  /** La surface est RÉCONCILIÉE, jamais reconstruite.
+   *
+   *  Elle repartait d'un `innerHTML = ""` : trente-sept rectangles, leurs
+   *  étiquettes et leurs écouteurs jetés puis refaits à chaque rendu — et un
+   *  rendu part au moindre clic, à chaque caractère tapé dans X/Y/Taille, à
+   *  chaque flèche, et à chaque taille relue dans l'aperçu. Mesuré à vide, un
+   *  simple clic de sélection coûtait 8,3 ms de reconstruction ; avec l'aperçu
+   *  chargé, chaque étiquette recréée redemande sa couche de composition.
+   *
+   *  Les nœuds vivent donc dans `reperes`, indexés par clé, et le rendu ne fait
+   *  plus que poser des styles et basculer des classes. Effet de bord voulu :
+   *  le nœud d'un élément SURVIT au rendu, donc le pointeur ne perd plus sa
+   *  cible sous lui, et l'infobulle ne se referme plus toute seule.
+   */
   function rendreSurface() {
     const cadre = noeuds.calque;
     const scene = sceneCourante();
     if (!cadre || !scene) return;
-    // Pendant un geste, on ne reconstruit RIEN : le repère manipulé serait
-    // détruit sous le pointeur. Le geste met à jour le nœud lui-même
-    // (`rafraichirManip`), et le rendu complet revient au relâchement.
+    // Pendant un geste, on ne redessine RIEN : le geste met à jour le nœud
+    // lui-même (`rafraichirManip`), et le rendu complet revient au relâchement.
     if (manip) return;
-    masquerInfobulle();
     chargerApercu(scene.slug);
-    cadre.innerHTML = "";
     const boite = boiteCalque();
     const largeur = boite ? boite.width : 0;
     const hauteur = boite ? boite.height : 0;
@@ -3091,18 +3246,24 @@ window.OverlayAdmin = (function () {
     const chevauchent = analyserChevauchements(scene, largeur, hauteur);
     const enChevauchement = {};
     chevauchent.cles.forEach(function (c) { enChevauchement[c] = true; });
+    const vus = {};
     ordre.forEach(function (cle, rang) {
       const element = scene.elements[cle];
       if (!element) return;
+      vus[cle] = true;
+      let rect = reperes[cle];
+      if (!rect || rect.parentNode !== cadre) {
+        rect = creerRepere(cle);
+        reperes[cle] = rect;
+        cadre.appendChild(rect);
+      }
       const mesure = tailleRendue(cle);
-      const rect = creer("div", "ovl-rect");
-      rect.dataset.cle = cle;
       rect.style.width = mesure.taille[0] + "px";
       rect.style.height = mesure.taille[1] + "px";
       // Traits pointillés tant qu'on n'a pas LU la taille : le repère ne doit
       // pas se donner l'air d'une mesure quand il ne porte qu'un ordre de
       // grandeur. C'est le reproche exact auquel ce lot répond.
-      if (!mesure.reelle) rect.classList.add("estime");
+      rect.classList.toggle("estime", !mesure.reelle);
       appliquerStyle(rect, element, largeur);
       const choisi = cle === etat.elementCourant;
       // L'ordre de la liste EST l'empilement : le premier passe devant.
@@ -3118,21 +3279,20 @@ window.OverlayAdmin = (function () {
       // ça, sélectionner trois repères empilés au centre n'en montrerait qu'un.
       rect.style.zIndex = String(choisi ? ordre.length + 2
         : (estSelectionne(cle) ? ordre.length + 1 : ordre.length - rang));
-      if (element.hidden) rect.classList.add("masque");
-      if (element.locked) rect.classList.add("verrouille");
-      if (choisi) rect.classList.add("actif");
-      if (estSelectionne(cle)) rect.classList.add("selectionne");
+      rect.classList.toggle("masque", !!element.hidden);
+      rect.classList.toggle("verrouille", !!element.locked);
+      rect.classList.toggle("actif", choisi);
+      rect.classList.toggle("selectionne", estSelectionne(cle));
       // Un élément qui sort du cadre se voit ICI, pas quand les viewers le
       // découvrent : le repère passe en orange et l'infobulle le dit.
       const deborde = largeur > 0
         && horsCadre(geometrie(cle, element, largeur, hauteur), largeur, hauteur);
-      if (deborde) rect.classList.add("hors-cadre");
+      rect.classList.toggle("hors-cadre", deborde);
       // Deux éléments qui cohabitent et se recouvrent : illisibles en direct.
       // Signalé ici, avant que les viewers le découvrent.
       const recouvre = !!enChevauchement[cle];
-      if (recouvre) rect.classList.add("chevauche");
-      rect.appendChild(creer("span", "ovl-rect-nom",
-        (mesure.reelle ? "" : "≈ ") + libelle(cle)));
+      rect.classList.toggle("chevauche", recouvre);
+      rect._nom.textContent = (mesure.reelle ? "" : "≈ ") + libelle(cle);
       // La taille est DITE, en pixels du canvas 1920, et sa provenance avec :
       // « ≈ 720 × 540 supposés » se corrige d'un clic sur ▶, « 586 × 642
       // mesurés » se croit sur parole.
@@ -3146,18 +3306,16 @@ window.OverlayAdmin = (function () {
         + (deborde ? " — ⚠ déborde du cadre" : "")
         + (recouvre ? " — ⚠ chevauche un élément qui peut être à l'écran en "
                       + "même temps" : ""));
-      rect.addEventListener("pointerdown", function (evt) { saisirRepere(evt, cle); });
-      // Le repère s'éclaire LUI-MÊME, et rien d'autre : il porte déjà son nom
-      // au survol, et éclairer sa ligne — pire, amener la liste jusqu'à elle —
-      // se lisait comme une sélection déclenchée par un simple passage du
-      // pointeur au-dessus de la scène.
-      rect.addEventListener("mouseenter", function () {
-        if (!manip) survoler(cle, "surface");
-      });
-      rect.addEventListener("mouseleave", function () {
-        if (!manip) survoler(null, "surface");
-      });
-      cadre.appendChild(rect);
+    });
+    // Ce que la scène ne porte plus. La bulle part avec eux : posée sur
+    // `<body>`, elle survivrait au nœud qui l'a ouverte et resterait plantée à
+    // l'écran, puisque le `mouseleave` d'un nœud détaché ne vient jamais.
+    Object.keys(reperes).forEach(function (cle) {
+      if (vus[cle]) return;
+      const mort = reperes[cle];
+      if (mort.parentNode) mort.parentNode.removeChild(mort);
+      delete reperes[cle];
+      masquerInfobulle();
     });
     majPoignees(largeur, hauteur);
     placerCadresGroupes(largeur, hauteur);
@@ -3437,6 +3595,7 @@ window.OverlayAdmin = (function () {
     // document est perdue en silence. `pointermove` sur `document` aurait le
     // défaut inverse — le pointeur sort du cadre pendant un geste rapide et
     // l'on perd la fin du mouvement, le repère restant collé.
+    masquerInfobulle();   // même raison qu'aux flèches : le repère va bouger
     try {
       noeuds.calque.setPointerCapture(evt.pointerId);
     } catch (e) {
@@ -3446,6 +3605,41 @@ window.OverlayAdmin = (function () {
     noeuds.cadre.classList.add("en-manip");
     evt.preventDefault();
     evt.stopPropagation();
+  }
+
+  // Le glisser est COALESCÉ : un traitement par frame, pas un par événement.
+  //
+  // Une souris moderne émet 125 à 1000 `pointermove` par seconde, et chacun
+  // refaisait le travail complet : `getBoundingClientRect()` sur la surface
+  // (une LECTURE de mise en page) suivie d'écritures de style sur tout le bloc,
+  // de la reconstruction des cadres de groupe et du réaffichage des champs.
+  // Lire puis écrire, huit fois par frame, force le navigateur à recalculer la
+  // mise en page à chaque aller-retour — le geste rame d'autant plus que la
+  // souris est bonne. Ce qui compte pour l'œil est la DERNIÈRE position.
+  let bougeEnAttente = null;
+  let bougeRaf = null;
+
+  function bougerCoalesce(evt) {
+    bougeEnAttente = evt;
+    if (bougeRaf !== null) return;
+    const suivant = window.requestAnimationFrame
+      || function (f) { return setTimeout(f, 16); };
+    bougeRaf = suivant(function () {
+      bougeRaf = null;
+      const dernier = bougeEnAttente;
+      bougeEnAttente = null;
+      if (dernier) bougerManip(dernier);
+    });
+  }
+
+  /** Jette le mouvement en attente. Sans ça, le dernier `pointermove` d'un
+   *  geste s'appliquerait APRÈS le relâchement, sur la manipulation suivante. */
+  function oublierBouge() {
+    if (bougeRaf !== null && window.cancelAnimationFrame) {
+      window.cancelAnimationFrame(bougeRaf);
+    }
+    bougeRaf = null;
+    bougeEnAttente = null;
   }
 
   function bougerManip(evt) {
@@ -3519,8 +3713,15 @@ window.OverlayAdmin = (function () {
 
   function finirManip(evt) {
     if (!manip || (evt && evt.pointerId !== manip.pointeur)) return;
+    // Le mouvement gardé pour la frame suivante est appliqué MAINTENANT. Sans
+    // ça, la coalescence jetterait le dernier déplacement du geste : on relâche
+    // là où on visait, et l'élément reste une frame en arrière — jusqu'à une
+    // dizaine de pixels d'écart, exactement au moment où l'on cherche le
+    // placement au pixel.
+    if (bougeEnAttente) bougerManip(bougeEnAttente);
     const fini = manip;
     manip = null;
+    oublierBouge();
     try {
       if (noeuds.calque.hasPointerCapture
           && noeuds.calque.hasPointerCapture(fini.pointeur)) {
@@ -3532,6 +3733,11 @@ window.OverlayAdmin = (function () {
     noeuds.cadre.classList.remove("en-manip");
     montrerGuides(null);
     montrerCoords(null);
+    // Ce que l'aperçu a changé pendant le geste : mesuré maintenant, pas
+    // pendant. Posé AVANT le retour du mode « bande » — sans quoi une taille
+    // apparue sous le doigt attendrait la prochaine mutation de l'aperçu, qui
+    // peut ne jamais venir.
+    if (mesureEnRetard) planifierMesure();
     if (fini.mode === "bande") { finirBande(fini); return; }
     // UNE modification pour tout le geste : en compter une par `pointermove`
     // afficherait « 340 modifications non publiées » pour un déplacement.
@@ -3551,6 +3757,11 @@ window.OverlayAdmin = (function () {
   function toucheSurface(evt) {
     const sens = TOUCHES[evt.key];
     if (!sens || manip) return;
+    // Les repères SURVIVENT au rendu depuis qu'il réconcilie : une bulle
+    // ouverte y resterait accrochée pendant que son repère s'en va sous elle.
+    // Aux flèches et au début d'un geste — les deux seuls rendus qui DÉPLACENT
+    // quelque chose —, on la referme.
+    masquerInfobulle();
     if (!selection().length) return;
     evt.preventDefault();   // sinon la page défile sous la surface
     const bloc = selectionDeplacable();
@@ -4788,6 +4999,11 @@ window.OverlayAdmin = (function () {
   function construireSquelette(conteneur) {
     conteneur.classList.add("ovl-panneau");
     conteneur.innerHTML = "";
+    // Les deux caches de rendu partent avec le squelette : les repères gardés
+    // pointent sur un calque qui n'existe plus, et la signature décrirait une
+    // liste effacée — le panneau resterait vide en se croyant à jour.
+    Object.keys(reperes).forEach(function (c) { delete reperes[c]; });
+    listeSignature = null;
 
     const entete = creer("div", "ovl-entete");
     entete.appendChild(creer("div", "card-title", "MISE EN SCÈNE"));
@@ -4846,7 +5062,7 @@ window.OverlayAdmin = (function () {
       + "Maj pour un pas de 1 %, Alt pour suspendre l'aimantation, "
       + "glisser sur le fond pour sélectionner plusieurs éléments");
     noeuds.calque.addEventListener("pointerdown", saisirFond);
-    noeuds.calque.addEventListener("pointermove", bougerManip);
+    noeuds.calque.addEventListener("pointermove", bougerCoalesce);
     noeuds.calque.addEventListener("pointerup", finirManip);
     noeuds.calque.addEventListener("pointercancel", finirManip);
     // Le filet : une capture perdue sans `pointerup` — relâchement hors de la
@@ -5163,6 +5379,11 @@ window.OverlayAdmin = (function () {
     // Le sens du survol. Exposé pour être TESTÉ : c'est une règle d'un mot
     // (« surface »), et elle ne se voit sur aucune capture d'écran.
     cotesDuSurvol: cotesDuSurvol,
+    // La signature de la liste. Exposée pour être TESTÉE, et c'est le seul
+    // moyen : ce qu'elle OUBLIERAIT ne se verrait pas en la lisant, mais des
+    // semaines plus tard, sous la forme d'un œil qui refuse de se fermer ou
+    // d'un groupe qui garde son ancien nom. Le test dit ce qu'elle doit voir.
+    signatureListe: signatureListe,
     tailleRendue: tailleRendue,
     // Le tri du cadenas : c'est lui qui dit que « verrouillé » vaut aussi pour
     // la visibilité, et pas seulement pour la position.

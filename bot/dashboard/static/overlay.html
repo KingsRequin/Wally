@@ -729,7 +729,7 @@
        sans rien recalculer. */
     .music-now .music-note i {
       display: block; width: 3px; height: 100%;
-      transform: scaleY(.18); transform-origin: bottom;
+      transform: scaleY(.2); transform-origin: bottom;
       background: var(--accent-morceau); border-radius: 2px;
       transition: background .45s ease;
     }
@@ -739,7 +739,7 @@
     .music-now.joue .music-note i:nth-child(4) { animation: music-danse .8s ease-in-out .45s infinite; opacity: .8; }
     .music-now.joue .music-note i:nth-child(5) { animation: music-danse 1s ease-in-out .6s infinite; }
     @keyframes music-danse {
-      0%, 100% { transform: scaleY(.18); }
+      0%, 100% { transform: scaleY(.2); }
       50%      { transform: scaleY(1); }
     }
 

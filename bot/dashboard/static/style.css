@@ -3803,7 +3803,9 @@ body.is-mobile .mobile-back-btn {
     linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 10% 10%;
-  backdrop-filter: blur(10px);
+  /* Pas de `backdrop-filter` : la surface est pleine (grille + aperçu), donc le
+     flou ne travaillait que sur un fond de page que personne ne voit — au prix
+     d'un recalcul sur toute la zone à chaque repeint de l'iframe. */
 }
 
 /* L'aperçu : la VRAIE page d'overlay de la scène, chargée telle quelle.
@@ -3885,10 +3887,16 @@ body.is-mobile .mobile-back-btn {
 .ovl-surface.avec-apercu .ovl-rect:hover { background: rgba(6, 182, 212, 0.10); }
 /* Un fond derrière le nom quand l'aperçu est là : sur une image de jeu, du
    texte nu ne se lit pas. En pixels d'ÉCRAN — l'étiquette a défait l'échelle du
-   repère, un padding de 12 px y ferait un pavé. */
+   repère, un padding de 12 px y ferait un pavé.
+
+   PAS DE `backdrop-filter` ICI. C'est le seul endroit du panneau où le
+   glassmorphism du dashboard coûte vraiment : trente-sept étiquettes, chacune
+   sa couche de composition, toutes posées AU-DESSUS d'une iframe qui repeint en
+   continu — le navigateur refloute trente-sept fonds à chaque frame de
+   l'aperçu. Et pour rien : le fond est un noir à 72 %, il ne laisse déjà
+   presque rien passer. Le flou ne se voyait pas ; son prix, si. */
 .ovl-surface.avec-apercu .ovl-rect-nom {
   background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(10px);
 }
 
 /* La bascule « Estomper les repères ». Celui qu'on règle et celui qu'on
@@ -4034,9 +4042,17 @@ body.is-mobile .mobile-back-btn {
    `!important` sur le rang : `rendreSurface()` pose un `z-index` EN LIGNE sur
    chaque repère (l'empilement de la scène), et rien d'écrit ici ne peut le
    dépasser. Sans ça, le repère qu'on vient d'éclairer resterait derrière les
-   vingt-cinq autres — précisément le cas qu'on cherche à démêler. */
+   vingt-cinq autres — précisément le cas qu'on cherche à démêler.
+
+   LE RANG NE MONTE QUE POUR UN SURVOL VENU DE LA LISTE (`survole-liste`).
+   Posé sur tout survol, il rendait la surface inutilisable : le repère que le
+   pointeur traverse en chemin passait devant celui qu'on venait de choisir,
+   et comme il était désormais dessus, le pointeur ne le quittait plus —
+   l'élément visé devenait inatteignable, et c'est toujours le même intrus qui
+   prenait le clic. Un repère survolé DEPUIS la surface est par définition
+   celui qui reçoit déjà le pointeur : il n'a rien à gagner à monter. */
+.ovl-rect.survole-liste { z-index: 50 !important; }
 .ovl-rect.survole {
-  z-index: 50 !important;
   border-color: #06b6d4;
   border-style: solid;
   background: rgba(6, 182, 212, 0.16);
@@ -4181,8 +4197,11 @@ body.is-mobile .mobile-back-btn {
   font-size: 0.72rem;
   font-family: var(--font-mono, monospace);
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+  /* Opaque plutôt que flouté : cette étiquette ne s'affiche QUE pendant un
+     geste, et elle est posée sur l'aperçu — c'est-à-dire à l'endroit et au
+     moment précis où un flou de fond coûte le plus cher. Un verre à 5 % sur une
+     image de jeu ne se lisait de toute façon que grâce au flou. */
+  background: rgba(0, 0, 0, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
