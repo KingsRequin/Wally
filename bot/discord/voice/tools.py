@@ -115,10 +115,20 @@ async def run_say_in_voice_tool(bot, args: dict, *, roles=None,
         # `malgre_ecoute` : pendant un live, Wally est en écoute seule et
         # `speak()` refuse de parler pour ne pas couvrir le streamer. C'est
         # justement le moment où cette fonction sert, et la demande est
-        # explicite — donc elle passe. Aucun autre chemin de parole ne le fait.
-        await service.speak(texte, malgre_ecoute=True)
+        # explicite — donc elle passe. Seule la récompense « im out » le fait
+        # aussi, et pour la même raison.
+        #
+        # Le retour est LU. Il ne l'était pas : `speak()` se taisait en silence
+        # sur cinq chemins (salon perdu entre-temps, texte réduit à rien par le
+        # nettoyage de style, timeout du TTS, panne Azure), et cette fonction
+        # répondait quand même « c'est dit à voix haute » — Wally confirmait au
+        # modérateur une phrase que personne n'avait entendue.
+        sortie = await service.speak(texte, malgre_ecoute=True)
     except Exception as e:  # noqa: BLE001 — une panne du vocal ne casse pas le chat
-        logger.warning("say_in_voice a échoué: {e}", e=e)
+        logger.warning("say_in_voice a échoué: {e!r}", e=e)
+        return "Impossible : la parole n'est pas sortie. Dis-le à la personne."
+    if not sortie:
+        logger.warning("say_in_voice : la parole n'est pas sortie — « {t} »", t=texte[:80])
         return "Impossible : la parole n'est pas sortie. Dis-le à la personne."
     logger.info("voice: dit à voix haute sur demande d'un modo — « {t} »", t=texte[:80])
     return f"C'est dit à voix haute dans le vocal : « {texte} ». Confirme-le en une phrase."

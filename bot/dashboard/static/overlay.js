@@ -641,7 +641,10 @@
         right.appendChild(verdict);
       } else {
         const help = el("div", "hangman-help");
-        help.textContent = "proposez une lettre dans le chat";
+        // Les deux façons de jouer, dites à l'écran : le mot entier a été
+        // ajouté le 2026-08-20, et une règle qu'on ne lit nulle part n'existe
+        // pas pour le chat.
+        help.textContent = "une lettre — ou le mot entier — dans le chat";
         right.appendChild(help);
       }
       box.appendChild(right);

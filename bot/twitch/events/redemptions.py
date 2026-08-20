@@ -130,6 +130,27 @@ async def _est_le_spam_virus(bot, reward_id: str) -> bool:
     return bool(attendu) and str(reward_id) == attendu
 
 
+async def _est_le_tts_im_out(bot, reward_id: str) -> bool:
+    """La récompense « im out », reconnue par son ID persisté.
+
+    Même principe que ses voisines, et pour la même raison : Twitch ne laisse
+    rembourser qu'à l'application qui a CRÉÉ la récompense, donc son ID est
+    découvert à l'exécution. Un ID vide DÉSACTIVE — sans ce garde, n'importe
+    quelle récompense de la chaîne ferait parler Wally.
+    """
+    from bot.twitch.events.im_out import CLE_RECOMPENSE
+
+    db = getattr(bot, "db", None)
+    if db is None or not reward_id:
+        return False
+    try:
+        attendu = str(await db.get_state(CLE_RECOMPENSE) or "")
+    except Exception as exc:  # noqa: BLE001 — un filtrage ne casse jamais l'événement
+        logger.debug("« im out » : ID persisté illisible : {e!r}", e=exc)
+        return False
+    return bool(attendu) and str(reward_id) == attendu
+
+
 async def _est_une_humeur(bot, reward_id: str) -> float | None:
     """L'intensité voulue si c'est une de NOS deux récompenses d'humeur.
 
@@ -176,6 +197,16 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
                 # devant un champ rempli, et les points rendus pour rien.
                 texte=str(getattr(event, "input", "") or ""),
                 intensite=intensite,
+                reward_id=reward_id,
+                redemption_id=str(getattr(event, "id", "")),
+            )
+            return
+        if await _est_le_tts_im_out(bot, reward_id):
+            from bot.twitch.events import im_out
+
+            await im_out.dire_im_out(
+                bot,
+                acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
                 reward_id=reward_id,
                 redemption_id=str(getattr(event, "id", "")),
             )

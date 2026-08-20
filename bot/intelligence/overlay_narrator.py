@@ -403,7 +403,8 @@ OVERLAY_TOOL_SPEC: dict = {
                         "bingo = une grille de pronostics sur le live · "
                         "hangman = le pendu — TU choisis le mot et tu lances "
                         "dans la foulée, le chat propose ensuite des lettres, "
-                        "une par message · "
+                        "une par message, ou tape le mot entier pour gagner "
+                        "d'un coup · "
                         "goal = un objectif de follows/subs/bits qui se remplit "
                         "tout seul · talkers = le podium des plus bavards"
                     ),
@@ -1680,7 +1681,14 @@ class OverlayNarrator:
             library = self._memes
             if library is None:
                 return None
-            chosen = library.pick(str(extra.get("about") or comment or ""))
+            # `about` SEUL, jamais `comment` en repli. La description de l'outil
+            # promet « omets-le pour un tirage au hasard » — or `comment` est la
+            # réplique de Wally, toujours remplie. Chaque affichage était donc
+            # filtré par les mots de sa propre phrase (« celui-là m'a toujours
+            # fait rire » → les memes qui parlent de rire), et le même petit
+            # groupe revenait sans fin. Un thème se DEMANDE, il ne se déduit pas
+            # de ce qu'on s'apprête à dire.
+            chosen = library.pick(str(extra.get("about") or ""))
             if chosen is None:
                 return None
             # Seule l'image part à l'écran. La description reste dans le retour,
@@ -2094,7 +2102,10 @@ class OverlayNarrator:
             f"Trouvées : {found}. Proposées en vain : {missed}. "
             f"{left} essai(s) avant la fin.\n"
             "Les messages d'une seule lettre sont des propositions, comptées "
-            "automatiquement — n'y réponds pas une par une."
+            "automatiquement — n'y réponds pas une par une. Le MOT ENTIER tapé "
+            "dans le chat gagne aussi la partie, sur-le-champ ; un mot faux ne "
+            "coûte rien. Tu peux le rappeler au chat, c'est la règle du jeu — "
+            "sans jamais approcher la réponse, évidemment."
         )
 
     def game_already_running(self, widget: str, **extra) -> Optional[str]:
@@ -2830,6 +2841,30 @@ class OverlayNarrator:
         if not game:
             return
         token = self._fold(text).strip()
+        # Le MOT ENTIER, pour qui l'a trouvé : épeler les lettres qui restent
+        # quand on a déjà la réponse n'est plus un jeu, c'est une formalité —
+        # et le chat se faisait doubler par le premier qui tapait vite.
+        #
+        # SEULE l'égalité exacte compte. Un mot faux n'est pas une proposition
+        # ratée, c'est un message ordinaire : le pénaliser ferait perdre la
+        # partie à coups de phrases de chat, et il n'existe aucun moyen de
+        # distinguer « chaussette » proposé de « chaussette » raconté.
+        #
+        # Les espaces sont recollés des DEUX côtés : `_fold` normalise la casse
+        # et les accents, pas eux — « rocket  league » posé et « rocket league »
+        # tapé sont le même mot, et l'un ne doit pas rater l'autre.
+        if token and " ".join(token.split()) == " ".join(game["word"].split()):
+            game["found"].update(c for c in game["word"] if c.isalpha())
+            # Même ordre que la victoire lettre par lettre : le filet tombe
+            # AVANT la publication qui révèle le mot, sinon l'écran affiche
+            # « […] » à la place de ce qu'on vient de trouver.
+            self._release_hangman_secret()
+            self._publish_hangman(last=token, won=True)
+            logger.info("Overlay: pendu gagné d'un coup par le chat ({w})",
+                        w=game["display"])
+            self._hangman = None
+            self._planifier_flush()
+            return
         if len(token) != 1 or not token.isalpha():
             return
         if token in game["found"] or token in game["missed"]:

@@ -38,6 +38,15 @@ PROMPT = ("L'écran se fait submerger de fausses fenêtres de virus et de memes,
 # héritage du duel qui attend un uid.
 SAISIE_REQUISE = False
 
+# Cinq minutes de recharge entre deux achats (owner, 2026-08-20). Le spectacle
+# dure et couvre TOUT l'écran : deux achats coup sur coup enchaînaient deux fois
+# la même chose, et le second passait pour un bug d'affichage.
+#
+# Tenu par TWITCH et non par nous : c'est lui qui refuse l'achat pendant le
+# délai, donc il n'y a rien à faire payer puis à rembourser, et le bouton porte
+# son compte à rebours sous les yeux du chat.
+RECHARGE_S = 300
+
 
 def _narrateur(bot):
     return getattr(getattr(bot, "discord_bot", None), "overlay_narrator", None)

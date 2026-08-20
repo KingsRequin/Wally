@@ -26,12 +26,18 @@ from loguru import logger
 async def assurer_recompense(
     api: Any, db: Any, *, cle_etat: str, titre: str, cout: int, prompt: str,
     libelle: str = "récompense", saisie_requise: bool = True,
+    cooldown_s: int = 0,
 ) -> str:
     """L'identifiant de notre récompense, créée si besoin. `""` si impossible.
 
     `cle_etat` est la clé de `bot_state` où vit l'identifiant : c'est le seul
     paramètre qui distingue deux récompenses, et il n'a pas de défaut — s'en
     passer ferait silencieusement partager la même à deux fonctionnalités.
+
+    `cooldown_s` voyage jusqu'à Twitch, à la création COMME à la mise à jour :
+    les récompenses en service ont toutes été créées avant que ce réglage
+    existe, et ne le poser qu'à la création ne l'aurait jamais appliqué à
+    aucune d'elles.
     """
     connu = await db.get_state(cle_etat)
     if connu:
@@ -46,12 +52,14 @@ async def assurer_recompense(
             # Une mise à jour ratée ne coûte que le libellé : la récompense
             # reste achetable et remboursable.
             await api.maj_recompense(connu, titre, cout, prompt, actuelle=actuelle,
-                                     saisie_requise=saisie_requise)
+                                     saisie_requise=saisie_requise,
+                                     cooldown_s=cooldown_s)
             return str(connu)
         logger.warning("Récompense {l} {i} introuvable côté Twitch — on recrée",
                        l=libelle, i=connu)
     nouvel_id = await api.creer_recompense(titre, cout, prompt,
-                                           saisie_requise=saisie_requise)
+                                           saisie_requise=saisie_requise,
+                                           cooldown_s=cooldown_s)
     if not nouvel_id:
         logger.error("Récompense {l} impossible à créer — fonction indisponible",
                      l=libelle)

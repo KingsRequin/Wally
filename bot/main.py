@@ -775,8 +775,8 @@ async def main() -> None:
         try:
             from bot.twitch.events.virus_popups import (
                 CLE_RECOMPENSE as _CLE_VIRUS, COUT as _COUT_VIRUS,
-                PROMPT as _PROMPT_VIRUS, SAISIE_REQUISE as _SAISIE_VIRUS,
-                TITRE as _TITRE_VIRUS,
+                PROMPT as _PROMPT_VIRUS, RECHARGE_S as _RECHARGE_VIRUS,
+                SAISIE_REQUISE as _SAISIE_VIRUS, TITRE as _TITRE_VIRUS,
             )
             from bot.twitch.recompenses import assurer_recompense
 
@@ -784,12 +784,36 @@ async def main() -> None:
                 twitch_api, db, cle_etat=_CLE_VIRUS,
                 titre=_TITRE_VIRUS, cout=_COUT_VIRUS,
                 prompt=_PROMPT_VIRUS, libelle="attaque de meme",
-                saisie_requise=_SAISIE_VIRUS,
+                saisie_requise=_SAISIE_VIRUS, cooldown_s=_RECHARGE_VIRUS,
             )
             logger.info("Attaque de meme armée (récompense {r})",
                         r=_virus_id or "INDISPONIBLE")
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
             logger.error("Attaque de meme non armée : {e}", e=exc)
+
+        # « im out » : la voix de Wally aux points de chaîne. Comme l'attaque de
+        # meme, elle ne dépend ni d'Apex ni de l'overlay — seulement du vocal —,
+        # donc elle vit hors des blocs conditionnés plus haut. Armée ici pour la
+        # même raison que ses voisines : Twitch ne laisse rembourser qu'à
+        # l'application qui a CRÉÉ la récompense.
+        try:
+            from bot.twitch.events.im_out import (
+                CLE_RECOMPENSE as _CLE_IMOUT, COUT as _COUT_IMOUT,
+                PROMPT as _PROMPT_IMOUT, SAISIE_REQUISE as _SAISIE_IMOUT,
+                TITRE as _TITRE_IMOUT,
+            )
+            from bot.twitch.recompenses import assurer_recompense
+
+            _imout_id = await assurer_recompense(
+                twitch_api, db, cle_etat=_CLE_IMOUT,
+                titre=_TITRE_IMOUT, cout=_COUT_IMOUT,
+                prompt=_PROMPT_IMOUT, libelle="im out",
+                saisie_requise=_SAISIE_IMOUT,
+            )
+            logger.info("Récompense « im out » armée ({r})",
+                        r=_imout_id or "INDISPONIBLE")
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
+            logger.error("Récompense « im out » non armée : {e!r}", e=exc)
 
         # Forcer une humeur (§14) : DEUX récompenses, une par intensité — le
         # coût est fixe par récompense côté Twitch, il en faut donc une pour

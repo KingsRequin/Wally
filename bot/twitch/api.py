@@ -88,7 +88,8 @@ TITRE_MAX = 45
 PROMPT_MAX = 200
 
 
-def _corps_recompense(titre: str, cout: int, prompt: str) -> dict:
+def _corps_recompense(titre: str, cout: int, prompt: str,
+                      cooldown_s: int = 0) -> dict:
     """Les champs éditables d'une récompense, tronqués aux limites Twitch.
 
     Partagé par la création et la mise à jour, et c'est tout l'intérêt : une
@@ -96,11 +97,48 @@ def _corps_recompense(titre: str, cout: int, prompt: str) -> dict:
     libellé au caractère près. Sans ce partage, un titre trop long serait
     tronqué à la création puis jugé « différent » du titre configuré à chaque
     démarrage — un PATCH par boot, indéfiniment.
+
+    `cooldown_s` est le temps de recharge GLOBAL : Twitch refuse lui-même
+    l'achat pendant ce délai, donc il n'y a rien à rembourser et le viewer voit
+    le compte à rebours sur le bouton. Un garde maison aurait fait payer puis
+    remboursé — beaucoup de code pour un moins bon résultat.
+
+    À zéro, la DURÉE n'est pas envoyée du tout : Twitch impose un minimum de 1,
+    et « désactivé » se dit par le seul booléen. L'envoyer quand même ferait
+    refuser la requête entière pour un champ qui ne sert à rien.
     """
-    return {
+    corps = {
         "title": (titre or "")[:TITRE_MAX],
         "cost": max(1, int(cout)),
         "prompt": (prompt or "")[:PROMPT_MAX],
+        "is_global_cooldown_enabled": int(cooldown_s or 0) > 0,
+    }
+    if int(cooldown_s or 0) > 0:
+        corps["global_cooldown_seconds"] = int(cooldown_s)
+    return corps
+
+
+def _aplatir_cooldown(recompense: dict) -> dict:
+    """La récompense telle que Twitch la REND, ramenée à la forme qu'il LIT.
+
+    Asymétrie confirmée dans la doc Helix : la requête porte
+    `is_global_cooldown_enabled` et `global_cooldown_seconds` à plat, la
+    réponse les rend imbriqués dans `global_cooldown_setting {is_enabled,
+    global_cooldown_seconds}`.
+
+    Sans cette traduction, les deux clés seraient toujours ABSENTES de la
+    récompense actuelle — donc jamais comptées comme un écart (règle « un champ
+    absent n'est pas un champ vide »), donc un cooldown ne serait JAMAIS posé
+    sur une récompense déjà créée. Et la relecture d'après-PATCH ne le verrait
+    pas revenir non plus : un PATCH réussi serait déclaré non appliqué.
+    """
+    reglage = recompense.get("global_cooldown_setting")
+    if not isinstance(reglage, dict):
+        return recompense
+    return {
+        **recompense,
+        "is_global_cooldown_enabled": bool(reglage.get("is_enabled")),
+        "global_cooldown_seconds": int(reglage.get("global_cooldown_seconds") or 0),
     }
 
 
@@ -855,7 +893,8 @@ class TwitchAPI:
                 f"ne les affiche pas par défaut). {geste}")
 
     async def creer_recompense(self, titre: str, cout: int, prompt: str, *,
-                               saisie_requise: bool = True) -> str | None:
+                               saisie_requise: bool = True,
+                               cooldown_s: int = 0) -> str | None:
         """Crée la récompense de points de chaîne, et rend son ID.
 
         C'est Wally qui doit la créer : Twitch réserve la mise à jour d'une
@@ -868,7 +907,7 @@ class TwitchAPI:
         rendrait le duel indisponible sans rattrapage.
         """
         corps = {
-            **_corps_recompense(titre, cout, prompt),
+            **_corps_recompense(titre, cout, prompt, cooldown_s),
             # `is_user_input_required` est OPTIONNEL côté Twitch (défaut
             # `false`) : il était posé à `True` en dur ici, hérité du duel qui
             # attend un uid. Toute récompense héritait donc d'un champ de saisie
@@ -1029,7 +1068,8 @@ class TwitchAPI:
 
     async def maj_recompense(self, reward_id: str, titre: str, cout: int,
                              prompt: str, *, actuelle: dict | None = None,
-                             saisie_requise: bool = True) -> bool:
+                             saisie_requise: bool = True,
+                             cooldown_s: int = 0) -> bool:
         """Aligne une récompense EXISTANTE sur le libellé voulu (PATCH).
 
         Sans elle, éditer `apex.duel` dans `config.yaml` ne changeait rien :
@@ -1060,9 +1100,13 @@ class TwitchAPI:
             # silencieusement — elle continuerait de marcher avec son champ de
             # trop. Hors de `_corps_recompense`, que la création remplit déjà de
             # son côté.
-            corps = {**_corps_recompense(titre, cout, prompt),
+            corps = {**_corps_recompense(titre, cout, prompt, cooldown_s),
                      "is_user_input_required": bool(saisie_requise)}
             if actuelle is not None:
+                # Aplatie AVANT la comparaison : le temps de recharge est le
+                # seul champ que Twitch rend sous une autre forme qu'il ne le
+                # lit, et une clé jamais trouvée n'est jamais un écart.
+                actuelle = _aplatir_cooldown(actuelle)
                 ecarts = {c: v for c, v in corps.items()
                           if c in actuelle and actuelle[c] != v}
                 if not ecarts:
@@ -1103,7 +1147,10 @@ class TwitchAPI:
                                      c=resp.status_code, t=resp.text[:200])
                         return False
                     data = (resp.json() or {}).get("data") or []
-                    rendue = (data[0] or {}) if data else {}
+                    # Même traduction qu'à l'aller : relue à plat, la recharge
+                    # que Twitch vient d'appliquer passerait pour absente, et un
+                    # PATCH réussi serait déclaré non appliqué.
+                    rendue = _aplatir_cooldown(data[0] or {}) if data else {}
                     restants = [c for c, v in corps.items()
                                 if c in rendue and rendue[c] != v]
                     if not rendue or restants:

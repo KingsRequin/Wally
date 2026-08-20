@@ -616,24 +616,35 @@ class VoiceService:
     # Parole (TTS → playback)
     # ------------------------------------------------------------------
 
-    async def speak(self, text: str, *, malgre_ecoute: bool = False) -> None:
+    async def speak(self, text: str, *, malgre_ecoute: bool = False) -> bool:
         """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus).
 
-        `malgre_ecoute` outrepasse le mode écoute seule. Un SEUL chemin s'en
-        sert : un modérateur qui demande explicitement, depuis le chat, que
-        Wally dise quelque chose à voix haute (`say_in_voice`). Le mode écoute
-        existe pour qu'il ne prenne jamais la parole de lui-même pendant un
-        live — pas pour qu'il refuse celle qu'on lui demande.
+        Rend VRAI si la parole a été entendue. Elle rendait `None` sur tous ses
+        chemins — pas de salon, mode écoute, texte vidé par le nettoyage de
+        style, timeout du TTS, panne Azure — si bien que `say_in_voice`
+        répondait « c'est dit à voix haute » à un modérateur devant un silence.
+        C'est le `is_sent: false` du chat Twitch transposé à la voix, et ce
+        projet a déjà payé ce défaut une fois de ce côté-là.
+
+        Les appelants qui n'ont rien à en faire (salutations, bruits de
+        réflexion) ignorent simplement le retour : personne n'a eu à changer.
+
+        `malgre_ecoute` outrepasse le mode écoute seule. Deux chemins s'en
+        servent, et tous deux sur une demande EXPLICITE depuis le chat : un
+        modérateur qui fait parler Wally (`say_in_voice`), et la récompense
+        « im out » achetée aux points de chaîne. Le mode écoute existe pour
+        qu'il ne prenne jamais la parole de lui-même pendant un live — pas pour
+        qu'il refuse celle qu'on lui demande.
         """
         if not text or self._vc is None:
-            return
+            return False
         # Dire le mot d'un pendu en cours le gâcherait autant que l'écrire.
         text = redact(text)
         if self.listen_only and not malgre_ecoute:
             # Garde en profondeur : en mode écoute, parler couvrirait le streamer
             # et serait réinjecté dans son micro.
             logger.debug("voice: parole refusée (mode écoute)")
-            return
+            return False
         # Sérialisé : deux `speak()` concurrents (deux `greet_newcomer`, une
         # tâche par événement) partaient tous les deux en lecture ; le perdant
         # se prenait un `ClientException('Already playing')` et remettait
@@ -642,7 +653,7 @@ class VoiceService:
         # captée par les micros ouverts entrait dans `history`, partait au
         # fact_extractor, et il pouvait se répondre à lui-même.
         async with self._speak_lock:
-            await self._speak_locked(text)
+            return await self._speak_locked(text)
 
     @property
     def style_voice(self) -> str:
@@ -655,7 +666,7 @@ class VoiceService:
         """
         return getattr(self._tts, "style_voice", "")
 
-    async def _speak_locked(self, text: str) -> None:
+    async def _speak_locked(self, text: str) -> bool:
         # Style de voix : tag explicite de Wally ([murmure]…), sinon son émotion
         # secondaire du moment, sinon son humeur dominante.
         try:
@@ -671,7 +682,9 @@ class VoiceService:
         style, text = resolve_style(text, emotion_state, voice=self.style_voice,
                                     secondaries=secondaries)
         if not text:
-            return
+            # Un texte réduit à rien par le nettoyage de style (une réplique qui
+            # n'était QUE des tags) : rien n'a été entendu.
+            return False
         self.quota.add_tts_chars(len(text))
         self.is_speaking = True
         try:
@@ -682,13 +695,20 @@ class VoiceService:
             # `threading.Condition` sans timeout, et `stop()` ne la débloque pas.
             # `is_speaking` restait True : session vocale morte jusqu'au reboot.
             if stream_fn is not None:
-                await asyncio.wait_for(
+                joue = await asyncio.wait_for(
                     self._speak_streaming(text, style, stream_fn), timeout=_SPEAK_TIMEOUT_S
                 )
             else:
-                await asyncio.wait_for(
+                joue = await asyncio.wait_for(
                     self._speak_batch(text, style), timeout=_SPEAK_TIMEOUT_S
                 )
+            if not joue:
+                # Une synthèse VIDE ne lève pas : Azure peut rendre zéro octet
+                # sur un texte qu'il refuse. Sans ce test, `speak()` promettrait
+                # une parole entendue là où le salon est resté silencieux — le
+                # défaut même qu'on vient de corriger, une couche plus bas.
+                logger.warning("voice: synthèse muette, rien n'a été joué")
+                return False
             await asyncio.sleep(POST_SPEAK_MUTE_S)
             # Il vient de PARLER, et il est le dernier à l'apprendre. Consigné
             # ici et pas dans `brain.py` : `speak()` est le point de passage
@@ -705,33 +725,52 @@ class VoiceService:
                 note_voice_speech(self.channel_id, self.members_names())
             except Exception as exc:  # noqa: BLE001 — une trace ne casse pas la voix
                 logger.debug("voice: parole non tracée: {e}", e=exc)
+            # Au MÊME endroit que `note_voice_speech` et pour la même raison :
+            # c'est le seul point du corps qui prouve que la lecture est allée
+            # au bout. Une synthèse expirée ou en panne tombe dans les `except`
+            # en dessous et rend faux.
+            return True
         except asyncio.TimeoutError:
             logger.warning("voice: parole abandonnée après {t}s", t=_SPEAK_TIMEOUT_S)
             try:
                 self._vc.stop()
             except Exception:  # noqa: BLE001
                 pass
+            return False
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice speak a échoué: {e}", e=e)
+            logger.warning("voice speak a échoué: {e!r}", e=e)
+            return False
         finally:
             self.is_speaking = False
 
-    async def _speak_streaming(self, text: str, style: str | None, stream_fn) -> None:
-        """Joue le TTS au fil de la synthèse via une source alimentée en continu (latence minimale)."""
+    async def _speak_streaming(self, text: str, style: str | None, stream_fn) -> bool:
+        """Joue le TTS au fil de la synthèse via une source alimentée en continu (latence minimale).
+
+        Rend VRAI si au moins un morceau de son a été alimenté. Compté ici et
+        pas dans `StreamingPCMSource` : une synthèse qui rend zéro chunk sans
+        lever laisse la source se terminer normalement, et rien en aval ne
+        distingue ce silence d'une phrase jouée.
+        """
         from bot.discord.voice.audio import StreamingPCMSource
         source = StreamingPCMSource()
         done = asyncio.Event()
         loop = asyncio.get_running_loop()
+        morceaux = 0
 
         def _after(err):
             if err:
                 logger.warning("voice playback erreur: {e}", e=err)
             loop.call_soon_threadsafe(done.set)
 
+        def _feed(chunk):
+            nonlocal morceaux
+            morceaux += 1
+            source.feed(chunk)
+
         self._vc.play(source, after=_after)
         try:
             # Les chunks PCM 48 kHz mono arrivent au fil de la synthèse → joués immédiatement.
-            await stream_fn(text, style, source.feed)
+            await stream_fn(text, style, _feed)
         finally:
             source.finish()  # garantit la fin de lecture même si la synthèse échoue
             # `await done.wait()` DANS le `finally` : s'il restait dehors, une
@@ -742,12 +781,16 @@ class VoiceService:
             # de sa propre voix rentrait dans l'historique, partait au
             # fact_extractor, et Wally pouvait se répondre à lui-même.
             await done.wait()
+        return morceaux > 0
 
-    async def _speak_batch(self, text: str, style: str | None) -> None:
-        """Synthèse complète puis lecture (fallback si le provider TTS ne streame pas)."""
+    async def _speak_batch(self, text: str, style: str | None) -> bool:
+        """Synthèse complète puis lecture (fallback si le provider TTS ne streame pas).
+
+        Rend VRAI si du son est parti. Une synthèse vide sortait en silence.
+        """
         pcm = await self._tts.synthesize(text, style)
         if not pcm:
-            return
+            return False
         # 48 kHz mono 16-bit → stéréo pour discord.PCMAudio.
         pcm_stereo = audioop.tostereo(pcm, 2, 1, 1)
         source = discord.PCMAudio(io.BytesIO(pcm_stereo))
@@ -761,6 +804,7 @@ class VoiceService:
 
         self._vc.play(source, after=_after)
         await done.wait()
+        return True
 
     async def play_cue(self) -> None:
         """Joue un bref bip 'je réfléchis' (feedback de latence) et attend sa fin."""
