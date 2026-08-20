@@ -70,7 +70,9 @@ FENETRE_DEFAUT = "7j"
 PAQUET = 4
 
 Decrire = Callable[[str, str], Awaitable[str]]
-Progression = Callable[[meme_import.Bilan], Awaitable[None]]
+# Le bilan seul disait « 2 rangés » sans jamais dire sur combien : le second
+# argument est le nombre de médias TROUVÉS, c'est-à-dire le dénominateur.
+Progression = Callable[[meme_import.Bilan, int], Awaitable[None]]
 
 
 def fenetre(depuis: str) -> datetime | None:
@@ -197,9 +199,16 @@ async def importer_medias(
     reste : décrire une onzième image pour une limite de dix, c'est un appel
     payé pour rien.
     """
-    session = await asyncio.to_thread(meme_import.SessionImport, dossier)
     bilan = meme_import.Bilan()
     reste = list(medias)
+    total = len(reste)
+    # Annoncé avant même d'ouvrir la session : indexer le dossier lit 44 Mo, et
+    # rapatrier puis décrire le premier paquet prend une dizaine de secondes —
+    # tout ce temps-là, l'appelant n'avait rien à afficher, pas même le nombre
+    # d'images qui l'attendent.
+    if progression is not None:
+        await progression(bilan, total)
+    session = await asyncio.to_thread(meme_import.SessionImport, dossier)
     while reste and len(bilan.ranges) < limite:
         taille = min(PAQUET, limite - len(bilan.ranges))
         paquet, reste = reste[:taille], reste[taille:]
@@ -212,7 +221,7 @@ async def importer_medias(
             )
             bilan.ajouter(resultat, decrit=bool(p.description))
         if progression is not None:
-            await progression(bilan)
+            await progression(bilan, total)
     bilan.interrompu = bool(reste)
     return bilan
 
@@ -225,6 +234,54 @@ def _depot_actif(bot) -> int | None:
 # Discord borne l'embed : 4096 caractères de description, 1024 par champ, 6000
 # au total. Deux cents memes rangés dépassent la description à eux seuls.
 _MAX_DESCRIPTION = 3900
+
+
+# Vingt segments : au-delà, la barre passe à la ligne sur mobile et ne veut
+# plus rien dire ; en dessous, un meme sur trois ne bouge pas le trait.
+_SEGMENTS = 20
+
+
+def barre(fait: int, total: int, segments: int = _SEGMENTS) -> str:
+    """Une barre de progression en pleins et déliés, suivie du pourcentage.
+
+    Un total NUL arrive pour de bon — un salon qui ne porte aucune image. Une
+    division par zéro sur le chemin d'affichage couperait le ratissage lui-même,
+    alors qu'il n'a rien à se reprocher.
+    """
+    part = 0.0 if total <= 0 else max(0.0, min(1.0, fait / total))
+    pleins = round(part * segments)
+    return f"`{'█' * pleins}{'░' * (segments - pleins)}` {part * 100:.0f} %"
+
+
+def texte_progression(bilan: meme_import.Bilan, total: int, salon) -> str:
+    """Ce que l'admin lit PENDANT le ratissage.
+
+    Le bilan seul annonçait « 2 rangés » sans dire sur combien : impossible de
+    savoir s'il restait huit images ou trois cents, donc impossible de décider
+    d'attendre. Le dénominateur compte les médias TRAITÉS — un doublon est du
+    travail fait, même s'il n'entre pas dans la banque.
+    """
+    ou = getattr(salon, "mention", "?")
+    if total <= 0:
+        # Une barre à 0/0 et un « ✅ 0 rangé » laissent croire à un travail en
+        # cours ; il n'y a simplement rien à ranger.
+        return f"Aucun média à ranger dans {ou}."
+    traites = len(bilan.ranges) + len(bilan.doublons) + len(bilan.refus)
+    lignes = [
+        f"**{total} média{'s' if total > 1 else ''} trouvé{'s' if total > 1 else ''}** dans {ou}",
+        f"{barre(traites, total)} — {traites}/{total}",
+    ]
+    # Tant que rien n'est traité, la ligne de comptes ne dirait que des zéros.
+    if traites:
+        comptes = [f"✅ {len(bilan.ranges)} rangé{'s' if len(bilan.ranges) > 1 else ''}"]
+        if bilan.doublons:
+            comptes.append(
+                f"🔁 {len(bilan.doublons)} doublon{'s' if len(bilan.doublons) > 1 else ''}"
+            )
+        if bilan.refus:
+            comptes.append(f"⚠️ {len(bilan.refus)} écarté{'s' if len(bilan.refus) > 1 else ''}")
+        lignes.append(" · ".join(comptes))
+    return "\n".join(lignes)
 
 
 def periode_lisible(apres: datetime | None, jusqu_a: datetime) -> str:
@@ -347,16 +404,23 @@ class MemeMasseCog(commands.Cog):
         depart = datetime.now(timezone.utc)
         muet = False  # passe à vrai dès que l'interaction n'écoute plus
         derniere = depart
+        premiere = True
 
-        async def _avancer(bilan: meme_import.Bilan) -> None:
-            nonlocal muet, derniere
+        async def _avancer(bilan: meme_import.Bilan, total: int) -> None:
+            # Le tout premier passage échappe au pas : c'est lui qui annonce
+            # combien de médias ont été trouvés, et le retenir trois secondes
+            # laisserait l'admin devant un « Wally réfléchit… » muet pendant
+            # que le premier paquet se télécharge.
+            nonlocal muet, derniere, premiere
             maintenant = datetime.now(timezone.utc)
-            if muet or (maintenant - derniere).total_seconds() < PAS_PROGRESSION:
+            trop_tot = (maintenant - derniere).total_seconds() < PAS_PROGRESSION
+            if muet or (trop_tot and not premiere):
                 return
+            premiere = False
             derniere = maintenant
             try:
                 await interaction.edit_original_response(
-                    content=f"Rangement en cours… {bilan.texte()}"
+                    content=texte_progression(bilan, total, cible)
                 )
             except Exception as e:  # noqa: BLE001 — le token d'interaction dure 15 min
                 muet = True

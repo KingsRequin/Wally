@@ -64,6 +64,51 @@ def _salon(messages):
 # ── La fenêtre temporelle ─────────────────────────────────────────────────────
 
 
+def test_la_barre_rend_le_pourcentage_et_les_pleins():
+    assert meme_masse.barre(0, 10) == "`" + "░" * 20 + "` 0 %"
+    assert meme_masse.barre(5, 10) == "`" + "█" * 10 + "░" * 10 + "` 50 %"
+    assert meme_masse.barre(10, 10) == "`" + "█" * 20 + "` 100 %"
+
+
+def test_un_salon_sans_image_ne_divise_pas_par_zero():
+    """Un salon vide n'a rien à se reprocher : la barre ne doit pas lever."""
+    assert meme_masse.barre(0, 0).endswith("0 %")
+
+
+def test_la_progression_dit_sur_combien_et_pas_seulement_combien():
+    bilan = meme_import.Bilan(ranges=["meme1.webp", "meme2.webp"], doublons=["meme9.webp"])
+    salon = MagicMock(spec=discord.TextChannel)
+    salon.mention = "#memes"
+
+    texte = meme_masse.texte_progression(bilan, 10, salon)
+
+    assert "**10 médias trouvés** dans #memes" in texte
+    assert "— 3/10" in texte
+    assert "30 %" in texte
+    assert "✅ 2 rangés · 🔁 1 doublon" in texte
+
+
+def test_avant_le_premier_rangement_la_ligne_de_comptes_se_tait():
+    """« ✅ 0 rangé » n'apprend rien : seule la barre a quelque chose à dire."""
+    salon = MagicMock(spec=discord.TextChannel)
+    salon.mention = "#memes"
+
+    texte = meme_masse.texte_progression(meme_import.Bilan(), 10, salon)
+
+    assert "0/10" in texte
+    assert "✅" not in texte
+
+
+def test_un_salon_sans_media_le_dit_au_lieu_d_une_barre_a_zero():
+    """Une barre à 0/0 laisse croire à un travail en cours qui n'existe pas."""
+    salon = MagicMock(spec=discord.TextChannel)
+    salon.mention = "#memes"
+
+    assert meme_masse.texte_progression(meme_import.Bilan(), 0, salon) == (
+        "Aucun média à ranger dans #memes."
+    )
+
+
 def test_la_periode_sans_borne_dit_tout_l_historique():
     fin = datetime(2026, 8, 20, 20, 30, tzinfo=timezone.utc)
     assert meme_masse.periode_lisible(None, fin) == (
@@ -236,8 +281,8 @@ async def test_la_progression_est_rapportee_en_cours_de_route(tmp_path, monkeypa
     monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
     vus = []
 
-    async def _noter(bilan):
-        vus.append(len(bilan.ranges))
+    async def _noter(bilan, total):
+        vus.append((len(bilan.ranges), total))
 
     await meme_masse.importer_salon(
         _salon([_message(f"https://cdn/{i}0000.png") for i in range(6)]),
@@ -246,7 +291,25 @@ async def test_la_progression_est_rapportee_en_cours_de_route(tmp_path, monkeypa
     )
 
     assert vus  # l'appelant a de quoi éditer son message d'attente
-    assert vus[-1] == 6
+    assert vus[-1] == (6, 6)
+
+
+async def test_le_total_est_annonce_avant_le_premier_paquet(tmp_path, monkeypatch, decrire):
+    """Rapatrier et décrire quatre images prend une dizaine de secondes : sans
+    cette annonce, l'admin n'a RIEN sous les yeux pendant ce temps-là."""
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    vus = []
+
+    async def _noter(bilan, total):
+        vus.append((len(bilan.ranges), total))
+
+    await meme_masse.importer_salon(
+        _salon([_message(f"https://cdn/{i}0000.png") for i in range(6)]),
+        apres=None, limite=100, dossier=tmp_path, decrire=decrire,
+        progression=_noter,
+    )
+
+    assert vus[0] == (0, 6)  # le dénominateur AVANT le premier rangement
 
 
 # ── La commande, et le dépôt au fil de l'eau ──────────────────────────────────
@@ -320,6 +383,22 @@ async def test_le_rapport_final_est_public_et_porte_les_comptes(tmp_path, monkey
     assert champs["Rangés"] == "1"
     assert champs["Doublons"] == "1"
     assert "tout l'historique" in champs["Période"]
+
+
+async def test_le_message_d_attente_porte_la_barre_et_le_total(tmp_path, monkeypatch):
+    """Le compte rendu d'attente disait « 2 rangés » sans jamais dire sur combien."""
+    monkeypatch.setattr(meme_masse, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
+    salon = _salon([_message("https://cdn/a.png"), _message("https://cdn/b.png")])
+    salon.permissions_for = MagicMock(return_value=MagicMock(read_message_history=True))
+    interaction = _interaction(salon)
+    cog = meme_masse.MemeMasseCog(_bot())
+
+    await cog.importer.callback(cog, interaction, depuis="tout")
+
+    attente = interaction.edit_original_response.call_args_list[0].kwargs["content"]
+    assert "**2 médias trouvés**" in attente
+    assert "0/2" in attente
 
 
 async def test_la_progression_ephemere_se_clot(tmp_path, monkeypatch):
