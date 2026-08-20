@@ -183,3 +183,55 @@ async def test_store_doubt_method(store):
         status, conf = await cur.fetchone()
     assert status == "needs_review"
     assert conf == pytest.approx(0.4)
+
+
+@pytest.mark.asyncio
+async def test_un_reminder_date_nait_avec_sa_peremption(store):
+    """« demain » dans une note doit poser une échéance, comme pour create_desire.
+
+    C'était le second chemin, oublié : `create_desire` appelle
+    `_peremption_desir` depuis le 2026-08-09, mais `note_to_self` en
+    kind=reminder atterrit AUSSI dans les DESIRE et ne l'appelait pas. Constat
+    du 2026-08-20 : 14 désirs actifs portaient un marqueur temporel sans
+    péremption — « demain midi », ou « le 14 juillet » cinq semaines après."""
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Demain, demander à polylrose ce qu'il pense du mode classé",
+                  "kind": "reminder"},
+    ))
+    actives = await store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(actives) == 1
+    assert actives[0].expires_at is not None
+
+
+@pytest.mark.asyncio
+async def test_un_desir_durable_ne_perime_pas(store):
+    """Garde-fou du garde-fou : sans marqueur temporel, rien n'expire. Un
+    plancher trop zélé effacerait des désirs de fond au bout de trois jours."""
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Comprendre ce que Makkx cherche vraiment derrière sa posture",
+                  "kind": "question"},
+    ))
+    actives = await store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(actives) == 1
+    assert actives[0].expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_une_note_a_echeance_explicite_ne_recoit_pas_de_peremption(store):
+    """`in_minutes` EST l'intention : une péremption déduite du texte pourrait
+    tomber avant elle (« ce soir » → fin de journée) et tuer le rappel avant
+    qu'il ne revienne à la conscience."""
+    disp = ActionDispatcher(fact_store=store)
+    await disp.dispatch(MetaDecision(
+        action="ACT", act_name="note_to_self",
+        act_args={"note": "Ce soir : relancer l'enquête DIS LE BORDEL",
+                  "kind": "reminder", "in_minutes": 9000},   # ~6 jours
+    ))
+    actives = await store.get_by_user("wally:self", categories=[FactCategory.DESIRE])
+    assert len(actives) == 1
+    assert actives[0].scheduled_at is not None
+    assert actives[0].expires_at is None

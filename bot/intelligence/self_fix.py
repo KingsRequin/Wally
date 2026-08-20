@@ -9,7 +9,7 @@ from loguru import logger
 from bot.discord.message_split import send_chunked
 from bot.intelligence.identity import render_identity, creator_name, bot_name
 from bot.intelligence.upgrade_registry import (
-    UpgradeRegistry, DELIVERED, DECLINED, ABANDONED, REQUESTED,
+    UpgradeRegistry, DELIVERED, DECLINED, ABANDONED, REQUESTED, formuler_capacite,
 )
 
 # Durée typique estimée d'un run Claude, sert UNIQUEMENT à calculer un pourcentage
@@ -177,19 +177,10 @@ class SelfFix:
         goal = (goal or self._active_goal or "").strip()
         if not goal:
             return
-        try:
-            phrase = await llm.complete(
-                "Tu reformules une demande d'amélioration ACCEPTÉE ET DÉPLOYÉE en une "
-                "phrase décrivant la capacité obtenue. Écris à la PREMIÈRE PERSONNE et "
-                "au PRÉSENT (« Je vois… », « Je reçois… »), une seule phrase courte, "
-                "concrète, sans préambule ni guillemets. Décris ce que la capacité "
-                "PERMET, pas la demande ni son historique.",
-                [{"role": "user", "content": goal[:1500]}],
-            )
-        except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("self-fix: reformulation de la capacité #{} échouée: {}", upgrade_id, e)
-            return
-        phrase = " ".join(str(phrase or "").split())[:300]
+        # Le prompt vit dans `upgrade_registry` : il est partagé avec l'outil de
+        # rattrapage et de livraison manuelle, pour que les trois chemins
+        # produisent la MÊME voix.
+        phrase = await formuler_capacite(llm, goal)
         if not phrase:
             return
         try:

@@ -792,6 +792,22 @@ class ActionDispatcher:
                     )
                     self._publish_act(f"note fusionnée ({kind}): ", note)
                     return
+            # Péremption des désirs datés — le second chemin, qui manquait.
+            # `create_desire` appelle `_peremption_desir` depuis le 2026-08-09,
+            # mais `note_to_self` en kind=question/reminder atterrit AUSSI en
+            # DESIRE et ne l'appelait pas : au 2026-08-20, 14 désirs actifs
+            # portaient un marqueur temporel sans échéance — « demain midi », ou
+            # « le 14 juillet » cinq semaines après la date.
+            #
+            # Sauf quand `scheduled_at` est posé : là, l'échéance EXPLICITE est
+            # l'intention. Une péremption déduite du texte pourrait tomber avant
+            # elle (« ce soir » → fin de journée) et tuer le rappel avant qu'il
+            # ne revienne à la conscience. Même arbitrage que la dédup ci-dessus.
+            peremption = (
+                _peremption_desir(note)
+                if cat == FactCategory.DESIRE and scheduled_at is None
+                else None
+            )
             await self._facts.add(AtomicFact(
                 user_id="wally:self",
                 content=note,
@@ -799,6 +815,7 @@ class ActionDispatcher:
                 source="note_to_self",
                 confidence=1.0,
                 scheduled_at=scheduled_at,
+                expires_at=peremption,
                 created_at=now,
                 last_seen_at=now,
             ))

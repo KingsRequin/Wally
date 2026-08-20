@@ -23,6 +23,51 @@ ABANDONED = "abandoned"   # timeout / échec technique / sans changement (re-pro
 # (2026-07-02) reproposée à l'identique en #14 (2026-07-30).
 _BLOCKING = (REQUESTED, DELIVERED, DECLINED)
 
+# Reformulation d'une demande livrée en capacité, AU PRÉSENT et à la première
+# personne. Point unique : ce prompt est partagé par le chemin self-fix
+# (`SelfFix._ecrire_capacite`) et par l'outil de rattrapage/livraison manuelle
+# (`scripts/capacites_livrees.py`). En trois exemplaires, les trois chemins
+# auraient produit trois voix différentes pour la même chose.
+#
+# Pourquoi le présent et la première personne : « tu as demandé X, c'est livré »
+# est une phrase que Wally REQUALIFIE dès qu'un désir la contredit (« la mienne
+# est différente », le 2026-08-09). « Je vois le chat du live » ne se discute pas.
+# ⚠️ Les exemples de verbes couvrent la PERCEPTION *et* l'ACTION. Avec les seuls
+# « Je vois / Je reçois », le modèle rendait « Je vois mes pensées envoyées dans
+# le salon chambre » pour une capacité qui est un GESTE (constaté sur la
+# demande #7, 2026-08-20). Une capacité d'agir décrite comme une perception,
+# c'est exactement le défaut que ce champ existe pour corriger.
+_PROMPT_CAPACITE = (
+    "Tu reformules une demande d'amélioration ACCEPTÉE ET DÉPLOYÉE en une "
+    "phrase décrivant la capacité obtenue. Écris à la PREMIÈRE PERSONNE et "
+    "au PRÉSENT. Choisis le verbe selon la nature de la capacité : perception "
+    "(« Je vois… », « Je reçois… ») ou action (« J'envoie… », « Je découpe… », "
+    "« Je rejoins… »). Une seule phrase courte, concrète, sans préambule ni "
+    "guillemets. Décris ce que la capacité PERMET, pas la demande ni son "
+    "historique."
+)
+
+
+async def formuler_capacite(llm, proposal: str) -> str:
+    """La phrase au présent qu'une demande livrée donne à Wally, ou "".
+
+    Best-effort de bout en bout : sans LLM, sans demande ou sur erreur, on rend
+    "" et l'appelant laisse la colonne NULL — le rendu retombe alors sur la
+    formulation de la demande, dégradé mais jamais vide.
+    """
+    goal = (proposal or "").strip()
+    if llm is None or not goal:
+        return ""
+    try:
+        phrase = await llm.complete(
+            _PROMPT_CAPACITE, [{"role": "user", "content": goal[:1500]}]
+        )
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant
+        logger.warning("capacité : reformulation échouée — {e!r}", e=exc)
+        return ""
+    return " ".join(str(phrase or "").split())[:300]
+
+
 _STOPWORDS = frozenset(
     {"le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "que",
      "qui", "est", "sur", "pour", "dans", "par", "pas", "ce", "ça", "il",
