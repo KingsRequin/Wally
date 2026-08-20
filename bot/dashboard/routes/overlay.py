@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from loguru import logger
 
 from bot.core.memes import media_type
+from bot.core.music import vignette
 from bot.core.sons import media_type as son_media_type
 
 public_router = APIRouter()
@@ -462,7 +463,11 @@ _ECHANTILLONS: dict[str, dict] = {
     # partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un vrai achat. Une
     # constante d'essai en montrait la moitié.
     "apex_kills": {"kills": 4, "total": 27, "games": 6, "rp": 87},
-    "music_now": {"title": "Numb", "artist": "Linkin Park", "playing": True},
+    # La pochette passe par `vignette()`, comme en prod : un échantillon qui
+    # court-circuiterait la dérivation montrerait une carte que le vrai
+    # chemin ne sait pas produire.
+    "music_now": {"title": "Numb", "artist": "Linkin Park", "playing": True,
+                  "cover": vignette("https://www.youtube.com/watch?v=kXYiU_JCYtU")},
     "poll":      {"question": "On enchaîne sur du classé ?",
                   "options": ["Oui", "Non", "Une pause d'abord", "Peu importe"],
                   "seconds": 20},

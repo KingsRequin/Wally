@@ -17,10 +17,12 @@ qui le rend testable sur des dictionnaires nus, horloge comprise.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 import uuid
 from collections import deque
 from collections.abc import Callable
+from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
@@ -35,6 +37,55 @@ _REVEILLENT = frozenset({"play", "play_query"})
 # Le titre et l'artiste viennent d'une page web — entrée non fiable — et
 # finissent dans le chat Twitch et sur l'overlay.
 _MAX_TEXTE = 200
+
+# L'identifiant d'une vidéo YouTube : onze caractères, et ce jeu-là exactement.
+# La borne est stricte À DESSEIN — l'url vient d'une page web, donc d'une entrée
+# non fiable, et ce qu'on en tire part dans un `<img src>` sur l'overlay. On ne
+# renvoie JAMAIS l'url reçue : seulement une adresse RECONSTRUITE à partir d'un
+# identifiant qui a passé cette grille.
+_ID_YOUTUBE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+# Les hôtes d'où un identifiant est accepté. Une liste blanche, pas un `in` sur
+# la chaîne : « youtube.com.pirate.fr » contient « youtube.com ».
+_HOTES_YOUTUBE = frozenset({
+    "youtube.com", "www.youtube.com", "m.youtube.com",
+    "music.youtube.com", "youtu.be", "www.youtu.be",
+})
+
+
+def vignette(url: str) -> str:
+    """L'adresse de la pochette du morceau, ou `""` si on ne sait pas.
+
+    La chaîne vide et non une image par défaut : l'overlay sait afficher un
+    disque neutre, et une pochette FAUSSE sur un morceau serait pire que pas de
+    pochette du tout — c'est le chat qui la verrait en premier.
+
+    `mqdefault` et non `hqdefault`, MESURÉ et non supposé : la seconde est en
+    480 × 360, soit du 4:3, et YouTube y ajoute donc des bandes noires en haut
+    et en bas — un quart du disque, qui est rond et recadre au centre. La
+    première est en 320 × 180, le format natif, sans bande. `maxresdefault`
+    serait plus fine encore mais n'existe pas sur toutes les vidéos et rend un
+    404 ; 320 px suffisent à un disque de 58 px comme à en tirer la couleur
+    dominante, qui se lit sur une réduction en 48 × 48.
+    """
+    url = str(url or "").strip()
+    if not url:
+        return ""
+    try:
+        decoupe = urlparse(url)
+    except ValueError:
+        return ""            # url illisible : on ne devine pas
+    if decoupe.hostname not in _HOTES_YOUTUBE:
+        return ""
+    if decoupe.hostname in ("youtu.be", "www.youtu.be"):
+        brut = decoupe.path.lstrip("/")
+    else:
+        brut = (parse_qs(decoupe.query).get("v") or [""])[0]
+    if not _ID_YOUTUBE.match(brut):
+        # Une page d'accueil, une playlist, une recherche : pas de vidéo, donc
+        # pas de pochette. Rien à signaler, c'est le cas courant.
+        return ""
+    return f"https://i.ytimg.com/vi/{brut}/mqdefault.jpg"
 
 
 class MusicService:

@@ -230,7 +230,8 @@ async def main() -> None:
             return
         narrateur.show_music(morceau.get("titre") or "",
                              morceau.get("artiste") or "",
-                             joue=bool(morceau.get("joue")))
+                             joue=bool(morceau.get("joue")),
+                             url=morceau.get("url") or "")
 
     music_service.ecouter_les_morceaux(_morceau_a_l_ecran)
 

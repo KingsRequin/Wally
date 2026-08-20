@@ -36,6 +36,7 @@ from loguru import logger
 
 from bot.core.audit_log import journal, note_audience, note_speech
 from bot.core.conversation_log import new_trace_id
+from bot.core.music import vignette
 from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
 from bot.intelligence.prompts import (
@@ -2703,7 +2704,8 @@ class OverlayNarrator:
     # quand cinq personnes demandent le titre en dix secondes.
     _dernier_morceau = ""
 
-    def show_music(self, titre: str, artiste: str, *, joue: bool = True) -> bool:
+    def show_music(self, titre: str, artiste: str, *, joue: bool = True,
+                   url: str = "") -> bool:
         """Affiche le morceau en cours. Vrai s'il est parti à l'écran.
 
         Il COHABITE : une étiquette de titre n'est pas un spectacle, elle
@@ -2713,6 +2715,12 @@ class OverlayNarrator:
         Refusé deux fois : hors live (rien à afficher) et sur le MÊME morceau
         que la dernière fois. Ce second refus ne rationne que l'AFFICHAGE — Wally
         répond quand même dans le chat à chacun de ceux qui demandent.
+
+        `url` est l'adresse de la page où joue le morceau, telle que l'extension
+        l'a rapportée. Elle ne part PAS à l'écran : seule la pochette qu'on en
+        dérive le fait, et uniquement si l'adresse a passé la grille de
+        `music.vignette()`. Sans pochette, l'overlay montre un disque neutre —
+        la carte ne dépend pas d'elle.
         """
         titre = str(titre or "").strip()[:80]
         if not titre:
@@ -2726,7 +2734,7 @@ class OverlayNarrator:
         self._dernier_morceau = signature
         self._last_event_at = time.monotonic()
         self._feed.widget("music_now", title=titre, artist=artiste,
-                          playing=bool(joue))
+                          playing=bool(joue), cover=vignette(url))
         logger.info("Overlay : morceau affiché — {a} — {t}", a=artiste, t=titre)
         return True
 

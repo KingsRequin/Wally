@@ -171,3 +171,130 @@ def test_la_page_le_connait_et_sait_le_dessiner():
 def test_le_bouton_d_essai_a_de_quoi_montrer():
     from bot.dashboard.routes.overlay import _ECHANTILLONS
     assert _ECHANTILLONS["music_now"]["title"]
+
+
+# ── la pochette ─────────────────────────────────────────────────────────────
+#
+# Le disque de l'overlay montre la pochette du morceau et lui emprunte sa
+# couleur. Elle n'est PAS rapportée par l'extension : elle se dérive de l'url de
+# la page, ce qui n'a rien coûté chez Azraël — une extension hors Web Store ne
+# se met jamais à jour seule, et lui en demander une n'est jamais gratuit.
+
+@pytest.mark.parametrize("url", [
+    "https://www.youtube.com/watch?v=kXYiU_JCYtU",
+    "https://m.youtube.com/watch?v=kXYiU_JCYtU",
+    "https://music.youtube.com/watch?v=kXYiU_JCYtU&list=RDAMVM",
+    "https://youtu.be/kXYiU_JCYtU",
+    "https://youtu.be/kXYiU_JCYtU?t=42",
+])
+def test_la_pochette_se_derive_de_l_url_du_morceau(url):
+    from bot.core.music import vignette
+    assert vignette(url) == "https://i.ytimg.com/vi/kXYiU_JCYtU/mqdefault.jpg"
+
+
+@pytest.mark.parametrize("url", [
+    "",
+    "https://www.youtube.com/",                       # l'accueil : pas de vidéo
+    "https://www.youtube.com/results?search_query=numb",
+    "https://www.youtube.com/watch?v=trop_court",
+    "https://www.youtube.com/watch?v=beaucoup_trop_long_pour_un_id",
+    "https://www.youtube.com/watch?v=onze/carac",     # onze signes, mauvais jeu
+])
+def test_sans_video_identifiable_il_n_y_a_PAS_de_pochette(url):
+    """La chaîne vide et non une image par défaut : l'overlay sait montrer un
+    disque neutre, et une pochette FAUSSE sur un morceau serait pire que pas de
+    pochette du tout — c'est le chat qui la verrait en premier."""
+    from bot.core.music import vignette
+    assert vignette(url) == ""
+
+
+@pytest.mark.parametrize("url", [
+    "https://youtube.com.pirate.fr/watch?v=kXYiU_JCYtU",
+    "https://notyoutube.com/watch?v=kXYiU_JCYtU",
+    "https://evil.example/watch?v=kXYiU_JCYtU",
+    "javascript:alert(1)",
+    "http://[::1/watch?v=kXYiU_JCYtU",                # url illisible
+])
+def test_un_HOTE_qui_n_est_pas_youtube_ne_donne_aucune_pochette(url):
+    """L'url vient d'une page web — entrée non fiable — et ce qu'on en tire part
+    dans un `<img src>` sur le live. La liste des hôtes est BLANCHE et non un
+    `in` sur la chaîne : « youtube.com.pirate.fr » contient « youtube.com »."""
+    from bot.core.music import vignette
+    assert vignette(url) == ""
+
+
+def test_l_ecran_recoit_la_pochette_du_morceau():
+    n = _narrateur()
+    n.show_music("Numb", "Linkin Park", joue=True,
+                 url="https://www.youtube.com/watch?v=kXYiU_JCYtU")
+    assert _widget(n).kwargs["cover"] == \
+        "https://i.ytimg.com/vi/kXYiU_JCYtU/mqdefault.jpg"
+
+
+def test_sans_url_la_carte_part_QUAND_MEME_sans_pochette():
+    """Le disque n'est pas une condition d'affichage : un morceau dont on n'a
+    pas l'image reste un morceau."""
+    n = _narrateur()
+    assert n.show_music("Numb", "Linkin Park", joue=True) is True
+    assert _widget(n).kwargs["cover"] == ""
+
+
+def test_l_url_BRUTE_ne_part_jamais_a_l_ecran():
+    """Seule l'adresse RECONSTRUITE traverse. L'url reçue peut pointer n'importe
+    où : elle sert à dériver, jamais à afficher."""
+    n = _narrateur()
+    n.show_music("Numb", "Linkin Park", joue=True,
+                 url="https://www.youtube.com/watch?v=kXYiU_JCYtU&secret=x")
+    envoye = " ".join(str(v) for v in _widget(n).kwargs.values())
+    assert "secret=x" not in envoye
+    assert "youtube.com/watch" not in envoye
+
+
+@pytest.mark.asyncio
+async def test_demander_le_titre_affiche_AUSSI_la_pochette():
+    """L'autre chemin d'affichage : « c'est quoi la musique ? » dans le chat. Il
+    a sa propre construction d'appel — une pochette branchée d'un seul côté est
+    exactement la panne que les tests de parité cherchent."""
+    from bot.core.music_tool import run_music_tool
+    n = _narrateur()
+    bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True,
+                     "url": "https://www.youtube.com/watch?v=kXYiU_JCYtU"},
+               narrateur=n)
+    await run_music_tool(bot, {"action": "now"}, roles=[], narrateur=n)
+    assert _widget(n).kwargs["cover"].endswith("/kXYiU_JCYtU/mqdefault.jpg")
+
+
+def test_le_bouton_d_essai_montre_une_VRAIE_pochette():
+    """Sinon le panneau de mise en scène mesure et montre une carte que le vrai
+    chemin ne sait pas produire."""
+    from bot.dashboard.routes.overlay import _ECHANTILLONS
+    assert _ECHANTILLONS["music_now"]["cover"].startswith("https://i.ytimg.com/vi/")
+
+
+def test_la_page_sait_dessiner_le_disque_et_en_tirer_la_couleur():
+    from pathlib import Path
+
+    statique = Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+    js = (statique / "overlay.js").read_text(encoding="utf-8")
+    html = (statique / "overlay.html").read_text(encoding="utf-8")
+    assert "music-disque" in html and "music-disque" in js
+    assert "couleurDominante" in js
+    # La couleur est posée sur la CARTE : sur `:root`, elle survivrait au départ
+    # du widget et teinterait le suivant.
+    assert "--accent-morceau" in html
+    assert 'box.style.setProperty("--accent-morceau"' in js
+
+
+def test_la_decoupe_d_entree_n_etrangle_pas_l_ombre_portee():
+    """`clip-path: inset(0 …)` colle à la boîte et mange le `box-shadow` EN
+    PERMANENCE, pas seulement le temps de l'animation — même famille de piège
+    que l'`overflow: hidden` qui avalait la pointe de bulle. La découpe finale
+    doit donc DÉBORDER."""
+    from pathlib import Path
+    import re
+
+    html = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+            / "overlay.html").read_text(encoding="utf-8")
+    bloc = re.search(r"\.widget\.visible \.music-now \{([^}]*)\}", html).group(1)
+    decoupe = re.search(r"clip-path:\s*inset\(([^)]*)\)", bloc).group(1)
+    assert all(v.startswith("-") for v in decoupe.split()[:3]), decoupe

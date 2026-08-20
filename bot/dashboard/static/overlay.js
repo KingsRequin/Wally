@@ -908,18 +908,53 @@
     // Le morceau en cours, affiché quand quelqu'un demande dans le chat ce qui
     // passe. Il COHABITE : pas de `widget-on`, Wally reste à l'écran à côté.
     music_now(p) {
-      const box = el("div", "music-now" + (p.playing ? " joue" : ""));
-      const note = el("div", "music-note");
-      // Trois barres qui dansent : un équaliseur dit « ça joue » sans un mot,
-      // et se fige quand c'est en pause — l'information est dans le mouvement.
-      note.append(el("i", ""), el("i", ""), el("i", ""));
+      const joue = !!p.playing;
+      const box = el("div", "music-now" + (joue ? " joue" : ""));
+
+      // Le disque : la pochette montée sur un vinyle. Il tourne même sans
+      // pochette — un morceau dont on n'a pas l'image reste un morceau, et un
+      // vinyle nu vaut mieux qu'un trou dans la carte.
+      const disque = el("div", "music-disque");
+      const pochette = String(p.cover || "");
+      if (pochette) {
+        const img = el("img", "music-pochette");
+        // `crossOrigin` posé AVANT `src`, et sur l'image AFFICHÉE plutôt que
+        // sur une seconde copie : c'est elle qu'on relira au canvas pour en
+        // tirer la couleur. Une image chargée en CORS et la même sans CORS sont
+        // deux entrées de cache DISTINCTES — deux copies feraient télécharger
+        // la pochette deux fois pour une seule à l'écran.
+        img.crossOrigin = "anonymous";
+        img.alt = "";
+        img.addEventListener("load", () => teinterSelonPochette(box, img));
+        // Une pochette qui ne charge pas ne laisse pas d'image cassée à
+        // l'écran : le disque nu fait un vinyle très convenable.
+        img.addEventListener("error", () => img.remove());
+        img.src = pochette;
+        disque.appendChild(img);
+      }
+      disque.append(el("div", "music-reflet"), el("div", "music-axe"));
+
       const texte = el("div", "music-texte");
+      const etat = el("div", "music-etat");
+      etat.textContent = joue ? "En lecture" : "En pause";
       const titre = el("div", "music-titre");
       titre.textContent = String(p.title || "");
-      const artiste = el("div", "music-artiste");
-      artiste.textContent = String(p.artist || "");
-      texte.append(titre, artiste);
-      box.append(note, texte);
+      texte.append(etat, titre);
+      // L'artiste SEULEMENT s'il y en a un : une ligne vide n'est pas neutre,
+      // elle décale le titre vers le haut et creuse la carte sous lui.
+      const nomArtiste = String(p.artist || "");
+      if (nomArtiste) {
+        const artiste = el("div", "music-artiste");
+        artiste.textContent = nomArtiste;
+        texte.appendChild(artiste);
+      }
+
+      // Cinq barres qui dansent : un équaliseur dit « ça joue » sans un mot, et
+      // se fige quand c'est en pause — l'information est dans le mouvement.
+      const note = el("div", "music-note");
+      for (let i = 0; i < 5; i++) note.appendChild(el("i", ""));
+
+      box.append(disque, texte, note);
       return box;
     },
 
@@ -979,6 +1014,102 @@
     const n = el("div", className);
     n.textContent = label;
     return n;
+  }
+
+  /* La couleur dominante d'une pochette, en `[r, v, b]`, ou `null`.
+   *
+   * Le tri se fait par TEINTE et non par couleur exacte : une pochette n'a
+   * jamais deux fois le même pixel, mais elle a une famille de teintes, et
+   * c'est celle-là qu'on cherche. Chaque pixel pèse sa saturation AU CARRÉ —
+   * sans ça, le gris d'un fond, qui couvre les trois quarts d'une image, gagne
+   * contre le rouge qui en fait l'identité. Les pixels presque noirs ou presque
+   * blancs ne votent pas du tout : leur teinte n'est que du bruit d'arrondi.
+   *
+   * 48 × 48 : on cherche une ambiance, pas un détail. Lire la pochette en
+   * pleine résolution coûterait cent fois plus pour la même réponse.
+   */
+  function couleurDominante(img) {
+    const N = 48;
+    const toile = document.createElement("canvas");
+    toile.width = toile.height = N;
+    const ctx = toile.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, N, N);
+    let pixels;
+    try {
+      pixels = ctx.getImageData(0, 0, N, N).data;
+    } catch (e) {
+      // Pochette servie sans en-tête CORS : la toile est « souillée » et sa
+      // lecture lève. Ce n'est PAS une panne — c'est un hébergeur qui ne le
+      // permet pas, et l'accent neutre de la carte prend le relais sans que
+      // rien ne manque à l'écran.
+      return null;
+    }
+    const paniers = new Map();       // teinte arrondie → poids cumulés
+    for (let i = 0; i < pixels.length; i += 4) {
+      const [t, sat, lum] = versTsl(pixels[i], pixels[i + 1], pixels[i + 2]);
+      if (lum < 0.12 || lum > 0.94) continue;
+      const cle = Math.round(t * 18);
+      const poids = 0.25 + sat * sat * 2.2 * (1 - Math.abs(lum - 0.55));
+      const panier = paniers.get(cle) || { p: 0, t: 0, s: 0, l: 0 };
+      panier.p += poids;
+      panier.t += t * poids;
+      panier.s += sat * poids;
+      panier.l += lum * poids;
+      paniers.set(cle, panier);
+    }
+    let gagnant = null;
+    paniers.forEach((panier) => {
+      if (!gagnant || panier.p > gagnant.p) gagnant = panier;
+    });
+    if (!gagnant) return null;       // pochette entièrement noire ou blanche
+    // Saturation et luminosité sont REMONTÉES dans une fourchette étroite : la
+    // moyenne d'une pochette est toujours terne, et un accent terne sur du
+    // gameplay ne se voit pas. La teinte, elle, n'est jamais touchée — c'est
+    // elle qui fait reconnaître l'album.
+    return versRvb(
+      gagnant.t / gagnant.p,
+      Math.max(0.62, Math.min(1, (gagnant.s / gagnant.p) * 1.35)),
+      Math.max(0.5, Math.min(0.66, (gagnant.l / gagnant.p) * 1.15)),
+    );
+  }
+
+  /* RVB (0–255) → TSL, chaque composante dans [0, 1]. */
+  function versTsl(r, v, b) {
+    r /= 255; v /= 255; b /= 255;
+    const haut = Math.max(r, v, b), bas = Math.min(r, v, b);
+    const lum = (haut + bas) / 2;
+    if (haut === bas) return [0, 0, lum];   // gris : aucune teinte à lire
+    const ecart = haut - bas;
+    const sat = lum > 0.5 ? ecart / (2 - haut - bas) : ecart / (haut + bas);
+    let t;
+    if (haut === r) t = (v - b) / ecart + (v < b ? 6 : 0);
+    else if (haut === v) t = (b - r) / ecart + 2;
+    else t = (r - v) / ecart + 4;
+    return [t / 6, sat, lum];
+  }
+
+  /* TSL → RVB (0–255). */
+  function versRvb(t, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    return [0, 8, 4].map((n) => {
+      const k = (n + t * 12) % 12;
+      return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+    });
+  }
+
+  /* Habille la carte aux couleurs du morceau, une fois sa pochette chargée.
+   *
+   * Les variables sont posées sur la CARTE et jamais sur `:root` : plusieurs
+   * widgets peuvent être à l'écran en même temps, et une variable globale
+   * survivrait au départ de celui-ci pour teinter le suivant.
+   */
+  function teinterSelonPochette(box, img) {
+    const rgb = couleurDominante(img);
+    if (!rgb) return;                // l'accent neutre de la carte reste en place
+    const [r, v, b] = rgb;
+    box.style.setProperty("--accent-morceau", `rgb(${r}, ${v}, ${b})`);
+    box.style.setProperty("--lueur-morceau", `rgba(${r}, ${v}, ${b}, .55)`);
   }
 
   /* Le dossier de memes, relu AVANT de lancer un spectacle qui le veut entier.

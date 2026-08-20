@@ -110,7 +110,8 @@ async def run_music_tool(bot, args: dict, *, roles=None, maison: bool = True,
             try:
                 narrateur.show_music(etat.get("titre") or "",
                                      etat.get("artiste") or "",
-                                     joue=bool(etat.get("joue")))
+                                     joue=bool(etat.get("joue")),
+                                     url=etat.get("url") or "")
             except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
                 logger.warning("Musique : affichage impossible : {e}", e=exc)
         return _dire_ce_qui_passe(etat)

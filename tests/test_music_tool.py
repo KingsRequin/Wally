@@ -231,6 +231,11 @@ def test_le_morceau_qui_change_est_BRANCHE_sur_l_overlay():
     assert "music_service.ecouter_les_morceaux(" in source
     bloc = re.search(r"def _morceau_a_l_ecran\(.{0,600}", source, re.S).group(0)
     assert "show_music" in bloc
+    # L'url part avec le reste : c'est d'elle que l'écran dérive la pochette du
+    # disque. Oubliée ICI, le morceau qui change s'afficherait sans image tandis
+    # que le même morceau demandé dans le chat en aurait une — une capacité
+    # branchée d'un seul côté, la signature de panne que ce dépôt traque.
+    assert 'url=morceau.get("url")' in bloc
     # Le narrateur est relu à chaque annonce : capturé au câblage, il vaudrait
     # `None` pour toujours — il naît avec la connexion Discord.
     assert 'getattr(discord_bot, "overlay_narrator", None)' in bloc
