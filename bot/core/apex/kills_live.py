@@ -53,8 +53,15 @@ class KillsDuLive:
     # 75 — deux ordres de grandeur en dessous.
     PLAFOND_RP_PARTIE = 1000
 
-    def __init__(self, horloge: Callable[[], float] | None = None) -> None:
+    def __init__(self, horloge: Callable[[], float] | None = None,
+                 horloge_murale: Callable[[], float] | None = None) -> None:
         self._maintenant = horloge or time.monotonic
+        # DEUX horloges, et il en faut deux. `time.monotonic()` ne recule pas
+        # (c'est ce qu'on veut pour mesurer une attente) mais repart de zéro à
+        # chaque process : rangé tel quel, il rendrait une durée écoulée
+        # absurde au redémarrage. Le temps MURAL, lui, traverse — il ne sert
+        # qu'à ça, et jamais à mesurer.
+        self._mur = horloge_murale or time.time
         self.nouveau_live()
 
     def nouveau_live(self) -> None:
@@ -170,6 +177,81 @@ class KillsDuLive:
                         r=f", {rp:+d} RP" if rp is not None else "")
         return {"partie": kills, "total": self.total, "parties": self.parties,
                 "rp": rp}
+
+
+    # ── survivre au redémarrage ─────────────────────────────────────────────
+
+    def instantane(self) -> dict:
+        """L'état sérialisable du suivi, pour le prochain process.
+
+        Tout est en types JSON nus : `bot_state` range du texte, et un tuple
+        (l'empreinte) reviendrait en liste — d'où la reconstruction explicite
+        côté `reprendre`, plutôt qu'un `==` qui aurait été faux à jamais.
+
+        `sortie_a` part en temps MURAL. C'est le seul champ qui demande une
+        traduction, et le seul qui casserait en silence sans elle.
+        """
+        ecoule = None
+        if self._sortie_a is not None:
+            ecoule = max(0.0, self._maintenant() - self._sortie_a)
+        return {
+            "base": dict(self._base) if self._base is not None else None,
+            "base_rp": self._base_rp,
+            "en_partie": self._en_partie,
+            # « sorti de partie il y a X secondes, à telle heure murale » : les
+            # deux ensemble permettent de recalculer l'attente restante quel que
+            # soit le temps passé hors ligne.
+            "sortie_ecoule": ecoule,
+            "sortie_mur": self._mur() if ecoule is not None else None,
+            "derniers": dict(self._derniers),
+            "dernier_rp": self._dernier_rp,
+            "total": self.total,
+            "parties": self.parties,
+        }
+
+    def reprendre(self, donnees: dict | None) -> bool:
+        """Reprend un état rangé. Vrai s'il y avait quelque chose à reprendre.
+
+        Chaque champ est REVALIDÉ, jamais recopié : cet instantané a pu être
+        écrit par une version antérieure, ou tronqué par une écriture coupée.
+        Un état à moitié repris serait pire que pas d'état du tout — il donnerait
+        des bilans faux, en direct, sans rien signaler.
+        """
+        if not isinstance(donnees, dict) or not donnees:
+            return False
+        base = donnees.get("base")
+        self._base = _entiers(base) if isinstance(base, dict) else None
+        # Un `_base` vidé par la validation n'est pas un `_base` de zéro
+        # tracker : c'est un départ inconnu, et `_figer` doit le lire comme tel.
+        if self._base is not None and not self._base:
+            self._base = None
+        self._base_rp = _entier(donnees.get("base_rp"))
+        self._en_partie = bool(donnees.get("en_partie"))
+        derniers = donnees.get("derniers")
+        self._derniers = _entiers(derniers) if isinstance(derniers, dict) else {}
+        self._dernier_rp = _entier(donnees.get("dernier_rp"))
+        self.total = _entier(donnees.get("total")) or 0
+        self.parties = _entier(donnees.get("parties")) or 0
+
+        # L'attente en cours, replacée sur l'horloge monotone de CE process.
+        # Le temps passé hors ligne compte : un rebuild de 15 s ne remet pas le
+        # compteur à zéro, et une coupure d'une heure fait expirer l'attente —
+        # ce qui est juste, la partie est finie depuis longtemps.
+        self._sortie_a = None
+        ecoule = donnees.get("sortie_ecoule")
+        if isinstance(ecoule, (int, float)) and not isinstance(ecoule, bool):
+            hors_ligne = 0.0
+            mur = donnees.get("sortie_mur")
+            if isinstance(mur, (int, float)) and not isinstance(mur, bool):
+                hors_ligne = max(0.0, self._mur() - float(mur))
+            self._sortie_a = self._maintenant() - (float(ecoule) + hors_ligne)
+
+        # L'empreinte n'est PAS reprise : elle dit « le relevé précédent était
+        # celui-ci », et le relevé précédent appartient au process mort. La
+        # laisser à None force un tour d'observation avant de figer — c'est-à-
+        # dire exactement la prudence que ce module tient depuis le 19/08.
+        self._empreinte = None
+        return True
 
 
 def _entier(valeur) -> int | None:

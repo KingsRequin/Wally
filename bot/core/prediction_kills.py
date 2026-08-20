@@ -21,6 +21,8 @@ from itertools import pairwise
 
 from loguru import logger
 
+from bot.core.etat_persistant import EtatPersistant
+
 
 def verifier_tranches(tranches: list[dict] | None) -> str | None:
     """`None` si le découpage est résolvable, sinon ce qui cloche, en français.
@@ -83,8 +85,48 @@ def tranche_gagnante(tranches: list[dict], kills: int) -> dict | None:
 class PredictionKills:
     """La prédiction en cours, et sa résolution automatique."""
 
-    def __init__(self) -> None:
+    # Un pari ouvert engage les POINTS DES VIEWERS : tant qu'il n'est ni résolu
+    # ni annulé, leurs mises sont bloquées chez Twitch. Il vivait en RAM, et les
+    # rebuilds sont fréquents (cinq le 19/08 entre 20 h et 23 h) — un seul
+    # suffisait à l'oublier pour de bon.
+    #
+    # PAS borné à la session du live, contrairement au suivi des kills : une
+    # prédiction ouverte chez Twitch le reste, live ou pas. Seul l'âge la périme,
+    # et douze heures couvrent large une soirée de stream.
+    CLE_ETAT = "twitch:prediction_kills"
+    AGE_MAX_S = 12 * 3600
+
+    def __init__(self, db=None) -> None:
         self.en_cours: dict | None = None
+        self._etat = EtatPersistant(db, self.CLE_ETAT, session=lambda: "",
+                                    age_max_s=self.AGE_MAX_S)
+
+    async def charger(self) -> None:
+        """Reprend le pari laissé ouvert par le process précédent."""
+        donnees = await self._etat.charger()
+        pari = donnees.get("pari") if isinstance(donnees, dict) else None
+        if not isinstance(pari, dict) or not pari.get("id"):
+            return
+        tranches = pari.get("tranches")
+        if not isinstance(tranches, list) or not tranches:
+            return
+        self.en_cours = {"id": str(pari["id"]),
+                         "titre": str(pari.get("titre") or ""),
+                         "tranches": [t for t in tranches if isinstance(t, dict)]}
+        logger.info("Prédiction kills reprise du process précédent : « {t} »",
+                    t=self.en_cours["titre"])
+
+    async def ranger(self) -> None:
+        """Range l'état courant. Appelé à CHAQUE mutation d'`en_cours`.
+
+        Y compris quand il repasse à `None` : un pari soldé qui resterait rangé
+        ressusciterait au prochain démarrage et bloquerait le suivant
+        (« une prédiction est déjà en cours »).
+        """
+        if self.en_cours is None:
+            await self._etat.oublier()
+            return
+        await self._etat.ranger({"pari": self.en_cours})
 
     async def ouvrir(self, bot, titre: str, tranches: list[dict],
                      fenetre_s: int) -> dict:
@@ -120,6 +162,7 @@ class PredictionKills:
             "tranches": [{**t, "outcome_id": par_libelle.get(t["label"], "")}
                          for t in tranches],
         }
+        await self.ranger()
         logger.info("Prédiction kills ouverte : « {t} »", t=self.en_cours["titre"])
         return {"ok": True, "titre": self.en_cours["titre"]}
 
@@ -139,6 +182,7 @@ class PredictionKills:
             logger.info("Prédiction kills : partie non mesurable — annulation")
             if await api.annuler_prediction(pred["id"]):
                 self.en_cours = None
+                await self.ranger()
                 return True
             return False
 
@@ -151,6 +195,7 @@ class PredictionKills:
                            k=kills)
             if await api.annuler_prediction(pred["id"]):
                 self.en_cours = None
+                await self.ranger()
                 return True
             return False
 
@@ -161,6 +206,7 @@ class PredictionKills:
         logger.info("Prédiction kills résolue : {k} kill(s) → « {l} »",
                     k=kills, l=gagnante["label"])
         self.en_cours = None
+        await self.ranger()
         return True
 
 
@@ -239,7 +285,12 @@ async def run_prediction_tool(bot, args: dict, *, roles=None,
 
     suivi = getattr(bot, "prediction_kills", None)
     if suivi is None:
-        suivi = PredictionKills()
+        # Repli : en temps normal l'objet est créé au démarrage (`main.py`) avec
+        # sa base, justement pour qu'un pari laissé ouvert soit repris. Ce
+        # chemin-là ne sert plus qu'aux tests et aux montages partiels — il
+        # prend quand même la base, sans quoi le pari ouvert ici ne serait rangé
+        # nulle part.
+        suivi = PredictionKills(getattr(bot, "db", None))
         bot.prediction_kills = suivi
 
     out = await suivi.ouvrir(bot, str((args or {}).get("titre") or ""),

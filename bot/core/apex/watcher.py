@@ -20,10 +20,17 @@ from loguru import logger
 
 from bot.core.apex.kills_live import KillsDuLive
 from bot.core.apex.reader import PlayerProfile
+from bot.core.etat_persistant import EtatPersistant
 
 # Le point de départ du live, rangé en base : un rebuild d'image en pleine
 # soirée remettait sinon la progression à zéro — et les rebuilds sont fréquents.
 BASELINE_KEY = "apex:live_baseline"
+
+# Le suivi partie par partie, rangé lui aussi. Le point de départ du live l'était
+# déjà ; le CUMUL du soir et la partie en cours, non — ils vivaient en RAM. Cinq
+# rebuilds le 19/08 entre 20 h et 23 h, donc cinq remises à zéro : le bilan de
+# fin de partie n'est jamais arrivé à l'écran de la soirée.
+KILLS_KEY = "apex:kills_live"
 
 # Deux cadences. Pendant le live, la courbe de progression est regardée en
 # direct et mérite d'être fine ; hors live, on ne fait qu'entretenir
@@ -73,6 +80,9 @@ class ApexWatcher:
         self._on_partie = on_partie
         self._kills: KillsDuLive | None = None
         self._kills_live_id = ""
+        self._kills_repris = False
+        self._kills_etat = EtatPersistant(db, KILLS_KEY,
+                                          session=self._live_courant)
         # Historique des totaux (`ApexHistory`), alimenté à CHAQUE passage —
         # y compris hors live : « ce mois-ci » compterait faux si les parties
         # jouées sans streamer manquaient à l'appel.
@@ -157,6 +167,14 @@ class ApexWatcher:
         # redémarrage recoller deux sessions.
         suivi = self._suivi_kills()
         live_courant = self._live_courant()
+        # AVANT le calcul de `premier`, et c'est tout l'enjeu : `_kills_live_id`
+        # est un attribut de RAM initialisé à "", donc un process neuf le voyait
+        # toujours différent de l'identité du live, appelait `nouveau_live()` et
+        # jetait le cumul du soir AINSI QUE la partie en cours. Une partie
+        # commencée avant un rebuild ne pouvait alors plus produire de bilan :
+        # son point de départ était perdu, et `show_apex_kills` refuse — à juste
+        # titre — d'afficher un faux zéro.
+        await self._reprendre_kills(suivi, live_courant)
         premier = getattr(self, "_kills_live_id", "") != live_courant
         if premier:
             suivi.nouveau_live()
@@ -169,11 +187,20 @@ class ApexWatcher:
                               trackers=profile.kill_trackers,
                               rp=profile.rank.score if profile.rank else None,
                               premier=premier)
+        # Rangé à CHAQUE tour, pas seulement en fin de partie : ce qu'un rebuild
+        # emporte, c'est justement la partie en cours — celle qui n'a encore
+        # produit aucun bilan. Une écriture toutes les 30 s pendant le live
+        # seulement, sur une base déjà sollicitée à cette cadence.
+        # `live` DANS les données, en plus de la session que porte l'enveloppe :
+        # c'est lui qui repeuplera `_kills_live_id`, et le laisser vide ferait
+        # jeter au tour suivant le cumul qu'on vient de reprendre.
+        await self._kills_etat.ranger({"live": live_courant or self._kills_live_id,
+                                       "suivi": suivi.instantane()})
         if bilan is not None and self._on_partie is not None:
             try:
                 self._on_partie(bilan)
             except Exception as exc:  # noqa: BLE001 — l'affichage ne casse pas la sonde
-                logger.warning("Apex watcher: bilan de partie non annoncé: {e}", e=exc)
+                logger.warning("Apex watcher: bilan de partie non annoncé: {e!r}", e=exc)
 
         if not self._baseline and not self._baseline_loaded:
             # Un live peut avoir commencé avant ce process : on reprend le point
@@ -245,6 +272,32 @@ class ApexWatcher:
         except Exception as exc:  # noqa: BLE001 — une sonde cassée n'est pas fatale
             logger.debug("Apex watcher: identité du live indisponible: {e}", e=exc)
             return ""
+
+    async def _reprendre_kills(self, suivi: KillsDuLive, live_courant: str) -> None:
+        """Relit le suivi laissé par le process précédent. Une seule fois.
+
+        `_kills_live_id` est posé DANS cette méthode : c'est lui que `premier`
+        compare, et le laisser vide ferait aussitôt appeler `nouveau_live()` sur
+        l'état qu'on vient de reprendre.
+
+        L'identité du live rangée fait foi et non `live_courant` : au démarrage,
+        le statut Twitch n'est pas encore revenu de son poll (60 s) et
+        `_live_courant()` rend "". Poser une identité vide ici rendrait `premier`
+        vrai au tour SUIVANT, quand elle arrive — et le cumul repris serait jeté
+        une minute après l'avoir relu.
+        """
+        if self._kills_repris:
+            return
+        self._kills_repris = True
+        etat = await self._kills_etat.charger()
+        if not etat or not suivi.reprendre(etat.get("suivi")):
+            return
+        self._kills_live_id = str(etat.get("live") or live_courant)
+        logger.info(
+            "Apex watcher : suivi du live repris du process précédent — "
+            "{t} kill(s) sur {p} partie(s){e}",
+            t=suivi.total, p=suivi.parties,
+            e=", une partie en cours" if suivi._en_partie else "")
 
     async def _load_baseline(self) -> dict[str, int]:
         """Le point de départ rangé, S'IL appartient bien au live en cours.

@@ -791,6 +791,21 @@ async def main() -> None:
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
             logger.error("Attaque de meme non armée : {e}", e=exc)
 
+        # Le pari sur les kills, repris s'il en restait un ouvert. Créé ICI et
+        # non à la demande : l'objet naissait dans `run_prediction_tool`, donc
+        # seulement quand quelqu'un ouvrait un pari. Après un redémarrage,
+        # `twitch_bot.prediction_kills` n'existait plus — `_solder_pari_sur_partie`
+        # sortait à la première ligne et le pari restait ouvert chez Twitch
+        # indéfiniment, mises des viewers bloquées dedans.
+        try:
+            from bot.core.prediction_kills import PredictionKills
+
+            _paris = PredictionKills(db)
+            await _paris.charger()
+            twitch_bot.prediction_kills = _paris
+        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
+            logger.error("Pari sur les kills non repris : {e!r}", e=exc)
+
         # « im out » : la voix de Wally aux points de chaîne. Comme l'attaque de
         # meme, elle ne dépend ni d'Apex ni de l'overlay — seulement du vocal —,
         # donc elle vit hors des blocs conditionnés plus haut. Armée ici pour la
