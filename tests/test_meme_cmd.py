@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from bot.core import meme_import
 from bot.discord.commands import meme_cmd
 from bot.discord.commands.meme_cmd import (
+    Entree,
     FormulaireDescription,
     MemeCog,
     VueRangement,
@@ -50,6 +52,7 @@ def _message(attachments=(), embeds=()):
 def test_la_piece_jointe_est_prioritaire():
     embed = MagicMock()
     embed.image.url = "https://tenor.com/x.gif"
+    embed.thumbnail.url = None
     assert image_du_message(_message([_piece_jointe()], [embed])) == (
         "https://cdn.discordapp.com/a/chat.png", ".png",
     )
@@ -273,7 +276,7 @@ async def test_un_fichier_trop_gros_coupe_le_flux(monkeypatch):
 async def test_ranger_ecrit_le_fichier_le_sidecar_et_annonce(tmp_path, monkeypatch):
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
-    vue = VueRangement(42, _MP4, ".mp4", "un clip qui tourne", salon)
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip qui tourne")], salon)
 
     await vue.ranger(_interaction())
 
@@ -291,7 +294,7 @@ async def test_l_annonce_montre_l_image_dans_l_embed(tmp_path, monkeypatch):
     """Une image s'affiche DANS l'embed, via la pièce jointe qui l'accompagne."""
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
-    vue = VueRangement(42, _PNG, ".png", "un carré", salon)
+    vue = VueRangement(42, [Entree(_PNG, ".png", "un carré")], salon)
 
     await vue.ranger(_interaction())
 
@@ -311,7 +314,7 @@ async def test_l_annonce_ne_pose_pas_de_video_en_image_d_embed(tmp_path, monkeyp
     """
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
-    vue = VueRangement(42, _MP4, ".mp4", "un clip", salon)
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], salon)
 
     await vue.ranger(_interaction())
 
@@ -326,7 +329,7 @@ async def test_l_annonce_ne_publie_pas_la_description(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
-    vue = VueRangement(42, _PNG, ".png", "SECRET DE POLICHINELLE", salon)
+    vue = VueRangement(42, [Entree(_PNG, ".png", "SECRET DE POLICHINELLE")], salon)
 
     await vue.ranger(_interaction())
 
@@ -343,7 +346,7 @@ async def test_une_annonce_impossible_ne_laisse_pas_croire_a_un_echec(tmp_path, 
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
     salon.send = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
-    vue = VueRangement(42, _MP4, ".mp4", "un clip", salon)
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], salon)
     interaction = _interaction()
 
     await vue.ranger(interaction)
@@ -357,7 +360,7 @@ async def test_une_annonce_impossible_ne_laisse_pas_croire_a_un_echec(tmp_path, 
 @pytest.mark.asyncio
 async def test_un_autre_utilisateur_ne_peut_pas_ranger(tmp_path, monkeypatch):
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
-    vue = VueRangement(42, _MP4, ".mp4", "un clip", _salon())
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], _salon())
     intrus = _interaction(user_id=99)
 
     assert await vue.interaction_check(intrus) is False
@@ -369,7 +372,7 @@ async def test_un_autre_utilisateur_ne_peut_pas_ranger(tmp_path, monkeypatch):
 async def test_annuler_n_ecrit_rien(tmp_path, monkeypatch):
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
-    vue = VueRangement(42, _MP4, ".mp4", "un clip", salon)
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], salon)
     interaction = _interaction()
 
     await vue.bouton_annuler.callback(interaction)
@@ -382,7 +385,7 @@ async def test_annuler_n_ecrit_rien(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_la_description_corrigee_est_celle_qui_est_ecrite(tmp_path, monkeypatch):
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
-    vue = VueRangement(42, _MP4, ".mp4", "ce que la vision a cru voir", _salon())
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "ce que la vision a cru voir")], _salon())
     formulaire = FormulaireDescription(vue)
     formulaire.description._value = "ce que l'owner a corrigé à la main"
 
@@ -399,7 +402,7 @@ def test_le_formulaire_supporte_une_longue_description():
     tokens — largement de quoi dépasser la borne du champ."""
     from bot.core.memes import MAX_DESCRIPTION
 
-    vue = VueRangement(42, _MP4, ".mp4", "Un chat très mécontent. " * 40, _salon())
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "Un chat très mécontent. " * 40)], _salon())
 
     champ = FormulaireDescription(vue).description
     assert len(champ.default) <= champ.max_length == MAX_DESCRIPTION
@@ -409,7 +412,7 @@ def test_le_formulaire_supporte_une_longue_description():
 async def test_l_apercu_expire_en_grisant_ses_boutons(tmp_path):
     """Passé 120 s Discord ne route plus l'interaction : un bouton resté
     cliquable rend « Cette interaction a échoué », ce qui passe pour une panne."""
-    vue = VueRangement(42, _MP4, ".mp4", "un clip", _salon())
+    vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], _salon())
     vue.message = MagicMock()
     vue.message.edit = AsyncMock()
 
@@ -505,3 +508,125 @@ async def test_une_image_que_la_vision_ne_decrit_pas_le_dit_franchement(tmp_path
     dit = interaction.followup.send.call_args.kwargs["content"]
     assert "vidéo" not in dit
     assert "n'a rien rendu" in dit
+
+
+# ── Un message, plusieurs images ──────────────────────────────────────────────
+# Un message Discord porte jusqu'à dix fichiers. La commande n'en rangeait qu'un
+# et annonçait « 9 autre(s) image(s) laissée(s) » — l'aveu du trou.
+
+
+def test_toutes_les_images_du_message_sont_rendues():
+    embed = MagicMock()
+    embed.image.url = "https://media.tenor.com/abc.gif"
+    embed.thumbnail.url = None
+    message = _message(
+        [_piece_jointe(url="https://cdn/a.png"), _piece_jointe(url="https://cdn/b.jpg",
+                                                              content_type="image/jpeg")],
+        [embed],
+    )
+
+    assert meme_cmd.images_du_message(message) == [
+        ("https://cdn/a.png", ".png"),
+        ("https://cdn/b.jpg", ".jpg"),
+        ("https://media.tenor.com/abc.gif", ".gif"),
+    ]
+
+
+def test_le_choix_unitaire_reste_le_premier_format_admis():
+    """`image_du_message()` ne change pas de comportement : un `.heic` posté
+    avant un `.png` ne prend pas la place du `.png`."""
+    message = _message([
+        _piece_jointe(url="https://cdn/a.heic", content_type="image/heic"),
+        _piece_jointe(url="https://cdn/b.png"),
+    ])
+
+    assert image_du_message(message) == ("https://cdn/b.png", ".png")
+
+
+@pytest.mark.asyncio
+async def test_un_message_a_trois_images_les_propose_toutes(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_cmd, "telecharger", AsyncMock(side_effect=[
+        _png((1, 2, 3)), _png((4, 5, 6)), _png((7, 8, 9)),
+    ]))
+    interaction = _interaction()
+
+    await MemeCog(_bot(tmp_path)).ranger(interaction, _message([
+        _piece_jointe(url="https://cdn/a.png"),
+        _piece_jointe(url="https://cdn/b.png"),
+        _piece_jointe(url="https://cdn/c.png"),
+    ]))
+
+    contenu = interaction.followup.send.call_args.kwargs["content"]
+    assert "3 images" in contenu
+    assert "laissée" not in contenu  # plus rien n'est abandonné
+    assert list(tmp_path.iterdir()) == []  # toujours rien avant validation
+
+
+@pytest.mark.asyncio
+async def test_ranger_un_lot_ecrit_chaque_image_et_n_annonce_qu_une_fois(tmp_path, monkeypatch):
+    """Une annonce par meme noierait le salon : dix embeds à la suite."""
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    salon = _salon()
+    vue = VueRangement(42, [
+        Entree(_png((1, 2, 3)), ".png", "un carré sombre"),
+        Entree(_png((250, 2, 3)), ".png", "un carré rouge"),
+        Entree(_MP4, ".mp4", "un clip"),
+    ], salon)
+
+    await vue.ranger(_interaction())
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "meme1.webp", "meme1.webp.txt", "meme2.webp", "meme2.webp.txt",
+        "meme3.mp4", "meme3.mp4.txt",
+    ]
+    assert salon.send.await_count == 1
+    assert len(salon.send.call_args.kwargs["files"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_un_doublon_dans_le_lot_n_empeche_pas_les_autres(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    identique = _png((5, 5, 5))
+    vue = VueRangement(42, [
+        Entree(identique, ".png", "un carré gris"),
+        Entree(identique, ".png", "le même carré gris"),
+        Entree(_png((99, 1, 1)), ".png", "un carré rouge"),
+    ], _salon())
+    interaction = _interaction()
+
+    await vue.ranger(interaction)
+
+    contenu = interaction.response.edit_message.call_args.kwargs["content"]
+    assert "2 rangés" in contenu and "1 doublon" in contenu
+    assert sorted(p.name for p in tmp_path.glob("*.webp")) == ["meme1.webp", "meme2.webp"]
+
+
+def test_le_formulaire_n_est_pas_propose_sur_un_lot(tmp_path):
+    """« Corriger » ne peut viser qu'une description : à plusieurs, il mentirait."""
+    seule = VueRangement(42, [Entree(_PNG, ".png", "un carré")], _salon())
+    lot = VueRangement(42, [Entree(_PNG, ".png", "a"), Entree(_MP4, ".mp4", "b")], _salon())
+
+    labels = lambda v: [e.label for e in v.children]
+    assert "Corriger" in labels(seule)
+    assert "Corriger" not in labels(lot)
+    assert "Ranger les 2" in labels(lot)
+
+
+@pytest.mark.asyncio
+async def test_un_lot_ne_paye_la_vision_que_pour_ce_qui_n_est_pas_deja_range(
+    tmp_path, monkeypatch
+):
+    """La dédup passe AVANT la description : décrire un doublon, c'est un appel
+    facturé et deux à cinq secondes d'attente pour un fichier qu'on jette."""
+    deja = _png((5, 5, 5))
+    meme_import.importer(deja, ".png", "déjà là", tmp_path)
+    monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
+    monkeypatch.setattr(meme_cmd, "telecharger", AsyncMock(side_effect=[deja, _png((7, 7, 7))]))
+    bot = _bot(tmp_path)
+
+    await MemeCog(bot).ranger(_interaction(), _message([
+        _piece_jointe(url="https://cdn/a.png"), _piece_jointe(url="https://cdn/b.png"),
+    ]))
+
+    assert bot.vision.analyze.await_count == 1

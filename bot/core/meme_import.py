@@ -17,7 +17,7 @@ import hashlib
 import re
 import struct
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from loguru import logger
@@ -82,62 +82,220 @@ def convertir_si_avantageux(octets: bytes, suffixe: str) -> tuple[bytes, str]:
         return dst.read_bytes(), ".webp"
 
 
-def importer(
-    octets: bytes, suffixe: str, description: str, dossier: Path
-) -> ResultatImport:
-    """Range une image dans la banque. N'écrit rien si elle est refusée."""
-    suffixe = suffixe.lower()
-    if suffixe not in _EXTENSIONS_MEDIA:
-        admis = " ".join(sorted(_EXTENSIONS_MEDIA))
-        return ResultatImport(False, raison=f"format {suffixe} non admis — attendus : {admis}")
-    if len(octets) > MAX_TELECHARGEMENT:
-        return ResultatImport(
-            False, raison=f"{len(octets) / 1e6:.1f} Mo — au-delà de la limite de téléchargement"
-        )
+@dataclass
+class Bilan:
+    """Ce qu'est devenu un lot d'imports, et le compte rendu qui va avec.
 
-    index = empreintes(dossier)
-    depuis = index.get(hashlib.sha256(octets).hexdigest())
-    if depuis:
-        return ResultatImport(False, doublon=depuis, raison="déjà rangé")
+    Un seul format de rapport pour les trois chemins d'import — le message
+    contextuel, le ratissage d'un salon, le dépôt au fil de l'eau. Deux
+    rédactions qui divergent, c'est un « 7 rangés » qui ne veut pas dire la
+    même chose selon la commande qui le rend.
 
-    finaux, suffixe_final = convertir_si_avantageux(octets, suffixe)
-    converti = suffixe_final != suffixe
-    if converti:
-        depuis = index.get(hashlib.sha256(finaux).hexdigest())
+    Les refus sont NOMMÉS : un compte seul laisse chercher dans le dossier ce
+    qui manque, là où « 9,4 Mo après conversion » l'explique sur place.
+    """
+
+    ranges: list[str] = field(default_factory=list)
+    doublons: list[str] = field(default_factory=list)
+    refus: list[str] = field(default_factory=list)
+    muets: int = 0
+    interrompu: bool = False
+
+    @classmethod
+    def depuis(cls, resultats: list[ResultatImport]) -> "Bilan":
+        bilan = cls()
+        for r in resultats:
+            bilan.ajouter(r)
+        return bilan
+
+    def ajouter(self, resultat: ResultatImport, decrit: bool = True) -> None:
+        if resultat.ok:
+            self.ranges.append(resultat.nom)
+            if not decrit:
+                self.muets += 1
+        elif resultat.doublon:
+            self.doublons.append(resultat.doublon)
+        else:
+            self.refus.append(resultat.raison)
+
+    def texte(self, refus_montres: int = 3) -> str:
+        def _n(quoi: str, combien: int) -> str:
+            return f"{combien} {quoi}{'s' if combien > 1 else ''}"
+
+        bouts = [f"**{_n('rangé', len(self.ranges))}**"]
+        if self.doublons:
+            bouts.append(_n("doublon", len(self.doublons)))
+        if self.refus:
+            bouts.append(_n("refusé", len(self.refus)))
+        if self.muets:
+            bouts.append(f"{self.muets} sans description")
+        lignes = [", ".join(bouts) + "."]
+        if self.ranges:
+            lignes.append(" ".join(f"`{n}`" for n in self.ranges))
+        lignes += [f"· {r}" for r in self.refus[:refus_montres]]
+        if len(self.refus) > refus_montres:
+            lignes.append(f"· … et {len(self.refus) - refus_montres} autre(s)")
+        if self.interrompu:
+            lignes.append("_Limite atteinte : relance la commande pour la suite._")
+        return "\n".join(lignes)
+
+
+@dataclass
+class Preparation:
+    """Une image passée au crible, prête à écrire — ou déjà refusée.
+
+    Ce qui justifie ce temps séparé : la conversion WebP tranche la question du
+    doublon (un `.png` reposté est rangé sous forme de `.webp`, donc son
+    empreinte d'origine ne dit rien) ET celle du poids. Les deux doivent être
+    connues AVANT de décrire l'image, sans quoi l'import en masse paye une
+    vision par doublon — quelques secondes chacune, sur un salon qui en compte
+    la moitié. Convertir ici puis ranger ces octets-là, c'est aussi ne convertir
+    qu'une fois.
+    """
+
+    octets: bytes = b""
+    suffixe: str = ""
+    converti: bool = False
+    doublon: str = ""
+    raison: str = ""
+
+    @property
+    def refusee(self) -> bool:
+        return bool(self.doublon or self.raison)
+
+    def resultat(self) -> ResultatImport:
+        """Le refus, sous la forme que rend `importer()`."""
+        return ResultatImport(False, raison=self.raison or "déjà rangé", doublon=self.doublon)
+
+
+class SessionImport:
+    """Une suite d'imports dans le même dossier, index chargé UNE fois.
+
+    `importer()` seul relit tout le dossier à chaque appel : aujourd'hui 268
+    fichiers et 44 Mo. Ranger 300 images d'un salon, c'était donc treize
+    gigaoctets de lecture pour en écrire quarante mégaoctets — et surtout deux
+    appels qui se chevauchent tirent le MÊME `prochain_numero()`, le second
+    écrasant le premier sans une ligne de log.
+
+    La session tient l'index et le compteur en mémoire et les met à jour à
+    chaque rangement. La dédup vaut donc aussi À L'INTÉRIEUR du lot, ce dont un
+    salon de memes a besoin : la même image y est repostée deux fois.
+
+    Elle n'est pas sûre entre threads — l'appelant sérialise ses rangements.
+    """
+
+    def __init__(self, dossier: Path) -> None:
+        self.dossier = dossier
+        self._index = empreintes(dossier)
+        self._numero = prochain_numero(dossier)
+
+    def preparer(self, octets: bytes, suffixe: str) -> Preparation:
+        """Valide, convertit, et confronte l'image à ce qui est déjà rangé.
+
+        N'écrit rien : tout refus laisse le dossier intact.
+        """
+        suffixe = suffixe.lower()
+        if suffixe not in _EXTENSIONS_MEDIA:
+            admis = " ".join(sorted(_EXTENSIONS_MEDIA))
+            return Preparation(raison=f"format {suffixe} non admis — attendus : {admis}")
+        if len(octets) > MAX_TELECHARGEMENT:
+            return Preparation(
+                raison=f"{len(octets) / 1e6:.1f} Mo — au-delà de la limite de téléchargement"
+            )
+
+        depuis = self._connu(octets)
+        if depuis:
+            return Preparation(doublon=depuis)
+
+        finaux, suffixe_final = convertir_si_avantageux(octets, suffixe)
+        converti = suffixe_final != suffixe
+        if converti:
+            depuis = self._connu(finaux)
+            if depuis:
+                return Preparation(doublon=depuis)
+
+        # Le plafond vaut pour TOUT média, vidéos comprises : `list_medias()`,
+        # celle qui sert le rotateur, l'applique aussi — avec un log DEBUG, donc
+        # muet en production. Le borner aux seules images laissait entrer un
+        # .mp4 de 12 Mo annoncé « rangé », que plus rien ensuite ne montrait ni
+        # ne signalait.
+        if len(finaux) > _MAX_BYTES:
+            return Preparation(
+                raison=(
+                    f"{len(finaux) / 1e6:.1f} Mo après conversion, au-dessus du plafond de "
+                    f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais montré"
+                )
+            )
+        # L'empreinte de l'ORIGINAL voyage avec la préparation : c'est elle que
+        # l'index retiendra en plus de celle du fichier écrit, pour qu'un
+        # deuxième post du même `.png` soit reconnu sans repayer sa conversion.
+        return Preparation(octets=finaux, suffixe=suffixe_final, converti=converti)
+
+    def ranger(self, prepare: Preparation, description: str,
+               origine: bytes = b"") -> ResultatImport:
+        """Écrit une préparation acceptée. `origine` : les octets d'avant conversion."""
+        if prepare.refusee:
+            return prepare.resultat()
+
+        # L'index a pu bouger DEPUIS la préparation : quatre images sont
+        # préparées en parallèle pendant qu'aucune n'est encore rangée, et un
+        # aperçu attend jusqu'à deux minutes avant qu'on clique. Sans ce
+        # second regard, deux fois la même image dans un paquet donnait deux
+        # fichiers — la préparation ne pouvait pas voir ce que le rangement
+        # écrirait. `ranger()` est sérialisé : c'est ici, et nulle part
+        # ailleurs, que la question se tranche pour de bon.
+        depuis = self._connu(prepare.octets) or (self._connu(origine) if origine else "")
         if depuis:
             return ResultatImport(False, doublon=depuis, raison="déjà rangé")
 
-    # Le plafond vaut pour TOUT média, vidéos comprises : `list_medias()`, celle
-    # qui sert le rotateur, l'applique aussi — avec un log DEBUG, donc muet en
-    # production. Le borner aux seules images laissait entrer un .mp4 de 12 Mo
-    # annoncé « rangé », que plus rien ensuite ne montrait ni ne signalait.
-    if len(finaux) > _MAX_BYTES:
+        nom = f"meme{self._numero}{prepare.suffixe}"
+        chemin = self.dossier / nom
+        chemin.write_bytes(prepare.octets)
+        # Écrire au-delà de ce que `_describe` relira, c'est écrire une phrase
+        # que personne ne lira jusqu'au bout : la lecture coupe à
+        # `MAX_DESCRIPTION`.
+        texte = tronquer_description(description)
+        if texte:
+            try:
+                (self.dossier / f"{nom}.txt").write_text(texte, encoding="utf-8")
+            except Exception:
+                # Le sidecar est le second temps d'une écriture en deux temps :
+                # s'il échoue, l'image ne doit pas rester seule en rayon — un
+                # meme sans description n'a que son nom de fichier à offrir à
+                # l'antenne. Le dossier doit revenir à son état d'avant l'appel,
+                # comme sur tout autre chemin de refus.
+                chemin.unlink(missing_ok=True)
+                raise
+
+        # Après l'écriture seulement : un refus ne consomme ni numéro ni entrée
+        # d'index. Les deux empreintes sont retenues — l'original autant que le
+        # fichier écrit — pour que le même `.png` reposté plus loin dans le lot
+        # soit écarté sans repasser par la conversion.
+        for empreinte in (origine, prepare.octets):
+            if empreinte:
+                self._index.setdefault(hashlib.sha256(empreinte).hexdigest(), nom)
+        self._numero += 1
         return ResultatImport(
-            False,
-            raison=(
-                f"{len(finaux) / 1e6:.1f} Mo après conversion, au-dessus du plafond de "
-                f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais montré"
-            ),
+            True, nom=nom, converti=prepare.converti, octets=len(prepare.octets)
         )
 
-    nom = f"meme{prochain_numero(dossier)}{suffixe_final}"
-    chemin = dossier / nom
-    chemin.write_bytes(finaux)
-    # Écrire au-delà de ce que `_describe` relira, c'est écrire une phrase que
-    # personne ne lira jusqu'au bout : la lecture coupe à `MAX_DESCRIPTION`.
-    texte = tronquer_description(description)
-    if texte:
-        try:
-            (dossier / f"{nom}.txt").write_text(texte, encoding="utf-8")
-        except Exception:
-            # Le sidecar est le second temps d'une écriture en deux temps : s'il
-            # échoue, l'image ne doit pas rester seule en rayon — un meme sans
-            # description n'a que son nom de fichier à offrir à l'antenne. Le
-            # dossier doit revenir à son état d'avant l'appel, comme sur tout
-            # autre chemin de refus.
-            chemin.unlink(missing_ok=True)
-            raise
-    return ResultatImport(True, nom=nom, converti=converti, octets=len(finaux))
+    def importer(self, octets: bytes, suffixe: str, description: str) -> ResultatImport:
+        """Range une image dans la banque. N'écrit rien si elle est refusée."""
+        return self.ranger(self.preparer(octets, suffixe), description, origine=octets)
+
+    def _connu(self, octets: bytes) -> str:
+        return self._index.get(hashlib.sha256(octets).hexdigest(), "")
+
+
+def importer(
+    octets: bytes, suffixe: str, description: str, dossier: Path
+) -> ResultatImport:
+    """Range une image dans la banque. N'écrit rien si elle est refusée.
+
+    Une session à usage unique : le contrat de la commande contextuelle et de
+    `scripts/rattraper_memes.py` ne bouge pas.
+    """
+    return SessionImport(dossier).importer(octets, suffixe, description)
 
 
 def prochain_numero(dossier: Path) -> int:

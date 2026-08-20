@@ -280,3 +280,144 @@ def test_un_sidecar_qui_echoue_ne_laisse_pas_l_image_orpheline(tmp_path, monkeyp
         meme_import.importer(b"\x00\x00\x00\x18ftypmp42", ".mp4", "un clip", tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+# ── Import en masse : la session ──────────────────────────────────────────────
+# `importer()` seul relit tout le dossier à chaque appel et retire son numéro du
+# disque. Les trois tests qui suivent fixent ce qu'une session change : un seul
+# balayage, des numéros qui ne se marchent pas dessus, et une dédup qui vaut
+# aussi À L'INTÉRIEUR du lot.
+
+
+def _png(chemin: Path | None = None, couleur=(0, 120, 255)) -> bytes:
+    import io
+
+    tampon = io.BytesIO()
+    Image.new("RGB", (64, 64), couleur).save(tampon, "PNG")
+    octets = tampon.getvalue()
+    if chemin is not None:
+        chemin.write_bytes(octets)
+    return octets
+
+
+def test_une_session_numerote_sans_ecraser(tmp_path):
+    """Le piège que la session existe pour fermer.
+
+    Deux `importer()` successifs relisent le dossier et retombent chacun sur le
+    numéro suivant — tant que le premier a fini d'écrire. Dès qu'ils se
+    chevauchent (import en masse, quatre téléchargements en vol), les deux
+    tirent le même et le second écrase le premier, sans une ligne de log.
+    """
+    session = meme_import.SessionImport(tmp_path)
+
+    noms = [
+        session.importer(_png(couleur=(i * 40, 10, 10)), ".png", f"image {i}").nom
+        for i in range(3)
+    ]
+
+    assert noms == ["meme1.webp", "meme2.webp", "meme3.webp"]
+    assert len({p.name for p in tmp_path.glob("meme*.webp")}) == 3
+
+
+def test_une_session_ecarte_un_doublon_du_lot_lui_meme(tmp_path):
+    """Un salon de memes reposte deux fois la même image."""
+    session = meme_import.SessionImport(tmp_path)
+    octets = _png()
+
+    premier = session.importer(octets, ".png", "un carré bleu")
+    second = session.importer(octets, ".png", "un carré bleu")
+
+    assert premier.ok
+    assert not second.ok
+    assert second.doublon == premier.nom
+
+
+def test_un_png_reposte_est_reconnu_avant_d_etre_decrit(tmp_path):
+    """Le doublon doit tomber AVANT la vision, sinon l'import en masse la paye.
+
+    Le piège : le fichier rangé est un `.webp` converti, le salon reposte le
+    `.png` d'origine. Comparer les empreintes du dossier ne suffit donc pas —
+    c'est la conversion qui tranche, d'où sa place dans `preparer()`.
+    """
+    octets = _png()
+    meme_import.importer(octets, ".png", "déjà là", tmp_path)
+    session = meme_import.SessionImport(tmp_path)
+
+    prepare = session.preparer(octets, ".png")
+
+    assert prepare.refusee
+    assert prepare.doublon == "meme1.webp"
+    assert not session.preparer(_png(couleur=(9, 9, 9)), ".png").refusee
+
+
+def test_une_image_n_est_convertie_qu_une_fois(tmp_path, monkeypatch):
+    """Préparer puis ranger, ce n'est pas convertir deux fois.
+
+    La conversion WebP tourne à la seconde par image sur les deux cœurs de
+    CT100 : la refaire au rangement doublerait la durée d'un import de salon.
+    """
+    conversions = []
+    vraie = meme_import.convertir_si_avantageux
+    monkeypatch.setattr(
+        meme_import, "convertir_si_avantageux",
+        lambda o, s: (conversions.append(s), vraie(o, s))[1],
+    )
+    session = meme_import.SessionImport(tmp_path)
+
+    resultat = session.importer(_png(), ".png", "un carré bleu")
+
+    assert resultat.ok and resultat.converti
+    assert conversions == [".png"]
+
+
+def test_un_refus_ne_consomme_pas_de_numero(tmp_path):
+    session = meme_import.SessionImport(tmp_path)
+
+    refuse = session.importer(b"pas une image", ".heic", "")
+    accepte = session.importer(_png(), ".png", "un carré bleu")
+
+    assert not refuse.ok and "non admis" in refuse.raison
+    assert accepte.nom == "meme1.webp"
+
+
+def test_la_session_ne_relit_le_dossier_qu_une_fois(tmp_path, monkeypatch):
+    _png(tmp_path / "meme1.png")
+    appels = []
+    vrai = meme_import.empreintes
+    monkeypatch.setattr(
+        meme_import, "empreintes",
+        lambda d: (appels.append(d), vrai(d))[1],
+    )
+
+    session = meme_import.SessionImport(tmp_path)
+    for i in range(4):
+        session.importer(_png(couleur=(i * 50, 3, 3)), ".png", "x")
+
+    assert len(appels) == 1
+
+
+def test_importer_reste_un_appel_a_lui_seul(tmp_path):
+    """La commande unitaire et `rattraper_memes.py` ne changent pas de contrat."""
+    premier = meme_import.importer(_png(), ".png", "un carré", tmp_path)
+    second = meme_import.importer(_png(couleur=(200, 0, 0)), ".png", "un carré rouge", tmp_path)
+
+    assert (premier.nom, second.nom) == ("meme1.webp", "meme2.webp")
+
+
+def test_deux_preparations_de_la_meme_image_ne_font_qu_un_fichier(tmp_path):
+    """Le défaut que l'import en masse a révélé.
+
+    Quatre images sont préparées EN PARALLÈLE avant qu'aucune ne soit rangée :
+    aucune des préparations ne voit ce que les autres écriront. La question ne
+    peut donc se trancher qu'au rangement, seul point sérialisé. Sans ce second
+    regard, un message postant deux fois la même image donnait deux fichiers.
+    """
+    session = meme_import.SessionImport(tmp_path)
+    octets = _png()
+    a = session.preparer(octets, ".png")
+    b = session.preparer(octets, ".png")
+
+    assert not a.refusee and not b.refusee  # ni l'une ni l'autre ne peut savoir
+    assert session.ranger(a, "un carré", octets).nom == "meme1.webp"
+    assert session.ranger(b, "un carré", octets).doublon == "meme1.webp"
+    assert sorted(p.name for p in tmp_path.glob("*.webp")) == ["meme1.webp"]

@@ -182,6 +182,11 @@ class DiscordConfig:
     # emote_describer). None → auto-détecté si le bot n'est que dans un serveur,
     # sinon désactivé (log des serveurs disponibles au boot).
     emote_guild_id: int | None = None
+    # Salon « boîte aux lettres » : toute image qui y est postée entre dans la
+    # banque de memes toute seule, sans commande. None → dépôt désactivé, ce qui
+    # est le bon défaut : ranger automatiquement les images d'un salon qu'on n'a
+    # pas désigné alimenterait l'overlay diffusé en direct.
+    meme_channel_id: int | None = None
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 
 
