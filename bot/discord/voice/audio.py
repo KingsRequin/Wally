@@ -33,15 +33,42 @@ def to_stt_format(pcm48k_stereo: bytes) -> bytes:
 # fait jeter (`_MAX_PENDING_FALLBACK`). On perdait donc de la parole pour avoir
 # transcrit du bruit.
 #
-# Les deux valeurs sont MESURÉES, pas choisies. Sur les 4 698 énoncés du repli
-# local relevés dans `/app/logs/2026-08-*/app.log`, ce plancher écarte 68 % des
-# 1 661 vides sans toucher UN SEUL des 3 037 énoncés réellement transcrits. Il
-# est posé SOUS les deux bords de la distribution vécue — le plus faible énoncé
-# transcrit est à rms 100, le plus court à 0,4 s — et non dessus : cette marge
-# paie un micro plus faible ou un locuteur plus loin, pour un point de charge.
-# À re-mesurer si les micros du salon changent ; les logs le permettent.
+# Les deux valeurs sont MESURÉES, pas choisies.
+#
+# `_RMS_PLANCHER` reste posé SOUS le bord vécu (le plus faible énoncé transcrit
+# est à rms 100) : cette marge paie un micro plus faible ou un locuteur plus
+# loin, pour un point de charge.
+#
+# `_DUREE_PLANCHER_S` valait 0,3 s au nom du même principe, le plus court
+# énoncé transcrit tenant en 0,4 s. Re-mesuré le 2026-08-20 sur 46 272 segments
+# — dix fois l'échantillon d'origine — la marge s'est révélée ruineuse :
+#
+#     durée   transcrits    vides    rendement
+#     0,3 s            0       86       0,00 %
+#     0,4 s            4   21 849       0,02 %   ← 47 % de toute la charge
+#     0,5 s           27    4 187       0,64 %
+#     0,6 s          100    4 083       2,39 %
+#
+# Toute la masse est à 0,4 s, PAS à 0,3 s : le préroll de 300 ms
+# (`_PREROLL_FRAMES`) fait de 0,4 s le plancher naturel de la distribution,
+# donc l'endroit exact où atterrit chaque souffle refermé par le VAD. Monter à
+# 0,4 s n'aurait écarté que 86 segments — rien. Seul 0,5 s retire les 21 853.
+#
+# ⚠️ Ce seuil passe donc AU-DESSUS du bord vécu, sciemment, contrairement au
+# principe qui gouverne le rms juste au-dessus. Le prix est connu et borné :
+# les 4 énoncés de 0,4 s réellement transcrits en un mois, soit 0,09 % des
+# 4 571 succès. On les échange contre 47 % de la charge d'un moteur MONO-THREAD
+# à deux places, où chaque calcul inutile est une chance d'occuper la file
+# quand la vraie parole arrive. Le 2026-08-19, GPU tombé, 14 411 paroles ont
+# été abandonnées faute de place — et 51 % des segments de ce soir-là étaient
+# ces fragments-là.
+#
+# À re-mesurer si les micros du salon changent, ou si le préroll bouge (il
+# déplacerait le pic). Les lignes « énoncé transcrit » et « rendu VIDE par le
+# STT local » portent toutes deux la durée : c'est ce qui rend ce tableau
+# reproductible.
 _RMS_PLANCHER = 80
-_DUREE_PLANCHER_S = 0.3
+_DUREE_PLANCHER_S = 0.5
 _OCTETS_PAR_SECONDE = SAMPLE_RATE * 2  # 16 kHz mono 16-bit
 
 

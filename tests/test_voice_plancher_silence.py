@@ -13,9 +13,22 @@ Les deux valeurs du plancher sont MESURÉES, pas choisies. Sur ce même relevé 
     rms >=  80, durée >= 0,3 s : 0 perte / 3 037 · 1 137 vides écartés (68 %)
     rms >= 200, durée >= 0,3 s : 18 pertes    · 1 303 vides écartés (78 %)
 
-Le plus faible énoncé RÉELLEMENT transcrit est à rms 100, le plus court à
-0,4 s. Le plancher est donc posé SOUS ces deux bords et non dessus : la marge
-paie un micro plus faible ou un locuteur plus loin, pour un point de charge.
+Le plus faible énoncé RÉELLEMENT transcrit est à rms 100 : le plancher de rms
+est donc posé SOUS ce bord et non dessus, la marge payant un micro plus faible
+ou un locuteur plus loin pour un point de charge.
+
+Le plancher de DURÉE, lui, est passé de 0,3 s à 0,5 s le 2026-08-20, après
+re-mesure sur 46 272 segments — dix fois l'échantillon d'origine :
+
+    0,3 s :      0 transcrit /     86 segments   (0,00 %)
+    0,4 s :      4 transcrits / 21 853 segments  (0,02 %) ← 47 % de la charge
+    0,5 s :     27 transcrits /  4 214 segments  (0,64 %)
+
+Toute la masse est à 0,4 s et non à 0,3 s — le préroll de 300 ms en fait le
+plancher naturel de la distribution du VAD, donc l'endroit où atterrit chaque
+souffle. Ce seuil passe donc sciemment AU-DESSUS du bord vécu, contrairement à
+celui du rms : on échange 4 énoncés par mois (0,09 % des succès) contre la
+moitié de la charge d'un moteur mono-thread à deux places.
 
 Ce que ces tests verrouillent, c'est le COMPORTEMENT — du souffle n'atteint pas
 le moteur, de la parole l'atteint — jamais les constantes elles-mêmes : elles
@@ -71,10 +84,30 @@ def test_l_enonce_le_plus_faible_du_releve_passe():
     assert not jeter
 
 
-def test_l_enonce_le_plus_court_du_releve_passe():
-    """0,4 s : le plus court énoncé réellement transcrit en prod."""
-    jeter, _duree, _niveau = est_sous_le_plancher(_pcm(0.4, 310))
+def test_l_enonce_le_plus_court_encore_gardé_passe():
+    """0,5 s : le plus court énoncé que le plancher laisse désormais passer.
+
+    Cette borne est la garde contre une DÉRIVE VERS LE HAUT du seuil. À 0,5 s
+    le relevé compte 27 énoncés transcrits, à 0,6 s une centaine : monter
+    encore mangerait de la parole vécue par paquets, pas à la marge."""
+    jeter, _duree, _niveau = est_sous_le_plancher(_pcm(0.5, 310))
     assert not jeter
+
+
+def test_le_fragment_de_04s_est_ecarte_sciemment():
+    """0,4 s à plein volume : ÉCARTÉ, et c'est voulu.
+
+    C'est le seul endroit du plancher qui passe AU-DESSUS du bord vécu — 4
+    énoncés de 0,4 s ont bien été transcrits en un mois. Le prix est assumé :
+    ces 4 succès valent 0,09 % des 4 571 transcriptions, quand les 21 853
+    segments de cette durée pèsent 47 % de la charge d'un moteur mono-thread à
+    deux places. Le pic est là parce que le préroll de 300 ms fait de 0,4 s le
+    plancher naturel de la distribution du VAD.
+
+    Si ce test tombe un jour, ce n'est pas un bug à corriger : c'est que
+    quelqu'un a redescendu le seuil. Qu'il re-mesure d'abord."""
+    jeter, _duree, _niveau = est_sous_le_plancher(_pcm(0.4, 3000))
+    assert jeter
 
 
 def test_une_mesure_impossible_laisse_passer():
