@@ -910,6 +910,10 @@
     music_now(p) {
       const joue = !!p.playing;
       const box = el("div", "music-now" + (joue ? " joue" : ""));
+      // Deux couches : `box` porte l'ombre, `pilule` porte le fond et la
+      // découpe du déroulé. Sur un seul élément, le `clip-path` amputerait la
+      // lueur colorée EN PERMANENCE (cf. le commentaire du style).
+      const pilule = el("div", "music-pilule");
 
       // Le disque : la pochette montée sur un vinyle. Il tourne même sans
       // pochette — un morceau dont on n'a pas l'image reste un morceau, et un
@@ -954,7 +958,8 @@
       const note = el("div", "music-note");
       for (let i = 0; i < 5; i++) note.appendChild(el("i", ""));
 
-      box.append(disque, texte, note);
+      pilule.append(disque, texte, note);
+      box.appendChild(pilule);
       return box;
     },
 
@@ -1109,7 +1114,14 @@
     if (!rgb) return;                // l'accent neutre de la carte reste en place
     const [r, v, b] = rgb;
     box.style.setProperty("--accent-morceau", `rgb(${r}, ${v}, ${b})`);
-    box.style.setProperty("--lueur-morceau", `rgba(${r}, ${v}, ${b}, .55)`);
+    // L'artiste prend la couleur en sourdine plutôt qu'un gris : c'est ce qui
+    // fait tenir la carte ensemble au lieu d'un accent posé à un seul endroit.
+    box.style.setProperty("--accent-doux", `rgba(${r}, ${v}, ${b}, .72)`);
+    // La bordure prend la couleur elle aussi, mais très diluée : à pleine
+    // opacité elle deviendrait un liseré fluo autour de la carte, alors que
+    // c'en est le contour.
+    box.style.setProperty("--bord-morceau", `rgba(${r}, ${v}, ${b}, .34)`);
+    box.style.setProperty("--lueur-morceau", `rgba(${r}, ${v}, ${b}, .6)`);
   }
 
   /* Le dossier de memes, relu AVANT de lancer un spectacle qui le veut entier.

@@ -116,10 +116,11 @@ window.WallyLayout = (function () {
     // Mesurée au banc de l'aperçu avec l'échantillon officiel du ▶
     // (« Numb » / « Linkin Park »), pas écrite au jugé : c'est la discipline du
     // dépôt, et mon estimation était deux fois et demie trop large.
-    // Remesurée le 2026-08-20, quand le disque de la pochette est arrivé :
-    // 125 × 60 → 220 × 82. Les réglages de position de chaque scène ont été
-    // posés sur l'ancienne boîte — la carte occupe désormais plus de place.
-    music_now: [220, 82],
+    // Remesurée le 2026-08-20 sur la page de prod, quand la carte est passée au
+    // design de l'owner (pilule, disque de 64 px) : 125 × 60 → 247 × 90. Les
+    // réglages de position de chaque scène ont été posés sur l'ancienne boîte —
+    // la carte occupe désormais deux fois plus de place.
+    music_now: [247, 90],
     // Mesurée au banc avec l'échantillon du ▶, pas estimée.
     apex_kills: [198, 62],
     // Le spam couvre le canvas entier : sa boîte n'est pas une supposition,

@@ -285,16 +285,57 @@ def test_la_page_sait_dessiner_le_disque_et_en_tirer_la_couleur():
     assert 'box.style.setProperty("--accent-morceau"' in js
 
 
-def test_la_decoupe_d_entree_n_etrangle_pas_l_ombre_portee():
-    """`clip-path: inset(0 …)` colle à la boîte et mange le `box-shadow` EN
-    PERMANENCE, pas seulement le temps de l'animation — même famille de piège
-    que l'`overflow: hidden` qui avalait la pointe de bulle. La découpe finale
-    doit donc DÉBORDER."""
+def test_l_ombre_et_la_DECOUPE_ne_sont_jamais_sur_le_meme_element():
+    """Le déroulé de la pilule se fait au `clip-path`, qui coupe TOUT ce que
+    porte son élément — `box-shadow` compris, et pas seulement le temps de
+    l'animation : `inset(0 0 0 0)` colle à la boîte, donc la lueur colorée
+    resterait amputée pour toujours. Un `filter: drop-shadow` ne sauve rien, il
+    s'applique AVANT le clip. Même famille de piège que l'`overflow: hidden` qui
+    avalait la pointe de bulle : d'où deux couches, l'ombre dehors et la découpe
+    dedans."""
     from pathlib import Path
     import re
 
     html = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
             / "overlay.html").read_text(encoding="utf-8")
-    bloc = re.search(r"\.widget\.visible \.music-now \{([^}]*)\}", html).group(1)
-    decoupe = re.search(r"clip-path:\s*inset\(([^)]*)\)", bloc).group(1)
-    assert all(v.startswith("-") for v in decoupe.split()[:3]), decoupe
+
+    def regle(selecteur):
+        return re.search(re.escape(selecteur) + r"\s*\{([^}]*)\}", html).group(1)
+
+    porteur = regle(".music-now")
+    assert "box-shadow" in porteur
+    assert "clip-path" not in porteur
+
+    pilule = regle(".music-now .music-pilule")
+    assert "clip-path" in pilule
+    # `inset` seul est permis ici : la pilule n'a pas d'ombre PORTÉE à protéger.
+    # L'ombre interne (`inset 0 1px 0 …`) reste dans la boîte, le clip ne la
+    # touche pas.
+    ombres = re.findall(r"box-shadow:([^;]*);", pilule)
+    assert all("inset" in o for o in ombres), ombres
+
+    # Et le JS monte bien les deux couches, sans quoi le style ne s'applique à
+    # rien : un test vert ne prouve pas qu'une carte MONTE.
+    js = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+          / "overlay.js").read_text(encoding="utf-8")
+    assert 'el("div", "music-pilule")' in js
+
+
+def test_la_bordure_suit_la_couleur_de_la_pochette():
+    """Demandé par l'owner. Elle est DILUÉE — à pleine opacité, le contour de la
+    carte deviendrait un liseré fluo. Sans pochette, elle retombe sur le trait
+    des autres cartes de l'overlay plutôt que de disparaître."""
+    from pathlib import Path
+    import re
+
+    statique = Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+    html = (statique / "overlay.html").read_text(encoding="utf-8")
+    js = (statique / "overlay.js").read_text(encoding="utf-8")
+
+    pilule = re.search(r"\.music-now \.music-pilule\s*\{([^}]*)\}", html).group(1)
+    assert "border: 1px solid var(--bord-morceau)" in pilule
+    # Le repli, sur la carte : sans lui, une pochette absente laisserait une
+    # bordure vide, donc pas de bordure du tout.
+    carte = re.search(r"\n    \.music-now\s*\{([^}]*)\}", html).group(1)
+    assert "--bord-morceau: var(--line)" in carte
+    assert 'box.style.setProperty("--bord-morceau"' in js
