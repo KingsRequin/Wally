@@ -338,6 +338,13 @@ quand elles coexistent. `anger↔boredom` volontairement absent.
 ALPHABÉTIQUEMENT : `anger_joy`, jamais `joy_anger`) : les composites se déclenchent quand deux
 dominantes ≥ 0.4 en même temps et priment sur les directives atomiques.
 
+**Directives par jour** (`WEEKDAYS.md`) : les sections sont en FRANÇAIS et en minuscules —
+`## lundi … dimanche`. Le fichier et le code n'ont jamais lu de clés anglaises : une section
+nommée en anglais est bien créée, jamais lue, et rien ne le signale. Les sections vides sont
+ignorées (aucune directive injectée).
+Ces directives échappent au court-circuit de `USERS.md` : y écrire une humeur contredirait une
+directive utilisateur — préférer du contextuel factuel (« on est en week-end »).
+
 **Timeout** : colère au-dessus du seuil N fois → mode mute (réactions seules : 💩 ⛔ 😤). Pendant le
 mute, chaque message ajoute `spam_anger_delta`.
 
